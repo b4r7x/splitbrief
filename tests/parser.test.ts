@@ -255,3 +255,156 @@ Depends on A.
     );
   });
 });
+
+describe('typeDefs and implSteps parsing', () => {
+  it('parses Type Definitions section', () => {
+    const input = `---
+id: T001
+title: Test task
+action: create
+file: src/test.ts
+depends_on: []
+---
+
+### Description
+Implement something.
+
+### Type Definitions
+\`\`\`typescript
+export interface Config {
+  name: string;
+}
+\`\`\`
+
+### Tests
+- test() should not throw
+
+### Constraints
+- Use ESM imports
+`;
+
+    const tasks = parseTasks(input);
+    assert.equal(tasks.length, 1);
+    assert.equal(tasks[0].typeDefs, 'export interface Config {\n  name: string;\n}');
+  });
+
+  it('parses Implementation Steps section', () => {
+    const input = `---
+id: T001
+title: Test task
+action: create
+file: src/test.ts
+depends_on: []
+---
+
+### Description
+Implement something.
+
+### Implementation Steps
+1. Import Config from types
+2. Create function that returns void
+3. Add validation logic
+
+### Tests
+- test() should not throw
+
+### Constraints
+- Use ESM imports
+`;
+
+    const tasks = parseTasks(input);
+    assert.equal(tasks.length, 1);
+    assert.deepEqual(tasks[0].implSteps, [
+      'Import Config from types',
+      'Create function that returns void',
+      'Add validation logic',
+    ]);
+  });
+
+  it('backward compat — missing sections default to empty', () => {
+    const input = `---
+id: T001
+title: Test task
+action: create
+file: src/test.ts
+depends_on: []
+---
+
+### Description
+A v0.1 task without Type Definitions or Implementation Steps.
+
+### Tests
+- Should work
+
+### Constraints
+- None
+`;
+
+    const tasks = parseTasks(input);
+    assert.equal(tasks.length, 1);
+    assert.equal(tasks[0].typeDefs, '');
+    assert.deepEqual(tasks[0].implSteps, []);
+  });
+
+  it('mixed — only typeDefs present', () => {
+    const input = `---
+id: T001
+title: Test task
+action: create
+file: src/test.ts
+depends_on: []
+---
+
+### Description
+Has type definitions but no implementation steps.
+
+### Type Definitions
+\`\`\`typescript
+export type Mode = 'fast' | 'slow';
+\`\`\`
+
+### Tests
+- Should work
+
+### Constraints
+- None
+`;
+
+    const tasks = parseTasks(input);
+    assert.equal(tasks.length, 1);
+    assert.equal(tasks[0].typeDefs, "export type Mode = 'fast' | 'slow';");
+    assert.deepEqual(tasks[0].implSteps, []);
+  });
+
+  it('mixed — only implSteps present', () => {
+    const input = `---
+id: T001
+title: Test task
+action: create
+file: src/test.ts
+depends_on: []
+---
+
+### Description
+Has implementation steps but no type definitions.
+
+### Implementation Steps
+1. Read the file
+2. Transform the data
+
+### Tests
+- Should work
+
+### Constraints
+- None
+`;
+
+    const tasks = parseTasks(input);
+    assert.equal(tasks.length, 1);
+    assert.equal(tasks[0].typeDefs, '');
+    assert.deepEqual(tasks[0].implSteps, [
+      'Read the file',
+      'Transform the data',
+    ]);
+  });
+});

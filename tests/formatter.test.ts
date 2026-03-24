@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatTaskPrompt, formatRetryPrompt, estimateTokens, truncateMiddle, SYSTEM_PREAMBLE } from '../src/spec/formatter.js';
+import { formatTaskPrompt, formatRetryPrompt, estimateTokens, truncateMiddle, computeTokenBudget, SYSTEM_PREAMBLE } from '../src/spec/formatter.js';
 import type { Task, ProjectContext } from '../src/types.js';
 
 const context: ProjectContext = {
@@ -21,6 +21,8 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     tests: [],
     constraints: [],
     status: 'pending',
+    typeDefs: '',
+    implSteps: [],
     ...overrides,
   };
 }
@@ -102,7 +104,7 @@ describe('formatRetryPrompt', () => {
     const prompt = formatRetryPrompt(task, context, error, 1);
 
     assert.ok(prompt.includes(error));
-    assert.ok(prompt.includes('Fix the error'));
+    assert.ok(prompt.includes('Fix it:'));
   });
 
   it('attempt 2 contains rephrased task', () => {
@@ -121,18 +123,20 @@ describe('formatRetryPrompt', () => {
     assert.ok(prompt.includes(error));
   });
 
-  it('retry prompts are smaller than the original prompt', () => {
-    const original = formatTaskPrompt(task, context);
+  it('retry prompts include error and task context', () => {
     const retry1 = formatRetryPrompt(task, context, error, 1);
     const retry2 = formatRetryPrompt(task, context, error, 2);
     const retry3 = formatRetryPrompt(task, context, error, 3);
 
-    assert.ok(retry1.length < original.length * 1.5 + error.length);
-    assert.ok(retry2.length < original.length * 1.5 + error.length);
-    assert.ok(retry3.length < original.length * 1.5 + error.length);
+    assert.ok(retry1.includes(error));
+    assert.ok(retry2.includes(error));
+    assert.ok(retry3.includes(error));
+    assert.ok(retry1.includes(task.file));
+    assert.ok(retry2.includes(task.file));
+    assert.ok(retry3.includes(task.file));
   });
 
-  it('attempt 2 and 3 do not include currentCode', () => {
+  it('attempt 2 and 3 still include currentCode (v0.2: full context preserved)', () => {
     const modifyTask = makeTask({
       action: 'modify',
       currentCode: 'export function existing(): void { /* long code */ }\n',
@@ -140,8 +144,8 @@ describe('formatRetryPrompt', () => {
     const retry2 = formatRetryPrompt(modifyTask, context, error, 2);
     const retry3 = formatRetryPrompt(modifyTask, context, error, 3);
 
-    assert.ok(!retry2.includes('Current Code'));
-    assert.ok(!retry3.includes('Current Code'));
+    assert.ok(retry2.includes('Current Code'));
+    assert.ok(retry3.includes('Current Code'));
   });
 });
 
@@ -149,7 +153,7 @@ describe('estimateTokens', () => {
   it('returns reasonable estimate for known text', () => {
     const tokens = estimateTokens('Hello, world!');
     assert.ok(tokens > 0);
-    assert.equal(tokens, Math.ceil(13 / 3.5));
+    assert.equal(tokens, Math.ceil(13 / 4));
   });
 
   it('returns 0 for empty string', () => {
@@ -215,5 +219,59 @@ describe('formatTaskPrompt with contextLength', () => {
     });
     const prompt = formatTaskPrompt(task, context);
     assert.ok(prompt.includes('export const x = 1;'));
+  });
+});
+
+describe('computeTokenBudget', () => {
+  it('returns correct token breakdown', () => {
+    const budget = computeTokenBudget('system text', 'task body', 'type defs', 'impl steps', 8192);
+    assert.strictEqual(budget.system, estimateTokens('system text'));
+    assert.strictEqual(budget.taskBody, estimateTokens('task body'));
+    assert.strictEqual(budget.typeDefs, estimateTokens('type defs'));
+    assert.strictEqual(budget.implSteps, estimateTokens('impl steps'));
+    assert.strictEqual(budget.codeContext, 0);
+    assert.strictEqual(budget.outputReserve, Math.floor(8192 * 0.25));
+    const expectedTotal = budget.system + budget.taskBody + budget.typeDefs + budget.implSteps + budget.outputReserve;
+    assert.strictEqual(budget.total, expectedTotal);
+    assert.strictEqual(budget.remaining, 8192 - expectedTotal);
+  });
+
+  it('25% output reserve', () => {
+    const budget = computeTokenBudget('s', 't', 'd', 'i', 10000);
+    assert.strictEqual(budget.outputReserve, Math.floor(10000 * 0.25));
+  });
+
+  it('remaining equals contextLength minus total', () => {
+    const budget = computeTokenBudget('system prompt here', 'the task body text', 'interface Foo {}', 'step 1: do X', 16384);
+    assert.strictEqual(budget.remaining, 16384 - budget.total);
+  });
+
+  it('small context (8K)', () => {
+    const budget = computeTokenBudget('sys', 'task', 'types', 'steps', 8192);
+    assert.strictEqual(budget.outputReserve, Math.floor(8192 * 0.25));
+    assert.ok(budget.remaining > 0);
+    assert.ok(budget.remaining < 8192);
+    assert.strictEqual(budget.total + budget.remaining, 8192);
+  });
+
+  it('large context (32K)', () => {
+    const budget = computeTokenBudget('sys', 'task', 'types', 'steps', 32768);
+    assert.strictEqual(budget.outputReserve, Math.floor(32768 * 0.25));
+    assert.ok(budget.remaining > 0);
+    assert.ok(budget.remaining < 32768);
+    assert.strictEqual(budget.total + budget.remaining, 32768);
+    // Large context should have more remaining than small context with same inputs
+    const smallBudget = computeTokenBudget('sys', 'task', 'types', 'steps', 8192);
+    assert.ok(budget.remaining > smallBudget.remaining);
+  });
+});
+
+describe('estimateTokens (token budgeting)', () => {
+  it('empty string returns 0', () => {
+    assert.strictEqual(estimateTokens(''), 0);
+  });
+
+  it('known length returns Math.ceil(length / 4)', () => {
+    assert.strictEqual(estimateTokens('a'.repeat(100)), Math.ceil(100 / 4));
   });
 });

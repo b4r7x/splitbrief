@@ -25,6 +25,8 @@ export interface Task {
   tests: string[];
   constraints: string[];
   pattern?: string;
+  typeDefs: string;
+  implSteps: string[];
   status: TaskStatus;
 }
 
@@ -142,6 +144,21 @@ export interface OrchestratorCallbacks {
   onComplete: (summary: Summary) => void;
   onError: (error: string) => void;
 }
+
+export interface TokenBudget {
+  system: number;
+  taskBody: number;
+  typeDefs: number;
+  implSteps: number;
+  codeContext: number;
+  outputReserve: number;
+  total: number;
+  remaining: number;
+}
+
+export type CodeContext =
+  | { mode: 'whole-file'; content: string }
+  | { mode: 'function-level'; imports: string; targetFunction: string; otherExports: string[] };
 
 export interface ProjectContext {
   name: string;
