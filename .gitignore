@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+*.tsbuildinfo
+
+# Runtime state (tiny-spec working directory)
+.tiny-spec/
+
+# SpecKit — only constitution and specs are tracked
+.specify/scripts/
+.specify/templates/
+.specify/init-options.json
+
+# Environment
+.env
+.env.*
+
+# Logs
+*.log
+
+# Test coverage
+coverage/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

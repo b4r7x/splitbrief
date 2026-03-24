@@ -1,0 +1,131 @@
+# CLI Command Interface: tiny-spec v0.1
+
+## Commands
+
+### `tiny-spec start <feature>`
+
+Start the full workflow: plan with Opus, implement with local model.
+
+```
+tiny-spec start "add user authentication"
+tiny-spec start "implement rate limiting" --auto
+tiny-spec start "add search" --model qwen3.5:27b --provider lm-studio
+```
+
+| Argument/Flag | Required | Default | Description |
+|---------------|----------|---------|-------------|
+| `<feature>` | Yes | -- | Natural language feature description |
+| `--auto` | No | false | Auto-approve spec and plan |
+| `--model <model>` | No | (from config) | Override implementer model |
+| `--provider <provider>` | No | (from config) | Override implementer provider |
+| `--project <dir>` | No | cwd | Project directory |
+
+**Output**: Split-pane TUI. Exit code 0 on success, 1 on failure.
+
+### `tiny-spec spec <feature>`
+
+Generate spec/plan/tasks only, no implementation.
+
+```
+tiny-spec spec "add rate limiting"
+tiny-spec spec "refactor auth" --auto
+```
+
+| Argument/Flag | Required | Default | Description |
+|---------------|----------|---------|-------------|
+| `<feature>` | Yes | -- | Natural language feature description |
+| `--auto` | No | false | Auto-approve spec |
+| `--project <dir>` | No | cwd | Project directory |
+
+**Output**: Generates `.tiny-spec/current/spec.md`, `plan.md`, `tasks.md`. Plain console output (no TUI).
+
+### `tiny-spec init`
+
+Initialize configuration with auto-detected models.
+
+```
+tiny-spec init
+tiny-spec init --reconfigure
+```
+
+| Argument/Flag | Required | Default | Description |
+|---------------|----------|---------|-------------|
+| `--reconfigure` | No | false | Overwrite existing config |
+
+**Output**: Creates `.tiny-spec/config.yaml`. Interactive model selection.
+
+### `tiny-spec status`
+
+Show current workflow state.
+
+```
+tiny-spec status
+```
+
+**Output**: Current phase, task progress, model info, or "No active workflow" if idle.
+
+### `tiny-spec resume`
+
+Resume an interrupted workflow.
+
+```
+tiny-spec resume
+```
+
+**Output**: Split-pane TUI, continuing from saved state. Error if no state exists.
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success (all tasks completed or spec generated) |
+| 1 | Failure (unrecoverable error, user cancellation) |
+| 2 | Configuration error (missing config, model unavailable) |
+
+## Configuration File
+
+Location: `.tiny-spec/config.yaml`
+
+```yaml
+planner:
+  tool: claude-code
+
+implementer:
+  provider: ollama
+  model: qwen2.5-coder:7b
+  context_length: 32768
+  temperature: 0.3
+
+validation:
+  typecheck: true
+  lint: true
+  test: true
+  test_command: npm test
+
+workflow:
+  auto_approve_spec: false
+  auto_approve_plan: false
+  max_retries: 3
+  commit_per_task: true
+```
+
+## Environment Variables
+
+| Variable | Used By | Description |
+|----------|---------|-------------|
+| `DEEPSEEK_API_KEY` | DeepSeek provider | API key for DeepSeek |
+| `OPENROUTER_API_KEY` | OpenRouter provider | API key for OpenRouter |
+| `EDITOR` / `VISUAL` | Spec review | Editor to open spec for review |
+| `OLLAMA_CONTEXT_LENGTH` | Ollama provider | Override Ollama's 2048-token default |
+
+## Keyboard Shortcuts (TUI)
+
+| Key | Action |
+|-----|--------|
+| `Tab` | Switch focus between panes |
+| `q` | Quit (with confirmation if workflow active) |
+| `Enter` | Approve current step (spec/plan) |
+| `e` | Open spec/plan in $EDITOR |
+| `s` | Skip current task |
+| `Esc` | Escalate current task manually |
+| `↑/↓` | Scroll focused pane |
