@@ -83,6 +83,7 @@ export interface Summary {
 }
 
 export interface WorkflowState {
+  stateVersion: number;
   phase: Phase;
   feature: string;
   currentTaskIndex: number;

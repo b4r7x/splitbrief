@@ -11,8 +11,8 @@ You are implementing an open-source CLI tool called **tiny-spec**. The project h
 ## What is tiny-spec?
 
 A TypeScript CLI tool that orchestrates two AI coding sessions:
-- **Planner**: Claude API (Opus) — researches codebase, writes specs, plans, tasks, validates
-- **Implementer**: Local model via Ollama/LM Studio (OpenAI-compatible API) — implements tasks one by one
+- **Planner**: Claude API (Opus)  -  researches codebase, writes specs, plans, tasks, validates
+- **Implementer**: Local model via Ollama/LM Studio (OpenAI-compatible API)  -  implements tasks one by one
 
 The tool shows a split-pane terminal UI (like tmux) using Ink. Left pane shows planner activity, right pane shows implementer activity. Bottom bar shows progress.
 
@@ -32,24 +32,24 @@ Then follow the tasks below.
 ## Implementation Documents
 
 Read these files in order before starting:
-1. `specs/001-tiny-spec-core/spec.md` — Requirements and acceptance criteria
-2. `specs/001-tiny-spec-core/plan.md` — Architecture, dependencies, file structure
-3. `specs/001-tiny-spec-core/tasks.md` — 33 tasks across 9 phases (implement in order)
-4. `CLAUDE.md` — Code conventions and quick reference
+1. `specs/001-tiny-spec-core/spec.md`  -  Requirements and acceptance criteria
+2. `specs/001-tiny-spec-core/plan.md`  -  Architecture, dependencies, file structure
+3. `specs/001-tiny-spec-core/tasks.md`  -  33 tasks across 9 phases (implement in order)
+4. `CLAUDE.md`  -  Code conventions and quick reference
 
 ## Key Architecture Decisions
 
-1. **API-direct approach (not subprocess orchestration)**: Use `@anthropic-ai/sdk` for Claude API calls and `openai` SDK pointing to Ollama/LM Studio for local model calls. Do NOT spawn Claude Code or OpenCode as subprocesses — call their APIs directly.
+1. **API-direct approach (not subprocess orchestration)**: Use `@anthropic-ai/sdk` for Claude API calls and `openai` SDK pointing to Ollama/LM Studio for local model calls. Do NOT spawn Claude Code or OpenCode as subprocesses  -  call their APIs directly.
 
-2. **Ink for TUI**: Use Ink (React for CLI) with `<Box flexDirection="row">` for the split-pane layout. Not actual tmux — it's a React-based terminal app.
+2. **Ink for TUI**: Use Ink (React for CLI) with `<Box flexDirection="row">` for the split-pane layout. Not actual tmux  -  it's a React-based terminal app.
 
 3. **State machine**: The workflow progresses through phases. State is persisted to `.tiny-spec/current/state.json` so interrupted workflows can resume.
 
-4. **Self-contained task prompts**: When sending a task to the local model, the prompt must contain ALL context inline. Never tell the model to "go read a file" — paste the relevant code into the prompt.
+4. **Self-contained task prompts**: When sending a task to the local model, the prompt must contain ALL context inline. Never tell the model to "go read a file"  -  paste the relevant code into the prompt.
 
 5. **Validation pipeline**: After each task, run tsc → lint → test. On failure, format the error and retry with the local model (max 3 times), then escalate to Claude.
 
-6. **Whole-file format for small models**: When the local model implements a task, ask it to return the complete file content. Don't use diffs or search/replace — small models (7-9B) are most reliable with whole-file output.
+6. **Whole-file format for small models**: When the local model implements a task, ask it to return the complete file content. Don't use diffs or search/replace  -  small models (7-9B) are most reliable with whole-file output.
 
 ## Tech Stack
 
@@ -64,7 +64,7 @@ Read these files in order before starting:
 
 ## Code Conventions
 
-- Zero classes — pure functions only, module-scoped state
+- Zero classes  -  pure functions only, module-scoped state
 - ESM imports with `.js` extension: `import { x } from './foo.js'`
 - No unnecessary comments
 - JSX in `.tsx` files, logic in `.ts` files

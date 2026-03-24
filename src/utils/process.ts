@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 
-const activeProcesses = new Set<ChildProcess>();
+export const activeProcesses = new Set<ChildProcess>();
 
 export function killProcess(proc: ChildProcess): void {
   if (proc.exitCode === null && !proc.killed) {
@@ -15,10 +15,15 @@ export function spawnWithStreaming(
   onStderr?: (line: string) => void,
   options?: { cwd?: string },
 ): Promise<{ code: number; killed: boolean }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const proc = spawn(command, args, {
       cwd: options?.cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    proc.on('error', (err) => {
+      activeProcesses.delete(proc);
+      reject(err);
     });
 
     activeProcesses.add(proc);
@@ -65,10 +70,15 @@ export function runCommand(
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const timeout = options?.timeout ?? 60_000;
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const proc = spawn(command, args, {
       cwd: options?.cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    proc.on('error', (err) => {
+      activeProcesses.delete(proc);
+      reject(err);
     });
 
     activeProcesses.add(proc);

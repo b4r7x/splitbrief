@@ -104,16 +104,16 @@
   ```
 
 - [ ] T008 Implement config loader in `src/config.ts`:
-  - `loadConfig(projectDir: string): Config` — reads `.tiny-spec/config.yaml`, merges with defaults
-  - `createDefaultConfig(): Config` — returns sensible defaults (ollama, qwen2.5-coder:7b)
-  - `initConfig(projectDir: string): void` — creates `.tiny-spec/config.yaml` with defaults if not exists
-  - `detectLocalModels(): Promise<{provider: string, models: string[]}[]>` — checks Ollama (`http://localhost:11434/api/tags`) and LM Studio (`http://localhost:1234/v1/models`) for available models
+  - `loadConfig(projectDir: string): Config`  -  reads `.tiny-spec/config.yaml`, merges with defaults
+  - `createDefaultConfig(): Config`  -  returns sensible defaults (ollama, qwen2.5-coder:7b)
+  - `initConfig(projectDir: string): void`  -  creates `.tiny-spec/config.yaml` with defaults if not exists
+  - `detectLocalModels(): Promise<{provider: string, models: string[]}[]>`  -  checks Ollama (`http://localhost:11434/api/tags`) and LM Studio (`http://localhost:1234/v1/models`) for available models
 
 - [ ] T009 Implement state manager in `src/state.ts`:
   - `createInitialState(feature: string): WorkflowState`
-  - `saveState(projectDir: string, state: WorkflowState): void` — writes `.tiny-spec/current/state.json`
-  - `loadState(projectDir: string): WorkflowState | null` — reads state, returns null if not exists
-  - `transition(state: WorkflowState, action: StateAction): WorkflowState` — pure state transitions
+  - `saveState(projectDir: string, state: WorkflowState): void`  -  writes `.tiny-spec/current/state.json`
+  - `loadState(projectDir: string): WorkflowState | null`  -  reads state, returns null if not exists
+  - `transition(state: WorkflowState, action: StateAction): WorkflowState`  -  pure state transitions
   - StateAction union type for all valid transitions
 
 **Checkpoint**: Types defined, config loads from YAML, state machine transitions work
@@ -126,19 +126,19 @@
 
 - [ ] T010 Implement git utilities in `src/utils/git.ts`:
   - `isGitRepo(dir: string): Promise<boolean>`
-  - `commitChanges(dir: string, message: string): Promise<string>` — stages all, commits, returns hash
-  - `getCurrentDiff(dir: string): Promise<string>` — unstaged + staged diff
-  - `getFileContent(dir: string, filePath: string): Promise<string | null>` — read file, null if not exists
+  - `commitChanges(dir: string, message: string): Promise<string>`  -  stages all, commits, returns hash
+  - `getCurrentDiff(dir: string): Promise<string>`  -  unstaged + staged diff
+  - `getFileContent(dir: string, filePath: string): Promise<string | null>`  -  read file, null if not exists
 
 - [ ] T011 Implement file system helpers in `src/utils/fs.ts`:
-  - `ensureTinySpecDir(projectDir: string): void` — creates `.tiny-spec/current/` if needed
+  - `ensureTinySpecDir(projectDir: string): void`  -  creates `.tiny-spec/current/` if needed
   - `writeSpecFile(projectDir: string, filename: string, content: string): void`
   - `readSpecFile(projectDir: string, filename: string): string | null`
-  - `archiveCurrentFeature(projectDir: string, featureName: string): void` — moves current/ to history/
+  - `archiveCurrentFeature(projectDir: string, featureName: string): void`  -  moves current/ to history/
 
 - [ ] T012 Implement process utilities in `src/utils/process.ts`:
   - `spawnWithOutput(command: string, args: string[], options: SpawnOptions): Promise<{stdout: string, stderr: string, code: number}>`
-  - `runValidation(projectDir: string, config: Config): Promise<ValidationResult[]>` — runs typecheck, lint, test in sequence, stops on first failure
+  - `runValidation(projectDir: string, config: Config): Promise<ValidationResult[]>`  -  runs typecheck, lint, test in sequence, stops on first failure
   - This module wraps child_process.spawn with promise-based API and output capture
 
 **Checkpoint**: Can commit, read files, run validation commands
@@ -150,22 +150,22 @@
 **Purpose**: Drive Claude API to generate spec, plan, and tasks
 
 - [ ] T013 Implement spec prompt templates in `src/spec/templates.ts`:
-  - `buildResearchPrompt(feature: string, projectContext: string): string` — prompt for Opus to research the codebase and understand what's needed
-  - `buildSpecPrompt(feature: string, researchOutput: string): string` — prompt for Opus to write spec.md
-  - `buildPlanPrompt(spec: string, projectContext: string): string` — prompt for Opus to write plan.md
-  - `buildTasksPrompt(spec: string, plan: string): string` — prompt for Opus to write tasks.md with the self-contained task format from plan.md
-  - `buildValidationPrompt(spec: string, diff: string): string` — prompt for Opus final review
-  - `buildEscalationPrompt(task: Task, lastAttempt: string, error: string): string` — prompt for Opus to fix a failed task
+  - `buildResearchPrompt(feature: string, projectContext: string): string`  -  prompt for Opus to research the codebase and understand what's needed
+  - `buildSpecPrompt(feature: string, researchOutput: string): string`  -  prompt for Opus to write spec.md
+  - `buildPlanPrompt(spec: string, projectContext: string): string`  -  prompt for Opus to write plan.md
+  - `buildTasksPrompt(spec: string, plan: string): string`  -  prompt for Opus to write tasks.md with the self-contained task format from plan.md
+  - `buildValidationPrompt(spec: string, diff: string): string`  -  prompt for Opus final review
+  - `buildEscalationPrompt(task: Task, lastAttempt: string, error: string): string`  -  prompt for Opus to fix a failed task
   - Each prompt should be detailed, structured, and include the exact output format expected
 
 - [ ] T014 Implement task parser in `src/spec/parser.ts`:
-  - `parseTasks(tasksMarkdown: string): Task[]` — parse tasks.md into Task objects
+  - `parseTasks(tasksMarkdown: string): Task[]`  -  parse tasks.md into Task objects
   - Handle YAML frontmatter per task (id, title, action, file, depends_on)
   - Extract sections: Context, Task, Signature, Tests, Constraints, Pattern
   - Return ordered array respecting dependencies
 
 - [ ] T015 Implement task formatter in `src/spec/formatter.ts`:
-  - `formatTaskPrompt(task: Task, projectContext: ProjectContext): string` — build self-contained prompt for the local model
+  - `formatTaskPrompt(task: Task, projectContext: ProjectContext): string`  -  build self-contained prompt for the local model
   - `ProjectContext` includes: project name, runtime info, test command
   - Prompt uses whole-file format for files <200 lines, search/replace for larger files
   - Inline all relevant code context (don't reference external files)
@@ -212,7 +212,7 @@
   - Runs validation pipeline in order: typecheck → lint → test
   - Each step only runs if enabled in config
   - Returns array of results (stops on first failure for efficiency)
-  - `formatValidationError(results: ValidationResult[]): string` — human-readable error for retry prompt
+  - `formatValidationError(results: ValidationResult[]): string`  -  human-readable error for retry prompt
 
 - [ ] T019 Implement the escalator in `src/orchestrator/escalator.ts`:
   - `escalateTask(task: Task, lastAttempt: string, error: string, projectDir: string, config: Config, onProgress: (msg: string) => void): Promise<{success: boolean, output: string}>`
@@ -310,16 +310,16 @@
 
 - [ ] T027 Implement CLI in `src/cli.ts`:
   - Commands:
-    - `tiny-spec start <feature>` — full workflow (TUI + orchestrator)
-    - `tiny-spec spec <feature>` — spec-only mode (generate spec/plan/tasks, no implementation)
-    - `tiny-spec init` — create .tiny-spec/config.yaml with detected models
-    - `tiny-spec status` — show current workflow state
-    - `tiny-spec resume` — resume interrupted workflow from saved state
+    - `tiny-spec start <feature>`  -  full workflow (TUI + orchestrator)
+    - `tiny-spec spec <feature>`  -  spec-only mode (generate spec/plan/tasks, no implementation)
+    - `tiny-spec init`  -  create .tiny-spec/config.yaml with detected models
+    - `tiny-spec status`  -  show current workflow state
+    - `tiny-spec resume`  -  resume interrupted workflow from saved state
   - Global options:
-    - `--auto` — auto-approve spec and plan
-    - `--model <model>` — override implementer model
-    - `--provider <provider>` — override implementer provider
-    - `--project <dir>` — project directory (default: cwd)
+    - `--auto`  -  auto-approve spec and plan
+    - `--model <model>`  -  override implementer model
+    - `--provider <provider>`  -  override implementer provider
+    - `--project <dir>`  -  project directory (default: cwd)
   - Entry: `#!/usr/bin/env node` with `--experimental-strip-types` for dev mode
   - Uses commander for argument parsing
   - Renders Ink app for `start` command, plain console for others
@@ -389,5 +389,5 @@
 | 9. Polish | T028-T033 | Tests, errors, docs |
 
 **Total**: 33 tasks across 9 phases
-**Estimated complexity**: Medium — no novel algorithms, mostly orchestration + TUI
+**Estimated complexity**: Medium  -  no novel algorithms, mostly orchestration + TUI
 **Critical path**: T007 → T013-T016 → T017-T019 → T020 → T025-T027

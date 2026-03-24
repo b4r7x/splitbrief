@@ -4,14 +4,14 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 
 ## Quick Context
 
-- `specs/002-cost-optimized-orchestrator/spec.md` — Full specification (4 user stories, 24 FRs)
-- `specs/002-cost-optimized-orchestrator/plan.md` — Architecture, state machine, dependencies
-- `specs/002-cost-optimized-orchestrator/tasks.md` — 45 tasks across 7 phases (all complete)
-- `specs/002-cost-optimized-orchestrator/research.md` — 12 research sections from 9 parallel agents
-- `specs/002-cost-optimized-orchestrator/data-model.md` — Entity definitions and state transitions
-- `specs/002-cost-optimized-orchestrator/contracts/cli-commands.md` — CLI interface contract
-- `specs/002-cost-optimized-orchestrator/quickstart.md` — End-to-end usage guide
-- `.specify/memory/constitution.md` — 5 project principles (v1.0.0)
+- `specs/002-cost-optimized-orchestrator/spec.md`  -  Full specification (4 user stories, 24 FRs)
+- `specs/002-cost-optimized-orchestrator/plan.md`  -  Architecture, state machine, dependencies
+- `specs/002-cost-optimized-orchestrator/tasks.md`  -  45 tasks across 7 phases (all complete)
+- `specs/002-cost-optimized-orchestrator/research.md`  -  12 research sections from 9 parallel agents
+- `specs/002-cost-optimized-orchestrator/data-model.md`  -  Entity definitions and state transitions
+- `specs/002-cost-optimized-orchestrator/contracts/cli-commands.md`  -  CLI interface contract
+- `specs/002-cost-optimized-orchestrator/quickstart.md`  -  End-to-end usage guide
+- `.specify/memory/constitution.md`  -  5 project principles (v1.0.0)
 
 ## Tech Stack
 
@@ -19,7 +19,7 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 - **Language**: TypeScript 5.9+, ESM only (`"type": "module"`)
 - **Dev runner**: `tsx` (handles TypeScript + JSX/TSX + ESM, no custom loaders needed)
 - **TUI**: Ink 5.x (React for CLI) + @inkjs/ui
-- **Planner**: Claude Code CLI (`claude -p --output-format stream-json`) as subprocess — uses existing subscription, $0 extra
+- **Planner**: Claude Code CLI (`claude -p --output-format stream-json`) as subprocess  -  uses existing subscription, $0 extra
 - **Implementer**: `openai` SDK (OpenAI-compatible API for Ollama/LM Studio/DeepSeek/OpenRouter)
 - **Config**: `yaml` package
 - **Git**: `simple-git` package
@@ -28,11 +28,11 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 
 ## Code Conventions
 
-- **Zero classes** — Pure functions, module-scoped state
-- **ESM imports** — Always use `.js` extension in imports (`'./config.js'`, not `'./config'`)
-- **No unnecessary comments** — Code should be self-explanatory
-- **Error at boundaries** — Internal functions propagate, callers decide
-- **JSX for Ink** — `.tsx` files for React components, `.ts` for everything else
+- **Zero classes**  -  Pure functions, module-scoped state
+- **ESM imports**  -  Always use `.js` extension in imports (`'./config.js'`, not `'./config'`)
+- **No unnecessary comments**  -  Code should be self-explanatory
+- **Error at boundaries**  -  Internal functions propagate, callers decide
+- **JSX for Ink**  -  `.tsx` files for React components, `.ts` for everything else
 
 ## Project Structure
 
@@ -124,3 +124,10 @@ All 45 tasks from `specs/002-cost-optimized-orchestrator/tasks.md` are complete.
 - TypeScript/JavaScript projects only (multi-language in v0.2)
 
 See `specs/002-cost-optimized-orchestrator/research.md` for all architectural decisions and rationale.
+
+## Active Technologies
+- TypeScript 6.0 (upgrading from 5.9.3), Node.js 22+ + ink 5.x, react 18.x, openai ^6.0.0 (upgrading from ^4.0.0), yaml, simple-git, commander ^14.0.0 (upgrading from ^12.0.0) (003-v02-fixes-robustness)
+- JSON files (`.tiny-spec/current/state.json`, `events.jsonl`), Markdown files (003-v02-fixes-robustness)
+
+## Recent Changes
+- 003-v02-fixes-robustness: Added TypeScript 6.0 (upgrading from 5.9.3), Node.js 22+ + ink 5.x, react 18.x, openai ^6.0.0 (upgrading from ^4.0.0), yaml, simple-git, commander ^14.0.0 (upgrading from ^12.0.0)

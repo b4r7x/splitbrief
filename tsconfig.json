@@ -1,19 +1,21 @@
 {
   "compilerOptions": {
-    "target": "ES2023",
+    "target": "ES2024",
+    "lib": ["ES2024"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "strict": true,
-    "esModuleInterop": true,
     "skipLibCheck": true,
     "outDir": "dist",
     "rootDir": "src",
     "declaration": true,
     "jsx": "react-jsx",
     "rewriteRelativeImportExtensions": true,
-    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
     "resolveJsonModule": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "types": ["node", "react"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "tests"]

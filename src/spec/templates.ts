@@ -15,21 +15,21 @@ ${projectContext}
 
 Analyze this codebase thoroughly:
 
-1. **Read key files** — Identify and read the most important source files: entry points, core modules, configuration, and type definitions.
+1. **Read key files**  -  Identify and read the most important source files: entry points, core modules, configuration, and type definitions.
 
-2. **Understand architecture** — Map out:
+2. **Understand architecture**  -  Map out:
    - How the project is structured (directories, module boundaries)
    - The data flow between components
    - Key abstractions and patterns used
    - How configuration and state are managed
 
-3. **Identify relevant code** — Find:
+3. **Identify relevant code**  -  Find:
    - Files that will need to be modified for this feature
    - Existing patterns that the new code should follow
    - Related functionality that already exists
    - Shared types, utilities, and helpers that can be reused
 
-4. **Note constraints** — Document:
+4. **Note constraints**  -  Document:
    - Coding conventions (naming, style, error handling)
    - Testing patterns and test infrastructure
    - Build and runtime requirements
@@ -87,7 +87,7 @@ Concrete usage scenarios showing how users will interact with this feature. Incl
 For each scenario, describe the user action and expected outcome.
 
 ### Acceptance Criteria
-Numbered list of specific, testable criteria that define "done." Each criterion must be verifiable — no subjective language like "should be fast" or "should be clean."
+Numbered list of specific, testable criteria that define "done." Each criterion must be verifiable  -  no subjective language like "should be fast" or "should be clean."
 
 ### Functional Requirements
 Detailed requirements organized by area:
@@ -164,13 +164,13 @@ For each major component:
 
 ## Output
 
-Write the complete plan.md content. Be specific — use actual file paths, function names, and type definitions from the project.`;
+Write the complete plan.md content. Be specific  -  use actual file paths, function names, and type definitions from the project.`;
 }
 
 export function buildTasksPrompt(spec: string, plan: string): string {
   return `# Write Implementation Tasks
 
-You are breaking down an implementation plan into atomic, self-contained tasks. Each task will be sent independently to a local AI model for implementation — the model will have NO access to the spec, plan, or other tasks. Every task must contain ALL context needed to complete it.
+You are breaking down an implementation plan into atomic, self-contained tasks. Each task will be sent independently to a local AI model for implementation  -  the model will have NO access to the spec, plan, or other tasks. Every task must contain ALL context needed to complete it.
 
 ## Specification
 ${spec}
@@ -226,7 +226,7 @@ export function exampleFn(param: Type): ReturnType
 
 3. **Dependency-ordered**: Tasks must be ordered so that dependencies come first. Use \`depends_on\` to declare which tasks must complete before this one. If tasks have no dependencies on each other, they can be marked as parallelizable.
 
-4. **Concrete tests**: Every task must include specific test cases with concrete inputs and expected outputs — not vague descriptions like "should work correctly."
+4. **Concrete tests**: Every task must include specific test cases with concrete inputs and expected outputs  -  not vague descriptions like "should work correctly."
 
 5. **Inline type definitions**: If a task depends on types defined in another file, copy the relevant type definitions into the task description so the implementer has them.
 
@@ -254,7 +254,7 @@ ${diff}
 
 ## Instructions
 
-Review the implementation diff against every acceptance criterion and requirement in the spec. Be thorough but fair — minor style differences are acceptable; missing functionality or incorrect behavior is not.
+Review the implementation diff against every acceptance criterion and requirement in the spec. Be thorough but fair  -  minor style differences are acceptable; missing functionality or incorrect behavior is not.
 
 ## Review Checklist
 
@@ -274,7 +274,7 @@ One of: \`pass\` | \`pass_with_notes\` | \`fail\`
 
 ### Criteria Results
 For each acceptance criterion from the spec:
-- **[PASS]** or **[FAIL]** Criterion description — brief explanation
+- **[PASS]** or **[FAIL]** Criterion description  -  brief explanation
 
 ### Findings
 List any issues found, categorized as:
@@ -289,7 +289,7 @@ One-paragraph overall assessment.`;
 export function buildHintPrompt(task: Task, error: string): string {
   return `# Diagnose Implementation Failure
 
-A local AI model attempted to implement the task below but the result failed validation. Provide a concise diagnosis and approach hint — do NOT write code.
+A local AI model attempted to implement the task below but the result failed validation. Provide a concise diagnosis and approach hint  -  do NOT write code.
 
 ## Task
 **ID**: ${task.id}
@@ -315,7 +315,7 @@ ${error}
 In ~500 tokens or less, provide:
 
 1. **Root cause**: What specifically went wrong? Parse the error message and identify the exact issue.
-2. **Fix approach**: Describe the approach to fix it in plain language. Be specific — mention exact function names, types, or patterns to use.
+2. **Fix approach**: Describe the approach to fix it in plain language. Be specific  -  mention exact function names, types, or patterns to use.
 3. **Common pitfall**: If this is a common mistake (e.g., missing .js extension, wrong import path, incorrect type), say so explicitly.
 
 Do NOT write code. Only explain the diagnosis and approach.`;

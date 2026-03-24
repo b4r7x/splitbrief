@@ -2,9 +2,10 @@ import type { Config, Task, ProjectContext } from '../types.js';
 import { buildResearchPrompt, buildSpecPrompt, buildPlanPrompt, buildTasksPrompt } from '../spec/templates.js';
 import { parseTasks } from '../spec/parser.js';
 import { spawnWithStreaming } from '../utils/process.js';
-import { writeSpecFile, readSpecFile } from '../utils/fs.js';
+import { writeSpecFile } from '../utils/fs.js';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { parseStreamLine } from './claude-stream.js';
 
 interface PlannerCallbacks {
   onOutput: (text: string) => void;
@@ -15,14 +16,16 @@ interface PlanResult {
   spec: string;
   plan: string;
   tasks: Task[];
+  usage: { inputTokens: number; outputTokens: number } | null;
 }
 
 interface StreamResult {
   text: string;
   sessionId: string | null;
+  usage: { inputTokens: number; outputTokens: number } | null;
 }
 
-export function buildProjectContext(projectDir: string): string {
+function buildProjectContext(projectDir: string): string {
   const parts: string[] = [];
 
   const pkgPath = join(projectDir, 'package.json');
@@ -82,44 +85,6 @@ function listDir(dir: string, root: string, depth: number): string {
   return lines.join('\n');
 }
 
-function parseStreamLine(line: string): { text: string | null; sessionId: string | null; result: string | null } {
-  if (!line.trim()) return { text: null, sessionId: null, result: null };
-
-  try {
-    const event = JSON.parse(line);
-
-    if (event.type === 'assistant' && event.message?.content) {
-      const texts: string[] = [];
-      for (const block of event.message.content) {
-        if (block.type === 'text' && block.text) {
-          texts.push(block.text);
-        }
-      }
-      return {
-        text: texts.length > 0 ? texts.join('') : null,
-        sessionId: event.session_id ?? null,
-        result: null,
-      };
-    }
-
-    if (event.type === 'result') {
-      return {
-        text: null,
-        sessionId: event.session_id ?? null,
-        result: typeof event.result === 'string' ? event.result : null,
-      };
-    }
-
-    if (event.session_id) {
-      return { text: null, sessionId: event.session_id, result: null };
-    }
-
-    return { text: null, sessionId: null, result: null };
-  } catch {
-    return { text: null, sessionId: null, result: null };
-  }
-}
-
 async function spawnClaude(
   prompt: string,
   projectDir: string,
@@ -134,6 +99,7 @@ async function spawnClaude(
   let collectedText = '';
   let collectedSessionId = sessionId;
   let stderrOutput = '';
+  let usage: { inputTokens: number; outputTokens: number } | null = null;
 
   let result: { code: number; killed: boolean };
   try {
@@ -152,8 +118,12 @@ async function spawnClaude(
           onOutput(parsed.text);
         }
 
-        if (parsed.result) {
-          collectedText = parsed.result;
+        if (parsed.isResult && parsed.text) {
+          collectedText = parsed.text;
+        }
+
+        if (parsed.usage) {
+          usage = parsed.usage;
         }
       },
       (line) => {
@@ -161,8 +131,8 @@ async function spawnClaude(
       },
       { cwd: projectDir },
     );
-  } catch (err: any) {
-    if (err?.code === 'ENOENT') {
+  } catch (err: unknown) {
+    if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new Error(
         'Claude Code CLI not found. Install it from https://claude.ai/code',
       );
@@ -183,7 +153,7 @@ async function spawnClaude(
     );
   }
 
-  return { text: collectedText, sessionId: collectedSessionId };
+  return { text: collectedText, sessionId: collectedSessionId, usage };
 }
 
 export async function planFeature(
@@ -193,6 +163,15 @@ export async function planFeature(
   callbacks: PlannerCallbacks,
 ): Promise<PlanResult> {
   const projectContext = buildProjectContext(projectDir);
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+
+  function accumulateUsage(streamResult: StreamResult) {
+    if (streamResult.usage) {
+      totalInputTokens += streamResult.usage.inputTokens;
+      totalOutputTokens += streamResult.usage.outputTokens;
+    }
+  }
 
   // Phase 1: Research
   callbacks.onPhase('researching');
@@ -203,6 +182,7 @@ export async function planFeature(
   } catch (err) {
     throw new Error(`Research phase failed: ${err instanceof Error ? err.message : String(err)}`);
   }
+  accumulateUsage(research);
 
   writeSpecFile(projectDir, 'research.md', research.text);
 
@@ -215,6 +195,7 @@ export async function planFeature(
   } catch (err) {
     throw new Error(`Specification phase failed: ${err instanceof Error ? err.message : String(err)}`);
   }
+  accumulateUsage(specResult);
   const spec = specResult.text;
 
   writeSpecFile(projectDir, 'spec.md', spec);
@@ -228,6 +209,7 @@ export async function planFeature(
   } catch (err) {
     throw new Error(`Planning phase failed: ${err instanceof Error ? err.message : String(err)}`);
   }
+  accumulateUsage(planResult);
   const plan = planResult.text;
 
   writeSpecFile(projectDir, 'plan.md', plan);
@@ -241,11 +223,16 @@ export async function planFeature(
   } catch (err) {
     throw new Error(`Task generation phase failed: ${err instanceof Error ? err.message : String(err)}`);
   }
+  accumulateUsage(tasksResult);
   const tasksMarkdown = tasksResult.text;
 
   writeSpecFile(projectDir, 'tasks.md', tasksMarkdown);
 
   const tasks = parseTasks(tasksMarkdown);
 
-  return { spec, plan, tasks };
+  const totalUsage = (totalInputTokens > 0 || totalOutputTokens > 0)
+    ? { inputTokens: totalInputTokens, outputTokens: totalOutputTokens }
+    : null;
+
+  return { spec, plan, tasks, usage: totalUsage };
 }

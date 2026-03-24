@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { Box, Text, useInput, useStdout, useApp } from 'ink';
 import Header from './header.js';
 import Pane, { type PaneHandle } from './pane.js';

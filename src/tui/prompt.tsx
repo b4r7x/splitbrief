@@ -1,4 +1,3 @@
-import React from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import { spawnSync } from 'node:child_process';
 

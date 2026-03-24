@@ -72,8 +72,8 @@ export async function validateTask(
         results.push(result);
         if (!result.passed) return results;
       }
-    } catch (err: any) {
-      if (err?.code === 'ENOENT') {
+    } catch (err: unknown) {
+      if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
         results.push({ passed: true, stage: 'typecheck', output: 'tsc not found, skipping typecheck' });
       } else {
         throw err;
@@ -86,7 +86,7 @@ export async function validateTask(
 
     if (linter === 'eslint') {
       try {
-        const { stdout, stderr, code } = await runCommand('npx', ['eslint', task.file], {
+        const { stdout, stderr, code } = await runCommand('npx', ['eslint', '--', task.file], {
           cwd: projectDir,
         });
 
@@ -113,7 +113,7 @@ export async function validateTask(
       }
     } else if (linter === 'biome') {
       try {
-        const { stdout, stderr, code } = await runCommand('npx', ['biome', 'check', task.file], {
+        const { stdout, stderr, code } = await runCommand('npx', ['biome', 'check', '--', task.file], {
           cwd: projectDir,
         });
 

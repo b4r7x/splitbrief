@@ -7,9 +7,9 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import App from './app.js';
-import { loadConfig, initConfig, createDefaultConfig } from './config.js';
+import { loadConfig, initConfig, createDefaultConfig, toYaml } from './config.js';
 import { loadState } from './state.js';
-import { detectLocalModels } from './orchestrator/providers.js';
+import { detectLocalModels, detectCapabilities } from './orchestrator/providers.js';
 import { planFeature } from './orchestrator/planner.js';
 import { isGitRepo } from './utils/git.js';
 
@@ -68,12 +68,22 @@ program
     if (opts.model) config.implementer.model = opts.model;
     if (opts.provider) config.implementer.provider = opts.provider as typeof config.implementer.provider;
 
+    try {
+      const caps = await detectCapabilities(config);
+      if (caps.contextLength) {
+        config.implementer.contextLength = caps.contextLength;
+      }
+    } catch {
+      // provider not reachable, use config default
+    }
+
     render(createElement(App, {
       feature,
       projectDir,
       auto: opts.auto,
       modelOverride: opts.model,
       providerOverride: opts.provider,
+      contextLengthOverride: config.implementer.contextLength,
     }));
   });
 
@@ -185,7 +195,7 @@ program
     fs.mkdirSync(dirPath, { recursive: true });
     fs.writeFileSync(
       path.join(dirPath, 'config.yaml'),
-      YAML.stringify(defaults),
+      YAML.stringify(toYaml(defaults)),
       'utf-8',
     );
 
@@ -241,6 +251,12 @@ program
       process.exit(1);
     }
 
+    if (!('stateVersion' in state) || (state as any).stateVersion < 2) {
+      console.error('Error: saved state is from an older version and cannot be resumed.');
+      console.error('Please start a new workflow with `tiny-spec start`.');
+      process.exit(1);
+    }
+
     const nonResumable = new Set(['idle', 'researching', 'specifying', 'planning', 'complete']);
     if (nonResumable.has(state.phase)) {
       console.error(`Error: workflow is in '${state.phase}' phase and cannot be resumed.`);
@@ -256,6 +272,7 @@ program
       auto: opts.auto,
       modelOverride: opts.model,
       providerOverride: opts.provider,
+      savedState: state,
     }));
   });
 

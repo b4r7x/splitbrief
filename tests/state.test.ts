@@ -195,6 +195,114 @@ describe('transition', () => {
     assert.equal(next.feature, 'feat');
   });
 
+  it('REJECT_PLAN -> idle', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'reviewing-plan',
+    };
+    const next = transition(state, { type: 'REJECT_PLAN' });
+    assert.equal(next.phase, 'idle');
+  });
+
+  it('HINT_FAIL -> stays in escalating', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'escalating',
+    };
+    const next = transition(state, { type: 'HINT_FAIL' });
+    assert.equal(next.phase, 'escalating');
+  });
+
+  it('FULL_SUCCESS -> implementing with index advanced, task in escalatedTasks, attempt reset', () => {
+    const tasks = [makeTask('t1'), makeTask('t2')];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'escalating',
+      tasks,
+      currentTaskIndex: 0,
+      attempt: 3,
+    };
+    const next = transition(state, { type: 'FULL_SUCCESS' });
+    assert.equal(next.phase, 'implementing');
+    assert.equal(next.currentTaskIndex, 1);
+    assert.deepEqual(next.escalatedTasks, ['t1']);
+    assert.equal(next.attempt, 0);
+  });
+
+  it('SET_SESSION_ID updates sessionId', () => {
+    const state = createInitialState('feat');
+    const next = transition(state, { type: 'SET_SESSION_ID', sessionId: 'abc-123' });
+    assert.equal(next.sessionId, 'abc-123');
+  });
+
+  it('HINT_SUCCESS resets attempt to 0', () => {
+    const tasks = [makeTask('t1'), makeTask('t2')];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'escalating',
+      tasks,
+      currentTaskIndex: 0,
+      attempt: 3,
+    };
+    const next = transition(state, { type: 'HINT_SUCCESS' });
+    assert.equal(next.phase, 'implementing');
+    assert.equal(next.attempt, 0);
+  });
+
+  it('FULL_FAIL resets attempt to 0', () => {
+    const tasks = [makeTask('t1'), makeTask('t2')];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'escalating',
+      tasks,
+      currentTaskIndex: 0,
+      attempt: 3,
+    };
+    const next = transition(state, { type: 'FULL_FAIL' });
+    assert.equal(next.phase, 'implementing');
+    assert.equal(next.attempt, 0);
+  });
+
+  it('configurable maxRetries: attempt < custom max stays in implementing', () => {
+    const tasks = [makeTask('t1')];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'validating-task',
+      tasks,
+      currentTaskIndex: 0,
+      attempt: 4,
+    };
+    const next = transition(state, { type: 'VALIDATION_FAIL' }, 5);
+    assert.equal(next.phase, 'implementing');
+    assert.equal(next.attempt, 5);
+  });
+
+  it('configurable maxRetries: attempt >= custom max transitions to escalating', () => {
+    const tasks = [makeTask('t1')];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'validating-task',
+      tasks,
+      currentTaskIndex: 0,
+      attempt: 5,
+    };
+    const next = transition(state, { type: 'VALIDATION_FAIL' }, 5);
+    assert.equal(next.phase, 'escalating');
+  });
+
+  it('VALIDATION_FAIL at default max transitions to escalating', () => {
+    const tasks = [makeTask('t1')];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'validating-task',
+      tasks,
+      currentTaskIndex: 0,
+      attempt: 3,
+    };
+    const next = transition(state, { type: 'VALIDATION_FAIL' });
+    assert.equal(next.phase, 'escalating');
+  });
+
   it('full workflow: START through REVIEW_DONE', () => {
     const tasks = [makeTask('t1'), makeTask('t2')];
 
