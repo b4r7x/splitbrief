@@ -2,10 +2,17 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { Task, Config, ProjectContext } from '../types.js';
 import { createClient } from './providers.js';
-import { formatTaskPrompt, formatRetryPrompt } from '../spec/formatter.js';
+import { formatTaskPrompt, formatRetryPrompt, SYSTEM_PREAMBLE, estimateTokens } from '../spec/formatter.js';
 import { extractCode } from './extractor.js';
+import { validateTaskPath } from '../utils/fs.js';
 
-function applyCode(code: string, task: Task, projectDir: string): { success: boolean; error?: string } {
+export function applyCode(code: string, task: Task, projectDir: string): { success: boolean; error?: string } {
+  try {
+    validateTaskPath(projectDir, task.file);
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+
   const filePath = join(projectDir, task.file);
   const dir = dirname(filePath);
 
@@ -60,42 +67,54 @@ function applyCode(code: string, task: Task, projectDir: string): { success: boo
   return { success: true };
 }
 
+interface CompletionResult {
+  text: string;
+  usage: { promptTokens: number; completionTokens: number } | null;
+}
+
 async function streamCompletion(
   client: ReturnType<typeof createClient>,
   model: string,
-  prompt: string,
+  messages: Array<{ role: 'system' | 'user'; content: string }>,
   temperature: number,
   onProgress: (text: string) => void,
   config: Config,
-): Promise<string> {
+  maxTokens?: number,
+): Promise<CompletionResult> {
   let stream;
   try {
     stream = await client.chat.completions.create({
       model,
-      messages: [{ role: 'user', content: prompt }],
+      messages,
       temperature,
       stream: true,
+      stream_options: { include_usage: true },
+      ...(maxTokens ? { max_tokens: maxTokens } : {}),
     });
-  } catch (err: any) {
-    if (err?.code === 'ECONNREFUSED' || err?.cause?.code === 'ECONNREFUSED') {
+  } catch (err: unknown) {
+    const errObj = err as Record<string, unknown>;
+    const causeObj = (typeof errObj?.cause === 'object' && errObj.cause !== null ? errObj.cause : {}) as Record<string, unknown>;
+    if (errObj?.code === 'ECONNREFUSED' || causeObj?.code === 'ECONNREFUSED') {
       const baseURL = config.implementer.apiBase || `${config.implementer.provider} default`;
       throw new Error(
         `Cannot connect to ${config.implementer.provider} at ${baseURL}. Is it running?`,
       );
     }
-    if (err?.status && err.status >= 400) {
+    if (typeof errObj?.status === 'number' && errObj.status >= 400) {
       throw new Error(
-        `API error ${err.status} from ${config.implementer.provider}: ${err.message ?? 'Unknown error'}`,
+        `API error ${errObj.status} from ${config.implementer.provider}: ${err instanceof Error ? err.message : 'Unknown error'}`,
       );
     }
     throw err;
   }
 
   let fullResponse = '';
+  let usage: { promptTokens: number; completionTokens: number } | null = null;
   const timeout = 60_000;
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('Model response timed out after 60 seconds')), timeout),
-  );
+  let timerId: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timerId = setTimeout(() => reject(new Error('Model response timed out after 60 seconds')), timeout);
+  });
 
   try {
     await Promise.race([
@@ -106,29 +125,39 @@ async function streamCompletion(
             fullResponse += content;
             onProgress(content);
           }
+          if (chunk.usage) {
+            usage = {
+              promptTokens: chunk.usage.prompt_tokens ?? 0,
+              completionTokens: chunk.usage.completion_tokens ?? 0,
+            };
+          }
         }
       })(),
       timeoutPromise,
     ]);
-  } catch (err: any) {
-    if (err?.message === 'Model response timed out after 60 seconds') {
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message === 'Model response timed out after 60 seconds') {
       throw err;
     }
-    if (err?.code === 'ECONNREFUSED' || err?.cause?.code === 'ECONNREFUSED') {
+    const errObj = err as Record<string, unknown>;
+    const causeObj = (typeof errObj?.cause === 'object' && errObj.cause !== null ? errObj.cause : {}) as Record<string, unknown>;
+    if (errObj?.code === 'ECONNREFUSED' || causeObj?.code === 'ECONNREFUSED') {
       const baseURL = config.implementer.apiBase || `${config.implementer.provider} default`;
       throw new Error(
         `Cannot connect to ${config.implementer.provider} at ${baseURL}. Is it running?`,
       );
     }
-    if (err?.status && err.status >= 400) {
+    if (typeof errObj?.status === 'number' && errObj.status >= 400) {
       throw new Error(
-        `API error ${err.status} from ${config.implementer.provider}: ${err.message ?? 'Unknown error'}`,
+        `API error ${errObj.status} from ${config.implementer.provider}: ${err instanceof Error ? err.message : 'Unknown error'}`,
       );
     }
     throw err;
+  } finally {
+    clearTimeout(timerId!);
   }
 
-  return fullResponse;
+  return { text: fullResponse, usage };
 }
 
 export async function implementTask(
@@ -137,38 +166,44 @@ export async function implementTask(
   config: Config,
   context: ProjectContext,
   onProgress: (text: string) => void,
-): Promise<{ success: boolean; output: string; error?: string }> {
-  const prompt = formatTaskPrompt(task, context);
+): Promise<{ success: boolean; output: string; error?: string; usage?: { promptTokens: number; completionTokens: number } }> {
+  const userPrompt = formatTaskPrompt(task, context, config.implementer.contextLength);
   const client = createClient(config);
+  const promptTokens = estimateTokens(SYSTEM_PREAMBLE) + estimateTokens(userPrompt);
+  const maxTokens = Math.max(config.implementer.contextLength - promptTokens, 1024);
 
-  let fullResponse: string;
+  let completion: CompletionResult;
   try {
-    fullResponse = await streamCompletion(
+    completion = await streamCompletion(
       client,
       config.implementer.model,
-      prompt,
+      [
+        { role: 'system', content: SYSTEM_PREAMBLE },
+        { role: 'user', content: userPrompt },
+      ],
       config.implementer.temperature,
       onProgress,
       config,
+      maxTokens,
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { success: false, output: '', error: msg };
   }
 
-  const extractResult = extractCode(fullResponse);
+  const extractResult = extractCode(completion.text);
 
   if ('error' in extractResult) {
-    return { success: false, output: fullResponse, error: extractResult.error };
+    return { success: false, output: completion.text, error: extractResult.error, usage: completion.usage ?? undefined };
   }
 
   const applyResult = applyCode(extractResult.code, task, projectDir);
 
   if (!applyResult.success) {
-    return { success: false, output: fullResponse, error: applyResult.error };
+    return { success: false, output: completion.text, error: applyResult.error, usage: completion.usage ?? undefined };
   }
 
-  return { success: true, output: fullResponse };
+  return { success: true, output: completion.text, usage: completion.usage ?? undefined };
 }
 
 export async function retryTask(
@@ -179,37 +214,43 @@ export async function retryTask(
   error: string,
   attempt: number,
   onProgress: (text: string) => void,
-): Promise<{ success: boolean; output: string; error?: string }> {
-  const prompt = formatRetryPrompt(task, context, error, attempt);
+): Promise<{ success: boolean; output: string; error?: string; usage?: { promptTokens: number; completionTokens: number } }> {
+  const retryPrompt = formatRetryPrompt(task, context, error, attempt);
   const client = createClient(config);
   const temperature = Math.min(config.implementer.temperature + attempt * 0.1, 2);
+  const promptTokens = estimateTokens(SYSTEM_PREAMBLE) + estimateTokens(retryPrompt);
+  const maxTokens = Math.max(config.implementer.contextLength - promptTokens, 1024);
 
-  let fullResponse: string;
+  let completion: CompletionResult;
   try {
-    fullResponse = await streamCompletion(
+    completion = await streamCompletion(
       client,
       config.implementer.model,
-      prompt,
+      [
+        { role: 'system', content: SYSTEM_PREAMBLE },
+        { role: 'user', content: retryPrompt },
+      ],
       temperature,
       onProgress,
       config,
+      maxTokens,
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { success: false, output: '', error: msg };
   }
 
-  const extractResult = extractCode(fullResponse);
+  const extractResult = extractCode(completion.text);
 
   if ('error' in extractResult) {
-    return { success: false, output: fullResponse, error: extractResult.error };
+    return { success: false, output: completion.text, error: extractResult.error, usage: completion.usage ?? undefined };
   }
 
   const applyResult = applyCode(extractResult.code, task, projectDir);
 
   if (!applyResult.success) {
-    return { success: false, output: fullResponse, error: applyResult.error };
+    return { success: false, output: completion.text, error: applyResult.error, usage: completion.usage ?? undefined };
   }
 
-  return { success: true, output: fullResponse };
+  return { success: true, output: completion.text, usage: completion.usage ?? undefined };
 }

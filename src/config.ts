@@ -22,7 +22,7 @@ function fromYaml(obj: unknown): unknown {
   return obj;
 }
 
-function toYaml(obj: unknown): unknown {
+export function toYaml(obj: unknown): unknown {
   if (Array.isArray(obj)) return obj.map(toYaml);
   if (obj !== null && typeof obj === 'object') {
     const result: Record<string, unknown> = {};
@@ -72,6 +72,65 @@ export function createDefaultConfig(): Config {
   };
 }
 
+export interface ConfigError {
+  path: string;
+  message: string;
+}
+
+export function validateConfig(config: Record<string, unknown>): ConfigError[] {
+  const errors: ConfigError[] = [];
+
+  const tool = (config as any)?.planner?.tool;
+  if (tool !== undefined && tool !== 'claude-code') {
+    errors.push({ path: 'planner.tool', message: `Must be 'claude-code' (got ${JSON.stringify(tool)})` });
+  }
+
+  const validProviders = ['ollama', 'lm-studio', 'deepseek', 'openrouter'];
+  const provider = (config as any)?.implementer?.provider;
+  if (provider !== undefined && !validProviders.includes(provider)) {
+    errors.push({ path: 'implementer.provider', message: `Must be one of: ${validProviders.join(', ')} (got ${JSON.stringify(provider)})` });
+  }
+
+  const model = (config as any)?.implementer?.model;
+  if (model !== undefined && (typeof model !== 'string' || model.length === 0)) {
+    errors.push({ path: 'implementer.model', message: 'Must be a non-empty string' });
+  }
+
+  const ctx = (config as any)?.implementer?.contextLength;
+  if (ctx !== undefined && (typeof ctx !== 'number' || !Number.isInteger(ctx) || ctx <= 0)) {
+    errors.push({ path: 'implementer.contextLength', message: 'Must be a positive integer' });
+  }
+
+  const temp = (config as any)?.implementer?.temperature;
+  if (temp !== undefined && (typeof temp !== 'number' || temp < 0 || temp > 2)) {
+    errors.push({ path: 'implementer.temperature', message: 'Must be a number between 0 and 2' });
+  }
+
+  const boolFields = [
+    'validation.typecheck', 'validation.lint', 'validation.test',
+    'workflow.autoApproveSpec', 'workflow.autoApprovePlan', 'workflow.commitPerTask',
+  ];
+  for (const field of boolFields) {
+    const [section, key] = field.split('.');
+    const val = (config as any)?.[section]?.[key];
+    if (val !== undefined && typeof val !== 'boolean') {
+      errors.push({ path: field, message: 'Must be true or false' });
+    }
+  }
+
+  const testCmd = (config as any)?.validation?.testCommand;
+  if (testCmd !== undefined && (typeof testCmd !== 'string' || testCmd.length === 0)) {
+    errors.push({ path: 'validation.testCommand', message: 'Must be a non-empty string' });
+  }
+
+  const retries = (config as any)?.workflow?.maxRetries;
+  if (retries !== undefined && (typeof retries !== 'number' || !Number.isInteger(retries) || retries < 0)) {
+    errors.push({ path: 'workflow.maxRetries', message: 'Must be a non-negative integer' });
+  }
+
+  return errors;
+}
+
 export function loadConfig(projectDir: string): Config {
   const configPath = path.join(projectDir, CONFIG_DIR, CONFIG_FILE);
 
@@ -84,8 +143,18 @@ export function loadConfig(projectDir: string): Config {
 
   const camelCased = fromYaml(parsed) as Record<string, unknown>;
   const defaults = createDefaultConfig() as unknown as Record<string, unknown>;
+  const merged = deepMerge(defaults, camelCased);
 
-  return deepMerge(defaults, camelCased) as unknown as Config;
+  const errors = validateConfig(merged);
+  if (errors.length > 0) {
+    console.error('Configuration errors in .tiny-spec/config.yaml:');
+    for (const err of errors) {
+      console.error(`  ${err.path}: ${err.message}`);
+    }
+    process.exit(2);
+  }
+
+  return merged as unknown as Config;
 }
 
 export function initConfig(projectDir: string): void {

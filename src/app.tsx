@@ -1,9 +1,9 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Box } from 'ink';
 import Layout from './tui/layout.js';
 import { runWorkflow } from './orchestrator/orchestrator.js';
 import { loadConfig } from './config.js';
-import type { Phase, Task, Summary, OrchestratorCallbacks, ValidationResult } from './types.js';
+import type { Phase, Task, Summary, OrchestratorCallbacks, ValidationResult, WorkflowState } from './types.js';
 
 interface AppProps {
   feature: string;
@@ -11,9 +11,11 @@ interface AppProps {
   auto: boolean;
   modelOverride?: string;
   providerOverride?: string;
+  contextLengthOverride?: number;
+  savedState?: WorkflowState;
 }
 
-export default function App({ feature, projectDir, auto, modelOverride, providerOverride }: AppProps) {
+export default function App({ feature, projectDir, auto, modelOverride, providerOverride, contextLengthOverride, savedState }: AppProps) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [plannerLines, setPlannerLines] = useState<string[]>([]);
   const [implementerLines, setImplementerLines] = useState<string[]>([]);
@@ -29,11 +31,20 @@ export default function App({ feature, projectDir, auto, modelOverride, provider
   } | null>(null);
   const [startedAt, setStartedAt] = useState('');
 
+  const MAX_LINES = 10_000;
+  const appendLines = (setter: typeof setPlannerLines) => (text: string) => {
+    setter(prev => {
+      const next = [...prev, text];
+      return next.length > MAX_LINES ? next.slice(-MAX_LINES) : next;
+    });
+  };
+
   useEffect(() => {
     const config = loadConfig(projectDir);
 
     if (modelOverride) config.implementer.model = modelOverride;
     if (providerOverride) config.implementer.provider = providerOverride as typeof config.implementer.provider;
+    if (contextLengthOverride) config.implementer.contextLength = contextLengthOverride;
 
     setModel(config.implementer.model);
     setStartedAt(new Date().toISOString());
@@ -42,12 +53,8 @@ export default function App({ feature, projectDir, auto, modelOverride, provider
       onPhaseChange(p: Phase) {
         setPhase(p);
       },
-      onPlannerOutput(text: string) {
-        setPlannerLines(prev => [...prev, text]);
-      },
-      onImplementerOutput(text: string) {
-        setImplementerLines(prev => [...prev, text]);
-      },
+      onPlannerOutput: appendLines(setPlannerLines),
+      onImplementerOutput: appendLines(setImplementerLines),
       onTaskStart(task: Task, index: number, total: number) {
         setCurrentTask(index + 1);
         setTotalTasks(total);
@@ -95,23 +102,29 @@ export default function App({ feature, projectDir, auto, modelOverride, provider
         });
       },
       onComplete(summary: Summary) {
-        setImplementerLines(prev => [
-          ...prev,
-          '',
-          `--- Complete ---`,
-          `Tasks: ${summary.completedByLocal + summary.escalatedToOpus}/${summary.totalTasks}`,
-          `Escalated: ${summary.escalatedToOpus}`,
-          `Failed: ${summary.failed}`,
-          `Time: ${summary.totalTime}s`,
-          `Savings: ${summary.estimatedCostSavings}`,
-        ]);
+        const secs = Math.floor(summary.totalTime / 1000);
+        const mins = Math.floor(secs / 60);
+        const timeStr = mins > 0 ? `${mins}m ${secs % 60}s` : `${secs}s`;
+        setImplementerLines(prev => {
+          const next = [
+            ...prev,
+            '',
+            `--- Complete ---`,
+            `Tasks: ${summary.completedByLocal + summary.escalatedToOpus}/${summary.totalTasks}`,
+            `Escalated: ${summary.escalatedToOpus}`,
+            `Failed: ${summary.failed}`,
+            `Time: ${timeStr}`,
+            `Savings: ${summary.estimatedCostSavings}`,
+          ];
+          return next.length > MAX_LINES ? next.slice(-MAX_LINES) : next;
+        });
       },
-      onError(error: string) {
-        setImplementerLines(prev => [...prev, `[ERROR] ${error}`]);
+      onError: (error: string) => {
+        appendLines(setImplementerLines)(`[ERROR] ${error}`);
       },
     };
 
-    runWorkflow(feature, projectDir, config, callbacks);
+    runWorkflow(feature, projectDir, config, callbacks, savedState).catch(err => callbacks.onError(String(err)));
   }, []);
 
   return (

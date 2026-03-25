@@ -1,4 +1,4 @@
-# Feature Specification: tiny-spec v0.1 — Cost-Optimized AI Coding Orchestrator
+# Feature Specification: tiny-spec v0.1  -  Cost-Optimized AI Coding Orchestrator
 
 **Feature Branch**: `001-tiny-spec-core`
 **Created**: 2026-03-24
@@ -6,11 +6,11 @@
 
 ## Vision
 
-tiny-spec is an open-source CLI tool that orchestrates two AI coding sessions side by side — one running an expensive model (Claude Code with Opus) for planning/validation, and one running a cheap/local model (OpenCode with Ollama/LM Studio) for implementation. The expensive model writes detailed specs; the cheap model implements them. The result: $100/mo feels like $300+.
+tiny-spec is an open-source CLI tool that orchestrates two AI coding sessions side by side  -  one running an expensive model (Claude Code with Opus) for planning/validation, and one running a cheap/local model (OpenCode with Ollama/LM Studio) for implementation. The expensive model writes detailed specs; the cheap model implements them. The result: $100/mo feels like $300+.
 
 ## User Scenarios & Testing
 
-### US1 — Spec-Driven Feature Development (P1)
+### US1  -  Spec-Driven Feature Development (P1)
 
 A developer has a feature to build. Instead of spending all their Opus tokens on implementation, they run `tiny-spec` which opens a split-pane terminal. The left pane runs Claude Code (Opus) which researches the codebase, writes a detailed specification, breaks it into atomic tasks with tests, and generates implementation prompts. The right pane runs OpenCode with a local model, receiving tasks one-by-one and implementing them. After each task, automated validation runs. If it passes, the next task starts. If it fails, the local model retries (max 3). If still failing, the task escalates to Opus.
 
@@ -30,7 +30,7 @@ A developer has a feature to build. Instead of spending all their Opus tokens on
 
 7. **Given** all tasks complete, **When** the final validation runs, **Then** Opus reviews the full diff against the original spec and reports any gaps.
 
-### US2 — Standalone Spec Generation (P2)
+### US2  -  Standalone Spec Generation (P2)
 
 A developer wants to generate a detailed spec without running the full pipeline. They run `tiny-spec spec "feature description"` and get a complete spec file they can use manually with any AI tool.
 
@@ -40,7 +40,7 @@ A developer wants to generate a detailed spec without running the full pipeline.
 
 2. **Given** a generated spec, **When** the user runs `tiny-spec plan`, **Then** Opus generates plan.md with architecture decisions and tasks.md with atomic implementation tasks.
 
-### US3 — Configuration & Model Selection (P2)
+### US3  -  Configuration & Model Selection (P2)
 
 A developer configures which models to use for implementation and where they run.
 

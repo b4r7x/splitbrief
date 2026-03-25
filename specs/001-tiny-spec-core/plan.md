@@ -4,7 +4,7 @@
 
 ## Summary
 
-Build an open-source CLI tool (TypeScript + Ink) that orchestrates two AI coding sessions — Claude Code (Opus) for planning/validation and OpenCode (local model) for implementation. Split-pane TUI shows both sessions. Opus writes detailed specs with atomic tasks; the local model implements them one by one with automated validation and escalation.
+Build an open-source CLI tool (TypeScript + Ink) that orchestrates two AI coding sessions  -  Claude Code (Opus) for planning/validation and OpenCode (local model) for implementation. Split-pane TUI shows both sessions. Opus writes detailed specs with atomic tasks; the local model implements them one by one with automated validation and escalation.
 
 ## Technical Context
 
@@ -102,7 +102,7 @@ Both Claude Code and OpenCode are managed as child processes:
 2. Use OpenAI-compatible API directly (via `openai` SDK pointing to Ollama) for implementation
 3. Show the activity in Ink panes as if they were separate sessions
 
-This avoids the complexity of managing CLI subprocesses while achieving the same result. The TUI still shows two panes — one for "Planner" activity and one for "Implementer" activity.
+This avoids the complexity of managing CLI subprocesses while achieving the same result. The TUI still shows two panes  -  one for "Planner" activity and one for "Implementer" activity.
 
 **Decision**: Start with the API-direct approach (simpler, more reliable). Add CLI subprocess orchestration in v0.2 for users who prefer the real Claude Code / OpenCode experience.
 
@@ -166,14 +166,14 @@ Do not include explanations. Only output the code.
 ## Dependencies
 
 ### Runtime
-- `ink` (^5.2.x) — React-based terminal UI
-- `@inkjs/ui` (^2.0.x) — Ink UI components (spinner, select, etc.)
-- `react` (^18.3.x) — Required by Ink
-- `@anthropic-ai/sdk` (^0.40.x) — Claude API for planning phase
-- `openai` (^4.x) — OpenAI-compatible SDK for local model (Ollama/LM Studio)
-- `yaml` (^2.x) — YAML config parsing
-- `simple-git` (^3.x) — Git operations
-- `commander` (^12.x) — CLI argument parsing
+- `ink` (^5.2.x)  -  React-based terminal UI
+- `@inkjs/ui` (^2.0.x)  -  Ink UI components (spinner, select, etc.)
+- `react` (^18.3.x)  -  Required by Ink
+- `@anthropic-ai/sdk` (^0.40.x)  -  Claude API for planning phase
+- `openai` (^4.x)  -  OpenAI-compatible SDK for local model (Ollama/LM Studio)
+- `yaml` (^2.x)  -  YAML config parsing
+- `simple-git` (^3.x)  -  Git operations
+- `commander` (^12.x)  -  CLI argument parsing
 
 ### Dev
 - `@types/node` (^22.x)
@@ -182,7 +182,7 @@ Do not include explanations. Only output the code.
 
 ## Constraints
 
-- Zero classes — pure functions, module-scoped state
+- Zero classes  -  pure functions, module-scoped state
 - ESM imports with `.js` extension
 - No unnecessary comments
 - Dev mode: `node --experimental-strip-types`

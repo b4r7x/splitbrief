@@ -1,42 +1,27 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { dirname } from 'node:path';
 import { spawn } from 'node:child_process';
 import type { Task, Config, ProjectContext } from '../types.js';
 import { buildHintPrompt, buildEscalationPrompt } from '../spec/templates.js';
 import { extractCode } from './extractor.js';
-
-function parseStreamLine(line: string): string | null {
-  if (!line.trim()) return null;
-
-  try {
-    const event = JSON.parse(line);
-
-    if (event.type === 'content_block_start' && event.content_block?.type === 'text') {
-      return event.content_block.text ?? null;
-    }
-
-    if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-      return event.delta.text ?? null;
-    }
-  } catch {
-    // non-JSON line, ignore
-  }
-
-  return null;
-}
+import { validateTaskPath } from '../utils/fs.js';
+import { parseStreamLine } from './claude-stream.js';
+import { activeProcesses } from '../utils/process.js';
 
 function spawnClaude(
   prompt: string,
+  projectDir: string,
   onOutput: (text: string) => void,
-): Promise<string> {
+): Promise<{ text: string; usage: { inputTokens: number; outputTokens: number } | null }> {
   return new Promise((resolve, reject) => {
     let proc;
     try {
       proc = spawn('claude', ['-p', '--output-format', 'stream-json'], {
         stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: projectDir,
       });
-    } catch (err: any) {
-      if (err?.code === 'ENOENT') {
+    } catch (err: unknown) {
+      if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
         reject(new Error('Claude Code CLI not found. Install it from https://claude.ai/code'));
         return;
       }
@@ -44,9 +29,13 @@ function spawnClaude(
       return;
     }
 
+    activeProcesses.add(proc);
+    proc.on('close', () => { activeProcesses.delete(proc); });
+
     let fullResponse = '';
     let stdoutBuffer = '';
     let stderrOutput = '';
+    let usage: { inputTokens: number; outputTokens: number } | null = null;
 
     proc.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'ENOENT') {
@@ -61,10 +50,15 @@ function spawnClaude(
       const lines = stdoutBuffer.split('\n');
       stdoutBuffer = lines.pop()!;
       for (const line of lines) {
-        const text = parseStreamLine(line);
-        if (text) {
-          fullResponse += text;
-          onOutput(text);
+        const parsed = parseStreamLine(line);
+        if (parsed.isResult && parsed.text) {
+          fullResponse = parsed.text;
+        } else if (parsed.text) {
+          fullResponse += parsed.text;
+          onOutput(parsed.text);
+        }
+        if (parsed.usage) {
+          usage = parsed.usage;
         }
       }
     });
@@ -74,11 +68,18 @@ function spawnClaude(
     });
 
     proc.on('close', (code) => {
+      activeProcesses.delete(proc);
+
       if (stdoutBuffer) {
-        const text = parseStreamLine(stdoutBuffer);
-        if (text) {
-          fullResponse += text;
-          onOutput(text);
+        const parsed = parseStreamLine(stdoutBuffer);
+        if (parsed.isResult && parsed.text) {
+          fullResponse = parsed.text;
+        } else if (parsed.text) {
+          fullResponse += parsed.text;
+          onOutput(parsed.text);
+        }
+        if (parsed.usage) {
+          usage = parsed.usage;
         }
       }
 
@@ -93,7 +94,7 @@ function spawnClaude(
         return;
       }
 
-      resolve(fullResponse);
+      resolve({ text: fullResponse, usage });
     });
 
     proc.stdin.write(prompt);
@@ -109,37 +110,25 @@ export async function escalateTask(
   _context: ProjectContext,
   callbacks: { onOutput: (text: string) => void },
   tier: 1 | 2 = 1,
-): Promise<{ success: boolean; output: string; tier: 1 | 2 }> {
+): Promise<{ success: boolean; output: string; tier: 1 | 2; usage: { inputTokens: number; outputTokens: number } | null }> {
   if (tier === 1) {
     const hintPrompt = buildHintPrompt(task, error);
-    const hints = await spawnClaude(hintPrompt, callbacks.onOutput);
-    return { success: false, output: hints, tier: 1 };
+    const result = await spawnClaude(hintPrompt, projectDir, callbacks.onOutput);
+    return { success: false, output: result.text, tier: 1, usage: result.usage };
   }
 
   const escalationPrompt = buildEscalationPrompt(task, task.currentCode ?? '', error);
-  const fullResponse = await spawnClaude(escalationPrompt, callbacks.onOutput);
+  const result = await spawnClaude(escalationPrompt, projectDir, callbacks.onOutput);
 
-  const extractResult = extractCode(fullResponse);
+  const extractResult = extractCode(result.text);
 
   if ('error' in extractResult) {
-    return { success: false, output: fullResponse, tier: 2 };
+    return { success: false, output: result.text, tier: 2, usage: result.usage };
   }
 
-  const filePath = join(projectDir, task.file);
+  const filePath = validateTaskPath(projectDir, task.file);
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, extractResult.code, 'utf-8');
 
-  return { success: true, output: fullResponse, tier: 2 };
-}
-
-export async function escalateTaskFull(
-  task: Task,
-  error: string,
-  projectDir: string,
-  config: Config,
-  context: ProjectContext,
-  callbacks: { onOutput: (text: string) => void },
-): Promise<{ success: boolean; output: string; tier: 2 }> {
-  const result = await escalateTask(task, error, projectDir, config, context, callbacks, 2);
-  return { ...result, tier: 2 };
+  return { success: true, output: result.text, tier: 2, usage: result.usage };
 }

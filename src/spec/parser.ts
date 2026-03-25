@@ -29,7 +29,7 @@ function splitTaskBlocks(markdown: string): string[] {
         foundFrontmatter = true;
         current.push(line);
       } else if (foundFrontmatter) {
-        // New block starting — save previous
+        // New block starting  -  save previous
         blocks.push(current.join('\n'));
         current = [line];
         inFrontmatter = true;
@@ -108,6 +108,8 @@ function extractFrontmatter(block: string): Record<string, any> | null {
             .split(',')
             .map((s: string) => s.trim().replace(/^['"]|['"]$/g, ''))
             .filter(Boolean);
+        } else if (value.length > 0) {
+          result[key] = [value.trim()];
         } else {
           result[key] = [];
         }

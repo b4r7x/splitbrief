@@ -2,8 +2,6 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, appendFileSync } fr
 import { join } from 'node:path';
 import type { WorkflowState, StateAction, Task, TokenUsage, Event } from './types.js';
 
-const MAX_RETRIES = 3;
-
 const zeroTokenUsage: TokenUsage = {
   plannerInput: 0,
   plannerOutput: 0,
@@ -15,6 +13,7 @@ const zeroTokenUsage: TokenUsage = {
 
 export function createInitialState(feature: string): WorkflowState {
   return {
+    stateVersion: 2,
     phase: 'idle',
     feature,
     currentTaskIndex: 0,
@@ -30,7 +29,7 @@ export function createInitialState(feature: string): WorkflowState {
   };
 }
 
-export function transition(state: WorkflowState, action: StateAction): WorkflowState {
+export function transition(state: WorkflowState, action: StateAction, maxRetries: number = 3): WorkflowState {
   switch (action.type) {
     case 'START':
       return { ...state, phase: 'researching' };
@@ -71,10 +70,10 @@ export function transition(state: WorkflowState, action: StateAction): WorkflowS
     }
 
     case 'VALIDATION_FAIL':
-      if (state.attempt < MAX_RETRIES) {
+      if (state.attempt < maxRetries) {
         return { ...state, phase: 'implementing', attempt: state.attempt + 1 };
       }
-      return state;
+      return { ...state, phase: 'escalating' };
 
     case 'ESCALATE':
       return { ...state, phase: 'escalating' };
@@ -85,6 +84,7 @@ export function transition(state: WorkflowState, action: StateAction): WorkflowS
         ...state,
         phase: 'implementing',
         currentTaskIndex: state.currentTaskIndex + 1,
+        attempt: 0,
         completedTasks: taskId ? [...state.completedTasks, taskId] : state.completedTasks,
       };
     }
@@ -98,6 +98,7 @@ export function transition(state: WorkflowState, action: StateAction): WorkflowS
         ...state,
         phase: 'implementing',
         currentTaskIndex: state.currentTaskIndex + 1,
+        attempt: 0,
         escalatedTasks: taskId ? [...state.escalatedTasks, taskId] : state.escalatedTasks,
       };
     }
@@ -108,6 +109,7 @@ export function transition(state: WorkflowState, action: StateAction): WorkflowS
         ...state,
         phase: 'implementing',
         currentTaskIndex: state.currentTaskIndex + 1,
+        attempt: 0,
         failedTasks: taskId ? [...state.failedTasks, taskId] : state.failedTasks,
       };
     }

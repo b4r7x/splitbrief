@@ -48,6 +48,17 @@ export async function detectLocalModels(): Promise<Array<{ provider: string; mod
   return results;
 }
 
+export function validateProviderCredentials(config: Config): string[] {
+  const warnings: string[] = [];
+  if (config.implementer.provider === 'deepseek' && !process.env.DEEPSEEK_API_KEY) {
+    warnings.push('DEEPSEEK_API_KEY environment variable is not set. DeepSeek API calls will fail.');
+  }
+  if (config.implementer.provider === 'openrouter' && !process.env.OPENROUTER_API_KEY) {
+    warnings.push('OPENROUTER_API_KEY environment variable is not set. OpenRouter API calls will fail.');
+  }
+  return warnings;
+}
+
 export async function detectCapabilities(config: Config): Promise<{ contextLength: number }> {
   const { provider, model } = config.implementer;
   const envCtx = process.env.OLLAMA_CONTEXT_LENGTH;

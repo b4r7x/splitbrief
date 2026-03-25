@@ -1,9 +1,8 @@
-import { mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
+import { join, resolve, isAbsolute } from 'node:path';
 
 const TINY_SPEC_DIR = '.tiny-spec';
 const CURRENT_DIR = 'current';
-const HISTORY_DIR = 'history';
 
 function currentDir(projectDir: string): string {
   return join(projectDir, TINY_SPEC_DIR, CURRENT_DIR);
@@ -24,15 +23,40 @@ export function readSpecFile(projectDir: string, filename: string): string | nul
   return readFileSync(filePath, 'utf-8');
 }
 
-export function archiveCurrentFeature(projectDir: string, featureName: string): void {
-  const src = currentDir(projectDir);
-  if (!existsSync(src)) return;
+export function validateTaskPath(projectDir: string, filePath: string): string {
+  if (isAbsolute(filePath)) {
+    throw new Error(`Path '${filePath}' escapes project directory`);
+  }
+  const resolved = resolve(join(projectDir, filePath));
+  if (!resolved.startsWith(resolve(projectDir))) {
+    throw new Error(`Path '${filePath}' escapes project directory`);
+  }
+  return resolved;
+}
 
-  const date = new Date().toISOString().slice(0, 10);
-  const dest = join(projectDir, TINY_SPEC_DIR, HISTORY_DIR, `${date}-${featureName}`);
-  mkdirSync(dest, { recursive: true });
+export function acquireLock(projectDir: string): void {
+  ensureTinySpecDir(projectDir);
+  const lockPath = join(projectDir, TINY_SPEC_DIR, 'lock');
+  if (existsSync(lockPath)) {
+    const content = readFileSync(lockPath, 'utf-8');
+    const pid = parseInt(content.trim(), 10);
+    if (!isNaN(pid)) {
+      try {
+        process.kill(pid, 0);
+        throw new Error(`Another tiny-spec instance is running (PID: ${pid})`);
+      } catch (err: unknown) {
+        if (err instanceof Error && err.message.startsWith('Another tiny-spec')) throw err;
+      }
+    }
+  }
+  writeFileSync(lockPath, String(process.pid), 'utf-8');
+}
 
-  for (const entry of readdirSync(src)) {
-    renameSync(join(src, entry), join(dest, entry));
+export function releaseLock(projectDir: string): void {
+  const lockPath = join(projectDir, TINY_SPEC_DIR, 'lock');
+  try {
+    unlinkSync(lockPath);
+  } catch (err: unknown) {
+    if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
 }

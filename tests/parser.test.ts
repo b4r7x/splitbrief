@@ -186,6 +186,30 @@ This task has missing required fields and invalid action.
     assert.deepEqual(tasks, []);
   });
 
+  it('parses bare depends_on without brackets as single-element array', () => {
+    const input = `---
+id: T050
+title: "Task with bare dep"
+action: create
+file: src/bare.ts
+depends_on: T001
+---
+
+### Description
+Task with bare depends_on value.
+
+### Tests
+- Should work
+
+### Constraints
+- None
+`;
+
+    const tasks = parseTasks(input);
+    assert.equal(tasks.length, 1);
+    assert.deepEqual(tasks[0].dependsOn, ['T001']);
+  });
+
   it('throws on circular dependencies', () => {
     const input = `---
 id: A

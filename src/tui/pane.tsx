@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useImperativeHandle, forwardRef } from 'react';
+import { useState, useMemo, useImperativeHandle, forwardRef } from 'react';
 import { Box, Text } from 'ink';
 
 export interface PaneProps {
