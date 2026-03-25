@@ -207,6 +207,21 @@ Detailed explanation of what to implement. Include all relevant context:
 export function exampleFn(param: Type): ReturnType
 \\\`\\\`\\\`
 
+### Type Definitions
+\\\`\\\`\\\`typescript
+// Copy ALL TypeScript interfaces/types referenced in the function signature,
+// tests, or description. Copy verbatim from source files.
+// Keep under ~300 tokens. Prioritize types in the function signature.
+export interface ExampleType {
+  field: string;
+}
+\\\`\\\`\\\`
+
+### Implementation Steps
+1. Step-by-step description of HOW to implement (not just WHAT)
+2. Include specific function calls, patterns, and logic flow
+3. 3-5 numbered steps maximum
+
 ### Tests
 - Test case 1: Given X, expect Y
 - Test case 2: Given A, expect B
@@ -230,9 +245,13 @@ export function exampleFn(param: Type): ReturnType
 
 5. **Inline type definitions**: If a task depends on types defined in another file, copy the relevant type definitions into the task description so the implementer has them.
 
-6. **Import paths**: Specify exact import paths the implementer should use, including \`.js\` extensions for ESM.
+6. **Implementation steps**: Every task must include 3-5 numbered steps in ### Implementation Steps describing HOW to implement the task. Include specific function calls, patterns to use, and logic flow. The implementer is a small model — it needs concrete guidance, not abstract descriptions.
 
-7. **Pattern examples**: If the codebase has an established pattern the task should follow, include a brief example in the task.
+7. **Type definitions section**: Every task must include a ### Type Definitions section with all TypeScript types referenced in the function signature, tests, or description. Copy the full interface/type definitions verbatim from source files. Max ~300 tokens — prioritize types that appear in the function signature.
+
+8. **Import paths**: Specify exact import paths the implementer should use, including \`.js\` extensions for ESM.
+
+9. **Pattern examples**: If the codebase has an established pattern the task should follow, include a brief example in the task.
 
 ## Output
 

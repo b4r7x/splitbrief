@@ -116,7 +116,20 @@ workflow:
   autoApprove: false
 ```
 
+Set `contextLength` to match your model's effective context window. tiny-spec uses 25% of the context for model output and auto-scales code context to fit the rest. The minimum supported context is 8192 tokens.
+
 ## Supported Models
+
+### Hardware Requirements
+
+| VRAM | Recommended Model | Context | Config |
+|------|-------------------|---------|--------|
+| 8 GB | Qwen 2.5 Coder 3B Q4 | 8K | `context_length: 8192` |
+| 12 GB | Qwen 2.5 Coder 7B Q4 | 8-16K | `context_length: 8192` |
+| 16 GB | Qwen 2.5 Coder 14B Q4 | 16-32K | `context_length: 16384` |
+| 32 GB+ | Qwen 3.5 27B Q4 | 32K+ | `context_length: 32768` |
+
+tiny-spec automatically adapts to your context window. For large files (300+ LOC), it switches from whole-file to function-level context — sending only the target function, its imports, and surrounding context. This means even 8K context models can handle modifications to large files.
 
 ### Local (free)
 
