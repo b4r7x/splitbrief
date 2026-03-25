@@ -56,6 +56,7 @@ src/
 │   ├── validator.ts          # tsc → lint → test pipeline (stops on first failure)
 │   ├── escalator.ts          # Two-tier escalation (tier 1: hints, tier 2: full Opus)
 │   ├── extractor.ts          # Code extraction from model responses (fences, explanation stripping)
+│   ├── context-extractor.ts  # Function-level code extraction for large files
 │   └── providers.ts          # Provider abstraction (Ollama/LM Studio/DeepSeek/OpenRouter)
 ├── spec/                     # Spec parsing & formatting
 │   ├── parser.ts             # tasks.md → Task[] with topological sort
@@ -83,7 +84,7 @@ npm run dev -- spec "feature"    # Spec-only mode (no implementation)
 npm run dev -- init              # Create config (auto-detect models)
 npm run dev -- status            # Show workflow state
 npm run dev -- resume            # Resume interrupted workflow
-npm test                         # Run tests (59 tests)
+npm test                         # Run tests (156 tests)
 npm run build                    # tsc → dist/
 ```
 
@@ -110,18 +111,49 @@ User: "add user auth"
   → Summary: tasks done, escalated, time, cost savings
 ```
 
+## Task Prompt Optimization (v0.2)
+
+### Token Budget (8K minimum context)
+
+| Component | Typical tokens | Notes |
+|-----------|---------------|-------|
+| System preamble + few-shot | ~500 | Fixed: rules + 13-line example |
+| Task body (desc, sig, tests, constraints) | ~600 | Variable per task |
+| Type definitions (inlined) | ~300 | Opus generates per task |
+| Implementation steps | ~150 | 3-5 steps from Opus |
+| Code context | auto-scaled | Whole-file or function-level |
+| Output reserve (25%) | 2048 (8K) | Reserved for model output |
+
+### Auto-Degradation Cascade
+
+When code context doesn't fit in the token budget:
+1. **Whole-file** — include entire file (files ≤~300 LOC at 8K)
+2. **Function-level** — imports + target function + 5 lines context
+3. **Truncate** — middle-out truncation with visible marker
+4. **Error** — task too large for configured context window
+
+### Task Fields (v0.2)
+
+- `typeDefs: string` — inlined TypeScript type definitions (all types referenced in signature/tests)
+- `implSteps: string[]` — 3-5 implementation steps describing HOW to implement
+
+### Retry Strategy (v0.2)
+
+All retry attempts preserve full context (signature, types, tests, constraints, impl steps).
+Varies by framing text and temperature only (+0.1 per attempt).
+
 ## Implementation Status
 
 All 45 tasks from `specs/002-cost-optimized-orchestrator/tasks.md` are complete.
-59 tests passing, 0 TypeScript errors.
+156 tests passing, 0 TypeScript errors.
 
 ### Known Limitations (v0.1)
 
 - Token usage counters not yet wired (summary shows $0.00 savings)
 - `s` (skip task) and `Esc` (manual escalate) keyboard shortcuts not yet implemented
-- Prompt size limits (8K/16K) not enforced in formatter
 - `detectCapabilities()` defined but not called at startup
 - TypeScript/JavaScript projects only (multi-language in v0.2)
+- 8K context minimum supported (v0.2)
 
 See `specs/002-cost-optimized-orchestrator/research.md` for all architectural decisions and rationale.
 

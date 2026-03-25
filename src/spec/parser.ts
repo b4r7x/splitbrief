@@ -80,6 +80,8 @@ function parseTaskBlock(block: string): Task | null {
     tests: sections.tests,
     constraints: sections.constraints,
     pattern: sections.pattern || undefined,
+    typeDefs: sections.typeDefs || '',
+    implSteps: sections.implSteps,
     status: 'pending',
   };
 }
@@ -141,6 +143,8 @@ interface Sections {
   tests: string[];
   constraints: string[];
   pattern: string;
+  typeDefs: string;
+  implSteps: string[];
 }
 
 function extractSections(block: string): Sections {
@@ -167,6 +171,8 @@ function extractSections(block: string): Sections {
     tests: extractListItems(sectionMap['tests'] ?? ''),
     constraints: extractListItems(sectionMap['constraints'] ?? ''),
     pattern: (sectionMap['pattern'] ?? '').trim(),
+    typeDefs: extractCodeBlock(sectionMap['type definitions'] ?? ''),
+    implSteps: extractNumberedItems(sectionMap['implementation steps'] ?? ''),
   };
 }
 
@@ -180,6 +186,14 @@ function extractListItems(text: string): string[] {
   return text
     .split('\n')
     .map((line) => line.match(/^-\s+(.*)/))
+    .filter((m): m is RegExpMatchArray => m !== null)
+    .map((m) => m[1].trim());
+}
+
+function extractNumberedItems(text: string): string[] {
+  return text
+    .split('\n')
+    .map((line) => line.match(/^\d+\.\s+(.*)/))
     .filter((m): m is RegExpMatchArray => m !== null)
     .map((m) => m[1].trim());
 }
