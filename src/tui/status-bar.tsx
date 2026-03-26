@@ -1,5 +1,6 @@
 import { Box, Text } from 'ink';
 import type { Phase } from '../types.js';
+import { formatTokens, formatCost } from '../utils/format.js';
 
 interface StatusBarProps {
   phase: Phase;
@@ -7,6 +8,9 @@ interface StatusBarProps {
   totalTasks: number;
   model: string;
   retries: number;
+  plannerName?: string;
+  totalTokens?: number;
+  estimatedCost?: number;
 }
 
 function phaseColor(phase: Phase): { color: string; bold?: boolean } {
@@ -33,13 +37,18 @@ function phaseColor(phase: Phase): { color: string; bold?: boolean } {
   }
 }
 
-function StatusBar({ phase, currentTask, totalTasks, model, retries }: StatusBarProps) {
+function StatusBar({ phase, currentTask, totalTasks, model, retries, plannerName, totalTokens, estimatedCost }: StatusBarProps) {
   const { color, bold } = phaseColor(phase);
+
+  const plannerSection = plannerName ? ` \u2502 Planner: ${plannerName}` : '';
+  const tokensSection = totalTokens && totalTokens > 0
+    ? ` \u2502 Tokens: ${formatTokens(totalTokens)} \u2502 ~${formatCost(estimatedCost ?? 0)}`
+    : '';
 
   return (
     <Box width="100%">
       <Text color={color} bold={bold}>
-        {' '}Phase: {phase} {'\u2502'} Task: {currentTask}/{totalTasks} {'\u2502'} Model: {model} {'\u2502'} Retries: {retries}
+        {' '}Phase: {phase} {'\u2502'} Task: {currentTask}/{totalTasks}{plannerSection} {'\u2502'} Model: {model}{tokensSection} {'\u2502'} Retries: {retries}
       </Text>
     </Box>
   );

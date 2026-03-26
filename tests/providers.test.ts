@@ -56,4 +56,18 @@ describe('createClient', () => {
     );
     assert.equal(client.baseURL, 'http://my-server:9999/v1');
   });
+
+  it('unknown provider uses apiBase directly', () => {
+    const client = createClient(
+      makeConfig({ provider: 'custom-ollama', apiBase: 'http://my-server:11434/v1' } as any),
+    );
+    assert.equal(client.baseURL, 'http://my-server:11434/v1');
+  });
+
+  it('unknown provider uses apiKey from config', () => {
+    const client = createClient(
+      makeConfig({ provider: 'custom-api', apiBase: 'http://api.example.com/v1', apiKey: 'sk-test123' } as any),
+    );
+    assert.equal(client.baseURL, 'http://api.example.com/v1');
+  });
 });

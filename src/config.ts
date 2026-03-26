@@ -80,15 +80,62 @@ export interface ConfigError {
 export function validateConfig(config: Record<string, unknown>): ConfigError[] {
   const errors: ConfigError[] = [];
 
+  const validTools = ['claude-code', 'codex', 'opencode', 'aider', 'agent-sdk', 'shell'];
   const tool = (config as any)?.planner?.tool;
-  if (tool !== undefined && tool !== 'claude-code') {
-    errors.push({ path: 'planner.tool', message: `Must be 'claude-code' (got ${JSON.stringify(tool)})` });
+  if (tool !== undefined && !validTools.includes(tool)) {
+    errors.push({ path: 'planner.tool', message: `Must be one of: ${validTools.join(', ')} (got ${JSON.stringify(tool)})` });
   }
 
-  const validProviders = ['ollama', 'lm-studio', 'deepseek', 'openrouter'];
+  if (tool === 'agent-sdk') {
+    const apiKey = (config as any)?.planner?.apiKey ?? process.env['ANTHROPIC_API_KEY'];
+    if (!apiKey) {
+      errors.push({ path: 'planner.apiKey', message: 'Agent SDK requires planner.apiKey or ANTHROPIC_API_KEY env var' });
+    }
+  }
+
+  if (tool === 'shell') {
+    const command = (config as any)?.planner?.command;
+    if (!command || typeof command !== 'string') {
+      errors.push({ path: 'planner.command', message: 'Shell planner requires planner.command to be set' });
+    }
+    const outputFormat = (config as any)?.planner?.outputFormat;
+    if (outputFormat !== undefined && !['stream-json', 'jsonl', 'text'].includes(outputFormat)) {
+      errors.push({ path: 'planner.outputFormat', message: `Must be one of: stream-json, jsonl, text (got ${JSON.stringify(outputFormat)})` });
+    }
+  }
+
+  const implType = (config as any)?.implementer?.type;
+  if (implType !== undefined && implType !== 'api' && implType !== 'shell' && implType !== 'agent') {
+    errors.push({ path: 'implementer.type', message: `Must be one of: api, shell, agent (got ${JSON.stringify(implType)})` });
+  }
+
+  if (implType === 'shell' || implType === 'agent') {
+    const implCommand = (config as any)?.implementer?.command;
+    if (!implCommand || typeof implCommand !== 'string') {
+      errors.push({ path: 'implementer.command', message: `${implType === 'agent' ? 'Agent' : 'Shell'} implementer requires implementer.command to be set` });
+    }
+  }
+
+  const timeout = (config as any)?.implementer?.timeout;
+  if (timeout !== undefined && (typeof timeout !== 'number' || timeout <= 0 || timeout > 600000)) {
+    errors.push({ path: 'implementer.timeout', message: 'Must be a positive number <= 600000 (10 minutes)' });
+  }
+
+  const implOutputFormat = (config as any)?.implementer?.outputFormat;
+  if (implOutputFormat !== undefined && !['stream-json', 'jsonl', 'text'].includes(implOutputFormat)) {
+    errors.push({ path: 'implementer.outputFormat', message: `Must be one of: stream-json, jsonl, text (got ${JSON.stringify(implOutputFormat)})` });
+  }
+
+  const knownProviders = ['ollama', 'lm-studio', 'deepseek', 'openrouter'];
   const provider = (config as any)?.implementer?.provider;
-  if (provider !== undefined && !validProviders.includes(provider)) {
-    errors.push({ path: 'implementer.provider', message: `Must be one of: ${validProviders.join(', ')} (got ${JSON.stringify(provider)})` });
+  if (provider !== undefined && typeof provider !== 'string') {
+    errors.push({ path: 'implementer.provider', message: 'Must be a string' });
+  }
+  if (provider !== undefined && typeof provider === 'string' && !knownProviders.includes(provider)) {
+    const apiBase = (config as any)?.implementer?.apiBase;
+    if (!apiBase || typeof apiBase !== 'string') {
+      errors.push({ path: 'implementer.apiBase', message: `Unknown provider "${provider}" requires implementer.apiBase to be set` });
+    }
   }
 
   const model = (config as any)?.implementer?.model;

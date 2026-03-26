@@ -9,9 +9,11 @@ import { createInterface } from 'node:readline';
 import App from './app.js';
 import { loadConfig, initConfig, createDefaultConfig, toYaml } from './config.js';
 import { loadState } from './state.js';
-import { detectLocalModels, detectCapabilities } from './orchestrator/providers.js';
-import { planFeature } from './orchestrator/planner.js';
+import { detectCapabilities } from './orchestrator/providers.js';
+import { detectAvailablePlanners, detectAvailableImplementers } from './orchestrator/planner-detection.js';
+import { createPlanner } from './orchestrator/planners/factory.js';
 import { isGitRepo } from './utils/git.js';
+import type { PlannerTool } from './types.js';
 
 function resolveProjectDir(dir?: string): string {
   return resolve(dir ?? process.cwd());
@@ -34,6 +36,84 @@ async function promptSelection(question: string, options: string[]): Promise<num
   });
 }
 
+async function runPicker(projectDir: string): Promise<void> {
+  console.log('Detecting available planners and models...\n');
+  const [planners, implementers] = await Promise.all([
+    detectAvailablePlanners(),
+    detectAvailableImplementers(),
+  ]);
+
+  const availablePlanners = planners.filter((p) => p.available);
+  const availableImplementers = implementers.filter((i) => i.available && i.models && i.models.length > 0);
+
+  if (availablePlanners.length === 0) {
+    console.log('No planner backends detected.');
+    console.log('Install one of: claude-code (npm i -g @anthropic-ai/claude-code), codex, opencode, aider, or agent-sdk.\n');
+    console.log('Creating config with defaults (claude-code planner, ollama implementer).');
+    initConfig(projectDir);
+    return;
+  }
+
+  const formatPlannerName = (p: { tool: string; version?: string | null }) =>
+    p.version ? `${p.tool} v${p.version}` : p.tool;
+
+  let selectedTool: PlannerTool;
+  if (availablePlanners.length === 1) {
+    selectedTool = availablePlanners[0].tool;
+    console.log(`Auto-selected planner: ${formatPlannerName(availablePlanners[0])}`);
+  } else {
+    const plannerOptions = availablePlanners.map((p) => formatPlannerName(p));
+    const idx = await promptSelection('Select a planner backend:', plannerOptions);
+    selectedTool = availablePlanners[idx].tool;
+  }
+
+  const allModels: Array<{ provider: string; model: string }> = [];
+  for (const imp of availableImplementers) {
+    for (const m of imp.models!) {
+      allModels.push({ provider: imp.provider, model: m });
+    }
+  }
+
+  const defaults = createDefaultConfig();
+  defaults.planner.tool = selectedTool;
+
+  if (allModels.length === 0) {
+    console.log('\nNo local models detected. Using defaults (ollama / qwen2.5-coder:7b).');
+    console.log('Start Ollama or LM Studio and run `tiny-spec init --reconfigure`.\n');
+  } else if (allModels.length === 1) {
+    const selected = allModels[0];
+    console.log(`Auto-selected model: ${selected.provider} / ${selected.model}`);
+    defaults.implementer.provider = selected.provider;
+    defaults.implementer.model = selected.model;
+  } else {
+    console.log('');
+    const modelOptions = allModels.map((m) => `${m.provider} / ${m.model}`);
+    const idx = await promptSelection('Select a model for implementation:', modelOptions);
+    defaults.implementer.provider = allModels[idx].provider;
+    defaults.implementer.model = allModels[idx].model;
+  }
+
+  const providerBases: Record<string, string> = {
+    ollama: 'http://localhost:11434/v1',
+    'lm-studio': 'http://localhost:1234/v1',
+  };
+  defaults.implementer.apiBase = providerBases[defaults.implementer.provider] ?? defaults.implementer.apiBase;
+
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const YAML = await import('yaml');
+
+  const dirPath = path.join(projectDir, '.tiny-spec');
+  fs.mkdirSync(dirPath, { recursive: true });
+  fs.writeFileSync(
+    path.join(dirPath, 'config.yaml'),
+    YAML.stringify(toYaml(defaults)),
+    'utf-8',
+  );
+
+  console.log(`\nCreated .tiny-spec/config.yaml (planner: ${selectedTool}, model: ${defaults.implementer.provider} / ${defaults.implementer.model})`);
+}
+
 const program = new Command();
 
 program
@@ -49,8 +129,10 @@ program
   .option('--auto', 'Auto-approve spec and plan', false)
   .option('--model <model>', 'Override implementer model')
   .option('--provider <provider>', 'Override implementer provider')
+  .option('--planner <provider>', 'Override planner backend (claude-code, codex, opencode, aider, agent-sdk)')
+  .option('--planner-model <model>', 'Override planner model')
   .option('--project <dir>', 'Project directory (default: cwd)')
-  .action(async (feature: string, opts: { auto: boolean; model?: string; provider?: string; project?: string }) => {
+  .action(async (feature: string, opts: { auto: boolean; model?: string; provider?: string; planner?: string; plannerModel?: string; project?: string }) => {
     const projectDir = resolveProjectDir(opts.project);
 
     if (!(await isGitRepo(projectDir))) {
@@ -59,9 +141,14 @@ program
     }
 
     const configPath = resolve(projectDir, '.tiny-spec', 'config.yaml');
+    const hasOverrides = !!(opts.model || opts.provider || opts.planner);
     if (!existsSync(configPath)) {
-      console.log('No config found. Creating default .tiny-spec/config.yaml');
-      initConfig(projectDir);
+      if (hasOverrides) {
+        console.log('No config found. Creating default .tiny-spec/config.yaml');
+        initConfig(projectDir);
+      } else {
+        await runPicker(projectDir);
+      }
     }
 
     const config = loadConfig(projectDir);
@@ -83,6 +170,8 @@ program
       auto: opts.auto,
       modelOverride: opts.model,
       providerOverride: opts.provider,
+      plannerOverride: opts.planner,
+      plannerModelOverride: opts.plannerModel,
       contextLengthOverride: config.implementer.contextLength,
     }));
   });
@@ -109,10 +198,11 @@ program
     }
 
     const config = loadConfig(projectDir);
+    const planner = await createPlanner(config);
 
-    console.log(`Planning feature: ${feature}\n`);
+    console.log(`Planning feature: ${feature} (planner: ${config.planner.tool ?? 'claude-code'})\n`);
 
-    const result = await planFeature(feature, projectDir, config, {
+    const result = await planner.plan(feature, projectDir, config, {
       onOutput(text: string) {
         process.stdout.write(text);
       },
@@ -143,63 +233,7 @@ program
       return;
     }
 
-    console.log('Detecting local models...\n');
-    const providers = await detectLocalModels();
-
-    if (providers.length === 0) {
-      console.log('No local model providers detected (Ollama, LM Studio).');
-      console.log('Creating config with defaults (ollama / qwen2.5-coder:7b).');
-      console.log('Start Ollama or LM Studio and run `tiny-spec init --reconfigure`.\n');
-      initConfig(projectDir);
-      console.log('Created .tiny-spec/config.yaml');
-      return;
-    }
-
-    const allModels: Array<{ provider: string; model: string }> = [];
-    for (const p of providers) {
-      console.log(`${p.provider}: ${p.models.length} model(s)`);
-      for (const m of p.models) {
-        allModels.push({ provider: p.provider, model: m });
-      }
-    }
-
-    console.log('');
-
-    let selected: { provider: string; model: string };
-
-    if (allModels.length === 1) {
-      selected = allModels[0];
-      console.log(`Auto-selected: ${selected.provider} / ${selected.model}`);
-    } else {
-      const options = allModels.map((m) => `${m.provider} / ${m.model}`);
-      const idx = await promptSelection('Select a model for implementation:', options);
-      selected = allModels[idx];
-    }
-
-    const defaults = createDefaultConfig();
-    defaults.implementer.provider = selected.provider as typeof defaults.implementer.provider;
-    defaults.implementer.model = selected.model;
-
-    const providerBases: Record<string, string> = {
-      ollama: 'http://localhost:11434/v1',
-      'lm-studio': 'http://localhost:1234/v1',
-    };
-    defaults.implementer.apiBase = providerBases[selected.provider] ?? defaults.implementer.apiBase;
-
-    // Write config manually to support --reconfigure (initConfig skips if exists)
-    const fs = await import('node:fs');
-    const path = await import('node:path');
-    const YAML = await import('yaml');
-
-    const dirPath = path.join(projectDir, '.tiny-spec');
-    fs.mkdirSync(dirPath, { recursive: true });
-    fs.writeFileSync(
-      path.join(dirPath, 'config.yaml'),
-      YAML.stringify(toYaml(defaults)),
-      'utf-8',
-    );
-
-    console.log(`\nCreated .tiny-spec/config.yaml (${selected.provider} / ${selected.model})`);
+    await runPicker(projectDir);
   });
 
 // ── status ─────────────────────────────────────────────
@@ -241,8 +275,10 @@ program
   .option('--auto', 'Auto-approve spec and plan', false)
   .option('--model <model>', 'Override implementer model')
   .option('--provider <provider>', 'Override implementer provider')
+  .option('--planner <provider>', 'Override planner backend (claude-code, codex, opencode, aider, agent-sdk)')
+  .option('--planner-model <model>', 'Override planner model')
   .option('--project <dir>', 'Project directory (default: cwd)')
-  .action(async (opts: { auto: boolean; model?: string; provider?: string; project?: string }) => {
+  .action(async (opts: { auto: boolean; model?: string; provider?: string; planner?: string; plannerModel?: string; project?: string }) => {
     const projectDir = resolveProjectDir(opts.project);
     const state = loadState(projectDir);
 
@@ -272,6 +308,8 @@ program
       auto: opts.auto,
       modelOverride: opts.model,
       providerOverride: opts.provider,
+      plannerOverride: opts.planner,
+      plannerModelOverride: opts.plannerModel,
       savedState: state,
     }));
   });

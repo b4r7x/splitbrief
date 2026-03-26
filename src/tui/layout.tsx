@@ -16,7 +16,7 @@ export interface LayoutProps {
   retries: number;
   plannerLines: string[];
   implementerLines: string[];
-  approval?: { type: 'spec' | 'plan'; filePath: string; onApprove: () => void; onReject: () => void } | null;
+  approval?: { type: 'spec' | 'plan'; filePath: string; onApprove: () => void; onReject: () => void; onComment?: (text: string) => void; supportsSession?: boolean } | null;
 }
 
 export default function Layout({
@@ -90,6 +90,8 @@ export default function Layout({
           filePath={approval.filePath}
           onApprove={approval.onApprove}
           onReject={approval.onReject}
+          onComment={approval.onComment}
+          supportsSession={approval.supportsSession}
         />
       )}
     </Box>

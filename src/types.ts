@@ -30,16 +30,32 @@ export interface Task {
   status: TaskStatus;
 }
 
+export type PlannerTool = 'claude-code' | 'codex' | 'opencode' | 'aider' | 'agent-sdk' | 'shell';
+
+export type OutputFormat = 'stream-json' | 'jsonl' | 'text';
+
 export interface Config {
   planner: {
-    tool: 'claude-code';
+    tool: PlannerTool;
+    model?: string;
+    apiKey?: string;
+    apiBase?: string;
+    command?: string;
+    args?: string[];
+    outputFormat?: OutputFormat;
   };
   implementer: {
-    provider: 'ollama' | 'lm-studio' | 'deepseek' | 'openrouter';
+    provider: string;
     model: string;
     apiBase: string;
     contextLength: number;
     temperature: number;
+    apiKey?: string;
+    type?: 'api' | 'shell' | 'agent';
+    command?: string;
+    args?: string[];
+    outputFormat?: OutputFormat;
+    timeout?: number;
   };
   validation: {
     typecheck: boolean;
@@ -71,17 +87,40 @@ export interface TokenUsage {
   escalationOutput: number;
 }
 
+export interface TaskTokenUsage {
+  taskId: string;
+  taskTitle: string;
+  method: 'local' | 'escalated-hint' | 'escalated-full' | 'failed' | 'skipped';
+  implementerTokens: number;
+  escalationTokens: number;
+  retryCount: number;
+}
+
+export interface CostBreakdown {
+  hypotheticalCost: number;
+  actualPlannerCost: number;
+  actualImplementerCost: number;
+  totalActualCost: number;
+  savingsAmount: number;
+  savingsPercentage: number;
+  localCompletionRate: number;
+}
+
 export interface Summary {
   feature: string;
   totalTasks: number;
   completedByLocal: number;
-  escalatedToOpus: number;
+  escalatedToPlanner: number;
   skipped: number;
   failed: number;
   totalTime: number;
   tokenUsage: TokenUsage;
   estimatedCostSavings: string;
   escalationRate: number;
+  taskBreakdown?: TaskTokenUsage[];
+  costBreakdown?: CostBreakdown;
+  plannerName?: string;
+  implementerName?: string;
 }
 
 export interface WorkflowState {
@@ -139,8 +178,9 @@ export interface OrchestratorCallbacks {
   onTaskRetry: (task: Task, attempt: number, error: string) => void;
   onTaskSkipped: (task: Task, reason: string) => void;
   onValidationResult: (task: Task, results: ValidationResult[]) => void;
-  onApprovalNeeded: (type: 'spec' | 'plan', filePath: string) => Promise<boolean>;
+  onApprovalNeeded: (type: 'spec' | 'plan', filePath: string) => Promise<{ approved: boolean; comment?: string }>;
   onExternalChanges: () => Promise<boolean>;
+  onQuestionAsked?: (question: import('./orchestrator/question-parser.js').ClarificationQuestion, num: number, total: number) => Promise<string>;
   onComplete: (summary: Summary) => void;
   onError: (error: string) => void;
 }
