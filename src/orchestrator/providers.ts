@@ -10,9 +10,17 @@ const DEFAULT_BASES: Record<string, { baseURL: string; apiKey: string | (() => s
 
 export function createClient(config: Config): OpenAI {
   const defaults = DEFAULT_BASES[config.implementer.provider];
-  const baseURL = config.implementer.apiBase || defaults.baseURL;
-  const apiKey = typeof defaults.apiKey === 'function' ? defaults.apiKey() : defaults.apiKey;
-  return new OpenAI({ baseURL, apiKey });
+
+  if (defaults) {
+    const baseURL = config.implementer.apiBase || defaults.baseURL;
+    const apiKey = config.implementer.apiKey || (typeof defaults.apiKey === 'function' ? defaults.apiKey() : defaults.apiKey);
+    return new OpenAI({ baseURL, apiKey });
+  }
+
+  const providerUpper = config.implementer.provider.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+  const envKey = process.env[`${providerUpper}_API_KEY`];
+  const apiKey = config.implementer.apiKey || envKey || 'no-key';
+  return new OpenAI({ baseURL: config.implementer.apiBase, apiKey });
 }
 
 export async function detectLocalModels(): Promise<Array<{ provider: string; models: string[] }>> {
@@ -50,12 +58,15 @@ export async function detectLocalModels(): Promise<Array<{ provider: string; mod
 
 export function validateProviderCredentials(config: Config): string[] {
   const warnings: string[] = [];
-  if (config.implementer.provider === 'deepseek' && !process.env.DEEPSEEK_API_KEY) {
+  const { provider } = config.implementer;
+
+  if (provider === 'deepseek' && !config.implementer.apiKey && !process.env.DEEPSEEK_API_KEY) {
     warnings.push('DEEPSEEK_API_KEY environment variable is not set. DeepSeek API calls will fail.');
   }
-  if (config.implementer.provider === 'openrouter' && !process.env.OPENROUTER_API_KEY) {
+  if (provider === 'openrouter' && !config.implementer.apiKey && !process.env.OPENROUTER_API_KEY) {
     warnings.push('OPENROUTER_API_KEY environment variable is not set. OpenRouter API calls will fail.');
   }
+
   return warnings;
 }
 

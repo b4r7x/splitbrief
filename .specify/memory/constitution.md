@@ -1,10 +1,9 @@
 <!--
 Sync Impact Report
-- Version change: (new) → 1.0.0
-- Added principles: I. Cost-Optimal Orchestration, II. Spec-Driven Development,
-  III. Local-First Implementation, IV. Functional Purity, V. Validate Before Commit
-- Added sections: Technical Constraints, Development Workflow
-- Removed sections: none (initial ratification)
+- Version change: 1.1.0 → 1.2.0
+- Modified principles: VI. Identity & Anti-Goals (added carve-out for delegated file writes)
+- Updated sections: Technical Constraints (implementer: added agent subprocess option)
+- Removed sections: none
 - Templates requiring updates:
   - .specify/templates/plan-template.md ✅ compatible (generic Constitution Check gate)
   - .specify/templates/spec-template.md ✅ compatible (no principle-specific sections)
@@ -91,6 +90,32 @@ After all tasks complete, a final Opus review MUST compare the
 full diff against the original specification before the workflow
 is marked complete.
 
+### VI. Identity & Anti-Goals
+
+tiny-spec is a **cost-optimized AI coding orchestrator**. Its core identity
+is splitting work between expensive planners and cheap implementers to
+save costs while maintaining planning quality.
+
+tiny-spec is NOT:
+- A universal AI connector that "connects any AI to any AI"
+- A multi-agent coordinator (Claude Squad, Overstory, Agent Orchestrator)
+- A generic orchestration framework with N dynamic agents
+
+Features and proposals MUST be evaluated against this identity. Additions
+that push tiny-spec toward generic multi-agent orchestration MUST be
+rejected unless they directly serve cost optimization.
+
+Explicit anti-goals that MUST NOT be implemented:
+- Tool call support for implementer models (small models can't handle it)
+- Generic agent-wrapping-agent patterns with dynamic agent counts
+- Features that blur the planner/implementer boundary
+
+**Permitted exception**: File write delegation to the implementer is allowed
+when tiny-spec retains ownership of validation (tsc/lint/test), retry,
+escalation, git commits, and the overall workflow. This enables agent-mode
+implementers (e.g., Claude Code with alternative models, Aider) while
+preserving the two-role architecture and quality pipeline.
+
 ## Technical Constraints
 
 - **Runtime**: Node.js 22+ with native TypeScript stripping
@@ -98,8 +123,8 @@ is marked complete.
 - **TUI**: Ink 5.x (React for CLI)
 - **Target**: macOS (primary), Linux (secondary)
 - **v0.1 scope**: TypeScript/JavaScript projects only
-- **Planner**: Claude Code CLI (`claude -p`) as subprocess
-- **Implementer**: OpenAI-compatible API (no subprocess tools)
+- **Planner**: Pluggable backends (6 built-in + shell command via config)
+- **Implementer**: OpenAI-compatible API (default), shell subprocess, or agent subprocess via config
 - **Edit format**: Whole-file replacement for files under 200 lines,
   search/replace blocks for larger files
 
@@ -136,4 +161,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 1.0.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-03-25
+**Version**: 1.2.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-03-26

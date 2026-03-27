@@ -55,10 +55,27 @@ Coding patterns, conventions, and styles found in the codebase that new code mus
 Technical constraints, runtime requirements, and existing limitations.
 
 ### Implementation Considerations
-Initial thoughts on how the feature might fit into the existing architecture.`;
+Initial thoughts on how the feature might fit into the existing architecture.
+
+## User Interaction
+
+After completing your research, if you identify important decisions or design ambiguities that would benefit from user input, embed them as interactive questions using this exact format:
+
+<!-- Q:{"id":"unique_id","type":"choice","text":"Your question here?","options":["Option 1","Option 2","Option 3"],"default":0} -->
+
+Question types:
+- "choice": Multiple choice with options array (default is index)
+- "input": Free text answer (default is suggested text)
+- "confirm": Yes/no (default is boolean)
+
+Rules:
+- Maximum 5 questions
+- Only ask about decisions that materially impact the spec
+- Base questions on what you found in the codebase (not generic)
+- If you found the answer in the codebase, don't ask — just use it`;
 }
 
-export function buildSpecPrompt(feature: string, researchOutput: string): string {
+export function buildSpecPrompt(feature: string, researchOutput: string, clarifications?: Array<{question: string, answer: string}>): string {
   return `# Write Feature Specification
 
 You are writing a detailed specification for a new feature. Use the research findings below to ground your spec in the actual codebase.
@@ -104,7 +121,14 @@ Explicitly list what this feature does NOT include to prevent scope creep.
 
 ## Output
 
-Write the complete spec.md content. Use clear, precise language. Reference specific files and patterns from the research findings where relevant.`;
+Write the complete spec.md content. Use clear, precise language. Reference specific files and patterns from the research findings where relevant.${clarifications && clarifications.length > 0 ? `
+
+## User Clarifications
+
+The user answered the following questions during research:
+${clarifications.map(c => `- Q: ${c.question} → A: ${c.answer}`).join('\n')}
+
+Integrate these answers into the spec. Do not ask about these topics — they are decided.` : ''}`;
 }
 
 export function buildPlanPrompt(spec: string, projectContext: string): string {
@@ -164,13 +188,32 @@ For each major component:
 
 ## Output
 
-Write the complete plan.md content. Be specific  -  use actual file paths, function names, and type definitions from the project.`;
+Write the complete plan.md content. Be specific  -  use actual file paths, function names, and type definitions from the project.${spec.includes('## Clarifications') ? `
+
+Note: The specification contains a Clarifications section with user decisions. Reference these decisions in your plan.` : ''}`;
+}
+
+export function buildRegeneratePrompt(artifactType: 'spec' | 'plan', currentContent: string, feedback: string): string {
+  const label = artifactType === 'spec' ? 'Specification' : 'Implementation Plan';
+  return `# Regenerate ${label}
+
+The user reviewed the ${artifactType} and has feedback:
+
+## Current ${label}
+${currentContent}
+
+## User Feedback
+${feedback}
+
+## Instructions
+
+Regenerate the complete ${artifactType}.md incorporating the user's feedback. Output the full updated document, not just the changes.`;
 }
 
 export function buildTasksPrompt(spec: string, plan: string): string {
   return `# Write Implementation Tasks
 
-You are breaking down an implementation plan into atomic, self-contained tasks. Each task will be sent independently to a local AI model for implementation  -  the model will have NO access to the spec, plan, or other tasks. Every task must contain ALL context needed to complete it.
+You are breaking down an implementation plan into atomic, self-contained tasks. Each task will be sent independently to an implementer model for implementation  -  the model will have NO access to the spec, plan, or other tasks. Every task must contain ALL context needed to complete it.
 
 ## Specification
 ${spec}
@@ -308,7 +351,7 @@ One-paragraph overall assessment.`;
 export function buildHintPrompt(task: Task, error: string): string {
   return `# Diagnose Implementation Failure
 
-A local AI model attempted to implement the task below but the result failed validation. Provide a concise diagnosis and approach hint  -  do NOT write code.
+An implementer model attempted to implement the task below but the result failed validation. Provide a concise diagnosis and approach hint  -  do NOT write code.
 
 ## Task
 **ID**: ${task.id}
@@ -343,7 +386,7 @@ Do NOT write code. Only explain the diagnosis and approach.`;
 export function buildEscalationPrompt(task: Task, lastAttempt: string, error: string): string {
   return `# Escalation: Implement Fix
 
-The local AI model failed to implement the task below after multiple attempts. You must provide the correct, complete implementation.
+The implementer model failed to implement the task below after multiple attempts. You must provide the correct, complete implementation.
 
 ## Task
 **ID**: ${task.id}

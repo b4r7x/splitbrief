@@ -5,6 +5,8 @@ import { createClient } from './providers.js';
 import { formatTaskPrompt, formatRetryPrompt, SYSTEM_PREAMBLE, estimateTokens } from '../spec/formatter.js';
 import { extractCode } from './extractor.js';
 import { validateTaskPath } from '../utils/fs.js';
+import { implementTaskViaShell, retryTaskViaShell } from './implementers/shell.js';
+import { implementTaskViaAgent, retryTaskViaAgent } from './implementers/agent.js';
 
 export function applyCode(code: string, task: Task, projectDir: string): { success: boolean; error?: string } {
   try {
@@ -167,6 +169,14 @@ export async function implementTask(
   context: ProjectContext,
   onProgress: (text: string) => void,
 ): Promise<{ success: boolean; output: string; error?: string; usage?: { promptTokens: number; completionTokens: number } }> {
+  if (config.implementer.type === 'agent') {
+    return implementTaskViaAgent(task, projectDir, config, context, onProgress);
+  }
+
+  if (config.implementer.type === 'shell') {
+    return implementTaskViaShell(task, projectDir, config, context, onProgress);
+  }
+
   const userPrompt = formatTaskPrompt(task, context, config.implementer.contextLength);
   const client = createClient(config);
   const promptTokens = estimateTokens(SYSTEM_PREAMBLE) + estimateTokens(userPrompt);
@@ -215,6 +225,14 @@ export async function retryTask(
   attempt: number,
   onProgress: (text: string) => void,
 ): Promise<{ success: boolean; output: string; error?: string; usage?: { promptTokens: number; completionTokens: number } }> {
+  if (config.implementer.type === 'agent') {
+    return retryTaskViaAgent(task, projectDir, config, context, error, attempt, onProgress);
+  }
+
+  if (config.implementer.type === 'shell') {
+    return retryTaskViaShell(task, projectDir, config, context, error, attempt, onProgress);
+  }
+
   const retryPrompt = formatRetryPrompt(task, context, error, attempt);
   const client = createClient(config);
   const temperature = Math.min(config.implementer.temperature + attempt * 0.1, 2);

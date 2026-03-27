@@ -1,21 +1,44 @@
 import { join } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
-import type { Config, WorkflowState, Task, Summary, OrchestratorCallbacks, ProjectContext, TokenUsage, ValidationResult } from '../types.js';
+import type { Config, WorkflowState, Task, Summary, OrchestratorCallbacks, ProjectContext, TokenUsage, ValidationResult, CostBreakdown, TaskTokenUsage, PlannerTool } from '../types.js';
 import { createInitialState, transition, saveState, loadState, appendEvent } from '../state.js';
-import { planFeature } from './planner.js';
 import { implementTask, retryTask } from './implementer.js';
 import { validateTask, formatValidationError } from './validator.js';
-import { escalateTask } from './escalator.js';
 import { commitChanges, getCurrentDiff, hasExternalChanges, discardTaskChanges } from '../utils/git.js';
 import { ensureTinySpecDir, readSpecFile, writeSpecFile } from '../utils/fs.js';
-import { buildFinalReviewPrompt } from '../spec/templates.js';
+import { buildFinalReviewPrompt, buildRegeneratePrompt } from '../spec/templates.js';
 import { killAllProcesses, activeProcesses } from '../utils/process.js';
 import { parseStreamLine } from './claude-stream.js';
+import type { ClarificationQuestion } from './question-parser.js';
 
-// Opus pricing per 1M tokens (USD)
-const OPUS_INPUT_PRICE = 15;
-const OPUS_OUTPUT_PRICE = 75;
+import { getPlannerPricing, getImplementerPricing, calculateCost } from './pricing.js';
+import { createPlanner } from './planners/factory.js';
+import type { PlannerBackend } from './planners/types.js';
+
+export function supportsConversational(tool: PlannerTool): boolean {
+  return tool === 'claude-code' || tool === 'agent-sdk';
+}
+
+function persistClarifications(projectDir: string, clarifications: Array<{ question: string; answer: string }>): void {
+  if (clarifications.length === 0) return;
+
+  const filename = 'spec.md';
+  let content = readSpecFile(projectDir, filename) ?? '';
+
+  const sessionHeader = `### Session ${new Date().toISOString().slice(0, 10)}`;
+  const entries = clarifications.map(c => `- Q: ${c.question} \u2192 A: ${c.answer}`).join('\n');
+
+  if (!content.includes('## Clarifications')) {
+    content += `\n\n## Clarifications\n\n${sessionHeader}\n${entries}\n`;
+  } else if (!content.includes(sessionHeader)) {
+    content += `\n${sessionHeader}\n${entries}\n`;
+  } else {
+    content += `\n${entries}\n`;
+  }
+
+  writeSpecFile(projectDir, filename, content);
+}
 
 function buildContext(projectDir: string, config: Config): ProjectContext {
   let name = 'unknown';
@@ -92,22 +115,63 @@ function addEscalationUsage(state: WorkflowState, usage: { inputTokens: number; 
   };
 }
 
-export function estimateCostSavings(tokenUsage: TokenUsage): string {
-  // If all implementer work had been done by Opus instead, how much would it have cost?
-  const hypotheticalOpusCost =
-    (tokenUsage.implementerInput / 1_000_000) * OPUS_INPUT_PRICE +
-    (tokenUsage.implementerOutput / 1_000_000) * OPUS_OUTPUT_PRICE;
+function tokenDelta(before: TokenUsage, after: TokenUsage): { implementerTokens: number; escalationTokens: number } {
+  const implBefore = before.implementerInput + before.implementerOutput;
+  const implAfter = after.implementerInput + after.implementerOutput;
+  const escBefore = before.escalationInput + before.escalationOutput;
+  const escAfter = after.escalationInput + after.escalationOutput;
+  return {
+    implementerTokens: implAfter - implBefore,
+    escalationTokens: escAfter - escBefore,
+  };
+}
 
-  // Actual Opus cost (planning + escalation)
-  const actualOpusCost =
-    ((tokenUsage.plannerInput + tokenUsage.escalationInput) / 1_000_000) * OPUS_INPUT_PRICE +
-    ((tokenUsage.plannerOutput + tokenUsage.escalationOutput) / 1_000_000) * OPUS_OUTPUT_PRICE;
+type RetryResult = { completed: boolean; method: TaskTokenUsage['method'] };
 
-  // Local model cost is effectively zero
-  const savings = hypotheticalOpusCost - actualOpusCost;
+export function estimateCostSavings(tokenUsage: TokenUsage, plannerTool?: string, implementerProvider?: string): string {
+  const breakdown = calculateCostBreakdown(tokenUsage, 0, 0, plannerTool, implementerProvider);
+  if (breakdown.savingsAmount <= 0) return '$0.00';
+  return `$${breakdown.savingsAmount.toFixed(2)}`;
+}
 
-  if (savings <= 0) return '$0.00';
-  return `$${savings.toFixed(2)}`;
+export function calculateCostBreakdown(
+  tokenUsage: TokenUsage,
+  totalTasks: number,
+  escalatedCount: number,
+  plannerTool?: string,
+  implementerProvider?: string,
+): CostBreakdown {
+  const plannerPricing = getPlannerPricing(plannerTool ?? 'claude-code');
+  const implPricing = getImplementerPricing(implementerProvider ?? 'ollama');
+
+  const hypotheticalCost = calculateCost(
+    tokenUsage.implementerInput, tokenUsage.implementerOutput, plannerPricing,
+  );
+
+  const actualPlannerCost = calculateCost(
+    tokenUsage.plannerInput + tokenUsage.escalationInput,
+    tokenUsage.plannerOutput + tokenUsage.escalationOutput,
+    plannerPricing,
+  );
+
+  const actualImplementerCost = calculateCost(
+    tokenUsage.implementerInput, tokenUsage.implementerOutput, implPricing,
+  );
+
+  const totalActualCost = actualPlannerCost + actualImplementerCost;
+  const savingsAmount = hypotheticalCost - totalActualCost;
+  const savingsPercentage = hypotheticalCost > 0 ? (savingsAmount / hypotheticalCost) * 100 : 0;
+  const localCompletionRate = totalTasks > 0 ? ((totalTasks - escalatedCount) / totalTasks) * 100 : 0;
+
+  return {
+    hypotheticalCost,
+    actualPlannerCost,
+    actualImplementerCost,
+    totalActualCost,
+    savingsAmount: Math.max(0, savingsAmount),
+    savingsPercentage: Math.max(0, savingsPercentage),
+    localCompletionRate,
+  };
 }
 
 async function runFinalReview(
@@ -214,8 +278,22 @@ export async function runWorkflow(
   process.on('SIGTERM', onSignal);
 
   try {
+  // Pre-start: validate shell implementer config
+  if (config.implementer.type === 'shell' && !config.implementer.command) {
+    callbacks.onError('Shell implementer requires implementer.command to be set in config.');
+    return buildSummary(feature, createInitialState(feature), startTime);
+  }
+
   // Step 1: Ensure .tiny-spec directory
   ensureTinySpecDir(projectDir);
+
+  // Create planner backend and check availability
+  const planner = await createPlanner(config);
+  const available = await planner.isAvailable();
+  if (!available) {
+    callbacks.onError(`Planner '${config.planner.tool}' is not available. Make sure it's installed.`);
+    return buildSummary(feature, createInitialState(feature), startTime);
+  }
 
   let state: WorkflowState;
 
@@ -240,13 +318,23 @@ export async function runWorkflow(
 
   if (!savedState) {
   // Step 4: Plan  -  research, spec, plan, tasks
-  let planResult: Awaited<ReturnType<typeof planFeature>>;
+  const collectedQuestions: ClarificationQuestion[] = [];
+  const conversational = supportsConversational(config.planner.tool);
+
+  let planResult: Awaited<ReturnType<PlannerBackend['plan']>>;
   try {
-    planResult = await planFeature(feature, projectDir, config, {
+    planResult = await planner.plan(feature, projectDir, config, {
       onOutput: (text) => callbacks.onPlannerOutput(text),
       onPhase: (phase) => {
         // planner emits its own sub-phases; we track spec/plan transitions
       },
+      onQuestion: conversational ? (questions) => {
+        for (const q of questions) {
+          if (collectedQuestions.length < 5) {
+            collectedQuestions.push(q);
+          }
+        }
+      } : undefined,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -268,6 +356,30 @@ export async function runWorkflow(
   saveState(projectDir, state);
   emit(projectDir, state, 'research_done');
 
+  // Step 4b: Ask clarification questions (conversational planners only)
+  if (conversational && collectedQuestions.length > 0 && callbacks.onQuestionAsked) {
+    const clarifications: Array<{ question: string; answer: string }> = [];
+    const total = collectedQuestions.length;
+
+    for (let qi = 0; qi < total; qi++) {
+      const question = collectedQuestions[qi];
+      const answer = await callbacks.onQuestionAsked(question, qi + 1, total);
+
+      if (answer === 'done') break;
+      if (answer === 'skip' || answer === '') continue;
+
+      clarifications.push({ question: question.text, answer });
+    }
+
+    if (clarifications.length > 0) {
+      persistClarifications(projectDir, clarifications);
+      emit(projectDir, state, 'clarifications_collected', undefined, {
+        count: clarifications.length,
+        clarifications,
+      });
+    }
+  }
+
   // Step 5: Review spec
   state = transition(state, { type: 'SPEC_DONE' });
   saveState(projectDir, state);
@@ -277,13 +389,29 @@ export async function runWorkflow(
   const specPath = join(projectDir, '.tiny-spec', 'current', 'spec.md');
 
   if (!config.workflow.autoApproveSpec) {
-    const specApproved = await callbacks.onApprovalNeeded('spec', specPath);
-    if (!specApproved) {
-      state = transition(state, { type: 'REJECT_SPEC' });
-      saveState(projectDir, state);
-      callbacks.onPhaseChange(state.phase);
-      emit(projectDir, state, 'spec_rejected');
-      return buildSummary(feature, state, startTime);
+    let specDone = false;
+    while (!specDone) {
+      const specResult = await callbacks.onApprovalNeeded('spec', specPath);
+      if (!specResult.approved && !specResult.comment) {
+        state = transition(state, { type: 'REJECT_SPEC' });
+        saveState(projectDir, state);
+        callbacks.onPhaseChange(state.phase);
+        emit(projectDir, state, 'spec_rejected');
+        return buildSummary(feature, state, startTime);
+      }
+      if (specResult.comment) {
+        const currentSpec = readSpecFile(projectDir, 'spec.md') ?? '';
+        const regenPrompt = buildRegeneratePrompt('spec', currentSpec, specResult.comment);
+        callbacks.onPlannerOutput(`\n[Regenerating spec with feedback: ${specResult.comment}]\n`);
+        const regenResult = await planner.regenerate(regenPrompt, 'spec', projectDir, {
+          onOutput: (text) => callbacks.onPlannerOutput(text),
+        });
+        state = addPlannerUsage(state, regenResult.usage);
+        saveState(projectDir, state);
+        emit(projectDir, state, 'spec_regenerated', undefined, { comment: specResult.comment });
+        continue;
+      }
+      specDone = true;
     }
   }
 
@@ -302,13 +430,29 @@ export async function runWorkflow(
   const planPath = join(projectDir, '.tiny-spec', 'current', 'plan.md');
 
   if (!config.workflow.autoApprovePlan) {
-    const planApproved = await callbacks.onApprovalNeeded('plan', planPath);
-    if (!planApproved) {
-      state = transition(state, { type: 'REJECT_PLAN' });
-      saveState(projectDir, state);
-      callbacks.onPhaseChange(state.phase);
-      emit(projectDir, state, 'plan_rejected');
-      return buildSummary(feature, state, startTime);
+    let planDone = false;
+    while (!planDone) {
+      const planResult2 = await callbacks.onApprovalNeeded('plan', planPath);
+      if (!planResult2.approved && !planResult2.comment) {
+        state = transition(state, { type: 'REJECT_PLAN' });
+        saveState(projectDir, state);
+        callbacks.onPhaseChange(state.phase);
+        emit(projectDir, state, 'plan_rejected');
+        return buildSummary(feature, state, startTime);
+      }
+      if (planResult2.comment) {
+        const currentPlan = readSpecFile(projectDir, 'plan.md') ?? '';
+        const regenPrompt = buildRegeneratePrompt('plan', currentPlan, planResult2.comment);
+        callbacks.onPlannerOutput(`\n[Regenerating plan with feedback: ${planResult2.comment}]\n`);
+        const regenResult = await planner.regenerate(regenPrompt, 'plan', projectDir, {
+          onOutput: (text) => callbacks.onPlannerOutput(text),
+        });
+        state = addPlannerUsage(state, regenResult.usage);
+        saveState(projectDir, state);
+        emit(projectDir, state, 'plan_regenerated', undefined, { comment: planResult2.comment });
+        continue;
+      }
+      planDone = true;
     }
   }
 
@@ -322,6 +466,7 @@ export async function runWorkflow(
 
   // Step 9: Task loop
   const totalTasks = state.tasks.length;
+  const taskBreakdowns: TaskTokenUsage[] = [];
 
   for (let i = state.currentTaskIndex; i < totalTasks; i++) {
     const task = state.tasks[i];
@@ -349,6 +494,8 @@ export async function runWorkflow(
       saveState(projectDir, state);
       callbacks.onTaskSkipped(task, `dependency failed: ${task.dependsOn.filter((d) => state.failedTasks.includes(d) || state.skippedTasks.includes(d)).join(', ')}`);
       emit(projectDir, state, 'task_skipped', task.id);
+      taskBreakdowns.push({ taskId: task.id, taskTitle: task.title, method: 'skipped', implementerTokens: 0, escalationTokens: 0, retryCount: 0 });
+      emit(projectDir, state, 'task_tokens', task.id, { method: 'skipped', implementerTokens: 0, escalationTokens: 0, retryCount: 0 });
       // Advance index manually since we're not going through VALIDATION_PASS
       state = { ...state, currentTaskIndex: i + 1 };
       saveState(projectDir, state);
@@ -369,6 +516,9 @@ export async function runWorkflow(
       }
     }
 
+    // Snapshot token usage before this task
+    const tokensBefore = { ...state.tokenUsage };
+
     // Implement
     const implResult = await implementTask(task, projectDir, config, context, (text) => {
       callbacks.onImplementerOutput(text);
@@ -381,13 +531,21 @@ export async function runWorkflow(
     if (!implResult.success) {
       // Implementation itself failed (couldn't extract code, etc.)
       // Treat as a validation failure and enter retry loop
-      const completed = await handleRetryAndEscalation(
+      const retryResult = await handleRetryAndEscalation(
         task, implResult.error ?? 'Implementation failed to produce valid code',
         projectDir, config, context, callbacks, state,
       );
       state = reloadState(projectDir, state);
       trackedState = state;
-      if (!completed) {
+      const delta = tokenDelta(tokensBefore, state.tokenUsage);
+      const taskUsage: TaskTokenUsage = {
+        taskId: task.id, taskTitle: task.title, method: retryResult.method,
+        implementerTokens: delta.implementerTokens, escalationTokens: delta.escalationTokens,
+        retryCount: state.attempt,
+      };
+      taskBreakdowns.push(taskUsage);
+      emit(projectDir, state, 'task_tokens', task.id, { method: taskUsage.method, implementerTokens: taskUsage.implementerTokens, escalationTokens: taskUsage.escalationTokens, retryCount: taskUsage.retryCount });
+      if (!retryResult.completed) {
         emit(projectDir, state, 'task_failed', task.id);
       }
       continue;
@@ -404,18 +562,34 @@ export async function runWorkflow(
       const result = await validateCommitAndAdvance(task, validationResults, projectDir, config, state, callbacks, 'local', 'VALIDATION_PASS');
       if (result.completed) {
         state = result.state;
+        const delta = tokenDelta(tokensBefore, state.tokenUsage);
+        const taskUsage: TaskTokenUsage = {
+          taskId: task.id, taskTitle: task.title, method: 'local',
+          implementerTokens: delta.implementerTokens, escalationTokens: delta.escalationTokens,
+          retryCount: 0,
+        };
+        taskBreakdowns.push(taskUsage);
+        emit(projectDir, state, 'task_tokens', task.id, { method: taskUsage.method, implementerTokens: taskUsage.implementerTokens, escalationTokens: taskUsage.escalationTokens, retryCount: taskUsage.retryCount });
         continue;
       }
     }
 
     // Validation failed  -  enter retry loop
     const errorText = formatValidationError(validationResults);
-    const completed = await handleRetryAndEscalation(
+    const retryResult2 = await handleRetryAndEscalation(
       task, errorText, projectDir, config, context, callbacks, state,
     );
     state = reloadState(projectDir, state);
     trackedState = state;
-    if (!completed) {
+    const delta = tokenDelta(tokensBefore, state.tokenUsage);
+    const taskUsage: TaskTokenUsage = {
+      taskId: task.id, taskTitle: task.title, method: retryResult2.method,
+      implementerTokens: delta.implementerTokens, escalationTokens: delta.escalationTokens,
+      retryCount: state.attempt,
+    };
+    taskBreakdowns.push(taskUsage);
+    emit(projectDir, state, 'task_tokens', task.id, { method: taskUsage.method, implementerTokens: taskUsage.implementerTokens, escalationTokens: taskUsage.escalationTokens, retryCount: taskUsage.retryCount });
+    if (!retryResult2.completed) {
       emit(projectDir, state, 'task_failed', task.id);
     }
   }
@@ -444,7 +618,7 @@ export async function runWorkflow(
   emit(projectDir, state, 'workflow_complete');
 
   // Step 11: Build summary
-  const summary = buildSummary(feature, state, startTime);
+  const summary = buildSummary(feature, state, startTime, taskBreakdowns);
   callbacks.onComplete(summary);
   return summary;
 
@@ -506,7 +680,7 @@ async function handleRetryAndEscalation(
   context: ProjectContext,
   callbacks: OrchestratorCallbacks,
   currentState: WorkflowState,
-): Promise<boolean> {
+): Promise<RetryResult> {
   let state = currentState;
   let lastError = initialError;
   const maxRetries = config.workflow.maxRetries;
@@ -546,7 +720,7 @@ async function handleRetryAndEscalation(
       const result = await validateCommitAndAdvance(task, retryValidation, projectDir, config, state, callbacks, 'local', 'VALIDATION_PASS');
       if (result.completed) {
         state = result.state;
-        return true;
+        return { completed: true, method: 'local' };
       }
     }
 
@@ -560,7 +734,8 @@ async function handleRetryAndEscalation(
   emit(projectDir, state, 'task_escalating', task.id);
 
   // Tier 1: Get hints from Opus
-  const tier1Result = await escalateTask(task, lastError, projectDir, config, context, {
+  const planner = await createPlanner(config);
+  const tier1Result = await planner.escalateHint(task, lastError, projectDir, {
     onOutput: (text) => callbacks.onPlannerOutput(text),
   });
 
@@ -589,7 +764,7 @@ async function handleRetryAndEscalation(
 
     const result = await validateCommitAndAdvance(task, hintValidation, projectDir, config, state, callbacks, 'local_with_hints', 'HINT_SUCCESS', 'with hints');
     if (result.completed) {
-      return true;
+      return { completed: true, method: 'escalated-hint' };
     }
   }
 
@@ -598,9 +773,9 @@ async function handleRetryAndEscalation(
   saveState(projectDir, state);
   emit(projectDir, state, 'hint_failed', task.id);
 
-  const tier2Result = await escalateTask(task, lastError, projectDir, config, context, {
+  const tier2Result = await planner.escalateFull(task, lastError, projectDir, {
     onOutput: (text) => callbacks.onPlannerOutput(text),
-  }, 2);
+  });
 
   state = addEscalationUsage(state, tier2Result.usage);
   saveState(projectDir, state);
@@ -611,7 +786,7 @@ async function handleRetryAndEscalation(
 
     const result = await validateCommitAndAdvance(task, tier2Validation, projectDir, config, state, callbacks, 'escalated', 'FULL_SUCCESS', 'escalated');
     if (result.completed) {
-      return true;
+      return { completed: true, method: 'escalated-full' };
     }
   }
 
@@ -621,32 +796,33 @@ async function handleRetryAndEscalation(
   task.status = 'failed';
   emit(projectDir, state, 'task_full_fail', task.id);
   try { await discardTaskChanges(projectDir, task.file, task.action); } catch { /* best effort */ }
-  return false;
+  return { completed: false, method: 'failed' };
 }
 
 function reloadState(projectDir: string, fallback: WorkflowState): WorkflowState {
   return loadState(projectDir) ?? fallback;
 }
 
-function buildSummary(feature: string, state: WorkflowState, startTime: number): Summary {
+function buildSummary(feature: string, state: WorkflowState, startTime: number, taskBreakdowns?: TaskTokenUsage[]): Summary {
   const totalTasks = state.tasks.length;
   const completedByLocal = state.completedTasks.length;
-  const escalatedToOpus = state.escalatedTasks.length;
+  const escalatedToPlanner = state.escalatedTasks.length;
   const skipped = state.skippedTasks.length;
   const failed = state.failedTasks.length;
   const totalTime = Date.now() - startTime;
-  const escalationRate = totalTasks > 0 ? escalatedToOpus / totalTasks : 0;
+  const escalationRate = totalTasks > 0 ? escalatedToPlanner / totalTasks : 0;
 
   return {
     feature,
     totalTasks,
     completedByLocal,
-    escalatedToOpus,
+    escalatedToPlanner,
     skipped,
     failed,
     totalTime,
     tokenUsage: state.tokenUsage,
     estimatedCostSavings: estimateCostSavings(state.tokenUsage),
     escalationRate,
+    taskBreakdown: taskBreakdowns,
   };
 }

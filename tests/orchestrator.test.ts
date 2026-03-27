@@ -81,7 +81,7 @@ describe('estimateCostSavings', () => {
       escalationInput: 0,
       escalationOutput: 0,
     };
-    assert.equal(estimateCostSavings(usage), '$0.00');
+    assert.equal(estimateCostSavings(usage, 'claude-code', 'ollama'), '$0.00');
   });
 
   it('calculates savings for known token values', () => {
@@ -93,10 +93,10 @@ describe('estimateCostSavings', () => {
       escalationInput: 0,
       escalationOutput: 0,
     };
-    // hypothetical Opus cost: (1M/1M)*15 + (1M/1M)*75 = 15 + 75 = $90
+    // hypothetical Opus cost: (1M/1M)*5 + (1M/1M)*25 = 5 + 25 = $30
     // actual Opus cost: $0 (no planner or escalation usage)
-    // savings: $90
-    assert.equal(estimateCostSavings(usage), '$90.00');
+    // savings: $30
+    assert.equal(estimateCostSavings(usage, 'claude-code', 'ollama'), '$30.00');
   });
 
   it('subtracts actual Opus cost from hypothetical', () => {
@@ -108,10 +108,10 @@ describe('estimateCostSavings', () => {
       escalationInput: 0,
       escalationOutput: 0,
     };
-    // hypothetical: (2M/1M)*15 + (500K/1M)*75 = 30 + 37.5 = $67.50
-    // actual: (1M/1M)*15 + (100K/1M)*75 = 15 + 7.5 = $22.50
-    // savings: $45.00
-    assert.equal(estimateCostSavings(usage), '$45.00');
+    // hypothetical: (2M/1M)*5 + (500K/1M)*25 = 10 + 12.5 = $22.50
+    // actual planner: (1M/1M)*5 + (100K/1M)*25 = 5 + 2.5 = $7.50
+    // savings: $15.00
+    assert.equal(estimateCostSavings(usage, 'claude-code', 'ollama'), '$15.00');
   });
 
   it('returns $0.00 when savings would be negative', () => {
@@ -123,6 +123,6 @@ describe('estimateCostSavings', () => {
       escalationInput: 0,
       escalationOutput: 0,
     };
-    assert.equal(estimateCostSavings(usage), '$0.00');
+    assert.equal(estimateCostSavings(usage, 'claude-code', 'ollama'), '$0.00');
   });
 });

@@ -12,7 +12,9 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsc",
-    "test": "tsx --test tests/**/*.test.ts"
+    "test": "tsx --test tests/**/*.test.ts",
+    "test:integration": "INTEGRATION=true tsx --test --test-timeout=60000 tests/integration/*.integration.test.ts",
+    "test:all": "INTEGRATION=true tsx --test --test-timeout=60000 tests/**/*.test.ts"
   },
   "keywords": [
     "ai",
@@ -25,6 +27,7 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@inkjs/ui": "^2.0.0",
     "commander": "^14.0.0",
     "ink": "^5.2.0",
     "openai": "^6.0.0",
