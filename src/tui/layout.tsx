@@ -1,87 +1,73 @@
-import { useState, useRef } from 'react';
-import { Box, Text, useInput, useStdout, useApp } from 'ink';
+import { useRef, type ReactNode } from 'react';
+import { Box, useInput, useStdout, useApp } from 'ink';
 import Header from './header.js';
-import Pane, { type PaneHandle } from './pane.js';
-import StatusBar from './status-bar.js';
+import ConversationFlow from './conversation-flow.js';
+import type { ConversationFlowHandle } from './conversation-flow.js';
+import CostFooter from './cost-footer.js';
 import ApprovalPrompt from './prompt.js';
-import type { Phase } from '../types.js';
+import type { Phase, TuiEvent } from '../types.js';
 
 export interface LayoutProps {
   feature: string;
   startedAt: string;
   phase: Phase;
+  events: TuiEvent[];
   currentTask: number;
   totalTasks: number;
   model: string;
-  retries: number;
-  plannerLines: string[];
-  implementerLines: string[];
+  localRate: number;
+  estimatedCost: number;
+  estimatedSavings: number;
   approval?: { type: 'spec' | 'plan'; filePath: string; onApprove: () => void; onReject: () => void; onComment?: (text: string) => void; supportsSession?: boolean } | null;
+  children?: ReactNode;
 }
 
 export default function Layout({
   feature,
   startedAt,
   phase,
+  events,
   currentTask,
   totalTasks,
   model,
-  retries,
-  plannerLines,
-  implementerLines,
+  localRate,
+  estimatedCost,
+  estimatedSavings,
   approval,
+  children,
 }: LayoutProps) {
-  const [focusedPane, setFocusedPane] = useState<'left' | 'right'>('left');
   const { stdout } = useStdout();
   const { exit } = useApp();
-
-  const leftRef = useRef<PaneHandle>(null);
-  const rightRef = useRef<PaneHandle>(null);
+  const flowRef = useRef<ConversationFlowHandle>(null);
 
   const rows = stdout?.rows ?? 24;
-  const paneHeight = rows - 4;
+  const contentHeight = Math.max(0, rows - 4);
 
   useInput((input, key) => {
-    if (key.tab) {
-      setFocusedPane(prev => (prev === 'left' ? 'right' : 'left'));
-    } else if (input === 'q' && !approval) {
+    if (input === 'q' && !approval) {
       exit();
+    } else if (input === 'd') {
+      flowRef.current?.toggleDiff();
     } else if (key.upArrow) {
-      (focusedPane === 'left' ? leftRef : rightRef).current?.scrollUp();
+      flowRef.current?.scrollUp();
     } else if (key.downArrow) {
-      (focusedPane === 'left' ? leftRef : rightRef).current?.scrollDown();
+      flowRef.current?.scrollDown();
     }
   });
 
   return (
     <Box flexDirection="column" height={rows}>
-      <Header feature={feature} startedAt={startedAt} />
+      <Header feature={feature} startedAt={startedAt} phase={phase} />
 
-      <Box flexDirection="row" flexGrow={1}>
-        <Pane
-          ref={leftRef}
-          title="Planner"
-          lines={plannerLines}
-          focused={focusedPane === 'left'}
-          height={paneHeight}
-          width="50%"
-        />
-        <Pane
-          ref={rightRef}
-          title="Implementer"
-          lines={implementerLines}
-          focused={focusedPane === 'right'}
-          height={paneHeight}
-          width="50%"
-        />
-      </Box>
+      <ConversationFlow ref={flowRef} events={events} height={contentHeight} />
 
-      <StatusBar
-        phase={phase}
+      <CostFooter
         currentTask={currentTask}
         totalTasks={totalTasks}
-        model={model}
-        retries={retries}
+        localRate={localRate}
+        estimatedCost={estimatedCost}
+        estimatedSavings={estimatedSavings}
+        implementerModel={model}
       />
 
       {approval && (
@@ -94,6 +80,8 @@ export default function Layout({
           supportsSession={approval.supportsSession}
         />
       )}
+
+      {children}
     </Box>
   );
 }

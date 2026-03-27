@@ -169,22 +169,6 @@ export interface Event {
   data?: Record<string, unknown>;
 }
 
-export interface OrchestratorCallbacks {
-  onPhaseChange: (phase: Phase) => void;
-  onPlannerOutput: (text: string) => void;
-  onImplementerOutput: (text: string) => void;
-  onTaskStart: (task: Task, index: number, total: number) => void;
-  onTaskComplete: (task: Task, method: 'local' | 'escalated') => void;
-  onTaskRetry: (task: Task, attempt: number, error: string) => void;
-  onTaskSkipped: (task: Task, reason: string) => void;
-  onValidationResult: (task: Task, results: ValidationResult[]) => void;
-  onApprovalNeeded: (type: 'spec' | 'plan', filePath: string) => Promise<{ approved: boolean; comment?: string }>;
-  onExternalChanges: () => Promise<boolean>;
-  onQuestionAsked?: (question: import('./orchestrator/question-parser.js').ClarificationQuestion, num: number, total: number) => Promise<string>;
-  onComplete: (summary: Summary) => void;
-  onError: (error: string) => void;
-}
-
 export interface TokenBudget {
   system: number;
   taskBody: number;
@@ -205,4 +189,25 @@ export interface ProjectContext {
   dir: string;
   runtime: string;
   testCommand: string;
+}
+
+export type TuiEvent =
+  | { type: 'planner-status'; ts: number; phase: string; status: 'running' | 'done'; summary?: string; duration?: number }
+  | { type: 'planner-text'; ts: number; text: string }
+  | { type: 'task-start'; ts: number; taskId: string; title: string; index: number; total: number; file: string; action: 'create' | 'modify' }
+  | { type: 'task-complete'; ts: number; taskId: string; title: string; method: 'local' | 'escalated'; retries: number; duration: number }
+  | { type: 'task-skipped'; ts: number; taskId: string; title: string; reason: string }
+  | { type: 'implementer-generate'; ts: number; status: 'running' | 'done' | 'failed'; model?: string; file?: string; linesAdded?: number; linesRemoved?: number; diff?: string; duration?: number }
+  | { type: 'validate'; ts: number; passed: boolean; stages: { tsc: boolean; lint: boolean; test: boolean }; error?: string; duration?: number }
+  | { type: 'retry'; ts: number; taskId: string; attempt: number; maxRetries: number }
+  | { type: 'escalate'; ts: number; tier: 1 | 2; hint?: string }
+  | { type: 'git-commit'; ts: number; message: string }
+  | { type: 'error'; ts: number; message: string };
+
+export interface OrchestratorCallbacks {
+  onEvent: (event: TuiEvent) => void;
+  onApprovalNeeded: (type: 'spec' | 'plan', filePath: string) => Promise<{ approved: boolean; comment?: string }>;
+  onExternalChanges: () => Promise<boolean>;
+  onQuestionAsked?: (question: import('./orchestrator/question-parser.js').ClarificationQuestion, num: number, total: number) => Promise<string>;
+  onComplete: (summary: Summary) => void;
 }

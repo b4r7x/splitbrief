@@ -1,8 +1,8 @@
 <!--
 Sync Impact Report
-- Version change: 1.1.0 → 1.2.0
-- Modified principles: VI. Identity & Anti-Goals (added carve-out for delegated file writes)
-- Updated sections: Technical Constraints (implementer: added agent subprocess option)
+- Version change: 1.2.0 → 1.3.0
+- Modified principles: VI. Identity & Anti-Goals (added UX visibility clause)
+- Updated sections: Technical Constraints (TUI: conversation flow redesign)
 - Removed sections: none
 - Templates requiring updates:
   - .specify/templates/plan-template.md ✅ compatible (generic Constitution Check gate)
@@ -92,9 +92,16 @@ is marked complete.
 
 ### VI. Identity & Anti-Goals
 
-tiny-spec is a **cost-optimized AI coding orchestrator**. Its core identity
-is splitting work between expensive planners and cheap implementers to
-save costs while maintaining planning quality.
+tiny-spec is a **cost-optimized AI coding orchestrator** with a **two-role
+architecture** (planner + implementer). Its core identity is splitting work
+between expensive planners and cheap implementers to save costs while
+maintaining planning quality.
+
+The collaboration between planner and implementer MUST be **visible,
+understandable, and satisfying to use**. Beautiful visualization of the
+orchestration is part of the product identity — not scope creep. The TUI
+MUST expose the planner/implementer dialog, cost savings, validation
+results, and escalation flow so users see and feel the value.
 
 tiny-spec is NOT:
 - A universal AI connector that "connects any AI to any AI"
@@ -110,17 +117,20 @@ Explicit anti-goals that MUST NOT be implemented:
 - Generic agent-wrapping-agent patterns with dynamic agent counts
 - Features that blur the planner/implementer boundary
 
-**Permitted exception**: File write delegation to the implementer is allowed
-when tiny-spec retains ownership of validation (tsc/lint/test), retry,
-escalation, git commits, and the overall workflow. This enables agent-mode
-implementers (e.g., Claude Code with alternative models, Aider) while
-preserving the two-role architecture and quality pipeline.
+**Permitted exceptions**:
+1. File write delegation to the implementer is allowed when tiny-spec
+   retains ownership of validation (tsc/lint/test), retry, escalation,
+   git commits, and the overall workflow. This enables agent-mode
+   implementers while preserving the two-role architecture.
+2. Rich visualization of the two-role orchestration (structured event
+   cards, diff views, pipeline progress, cost tracking) is encouraged
+   as product differentiation, not multi-agent coordination.
 
 ## Technical Constraints
 
 - **Runtime**: Node.js 22+ with native TypeScript stripping
 - **Language**: TypeScript 5.9+, ESM only (`"type": "module"`)
-- **TUI**: Ink 5.x (React for CLI)
+- **TUI**: Ink 5.x (React for CLI), conversation flow layout with structured event cards
 - **Target**: macOS (primary), Linux (secondary)
 - **v0.1 scope**: TypeScript/JavaScript projects only
 - **Planner**: Pluggable backends (6 built-in + shell command via config)
@@ -161,4 +171,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 1.2.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-03-26
+**Version**: 1.3.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-03-27

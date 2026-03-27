@@ -1,12 +1,13 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import type { Task, Config, ProjectContext } from '../types.js';
+import type { Task, Config, ProjectContext, TuiEvent } from '../types.js';
 import { createClient } from './providers.js';
 import { formatTaskPrompt, formatRetryPrompt, SYSTEM_PREAMBLE, estimateTokens } from '../spec/formatter.js';
 import { extractCode } from './extractor.js';
 import { validateTaskPath } from '../utils/fs.js';
 import { implementTaskViaShell, retryTaskViaShell } from './implementers/shell.js';
 import { implementTaskViaAgent, retryTaskViaAgent } from './implementers/agent.js';
+import { computeDiff } from './diff.js';
 
 export function applyCode(code: string, task: Task, projectDir: string): { success: boolean; error?: string } {
   try {
@@ -168,7 +169,10 @@ export async function implementTask(
   config: Config,
   context: ProjectContext,
   onProgress: (text: string) => void,
+  onEvent?: (event: TuiEvent) => void,
 ): Promise<{ success: boolean; output: string; error?: string; usage?: { promptTokens: number; completionTokens: number } }> {
+  const modelName = config.implementer.model;
+
   if (config.implementer.type === 'agent') {
     return implementTaskViaAgent(task, projectDir, config, context, onProgress);
   }
@@ -176,6 +180,12 @@ export async function implementTask(
   if (config.implementer.type === 'shell') {
     return implementTaskViaShell(task, projectDir, config, context, onProgress);
   }
+
+  onEvent?.({ type: 'implementer-generate', ts: Date.now(), status: 'running', model: modelName, file: task.file });
+  const startTime = Date.now();
+
+  const filePath = join(projectDir, task.file);
+  const oldContent = existsSync(filePath) ? readFileSync(filePath, 'utf-8') : '';
 
   const userPrompt = formatTaskPrompt(task, context, config.implementer.contextLength);
   const client = createClient(config);
@@ -198,20 +208,27 @@ export async function implementTask(
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    onEvent?.({ type: 'implementer-generate', ts: Date.now(), status: 'failed', model: modelName, file: task.file, duration: Date.now() - startTime });
     return { success: false, output: '', error: msg };
   }
 
   const extractResult = extractCode(completion.text);
 
   if ('error' in extractResult) {
+    onEvent?.({ type: 'implementer-generate', ts: Date.now(), status: 'failed', model: modelName, file: task.file, duration: Date.now() - startTime });
     return { success: false, output: completion.text, error: extractResult.error, usage: completion.usage ?? undefined };
   }
 
   const applyResult = applyCode(extractResult.code, task, projectDir);
 
   if (!applyResult.success) {
+    onEvent?.({ type: 'implementer-generate', ts: Date.now(), status: 'failed', model: modelName, file: task.file, duration: Date.now() - startTime });
     return { success: false, output: completion.text, error: applyResult.error, usage: completion.usage ?? undefined };
   }
+
+  const newContent = existsSync(filePath) ? readFileSync(filePath, 'utf-8') : '';
+  const { diff, linesAdded, linesRemoved } = computeDiff(oldContent, newContent);
+  onEvent?.({ type: 'implementer-generate', ts: Date.now(), status: 'done', model: modelName, file: task.file, linesAdded, linesRemoved, diff, duration: Date.now() - startTime });
 
   return { success: true, output: completion.text, usage: completion.usage ?? undefined };
 }
@@ -224,7 +241,10 @@ export async function retryTask(
   error: string,
   attempt: number,
   onProgress: (text: string) => void,
+  onEvent?: (event: TuiEvent) => void,
 ): Promise<{ success: boolean; output: string; error?: string; usage?: { promptTokens: number; completionTokens: number } }> {
+  const modelName = config.implementer.model;
+
   if (config.implementer.type === 'agent') {
     return retryTaskViaAgent(task, projectDir, config, context, error, attempt, onProgress);
   }
@@ -232,6 +252,12 @@ export async function retryTask(
   if (config.implementer.type === 'shell') {
     return retryTaskViaShell(task, projectDir, config, context, error, attempt, onProgress);
   }
+
+  onEvent?.({ type: 'implementer-generate', ts: Date.now(), status: 'running', model: modelName, file: task.file });
+  const startTime = Date.now();
+
+  const filePath = join(projectDir, task.file);
+  const oldContent = existsSync(filePath) ? readFileSync(filePath, 'utf-8') : '';
 
   const retryPrompt = formatRetryPrompt(task, context, error, attempt);
   const client = createClient(config);
@@ -255,20 +281,27 @@ export async function retryTask(
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    onEvent?.({ type: 'implementer-generate', ts: Date.now(), status: 'failed', model: modelName, file: task.file, duration: Date.now() - startTime });
     return { success: false, output: '', error: msg };
   }
 
   const extractResult = extractCode(completion.text);
 
   if ('error' in extractResult) {
+    onEvent?.({ type: 'implementer-generate', ts: Date.now(), status: 'failed', model: modelName, file: task.file, duration: Date.now() - startTime });
     return { success: false, output: completion.text, error: extractResult.error, usage: completion.usage ?? undefined };
   }
 
   const applyResult = applyCode(extractResult.code, task, projectDir);
 
   if (!applyResult.success) {
+    onEvent?.({ type: 'implementer-generate', ts: Date.now(), status: 'failed', model: modelName, file: task.file, duration: Date.now() - startTime });
     return { success: false, output: completion.text, error: applyResult.error, usage: completion.usage ?? undefined };
   }
+
+  const newContent = existsSync(filePath) ? readFileSync(filePath, 'utf-8') : '';
+  const { diff, linesAdded, linesRemoved } = computeDiff(oldContent, newContent);
+  onEvent?.({ type: 'implementer-generate', ts: Date.now(), status: 'done', model: modelName, file: task.file, linesAdded, linesRemoved, diff, duration: Date.now() - startTime });
 
   return { success: true, output: completion.text, usage: completion.usage ?? undefined };
 }

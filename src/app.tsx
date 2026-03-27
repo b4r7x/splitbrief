@@ -5,7 +5,7 @@ import QuestionPrompt from './tui/question-prompt.js';
 import UserInput from './tui/user-input.js';
 import { runWorkflow, calculateCostBreakdown } from './orchestrator/orchestrator.js';
 import { loadConfig } from './config.js';
-import type { Phase, Task, Summary, OrchestratorCallbacks, ValidationResult, WorkflowState } from './types.js';
+import type { Phase, TuiEvent, Summary, OrchestratorCallbacks, WorkflowState } from './types.js';
 import type { ClarificationQuestion } from './orchestrator/question-parser.js';
 
 interface AppProps {
@@ -20,13 +20,15 @@ interface AppProps {
   savedState?: WorkflowState;
 }
 
+const MAX_EVENTS = 10_000;
+
 export default function App({ feature, projectDir, auto, modelOverride, providerOverride, contextLengthOverride, plannerOverride, plannerModelOverride, savedState }: AppProps) {
+  const [events, setEvents] = useState<TuiEvent[]>([]);
   const [phase, setPhase] = useState<Phase>('idle');
-  const [plannerLines, setPlannerLines] = useState<string[]>([]);
-  const [implementerLines, setImplementerLines] = useState<string[]>([]);
   const [currentTask, setCurrentTask] = useState(0);
   const [totalTasks, setTotalTasks] = useState(0);
-  const [retries, setRetries] = useState(0);
+  const [localCount, setLocalCount] = useState(0);
+  const [escalatedCount, setEscalatedCount] = useState(0);
   const [model, setModel] = useState('');
   const [approval, setApproval] = useState<{
     type: 'spec' | 'plan';
@@ -51,13 +53,9 @@ export default function App({ feature, projectDir, auto, modelOverride, provider
     onResolve: (text: string) => void;
   } | null>(null);
 
-  const MAX_LINES = 10_000;
-  const appendLines = (setter: typeof setPlannerLines) => (text: string) => {
-    setter(prev => {
-      const next = [...prev, text];
-      return next.length > MAX_LINES ? next.slice(-MAX_LINES) : next;
-    });
-  };
+  const localRate = (localCount + escalatedCount) > 0
+    ? (localCount / (localCount + escalatedCount)) * 100
+    : 0;
 
   async function askQuestion(question: ClarificationQuestion, num: number, total: number): Promise<string> {
     if (auto) return question.default?.toString() ?? '';
@@ -88,23 +86,18 @@ export default function App({ feature, projectDir, auto, modelOverride, provider
     setStartedAt(new Date().toISOString());
 
     const callbacks: OrchestratorCallbacks = {
-      onPhaseChange(p: Phase) {
-        setPhase(p);
+      onEvent: (event: TuiEvent) => {
+        setEvents(prev => {
+          const next = [...prev, event];
+          return next.length > MAX_EVENTS ? next.slice(-MAX_EVENTS) : next;
+        });
+        if (event.type === 'planner-status') setPhase(event.phase as Phase);
+        if (event.type === 'task-start') { setCurrentTask(event.index + 1); setTotalTasks(event.total); }
+        if (event.type === 'task-complete') {
+          if (event.method === 'local') setLocalCount(prev => prev + 1);
+          else setEscalatedCount(prev => prev + 1);
+        }
       },
-      onPlannerOutput: appendLines(setPlannerLines),
-      onImplementerOutput: appendLines(setImplementerLines),
-      onTaskStart(task: Task, index: number, total: number) {
-        setCurrentTask(index + 1);
-        setTotalTasks(total);
-      },
-      onTaskRetry(_task: Task, attempt: number, _error: string) {
-        setRetries(attempt);
-      },
-      onTaskComplete(_task: Task, _method: 'local' | 'escalated') {
-        setRetries(0);
-      },
-      onTaskSkipped(_task: Task, _reason: string) {},
-      onValidationResult(_task: Task, _results: ValidationResult[]) {},
       onApprovalNeeded(type: 'spec' | 'plan', filePath: string): Promise<{ approved: boolean; comment?: string }> {
         if (auto) return Promise.resolve({ approved: true });
         const sessionPlanners = ['claude-code', 'agent-sdk'];
@@ -116,6 +109,7 @@ export default function App({ feature, projectDir, auto, modelOverride, provider
             supportsSession,
             onApprove() {
               setApproval(null);
+              callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: type === 'spec' ? 'reviewing-spec' : 'reviewing-plan', status: 'done', summary: 'Approved' });
               resolve({ approved: true });
             },
             onReject() {
@@ -124,6 +118,7 @@ export default function App({ feature, projectDir, auto, modelOverride, provider
             },
             onComment(text: string) {
               setApproval(null);
+              callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text: `Comment: ${text}` });
               resolve({ approved: false, comment: text });
             },
           });
@@ -163,33 +158,39 @@ export default function App({ feature, projectDir, auto, modelOverride, provider
         setScreen('summary');
       },
       onQuestionAsked: askQuestion,
-      onError: (error: string) => {
-        appendLines(setPlannerLines)(`[ERROR] ${error}`);
-        appendLines(setImplementerLines)(`[ERROR] ${error}`);
-      },
     };
 
-    runWorkflow(feature, projectDir, config, callbacks, savedState).catch(err => callbacks.onError(String(err)));
+    runWorkflow(feature, projectDir, config, callbacks, savedState).catch(err => {
+      callbacks.onEvent({ type: 'error', ts: Date.now(), message: String(err) });
+    });
   }, []);
 
   if (screen === 'summary' && summaryData) {
     return <SummaryView summary={summaryData} />;
   }
 
+  const costBreakdown = (localCount + escalatedCount) > 0
+    ? calculateCostBreakdown(
+        { plannerInput: 0, plannerOutput: 0, implementerInput: 0, implementerOutput: 0, escalationInput: 0, escalationOutput: 0 },
+        localCount + escalatedCount,
+        escalatedCount,
+      )
+    : null;
+
   return (
-    <>
-      <Layout
-        feature={feature}
-        startedAt={startedAt}
-        phase={phase}
-        currentTask={currentTask}
-        totalTasks={totalTasks}
-        model={model}
-        retries={retries}
-        plannerLines={plannerLines}
-        implementerLines={implementerLines}
-        approval={approval}
-      />
+    <Layout
+      feature={feature}
+      startedAt={startedAt}
+      phase={phase}
+      events={events}
+      currentTask={currentTask}
+      totalTasks={totalTasks}
+      model={model}
+      localRate={localRate}
+      estimatedCost={costBreakdown?.totalActualCost ?? 0}
+      estimatedSavings={costBreakdown?.savingsAmount ?? 0}
+      approval={approval}
+    >
       {inputMode?.type === 'question' && (
         <QuestionPrompt
           question={inputMode.question}
@@ -206,6 +207,6 @@ export default function App({ feature, projectDir, auto, modelOverride, provider
           onSubmit={(text) => inputMode.onResolve(text)}
         />
       )}
-    </>
+    </Layout>
   );
 }

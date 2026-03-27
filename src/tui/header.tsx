@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
+import type { Phase } from '../types.js';
+import PipelineBar from './pipeline-bar.js';
 
 interface HeaderProps {
   feature: string;
   startedAt: string;
+  phase: Phase;
 }
 
 function formatElapsed(startedAt: string): string {
@@ -18,7 +21,7 @@ function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max - 1) + '\u2026' : text;
 }
 
-export default function Header({ feature, startedAt }: HeaderProps) {
+export default function Header({ feature, startedAt, phase }: HeaderProps) {
   const [elapsed, setElapsed] = useState(() => formatElapsed(startedAt));
 
   useEffect(() => {
@@ -31,6 +34,8 @@ export default function Header({ feature, startedAt }: HeaderProps) {
       <Text bold color="cyan"> tiny-spec</Text>
       <Text color="gray"> {'\u2502'} </Text>
       <Text>{truncate(feature, 40)}</Text>
+      <Text color="gray"> {'\u2502'} </Text>
+      <PipelineBar phase={phase} />
       <Text color="gray"> {'\u2502'} </Text>
       <Text>{elapsed}</Text>
     </Box>

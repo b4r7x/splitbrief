@@ -11,14 +11,16 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 - `specs/002-cost-optimized-orchestrator/data-model.md`  -  Entity definitions and state transitions
 - `specs/002-cost-optimized-orchestrator/contracts/cli-commands.md`  -  CLI interface contract
 - `specs/002-cost-optimized-orchestrator/quickstart.md`  -  End-to-end usage guide
-- `.specify/memory/constitution.md`  -  6 project principles (v1.1.0)
+- `.specify/memory/constitution.md`  -  6 project principles (v1.3.0)
+- `docs/VISION.md`  -  Strategic direction, competitive analysis, design decisions
+- `docs/NEXT.md`  -  Current priorities and TUI redesign decisions
 
 ## Tech Stack
 
 - **Runtime**: Node.js 22+
 - **Language**: TypeScript 5.9+, ESM only (`"type": "module"`)
 - **Dev runner**: `tsx` (handles TypeScript + JSX/TSX + ESM, no custom loaders needed)
-- **TUI**: Ink 5.x (React for CLI) + @inkjs/ui
+- **TUI**: Ink 5.x (React for CLI) + @inkjs/ui — conversation flow layout with structured event cards (redesigning from dual-pane)
 - **Planner**: Pluggable — 6 built-in backends (claude-code, codex, opencode, aider, agent-sdk, shell) + any shell command via `planner.tool: shell`
 - **Implementer**: `openai` SDK — any OpenAI-compatible endpoint (built-in: Ollama/LM Studio/DeepSeek/OpenRouter; custom: any provider with `apiBase`)
 - **Config**: `yaml` package
@@ -43,18 +45,22 @@ src/
 ├── types.ts                  # All shared types (Phase, Task, Config, WorkflowState, etc.)
 ├── config.ts                 # Config loading (.tiny-spec/config.yaml), defaults, YAML↔TS conversion
 ├── state.ts                  # Workflow state machine (11 phases, 20 transitions, persistence)
-├── tui/                      # Ink UI components
-│   ├── layout.tsx            # Split-pane layout (left: planner, right: implementer)
-│   ├── pane.tsx              # Scrollable output pane (windowed rendering)
-│   ├── status-bar.tsx        # Bottom status bar (phase, progress, model, retries)
-│   ├── header.tsx            # Top header (feature name, elapsed time)
+├── tui/                      # Ink UI components (conversation flow layout)
+│   ├── layout.tsx            # Single-column layout: sticky header + scrollable events + sticky footer
+│   ├── conversation-flow.tsx # Scrollable event card list with auto-follow + virtual scroll
+│   ├── event-card.tsx        # Renders single TuiEvent as visual card (switch on type)
+│   ├── pipeline-bar.tsx      # Phase progress: ● res ● spec ◉ impl ○ rev
+│   ├── cost-footer.tsx       # Real-time cost savings: Task N/M │ Local: X% │ Saved: ~$X
+│   ├── diff-view.tsx         # Collapsible colored diff (collapsed summary / expanded +/- lines)
+│   ├── task-summary.tsx      # Collapsed completed task: ✓ T1 title — local, 12s
+│   ├── header.tsx            # Top header (feature name, pipeline bar, elapsed time)
 │   ├── prompt.tsx            # User approval prompts ($EDITOR support)
 │   ├── summary.tsx           # Final run summary with cost breakdown
 │   ├── picker.tsx            # Interactive planner/implementer selection
 │   ├── user-input.tsx        # TextInput wrapper for TUI input
 │   └── question-prompt.tsx   # Clarification question display with options
 ├── orchestrator/             # Workflow logic
-│   ├── orchestrator.ts       # Main workflow loop (~550 lines, retry, escalation, SIGINT)
+│   ├── orchestrator.ts       # Main workflow loop (~700 lines, emits TuiEvents, retry, escalation, SIGINT)
 │   ├── planners/             # Pluggable planner backends
 │   │   ├── types.ts          # PlannerBackend interface (plan, escalateHint, escalateFull, isAvailable, getPricing)
 │   │   ├── factory.ts        # createPlanner(config) — dynamic import by tool name
@@ -64,7 +70,8 @@ src/
 │   │   ├── aider.ts          # Aider CLI (text output, regex token parsing)
 │   │   ├── agent-sdk.ts      # Anthropic Agent SDK (programmatic, no subprocess)
 │   │   └── shell.ts          # Generic shell — any command via config (stream-json/jsonl/text parsers)
-│   ├── implementer.ts        # Local model via OpenAI-compatible API + code application
+│   ├── implementer.ts        # Local model via OpenAI-compatible API + code application + diff events
+│   ├── diff.ts               # computeDiff(old, new) → unified diff string with +/- prefixes
 │   ├── implementers/         # Alternative implementer backends
 │   │   └── shell.ts          # Shell subprocess implementer (stdin/stdout)
 │   ├── validator.ts          # tsc → lint → test pipeline (stops on first failure)
@@ -103,6 +110,16 @@ tests/
 ├── claude-stream.test.ts     # Claude Code stream-json parsing
 ├── implementer.test.ts       # Implementer API integration
 ├── validator.test.ts         # Validation pipeline
+├── events.test.ts            # TuiEvent type validation
+├── diff.test.ts              # computeDiff utility
+├── event-card.test.ts        # EventCard component rendering
+├── conversation-flow.test.ts # ConversationFlow scroll + grouping
+├── pipeline-bar.test.ts      # PipelineBar phase mapping
+├── cost-footer.test.ts       # CostFooter display
+├── diff-view.test.ts         # DiffView collapsed/expanded
+├── task-summary.test.ts      # TaskSummary collapsed line
+├── helpers/
+│   └── render.tsx            # Ink component test helper
 └── integration/              # Integration tests (require running services)
     ├── claude.integration.test.ts
     ├── ollama.integration.test.ts
@@ -136,17 +153,17 @@ npm run build                    # tsc → dist/
 
 ```
 User: "add user auth"
-  → Planner (any backend) researches codebase, writes spec/plan/tasks  [LEFT PANE]
-  → Planner may ask clarifying questions (answered in TUI)
-  → User approves spec and plan (approve, edit, comment, or quit)
+  → Planner researches codebase, writes spec/plan/tasks  [conversational cards]
+  → Planner may ask clarifying questions (inline in flow)
+  → User approves spec and plan (inline: approve, edit, comment, quit)
   → For each task:
-    → Implementer (any provider) implements the code                   [RIGHT PANE]
-    → Validation: tsc → lint → tests
-    → Pass → commit, next task
-    → Fail → retry (max 3, varied approach)
-    → Still fail → escalate to planner (hints first, then full impl)
+    → Implementer implements the code                    [⚡ tool-call cards]
+    → Validation: tsc → lint → tests                    [✓/✗ result cards]
+    → Pass → commit, collapse task to 1 line
+    → Fail → retry (max 3) → escalate to planner       [⚠ escalation card]
   → Planner reviews full diff against original spec
   → Summary: tasks done, escalated, time, cost savings
+  → Footer shows real-time: Local: X% │ $X.XX │ Saved: ~$X.XX
 ```
 
 ## Task Prompt Optimization (v0.2)
@@ -208,6 +225,14 @@ Known implementer providers (with defaults): `ollama`, `lm-studio`, `deepseek`, 
 All 45 tasks from `specs/002-cost-optimized-orchestrator/tasks.md` are complete.
 Unit tests + integration tests (integration tests require running services).
 
+### TUI Redesign (v0.4 — in progress)
+
+The dual-pane raw text layout is being replaced with a conversation flow layout. See `docs/NEXT.md` for full design decisions. Key changes:
+- `TuiEvent` union type replaces `plannerLines: string[]` / `implementerLines: string[]`
+- Planner output: conversational text. Implementer: structured tool-call cards.
+- Collapsible diffs, collapsible completed tasks, pipeline progress bar, cost savings footer.
+- Constitution updated to v1.3.0: beautiful orchestration UX is product identity.
+
 ### Known Limitations
 
 - `s` (skip task) and `Esc` (manual escalate) keyboard shortcuts not yet implemented
@@ -222,6 +247,8 @@ See `specs/002-cost-optimized-orchestrator/research.md` for all architectural de
 - openai ^6.0.0, yaml, simple-git, commander ^14.0.0
 - JSON files (state.json, events.jsonl), Markdown files (spec.md, plan.md, tasks.md)
 - TypeScript 5.9+, ESM only (`"type": "module"`) + Ink 5.x, @inkjs/ui, openai ^6.0.0, yaml, simple-git, commander ^14.0.0 (007-agent-mode-hardening)
+- TypeScript 5.9+, ESM only + Ink 5.2.1 (React for CLI), @inkjs/ui, openai SDK, simple-git, commander (008-tui-conversation-flow)
+- JSON files (.tiny-spec/state.json, events.jsonl), Markdown files (008-tui-conversation-flow)
 
 ## Recent Changes
 - 007-agent-mode-hardening: Added TypeScript 5.9+, ESM only (`"type": "module"`) + Ink 5.x, @inkjs/ui, openai ^6.0.0, yaml, simple-git, commander ^14.0.0

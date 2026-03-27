@@ -53,6 +53,34 @@ If the implementer IS a full coding agent (manages its own files/git/context), t
 
 "tiny-spec" implies spec-driven development, which is accurate. If we rename, it should reflect cost-optimization, not "universal connector". No decision yet.
 
+### 7. Full TUI redesign — Conversation Flow (2026-03-27)
+
+The dual-pane layout (planner left, implementer right with raw text) is replaced with a **single-column conversation flow** with structured event cards. Research showed:
+- Developers prefer structured output over raw chat streams ([Pragmatic Engineer Survey 2026](https://newsletter.pragmaticengineer.com/p/ai-tooling-2026))
+- Collapsible code blocks are expected UX ([Google Developers Blog](https://developers.googleblog.com/en/unleash-your-development-superpowers-refining-the-core-coding-experience/))
+- Terminal scroll management is a known pain point ([Claude Code issues](https://github.com/anthropics/claude-code/issues/36582))
+- "Terminal Is All You Need" paper identifies transparency + representational compatibility as key properties ([arxiv 2603.10664](https://arxiv.org/html/2603.10664))
+
+Design decisions:
+- **Planner phases = conversational** (text, questions, approval prompts)
+- **Implement/validate/git = structured tool-call cards** (`⚡ operation → result`)
+- **Diff = collapsible** (1-line summary by default, expand on demand)
+- **Completed tasks collapse** to 1 line (expandable)
+- **Sticky header** with pipeline progress bar (`● res → ● spec → ◉ impl → ○ rev`)
+- **Sticky footer** with real-time cost savings (`Local: 75% │ $0.02 │ Saved: ~$1.40`)
+- **Framework**: Stay on Ink 5.x (React). Claude Code started on Ink too. OpenTUI (@opentui/react) is a future option if perf becomes an issue.
+- **Full replace** of callback system: `plannerLines: string[]` → structured `TuiEvent` union type
+- **Constitution updated** to v1.3.0: beautiful visualization of orchestration is part of product identity
+
+### 8. Stay on Ink 5.x (2026-03-27)
+
+Evaluated alternatives:
+- **@opentui/react** (OpenCode's framework, Zig core) — production-ready but young, minimal docs, migration risk
+- **Bubbletea** (Go) — not applicable (wrong language)
+- **neo-blessed** — semi-maintained, not React
+
+Ink works, we know React, sticky header/footer is achievable with manual height management. Migrate to OpenTUI later if needed — both use React so migration is straightforward.
+
 ## Competitive Landscape (March 2026)
 
 Multi-agent coding space is exploding:
@@ -67,13 +95,14 @@ None of these optimize for cost. They assume the same tier of model for all work
 
 ## Architecture Principles
 
-See `.specify/memory/constitution.md` for the 5 constitutional principles:
+See `.specify/memory/constitution.md` for the 6 constitutional principles (v1.3.0):
 
 1. **Cost-Optimal Orchestration** — Opus only for tasks where quality matters; implementation on cheap models
 2. **Spec-Driven Development** — No code without spec; self-contained task prompts
 3. **Local-First Implementation** — Default to Ollama/LM Studio ($0); cloud is opt-in
 4. **Functional Purity** — Zero classes, pure functions, ESM, no unnecessary comments
 5. **Validate Before Commit** — tsc → lint → test per task; final Opus review
+6. **Identity & Anti-Goals** — Not a multi-agent coordinator; beautiful orchestration UX is product identity, not scope creep
 
 ## Current State (March 2026)
 
@@ -90,6 +119,12 @@ See `.specify/memory/constitution.md` for the 5 constitutional principles:
   - Constitution updated to v1.1.0 (added Principle VI: Identity & Anti-Goals)
   - Removed backward-compat planner wrapper; `spec` command uses factory
   - Codebase cleanup
+- **v0.4** (next — `008-tui-conversation-flow`):
+  - Full TUI redesign: conversation flow with structured event cards
+  - New event model replacing raw text callbacks
+  - Collapsible diffs, collapsible completed tasks
+  - Pipeline progress bar, real-time cost savings display
+  - Constitution v1.3.0
 
 ## Known Problems & Open Questions (2026-03-26)
 
@@ -121,8 +156,8 @@ Claude Code v2.1.84 requires `--verbose` flag when using `--output-format stream
 
 ## Near-term Priorities
 
-1. **Rethink shell implementer for agent-style tools** — The current stdin/stdout model is too simple. Need to decide: support agent-mode implementers, or only "dumb" code generators?
-2. **End-to-end test the conversational flow** — Run the full pipeline with real Claude Code and real Ollama to validate question asking, approval commenting, and file persistence
+1. **TUI redesign (v0.4)** — Full conversation flow with structured events, collapsible diffs, pipeline bar, cost savings display. This is the top priority — the current dual-pane raw text UI doesn't expose the product's value.
+2. **End-to-end test the conversational flow** — Run the full pipeline with real Claude Code and real Ollama
 3. Cost reporting (token dashboard with per-task breakdown) — partially done
 4. Integration test coverage — in progress
 5. Multi-language support (beyond TypeScript/JavaScript)
