@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
-import type { Config, WorkflowState, Task, Summary, OrchestratorCallbacks, ProjectContext, TokenUsage, ValidationResult, CostBreakdown, TaskTokenUsage, PlannerTool } from '../types.js';
+import type { Config, WorkflowState, Task, Summary, OrchestratorCallbacks, ProjectContext, TokenUsage, ValidationResult, CostBreakdown, TaskTokenUsage, PlannerTool, TuiEvent } from '../types.js';
 import { createInitialState, transition, saveState, loadState, appendEvent } from '../state.js';
 import { implementTask, retryTask } from './implementer.js';
 import { validateTask, formatValidationError } from './validator.js';
@@ -206,7 +206,7 @@ async function runFinalReview(
           } else {
             fullResponse += parsed.text;
           }
-          callbacks.onPlannerOutput(parsed.text);
+          callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text: parsed.text });
         }
         if (parsed.usage) {
           usage = parsed.usage;
@@ -225,7 +225,7 @@ async function runFinalReview(
           } else {
             fullResponse += parsed.text;
           }
-          callbacks.onPlannerOutput(parsed.text);
+          callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text: parsed.text });
         }
         if (parsed.usage) {
           usage = parsed.usage;
@@ -280,7 +280,7 @@ export async function runWorkflow(
   try {
   // Pre-start: validate shell implementer config
   if (config.implementer.type === 'shell' && !config.implementer.command) {
-    callbacks.onError('Shell implementer requires implementer.command to be set in config.');
+    callbacks.onEvent({ type: 'error', ts: Date.now(), message: 'Shell implementer requires implementer.command to be set in config.' });
     return buildSummary(feature, createInitialState(feature), startTime);
   }
 
@@ -291,7 +291,7 @@ export async function runWorkflow(
   const planner = await createPlanner(config);
   const available = await planner.isAvailable();
   if (!available) {
-    callbacks.onError(`Planner '${config.planner.tool}' is not available. Make sure it's installed.`);
+    callbacks.onEvent({ type: 'error', ts: Date.now(), message: `Planner '${config.planner.tool}' is not available. Make sure it's installed.` });
     return buildSummary(feature, createInitialState(feature), startTime);
   }
 
@@ -301,7 +301,7 @@ export async function runWorkflow(
     // Resume path: skip planning, jump to task loop
     state = savedState;
     trackedState = state;
-    callbacks.onPhaseChange(state.phase);
+    callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: state.phase, status: 'running' });
     emit(projectDir, state, 'workflow_resumed');
   } else {
     // Step 2: Create initial state
@@ -309,7 +309,7 @@ export async function runWorkflow(
     state = transition(state, { type: 'START', feature });
     saveState(projectDir, state);
     trackedState = state;
-    callbacks.onPhaseChange(state.phase);
+    callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: state.phase, status: 'running' });
     emit(projectDir, state, 'workflow_started');
   }
 
@@ -324,7 +324,7 @@ export async function runWorkflow(
   let planResult: Awaited<ReturnType<PlannerBackend['plan']>>;
   try {
     planResult = await planner.plan(feature, projectDir, config, {
-      onOutput: (text) => callbacks.onPlannerOutput(text),
+      onOutput: (text) => callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text }),
       onPhase: (phase) => {
         // planner emits its own sub-phases; we track spec/plan transitions
       },
@@ -338,7 +338,7 @@ export async function runWorkflow(
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    callbacks.onError(`Planning failed: ${msg}`);
+    callbacks.onEvent({ type: 'error', ts: Date.now(), message: `Planning failed: ${msg}` });
     state = transition(state, { type: 'CANCEL' });
     saveState(projectDir, state);
     trackedState = state;
@@ -383,7 +383,7 @@ export async function runWorkflow(
   // Step 5: Review spec
   state = transition(state, { type: 'SPEC_DONE' });
   saveState(projectDir, state);
-  callbacks.onPhaseChange(state.phase);
+  callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: state.phase, status: 'running' });
   emit(projectDir, state, 'spec_done');
 
   const specPath = join(projectDir, '.tiny-spec', 'current', 'spec.md');
@@ -395,16 +395,16 @@ export async function runWorkflow(
       if (!specResult.approved && !specResult.comment) {
         state = transition(state, { type: 'REJECT_SPEC' });
         saveState(projectDir, state);
-        callbacks.onPhaseChange(state.phase);
+        callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: state.phase, status: 'done' });
         emit(projectDir, state, 'spec_rejected');
         return buildSummary(feature, state, startTime);
       }
       if (specResult.comment) {
         const currentSpec = readSpecFile(projectDir, 'spec.md') ?? '';
         const regenPrompt = buildRegeneratePrompt('spec', currentSpec, specResult.comment);
-        callbacks.onPlannerOutput(`\n[Regenerating spec with feedback: ${specResult.comment}]\n`);
+        callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text: `\n[Regenerating spec with feedback: ${specResult.comment}]\n` });
         const regenResult = await planner.regenerate(regenPrompt, 'spec', projectDir, {
-          onOutput: (text) => callbacks.onPlannerOutput(text),
+          onOutput: (text) => callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text }),
         });
         state = addPlannerUsage(state, regenResult.usage);
         saveState(projectDir, state);
@@ -418,13 +418,13 @@ export async function runWorkflow(
   // Step 6: Approve spec -> planning phase (plan already generated)
   state = transition(state, { type: 'APPROVE_SPEC' });
   saveState(projectDir, state);
-  callbacks.onPhaseChange(state.phase);
+  callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: state.phase, status: 'running' });
   emit(projectDir, state, 'spec_approved');
 
   // Step 7: Review plan
   state = transition(state, { type: 'PLAN_DONE', tasks });
   saveState(projectDir, state);
-  callbacks.onPhaseChange(state.phase);
+  callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: state.phase, status: 'running' });
   emit(projectDir, state, 'plan_done', undefined, { taskCount: tasks.length });
 
   const planPath = join(projectDir, '.tiny-spec', 'current', 'plan.md');
@@ -436,16 +436,16 @@ export async function runWorkflow(
       if (!planResult2.approved && !planResult2.comment) {
         state = transition(state, { type: 'REJECT_PLAN' });
         saveState(projectDir, state);
-        callbacks.onPhaseChange(state.phase);
+        callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: state.phase, status: 'done' });
         emit(projectDir, state, 'plan_rejected');
         return buildSummary(feature, state, startTime);
       }
       if (planResult2.comment) {
         const currentPlan = readSpecFile(projectDir, 'plan.md') ?? '';
         const regenPrompt = buildRegeneratePrompt('plan', currentPlan, planResult2.comment);
-        callbacks.onPlannerOutput(`\n[Regenerating plan with feedback: ${planResult2.comment}]\n`);
+        callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text: `\n[Regenerating plan with feedback: ${planResult2.comment}]\n` });
         const regenResult = await planner.regenerate(regenPrompt, 'plan', projectDir, {
-          onOutput: (text) => callbacks.onPlannerOutput(text),
+          onOutput: (text) => callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text }),
         });
         state = addPlannerUsage(state, regenResult.usage);
         saveState(projectDir, state);
@@ -460,7 +460,7 @@ export async function runWorkflow(
   state = transition(state, { type: 'APPROVE_PLAN' });
   saveState(projectDir, state);
   trackedState = state;
-  callbacks.onPhaseChange(state.phase);
+  callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: state.phase, status: 'running' });
   emit(projectDir, state, 'plan_approved');
   } // end if (!savedState)
 
@@ -492,7 +492,8 @@ export async function runWorkflow(
       task.status = 'skipped';
       state = { ...state, skippedTasks: [...state.skippedTasks, task.id] };
       saveState(projectDir, state);
-      callbacks.onTaskSkipped(task, `dependency failed: ${task.dependsOn.filter((d) => state.failedTasks.includes(d) || state.skippedTasks.includes(d)).join(', ')}`);
+      const skipReason = `dependency failed: ${task.dependsOn.filter((d) => state.failedTasks.includes(d) || state.skippedTasks.includes(d)).join(', ')}`;
+      callbacks.onEvent({ type: 'task-skipped', ts: Date.now(), taskId: task.id, title: task.title, reason: skipReason });
       emit(projectDir, state, 'task_skipped', task.id);
       taskBreakdowns.push({ taskId: task.id, taskTitle: task.title, method: 'skipped', implementerTokens: 0, escalationTokens: 0, retryCount: 0 });
       emit(projectDir, state, 'task_tokens', task.id, { method: 'skipped', implementerTokens: 0, escalationTokens: 0, retryCount: 0 });
@@ -505,7 +506,8 @@ export async function runWorkflow(
     // Start task
     task.status = 'in_progress';
     currentTask = task;
-    callbacks.onTaskStart(task, i, totalTasks);
+    const taskStartTime = Date.now();
+    callbacks.onEvent({ type: 'task-start', ts: taskStartTime, taskId: task.id, title: task.title, index: i, total: totalTasks, file: task.file, action: task.action });
     emit(projectDir, state, 'task_started', task.id);
 
     // Read current file content for modify tasks
@@ -521,19 +523,17 @@ export async function runWorkflow(
 
     // Implement
     const implResult = await implementTask(task, projectDir, config, context, (text) => {
-      callbacks.onImplementerOutput(text);
-    });
+      callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text });
+    }, callbacks.onEvent);
 
     // Track implementer usage
     state = addImplementerUsage(state, implResult.usage);
     saveState(projectDir, state);
 
     if (!implResult.success) {
-      // Implementation itself failed (couldn't extract code, etc.)
-      // Treat as a validation failure and enter retry loop
       const retryResult = await handleRetryAndEscalation(
         task, implResult.error ?? 'Implementation failed to produce valid code',
-        projectDir, config, context, callbacks, state,
+        projectDir, config, context, callbacks, state, taskStartTime,
       );
       state = reloadState(projectDir, state);
       trackedState = state;
@@ -555,11 +555,23 @@ export async function runWorkflow(
     state = transition(state, { type: 'TASK_SENT' });
     saveState(projectDir, state);
 
+    const valStartTime = Date.now();
     const validationResults = await validateTask(task, projectDir, config);
-    callbacks.onValidationResult(task, validationResults);
+    const valPassed = validationResults.length === 0 || validationResults.every(r => r.passed);
+    const failedStage = validationResults.find(r => !r.passed);
+    callbacks.onEvent({
+      type: 'validate', ts: Date.now(), passed: valPassed,
+      stages: {
+        tsc: validationResults.find(r => r.stage === 'typecheck')?.passed ?? true,
+        lint: validationResults.find(r => r.stage === 'lint')?.passed ?? true,
+        test: validationResults.find(r => r.stage === 'test')?.passed ?? true,
+      },
+      error: failedStage?.error,
+      duration: Date.now() - valStartTime,
+    });
 
     {
-      const result = await validateCommitAndAdvance(task, validationResults, projectDir, config, state, callbacks, 'local', 'VALIDATION_PASS');
+      const result = await validateCommitAndAdvance(task, validationResults, projectDir, config, state, callbacks, 'local', 'VALIDATION_PASS', undefined, taskStartTime);
       if (result.completed) {
         state = result.state;
         const delta = tokenDelta(tokensBefore, state.tokenUsage);
@@ -577,7 +589,7 @@ export async function runWorkflow(
     // Validation failed  -  enter retry loop
     const errorText = formatValidationError(validationResults);
     const retryResult2 = await handleRetryAndEscalation(
-      task, errorText, projectDir, config, context, callbacks, state,
+      task, errorText, projectDir, config, context, callbacks, state, taskStartTime,
     );
     state = reloadState(projectDir, state);
     trackedState = state;
@@ -598,7 +610,8 @@ export async function runWorkflow(
   // Step 10: Final review
   state = transition(state, { type: 'ALL_DONE' });
   saveState(projectDir, state);
-  callbacks.onPhaseChange(state.phase);
+  const finalReviewStart = Date.now();
+  callbacks.onEvent({ type: 'planner-status', ts: finalReviewStart, phase: state.phase, status: 'running' });
   emit(projectDir, state, 'all_tasks_done');
 
   try {
@@ -608,13 +621,13 @@ export async function runWorkflow(
     saveState(projectDir, state);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    callbacks.onError(`Final review failed: ${msg}`);
+    callbacks.onEvent({ type: 'error', ts: Date.now(), message: `Final review failed: ${msg}` });
     // Non-fatal  -  we still complete
   }
 
   state = transition(state, { type: 'REVIEW_DONE' });
   saveState(projectDir, state);
-  callbacks.onPhaseChange(state.phase);
+  callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: state.phase, status: 'done', duration: Date.now() - finalReviewStart });
   emit(projectDir, state, 'workflow_complete');
 
   // Step 11: Build summary
@@ -631,7 +644,7 @@ export async function runWorkflow(
       } catch { /* best-effort */ }
     }
     killAllProcesses();
-    callbacks.onError(msg);
+    callbacks.onEvent({ type: 'error', ts: Date.now(), message: msg });
     return buildSummary(feature, trackedState ?? createInitialState(feature), startTime);
   } finally {
     process.removeListener('SIGINT', onSignal);
@@ -649,6 +662,7 @@ async function validateCommitAndAdvance(
   method: 'local' | 'local_with_hints' | 'escalated',
   transitionType: 'VALIDATION_PASS' | 'HINT_SUCCESS' | 'FULL_SUCCESS',
   commitSuffix?: string,
+  taskStartTime?: number,
 ): Promise<{ state: WorkflowState; completed: boolean }> {
   if (!allValidationsPassed(results)) {
     return { state, completed: false };
@@ -656,8 +670,10 @@ async function validateCommitAndAdvance(
 
   if (config.workflow.commitPerTask) {
     const suffix = commitSuffix ? ` (${commitSuffix})` : '';
+    const commitMsg = `feat(tiny-spec): ${task.id} - ${task.title}${suffix}`;
     try {
-      await commitChanges(projectDir, `feat(tiny-spec): ${task.id} - ${task.title}${suffix}`);
+      await commitChanges(projectDir, commitMsg);
+      callbacks.onEvent({ type: 'git-commit', ts: Date.now(), message: commitMsg });
     } catch {
       // commit failure is non-fatal
     }
@@ -666,7 +682,12 @@ async function validateCommitAndAdvance(
   const nextState = transition(state, { type: transitionType });
   saveState(projectDir, nextState);
   task.status = method === 'escalated' ? 'escalated' : 'done';
-  callbacks.onTaskComplete(task, method === 'escalated' ? 'escalated' : 'local');
+  const taskMethod = method === 'escalated' ? 'escalated' as const : 'local' as const;
+  callbacks.onEvent({
+    type: 'task-complete', ts: Date.now(), taskId: task.id, title: task.title,
+    method: taskMethod, retries: state.attempt,
+    duration: taskStartTime ? Date.now() - taskStartTime : 0,
+  });
   emit(projectDir, nextState, 'task_completed', task.id, { method });
 
   return { state: nextState, completed: true };
@@ -680,6 +701,7 @@ async function handleRetryAndEscalation(
   context: ProjectContext,
   callbacks: OrchestratorCallbacks,
   currentState: WorkflowState,
+  taskStartTime?: number,
 ): Promise<RetryResult> {
   let state = currentState;
   let lastError = initialError;
@@ -689,7 +711,7 @@ async function handleRetryAndEscalation(
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     state = transition(state, { type: 'VALIDATION_FAIL' }, config.workflow.maxRetries);
     saveState(projectDir, state);
-    callbacks.onTaskRetry(task, attempt, lastError);
+    callbacks.onEvent({ type: 'retry', ts: Date.now(), taskId: task.id, attempt, maxRetries });
     emit(projectDir, state, 'task_retry', task.id, { attempt, error: lastError });
 
     // Read current file content for retry context
@@ -701,8 +723,8 @@ async function handleRetryAndEscalation(
     }
 
     const retryResult = await retryTask(task, projectDir, config, context, lastError, attempt, (text) => {
-      callbacks.onImplementerOutput(text);
-    });
+      callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text });
+    }, callbacks.onEvent);
 
     state = addImplementerUsage(state, retryResult.usage);
     saveState(projectDir, state);
@@ -713,11 +735,23 @@ async function handleRetryAndEscalation(
     }
 
     // Validate retry
+    const retryValStart = Date.now();
     const retryValidation = await validateTask(task, projectDir, config);
-    callbacks.onValidationResult(task, retryValidation);
+    const retryValPassed = retryValidation.length === 0 || retryValidation.every(r => r.passed);
+    const retryFailedStage = retryValidation.find(r => !r.passed);
+    callbacks.onEvent({
+      type: 'validate', ts: Date.now(), passed: retryValPassed,
+      stages: {
+        tsc: retryValidation.find(r => r.stage === 'typecheck')?.passed ?? true,
+        lint: retryValidation.find(r => r.stage === 'lint')?.passed ?? true,
+        test: retryValidation.find(r => r.stage === 'test')?.passed ?? true,
+      },
+      error: retryFailedStage?.error,
+      duration: Date.now() - retryValStart,
+    });
 
     {
-      const result = await validateCommitAndAdvance(task, retryValidation, projectDir, config, state, callbacks, 'local', 'VALIDATION_PASS');
+      const result = await validateCommitAndAdvance(task, retryValidation, projectDir, config, state, callbacks, 'local', 'VALIDATION_PASS', undefined, taskStartTime);
       if (result.completed) {
         state = result.state;
         return { completed: true, method: 'local' };
@@ -730,17 +764,23 @@ async function handleRetryAndEscalation(
   // Max retries exhausted  -  escalate
   state = transition(state, { type: 'ESCALATE' });
   saveState(projectDir, state);
-  callbacks.onPhaseChange(state.phase);
+  callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: String(state.phase), status: 'running' });
   emit(projectDir, state, 'task_escalating', task.id);
 
   // Tier 1: Get hints from Opus
+  callbacks.onEvent({ type: 'escalate', ts: Date.now(), tier: 1 });
   const planner = await createPlanner(config);
   const tier1Result = await planner.escalateHint(task, lastError, projectDir, {
-    onOutput: (text) => callbacks.onPlannerOutput(text),
+    onOutput: (text) => callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text }),
   });
 
   state = addEscalationUsage(state, tier1Result.usage);
   saveState(projectDir, state);
+
+  // Emit hint text
+  if (tier1Result.output) {
+    callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text: tier1Result.output });
+  }
 
   // Feed hints back to local model as one more retry
   const hintError = `${lastError}\n\n## Hints from senior reviewer:\n${tier1Result.output}`;
@@ -752,17 +792,29 @@ async function handleRetryAndEscalation(
   }
 
   const hintRetryResult = await retryTask(task, projectDir, config, context, hintError, maxRetries + 1, (text) => {
-    callbacks.onImplementerOutput(text);
-  });
+    callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text });
+  }, callbacks.onEvent);
 
   state = addImplementerUsage(state, hintRetryResult.usage);
   saveState(projectDir, state);
 
   if (hintRetryResult.success) {
+    const hintValStart = Date.now();
     const hintValidation = await validateTask(task, projectDir, config);
-    callbacks.onValidationResult(task, hintValidation);
+    const hintValPassed = hintValidation.length === 0 || hintValidation.every(r => r.passed);
+    const hintFailedStage = hintValidation.find(r => !r.passed);
+    callbacks.onEvent({
+      type: 'validate', ts: Date.now(), passed: hintValPassed,
+      stages: {
+        tsc: hintValidation.find(r => r.stage === 'typecheck')?.passed ?? true,
+        lint: hintValidation.find(r => r.stage === 'lint')?.passed ?? true,
+        test: hintValidation.find(r => r.stage === 'test')?.passed ?? true,
+      },
+      error: hintFailedStage?.error,
+      duration: Date.now() - hintValStart,
+    });
 
-    const result = await validateCommitAndAdvance(task, hintValidation, projectDir, config, state, callbacks, 'local_with_hints', 'HINT_SUCCESS', 'with hints');
+    const result = await validateCommitAndAdvance(task, hintValidation, projectDir, config, state, callbacks, 'local_with_hints', 'HINT_SUCCESS', 'with hints', taskStartTime);
     if (result.completed) {
       return { completed: true, method: 'escalated-hint' };
     }
@@ -773,18 +825,31 @@ async function handleRetryAndEscalation(
   saveState(projectDir, state);
   emit(projectDir, state, 'hint_failed', task.id);
 
+  callbacks.onEvent({ type: 'escalate', ts: Date.now(), tier: 2 });
   const tier2Result = await planner.escalateFull(task, lastError, projectDir, {
-    onOutput: (text) => callbacks.onPlannerOutput(text),
+    onOutput: (text) => callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text }),
   });
 
   state = addEscalationUsage(state, tier2Result.usage);
   saveState(projectDir, state);
 
   if (tier2Result.success) {
+    const tier2ValStart = Date.now();
     const tier2Validation = await validateTask(task, projectDir, config);
-    callbacks.onValidationResult(task, tier2Validation);
+    const tier2ValPassed = tier2Validation.length === 0 || tier2Validation.every(r => r.passed);
+    const tier2FailedStage = tier2Validation.find(r => !r.passed);
+    callbacks.onEvent({
+      type: 'validate', ts: Date.now(), passed: tier2ValPassed,
+      stages: {
+        tsc: tier2Validation.find(r => r.stage === 'typecheck')?.passed ?? true,
+        lint: tier2Validation.find(r => r.stage === 'lint')?.passed ?? true,
+        test: tier2Validation.find(r => r.stage === 'test')?.passed ?? true,
+      },
+      error: tier2FailedStage?.error,
+      duration: Date.now() - tier2ValStart,
+    });
 
-    const result = await validateCommitAndAdvance(task, tier2Validation, projectDir, config, state, callbacks, 'escalated', 'FULL_SUCCESS', 'escalated');
+    const result = await validateCommitAndAdvance(task, tier2Validation, projectDir, config, state, callbacks, 'escalated', 'FULL_SUCCESS', 'escalated', taskStartTime);
     if (result.completed) {
       return { completed: true, method: 'escalated-full' };
     }

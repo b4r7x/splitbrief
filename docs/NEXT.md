@@ -1,77 +1,95 @@
 # What to Work on Next
 
-**Last updated**: 2026-03-26
-**Branch**: `006-conversational-planning`
+**Last updated**: 2026-03-27
+**Branch**: `008-tui-conversation-flow`
 **Context**: Load `/tiny-spec-dev` skill first, then read this file.
 
 ## What Just Happened
 
-We implemented 47 tasks across 8 phases on branch `006-conversational-planning`. The goal was: interactive TUI picker, conversational planning with clarifications, shell subprocess implementer, codebase cleanup, and constitution update.
+TUI conversation flow redesign implemented (47 tasks, 402 tests pass). The dual-pane raw text layout is replaced with a single-column conversation flow showing structured event cards, collapsible diffs, pipeline progress bar, and real-time cost savings footer.
 
-Everything was implemented and tests pass (227 tests, 0 failures). But when we actually ran it, we discovered problems.
+## Decision: Full TUI Redesign (2026-03-27)
 
-## Problems Discovered
+After extensive research and discussion, we decided to **replace the dual-pane raw text layout** with a **single-column conversation flow** with structured event cards.
 
-### 1. Shell implementer doesn't work for agent-style tools
+### Why
 
-We built `implementer.type: shell` to allow custom commands as the implementer (like the shell planner). The idea: user configures their bash wrapper (e.g., `claude-zai` which is Claude Code pointed at Z.AI's GLM models) as the implementer.
+The current TUI has fundamental UX problems:
+1. **No visible collaboration** — planner and implementer are two independent text logs
+2. **No pipeline visibility** — `Phase: implementing` is a string, not a visual flow
+3. **No code display** — implementer generates code but it's shown as plain text, no diff
+4. **No cost savings visibility** — the entire USP (50%+ savings) is invisible to the user
+5. **Escalation is invisible** — the most valuable moment (planner helping stuck implementer) looks like any other line
 
-**Why it doesn't work**:
-- `spawn()` can't see bash functions — only executables on PATH. `claude-zai` is a bash function, not a script.
-- Even if it were a script, agent-style tools (like Claude Code) manage their own files. But tiny-spec assumes it controls file writes via `extractCode()` → `applyCode()`. Two things writing to the same files = conflict.
-- The stdin/stdout contract (prompt in, code out) is too simple for tools that use streaming JSON, sessions, tool use, etc.
+### Design Decisions
 
-**The deeper question**: Decision #5 in docs/VISION.md says "Don't wrap agents in agents." But users WANT to use agent-style tools as implementers. This is a design tension that needs resolving.
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Layout | Single-column conversation flow | Shows dialog between roles naturally |
+| Planner output | Conversational text | Planner thinks — show the thinking |
+| Implementer output | Structured tool-call cards | Implementer executes — show operations |
+| Code display | Collapsible diff (summary default) | Clean by default, detail on demand |
+| Completed tasks | Collapse to 1 line | Prevent scroll overload |
+| Pipeline | Sticky header progress bar | Always visible: `● res → ● spec → ◉ impl` |
+| Cost savings | Sticky footer | Always visible: `Local: 75% │ Saved: $1.40` |
+| Framework | Stay on Ink 5.x | Works, known, React. OpenTUI later if needed |
+| Callback system | Full replace → structured events | `TuiEvent` union type replaces `string[]` |
+| Constitution | v1.3.0 | Beautiful orchestration UX = product identity |
 
-**Possible directions**:
-- **Agent mode**: New `implementer.type: agent` where the implementer manages its own files. Tiny-spec only does: send task description → wait for completion signal → validate (tsc/lint/test) → commit. No `extractCode()`, no `applyCode()`. The implementer is trusted to write files.
-- **Keep it simple**: Only support "dumb" implementers (OpenAI API, simple scripts). If you want an agent, use it directly, don't put it behind tiny-spec.
-- **Hybrid**: Default is dumb mode. Agent mode is opt-in with clear warnings that validation may not catch everything.
+### Research References
 
-### 2. Interactive TUI not battle-tested
+- [Pragmatic Engineer Survey 2026](https://newsletter.pragmaticengineer.com/p/ai-tooling-2026) — devs prefer structured output over raw streams
+- ["Terminal Is All You Need" (arxiv)](https://arxiv.org/html/2603.10664) — transparency + representational compatibility
+- [Anthropic: Effective Harnesses](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) — progress files, feature decomposition
+- [Google: Refining Coding UX](https://developers.googleblog.com/en/unleash-your-development-superpowers-refining-the-core-coding-experience/) — collapsible code blocks
+- Competitive analysis: Claude Squad, Conduit, Ralph TUI, AgentPipe, OpenCode, Codex CLI
 
-The conversational planning flow was implemented by AI agents in one pass. It hasn't been tested end-to-end with real Claude Code + real Ollama. Specifically:
-- Question asking flow (does the planner actually emit `<!-- Q:{JSON} -->` markers?)
-- Comment-on-approval flow (does regeneration work within the same session?)
-- File persistence (are clarifications written to spec.md correctly?)
-- Edge cases: what if planner outputs malformed questions? What if user cancels mid-question?
+### Target Layout
 
-**What to do**: Run `npm run dev -- start "add user authentication"` end-to-end with Claude Code as planner and Ollama as implementer. Fix whatever breaks.
-
-### 3. Claude Code CLI compatibility
-
-v2.1.84 requires `--verbose` flag for `stream-json` + `-p`. We fixed it, but the API is a moving target. We should consider:
-- Version detection at startup (`claude --version` → parse → adjust flags)
-- Graceful error messages when Claude Code's output format changes
+```
+┌─ sticky header ──────────────────────────────────────────────────────┐
+│ tiny-spec │ feature name │ ● res ● spec ● plan ◉ impl ○ rev │ 04:12│
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ● Planner researching... (conversational text)                      │
+│  ● Planner spec ready [approve/edit/comment]                         │
+│  ● Planner plan: 8 tasks                                            │
+│                                                                      │
+│  ✓ T1 auth middleware — local, 12s                                   │
+│  ✓ T2 JWT utils — local, 8s                                         │
+│  ─── T3: Login endpoint ──────────────────────                       │
+│  ⚡ implementer.generate(qwen2.5-coder:7b)          12s              │
+│    → src/routes/auth.ts (+47 lines)             [d] diff             │
+│  ⚡ validate(tsc, lint, test)                        ✓ 7s            │
+│  ⚡ git.commit("feat(auth): login endpoint")         1s              │
+│  ─── T4: Register (active) ──────────────────────                    │
+│  ⚡ implementer.generate(qwen2.5-coder:7b)          running...       │
+│                                                                      │
+├──────────────────────────────────────────────────────────────────────┤
+│ Task 4/8 │ Local: 75% │ $0.02 │ Saved: ~$1.40 │ qwen2.5-coder:7b  │
+└──────────────────────────────────────────────────────────────────────┘
+```
 
 ## Priority Order
 
-1. **Decide on agent-mode implementer** — this blocks everything else because it determines the architecture
-2. **Battle-test the conversational flow** — run it for real, fix what breaks
-3. **Fix CLI compatibility** — add version detection or at least better error messages
-4. **Then**: token dashboard, integration tests, multi-language support
+1. ~~**TUI redesign**~~ — DONE (47 tasks, 402 tests, all 7 user stories implemented)
+2. **End-to-end battle-test** — Run the full pipeline with real Claude Code + Ollama to validate the new conversation flow in practice
+3. Token dashboard, integration tests
+4. Multi-language support
 
 ## Key Files to Understand
 
-| File | What it does | Why it matters |
-|------|-------------|---------------|
-| `src/orchestrator/orchestrator.ts` | Main workflow loop (~700 lines) | All flow logic lives here — question loop, approval loop, retry/escalation |
-| `src/orchestrator/planners/claude-code.ts` | Claude Code subprocess planner | Spawns `claude -p`, parses stream-json, extracts questions |
-| `src/orchestrator/implementer.ts` | Implementer dispatch | Routes to OpenAI API or shell based on `config.implementer.type` |
-| `src/orchestrator/implementers/shell.ts` | Shell subprocess implementer | The problematic stdin/stdout model |
-| `src/orchestrator/question-parser.ts` | Question extraction | Parses `<!-- Q:{JSON} -->` from planner stream |
-| `src/tui/prompt.tsx` | Approval prompt | approve/edit/comment/quit |
-| `src/tui/picker.tsx` | Planner/implementer picker | Auto-detect and select |
-| `src/tui/question-prompt.tsx` | Question display | Shows choices, accepts answers |
-| `src/app.tsx` | Root TUI component | Wires everything together — state, callbacks, overlays |
-| `src/spec/templates.ts` | Planner prompts | Research, spec, plan, tasks, regenerate — all prompt templates |
-| `docs/VISION.md` | Strategic direction | What we are, what we're NOT, known problems, competitive landscape |
-| `.specify/memory/constitution.md` | Constitutional principles | 6 principles including anti-goals (v1.1.0) |
+| File | What it does | Why it matters for redesign |
+|------|-------------|---------------------------|
+| `src/app.tsx` | Root TUI component | Wires orchestrator callbacks → TUI state. Full rewrite needed. |
+| `src/tui/layout.tsx` | Dual-pane layout | **Replace** with conversation flow layout |
+| `src/tui/pane.tsx` | Scrollable text pane | **Replace** with event card renderer |
+| `src/tui/header.tsx` | Feature + timer | **Extend** with pipeline progress bar |
+| `src/tui/status-bar.tsx` | Phase/task/model | **Redesign** with cost savings display |
+| `src/tui/prompt.tsx` | Approval prompts | Keep, integrate inline in flow |
+| `src/types.ts` | All shared types | Add `TuiEvent` union type |
+| `src/orchestrator/orchestrator.ts` | Main workflow loop | Emit structured events instead of text |
 
 ## Conversation History Summary
 
-The owner's intent: tiny-spec should be a **cost-optimizer**, not a universal connector. The unique value is the planner/implementer split with validation, retry, and escalation. No other tool does this.
-
-The owner uses Claude Code (normal) as planner and wants flexibility in the implementer — including using claude-zai (Claude Code + Z.AI's GLM models) or any other tool. The current `type: shell` approach was too simplistic and needs rethinking.
-
-The interactive TUI (picker, conversational questions, comment-on-approval) is the right direction but needs real-world testing before it's trustworthy.
+The owner wants tiny-spec to feel alive — to show the planner/implementer collaboration visually. Not another multi-agent coordinator, but a cost optimizer with state-of-the-art UX. The dual-pane raw text layout is being replaced because it hides the product's core value.

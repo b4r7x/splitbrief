@@ -6,35 +6,41 @@ description: Development context for the tiny-spec cost-optimized AI coding orch
 # tiny-spec Development Guide
 
 ## Purpose
-CLI tool that orchestrates expensive AI (Claude Code/Opus) for planning and cheap/local AI (Ollama/LM Studio) for implementation, saving 50%+ on AI coding costs.
+CLI tool that orchestrates expensive AI (Claude Code/Opus) for planning and cheap/local AI (Ollama/LM Studio) for implementation, saving 50%+ on AI coding costs. Two-role architecture with visible collaboration via conversation-flow TUI.
 
 ## Architecture
 
 ```
 src/
   cli.ts                 CLI entry (commander): start, spec, init, status, resume
-  app.tsx                Root Ink component — connects orchestrator to TUI
-  types.ts               All shared types (Phase, Task, Config, WorkflowState, TokenBudget, CodeContext)
+  app.tsx                Root Ink component — connects orchestrator events to TUI
+  types.ts               All shared types (Phase, Task, Config, WorkflowState, TuiEvent)
   config.ts              YAML config loading, defaults, validation
   state.ts               Pure function state machine (11 phases, 20 transitions)
 
-  tui/                   Ink 5.x split-pane TUI
-    layout.tsx           Two-column layout (planner left, implementer right)
-    pane.tsx             Scrollable windowed rendering
-    header.tsx           Feature name + elapsed timer
-    status-bar.tsx       Phase/task/model/retries, color-coded
-    prompt.tsx           Approval: Enter/e/$EDITOR/q
+  tui/                   Ink 5.x conversation-flow TUI
+    layout.tsx           Conversation flow: sticky header + scrollable events + sticky footer
+    event-card.tsx       Renders a single TuiEvent as a structured card
+    pipeline-bar.tsx     Phase progress: ● res → ● spec → ◉ impl → ○ rev
+    diff-view.tsx        Collapsible diff display (summary default, expand on demand)
+    header.tsx           Feature name + pipeline bar + elapsed timer
+    status-bar.tsx       Cost savings, token count, model, task progress
+    prompt.tsx           Approval: Enter/e/$EDITOR/q (inline in flow)
+    picker.tsx           Interactive planner/implementer selection
+    question-prompt.tsx  Clarification questions with options
+    summary.tsx          Final run summary with cost breakdown
 
   orchestrator/          Core workflow
-    orchestrator.ts      Main loop (~650 LOC): retry, escalation, SIGINT, cost tracking
-    planner.ts           Spawns claude -p for 4-phase planning
-    implementer.ts       OpenAI SDK streaming, code extraction, file write
+    orchestrator.ts      Main loop (~700 LOC): emits TuiEvents, retry, escalation, SIGINT
+    planners/            Pluggable planner backends (6 built-in + shell)
+    implementer.ts       OpenAI SDK streaming → structured events
+    implementers/shell.ts  Shell subprocess implementer
     validator.ts         tsc → ESLint/Biome → affected tests pipeline
     escalator.ts         Two-tier: hints (~500 tok) → full Opus implementation
     extractor.ts         Parses LLM responses: fenced blocks, raw code, NL stripping
     context-extractor.ts Function-level code extraction for large files
     providers.ts         Provider abstraction: Ollama/LM Studio/DeepSeek/OpenRouter
-    claude-stream.ts     Parser for Claude Code CLI stream-json format
+    pricing.ts           Cost calculation (known model pricing + $0 local fallback)
 
   spec/                  Spec generation & formatting
     parser.ts            tasks.md → Task[] with YAML frontmatter + topological sort
@@ -45,6 +51,7 @@ src/
     process.ts           Subprocess spawn, streaming, lifecycle, cleanup
     git.ts               simple-git wrapper: commit, diff, external changes, discard
     fs.ts                .tiny-spec/ directory management, path validation, lock file
+    format.ts            Formatting helpers (tokens, cost, time)
 ```
 
 ## Key Types
@@ -53,18 +60,30 @@ src/
 type Phase = 'idle' | 'researching' | 'specifying' | 'reviewing-spec' | 'planning' |
   'reviewing-plan' | 'implementing' | 'validating-task' | 'escalating' | 'final-review' | 'complete';
 
+// TUI event model — replaces raw text lines
+type TuiEvent =
+  | { type: 'planner-status'; phase: string; status: 'running' | 'done'; summary?: string; duration?: number }
+  | { type: 'planner-text'; text: string }
+  | { type: 'task-start'; taskId: string; title: string; index: number; total: number }
+  | { type: 'task-complete'; taskId: string; method: 'local' | 'escalated'; duration: number }
+  | { type: 'implementer-generate'; status: 'running' | 'done' | 'failed'; file?: string; diff?: string; linesAdded?: number; duration?: number }
+  | { type: 'validate'; results: { tsc: boolean; lint: boolean; test: boolean }; error?: string; duration?: number }
+  | { type: 'retry'; attempt: number; maxRetries: number }
+  | { type: 'escalate'; tier: 1 | 2; hint?: string }
+  | { type: 'git-commit'; message: string }
+  | { type: 'error'; message: string }
+
 interface Task {
   id: string; title: string; action: 'create' | 'modify'; file: string;
   dependsOn: string[]; description: string; signature?: string;
   currentCode?: string; tests: string[]; constraints: string[];
   pattern?: string; status: TaskStatus;
-  typeDefs: string;      // inlined type definitions for small models
-  implSteps: string[];   // 3-5 implementation steps
+  typeDefs: string; implSteps: string[];
 }
 
 interface Config {
-  planner: { tool: 'claude-code' };
-  implementer: { provider: string; model: string; apiBase: string; contextLength: number; temperature: number };
+  planner: { tool: string; command?: string; args?: string[]; outputFormat?: string };
+  implementer: { provider: string; model: string; apiBase: string; contextLength: number; temperature: number; type?: 'api' | 'shell' | 'agent' };
   validation: { typecheck: boolean; lint: boolean; test: boolean; testCommand: string };
   workflow: { autoApproveSpec: boolean; autoApprovePlan: boolean; maxRetries: number; commitPerTask: boolean };
 }
@@ -78,39 +97,27 @@ interface Config {
 - **Error at boundaries** — internal functions propagate, callers decide
 - **JSX for Ink** — `.tsx` for React components, `.ts` for everything else
 
-## Task Prompt Format (for local models)
-
-Token budget per task (8K minimum context):
-- System preamble + few-shot: ~500 tok
-- Task body (desc, sig, tests, constraints): ~600 tok
-- Type definitions: ~300 tok
-- Implementation steps: ~150 tok
-- Code context: auto-scaled (whole-file → function-level → truncate)
-- Output reserve: 25% of contextLength
-
-Auto-degradation cascade:
-1. Whole-file (if fits)
-2. Function-level (imports + target function + 5 lines context)
-3. Truncate middle with marker
-4. Error: task too large
-
 ## Testing
 
 ```bash
-npm test                         # 132+ tests (tsx --test)
+npm test                         # 227+ tests (tsx --test)
 npm run dev -- start "feature"   # Full workflow with TUI
 npm run dev -- spec "feature"    # Spec-only mode
 ```
 
-Test files: `tests/*.test.ts` — parser, extractor, state, providers, formatter, context-extractor.
+Test files: `tests/*.test.ts` — parser, extractor, state, providers, formatter, orchestrator, etc.
 
 ## Workflow
 
 ```
 User: "add user auth"
-  → Claude Code (Opus) researches, writes spec/plan/tasks
+  → Planner (Opus) researches, writes spec/plan/tasks  [conversational cards]
   → User approves (or --auto)
-  → For each task: local model implements → validate (tsc/lint/test) → commit
-  → Fail → retry (max 3) → escalate (hints → full Opus)
-  → Opus final review of diff vs spec
+  → For each task:
+    → Implementer (local model) implements             [tool-call cards with diff]
+    → Validate (tsc/lint/test)                         [result card]
+    → Pass → commit, collapse task to 1 line
+    → Fail → retry card → escalate card (planner hint)
+  → Final Opus review
+  → Summary with cost savings
 ```
