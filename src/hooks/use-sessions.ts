@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import type { Session } from '../types.js';
 import { getSessionDir, listSessions, writeSession } from '../utils/sessions.js';
 
@@ -12,11 +12,11 @@ export function useSessions(sessionsScope: 'project' | 'global', projectDir: str
     setLoading(false);
   }, [sessionsScope, projectDir]);
 
-  const saveSession = useCallback((session: Session) => {
+  const saveSession = (session: Session) => {
     const dir = getSessionDir(sessionsScope, projectDir);
     writeSession(dir, session);
     setSessions(listSessions(dir));
-  }, [sessionsScope, projectDir]);
+  };
 
   return { sessions, saveSession, loading };
 }

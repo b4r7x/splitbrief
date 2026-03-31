@@ -1,25 +1,27 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useRef } from 'react';
 
 export function useSidebar(isSmall: boolean) {
   const [visible, setVisible] = useState(false);
   const wasVisible = useRef(false);
 
-  const toggle = useCallback(() => {
+  const toggle = () => {
     if (isSmall) return;
     setVisible((prev) => {
       const next = !prev;
       wasVisible.current = next;
       return next;
     });
-  }, [isSmall]);
+  };
 
-  useEffect(() => {
-    setVisible(prev => {
-      if (isSmall) return false;
-      if (!prev && wasVisible.current) return true;
-      return prev;
-    });
-  }, [isSmall]);
+  const [prevIsSmall, setPrevIsSmall] = useState(isSmall);
+  if (isSmall !== prevIsSmall) {
+    setPrevIsSmall(isSmall);
+    if (isSmall) {
+      setVisible(false);
+    } else if (wasVisible.current) {
+      setVisible(true);
+    }
+  }
 
   return { visible, toggle };
 }

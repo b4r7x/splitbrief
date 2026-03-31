@@ -1,4 +1,4 @@
-import { useState, useMemo, useImperativeHandle, forwardRef, useCallback } from 'react';
+import { useState, useImperativeHandle, forwardRef } from 'react';
 import { Box, Text, Static } from 'ink';
 import type { TuiEvent } from '../types.js';
 import { getTheme } from '../theme.js';
@@ -165,13 +165,10 @@ const ConversationFlow = forwardRef<ConversationFlowHandle, ConversationFlowProp
     const [scrollOffset, setScrollOffset] = useState(0);
     const [expandedDiffs, setExpandedDiffs] = useState<Set<number>>(() => new Set());
 
-    const sections = useMemo(() => groupEventsIntoSections(events), [events]);
+    const sections = groupEventsIntoSections(events);
+    const maxScrollOffset = Math.max(0, events.length - 1);
 
-    const maxScrollOffset = useMemo(() => {
-      return Math.max(0, events.length - 1);
-    }, [events]);
-
-    const toggleDiff = useCallback(() => {
+    const toggleDiff = () => {
       const idx = findLatestDiffEventIndex(events);
       if (idx == null) return;
       setExpandedDiffs(prev => {
@@ -183,7 +180,7 @@ const ConversationFlow = forwardRef<ConversationFlowHandle, ConversationFlowProp
         }
         return next;
       });
-    }, [events]);
+    };
 
     useImperativeHandle(ref, () => ({
       scrollUp() {
@@ -193,20 +190,14 @@ const ConversationFlow = forwardRef<ConversationFlowHandle, ConversationFlowProp
         setScrollOffset(prev => Math.max(0, prev - 1));
       },
       toggleDiff,
-    }), [maxScrollOffset, toggleDiff]);
+    }));
 
-    const completedItems = useMemo(() =>
-      sections
-        .filter((s): s is Section & { type: 'completed-task' } => s.type === 'completed-task')
-        .map(s => s.summary),
-      [sections],
-    );
+    const completedItems = sections
+      .filter((s): s is Section & { type: 'completed-task' } => s.type === 'completed-task')
+      .map(s => s.summary);
 
     type DynamicSection = Extract<Section, { type: 'events' | 'active-task' }>;
-    const dynamicSections = useMemo(() =>
-      sections.filter((s): s is DynamicSection => s.type !== 'completed-task'),
-      [sections],
-    );
+    const dynamicSections = sections.filter((s): s is DynamicSection => s.type !== 'completed-task');
 
     const dynamicHeight = sections.reduce(
       (sum, s) => s.type === 'completed-task' ? sum : sum + estimateSectionHeight(s, expandedDiffs),

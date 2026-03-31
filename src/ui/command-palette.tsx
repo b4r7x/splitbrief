@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { CommandPaletteItem, Screen } from '../types.js';
 import type { Theme } from '../theme.js';
@@ -15,14 +15,13 @@ export function CommandPalette({ items, currentScreen, onExecute, onClose, theme
   const [filter, setFilter] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  const filtered = useMemo(() => {
-    const screenItems = items.filter((item) => item.availableOn.includes(currentScreen));
-    if (!filter) return screenItems;
-    const lower = filter.toLowerCase();
-    return screenItems.filter(
-      (item) => item.label.toLowerCase().includes(lower) || item.description.toLowerCase().includes(lower)
-    );
-  }, [items, currentScreen, filter]);
+  const screenItems = items.filter((item) => item.availableOn.includes(currentScreen));
+  const filtered = !filter
+    ? screenItems
+    : screenItems.filter((item) => {
+        const lower = filter.toLowerCase();
+        return item.label.toLowerCase().includes(lower) || item.description.toLowerCase().includes(lower);
+      });
 
   useInput((input, key) => {
     if (key.escape) {

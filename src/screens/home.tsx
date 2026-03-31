@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import cfonts from "cfonts";
-import type { Config, Session, Screen } from "../types.js";
+import type { Config, Session, Screen, SlashCommandDef } from "../types.js";
 import type { Theme } from "../theme.js";
 import { InputBar } from "../ui/input-bar.js";
 import { useResponsiveLayout } from "../hooks/use-terminal-size.js";
@@ -67,8 +67,9 @@ function statusColor(status: Session["status"], theme: Theme): string {
 interface HomeScreenProps {
   config: Config;
   sessions: Session[];
+  commands: SlashCommandDef[];
   onStartWorkflow: (feature: string) => void;
-  onSlashCommand?: (command: string) => void;
+  onSlashCommand: (command: string) => void;
   onOpenOverlay?: (type: import("../types.js").OverlayType) => void;
   errorMessage?: string | null;
   onClearError?: () => void;
@@ -78,6 +79,7 @@ interface HomeScreenProps {
 export function HomeScreen({
   config,
   sessions,
+  commands,
   onStartWorkflow,
   onSlashCommand,
   onOpenOverlay,
@@ -146,6 +148,7 @@ export function HomeScreen({
         <InputBar
           onSubmit={onStartWorkflow}
           onSlashCommand={onSlashCommand}
+          commands={commands}
           errorMessage={errorMessage}
           onClearError={onClearError}
           mode="normal"
