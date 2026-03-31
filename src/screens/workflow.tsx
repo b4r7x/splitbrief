@@ -1,16 +1,16 @@
 import { useState, useRef, useMemo } from 'react';
 import { Box, useInput, useStdout, useApp } from 'ink';
-import type { Config, Summary, WorkflowState } from '../../types.js';
-import type { Theme } from '../../theme.js';
-import Header from '../header.js';
-import ConversationFlow from '../conversation-flow.js';
-import type { ConversationFlowHandle } from '../conversation-flow.js';
-import CostFooter from '../cost-footer.js';
-import { InputBar } from '../input-bar.js';
-import ReviewView from '../review-view.js';
-import Sidebar from '../sidebar.js';
-import { useSidebar } from '../../hooks/use-sidebar.js';
-import { useWorkflow } from '../../hooks/use-workflow.js';
+import type { Config, Summary, WorkflowState } from '../types.js';
+import type { Theme } from '../theme.js';
+import Header from '../ui/header.js';
+import ConversationFlow from '../ui/conversation-flow.js';
+import type { ConversationFlowHandle } from '../ui/conversation-flow.js';
+import CostFooter from '../ui/cost-footer.js';
+import { InputBar } from '../ui/input-bar.js';
+import ReviewView from '../ui/review-view.js';
+import Sidebar from '../ui/sidebar.js';
+import { useSidebar } from '../hooks/use-sidebar.js';
+import { useWorkflow } from '../hooks/use-workflow.js';
 
 interface WorkflowScreenProps {
   feature: string;
@@ -21,7 +21,7 @@ interface WorkflowScreenProps {
   onComplete: (summary: Summary) => void;
   resumeState?: WorkflowState;
   onSlashCommand?: (command: string) => void;
-  onOpenOverlay?: (type: import('../../types.js').OverlayType) => void;
+  onOpenOverlay?: (type: import('../types.js').OverlayType) => void;
   errorMessage?: string | null;
   onClearError?: () => void;
 }

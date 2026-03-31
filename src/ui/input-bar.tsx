@@ -43,8 +43,8 @@ export function InputBar({ onSubmit, onSlashCommand, errorMessage, onClearError,
       : 'describe your feature...');
 
   return (
-    <Box flexDirection="column">
-      <Box borderStyle="round" borderColor={theme.border} paddingX={1}>
+    <Box flexDirection="column" width="100%">
+      <Box borderStyle="round" borderColor={theme.border} paddingX={1} width="100%">
         <Text color={theme.accent}>&gt; </Text>
         <MultilineInput
           value={value}
