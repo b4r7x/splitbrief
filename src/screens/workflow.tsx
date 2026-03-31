@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo } from 'react';
-import { Box, useInput, useStdout, useApp } from 'ink';
+import { Box, useInput } from 'ink';
 import type { Config, Summary, WorkflowState } from '../types.js';
 import type { Theme } from '../theme.js';
 import Header from '../ui/header.js';
@@ -11,6 +11,7 @@ import ReviewView from '../ui/review-view.js';
 import Sidebar from '../ui/sidebar.js';
 import { useSidebar } from '../hooks/use-sidebar.js';
 import { useWorkflow } from '../hooks/use-workflow.js';
+import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 
 interface WorkflowScreenProps {
   feature: string;
@@ -27,13 +28,12 @@ interface WorkflowScreenProps {
 }
 
 export function WorkflowScreen({ feature, config, theme: t, auto, projectDir, onComplete, resumeState, onSlashCommand, onOpenOverlay, errorMessage, onClearError }: WorkflowScreenProps) {
-  const { stdout } = useStdout();
-  const { exit } = useApp();
+  const { cols, rows, isSmall } = useResponsiveLayout();
   const flowRef = useRef<ConversationFlowHandle>(null);
 
   const workflow = useWorkflow({ feature, projectDir, config, auto, onComplete, resumeState });
 
-  const sidebar = useSidebar();
+  const sidebar = useSidebar(isSmall);
   const [startedAt] = useState(() => new Date().toISOString());
 
   const sidebarTasks = useMemo(() => {
@@ -58,23 +58,15 @@ export function WorkflowScreen({ feature, config, theme: t, auto, projectDir, on
     saved: 0,
   }), [workflow.localCount, workflow.escalatedCount]);
 
-  const rows = stdout?.rows ?? 24;
+  const showSidebar = sidebar.visible && !isSmall;
+  const sidebarWidth = Math.floor(cols * 0.25);
   const contentHeight = Math.max(0, rows - 4);
 
   useInput((input, key) => {
-    if (input === '?' && workflow.inputMode === 'normal') {
-      onOpenOverlay?.('help');
-    } else if (key.ctrl && input === '\\' && workflow.inputMode === 'normal') {
-      sidebar.toggle();
-    } else if (input === 'q' && workflow.inputMode === 'normal') {
-      exit();
-    } else if (input === 'd') {
-      flowRef.current?.toggleDiff();
-    } else if (key.upArrow) {
-      flowRef.current?.scrollUp();
-    } else if (key.downArrow) {
-      flowRef.current?.scrollDown();
-    }
+    if (key.ctrl && input === '\\') { sidebar.toggle(); return; }
+    if (key.ctrl && input === 'd') { flowRef.current?.toggleDiff(); return; }
+    if (key.upArrow) { flowRef.current?.scrollUp(); return; }
+    if (key.downArrow) { flowRef.current?.scrollDown(); return; }
   });
 
   return (
@@ -82,8 +74,8 @@ export function WorkflowScreen({ feature, config, theme: t, auto, projectDir, on
       <Header feature={feature} startedAt={startedAt} phase={workflow.phase} />
 
       <Box flexDirection="row" flexGrow={1}>
-        {sidebar.visible && (
-          <Sidebar tasks={sidebarTasks} costData={costData} theme={t} />
+        {showSidebar && (
+          <Sidebar tasks={sidebarTasks} costData={costData} theme={t} width={sidebarWidth} />
         )}
         {workflow.inputMode === 'review' && workflow.reviewFilePath ? (
           <ReviewView filePath={workflow.reviewFilePath} theme={t} height={contentHeight} />
@@ -99,6 +91,7 @@ export function WorkflowScreen({ feature, config, theme: t, auto, projectDir, on
         estimatedCost={0}
         estimatedSavings={0}
         implementerModel={config.implementer.model}
+        isSmall={isSmall}
       />
 
       <InputBar

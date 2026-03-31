@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import type { Phase } from '../types.js';
 import PipelineBar from './pipeline-bar.js';
 import { getTheme } from '../theme.js';
+import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 
 interface HeaderProps {
   feature: string;
@@ -23,8 +24,10 @@ function truncate(text: string, max: number): string {
 }
 
 export default function Header({ feature, startedAt, phase }: HeaderProps) {
+  const { isSmall } = useResponsiveLayout();
   const t = getTheme();
   const [elapsed, setElapsed] = useState(() => formatElapsed(startedAt));
+  const maxFeatureLength = isSmall ? 25 : 40;
 
   useEffect(() => {
     const id = setInterval(() => setElapsed(formatElapsed(startedAt)), 1000);
@@ -33,7 +36,7 @@ export default function Header({ feature, startedAt, phase }: HeaderProps) {
 
   return (
     <Box width="100%" paddingX={1} justifyContent="space-between">
-      <Text color={t.text}>{truncate(feature, 40)}</Text>
+      <Text color={t.text}>{truncate(feature, maxFeatureLength)}</Text>
       <PipelineBar phase={phase} />
       <Text color={t.textDim}>{elapsed}</Text>
     </Box>

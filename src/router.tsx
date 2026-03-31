@@ -51,7 +51,7 @@ export function Router({
   navigate,
 }: RouterProps) {
   if (overlayActive === "help") {
-    return <HelpOverlay onClose={onCloseOverlay} theme={theme} />;
+    return <HelpOverlay onClose={onCloseOverlay} theme={theme} currentScreen={screen} />;
   }
 
   if (overlayActive === "command-palette") {
@@ -110,7 +110,6 @@ export function Router({
           theme={theme}
           onDone={() => navigate("home")}
           onSlashCommand={(raw) => onSlashCommand(raw, "summary")}
-          onOpenOverlay={onOpenOverlay}
           errorMessage={errorMessage}
           onClearError={onClearError}
         />

@@ -1,31 +1,25 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useStdout } from 'ink';
 
-const MIN_WIDTH = 100;
-
-export function useSidebar() {
-  const { stdout } = useStdout();
+export function useSidebar(isSmall: boolean) {
   const [visible, setVisible] = useState(false);
   const wasVisible = useRef(false);
 
-  const width = stdout?.columns ?? 80;
-
   const toggle = useCallback(() => {
-    if (width < MIN_WIDTH) return;
+    if (isSmall) return;
     setVisible((prev) => {
       const next = !prev;
       wasVisible.current = next;
       return next;
     });
-  }, [width]);
+  }, [isSmall]);
 
   useEffect(() => {
-    if (width < MIN_WIDTH && visible) {
-      setVisible(false);
-    } else if (width >= MIN_WIDTH && !visible && wasVisible.current) {
-      setVisible(true);
-    }
-  }, [width, visible]);
+    setVisible(prev => {
+      if (isSmall) return false;
+      if (!prev && wasVisible.current) return true;
+      return prev;
+    });
+  }, [isSmall]);
 
   return { visible, toggle };
 }

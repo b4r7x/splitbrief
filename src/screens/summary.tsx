@@ -1,16 +1,16 @@
 import React from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
 import type { Summary } from '../types.js';
 import type { Theme } from '../theme.js';
-import { formatTokens, formatCost, formatTime } from '../utils/format.js';
+import { formatTokens, formatTime, formatCost } from '../utils/format.js';
 import { InputBar } from '../ui/input-bar.js';
+import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 
 interface SummaryScreenProps {
   summary: Summary;
   theme: Theme;
   onDone: () => void;
   onSlashCommand?: (command: string) => void;
-  onOpenOverlay?: (type: import('../types.js').OverlayType) => void;
   errorMessage?: string | null;
   onClearError?: () => void;
 }
@@ -32,16 +32,13 @@ function progressBar(completed: number, total: number, width: number): string {
   return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
 
-export function SummaryScreen({ summary, theme, onDone, onSlashCommand, onOpenOverlay, errorMessage, onClearError }: SummaryScreenProps) {
-  useInput((input, key) => {
-    if (input === '?') {
-      onOpenOverlay?.('help');
-    } else if (input === 'q' || key.return) {
-      onDone();
-    }
-  });
+export function SummaryScreen({ summary, theme, onDone, onSlashCommand, errorMessage, onClearError }: SummaryScreenProps) {
+  const { isSmall } = useResponsiveLayout();
 
   const completed = summary.completedByLocal + summary.escalatedToPlanner;
+  const labelWidth = isSmall ? 15 : 20;
+  const taskTitleWidth = isSmall ? 20 : 30;
+  const truncateLength = isSmall ? 18 : 28;
 
   return (
     <Box flexDirection="column" padding={1}>
@@ -49,17 +46,17 @@ export function SummaryScreen({ summary, theme, onDone, onSlashCommand, onOpenOv
         <Text bold color={theme.success}>tiny-spec complete</Text>
       </Box>
 
-      <Box flexDirection="column" marginTop={1}>
-        <Box><Box width={20}><Text color={theme.textDim}>Feature</Text></Box><Text bold>{summary.feature}</Text></Box>
-        <Box><Box width={20}><Text color={theme.textDim}>Time</Text></Box><Text>{formatTime(summary.totalTime)}</Text></Box>
-        {summary.plannerName && <Box><Box width={20}><Text color={theme.textDim}>Planner</Text></Box><Text>{summary.plannerName}</Text></Box>}
-        {summary.implementerName && <Box><Box width={20}><Text color={theme.textDim}>Implementer</Text></Box><Text>{summary.implementerName}</Text></Box>}
-        <Box><Box width={20}><Text color={theme.textDim}>Savings</Text></Box><Text bold color={theme.success}>{summary.estimatedCostSavings}</Text></Box>
+      <Box flexDirection="column" marginTop={1} gap={isSmall ? 0 : 1}>
+        <Box><Box width={labelWidth}><Text color={theme.textDim}>Feature</Text></Box><Text bold>{summary.feature}</Text></Box>
+        <Box><Box width={labelWidth}><Text color={theme.textDim}>Time</Text></Box><Text>{formatTime(summary.totalTime)}</Text></Box>
+        {summary.plannerName && <Box><Box width={labelWidth}><Text color={theme.textDim}>Planner</Text></Box><Text>{summary.plannerName}</Text></Box>}
+        {summary.implementerName && <Box><Box width={labelWidth}><Text color={theme.textDim}>Implementer</Text></Box><Text>{summary.implementerName}</Text></Box>}
+        <Box><Box width={labelWidth}><Text color={theme.textDim}>Savings</Text></Box><Text bold color={theme.success}>{summary.estimatedCostSavings}</Text></Box>
       </Box>
 
       <Box flexDirection="column" marginTop={1}>
         <Box>
-          <Text color={theme.success}>{progressBar(completed, summary.totalTasks, 30)}</Text>
+          <Text color={theme.success}>{progressBar(completed, summary.totalTasks, isSmall ? 20 : 30)}</Text>
           <Text> {completed}/{summary.totalTasks}</Text>
         </Box>
         <Box gap={2}>
@@ -70,10 +67,10 @@ export function SummaryScreen({ summary, theme, onDone, onSlashCommand, onOpenOv
       </Box>
 
       {summary.costBreakdown && (
-        <Box flexDirection="column" marginTop={1}>
-          <Box><Box width={20}><Text color={theme.textDim}>Actual cost</Text></Box><Text bold>{formatCost(summary.costBreakdown.totalActualCost)}</Text></Box>
-          <Box><Box width={20}><Text color={theme.textDim}>Saved</Text></Box><Text color={theme.success}>{formatCost(summary.costBreakdown.savingsAmount)} ({summary.costBreakdown.savingsPercentage.toFixed(0)}%)</Text></Box>
-          <Box><Box width={20}><Text color={theme.textDim}>Local rate</Text></Box><Text color={theme.success}>{(summary.costBreakdown.localCompletionRate * 100).toFixed(0)}%</Text></Box>
+        <Box flexDirection="column" marginTop={1} gap={isSmall ? 0 : 1}>
+          <Box><Box width={labelWidth}><Text color={theme.textDim}>Actual cost</Text></Box><Text bold>{formatCost(summary.costBreakdown.totalActualCost)}</Text></Box>
+          <Box><Box width={labelWidth}><Text color={theme.textDim}>Saved</Text></Box><Text color={theme.success}>{formatCost(summary.costBreakdown.savingsAmount)} ({summary.costBreakdown.savingsPercentage.toFixed(0)}%)</Text></Box>
+          <Box><Box width={labelWidth}><Text color={theme.textDim}>Local rate</Text></Box><Text color={theme.success}>{(summary.costBreakdown.localCompletionRate * 100).toFixed(0)}%</Text></Box>
         </Box>
       )}
 
@@ -84,7 +81,7 @@ export function SummaryScreen({ summary, theme, onDone, onSlashCommand, onOpenOv
             return (
               <Box key={task.taskId}>
                 <Box width={6}><Text color={theme.textDim}>{task.taskId}</Text></Box>
-                <Box width={30}><Text>{task.taskTitle.length > 28 ? task.taskTitle.slice(0, 27) + '…' : task.taskTitle}</Text></Box>
+                <Box width={taskTitleWidth}><Text>{task.taskTitle.length > truncateLength ? task.taskTitle.slice(0, truncateLength) + '…' : task.taskTitle}</Text></Box>
                 <Box width={10}><Text color={m.color}>{m.text}</Text></Box>
                 {task.retryCount > 0 && <Text color={theme.warning}>{task.retryCount}r</Text>}
               </Box>

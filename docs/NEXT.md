@@ -32,6 +32,17 @@ Theme lives at `src/theme.ts` (not `src/ui/theme.ts`) because:
 - Putting theme in `ui/` would create an `engine/ → ui/` dependency, violating the zero-UI-deps rule
 - Theme is data (hex strings), not UI — it belongs alongside `types.ts` as shared project-level config
 
+### Architecture Decision: useResponsiveLayout hook (not Context)
+
+Terminal dimensions flow through `useResponsiveLayout()` → `{ cols, rows, isSmall, isMedium, isLarge }`. Screens derive specific values (sidebar width, content width, truncation lengths) locally.
+
+**Why hook, not Context:** 3 screens + 2 UI components consume dimensions. Context adds a provider wrapper and indirection for what is a simple useState + resize listener. Migration to Context is trivial if the app grows to 10+ consumers — the interface stays the same.
+
+**Key handling (two-tier):**
+- Global (`use-global-keys.ts`): Ctrl+C/K/Q//, Escape — all screens
+- Screen-local (e.g. `workflow.tsx` useInput): Ctrl+\, Ctrl+D, arrows — screen-specific
+- `shortcuts.ts` is metadata-only for help overlay display
+
 ### Visual Design: Why OpenCode
 
 opencode has the best terminal UI in AI coding tools. Its design achieves polish through **simple, replicable patterns**:
@@ -66,7 +77,6 @@ What we **can't** match (and it's fine):
 | `src/engine/highlight.ts` | Shiki singleton + ANSI output | Syntax highlighting for diffs and code blocks. Custom TextMate theme from theme.ts. |
 | `src/ui/event-card.tsx` | Renders TuiEvent as visual card | The heart of the visual design. Switch on event type → sub-components with themed rendering. |
 | `src/ui/conversation-flow.tsx` | Scrollable event list | Uses `<Static>` for completed tasks, dynamic render for active events. Windowing logic. |
-| `src/ui/layout.tsx` | Main layout | `backgroundColor={theme.background}` on outer Box. Header + content + footer. |
 | `src/engine/orchestrator.ts` | Main workflow loop | Emits `TuiEvent`s consumed by the UI. No React deps. |
 
 ## What Changed in the Restructure

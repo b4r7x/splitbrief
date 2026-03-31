@@ -1,4 +1,4 @@
-import { Box, Text, useStdout } from 'ink';
+import { Box, Text } from 'ink';
 import type { Theme } from '../theme.js';
 
 interface SidebarTask {
@@ -17,6 +17,7 @@ interface SidebarProps {
   tasks: SidebarTask[];
   costData: CostData;
   theme: Theme;
+  width: number;
 }
 
 const statusIcon: Record<SidebarTask['status'], string> = {
@@ -40,13 +41,9 @@ function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max - 1) + '\u2026' : text;
 }
 
-export default function Sidebar({ tasks, costData, theme: t }: SidebarProps) {
-  const { stdout } = useStdout();
-  const cols = stdout?.columns ?? 80;
-  const width = Math.min(30, Math.floor(cols * 0.25));
-
+export default function Sidebar({ tasks, costData, theme: t, width }: SidebarProps) {
   const doneCount = tasks.filter((tk) => tk.status === 'done').length;
-  const labelWidth = width - 4; // account for border + padding
+  const labelWidth = Math.max(10, width - 4);
 
   return (
     <Box flexDirection="column" width={width} borderStyle="single" borderLeft borderTop={false} borderBottom={false} borderRight={false} borderColor={t.border}>

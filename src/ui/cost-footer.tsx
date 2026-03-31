@@ -9,6 +9,7 @@ interface CostFooterProps {
   estimatedCost: number;
   estimatedSavings: number;
   implementerModel: string;
+  isSmall?: boolean;
 }
 
 export function rateColor(localRate: number): string {
@@ -18,15 +19,19 @@ export function rateColor(localRate: number): string {
   return t.error;
 }
 
-export default function CostFooter({ currentTask, totalTasks, localRate, estimatedCost, estimatedSavings, implementerModel }: CostFooterProps) {
+export default function CostFooter({ currentTask, totalTasks, localRate, estimatedCost, estimatedSavings, implementerModel, isSmall }: CostFooterProps) {
   const t = getTheme();
   return (
     <Box width="100%" paddingX={1} justifyContent="space-between">
       <Box gap={2}>
         <Text color={t.text}>Task {currentTask}/{totalTasks}</Text>
         <Text color={rateColor(localRate)}>Local: {Math.round(localRate)}%</Text>
-        <Text color={t.text}>{formatCost(estimatedCost)}</Text>
-        <Text color={t.success}>Saved: ~{formatCost(estimatedSavings)}</Text>
+        {!isSmall && (
+          <>
+            <Text color={t.text}>{formatCost(estimatedCost)}</Text>
+            <Text color={t.success}>Saved: ~{formatCost(estimatedSavings)}</Text>
+          </>
+        )}
         <Text color={t.textDim}>{implementerModel}</Text>
       </Box>
       <Text color={t.textDim}>ctrl+b budget</Text>

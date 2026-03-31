@@ -77,6 +77,7 @@ function listDir(dir: string, root: string, depth: number): string {
 
 async function loadSdk(): Promise<{ query: (...args: any[]) => any }> {
   try {
+    // @ts-expect-error optional dependency
     return await import('@anthropic-ai/claude-agent-sdk');
   } catch {
     throw new Error(
@@ -300,6 +301,7 @@ export function createAgentSdkPlanner(): PlannerBackend {
     async isAvailable(): Promise<boolean> {
       if (!process.env.ANTHROPIC_API_KEY) return false;
       try {
+        // @ts-expect-error optional dependency
         await import('@anthropic-ai/claude-agent-sdk');
         return true;
       } catch {

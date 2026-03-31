@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
-import { useInput, useApp } from 'ink';
+import { useApp } from 'ink';
 import { useRouter } from './hooks/use-router.js';
 import { useSessions } from './hooks/use-sessions.js';
 import { useOverlay } from './hooks/use-overlay.js';
 import { useConfig } from './hooks/use-config.js';
-import { useAppCommands } from './hooks/use-app-commands.js';
-import { useCtrlC } from './hooks/use-ctrl-c.js';
+import { createCommands, toPaletteItems, executeSlashCommand } from './commands.js';
+import { useGlobalKeys } from './hooks/use-global-keys.js';
 import { Router } from './router.js';
 import { getTheme } from './theme.js';
-import type { WorkflowState, RouteData } from './types.js';
+import type { WorkflowState, RouteData, CommandContext, Screen } from './types.js';
 
 interface AppProps {
   feature?: string;
@@ -37,19 +37,18 @@ export default function App({ feature, projectDir, auto, modelOverride, provider
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const { paletteItems, handleSlashCommand } = useAppCommands(overlay, screen, exit, setErrorMessage);
+  const ctx: CommandContext = {
+    openOverlay: overlay.open,
+    closeOverlay: overlay.close,
+    showStatus: () => setErrorMessage('No active workflow'),
+    quit: () => exit(),
+  };
+  const commands = createCommands(ctx);
+  const paletteItems = toPaletteItems(commands);
+  const handleSlashCommand = (raw: string, from: Screen) =>
+    executeSlashCommand(commands, raw, from, setErrorMessage);
 
-  useCtrlC(screen, exit, setErrorMessage);
-
-  useInput((input, key) => {
-    if (key.escape && overlay.isOpen) {
-      overlay.close();
-      return;
-    }
-    if (key.ctrl && input === 'k' && !overlay.isOpen) {
-      overlay.open('command-palette');
-    }
-  });
+  useGlobalKeys({ screen, overlay, exit, setErrorMessage });
 
   return (
     <Router

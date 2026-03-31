@@ -1,4 +1,5 @@
 export type Screen = 'home' | 'workflow' | 'summary';
+export const ALL_SCREENS: Screen[] = ['home', 'workflow', 'summary'];
 
 export type ThemeMode = 'terminal' | 'mono';
 
@@ -223,7 +224,7 @@ export type TuiEvent =
   | { type: 'task-complete'; ts: number; taskId: string; title: string; method: 'local' | 'escalated'; retries: number; duration: number }
   | { type: 'task-skipped'; ts: number; taskId: string; title: string; reason: string }
   | { type: 'implementer-generate'; ts: number; status: 'running' | 'done' | 'failed'; model?: string; file?: string; linesAdded?: number; linesRemoved?: number; diff?: string; duration?: number }
-  | { type: 'validate'; ts: number; passed: boolean; stages: { tsc: boolean; lint: boolean; test: boolean }; error?: string; duration?: number }
+  | { type: 'validate'; ts: number; status: 'running' | 'done'; passed: boolean; stages: { tsc: boolean; lint: boolean; test: boolean }; error?: string; duration?: number }
   | { type: 'retry'; ts: number; taskId: string; attempt: number; maxRetries: number }
   | { type: 'escalate'; ts: number; tier: 1 | 2; hint?: string }
   | { type: 'git-commit'; ts: number; message: string }
@@ -241,15 +242,16 @@ export type OverlayType = 'none' | 'help' | 'command-palette' | 'picker';
 
 export interface SlashCommandDef {
   name: string;
+  label?: string;
   description: string;
+  shortcut?: string | null;
   validScreens: Screen[];
-  handler: (ctx: CommandContext) => void;
+  handler: () => void;
 }
 
 export interface CommandContext {
   openOverlay: (type: OverlayType) => void;
   closeOverlay: () => void;
-  toggleSidebar: () => void;
   showStatus: () => void;
   quit: () => void;
 }
