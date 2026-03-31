@@ -1,7 +1,7 @@
 import React from 'react';
 import { render } from 'ink';
 import { PassThrough } from 'node:stream';
-import TaskSummary from '../../src/tui/task-summary.js';
+import TaskSummary from '../../src/ui/task-summary.js';
 
 type Props = Parameters<typeof TaskSummary>[0];
 

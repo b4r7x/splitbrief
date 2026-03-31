@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTasks, topoSort } from '../src/spec/parser.js';
+import { parseTasks, topoSort } from '../src/engine/spec/parser.js';
 
 const validTasksMd = `---
 id: T001

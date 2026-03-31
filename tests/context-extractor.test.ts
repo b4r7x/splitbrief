@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractFunctionContext } from '../src/orchestrator/context-extractor.js';
+import { extractFunctionContext } from '../src/engine/context-extractor.js';
 
 describe('extractFunctionContext', () => {
   it('extracts export function by name', () => {

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
-import type { Config } from './types.js';
+import type { Config, ThemeMode } from './types.js';
 
 const CONFIG_DIR = '.tiny-spec';
 const CONFIG_FILE = 'config.yaml';
@@ -69,6 +69,9 @@ export function createDefaultConfig(): Config {
       maxRetries: 3,
       commitPerTask: true,
     },
+    theme: 'terminal' as ThemeMode,
+    shikiTheme: 'github-dark',
+    sessions: { scope: 'project' as const },
   };
 }
 
@@ -173,6 +176,21 @@ export function validateConfig(config: Record<string, unknown>): ConfigError[] {
   const retries = (config as any)?.workflow?.maxRetries;
   if (retries !== undefined && (typeof retries !== 'number' || !Number.isInteger(retries) || retries < 0)) {
     errors.push({ path: 'workflow.maxRetries', message: 'Must be a non-negative integer' });
+  }
+
+  const theme = (config as any)?.theme;
+  if (theme !== undefined && theme !== 'terminal' && theme !== 'mono') {
+    errors.push({ path: 'theme', message: `Must be one of: terminal, mono (got ${JSON.stringify(theme)})` });
+  }
+
+  const shikiTheme = (config as any)?.shikiTheme;
+  if (shikiTheme !== undefined && (typeof shikiTheme !== 'string' || shikiTheme.length === 0)) {
+    errors.push({ path: 'shikiTheme', message: 'Must be a non-empty string' });
+  }
+
+  const sessionsScope = (config as any)?.sessions?.scope;
+  if (sessionsScope !== undefined && sessionsScope !== 'project' && sessionsScope !== 'global') {
+    errors.push({ path: 'sessions.scope', message: `Must be one of: project, global (got ${JSON.stringify(sessionsScope)})` });
   }
 
   return errors;

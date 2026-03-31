@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, mkdirSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { validateTaskPath } from '../src/utils/fs.js';
-import { applyCode } from '../src/orchestrator/implementer.js';
+import { applyCode } from '../src/engine/implementer.js';
 import type { Task } from '../src/types.js';
 
 function makeTask(overrides: Partial<Task> = {}): Task {

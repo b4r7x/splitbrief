@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeDiff } from '../src/orchestrator/diff.js';
+import { computeDiff } from '../src/utils/diff.js';
 
 describe('computeDiff', () => {
   it('creates file — empty old produces all + lines', () => {

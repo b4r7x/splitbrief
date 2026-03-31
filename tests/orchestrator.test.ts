@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { runWorkflow, allValidationsPassed, hasDependencyFailed, estimateCostSavings } from '../src/orchestrator/orchestrator.js';
+import { runWorkflow, allValidationsPassed, hasDependencyFailed, estimateCostSavings } from '../src/engine/orchestrator.js';
 import type { Task, ValidationResult, TokenUsage } from '../src/types.js';
 
 describe('runWorkflow', () => {

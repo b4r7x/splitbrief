@@ -27,7 +27,7 @@ Core value: **same planning quality, 50%+ cost savings** by offloading mechanica
 
 **Our moat**: Intelligent planner/implementer split with validation, retry, and escalation pipeline. Nobody else does this.
 
-## Strategic Decisions (2026-03-26)
+## Strategic Decisions
 
 ### 1. Keep the cost-optimization focus
 
@@ -35,11 +35,11 @@ Don't pivot to "universal connector". The market for multi-agent orchestrators i
 
 ### 2. Interactive TUI picker — YES
 
-Add interactive model/provider selection to `start` command. Auto-detect available planners and running implementer endpoints. No more editing YAML to get started.
+Interactive model/provider selection in `start` command. Auto-detect available planners and running implementer endpoints. No more editing YAML to get started.
 
 ### 3. Subprocess implementer — YES (as option)
 
-Add `implementer.type: agent` that runs a subprocess command instead of OpenAI chat API. Lets users plug in custom bash wrappers, alternative CLIs, etc. But the default stays OpenAI-compatible API — it works and is simple.
+`implementer.type: agent` runs a subprocess command instead of OpenAI chat API. Lets users plug in custom bash wrappers, alternative CLIs, etc. Default stays OpenAI-compatible API.
 
 ### 4. Tool calls in implementer — NO
 
@@ -47,39 +47,47 @@ Small models (7B-27B) can't reliably produce tool call format. Current pipeline 
 
 ### 5. Don't wrap agents in agents
 
-If the implementer IS a full coding agent (manages its own files/git/context), there's a conflict of control. tiny-spec owns file writing, validation, and git. The implementer returns code, nothing more.
+If the implementer IS a full coding agent, there's a conflict of control. tiny-spec owns file writing, validation, and git. The implementer returns code, nothing more.
 
-### 6. Name change — open question
+### 6. OpenCode-inspired TUI (v0.5 — 2026-03-31)
 
-"tiny-spec" implies spec-driven development, which is accurate. If we rename, it should reflect cost-optimization, not "universal connector". No decision yet.
+The TUI visual language is modeled after opencode — the best-looking terminal coding assistant. Key principles:
 
-### 7. Full TUI redesign — Conversation Flow (2026-03-27)
+**Why opencode as reference**: opencode has the most polished terminal UI in the AI coding space. It achieves visual quality through simple, replicable patterns — not GPU acceleration or custom renderers.
 
-The dual-pane layout (planner left, implementer right with raw text) is replaced with a **single-column conversation flow** with structured event cards. Research showed:
-- Developers prefer structured output over raw chat streams ([Pragmatic Engineer Survey 2026](https://newsletter.pragmaticengineer.com/p/ai-tooling-2026))
-- Collapsible code blocks are expected UX ([Google Developers Blog](https://developers.googleblog.com/en/unleash-your-development-superpowers-refining-the-core-coding-experience/))
-- Terminal scroll management is a known pain point ([Claude Code issues](https://github.com/anthropics/claude-code/issues/36582))
-- "Terminal Is All You Need" paper identifies transparency + representational compatibility as key properties ([arxiv 2603.10664](https://arxiv.org/html/2603.10664))
+**Design language** (achievable in Ink 6):
+- **Background color stepping** (3 levels: `#0a0a0a` → `#141414` → `#1e1e1e`) instead of box-drawing borders
+- **Left-colored accent lines** (`┃`) for message ownership — accent for planner, primary for user, warning for escalation, error for failures
+- **Compact tool calls** — one-line format (`. description  result`) in muted color, expandable
+- **Syntax-highlighted diffs** via Shiki 4.x — teal additions on dark teal bg, red removals on dark red bg
+- **Braille spinners** (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` at 80ms) instead of text spinners
+- **Markdown rendering** in planner text — headings in accent, code blocks highlighted, bold in warning
 
-Design decisions:
-- **Planner phases = conversational** (text, questions, approval prompts)
-- **Implement/validate/git = structured tool-call cards** (`⚡ operation → result`)
-- **Diff = collapsible** (1-line summary by default, expand on demand)
-- **Completed tasks collapse** to 1 line (expandable)
-- **Sticky header** with pipeline progress bar (`● res → ● spec → ◉ impl → ○ rev`)
-- **Sticky footer** with real-time cost savings (`Local: 75% │ $0.02 │ Saved: ~$1.40`)
-- **Framework**: Stay on Ink 5.x (React). Claude Code started on Ink too. OpenTUI (@opentui/react) is a future option if perf becomes an issue.
-- **Full replace** of callback system: `plannerLines: string[]` → structured `TuiEvent` union type
-- **Constitution updated** to v1.3.0: beautiful visualization of orchestration is part of product identity
+**What we CAN'T replicate** (and don't need to):
+- opencode uses OpenTUI (Zig native core, 60fps, GPU). We use Ink 6 with full-screen redraw via react-reconciler + Yoga layout (30fps cap). Ink erases and rewrites the entire output on each state change — it does NOT render line-by-line. Mitigated by `incrementalRendering` (Ink 6.5+) which diffs output and only rewrites changed lines, and `synchronizedOutput` (Ink 6.7+) which prevents flicker in multiplexers.
+- opencode has mouse support. Ink doesn't.
+- opencode has smooth animations. Ink's full-redraw architecture means animations are limited to spinners and progress bars.
 
-### 8. Stay on Ink 5.x (2026-03-27)
+**What we GAINED over previous approach**:
+- Ink 6.5+ has native `incrementalRendering` — only changed lines redraw
+- Ink 6.7+ has `synchronizedOutput` — no flicker in tmux/Zellij
+- `<Static>` for completed events — zero re-render cost
+- `backgroundColor` on `<Box>` (Ink 6.1+) — the depth effect that makes opencode look good
+
+### 7. Clean architecture: engine/ + ui/
+
+Previous: tangled `orchestrator/` with 25+ files and `tui/` with components. Bulletproof React features pattern was attempted and rejected — artificial feature boundaries don't fit a single-view CLI app.
+
+Current: `engine/` (zero React deps, all business logic) + `ui/` (flat, ~14 Ink components) + `hooks/` (bridge). Theme is project-level (`src/theme.ts`), importable by both engine and UI.
+
+### 8. Stay on Ink 6.x
 
 Evaluated alternatives:
-- **@opentui/react** (OpenCode's framework, Zig core) — production-ready but young, minimal docs, migration risk
+- **@opentui/react** (OpenCode's framework, Zig core) — production-ready but requires Bun, v0.1.x, migration risk
 - **Bubbletea** (Go) — not applicable (wrong language)
 - **neo-blessed** — semi-maintained, not React
 
-Ink works, we know React, sticky header/footer is achievable with manual height management. Migrate to OpenTUI later if needed — both use React so migration is straightforward.
+Ink works, we know React, incremental rendering is good enough. Migrate to OpenTUI later if needed.
 
 ## Competitive Landscape (March 2026)
 
@@ -90,12 +98,13 @@ Multi-agent coding space is exploding:
 - **Agent Orchestrator** (github.com/ComposioHQ/agent-orchestrator) — parallel agents, git worktrees, swappable backends
 - **Overstory** (github.com/jayminwest/overstory) — 11 runtime adapters, tmux, SQLite mail
 - **Ruflo** — multi-agent swarms for Claude Code
+- **OpenCode** (opencode.ai) — beautiful TUI, OpenTUI framework, but no cost optimization
 
 None of these optimize for cost. They assume the same tier of model for all work.
 
 ## Architecture Principles
 
-See `.specify/memory/constitution.md` for the 6 constitutional principles (v1.3.0):
+See `.specify/memory/constitution.md` for the 6 constitutional principles (v1.3.1):
 
 1. **Cost-Optimal Orchestration** — Opus only for tasks where quality matters; implementation on cheap models
 2. **Spec-Driven Development** — No code without spec; self-contained task prompts
@@ -104,70 +113,12 @@ See `.specify/memory/constitution.md` for the 6 constitutional principles (v1.3.
 5. **Validate Before Commit** — tsc → lint → test per task; final Opus review
 6. **Identity & Anti-Goals** — Not a multi-agent coordinator; beautiful orchestration UX is product identity, not scope creep
 
-## Current State (March 2026)
+## Version History
 
-- **v0.1**: Complete. 45 tasks. Core orchestrator works end-to-end.
-- **v0.2**: In progress on branch `004-token-dashboard-integration-tests`
-  - Pluggable planner backends (6 built-in + shell)
-  - Token dashboard / cost tracking
-  - Integration tests
-  - Bug fixes and hardening
-- **v0.3 features** (branch `006-conversational-planning`):
-  - Conversational planning: planner can ask clarifying questions via `<!-- Q:{JSON} -->` markers
-  - Interactive TUI picker for planner/implementer selection with auto-detection
-  - Shell subprocess implementer (`implementer.type: shell`)
-  - Constitution updated to v1.1.0 (added Principle VI: Identity & Anti-Goals)
-  - Removed backward-compat planner wrapper; `spec` command uses factory
-  - Codebase cleanup
-- **v0.4** (next — `008-tui-conversation-flow`):
-  - Full TUI redesign: conversation flow with structured event cards
-  - New event model replacing raw text callbacks
-  - Collapsible diffs, collapsible completed tasks
-  - Pipeline progress bar, real-time cost savings display
-  - Constitution v1.3.0
-
-## Known Problems & Open Questions (2026-03-26)
-
-### Shell implementer doesn't work well for agent-style tools
-
-The `implementer.type: shell` was designed with a simple stdin/stdout model: send prompt to stdin, read code from stdout. This works for simple scripts but **doesn't work for full coding agents** like claude-zai (Claude Code wrapper) because:
-
-1. **Bash functions can't be spawned** — `spawn()` doesn't see shell functions, only executables on PATH. Workaround (`bash -c "source ~/.zshrc && claude-zai ..."`) is ugly and fragile.
-2. **Agent-style tools manage their own files** — If the implementer IS a coding agent (like Claude Code via Z.AI), it writes files directly. But tiny-spec assumes it controls file writes via `extractCode()` → `applyCode()`. Two things writing to the same files = conflict.
-3. **The stdin/stdout contract is too simple** — Agents like Claude Code use stream-json format with session IDs, tool use, etc. The simple "prompt in, code out" model doesn't capture this.
-
-**Decision needed**: Should the shell implementer be redesigned to support agent-mode (where the implementer manages its own files and tiny-spec only validates/commits)? Or should we keep it simple and only support "dumb" implementers that return code text?
-
-This is fundamentally about Decision #5 ("Don't wrap agents in agents"). If we allow agent-style implementers, we need to rethink who owns file writes, git, and validation.
-
-### Interactive TUI needs work
-
-The current interactive implementation has rough edges:
-
-1. **Picker works** — auto-detection and selection for planner/implementer is functional
-2. **Question protocol works** — `<!-- Q:{JSON} -->` markers are parsed from planner stream
-3. **But the conversational flow hasn't been battle-tested** — it was implemented by agents without manual end-to-end testing with real Claude Code
-4. **Comment-on-approval flow** — the regenerate loop (comment → planner regenerates → re-approve) depends on planner session continuity which only works with claude-code and agent-sdk backends
-5. **The TUI input components exist** but need real-world UX testing — focus management, keyboard handling, and layout may have issues
-
-### Claude Code CLI compatibility
-
-Claude Code v2.1.84 requires `--verbose` flag when using `--output-format stream-json` with `-p`. This wasn't documented in earlier versions. Fixed in `claude-code.ts` but indicates the CLI API is a moving target — we need to handle version differences gracefully.
-
-## Near-term Priorities
-
-1. **TUI redesign (v0.4)** — Full conversation flow with structured events, collapsible diffs, pipeline bar, cost savings display. This is the top priority — the current dual-pane raw text UI doesn't expose the product's value.
-2. **End-to-end test the conversational flow** — Run the full pipeline with real Claude Code and real Ollama
-3. Cost reporting (token dashboard with per-task breakdown) — partially done
-4. Integration test coverage — in progress
-5. Multi-language support (beyond TypeScript/JavaScript)
-6. Prompt size limit enforcement (8K/16K) in formatter
-
-## Spec History
-
-| Directory | Status | Content |
-|-----------|--------|---------|
-| `specs/001-tiny-spec-core/` | Historical | Original bootstrap spec. v0.1 prototype. |
-| `specs/002-cost-optimized-orchestrator/` | Reference | Main v0.1 spec. 4 user stories, 24 FRs, 45 tasks. All complete. |
-| `specs/003-v02-fixes-robustness/` | Active | v0.2 fixes: retry/escalation bugs, config validation, test coverage. |
-| `specs/004-token-dashboard-integration-tests/` | Active | Current branch. Pluggable backends, token dashboard, integration tests. |
+| Version | Date | Key Changes |
+|---------|------|-------------|
+| v0.1 | 2026-03 | Core orchestrator, 45 tasks, end-to-end workflow |
+| v0.2 | 2026-03 | Pluggable backends (6 planners + shell), token dashboard, integration tests |
+| v0.3 | 2026-03 | Conversational planning, TUI picker, agent-mode implementer, version detection |
+| v0.4 | 2026-03 | TUI conversation flow redesign — event model, collapsible diffs, pipeline bar |
+| v0.5 | 2026-03 | OpenCode visual restructure — Ink 6/React 19, Shiki highlighting, theme system, engine/ui architecture |

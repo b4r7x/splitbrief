@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractQuestionsFromStream, createQuestionAccumulator } from '../src/orchestrator/question-parser.js';
+import { extractQuestionsFromStream, createQuestionAccumulator } from '../src/engine/question-parser.js';
 
 describe('extractQuestionsFromStream', () => {
   it('extracts a single choice question', () => {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { detectLinter, findAffectedTestFile, formatValidationError } from '../src/orchestrator/validator.js';
+import { detectLinter, findAffectedTestFile, formatValidationError } from '../src/engine/validator.js';
 import type { ValidationResult } from '../src/types.js';
 
 describe('detectLinter', () => {

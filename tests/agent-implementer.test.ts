@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
 import type { Config, Task, ProjectContext } from '../src/types.js';
-import { implementTaskViaAgent, retryTaskViaAgent } from '../src/orchestrator/implementers/agent.js';
+import { implementTaskViaAgent, retryTaskViaAgent } from '../src/engine/implementers/agent.js';
 
 function makeConfig(extra?: Partial<Config['implementer']>): Config {
   return {

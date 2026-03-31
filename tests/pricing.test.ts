@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { getPricing, getPlannerPricing, getImplementerPricing, calculateCost } from '../src/orchestrator/pricing.js';
+import { getPricing, getPlannerPricing, getImplementerPricing, calculateCost } from '../src/engine/pricing.js';
 
 describe('getPricing', () => {
   it('returns correct pricing for claude-opus-4-6', () => {

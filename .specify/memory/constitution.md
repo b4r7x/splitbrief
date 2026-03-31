@@ -1,8 +1,8 @@
 <!--
 Sync Impact Report
-- Version change: 1.2.0 → 1.3.0
-- Modified principles: VI. Identity & Anti-Goals (added UX visibility clause)
-- Updated sections: Technical Constraints (TUI: conversation flow redesign)
+- Version change: 1.3.0 → 1.3.1
+- Modified principles: none
+- Updated sections: Technical Constraints (TUI: Ink 6.x + Shiki 4.x)
 - Removed sections: none
 - Templates requiring updates:
   - .specify/templates/plan-template.md ✅ compatible (generic Constitution Check gate)
@@ -130,7 +130,8 @@ Explicit anti-goals that MUST NOT be implemented:
 
 - **Runtime**: Node.js 22+ with native TypeScript stripping
 - **Language**: TypeScript 5.9+, ESM only (`"type": "module"`)
-- **TUI**: Ink 5.x (React for CLI), conversation flow layout with structured event cards
+- **TUI**: Ink 6.x (React 19 for CLI), conversation flow layout with structured event cards
+- **Syntax highlighting**: Shiki 4.x (WASM-based, async)
 - **Target**: macOS (primary), Linux (secondary)
 - **v0.1 scope**: TypeScript/JavaScript projects only
 - **Planner**: Pluggable backends (6 built-in + shell command via config)
@@ -171,4 +172,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 1.3.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-03-27
+**Version**: 1.3.1 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-03-31

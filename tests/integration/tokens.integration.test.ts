@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { guardIntegration, type TestGuard } from './guard.js';
 import { createInitialState, saveState, loadState } from '../../src/state.js';
-import { estimateCostSavings } from '../../src/orchestrator/orchestrator.js';
+import { estimateCostSavings } from '../../src/engine/orchestrator.js';
 
 let g: TestGuard;
 
