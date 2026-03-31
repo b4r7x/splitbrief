@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseStreamLine } from '../src/orchestrator/claude-stream.js';
+import { parseStreamLine } from '../src/engine/claude-stream.js';
 
 describe('parseStreamLine', () => {
   it('extracts text from assistant event', () => {

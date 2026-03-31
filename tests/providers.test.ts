@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createClient } from '../src/orchestrator/providers.js';
+import { createClient } from '../src/engine/providers.js';
 import type { Config } from '../src/types.js';
 
 function makeConfig(overrides: Partial<Config['implementer']> = {}): Config {

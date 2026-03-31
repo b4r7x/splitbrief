@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { getStageIndex } from '../src/tui/pipeline-bar.js';
+import { getStageIndex } from '../src/ui/pipeline-bar.js';
 import type { Phase } from '../src/types.js';
 
 describe('getStageIndex', () => {

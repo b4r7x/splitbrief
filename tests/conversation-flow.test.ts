@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { estimateEventHeight, getVisibleWindow } from '../src/tui/conversation-flow.js';
+import { estimateEventHeight, getVisibleWindow } from '../src/ui/conversation-flow.js';
 import type { TuiEvent } from '../src/types.js';
 
 function makeEvent(type: TuiEvent['type'], extra?: Record<string, unknown>): TuiEvent {
@@ -161,14 +161,14 @@ describe('getVisibleWindow', () => {
 
 describe('ConversationFlow component', () => {
   it('exports a default forwardRef component', async () => {
-    const mod = await import('../src/tui/conversation-flow.js');
+    const mod = await import('../src/ui/conversation-flow.js');
     assert.ok(mod.default, 'should export default');
     // forwardRef components have $$typeof and render
     assert.equal(typeof (mod.default as { render?: unknown }).render, 'function');
   });
 
   it('exports estimateEventHeight and getVisibleWindow', async () => {
-    const mod = await import('../src/tui/conversation-flow.js');
+    const mod = await import('../src/ui/conversation-flow.js');
     assert.equal(typeof mod.estimateEventHeight, 'function');
     assert.equal(typeof mod.getVisibleWindow, 'function');
   });

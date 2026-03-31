@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractCode, stripMarkdownFences, isCodeLine, looksLikeTypeScript } from '../src/orchestrator/extractor.js';
+import { extractCode, stripMarkdownFences, isCodeLine, looksLikeTypeScript } from '../src/engine/extractor.js';
 
 describe('extractCode', () => {
   it('extracts code from ```typescript fenced block with high confidence', () => {

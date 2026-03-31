@@ -1,95 +1,90 @@
 # What to Work on Next
 
-**Last updated**: 2026-03-27
-**Branch**: `008-tui-conversation-flow`
+**Last updated**: 2026-03-31
+**Branch**: `013-opencode-visual-restructure`
 **Context**: Load `/tiny-spec-dev` skill first, then read this file.
 
-## What Just Happened
+## What Just Happened (v0.5)
 
-TUI conversation flow redesign implemented (47 tasks, 402 tests pass). The dual-pane raw text layout is replaced with a single-column conversation flow showing structured event cards, collapsible diffs, pipeline progress bar, and real-time cost savings footer.
+Clean slate visual restructure completed:
 
-## Decision: Full TUI Redesign (2026-03-27)
+1. **Ink 5 → 6.8** + React 18 → 19 — incremental rendering, synchronized output, backgroundColor on Box
+2. **Project restructure** — `orchestrator/` → `engine/`, `tui/` → `ui/` (flat), new `hooks/`, `theme.ts`
+3. **OpenCode-inspired visuals** — background color stepping (3 levels), left accent lines, compact tool calls, braille spinners
+4. **Shiki syntax highlighting** — TypeScript/JavaScript code in diffs and planner markdown, custom theme with opencode palette
+5. **`<Static>` for completed events** — zero re-render cost for finished tasks
+6. **404 tests pass**, zero TSC errors, zero hardcoded colors in UI
 
-After extensive research and discussion, we decided to **replace the dual-pane raw text layout** with a **single-column conversation flow** with structured event cards.
+### Architecture Decision: engine/ + ui/ (not Bulletproof React)
 
-### Why
+We tried Bulletproof React (features/conversation/, features/input/, features/layout/, features/workflow/) and rejected it. Why:
 
-The current TUI has fundamental UX problems:
-1. **No visible collaboration** — planner and implementer are two independent text logs
-2. **No pipeline visibility** — `Phase: implementing` is a string, not a visual flow
-3. **No code display** — implementer generates code but it's shown as plain text, no diff
-4. **No cost savings visibility** — the entire USP (50%+ savings) is invisible to the user
-5. **Escalation is invisible** — the most valuable moment (planner helping stuck implementer) looks like any other line
+- tiny-spec's TUI is **one cohesive view** with ~14 components, not 4 independent features
+- Feature boundaries were artificial — `features/conversation/` imported from `features/workflow/` constantly
+- 4 folders with 3 files each = overhead, not organization
 
-### Design Decisions
+Instead: `engine/` (25 files, zero React) + `ui/` (14 files, flat) + `hooks/` (2 files) + `theme.ts`. Clean, simple, honest about what this project is.
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Layout | Single-column conversation flow | Shows dialog between roles naturally |
-| Planner output | Conversational text | Planner thinks — show the thinking |
-| Implementer output | Structured tool-call cards | Implementer executes — show operations |
-| Code display | Collapsible diff (summary default) | Clean by default, detail on demand |
-| Completed tasks | Collapse to 1 line | Prevent scroll overload |
-| Pipeline | Sticky header progress bar | Always visible: `● res → ● spec → ◉ impl` |
-| Cost savings | Sticky footer | Always visible: `Local: 75% │ Saved: $1.40` |
-| Framework | Stay on Ink 5.x | Works, known, React. OpenTUI later if needed |
-| Callback system | Full replace → structured events | `TuiEvent` union type replaces `string[]` |
-| Constitution | v1.3.0 | Beautiful orchestration UX = product identity |
+### Architecture Decision: theme.ts at project root
 
-### Research References
+Theme lives at `src/theme.ts` (not `src/ui/theme.ts`) because:
+- `engine/highlight.ts` needs syntax colors for the Shiki TextMate theme
+- Putting theme in `ui/` would create an `engine/ → ui/` dependency, violating the zero-UI-deps rule
+- Theme is data (hex strings), not UI — it belongs alongside `types.ts` as shared project-level config
 
-- [Pragmatic Engineer Survey 2026](https://newsletter.pragmaticengineer.com/p/ai-tooling-2026) — devs prefer structured output over raw streams
-- ["Terminal Is All You Need" (arxiv)](https://arxiv.org/html/2603.10664) — transparency + representational compatibility
-- [Anthropic: Effective Harnesses](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) — progress files, feature decomposition
-- [Google: Refining Coding UX](https://developers.googleblog.com/en/unleash-your-development-superpowers-refining-the-core-coding-experience/) — collapsible code blocks
-- Competitive analysis: Claude Squad, Conduit, Ralph TUI, AgentPipe, OpenCode, Codex CLI
+### Visual Design: Why OpenCode
 
-### Target Layout
+opencode has the best terminal UI in AI coding tools. Its design achieves polish through **simple, replicable patterns**:
 
-```
-┌─ sticky header ──────────────────────────────────────────────────────┐
-│ tiny-spec │ feature name │ ● res ● spec ● plan ◉ impl ○ rev │ 04:12│
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ● Planner researching... (conversational text)                      │
-│  ● Planner spec ready [approve/edit/comment]                         │
-│  ● Planner plan: 8 tasks                                            │
-│                                                                      │
-│  ✓ T1 auth middleware — local, 12s                                   │
-│  ✓ T2 JWT utils — local, 8s                                         │
-│  ─── T3: Login endpoint ──────────────────────                       │
-│  ⚡ implementer.generate(qwen2.5-coder:7b)          12s              │
-│    → src/routes/auth.ts (+47 lines)             [d] diff             │
-│  ⚡ validate(tsc, lint, test)                        ✓ 7s            │
-│  ⚡ git.commit("feat(auth): login endpoint")         1s              │
-│  ─── T4: Register (active) ──────────────────────                    │
-│  ⚡ implementer.generate(qwen2.5-coder:7b)          running...       │
-│                                                                      │
-├──────────────────────────────────────────────────────────────────────┤
-│ Task 4/8 │ Local: 75% │ $0.02 │ Saved: ~$1.40 │ qwen2.5-coder:7b  │
-└──────────────────────────────────────────────────────────────────────┘
-```
+| Pattern | How opencode does it | How we do it (Ink 6) |
+|---------|---------------------|----------------------|
+| Depth | 3-level bg stepping (#0a0a0a → #141414 → #1e1e1e) | `backgroundColor` on `<Box>` (Ink 6.1+) |
+| Message ownership | Left colored `┃` accent line | `<Text color={theme.accent}>┃</Text>` + content |
+| Tool calls | Compact 1-line with icon (`. description result`) | Same pattern in event-card.tsx |
+| Code | Shiki syntax highlighting | `codeToTokensBase` + `ansis` → ANSI in `<Text>` |
+| Borders | None on content — spacing + color contrast only | Removed all `borderStyle` from content cards |
+| Spinner | Braille frames at 80ms | `useState` + `setInterval` |
+
+What we **can't** match (and it's fine):
+- opencode uses OpenTUI (Zig native, 60fps) — we use Ink 6 with line-level incremental rendering
+- opencode has mouse support — we use keyboard (`d` for diff, arrows for scroll)
+- opencode has CSS-like animations — we have frame-based braille spinners
 
 ## Priority Order
 
-1. ~~**TUI redesign**~~ — DONE (47 tasks, 402 tests, all 7 user stories implemented)
-2. **End-to-end battle-test** — Run the full pipeline with real Claude Code + Ollama to validate the new conversation flow in practice
-3. Token dashboard, integration tests
-4. Multi-language support
+1. **End-to-end battle-test** — Run the full pipeline with real Claude Code + Ollama to validate new visuals in practice
+2. **Fix test script** — `npm test` glob `tests/**/*.test.ts` only matches subdirectory files. Should be `tests/*.test.ts` or include both patterns
+3. **Demo mode** — Add a way to preview the TUI with mock events without needing planner/implementer
+4. Token dashboard, integration tests
+5. Multi-language support (beyond TypeScript/JavaScript)
 
 ## Key Files to Understand
 
-| File | What it does | Why it matters for redesign |
-|------|-------------|---------------------------|
-| `src/app.tsx` | Root TUI component | Wires orchestrator callbacks → TUI state. Full rewrite needed. |
-| `src/tui/layout.tsx` | Dual-pane layout | **Replace** with conversation flow layout |
-| `src/tui/pane.tsx` | Scrollable text pane | **Replace** with event card renderer |
-| `src/tui/header.tsx` | Feature + timer | **Extend** with pipeline progress bar |
-| `src/tui/status-bar.tsx` | Phase/task/model | **Redesign** with cost savings display |
-| `src/tui/prompt.tsx` | Approval prompts | Keep, integrate inline in flow |
-| `src/types.ts` | All shared types | Add `TuiEvent` union type |
-| `src/orchestrator/orchestrator.ts` | Main workflow loop | Emit structured events instead of text |
+| File | What it does | Why it matters |
+|------|-------------|----------------|
+| `src/theme.ts` | Color palette — opencode dark theme | Single source of truth for all colors. Change one value, propagates everywhere. |
+| `src/engine/highlight.ts` | Shiki singleton + ANSI output | Syntax highlighting for diffs and code blocks. Custom TextMate theme from theme.ts. |
+| `src/ui/event-card.tsx` | Renders TuiEvent as visual card | The heart of the visual design. Switch on event type → sub-components with themed rendering. |
+| `src/ui/conversation-flow.tsx` | Scrollable event list | Uses `<Static>` for completed tasks, dynamic render for active events. Windowing logic. |
+| `src/ui/layout.tsx` | Main layout | `backgroundColor={theme.background}` on outer Box. Header + content + footer. |
+| `src/engine/orchestrator.ts` | Main workflow loop | Emits `TuiEvent`s consumed by the UI. No React deps. |
+
+## What Changed in the Restructure
+
+```
+BEFORE (v0.4)                    AFTER (v0.5)
+─────────────────                ────────────────
+src/orchestrator/  (25 files)  → src/engine/      (25 files, zero React)
+src/tui/           (13 files)  → src/ui/           (14 files, flat, all themed)
+src/spec/          (3 files)   → src/engine/spec/  (3 files)
+src/types.ts       (unchanged)   src/types.ts
+src/config.ts      (unchanged)   src/config.ts
+src/state.ts       (unchanged)   src/state.ts
+                    NEW:         src/theme.ts       (color palette)
+                    NEW:         src/engine/highlight.ts (Shiki)
+                    NEW:         src/hooks/          (workflow + navigation)
+```
 
 ## Conversation History Summary
 
-The owner wants tiny-spec to feel alive — to show the planner/implementer collaboration visually. Not another multi-agent coordinator, but a cost optimizer with state-of-the-art UX. The dual-pane raw text layout is being replaced because it hides the product's core value.
+The owner wants tiny-spec to feel alive — to show the planner/implementer collaboration visually. Not another multi-agent coordinator, but a cost optimizer with a TUI that makes you feel the savings happening in real-time. The opencode-inspired redesign replaces the old dual-pane raw text layout AND the failed Bulletproof React attempt with a clean, beautiful conversation flow.

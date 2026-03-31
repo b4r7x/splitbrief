@@ -1,3 +1,25 @@
+export type Screen = 'home' | 'workflow' | 'summary';
+
+export type ThemeMode = 'terminal' | 'mono';
+
+export type InputMode = 'normal' | 'review' | 'question';
+
+export interface Session {
+  id: string;
+  feature: string;
+  startedAt: number;
+  completedAt: number | null;
+  status: 'complete' | 'interrupted' | 'failed';
+  summary: Summary | null;
+  stateVersion: number;
+  stateFile: string | null;
+}
+
+export type RouteData =
+  | { screen: 'home' }
+  | { screen: 'workflow'; feature: string; resumeState?: WorkflowState }
+  | { screen: 'summary'; summary: Summary };
+
 export type Phase =
   | 'idle'
   | 'researching'
@@ -69,6 +91,9 @@ export interface Config {
     maxRetries: number;
     commitPerTask: boolean;
   };
+  theme?: ThemeMode;
+  shikiTheme?: string;
+  sessions?: { scope?: 'project' | 'global' };
 }
 
 export interface ValidationResult {
@@ -208,6 +233,31 @@ export interface OrchestratorCallbacks {
   onEvent: (event: TuiEvent) => void;
   onApprovalNeeded: (type: 'spec' | 'plan', filePath: string) => Promise<{ approved: boolean; comment?: string }>;
   onExternalChanges: () => Promise<boolean>;
-  onQuestionAsked?: (question: import('./orchestrator/question-parser.js').ClarificationQuestion, num: number, total: number) => Promise<string>;
+  onQuestionAsked?: (question: import('./engine/question-parser.js').ClarificationQuestion, num: number, total: number) => Promise<string>;
   onComplete: (summary: Summary) => void;
+}
+
+export type OverlayType = 'none' | 'help' | 'command-palette' | 'picker';
+
+export interface SlashCommandDef {
+  name: string;
+  description: string;
+  validScreens: Screen[];
+  handler: (ctx: CommandContext) => void;
+}
+
+export interface CommandContext {
+  openOverlay: (type: OverlayType) => void;
+  closeOverlay: () => void;
+  toggleSidebar: () => void;
+  showStatus: () => void;
+  quit: () => void;
+}
+
+export interface CommandPaletteItem {
+  label: string;
+  description: string;
+  shortcut: string | null;
+  action: () => void;
+  availableOn: Screen[];
 }

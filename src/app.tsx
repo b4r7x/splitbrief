@@ -1,15 +1,20 @@
-import { useState, useEffect } from 'react';
-import Layout from './tui/layout.js';
-import SummaryView from './tui/summary.js';
-import QuestionPrompt from './tui/question-prompt.js';
-import UserInput from './tui/user-input.js';
-import { runWorkflow, calculateCostBreakdown } from './orchestrator/orchestrator.js';
+import React, { useState, useCallback, useMemo } from 'react';
+import { useInput, useApp } from 'ink';
+import { useRouter } from './hooks/use-router.js';
+import { useSessions } from './hooks/use-sessions.js';
+import { useOverlay } from './hooks/use-overlay.js';
+import { HomeScreen } from './ui/screens/home.js';
+import { WorkflowScreen } from './ui/screens/workflow.js';
+import { SummaryScreen } from './ui/screens/summary.js';
+import { HelpOverlay } from './ui/help-overlay.js';
+import { CommandPalette } from './ui/command-palette.js';
 import { loadConfig } from './config.js';
-import type { Phase, TuiEvent, Summary, OrchestratorCallbacks, WorkflowState } from './types.js';
-import type { ClarificationQuestion } from './orchestrator/question-parser.js';
+import { getTheme } from './theme.js';
+import { createCommands, findCommand, getCommandsForScreen } from './commands.js';
+import type { WorkflowState, RouteData, Screen, OverlayType, CommandPaletteItem } from './types.js';
 
 interface AppProps {
-  feature: string;
+  feature?: string;
   projectDir: string;
   auto: boolean;
   modelOverride?: string;
@@ -20,193 +25,142 @@ interface AppProps {
   savedState?: WorkflowState;
 }
 
-const MAX_EVENTS = 10_000;
-
 export default function App({ feature, projectDir, auto, modelOverride, providerOverride, contextLengthOverride, plannerOverride, plannerModelOverride, savedState }: AppProps) {
-  const [events, setEvents] = useState<TuiEvent[]>([]);
-  const [phase, setPhase] = useState<Phase>('idle');
-  const [currentTask, setCurrentTask] = useState(0);
-  const [totalTasks, setTotalTasks] = useState(0);
-  const [localCount, setLocalCount] = useState(0);
-  const [escalatedCount, setEscalatedCount] = useState(0);
-  const [model, setModel] = useState('');
-  const [approval, setApproval] = useState<{
-    type: 'spec' | 'plan';
-    filePath: string;
-    onApprove: () => void;
-    onReject: () => void;
-    onComment?: (text: string) => void;
-    supportsSession?: boolean;
-  } | null>(null);
-  const [startedAt, setStartedAt] = useState('');
-  const [screen, setScreen] = useState<'workflow' | 'summary'>('workflow');
-  const [summaryData, setSummaryData] = useState<Summary | null>(null);
-  const [inputMode, setInputMode] = useState<{
-    type: 'question';
-    question: ClarificationQuestion;
-    questionNumber: number;
-    totalQuestions: number;
-    onResolve: (answer: string) => void;
-  } | {
-    type: 'comment';
-    prompt: string;
-    onResolve: (text: string) => void;
-  } | null>(null);
+  const initialRoute: RouteData | undefined = feature
+    ? { screen: 'workflow', feature, resumeState: savedState }
+    : undefined;
 
-  const localRate = (localCount + escalatedCount) > 0
-    ? (localCount / (localCount + escalatedCount)) * 100
-    : 0;
+  const { screen, routeData, navigate } = useRouter(initialRoute);
+  const { exit } = useApp();
+  const overlay = useOverlay();
 
-  async function askQuestion(question: ClarificationQuestion, num: number, total: number): Promise<string> {
-    if (auto) return question.default?.toString() ?? '';
-    return new Promise<string>((resolve) => {
-      setInputMode({
-        type: 'question',
-        question,
-        questionNumber: num,
-        totalQuestions: total,
-        onResolve: (answer: string) => {
-          setInputMode(null);
-          resolve(answer);
-        },
-      });
-    });
+  const config = loadConfig(projectDir);
+  if (modelOverride) config.implementer.model = modelOverride;
+  if (providerOverride) config.implementer.provider = providerOverride;
+  if (contextLengthOverride) config.implementer.contextLength = contextLengthOverride;
+  if (plannerOverride) (config.planner as any).tool = plannerOverride;
+  if (plannerModelOverride) (config.planner as any).model = plannerModelOverride;
+
+  const theme = getTheme(config.theme);
+  const sessionsScope = config.sessions?.scope ?? 'project';
+  const { sessions } = useSessions(sessionsScope, projectDir);
+
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const clearError = useCallback(() => setErrorMessage(null), []);
+
+  const commands = useMemo(() => createCommands({
+    openOverlay: overlay.open,
+    closeOverlay: overlay.close,
+    toggleSidebar: () => {},
+    showStatus: () => {
+      setErrorMessage('No active workflow');
+    },
+    quit: () => exit(),
+  }), [overlay.open, overlay.close, exit]);
+
+  const handleSlashCommand = useCallback((raw: string, fromScreen: Screen) => {
+    const name = raw.split(' ')[0].toLowerCase();
+    const cmd = findCommand(commands, name);
+
+    if (!cmd) {
+      setErrorMessage(`Unknown command: ${name}. Type /help for available commands.`);
+      return;
+    }
+
+    if (!cmd.validScreens.includes(fromScreen)) {
+      setErrorMessage(`${cmd.name} is only available on the ${cmd.validScreens.join(', ')} screen.`);
+      return;
+    }
+
+    cmd.handler({ openOverlay: overlay.open, closeOverlay: overlay.close, toggleSidebar: () => {}, showStatus: () => setErrorMessage('No active workflow'), quit: () => exit() });
+  }, [commands, overlay.open, overlay.close, exit]);
+
+  useInput((input, key) => {
+    if (key.escape && overlay.isOpen) {
+      overlay.close();
+      return;
+    }
+    if (key.ctrl && input === 'k' && !overlay.isOpen) {
+      overlay.open('command-palette');
+    }
+  });
+
+  const paletteItems: CommandPaletteItem[] = useMemo(() => {
+    const allScreens: Screen[] = ['home', 'workflow', 'summary'];
+    const items: CommandPaletteItem[] = [
+      { label: 'Help', description: 'Show commands and shortcuts', shortcut: '?', action: () => overlay.open('help'), availableOn: allScreens },
+      { label: 'Status', description: 'Show workflow progress', shortcut: null, action: () => setErrorMessage('No active workflow'), availableOn: allScreens },
+      { label: 'Configure', description: 'Select planner and model', shortcut: null, action: () => overlay.open('picker'), availableOn: ['home'] },
+      { label: 'Toggle Sidebar', description: 'Show/hide task sidebar', shortcut: 'Ctrl+\\', action: () => {}, availableOn: ['workflow'] },
+      { label: 'Toggle Diff', description: 'Expand/collapse latest diff', shortcut: 'd', action: () => {}, availableOn: ['workflow'] },
+      { label: 'Quit', description: 'Exit tiny-spec', shortcut: 'q', action: () => exit(), availableOn: allScreens },
+    ];
+    return items;
+  }, [overlay.open, exit]);
+
+  if (overlay.active === 'help') {
+    return <HelpOverlay onClose={overlay.close} theme={theme} />;
   }
 
-  useEffect(() => {
-    const config = loadConfig(projectDir);
-
-    if (modelOverride) config.implementer.model = modelOverride;
-    if (providerOverride) config.implementer.provider = providerOverride as typeof config.implementer.provider;
-    if (contextLengthOverride) config.implementer.contextLength = contextLengthOverride;
-    if (plannerOverride) (config.planner as any).tool = plannerOverride;
-    if (plannerModelOverride) (config.planner as any).model = plannerModelOverride;
-
-    setModel(config.implementer.model);
-    setStartedAt(new Date().toISOString());
-
-    const callbacks: OrchestratorCallbacks = {
-      onEvent: (event: TuiEvent) => {
-        setEvents(prev => {
-          const next = [...prev, event];
-          return next.length > MAX_EVENTS ? next.slice(-MAX_EVENTS) : next;
-        });
-        if (event.type === 'planner-status') setPhase(event.phase as Phase);
-        if (event.type === 'task-start') { setCurrentTask(event.index + 1); setTotalTasks(event.total); }
-        if (event.type === 'task-complete') {
-          if (event.method === 'local') setLocalCount(prev => prev + 1);
-          else setEscalatedCount(prev => prev + 1);
-        }
-      },
-      onApprovalNeeded(type: 'spec' | 'plan', filePath: string): Promise<{ approved: boolean; comment?: string }> {
-        if (auto) return Promise.resolve({ approved: true });
-        const sessionPlanners = ['claude-code', 'agent-sdk'];
-        const supportsSession = sessionPlanners.includes(config.planner.tool);
-        return new Promise<{ approved: boolean; comment?: string }>(resolve => {
-          setApproval({
-            type,
-            filePath,
-            supportsSession,
-            onApprove() {
-              setApproval(null);
-              callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: type === 'spec' ? 'reviewing-spec' : 'reviewing-plan', status: 'done', summary: 'Approved' });
-              resolve({ approved: true });
-            },
-            onReject() {
-              setApproval(null);
-              resolve({ approved: false });
-            },
-            onComment(text: string) {
-              setApproval(null);
-              callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text: `Comment: ${text}` });
-              resolve({ approved: false, comment: text });
-            },
-          });
-        });
-      },
-      onExternalChanges(): Promise<boolean> {
-        if (auto) return Promise.resolve(true);
-        return new Promise<boolean>(resolve => {
-          setApproval({
-            type: 'plan',
-            filePath: '',
-            onApprove() {
-              setApproval(null);
-              resolve(true);
-            },
-            onReject() {
-              setApproval(null);
-              resolve(false);
-            },
-          });
-        });
-      },
-      onComplete(summary: Summary) {
-        const costBreakdown = calculateCostBreakdown(
-          summary.tokenUsage,
-          summary.totalTasks,
-          summary.escalatedToPlanner,
-          config.planner.tool,
-          config.implementer.provider,
-        );
-        setSummaryData({
-          ...summary,
-          costBreakdown,
-          plannerName: config.planner.tool,
-          implementerName: `${config.implementer.provider} / ${config.implementer.model}`,
-        });
-        setScreen('summary');
-      },
-      onQuestionAsked: askQuestion,
-    };
-
-    runWorkflow(feature, projectDir, config, callbacks, savedState).catch(err => {
-      callbacks.onEvent({ type: 'error', ts: Date.now(), message: String(err) });
-    });
-  }, []);
-
-  if (screen === 'summary' && summaryData) {
-    return <SummaryView summary={summaryData} />;
+  if (overlay.active === 'command-palette') {
+    return (
+      <CommandPalette
+        items={paletteItems}
+        currentScreen={screen}
+        onExecute={(item) => { overlay.close(); item.action(); }}
+        onClose={overlay.close}
+        theme={theme}
+      />
+    );
   }
 
-  const costBreakdown = (localCount + escalatedCount) > 0
-    ? calculateCostBreakdown(
-        { plannerInput: 0, plannerOutput: 0, implementerInput: 0, implementerOutput: 0, escalationInput: 0, escalationOutput: 0 },
-        localCount + escalatedCount,
-        escalatedCount,
-      )
-    : null;
+  if (screen === 'home') {
+    return (
+      <HomeScreen
+        config={config}
+        sessions={sessions}
+        onStartWorkflow={(feat) => navigate('workflow', { feature: feat })}
+        onSlashCommand={(raw) => handleSlashCommand(raw, 'home')}
+        onOpenOverlay={overlay.open}
+        errorMessage={errorMessage}
+        onClearError={clearError}
+        theme={theme}
+      />
+    );
+  }
 
-  return (
-    <Layout
-      feature={feature}
-      startedAt={startedAt}
-      phase={phase}
-      events={events}
-      currentTask={currentTask}
-      totalTasks={totalTasks}
-      model={model}
-      localRate={localRate}
-      estimatedCost={costBreakdown?.totalActualCost ?? 0}
-      estimatedSavings={costBreakdown?.savingsAmount ?? 0}
-      approval={approval}
-    >
-      {inputMode?.type === 'question' && (
-        <QuestionPrompt
-          question={inputMode.question}
-          questionNumber={inputMode.questionNumber}
-          totalQuestions={inputMode.totalQuestions}
-          onAnswer={(questionId, answer) => inputMode.onResolve(answer)}
-          onSkip={(_questionId) => inputMode.onResolve('skip')}
-          onDone={() => inputMode.onResolve('done')}
-        />
-      )}
-      {inputMode?.type === 'comment' && (
-        <UserInput
-          prompt={inputMode.prompt}
-          onSubmit={(text) => inputMode.onResolve(text)}
-        />
-      )}
-    </Layout>
-  );
+  if (screen === 'summary' && routeData.screen === 'summary') {
+    return (
+      <SummaryScreen
+        summary={routeData.summary}
+        theme={theme}
+        onDone={() => navigate('home')}
+        onSlashCommand={(raw) => handleSlashCommand(raw, 'summary')}
+        onOpenOverlay={overlay.open}
+        errorMessage={errorMessage}
+        onClearError={clearError}
+      />
+    );
+  }
+
+  if (screen === 'workflow' && routeData.screen === 'workflow') {
+    return (
+      <WorkflowScreen
+        feature={routeData.feature}
+        config={config}
+        theme={theme}
+        auto={auto}
+        projectDir={projectDir}
+        resumeState={routeData.resumeState}
+        onComplete={(summary) => navigate('summary', { summary })}
+        onSlashCommand={(raw) => handleSlashCommand(raw, 'workflow')}
+        onOpenOverlay={overlay.open}
+        errorMessage={errorMessage}
+        onClearError={clearError}
+      />
+    );
+  }
+
+  return null;
 }

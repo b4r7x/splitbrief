@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatTaskPrompt, formatRetryPrompt, estimateTokens, truncateMiddle, computeTokenBudget, SYSTEM_PREAMBLE } from '../src/spec/formatter.js';
+import { formatTaskPrompt, formatRetryPrompt, estimateTokens, truncateMiddle, computeTokenBudget, SYSTEM_PREAMBLE } from '../src/engine/spec/formatter.js';
 import type { Task, ProjectContext } from '../src/types.js';
 
 const context: ProjectContext = {

@@ -3,15 +3,16 @@
 import { Command } from 'commander';
 import { render } from 'ink';
 import { createElement } from 'react';
+import { withFullScreen } from 'fullscreen-ink';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import App from './app.js';
 import { loadConfig, initConfig, createDefaultConfig, toYaml } from './config.js';
 import { loadState } from './state.js';
-import { detectCapabilities } from './orchestrator/providers.js';
-import { detectAvailablePlanners, detectAvailableImplementers } from './orchestrator/planner-detection.js';
-import { createPlanner } from './orchestrator/planners/factory.js';
+import { detectCapabilities } from './engine/providers.js';
+import { detectAvailablePlanners, detectAvailableImplementers } from './engine/detection.js';
+import { createPlanner } from './engine/planners/factory.js';
 import { isGitRepo } from './utils/git.js';
 import type { PlannerTool } from './types.js';
 
@@ -124,7 +125,7 @@ program
 // ── start ──────────────────────────────────────────────
 
 program
-  .command('start <feature>')
+  .command('start [feature]')
   .description('Full workflow: plan with Claude, implement with local model')
   .option('--auto', 'Auto-approve spec and plan', false)
   .option('--model <model>', 'Override implementer model')
@@ -132,7 +133,8 @@ program
   .option('--planner <provider>', 'Override planner backend (claude-code, codex, opencode, aider, agent-sdk)')
   .option('--planner-model <model>', 'Override planner model')
   .option('--project <dir>', 'Project directory (default: cwd)')
-  .action(async (feature: string, opts: { auto: boolean; model?: string; provider?: string; planner?: string; plannerModel?: string; project?: string }) => {
+  .option('--no-fullscreen', 'Disable fullscreen alternate screen buffer')
+  .action(async (feature: string | undefined, opts: { auto: boolean; model?: string; provider?: string; planner?: string; plannerModel?: string; project?: string; fullscreen?: boolean }) => {
     const projectDir = resolveProjectDir(opts.project);
 
     if (!(await isGitRepo(projectDir))) {
@@ -164,8 +166,11 @@ program
       // provider not reachable, use config default
     }
 
-    render(createElement(App, {
-      feature,
+    const isInteractive = process.stdout.isTTY && !process.env['CI'];
+    const useFullscreen = opts.fullscreen !== false && isInteractive;
+
+    const appElement = createElement(App, {
+      feature: feature ?? undefined,
       projectDir,
       auto: opts.auto,
       modelOverride: opts.model,
@@ -173,7 +178,19 @@ program
       plannerOverride: opts.planner,
       plannerModelOverride: opts.plannerModel,
       contextLengthOverride: config.implementer.contextLength,
-    }));
+    });
+
+    if (useFullscreen) {
+      try {
+        const ink = withFullScreen(appElement, { exitOnCtrlC: false });
+        await ink.start();
+        await ink.waitUntilExit();
+      } catch {
+        render(appElement, { incrementalRendering: true, maxFps: 30 });
+      }
+    } else {
+      render(appElement, { incrementalRendering: true, maxFps: 30 });
+    }
   });
 
 // ── spec ───────────────────────────────────────────────
@@ -302,7 +319,9 @@ program
 
     console.log(`Resuming: ${state.feature} (phase: ${state.phase}, task ${state.currentTaskIndex + 1}/${state.tasks.length})`);
 
-    render(createElement(App, {
+    const isInteractive = process.stdout.isTTY && !process.env['CI'];
+
+    const appElement = createElement(App, {
       feature: state.feature,
       projectDir,
       auto: opts.auto,
@@ -311,7 +330,19 @@ program
       plannerOverride: opts.planner,
       plannerModelOverride: opts.plannerModel,
       savedState: state,
-    }));
+    });
+
+    if (isInteractive) {
+      try {
+        const ink = withFullScreen(appElement, { exitOnCtrlC: false });
+        await ink.start();
+        await ink.waitUntilExit();
+      } catch {
+        render(appElement, { incrementalRendering: true, maxFps: 30 });
+      }
+    } else {
+      render(appElement, { incrementalRendering: true, maxFps: 30 });
+    }
   });
 
 program.parse();

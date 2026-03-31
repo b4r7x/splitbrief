@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createPlanner } from '../src/orchestrator/planners/factory.js';
+import { createPlanner } from '../src/engine/planners/factory.js';
 import type { Config } from '../src/types.js';
 
 function makeConfig(tool: string, extra?: Partial<Config['planner']>): Config {

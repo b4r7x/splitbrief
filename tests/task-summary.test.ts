@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 describe('TaskSummary', () => {
   it('module exports a default function', async () => {
-    const mod = await import('../src/tui/task-summary.js');
+    const mod = await import('../src/ui/task-summary.js');
     assert.equal(typeof mod.default, 'function');
   });
 
@@ -34,6 +34,6 @@ describe('TaskSummary', () => {
   it('skipped task with reason', async () => {
     const { renderToString } = await import('./helpers/render.js');
     const output = await renderToString({ index: 5, title: 'migration', method: 'skipped', reason: 'dependency failed' });
-    assert.ok(output.includes('\u25CB T5 migration \u2014 skipped: dependency failed'), `expected skipped summary, got: ${output}`);
+    assert.ok(output.includes('\u2298 T5 migration \u2014 skipped: dependency failed'), `expected skipped summary, got: ${output}`);
   });
 });

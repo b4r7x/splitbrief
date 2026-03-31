@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 
 describe('detectAvailablePlanners', () => {
   let originalCreatePlanner: any;
-  let plannerDetection: typeof import('../src/orchestrator/planner-detection.js');
+  let plannerDetection: typeof import('../src/engine/detection.js');
 
   beforeEach(async () => {
     // Fresh import each time to pick up mocks
-    plannerDetection = await import('../src/orchestrator/planner-detection.js');
+    plannerDetection = await import('../src/engine/detection.js');
   });
 
   it('returns all known planner tools', async () => {
@@ -50,12 +50,12 @@ describe('detectAvailablePlanners', () => {
 });
 
 describe('detectAvailableImplementers', () => {
-  let plannerDetection: typeof import('../src/orchestrator/planner-detection.js');
+  let plannerDetection: typeof import('../src/engine/detection.js');
   let originalFetch: typeof globalThis.fetch;
 
   beforeEach(async () => {
     originalFetch = globalThis.fetch;
-    plannerDetection = await import('../src/orchestrator/planner-detection.js');
+    plannerDetection = await import('../src/engine/detection.js');
   });
 
   afterEach(() => {
