@@ -1,16 +1,16 @@
 import React from 'react';
 import { Box, Text, useInput } from 'ink';
-import type { Summary } from '../../types.js';
-import type { Theme } from '../../theme.js';
-import { formatTokens, formatCost, formatTime } from '../../utils/format.js';
-import { InputBar } from '../input-bar.js';
+import type { Summary } from '../types.js';
+import type { Theme } from '../theme.js';
+import { formatTokens, formatCost, formatTime } from '../utils/format.js';
+import { InputBar } from '../ui/input-bar.js';
 
 interface SummaryScreenProps {
   summary: Summary;
   theme: Theme;
   onDone: () => void;
   onSlashCommand?: (command: string) => void;
-  onOpenOverlay?: (type: import('../../types.js').OverlayType) => void;
+  onOpenOverlay?: (type: import('../types.js').OverlayType) => void;
   errorMessage?: string | null;
   onClearError?: () => void;
 }
