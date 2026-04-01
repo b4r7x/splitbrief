@@ -238,7 +238,15 @@ export interface OrchestratorCallbacks {
   onComplete: (summary: Summary) => void;
 }
 
-export type OverlayType = 'none' | 'help' | 'command-palette' | 'picker';
+export type OverlayType = 'none' | 'help' | 'command-palette' | 'picker' | 'skills';
+
+export interface SkillMeta {
+  id: string;
+  name: string;
+  description: string;
+  path: string;
+  scope: 'global' | 'project';
+}
 
 export interface SlashCommandDef {
   name: string;

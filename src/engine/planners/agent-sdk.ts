@@ -170,6 +170,7 @@ export function createAgentSdkPlanner(): PlannerBackend {
       projectDir: string,
       config: Config,
       callbacks: PlannerCallbacks,
+      skillsContext?: string,
     ): Promise<PlanResult> {
       const model = (config.planner as any).model || 'claude-sonnet-4-6';
       const projectContext = buildProjectContext(projectDir);
@@ -184,7 +185,7 @@ export function createAgentSdkPlanner(): PlannerBackend {
       }
 
       callbacks.onPhase('researching');
-      const researchPrompt = buildResearchPrompt(feature, projectContext);
+      const researchPrompt = buildResearchPrompt(feature, projectContext, skillsContext);
       const research = await runQuery(
         researchPrompt, projectDir, model, WRITE_TOOLS, 'acceptEdits', callbacks.onOutput,
       );
@@ -201,7 +202,7 @@ export function createAgentSdkPlanner(): PlannerBackend {
       writeSpecFile(projectDir, 'spec.md', spec);
 
       callbacks.onPhase('planning');
-      const planPrompt = buildPlanPrompt(spec, projectContext);
+      const planPrompt = buildPlanPrompt(spec, projectContext, skillsContext);
       const planResult = await runQuery(
         planPrompt, projectDir, model, WRITE_TOOLS, 'acceptEdits', callbacks.onOutput,
       );

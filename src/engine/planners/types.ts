@@ -35,6 +35,7 @@ export interface PlannerBackend {
     projectDir: string,
     config: Config,
     callbacks: PlannerCallbacks,
+    skillsContext?: string,
   ): Promise<PlanResult>;
 
   regenerate(

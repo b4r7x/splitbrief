@@ -34,6 +34,14 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
       handler: () => ctx.openOverlay('command-palette'),
     },
     {
+      name: '/skills',
+      label: 'Skills',
+      description: 'Select planner skills',
+      shortcut: getShortcutKey('skills'),
+      validScreens: ['home'],
+      handler: () => ctx.openOverlay('skills'),
+    },
+    {
       name: '/quit',
       label: 'Quit',
       description: 'Exit application',

@@ -1,13 +1,14 @@
 import { join } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
-import type { Config, WorkflowState, Task, Summary, OrchestratorCallbacks, ProjectContext, TokenUsage, ValidationResult, CostBreakdown, TaskTokenUsage, PlannerTool, TuiEvent } from '../types.js';
+import type { Config, WorkflowState, Task, Summary, OrchestratorCallbacks, ProjectContext, TokenUsage, ValidationResult, CostBreakdown, TaskTokenUsage, PlannerTool, TuiEvent, SkillMeta } from '../types.js';
 import { createInitialState, transition, saveState, loadState, appendEvent } from '../state.js';
 import { implementTask, retryTask } from './implementer.js';
 import { validateTask, formatValidationError } from './validator.js';
 import { commitChanges, getCurrentDiff, hasExternalChanges, discardTaskChanges } from '../utils/git.js';
 import { ensureTinySpecDir, readSpecFile, writeSpecFile } from '../utils/fs.js';
 import { buildFinalReviewPrompt, buildRegeneratePrompt } from './spec/templates.js';
+import { buildSkillsSection } from './skills.js';
 import { killAllProcesses, activeProcesses } from '../utils/process.js';
 import { parseStreamLine } from './claude-stream.js';
 import type { ClarificationQuestion } from './question-parser.js';
@@ -261,6 +262,7 @@ export async function runWorkflow(
   config: Config,
   callbacks: OrchestratorCallbacks,
   savedState?: WorkflowState,
+  selectedSkills?: SkillMeta[],
 ): Promise<Summary> {
   const startTime = Date.now();
   let trackedState: WorkflowState | undefined;
@@ -330,6 +332,8 @@ export async function runWorkflow(
 
   let planResult: Awaited<ReturnType<PlannerBackend['plan']>>;
   try {
+    const skillsContext = selectedSkills?.length ? buildSkillsSection(selectedSkills) : undefined;
+
     planResult = await planner.plan(feature, projectDir, config, {
       onOutput: (text) => callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text }),
       onPhase: (phase) => {
@@ -342,7 +346,7 @@ export async function runWorkflow(
           }
         }
       } : undefined,
-    });
+    }, skillsContext);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     callbacks.onEvent({ type: 'error', ts: Date.now(), message: `Planning failed: ${msg}` });

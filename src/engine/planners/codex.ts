@@ -190,6 +190,7 @@ export function createCodexPlanner(): PlannerBackend {
       projectDir: string,
       _config: Config,
       callbacks: PlannerCallbacks,
+      skillsContext?: string,
     ): Promise<PlanResult> {
       const projectContext = buildProjectContext(projectDir);
       let totalInputTokens = 0;
@@ -203,7 +204,7 @@ export function createCodexPlanner(): PlannerBackend {
       }
 
       callbacks.onPhase('researching');
-      const researchPrompt = buildResearchPrompt(feature, projectContext);
+      const researchPrompt = buildResearchPrompt(feature, projectContext, skillsContext);
       let research: CodexStreamResult;
       try {
         research = await spawnCodex(researchPrompt, projectDir, callbacks.onOutput);
@@ -226,7 +227,7 @@ export function createCodexPlanner(): PlannerBackend {
       writeSpecFile(projectDir, 'spec.md', spec);
 
       callbacks.onPhase('planning');
-      const planPrompt = buildPlanPrompt(spec, projectContext);
+      const planPrompt = buildPlanPrompt(spec, projectContext, skillsContext);
       let planResult: CodexStreamResult;
       try {
         planResult = await spawnCodex(planPrompt, projectDir, callbacks.onOutput);

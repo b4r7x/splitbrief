@@ -4,6 +4,7 @@ import { WorkflowScreen } from "./screens/workflow.js";
 import { SummaryScreen } from "./screens/summary.js";
 import { HelpOverlay } from "./ui/help-overlay.js";
 import { CommandPalette } from "./ui/command-palette.js";
+import { SkillsPicker } from "./ui/skills-picker.js";
 import type {
   Screen,
   RouteData,
@@ -11,6 +12,7 @@ import type {
   CommandPaletteItem,
   SlashCommandDef,
   OverlayType,
+  SkillMeta,
 } from "./types.js";
 import type { Session } from "./types.js";
 import type { getTheme } from "./theme.js";
@@ -33,6 +35,10 @@ interface RouterProps {
   onSlashCommand: (raw: string, from: Screen) => void;
   navigate: (to: "home" | "workflow" | "summary", data?: any) => void;
   exit: () => void;
+  availableSkills: SkillMeta[];
+  selectedSkillIds: Set<string>;
+  onSkillsConfirm: (selected: Set<string>) => void;
+  selectedSkillMetas: SkillMeta[];
 }
 
 export function Router({
@@ -52,6 +58,10 @@ export function Router({
   onClearError,
   onSlashCommand,
   navigate,
+  availableSkills,
+  selectedSkillIds,
+  onSkillsConfirm,
+  selectedSkillMetas,
 }: RouterProps) {
   if (overlayActive === "help") {
     return <HelpOverlay onClose={onCloseOverlay} theme={theme} currentScreen={screen} />;
@@ -72,6 +82,21 @@ export function Router({
     );
   }
 
+  if (overlayActive === "skills") {
+    return (
+      <SkillsPicker
+        skills={availableSkills}
+        selected={selectedSkillIds}
+        onConfirm={(selected) => {
+          onSkillsConfirm(selected);
+          onCloseOverlay();
+        }}
+        onClose={onCloseOverlay}
+        theme={theme}
+      />
+    );
+  }
+
   switch (screen) {
     case "home":
       return (
@@ -85,6 +110,7 @@ export function Router({
           errorMessage={errorMessage}
           onClearError={onClearError}
           theme={theme}
+          selectedSkillCount={selectedSkillIds.size}
         />
       );
 
@@ -104,6 +130,7 @@ export function Router({
           onOpenOverlay={onOpenOverlay}
           errorMessage={errorMessage}
           onClearError={onClearError}
+          selectedSkills={selectedSkillMetas}
         />
       );
 

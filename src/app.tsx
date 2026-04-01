@@ -4,11 +4,12 @@ import { useRouter } from './hooks/use-router.js';
 import { useSessions } from './hooks/use-sessions.js';
 import { useOverlay } from './hooks/use-overlay.js';
 import { useConfig } from './hooks/use-config.js';
+import { useSkills } from './hooks/use-skills.js';
 import { createCommands, toPaletteItems, executeSlashCommand } from './commands.js';
 import { useGlobalKeys } from './hooks/use-global-keys.js';
 import { Router } from './router.js';
 import { getTheme } from './theme.js';
-import type { WorkflowState, RouteData, CommandContext, Screen } from './types.js';
+import type { WorkflowState, RouteData, CommandContext, Screen, SkillMeta } from './types.js';
 
 interface AppProps {
   feature?: string;
@@ -34,6 +35,7 @@ export default function App({ feature, projectDir, auto, modelOverride, provider
   const theme = getTheme(config.theme);
   const sessionsScope = config.sessions?.scope ?? 'project';
   const { sessions } = useSessions(sessionsScope, projectDir);
+  const skills = useSkills(config.planner.tool, projectDir);
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -69,6 +71,10 @@ export default function App({ feature, projectDir, auto, modelOverride, provider
       onSlashCommand={handleSlashCommand}
       navigate={navigate}
       exit={exit}
+      availableSkills={skills.available}
+      selectedSkillIds={skills.selected}
+      onSkillsConfirm={skills.setSelected}
+      selectedSkillMetas={skills.selectedMetas}
     />
   );
 }

@@ -24,6 +24,7 @@ export function HelpOverlay({ onClose, theme: t, currentScreen }: HelpOverlayPro
         <Box><Box width={14}><Text color={t.accent}>/help</Text></Box><Text color={t.textDim}>Show this help overlay</Text></Box>
         <Box><Box width={14}><Text color={t.accent}>/status</Text></Box><Text color={t.textDim}>Show workflow status</Text></Box>
         <Box><Box width={14}><Text color={t.accent}>/init</Text></Box><Text color={t.textDim}>Configure planner & model</Text></Box>
+        <Box><Box width={14}><Text color={t.accent}>/skills</Text></Box><Text color={t.textDim}>Select planner skills</Text></Box>
         <Box><Box width={14}><Text color={t.accent}>/palette</Text></Box><Text color={t.textDim}>Open command palette</Text></Box>
         <Box><Box width={14}><Text color={t.accent}>/quit</Text></Box><Text color={t.textDim}>Exit application</Text></Box>
       </Box>

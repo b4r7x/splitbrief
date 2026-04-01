@@ -182,6 +182,7 @@ export function createOpenCodePlanner(): PlannerBackend {
       projectDir: string,
       config: Config,
       callbacks: PlannerCallbacks,
+      skillsContext?: string,
     ): Promise<PlanResult> {
       const projectContext = buildProjectContext(projectDir);
       let totalInputTokens = 0;
@@ -195,7 +196,7 @@ export function createOpenCodePlanner(): PlannerBackend {
       }
 
       callbacks.onPhase('researching');
-      const researchPrompt = buildResearchPrompt(feature, projectContext);
+      const researchPrompt = buildResearchPrompt(feature, projectContext, skillsContext);
       let research: StreamResult;
       try {
         research = await spawnOpenCode('plan', researchPrompt, projectDir, callbacks.onOutput);
@@ -218,7 +219,7 @@ export function createOpenCodePlanner(): PlannerBackend {
       writeSpecFile(projectDir, 'spec.md', spec);
 
       callbacks.onPhase('planning');
-      const planPrompt = buildPlanPrompt(spec, projectContext);
+      const planPrompt = buildPlanPrompt(spec, projectContext, skillsContext);
       let planResult: StreamResult;
       try {
         planResult = await spawnOpenCode('plan', planPrompt, projectDir, callbacks.onOutput);
