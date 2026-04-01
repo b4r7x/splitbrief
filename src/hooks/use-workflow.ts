@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { spawnSync } from 'node:child_process';
-import type { Phase, TuiEvent, Config, Summary, WorkflowState } from '../types.js';
+import type { Phase, TuiEvent, Config, Summary, WorkflowState, SkillMeta } from '../types.js';
 import { useInputMode } from './use-input-mode.js';
 import { runWorkflow } from '../engine/orchestrator.js';
 import { killAllProcesses } from '../utils/process.js';
@@ -14,9 +14,10 @@ interface UseWorkflowOptions {
   auto: boolean;
   onComplete: (summary: Summary) => void;
   resumeState?: WorkflowState;
+  selectedSkills?: SkillMeta[];
 }
 
-export function useWorkflow({ feature, projectDir, config, auto, onComplete, resumeState }: UseWorkflowOptions) {
+export function useWorkflow({ feature, projectDir, config, auto, onComplete, resumeState, selectedSkills }: UseWorkflowOptions) {
   const [events, setEvents] = useState<TuiEvent[]>([]);
   const [phase, setPhase] = useState<Phase>(resumeState?.phase ?? 'idle');
   const [currentTask, setCurrentTask] = useState(resumeState?.currentTaskIndex ?? 0);
@@ -67,7 +68,7 @@ export function useWorkflow({ feature, projectDir, config, auto, onComplete, res
       onComplete: (summary) => {
         if (!abortedRef.current) onComplete(summary);
       },
-    }, resumeState).catch((err) => {
+    }, resumeState, selectedSkills).catch((err) => {
       if (!abortedRef.current) {
         addEvent({ type: 'planner-text', ts: Date.now(), text: `Error: ${String(err)}` });
       }

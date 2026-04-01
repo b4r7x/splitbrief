@@ -1,6 +1,6 @@
 import type { Task } from '../../types.js';
 
-export function buildResearchPrompt(feature: string, projectContext: string): string {
+export function buildResearchPrompt(feature: string, projectContext: string, skillsContext?: string): string {
   return `# Research Task
 
 You are preparing to implement a new feature. Before writing any specification, you need to deeply understand the existing codebase.
@@ -10,7 +10,7 @@ ${feature}
 
 ## Project Context
 ${projectContext}
-
+${skillsContext ? `\n${skillsContext}\n` : ''}
 ## Instructions
 
 Analyze this codebase thoroughly:
@@ -131,7 +131,7 @@ ${clarifications.map(c => `- Q: ${c.question} → A: ${c.answer}`).join('\n')}
 Integrate these answers into the spec. Do not ask about these topics — they are decided.` : ''}`;
 }
 
-export function buildPlanPrompt(spec: string, projectContext: string): string {
+export function buildPlanPrompt(spec: string, projectContext: string, skillsContext?: string): string {
   return `# Write Implementation Plan
 
 You are writing a detailed implementation plan based on the specification below. The plan defines **how** to build the feature.
@@ -141,7 +141,7 @@ ${spec}
 
 ## Project Context
 ${projectContext}
-
+${skillsContext ? `\n${skillsContext}\n` : ''}
 ## Instructions
 
 Write a complete \`plan.md\` document that provides a concrete implementation blueprint. Another developer (or AI) should be able to follow this plan without needing to make architectural decisions.

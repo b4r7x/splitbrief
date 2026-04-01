@@ -249,6 +249,7 @@ export function createShellPlanner(config: Config): PlannerBackend {
       projectDir: string,
       _config: Config,
       callbacks: PlannerCallbacks,
+      skillsContext?: string,
     ): Promise<PlanResult> {
       const projectContext = buildProjectContext(projectDir);
       let totalInputTokens = 0;
@@ -262,7 +263,7 @@ export function createShellPlanner(config: Config): PlannerBackend {
       }
 
       callbacks.onPhase('researching');
-      const researchPrompt = buildResearchPrompt(feature, projectContext);
+      const researchPrompt = buildResearchPrompt(feature, projectContext, skillsContext);
       const research = await spawnShellCommand(command, baseArgs, researchPrompt, projectDir, format, callbacks.onOutput);
       accumulateUsage(research);
       writeSpecFile(projectDir, 'research.md', research.text);
@@ -275,7 +276,7 @@ export function createShellPlanner(config: Config): PlannerBackend {
       writeSpecFile(projectDir, 'spec.md', spec);
 
       callbacks.onPhase('planning');
-      const planPrompt = buildPlanPrompt(spec, projectContext);
+      const planPrompt = buildPlanPrompt(spec, projectContext, skillsContext);
       const planResult = await spawnShellCommand(command, baseArgs, planPrompt, projectDir, format, callbacks.onOutput);
       accumulateUsage(planResult);
       const plan = planResult.text;

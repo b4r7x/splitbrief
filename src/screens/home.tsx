@@ -74,6 +74,7 @@ interface HomeScreenProps {
   errorMessage?: string | null;
   onClearError?: () => void;
   theme: Theme;
+  selectedSkillCount?: number;
 }
 
 export function HomeScreen({
@@ -86,6 +87,7 @@ export function HomeScreen({
   errorMessage,
   onClearError,
   theme,
+  selectedSkillCount = 0,
 }: HomeScreenProps) {
   const banner = getBanner();
   const { cols, rows, isSmall } = useResponsiveLayout();
@@ -121,6 +123,13 @@ export function HomeScreen({
             <Text color={theme.implementer}>{config.implementer.model}</Text>
             <Text color={theme.textDim}> ({config.implementer.provider})</Text>
             <Text color={theme.textDim}> /init to change</Text>
+          </Box>
+          <Box>
+            <Text color={theme.textDim}>Skills: </Text>
+            <Text color={selectedSkillCount > 0 ? theme.accent : theme.textDim}>
+              {selectedSkillCount > 0 ? `${selectedSkillCount} active` : 'none'}
+            </Text>
+            <Text color={theme.textDim}> /skills to configure</Text>
           </Box>
         </Box>
 

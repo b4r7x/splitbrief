@@ -13,6 +13,7 @@ export const SHORTCUTS: ShortcutInfo[] = [
   { key: 'Ctrl+K', description: 'Command palette', screens: ALL_SCREENS },
   { id: 'help', key: 'Ctrl+/', description: 'Help', screens: ALL_SCREENS },
   { id: 'quit', key: 'Ctrl+Q', description: 'Quit', screens: ALL_SCREENS },
+  { id: 'skills', key: 'Ctrl+S', description: 'Skills picker', screens: ['home'] },
   { key: 'Escape', description: 'Close overlay', screens: ALL_SCREENS },
   { id: 'toggle-sidebar', key: 'Ctrl+\\', description: 'Toggle sidebar', screens: ['workflow'] },
   { id: 'toggle-diff', key: 'Ctrl+D', description: 'Toggle diff', screens: ['workflow'] },

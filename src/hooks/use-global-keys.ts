@@ -24,6 +24,10 @@ export function useGlobalKeys({ screen, overlay, exit, setErrorMessage }: UseGlo
       overlay.open('command-palette');
       return;
     }
+    if (key.ctrl && input === 's' && screen === 'home') {
+      overlay.open('skills');
+      return;
+    }
     if (key.ctrl && input === '/') {
       overlay.open('help');
       return;

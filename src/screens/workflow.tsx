@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { Box, useInput } from 'ink';
-import type { Config, Summary, WorkflowState, SlashCommandDef } from '../types.js';
+import type { Config, Summary, WorkflowState, SlashCommandDef, SkillMeta } from '../types.js';
 import type { Theme } from '../theme.js';
 import Header from '../ui/header.js';
 import ConversationFlow from '../ui/conversation-flow.js';
@@ -26,13 +26,14 @@ interface WorkflowScreenProps {
   onOpenOverlay?: (type: import('../types.js').OverlayType) => void;
   errorMessage?: string | null;
   onClearError?: () => void;
+  selectedSkills?: SkillMeta[];
 }
 
-export function WorkflowScreen({ feature, config, theme: t, auto, projectDir, onComplete, resumeState, commands, onSlashCommand, onOpenOverlay, errorMessage, onClearError }: WorkflowScreenProps) {
+export function WorkflowScreen({ feature, config, theme: t, auto, projectDir, onComplete, resumeState, commands, onSlashCommand, onOpenOverlay, errorMessage, onClearError, selectedSkills }: WorkflowScreenProps) {
   const { cols, rows, isSmall } = useResponsiveLayout();
   const flowRef = useRef<ConversationFlowHandle>(null);
 
-  const workflow = useWorkflow({ feature, projectDir, config, auto, onComplete, resumeState });
+  const workflow = useWorkflow({ feature, projectDir, config, auto, onComplete, resumeState, selectedSkills });
 
   const sidebar = useSidebar(isSmall);
   const [startedAt] = useState(() => new Date().toISOString());

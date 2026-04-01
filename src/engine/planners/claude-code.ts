@@ -262,6 +262,7 @@ export function createClaudeCodePlanner(): PlannerBackend {
       projectDir: string,
       config: Config,
       callbacks: PlannerCallbacks,
+      skillsContext?: string,
     ): Promise<PlanResult> {
       const projectContext = buildProjectContext(projectDir);
       let totalInputTokens = 0;
@@ -275,7 +276,7 @@ export function createClaudeCodePlanner(): PlannerBackend {
       }
 
       callbacks.onPhase('researching');
-      const researchPrompt = buildResearchPrompt(feature, projectContext);
+      const researchPrompt = buildResearchPrompt(feature, projectContext, skillsContext);
       let research: StreamResult;
       try {
         research = await spawnClaudePlanner(researchPrompt, projectDir, null, callbacks.onOutput, callbacks.onQuestion);
@@ -298,7 +299,7 @@ export function createClaudeCodePlanner(): PlannerBackend {
       writeSpecFile(projectDir, 'spec.md', spec);
 
       callbacks.onPhase('planning');
-      const planPrompt = buildPlanPrompt(spec, projectContext);
+      const planPrompt = buildPlanPrompt(spec, projectContext, skillsContext);
       let planResult: StreamResult;
       try {
         planResult = await spawnClaudePlanner(planPrompt, projectDir, specResult.sessionId, callbacks.onOutput, callbacks.onQuestion);

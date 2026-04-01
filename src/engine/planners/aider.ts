@@ -152,6 +152,7 @@ export function createAiderPlanner(): PlannerBackend {
       projectDir: string,
       config: Config,
       callbacks: PlannerCallbacks,
+      skillsContext?: string,
     ): Promise<PlanResult> {
       const projectContext = buildProjectContext(projectDir);
       const model = (config.planner as { model?: string }).model;
@@ -167,7 +168,7 @@ export function createAiderPlanner(): PlannerBackend {
 
       // Phase 1: Research
       callbacks.onPhase('researching');
-      const researchPrompt = buildResearchPrompt(feature, projectContext);
+      const researchPrompt = buildResearchPrompt(feature, projectContext, skillsContext);
       const research = await spawnAider(
         aiderAskArgs(model, researchPrompt, ['src/']),
         projectDir,
@@ -190,7 +191,7 @@ export function createAiderPlanner(): PlannerBackend {
 
       // Phase 3: Plan
       callbacks.onPhase('planning');
-      const planPrompt = buildPlanPrompt(spec, projectContext);
+      const planPrompt = buildPlanPrompt(spec, projectContext, skillsContext);
       const planResult = await spawnAider(
         aiderAskArgs(model, planPrompt, ['src/']),
         projectDir,
