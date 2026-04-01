@@ -70,6 +70,13 @@ function emit(projectDir: string, state: WorkflowState, type: string, taskId?: s
   });
 }
 
+function emitValidationStart(callbacks: OrchestratorCallbacks): void {
+  callbacks.onEvent({
+    type: 'validate', ts: Date.now(), status: 'running', passed: false,
+    stages: { tsc: false, lint: false, test: false },
+  });
+}
+
 export function allValidationsPassed(results: ValidationResult[]): boolean {
   return results.length === 0 || results.every((r) => r.passed);
 }
@@ -556,11 +563,12 @@ export async function runWorkflow(
     saveState(projectDir, state);
 
     const valStartTime = Date.now();
+    emitValidationStart(callbacks);
     const validationResults = await validateTask(task, projectDir, config);
     const valPassed = validationResults.length === 0 || validationResults.every(r => r.passed);
     const failedStage = validationResults.find(r => !r.passed);
     callbacks.onEvent({
-      type: 'validate', ts: Date.now(), passed: valPassed,
+      type: 'validate', ts: Date.now(), status: 'done', passed: valPassed,
       stages: {
         tsc: validationResults.find(r => r.stage === 'typecheck')?.passed ?? true,
         lint: validationResults.find(r => r.stage === 'lint')?.passed ?? true,
@@ -736,11 +744,12 @@ async function handleRetryAndEscalation(
 
     // Validate retry
     const retryValStart = Date.now();
+    emitValidationStart(callbacks);
     const retryValidation = await validateTask(task, projectDir, config);
     const retryValPassed = retryValidation.length === 0 || retryValidation.every(r => r.passed);
     const retryFailedStage = retryValidation.find(r => !r.passed);
     callbacks.onEvent({
-      type: 'validate', ts: Date.now(), passed: retryValPassed,
+      type: 'validate', ts: Date.now(), status: 'done', passed: retryValPassed,
       stages: {
         tsc: retryValidation.find(r => r.stage === 'typecheck')?.passed ?? true,
         lint: retryValidation.find(r => r.stage === 'lint')?.passed ?? true,
@@ -800,11 +809,12 @@ async function handleRetryAndEscalation(
 
   if (hintRetryResult.success) {
     const hintValStart = Date.now();
+    emitValidationStart(callbacks);
     const hintValidation = await validateTask(task, projectDir, config);
     const hintValPassed = hintValidation.length === 0 || hintValidation.every(r => r.passed);
     const hintFailedStage = hintValidation.find(r => !r.passed);
     callbacks.onEvent({
-      type: 'validate', ts: Date.now(), passed: hintValPassed,
+      type: 'validate', ts: Date.now(), status: 'done', passed: hintValPassed,
       stages: {
         tsc: hintValidation.find(r => r.stage === 'typecheck')?.passed ?? true,
         lint: hintValidation.find(r => r.stage === 'lint')?.passed ?? true,
@@ -835,11 +845,12 @@ async function handleRetryAndEscalation(
 
   if (tier2Result.success) {
     const tier2ValStart = Date.now();
+    emitValidationStart(callbacks);
     const tier2Validation = await validateTask(task, projectDir, config);
     const tier2ValPassed = tier2Validation.length === 0 || tier2Validation.every(r => r.passed);
     const tier2FailedStage = tier2Validation.find(r => !r.passed);
     callbacks.onEvent({
-      type: 'validate', ts: Date.now(), passed: tier2ValPassed,
+      type: 'validate', ts: Date.now(), status: 'done', passed: tier2ValPassed,
       stages: {
         tsc: tier2Validation.find(r => r.stage === 'typecheck')?.passed ?? true,
         lint: tier2Validation.find(r => r.stage === 'lint')?.passed ?? true,

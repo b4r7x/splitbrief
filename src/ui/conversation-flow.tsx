@@ -101,16 +101,17 @@ function estimateSectionHeight(section: Section, expandedDiffs: Set<number>): nu
 export function estimateEventHeight(event: TuiEvent, diffExpanded?: boolean): number {
   switch (event.type) {
     case 'task-start':
-      return 2; // marginTop adds 1 line
+      return 4;
     case 'implementer-generate':
-      if (event.status === 'running') return 1;
-      return diffExpanded ? 4 : 2;
+      if (event.status === 'running') return 3;
+      return diffExpanded ? 6 : 4;
     case 'validate':
-      return event.error ? 3 : 2;
+      if (event.status === 'running') return 3;
+      return event.error ? 5 : 4;
     case 'escalate':
-      return event.hint ? 2 : 1;
+      return event.hint ? 4 : 3;
     default:
-      return 1;
+      return 3;
   }
 }
 
@@ -265,7 +266,7 @@ const ConversationFlow = forwardRef<ConversationFlowHandle, ConversationFlowProp
           )}
           {visibleDynamic.map((section) => {
             return section.items.map((event, i) => (
-              <Box key={`${section.startIndex + i}`} marginY={0}>
+              <Box key={`${section.startIndex + i}`} marginY={1}>
                 <EventCard
                   event={event}
                   diffExpanded={expandedDiffs.has(section.startIndex + i)}

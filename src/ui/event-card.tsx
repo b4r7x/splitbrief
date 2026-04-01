@@ -5,6 +5,8 @@ import { highlight } from '../engine/highlight.js';
 import { getTheme } from '../theme.js';
 import DiffView from './diff-view.js';
 
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
 interface EventCardProps {
   event: TuiEvent;
   diffExpanded?: boolean;
@@ -125,6 +127,22 @@ function PlannerText({ text }: { text: string }) {
   );
 }
 
+function Spinner({ label, color }: { label: string; color: string }) {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setFrame(f => (f + 1) % SPINNER_FRAMES.length), 80);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <Box>
+      <Text color={color}>{SPINNER_FRAMES[frame]}</Text>
+      <Text color={color}> {label}</Text>
+    </Box>
+  );
+}
+
 // --- Sub-components for each event card type ---
 
 function PlannerStatusCard({ event }: { event: Extract<TuiEvent, { type: 'planner-status' }> }) {
@@ -157,12 +175,7 @@ function ImplementerCard({ event, diffExpanded }: { event: Extract<TuiEvent, { t
   const t = getTheme();
 
   if (event.status === 'running') {
-    return (
-      <Box>
-        <Text color={t.implementer}>generating...</Text>
-        <Text color={t.textDim}> {event.model ?? '?'}</Text>
-      </Box>
-    );
+    return <Spinner label={`generating ${event.model ?? 'local'}...`} color={t.implementer} />;
   }
 
   const dur = event.duration ? `  ${(event.duration / 1000).toFixed(1)}s` : '';
@@ -205,6 +218,11 @@ function ValidateCard({ event }: { event: Extract<TuiEvent, { type: 'validate' }
   const stageIcon = (passed: boolean) => passed
     ? <Text color={t.success}>✓</Text>
     : <Text color={t.error}>✗</Text>;
+
+  if (event.status === 'running') {
+    const currentStage = !event.stages.tsc ? 'tsc' : !event.stages.lint ? 'lint' : 'test';
+    return <Spinner label={`validating ${currentStage}...`} color={t.validator} />;
+  }
 
   return (
     <Box flexDirection="column">

@@ -4,7 +4,7 @@ import cfonts from "cfonts";
 import type { Config, Session, Screen } from "../types.js";
 import type { Theme } from "../theme.js";
 import { InputBar } from "../ui/input-bar.js";
-import { useTerminalSize } from "../hooks/use-terminal-size.js";
+import { useResponsiveLayout } from "../hooks/use-terminal-size.js";
 
 let cachedBanner: string | undefined;
 
@@ -86,8 +86,8 @@ export function HomeScreen({
   theme,
 }: HomeScreenProps) {
   const banner = getBanner();
-  const { cols, rows } = useTerminalSize();
-  const contentWidth = Math.min(cols - 8, 100);
+  const { cols, rows, isSmall } = useResponsiveLayout();
+  const contentWidth = Math.min(cols - 8, isSmall ? 70 : 100);
 
   return (
     <Box
@@ -97,8 +97,8 @@ export function HomeScreen({
       justifyContent="center"
       alignItems="center"
     >
-      <Box flexDirection="column" width={contentWidth} gap={1}>
-        <Box justifyContent="center">
+      <Box flexDirection="column" width={contentWidth} gap={isSmall ? 0 : 1}>
+        <Box justifyContent="center" marginBottom={1}>
           {banner ? (
             <Text>{banner.trimEnd()}</Text>
           ) : (
@@ -106,7 +106,7 @@ export function HomeScreen({
           )}
         </Box>
 
-        <Box flexDirection="column">
+        <Box flexDirection="column" marginBottom={1}>
           <Box>
             <Text color={theme.textDim}>Planner: </Text>
             <Text color={theme.planner}>{config.planner.tool}</Text>
@@ -122,10 +122,12 @@ export function HomeScreen({
           </Box>
         </Box>
 
-        <Box flexDirection="column">
+        <Box flexDirection="column" marginBottom={1}>
           {sessions.length > 0 ? (
             <>
-              <Text color={theme.textDim}>Recent sessions</Text>
+              <Box marginBottom={isSmall ? 0 : 1}>
+                <Text color={theme.textDim}>Recent sessions</Text>
+              </Box>
               {sessions.map((s) => (
                 <Box key={s.id}>
                   <Text color={statusColor(s.status, theme)}>
