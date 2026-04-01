@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import type { Summary } from '../types.js';
+import type { Summary, SlashCommandDef } from '../types.js';
 import type { Theme } from '../theme.js';
 import { formatTokens, formatTime, formatCost } from '../utils/format.js';
 import { InputBar } from '../ui/input-bar.js';
@@ -10,7 +10,8 @@ interface SummaryScreenProps {
   summary: Summary;
   theme: Theme;
   onDone: () => void;
-  onSlashCommand?: (command: string) => void;
+  commands: SlashCommandDef[];
+  onSlashCommand: (command: string) => void;
   errorMessage?: string | null;
   onClearError?: () => void;
 }
@@ -32,7 +33,7 @@ function progressBar(completed: number, total: number, width: number): string {
   return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
 
-export function SummaryScreen({ summary, theme, onDone, onSlashCommand, errorMessage, onClearError }: SummaryScreenProps) {
+export function SummaryScreen({ summary, theme, onDone, onSlashCommand, commands, errorMessage, onClearError }: SummaryScreenProps) {
   const { isSmall } = useResponsiveLayout();
 
   const completed = summary.completedByLocal + summary.escalatedToPlanner;
@@ -94,6 +95,7 @@ export function SummaryScreen({ summary, theme, onDone, onSlashCommand, errorMes
         <InputBar
           onSubmit={() => onDone()}
           onSlashCommand={onSlashCommand}
+          commands={commands}
           errorMessage={errorMessage}
           onClearError={onClearError}
           mode="normal"

@@ -55,9 +55,11 @@ export default function ReviewView({ filePath, theme: t, height, scrollOffset: e
     }
   }, [filePath]);
 
-  useEffect(() => {
+  const [prevExternalOffset, setPrevExternalOffset] = useState(externalOffset);
+  if (externalOffset !== prevExternalOffset) {
+    setPrevExternalOffset(externalOffset);
     if (externalOffset != null) setOffset(externalOffset);
-  }, [externalOffset]);
+  }
 
   const lines = content.split('\n');
   const visibleHeight = height ?? 20;

@@ -13,6 +13,7 @@ export interface Theme {
   validator: string;
   border: string;
   panelBg: string;
+  selectionBg: string;
   diff: {
     added: string;
     addedBg: string;
@@ -36,6 +37,7 @@ const terminalTheme: Theme = {
   validator: 'green',
   border: 'gray',
   panelBg: '',
+  selectionBg: '#333333',
   diff: {
     added: 'green',
     addedBg: '',
@@ -59,6 +61,7 @@ const monoTheme: Theme = {
   validator: '#9ece6a',
   border: '#3b3b3b',
   panelBg: '#1a1a1a',
+  selectionBg: '#2a2a3a',
   diff: {
     added: '#4fd6be',
     addedBg: '#20303b',

@@ -63,6 +63,7 @@ export default function App({ feature, projectDir, auto, modelOverride, provider
       auto={auto}
       projectDir={projectDir}
       paletteItems={paletteItems}
+      commands={commands}
       errorMessage={errorMessage}
       onClearError={() => setErrorMessage(null)}
       onSlashCommand={handleSlashCommand}

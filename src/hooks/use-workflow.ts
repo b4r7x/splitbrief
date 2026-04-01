@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { spawnSync } from 'node:child_process';
 import type { Phase, TuiEvent, Config, Summary, WorkflowState } from '../types.js';
 import { useInputMode } from './use-input-mode.js';
@@ -28,7 +28,7 @@ export function useWorkflow({ feature, projectDir, config, auto, onComplete, res
   const inputMode = useInputMode();
   const abortedRef = useRef(false);
 
-  const addEvent = useCallback((event: TuiEvent) => {
+  const addEvent = (event: TuiEvent) => {
     if (abortedRef.current) return;
     setEvents(prev => {
       const next = [...prev, event];
@@ -43,7 +43,7 @@ export function useWorkflow({ feature, projectDir, config, auto, onComplete, res
       if (event.method === 'local') setLocalCount(prev => prev + 1);
       else setEscalatedCount(prev => prev + 1);
     }
-  }, []);
+  };
 
   useEffect(() => {
     abortedRef.current = false;
@@ -81,7 +81,7 @@ export function useWorkflow({ feature, projectDir, config, auto, onComplete, res
     // eslint-disable-next-line react-hooks/exhaustive-deps -- props are stable for screen lifetime
   }, []);
 
-  const handleInput = useCallback((text: string) => {
+  const handleInput = (text: string) => {
     if (inputMode.mode === 'review') {
       const cmd = text.toLowerCase().trim();
       if (cmd === 'approve') {
@@ -103,7 +103,7 @@ export function useWorkflow({ feature, projectDir, config, auto, onComplete, res
     if (inputMode.mode === 'question') {
       inputMode.resolve(text);
     }
-  }, [inputMode, reviewFilePath]);
+  };
 
   return {
     events,

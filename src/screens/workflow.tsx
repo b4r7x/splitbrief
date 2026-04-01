@@ -1,6 +1,6 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef } from 'react';
 import { Box, useInput } from 'ink';
-import type { Config, Summary, WorkflowState } from '../types.js';
+import type { Config, Summary, WorkflowState, SlashCommandDef } from '../types.js';
 import type { Theme } from '../theme.js';
 import Header from '../ui/header.js';
 import ConversationFlow from '../ui/conversation-flow.js';
@@ -21,13 +21,14 @@ interface WorkflowScreenProps {
   projectDir: string;
   onComplete: (summary: Summary) => void;
   resumeState?: WorkflowState;
-  onSlashCommand?: (command: string) => void;
+  commands: SlashCommandDef[];
+  onSlashCommand: (command: string) => void;
   onOpenOverlay?: (type: import('../types.js').OverlayType) => void;
   errorMessage?: string | null;
   onClearError?: () => void;
 }
 
-export function WorkflowScreen({ feature, config, theme: t, auto, projectDir, onComplete, resumeState, onSlashCommand, onOpenOverlay, errorMessage, onClearError }: WorkflowScreenProps) {
+export function WorkflowScreen({ feature, config, theme: t, auto, projectDir, onComplete, resumeState, commands, onSlashCommand, onOpenOverlay, errorMessage, onClearError }: WorkflowScreenProps) {
   const { cols, rows, isSmall } = useResponsiveLayout();
   const flowRef = useRef<ConversationFlowHandle>(null);
 
@@ -36,27 +37,25 @@ export function WorkflowScreen({ feature, config, theme: t, auto, projectDir, on
   const sidebar = useSidebar(isSmall);
   const [startedAt] = useState(() => new Date().toISOString());
 
-  const sidebarTasks = useMemo(() => {
-    const taskMap = new Map<string, { id: string; title: string; status: 'pending' | 'done' | 'failed' | 'skipped' | 'in_progress' }>();
-    for (const ev of workflow.events) {
-      if (ev.type === 'task-start') {
-        taskMap.set(ev.taskId, { id: ev.taskId, title: ev.title, status: 'in_progress' });
-      } else if (ev.type === 'task-complete') {
-        const existing = taskMap.get(ev.taskId);
-        if (existing) existing.status = 'done';
-      } else if (ev.type === 'task-skipped') {
-        const existing = taskMap.get(ev.taskId);
-        if (existing) existing.status = 'skipped';
-      }
+  const taskMap = new Map<string, { id: string; title: string; status: 'pending' | 'done' | 'failed' | 'skipped' | 'in_progress' }>();
+  for (const ev of workflow.events) {
+    if (ev.type === 'task-start') {
+      taskMap.set(ev.taskId, { id: ev.taskId, title: ev.title, status: 'in_progress' });
+    } else if (ev.type === 'task-complete') {
+      const existing = taskMap.get(ev.taskId);
+      if (existing) existing.status = 'done';
+    } else if (ev.type === 'task-skipped') {
+      const existing = taskMap.get(ev.taskId);
+      if (existing) existing.status = 'skipped';
     }
-    return Array.from(taskMap.values());
-  }, [workflow.events]);
+  }
+  const sidebarTasks = Array.from(taskMap.values());
 
-  const costData = useMemo(() => ({
+  const costData = {
     localRate: (workflow.localCount + workflow.escalatedCount) > 0 ? (workflow.localCount / (workflow.localCount + workflow.escalatedCount)) * 100 : 0,
     spent: 0,
     saved: 0,
-  }), [workflow.localCount, workflow.escalatedCount]);
+  };
 
   const showSidebar = sidebar.visible && !isSmall;
   const sidebarWidth = Math.floor(cols * 0.25);
@@ -97,6 +96,7 @@ export function WorkflowScreen({ feature, config, theme: t, auto, projectDir, on
       <InputBar
         onSubmit={workflow.handleInput}
         onSlashCommand={onSlashCommand}
+        commands={commands}
         errorMessage={errorMessage}
         onClearError={onClearError}
         mode={workflow.inputMode}

@@ -28,6 +28,7 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
     },
     {
       name: '/palette',
+      label: 'Palette',
       description: 'Open command palette',
       validScreens: ALL_SCREENS,
       handler: () => ctx.openOverlay('command-palette'),

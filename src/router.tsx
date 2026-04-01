@@ -9,6 +9,7 @@ import type {
   RouteData,
   Config,
   CommandPaletteItem,
+  SlashCommandDef,
   OverlayType,
 } from "./types.js";
 import type { Session } from "./types.js";
@@ -26,6 +27,7 @@ interface RouterProps {
   auto: boolean;
   projectDir: string;
   paletteItems: CommandPaletteItem[];
+  commands: SlashCommandDef[];
   errorMessage: string | null;
   onClearError: () => void;
   onSlashCommand: (raw: string, from: Screen) => void;
@@ -45,6 +47,7 @@ export function Router({
   auto,
   projectDir,
   paletteItems,
+  commands,
   errorMessage,
   onClearError,
   onSlashCommand,
@@ -75,6 +78,7 @@ export function Router({
         <HomeScreen
           config={config}
           sessions={sessions}
+          commands={commands}
           onStartWorkflow={(feat) => navigate("workflow", { feature: feat })}
           onSlashCommand={(raw) => onSlashCommand(raw, "home")}
           onOpenOverlay={onOpenOverlay}
@@ -95,6 +99,7 @@ export function Router({
           projectDir={projectDir}
           resumeState={routeData.resumeState}
           onComplete={(summary) => navigate("summary", { summary })}
+          commands={commands}
           onSlashCommand={(raw) => onSlashCommand(raw, "workflow")}
           onOpenOverlay={onOpenOverlay}
           errorMessage={errorMessage}
@@ -109,6 +114,7 @@ export function Router({
           summary={routeData.summary}
           theme={theme}
           onDone={() => navigate("home")}
+          commands={commands}
           onSlashCommand={(raw) => onSlashCommand(raw, "summary")}
           errorMessage={errorMessage}
           onClearError={onClearError}
