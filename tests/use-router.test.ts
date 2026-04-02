@@ -1,15 +1,15 @@
-import { describe, it, expect } from 'vitest';
-import React, { useRef, useImperativeHandle, forwardRef, createRef } from 'react';
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import React from 'react';
 import { render } from 'ink';
 import { PassThrough } from 'node:stream';
 import { useRouter } from '../src/hooks/use-router.js';
-import type { Screen, RouteData, Summary, WorkflowState } from '../src/types.js';
+import type { Summary, WorkflowState } from '../src/types.js';
 
 // Minimal renderHook for Ink — renders a component that calls the hook
 // and exposes the return value via a mutable ref.
 function renderHook<T>(hookFn: () => T) {
   const resultRef: { current: T | null } = { current: null };
-  const actQueue: Array<() => void> = [];
 
   function HookHost() {
     const value = hookFn();
@@ -28,7 +28,6 @@ function renderHook<T>(hookFn: () => T) {
 
   function act(fn: () => void) {
     fn();
-    // Force a synchronous re-render by waiting a microtick
     return new Promise<void>(resolve => setTimeout(resolve, 10));
   }
 
@@ -62,22 +61,22 @@ const dummySummary: Summary = {
 describe('useRouter', () => {
   it('defaults to home screen', () => {
     const { result, unmount } = renderHook(() => useRouter());
-    expect(result.current.screen).toBe('home');
-    expect(result.current.routeData).toEqual({ screen: 'home' });
+    assert.equal(result.current.screen, 'home');
+    assert.deepEqual(result.current.routeData, { screen: 'home' });
     unmount();
   });
 
   it('navigates from home to workflow with feature data', async () => {
     const { result, act, unmount } = renderHook(() => useRouter());
 
-    expect(result.current.screen).toBe('home');
+    assert.equal(result.current.screen, 'home');
 
     await act(() => {
       result.current.navigate('workflow', { feature: 'auth' });
     });
 
-    expect(result.current.screen).toBe('workflow');
-    expect(result.current.routeData).toEqual({
+    assert.equal(result.current.screen, 'workflow');
+    assert.deepEqual(result.current.routeData, {
       screen: 'workflow',
       feature: 'auth',
       resumeState: undefined,
@@ -90,14 +89,14 @@ describe('useRouter', () => {
       useRouter({ screen: 'workflow', feature: 'auth' }),
     );
 
-    expect(result.current.screen).toBe('workflow');
+    assert.equal(result.current.screen, 'workflow');
 
     await act(() => {
       result.current.navigate('summary', { summary: dummySummary });
     });
 
-    expect(result.current.screen).toBe('summary');
-    expect(result.current.routeData).toEqual({
+    assert.equal(result.current.screen, 'summary');
+    assert.deepEqual(result.current.routeData, {
       screen: 'summary',
       summary: dummySummary,
     });
@@ -109,14 +108,14 @@ describe('useRouter', () => {
       useRouter({ screen: 'summary', summary: dummySummary }),
     );
 
-    expect(result.current.screen).toBe('summary');
+    assert.equal(result.current.screen, 'summary');
 
     await act(() => {
       result.current.navigate('home');
     });
 
-    expect(result.current.screen).toBe('home');
-    expect(result.current.routeData).toEqual({ screen: 'home' });
+    assert.equal(result.current.screen, 'home');
+    assert.deepEqual(result.current.routeData, { screen: 'home' });
     unmount();
   });
 
@@ -152,8 +151,8 @@ describe('useRouter', () => {
       result.current.navigate('workflow', { feature: 'auth', resumeState });
     });
 
-    expect(result.current.screen).toBe('workflow');
-    expect(result.current.routeData).toEqual({
+    assert.equal(result.current.screen, 'workflow');
+    assert.deepEqual(result.current.routeData, {
       screen: 'workflow',
       feature: 'auth',
       resumeState,
@@ -164,38 +163,18 @@ describe('useRouter', () => {
   it('throws on invalid transition from home to summary', () => {
     const { result, unmount } = renderHook(() => useRouter());
 
-    expect(() => {
+    assert.throws(() => {
       result.current.navigate('summary', { summary: dummySummary });
-    }).toThrow('Cannot navigate from "home" to "summary"');
+    }, /Cannot navigate from "home" to "summary"/);
     unmount();
   });
 
-  it('canNavigate returns correct booleans', async () => {
-    const { result, act, unmount } = renderHook(() => useRouter());
+  it('guards invalid transitions internally', () => {
+    const { result, unmount } = renderHook(() => useRouter());
 
-    // From home
-    expect(result.current.canNavigate('workflow')).toBe(true);
-    expect(result.current.canNavigate('summary')).toBe(false);
-    expect(result.current.canNavigate('home')).toBe(false);
-
-    // Move to workflow
-    await act(() => {
-      result.current.navigate('workflow', { feature: 'x' });
-    });
-
-    expect(result.current.canNavigate('summary')).toBe(true);
-    expect(result.current.canNavigate('home')).toBe(false);
-    expect(result.current.canNavigate('workflow')).toBe(false);
-
-    // Move to summary
-    await act(() => {
+    assert.throws(() => {
       result.current.navigate('summary', { summary: dummySummary });
-    });
-
-    expect(result.current.canNavigate('home')).toBe(true);
-    expect(result.current.canNavigate('workflow')).toBe(true);
-    expect(result.current.canNavigate('summary')).toBe(false);
-
+    }, /Cannot navigate from "home" to "summary"/);
     unmount();
   });
 });

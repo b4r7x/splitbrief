@@ -1,5 +1,6 @@
-import type { Task, ProjectContext, TokenBudget, CodeContext } from '../../types.js';
+import type { Task, ProjectContext, CodeContext } from '../../types.js';
 import { extractFunctionContext } from '../context-extractor.js';
+import { estimateTokens, truncateMiddle, computeTokenBudget } from './token-budget.js';
 
 export const SYSTEM_PREAMBLE = `SYSTEM: You are a TypeScript code generator. You write clean, working TypeScript code.
 Rules:
@@ -26,59 +27,16 @@ export function loadConfig(dir: string): Config {
   };
 }`;
 
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
-
-export function truncateMiddle(text: string, maxTokens: number): string {
-  const maxChars = Math.floor(maxTokens * 4);
-  if (text.length <= maxChars) return text;
-  const half = Math.floor((maxChars - 50) / 2);
-  if (half <= 0) return text.slice(0, maxChars);
-  return text.slice(0, half) + '\n// ... truncated to fit context window ...\n' + text.slice(-half);
-}
-
-export function computeTokenBudget(
-  system: string,
-  taskBody: string,
-  typeDefs: string,
-  implSteps: string,
-  contextLength: number,
-): TokenBudget {
-  const systemTokens = estimateTokens(system);
-  const taskBodyTokens = estimateTokens(taskBody);
-  const typeDefsTokens = estimateTokens(typeDefs);
-  const implStepsTokens = estimateTokens(implSteps);
-  const outputReserve = Math.floor(contextLength * 0.25);
-  const usedWithoutCode = systemTokens + taskBodyTokens + typeDefsTokens + implStepsTokens + outputReserve;
-  const codeContext = 0; // placeholder — filled by caller
-  const total = usedWithoutCode;
-  const remaining = contextLength - total;
-
-  return {
-    system: systemTokens,
-    taskBody: taskBodyTokens,
-    typeDefs: typeDefsTokens,
-    implSteps: implStepsTokens,
-    codeContext,
-    outputReserve,
-    total,
-    remaining,
-  };
-}
-
 export function resolveCodeContext(
   fileContent: string,
   functionName: string | undefined,
   availableTokens: number,
 ): CodeContext {
-  // 1. Try whole-file
   const wholeFileTokens = estimateTokens(fileContent);
   if (wholeFileTokens <= availableTokens) {
     return { mode: 'whole-file', content: fileContent };
   }
 
-  // 2. Try function-level (if we have a function name)
   if (functionName) {
     const extracted = extractFunctionContext(fileContent, functionName);
     if (extracted) {
@@ -95,12 +53,10 @@ export function resolveCodeContext(
     }
   }
 
-  // 3. Truncate middle
   if (availableTokens > 0) {
     return { mode: 'whole-file', content: truncateMiddle(fileContent, availableTokens) };
   }
 
-  // 4. No space at all — return empty
   return { mode: 'whole-file', content: '' };
 }
 
@@ -110,31 +66,31 @@ const CLOSING_CONSTRAINTS = [
   'Do NOT import packages not listed in the project dependencies',
 ];
 
-export function formatTaskPrompt(task: Task, context: ProjectContext, contextLength?: number): string {
-  const sections: string[] = [
-    `## Project: ${context.name}`,
-    `## Runtime: ${context.runtime}`,
-    '',
+function buildTaskSections(task: Task, context?: ProjectContext): string[] {
+  const sections: string[] = [];
+
+  if (context) {
+    sections.push(`## Project: ${context.name}`, `## Runtime: ${context.runtime}`, '');
+  }
+
+  sections.push(
     `## Task: ${task.title}`,
     `### Action: ${task.action}`,
     `### File: ${task.file}`,
     '',
     '### What To Do',
     task.description,
-  ];
+  );
 
   if (task.signature) {
     sections.push('', '### Function Signature', task.signature);
   }
-
   if (task.typeDefs) {
     sections.push('', '### Type Definitions', task.typeDefs);
   }
-
   if (task.implSteps.length > 0) {
     sections.push('', '### Implementation Steps', ...task.implSteps.map((s, i) => `${i + 1}. ${s}`));
   }
-
   if (task.tests.length > 0) {
     sections.push('', '### Tests (must pass after implementation)', task.tests.join('\n'));
   }
@@ -143,73 +99,72 @@ export function formatTaskPrompt(task: Task, context: ProjectContext, contextLen
   sections.push('', '### Constraints', ...allConstraints.map(c => `- ${c}`));
   sections.push('', `Output the complete file contents for ${task.file}. No markdown fences. No explanations.`);
 
-  // Assemble task body (everything except code context)
-  const taskBody = sections.join('\n');
+  return sections;
+}
 
-  // If no context length specified, include code as-is (legacy behavior)
-  if (!contextLength) {
-    if (task.action === 'modify' && task.currentCode) {
-      const withCode = [...sections];
-      // Insert current code before constraints
-      const constraintIdx = withCode.indexOf('### Constraints');
-      if (constraintIdx !== -1) {
-        withCode.splice(constraintIdx, 0, '', '### Current Code', task.currentCode);
-      }
-      return withCode.join('\n');
-    }
-    return taskBody;
+function insertCodeBeforeConstraints(sections: string[], codeLines: string[]): void {
+  const constraintIdx = sections.indexOf('### Constraints');
+  if (constraintIdx !== -1) {
+    sections.splice(constraintIdx, 0, ...codeLines);
+  } else {
+    sections.push(...codeLines);
+  }
+}
+
+function insertCodeContext(sections: string[], task: Task, budget?: { remaining: number }): void {
+  if (!task.currentCode) return;
+
+  if (!budget) {
+    insertCodeBeforeConstraints(sections, ['', '### Current Code', task.currentCode]);
+    return;
   }
 
-  // Token-budgeted assembly
-  const budget = computeTokenBudget(
-    SYSTEM_PREAMBLE,
-    taskBody,
-    '', // typeDefs already in taskBody
-    '', // implSteps already in taskBody
-    contextLength,
-  );
+  let functionName: string | undefined;
+  if (task.signature) {
+    const match = task.signature.match(/(?:function|const|class|interface|type)\s+(\w+)/);
+    if (match) functionName = match[1];
+  }
 
-  // Resolve code context for modify tasks
-  if (task.action === 'modify' && task.currentCode) {
-    // Extract function name from signature for function-level extraction
-    let functionName: string | undefined;
-    if (task.signature) {
-      const match = task.signature.match(/(?:function|const|class|interface|type)\s+(\w+)/);
-      if (match) functionName = match[1];
-    }
+  const codeCtx = resolveCodeContext(task.currentCode, functionName, budget.remaining);
 
-    const codeCtx = resolveCodeContext(task.currentCode, functionName, budget.remaining);
+  if (codeCtx.mode === 'function-level') {
+    insertCodeBeforeConstraints(sections, [
+      '', '### Current Code (relevant section)',
+      '// === Imports ===', codeCtx.imports, '',
+      '// === Target Function ===', codeCtx.targetFunction, '',
+      `// === Other Exports (do not modify): ${codeCtx.otherExports.join(', ')}`,
+    ]);
+  } else {
+    insertCodeBeforeConstraints(sections, ['', '### Current Code', codeCtx.content]);
+  }
+}
 
-    if (codeCtx.mode === 'function-level') {
-      const codeSection = [
-        '',
-        '### Current Code (relevant section)',
-        '// === Imports ===',
-        codeCtx.imports,
-        '',
-        '// === Target Function ===',
-        codeCtx.targetFunction,
-        '',
-        `// === Other Exports (do not modify): ${codeCtx.otherExports.join(', ')}`,
-      ];
-      // Insert before constraints
-      const constraintIdx = sections.indexOf('### Constraints');
-      if (constraintIdx !== -1) {
-        sections.splice(constraintIdx, 0, ...codeSection);
-      }
-    } else {
-      // whole-file (possibly truncated)
-      const constraintIdx = sections.indexOf('### Constraints');
-      if (constraintIdx !== -1) {
-        sections.splice(constraintIdx, 0, '', '### Current Code', codeCtx.content);
-      }
-    }
+export function formatTaskPrompt(task: Task, context: ProjectContext, contextLength?: number): string {
+  const sections = buildTaskSections(task, context);
+
+  if (!contextLength) {
+    if (task.action === 'modify') insertCodeContext(sections, task);
+    return sections.join('\n');
+  }
+
+  const budget = computeTokenBudget(SYSTEM_PREAMBLE, sections.join('\n'), contextLength);
+
+  if (task.action === 'modify') {
+    insertCodeContext(sections, task, budget);
   }
 
   return sections.join('\n');
 }
 
-export function formatRetryPrompt(task: Task, context: ProjectContext, error: string, attempt: number): string {
+export function buildFullPrompt(task: Task, context: ProjectContext, contextLength?: number): string {
+  return SYSTEM_PREAMBLE + '\n\n' + formatTaskPrompt(task, context, contextLength);
+}
+
+export function buildFullRetryPrompt(task: Task, context: ProjectContext, error: string, attempt: number, contextLength?: number): string {
+  return SYSTEM_PREAMBLE + '\n\n' + formatRetryPrompt(task, context, error, attempt, contextLength);
+}
+
+export function formatRetryPrompt(task: Task, context: ProjectContext, error: string, attempt: number, contextLength?: number): string {
   const framings: Record<number, string> = {
     1: 'Your previous attempt had an error. Fix it:',
     2: 'Previous attempts failed. Here is the task rephrased differently:',
@@ -217,44 +172,16 @@ export function formatRetryPrompt(task: Task, context: ProjectContext, error: st
   };
 
   const framing = framings[attempt] ?? framings[3];
+  const sections = buildTaskSections(task, context);
 
-  const sections: string[] = [
-    framing,
-    '',
-    'Error from previous attempt:',
-    error,
-    '',
-    `## Task: ${task.title}`,
-    `### Action: ${task.action}`,
-    `### File: ${task.file}`,
-    '',
-    '### What To Do',
-    task.description,
-  ];
-
-  if (task.signature) {
-    sections.push('', '### Function Signature', task.signature);
-  }
-
-  if (task.typeDefs) {
-    sections.push('', '### Type Definitions', task.typeDefs);
-  }
-
-  if (task.implSteps.length > 0) {
-    sections.push('', '### Implementation Steps', ...task.implSteps.map((s, i) => `${i + 1}. ${s}`));
-  }
-
-  if (task.tests.length > 0) {
-    sections.push('', '### Tests (must pass after implementation)', task.tests.join('\n'));
-  }
+  sections.unshift(framing, '', 'Error from previous attempt:', error, '');
 
   if (task.currentCode) {
-    sections.push('', '### Current Code', task.currentCode);
+    const budget = contextLength
+      ? computeTokenBudget(SYSTEM_PREAMBLE, sections.join('\n'), contextLength)
+      : undefined;
+    insertCodeContext(sections, task, budget);
   }
-
-  const allConstraints = [...task.constraints, ...CLOSING_CONSTRAINTS];
-  sections.push('', '### Constraints', ...allConstraints.map(c => `- ${c}`));
-  sections.push('', `Output the complete file contents for ${task.file}. No markdown fences. No explanations.`);
 
   return sections.join('\n');
 }

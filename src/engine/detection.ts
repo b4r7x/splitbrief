@@ -1,5 +1,7 @@
 import type { PlannerTool } from '../types.js';
 import { createPlanner } from './planners/factory.js';
+import { DEFAULT_BASES } from './providers.js';
+import { toErrorMessage } from '../utils/format.js';
 
 export interface PlannerDetection {
   tool: PlannerTool;
@@ -14,6 +16,7 @@ export interface ImplementerDetection {
   models?: string[];
 }
 
+const DETECTION_TIMEOUT_MS = 5000;
 const KNOWN_PLANNER_TOOLS: PlannerTool[] = ['claude-code', 'codex', 'opencode', 'aider', 'agent-sdk'];
 
 function minimalConfig(tool: PlannerTool) {
@@ -40,34 +43,46 @@ export async function detectAvailablePlanners(): Promise<PlannerDetection[]> {
     KNOWN_PLANNER_TOOLS.map(async (tool): Promise<PlannerDetection> => {
       try {
         const backend = await createPlanner(minimalConfig(tool));
-        const available = await withTimeout(backend.isAvailable(), 5000);
+        const available = await withTimeout(backend.isAvailable(), DETECTION_TIMEOUT_MS);
         let version: string | null = null;
         if (available) {
           try {
-            version = await withTimeout(backend.getVersion(), 5000);
-          } catch {
-            // version detection is non-fatal
-          }
+            version = await withTimeout(backend.getVersion(), DETECTION_TIMEOUT_MS);
+          } catch {}
         }
         return { tool, available, version };
       } catch (err) {
-        return { tool, available: false, error: err instanceof Error ? err.message : String(err) };
+        return { tool, available: false, error: toErrorMessage(err) };
       }
     }),
   );
   return results;
 }
 
+interface OllamaTagsResponse {
+  models?: { name: string }[];
+}
+
+interface LmStudioListResponse {
+  data?: { id: string }[];
+}
+
 const IMPLEMENTER_CHECKS = [
   {
     provider: 'ollama',
-    url: 'http://localhost:11434/api/tags',
-    parse: (data: any) => (data.models ?? []).map((m: any) => m.name as string),
+    url: DEFAULT_BASES.ollama.baseURL.replace('/v1', '/api/tags'),
+    parse: (data: unknown) => {
+      const d = data as OllamaTagsResponse;
+      return (d.models ?? []).map((m) => m.name);
+    },
   },
   {
     provider: 'lm-studio',
-    url: 'http://localhost:1234/v1/models',
-    parse: (data: any) => (data.data ?? []).map((m: any) => m.id as string),
+    url: `${DEFAULT_BASES['lm-studio'].baseURL}/models`,
+    parse: (data: unknown) => {
+      const d = data as LmStudioListResponse;
+      return (d.data ?? []).map((m) => m.id);
+    },
   },
 ];
 
@@ -75,9 +90,13 @@ export async function detectAvailableImplementers(): Promise<ImplementerDetectio
   const results = await Promise.all(
     IMPLEMENTER_CHECKS.map(async ({ provider, url, parse }): Promise<ImplementerDetection> => {
       try {
-        const res = await withTimeout(fetch(url), 5000);
-        if (!res.ok) return { provider, available: false };
-        const data = await res.json();
+        const data = await withTimeout(
+          fetch(url).then(res => {
+            if (!res.ok) throw new Error('not ok');
+            return res.json();
+          }),
+          DETECTION_TIMEOUT_MS,
+        );
         const models = parse(data);
         return { provider, available: models.length > 0, models };
       } catch {

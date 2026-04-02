@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import type { Phase } from '../types.js';
 import PipelineBar from './pipeline-bar.js';
-import { getTheme } from '../theme.js';
+import { useAppContext } from '../app.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
+import { truncate } from '../utils/format.js';
 
 interface HeaderProps {
   feature: string;
@@ -19,13 +20,9 @@ function formatElapsed(startedAt: string): string {
   return `${h}:${m}:${s}`;
 }
 
-function truncate(text: string, max: number): string {
-  return text.length > max ? text.slice(0, max - 1) + '\u2026' : text;
-}
-
 export default function Header({ feature, startedAt, phase }: HeaderProps) {
   const { isSmall } = useResponsiveLayout();
-  const t = getTheme();
+  const { theme: t } = useAppContext();
   const [elapsed, setElapsed] = useState(() => formatElapsed(startedAt));
   const maxFeatureLength = isSmall ? 25 : 40;
 

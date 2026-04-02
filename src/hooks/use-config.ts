@@ -1,5 +1,6 @@
+import { useMemo } from 'react';
 import { loadConfig } from '../config.js';
-import type { Config } from '../types.js';
+import type { Config, PlannerTool } from '../types.js';
 
 interface ConfigOverrides {
   modelOverride?: string;
@@ -10,11 +11,13 @@ interface ConfigOverrides {
 }
 
 export function useConfig(projectDir: string, overrides: ConfigOverrides): Config {
-  const config = loadConfig(projectDir);
-  if (overrides.modelOverride) config.implementer.model = overrides.modelOverride;
-  if (overrides.providerOverride) config.implementer.provider = overrides.providerOverride;
-  if (overrides.contextLengthOverride) config.implementer.contextLength = overrides.contextLengthOverride;
-  if (overrides.plannerOverride) (config.planner as any).tool = overrides.plannerOverride;
-  if (overrides.plannerModelOverride) (config.planner as any).model = overrides.plannerModelOverride;
-  return config;
+  return useMemo(() => {
+    const config = loadConfig(projectDir);
+    if (overrides.modelOverride) config.implementer.model = overrides.modelOverride;
+    if (overrides.providerOverride) config.implementer.provider = overrides.providerOverride;
+    if (overrides.contextLengthOverride) config.implementer.contextLength = overrides.contextLengthOverride;
+    if (overrides.plannerOverride) config.planner.tool = overrides.plannerOverride as PlannerTool;
+    if (overrides.plannerModelOverride) config.planner.model = overrides.plannerModelOverride;
+    return config;
+  }, [projectDir, overrides.modelOverride, overrides.providerOverride, overrides.contextLengthOverride, overrides.plannerOverride, overrides.plannerModelOverride]);
 }

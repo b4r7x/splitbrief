@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
 import { getTheme } from '../src/theme.js';
 
 const requiredFields = [
@@ -13,57 +14,57 @@ const diffFields = [
 describe('getTheme', () => {
   it('returns terminal theme by default (no argument)', () => {
     const theme = getTheme();
-    expect(theme.accent).toBe('cyan');
+    assert.equal(theme.accent, 'cyan');
   });
 
   it('returns terminal theme with ANSI named colors', () => {
     const theme = getTheme('terminal');
-    expect(theme.accent).toBe('cyan');
-    expect(theme.success).toBe('green');
-    expect(theme.error).toBe('red');
-    expect(theme.accent).not.toMatch(/^#/);
+    assert.equal(theme.accent, 'cyan');
+    assert.equal(theme.success, 'green');
+    assert.equal(theme.error, 'red');
+    assert.ok(!theme.accent.startsWith('#'));
   });
 
   it('returns mono theme with hex color values', () => {
     const theme = getTheme('mono');
-    expect(theme.accent).toMatch(/^#/);
-    expect(theme.success).toMatch(/^#/);
-    expect(theme.error).toMatch(/^#/);
+    assert.ok(theme.accent.startsWith('#'));
+    assert.ok(theme.success.startsWith('#'));
+    assert.ok(theme.error.startsWith('#'));
   });
 
   it('terminal theme text is white', () => {
-    expect(getTheme('terminal').text).toBe('white');
+    assert.equal(getTheme('terminal').text, 'white');
   });
 
   it('mono theme text is #c0c0c0', () => {
-    expect(getTheme('mono').text).toBe('#c0c0c0');
+    assert.equal(getTheme('mono').text, '#c0c0c0');
   });
 
   it('terminal theme has all required fields', () => {
     const theme = getTheme('terminal');
     for (const field of requiredFields) {
-      expect(theme).toHaveProperty(field);
+      assert.ok(field in theme, `missing field: ${field}`);
     }
   });
 
   it('mono theme has all required fields', () => {
     const theme = getTheme('mono');
     for (const field of requiredFields) {
-      expect(theme).toHaveProperty(field);
+      assert.ok(field in theme, `missing field: ${field}`);
     }
   });
 
   it('terminal diff has all sub-fields', () => {
     const { diff } = getTheme('terminal');
     for (const field of diffFields) {
-      expect(diff).toHaveProperty(field);
+      assert.ok(field in diff, `missing diff field: ${field}`);
     }
   });
 
   it('mono diff has all sub-fields', () => {
     const { diff } = getTheme('mono');
     for (const field of diffFields) {
-      expect(diff).toHaveProperty(field);
+      assert.ok(field in diff, `missing diff field: ${field}`);
     }
   });
 });

@@ -1,6 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, appendFileSync } from 'node:fs';
-import { join } from 'node:path';
-import type { WorkflowState, StateAction, Task, TokenUsage, Event } from './types.js';
+import type { WorkflowState, StateAction, TokenUsage } from './types.js';
 
 const zeroTokenUsage: TokenUsage = {
   plannerInput: 0,
@@ -26,6 +24,17 @@ export function createInitialState(feature: string): WorkflowState {
     sessionId: null,
     startedAt: new Date().toISOString(),
     tokenUsage: { ...zeroTokenUsage },
+  };
+}
+
+function advanceTask(state: WorkflowState, list: 'completedTasks' | 'escalatedTasks' | 'failedTasks'): WorkflowState {
+  const taskId = state.tasks[state.currentTaskIndex]?.id;
+  return {
+    ...state,
+    phase: 'implementing',
+    currentTaskIndex: state.currentTaskIndex + 1,
+    attempt: 0,
+    [list]: taskId ? [...state[list], taskId] : state[list],
   };
 }
 
@@ -58,16 +67,8 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
     case 'TASK_SENT':
       return { ...state, phase: 'validating-task' };
 
-    case 'VALIDATION_PASS': {
-      const taskId = state.tasks[state.currentTaskIndex]?.id;
-      return {
-        ...state,
-        phase: 'implementing',
-        currentTaskIndex: state.currentTaskIndex + 1,
-        attempt: 0,
-        completedTasks: taskId ? [...state.completedTasks, taskId] : state.completedTasks,
-      };
-    }
+    case 'VALIDATION_PASS':
+      return advanceTask(state, 'completedTasks');
 
     case 'VALIDATION_FAIL':
       if (state.attempt < maxRetries) {
@@ -78,41 +79,17 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
     case 'ESCALATE':
       return { ...state, phase: 'escalating' };
 
-    case 'HINT_SUCCESS': {
-      const taskId = state.tasks[state.currentTaskIndex]?.id;
-      return {
-        ...state,
-        phase: 'implementing',
-        currentTaskIndex: state.currentTaskIndex + 1,
-        attempt: 0,
-        completedTasks: taskId ? [...state.completedTasks, taskId] : state.completedTasks,
-      };
-    }
+    case 'HINT_SUCCESS':
+      return advanceTask(state, 'completedTasks');
 
     case 'HINT_FAIL':
       return { ...state, phase: 'escalating' };
 
-    case 'FULL_SUCCESS': {
-      const taskId = state.tasks[state.currentTaskIndex]?.id;
-      return {
-        ...state,
-        phase: 'implementing',
-        currentTaskIndex: state.currentTaskIndex + 1,
-        attempt: 0,
-        escalatedTasks: taskId ? [...state.escalatedTasks, taskId] : state.escalatedTasks,
-      };
-    }
+    case 'FULL_SUCCESS':
+      return advanceTask(state, 'escalatedTasks');
 
-    case 'FULL_FAIL': {
-      const taskId = state.tasks[state.currentTaskIndex]?.id;
-      return {
-        ...state,
-        phase: 'implementing',
-        currentTaskIndex: state.currentTaskIndex + 1,
-        attempt: 0,
-        failedTasks: taskId ? [...state.failedTasks, taskId] : state.failedTasks,
-      };
-    }
+    case 'FULL_FAIL':
+      return advanceTask(state, 'failedTasks');
 
     case 'ALL_DONE':
       return { ...state, phase: 'final-review' };
@@ -126,35 +103,9 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
     case 'SET_SESSION_ID':
       return { ...state, sessionId: action.sessionId };
 
-    default:
+    default: {
+      const _exhaustive: never = action;
       return state;
+    }
   }
-}
-
-function stateDir(projectDir: string): string {
-  return join(projectDir, '.tiny-spec', 'current');
-}
-
-function ensureDir(dir: string): void {
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-}
-
-export function saveState(projectDir: string, state: WorkflowState): void {
-  const dir = stateDir(projectDir);
-  ensureDir(dir);
-  writeFileSync(join(dir, 'state.json'), JSON.stringify(state, null, 2) + '\n');
-}
-
-export function loadState(projectDir: string): WorkflowState | null {
-  const filePath = join(stateDir(projectDir), 'state.json');
-  if (!existsSync(filePath)) return null;
-  return JSON.parse(readFileSync(filePath, 'utf-8')) as WorkflowState;
-}
-
-export function appendEvent(projectDir: string, event: Event): void {
-  const dir = stateDir(projectDir);
-  ensureDir(dir);
-  appendFileSync(join(dir, 'events.jsonl'), JSON.stringify(event) + '\n');
 }

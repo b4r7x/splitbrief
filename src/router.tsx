@@ -1,21 +1,20 @@
-import React from "react";
-import { HomeScreen } from "./screens/home.js";
-import { WorkflowScreen } from "./screens/workflow.js";
-import { SummaryScreen } from "./screens/summary.js";
-import { HelpOverlay } from "./ui/help-overlay.js";
-import { CommandPalette } from "./ui/command-palette.js";
-import { SkillsPicker } from "./ui/skills-picker.js";
+import { Box } from 'ink';
+import { useAppContext } from './app.js';
+import { HomeScreen } from './screens/home.js';
+import { WorkflowScreen } from './screens/workflow.js';
+import { SummaryScreen } from './screens/summary.js';
+import { HelpOverlay } from './ui/help-overlay.js';
+import { CommandPalette } from './ui/command-palette.js';
+import { SkillsPicker } from './ui/skills-picker.js';
 import type {
   Screen,
   RouteData,
-  Config,
   CommandPaletteItem,
-  SlashCommandDef,
   OverlayType,
-  SkillMeta,
-} from "./types.js";
-import type { Session } from "./types.js";
-import type { getTheme } from "./theme.js";
+  Session,
+  Summary,
+  WorkflowState,
+} from './types.js';
 
 interface RouterProps {
   screen: Screen;
@@ -23,22 +22,10 @@ interface RouterProps {
   overlayActive: OverlayType;
   onCloseOverlay: () => void;
   onOpenOverlay: (type: OverlayType) => void;
-  config: Config;
-  theme: ReturnType<typeof getTheme>;
   sessions: Session[];
-  auto: boolean;
-  projectDir: string;
   paletteItems: CommandPaletteItem[];
-  commands: SlashCommandDef[];
-  errorMessage: string | null;
-  onClearError: () => void;
   onSlashCommand: (raw: string, from: Screen) => void;
-  navigate: (to: "home" | "workflow" | "summary", data?: any) => void;
-  exit: () => void;
-  availableSkills: SkillMeta[];
-  selectedSkillIds: Set<string>;
-  onSkillsConfirm: (selected: Set<string>) => void;
-  selectedSkillMetas: SkillMeta[];
+  navigate: (to: 'home' | 'workflow' | 'summary', data?: { feature?: string; summary?: Summary; resumeState?: WorkflowState }) => void;
 }
 
 export function Router({
@@ -47,105 +34,81 @@ export function Router({
   overlayActive,
   onCloseOverlay,
   onOpenOverlay,
-  config,
-  theme,
   sessions,
-  auto,
-  projectDir,
   paletteItems,
-  commands,
-  errorMessage,
-  onClearError,
   onSlashCommand,
   navigate,
-  availableSkills,
-  selectedSkillIds,
-  onSkillsConfirm,
-  selectedSkillMetas,
 }: RouterProps) {
-  if (overlayActive === "help") {
-    return <HelpOverlay onClose={onCloseOverlay} theme={theme} currentScreen={screen} />;
-  }
+  const { availableSkills, selectedSkillIds, onSkillsConfirm } = useAppContext();
+  const hasOverlay = overlayActive !== 'none';
 
-  if (overlayActive === "command-palette") {
-    return (
-      <CommandPalette
-        items={paletteItems}
-        currentScreen={screen}
-        onExecute={(item) => {
-          onCloseOverlay();
-          item.action();
-        }}
-        onClose={onCloseOverlay}
-        theme={theme}
-      />
-    );
-  }
+  const screenContent = (() => {
+    switch (screen) {
+      case 'home':
+        return (
+          <HomeScreen
+            sessions={sessions}
+            onStartWorkflow={(feat) => navigate('workflow', { feature: feat })}
+            onSlashCommand={(raw) => onSlashCommand(raw, 'home')}
+          />
+        );
 
-  if (overlayActive === "skills") {
-    return (
-      <SkillsPicker
-        skills={availableSkills}
-        selected={selectedSkillIds}
-        onConfirm={(selected) => {
-          onSkillsConfirm(selected);
-          onCloseOverlay();
-        }}
-        onClose={onCloseOverlay}
-        theme={theme}
-      />
-    );
-  }
+      case 'workflow':
+        if (routeData.screen !== 'workflow') return null;
+        return (
+          <WorkflowScreen
+            feature={routeData.feature}
+            resumeState={routeData.resumeState}
+            onComplete={(summary) => navigate('summary', { summary })}
+            onSlashCommand={(raw) => onSlashCommand(raw, 'workflow')}
+          />
+        );
 
-  switch (screen) {
-    case "home":
-      return (
-        <HomeScreen
-          config={config}
-          sessions={sessions}
-          commands={commands}
-          onStartWorkflow={(feat) => navigate("workflow", { feature: feat })}
-          onSlashCommand={(raw) => onSlashCommand(raw, "home")}
-          onOpenOverlay={onOpenOverlay}
-          errorMessage={errorMessage}
-          onClearError={onClearError}
-          theme={theme}
-          selectedSkillCount={selectedSkillIds.size}
+      case 'summary':
+        if (routeData.screen !== 'summary') return null;
+        return (
+          <SummaryScreen
+            summary={routeData.summary}
+            onDone={() => navigate('home')}
+            onSlashCommand={(raw) => onSlashCommand(raw, 'summary')}
+          />
+        );
+    }
+  })();
+
+  return (
+    <>
+      <Box display={hasOverlay ? 'none' : 'flex'}>
+        {screenContent}
+      </Box>
+
+      {overlayActive === 'help' && (
+        <HelpOverlay currentScreen={screen} />
+      )}
+
+      {overlayActive === 'command-palette' && (
+        <CommandPalette
+          items={paletteItems}
+          currentScreen={screen}
+          onExecute={(item) => {
+            onCloseOverlay();
+            item.action();
+          }}
+          onClose={onCloseOverlay}
         />
-      );
+      )}
 
-    case "workflow":
-      if (routeData.screen !== "workflow") return null;
-      return (
-        <WorkflowScreen
-          feature={routeData.feature}
-          config={config}
-          theme={theme}
-          auto={auto}
-          projectDir={projectDir}
-          resumeState={routeData.resumeState}
-          onComplete={(summary) => navigate("summary", { summary })}
-          commands={commands}
-          onSlashCommand={(raw) => onSlashCommand(raw, "workflow")}
-          onOpenOverlay={onOpenOverlay}
-          errorMessage={errorMessage}
-          onClearError={onClearError}
-          selectedSkills={selectedSkillMetas}
+      {overlayActive === 'skills' && (
+        <SkillsPicker
+          skills={availableSkills}
+          selected={selectedSkillIds}
+          onConfirm={(selected) => {
+            onSkillsConfirm(selected);
+            onCloseOverlay();
+          }}
+          onClose={onCloseOverlay}
         />
-      );
-
-    case "summary":
-      if (routeData.screen !== "summary") return null;
-      return (
-        <SummaryScreen
-          summary={routeData.summary}
-          theme={theme}
-          onDone={() => navigate("home")}
-          commands={commands}
-          onSlashCommand={(raw) => onSlashCommand(raw, "summary")}
-          errorMessage={errorMessage}
-          onClearError={onClearError}
-        />
-      );
-  }
+      )}
+    </>
+  );
 }

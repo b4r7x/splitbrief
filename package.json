@@ -12,9 +12,9 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsc",
-    "test": "tsx --test tests/**/*.test.ts",
+    "test": "tsx --test tests/*.test.ts tests/integration/*.test.ts",
     "test:integration": "INTEGRATION=true tsx --test --test-timeout=60000 tests/integration/*.integration.test.ts",
-    "test:all": "INTEGRATION=true tsx --test --test-timeout=60000 tests/**/*.test.ts"
+    "test:all": "INTEGRATION=true tsx --test --test-timeout=60000 tests/*.test.ts tests/integration/*.test.ts"
   },
   "keywords": [
     "ai",

@@ -73,7 +73,8 @@ export function extractFunctionContext(
 
   if (boundaries.length === 0) return null;
 
-  const wordBoundaryRegex = new RegExp(`\\b${functionName}\\b`);
+  const escaped = functionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const wordBoundaryRegex = new RegExp(`\\b${escaped}\\b`);
   const targetIndex = boundaries.findIndex(
     (b) => b.name !== null && wordBoundaryRegex.test(b.name),
   );

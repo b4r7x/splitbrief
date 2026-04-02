@@ -1,13 +1,9 @@
 import { useState, useEffect } from "react";
 import { useStdout } from "ink";
 
-export const BREAKPOINTS = {
-  SMALL: 80,
-  MEDIUM: 120,
-  LARGE: 160,
-};
+const MEDIUM_BREAKPOINT = 120;
 
-export function useTerminalSize() {
+function useTerminalSize() {
   const { stdout } = useStdout();
   const [dimensions, setDimensions] = useState({
     cols: stdout?.columns ?? 80,
@@ -30,8 +26,6 @@ export function useResponsiveLayout() {
   return {
     cols,
     rows,
-    isSmall: cols < BREAKPOINTS.MEDIUM,
-    isMedium: cols >= BREAKPOINTS.MEDIUM && cols < BREAKPOINTS.LARGE,
-    isLarge: cols >= BREAKPOINTS.LARGE,
+    isSmall: cols < MEDIUM_BREAKPOINT,
   };
 }

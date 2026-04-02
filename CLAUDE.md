@@ -44,27 +44,44 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 src/
 ├── cli.ts                    # CLI entry point (5 commands: start, spec, init, status, resume)
 ├── app.tsx                   # Root Ink component
+├── commands.ts               # Slash command definitions and handlers
+├── router.tsx                # Screen router (home → workflow → summary) + overlay rendering
+├── shortcuts.ts              # Keyboard shortcut definitions per screen
 ├── types.ts                  # All shared types (Phase, Task, Config, WorkflowState, TuiEvent, etc.)
 ├── config.ts                 # Config loading (.tiny-spec/config.yaml), defaults, YAML↔TS conversion
 ├── state.ts                  # Workflow state machine (11 phases, 20 transitions, persistence)
 ├── theme.ts                  # Centralized color palette — zero hardcoded colors elsewhere
 ├── engine/                   # Workflow logic (zero React/Ink imports)
-│   ├── orchestrator.ts       # Main workflow loop (emits TuiEvents, retry, escalation, SIGINT)
+│   ├── orchestrator/         # Main workflow loop (decomposed into focused modules)
+│   │   ├── index.ts          # runWorkflow main loop + re-exports
+│   │   ├── cost.ts           # Cost breakdown calculations + buildSummary
+│   │   ├── events.ts         # Event emission helpers (emit, emitValidationStart, etc.)
+│   │   ├── helpers.ts        # Shared utilities (context, validation helpers)
+│   │   ├── tokens.ts         # Token usage accounting (planner/implementer/escalation)
+│   │   ├── task-runner.ts    # Retry/escalation cascade + validateCommitAndAdvance
+│   │   ├── task-loop.ts      # Per-task iteration (implement, validate, retry)
+│   │   ├── planning.ts       # Planning phase + approval loops
+│   │   └── final-review.ts   # Final review subprocess (Claude CLI)
 │   ├── planners/             # Pluggable planner backends
+│   │   ├── base.ts           # Shared planner factory (createPlannerBase, buildProjectContext)
+│   │   ├── context.ts        # Project context builder (package.json, README, config)
+│   │   ├── spawn.ts          # Shared subprocess spawning for planner backends
 │   │   ├── types.ts          # PlannerBackend interface
 │   │   ├── factory.ts        # createPlanner(config) — dynamic import by tool name
-│   │   ├── claude-code.ts    # Claude Code CLI (stream-json output, session management)
+│   │   ├── claude-code.ts    # Claude Code CLI (stream-json, session chaining)
 │   │   ├── codex.ts          # OpenAI Codex CLI (jsonl output)
 │   │   ├── opencode.ts       # OpenCode CLI
 │   │   ├── aider.ts          # Aider CLI (text output, regex token parsing)
 │   │   ├── agent-sdk.ts      # Anthropic Agent SDK (programmatic, no subprocess)
 │   │   └── shell.ts          # Generic shell — any command via config
-│   ├── implementer.ts        # Local model via OpenAI-compatible API + code application + diff events
+│   ├── apply.ts              # Code application (whole-file write + search/replace markers)
+│   ├── openai-stream.ts      # OpenAI-compatible streaming client (timeout, error handling)
+│   ├── output-parsers.ts     # Unified output format parsers (text, stream-json, jsonl)
+│   ├── implementer.ts        # Implementer routing + OpenAI implementation core
 │   ├── implementers/         # Alternative implementer backends
 │   │   ├── shell.ts          # Shell subprocess implementer (stdin/stdout)
 │   │   └── agent.ts          # Agent subprocess implementer
 │   ├── validator.ts          # tsc → lint → test pipeline (stops on first failure)
-│   ├── escalator.ts          # Two-tier escalation (tier 1: hints, tier 2: full Opus)
 │   ├── extractor.ts          # Code extraction from model responses (fences, explanation stripping)
 │   ├── context-extractor.ts  # Function-level code extraction for large files
 │   ├── highlight.ts          # Shiki-based syntax highlighting (async, WASM)
@@ -73,31 +90,54 @@ src/
 │   ├── detection.ts          # Auto-detect available planners and implementers
 │   ├── pricing.ts            # Cost calculation (known model pricing tables + $0 local fallback)
 │   ├── providers.ts          # Provider abstraction (known defaults + generic apiBase/apiKey)
+│   ├── skills.ts             # Skill discovery (frontmatter parsing, .claude/skills scanning)
 │   └── spec/                 # Spec parsing & formatting
 │       ├── parser.ts         # tasks.md → Task[] with topological sort
 │       ├── templates.ts      # Prompt templates for planner
 │       └── formatter.ts      # Task → self-contained prompt for local model
+├── screens/                  # Top-level screen components
+│   ├── home.tsx              # Home screen (banner, session list, input)
+│   ├── workflow.tsx          # Workflow screen (header, events, footer, input)
+│   └── summary.tsx           # Post-run summary screen
 ├── ui/                       # Ink UI components (all colors from theme.ts)
-│   ├── layout.tsx            # Single-column layout: sticky header + scrollable events + sticky footer
+│   ├── command-palette.tsx   # Ctrl+K command palette overlay
 │   ├── conversation-flow.tsx # Scrollable event card list with auto-follow + virtual scroll
-│   ├── event-card.tsx        # Renders single TuiEvent as visual card (switch on type, markdown + Shiki)
+│   ├── markdown.tsx          # Shared markdown rendering (parseBlocks, renderMarkdownLine, HighlightedCode)
+│   ├── event-card.tsx        # Renders single TuiEvent as visual card (switch on type)
 │   ├── pipeline-bar.tsx      # Phase progress: ● res ● spec ◉ impl ○ rev
 │   ├── cost-footer.tsx       # Real-time cost savings: Task N/M │ Local: X% │ Saved: ~$X
 │   ├── diff-view.tsx         # Collapsible syntax-highlighted diff
 │   ├── task-summary.tsx      # Collapsed completed task: ✓ T1 title — local, 12s
 │   ├── header.tsx            # Top header (feature name, pipeline bar, elapsed time)
-│   ├── summary.tsx           # Final run summary with cost breakdown
-│   ├── prompt.tsx            # User approval prompts ($EDITOR support)
+│   ├── help-overlay.tsx      # Keyboard shortcut help overlay
+│   ├── input-bar.tsx         # Multiline input with slash command suggestions
 │   ├── picker.tsx            # Interactive planner/implementer selection
-│   ├── user-input.tsx        # TextInput wrapper for TUI input
-│   └── question-prompt.tsx   # Clarification question display with options
+│   ├── picker-utils.ts       # Shared picker helpers (scroll offset, truncation)
+│   ├── review-view.tsx       # Spec/plan review display (markdown file viewer)
+│   ├── sidebar.tsx           # Task list sidebar (progress, status)
+│   ├── skills-picker.tsx     # Skill selection overlay
+│   ├── slash-suggestions.tsx # Slash command autocomplete dropdown
+│   └── summary.tsx           # Final run summary with cost breakdown
 ├── hooks/                    # React hooks (shared across UI components)
-│   └── index.ts              # Hook exports
+│   ├── use-config.ts         # Config loading hook
+│   ├── use-ctrl-c.ts         # Double Ctrl+C exit handler
+│   ├── use-global-keys.ts    # Global keyboard shortcuts (help, palette, quit)
+│   ├── use-input-mode.ts     # Input mode state (normal, review, question)
+│   ├── use-overlay.ts        # Overlay open/close state (help, palette, skills)
+│   ├── use-router.ts         # Screen navigation state machine
+│   ├── use-sessions.ts       # Session persistence (list, create, load)
+│   ├── use-sidebar.ts        # Sidebar visibility toggle
+│   ├── use-skills.ts         # Skill discovery and selection state
+│   ├── use-terminal-size.ts  # Terminal resize tracking + responsive layout
+│   └── use-workflow.ts       # Orchestrator lifecycle (start, events, completion)
 └── utils/                    # Helpers (no React/Ink dependencies)
-    ├── process.ts            # Subprocess spawn, streaming, lifecycle, cleanup
-    ├── git.ts                # Git operations (commit, diff, status, discard changes)
+    ├── diff.ts               # Line-level diff computation
+    ├── format.ts             # Formatting helpers (tokens, cost, time)
     ├── fs.ts                 # .tiny-spec/ directory management, archiving
-    └── format.ts             # Formatting helpers (tokens, cost, time)
+    ├── git.ts                # Git operations (commit, diff, status, discard changes)
+    ├── process.ts            # Subprocess spawn, streaming, lifecycle, cleanup
+    ├── sessions.ts           # Session directory management (project + global scope)
+    └── version.ts            # Semantic version parsing and comparison
 
 tests/
 ├── *.test.ts                 # Unit tests for engine, ui logic, utilities
@@ -230,6 +270,13 @@ See `specs/002-cost-optimized-orchestrator/research.md` for all architectural de
 - JSON files (`.tiny-spec/sessions/`, `.tiny-spec/state.json`) (014-chat-first-tui-redesign)
 - TypeScript 5.9+, ESM only + Ink 6.8, React 19, @inkjs/ui 2.x, ink-multiline-input, cfonts, ansis (015-tui-interactive-fix)
 - JSON files (`.tiny-spec/state.json`, `sessions/`) (015-tui-interactive-fix)
+- TypeScript 5.9+, ESM only (`"type": "module"`) + Ink 6.x (React 19), commander, openai, simple-git, yaml, Shiki 4.x, ansis (016-engine-srp-refactor)
+- JSON files (`.tiny-spec/state.json`, `events.jsonl`), Markdown files (spec, plan, tasks) (016-engine-srp-refactor)
+- TypeScript 5.9+, ESM only (`"type": "module"`) + openai ^6.0.0, yaml, simple-git, commander ^14.0.0, Ink 6.x (React 19) (017-engine-code-quality)
+- TypeScript 5.9+, ESM only (`"type": "module"`) + Ink 6.x (React 19), openai ^6.0.0, simple-git, yaml, commander ^14.0.0, Shiki 4.x, ansis (018-audit-remediation)
+- TypeScript 5.9+, ESM only (`"type": "module"`) + Ink 6.x (React 19), openai ^6.0.0, simple-git, commander ^14.0.0, yaml, Shiki 4.x, ansis (019-deep-quality-fixes)
+- TypeScript 5.9+, ESM only (`"type": "module"`) + Ink 6.x (React 19), openai ^6.0, commander ^14.0, simple-git, yaml, Shiki 4.x, ansis (021-deep-quality-remediation)
+- TypeScript 5.9+, ESM only (`"type": "module"`) + Ink 6.x (React 19), openai ^6.0, simple-git, commander ^14.0, yaml, Shiki 4.x, ansis (022-quality-audit-fixes)
 
 ## Recent Changes
 - 012-core-cli-restructure: Restructured src/ into engine/, ui/, hooks/, utils/ with centralized theme.ts

@@ -126,7 +126,7 @@ function stripNaturalLanguage(text: string): string {
   return lines.slice(start, end + 1).join('\n').trim();
 }
 
-type ExtractionResult =
+export type ExtractionResult =
   | { code: string; confidence: 'high' | 'medium' | 'low' }
   | { error: string };
 

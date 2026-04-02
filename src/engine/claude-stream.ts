@@ -1,8 +1,10 @@
-export interface StreamParseResult {
+import type { PlannerTokenUsage } from '../types.js';
+
+interface StreamParseResult {
   text: string | null;
   sessionId: string | null;
   isResult: boolean;
-  usage: { inputTokens: number; outputTokens: number } | null;
+  usage: PlannerTokenUsage | null;
   costUsd: number | null;
 }
 

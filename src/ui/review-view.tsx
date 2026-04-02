@@ -1,68 +1,38 @@
 import { useState, useEffect } from 'react';
-import { Box, Text } from 'ink';
-import { readFileSync, existsSync } from 'node:fs';
-import type { Theme } from '../theme.js';
+import { Box, Text, useInput } from 'ink';
+import fs from 'node:fs/promises';
+import { useAppContext } from '../app.js';
+import { renderMarkdownLine } from './markdown.js';
 
 interface ReviewViewProps {
   filePath: string;
-  theme: Theme;
   height?: number;
-  scrollOffset?: number;
 }
 
-function renderMarkdownLine(line: string, key: number, t: Theme) {
-  if (line.startsWith('# ')) {
-    return <Text key={key} color={t.accent} bold>{line.slice(2)}</Text>;
-  }
-  if (line.startsWith('## ')) {
-    return <Text key={key} color={t.accent} bold>{line.slice(3)}</Text>;
-  }
-  if (line.startsWith('### ')) {
-    return <Text key={key} color={t.info}>{line.slice(4)}</Text>;
-  }
-  if (line.startsWith('- ') || line.startsWith('* ')) {
-    return <Text key={key} color={t.text}>  {line}</Text>;
-  }
-  if (line.startsWith('```')) {
-    return <Text key={key} color={t.textDim}>{line}</Text>;
-  }
-
-  const boldParts = line.split(/\*\*([^*]+)\*\*/g);
-  if (boldParts.length > 1) {
-    return (
-      <Text key={key} color={t.text}>
-        {boldParts.map((part, i) =>
-          i % 2 === 1
-            ? <Text key={i} bold>{part}</Text>
-            : <Text key={i}>{part}</Text>
-        )}
-      </Text>
-    );
-  }
-
-  return <Text key={key} color={t.text}>{line}</Text>;
-}
-
-export default function ReviewView({ filePath, theme: t, height, scrollOffset: externalOffset }: ReviewViewProps) {
+export default function ReviewView({ filePath, height }: ReviewViewProps) {
+  const { theme: t } = useAppContext();
   const [content, setContent] = useState('');
-  const [offset, setOffset] = useState(externalOffset ?? 0);
+  const [offset, setOffset] = useState(0);
 
   useEffect(() => {
-    if (existsSync(filePath)) {
-      setContent(readFileSync(filePath, 'utf-8'));
-    } else {
-      setContent(`File not found: ${filePath}`);
-    }
+    let cancelled = false;
+    fs.readFile(filePath, 'utf-8').then(data => {
+      if (!cancelled) setContent(data);
+    }).catch(() => {
+      if (!cancelled) setContent('(Error reading file)');
+    });
+    return () => { cancelled = true; };
   }, [filePath]);
-
-  const [prevExternalOffset, setPrevExternalOffset] = useState(externalOffset);
-  if (externalOffset !== prevExternalOffset) {
-    setPrevExternalOffset(externalOffset);
-    if (externalOffset != null) setOffset(externalOffset);
-  }
 
   const lines = content.split('\n');
   const visibleHeight = height ?? 20;
+  const maxOffset = Math.max(0, lines.length - visibleHeight);
+
+  useInput((_input, key) => {
+    if (key.upArrow) setOffset((prev) => Math.max(0, prev - 1));
+    if (key.downArrow) setOffset((prev) => Math.min(maxOffset, prev + 1));
+  });
+
   const visibleLines = lines.slice(offset, offset + visibleHeight);
 
   return (

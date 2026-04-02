@@ -1,6 +1,6 @@
 import simpleGit, { type SimpleGit } from 'simple-git';
 
-const getGit = (dir: string): SimpleGit => (simpleGit as unknown as (dir: string) => SimpleGit)(dir);
+export const getGit = (dir: string): SimpleGit => (simpleGit as unknown as (dir: string) => SimpleGit)(dir);
 
 export async function isGitRepo(dir: string): Promise<boolean> {
   const git = getGit(dir);

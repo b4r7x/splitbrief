@@ -1,5 +1,6 @@
 import { Box, Text } from 'ink';
-import { getTheme } from '../theme.js';
+import { useAppContext } from '../app.js';
+import type { Theme } from '../theme.js';
 
 interface TaskSummaryProps {
   index: number;
@@ -10,15 +11,13 @@ interface TaskSummaryProps {
   reason?: string;
 }
 
-export default function TaskSummary({ index, title, method, retries, duration, reason }: TaskSummaryProps) {
-  const t = getTheme();
-
+export function renderTaskSummary({ index, title, method, retries, duration, reason }: TaskSummaryProps, t: Theme) {
   if (method === 'failed') {
     return (
       <Box>
         <Text color={t.error}>✗ </Text>
         <Text color={t.error}>T{index} {title}</Text>
-        <Text color={t.textDim}> failed</Text>
+        <Text color={t.textDim}> — failed</Text>
       </Box>
     );
   }
@@ -26,7 +25,7 @@ export default function TaskSummary({ index, title, method, retries, duration, r
   if (method === 'skipped') {
     return (
       <Box>
-        <Text color={t.textDim}>- T{index} {title} skipped{reason ? `: ${reason}` : ''}</Text>
+        <Text color={t.textDim}>⊘ T{index} {title} — skipped{reason ? `: ${reason}` : ''}</Text>
       </Box>
     );
   }
@@ -39,7 +38,12 @@ export default function TaskSummary({ index, title, method, retries, duration, r
     <Box>
       <Text color={t.success}>✓ </Text>
       <Text color={t.text}>T{index} {title}</Text>
-      <Text color={t.textDim}> {meta.join(', ')}</Text>
+      <Text color={t.textDim}> — {meta.join(', ')}</Text>
     </Box>
   );
+}
+
+export default function TaskSummary(props: TaskSummaryProps) {
+  const { theme: t } = useAppContext();
+  return renderTaskSummary(props, t);
 }

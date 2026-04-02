@@ -20,13 +20,6 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
       handler: () => ctx.showStatus(),
     },
     {
-      name: '/init',
-      label: 'Configure',
-      description: 'Select planner and model',
-      validScreens: ['home'],
-      handler: () => ctx.openOverlay('picker'),
-    },
-    {
       name: '/palette',
       label: 'Palette',
       description: 'Open command palette',

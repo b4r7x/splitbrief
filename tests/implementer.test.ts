@@ -4,22 +4,12 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, mkdirSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { validateTaskPath } from '../src/utils/fs.js';
-import { applyCode } from '../src/engine/implementer.js';
+import { applyCode } from '../src/engine/apply.js';
+import { makeTask as makeBaseTask } from './helpers/fixtures.js';
 import type { Task } from '../src/types.js';
 
 function makeTask(overrides: Partial<Task> = {}): Task {
-  return {
-    id: 'T001',
-    title: 'Test task',
-    action: 'create',
-    file: 'src/test.ts',
-    dependsOn: [],
-    description: 'test',
-    tests: [],
-    constraints: [],
-    status: 'pending',
-    ...overrides,
-  };
+  return makeBaseTask({ title: 'Test task', file: 'src/test.ts', description: 'test', ...overrides });
 }
 
 describe('validateTaskPath', () => {
@@ -113,6 +103,52 @@ describe('applyCode', () => {
 
     assert.equal(result.success, false);
     assert.ok(result.error?.includes('Search block not found'));
+  });
+
+  it('search/replace preserves dollar sign patterns verbatim', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'impl-test-'));
+    const filePath = join(tempDir, 'src', 'dollar.ts');
+    const task = makeTask({ action: 'modify', file: 'src/dollar.ts' });
+
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    const lines = Array.from({ length: 250 }, (_, i) => `// line ${i + 1}`);
+    lines[5] = 'const a = "old1";';
+    lines[10] = 'const b = "old2";';
+    lines[15] = 'const c = "old3";';
+    lines[20] = 'const d = "old4";';
+    writeFileSync(filePath, lines.join('\n'));
+
+    const patchCode = [
+      '<<<<<<< SEARCH',
+      'const a = "old1";',
+      '=======',
+      'const a = `Hello ${variable}`;',
+      '>>>>>>> REPLACE',
+      '<<<<<<< SEARCH',
+      'const b = "old2";',
+      '=======',
+      'const b = "$1 captured group";',
+      '>>>>>>> REPLACE',
+      '<<<<<<< SEARCH',
+      'const c = "old3";',
+      '=======',
+      'const c = "$& matched text";',
+      '>>>>>>> REPLACE',
+      '<<<<<<< SEARCH',
+      'const d = "old4";',
+      '=======',
+      'const d = "$$ escaped dollar";',
+      '>>>>>>> REPLACE',
+    ].join('\n');
+
+    const result = applyCode(patchCode, task, tempDir);
+
+    assert.equal(result.success, true);
+    const content = readFileSync(filePath, 'utf-8');
+    assert.ok(content.includes('const a = `Hello ${variable}`;'));
+    assert.ok(content.includes('const b = "$1 captured group";'));
+    assert.ok(content.includes('const c = "$& matched text";'));
+    assert.ok(content.includes('const d = "$$ escaped dollar";'));
   });
 
   it('rejects path traversal in task file', () => {

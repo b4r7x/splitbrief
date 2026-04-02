@@ -1,11 +1,8 @@
 import { Box, Text } from 'ink';
+import { useAppContext } from '../app.js';
 import type { Theme } from '../theme.js';
-
-interface SidebarTask {
-  id: string;
-  title: string;
-  status: 'pending' | 'done' | 'failed' | 'skipped' | 'in_progress';
-}
+import type { SidebarTask } from '../types.js';
+import { truncate } from '../utils/format.js';
 
 interface CostData {
   localRate: number;
@@ -16,13 +13,13 @@ interface CostData {
 interface SidebarProps {
   tasks: SidebarTask[];
   costData: CostData;
-  theme: Theme;
   width: number;
 }
 
 const statusIcon: Record<SidebarTask['status'], string> = {
   done: '✓',
   failed: '✗',
+  escalated: '⚠',
   in_progress: '◉',
   pending: '○',
   skipped: '○',
@@ -37,11 +34,8 @@ function statusColor(status: SidebarTask['status'], t: Theme): string {
   }
 }
 
-function truncate(text: string, max: number): string {
-  return text.length > max ? text.slice(0, max - 1) + '\u2026' : text;
-}
-
-export default function Sidebar({ tasks, costData, theme: t, width }: SidebarProps) {
+export default function Sidebar({ tasks, costData, width }: SidebarProps) {
+  const { theme: t } = useAppContext();
   const doneCount = tasks.filter((tk) => tk.status === 'done').length;
   const labelWidth = Math.max(10, width - 4);
 
