@@ -122,3 +122,4 @@ See `.specify/memory/constitution.md` for the 6 constitutional principles (v1.3.
 | v0.3 | 2026-03 | Conversational planning, TUI picker, agent-mode implementer, version detection |
 | v0.4 | 2026-03 | TUI conversation flow redesign — event model, collapsible diffs, pipeline bar |
 | v0.5 | 2026-03 | OpenCode visual restructure — Ink 6/React 19, Shiki highlighting, theme system, engine/ui architecture |
+| v0.6 | 2026-04 | Core extraction (core/, cli/, types/), colocated tests, slash commands, skills, global keys |

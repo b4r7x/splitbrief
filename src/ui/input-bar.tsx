@@ -29,6 +29,7 @@ export function InputBar({
 }: InputBarProps) {
   const { theme } = useAppContext();
   const [value, setValue] = useState('');
+  const [inputKey, setInputKey] = useState(0);
 
   const slashMode = value.startsWith('/');
   const screenCmds = useMemo(
@@ -56,6 +57,7 @@ export function InputBar({
   const showSuggestions = slashMode && filtered.length > 0;
 
   const passThroughFilter = useCallback(() => true, []);
+  const blockAppend = useCallback(() => false, []);
 
   const { selectedIndex } = useFilterableList({
     items: filtered,
@@ -63,19 +65,17 @@ export function InputBar({
     onSelect,
     onClose,
     isActive: showSuggestions,
+    shouldAppendChar: blockAppend,
   });
 
-  // Handle tab completion and backspace-on-empty-filter (not covered by hook)
   useInput(
     (_input, key) => {
       if (key.tab && filtered.length > 0) {
         const selected = filtered[selectedIndex];
         if (selected) {
           setValue(selected.name);
+          setInputKey((k) => k + 1);
         }
-      }
-      if ((key.backspace || key.delete) && value === '/') {
-        setValue('');
       }
     },
     { isActive: showSuggestions },
@@ -88,6 +88,7 @@ export function InputBar({
   }, [errorMessage, onClearError]);
 
   const handleSubmit = (text: string) => {
+    if (showSuggestions) return;
     const trimmed = text.trim();
     if (!trimmed) return;
 
@@ -119,18 +120,13 @@ export function InputBar({
         width="100%"
       >
         <Text color={theme.accent}>&gt; </Text>
-        {showSuggestions && (
-          <Text>
-            {value}
-            <Text color={theme.textDim}>│</Text>
-          </Text>
-        )}
-        <Box display={showSuggestions ? 'none' : 'flex'}>
+        <Box flexGrow={1}>
           <MultilineInput
+            key={inputKey}
             value={value}
             onChange={setValue}
             onSubmit={handleSubmit}
-            focus={!showSuggestions}
+            focus
             placeholder={
               hint ||
               (mode === 'review'

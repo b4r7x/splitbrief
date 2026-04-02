@@ -129,7 +129,7 @@ Explicit anti-goals that MUST NOT be implemented:
 ## Technical Constraints
 
 - **Runtime**: Node.js 22+ with native TypeScript stripping
-- **Language**: TypeScript 5.9+, ESM only (`"type": "module"`)
+- **Language**: TypeScript 6.x, ESM only (`"type": "module"`)
 - **TUI**: Ink 6.x (React 19 for CLI), conversation flow layout with structured event cards
 - **Syntax highlighting**: Shiki 4.x (WASM-based, async)
 - **Target**: macOS (primary), Linux (secondary)
