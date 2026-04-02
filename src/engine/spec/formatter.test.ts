@@ -1,0 +1,251 @@
+import { describe, it, expect } from 'vitest';
+import { formatTaskPrompt, formatRetryPrompt, SYSTEM_PREAMBLE } from './formatter.js';
+import { estimateTokens, truncateMiddle, computeTokenBudget } from './token-budget.js';
+import { makeTask as makeBaseTask, defaultContext } from '#testing/helpers/fixtures.js';
+import type { Task } from '../../types.js';
+
+const context = { ...defaultContext, testCommand: 'node --test' };
+
+function makeTask(overrides: Partial<Task> = {}): Task {
+  return makeBaseTask({
+    title: 'Create utility module',
+    file: 'src/utils/helpers.ts',
+    description: 'Implement helper functions for string manipulation.',
+    ...overrides,
+  });
+}
+
+describe('formatTaskPrompt', () => {
+  it('create action task contains action, file path, and project info', () => {
+    const task = makeTask();
+    const prompt = formatTaskPrompt(task, context);
+
+    expect(prompt).toContain('Action: create');
+    expect(prompt).toContain('src/utils/helpers.ts');
+    expect(prompt).toContain('test-project');
+    expect(prompt).toContain('Node.js 22');
+  });
+
+  it('modify action task with currentCode contains Current Code section', () => {
+    const task = makeTask({
+      action: 'modify',
+      currentCode: 'export function old(): void {}\n',
+    });
+    const prompt = formatTaskPrompt(task, context);
+
+    expect(prompt).toContain('Current Code');
+    expect(prompt).toContain('export function old(): void {}');
+  });
+
+  it('task with signature contains Function Signature section', () => {
+    const task = makeTask({
+      signature: 'export function greet(name: string): string',
+    });
+    const prompt = formatTaskPrompt(task, context);
+
+    expect(prompt).toContain('### Function Signature');
+    expect(prompt).toContain('export function greet(name: string): string');
+  });
+
+  it('task with tests contains Tests section with all test items', () => {
+    const task = makeTask({
+      tests: ['Should handle empty input', 'Should trim whitespace', 'Should return lowercase'],
+    });
+    const prompt = formatTaskPrompt(task, context);
+
+    expect(prompt).toContain('### Tests');
+    expect(prompt).toContain('Should handle empty input');
+    expect(prompt).toContain('Should trim whitespace');
+    expect(prompt).toContain('Should return lowercase');
+  });
+
+  it('task with constraints contains Constraints section', () => {
+    const task = makeTask({
+      constraints: ['Must be pure function', 'No side effects'],
+    });
+    const prompt = formatTaskPrompt(task, context);
+
+    expect(prompt).toContain('### Constraints');
+    expect(prompt).toContain('- Must be pure function');
+    expect(prompt).toContain('- No side effects');
+  });
+
+  it('prompt ends with output instruction (lost-in-middle mitigation)', () => {
+    const task = makeTask();
+    const prompt = formatTaskPrompt(task, context);
+    const lastLine = prompt.trimEnd().split('\n').at(-1)!;
+
+    expect(lastLine).toContain('Output the complete file contents');
+    expect(lastLine).toContain('No markdown fences');
+  });
+
+  it('SYSTEM_PREAMBLE does not contain markdown fences', () => {
+    expect(SYSTEM_PREAMBLE).not.toContain('```');
+  });
+});
+
+describe('formatRetryPrompt', () => {
+  const task = makeTask();
+  const error = 'TypeError: Cannot read property x of undefined';
+
+  it('attempt 1 contains error message and fix instruction', () => {
+    const prompt = formatRetryPrompt(task, context, error, 1);
+
+    expect(prompt).toContain(error);
+    expect(prompt).toContain('Fix it:');
+  });
+
+  it('attempt 2 contains rephrased task', () => {
+    const prompt = formatRetryPrompt(task, context, error, 2);
+
+    expect(prompt).toContain('rephrased');
+    expect(prompt).toContain(task.file);
+    expect(prompt).toContain(task.title);
+    expect(prompt).toContain(error);
+  });
+
+  it('attempt 3 contains different approach instruction', () => {
+    const prompt = formatRetryPrompt(task, context, error, 3);
+
+    expect(prompt).toContain('different approach');
+    expect(prompt).toContain(error);
+  });
+
+  it('retry prompts include error and task context', () => {
+    const retry1 = formatRetryPrompt(task, context, error, 1);
+    const retry2 = formatRetryPrompt(task, context, error, 2);
+    const retry3 = formatRetryPrompt(task, context, error, 3);
+
+    expect(retry1).toContain(error);
+    expect(retry2).toContain(error);
+    expect(retry3).toContain(error);
+    expect(retry1).toContain(task.file);
+    expect(retry2).toContain(task.file);
+    expect(retry3).toContain(task.file);
+  });
+
+  it('attempt 2 and 3 still include currentCode (v0.2: full context preserved)', () => {
+    const modifyTask = makeTask({
+      action: 'modify',
+      currentCode: 'export function existing(): void { /* long code */ }\n',
+    });
+    const retry2 = formatRetryPrompt(modifyTask, context, error, 2);
+    const retry3 = formatRetryPrompt(modifyTask, context, error, 3);
+
+    expect(retry2).toContain('Current Code');
+    expect(retry3).toContain('Current Code');
+  });
+});
+
+describe('estimateTokens', () => {
+  it('returns reasonable estimate for known text', () => {
+    const tokens = estimateTokens('Hello, world!');
+    expect(tokens).toBeGreaterThan(0);
+    expect(tokens).toBe(Math.ceil(13 / 4));
+  });
+
+  it('returns 0 for empty string', () => {
+    expect(estimateTokens('')).toBe(0);
+  });
+
+  it('scales linearly with text length', () => {
+    const short = estimateTokens('a'.repeat(100));
+    const long = estimateTokens('a'.repeat(1000));
+    expect(long).toBeGreaterThanOrEqual(short * 9);
+    expect(long).toBeLessThanOrEqual(short * 11);
+  });
+});
+
+describe('truncateMiddle', () => {
+  it('returns text unchanged when under limit', () => {
+    const text = 'short text';
+    expect(truncateMiddle(text, 1000)).toBe(text);
+  });
+
+  it('truncates long text with marker', () => {
+    const text = 'A'.repeat(10000);
+    const result = truncateMiddle(text, 100);
+    expect(result).toContain('// ... truncated to fit context window ...');
+    expect(result.length).toBeLessThan(text.length);
+  });
+
+  it('preserves start and end of text', () => {
+    const text = 'START' + 'X'.repeat(10000) + 'END!!';
+    const result = truncateMiddle(text, 200);
+    expect(result.startsWith('START')).toBeTruthy();
+    expect(result.endsWith('END!!')).toBeTruthy();
+  });
+});
+
+describe('formatTaskPrompt with contextLength', () => {
+  it('truncates large currentCode when contextLength is set', () => {
+    const largeCode = 'x'.repeat(50000);
+    const task = makeTask({
+      action: 'modify',
+      currentCode: largeCode,
+    });
+    const prompt = formatTaskPrompt(task, context, 2048);
+    expect(prompt.length).toBeLessThan(largeCode.length);
+    expect(prompt).toContain('// ... truncated to fit context window ...');
+  });
+
+  it('does not truncate small currentCode', () => {
+    const smallCode = 'export function small(): void {}\n';
+    const task = makeTask({
+      action: 'modify',
+      currentCode: smallCode,
+    });
+    const prompt = formatTaskPrompt(task, context, 8192);
+    expect(prompt).toContain(smallCode);
+    expect(prompt).not.toContain('truncated');
+  });
+
+  it('works without contextLength (backward compatible)', () => {
+    const task = makeTask({
+      action: 'modify',
+      currentCode: 'export const x = 1;\n',
+    });
+    const prompt = formatTaskPrompt(task, context);
+    expect(prompt).toContain('export const x = 1;');
+  });
+});
+
+describe('computeTokenBudget', () => {
+  it('returns correct token breakdown', () => {
+    const budget = computeTokenBudget('system text', 'task body', 8192);
+    expect(budget.system).toBe(estimateTokens('system text'));
+    expect(budget.taskBody).toBe(estimateTokens('task body'));
+    expect(budget.outputReserve).toBe(Math.floor(8192 * 0.25));
+    const expectedTotal = budget.system + budget.taskBody + budget.outputReserve;
+    expect(budget.total).toBe(expectedTotal);
+    expect(budget.remaining).toBe(8192 - expectedTotal);
+  });
+
+  it('25% output reserve', () => {
+    const budget = computeTokenBudget('s', 't', 10000);
+    expect(budget.outputReserve).toBe(Math.floor(10000 * 0.25));
+  });
+
+  it('remaining equals contextLength minus total', () => {
+    const budget = computeTokenBudget('system prompt here', 'the task body text', 16384);
+    expect(budget.remaining).toBe(16384 - budget.total);
+  });
+
+  it('small context (8K)', () => {
+    const budget = computeTokenBudget('sys', 'task', 8192);
+    expect(budget.outputReserve).toBe(Math.floor(8192 * 0.25));
+    expect(budget.remaining).toBeGreaterThan(0);
+    expect(budget.remaining).toBeLessThan(8192);
+    expect(budget.total + budget.remaining).toBe(8192);
+  });
+
+  it('large context (32K)', () => {
+    const budget = computeTokenBudget('sys', 'task', 32768);
+    expect(budget.outputReserve).toBe(Math.floor(32768 * 0.25));
+    expect(budget.remaining).toBeGreaterThan(0);
+    expect(budget.remaining).toBeLessThan(32768);
+    expect(budget.total + budget.remaining).toBe(32768);
+    const smallBudget = computeTokenBudget('sys', 'task', 8192);
+    expect(budget.remaining).toBeGreaterThan(smallBudget.remaining);
+  });
+});

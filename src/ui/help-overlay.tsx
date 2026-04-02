@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { useAppContext } from '../app.js';
 import type { Screen } from '../types.js';
-import { getShortcutsForScreen } from '../shortcuts.js';
+import { getShortcutsForScreen } from '../core/shortcuts.js';
 
 const LABEL_COL_WIDTH = 14;
 

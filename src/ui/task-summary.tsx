@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import { useAppContext } from '../app.js';
-import type { Theme } from '../theme.js';
+import type { Theme } from '../core/theme.js';
 
 interface TaskSummaryProps {
   index: number;

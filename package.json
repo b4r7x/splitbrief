@@ -12,9 +12,10 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsc",
-    "test": "tsx --test tests/*.test.ts tests/integration/*.test.ts",
-    "test:integration": "INTEGRATION=true tsx --test --test-timeout=60000 tests/integration/*.integration.test.ts",
-    "test:all": "INTEGRATION=true tsx --test --test-timeout=60000 tests/*.test.ts tests/integration/*.test.ts"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "INTEGRATION=true vitest run testing/integration/"
   },
   "keywords": [
     "ai",
@@ -25,6 +26,9 @@
     "local-model",
     "cost-optimization"
   ],
+  "imports": {
+    "#testing/*": "./testing/*"
+  },
   "license": "MIT",
   "dependencies": {
     "@inkjs/ui": "^2.0.0",
@@ -43,7 +47,9 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
+    "@vitest/coverage-v8": "^4.1.2",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.0"
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.2"
   }
 }

@@ -2,7 +2,7 @@ import { Box, Text } from 'ink';
 import cfonts from 'cfonts';
 import { useAppContext } from '../app.js';
 import type { Session } from '../types.js';
-import type { Theme } from '../theme.js';
+import type { Theme } from '../core/theme.js';
 import { InputBar } from '../ui/input-bar.js';
 import { formatRelativeTime } from '../utils/format.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';

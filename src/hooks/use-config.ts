@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { loadConfig } from '../config.js';
+import { loadConfig } from '../core/config.js';
 import type { Config, PlannerTool } from '../types.js';
 
 interface ConfigOverrides {

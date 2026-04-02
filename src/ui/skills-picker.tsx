@@ -2,7 +2,7 @@ import { Fragment, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useAppContext } from '../app.js';
 import type { SkillMeta } from '../types.js';
-import type { Theme } from '../theme.js';
+import type { Theme } from '../core/theme.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 import { useFilterableList } from '../hooks/use-filterable-list.js';
 import { truncate } from '../utils/format.js';
