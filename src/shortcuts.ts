@@ -1,14 +1,14 @@
-import type { Screen } from './types.js';
 import { ALL_SCREENS } from './types.js';
+import type { Screen } from './types.js';
 
-export interface ShortcutInfo {
+interface ShortcutInfo {
   id?: string;
   key: string;
   description: string;
   screens: Screen[];
 }
 
-export const SHORTCUTS: ShortcutInfo[] = [
+const SHORTCUTS: ShortcutInfo[] = [
   { key: 'Ctrl+C', description: 'Exit (double-press)', screens: ALL_SCREENS },
   { key: 'Ctrl+K', description: 'Command palette', screens: ALL_SCREENS },
   { id: 'help', key: 'Ctrl+/', description: 'Help', screens: ALL_SCREENS },

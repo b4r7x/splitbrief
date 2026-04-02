@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { Screen, RouteData, Summary, WorkflowState } from '../types.js';
 
 const transitions: Record<Screen, Screen[]> = {
@@ -8,16 +8,15 @@ const transitions: Record<Screen, Screen[]> = {
 };
 
 export function useRouter(initialRoute?: RouteData) {
-  const [screen, setScreen] = useState<Screen>(initialRoute?.screen ?? 'home');
   const [routeData, setRouteData] = useState<RouteData>(initialRoute ?? { screen: 'home' });
+  const screenRef = useRef(routeData.screen);
+  screenRef.current = routeData.screen;
 
-  function canNavigate(to: Screen): boolean {
-    return transitions[screen].includes(to);
-  }
+  const screen = routeData.screen;
 
-  function navigate(to: Screen, data?: { feature?: string; summary?: Summary; resumeState?: WorkflowState }) {
-    if (!canNavigate(to)) {
-      throw new Error(`Cannot navigate from "${screen}" to "${to}"`);
+  const navigate = useCallback((to: Screen, data?: { feature?: string; summary?: Summary; resumeState?: WorkflowState }) => {
+    if (!transitions[screenRef.current].includes(to)) {
+      throw new Error(`Cannot navigate from "${screenRef.current}" to "${to}"`);
     }
 
     let next: RouteData;
@@ -29,13 +28,13 @@ export function useRouter(initialRoute?: RouteData) {
         next = { screen: 'workflow', feature: data?.feature ?? '', resumeState: data?.resumeState };
         break;
       case 'summary':
-        next = { screen: 'summary', summary: data?.summary! };
+        if (!data?.summary) throw new Error('Summary data required');
+        next = { screen: 'summary', summary: data.summary };
         break;
     }
 
-    setScreen(to);
     setRouteData(next);
-  }
+  }, []);
 
-  return { screen, routeData, navigate, canNavigate };
+  return { screen, routeData, navigate };
 }

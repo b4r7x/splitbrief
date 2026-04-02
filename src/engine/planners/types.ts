@@ -1,10 +1,10 @@
-import type { Task, Config, ProjectContext } from '../../types.js';
+import type { Task, Config, PlannerTokenUsage } from '../../types.js';
 import type { PricingInfo } from '../pricing.js';
 import type { ClarificationQuestion } from '../question-parser.js';
 
 export interface PlannerCallbacks {
   onOutput: (text: string) => void;
-  onPhase: (phase: string) => void;
+  onPhase?: (phase: string) => void;
   onQuestion?: (questions: ClarificationQuestion[]) => void;
 }
 
@@ -12,23 +12,24 @@ export interface PlanResult {
   spec: string;
   plan: string;
   tasks: Task[];
-  usage: { inputTokens: number; outputTokens: number } | null;
+  usage: PlannerTokenUsage | null;
 }
 
 export interface EscalationResult {
   success: boolean;
   output: string;
   code: string | null;
-  usage: { inputTokens: number; outputTokens: number } | null;
+  usage: PlannerTokenUsage | null;
 }
 
 export interface RegenerateResult {
   text: string;
-  usage: { inputTokens: number; outputTokens: number } | null;
+  usage: PlannerTokenUsage | null;
 }
 
 export interface PlannerBackend {
   readonly name: string;
+  readonly conversational: boolean;
 
   plan(
     feature: string,

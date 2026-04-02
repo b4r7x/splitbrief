@@ -1,19 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateCostBreakdown } from '../src/engine/orchestrator.js';
-import type { TokenUsage } from '../src/types.js';
-
-function makeUsage(overrides?: Partial<TokenUsage>): TokenUsage {
-  return {
-    plannerInput: 0,
-    plannerOutput: 0,
-    implementerInput: 0,
-    implementerOutput: 0,
-    escalationInput: 0,
-    escalationOutput: 0,
-    ...overrides,
-  };
-}
+import { calculateCostBreakdown } from '../src/engine/orchestrator/index.js';
+import { makeUsage } from './helpers/fixtures.js';
 
 describe('calculateCostBreakdown', () => {
   it('all local (0 escalations) yields 100% localCompletionRate and positive savings', () => {
@@ -23,8 +11,8 @@ describe('calculateCostBreakdown', () => {
       implementerInput: 1_000_000,
       implementerOutput: 500_000,
     });
-    const result = calculateCostBreakdown(usage, 5, 0, 'claude-code', 'ollama');
-    assert.equal(result.localCompletionRate, 100);
+    const result = calculateCostBreakdown({ tokenUsage: usage, totalTasks: 5, escalatedCount: 0, plannerTool: 'claude-code', implementerProvider: 'ollama' });
+    assert.equal(result.localCompletionRate, 1);
     assert.ok(result.savingsPercentage > 0, 'savingsPercentage should be > 0');
   });
 
@@ -35,7 +23,7 @@ describe('calculateCostBreakdown', () => {
       escalationInput: 1_000_000,
       escalationOutput: 500_000,
     });
-    const result = calculateCostBreakdown(usage, 3, 3, 'claude-code', 'ollama');
+    const result = calculateCostBreakdown({ tokenUsage: usage, totalTasks: 3, escalatedCount: 3, plannerTool: 'claude-code', implementerProvider: 'ollama' });
     assert.equal(result.localCompletionRate, 0);
   });
 
@@ -46,16 +34,16 @@ describe('calculateCostBreakdown', () => {
       escalationInput: 100_000,
       escalationOutput: 50_000,
     });
-    const result = calculateCostBreakdown(usage, 7, 2, 'claude-code', 'ollama');
+    const result = calculateCostBreakdown({ tokenUsage: usage, totalTasks: 7, escalatedCount: 2, plannerTool: 'claude-code', implementerProvider: 'ollama' });
     assert.ok(
-      Math.abs(result.localCompletionRate - 71.42857142857143) < 0.01,
-      `expected ~71.4, got ${result.localCompletionRate}`,
+      Math.abs(result.localCompletionRate - 0.7142857142857143) < 0.001,
+      `expected ~0.714, got ${result.localCompletionRate}`,
     );
   });
 
   it('zero tasks yields 0% localCompletionRate without division by zero', () => {
     const usage = makeUsage();
-    const result = calculateCostBreakdown(usage, 0, 0, 'claude-code', 'ollama');
+    const result = calculateCostBreakdown({ tokenUsage: usage, totalTasks: 0, escalatedCount: 0, plannerTool: 'claude-code', implementerProvider: 'ollama' });
     assert.equal(result.localCompletionRate, 0);
     assert.equal(result.savingsAmount, 0);
     assert.equal(Number.isFinite(result.savingsPercentage), true);
@@ -68,7 +56,7 @@ describe('calculateCostBreakdown', () => {
       implementerInput: 100,
       implementerOutput: 50,
     });
-    const result = calculateCostBreakdown(usage, 1, 0, 'claude-code', 'ollama');
+    const result = calculateCostBreakdown({ tokenUsage: usage, totalTasks: 1, escalatedCount: 0, plannerTool: 'claude-code', implementerProvider: 'ollama' });
     assert.equal(result.savingsAmount, 0);
     assert.equal(result.savingsPercentage, 0);
   });

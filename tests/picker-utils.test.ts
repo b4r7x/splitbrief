@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeScrollOffset, truncate } from '../src/ui/picker-utils.js';
+import { computeScrollOffset } from '../src/ui/picker-utils.js';
+import { truncate } from '../src/utils/format.js';
 
 describe('computeScrollOffset', () => {
   it('returns 0 when all items fit in window', () => {

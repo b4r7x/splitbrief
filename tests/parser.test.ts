@@ -210,6 +210,78 @@ Task with bare depends_on value.
     assert.deepEqual(tasks[0].dependsOn, ['T001']);
   });
 
+  it('strips double quotes from bare depends_on value', () => {
+    const input = `---
+id: T060
+title: "Task with quoted dep"
+action: create
+file: src/quoted.ts
+depends_on: "T001"
+---
+
+### Description
+Task with double-quoted depends_on value.
+
+### Tests
+- Should work
+
+### Constraints
+- None
+`;
+
+    const tasks = parseTasks(input);
+    assert.equal(tasks.length, 1);
+    assert.deepEqual(tasks[0].dependsOn, ['T001']);
+  });
+
+  it('strips single quotes from bare depends_on value', () => {
+    const input = `---
+id: T061
+title: "Task with single-quoted dep"
+action: create
+file: src/quoted2.ts
+depends_on: 'T001'
+---
+
+### Description
+Task with single-quoted depends_on value.
+
+### Tests
+- Should work
+
+### Constraints
+- None
+`;
+
+    const tasks = parseTasks(input);
+    assert.equal(tasks.length, 1);
+    assert.deepEqual(tasks[0].dependsOn, ['T001']);
+  });
+
+  it('strips quotes from array depends_on values', () => {
+    const input = `---
+id: T062
+title: "Task with quoted array deps"
+action: create
+file: src/quoted3.ts
+depends_on: ['T001', "T002"]
+---
+
+### Description
+Task with quoted array depends_on values.
+
+### Tests
+- Should work
+
+### Constraints
+- None
+`;
+
+    const tasks = parseTasks(input);
+    assert.equal(tasks.length, 1);
+    assert.deepEqual(tasks[0].dependsOn, ['T001', 'T002']);
+  });
+
   it('throws on circular dependencies', () => {
     const input = `---
 id: A

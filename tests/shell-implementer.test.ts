@@ -1,59 +1,15 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Config, Task, ProjectContext } from '../src/types.js';
+import type { Config } from '../src/types.js';
+import { makeConfig as makeBaseConfig, makeTask, defaultContext } from './helpers/fixtures.js';
 
 function makeConfig(extra?: Partial<Config['implementer']>): Config {
-  return {
-    planner: { tool: 'claude-code' },
-    implementer: {
-      provider: 'ollama',
-      model: 'test',
-      apiBase: '',
-      contextLength: 8192,
-      temperature: 0.3,
-      type: 'shell',
-      command: 'my-ai-tool',
-      outputFormat: 'text',
-      ...extra,
-    },
-    validation: {
-      typecheck: true,
-      lint: true,
-      test: true,
-      testCommand: 'npm test',
-    },
-    workflow: {
-      autoApproveSpec: false,
-      autoApprovePlan: false,
-      maxRetries: 3,
-      commitPerTask: true,
-    },
-  };
+  return makeBaseConfig({
+    implementer: { model: 'test', contextLength: 8192, temperature: 0.3, type: 'shell', command: 'my-ai-tool', outputFormat: 'text', ...extra },
+  });
 }
 
-function makeTask(overrides?: Partial<Task>): Task {
-  return {
-    id: 'T001',
-    title: 'Create hello module',
-    action: 'create',
-    file: 'src/hello.ts',
-    dependsOn: [],
-    description: 'Create a hello world module',
-    tests: [],
-    constraints: [],
-    typeDefs: '',
-    implSteps: [],
-    status: 'pending',
-    ...overrides,
-  };
-}
-
-const context: ProjectContext = {
-  name: 'test-project',
-  dir: '/tmp',
-  runtime: 'node',
-  testCommand: 'npm test',
-};
+const context = { ...defaultContext, dir: '/tmp', runtime: 'node' };
 
 describe('shell implementer', () => {
   it('implementTask dispatches to shell when type is shell', async () => {
@@ -61,7 +17,7 @@ describe('shell implementer', () => {
     const config = makeConfig({ command: '/bin/echo' });
     const task = makeTask();
 
-    const result = await implementTask(task, '/tmp', config, context, () => {});
+    const result = await implementTask(task, { projectDir: '/tmp', config, context, onProgress: () => {} });
 
     assert.equal(typeof result.success, 'boolean');
     assert.equal(typeof result.output, 'string');
@@ -72,7 +28,7 @@ describe('shell implementer', () => {
     const config = makeConfig({ command: '/bin/echo' });
     const task = makeTask();
 
-    const result = await retryTask(task, '/tmp', config, context, 'previous error', 1, () => {});
+    const result = await retryTask(task, { projectDir: '/tmp', config, context, error: 'previous error', attempt: 1, onProgress: () => {} });
 
     assert.equal(typeof result.success, 'boolean');
     assert.equal(typeof result.output, 'string');
@@ -83,7 +39,7 @@ describe('shell implementer', () => {
     const config = makeConfig({ command: '/usr/bin/false' });
     const task = makeTask();
 
-    const result = await implementTask(task, '/tmp', config, context, () => {});
+    const result = await implementTask(task, { projectDir: '/tmp', config, context, onProgress: () => {} });
 
     assert.equal(result.success, false);
     assert.ok(result.error);
@@ -95,7 +51,7 @@ describe('shell implementer', () => {
     const task = makeTask();
 
     await assert.rejects(
-      () => implementTask(task, '/tmp', config, context, () => {}),
+      () => implementTask(task, { projectDir: '/tmp', config, context, onProgress: () => {} }),
       (err: Error) => {
         assert.ok(err.message.includes('command not found') || err.message.includes('ENOENT'));
         return true;
@@ -109,7 +65,7 @@ describe('shell implementer', () => {
     const config = makeConfig({ command: '/usr/bin/printf', args: ['%s', codeOutput] });
     const task = makeTask();
 
-    const result = await implementTask(task, '/tmp', config, context, () => {});
+    const result = await implementTask(task, { projectDir: '/tmp', config, context, onProgress: () => {} });
 
     assert.equal(result.success, true);
     assert.ok(result.output.includes('hello'));
@@ -121,7 +77,7 @@ describe('shell implementer', () => {
     const config = makeConfig({ command: '/usr/bin/printf', args: ['%s', code], outputFormat: 'text' });
     const task = makeTask();
 
-    const result = await implementTask(task, '/tmp', config, context, () => {});
+    const result = await implementTask(task, { projectDir: '/tmp', config, context, onProgress: () => {} });
 
     assert.equal(typeof result.success, 'boolean');
   });
@@ -132,7 +88,7 @@ describe('shell implementer', () => {
     const config = makeConfig({ command: '/usr/bin/printf', args: ['%s\n', jsonlLine], outputFormat: 'jsonl' });
     const task = makeTask();
 
-    const result = await implementTask(task, '/tmp', config, context, () => {});
+    const result = await implementTask(task, { projectDir: '/tmp', config, context, onProgress: () => {} });
 
     assert.equal(typeof result.success, 'boolean');
   });
@@ -144,8 +100,9 @@ describe('shell implementer', () => {
     const task = makeTask();
     const progressCalls: string[] = [];
 
-    await implementTask(task, '/tmp', config, context, (text) => {
-      progressCalls.push(text);
+    await implementTask(task, {
+      projectDir: '/tmp', config, context,
+      onProgress: (text) => { progressCalls.push(text); },
     });
 
     assert.ok(progressCalls.length > 0);
@@ -157,8 +114,10 @@ describe('shell implementer', () => {
     const task = makeTask();
     const progressCalls: string[] = [];
 
-    const result = await retryTask(task, '/tmp', config, context, 'TypeError: x is not a function', 1, (text) => {
-      progressCalls.push(text);
+    const result = await retryTask(task, {
+      projectDir: '/tmp', config, context,
+      error: 'TypeError: x is not a function', attempt: 1,
+      onProgress: (text) => { progressCalls.push(text); },
     });
 
     const fullOutput = progressCalls.join('');
@@ -172,7 +131,7 @@ describe('shell implementer', () => {
 
     const task = makeTask();
 
-    const result = await implementTask(task, '/tmp', config, context, () => {});
+    const result = await implementTask(task, { projectDir: '/tmp', config, context, onProgress: () => {} });
     assert.equal(result.success, false);
     assert.ok(result.error);
   });
@@ -185,7 +144,7 @@ describe('shell implementer', () => {
 
     const task = makeTask();
 
-    const result = await implementTask(task, '/tmp', config, context, () => {});
+    const result = await implementTask(task, { projectDir: '/tmp', config, context, onProgress: () => {} });
     assert.equal(result.success, false);
     assert.ok(result.error);
   });

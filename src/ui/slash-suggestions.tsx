@@ -1,22 +1,14 @@
-import React from 'react';
 import { Box, Text } from 'ink';
-import type { SlashCommandDef, Screen } from '../types.js';
-import type { Theme } from '../theme.js';
+import { useAppContext } from '../app.js';
+import type { SlashCommandDef } from '../types.js';
 
 interface SlashSuggestionsProps {
   filtered: SlashCommandDef[];
   selectedIndex: number;
-  theme: Theme;
 }
 
-export function filterCommands(commands: SlashCommandDef[], filter: string, screen: Screen): SlashCommandDef[] {
-  const screenCmds = commands.filter((cmd) => cmd.validScreens.includes(screen));
-  if (!filter || filter === '/') return screenCmds;
-  const lower = filter.toLowerCase();
-  return screenCmds.filter((cmd) => cmd.name.toLowerCase().startsWith(lower));
-}
-
-export function SlashSuggestions({ filtered, selectedIndex, theme: t }: SlashSuggestionsProps) {
+export function SlashSuggestions({ filtered, selectedIndex }: SlashSuggestionsProps) {
+  const { theme: t } = useAppContext();
   if (filtered.length === 0) return null;
 
   return (

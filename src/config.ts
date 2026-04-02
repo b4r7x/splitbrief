@@ -1,10 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
-import type { Config, ThemeMode } from './types.js';
+import type { Config } from './types.js';
+import { DEFAULT_BASES } from './engine/providers.js';
+import { validateConfig } from './config-validation.js';
 
 const CONFIG_DIR = '.tiny-spec';
 const CONFIG_FILE = 'config.yaml';
+
+export function configPath(projectDir: string): string {
+  return path.join(projectDir, CONFIG_DIR, CONFIG_FILE);
+}
 
 function snakeToCamel(s: string): string {
   return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
@@ -53,7 +59,7 @@ export function createDefaultConfig(): Config {
     implementer: {
       provider: 'ollama',
       model: 'qwen2.5-coder:7b',
-      apiBase: 'http://localhost:11434/v1',
+      apiBase: DEFAULT_BASES.ollama.baseURL,
       contextLength: 32768,
       temperature: 0.3,
     },
@@ -69,131 +75,10 @@ export function createDefaultConfig(): Config {
       maxRetries: 3,
       commitPerTask: true,
     },
-    theme: 'terminal' as ThemeMode,
+    theme: 'terminal',
     shikiTheme: 'github-dark',
-    sessions: { scope: 'project' as const },
+    sessions: { scope: 'project' },
   };
-}
-
-export interface ConfigError {
-  path: string;
-  message: string;
-}
-
-export function validateConfig(config: Record<string, unknown>): ConfigError[] {
-  const errors: ConfigError[] = [];
-
-  const validTools = ['claude-code', 'codex', 'opencode', 'aider', 'agent-sdk', 'shell'];
-  const tool = (config as any)?.planner?.tool;
-  if (tool !== undefined && !validTools.includes(tool)) {
-    errors.push({ path: 'planner.tool', message: `Must be one of: ${validTools.join(', ')} (got ${JSON.stringify(tool)})` });
-  }
-
-  if (tool === 'agent-sdk') {
-    const apiKey = (config as any)?.planner?.apiKey ?? process.env['ANTHROPIC_API_KEY'];
-    if (!apiKey) {
-      errors.push({ path: 'planner.apiKey', message: 'Agent SDK requires planner.apiKey or ANTHROPIC_API_KEY env var' });
-    }
-  }
-
-  if (tool === 'shell') {
-    const command = (config as any)?.planner?.command;
-    if (!command || typeof command !== 'string') {
-      errors.push({ path: 'planner.command', message: 'Shell planner requires planner.command to be set' });
-    }
-    const outputFormat = (config as any)?.planner?.outputFormat;
-    if (outputFormat !== undefined && !['stream-json', 'jsonl', 'text'].includes(outputFormat)) {
-      errors.push({ path: 'planner.outputFormat', message: `Must be one of: stream-json, jsonl, text (got ${JSON.stringify(outputFormat)})` });
-    }
-  }
-
-  const implType = (config as any)?.implementer?.type;
-  if (implType !== undefined && implType !== 'api' && implType !== 'shell' && implType !== 'agent') {
-    errors.push({ path: 'implementer.type', message: `Must be one of: api, shell, agent (got ${JSON.stringify(implType)})` });
-  }
-
-  if (implType === 'shell' || implType === 'agent') {
-    const implCommand = (config as any)?.implementer?.command;
-    if (!implCommand || typeof implCommand !== 'string') {
-      errors.push({ path: 'implementer.command', message: `${implType === 'agent' ? 'Agent' : 'Shell'} implementer requires implementer.command to be set` });
-    }
-  }
-
-  const timeout = (config as any)?.implementer?.timeout;
-  if (timeout !== undefined && (typeof timeout !== 'number' || timeout <= 0 || timeout > 600000)) {
-    errors.push({ path: 'implementer.timeout', message: 'Must be a positive number <= 600000 (10 minutes)' });
-  }
-
-  const implOutputFormat = (config as any)?.implementer?.outputFormat;
-  if (implOutputFormat !== undefined && !['stream-json', 'jsonl', 'text'].includes(implOutputFormat)) {
-    errors.push({ path: 'implementer.outputFormat', message: `Must be one of: stream-json, jsonl, text (got ${JSON.stringify(implOutputFormat)})` });
-  }
-
-  const knownProviders = ['ollama', 'lm-studio', 'deepseek', 'openrouter'];
-  const provider = (config as any)?.implementer?.provider;
-  if (provider !== undefined && typeof provider !== 'string') {
-    errors.push({ path: 'implementer.provider', message: 'Must be a string' });
-  }
-  if (provider !== undefined && typeof provider === 'string' && !knownProviders.includes(provider)) {
-    const apiBase = (config as any)?.implementer?.apiBase;
-    if (!apiBase || typeof apiBase !== 'string') {
-      errors.push({ path: 'implementer.apiBase', message: `Unknown provider "${provider}" requires implementer.apiBase to be set` });
-    }
-  }
-
-  const model = (config as any)?.implementer?.model;
-  if (model !== undefined && (typeof model !== 'string' || model.length === 0)) {
-    errors.push({ path: 'implementer.model', message: 'Must be a non-empty string' });
-  }
-
-  const ctx = (config as any)?.implementer?.contextLength;
-  if (ctx !== undefined && (typeof ctx !== 'number' || !Number.isInteger(ctx) || ctx <= 0)) {
-    errors.push({ path: 'implementer.contextLength', message: 'Must be a positive integer' });
-  }
-
-  const temp = (config as any)?.implementer?.temperature;
-  if (temp !== undefined && (typeof temp !== 'number' || temp < 0 || temp > 2)) {
-    errors.push({ path: 'implementer.temperature', message: 'Must be a number between 0 and 2' });
-  }
-
-  const boolFields = [
-    'validation.typecheck', 'validation.lint', 'validation.test',
-    'workflow.autoApproveSpec', 'workflow.autoApprovePlan', 'workflow.commitPerTask',
-  ];
-  for (const field of boolFields) {
-    const [section, key] = field.split('.');
-    const val = (config as any)?.[section]?.[key];
-    if (val !== undefined && typeof val !== 'boolean') {
-      errors.push({ path: field, message: 'Must be true or false' });
-    }
-  }
-
-  const testCmd = (config as any)?.validation?.testCommand;
-  if (testCmd !== undefined && (typeof testCmd !== 'string' || testCmd.length === 0)) {
-    errors.push({ path: 'validation.testCommand', message: 'Must be a non-empty string' });
-  }
-
-  const retries = (config as any)?.workflow?.maxRetries;
-  if (retries !== undefined && (typeof retries !== 'number' || !Number.isInteger(retries) || retries < 0)) {
-    errors.push({ path: 'workflow.maxRetries', message: 'Must be a non-negative integer' });
-  }
-
-  const theme = (config as any)?.theme;
-  if (theme !== undefined && theme !== 'terminal' && theme !== 'mono') {
-    errors.push({ path: 'theme', message: `Must be one of: terminal, mono (got ${JSON.stringify(theme)})` });
-  }
-
-  const shikiTheme = (config as any)?.shikiTheme;
-  if (shikiTheme !== undefined && (typeof shikiTheme !== 'string' || shikiTheme.length === 0)) {
-    errors.push({ path: 'shikiTheme', message: 'Must be a non-empty string' });
-  }
-
-  const sessionsScope = (config as any)?.sessions?.scope;
-  if (sessionsScope !== undefined && sessionsScope !== 'project' && sessionsScope !== 'global') {
-    errors.push({ path: 'sessions.scope', message: `Must be one of: project, global (got ${JSON.stringify(sessionsScope)})` });
-  }
-
-  return errors;
 }
 
 export function loadConfig(projectDir: string): Config {
@@ -212,11 +97,11 @@ export function loadConfig(projectDir: string): Config {
 
   const errors = validateConfig(merged);
   if (errors.length > 0) {
-    console.error('Configuration errors in .tiny-spec/config.yaml:');
+    const lines = ['Configuration errors in .tiny-spec/config.yaml:'];
     for (const err of errors) {
-      console.error(`  ${err.path}: ${err.message}`);
+      lines.push(`  ${err.path}: ${err.message}`);
     }
-    process.exit(2);
+    throw new Error(lines.join('\n'));
   }
 
   return merged as unknown as Config;

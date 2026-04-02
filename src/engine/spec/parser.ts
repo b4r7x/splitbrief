@@ -1,14 +1,16 @@
 import type { Task } from '../../types.js';
 
+interface TaskFrontmatter {
+  id: string;
+  title: string;
+  action: 'create' | 'modify';
+  file: string;
+  depends_on?: string[];
+}
+
 export function parseTasks(tasksMarkdown: string): Task[] {
   const blocks = splitTaskBlocks(tasksMarkdown);
-  const tasks: Task[] = [];
-
-  for (const block of blocks) {
-    const task = parseTaskBlock(block);
-    if (task) tasks.push(task);
-  }
-
+  const tasks = blocks.map(parseTaskBlock).filter((t): t is Task => t !== null);
   return topoSort(tasks);
 }
 
@@ -51,22 +53,8 @@ function parseTaskBlock(block: string): Task | null {
   const frontmatter = extractFrontmatter(block);
   if (!frontmatter) return null;
 
-  const id = frontmatter.id;
-  const title = frontmatter.title;
-  const action = frontmatter.action;
-  const file = frontmatter.file;
-
-  if (!id || !title || !file) {
-    console.warn(`Skipping task with missing required fields (id, title, or file)`);
-    return null;
-  }
-
-  if (action !== 'create' && action !== 'modify') {
-    console.warn(`Skipping task ${id}: invalid action "${action}"`);
-    return null;
-  }
-
-  const dependsOn = parseDependsOn(frontmatter.depends_on);
+  const { id, title, action, file } = frontmatter;
+  const dependsOn: string[] = frontmatter.depends_on ?? [];
   const sections = extractSections(block);
 
   return {
@@ -86,55 +74,58 @@ function parseTaskBlock(block: string): Task | null {
   };
 }
 
-function extractFrontmatter(block: string): Record<string, any> | null {
+function parseDependsOnValue(value: string): string[] {
+  if (value === '[]' || value.length === 0) return [];
+  if (value.startsWith('[') && value.endsWith(']')) {
+    return value.slice(1, -1).split(',')
+      .map((s: string) => s.trim().replace(/^['"]|['"]$/g, ''))
+      .filter(Boolean);
+  }
+  return [value.trim().replace(/^['"]|['"]$/g, '')];
+}
+
+function extractFrontmatter(block: string): TaskFrontmatter | null {
   const match = block.match(/^---\n([\s\S]*?)\n---/);
   if (!match) return null;
 
   const yaml = match[1];
-  const result: Record<string, any> = {};
+  const raw: Record<string, unknown> = {};
 
-  try {
-    for (const line of yaml.split('\n')) {
-      const colonIdx = line.indexOf(':');
-      if (colonIdx === -1) continue;
+  for (const line of yaml.split('\n')) {
+    const colonIdx = line.indexOf(':');
+    if (colonIdx === -1) continue;
 
-      const key = line.slice(0, colonIdx).trim();
-      let value = line.slice(colonIdx + 1).trim();
+    const key = line.slice(0, colonIdx).trim();
+    let value = line.slice(colonIdx + 1).trim();
 
-      if (key === 'depends_on') {
-        if (value === '[]') {
-          result[key] = [];
-        } else if (value.startsWith('[') && value.endsWith(']')) {
-          result[key] = value
-            .slice(1, -1)
-            .split(',')
-            .map((s: string) => s.trim().replace(/^['"]|['"]$/g, ''))
-            .filter(Boolean);
-        } else if (value.length > 0) {
-          result[key] = [value.trim()];
-        } else {
-          result[key] = [];
-        }
-      } else {
-        if ((value.startsWith('"') && value.endsWith('"')) ||
-            (value.startsWith("'") && value.endsWith("'"))) {
-          value = value.slice(1, -1);
-        }
-        result[key] = value;
-      }
+    if (key === 'depends_on') {
+      raw[key] = parseDependsOnValue(value);
+      continue;
     }
-  } catch {
-    console.warn('Malformed YAML frontmatter, skipping task');
+
+    if ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    raw[key] = value;
+  }
+
+  if (typeof raw.id !== 'string' || typeof raw.title !== 'string' ||
+      typeof raw.action !== 'string' || typeof raw.file !== 'string') {
     return null;
   }
 
-  return result;
-}
+  if (raw.action !== 'create' && raw.action !== 'modify') return null;
 
-function parseDependsOn(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map(String);
-  if (typeof value === 'string' && value.length > 0) return [value];
-  return [];
+  if (raw.depends_on !== undefined && !Array.isArray(raw.depends_on)) return null;
+
+  return {
+    id: raw.id,
+    title: raw.title,
+    action: raw.action,
+    file: raw.file,
+    depends_on: raw.depends_on as string[] | undefined,
+  };
 }
 
 interface Sections {
@@ -148,7 +139,6 @@ interface Sections {
 }
 
 function extractSections(block: string): Sections {
-  // Remove frontmatter
   const body = block.replace(/^---\n[\s\S]*?\n---\n?/, '');
 
   const sectionMap: Record<string, string> = {};

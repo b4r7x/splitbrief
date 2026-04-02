@@ -1,7 +1,7 @@
-import { useState, useRef } from 'react';
+import { useRef } from 'react';
 import { Box, useInput } from 'ink';
-import type { Config, Summary, WorkflowState, SlashCommandDef, SkillMeta } from '../types.js';
-import type { Theme } from '../theme.js';
+import { useAppContext } from '../app.js';
+import type { Summary, WorkflowState } from '../types.js';
 import Header from '../ui/header.js';
 import ConversationFlow from '../ui/conversation-flow.js';
 import type { ConversationFlowHandle } from '../ui/conversation-flow.js';
@@ -15,48 +15,26 @@ import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 
 interface WorkflowScreenProps {
   feature: string;
-  config: Config;
-  theme: Theme;
-  auto: boolean;
-  projectDir: string;
   onComplete: (summary: Summary) => void;
   resumeState?: WorkflowState;
-  commands: SlashCommandDef[];
   onSlashCommand: (command: string) => void;
-  onOpenOverlay?: (type: import('../types.js').OverlayType) => void;
-  errorMessage?: string | null;
-  onClearError?: () => void;
-  selectedSkills?: SkillMeta[];
 }
 
-export function WorkflowScreen({ feature, config, theme: t, auto, projectDir, onComplete, resumeState, commands, onSlashCommand, onOpenOverlay, errorMessage, onClearError, selectedSkills }: WorkflowScreenProps) {
+export function WorkflowScreen({ feature, onComplete, resumeState, onSlashCommand }: WorkflowScreenProps) {
+  const { config, commands, errorMessage, onClearError, projectDir, selectedSkillMetas } = useAppContext();
   const { cols, rows, isSmall } = useResponsiveLayout();
   const flowRef = useRef<ConversationFlowHandle>(null);
 
-  const workflow = useWorkflow({ feature, projectDir, config, auto, onComplete, resumeState, selectedSkills });
+  const workflow = useWorkflow({ feature, projectDir, config, onComplete, resumeState, selectedSkills: selectedSkillMetas });
 
   const sidebar = useSidebar(isSmall);
-  const [startedAt] = useState(() => new Date().toISOString());
+  const startedAt = useRef(new Date().toISOString());
 
-  const taskMap = new Map<string, { id: string; title: string; status: 'pending' | 'done' | 'failed' | 'skipped' | 'in_progress' }>();
-  for (const ev of workflow.events) {
-    if (ev.type === 'task-start') {
-      taskMap.set(ev.taskId, { id: ev.taskId, title: ev.title, status: 'in_progress' });
-    } else if (ev.type === 'task-complete') {
-      const existing = taskMap.get(ev.taskId);
-      if (existing) existing.status = 'done';
-    } else if (ev.type === 'task-skipped') {
-      const existing = taskMap.get(ev.taskId);
-      if (existing) existing.status = 'skipped';
-    }
-  }
-  const sidebarTasks = Array.from(taskMap.values());
+  const sidebarTasks = Array.from(workflow.taskMap.values());
 
-  const costData = {
-    localRate: (workflow.localCount + workflow.escalatedCount) > 0 ? (workflow.localCount / (workflow.localCount + workflow.escalatedCount)) * 100 : 0,
-    spent: 0,
-    saved: 0,
-  };
+  const localRate = (workflow.localCount + workflow.escalatedCount) > 0
+    ? (workflow.localCount / (workflow.localCount + workflow.escalatedCount)) * 100
+    : 0;
 
   const showSidebar = sidebar.visible && !isSmall;
   const sidebarWidth = Math.floor(cols * 0.25);
@@ -71,14 +49,14 @@ export function WorkflowScreen({ feature, config, theme: t, auto, projectDir, on
 
   return (
     <Box flexDirection="column" height={rows}>
-      <Header feature={feature} startedAt={startedAt} phase={workflow.phase} />
+      <Header feature={feature} startedAt={startedAt.current} phase={workflow.phase} />
 
       <Box flexDirection="row" flexGrow={1}>
         {showSidebar && (
-          <Sidebar tasks={sidebarTasks} costData={costData} theme={t} width={sidebarWidth} />
+          <Sidebar tasks={sidebarTasks} costData={{ localRate, spent: 0, saved: 0 }} width={sidebarWidth} />
         )}
         {workflow.inputMode === 'review' && workflow.reviewFilePath ? (
-          <ReviewView filePath={workflow.reviewFilePath} theme={t} height={contentHeight} />
+          <ReviewView filePath={workflow.reviewFilePath} height={contentHeight} />
         ) : (
           <ConversationFlow ref={flowRef} events={workflow.events} height={contentHeight} />
         )}
@@ -87,7 +65,7 @@ export function WorkflowScreen({ feature, config, theme: t, auto, projectDir, on
       <CostFooter
         currentTask={workflow.currentTask}
         totalTasks={workflow.totalTasks}
-        localRate={costData.localRate}
+        localRate={localRate}
         estimatedCost={0}
         estimatedSavings={0}
         implementerModel={config.implementer.model}
@@ -103,7 +81,6 @@ export function WorkflowScreen({ feature, config, theme: t, auto, projectDir, on
         mode={workflow.inputMode}
         hint={workflow.inputHint || (workflow.inputMode === 'review' ? 'approve / edit / comment <text> / quit' : '')}
         currentScreen="workflow"
-        theme={t}
       />
     </Box>
   );

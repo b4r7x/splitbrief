@@ -1,16 +1,16 @@
-import React from 'react';
 import { Box, Text } from 'ink';
-import type { Theme } from '../theme.js';
+import { useAppContext } from '../app.js';
 import type { Screen } from '../types.js';
 import { getShortcutsForScreen } from '../shortcuts.js';
 
+const LABEL_COL_WIDTH = 14;
+
 interface HelpOverlayProps {
-  onClose: () => void;
-  theme: Theme;
   currentScreen: Screen;
 }
 
-export function HelpOverlay({ onClose, theme: t, currentScreen }: HelpOverlayProps) {
+export function HelpOverlay({ currentScreen }: HelpOverlayProps) {
+  const { theme: t, commands } = useAppContext();
   const shortcuts = getShortcutsForScreen(currentScreen);
 
   return (
@@ -21,19 +21,19 @@ export function HelpOverlay({ onClose, theme: t, currentScreen }: HelpOverlayPro
 
       <Box flexDirection="column" marginBottom={1}>
         <Text bold color={t.text}>Commands</Text>
-        <Box><Box width={14}><Text color={t.accent}>/help</Text></Box><Text color={t.textDim}>Show this help overlay</Text></Box>
-        <Box><Box width={14}><Text color={t.accent}>/status</Text></Box><Text color={t.textDim}>Show workflow status</Text></Box>
-        <Box><Box width={14}><Text color={t.accent}>/init</Text></Box><Text color={t.textDim}>Configure planner & model</Text></Box>
-        <Box><Box width={14}><Text color={t.accent}>/skills</Text></Box><Text color={t.textDim}>Select planner skills</Text></Box>
-        <Box><Box width={14}><Text color={t.accent}>/palette</Text></Box><Text color={t.textDim}>Open command palette</Text></Box>
-        <Box><Box width={14}><Text color={t.accent}>/quit</Text></Box><Text color={t.textDim}>Exit application</Text></Box>
+        {commands.map((cmd) => (
+          <Box key={cmd.name}>
+            <Box width={LABEL_COL_WIDTH}><Text color={t.accent}>{cmd.name}</Text></Box>
+            <Text color={t.textDim}>{cmd.description}</Text>
+          </Box>
+        ))}
       </Box>
 
       <Box flexDirection="column" marginBottom={1}>
         <Text bold color={t.text}>Keyboard Shortcuts</Text>
         {shortcuts.map((s) => (
           <Box key={s.key}>
-            <Box width={14}><Text color={t.accent}>{s.key}</Text></Box>
+            <Box width={LABEL_COL_WIDTH}><Text color={t.accent}>{s.key}</Text></Box>
             <Text color={t.textDim}>{s.description}</Text>
           </Box>
         ))}

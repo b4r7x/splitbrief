@@ -1,6 +1,5 @@
 export function computeDiff(oldContent: string, newContent: string): { diff: string; linesAdded: number; linesRemoved: number } {
   if (oldContent === newContent) return { diff: '', linesAdded: 0, linesRemoved: 0 };
-  if (oldContent === '' && newContent === '') return { diff: '', linesAdded: 0, linesRemoved: 0 };
 
   const oldLines = oldContent === '' ? [] : oldContent.split('\n');
   const newLines = newContent === '' ? [] : newContent.split('\n');

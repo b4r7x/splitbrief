@@ -1,30 +1,19 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatTaskPrompt, formatRetryPrompt, estimateTokens, truncateMiddle, computeTokenBudget, SYSTEM_PREAMBLE } from '../src/engine/spec/formatter.js';
-import type { Task, ProjectContext } from '../src/types.js';
+import { formatTaskPrompt, formatRetryPrompt, SYSTEM_PREAMBLE } from '../src/engine/spec/formatter.js';
+import { estimateTokens, truncateMiddle, computeTokenBudget } from '../src/engine/spec/token-budget.js';
+import { makeTask as makeBaseTask, defaultContext } from './helpers/fixtures.js';
+import type { Task } from '../src/types.js';
 
-const context: ProjectContext = {
-  name: 'test-project',
-  dir: '/tmp/test-project',
-  runtime: 'Node.js 22',
-  testCommand: 'node --test',
-};
+const context = { ...defaultContext, testCommand: 'node --test' };
 
 function makeTask(overrides: Partial<Task> = {}): Task {
-  return {
-    id: 'T001',
+  return makeBaseTask({
     title: 'Create utility module',
-    action: 'create',
     file: 'src/utils/helpers.ts',
-    dependsOn: [],
     description: 'Implement helper functions for string manipulation.',
-    tests: [],
-    constraints: [],
-    status: 'pending',
-    typeDefs: '',
-    implSteps: [],
     ...overrides,
-  };
+  });
 }
 
 describe('formatTaskPrompt', () => {
@@ -224,30 +213,27 @@ describe('formatTaskPrompt with contextLength', () => {
 
 describe('computeTokenBudget', () => {
   it('returns correct token breakdown', () => {
-    const budget = computeTokenBudget('system text', 'task body', 'type defs', 'impl steps', 8192);
+    const budget = computeTokenBudget('system text', 'task body', 8192);
     assert.strictEqual(budget.system, estimateTokens('system text'));
     assert.strictEqual(budget.taskBody, estimateTokens('task body'));
-    assert.strictEqual(budget.typeDefs, estimateTokens('type defs'));
-    assert.strictEqual(budget.implSteps, estimateTokens('impl steps'));
-    assert.strictEqual(budget.codeContext, 0);
     assert.strictEqual(budget.outputReserve, Math.floor(8192 * 0.25));
-    const expectedTotal = budget.system + budget.taskBody + budget.typeDefs + budget.implSteps + budget.outputReserve;
+    const expectedTotal = budget.system + budget.taskBody + budget.outputReserve;
     assert.strictEqual(budget.total, expectedTotal);
     assert.strictEqual(budget.remaining, 8192 - expectedTotal);
   });
 
   it('25% output reserve', () => {
-    const budget = computeTokenBudget('s', 't', 'd', 'i', 10000);
+    const budget = computeTokenBudget('s', 't', 10000);
     assert.strictEqual(budget.outputReserve, Math.floor(10000 * 0.25));
   });
 
   it('remaining equals contextLength minus total', () => {
-    const budget = computeTokenBudget('system prompt here', 'the task body text', 'interface Foo {}', 'step 1: do X', 16384);
+    const budget = computeTokenBudget('system prompt here', 'the task body text', 16384);
     assert.strictEqual(budget.remaining, 16384 - budget.total);
   });
 
   it('small context (8K)', () => {
-    const budget = computeTokenBudget('sys', 'task', 'types', 'steps', 8192);
+    const budget = computeTokenBudget('sys', 'task', 8192);
     assert.strictEqual(budget.outputReserve, Math.floor(8192 * 0.25));
     assert.ok(budget.remaining > 0);
     assert.ok(budget.remaining < 8192);
@@ -255,23 +241,13 @@ describe('computeTokenBudget', () => {
   });
 
   it('large context (32K)', () => {
-    const budget = computeTokenBudget('sys', 'task', 'types', 'steps', 32768);
+    const budget = computeTokenBudget('sys', 'task', 32768);
     assert.strictEqual(budget.outputReserve, Math.floor(32768 * 0.25));
     assert.ok(budget.remaining > 0);
     assert.ok(budget.remaining < 32768);
     assert.strictEqual(budget.total + budget.remaining, 32768);
-    // Large context should have more remaining than small context with same inputs
-    const smallBudget = computeTokenBudget('sys', 'task', 'types', 'steps', 8192);
+    const smallBudget = computeTokenBudget('sys', 'task', 8192);
     assert.ok(budget.remaining > smallBudget.remaining);
   });
 });
 
-describe('estimateTokens (token budgeting)', () => {
-  it('empty string returns 0', () => {
-    assert.strictEqual(estimateTokens(''), 0);
-  });
-
-  it('known length returns Math.ceil(length / 4)', () => {
-    assert.strictEqual(estimateTokens('a'.repeat(100)), Math.ceil(100 / 4));
-  });
-});

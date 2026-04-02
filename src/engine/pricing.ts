@@ -21,11 +21,11 @@ const PRICING: Record<string, PricingInfo> = {
 const LOCAL_PRICING: PricingInfo = { inputPer1M: 0, outputPer1M: 0, isLocal: true, name: 'Local model' };
 
 const DEFAULT_PLANNER_PRICING: Record<string, PricingInfo> = {
-  'claude-code': { inputPer1M: 5, outputPer1M: 25, isLocal: false, name: 'Claude Code (Opus)' },
-  'codex': { inputPer1M: 1.1, outputPer1M: 4.4, isLocal: false, name: 'Codex (o4-mini)' },
-  'opencode': { inputPer1M: 3, outputPer1M: 15, isLocal: false, name: 'OpenCode' },
-  'aider': { inputPer1M: 3, outputPer1M: 15, isLocal: false, name: 'Aider' },
-  'agent-sdk': { inputPer1M: 5, outputPer1M: 25, isLocal: false, name: 'Agent SDK (Opus)' },
+  'claude-code': { ...PRICING['claude-opus-4-6'], name: 'Claude Code (Opus)' },
+  'codex': { ...PRICING['o4-mini'], name: 'Codex (o4-mini)' },
+  'opencode': { ...PRICING['claude-sonnet-4-6'], name: 'OpenCode' },
+  'aider': { ...PRICING['claude-sonnet-4-6'], name: 'Aider' },
+  'agent-sdk': { ...PRICING['claude-opus-4-6'], name: 'Agent SDK (Opus)' },
 };
 
 export function getPricing(modelOrProvider: string): PricingInfo {
@@ -36,10 +36,16 @@ export function getPlannerPricing(tool: string): PricingInfo {
   return DEFAULT_PLANNER_PRICING[tool] ?? LOCAL_PRICING;
 }
 
+const IMPLEMENTER_PRICING: Record<string, PricingInfo> = {
+  ollama: LOCAL_PRICING,
+  'lm-studio': LOCAL_PRICING,
+  deepseek: { ...PRICING['deepseek-chat'], name: 'DeepSeek V3' },
+  openrouter: { inputPer1M: 0.15, outputPer1M: 0.60, isLocal: false, name: 'OpenRouter' },
+  shell: LOCAL_PRICING,
+};
+
 export function getImplementerPricing(provider: string): PricingInfo {
-  if (provider === 'ollama' || provider === 'lm-studio') return LOCAL_PRICING;
-  if (provider === 'deepseek') return PRICING['deepseek-chat']!;
-  return LOCAL_PRICING;
+  return IMPLEMENTER_PRICING[provider] ?? LOCAL_PRICING;
 }
 
 export function calculateCost(inputTokens: number, outputTokens: number, pricing: PricingInfo): number {

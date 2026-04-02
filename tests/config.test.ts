@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateConfig, createDefaultConfig } from '../src/config.js';
+import { createDefaultConfig } from '../src/config.js';
+import { validateConfig } from '../src/config-validation.js';
 
 describe('validateConfig', () => {
   it('returns no errors for valid default config', () => {

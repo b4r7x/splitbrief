@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
-import { Box, Text, useInput } from "ink";
-import { MultilineInput } from "ink-multiline-input";
-import { SlashSuggestions, filterCommands } from "./slash-suggestions.js";
-import type { InputMode, Screen, SlashCommandDef } from "../types.js";
-import type { Theme } from "../theme.js";
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Box, Text, useInput } from 'ink';
+import { MultilineInput } from 'ink-multiline-input';
+import { SlashSuggestions } from './slash-suggestions.js';
+import { useFilterableList } from '../hooks/use-filterable-list.js';
+import { useAppContext } from '../app.js';
+import type { InputMode, Screen, SlashCommandDef } from '../types.js';
 
 interface InputBarProps {
   onSubmit: (text: string) => void;
@@ -14,7 +15,6 @@ interface InputBarProps {
   mode: InputMode;
   hint: string;
   currentScreen: Screen;
-  theme: Theme;
 }
 
 export function InputBar({
@@ -26,25 +26,60 @@ export function InputBar({
   mode,
   hint,
   currentScreen,
-  theme,
 }: InputBarProps) {
-  const [value, setValue] = useState("");
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const { theme } = useAppContext();
+  const [value, setValue] = useState('');
 
-  const slashMode = value.startsWith("/");
-  const filtered = slashMode
-    ? filterCommands(commands, value, currentScreen)
-    : [];
+  const slashMode = value.startsWith('/');
+  const screenCmds = useMemo(
+    () => commands.filter((cmd) => cmd.validScreens.includes(currentScreen)),
+    [commands, currentScreen],
+  );
+
+  const onSelect = (cmd: SlashCommandDef) => {
+    onSlashCommand(cmd.name);
+    setValue('');
+  };
+
+  const onClose = () => setValue('');
+
+  const filtered = useMemo(
+    () =>
+      slashMode
+        ? screenCmds.filter((cmd) =>
+            cmd.name.toLowerCase().startsWith('/' + value.slice(1).toLowerCase()),
+          )
+        : [],
+    [slashMode, value, screenCmds],
+  );
 
   const showSuggestions = slashMode && filtered.length > 0;
-  const clampedIndex =
-    filtered.length > 0 ? Math.min(selectedIndex, filtered.length - 1) : 0;
 
-  const [prevValue, setPrevValue] = useState(value);
-  if (value !== prevValue) {
-    setPrevValue(value);
-    setSelectedIndex(0);
-  }
+  const passThroughFilter = useCallback(() => true, []);
+
+  const { selectedIndex } = useFilterableList({
+    items: filtered,
+    filterFn: passThroughFilter,
+    onSelect,
+    onClose,
+    isActive: showSuggestions,
+  });
+
+  // Handle tab completion and backspace-on-empty-filter (not covered by hook)
+  useInput(
+    (_input, key) => {
+      if (key.tab && filtered.length > 0) {
+        const selected = filtered[selectedIndex];
+        if (selected) {
+          setValue(selected.name);
+        }
+      }
+      if ((key.backspace || key.delete) && value === '/') {
+        setValue('');
+      }
+    },
+    { isActive: showSuggestions },
+  );
 
   useEffect(() => {
     if (!errorMessage || !onClearError) return;
@@ -56,59 +91,17 @@ export function InputBar({
     const trimmed = text.trim();
     if (!trimmed) return;
 
-    if (trimmed.startsWith("/")) {
+    if (trimmed.startsWith('/')) {
       onSlashCommand(trimmed);
     } else {
       onSubmit(trimmed);
     }
-    setValue("");
+    setValue('');
   };
-
-  const executeSelected = () => {
-    if (clampedIndex >= 0 && filtered[clampedIndex]) {
-      onSlashCommand(filtered[clampedIndex].name);
-      setValue("");
-    }
-  };
-
-  useInput(
-    (input, key) => {
-      if (key.escape) {
-        setValue("");
-        return;
-      }
-      if (key.return) {
-        executeSelected();
-        return;
-      }
-      if (key.upArrow) {
-        if (filtered.length === 0) return;
-        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : filtered.length - 1));
-        return;
-      }
-      if (key.downArrow) {
-        if (filtered.length === 0) return;
-        setSelectedIndex((prev) => (prev < filtered.length - 1 ? prev + 1 : 0));
-        return;
-      }
-      if (key.tab && filtered.length > 0) {
-        if (filtered[clampedIndex]) setValue(filtered[clampedIndex].name);
-        return;
-      }
-      if (key.backspace || key.delete) {
-        setValue((prev) => prev.slice(0, -1));
-        return;
-      }
-      if (input && !key.ctrl && !key.meta) {
-        setValue((prev) => prev + input);
-      }
-    },
-    { isActive: showSuggestions },
-  );
 
   return (
     <Box flexDirection="column" width="100%">
-      {!showSuggestions && currentScreen === "home" && (
+      {!showSuggestions && currentScreen === 'home' && (
         <Box justifyContent="center">
           <Text color={theme.textDim}>/help /status /init Ctrl+K palette</Text>
         </Box>
@@ -116,8 +109,7 @@ export function InputBar({
       {showSuggestions && (
         <SlashSuggestions
           filtered={filtered}
-          selectedIndex={clampedIndex}
-          theme={theme}
+          selectedIndex={selectedIndex}
         />
       )}
       <Box
@@ -133,7 +125,7 @@ export function InputBar({
             <Text color={theme.textDim}>│</Text>
           </Text>
         )}
-        <Box display={showSuggestions ? "none" : "flex"}>
+        <Box display={showSuggestions ? 'none' : 'flex'}>
           <MultilineInput
             value={value}
             onChange={setValue}
@@ -141,11 +133,11 @@ export function InputBar({
             focus={!showSuggestions}
             placeholder={
               hint ||
-              (mode === "review"
-                ? "approve / edit / comment ... / quit"
-                : mode === "question"
-                  ? "type your answer..."
-                  : "describe your feature...")
+              (mode === 'review'
+                ? 'approve / edit / comment ... / quit'
+                : mode === 'question'
+                  ? 'type your answer...'
+                  : 'describe your feature...')
             }
             rows={1}
             maxRows={6}

@@ -1,76 +1,85 @@
-import { useState, useRef, useEffect } from 'react';
-import { spawnSync } from 'node:child_process';
-import type { Phase, TuiEvent, Config, Summary, WorkflowState, SkillMeta } from '../types.js';
+import { useReducer, useRef, useEffect, useCallback } from 'react';
+import type { Config, Summary, WorkflowState as WfState, SkillMeta, TuiEvent } from '../types.js';
 import { useInputMode } from './use-input-mode.js';
-import { runWorkflow } from '../engine/orchestrator.js';
+import { useLatestRef } from './use-latest-ref.js';
+import { workflowReducer } from './workflow-reducer.js';
+import type { HookWorkflowState } from './workflow-reducer.js';
+import { runWorkflow } from '../engine/orchestrator/index.js';
 import { killAllProcesses } from '../utils/process.js';
 
-const MAX_EVENTS = 10_000;
+const defaultInitialState: HookWorkflowState = {
+  events: [],
+  phase: 'idle',
+  currentTask: 0,
+  totalTasks: 0,
+  localCount: 0,
+  escalatedCount: 0,
+  reviewFilePath: null,
+  taskMap: new Map(),
+};
 
 interface UseWorkflowOptions {
   feature: string;
   projectDir: string;
   config: Config;
-  auto: boolean;
   onComplete: (summary: Summary) => void;
-  resumeState?: WorkflowState;
+  resumeState?: WfState;
   selectedSkills?: SkillMeta[];
 }
 
-export function useWorkflow({ feature, projectDir, config, auto, onComplete, resumeState, selectedSkills }: UseWorkflowOptions) {
-  const [events, setEvents] = useState<TuiEvent[]>([]);
-  const [phase, setPhase] = useState<Phase>(resumeState?.phase ?? 'idle');
-  const [currentTask, setCurrentTask] = useState(resumeState?.currentTaskIndex ?? 0);
-  const [totalTasks, setTotalTasks] = useState(resumeState?.tasks.length ?? 0);
-  const [localCount, setLocalCount] = useState(0);
-  const [escalatedCount, setEscalatedCount] = useState(0);
-  const [reviewFilePath, setReviewFilePath] = useState<string | null>(null);
+export function useWorkflow({ feature, projectDir, config, onComplete, resumeState, selectedSkills }: UseWorkflowOptions) {
+  const [state, dispatch] = useReducer(workflowReducer, {
+    ...defaultInitialState,
+    phase: resumeState?.phase ?? 'idle',
+    currentTask: resumeState?.currentTaskIndex ?? 0,
+    totalTasks: resumeState?.tasks.length ?? 0,
+  });
 
   const inputMode = useInputMode();
   const abortedRef = useRef(false);
 
-  const addEvent = (event: TuiEvent) => {
-    if (abortedRef.current) return;
-    setEvents(prev => {
-      const next = [...prev, event];
-      return next.length > MAX_EVENTS ? next.slice(-MAX_EVENTS) : next;
-    });
-    if (event.type === 'planner-status') setPhase(event.phase as Phase);
-    if (event.type === 'task-start') {
-      setCurrentTask(event.index + 1);
-      setTotalTasks(event.total);
-    }
-    if (event.type === 'task-complete') {
-      if (event.method === 'local') setLocalCount(prev => prev + 1);
-      else setEscalatedCount(prev => prev + 1);
-    }
-  };
+  const configRef = useLatestRef(config);
+  const onCompleteRef = useLatestRef(onComplete);
+  const resumeStateRef = useLatestRef(resumeState);
+  const selectedSkillsRef = useLatestRef(selectedSkills);
 
   useEffect(() => {
     abortedRef.current = false;
 
-    runWorkflow(feature, projectDir, config, {
-      onEvent: addEvent,
-      onApprovalNeeded: async (_type, filePath) => {
-        setReviewFilePath(filePath);
-        const result = await inputMode.setReviewMode('approve / edit / comment <text> / quit');
-        setReviewFilePath(null);
-        return result as { approved: boolean; comment?: string };
+    const addEvent = (event: TuiEvent) => {
+      if (abortedRef.current) return;
+      dispatch({ type: 'ADD_EVENT', event });
+    };
+
+    runWorkflow({
+      feature,
+      projectDir,
+      config: configRef.current,
+      callbacks: {
+        onEvent: addEvent,
+        onApprovalNeeded: async (_type, filePath) => {
+          dispatch({ type: 'SET_REVIEW_FILE', path: filePath });
+          const result = await inputMode.setReviewMode('approve / edit / comment <text> / quit');
+          dispatch({ type: 'SET_REVIEW_FILE', path: null });
+          return result;
+        },
+        onExternalChanges: async () => {
+          const result = await inputMode.setReviewMode('External changes detected. continue / quit');
+          return result.approved;
+        },
+        onQuestionAsked: async (question, num, total) => {
+          const answer = await inputMode.setQuestionMode(`Question ${num}/${total}: ${question.text}`);
+          return answer;
+        },
+        onComplete: (summary) => {
+          if (!abortedRef.current) onCompleteRef.current(summary);
+        },
       },
-      onExternalChanges: async () => {
-        const result = await inputMode.setReviewMode('External changes detected. continue / quit');
-        return (result as { approved: boolean }).approved;
-      },
-      onQuestionAsked: async (question, num, total) => {
-        const answer = await inputMode.setQuestionMode(`Question ${num}/${total}: ${question.text}`);
-        return answer as string;
-      },
-      onComplete: (summary) => {
-        if (!abortedRef.current) onComplete(summary);
-      },
-    }, resumeState, selectedSkills).catch((err) => {
+      savedState: resumeStateRef.current,
+      selectedSkills: selectedSkillsRef.current,
+    }).catch((err) => {
       if (!abortedRef.current) {
-        addEvent({ type: 'planner-text', ts: Date.now(), text: `Error: ${String(err)}` });
+        dispatch({ type: 'ADD_EVENT', event: { type: 'planner-text', ts: Date.now(), text: `Error: ${String(err)}` } });
       }
     });
 
@@ -79,43 +88,55 @@ export function useWorkflow({ feature, projectDir, config, auto, onComplete, res
       inputMode.resetMode();
       killAllProcesses();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- props are stable for screen lifetime
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refs used for config/onComplete/resumeState/selectedSkills; feature+projectDir are stable
+  }, [feature, projectDir]);
 
-  const handleInput = (text: string) => {
-    if (inputMode.mode === 'review') {
+  const inputModeRef = useLatestRef(inputMode);
+  const reviewFilePathRef = useLatestRef(state.reviewFilePath);
+
+  const handleInput = useCallback(async (text: string) => {
+    const mode = inputModeRef.current;
+    if (mode.mode === 'review') {
       const cmd = text.toLowerCase().trim();
       if (cmd === 'approve') {
-        inputMode.resolve({ approved: true });
+        mode.resolve({ approved: true });
       } else if (cmd === 'edit') {
-        if (reviewFilePath) {
+        if (reviewFilePathRef.current) {
           const editor = process.env.EDITOR || 'vi';
-          spawnSync(editor, [reviewFilePath], { stdio: 'inherit' });
+          const { spawn } = await import('node:child_process');
+          await new Promise<void>((resolve) => {
+            const child = spawn(editor, [reviewFilePathRef.current!], { stdio: 'inherit' });
+            child.on('close', () => resolve());
+            child.on('error', () => resolve());
+          });
         }
       } else if (cmd.startsWith('comment ')) {
         const comment = text.slice(8).trim();
-        inputMode.resolve({ approved: true, comment });
+        mode.resolve({ approved: true, comment });
+      } else if (cmd === 'continue') {
+        mode.resolve({ approved: true });
       } else if (cmd === 'quit') {
-        inputMode.resolve({ approved: false });
+        mode.resolve({ approved: false });
       }
       return;
     }
 
-    if (inputMode.mode === 'question') {
-      inputMode.resolve(text);
+    if (mode.mode === 'question') {
+      mode.resolve(text);
     }
-  };
+  }, []);
 
   return {
-    events,
-    phase,
-    currentTask,
-    totalTasks,
-    localCount,
-    escalatedCount,
+    events: state.events,
+    phase: state.phase,
+    currentTask: state.currentTask,
+    totalTasks: state.totalTasks,
+    localCount: state.localCount,
+    escalatedCount: state.escalatedCount,
+    taskMap: state.taskMap,
     inputMode: inputMode.mode,
     inputHint: inputMode.hint,
-    reviewFilePath,
+    reviewFilePath: state.reviewFilePath,
     handleInput,
   };
 }

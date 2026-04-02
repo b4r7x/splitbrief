@@ -19,11 +19,11 @@ export async function createPlanner(config: Config): Promise<PlannerBackend> {
     }
     case 'aider': {
       const { createAiderPlanner } = await import('./aider.js');
-      return createAiderPlanner();
+      return createAiderPlanner(config);
     }
     case 'agent-sdk': {
       const { createAgentSdkPlanner } = await import('./agent-sdk.js');
-      return createAgentSdkPlanner();
+      return createAgentSdkPlanner(config);
     }
     case 'shell': {
       const { createShellPlanner } = await import('./shell.js');

@@ -1,17 +1,12 @@
-import { useState, useEffect } from 'react';
-import type { PlannerTool, SkillMeta } from '../types.js';
+import { useState, useMemo } from 'react';
+import type { PlannerTool } from '../types.js';
 import { discoverSkills } from '../engine/skills.js';
 
 export function useSkills(plannerTool: PlannerTool, projectDir: string) {
-  const [available, setAvailable] = useState<SkillMeta[]>([]);
+  const available = useMemo(() => discoverSkills(plannerTool, projectDir), [plannerTool, projectDir]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    setAvailable(discoverSkills(plannerTool, projectDir));
-    setSelected(new Set());
-  }, [plannerTool, projectDir]);
-
-  const selectedMetas = available.filter(s => selected.has(s.id));
+  const selectedMetas = useMemo(() => available.filter(s => selected.has(s.id)), [available, selected]);
 
   return { available, selected, setSelected, selectedMetas };
 }

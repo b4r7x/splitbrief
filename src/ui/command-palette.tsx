@@ -1,21 +1,26 @@
-import React, { useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { useMemo } from 'react';
+import { Box, Text } from 'ink';
+import { useAppContext } from '../app.js';
 import type { CommandPaletteItem, Screen } from '../types.js';
-import type { Theme } from '../theme.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
-import { computeScrollOffset, truncate } from './picker-utils.js';
+import { useFilterableList } from '../hooks/use-filterable-list.js';
+import { truncate } from '../utils/format.js';
+import { computeScrollOffset } from './picker-utils.js';
 
 interface CommandPaletteProps {
   items: CommandPaletteItem[];
   currentScreen: Screen;
   onExecute: (item: CommandPaletteItem) => void;
   onClose: () => void;
-  theme: Theme;
 }
 
-export function CommandPalette({ items, currentScreen, onExecute, onClose, theme: t }: CommandPaletteProps) {
-  const [filter, setFilter] = useState('');
-  const [selectedIndex, setSelectedIndex] = useState(0);
+const filterPaletteItem = (item: CommandPaletteItem, query: string) => {
+  const lower = query.toLowerCase();
+  return item.label.toLowerCase().includes(lower) || item.description.toLowerCase().includes(lower);
+};
+
+export function CommandPalette({ items, currentScreen, onExecute, onClose }: CommandPaletteProps) {
+  const { theme: t } = useAppContext();
   const { cols, rows, isSmall } = useResponsiveLayout();
 
   const contentWidth = Math.min(cols - 4, isSmall ? 60 : 80);
@@ -25,47 +30,23 @@ export function CommandPalette({ items, currentScreen, onExecute, onClose, theme
   const gapWidth = 2;
   const descMaxWidth = Math.max(10, contentWidth - cursorWidth - nameColWidth - gapWidth - shortcutMaxWidth);
 
-  const screenItems = items.filter((item) => item.availableOn.includes(currentScreen));
-  const filtered = !filter
-    ? screenItems
-    : screenItems.filter((item) => {
-        const lower = filter.toLowerCase();
-        return item.label.toLowerCase().includes(lower) || item.description.toLowerCase().includes(lower);
-      });
+  const screenItems = useMemo(
+    () => items.filter((item) => item.availableOn.includes(currentScreen)),
+    [items, currentScreen],
+  );
+
+  const { filter, filtered, selectedIndex } = useFilterableList<CommandPaletteItem>({
+    items: screenItems,
+    filterFn: filterPaletteItem,
+    onSelect: onExecute,
+    onClose,
+  });
 
   const maxVisible = Math.max(rows - 12, 5);
   const scrollOffset = computeScrollOffset(selectedIndex, maxVisible, filtered.length);
   const visibleSlice = filtered.slice(scrollOffset, scrollOffset + maxVisible);
   const showScrollUp = scrollOffset > 0;
   const showScrollDown = scrollOffset + maxVisible < filtered.length;
-
-  useInput((input, key) => {
-    if (key.escape) {
-      onClose();
-      return;
-    }
-    if (key.return && filtered.length > 0) {
-      onExecute(filtered[selectedIndex]);
-      return;
-    }
-    if (key.upArrow) {
-      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : filtered.length - 1));
-      return;
-    }
-    if (key.downArrow) {
-      setSelectedIndex((prev) => (prev < filtered.length - 1 ? prev + 1 : 0));
-      return;
-    }
-    if (key.backspace || key.delete) {
-      setFilter((prev) => prev.slice(0, -1));
-      setSelectedIndex(0);
-      return;
-    }
-    if (input && !key.ctrl && !key.meta) {
-      setFilter((prev) => prev + input);
-      setSelectedIndex(0);
-    }
-  });
 
   return (
     <Box flexDirection="column" width={cols} height={rows} alignItems="center" paddingTop={1}>

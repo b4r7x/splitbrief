@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
-import { join, basename, dirname, relative } from 'node:path';
+import { join, basename, dirname } from 'node:path';
 import type { Task, Config, ValidationResult } from '../types.js';
-import { runCommand } from '../utils/process.js';
+import { runCommand, isENOENT } from '../utils/process.js';
 
 export function detectLinter(projectDir: string): 'eslint' | 'biome' | null {
   const eslintPatterns = [
@@ -27,9 +27,8 @@ export function detectLinter(projectDir: string): 'eslint' | 'biome' | null {
 }
 
 export function findAffectedTestFile(taskFile: string, projectDir: string): string | null {
-  const rel = relative(projectDir, join(projectDir, taskFile));
-  const dir = dirname(rel);
-  const name = basename(rel).replace(/\.(ts|tsx|js|jsx)$/, '');
+  const dir = dirname(taskFile);
+  const name = basename(taskFile).replace(/\.(ts|tsx|js|jsx)$/, '');
 
   const candidates = [
     join(projectDir, dir.replace(/^src/, 'tests'), `${name}.test.ts`),
@@ -45,6 +44,36 @@ export function findAffectedTestFile(taskFile: string, projectDir: string): stri
   return null;
 }
 
+async function runValidationStep(opts: {
+  stage: ValidationResult['stage'];
+  cmd: string;
+  args: string[];
+  cwd: string;
+  errorSource: 'stderr' | 'stdout';
+}): Promise<ValidationResult> {
+  const { stage, cmd, args, cwd, errorSource: errorSourcePreference } = opts;
+  try {
+    const { stdout, stderr, code } = await runCommand(cmd, args, { cwd });
+
+    if (code === 127) {
+      return { passed: true, stage, output: `${cmd} not found, skipping ${stage}` };
+    }
+
+    const result: ValidationResult = { passed: code === 0, stage, output: stdout };
+    if (code !== 0) {
+      const primary = errorSourcePreference === 'stderr' ? stderr : stdout;
+      const fallback = errorSourcePreference === 'stderr' ? stdout : stderr;
+      result.error = (primary || fallback).trim();
+    }
+    return result;
+  } catch (err: unknown) {
+    if (isENOENT(err)) {
+      return { passed: true, stage, output: `${cmd} not found, skipping ${stage}` };
+    }
+    throw err;
+  }
+}
+
 export async function validateTask(
   task: Task,
   projectDir: string,
@@ -53,128 +82,31 @@ export async function validateTask(
   const results: ValidationResult[] = [];
 
   if (config.validation.typecheck) {
-    try {
-      const { stdout, stderr, code } = await runCommand('npx', ['tsc', '--noEmit'], {
-        cwd: projectDir,
-      });
-
-      if (code === 127) {
-        results.push({ passed: true, stage: 'typecheck', output: 'tsc not found, skipping typecheck' });
-      } else {
-        const result: ValidationResult = {
-          passed: code === 0,
-          stage: 'typecheck',
-          output: stdout,
-        };
-        if (code !== 0) {
-          result.error = (stderr || stdout).trim();
-        }
-        results.push(result);
-        if (!result.passed) return results;
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
-        results.push({ passed: true, stage: 'typecheck', output: 'tsc not found, skipping typecheck' });
-      } else {
-        throw err;
-      }
-    }
+    const result = await runValidationStep({ stage: 'typecheck', cmd: 'npx', args: ['tsc', '--noEmit'], cwd: projectDir, errorSource: 'stderr' });
+    results.push(result);
+    if (!result.passed) return results;
   }
 
   if (config.validation.lint) {
     const linter = detectLinter(projectDir);
 
-    if (linter === 'eslint') {
-      try {
-        const { stdout, stderr, code } = await runCommand('npx', ['eslint', '--', task.file], {
-          cwd: projectDir,
-        });
-
-        if (code === 127) {
-          results.push({ passed: true, stage: 'lint', output: 'eslint not found, skipping lint' });
-        } else {
-          const result: ValidationResult = {
-            passed: code === 0,
-            stage: 'lint',
-            output: stdout,
-          };
-          if (code !== 0) {
-            result.error = (stdout || stderr).trim();
-          }
-          results.push(result);
-          if (!result.passed) return results;
-        }
-      } catch (err: any) {
-        if (err?.code === 'ENOENT') {
-          results.push({ passed: true, stage: 'lint', output: 'eslint not found, skipping lint' });
-        } else {
-          throw err;
-        }
-      }
-    } else if (linter === 'biome') {
-      try {
-        const { stdout, stderr, code } = await runCommand('npx', ['biome', 'check', '--', task.file], {
-          cwd: projectDir,
-        });
-
-        if (code === 127) {
-          results.push({ passed: true, stage: 'lint', output: 'biome not found, skipping lint' });
-        } else {
-          const result: ValidationResult = {
-            passed: code === 0,
-            stage: 'lint',
-            output: stdout,
-          };
-          if (code !== 0) {
-            result.error = (stdout || stderr).trim();
-          }
-          results.push(result);
-          if (!result.passed) return results;
-        }
-      } catch (err: any) {
-        if (err?.code === 'ENOENT') {
-          results.push({ passed: true, stage: 'lint', output: 'biome not found, skipping lint' });
-        } else {
-          throw err;
-        }
-      }
+    if (linter) {
+      const args = linter === 'eslint'
+        ? ['eslint', '--', task.file]
+        : ['biome', 'check', '--', task.file];
+      const result = await runValidationStep({ stage: 'lint', cmd: 'npx', args, cwd: projectDir, errorSource: 'stdout' });
+      results.push(result);
+      if (!result.passed) return results;
     }
   }
 
   if (config.validation.test) {
     const testFile = findAffectedTestFile(task.file, projectDir);
-
     if (testFile) {
       const testCommand = config.validation.testCommand || 'npm test';
       const parts = testCommand.split(/\s+/);
-      const cmd = parts[0];
-      const args = [...parts.slice(1), '--', testFile];
-
-      try {
-        const { stdout, stderr, code } = await runCommand(cmd, args, {
-          cwd: projectDir,
-        });
-
-        if (code === 127) {
-          results.push({ passed: true, stage: 'test', output: `Test command "${testCommand}" not found, skipping tests` });
-        } else {
-          const result: ValidationResult = {
-            passed: code === 0,
-            stage: 'test',
-            output: stdout,
-          };
-          if (code !== 0) {
-            result.error = (stderr || stdout).trim();
-          }
-          results.push(result);
-        }
-      } catch (err: any) {
-        if (err?.code === 'ENOENT') {
-          results.push({ passed: true, stage: 'test', output: `Test command "${testCommand}" not found, skipping tests` });
-        } else {
-          throw err;
-        }
-      }
+      const result = await runValidationStep({ stage: 'test', cmd: parts[0], args: [...parts.slice(1), '--', testFile], cwd: projectDir, errorSource: 'stderr' });
+      results.push(result);
     }
   }
 

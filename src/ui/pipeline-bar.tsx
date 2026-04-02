@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import type { Phase } from '../types.js';
-import { getTheme } from '../theme.js';
+import { useAppContext } from '../app.js';
 
 interface PipelineBarProps {
   phase: Phase;
@@ -21,7 +21,7 @@ export function getStageIndex(phase: Phase): number {
 }
 
 export default function PipelineBar({ phase }: PipelineBarProps) {
-  const t = getTheme();
+  const { theme: t } = useAppContext();
   const currentIndex = getStageIndex(phase);
 
   return (

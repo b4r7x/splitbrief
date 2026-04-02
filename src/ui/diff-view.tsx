@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Box, Text } from 'ink';
-import { highlight } from '../engine/highlight.js';
-import { getTheme } from '../theme.js';
+import { highlight } from '../utils/highlight.js';
+import { useAppContext } from '../app.js';
 
 export interface DiffViewProps {
   file: string;
@@ -20,15 +20,20 @@ function stripPrefix(line: string): string {
 }
 
 export default function DiffView({ file, linesAdded, linesRemoved, diff, expanded }: DiffViewProps) {
-  const t = getTheme();
+  const { theme: t } = useAppContext();
   const [highlighted, setHighlighted] = useState<Map<number, string>>(new Map());
+  const prevDiffRef = useRef(diff);
 
   const lines = diff ? diff.split('\n').filter(l => l.length > 0) : [];
   const visible = lines.slice(0, MAX_LINES);
 
   useEffect(() => {
-    if (!expanded || visible.length === 0) return;
+    if (!expanded) return;
+    if (visible.length === 0) return;
 
+    const diffChanged = diff !== prevDiffRef.current;
+    prevDiffRef.current = diff;
+    if (diffChanged) setHighlighted(new Map());
     let cancelled = false;
     const run = async () => {
       const results = new Map<number, string>();
@@ -47,15 +52,7 @@ export default function DiffView({ file, linesAdded, linesRemoved, diff, expande
     return () => { cancelled = true; };
   }, [expanded, diff]);
 
-  if (!expanded) {
-    return (
-      <Box>
-        <Text color={t.textDim}>  {file} (+{linesAdded} -{linesRemoved})</Text>
-      </Box>
-    );
-  }
-
-  if (lines.length === 0) {
+  if (!expanded || lines.length === 0) {
     return (
       <Box>
         <Text color={t.textDim}>  {file} (+{linesAdded} -{linesRemoved})</Text>
@@ -71,28 +68,15 @@ export default function DiffView({ file, linesAdded, linesRemoved, diff, expande
       <Box flexDirection="column" marginLeft={4}>
         {visible.map((line, i) => {
           const lineNum = String(i + 1).padStart(3, ' ');
-          if (line.startsWith('+ ')) {
-            const hl = highlighted.get(i);
-            return (
-              <Box key={i}>
-                <Text color={t.border}>{lineNum} </Text>
-                <Text backgroundColor={t.diff.addedBg}>{hl ?? stripPrefix(line)}</Text>
-              </Box>
-            );
-          }
-          if (line.startsWith('- ')) {
-            const hl = highlighted.get(i);
-            return (
-              <Box key={i}>
-                <Text color={t.border}>{lineNum} </Text>
-                <Text backgroundColor={t.diff.removedBg}>{hl ?? stripPrefix(line)}</Text>
-              </Box>
-            );
-          }
+          const isAdded = line.startsWith('+ ');
+          const isRemoved = line.startsWith('- ');
+          const bg = isAdded ? t.diff.addedBg : isRemoved ? t.diff.removedBg : t.diff.contextBg;
+          const color = (!isAdded && !isRemoved) ? t.diff.context : undefined;
+          const content = (isAdded || isRemoved) ? (highlighted.get(i) ?? stripPrefix(line)) : stripPrefix(line);
           return (
-            <Box key={i}>
+            <Box key={`${i}-${line.slice(0, 30)}`}>
               <Text color={t.border}>{lineNum} </Text>
-              <Text color={t.diff.context} backgroundColor={t.diff.contextBg}>{stripPrefix(line)}</Text>
+              <Text color={color} backgroundColor={bg}>{content}</Text>
             </Box>
           );
         })}

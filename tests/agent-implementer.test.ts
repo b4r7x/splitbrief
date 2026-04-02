@@ -4,60 +4,17 @@ import { writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
-import type { Config, Task, ProjectContext } from '../src/types.js';
+import type { Config } from '../src/types.js';
 import { implementTaskViaAgent, retryTaskViaAgent } from '../src/engine/implementers/agent.js';
+import { makeConfig as makeBaseConfig, makeTask, defaultContext } from './helpers/fixtures.js';
 
 function makeConfig(extra?: Partial<Config['implementer']>): Config {
-  return {
-    planner: { tool: 'claude-code' },
-    implementer: {
-      provider: 'ollama',
-      model: 'test',
-      apiBase: '',
-      contextLength: 8192,
-      temperature: 0.3,
-      type: 'agent',
-      command: 'echo',
-      ...extra,
-    },
-    validation: {
-      typecheck: true,
-      lint: true,
-      test: true,
-      testCommand: 'npm test',
-    },
-    workflow: {
-      autoApproveSpec: false,
-      autoApprovePlan: false,
-      maxRetries: 3,
-      commitPerTask: true,
-    },
-  };
+  return makeBaseConfig({
+    implementer: { model: 'test', contextLength: 8192, temperature: 0.3, type: 'agent', command: 'echo', ...extra },
+  });
 }
 
-function makeTask(overrides?: Partial<Task>): Task {
-  return {
-    id: 'T001',
-    title: 'Create hello module',
-    action: 'create',
-    file: 'src/hello.ts',
-    dependsOn: [],
-    description: 'Create a hello world module',
-    tests: [],
-    constraints: [],
-    typeDefs: '',
-    implSteps: [],
-    status: 'pending',
-    ...overrides,
-  };
-}
-
-const context: ProjectContext = {
-  name: 'test-project',
-  dir: '/tmp/test-project',
-  runtime: 'node',
-  testCommand: 'npm test',
-};
+const context = { ...defaultContext, runtime: 'node' };
 
 let testDir: string;
 
@@ -91,13 +48,13 @@ describe('agent implementer', () => {
     });
 
     const output: string[] = [];
-    const result = await implementTaskViaAgent(
-      makeTask(),
-      testDir,
+    const result = await implementTaskViaAgent({
+      task: makeTask(),
+      projectDir: testDir,
       config,
-      { ...context, dir: testDir },
-      (text) => output.push(text),
-    );
+      context: { ...context, dir: testDir },
+      onProgress: (text) => output.push(text),
+    });
 
     assert.equal(result.success, true);
   });
@@ -108,13 +65,13 @@ describe('agent implementer', () => {
       args: ['no files written'],
     });
 
-    const result = await implementTaskViaAgent(
-      makeTask(),
-      testDir,
+    const result = await implementTaskViaAgent({
+      task: makeTask(),
+      projectDir: testDir,
       config,
-      { ...context, dir: testDir },
-      () => {},
-    );
+      context: { ...context, dir: testDir },
+      onProgress: () => {},
+    });
 
     assert.equal(result.success, false);
     assert.ok(result.error?.includes('without changing any files'));
@@ -127,13 +84,13 @@ describe('agent implementer', () => {
       timeout: 100, // 100ms timeout
     });
 
-    const result = await implementTaskViaAgent(
-      makeTask(),
-      testDir,
+    const result = await implementTaskViaAgent({
+      task: makeTask(),
+      projectDir: testDir,
       config,
-      { ...context, dir: testDir },
-      () => {},
-    );
+      context: { ...context, dir: testDir },
+      onProgress: () => {},
+    });
 
     assert.equal(result.success, false);
     assert.ok(result.error?.includes('timed out'));
@@ -145,13 +102,13 @@ describe('agent implementer', () => {
     });
 
     await assert.rejects(
-      () => implementTaskViaAgent(
-        makeTask(),
-        testDir,
+      () => implementTaskViaAgent({
+        task: makeTask(),
+        projectDir: testDir,
         config,
-        { ...context, dir: testDir },
-        () => {},
-      ),
+        context: { ...context, dir: testDir },
+        onProgress: () => {},
+      }),
       (err: Error) => {
         assert.ok(err.message.includes('command not found'));
         return true;
@@ -167,13 +124,13 @@ describe('agent implementer', () => {
       args: ['-c', `echo "{prompt}" | head -c 100 > ${outFile}`],
     });
 
-    const result = await implementTaskViaAgent(
-      makeTask({ description: 'test prompt content' }),
-      testDir,
+    const result = await implementTaskViaAgent({
+      task: makeTask({ description: 'test prompt content' }),
+      projectDir: testDir,
       config,
-      { ...context, dir: testDir },
-      () => {},
-    );
+      context: { ...context, dir: testDir },
+      onProgress: () => {},
+    });
 
     assert.equal(result.success, true);
   });
@@ -185,15 +142,15 @@ describe('agent implementer', () => {
       args: ['-c', `echo "retry" > ${outFile}`],
     });
 
-    const result = await retryTaskViaAgent(
-      makeTask(),
-      testDir,
+    const result = await retryTaskViaAgent({
+      task: makeTask(),
+      projectDir: testDir,
       config,
-      { ...context, dir: testDir },
-      'tsc error: missing semicolon',
-      1,
-      () => {},
-    );
+      context: { ...context, dir: testDir },
+      error: 'tsc error: missing semicolon',
+      attempt: 1,
+      onProgress: () => {},
+    });
 
     assert.equal(result.success, true);
   });
@@ -206,13 +163,13 @@ describe('agent implementer', () => {
     });
 
     const chunks: string[] = [];
-    const result = await implementTaskViaAgent(
-      makeTask(),
-      testDir,
+    const result = await implementTaskViaAgent({
+      task: makeTask(),
+      projectDir: testDir,
       config,
-      { ...context, dir: testDir },
-      (text) => chunks.push(text),
-    );
+      context: { ...context, dir: testDir },
+      onProgress: (text) => chunks.push(text),
+    });
 
     assert.equal(result.success, true);
     assert.ok(chunks.join('').includes('agent progress output'));

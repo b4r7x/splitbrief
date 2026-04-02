@@ -1,19 +1,15 @@
-import React from 'react';
 import { Box, Text } from 'ink';
-import type { Summary, SlashCommandDef } from '../types.js';
+import { useAppContext } from '../app.js';
+import type { Summary } from '../types.js';
 import type { Theme } from '../theme.js';
-import { formatTokens, formatTime, formatCost } from '../utils/format.js';
+import { formatTime, formatCost, truncate } from '../utils/format.js';
 import { InputBar } from '../ui/input-bar.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 
 interface SummaryScreenProps {
   summary: Summary;
-  theme: Theme;
   onDone: () => void;
-  commands: SlashCommandDef[];
   onSlashCommand: (command: string) => void;
-  errorMessage?: string | null;
-  onClearError?: () => void;
 }
 
 function methodLabel(method: string, theme: Theme): { text: string; color: string } {
@@ -33,7 +29,8 @@ function progressBar(completed: number, total: number, width: number): string {
   return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
 
-export function SummaryScreen({ summary, theme, onDone, onSlashCommand, commands, errorMessage, onClearError }: SummaryScreenProps) {
+export function SummaryScreen({ summary, onDone, onSlashCommand }: SummaryScreenProps) {
+  const { theme, commands, errorMessage, onClearError } = useAppContext();
   const { isSmall } = useResponsiveLayout();
 
   const completed = summary.completedByLocal + summary.escalatedToPlanner;
@@ -82,7 +79,7 @@ export function SummaryScreen({ summary, theme, onDone, onSlashCommand, commands
             return (
               <Box key={task.taskId}>
                 <Box width={6}><Text color={theme.textDim}>{task.taskId}</Text></Box>
-                <Box width={taskTitleWidth}><Text>{task.taskTitle.length > truncateLength ? task.taskTitle.slice(0, truncateLength) + '…' : task.taskTitle}</Text></Box>
+                <Box width={taskTitleWidth}><Text>{truncate(task.taskTitle, truncateLength)}</Text></Box>
                 <Box width={10}><Text color={m.color}>{m.text}</Text></Box>
                 {task.retryCount > 0 && <Text color={theme.warning}>{task.retryCount}r</Text>}
               </Box>
@@ -101,7 +98,6 @@ export function SummaryScreen({ summary, theme, onDone, onSlashCommand, commands
           mode="normal"
           hint="press enter to continue"
           currentScreen="summary"
-          theme={theme}
         />
       </Box>
     </Box>

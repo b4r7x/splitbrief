@@ -4,8 +4,10 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { guardIntegration, type TestGuard } from './guard.js';
-import { createInitialState, saveState, loadState } from '../../src/state.js';
-import type { Task, WorkflowState } from '../../src/types.js';
+import { createInitialState } from '../../src/state.js';
+import { saveState, loadState } from '../../src/state-persistence.js';
+import type { WorkflowState } from '../../src/types.js';
+import { makeTask as makeTaskBase } from '../helpers/fixtures.js';
 
 let g: TestGuard;
 
@@ -13,18 +15,8 @@ before(async () => {
   g = await guardIntegration();
 });
 
-function makeTask(id: string): Task {
-  return {
-    id,
-    title: `Task ${id}`,
-    action: 'create',
-    file: `src/${id}.ts`,
-    dependsOn: [],
-    description: `Description for ${id}`,
-    tests: [],
-    constraints: [],
-    status: 'pending',
-  };
+function makeTask(id: string) {
+  return makeTaskBase({ id, title: `Task ${id}`, file: `src/${id}.ts`, description: `Description for ${id}` });
 }
 
 describe('Resume with token preservation integration', () => {

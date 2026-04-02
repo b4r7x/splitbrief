@@ -1,40 +1,52 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import type { InputMode } from '../types.js';
 
+type ReviewResult = { approved: boolean; comment?: string };
+
 export function useInputMode() {
-  const [mode, setMode] = useState<InputMode>('normal');
-  const [hint, setHint] = useState('');
-  const resolverRef = useRef<((value: unknown) => void) | null>(null);
+  const [modeState, setModeState] = useState<{ mode: InputMode; hint: string }>({ mode: 'normal', hint: '' });
+  const reviewResolverRef = useRef<((value: ReviewResult) => void) | null>(null);
+  const questionResolverRef = useRef<((value: string) => void) | null>(null);
+  const modeRef = useRef<InputMode>('normal');
+  modeRef.current = modeState.mode;
 
-  const setReviewMode = (h: string): Promise<{ approved: boolean; comment?: string }> => {
+  const setReviewMode = useCallback((h: string): Promise<ReviewResult> => {
     return new Promise((resolve) => {
-      resolverRef.current = resolve as (value: unknown) => void;
-      setHint(h);
-      setMode('review');
+      reviewResolverRef.current = resolve;
+      setModeState({ mode: 'review', hint: h });
     });
-  };
+  }, []);
 
-  const setQuestionMode = (h: string): Promise<string> => {
+  const setQuestionMode = useCallback((h: string): Promise<string> => {
     return new Promise((resolve) => {
-      resolverRef.current = resolve as (value: unknown) => void;
-      setHint(h);
-      setMode('question');
+      questionResolverRef.current = resolve;
+      setModeState({ mode: 'question', hint: h });
     });
-  };
+  }, []);
 
-  const resolve = (value: unknown): void => {
-    const resolver = resolverRef.current;
-    resolverRef.current = null;
-    setMode('normal');
-    setHint('');
-    resolver?.(value);
-  };
+  const resolve = useCallback((value: ReviewResult | string): void => {
+    const currentMode = modeRef.current;
+    setModeState({ mode: 'normal', hint: '' });
+    if (currentMode === 'review' && typeof value === 'object') {
+      const resolver = reviewResolverRef.current;
+      reviewResolverRef.current = null;
+      resolver?.(value);
+    } else if (currentMode === 'question' && typeof value === 'string') {
+      const resolver = questionResolverRef.current;
+      questionResolverRef.current = null;
+      resolver?.(value);
+    }
+  }, []);
 
-  const resetMode = (): void => {
-    resolverRef.current = null;
-    setMode('normal');
-    setHint('');
-  };
+  const resetMode = useCallback((): void => {
+    const reviewResolver = reviewResolverRef.current;
+    const questionResolver = questionResolverRef.current;
+    reviewResolverRef.current = null;
+    questionResolverRef.current = null;
+    setModeState({ mode: 'normal', hint: '' });
+    reviewResolver?.({ approved: false });
+    questionResolver?.('');
+  }, []);
 
-  return { mode, hint, setReviewMode, setQuestionMode, resolve, resetMode };
+  return { mode: modeState.mode, hint: modeState.hint, setReviewMode, setQuestionMode, resolve, resetMode };
 }
