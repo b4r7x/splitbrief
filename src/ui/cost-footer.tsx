@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { formatCost } from '../utils/format.js';
 import { useAppContext } from '../app.js';
-import type { Theme } from '../theme.js';
+import type { Theme } from '../core/theme.js';
 
 interface CostFooterProps {
   currentTask: number;

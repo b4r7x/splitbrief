@@ -5,11 +5,11 @@ import { useSessions } from './hooks/use-sessions.js';
 import { useOverlay } from './hooks/use-overlay.js';
 import { useConfig } from './hooks/use-config.js';
 import { useSkills } from './hooks/use-skills.js';
-import { createCommands, toPaletteItems, executeSlashCommand } from './commands.js';
+import { createCommands, toPaletteItems, executeSlashCommand } from './core/commands.js';
 import { useGlobalKeys } from './hooks/use-global-keys.js';
 import { Router } from './router.js';
-import { getTheme } from './theme.js';
-import type { Theme } from './theme.js';
+import { getTheme } from './core/theme.js';
+import type { Theme } from './core/theme.js';
 import type { WorkflowState, RouteData, CommandContext, Screen, SkillMeta, Config, SlashCommandDef } from './types.js';
 
 interface AppContextValue {

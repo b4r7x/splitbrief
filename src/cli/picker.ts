@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import YAML from 'yaml';
-import { createDefaultConfig, initConfig, toYaml } from '../config.js';
+import { createDefaultConfig, initConfig, toYaml } from '../core/config.js';
 import { DEFAULT_BASES } from '../engine/providers.js';
 import { detectAvailablePlanners, detectAvailableImplementers } from '../engine/detection.js';
 import type { PlannerTool } from '../types.js';

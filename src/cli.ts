@@ -4,7 +4,7 @@ import { Command } from 'commander';
 import { createElement } from 'react';
 import { existsSync } from 'node:fs';
 import App from './app.js';
-import { configPath } from './config.js';
+import { configPath } from './core/config.js';
 import { loadState } from './state-persistence.js';
 import { createPlanner } from './engine/planners/factory.js';
 import { runPicker } from './cli/picker.js';

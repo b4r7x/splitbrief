@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { loadConfig, initConfig, configPath } from '../config.js';
+import { loadConfig, initConfig, configPath } from '../core/config.js';
 import { detectCapabilities } from '../engine/providers.js';
 import { isGitRepo } from '../utils/git.js';
 import { runPicker } from './picker.js';
