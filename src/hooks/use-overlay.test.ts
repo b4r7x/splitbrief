@@ -60,4 +60,42 @@ describe('useOverlay', () => {
     expect(typeof result.current.close).toBe('function');
     unmount();
   });
+
+  it('exclusiveInput starts false', () => {
+    const { result, unmount } = renderHook(() => useOverlay());
+    expect(result.current.exclusiveInput).toBe(false);
+    unmount();
+  });
+
+  it('setExclusive toggles exclusiveInput', async () => {
+    const { result, act, unmount } = renderHook(() => useOverlay());
+
+    await act(() => {
+      result.current.setExclusive(true);
+    });
+    expect(result.current.exclusiveInput).toBe(true);
+
+    await act(() => {
+      result.current.setExclusive(false);
+    });
+    expect(result.current.exclusiveInput).toBe(false);
+    unmount();
+  });
+
+  it('close resets exclusiveInput to false', async () => {
+    const { result, act, unmount } = renderHook(() => useOverlay());
+
+    await act(() => {
+      result.current.open('picker');
+      result.current.setExclusive(true);
+    });
+    expect(result.current.exclusiveInput).toBe(true);
+
+    await act(() => {
+      result.current.close();
+    });
+    expect(result.current.exclusiveInput).toBe(false);
+    expect(result.current.active).toBe('none');
+    unmount();
+  });
 });

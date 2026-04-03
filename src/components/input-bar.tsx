@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { MultilineInput } from '../ui/multiline-input.js';
 import { SlashSuggestions } from './slash-suggestions.js';
@@ -17,6 +17,7 @@ interface InputBarProps {
   hint: string;
   currentScreen: Screen;
   width?: number;
+  disabled?: boolean;
 }
 
 export function InputBar({
@@ -29,18 +30,23 @@ export function InputBar({
   hint,
   currentScreen,
   width,
+  disabled,
 }: InputBarProps) {
   const theme = useTheme();
   const { cols } = useResponsiveLayout();
-  const inputColumns = (width ?? cols) - 6; // border(2) + paddingX(2) + "> " prefix(2)
+  const inputColumns = (width ?? cols) - 6;
   const [value, setValue] = useState('');
   const [inputKey, setInputKey] = useState(0);
 
+  useEffect(() => {
+    if (!disabled) {
+      setValue('');
+      setInputKey((k) => k + 1);
+    }
+  }, [disabled]);
+
   const slashMode = value.startsWith('/');
-  const screenCmds = useMemo(
-    () => commands.filter((cmd) => cmd.validScreens.includes(currentScreen)),
-    [commands, currentScreen],
-  );
+  const screenCmds = commands.filter((cmd) => cmd.validScreens.includes(currentScreen));
 
   const onSelect = (cmd: SlashCommandDef) => {
     onSlashCommand(cmd.name);
@@ -49,27 +55,23 @@ export function InputBar({
 
   const onClose = () => setValue('');
 
-  const filtered = useMemo(
-    () =>
-      slashMode
-        ? screenCmds.filter((cmd) =>
-            cmd.name.toLowerCase().startsWith('/' + value.slice(1).toLowerCase()),
-          )
-        : [],
-    [slashMode, value, screenCmds],
-  );
+  const filtered = slashMode
+    ? screenCmds.filter((cmd) =>
+        cmd.name.toLowerCase().startsWith('/' + value.slice(1).toLowerCase()),
+      )
+    : [];
 
   const showSuggestions = slashMode && filtered.length > 0;
 
-  const passThroughFilter = useCallback(() => true, []);
-  const blockAppend = useCallback(() => false, []);
+  const passThroughFilter = () => true;
+  const blockAppend = () => false;
 
   const { selectedIndex } = useFilterableList({
     items: filtered,
     filterFn: passThroughFilter,
     onSelect,
     onClose,
-    isActive: showSuggestions,
+    isActive: showSuggestions && !disabled,
     shouldAppendChar: blockAppend,
   });
 
@@ -83,7 +85,7 @@ export function InputBar({
         }
       }
     },
-    { isActive: showSuggestions },
+    { isActive: showSuggestions && !disabled },
   );
 
   useEffect(() => {
@@ -132,7 +134,7 @@ export function InputBar({
             onChange={setValue}
             onSubmit={handleSubmit}
             columns={inputColumns}
-            focus
+            focus={!disabled}
             placeholder={
               hint ||
               (mode === 'review'

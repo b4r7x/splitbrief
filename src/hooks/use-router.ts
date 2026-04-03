@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useRef } from 'react';
 import type { Screen, RouteData, Summary, WorkflowState } from '../types.js';
 
 const transitions: Record<Screen, Screen[]> = {
@@ -14,7 +14,7 @@ export function useRouter(initialRoute?: RouteData) {
 
   const screen = routeData.screen;
 
-  const navigate = useCallback((to: Screen, data?: { feature?: string; summary?: Summary; resumeState?: WorkflowState }) => {
+  const navigate = (to: Screen, data?: { feature?: string; summary?: Summary; resumeState?: WorkflowState }) => {
     if (!transitions[screenRef.current].includes(to)) {
       throw new Error(`Cannot navigate from "${screenRef.current}" to "${to}"`);
     }
@@ -34,7 +34,7 @@ export function useRouter(initialRoute?: RouteData) {
     }
 
     setRouteData(next);
-  }, []);
+  };
 
   return { screen, routeData, navigate };
 }

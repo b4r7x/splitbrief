@@ -1,126 +1,184 @@
-import { useState, useEffect } from 'react';
-import { Box, Text, useInput } from 'ink';
-import { useAppContext } from '../app.js';
-import { useTheme } from '../ui/theme.js';
-import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
-import { useFilterableList } from '../hooks/use-filterable-list.js';
-import { truncate } from '../utils/format.js';
-import { computeScrollOffset } from '../ui/picker-utils.js';
-import { Spinner } from '../ui/spinner.js';
-import { detectAvailablePlanners, detectAvailableImplementers } from '../engine/detection.js';
-import { writeConfigSelection } from '../core/config.js';
-import type { PlannerDetection, ImplementerDetection } from '../engine/detection.js';
-import type { Theme } from '../ui/theme.js';
-import type { PlannerTool } from '../types.js';
+import { useState, useEffect } from "react";
+import { Box, Text, useInput } from "ink";
+import { useAppContext } from "../app.js";
+import { useTheme } from "../ui/theme.js";
+import { useResponsiveLayout } from "../hooks/use-terminal-size.js";
+import { useFilterableList } from "../hooks/use-filterable-list.js";
+import { computeScrollOffset } from "../ui/picker-utils.js";
+import { Spinner } from "../ui/spinner.js";
+import {
+  detectAvailablePlanners,
+  detectAvailableImplementers,
+} from "../engine/detection.js";
+import { writeConfigSelection } from "../core/config.js";
+import { FilterPanel, filterItem } from "./filter-panel.js";
+import type { PickerItem } from "./filter-panel.js";
+import type {
+  PlannerDetection,
+  ImplementerDetection,
+} from "../engine/detection.js";
+import type { PlannerTool } from "../types.js";
 
 interface ConfigPickerProps {
   onClose: () => void;
-}
-
-interface PickerItem {
-  id: string;
-  label: string;
-  sublabel: string;
-  isSentinel?: boolean;
+  onSetExclusive: (v: boolean) => void;
 }
 
 function buildPlannerItems(planners: PlannerDetection[]): PickerItem[] {
-  const items: PickerItem[] = planners
-    .filter(p => p.available)
-    .map(p => ({
+  const items: PickerItem[] = [
+    {
+      id: "__custom__",
+      label: "+ Custom shell command...",
+      sublabel: "",
+      isSentinel: true,
+    },
+  ];
+  for (const p of planners) {
+    if (!p.available) continue;
+    items.push({
       id: p.tool,
       label: p.tool,
-      sublabel: p.version ? `v${p.version}` : '',
-    }));
-  items.push({ id: '__custom__', label: '+ Custom shell command...', sublabel: '', isSentinel: true });
+      sublabel: p.version ? `v${p.version}` : "",
+    });
+  }
   return items;
 }
 
 function buildModelItems(implementers: ImplementerDetection[]): PickerItem[] {
-  const items: PickerItem[] = [];
+  const items: PickerItem[] = [
+    {
+      id: "__custom__",
+      label: "+ Custom endpoint...",
+      sublabel: "",
+      isSentinel: true,
+    },
+  ];
   for (const imp of implementers) {
     if (!imp.available || !imp.models) continue;
     for (const model of imp.models) {
-      items.push({ id: `${imp.provider}/${model}`, label: model, sublabel: imp.provider });
+      items.push({
+        id: `${imp.provider}/${model}`,
+        label: model,
+        sublabel: imp.provider,
+      });
     }
   }
-  items.push({ id: '__custom__', label: '+ Custom endpoint...', sublabel: '', isSentinel: true });
   return items;
 }
 
-function filterItem(item: PickerItem, query: string): boolean {
-  const lower = query.toLowerCase();
-  return item.label.toLowerCase().includes(lower) || item.sublabel.toLowerCase().includes(lower);
-}
+type CustomStep = null | "planner-command" | "impl-provider" | "impl-model";
+type CustomField = "provider" | "model";
 
-interface ItemRowProps {
-  item: PickerItem;
-  isCursor: boolean;
-  nameWidth: number;
-  sublabelWidth: number;
-  theme: Theme;
-}
-
-function ItemRow({ item, isCursor, nameWidth, sublabelWidth, theme: t }: ItemRowProps) {
-  const cursor = isCursor ? '\u25b8 ' : '  ';
-  const name = truncate(item.label, nameWidth).padEnd(nameWidth);
-  const sub = item.sublabel ? truncate(item.sublabel, sublabelWidth) : '';
-
-  return (
-    <Box>
-      <Text color={isCursor ? t.accent : (item.isSentinel ? t.textDim : t.text)}>{cursor}</Text>
-      <Text color={isCursor ? t.accent : (item.isSentinel ? t.textDim : t.text)} bold={isCursor}>{name}</Text>
-      {sub && <Text color={t.textDim}>{'  '}{sub}</Text>}
-    </Box>
-  );
-}
-
-type CustomStep = null | 'planner-command' | 'impl-provider' | 'impl-model';
-
-export function ConfigPicker({ onClose }: ConfigPickerProps) {
+export function ConfigPicker({ onClose, onSetExclusive }: ConfigPickerProps) {
   const t = useTheme();
-  const { projectDir, reloadConfig } = useAppContext();
+  const { config, projectDir, reloadConfig } = useAppContext();
   const { cols, rows, isSmall } = useResponsiveLayout();
 
-  const [phase, setPhase] = useState<'loading' | 'ready'>('loading');
+  const [phase, setPhase] = useState<"loading" | "ready">("loading");
   const [plannerItems, setPlannerItems] = useState<PickerItem[]>([]);
   const [modelItems, setModelItems] = useState<PickerItem[]>([]);
-  const [activeSection, setActiveSection] = useState<'planner' | 'model'>('planner');
+  const [activeSection, setActiveSection] = useState<"planner" | "model">(
+    "planner",
+  );
+
+  const [selectedPlannerId, setSelectedPlannerId] = useState<string | null>(null);
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [navigating, setNavigating] = useState(false);
+
   const [customStep, setCustomStep] = useState<CustomStep>(null);
-  const [customInput, setCustomInput] = useState('');
-  const [customProvider, setCustomProvider] = useState('');
+  const [customInput, setCustomInput] = useState("");
+  const [customProvider, setCustomProvider] = useState("");
+  const [customField, setCustomField] = useState<CustomField>("provider");
+
+  const [customPlannerData, setCustomPlannerData] = useState<{ command: string } | null>(null);
+  const [customImplData, setCustomImplData] = useState<{ provider: string; model: string; apiBase?: string } | null>(null);
+
+  useEffect(() => {
+    onSetExclusive(!!customStep);
+    return () => onSetExclusive(false);
+  }, [customStep, onSetExclusive]);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([detectAvailablePlanners(), detectAvailableImplementers()]).then(
-      ([planners, implementers]) => {
-        if (cancelled) return;
-        setPlannerItems(buildPlannerItems(planners));
-        setModelItems(buildModelItems(implementers));
-        setPhase('ready');
-      },
-    );
-    return () => { cancelled = true; };
-  }, []);
+    Promise.all([
+      detectAvailablePlanners(),
+      detectAvailableImplementers(),
+    ]).then(([planners, implementers]) => {
+      if (cancelled) return;
+      const pItems = buildPlannerItems(planners);
+      const mItems = buildModelItems(implementers);
+      setPlannerItems(pItems);
+      setModelItems(mItems);
 
-  const contentWidth = Math.min(cols - 4, isSmall ? 76 : 110);
-  const sectionMaxVisible = Math.max(Math.floor((rows - 16) / 2), 3);
-  const nameWidth = isSmall ? 30 : 40;
-  const sublabelWidth = Math.max(10, contentWidth - nameWidth - 6);
+      const plannerMatch = pItems.findIndex((item) => item.id === config.planner.tool);
+      if (plannerMatch >= 0) {
+        setSelectedPlannerId(pItems[plannerMatch].id);
+      }
+
+      const implId = `${config.implementer.provider}/${config.implementer.model}`;
+      const modelMatch = mItems.findIndex((item) => item.id === implId);
+      if (modelMatch >= 0) {
+        setSelectedModelId(mItems[modelMatch].id);
+      }
+
+      setPhase("ready");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [config.planner.tool, config.implementer.provider, config.implementer.model]);
+
+  const totalWidth = Math.min(cols - 2, isSmall ? 76 : 120);
+  const panelWidth = Math.floor((totalWidth - 2) / 2);
+  const panelMaxVisible = Math.max(rows - 10, 4);
+  const nameWidth = Math.min(Math.max(10, Math.floor(panelWidth * 0.55)), 30);
+  const sublabelWidth = Math.max(8, panelWidth - nameWidth - 12);
+  const modalWidth = Math.min(totalWidth, 60);
+
+  const enterCustomForActive = () => {
+    if (activeSection === "planner") {
+      setCustomStep("planner-command");
+      setCustomInput("");
+    } else {
+      setCustomStep("impl-provider");
+      setCustomInput("");
+      setCustomProvider("");
+      setCustomField("provider");
+    }
+  };
+
+  const tryConfirm = (plannerId: string | null, modelId: string | null, cpd: typeof customPlannerData, cid: typeof customImplData) => {
+    if (!plannerId && !cpd) return;
+    if (!modelId && !cid) return;
+    const plannerConfig = cpd
+      ? { tool: "shell" as PlannerTool, command: cpd.command }
+      : { tool: plannerId as PlannerTool };
+    const implConfig = cid
+      ? { provider: cid.provider, model: cid.model, apiBase: cid.apiBase }
+      : (() => {
+          const [provider, ...rest] = modelId!.split("/");
+          return { provider, model: rest.join("/") };
+        })();
+    writeConfigSelection(projectDir, plannerConfig, implConfig);
+    reloadConfig();
+    onClose();
+  };
 
   const plannerList = useFilterableList({
     items: plannerItems,
     filterFn: filterItem,
     onSelect: (item) => {
       if (item.isSentinel) {
-        setCustomStep('planner-command');
-        setCustomInput('');
+        enterCustomForActive();
         return;
       }
-      setActiveSection('model');
+      setSelectedPlannerId(item.id);
+      setCustomPlannerData(null);
+      tryConfirm(item.id, selectedModelId, null, customImplData);
     },
     onClose,
-    isActive: phase === 'ready' && activeSection === 'planner' && !customStep,
+    isActive: phase === "ready" && activeSection === "planner" && !customStep,
+    shouldAppendChar: (ch) => !(ch === " " && navigating),
   });
 
   const modelList = useFilterableList({
@@ -128,211 +186,358 @@ export function ConfigPicker({ onClose }: ConfigPickerProps) {
     filterFn: filterItem,
     onSelect: (item) => {
       if (item.isSentinel) {
-        setCustomStep('impl-provider');
-        setCustomInput('');
+        enterCustomForActive();
         return;
       }
-      const [provider, ...rest] = item.id.split('/');
-      const model = rest.join('/');
-      const plannerItem = plannerItems[plannerList.selectedIndex];
-      if (!plannerItem || plannerItem.isSentinel) return;
-      writeConfigSelection(
-        projectDir,
-        { tool: plannerItem.id as PlannerTool },
-        { provider, model },
-      );
-      reloadConfig();
-      onClose();
+      setSelectedModelId(item.id);
+      setCustomImplData(null);
+      tryConfirm(selectedPlannerId, item.id, customPlannerData, null);
     },
     onClose,
-    isActive: phase === 'ready' && activeSection === 'model' && !customStep,
+    isActive: phase === "ready" && activeSection === "model" && !customStep,
+    shouldAppendChar: (ch) => !(ch === " " && navigating),
   });
 
-  useInput((input, key) => {
-    if (phase !== 'ready') return;
+  // Pre-set cursor to the matching config item after detection
+  const [cursorInitialized, setCursorInitialized] = useState(false);
+  useEffect(() => {
+    if (phase !== "ready" || cursorInitialized) return;
+    const plannerMatch = plannerList.filtered.findIndex((item) => item.id === config.planner.tool);
+    if (plannerMatch >= 0) plannerList.setSelectedIndex(plannerMatch);
 
-    if (!customStep) {
-      if (key.tab && !key.shift) {
-        setActiveSection(prev => prev === 'planner' ? 'model' : 'planner');
+    const implId = `${config.implementer.provider}/${config.implementer.model}`;
+    const modelMatch = modelList.filtered.findIndex((item) => item.id === implId);
+    if (modelMatch >= 0) modelList.setSelectedIndex(modelMatch);
+
+    setCursorInitialized(true);
+  }, [phase, cursorInitialized, plannerList.filtered, modelList.filtered, config.planner.tool, config.implementer.provider, config.implementer.model]);
+
+  // Layered input for navigation, space selection, panel switching
+  useInput(
+    (input, key) => {
+      if (phase !== "ready" || customStep) return;
+
+      if (key.upArrow || key.downArrow) {
+        setNavigating(true);
         return;
       }
-      if (key.tab && key.shift) {
-        setActiveSection(prev => prev === 'planner' ? 'model' : 'planner');
+      if (key.backspace || key.delete) {
+        setNavigating(false);
         return;
       }
-      return;
-    }
 
-    if (key.escape) {
-      setCustomStep(null);
-      setCustomInput('');
-      return;
-    }
-
-    if (key.return && customInput.trim()) {
-      if (customStep === 'planner-command') {
-        writeConfigSelection(
-          projectDir,
-          { tool: 'shell' as PlannerTool, command: customInput.trim() },
-          { provider: modelItems[modelList.selectedIndex]?.sublabel ?? 'ollama', model: modelItems[modelList.selectedIndex]?.label ?? 'qwen2.5-coder:7b' },
+      if (key.leftArrow || key.rightArrow) {
+        setNavigating(true);
+        setActiveSection((prev) =>
+          prev === "planner" ? "model" : "planner",
         );
-        reloadConfig();
-        onClose();
         return;
       }
-      if (customStep === 'impl-provider') {
-        setCustomProvider(customInput.trim());
-        setCustomInput('');
-        setCustomStep('impl-model');
-        return;
-      }
-      if (customStep === 'impl-model') {
-        const plannerItem = plannerItems[plannerList.selectedIndex];
-        const tool = (plannerItem && !plannerItem.isSentinel ? plannerItem.id : 'claude-code') as PlannerTool;
-        writeConfigSelection(
-          projectDir,
-          { tool },
-          { provider: customProvider, model: customInput.trim(), apiBase: customProvider.startsWith('http') ? customProvider : undefined },
+      if (key.tab) {
+        setActiveSection((prev) =>
+          prev === "planner" ? "model" : "planner",
         );
-        reloadConfig();
-        onClose();
         return;
       }
-    }
 
-    if (key.backspace || key.delete) {
-      setCustomInput(prev => prev.slice(0, -1));
-      return;
-    }
+      if (input === " " && navigating) {
+        const list = activeSection === "planner" ? plannerList : modelList;
+        const item = list.filtered[list.selectedIndex];
+        if (!item) return;
+        if (item.isSentinel) {
+          enterCustomForActive();
+          return;
+        }
+        if (activeSection === "planner") {
+          setSelectedPlannerId(item.id);
+          setCustomPlannerData(null);
+        } else {
+          setSelectedModelId(item.id);
+          setCustomImplData(null);
+        }
+        return;
+      }
 
-    if (input && !key.ctrl && !key.meta) {
-      setCustomInput(prev => prev + input);
-    }
-  }, { isActive: phase === 'ready' });
+      if (input === "n" && key.ctrl) {
+        enterCustomForActive();
+        return;
+      }
 
-  if (phase === 'loading') {
+      if (input && !key.ctrl && !key.meta && input !== " ") {
+        setNavigating(false);
+      }
+    },
+    { isActive: phase === "ready" && !customStep },
+  );
+
+  // Custom modal input handling
+  useInput(
+    (input, key) => {
+      if (key.escape) {
+        setCustomStep(null);
+        setCustomInput("");
+        setCustomProvider("");
+        return;
+      }
+
+      if (customStep === "planner-command") {
+        if (key.return && customInput.trim()) {
+          setCustomPlannerData({ command: customInput.trim() });
+          setSelectedPlannerId(null);
+          setCustomStep(null);
+          setCustomInput("");
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setCustomInput((prev) => prev.slice(0, -1));
+          return;
+        }
+        if (input && !key.ctrl && !key.meta) {
+          setCustomInput((prev) => prev + input);
+        }
+        return;
+      }
+
+      if (customStep === "impl-provider" || customStep === "impl-model") {
+        if (key.tab) {
+          setCustomField((prev) =>
+            prev === "provider" ? "model" : "provider",
+          );
+          return;
+        }
+        if (key.return) {
+          if (customField === "provider" && customProvider.trim()) {
+            setCustomInput("");
+            setCustomField("model");
+            setCustomStep("impl-model");
+            return;
+          }
+          if (
+            customField === "model" &&
+            customInput.trim() &&
+            customProvider.trim()
+          ) {
+            setCustomImplData({
+              provider: customProvider.trim(),
+              model: customInput.trim(),
+              apiBase: customProvider.trim().startsWith("http")
+                ? customProvider.trim()
+                : undefined,
+            });
+            setSelectedModelId(null);
+            setCustomStep(null);
+            setCustomInput("");
+            setCustomProvider("");
+            return;
+          }
+        }
+        if (key.backspace || key.delete) {
+          if (customField === "provider") {
+            setCustomProvider((prev) => prev.slice(0, -1));
+          } else {
+            setCustomInput((prev) => prev.slice(0, -1));
+          }
+          return;
+        }
+        if (input && !key.ctrl && !key.meta) {
+          if (customField === "provider") {
+            setCustomProvider((prev) => prev + input);
+          } else {
+            setCustomInput((prev) => prev + input);
+          }
+        }
+      }
+    },
+    { isActive: phase === "ready" && !!customStep },
+  );
+
+  if (phase === "loading") {
     return (
-      <Box flexDirection="column" width={cols} height={rows} alignItems="center" justifyContent="center">
+      <Box
+        flexDirection="column"
+        width={cols}
+        height={rows}
+        alignItems="center"
+        justifyContent="center"
+      >
         <Spinner label="Detecting planners and models..." color={t.accent} />
       </Box>
     );
   }
 
-  const plannerScrollOffset = computeScrollOffset(plannerList.selectedIndex, sectionMaxVisible, plannerList.filtered.length);
-  const plannerVisible = plannerList.filtered.slice(plannerScrollOffset, plannerScrollOffset + sectionMaxVisible);
-  const modelScrollOffset = computeScrollOffset(modelList.selectedIndex, sectionMaxVisible, modelList.filtered.length);
-  const modelVisible = modelList.filtered.slice(modelScrollOffset, modelScrollOffset + sectionMaxVisible);
+  const plannerScrollOffset = computeScrollOffset(
+    plannerList.selectedIndex,
+    panelMaxVisible,
+    plannerList.filtered.length,
+  );
+  const modelScrollOffset = computeScrollOffset(
+    modelList.selectedIndex,
+    panelMaxVisible,
+    modelList.filtered.length,
+  );
 
-  const plannerActive = activeSection === 'planner' && !customStep;
-  const modelActive = activeSection === 'model' && !customStep;
+  const plannerActive = activeSection === "planner" && !customStep;
+  const modelActive = activeSection === "model" && !customStep;
 
-  const customLabel = customStep === 'planner-command'
-    ? 'Shell command:'
-    : customStep === 'impl-provider'
-      ? 'Provider name or API base URL:'
-      : customStep === 'impl-model'
-        ? `Model name (${customProvider}):`
-        : '';
+  const hasBothSelections =
+    (selectedPlannerId || customPlannerData) &&
+    (selectedModelId || customImplData);
 
-  let footerHint = 'Tab switch  \u2191\u2193 navigate  Enter select  Esc close';
-  if (customStep) {
-    footerHint = 'Enter confirm  Esc cancel';
+  const plannerDisplay = customPlannerData
+    ? `__shell__:${customPlannerData.command}`
+    : selectedPlannerId;
+  const modelDisplay = customImplData
+    ? `__custom__:${customImplData.provider}/${customImplData.model}`
+    : selectedModelId;
+
+  let footerHint: string;
+  if (customStep === "planner-command") {
+    footerHint = "Enter confirm  Esc cancel";
+  } else if (customStep === "impl-provider" || customStep === "impl-model") {
+    footerHint = "Tab switch field  Enter confirm  Esc cancel";
+  } else if (navigating) {
+    footerHint = `Space select  Tab/\u2190\u2192 switch  ${hasBothSelections ? "Enter save  " : ""}Ctrl+N custom  Esc cancel`;
+  } else {
+    footerHint = `\u2191\u2193 navigate  Tab/\u2190\u2192 switch  ${hasBothSelections ? "Enter save  " : ""}Ctrl+N custom  Esc cancel`;
   }
 
   return (
-    <Box flexDirection="column" width={cols} height={rows} alignItems="center" paddingTop={1}>
-      <Box flexDirection="column" width={contentWidth}>
-        <Box justifyContent="center" marginBottom={1}>
-          <Text bold color={t.accent}>Config</Text>
-        </Box>
-
-        <Box marginBottom={0}>
-          <Text bold color={plannerActive ? t.accent : t.text}>Planner</Text>
-          {!plannerActive && plannerList.filtered.length > 0 && (
-            <Text color={t.textDim}>{' \u2014 '}{plannerList.filtered[plannerList.selectedIndex]?.label ?? ''}</Text>
-          )}
-        </Box>
-
-        {customStep === 'planner-command' ? (
-          <Box borderStyle="round" borderColor={t.accent} paddingX={1} marginBottom={1} width={contentWidth}>
-            <Text color={t.accent}>{'> '}</Text>
-            <Text>{customInput || <Text color={t.textDim}>type shell command...</Text>}</Text>
-          </Box>
-        ) : (
-          <>
-            <Box borderStyle="round" borderColor={plannerActive ? t.accent : t.border} paddingX={1} marginBottom={0} width={contentWidth}>
-              <Text color={plannerActive ? t.accent : t.textDim}>{'> '}</Text>
-              <Text>{plannerActive ? (plannerList.filter || <Text color={t.textDim}>Type to filter...</Text>) : <Text color={t.textDim}>{plannerList.filter || 'Type to filter...'}</Text>}</Text>
-            </Box>
-
-            {plannerScrollOffset > 0 && <Text color={t.textDim}>{'  \u2191 more'}</Text>}
-
-            <Box flexDirection="column" marginBottom={1}>
-              {plannerVisible.map((item, i) => {
-                const globalIndex = plannerScrollOffset + i;
-                return (
-                  <ItemRow
-                    key={item.id}
-                    item={item}
-                    isCursor={plannerActive && globalIndex === plannerList.selectedIndex}
-                    nameWidth={nameWidth}
-                    sublabelWidth={sublabelWidth}
-                    theme={t}
-                  />
-                );
-              })}
-              {plannerList.filtered.length === 0 && <Text color={t.textDim}>{'  No planners detected'}</Text>}
-            </Box>
-
-            {plannerScrollOffset + sectionMaxVisible < plannerList.filtered.length && <Text color={t.textDim}>{'  \u2193 more'}</Text>}
-          </>
-        )}
-
-        <Box marginBottom={0}>
-          <Text bold color={modelActive ? t.accent : t.text}>Model</Text>
-          {!modelActive && modelList.filtered.length > 0 && (
-            <Text color={t.textDim}>{' \u2014 '}{modelList.filtered[modelList.selectedIndex]?.label ?? ''}</Text>
-          )}
-        </Box>
-
-        {customStep === 'impl-provider' || customStep === 'impl-model' ? (
-          <Box borderStyle="round" borderColor={t.accent} paddingX={1} marginBottom={1} width={contentWidth}>
-            <Text color={t.textDim}>{customLabel} </Text>
-            <Text color={t.accent}>{'> '}</Text>
-            <Text>{customInput || <Text color={t.textDim}>type here...</Text>}</Text>
-          </Box>
-        ) : (
-          <>
-            <Box borderStyle="round" borderColor={modelActive ? t.accent : t.border} paddingX={1} marginBottom={0} width={contentWidth}>
-              <Text color={modelActive ? t.accent : t.textDim}>{'> '}</Text>
-              <Text>{modelActive ? (modelList.filter || <Text color={t.textDim}>Type to filter...</Text>) : <Text color={t.textDim}>{modelList.filter || 'Type to filter...'}</Text>}</Text>
-            </Box>
-
-            {modelScrollOffset > 0 && <Text color={t.textDim}>{'  \u2191 more'}</Text>}
-
-            <Box flexDirection="column">
-              {modelVisible.map((item, i) => {
-                const globalIndex = modelScrollOffset + i;
-                return (
-                  <ItemRow
-                    key={item.id}
-                    item={item}
-                    isCursor={modelActive && globalIndex === modelList.selectedIndex}
-                    nameWidth={nameWidth}
-                    sublabelWidth={sublabelWidth}
-                    theme={t}
-                  />
-                );
-              })}
-              {modelList.filtered.length === 0 && <Text color={t.textDim}>{'  No models detected'}</Text>}
-            </Box>
-
-            {modelScrollOffset + sectionMaxVisible < modelList.filtered.length && <Text color={t.textDim}>{'  \u2193 more'}</Text>}
-          </>
+    <Box
+      flexDirection="column"
+      width={cols}
+      height={rows}
+      alignItems="center"
+      paddingTop={1}
+    >
+      <Box justifyContent="center" marginBottom={1}>
+        <Text bold color={t.accent}>
+          Config
+        </Text>
+        {hasBothSelections && (
+          <Text color={t.success}>{" \u2714 ready"}</Text>
         )}
       </Box>
 
-      <Box flexGrow={1} />
+      <Box
+        display={customStep ? "none" : "flex"}
+        flexDirection="row"
+        gap={2}
+        flexGrow={1}
+      >
+        <FilterPanel
+          title="Planner"
+          items={plannerList.filtered}
+          filter={plannerList.filter}
+          selectedIndex={plannerList.selectedIndex}
+          scrollOffset={plannerScrollOffset}
+          maxVisible={panelMaxVisible}
+          isActive={plannerActive}
+          width={panelWidth}
+          nameWidth={nameWidth}
+          sublabelWidth={sublabelWidth}
+          emptyText="No planners detected"
+          selectedId={plannerDisplay}
+        />
+        <FilterPanel
+          title="Model"
+          items={modelList.filtered}
+          filter={modelList.filter}
+          selectedIndex={modelList.selectedIndex}
+          scrollOffset={modelScrollOffset}
+          maxVisible={panelMaxVisible}
+          isActive={modelActive}
+          width={panelWidth}
+          nameWidth={nameWidth}
+          sublabelWidth={sublabelWidth}
+          emptyText="No models detected"
+          selectedId={modelDisplay}
+        />
+      </Box>
+
+      {customStep && (
+        <Box
+          flexDirection="column"
+          flexGrow={1}
+          alignItems="center"
+          justifyContent="center"
+        >
+          <Box
+            flexDirection="column"
+            width={modalWidth}
+            borderStyle="round"
+            borderColor={t.accent}
+            paddingX={2}
+            paddingY={1}
+          >
+            {customStep === "planner-command" && (
+              <>
+                <Box marginBottom={1}>
+                  <Text bold color={t.accent}>
+                    Custom Planner
+                  </Text>
+                </Box>
+                <Text color={t.textDim}>Shell command:</Text>
+                <Box borderStyle="round" borderColor={t.accent} paddingX={1}>
+                  <Text color={t.accent}>{"> "}</Text>
+                  <Text>
+                    {customInput || (
+                      <Text color={t.textDim}>
+                        claude-zai -p --output-format stream-json
+                      </Text>
+                    )}
+                  </Text>
+                </Box>
+              </>
+            )}
+
+            {(customStep === "impl-provider" ||
+              customStep === "impl-model") && (
+              <>
+                <Box marginBottom={1}>
+                  <Text bold color={t.accent}>
+                    Custom Endpoint
+                  </Text>
+                </Box>
+                <Text color={t.textDim}>Provider / API base URL:</Text>
+                <Box
+                  borderStyle="round"
+                  borderColor={customField === "provider" ? t.accent : t.border}
+                  paddingX={1}
+                  marginBottom={1}
+                >
+                  <Text
+                    color={customField === "provider" ? t.accent : t.textDim}
+                  >
+                    {"> "}
+                  </Text>
+                  <Text>
+                    {customProvider || (
+                      <Text color={t.textDim}>
+                        ollama, lm-studio, or http://...
+                      </Text>
+                    )}
+                  </Text>
+                </Box>
+                <Text color={t.textDim}>Model name:</Text>
+                <Box
+                  borderStyle="round"
+                  borderColor={customField === "model" ? t.accent : t.border}
+                  paddingX={1}
+                >
+                  <Text color={customField === "model" ? t.accent : t.textDim}>
+                    {"> "}
+                  </Text>
+                  <Text>
+                    {customInput || (
+                      <Text color={t.textDim}>qwen2.5-coder:7b</Text>
+                    )}
+                  </Text>
+                </Box>
+              </>
+            )}
+          </Box>
+        </Box>
+      )}
 
       <Box justifyContent="center" paddingBottom={1}>
         <Text color={t.textDim}>{footerHint}</Text>

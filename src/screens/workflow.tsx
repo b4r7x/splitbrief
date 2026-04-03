@@ -17,10 +17,11 @@ interface WorkflowScreenProps {
   feature: string;
   onComplete: (summary: Summary) => void;
   resumeState?: WorkflowState;
+  hasOverlay?: boolean;
   onSlashCommand: (command: string) => void;
 }
 
-export function WorkflowScreen({ feature, onComplete, resumeState, onSlashCommand }: WorkflowScreenProps) {
+export function WorkflowScreen({ feature, onComplete, resumeState, hasOverlay, onSlashCommand }: WorkflowScreenProps) {
   const { config, commands, errorMessage, onClearError, projectDir, selectedSkillMetas } = useAppContext();
   const { cols, rows, isSmall } = useResponsiveLayout();
   const flowRef = useRef<ConversationFlowHandle>(null);
@@ -40,12 +41,15 @@ export function WorkflowScreen({ feature, onComplete, resumeState, onSlashComman
   const sidebarWidth = Math.floor(cols * 0.25);
   const contentHeight = Math.max(0, rows - 4);
 
-  useInput((input, key) => {
-    if (key.ctrl && input === '\\') { sidebar.toggle(); return; }
-    if (key.ctrl && input === 'd') { flowRef.current?.toggleDiff(); return; }
-    if (key.upArrow) { flowRef.current?.scrollUp(); return; }
-    if (key.downArrow) { flowRef.current?.scrollDown(); return; }
-  });
+  useInput(
+    (input, key) => {
+      if (key.ctrl && input === '\\') { sidebar.toggle(); return; }
+      if (key.ctrl && input === 'd') { flowRef.current?.toggleDiff(); return; }
+      if (key.upArrow) { flowRef.current?.scrollUp(); return; }
+      if (key.downArrow) { flowRef.current?.scrollDown(); return; }
+    },
+    { isActive: !hasOverlay },
+  );
 
   return (
     <Box flexDirection="column" height={rows}>
@@ -81,6 +85,7 @@ export function WorkflowScreen({ feature, onComplete, resumeState, onSlashComman
         mode={workflow.inputMode}
         hint={workflow.inputHint || (workflow.inputMode === 'review' ? 'approve / edit / comment <text> / quit' : '')}
         currentScreen="workflow"
+        disabled={hasOverlay}
       />
     </Box>
   );

@@ -1,4 +1,4 @@
-import { useReducer, useRef, useEffect, useCallback } from 'react';
+import { useReducer, useRef, useEffect } from 'react';
 import type { Config, Summary, WorkflowState as WfState, SkillMeta, TuiEvent } from '../types.js';
 import { useInputMode } from './use-input-mode.js';
 import { useLatestRef } from './use-latest-ref.js';
@@ -94,7 +94,7 @@ export function useWorkflow({ feature, projectDir, config, onComplete, resumeSta
   const inputModeRef = useLatestRef(inputMode);
   const reviewFilePathRef = useLatestRef(state.reviewFilePath);
 
-  const handleInput = useCallback(async (text: string) => {
+  const handleInput = async (text: string) => {
     const mode = inputModeRef.current;
     if (mode.mode === 'review') {
       const cmd = text.toLowerCase().trim();
@@ -124,7 +124,7 @@ export function useWorkflow({ feature, projectDir, config, onComplete, resumeSta
     if (mode.mode === 'question') {
       mode.resolve(text);
     }
-  }, []);
+  };
 
   return {
     events: state.events,

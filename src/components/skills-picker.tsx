@@ -81,7 +81,6 @@ export function SkillsPicker({ skills, selected: initial, onConfirm, onClose }: 
     items: skills,
     filterFn: filterSkill,
     onSelect: () => onConfirm(checked),
-    onClose,
   });
 
   const contentWidth = Math.min(cols - 4, isSmall ? 76 : 110);

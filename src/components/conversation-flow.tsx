@@ -1,4 +1,4 @@
-import { useState, useImperativeHandle, forwardRef, useMemo } from 'react';
+import { useState, useImperativeHandle, forwardRef } from 'react';
 import { Box, Text, Static } from 'ink';
 import type { TuiEvent } from '../types.js';
 import { useTheme } from '../ui/theme.js';
@@ -29,7 +29,7 @@ const ConversationFlow = forwardRef<ConversationFlowHandle, ConversationFlowProp
     const [scrollOffset, setScrollOffset] = useState(0);
     const [expandedDiffs, setExpandedDiffs] = useState<Set<number>>(() => new Set());
 
-    const sections = useMemo(() => groupEventsIntoSections(events), [events]);
+    const sections = groupEventsIntoSections(events);
     const maxScrollOffset = Math.max(0, events.length - 1);
 
     const toggleDiff = () => {

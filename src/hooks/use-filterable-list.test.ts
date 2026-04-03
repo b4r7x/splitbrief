@@ -89,4 +89,17 @@ describe('useFilterableList', () => {
     expect(result.current.selectedIndex).toBe(0);
     unmount();
   });
+
+  it('works without onClose', () => {
+    const { result, unmount } = renderHook(() =>
+      useFilterableList({
+        items,
+        filterFn,
+        onSelect: vi.fn(),
+      }),
+    );
+
+    expect(result.current.filtered).toEqual(items);
+    unmount();
+  });
 });

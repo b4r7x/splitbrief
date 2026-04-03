@@ -1,4 +1,4 @@
-import { Box } from 'ink';
+import { Box, useInput } from 'ink';
 import { useAppContext } from './app.js';
 import { HomeScreen } from './screens/home.js';
 import { WorkflowScreen } from './screens/workflow.js';
@@ -21,8 +21,10 @@ interface RouterProps {
   screen: Screen;
   routeData: RouteData;
   overlayActive: OverlayType;
+  exclusiveInput: boolean;
   onCloseOverlay: () => void;
   onOpenOverlay: (type: OverlayType) => void;
+  onSetExclusive: (v: boolean) => void;
   sessions: Session[];
   paletteItems: CommandPaletteItem[];
   onSlashCommand: (raw: string, from: Screen) => void;
@@ -33,8 +35,10 @@ export function Router({
   screen,
   routeData,
   overlayActive,
+  exclusiveInput,
   onCloseOverlay,
   onOpenOverlay,
+  onSetExclusive,
   sessions,
   paletteItems,
   onSlashCommand,
@@ -43,12 +47,20 @@ export function Router({
   const { availableSkills, selectedSkillIds, onSkillsConfirm } = useAppContext();
   const hasOverlay = overlayActive !== 'none';
 
+  useInput(
+    (_input, key) => {
+      if (key.escape) onCloseOverlay();
+    },
+    { isActive: hasOverlay && !exclusiveInput },
+  );
+
   const screenContent = (() => {
     switch (screen) {
       case 'home':
         return (
           <HomeScreen
             sessions={sessions}
+            hasOverlay={hasOverlay}
             onStartWorkflow={(feat) => navigate('workflow', { feature: feat })}
             onSlashCommand={(raw) => onSlashCommand(raw, 'home')}
           />
@@ -60,6 +72,7 @@ export function Router({
           <WorkflowScreen
             feature={routeData.feature}
             resumeState={routeData.resumeState}
+            hasOverlay={hasOverlay}
             onComplete={(summary) => navigate('summary', { summary })}
             onSlashCommand={(raw) => onSlashCommand(raw, 'workflow')}
           />
@@ -112,7 +125,7 @@ export function Router({
       )}
 
       {overlayActive === 'picker' && (
-        <ConfigPicker onClose={onCloseOverlay} />
+        <ConfigPicker onClose={onCloseOverlay} onSetExclusive={onSetExclusive} />
       )}
     </>
   );

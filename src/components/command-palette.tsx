@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../ui/theme.js';
 import type { CommandPaletteItem, Screen } from '../types.js';
@@ -30,16 +29,12 @@ export function CommandPalette({ items, currentScreen, onExecute, onClose }: Com
   const gapWidth = 2;
   const descMaxWidth = Math.max(10, contentWidth - cursorWidth - nameColWidth - gapWidth - shortcutMaxWidth);
 
-  const screenItems = useMemo(
-    () => items.filter((item) => item.availableOn.includes(currentScreen)),
-    [items, currentScreen],
-  );
+  const screenItems = items.filter((item) => item.availableOn.includes(currentScreen));
 
   const { filter, filtered, selectedIndex } = useFilterableList<CommandPaletteItem>({
     items: screenItems,
     filterFn: filterPaletteItem,
     onSelect: onExecute,
-    onClose,
   });
 
   const maxVisible = Math.max(rows - 12, 5);
