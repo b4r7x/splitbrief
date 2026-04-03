@@ -15,8 +15,7 @@ tiny-spec is a **cost-optimized AI coding orchestrator** with a **two-role archi
 
 1. **`CLAUDE.md`** — Tech stack, code conventions, project structure, all commands
 2. **`docs/VISION.md`** — Strategic direction, competitive analysis, what we build and what we DON'T
-3. **`docs/NEXT.md`** — Current priorities, recent decisions, what to work on
-4. **`.specify/memory/constitution.md`** — 6 constitutional principles governing all decisions (v1.3.0)
+3. **`.specify/memory/constitution.md`** — 6 constitutional principles governing all decisions (v1.3.1)
 
 ## Architecture at a Glance
 
@@ -32,12 +31,26 @@ User → CLI (commander) → Orchestrator (main loop)
     (hints → full)
 ```
 
-- **TUI**: Ink 5.x conversation flow with structured event cards (v0.4, implemented)
+- **TUI**: Ink 6.8 (React 19) conversation flow with structured event cards
 - **Event model**: `TuiEvent` union type — planner events (conversational), implementer events (structured tool-call cards), validation, git, escalation
 - **Conversational planning**: Planner embeds `<!-- Q:{JSON} -->` markers → `question-parser.ts` extracts → TUI displays inline
-- **Auto-detection**: `planner-detection.ts` discovers planners and implementer endpoints; `picker.tsx` for interactive selection
+- **Auto-detection**: `detection.ts` discovers planners and implementer endpoints; `cli/picker.ts` for interactive selection
 - **State**: JSON snapshot per transition → resume support
 - **Zero classes**: Pure functions, module-scoped state, ESM only
+
+## Key Source Layout
+
+```
+src/core/     — config, types/, theme, commands, shortcuts, state-persistence
+src/cli/      — picker, render, workflow command handlers (non-React)
+src/engine/   — orchestrator/, planners/, implementers/, spec/, validator, extractor (zero React deps)
+src/screens/  — home, workflow, summary (top-level Ink screens)
+src/ui/       — 17 Ink components (all themed via core/theme.ts)
+src/hooks/    — 14 React hooks
+src/utils/    — diff, format, fs, git, highlight, process, sessions, event-sections
+```
+
+All 72 test files are colocated (`foo.test.ts` next to `foo.ts`).
 
 ## Key Decisions — DO NOT Revisit
 
@@ -50,10 +63,10 @@ User → CLI (commander) → Orchestrator (main loop)
 | Two-tier escalation (hints → full) | Hints are cheap (~500 tokens); full impl is last resort (~5000 tokens) |
 | No tool calls for implementer | Small models can't reliably produce tool call format |
 | Conversation flow TUI (not dual-pane) | Research: devs prefer structured output; dual-pane hides collaboration |
-| Stay on Ink 5.x | Known, works, React-based. OpenTUI later if perf demands it |
+| Stay on Ink 6.x | Known, works, React 19. OpenTUI later if perf demands it |
 | Full callback replace (events not strings) | `TuiEvent` union replaces `plannerLines: string[]` |
 
-## What NOT to Build (Constitution Principle VI, v1.3.0)
+## What NOT to Build (Constitution Principle VI, v1.3.1)
 
 These are **constitutional anti-goals**:
 
@@ -66,17 +79,19 @@ These are **constitutional anti-goals**:
 
 ## Code Conventions (Summary)
 
-- TypeScript 5.9+, ESM only, `.js` extensions in imports
+- TypeScript 6.x, ESM only, `.js` extensions in imports
 - Zero classes — pure functions only
 - No unnecessary comments — code is self-explanatory
 - Error at boundaries — internal functions propagate, callers decide
 - JSX for Ink components (`.tsx`), plain TS for everything else (`.ts`)
+- Colocated tests — `foo.test.ts` next to `foo.ts`
 
 ## Current Status
 
 - **v0.1**: Done (45 tasks)
 - **v0.2**: Done — pluggable backends, token dashboard, integration tests
 - **v0.3**: Done — conversational planning, TUI picker, agent-mode implementer, version detection
-- **v0.4**: Done — TUI redesign (conversation flow, event model, collapsible diffs, pipeline bar, cost savings). 47 tasks, 402 tests.
-- **Active specs**: `specs/008-tui-conversation-flow/` (implemented)
-- **Historical specs**: `specs/001-*` through `specs/007-*` (reference only)
+- **v0.4**: Done — TUI redesign (conversation flow, event model, collapsible diffs, pipeline bar, cost savings)
+- **v0.5**: Done — OpenCode visual restructure (Ink 6/React 19, Shiki highlighting, theme system, engine/ui architecture)
+- **v0.6**: Done — Core extraction (core/, cli/, types/), colocated tests, slash commands, skills, global keys
+- 110 source files, 72 colocated test files

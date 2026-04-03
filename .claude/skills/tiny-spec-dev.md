@@ -14,45 +14,70 @@ CLI tool that orchestrates expensive AI (Claude Code/Opus) for planning and chea
 src/
   cli.ts                 CLI entry (commander): start, spec, init, status, resume
   app.tsx                Root Ink component — connects orchestrator events to TUI
-  types.ts               All shared types (Phase, Task, Config, WorkflowState, TuiEvent)
-  config.ts              YAML config loading, defaults, validation
+  router.tsx             Screen router (home → workflow → summary) + overlays
+  types.ts               Re-exports from core/types/
   state.ts               Pure function state machine (11 phases, 20 transitions)
 
-  tui/                   Ink 5.x conversation-flow TUI
-    layout.tsx           Conversation flow: sticky header + scrollable events + sticky footer
-    event-card.tsx       Renders a single TuiEvent as a structured card
-    pipeline-bar.tsx     Phase progress: ● res → ● spec → ◉ impl → ○ rev
-    diff-view.tsx        Collapsible diff display (summary default, expand on demand)
-    header.tsx           Feature name + pipeline bar + elapsed timer
-    status-bar.tsx       Cost savings, token count, model, task progress
-    prompt.tsx           Approval: Enter/e/$EDITOR/q (inline in flow)
-    picker.tsx           Interactive planner/implementer selection
-    question-prompt.tsx  Clarification questions with options
-    summary.tsx          Final run summary with cost breakdown
+  core/                  Shared domain logic
+    config.ts            YAML config loading, defaults, validation
+    config-validation.ts Config schema validation
+    commands.ts          Slash command definitions and handlers
+    shortcuts.ts         Keyboard shortcut definitions per screen
+    state-persistence.ts State persistence to .tiny-spec/state.json
+    theme.ts             Centralized color palette — zero hardcoded colors elsewhere
+    types/               All shared types (split by domain)
+      config.ts          Config, PlannerTool, OutputFormat, ThemeMode
+      events.ts          TuiEvent union type
+      summary.ts         RunSummary, CostBreakdown
+      tokens.ts          TokenUsage, TaskTokenUsage
+      ui.ts              UI-specific types
+      workflow.ts        Phase, Task, TaskStatus, WorkflowState
 
-  orchestrator/          Core workflow
-    orchestrator.ts      Main loop (~700 LOC): emits TuiEvents, retry, escalation, SIGINT
+  cli/                   CLI-specific logic (non-React)
+    picker.ts            Interactive planner/implementer selection (readline)
+    render.ts            Ink/fullscreen rendering setup
+    workflow.ts          CLI command handlers
+
+  engine/                Core workflow (zero React/Ink imports)
+    orchestrator/        Main loop (decomposed into focused modules)
+      index.ts           runWorkflow main loop + re-exports
+      cost.ts            Cost breakdown calculations + buildSummary
+      escalation.ts      Escalation logic (hints → full planner fix)
+      events.ts          Event emission helpers
+      helpers.ts         Shared utilities (context, validation helpers)
+      tokens.ts          Token usage accounting
+      task-runner.ts     Retry/escalation cascade + validateCommitAndAdvance
+      task-loop.ts       Per-task iteration (implement, validate, retry)
+      planning.ts        Planning phase + approval loops
+      final-review.ts    Final review subprocess (Claude CLI)
     planners/            Pluggable planner backends (6 built-in + shell)
-    implementer.ts       OpenAI SDK streaming → structured events
-    implementers/shell.ts  Shell subprocess implementer
+    implementer.ts       Implementer routing + OpenAI implementation core
+    implementer-utils.ts Shared implementer utilities (extract, apply, diff)
+    implementers/        Shell, agent, and OpenAI implementer backends
     validator.ts         tsc → ESLint/Biome → affected tests pipeline
-    escalator.ts         Two-tier: hints (~500 tok) → full Opus implementation
     extractor.ts         Parses LLM responses: fenced blocks, raw code, NL stripping
     context-extractor.ts Function-level code extraction for large files
     providers.ts         Provider abstraction: Ollama/LM Studio/DeepSeek/OpenRouter
     pricing.ts           Cost calculation (known model pricing + $0 local fallback)
+    detection.ts         Auto-detect available planners and implementers
+    question-parser.ts   Parse <!-- Q:{JSON} --> markers from planner stream
+    skills.ts            Skill discovery (frontmatter, .claude/skills scanning)
+    spec/                Spec parsing, formatting & prompt generation
+      parser.ts          tasks.md → Task[] with YAML frontmatter + topological sort
+      templates.ts       Prompt templates for planner
+      formatter.ts       Task → prompt for local model (token budgeting, auto-degradation)
+      token-budget.ts    Token budget calculation and context fitting
+      planning-prompts.ts    Planner prompt generation
+      execution-prompts.ts   Implementer prompt generation
+      review-prompts.ts      Review prompt generation
 
-  spec/                  Spec generation & formatting
-    parser.ts            tasks.md → Task[] with YAML frontmatter + topological sort
-    templates.ts         7 prompt templates for Claude Code
-    formatter.ts         Task → prompt for local model (token budgeting, auto-degradation)
-
-  utils/
-    process.ts           Subprocess spawn, streaming, lifecycle, cleanup
-    git.ts               simple-git wrapper: commit, diff, external changes, discard
-    fs.ts                .tiny-spec/ directory management, path validation, lock file
-    format.ts            Formatting helpers (tokens, cost, time)
+  screens/               Top-level screen components (home, workflow, summary)
+  ui/                    17 Ink components (all colors from core/theme.ts)
+  hooks/                 14 React hooks (colocated tests)
+  utils/                 Helpers (no React/Ink deps): diff, format, fs, git, highlight, process, sessions, event-sections
 ```
+
+All 72 test files are colocated next to their implementations (`foo.test.ts` beside `foo.ts`).
 
 ## Key Types
 
@@ -60,7 +85,7 @@ src/
 type Phase = 'idle' | 'researching' | 'specifying' | 'reviewing-spec' | 'planning' |
   'reviewing-plan' | 'implementing' | 'validating-task' | 'escalating' | 'final-review' | 'complete';
 
-// TUI event model — replaces raw text lines
+// TUI event model — drives all UI rendering
 type TuiEvent =
   | { type: 'planner-status'; phase: string; status: 'running' | 'done'; summary?: string; duration?: number }
   | { type: 'planner-text'; text: string }
@@ -96,16 +121,15 @@ interface Config {
 - **No unnecessary comments** — code is self-explanatory
 - **Error at boundaries** — internal functions propagate, callers decide
 - **JSX for Ink** — `.tsx` for React components, `.ts` for everything else
+- **Colocated tests** — `foo.test.ts` next to `foo.ts`
 
 ## Testing
 
 ```bash
-npm test                         # 227+ tests (tsx --test)
+npm test                         # 72 test files (vitest)
 npm run dev -- start "feature"   # Full workflow with TUI
 npm run dev -- spec "feature"    # Spec-only mode
 ```
-
-Test files: `tests/*.test.ts` — parser, extractor, state, providers, formatter, orchestrator, etc.
 
 ## Workflow
 
