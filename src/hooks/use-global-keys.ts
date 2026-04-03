@@ -26,7 +26,7 @@ export function useGlobalKeys({ screen, overlay, exit, setErrorMessage }: UseGlo
         overlay.open('picker');
         return;
       }
-      if (key.ctrl && input === '/') {
+      if (input === '\x1f') {
         overlay.open('help');
         return;
       }
