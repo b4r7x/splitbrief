@@ -37,7 +37,7 @@ describe('getShortcutsForScreen', () => {
   it('includes toggle sidebar and toggle diff for workflow screen', () => {
     const shortcuts = getShortcutsForScreen('workflow');
     const keys = shortcuts.map(s => s.key);
-    expect(keys).toContain('Ctrl+\\');
+    expect(keys).toContain('Ctrl+E');
     expect(keys).toContain('Ctrl+D');
   });
 

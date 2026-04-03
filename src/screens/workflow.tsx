@@ -43,7 +43,7 @@ export function WorkflowScreen({ feature, onComplete, resumeState, hasOverlay, o
 
   useInput(
     (input, key) => {
-      if (key.ctrl && input === '\\') { sidebar.toggle(); return; }
+      if (key.ctrl && input === 'e') { sidebar.toggle(); return; }
       if (key.ctrl && input === 'd') { flowRef.current?.toggleDiff(); return; }
       if (key.upArrow) { flowRef.current?.scrollUp(); return; }
       if (key.downArrow) { flowRef.current?.scrollDown(); return; }
