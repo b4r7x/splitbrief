@@ -4,7 +4,7 @@ import { useGlobalKeys } from './use-global-keys.js';
 
 describe('useGlobalKeys', () => {
   it('mounts without error on home screen', () => {
-    const overlay = { isOpen: false, open: vi.fn(), close: vi.fn() };
+    const overlay = { isOpen: false, open: vi.fn() };
     const exit = vi.fn();
     const setErrorMessage = vi.fn();
 
@@ -18,7 +18,7 @@ describe('useGlobalKeys', () => {
   });
 
   it('mounts without error on workflow screen', () => {
-    const overlay = { isOpen: false, open: vi.fn(), close: vi.fn() };
+    const overlay = { isOpen: false, open: vi.fn() };
     const exit = vi.fn();
     const setErrorMessage = vi.fn();
 
@@ -31,7 +31,7 @@ describe('useGlobalKeys', () => {
   });
 
   it('mounts without error on summary screen', () => {
-    const overlay = { isOpen: false, open: vi.fn(), close: vi.fn() };
+    const overlay = { isOpen: false, open: vi.fn() };
     const exit = vi.fn();
     const setErrorMessage = vi.fn();
 
@@ -44,7 +44,7 @@ describe('useGlobalKeys', () => {
   });
 
   it('accepts overlay in open state without error', () => {
-    const overlay = { isOpen: true, open: vi.fn(), close: vi.fn() };
+    const overlay = { isOpen: true, open: vi.fn() };
     const exit = vi.fn();
     const setErrorMessage = vi.fn();
 
@@ -53,7 +53,6 @@ describe('useGlobalKeys', () => {
     );
 
     expect(exit).not.toHaveBeenCalled();
-    expect(overlay.close).not.toHaveBeenCalled();
     unmount();
   });
 });

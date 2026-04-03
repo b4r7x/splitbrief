@@ -1,11 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useInput } from 'ink';
 
 interface UseFilterableListOptions<T> {
   items: T[];
   filterFn: (item: T, query: string) => boolean;
   onSelect: (item: T) => void;
-  onClose: () => void;
+  onClose?: () => void;
   isActive?: boolean;
   shouldAppendChar?: (input: string) => boolean;
 }
@@ -29,10 +29,7 @@ export function useFilterableList<T>({
   const [filter, setFilter] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  const filtered = useMemo(
-    () => (filter ? items.filter((item) => filterFn(item, filter)) : items),
-    [items, filter, filterFn],
-  );
+  const filtered = filter ? items.filter((item) => filterFn(item, filter)) : items;
 
   const clampedIndex = Math.min(selectedIndex, Math.max(0, filtered.length - 1));
   if (clampedIndex !== selectedIndex && filtered.length > 0) {
@@ -42,7 +39,7 @@ export function useFilterableList<T>({
   useInput(
     (input, key) => {
       if (key.escape) {
-        onClose();
+        onClose?.();
         return;
       }
       if (key.return && filtered.length > 0) {

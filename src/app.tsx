@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
+import { createContext, useContext, useState } from 'react';
 import { useApp } from 'ink';
 import { useRouter } from './hooks/use-router.js';
 import { useSessions } from './hooks/use-sessions.js';
@@ -59,21 +59,21 @@ export default function App({ feature, projectDir, modelOverride, providerOverri
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const ctx = useMemo<CommandContext>(() => ({
+  const ctx: CommandContext = {
     openOverlay: overlay.open,
     closeOverlay: overlay.close,
     showStatus: () => setErrorMessage('No active workflow'),
     quit: () => exit(),
-  }), [overlay.open, overlay.close, exit]);
-  const commands = useMemo(() => createCommands(ctx), [ctx]);
+  };
+  const commands = createCommands(ctx);
   const paletteItems = toPaletteItems(commands);
   const handleSlashCommand = (raw: string, from: Screen) =>
     executeSlashCommand(commands, raw, from, setErrorMessage);
 
   useGlobalKeys({ screen, overlay, exit, setErrorMessage });
 
-  const onClearError = useCallback(() => setErrorMessage(null), []);
-  const appContextValue = useMemo<AppContextValue>(() => ({
+  const onClearError = () => setErrorMessage(null);
+  const appContextValue: AppContextValue = {
     config,
     reloadConfig,
     commands,
@@ -84,7 +84,7 @@ export default function App({ feature, projectDir, modelOverride, providerOverri
     selectedSkillIds: skills.selected,
     onSkillsConfirm: skills.setSelected,
     selectedSkillMetas: skills.selectedMetas,
-  }), [config, reloadConfig, commands, errorMessage, onClearError, projectDir, skills.available, skills.selected, skills.setSelected, skills.selectedMetas]);
+  };
 
   return (
     <ThemeProvider theme={theme}>
@@ -93,8 +93,10 @@ export default function App({ feature, projectDir, modelOverride, providerOverri
         screen={screen}
         routeData={routeData}
         overlayActive={overlay.active}
+        exclusiveInput={overlay.exclusiveInput}
         onCloseOverlay={overlay.close}
         onOpenOverlay={overlay.open}
+        onSetExclusive={overlay.setExclusive}
         sessions={sessions}
         paletteItems={paletteItems}
         onSlashCommand={handleSlashCommand}

@@ -45,12 +45,14 @@ function statusColor(status: Session['status'], theme: Theme): string {
 
 interface HomeScreenProps {
   sessions: Session[];
+  hasOverlay?: boolean;
   onStartWorkflow: (feature: string) => void;
   onSlashCommand: (command: string) => void;
 }
 
 export function HomeScreen({
   sessions,
+  hasOverlay,
   onStartWorkflow,
   onSlashCommand,
 }: HomeScreenProps) {
@@ -123,6 +125,7 @@ export function HomeScreen({
         </Box>
 
         <InputBar
+          disabled={hasOverlay}
           onSubmit={onStartWorkflow}
           onSlashCommand={onSlashCommand}
           commands={commands}

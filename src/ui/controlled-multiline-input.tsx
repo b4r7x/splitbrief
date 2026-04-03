@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { Box, Spacer, Text, measureElement } from 'ink';
 
 function expandTabs(text: string, tabSize: number): string {
@@ -80,18 +80,15 @@ export const ControlledMultilineInput = ({
   const [contentHeight, setContentHeight] = useState(0);
   const [markerHeight, setMarkerHeight] = useState(0);
 
-  const formatText = useCallback(
-    (text: string, isPlaceholder = false) => {
-      const normalized = normalizeLineEndings(text);
-      if (!isPlaceholder && mask) {
-        return normalized.replace(/[^\n]/g, mask);
-      }
-      return expandTabs(normalized, tabSize);
-    },
-    [tabSize, mask],
-  );
+  const formatText = (text: string, isPlaceholder = false) => {
+    const normalized = normalizeLineEndings(text);
+    if (!isPlaceholder && mask) {
+      return normalized.replace(/[^\n]/g, mask);
+    }
+    return expandTabs(normalized, tabSize);
+  };
 
-  const { preCursor, postCursor } = useMemo((): { preCursor: Segment[]; postCursor: Segment[] } => {
+  const { preCursor, postCursor } = ((): { preCursor: Segment[]; postCursor: Segment[] } => {
     if (!value) {
       if (placeholder && !focus) {
         return {
@@ -173,17 +170,11 @@ export const ControlledMultilineInput = ({
         ],
       };
     }
-  }, [cursorIndex, showCursor, focus, value, placeholder, mask, highlight, formatText, refreshKey]);
+  })();
 
-  const visibleRows = useMemo(() => {
-    if (contentHeight !== undefined) {
-      return Math.max(
-        rows ?? maxRows ?? 1,
-        Math.min(maxRows ?? rows ?? 1, contentHeight),
-      );
-    }
-    return 1;
-  }, [rows, maxRows, contentHeight]);
+  const visibleRows = contentHeight !== undefined
+    ? Math.max(rows ?? maxRows ?? 1, Math.min(maxRows ?? rows ?? 1, contentHeight))
+    : 1;
 
   useEffect(() => {
     if (markerHeight !== undefined && visibleRows !== undefined) {
@@ -207,24 +198,21 @@ export const ControlledMultilineInput = ({
     }
   }, [markerHeight, visibleRows, contentHeight]);
 
-  const getStyle = useCallback(
-    (type: SegmentType): TextStyle => {
-      switch (type) {
-        case 'placeholder':
-          return { ...textStyle, dimColor: true };
-        case 'highlight':
-          return highlightStyle ?? textStyle ?? {};
-        case 'cursor':
-          return {
-            ...(highlightStyle ?? textStyle),
-            inverse: showCursor && focus,
-          };
-        default:
-          return textStyle ?? {};
-      }
-    },
-    [textStyle, highlightStyle, showCursor, focus],
-  );
+  const getStyle = (type: SegmentType): TextStyle => {
+    switch (type) {
+      case 'placeholder':
+        return { ...textStyle, dimColor: true };
+      case 'highlight':
+        return highlightStyle ?? textStyle ?? {};
+      case 'cursor':
+        return {
+          ...(highlightStyle ?? textStyle),
+          inverse: showCursor && focus,
+        };
+      default:
+        return textStyle ?? {};
+    }
+  };
 
   return (
     <Box height={visibleRows} overflow="hidden" flexDirection="column" flexGrow={0} flexShrink={0}>

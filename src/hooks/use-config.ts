@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState } from 'react';
 import { loadConfig } from '../core/config.js';
 import type { Config, PlannerTool } from '../types.js';
 
@@ -24,7 +24,7 @@ export function useConfig(projectDir: string, overrides: ConfigOverrides): { con
     return cfg;
   }, [projectDir, version, overrides.modelOverride, overrides.providerOverride, overrides.contextLengthOverride, overrides.plannerOverride, overrides.plannerModelOverride]);
 
-  const reloadConfig = useCallback(() => setVersion(v => v + 1), []);
+  const reloadConfig = () => setVersion(v => v + 1);
 
   return { config, reloadConfig };
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useInput, type Key } from 'ink';
 import { ControlledMultilineInput, normalizeLineEndings } from './controlled-multiline-input.js';
 import type { ControlledMultilineInputProps } from './controlled-multiline-input.js';
@@ -181,15 +181,9 @@ export const MultilineInput = ({
     }
   }, focus);
 
-  const highlight = useMemo(() => {
-    if (highlightPastedText && pasteLength > 1) {
-      return {
-        start: Math.max(0, cursorIndex - pasteLength),
-        end: cursorIndex,
-      };
-    }
-    return undefined;
-  }, [cursorIndex, pasteLength, highlightPastedText]);
+  const highlight = highlightPastedText && pasteLength > 1
+    ? { start: Math.max(0, cursorIndex - pasteLength), end: cursorIndex }
+    : undefined;
 
   return (
     <ControlledMultilineInput
