@@ -1,7 +1,7 @@
 import { useState, useImperativeHandle, forwardRef, useMemo } from 'react';
 import { Box, Text, Static } from 'ink';
 import type { TuiEvent } from '../types.js';
-import { useAppContext } from '../app.js';
+import { useTheme } from '../ui/theme.js';
 import EventCard from './event-card.js';
 import TaskSummary from './task-summary.js';
 import {
@@ -24,7 +24,7 @@ export interface ConversationFlowHandle {
 
 const ConversationFlow = forwardRef<ConversationFlowHandle, ConversationFlowProps>(
   function ConversationFlow({ events, height: rawHeight }, ref) {
-    const { theme: t } = useAppContext();
+    const t = useTheme();
     const height = Math.max(0, rawHeight);
     const [scrollOffset, setScrollOffset] = useState(0);
     const [expandedDiffs, setExpandedDiffs] = useState<Set<number>>(() => new Set());

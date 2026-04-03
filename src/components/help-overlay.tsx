@@ -1,5 +1,6 @@
 import { Box, Text } from 'ink';
 import { useAppContext } from '../app.js';
+import { useTheme } from '../ui/theme.js';
 import type { Screen } from '../types.js';
 import { getShortcutsForScreen } from '../core/shortcuts.js';
 
@@ -10,7 +11,8 @@ interface HelpOverlayProps {
 }
 
 export function HelpOverlay({ currentScreen }: HelpOverlayProps) {
-  const { theme: t, commands } = useAppContext();
+  const t = useTheme();
+  const { commands } = useAppContext();
   const shortcuts = getShortcutsForScreen(currentScreen);
 
   return (

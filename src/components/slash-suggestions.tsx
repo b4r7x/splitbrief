@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import { useAppContext } from '../app.js';
+import { useTheme } from '../ui/theme.js';
 import type { SlashCommandDef } from '../types.js';
 
 interface SlashSuggestionsProps {
@@ -8,7 +8,7 @@ interface SlashSuggestionsProps {
 }
 
 export function SlashSuggestions({ filtered, selectedIndex }: SlashSuggestionsProps) {
-  const { theme: t } = useAppContext();
+  const t = useTheme();
   if (filtered.length === 0) return null;
 
   return (

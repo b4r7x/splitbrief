@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
-import { useAppContext } from '../app.js';
-import type { Theme } from '../core/theme.js';
+import { useTheme } from '../ui/theme.js';
+import type { Theme } from '../ui/theme.js';
 
 interface TaskSummaryProps {
   index: number;
@@ -44,6 +44,6 @@ export function renderTaskSummary({ index, title, method, retries, duration, rea
 }
 
 export default function TaskSummary(props: TaskSummaryProps) {
-  const { theme: t } = useAppContext();
+  const t = useTheme();
   return renderTaskSummary(props, t);
 }

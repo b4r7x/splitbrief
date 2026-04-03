@@ -1,4 +1,4 @@
-import type { ThemeMode } from './types.js';
+import { createContext, useContext } from 'react';
 
 export interface Theme {
   text: string;
@@ -72,6 +72,22 @@ const monoTheme: Theme = {
   },
 };
 
-export function getTheme(mode: ThemeMode = 'terminal'): Theme {
+export function getTheme(mode: 'terminal' | 'mono' = 'terminal'): Theme {
   return mode === 'mono' ? monoTheme : terminalTheme;
+}
+
+const ThemeContext = createContext<Theme>(terminalTheme);
+
+export function ThemeProvider({
+  theme = terminalTheme,
+  children,
+}: {
+  theme?: Theme;
+  children: React.ReactNode;
+}) {
+  return <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>;
+}
+
+export function useTheme(): Theme {
+  return useContext(ThemeContext);
 }

@@ -28,6 +28,10 @@ export function useGlobalKeys({ screen, overlay, exit, setErrorMessage }: UseGlo
       overlay.open('skills');
       return;
     }
+    if (key.ctrl && input === 'i' && screen === 'home') {
+      overlay.open('picker');
+      return;
+    }
     if (key.ctrl && input === '/') {
       overlay.open('help');
       return;

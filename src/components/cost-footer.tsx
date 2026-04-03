@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { formatCost } from '../utils/format.js';
-import { useAppContext } from '../app.js';
-import type { Theme } from '../core/theme.js';
+import { useTheme } from '../ui/theme.js';
+import type { Theme } from '../ui/theme.js';
 
 interface CostFooterProps {
   currentTask: number;
@@ -39,6 +39,6 @@ export function renderCostFooter({ currentTask, totalTasks, localRate, estimated
 }
 
 export default function CostFooter(props: CostFooterProps) {
-  const { theme: t } = useAppContext();
+  const t = useTheme();
   return renderCostFooter(props, t);
 }

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
-import type { Config } from './types.js';
+import type { Config, PlannerTool } from './types.js';
 import { DEFAULT_BASES } from '../engine/providers.js';
 import { validateConfig } from './config-validation.js';
 
@@ -117,4 +117,31 @@ export function initConfig(projectDir: string): void {
 
   const yamlObj = toYaml(createDefaultConfig());
   fs.writeFileSync(configPath, YAML.stringify(yamlObj), 'utf-8');
+}
+
+export function writeConfigSelection(
+  projectDir: string,
+  planner: { tool: PlannerTool; command?: string },
+  implementer: { provider: string; model: string; apiBase?: string },
+): void {
+  const config = loadConfig(projectDir);
+
+  config.planner.tool = planner.tool;
+  if (planner.tool === 'shell' && planner.command) {
+    config.planner.command = planner.command;
+  }
+
+  config.implementer.provider = implementer.provider;
+  config.implementer.model = implementer.model;
+
+  const base = DEFAULT_BASES[implementer.provider];
+  config.implementer.apiBase = implementer.apiBase ?? base?.baseURL ?? config.implementer.apiBase;
+
+  const dirPath = path.join(projectDir, CONFIG_DIR);
+  fs.mkdirSync(dirPath, { recursive: true });
+  fs.writeFileSync(
+    path.join(dirPath, CONFIG_FILE),
+    YAML.stringify(toYaml(config)),
+    'utf-8',
+  );
 }

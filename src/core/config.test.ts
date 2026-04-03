@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest';
-import { createDefaultConfig } from './config.js';
+import { describe, it, expect, afterEach } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import YAML from 'yaml';
+import { createDefaultConfig, writeConfigSelection, loadConfig } from './config.js';
 import { validateConfig } from './config-validation.js';
 
 describe('validateConfig', () => {
@@ -225,5 +229,78 @@ describe('validateConfig', () => {
         process.env['ANTHROPIC_API_KEY'] = original;
       }
     }
+  });
+});
+
+describe('writeConfigSelection', () => {
+  let tmpDir: string;
+
+  afterEach(() => {
+    if (tmpDir) {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('creates config file with selected planner and implementer', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tiny-spec-test-'));
+    writeConfigSelection(
+      tmpDir,
+      { tool: 'codex' },
+      { provider: 'ollama', model: 'llama3:8b' },
+    );
+    const configFile = path.join(tmpDir, '.tiny-spec', 'config.yaml');
+    expect(fs.existsSync(configFile)).toBe(true);
+    const config = loadConfig(tmpDir);
+    expect(config.planner.tool).toBe('codex');
+    expect(config.implementer.provider).toBe('ollama');
+    expect(config.implementer.model).toBe('llama3:8b');
+  });
+
+  it('sets shell command for custom planner', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tiny-spec-test-'));
+    writeConfigSelection(
+      tmpDir,
+      { tool: 'shell', command: 'my-cli --json' },
+      { provider: 'ollama', model: 'qwen2.5-coder:7b' },
+    );
+    const config = loadConfig(tmpDir);
+    expect(config.planner.tool).toBe('shell');
+    expect(config.planner.command).toBe('my-cli --json');
+  });
+
+  it('uses custom apiBase when provided', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tiny-spec-test-'));
+    writeConfigSelection(
+      tmpDir,
+      { tool: 'claude-code' },
+      { provider: 'custom', model: 'my-model', apiBase: 'http://localhost:9999/v1' },
+    );
+    const config = loadConfig(tmpDir);
+    expect(config.implementer.apiBase).toBe('http://localhost:9999/v1');
+    expect(config.implementer.provider).toBe('custom');
+  });
+
+  it('preserves existing config fields when updating', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tiny-spec-test-'));
+    const dirPath = path.join(tmpDir, '.tiny-spec');
+    fs.mkdirSync(dirPath, { recursive: true });
+    const initial = createDefaultConfig();
+    initial.workflow.maxRetries = 5;
+    initial.validation.testCommand = 'yarn test';
+    fs.writeFileSync(
+      path.join(dirPath, 'config.yaml'),
+      YAML.stringify({ planner: { tool: 'claude-code' }, implementer: { provider: 'ollama', model: 'qwen2.5-coder:7b', api_base: 'http://localhost:11434/v1', context_length: 32768, temperature: 0.3 }, validation: { typecheck: true, lint: true, test: true, test_command: 'yarn test' }, workflow: { auto_approve_spec: false, auto_approve_plan: false, max_retries: 5, commit_per_task: true } }),
+      'utf-8',
+    );
+    writeConfigSelection(
+      tmpDir,
+      { tool: 'aider' },
+      { provider: 'lm-studio', model: 'codellama' },
+    );
+    const config = loadConfig(tmpDir);
+    expect(config.planner.tool).toBe('aider');
+    expect(config.implementer.provider).toBe('lm-studio');
+    expect(config.workflow.maxRetries).toBe(5);
+    expect(config.validation.testCommand).toBe('yarn test');
   });
 });
