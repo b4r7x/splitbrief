@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { MultilineInput } from 'ink-multiline-input';
+import { MultilineInput } from '../ui/multiline-input.js';
 import { SlashSuggestions } from './slash-suggestions.js';
 import { useFilterableList } from '../hooks/use-filterable-list.js';
-import { useAppContext } from '../app.js';
+import { useTheme } from '../ui/theme.js';
+import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 import type { InputMode, Screen, SlashCommandDef } from '../types.js';
 
 interface InputBarProps {
@@ -15,6 +16,7 @@ interface InputBarProps {
   mode: InputMode;
   hint: string;
   currentScreen: Screen;
+  width?: number;
 }
 
 export function InputBar({
@@ -26,8 +28,11 @@ export function InputBar({
   mode,
   hint,
   currentScreen,
+  width,
 }: InputBarProps) {
-  const { theme } = useAppContext();
+  const theme = useTheme();
+  const { cols } = useResponsiveLayout();
+  const inputColumns = (width ?? cols) - 6; // border(2) + paddingX(2) + "> " prefix(2)
   const [value, setValue] = useState('');
   const [inputKey, setInputKey] = useState(0);
 
@@ -126,6 +131,7 @@ export function InputBar({
             value={value}
             onChange={setValue}
             onSubmit={handleSubmit}
+            columns={inputColumns}
             focus
             placeholder={
               hint ||

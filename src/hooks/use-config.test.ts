@@ -15,9 +15,9 @@ describe('useConfig', () => {
 
   it('returns a config object with default values', () => {
     const { result, unmount } = renderHook(() => useConfig('/tmp/project', {}));
-    expect(result.current.planner.tool).toBe('claude-code');
-    expect(result.current.implementer.provider).toBe('ollama');
-    expect(result.current.implementer.model).toBe('qwen2.5-coder:7b');
+    expect(result.current.config.planner.tool).toBe('claude-code');
+    expect(result.current.config.implementer.provider).toBe('ollama');
+    expect(result.current.config.implementer.model).toBe('qwen2.5-coder:7b');
     unmount();
   });
 
@@ -25,7 +25,7 @@ describe('useConfig', () => {
     const { result, unmount } = renderHook(() =>
       useConfig('/tmp/project', { modelOverride: 'llama3:8b' }),
     );
-    expect(result.current.implementer.model).toBe('llama3:8b');
+    expect(result.current.config.implementer.model).toBe('llama3:8b');
     unmount();
   });
 
@@ -33,7 +33,7 @@ describe('useConfig', () => {
     const { result, unmount } = renderHook(() =>
       useConfig('/tmp/project', { providerOverride: 'lm-studio' }),
     );
-    expect(result.current.implementer.provider).toBe('lm-studio');
+    expect(result.current.config.implementer.provider).toBe('lm-studio');
     unmount();
   });
 
@@ -41,7 +41,7 @@ describe('useConfig', () => {
     const { result, unmount } = renderHook(() =>
       useConfig('/tmp/project', { contextLengthOverride: 8192 }),
     );
-    expect(result.current.implementer.contextLength).toBe(8192);
+    expect(result.current.config.implementer.contextLength).toBe(8192);
     unmount();
   });
 
@@ -49,7 +49,7 @@ describe('useConfig', () => {
     const { result, unmount } = renderHook(() =>
       useConfig('/tmp/project', { plannerOverride: 'aider' }),
     );
-    expect(result.current.planner.tool).toBe('aider');
+    expect(result.current.config.planner.tool).toBe('aider');
     unmount();
   });
 
@@ -57,7 +57,7 @@ describe('useConfig', () => {
     const { result, unmount } = renderHook(() =>
       useConfig('/tmp/project', { plannerModelOverride: 'opus-4' }),
     );
-    expect(result.current.planner.model).toBe('opus-4');
+    expect(result.current.config.planner.model).toBe('opus-4');
     unmount();
   });
 
@@ -69,9 +69,15 @@ describe('useConfig', () => {
         plannerOverride: 'codex',
       }),
     );
-    expect(result.current.implementer.model).toBe('custom-model');
-    expect(result.current.implementer.provider).toBe('deepseek');
-    expect(result.current.planner.tool).toBe('codex');
+    expect(result.current.config.implementer.model).toBe('custom-model');
+    expect(result.current.config.implementer.provider).toBe('deepseek');
+    expect(result.current.config.planner.tool).toBe('codex');
+    unmount();
+  });
+
+  it('exposes reloadConfig function', () => {
+    const { result, unmount } = renderHook(() => useConfig('/tmp/project', {}));
+    expect(typeof result.current.reloadConfig).toBe('function');
     unmount();
   });
 });

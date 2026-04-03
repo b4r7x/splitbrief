@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import fs from 'node:fs/promises';
-import { useAppContext } from '../app.js';
-import { renderMarkdownLine } from './markdown.js';
+import { useTheme } from '../ui/theme.js';
+import { renderMarkdownLine } from '../ui/markdown.js';
 
 interface ReviewViewProps {
   filePath: string;
@@ -10,7 +10,7 @@ interface ReviewViewProps {
 }
 
 export default function ReviewView({ filePath, height }: ReviewViewProps) {
-  const { theme: t } = useAppContext();
+  const t = useTheme();
   const [content, setContent] = useState('');
   const [offset, setOffset] = useState(0);
 

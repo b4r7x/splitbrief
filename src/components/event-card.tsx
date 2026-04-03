@@ -1,10 +1,10 @@
 import { Box, Text } from 'ink';
 import type { TuiEvent } from '../types.js';
-import type { Theme } from '../core/theme.js';
-import { useAppContext } from '../app.js';
-import DiffView from './diff-view.js';
-import { PlannerText } from './markdown.js';
-import { Spinner } from './spinner.js';
+import type { Theme } from '../ui/theme.js';
+import { useTheme } from '../ui/theme.js';
+import DiffView from '../ui/diff-view.js';
+import { PlannerText } from '../ui/markdown.js';
+import { Spinner } from '../ui/spinner.js';
 import { formatDuration } from '../utils/format.js';
 
 interface EventCardProps {
@@ -191,6 +191,6 @@ export function renderEvent(event: TuiEvent, t: Theme, diffExpanded?: boolean): 
 }
 
 export default function EventCard({ event, diffExpanded }: EventCardProps) {
-  const { theme: t } = useAppContext();
+  const t = useTheme();
   return renderEvent(event, t, diffExpanded);
 }

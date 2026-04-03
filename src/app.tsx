@@ -8,13 +8,12 @@ import { useSkills } from './hooks/use-skills.js';
 import { createCommands, toPaletteItems, executeSlashCommand } from './core/commands.js';
 import { useGlobalKeys } from './hooks/use-global-keys.js';
 import { Router } from './router.js';
-import { getTheme } from './core/theme.js';
-import type { Theme } from './core/theme.js';
+import { ThemeProvider, getTheme } from './ui/theme.js';
 import type { WorkflowState, RouteData, CommandContext, Screen, SkillMeta, Config, SlashCommandDef } from './types.js';
 
 interface AppContextValue {
   config: Config;
-  theme: Theme;
+  reloadConfig: () => void;
   commands: SlashCommandDef[];
   errorMessage: string | null;
   onClearError: () => void;
@@ -52,7 +51,7 @@ export default function App({ feature, projectDir, modelOverride, providerOverri
   const { screen, routeData, navigate } = useRouter(initialRoute);
   const { exit } = useApp();
   const overlay = useOverlay();
-  const config = useConfig(projectDir, { modelOverride, providerOverride, contextLengthOverride, plannerOverride, plannerModelOverride });
+  const { config, reloadConfig } = useConfig(projectDir, { modelOverride, providerOverride, contextLengthOverride, plannerOverride, plannerModelOverride });
   const theme = getTheme(config.theme);
   const sessionsScope = config.sessions?.scope ?? 'project';
   const { sessions } = useSessions(sessionsScope, projectDir);
@@ -76,7 +75,7 @@ export default function App({ feature, projectDir, modelOverride, providerOverri
   const onClearError = useCallback(() => setErrorMessage(null), []);
   const appContextValue = useMemo<AppContextValue>(() => ({
     config,
-    theme,
+    reloadConfig,
     commands,
     errorMessage,
     onClearError,
@@ -85,9 +84,10 @@ export default function App({ feature, projectDir, modelOverride, providerOverri
     selectedSkillIds: skills.selected,
     onSkillsConfirm: skills.setSelected,
     selectedSkillMetas: skills.selectedMetas,
-  }), [config, theme, commands, errorMessage, onClearError, projectDir, skills.available, skills.selected, skills.setSelected, skills.selectedMetas]);
+  }), [config, reloadConfig, commands, errorMessage, onClearError, projectDir, skills.available, skills.selected, skills.setSelected, skills.selectedMetas]);
 
   return (
+    <ThemeProvider theme={theme}>
     <AppContext.Provider value={appContextValue}>
       <Router
         screen={screen}
@@ -101,5 +101,6 @@ export default function App({ feature, projectDir, modelOverride, providerOverri
         navigate={navigate}
       />
     </AppContext.Provider>
+    </ThemeProvider>
   );
 }

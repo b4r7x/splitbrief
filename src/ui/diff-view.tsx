@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Box, Text } from 'ink';
 import { highlight } from '../utils/highlight.js';
-import { useAppContext } from '../app.js';
+import { useTheme } from './theme.js';
 
 export interface DiffViewProps {
   file: string;
@@ -20,7 +20,7 @@ function stripPrefix(line: string): string {
 }
 
 export default function DiffView({ file, linesAdded, linesRemoved, diff, expanded }: DiffViewProps) {
-  const { theme: t } = useAppContext();
+  const t = useTheme();
   const [highlighted, setHighlighted] = useState<Map<number, string>>(new Map());
   const prevDiffRef = useRef(diff);
 

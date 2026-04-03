@@ -3,9 +3,10 @@ import { useAppContext } from './app.js';
 import { HomeScreen } from './screens/home.js';
 import { WorkflowScreen } from './screens/workflow.js';
 import { SummaryScreen } from './screens/summary.js';
-import { HelpOverlay } from './ui/help-overlay.js';
-import { CommandPalette } from './ui/command-palette.js';
-import { SkillsPicker } from './ui/skills-picker.js';
+import { HelpOverlay } from './components/help-overlay.js';
+import { CommandPalette } from './components/command-palette.js';
+import { SkillsPicker } from './components/skills-picker.js';
+import { ConfigPicker } from './components/config-picker.js';
 import type {
   Screen,
   RouteData,
@@ -108,6 +109,10 @@ export function Router({
           }}
           onClose={onCloseOverlay}
         />
+      )}
+
+      {overlayActive === 'picker' && (
+        <ConfigPicker onClose={onCloseOverlay} />
       )}
     </>
   );

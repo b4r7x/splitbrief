@@ -1,9 +1,10 @@
 import { Box, Text } from 'ink';
 import { useAppContext } from '../app.js';
 import type { Summary } from '../types.js';
-import type { Theme } from '../core/theme.js';
+import { useTheme } from '../ui/theme.js';
+import type { Theme } from '../ui/theme.js';
 import { formatTime, formatCost, truncate } from '../utils/format.js';
-import { InputBar } from '../ui/input-bar.js';
+import { InputBar } from '../components/input-bar.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 
 interface SummaryScreenProps {
@@ -30,7 +31,8 @@ function progressBar(completed: number, total: number, width: number): string {
 }
 
 export function SummaryScreen({ summary, onDone, onSlashCommand }: SummaryScreenProps) {
-  const { theme, commands, errorMessage, onClearError } = useAppContext();
+  const theme = useTheme();
+  const { commands, errorMessage, onClearError } = useAppContext();
   const { isSmall } = useResponsiveLayout();
 
   const completed = summary.completedByLocal + summary.escalatedToPlanner;

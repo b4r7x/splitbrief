@@ -1,12 +1,12 @@
 import { Fragment, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { useAppContext } from '../app.js';
+import { useTheme } from '../ui/theme.js';
 import type { SkillMeta } from '../types.js';
-import type { Theme } from '../core/theme.js';
+import type { Theme } from '../ui/theme.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 import { useFilterableList } from '../hooks/use-filterable-list.js';
 import { truncate } from '../utils/format.js';
-import { computeScrollOffset } from './picker-utils.js';
+import { computeScrollOffset } from '../ui/picker-utils.js';
 
 interface SkillsPickerProps {
   skills: SkillMeta[];
@@ -72,7 +72,7 @@ function filterSkill(s: SkillMeta, query: string): boolean {
 }
 
 export function SkillsPicker({ skills, selected: initial, onConfirm, onClose }: SkillsPickerProps) {
-  const { theme: t } = useAppContext();
+  const t = useTheme();
   const [checked, setChecked] = useState<Set<string>>(new Set(initial));
   const [navigating, setNavigating] = useState(false);
   const { cols, rows, isSmall } = useResponsiveLayout();

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import type { Phase } from '../types.js';
 import PipelineBar from './pipeline-bar.js';
-import { useAppContext } from '../app.js';
+import { useTheme } from '../ui/theme.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 import { truncate } from '../utils/format.js';
 
@@ -22,7 +22,7 @@ function formatElapsed(startedAt: string): string {
 
 export default function Header({ feature, startedAt, phase }: HeaderProps) {
   const { isSmall } = useResponsiveLayout();
-  const { theme: t } = useAppContext();
+  const t = useTheme();
   const [elapsed, setElapsed] = useState(() => formatElapsed(startedAt));
   const maxFeatureLength = isSmall ? 25 : 40;
 

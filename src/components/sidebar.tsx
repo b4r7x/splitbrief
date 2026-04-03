@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
-import { useAppContext } from '../app.js';
-import type { Theme } from '../core/theme.js';
+import { useTheme } from '../ui/theme.js';
+import type { Theme } from '../ui/theme.js';
 import type { SidebarTask } from '../types.js';
 import { truncate } from '../utils/format.js';
 
@@ -35,7 +35,7 @@ function statusColor(status: SidebarTask['status'], t: Theme): string {
 }
 
 export default function Sidebar({ tasks, costData, width }: SidebarProps) {
-  const { theme: t } = useAppContext();
+  const t = useTheme();
   const doneCount = tasks.filter((tk) => tk.status === 'done').length;
   const labelWidth = Math.max(10, width - 4);
 

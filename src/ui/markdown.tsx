@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
-import type { Theme } from '../core/theme.js';
+import type { Theme } from './theme.js';
 import { highlight } from '../utils/highlight.js';
 
 type CodeBlock = { type: 'code'; lang: string; code: string };

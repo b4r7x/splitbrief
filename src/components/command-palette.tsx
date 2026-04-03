@@ -1,11 +1,11 @@
 import { useMemo } from 'react';
 import { Box, Text } from 'ink';
-import { useAppContext } from '../app.js';
+import { useTheme } from '../ui/theme.js';
 import type { CommandPaletteItem, Screen } from '../types.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 import { useFilterableList } from '../hooks/use-filterable-list.js';
 import { truncate } from '../utils/format.js';
-import { computeScrollOffset } from './picker-utils.js';
+import { computeScrollOffset } from '../ui/picker-utils.js';
 
 interface CommandPaletteProps {
   items: CommandPaletteItem[];
@@ -20,7 +20,7 @@ const filterPaletteItem = (item: CommandPaletteItem, query: string) => {
 };
 
 export function CommandPalette({ items, currentScreen, onExecute, onClose }: CommandPaletteProps) {
-  const { theme: t } = useAppContext();
+  const t = useTheme();
   const { cols, rows, isSmall } = useResponsiveLayout();
 
   const contentWidth = Math.min(cols - 4, isSmall ? 60 : 80);

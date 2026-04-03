@@ -2,8 +2,9 @@ import { Box, Text } from 'ink';
 import cfonts from 'cfonts';
 import { useAppContext } from '../app.js';
 import type { Session } from '../types.js';
-import type { Theme } from '../core/theme.js';
-import { InputBar } from '../ui/input-bar.js';
+import { useTheme } from '../ui/theme.js';
+import type { Theme } from '../ui/theme.js';
+import { InputBar } from '../components/input-bar.js';
 import { formatRelativeTime } from '../utils/format.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 
@@ -53,7 +54,8 @@ export function HomeScreen({
   onStartWorkflow,
   onSlashCommand,
 }: HomeScreenProps) {
-  const { config, theme, commands, errorMessage, onClearError, selectedSkillIds } = useAppContext();
+  const theme = useTheme();
+  const { config, commands, errorMessage, onClearError, selectedSkillIds } = useAppContext();
   const selectedSkillCount = selectedSkillIds.size;
   const banner = getBanner();
   const { cols, rows, isSmall } = useResponsiveLayout();
@@ -88,7 +90,7 @@ export function HomeScreen({
             <Text color={theme.textDim}>Model: </Text>
             <Text color={theme.implementer}>{config.implementer.model}</Text>
             <Text color={theme.textDim}> ({config.implementer.provider})</Text>
-            <Text color={theme.textDim}> /init to change</Text>
+            <Text color={theme.textDim}> /config to change</Text>
           </Box>
           <Box>
             <Text color={theme.textDim}>Skills: </Text>
@@ -129,6 +131,7 @@ export function HomeScreen({
           mode="normal"
           hint="describe your feature..."
           currentScreen='home'
+          width={contentWidth}
         />
       </Box>
     </Box>
