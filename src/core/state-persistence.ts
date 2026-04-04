@@ -6,15 +6,9 @@ function stateDir(projectDir: string): string {
   return join(projectDir, '.tiny-spec', 'current');
 }
 
-function ensureDir(dir: string): void {
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-}
-
 export function saveState(projectDir: string, state: WorkflowState): void {
   const dir = stateDir(projectDir);
-  ensureDir(dir);
+  mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'state.json'), JSON.stringify(state, null, 2) + '\n');
 }
 
@@ -26,6 +20,6 @@ export function loadState(projectDir: string): WorkflowState | null {
 
 export function appendEvent(projectDir: string, event: OrchestratorEvent): void {
   const dir = stateDir(projectDir);
-  ensureDir(dir);
+  mkdirSync(dir, { recursive: true });
   appendFileSync(join(dir, 'events.jsonl'), JSON.stringify(event) + '\n');
 }

@@ -7,7 +7,7 @@ import { ThemeProvider, getTheme } from './ui/theme.js';
 import { routerStore } from './stores/router.js';
 import { configStore } from './stores/config.js';
 import { overlayStore } from './stores/overlay.js';
-import { errorStore } from './stores/error.js';
+import { feedbackStore } from './stores/error.js';
 import { HomeScreen } from './screens/home.js';
 import { WorkflowScreen } from './screens/workflow.js';
 import { SummaryScreen } from './screens/summary.js';
@@ -33,7 +33,7 @@ export default function App() {
   const commands = createCommands(ctx);
   const paletteItems = toPaletteItems(commands);
   const handleSlashCommand = (raw: string, from: Screen) =>
-    executeSlashCommand(commands, raw, from, errorStore.setError);
+    executeSlashCommand(commands, raw, from, feedbackStore.setError);
 
   useGlobalKeys({ exit });
 

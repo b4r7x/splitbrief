@@ -1,6 +1,7 @@
 import type { ClarificationQuestion } from '../../engine/question-parser.js';
 import type { Phase } from './workflow.js';
 import type { Summary } from './summary.js';
+import type { TaskCompletionMethod } from './tokens.js';
 
 export type TuiEvent =
   | {
@@ -31,7 +32,7 @@ export type TuiEvent =
       ts: number;
       taskId: string;
       title: string;
-      method: 'local' | 'escalated';
+      method: TaskCompletionMethod;
       retries: number;
       duration: number;
     }

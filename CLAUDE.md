@@ -90,22 +90,42 @@ src/
 │   │   ├── task-loop.ts      # Per-task iteration (implement, validate, retry)
 │   │   ├── planning.ts       # Planning phase + approval loops
 │   │   └── final-review.ts   # Final review subprocess (Claude CLI)
-│   ├── planners/             # Pluggable planner backends
-│   │   ├── base.ts           # Shared planner factory (createPlannerBase, buildProjectContext)
-│   │   ├── context.ts        # Project context builder (package.json, README, config)
-│   │   ├── spawn.ts          # Shared subprocess spawning for planner backends
-│   │   ├── types.ts          # PlannerBackend interface
-│   │   ├── factory.ts        # createPlanner(config) — dynamic import by tool name
+│   ├── orchestrator/         # Main workflow loop (decomposed into focused modules)
+│   │   ├── types.ts          # WorkflowContext (bundles projectDir, config, callbacks, planner, context)
+│   │   ├── index.ts          # runWorkflow main loop + re-exports
+│   │   ├── planning.ts       # Mode-aware planning (quick/standard/full)
+│   │   ├── task-loop.ts      # Per-task iteration with WorkflowContext
+│   │   └── ...               # cost, escalation, events, helpers, tokens, task-runner, final-review
+│   ├── planners/             # Pluggable planner backends (subprocess + API)
+│   │   ├── base.ts           # Shared planner factory (createPlannerBase, quickPlan)
+│   │   ├── types.ts          # PlannerBackend interface (plan, quickPlan, escalate, isAvailable, getPricing)
+│   │   ├── factory.ts        # createPlanner(config) — API planner if provider set, else tool switch
+│   │   ├── api.ts            # API-based planner (any OpenAI-compatible endpoint)
 │   │   ├── claude-code.ts    # Claude Code CLI (stream-json, session chaining)
 │   │   ├── codex.ts          # OpenAI Codex CLI (jsonl output)
 │   │   ├── opencode.ts       # OpenCode CLI
 │   │   ├── aider.ts          # Aider CLI (text output, regex token parsing)
 │   │   ├── agent-sdk.ts      # Anthropic Agent SDK (programmatic, no subprocess)
-│   │   └── shell.ts          # Generic shell — any command via config
-│   ├── implementers/         # Alternative implementer backends
-│   │   ├── openai.ts         # Default OpenAI-compatible API implementer
-│   │   ├── shell.ts          # Shell subprocess implementer (stdin/stdout)
+│   │   ├── shell.ts          # Generic shell — any command via config
+│   │   ├── context.ts        # Project context builder
+│   │   └── spawn.ts          # Shared subprocess spawning
+│   ├── implementers/         # Pluggable implementer backends (mirrors planner pattern)
+│   │   ├── types.ts          # ImplementerBackend interface (implement, retry, isAvailable, listModels, getPricing)
+│   │   ├── base.ts           # createImplementerBase() factory — shared pipeline
+│   │   ├── factory.ts        # createImplementer(config) — routing (api/shell/agent)
+│   │   ├── openai.ts         # OpenAI-compatible API implementer
+│   │   ├── shell.ts          # Shell subprocess implementer
 │   │   └── agent.ts          # Agent subprocess implementer
+│   ├── providers/            # Shared provider registry (used by both planners and implementers)
+│   │   ├── types.ts          # ProviderDef interface, ModelsResponse, ProviderOverrides
+│   │   ├── registry.ts       # KNOWN_PROVIDERS, getProvider(), detectAvailableProviders()
+│   │   ├── openai-compat.ts  # Shared factory for remote OpenAI-compatible providers
+│   │   ├── ollama.ts         # Ollama (local, /api/tags, /api/show)
+│   │   ├── lm-studio.ts      # LM Studio (local, /v1/models)
+│   │   ├── deepseek.ts       # DeepSeek (remote, delegates to openai-compat)
+│   │   ├── openrouter.ts     # OpenRouter (remote, delegates to openai-compat)
+│   │   ├── generic.ts        # Custom endpoint (delegates to openai-compat)
+│   │   └── index.ts          # Re-exports
 │   ├── spec/                 # Spec parsing, formatting & prompt generation
 │   │   ├── parser.ts         # tasks.md → Task[] with topological sort
 │   │   ├── templates.ts      # Prompt templates for planner
@@ -117,16 +137,16 @@ src/
 │   ├── apply.ts              # Code application (whole-file write + search/replace markers)
 │   ├── openai-stream.ts      # OpenAI-compatible streaming client (timeout, error handling)
 │   ├── output-parsers.ts     # Unified output format parsers (text, stream-json, jsonl)
-│   ├── implementer.ts        # Implementer routing + OpenAI implementation core
-│   ├── implementer-utils.ts  # Shared implementer utilities (extract, apply, diff)
+│   ├── implementer.ts        # Backward-compat wrapper (delegates to implementers/factory)
+│   ├── implementer-utils.ts  # Shared utilities (processImplementerOutput, createGenEventEmitter)
 │   ├── validator.ts          # tsc → lint → test pipeline (stops on first failure)
 │   ├── extractor.ts          # Code extraction from model responses (fences, explanation stripping)
 │   ├── context-extractor.ts  # Function-level code extraction for large files
 │   ├── claude-stream.ts      # Claude Code stream-json parsing
 │   ├── question-parser.ts    # Parse <!-- Q:{JSON} --> markers from planner stream
-│   ├── detection.ts          # Auto-detect available planners and implementers
+│   ├── detection.ts          # Auto-detect planners (CLI) and implementers (delegates to provider registry)
 │   ├── pricing.ts            # Cost calculation (known model pricing tables + $0 local fallback)
-│   ├── providers.ts          # Provider abstraction (known defaults + generic apiBase/apiKey)
+│   ├── providers.ts          # Backward-compat wrapper (delegates to providers/registry)
 │   └── skills.ts             # Skill discovery (frontmatter parsing, .claude/skills scanning)
 ├── screens/                  # Top-level screen components
 │   ├── home.tsx              # Home screen (banner, session list, input)
@@ -144,6 +164,10 @@ src/
 │   ├── header.tsx            # Top header (feature name, pipeline bar, elapsed time)
 │   ├── help-overlay.tsx      # Keyboard shortcut help overlay
 │   ├── input-bar.tsx         # Multiline input with slash command suggestions
+│   ├── picker-shell.tsx      # Generic PickerShell<T> — shared layout for all pickers
+│   ├── model-picker.tsx      # Model selection picker (grouped by provider)
+│   ├── planner-picker.tsx    # Planner selection picker (CLI + API)
+│   ├── init-wizard.tsx       # Multi-step init wizard (detect → planner → model)
 │   ├── picker-utils.ts       # Shared picker helpers (scroll offset, truncation)
 │   ├── review-view.tsx       # Spec/plan review display (markdown file viewer)
 │   ├── sidebar.tsx           # Task list sidebar (progress, status)
@@ -170,15 +194,17 @@ src/
     └── sessions.ts           # Session directory management (project + global scope)
 ```
 
-All `*.test.ts` files are colocated next to their implementations (80 test files total, not shown above).
+All `*.test.ts` files are colocated next to their implementations (89 test files, not shown above).
 
 ## Commands
 
 ```bash
 npm run dev -- --help            # Show CLI help
-npm run dev -- start "feature"   # Full workflow with TUI
+npm run dev -- start "feature"   # Full workflow with TUI (default: standard mode)
+npm run dev -- start --mode quick "feature"  # Quick mode: 1 planner call, 0 approvals
+npm run dev -- start --mode full "feature"   # Full mode: 4 planner calls, 2 approvals
 npm run dev -- spec "feature"    # Spec-only mode (no implementation)
-npm run dev -- init              # Create config (auto-detect models)
+npm run dev -- init              # Create config (Ink-based picker with model discovery)
 npm run dev -- status            # Show workflow state
 npm run dev -- resume            # Resume interrupted workflow
 npm test                         # Run unit tests (vitest)
@@ -187,10 +213,20 @@ npm run build                    # tsc → dist/
 
 ## Prerequisites
 
-- **Planner** — one of: Claude Code (default), Codex, OpenCode, Aider, Agent SDK, or any shell command
+- **Planner** — CLI: Claude Code (default), Codex, OpenCode, Aider, Agent SDK, shell; OR API: any OpenAI-compatible endpoint
 - **Implementer** — Ollama (default), LM Studio, DeepSeek, OpenRouter, or any OpenAI-compatible endpoint
 - **Node.js 22+**
 - **Git** initialized in the target project
+
+## Workflow Modes
+
+| Mode | Planner Calls | Approval Gates | Best For |
+|------|:---:|:---:|---|
+| `quick` | 1 | 0 | Small: "add endpoint", "fix bug" |
+| `standard` (default) | 4 | 1 (spec) | Medium features |
+| `full` | 4 | 2 (spec + plan) | Large features, team handoffs |
+
+Set via `--mode`, config `workflow.mode`, or `/mode` slash command at runtime.
 
 ## How It Works
 
@@ -198,7 +234,7 @@ npm run build                    # tsc → dist/
 User: "add user auth"
   → Planner researches codebase, writes spec/plan/tasks  [conversational cards]
   → Planner may ask clarifying questions (inline in flow)
-  → User approves spec and plan (inline: approve, edit, comment, quit)
+  → User approves spec (and plan in full mode)
   → For each task:
     → Implementer implements the code                    [tool-call cards]
     → Validation: tsc → lint → tests                    [result cards]
@@ -260,13 +296,19 @@ implementer:
   apiKey: ""                    # optional, falls back to <PROVIDER>_API_KEY env var
 ```
 
-Built-in planner tools: `claude-code`, `codex`, `opencode`, `aider`, `agent-sdk`, `shell`
+Built-in planner tools (subprocess): `claude-code`, `codex`, `opencode`, `aider`, `agent-sdk`, `shell`
+Built-in planner providers (API): any provider from the registry (`ollama`, `lm-studio`, `deepseek`, `openrouter`, custom)
 Known implementer providers (with defaults): `ollama`, `lm-studio`, `deepseek`, `openrouter`
+
+Provider registry (`src/engine/providers/registry.ts`): `getProvider(name, overrides?)` returns known providers with defaults or creates generic ones for unknown names.
 
 ## Implementation Status
 
 All 45 tasks from `specs/002-cost-optimized-orchestrator/tasks.md` are complete.
-110 source files, 80 colocated test files.
+v0.7: Symmetric provider architecture, formal ImplementerBackend, workflow modes, API planner, Ink picker.
+~130 source files, 89 colocated test files.
+
+See `docs/REFACTOR-v0.7-symmetric-providers.md` for full refactor documentation.
 
 ### TUI Architecture
 
@@ -321,6 +363,8 @@ CLI (initStores → store.load) → render(<App />)
 - Don't create thin wrapper hooks around `store.use()` — call stores directly in components
 - Don't put `commands` in a store — it closes over Ink's `exit()` function
 - Don't use `configStore.get()` in components — use `configStore.use(selector)` or `configStore.useConfig()` for reactive reads (`.get()` is for non-React code)
+- Use `feedbackStore.setMessage()` for informational messages (e.g., slash command feedback), `setError()` for actual errors
+- When updating config via store, create new objects (immutable): `configStore.set({ ...configStore.get(), config: { ...config, workflow: { ...config.workflow, mode } } })`
 
 ### Testing Policy
 

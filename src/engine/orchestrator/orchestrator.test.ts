@@ -1,13 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { runWorkflow, allValidationsPassed, hasDependencyFailed, estimateCostSavings } from './index.js';
+import { allValidationsPassed, hasDependencyFailed, estimateCostSavings } from './index.js';
 import { makeTask, makeUsage } from '#testing/helpers/fixtures.js';
-import type { ValidationResult, TokenUsage } from '../../types.js';
-
-describe('runWorkflow', () => {
-  it('accepts an options object parameter', () => {
-    expect(runWorkflow.length).toBe(1);
-  });
-});
+import type { ValidationResult } from '../../types.js';
 
 describe('allValidationsPassed', () => {
   it('returns true for empty results array', () => {

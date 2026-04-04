@@ -1,12 +1,11 @@
-import { join } from 'node:path';
-import type { OutputFormat, ImplementerResult, ImplementerTokenUsage } from '../../types.js';
-import type { ImplementerOptions, RetryOptions } from '../implementer-utils.js';
+import type { Config, OutputFormat, ImplementerTokenUsage } from '../../types.js';
+import type { ImplementerOptions, RetryOptions } from './base.js';
+import type { ImplementerBackend } from './types.js';
+import type { InvokeOpts } from './base.js';
+import { createImplementerBase } from './base.js';
 import { buildFullPrompt, buildFullRetryPrompt } from '../spec/formatter.js';
-import { createGenEventEmitter, processImplementerOutput } from '../implementer-utils.js';
 import { spawnWithStdin } from '../planners/spawn.js';
 import { getLineParser, accumulateUsage } from '../output-parsers.js';
-import { readFileOrEmpty } from '../../utils/fs.js';
-import { toErrorMessage } from '../../utils/format.js';
 
 interface ShellImplResult {
   text: string;
@@ -57,52 +56,37 @@ async function spawnShellImplementer(opts: SpawnShellOptions): Promise<ShellImpl
   return { text: collectedText, usage: rawUsage };
 }
 
-async function runShellImplementer(opts: ImplementerOptions & { prompt: string }): Promise<ImplementerResult> {
-  const { task, projectDir, config, prompt, onProgress, onEvent } = opts;
-  const emitGenEvent = createGenEventEmitter(onEvent, config.implementer.model, task.file);
+export function createShellImplementer(config: Config): ImplementerBackend {
+  return createImplementerBase({
+    name: 'shell',
+    pricingKey: 'shell',
+    extractsCode: true,
 
-  emitGenEvent('running');
+    async invoke(opts: InvokeOpts) {
+      const { prompt, projectDir, config: cfg, onProgress } = opts;
+      const command = cfg.implementer.command!;
+      const args = cfg.implementer.args ?? [];
+      const format: OutputFormat = cfg.implementer.outputFormat ?? 'text';
 
-  const filePath = join(projectDir, task.file);
-  const oldContent = readFileOrEmpty(filePath);
+      const result = await spawnShellImplementer({ command, args, prompt, projectDir, format, onProgress });
+      return { text: result.text, usage: result.usage };
+    },
 
-  const command = config.implementer.command!;
-  const args = config.implementer.args ?? [];
-  const format: OutputFormat = config.implementer.outputFormat ?? 'text';
+    buildPrompt(opts: ImplementerOptions) {
+      return buildFullPrompt(opts.task, opts.context, opts.config.implementer.contextLength);
+    },
 
-  let implResult: ImplementerResult | undefined;
-  try {
-    let result: ShellImplResult;
-    try {
-      result = await spawnShellImplementer({ command, args, prompt, projectDir, format, onProgress });
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('command not found')) throw err;
-      return { success: false, output: '', error: toErrorMessage(err) };
-    }
+    buildRetryPrompt(opts: RetryOptions) {
+      return buildFullRetryPrompt(opts.task, opts.context, opts.error, opts.attempt, opts.config.implementer.contextLength);
+    },
 
-    const usage = result.usage;
-    const processResult = await processImplementerOutput(result.text, task, projectDir, oldContent);
+    shouldThrow(err: unknown) {
+      return err instanceof Error && err.message.includes('command not found');
+    },
 
-    if (!processResult.success) {
-      return { success: false, output: result.text, error: processResult.error, usage };
-    }
-
-    emitGenEvent('done', { linesAdded: processResult.linesAdded, linesRemoved: processResult.linesRemoved, diff: processResult.diff });
-    implResult = { success: true, output: result.text, usage };
-    return implResult;
-  } finally {
-    if (!implResult?.success) emitGenEvent('failed');
-  }
+    async isAvailable() {
+      return true;
+    },
+  });
 }
 
-export async function implementTaskViaShell(opts: ImplementerOptions): Promise<ImplementerResult> {
-  const { task, config, context } = opts;
-  const prompt = buildFullPrompt(task, context, config.implementer.contextLength);
-  return runShellImplementer({ ...opts, prompt });
-}
-
-export async function retryTaskViaShell(opts: RetryOptions): Promise<ImplementerResult> {
-  const { task, config, context, error, attempt } = opts;
-  const prompt = buildFullRetryPrompt(task, context, error, attempt, config.implementer.contextLength);
-  return runShellImplementer({ ...opts, prompt });
-}

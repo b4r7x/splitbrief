@@ -1,6 +1,8 @@
 import type { Task, Config, PlannerTool, PlannerTokenUsage } from '../../types.js';
 import type { PlannerBackend, PlannerCallbacks, PlanResult, EscalationResult, RegenerateResult } from './types.js';
-import { buildResearchPrompt, buildSpecPrompt, buildPlanPrompt, buildTasksPrompt, buildHintPrompt, buildEscalationPrompt } from '../spec/templates.js';
+import { buildResearchPrompt, buildSpecPrompt, buildPlanPrompt, buildTasksPrompt } from '../spec/planning-prompts.js';
+import { buildHintPrompt, buildEscalationPrompt } from '../spec/execution-prompts.js';
+import { buildQuickPlanPrompt } from '../spec/planning-prompts.js';
 import { parseTasks } from '../spec/parser.js';
 import { writeSpecFile } from '../../utils/fs.js';
 import { extractCode } from '../extractor.js';
@@ -90,6 +92,23 @@ export function createPlannerBase(config: PlannerBaseConfig): PlannerBackend {
       const tasks = parseTasks(tasksMarkdown);
 
       return { spec, plan, tasks, usage };
+    },
+
+    async quickPlan(
+      feature: string,
+      projectDir: string,
+      _config: Config,
+      callbacks: PlannerCallbacks,
+    ): Promise<PlanResult> {
+      const projectContext = buildProjectContextMarkdown(projectDir);
+      const prompt = buildQuickPlanPrompt(feature, projectContext);
+
+      callbacks.onPhase?.('quick-planning');
+      const result = await config.invokePlan(prompt, projectDir, callbacks.onOutput);
+      writeSpecFile(projectDir, 'tasks.md', result.text);
+
+      const tasks = parseTasks(result.text);
+      return { spec: '', plan: '', tasks, usage: result.usage };
     },
 
     async regenerate(

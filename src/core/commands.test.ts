@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { createCommands, findCommand, toPaletteItems, executeSlashCommand } from './commands.js';
+import { configStore } from '../stores/config.js';
+import { feedbackStore } from '../stores/error.js';
 import type { SlashCommandDef, CommandContext } from './types.js';
 
 const noop = () => {};
@@ -81,5 +83,86 @@ describe('executeSlashCommand', () => {
     ];
     executeSlashCommand(cmds, '/test-home-only', 'workflow', (msg) => { errorMsg = msg; });
     expect(errorMsg).toContain('only available');
+  });
+
+  it('passes args to handler', () => {
+    let receivedArgs: string | undefined;
+    const cmds: SlashCommandDef[] = [
+      { name: '/test', description: 'test', validScreens: ['home'], handler: (args) => { receivedArgs = args; } },
+    ];
+    executeSlashCommand(cmds, '/test hello world', 'home', noop);
+    expect(receivedArgs).toBe('hello world');
+  });
+
+  it('passes undefined args when no args given', () => {
+    let receivedArgs: string | undefined = 'initial';
+    const cmds: SlashCommandDef[] = [
+      { name: '/test', description: 'test', validScreens: ['home'], handler: (args) => { receivedArgs = args; } },
+    ];
+    executeSlashCommand(cmds, '/test', 'home', noop);
+    expect(receivedArgs).toBeUndefined();
+  });
+});
+
+function makeConfig() {
+  return {
+    planner: { tool: 'claude-code' as const, model: 'opus-4' },
+    implementer: { provider: 'ollama', model: 'qwen2.5-coder:7b', apiBase: '', contextLength: 8192, temperature: 0.3 },
+    validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
+    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitPerTask: true },
+  };
+}
+
+describe('/mode command', () => {
+  beforeEach(() => {
+    configStore.reset();
+    feedbackStore.reset();
+  });
+
+  it('shows current mode when called without args', () => {
+    configStore.set({ config: makeConfig(), projectDir: '/tmp', overrides: {} });
+    const commands = createCommands(makeCtx());
+    findCommand(commands, '/mode')!.handler();
+    expect(feedbackStore.get().message).toContain('standard');
+  });
+
+  it('sets mode to quick', () => {
+    configStore.set({ config: makeConfig(), projectDir: '/tmp', overrides: {} });
+    const commands = createCommands(makeCtx());
+    findCommand(commands, '/mode')!.handler('quick');
+    expect(configStore.get().config!.workflow.mode).toBe('quick');
+    expect(feedbackStore.get().message).toContain('quick');
+  });
+
+  it('sets mode to full', () => {
+    configStore.set({ config: makeConfig(), projectDir: '/tmp', overrides: {} });
+    const commands = createCommands(makeCtx());
+    findCommand(commands, '/mode')!.handler('full');
+    expect(configStore.get().config!.workflow.mode).toBe('full');
+  });
+
+  it('rejects invalid mode', () => {
+    configStore.set({ config: makeConfig(), projectDir: '/tmp', overrides: {} });
+    const commands = createCommands(makeCtx());
+    findCommand(commands, '/mode')!.handler('turbo');
+    expect(feedbackStore.get().message).toContain('Invalid mode');
+  });
+});
+
+describe('/model command', () => {
+  beforeEach(() => {
+    configStore.reset();
+    feedbackStore.reset();
+  });
+
+  it('shows planner and implementer info', () => {
+    configStore.set({ config: makeConfig(), projectDir: '/tmp', overrides: {} });
+    const commands = createCommands(makeCtx());
+    findCommand(commands, '/model')!.handler();
+    const msg = feedbackStore.get().message!;
+    expect(msg).toContain('claude-code');
+    expect(msg).toContain('opus-4');
+    expect(msg).toContain('qwen2.5-coder:7b');
+    expect(msg).toContain('ollama');
   });
 });

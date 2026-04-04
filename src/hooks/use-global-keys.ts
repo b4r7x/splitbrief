@@ -2,13 +2,13 @@ import { useInput } from 'ink';
 import { useCtrlC } from './use-ctrl-c.js';
 import { overlayStore } from '../stores/overlay.js';
 import { routerStore } from '../stores/router.js';
-import { errorStore } from '../stores/error.js';
+import { feedbackStore } from '../stores/error.js';
 
 export function useGlobalKeys({ exit }: { exit: () => void }) {
   const screen = routerStore.use(s => s.screen);
   const isOpen = overlayStore.use(s => s.active) !== 'none';
 
-  useCtrlC(screen, exit, errorStore.setError);
+  useCtrlC(screen, exit, feedbackStore.setError);
 
   useInput(
     (input, key) => {

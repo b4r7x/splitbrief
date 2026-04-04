@@ -5,27 +5,31 @@ import { createElement } from 'react';
 import { existsSync } from 'node:fs';
 import App from './app.js';
 import { configPath } from './core/config.js';
-import { loadState } from './state-persistence.js';
+import { loadState } from './core/state-persistence.js';
 import { createPlanner } from './engine/planners/factory.js';
 import { runPicker } from './cli/picker.js';
 import { renderApp } from './cli/render.js';
 import { addWorkflowOptions, setupWorkflow, ensureGitAndConfig, resolveProjectDir, loadConfigOrExit } from './cli/workflow.js';
 import { configStore } from './stores/config.js';
+import { setHighlightTheme } from './utils/highlight.js';
 import { sessionsStore } from './stores/sessions.js';
 import { skillsStore } from './stores/skills.js';
 import { routerStore } from './stores/router.js';
 import type { WorkflowOpts } from './cli/workflow.js';
 import type { Phase } from './types.js';
 
-function initStores(projectDir: string, opts: WorkflowOpts) {
+function initStores(projectDir: string, opts: WorkflowOpts & { contextLength?: number }) {
   configStore.load(projectDir, {
     modelOverride: opts.model,
     providerOverride: opts.provider,
+    contextLengthOverride: opts.contextLength,
     plannerOverride: opts.planner,
     plannerModelOverride: opts.plannerModel,
     autoApprove: opts.auto,
+    modeOverride: opts.mode,
   });
   const storeConfig = configStore.get().config!;
+  if (storeConfig.shikiTheme) setHighlightTheme(storeConfig.shikiTheme);
   sessionsStore.load(storeConfig.sessions?.scope ?? 'project', projectDir);
   skillsStore.discover(storeConfig.planner.tool, projectDir);
 }
@@ -42,9 +46,9 @@ addWorkflowOptions(
     .command('start [feature]')
     .description('Full workflow: plan with Claude, implement with local model'),
 ).action(async (feature: string | undefined, opts: WorkflowOpts) => {
-    const { projectDir, useFullscreen } = await setupWorkflow(opts);
+    const { projectDir, useFullscreen, contextLength } = await setupWorkflow(opts);
 
-    initStores(projectDir, opts);
+    initStores(projectDir, { ...opts, contextLength });
     if (feature) {
       routerStore.init({ screen: 'workflow', feature });
     }
@@ -160,9 +164,9 @@ addWorkflowOptions(
 
     console.log(`Resuming: ${state.feature} (phase: ${state.phase}, task ${state.currentTaskIndex + 1}/${state.tasks.length})`);
 
-    const { useFullscreen } = await setupWorkflow(opts);
+    const { useFullscreen, contextLength } = await setupWorkflow(opts);
 
-    initStores(projectDir, opts);
+    initStores(projectDir, { ...opts, contextLength });
     routerStore.init({ screen: 'workflow', feature: state.feature, resumeState: state });
 
     await renderApp(createElement(App), useFullscreen);

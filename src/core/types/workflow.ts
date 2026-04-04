@@ -50,6 +50,7 @@ export interface WorkflowState {
 
 export type StateAction =
   | { type: 'START'; feature: string }
+  | { type: 'START_QUICK'; tasks: Task[] }
   | { type: 'RESEARCH_DONE' }
   | { type: 'SPEC_DONE' }
   | { type: 'APPROVE_SPEC' }

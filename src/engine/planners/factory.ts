@@ -2,6 +2,11 @@ import type { Config } from '../../types.js';
 import type { PlannerBackend } from './types.js';
 
 export async function createPlanner(config: Config): Promise<PlannerBackend> {
+  if (config.planner.provider) {
+    const { createApiPlanner } = await import('./api.js');
+    return createApiPlanner(config);
+  }
+
   const tool = config.planner.tool ?? 'claude-code';
 
   switch (tool) {

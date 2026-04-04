@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { MultilineInput } from '../ui/multiline-input.js';
 import { SlashSuggestions } from './slash-suggestions.js';
 import { useFilterableList } from '../hooks/use-filterable-list.js';
 import { useTheme } from '../ui/theme.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
-import { errorStore } from '../stores/error.js';
+import { feedbackStore } from '../stores/error.js';
 import type { InputMode, Screen, SlashCommandDef } from '../types.js';
 
 interface InputBarProps {
@@ -29,19 +29,12 @@ export function InputBar({
   width,
   disabled,
 }: InputBarProps) {
-  const errorMessage = errorStore.use(s => s.message);
+  const errorMessage = feedbackStore.use(s => s.message);
   const theme = useTheme();
   const { cols } = useResponsiveLayout();
   const inputColumns = (width ?? cols) - 6;
   const [value, setValue] = useState('');
   const [inputKey, setInputKey] = useState(0);
-
-  useEffect(() => {
-    if (!disabled) {
-      setValue('');
-      setInputKey((k) => k + 1);
-    }
-  }, [disabled]);
 
   const slashMode = value.startsWith('/');
   const screenCmds = commands.filter((cmd) => cmd.validScreens.includes(currentScreen));
@@ -85,12 +78,6 @@ export function InputBar({
     },
     { isActive: showSuggestions && !disabled },
   );
-
-  useEffect(() => {
-    if (!errorMessage) return;
-    const timer = setTimeout(() => errorStore.setError(null), 3000);
-    return () => clearTimeout(timer);
-  }, [errorMessage]);
 
   const handleSubmit = (text: string) => {
     if (showSuggestions) return;

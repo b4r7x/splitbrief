@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
 import type { Task, WorkflowState, PlannerTokenUsage, ImplementerTokenUsage, ValidationResult } from '../../types.js';
-import { saveState } from '../../state-persistence.js';
+import { saveState } from '../../core/state-persistence.js';
 import { addUsage, type UsageCategory } from './tokens.js';
 
 export function refreshCurrentCode(task: Task, projectDir: string): void {

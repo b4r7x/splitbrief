@@ -1,3 +1,6 @@
+export type WorkflowMode = 'quick' | 'standard' | 'full';
+export const WORKFLOW_MODES: readonly WorkflowMode[] = ['quick', 'standard', 'full'];
+
 export type ThemeMode = 'terminal' | 'mono';
 
 export type PlannerTool = 'claude-code' | 'codex' | 'opencode' | 'aider' | 'agent-sdk' | 'shell';
@@ -7,6 +10,7 @@ export type OutputFormat = 'stream-json' | 'jsonl' | 'text' | 'opencode';
 export interface Config {
   planner: {
     tool: PlannerTool;
+    provider?: string;
     model?: string;
     apiKey?: string;
     apiBase?: string;
@@ -38,6 +42,7 @@ export interface Config {
     autoApprovePlan: boolean;
     maxRetries: number;
     commitPerTask: boolean;
+    mode?: WorkflowMode;
   };
   theme?: ThemeMode;
   shikiTheme?: string;

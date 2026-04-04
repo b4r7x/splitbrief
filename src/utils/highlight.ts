@@ -4,8 +4,15 @@ import type { HighlighterCore } from 'shiki/core';
 import ansis from 'ansis';
 
 let highlighter: HighlighterCore | null = null;
-const currentThemeName = 'github-dark';
+let currentThemeName = 'github-dark';
 const cache = new Map<string, string>();
+
+export function setHighlightTheme(theme: string): void {
+  if (theme !== currentThemeName) {
+    currentThemeName = theme;
+    cache.clear();
+  }
+}
 
 async function getHighlighter(): Promise<HighlighterCore> {
   if (!highlighter) {

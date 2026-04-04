@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Config } from '../../types.js';
 import { makeConfig as makeBaseConfig, makeTask, defaultContext } from '#testing/helpers/fixtures.js';
+import { createImplementer } from './factory.js';
 
 function makeConfig(extra?: Partial<Config['implementer']>): Config {
   return makeBaseConfig({
@@ -10,9 +11,18 @@ function makeConfig(extra?: Partial<Config['implementer']>): Config {
 
 const context = { ...defaultContext, dir: '/tmp', runtime: 'node' };
 
+async function implementTask(task: ReturnType<typeof makeTask>, opts: { projectDir: string; config: Config; context: typeof defaultContext; onProgress: (text: string) => void; onEvent?: (event: any) => void }) {
+  const implementer = await createImplementer(opts.config);
+  return implementer.implement({ ...opts, task });
+}
+
+async function retryTask(task: ReturnType<typeof makeTask>, opts: { projectDir: string; config: Config; context: typeof defaultContext; error: string; attempt: number; onProgress: (text: string) => void; onEvent?: (event: any) => void }) {
+  const implementer = await createImplementer(opts.config);
+  return implementer.retry({ ...opts, task });
+}
+
 describe('shell implementer', () => {
   it('implementTask dispatches to shell when type is shell', async () => {
-    const { implementTask } = await import('../implementer.js');
     const config = makeConfig({ command: '/bin/echo' });
     const task = makeTask();
 
@@ -23,7 +33,6 @@ describe('shell implementer', () => {
   });
 
   it('retryTask dispatches to shell when type is shell', async () => {
-    const { retryTask } = await import('../implementer.js');
     const config = makeConfig({ command: '/bin/echo' });
     const task = makeTask();
 
@@ -34,7 +43,6 @@ describe('shell implementer', () => {
   });
 
   it('returns failure on non-zero exit code with no output', async () => {
-    const { implementTask } = await import('../implementer.js');
     const config = makeConfig({ command: '/usr/bin/false' });
     const task = makeTask();
 
@@ -45,7 +53,6 @@ describe('shell implementer', () => {
   });
 
   it('throws on command not found (ENOENT)', async () => {
-    const { implementTask } = await import('../implementer.js');
     const config = makeConfig({ command: 'nonexistent-command-that-does-not-exist-xyz' });
     const task = makeTask();
 
@@ -55,7 +62,6 @@ describe('shell implementer', () => {
   });
 
   it('successful code extraction from stdout with fenced code', async () => {
-    const { implementTask } = await import('../implementer.js');
     const codeOutput = '```typescript\nexport function hello() { return "hi"; }\n```';
     const config = makeConfig({ command: '/usr/bin/printf', args: ['%s', codeOutput] });
     const task = makeTask();
@@ -67,7 +73,6 @@ describe('shell implementer', () => {
   });
 
   it('handles text output format', async () => {
-    const { implementTask } = await import('../implementer.js');
     const code = 'export const x = 1;';
     const config = makeConfig({ command: '/usr/bin/printf', args: ['%s', code], outputFormat: 'text' });
     const task = makeTask();
@@ -78,7 +83,6 @@ describe('shell implementer', () => {
   });
 
   it('handles jsonl output format', async () => {
-    const { implementTask } = await import('../implementer.js');
     const jsonlLine = JSON.stringify({ text: 'export const x = 1;' });
     const config = makeConfig({ command: '/usr/bin/printf', args: ['%s\n', jsonlLine], outputFormat: 'jsonl' });
     const task = makeTask();
@@ -89,7 +93,6 @@ describe('shell implementer', () => {
   });
 
   it('reports progress via onProgress callback', async () => {
-    const { implementTask } = await import('../implementer.js');
     const code = 'export const x = 1;\n';
     const config = makeConfig({ command: '/usr/bin/printf', args: ['%s', code] });
     const task = makeTask();
@@ -104,7 +107,6 @@ describe('shell implementer', () => {
   });
 
   it('retry passes error context to the prompt', async () => {
-    const { retryTask } = await import('../implementer.js');
     const config = makeConfig({ command: '/bin/cat' });
     const task = makeTask();
     const progressCalls: string[] = [];
@@ -120,7 +122,6 @@ describe('shell implementer', () => {
   });
 
   it('does not dispatch to shell when type is api', async () => {
-    const { implementTask } = await import('../implementer.js');
     const config = makeConfig({ type: 'api' });
     delete (config.implementer as any).command;
 
@@ -132,7 +133,6 @@ describe('shell implementer', () => {
   });
 
   it('does not dispatch to shell when type is undefined', async () => {
-    const { implementTask } = await import('../implementer.js');
     const config = makeConfig();
     delete (config.implementer as any).type;
     delete (config.implementer as any).command;

@@ -1,4 +1,64 @@
-import type { Task } from '../../types.js';
+export function buildQuickPlanPrompt(feature: string, projectContext: string): string {
+  return `# Quick Plan: Generate Tasks
+
+You are implementing a feature in an existing codebase. Briefly analyze the project, then produce an ordered list of atomic implementation tasks.
+
+## Feature Request
+${feature}
+
+## Project Context
+${projectContext}
+
+## Instructions
+
+1. Briefly review the codebase structure and identify files to create or modify.
+2. Output a \`tasks.md\` file with atomic, self-contained tasks. Each task = one file.
+
+Use this exact format for each task:
+
+\`\`\`markdown
+---
+id: T001
+title: Short descriptive title
+action: create | modify
+file: src/path/to/file.ts
+depends_on: [] | [T001, T002]
+---
+
+### Description
+What to implement and why. Include all context the implementer needs.
+
+### Signature
+\\\`\\\`\\\`typescript
+export function exampleFn(param: Type): ReturnType
+\\\`\\\`\\\`
+
+### Type Definitions
+\\\`\\\`\\\`typescript
+// All referenced types, copied verbatim
+\\\`\\\`\\\`
+
+### Implementation Steps
+1. Step-by-step HOW to implement
+2. Specific function calls and patterns
+3. 3-5 steps max
+
+### Tests
+- Test case with concrete inputs/outputs
+
+### Constraints
+- ESM imports with .js extensions
+- Follow existing codebase patterns
+\`\`\`
+
+## Rules
+- One task per file. Self-contained with all context inlined.
+- Dependency-ordered. Use \`depends_on\` for sequencing.
+- No spec or plan document needed — just tasks.
+
+## Output
+Write the complete tasks.md content.`;
+}
 
 export function buildResearchPrompt(feature: string, projectContext: string, skillsContext?: string): string {
   return `# Research Task
@@ -75,7 +135,7 @@ Rules:
 - If you found the answer in the codebase, don't ask — just use it`;
 }
 
-export function buildSpecPrompt(feature: string, researchOutput: string, clarifications?: Array<{question: string, answer: string}>): string {
+export function buildSpecPrompt(feature: string, researchOutput: string): string {
   return `# Write Feature Specification
 
 You are writing a detailed specification for a new feature. Use the research findings below to ground your spec in the actual codebase.
@@ -121,14 +181,7 @@ Explicitly list what this feature does NOT include to prevent scope creep.
 
 ## Output
 
-Write the complete spec.md content. Use clear, precise language. Reference specific files and patterns from the research findings where relevant.${clarifications && clarifications.length > 0 ? `
-
-## User Clarifications
-
-The user answered the following questions during research:
-${clarifications.map(c => `- Q: ${c.question} → A: ${c.answer}`).join('\n')}
-
-Integrate these answers into the spec. Do not ask about these topics — they are decided.` : ''}`;
+Write the complete spec.md content. Use clear, precise language. Reference specific files and patterns from the research findings where relevant.`;
 }
 
 export function buildPlanPrompt(spec: string, projectContext: string, skillsContext?: string): string {

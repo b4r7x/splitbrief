@@ -1,4 +1,5 @@
-export type { Config, PlannerTool, OutputFormat, ThemeMode } from './config.js';
+export type { Config, PlannerTool, OutputFormat, ThemeMode, WorkflowMode } from './config.js';
+export { WORKFLOW_MODES } from './config.js';
 export type {
   Phase,
   Task,
@@ -10,10 +11,12 @@ export type {
   ProjectContext,
 } from './workflow.js';
 export type {
+  ModelTokenUsage,
   PlannerTokenUsage,
   ImplementerTokenUsage,
   TokenUsage,
   TaskTokenUsage,
+  TaskCompletionMethod,
   CostBreakdown,
 } from './tokens.js';
 export type { ImplementerResult, ValidationResult, Summary } from './summary.js';

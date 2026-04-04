@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { WorkflowState, OrchestratorCallbacks, TuiEvent, ValidationResult } from '../../types.js';
 import type { PlannerBackend } from '../planners/types.js';
-import { createInitialState, transition } from '../../state.js';
+import type { ImplementerBackend } from '../implementers/types.js';
+import { createInitialState, transition } from '../../core/state.js';
 import { makeTask, makeConfig, defaultContext } from '#testing/helpers/fixtures.js';
 
-vi.mock('../implementer.js', () => ({
-  implementTask: vi.fn(),
-}));
 vi.mock('../validator.js', () => ({
   validateTask: vi.fn(),
   formatValidationError: vi.fn().mockReturnValue('validation error'),
@@ -15,7 +13,7 @@ vi.mock('../../utils/git.js', () => ({
   hasExternalChanges: vi.fn().mockResolvedValue(false),
   commitChanges: vi.fn(),
 }));
-vi.mock('../../state-persistence.js', () => ({
+vi.mock('../../core/state-persistence.js', () => ({
   saveState: vi.fn(),
   loadState: vi.fn(),
   appendEvent: vi.fn(),
@@ -25,10 +23,9 @@ vi.mock('./escalation.js', () => ({
 }));
 
 import { hasDependencyFailed, runTaskLoop } from './task-loop.js';
-import { implementTask } from '../implementer.js';
 import { validateTask } from '../validator.js';
 import { commitChanges } from '../../utils/git.js';
-import { loadState } from '../../state-persistence.js';
+import { loadState } from '../../core/state-persistence.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -58,6 +55,17 @@ function makePlanner(): PlannerBackend {
     isAvailable: vi.fn().mockResolvedValue(true),
     getVersion: vi.fn().mockResolvedValue('1.0'),
     getPricing: vi.fn().mockReturnValue({ inputPer1M: 0, outputPer1M: 0 }),
+  };
+}
+
+function makeImplementer(overrides?: Partial<ImplementerBackend>): ImplementerBackend {
+  return {
+    name: 'test',
+    implement: vi.fn().mockResolvedValue({ success: true, output: 'code', usage: { inputTokens: 100, outputTokens: 50 } }),
+    retry: vi.fn().mockResolvedValue({ success: true, output: 'code', usage: { inputTokens: 100, outputTokens: 50 } }),
+    isAvailable: vi.fn().mockResolvedValue(true),
+    getPricing: vi.fn().mockReturnValue({ inputPer1M: 0, outputPer1M: 0 }),
+    ...overrides,
   };
 }
 
@@ -111,11 +119,7 @@ describe('runTaskLoop', () => {
     const { callbacks, events } = makeCallbacks();
 
     const result = await runTaskLoop({
-      projectDir: '/tmp/proj',
-      config: makeConfig(),
-      callbacks,
-      context: defaultContext,
-      planner: makePlanner(),
+      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer: makeImplementer() },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
@@ -131,11 +135,7 @@ describe('runTaskLoop', () => {
     const task = makeTask({ id: 'T001' });
     const state = makeImplState([task]);
 
-    vi.mocked(implementTask).mockResolvedValue({
-      success: true,
-      output: 'code',
-      usage: { inputTokens: 100, outputTokens: 50 },
-    });
+    const implementer = makeImplementer();
     vi.mocked(validateTask).mockResolvedValue(passingResults);
     vi.mocked(commitChanges).mockResolvedValue();
 
@@ -143,17 +143,13 @@ describe('runTaskLoop', () => {
     const setCurrentTask = vi.fn();
 
     const result = await runTaskLoop({
-      projectDir: '/tmp/proj',
-      config: makeConfig({ workflow: { commitPerTask: true } }),
-      callbacks,
-      context: defaultContext,
-      planner: makePlanner(),
+      wctx: { projectDir: '/tmp/proj', config: makeConfig({ workflow: { commitPerTask: true } }), callbacks, context: defaultContext, planner: makePlanner(), implementer },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask,
     });
 
-    expect(implementTask).toHaveBeenCalledTimes(1);
+    expect(implementer.implement).toHaveBeenCalledTimes(1);
     expect(validateTask).toHaveBeenCalledTimes(1);
     const taskStart = events.find((e) => e.type === 'task-start');
     expect(taskStart).toBeDefined();
@@ -166,10 +162,8 @@ describe('runTaskLoop', () => {
     const task = makeTask({ id: 'T001' });
     const state = makeImplState([task]);
 
-    vi.mocked(implementTask).mockResolvedValue({
-      success: true,
-      output: 'code',
-      usage: { inputTokens: 500, outputTokens: 200 },
+    const implementer = makeImplementer({
+      implement: vi.fn().mockResolvedValue({ success: true, output: 'code', usage: { inputTokens: 500, outputTokens: 200 } }),
     });
     vi.mocked(validateTask).mockResolvedValue(passingResults);
     vi.mocked(commitChanges).mockResolvedValue();
@@ -177,11 +171,7 @@ describe('runTaskLoop', () => {
     const { callbacks } = makeCallbacks();
 
     const result = await runTaskLoop({
-      projectDir: '/tmp/proj',
-      config: makeConfig(),
-      callbacks,
-      context: defaultContext,
-      planner: makePlanner(),
+      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
@@ -204,11 +194,7 @@ describe('runTaskLoop', () => {
     callbacks.onExternalChanges = onExternalChanges;
 
     const result = await runTaskLoop({
-      projectDir: '/tmp/proj',
-      config: makeConfig(),
-      callbacks,
-      context: defaultContext,
-      planner: makePlanner(),
+      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer: makeImplementer() },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),

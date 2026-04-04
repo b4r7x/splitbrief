@@ -1,11 +1,12 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import type { ImplementerResult } from '../../types.js';
-import type { ImplementerOptions, RetryOptions } from '../implementer-utils.js';
+import type { Config } from '../../types.js';
+import type { ImplementerOptions, RetryOptions } from './base.js';
+import type { ImplementerBackend } from './types.js';
+import type { InvokeOpts } from './base.js';
+import { createImplementerBase } from './base.js';
 import { buildFullPrompt, buildFullRetryPrompt } from '../spec/formatter.js';
 import { registerProcess, unregisterProcess, isENOENT, killProcess } from '../../utils/process.js';
-import { createGenEventEmitter } from '../implementer-utils.js';
 import { getGit } from '../../utils/git.js';
-import { toErrorMessage } from '../../utils/format.js';
 
 const DEFAULT_TIMEOUT = 300_000;
 
@@ -131,58 +132,66 @@ function interpretAgentResult(
   return { success: true, output: result.output };
 }
 
-async function runAgentImplementer(opts: ImplementerOptions & { prompt: string }): Promise<ImplementerResult> {
-  const { task, prompt, projectDir, config, onProgress, onEvent } = opts;
-  const emitGenEvent = createGenEventEmitter(onEvent, config.implementer.model, task.file);
-
-  emitGenEvent('running');
-
-  const command = config.implementer.command!;
-  const rawArgs = config.implementer.args ?? [];
-  const timeout = config.implementer.timeout ?? DEFAULT_TIMEOUT;
-
-  const { args, useStdin } = substitutePrompt(rawArgs, prompt);
-
-  let implResult: ImplementerResult | undefined;
-  try {
-    let result: SpawnAgentResult;
-    try {
-      result = await spawnWithShellFallback({ command, args, prompt, projectDir, timeout, useStdin, onProgress });
-    } catch (err) {
-      if (isENOENT(err)) throw new Error(`Agent implementer command not found: ${command}`);
-      return { success: false, output: '', error: toErrorMessage(err) };
-    }
-
-    const interpreted = interpretAgentResult(result, timeout, command);
-
-    if (!interpreted.success) {
-      return interpreted;
-    }
-
-    const changedFiles = await getChangedFiles(projectDir);
-    if (changedFiles.length === 0) {
-      return {
-        success: false,
-        output: result.output,
-        error: 'Agent implementer exited without changing any files',
-      };
-    }
-
-    implResult = { success: true, output: result.output };
-    return implResult;
-  } finally {
-    emitGenEvent(implResult?.success ? 'done' : 'failed');
-  }
+function agentError(message: string, output: string): Error & { output: string } {
+  const err = new Error(message) as Error & { output: string };
+  err.output = output;
+  return err;
 }
 
-export async function implementTaskViaAgent(opts: ImplementerOptions): Promise<ImplementerResult> {
-  const { task, config, context } = opts;
-  const prompt = buildFullPrompt(task, context, config.implementer.contextLength);
-  return runAgentImplementer({ ...opts, prompt });
+export function createAgentImplementer(config: Config): ImplementerBackend {
+  return createImplementerBase({
+    name: 'agent',
+    pricingKey: config.implementer.provider,
+    extractsCode: false,
+
+
+    buildPrompt(opts: ImplementerOptions) {
+      return buildFullPrompt(opts.task, opts.context, opts.config.implementer.contextLength);
+    },
+
+    buildRetryPrompt(opts: RetryOptions) {
+      return buildFullRetryPrompt(opts.task, opts.context, opts.error, opts.attempt, opts.config.implementer.contextLength);
+    },
+
+    async invoke(opts: InvokeOpts) {
+      const { prompt, projectDir, config: cfg, onProgress } = opts;
+      const command = cfg.implementer.command!;
+      const rawArgs = cfg.implementer.args ?? [];
+      const timeout = cfg.implementer.timeout ?? DEFAULT_TIMEOUT;
+
+      const { args, useStdin } = substitutePrompt(rawArgs, prompt);
+
+      let result: SpawnAgentResult;
+      try {
+        result = await spawnWithShellFallback({ command, args, prompt, projectDir, timeout, useStdin, onProgress });
+      } catch (err) {
+        if (isENOENT(err)) throw new Error(`Agent implementer command not found: ${command}`);
+        throw err;
+      }
+
+      const interpreted = interpretAgentResult(result, timeout, command);
+      if (!interpreted.success) {
+        throw agentError(interpreted.error!, interpreted.output);
+      }
+
+      return { text: result.output };
+    },
+
+    async detectChanges(projectDir: string) {
+      const changedFiles = await getChangedFiles(projectDir);
+      if (changedFiles.length === 0) {
+        return { changed: false, output: 'Agent implementer exited without changing any files' };
+      }
+      return { changed: true, output: '' };
+    },
+
+    shouldThrow(err: unknown) {
+      return err instanceof Error && err.message.includes('command not found');
+    },
+
+    async isAvailable() {
+      return true;
+    },
+  });
 }
 
-export async function retryTaskViaAgent(opts: RetryOptions): Promise<ImplementerResult> {
-  const { task, config, context, error, attempt } = opts;
-  const prompt = buildFullRetryPrompt(task, context, error, attempt, config.implementer.contextLength);
-  return runAgentImplementer({ ...opts, prompt });
-}

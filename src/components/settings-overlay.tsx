@@ -219,13 +219,10 @@ export function SettingsOverlay() {
     ? SETTINGS_DEFS.filter((def) => matchesFilter(def, filter))
     : SETTINGS_DEFS;
 
-  const clampedIndex = Math.min(
+  const effectiveIndex = Math.min(
     selectedIndex,
     Math.max(0, filtered.length - 1),
   );
-  if (clampedIndex !== selectedIndex && filtered.length > 0) {
-    setSelectedIndex(clampedIndex);
-  }
 
   useEffect(() => {
     onSetExclusive(!!editingId);
@@ -313,7 +310,7 @@ export function SettingsOverlay() {
         return;
       }
       if (input === " " && filtered.length > 0) {
-        const def = filtered[selectedIndex];
+        const def = filtered[effectiveIndex];
         if (def.kind === "boolean") {
           const current = getValue(def);
           setEdits((prev) => ({ ...prev, [def.id]: !current }));
@@ -326,7 +323,7 @@ export function SettingsOverlay() {
         return;
       }
       if (key.return && filtered.length > 0) {
-        const def = filtered[selectedIndex];
+        const def = filtered[effectiveIndex];
         if (def.kind === "string" || def.kind === "number") startEditing(def);
         return;
       }
@@ -348,7 +345,7 @@ export function SettingsOverlay() {
   const contentWidth = Math.min(cols - 4, 60);
   const maxVisible = rows - 10;
   const scrollOffset = computeScrollOffset(
-    selectedIndex,
+    effectiveIndex,
     maxVisible,
     filtered.length,
   );
@@ -356,7 +353,7 @@ export function SettingsOverlay() {
 
   let lastSection = "";
   const hasChanges = Object.keys(edits).length > 0;
-  const selectedDef = filtered[selectedIndex];
+  const selectedDef = filtered[effectiveIndex];
 
   return (
     <Box width={cols} height={rows} alignItems="center" justifyContent="center">
@@ -384,7 +381,7 @@ export function SettingsOverlay() {
         <Box flexDirection="column">
           {visible.map((def, i) => {
             const globalIndex = scrollOffset + i;
-            const isSelected = globalIndex === selectedIndex;
+            const isSelected = globalIndex === effectiveIndex;
             const isEditing = editingId === def.id;
             const value = getValue(def);
             const showSection = def.section !== lastSection;

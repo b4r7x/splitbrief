@@ -9,7 +9,7 @@ vi.mock('../../utils/fs.js', () => ({
   readSpecFile: vi.fn().mockReturnValue('# Spec\nBuild feature X'),
 }));
 
-vi.mock('../spec/templates.js', () => ({
+vi.mock('../spec/review-prompts.js', () => ({
   buildFinalReviewPrompt: vi.fn().mockReturnValue('review this'),
 }));
 
@@ -32,14 +32,16 @@ vi.mock('../planners/spawn.js', () => ({
 
 import { runFinalReview } from './final-review.js';
 import { spawnWithStdin } from '../planners/spawn.js';
-import { buildFinalReviewPrompt } from '../spec/templates.js';
+import { buildFinalReviewPrompt } from '../spec/review-prompts.js';
 
 const mockSpawn = vi.mocked(spawnWithStdin);
 
 function makeCallbacks(): OrchestratorCallbacks {
   return {
     onEvent: vi.fn(),
-    onPhase: vi.fn(),
+    onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
+    onExternalChanges: vi.fn().mockResolvedValue(false),
+    onComplete: vi.fn(),
   };
 }
 

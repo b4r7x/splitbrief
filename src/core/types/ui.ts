@@ -40,7 +40,7 @@ export interface SlashCommandDef {
   description: string;
   shortcut?: string | null;
   validScreens: Screen[];
-  handler: () => void;
+  handler: (args?: string) => void;
 }
 
 export interface CommandContext {

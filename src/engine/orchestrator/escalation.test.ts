@@ -1,12 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { OrchestratorCallbacks, TuiEvent, ValidationResult, WorkflowState } from '../../types.js';
 import type { PlannerBackend } from '../planners/types.js';
-import { createInitialState, transition } from '../../state.js';
+import type { ImplementerBackend } from '../implementers/types.js';
+import { createInitialState, transition } from '../../core/state.js';
 import { makeTask, makeConfig, defaultContext } from '#testing/helpers/fixtures.js';
-
-vi.mock('../implementer.js', () => ({
-  retryTask: vi.fn(),
-}));
 vi.mock('../validator.js', () => ({
   validateTask: vi.fn(),
   formatValidationError: vi.fn().mockReturnValue('validation error'),
@@ -15,13 +12,12 @@ vi.mock('../../utils/git.js', () => ({
   discardTaskChanges: vi.fn(),
   commitChanges: vi.fn(),
 }));
-vi.mock('../../state-persistence.js', () => ({
+vi.mock('../../core/state-persistence.js', () => ({
   saveState: vi.fn(),
   appendEvent: vi.fn(),
 }));
 
 import { handleRetryAndEscalation } from './escalation.js';
-import { retryTask } from '../implementer.js';
 import { validateTask } from '../validator.js';
 import { discardTaskChanges } from '../../utils/git.js';
 
@@ -57,6 +53,17 @@ function makePlanner(overrides?: Partial<PlannerBackend>): PlannerBackend {
   };
 }
 
+function makeImplementer(overrides?: Partial<ImplementerBackend>): ImplementerBackend {
+  return {
+    name: 'test',
+    implement: vi.fn().mockResolvedValue({ success: true, output: 'code', usage: { inputTokens: 50, outputTokens: 25 } }),
+    retry: vi.fn().mockResolvedValue({ success: true, output: 'fixed code', usage: { inputTokens: 50, outputTokens: 25 } }),
+    isAvailable: vi.fn().mockResolvedValue(true),
+    getPricing: vi.fn().mockReturnValue({ inputPer1M: 0, outputPer1M: 0 }),
+    ...overrides,
+  };
+}
+
 const passingResults: ValidationResult[] = [
   { passed: true, stage: 'typecheck' },
   { passed: true, stage: 'lint' },
@@ -87,22 +94,18 @@ describe('handleRetryAndEscalation', () => {
     const task = makeTask();
     const config = makeConfig({ workflow: { maxRetries: 3 } });
     const state = makeValidatingState();
+    const implementer = makeImplementer();
 
-    vi.mocked(retryTask).mockResolvedValue({
-      success: true,
-      output: 'fixed code',
-      usage: { inputTokens: 50, outputTokens: 25 },
-    });
     vi.mocked(validateTask).mockResolvedValue(passingResults);
 
     const result = await handleRetryAndEscalation({
       task, initialError: 'type error', projectDir: '/tmp/proj',
-      config, context: defaultContext, planner, callbacks, currentState: state,
+      config, context: defaultContext, planner, callbacks, currentState: state, implementer,
     });
 
     expect(result.completed).toBe(true);
     expect(result.method).toBe('local');
-    expect(retryTask).toHaveBeenCalledTimes(1);
+    expect(implementer.retry).toHaveBeenCalledTimes(1);
   });
 
   it('all retries fail → transitions to hint escalation', async () => {
@@ -111,26 +114,22 @@ describe('handleRetryAndEscalation', () => {
     const task = makeTask();
     const config = makeConfig({ workflow: { maxRetries: 2 } });
     const state = makeValidatingState();
-
-    // All local retries fail
-    vi.mocked(retryTask).mockResolvedValue({
-      success: false,
-      output: '',
-      error: 'still broken',
-      usage: { inputTokens: 10, outputTokens: 5 },
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken', usage: { inputTokens: 10, outputTokens: 5 } }),
     });
+
     // Hint retry also fails
     vi.mocked(validateTask).mockResolvedValue(failingResults);
 
     const result = await handleRetryAndEscalation({
       task, initialError: 'error', projectDir: '/tmp/proj',
-      config, context: defaultContext, planner, callbacks, currentState: state,
+      config, context: defaultContext, planner, callbacks, currentState: state, implementer,
     });
 
     // Planner should have been called for escalation
     expect(planner.escalateHint).toHaveBeenCalled();
-    // retryTask called: 2 local retries + 1 hint retry = 3
-    expect(retryTask).toHaveBeenCalledTimes(3);
+    // retry called: 2 local retries + 1 hint retry = 3
+    expect(implementer.retry).toHaveBeenCalledTimes(3);
   });
 
   it('hint escalation success: planner hint helps, local retry succeeds', async () => {
@@ -139,11 +138,13 @@ describe('handleRetryAndEscalation', () => {
     const config = makeConfig({ workflow: { maxRetries: 1 } });
     const state = makeValidatingState();
 
-    // Local retry fails
-    vi.mocked(retryTask)
-      .mockResolvedValueOnce({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } })
-      // Hint-assisted retry succeeds
-      .mockResolvedValueOnce({ success: true, output: 'fixed', usage: { inputTokens: 20, outputTokens: 10 } });
+    const implementer = makeImplementer({
+      retry: vi.fn()
+        // Local retry fails
+        .mockResolvedValueOnce({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } })
+        // Hint-assisted retry succeeds
+        .mockResolvedValueOnce({ success: true, output: 'fixed', usage: { inputTokens: 20, outputTokens: 10 } }),
+    });
 
     vi.mocked(validateTask).mockResolvedValue(passingResults);
 
@@ -153,7 +154,7 @@ describe('handleRetryAndEscalation', () => {
 
     const result = await handleRetryAndEscalation({
       task, initialError: 'error', projectDir: '/tmp/proj',
-      config, context: defaultContext, planner, callbacks, currentState: state,
+      config, context: defaultContext, planner, callbacks, currentState: state, implementer,
     });
 
     expect(result.completed).toBe(true);
@@ -168,12 +169,11 @@ describe('handleRetryAndEscalation', () => {
     const config = makeConfig({ workflow: { maxRetries: 1 } });
     const state = makeValidatingState();
 
-    // All local retries fail
-    vi.mocked(retryTask).mockResolvedValue({
-      success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 },
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
     });
 
-    // retryTask always fails so validateTask is only called in tier2's validateAndCommit
+    // retry always fails so validateTask is only called in tier2's validateAndCommit
     vi.mocked(validateTask).mockResolvedValueOnce(passingResults);
 
     const planner = makePlanner({
@@ -183,7 +183,7 @@ describe('handleRetryAndEscalation', () => {
 
     const result = await handleRetryAndEscalation({
       task, initialError: 'error', projectDir: '/tmp/proj',
-      config, context: defaultContext, planner, callbacks, currentState: state,
+      config, context: defaultContext, planner, callbacks, currentState: state, implementer,
     });
 
     expect(result.completed).toBe(true);
@@ -197,8 +197,8 @@ describe('handleRetryAndEscalation', () => {
     const config = makeConfig({ workflow: { maxRetries: 1 } });
     const state = makeValidatingState();
 
-    vi.mocked(retryTask).mockResolvedValue({
-      success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 },
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
     });
     vi.mocked(validateTask).mockResolvedValue(failingResults);
 
@@ -209,7 +209,7 @@ describe('handleRetryAndEscalation', () => {
 
     const result = await handleRetryAndEscalation({
       task, initialError: 'error', projectDir: '/tmp/proj',
-      config, context: defaultContext, planner, callbacks, currentState: state,
+      config, context: defaultContext, planner, callbacks, currentState: state, implementer,
     });
 
     expect(result.completed).toBe(false);
@@ -224,8 +224,8 @@ describe('handleRetryAndEscalation', () => {
     const config = makeConfig({ workflow: { maxRetries: 5 } });
     const state = makeValidatingState();
 
-    vi.mocked(retryTask).mockResolvedValue({
-      success: false, output: '', error: 'fail', usage: { inputTokens: 1, outputTokens: 1 },
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 1, outputTokens: 1 } }),
     });
     vi.mocked(validateTask).mockResolvedValue(failingResults);
 
@@ -236,10 +236,10 @@ describe('handleRetryAndEscalation', () => {
 
     await handleRetryAndEscalation({
       task, initialError: 'error', projectDir: '/tmp/proj',
-      config, context: defaultContext, planner, callbacks, currentState: state,
+      config, context: defaultContext, planner, callbacks, currentState: state, implementer,
     });
 
-    // 5 local retries + 1 hint retry = 6 total retryTask calls
-    expect(retryTask).toHaveBeenCalledTimes(6);
+    // 5 local retries + 1 hint retry = 6 total retry calls
+    expect(implementer.retry).toHaveBeenCalledTimes(6);
   });
 });

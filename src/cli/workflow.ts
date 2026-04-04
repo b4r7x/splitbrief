@@ -14,6 +14,7 @@ export interface WorkflowOpts {
   plannerModel?: string;
   project?: string;
   fullscreen?: boolean;
+  mode?: string;
 }
 
 export function addWorkflowOptions(cmd: Command): Command {
@@ -24,7 +25,8 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--planner <provider>', 'Override planner backend (claude-code, codex, opencode, aider, agent-sdk)')
     .option('--planner-model <model>', 'Override planner model')
     .option('--project <dir>', 'Project directory (default: cwd)')
-    .option('--no-fullscreen', 'Disable fullscreen alternate screen buffer');
+    .option('--no-fullscreen', 'Disable fullscreen alternate screen buffer')
+    .option('--mode <mode>', 'Workflow mode: quick, standard, or full');
 }
 
 export function resolveProjectDir(dir?: string): string {
@@ -52,7 +54,7 @@ export async function ensureGitAndConfig(projectDir: string): Promise<void> {
   }
 }
 
-export async function setupWorkflow(opts: WorkflowOpts): Promise<{ projectDir: string; config: ReturnType<typeof loadConfig>; useFullscreen: boolean }> {
+export async function setupWorkflow(opts: WorkflowOpts): Promise<{ projectDir: string; useFullscreen: boolean; contextLength?: number }> {
   const projectDir = resolveProjectDir(opts.project);
 
   if (!(await isGitRepo(projectDir))) {
@@ -71,17 +73,12 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<{ projectDir: s
   }
 
   const config = loadConfigOrExit(projectDir);
-  if (opts.auto) {
-    config.workflow.autoApproveSpec = true;
-    config.workflow.autoApprovePlan = true;
-  }
-  if (opts.model) config.implementer.model = opts.model;
-  if (opts.provider) config.implementer.provider = opts.provider as typeof config.implementer.provider;
+  let contextLength: number | undefined;
 
   try {
     const caps = await detectCapabilities(config);
     if (caps.contextLength) {
-      config.implementer.contextLength = caps.contextLength;
+      contextLength = caps.contextLength;
     }
   } catch {
     // provider not reachable, use config default
@@ -90,5 +87,5 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<{ projectDir: s
   const isInteractive = process.stdout.isTTY && !process.env['CI'];
   const useFullscreen = opts.fullscreen !== false && isInteractive;
 
-  return { projectDir, config, useFullscreen };
+  return { projectDir, useFullscreen, contextLength };
 }

@@ -1,7 +1,6 @@
 import { Box, Text } from 'ink';
 import { formatCost } from '../utils/format.js';
 import { useTheme } from '../ui/theme.js';
-import type { Theme } from '../ui/theme.js';
 
 interface CostFooterProps {
   currentTask: number;
@@ -13,18 +12,15 @@ interface CostFooterProps {
   isSmall?: boolean;
 }
 
-export function rateColor(localRate: number, t: { success: string; warning: string; error: string }): string {
-  if (localRate >= 50) return t.success;
-  if (localRate >= 25) return t.warning;
-  return t.error;
-}
+export default function CostFooter({ currentTask, totalTasks, localRate, estimatedCost, estimatedSavings, implementerModel, isSmall }: CostFooterProps) {
+  const t = useTheme();
+  const color = localRate >= 50 ? t.success : localRate >= 25 ? t.warning : t.error;
 
-export function renderCostFooter({ currentTask, totalTasks, localRate, estimatedCost, estimatedSavings, implementerModel, isSmall }: CostFooterProps, t: Theme) {
   return (
     <Box width="100%" paddingX={1} justifyContent="space-between">
       <Box gap={2}>
         <Text color={t.text}>Task {currentTask}/{totalTasks}</Text>
-        <Text color={rateColor(localRate, t)}>Local: {Math.round(localRate)}%</Text>
+        <Text color={color}>Local: {Math.round(localRate)}%</Text>
         {!isSmall && (
           <>
             <Text color={t.text}>{formatCost(estimatedCost)}</Text>
@@ -33,12 +29,6 @@ export function renderCostFooter({ currentTask, totalTasks, localRate, estimated
         )}
         <Text color={t.textDim}>{implementerModel}</Text>
       </Box>
-      <Text color={t.textDim}>ctrl+b budget</Text>
     </Box>
   );
-}
-
-export default function CostFooter(props: CostFooterProps) {
-  const t = useTheme();
-  return renderCostFooter(props, t);
 }

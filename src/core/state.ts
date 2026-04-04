@@ -43,6 +43,9 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
     case 'START':
       return { ...state, phase: 'researching' };
 
+    case 'START_QUICK':
+      return { ...state, phase: 'implementing', tasks: action.tasks, currentTaskIndex: 0, attempt: 0 };
+
     case 'RESEARCH_DONE':
       return { ...state, phase: 'specifying' };
 
