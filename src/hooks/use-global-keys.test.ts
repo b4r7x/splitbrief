@@ -1,56 +1,39 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '#testing/helpers/render-hook.js';
 import { useGlobalKeys } from './use-global-keys.js';
+import { routerStore } from '../stores/router.js';
+import { overlayStore } from '../stores/overlay.js';
 
 describe('useGlobalKeys', () => {
+  beforeEach(() => {
+    routerStore.reset();
+    overlayStore.reset();
+  });
+
   it('mounts without error on home screen', () => {
-    const overlay = { isOpen: false, open: vi.fn() };
     const exit = vi.fn();
-    const setErrorMessage = vi.fn();
 
-    const { unmount } = renderHook(() =>
-      useGlobalKeys({ screen: 'home', overlay, exit, setErrorMessage }),
-    );
-
-    expect(exit).not.toHaveBeenCalled();
-    expect(overlay.open).not.toHaveBeenCalled();
-    unmount();
-  });
-
-  it('mounts without error on workflow screen', () => {
-    const overlay = { isOpen: false, open: vi.fn() };
-    const exit = vi.fn();
-    const setErrorMessage = vi.fn();
-
-    const { unmount } = renderHook(() =>
-      useGlobalKeys({ screen: 'workflow', overlay, exit, setErrorMessage }),
-    );
+    const { unmount } = renderHook(() => useGlobalKeys({ exit }));
 
     expect(exit).not.toHaveBeenCalled();
     unmount();
   });
 
-  it('mounts without error on summary screen', () => {
-    const overlay = { isOpen: false, open: vi.fn() };
+  it('mounts without error on workflow screen', async () => {
+    routerStore.init({ screen: 'workflow', feature: 'auth' });
     const exit = vi.fn();
-    const setErrorMessage = vi.fn();
 
-    const { unmount } = renderHook(() =>
-      useGlobalKeys({ screen: 'summary', overlay, exit, setErrorMessage }),
-    );
+    const { unmount } = renderHook(() => useGlobalKeys({ exit }));
 
     expect(exit).not.toHaveBeenCalled();
     unmount();
   });
 
-  it('accepts overlay in open state without error', () => {
-    const overlay = { isOpen: true, open: vi.fn() };
+  it('mounts without error when overlay is open', async () => {
+    overlayStore.open('help');
     const exit = vi.fn();
-    const setErrorMessage = vi.fn();
 
-    const { unmount } = renderHook(() =>
-      useGlobalKeys({ screen: 'home', overlay, exit, setErrorMessage }),
-    );
+    const { unmount } = renderHook(() => useGlobalKeys({ exit }));
 
     expect(exit).not.toHaveBeenCalled();
     unmount();

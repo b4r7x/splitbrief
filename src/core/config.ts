@@ -107,6 +107,16 @@ export function loadConfig(projectDir: string): Config {
   return merged as unknown as Config;
 }
 
+export function writeConfig(projectDir: string, config: Config): void {
+  const dirPath = path.join(projectDir, CONFIG_DIR);
+  fs.mkdirSync(dirPath, { recursive: true });
+  fs.writeFileSync(
+    path.join(dirPath, CONFIG_FILE),
+    YAML.stringify(toYaml(config)),
+    'utf-8',
+  );
+}
+
 export function initConfig(projectDir: string): void {
   const dirPath = path.join(projectDir, CONFIG_DIR);
   const configPath = path.join(dirPath, CONFIG_FILE);

@@ -7,13 +7,8 @@ import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 import { useFilterableList } from '../hooks/use-filterable-list.js';
 import { truncate } from '../utils/format.js';
 import { computeScrollOffset } from '../ui/picker-utils.js';
-
-interface SkillsPickerProps {
-  skills: SkillMeta[];
-  selected: Set<string>;
-  onConfirm: (selected: Set<string>) => void;
-  onClose: () => void;
-}
+import { skillsStore } from '../stores/skills.js';
+import { overlayStore } from '../stores/overlay.js';
 
 interface SkillRowProps {
   skill: SkillMeta;
@@ -71,16 +66,20 @@ function filterSkill(s: SkillMeta, query: string): boolean {
   return s.name.toLowerCase().includes(lower) || s.description.toLowerCase().includes(lower);
 }
 
-export function SkillsPicker({ skills, selected: initial, onConfirm, onClose }: SkillsPickerProps) {
+export function SkillsPicker() {
   const t = useTheme();
+  const skills = skillsStore.use(s => s.available);
+  const initial = skillsStore.use(s => s.selected);
   const [checked, setChecked] = useState<Set<string>>(new Set(initial));
   const [navigating, setNavigating] = useState(false);
   const { cols, rows, isSmall } = useResponsiveLayout();
 
-  const { filter, setFilter, filtered, selectedIndex } = useFilterableList({
+  const { filter, filtered, selectedIndex } = useFilterableList({
     items: skills,
     filterFn: filterSkill,
-    onSelect: () => onConfirm(checked),
+    onSelect: () => { skillsStore.setSelected(checked); overlayStore.close(); },
+    onClose: () => overlayStore.close(),
+    shouldAppendChar: (ch) => ch !== ' ' || !navigating,
   });
 
   const contentWidth = Math.min(cols - 4, isSmall ? 76 : 110);
@@ -123,8 +122,6 @@ export function SkillsPicker({ skills, selected: initial, onConfirm, onClose }: 
     if (key.ctrl && input === 'a') { toggleAll(); return; }
     if (input === ' ' && navigating && flatList.length > 0) {
       toggle(flatList[selectedIndex].id);
-      // Strip the trailing space the hook's useInput will append
-      setTimeout(() => setFilter(filter.trimEnd()), 0);
       return;
     }
     if (input && !key.ctrl && !key.meta && input !== ' ') setNavigating(false);

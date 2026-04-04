@@ -1,12 +1,15 @@
 import { Box, Text } from 'ink';
 import cfonts from 'cfonts';
-import { useAppContext } from '../app.js';
-import type { Session } from '../types.js';
-import { useTheme } from '../ui/theme.js';
-import type { Theme } from '../ui/theme.js';
+import type { Session, SlashCommandDef } from '../types.js';
+import { useTheme, type Theme } from '../ui/theme.js';
 import { InputBar } from '../components/input-bar.js';
 import { formatRelativeTime } from '../utils/format.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
+import { configStore } from '../stores/config.js';
+import { skillsStore } from '../stores/skills.js';
+import { sessionsStore } from '../stores/sessions.js';
+import { overlayStore } from '../stores/overlay.js';
+import { routerStore } from '../stores/router.js';
 
 let cachedBanner: string | undefined;
 
@@ -44,24 +47,24 @@ function statusColor(status: Session['status'], theme: Theme): string {
 }
 
 interface HomeScreenProps {
-  sessions: Session[];
-  hasOverlay?: boolean;
-  onStartWorkflow: (feature: string) => void;
+  commands: SlashCommandDef[];
   onSlashCommand: (command: string) => void;
 }
 
-export function HomeScreen({
-  sessions,
-  hasOverlay,
-  onStartWorkflow,
-  onSlashCommand,
-}: HomeScreenProps) {
+export function HomeScreen({ commands, onSlashCommand }: HomeScreenProps) {
   const theme = useTheme();
-  const { config, commands, errorMessage, onClearError, selectedSkillIds } = useAppContext();
+  const config = configStore.use(s => s.config);
+  const selectedSkillIds = skillsStore.use(s => s.selected);
+  const sessions = sessionsStore.use(s => s.sessions);
+  const hasOverlay = overlayStore.use(s => s.active) !== 'none';
+  const { cols, rows, isSmall } = useResponsiveLayout();
+  if (!config) return null;
+
   const selectedSkillCount = selectedSkillIds.size;
   const banner = getBanner();
-  const { cols, rows, isSmall } = useResponsiveLayout();
   const contentWidth = Math.min(cols - 8, isSmall ? 70 : 100);
+
+  const onStartWorkflow = (feat: string) => routerStore.navigate('workflow', { feature: feat });
 
   return (
     <Box
@@ -129,8 +132,6 @@ export function HomeScreen({
           onSubmit={onStartWorkflow}
           onSlashCommand={onSlashCommand}
           commands={commands}
-          errorMessage={errorMessage}
-          onClearError={onClearError}
           mode="normal"
           hint="describe your feature..."
           currentScreen='home'

@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
-import { useAppContext } from "../app.js";
 import { useTheme } from "../ui/theme.js";
+import { configStore } from "../stores/config.js";
+import { overlayStore } from "../stores/overlay.js";
 import { useResponsiveLayout } from "../hooks/use-terminal-size.js";
 import { useFilterableList } from "../hooks/use-filterable-list.js";
 import { computeScrollOffset } from "../ui/picker-utils.js";
@@ -18,11 +19,6 @@ import type {
   ImplementerDetection,
 } from "../engine/detection.js";
 import type { PlannerTool } from "../types.js";
-
-interface ConfigPickerProps {
-  onClose: () => void;
-  onSetExclusive: (v: boolean) => void;
-}
 
 function buildPlannerItems(planners: PlannerDetection[]): PickerItem[] {
   const items: PickerItem[] = [
@@ -69,11 +65,14 @@ function buildModelItems(implementers: ImplementerDetection[]): PickerItem[] {
 type CustomStep = null | "planner-command" | "impl-provider" | "impl-model";
 type CustomField = "provider" | "model";
 
-export function ConfigPicker({ onClose, onSetExclusive }: ConfigPickerProps) {
+export function ConfigPicker() {
   const t = useTheme();
-  const { config, projectDir, reloadConfig } = useAppContext();
+  const config = configStore.use(s => s.config);
+  const projectDir = configStore.use(s => s.projectDir);
+  const reloadConfig = configStore.reload;
+  const onClose = overlayStore.close;
+  const onSetExclusive = overlayStore.setExclusive;
   const { cols, rows, isSmall } = useResponsiveLayout();
-
   const [phase, setPhase] = useState<"loading" | "ready">("loading");
   const [plannerItems, setPlannerItems] = useState<PickerItem[]>([]);
   const [modelItems, setModelItems] = useState<PickerItem[]>([]);
@@ -99,6 +98,7 @@ export function ConfigPicker({ onClose, onSetExclusive }: ConfigPickerProps) {
   }, [customStep, onSetExclusive]);
 
   useEffect(() => {
+    if (!config) return;
     let cancelled = false;
     Promise.all([
       detectAvailablePlanners(),
@@ -126,7 +126,7 @@ export function ConfigPicker({ onClose, onSetExclusive }: ConfigPickerProps) {
     return () => {
       cancelled = true;
     };
-  }, [config.planner.tool, config.implementer.provider, config.implementer.model]);
+  }, [config?.planner?.tool, config?.implementer?.provider, config?.implementer?.model]);
 
   const totalWidth = Math.min(cols - 2, isSmall ? 76 : 120);
   const panelWidth = Math.floor((totalWidth - 2) / 2);
@@ -198,10 +198,9 @@ export function ConfigPicker({ onClose, onSetExclusive }: ConfigPickerProps) {
     shouldAppendChar: (ch) => !(ch === " " && navigating),
   });
 
-  // Pre-set cursor to the matching config item after detection
   const [cursorInitialized, setCursorInitialized] = useState(false);
   useEffect(() => {
-    if (phase !== "ready" || cursorInitialized) return;
+    if (!config || phase !== "ready" || cursorInitialized) return;
     const plannerMatch = plannerList.filtered.findIndex((item) => item.id === config.planner.tool);
     if (plannerMatch >= 0) plannerList.setSelectedIndex(plannerMatch);
 
@@ -210,9 +209,8 @@ export function ConfigPicker({ onClose, onSetExclusive }: ConfigPickerProps) {
     if (modelMatch >= 0) modelList.setSelectedIndex(modelMatch);
 
     setCursorInitialized(true);
-  }, [phase, cursorInitialized, plannerList.filtered, modelList.filtered, config.planner.tool, config.implementer.provider, config.implementer.model]);
+  }, [phase, cursorInitialized, plannerList.filtered, modelList.filtered, config?.planner?.tool, config?.implementer?.provider, config?.implementer?.model]);
 
-  // Layered input for navigation, space selection, panel switching
   useInput(
     (input, key) => {
       if (phase !== "ready" || customStep) return;
@@ -270,7 +268,6 @@ export function ConfigPicker({ onClose, onSetExclusive }: ConfigPickerProps) {
     { isActive: phase === "ready" && !customStep },
   );
 
-  // Custom modal input handling
   useInput(
     (input, key) => {
       if (key.escape) {
@@ -350,6 +347,8 @@ export function ConfigPicker({ onClose, onSetExclusive }: ConfigPickerProps) {
     },
     { isActive: phase === "ready" && !!customStep },
   );
+
+  if (!config) return null;
 
   if (phase === "loading") {
     return (

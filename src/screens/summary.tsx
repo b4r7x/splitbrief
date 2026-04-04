@@ -1,15 +1,13 @@
 import { Box, Text } from 'ink';
-import { useAppContext } from '../app.js';
-import type { Summary } from '../types.js';
-import { useTheme } from '../ui/theme.js';
-import type { Theme } from '../ui/theme.js';
+import type { Summary, SlashCommandDef } from '../types.js';
+import { useTheme, type Theme } from '../ui/theme.js';
 import { formatTime, formatCost, truncate } from '../utils/format.js';
 import { InputBar } from '../components/input-bar.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
+import { routerStore } from '../stores/router.js';
 
 interface SummaryScreenProps {
-  summary: Summary;
-  onDone: () => void;
+  commands: SlashCommandDef[];
   onSlashCommand: (command: string) => void;
 }
 
@@ -30,10 +28,14 @@ function progressBar(completed: number, total: number, width: number): string {
   return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
 
-export function SummaryScreen({ summary, onDone, onSlashCommand }: SummaryScreenProps) {
+export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) {
   const theme = useTheme();
-  const { commands, errorMessage, onClearError } = useAppContext();
   const { isSmall } = useResponsiveLayout();
+
+  const summary = routerStore.use(s => s.screen === 'summary' ? s.summary : null);
+  if (!summary) return null;
+
+  const onDone = () => routerStore.navigate('home');
 
   const completed = summary.completedByLocal + summary.escalatedToPlanner;
   const labelWidth = isSmall ? 15 : 20;
@@ -92,11 +94,9 @@ export function SummaryScreen({ summary, onDone, onSlashCommand }: SummaryScreen
 
       <Box marginTop={1}>
         <InputBar
-          onSubmit={() => onDone()}
+          onSubmit={onDone}
           onSlashCommand={onSlashCommand}
           commands={commands}
-          errorMessage={errorMessage}
-          onClearError={onClearError}
           mode="normal"
           hint="press enter to continue"
           currentScreen="summary"

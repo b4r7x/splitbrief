@@ -1,5 +1,5 @@
 import type { Config, Task, TokenUsage, ProjectContext, Summary, SidebarTask, TaskStatus } from '../../src/types.js';
-import type { HookWorkflowState } from '../../src/hooks/workflow-reducer.js';
+import type { WorkflowState as HookWorkflowState } from '../../src/stores/workflow.js';
 
 export function makeConfig(overrides?: Partial<Config> & { implementer?: Partial<Config['implementer']>; planner?: Partial<Config['planner']>; validation?: Partial<Config['validation']>; workflow?: Partial<Config['workflow']> }): Config {
   const base: Config = {

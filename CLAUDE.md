@@ -44,11 +44,20 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 ```
 src/
 ├── cli.ts                    # CLI entry point (commander registration)
-├── app.tsx                   # Root Ink component
-├── router.tsx                # Screen router (home → workflow → summary) + overlay rendering
+├── app.tsx                   # Root Ink component (zero props, composition, render helpers)
+├── layout.tsx                # Structural shell (2 props: screen + overlay as ReactNode)
 ├── types.ts                  # Re-exports from core/types/
 ├── state.ts                  # Workflow state machine (11 phases, 20 transitions)
 ├── state-persistence.ts      # Re-exports from core/state-persistence
+├── stores/                   # External stores (useSyncExternalStore, zero deps)
+│   ├── create-store.ts       # Generic store factory (~40 lines)
+│   ├── overlay.ts            # Overlay active/exclusive state
+│   ├── router.ts             # Screen routing + transition validation
+│   ├── error.ts              # Error message state
+│   ├── config.ts             # Config + projectDir (loaded from disk)
+│   ├── skills.ts             # Skill discovery + selection
+│   ├── sessions.ts           # Session list (loaded from disk)
+│   └── workflow.ts           # Workflow events/phase/tasks (biggest store)
 ├── core/                     # Shared domain logic (config, types, theme, commands)
 │   ├── config.ts             # YAML config loading, defaults, validation
 │   ├── config-validation.ts  # Config schema validation
@@ -141,21 +150,15 @@ src/
 │   ├── skills-picker.tsx     # Skill selection overlay
 │   ├── slash-suggestions.tsx # Slash command autocomplete dropdown
 │   └── spinner.tsx           # Braille spinner component
-├── hooks/                    # React hooks (shared across UI components)
-│   ├── use-config.ts         # Config loading hook
-│   ├── use-ctrl-c.ts         # Double Ctrl+C exit handler
+├── hooks/                    # React hooks (Ink-dependent lifecycle)
+│   ├── use-ctrl-c.ts         # Double Ctrl+C exit handler (Ink useInput)
 │   ├── use-filterable-list.ts # Filterable list state (search, scroll, selection)
-│   ├── use-global-keys.ts    # Global keyboard shortcuts (help, palette, quit)
-│   ├── use-input-mode.ts     # Input mode state (normal, review, question)
+│   ├── use-global-keys.ts    # Global keyboard shortcuts (reads stores, takes only { exit })
+│   ├── use-input-mode.ts     # Input mode state (Promise-based, workflow-scoped)
 │   ├── use-latest-ref.ts     # Ref that always holds the latest value
-│   ├── use-overlay.ts        # Overlay open/close state (help, palette, skills)
-│   ├── use-router.ts         # Screen navigation state machine
-│   ├── use-sessions.ts       # Session persistence (list, create, load)
-│   ├── use-sidebar.ts        # Sidebar visibility toggle
-│   ├── use-skills.ts         # Skill discovery and selection state
+│   ├── use-sidebar.ts        # Sidebar visibility toggle (viewport-responsive)
 │   ├── use-terminal-size.ts  # Terminal resize tracking + responsive layout
-│   ├── use-workflow.ts       # Orchestrator lifecycle (start, events, completion)
-│   └── workflow-reducer.ts   # Workflow state reducer (events, phase transitions)
+│   └── use-workflow.ts       # Orchestrator lifecycle (useEffect + store reads)
 └── utils/                    # Helpers (no React/Ink dependencies)
     ├── diff.ts               # Line-level diff computation
     ├── event-sections.ts     # Group TuiEvents into collapsible sections
@@ -167,7 +170,7 @@ src/
     └── sessions.ts           # Session directory management (project + global scope)
 ```
 
-All `*.test.ts` files are colocated next to their implementations (72 test files total, not shown above).
+All `*.test.ts` files are colocated next to their implementations (80 test files total, not shown above).
 
 ## Commands
 
@@ -263,7 +266,7 @@ Known implementer providers (with defaults): `ollama`, `lm-studio`, `deepseek`, 
 ## Implementation Status
 
 All 45 tasks from `specs/002-cost-optimized-orchestrator/tasks.md` are complete.
-110 source files, 72 colocated test files.
+110 source files, 80 colocated test files.
 
 ### TUI Architecture
 
@@ -273,6 +276,56 @@ Conversation flow layout with structured event cards. Key design:
 - Collapsible syntax-highlighted diffs, collapsible completed tasks, pipeline progress bar, cost savings footer.
 - All colors from `src/core/theme.ts` (zero hardcoded hex in `src/ui/`)
 - Zero React/Ink imports in `src/engine/` (clean engine/UI separation)
+
+### State Management (External Stores)
+
+Uses DIY external stores built on React's `useSyncExternalStore` — zero dependencies, zero Context (except ThemeContext which is static). No `useMemo`, `useCallback`, or `React.memo` anywhere.
+
+See `docs/STORES.md` for full architecture documentation.
+
+**How it works:**
+- `src/stores/create-store.ts` — ~45 line factory: `get()`, `set()`, `subscribe()`, `use(selector)`, `reset()`
+- 7 domain stores: overlay, router, error, config, skills, sessions, workflow
+- Components subscribe to specific slices via `store.use(selector)` — only re-render when that slice changes
+- Stores are module-scoped singletons, accessible from both React components and engine code
+- Tests use `beforeEach(() => store.reset())` for isolation
+- `configStore.useConfig()` returns typed `Config` (non-null) with a guard — use this in components instead of `store.use(s => s.config)!`
+
+**Store initialization (eager, before React):**
+- Stores that need data from disk (config, sessions, skills) are loaded in `src/cli.ts` via `initStores()` before `render()` is called
+- Router is initialized conditionally (`start` with feature) or always (`resume`)
+- Components call `store.use(selector)` directly — no wrapper hooks needed
+- This prevents infinite render loops that occur when `store.set()` is called during React render
+
+**Data flow:**
+```
+CLI (initStores → store.load) → render(<App />)
+  App (store.use subscriptions) → Layout (structural shell, 2 props)
+    → renderScreen(switch) → Screen reads stores directly
+    → renderOverlay(switch) → Overlay reads stores directly
+  Engine code → workflowStore.addEvent() → subscribers re-render
+```
+
+**What stays as React hooks (can't be stores):**
+- `useInputMode` — Promise-based resolver pattern (workflow-scoped lifecycle)
+- `useWorkflow` — orchestrator lifecycle (useEffect + store reads + engine bridge)
+- `useGlobalKeys` / `useCtrlC` — Ink's `useInput` required
+- `useSidebar` — viewport-responsive state
+- `useFilterableList` — keyboard-driven list state
+
+**What NOT to do:**
+- Don't add `useMemo`, `useCallback`, or `React.memo` — store selectors make them unnecessary
+- Don't call `store.set()` or `store.load()` during React render — causes infinite loops
+- Don't add `loaded: boolean` flags to store state — init belongs in the CLI entry point, not in hooks
+- Don't create React Context for shared state — use stores instead
+- Don't create thin wrapper hooks around `store.use()` — call stores directly in components
+- Don't put `commands` in a store — it closes over Ink's `exit()` function
+- Don't use `configStore.get()` in components — use `configStore.use(selector)` or `configStore.useConfig()` for reactive reads (`.get()` is for non-React code)
+
+### Testing Policy
+
+- **Zero failing tests** — all tests must pass before any PR. No pre-existing failures accepted.
+- **Agent implementer tests** spawn real subprocesses. The `command not found` test uses a login shell fallback (`-lc`) which can be slow on machines with heavy shell configs — it has a 30s timeout for this reason.
 
 ### Known Limitations
 

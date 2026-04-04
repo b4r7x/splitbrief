@@ -1,22 +1,12 @@
-import { useReducer, useRef, useEffect } from 'react';
+import { useRef, useEffect } from 'react';
 import type { Config, Summary, WorkflowState as WfState, SkillMeta, TuiEvent } from '../types.js';
 import { useInputMode } from './use-input-mode.js';
 import { useLatestRef } from './use-latest-ref.js';
-import { workflowReducer } from './workflow-reducer.js';
-import type { HookWorkflowState } from './workflow-reducer.js';
+import { workflowStore } from '../stores/workflow.js';
 import { runWorkflow } from '../engine/orchestrator/index.js';
 import { killAllProcesses } from '../utils/process.js';
 
-const defaultInitialState: HookWorkflowState = {
-  events: [],
-  phase: 'idle',
-  currentTask: 0,
-  totalTasks: 0,
-  localCount: 0,
-  escalatedCount: 0,
-  reviewFilePath: null,
-  taskMap: new Map(),
-};
+export const REVIEW_HINT = 'approve / edit / comment <text> / quit';
 
 interface UseWorkflowOptions {
   feature: string;
@@ -28,13 +18,6 @@ interface UseWorkflowOptions {
 }
 
 export function useWorkflow({ feature, projectDir, config, onComplete, resumeState, selectedSkills }: UseWorkflowOptions) {
-  const [state, dispatch] = useReducer(workflowReducer, {
-    ...defaultInitialState,
-    phase: resumeState?.phase ?? 'idle',
-    currentTask: resumeState?.currentTaskIndex ?? 0,
-    totalTasks: resumeState?.tasks.length ?? 0,
-  });
-
   const inputMode = useInputMode();
   const abortedRef = useRef(false);
 
@@ -46,9 +29,15 @@ export function useWorkflow({ feature, projectDir, config, onComplete, resumeSta
   useEffect(() => {
     abortedRef.current = false;
 
+    workflowStore.reset({
+      phase: resumeState?.phase ?? 'idle',
+      currentTask: resumeState?.currentTaskIndex ?? 0,
+      totalTasks: resumeState?.tasks.length ?? 0,
+    });
+
     const addEvent = (event: TuiEvent) => {
       if (abortedRef.current) return;
-      dispatch({ type: 'ADD_EVENT', event });
+      workflowStore.addEvent(event);
     };
 
     runWorkflow({
@@ -58,19 +47,15 @@ export function useWorkflow({ feature, projectDir, config, onComplete, resumeSta
       callbacks: {
         onEvent: addEvent,
         onApprovalNeeded: async (_type, filePath) => {
-          dispatch({ type: 'SET_REVIEW_FILE', path: filePath });
-          const result = await inputMode.setReviewMode('approve / edit / comment <text> / quit');
-          dispatch({ type: 'SET_REVIEW_FILE', path: null });
+          workflowStore.setReviewFile(filePath);
+          const result = await inputMode.setReviewMode(REVIEW_HINT);
+          workflowStore.setReviewFile(null);
           return result;
         },
-        onExternalChanges: async () => {
-          const result = await inputMode.setReviewMode('External changes detected. continue / quit');
-          return result.approved;
-        },
-        onQuestionAsked: async (question, num, total) => {
-          const answer = await inputMode.setQuestionMode(`Question ${num}/${total}: ${question.text}`);
-          return answer;
-        },
+        onExternalChanges: async () =>
+          (await inputMode.setReviewMode('External changes detected. continue / quit')).approved,
+        onQuestionAsked: (question, num, total) =>
+          inputMode.setQuestionMode(`Question ${num}/${total}: ${question.text}`),
         onComplete: (summary) => {
           if (!abortedRef.current) onCompleteRef.current(summary);
         },
@@ -79,7 +64,7 @@ export function useWorkflow({ feature, projectDir, config, onComplete, resumeSta
       selectedSkills: selectedSkillsRef.current,
     }).catch((err) => {
       if (!abortedRef.current) {
-        dispatch({ type: 'ADD_EVENT', event: { type: 'planner-text', ts: Date.now(), text: `Error: ${String(err)}` } });
+        workflowStore.addEvent({ type: 'planner-text', ts: Date.now(), text: `Error: ${String(err)}` });
       }
     });
 
@@ -92,7 +77,7 @@ export function useWorkflow({ feature, projectDir, config, onComplete, resumeSta
   }, [feature, projectDir]);
 
   const inputModeRef = useLatestRef(inputMode);
-  const reviewFilePathRef = useLatestRef(state.reviewFilePath);
+  const reviewFilePath = workflowStore.use(s => s.reviewFilePath);
 
   const handleInput = async (text: string) => {
     const mode = inputModeRef.current;
@@ -101,11 +86,12 @@ export function useWorkflow({ feature, projectDir, config, onComplete, resumeSta
       if (cmd === 'approve') {
         mode.resolve({ approved: true });
       } else if (cmd === 'edit') {
-        if (reviewFilePathRef.current) {
+        const filePath = workflowStore.get().reviewFilePath;
+        if (filePath) {
           const editor = process.env.EDITOR || 'vi';
           const { spawn } = await import('node:child_process');
           await new Promise<void>((resolve) => {
-            const child = spawn(editor, [reviewFilePathRef.current!], { stdio: 'inherit' });
+            const child = spawn(editor, [filePath], { stdio: 'inherit' });
             child.on('close', () => resolve());
             child.on('error', () => resolve());
           });
@@ -127,16 +113,16 @@ export function useWorkflow({ feature, projectDir, config, onComplete, resumeSta
   };
 
   return {
-    events: state.events,
-    phase: state.phase,
-    currentTask: state.currentTask,
-    totalTasks: state.totalTasks,
-    localCount: state.localCount,
-    escalatedCount: state.escalatedCount,
-    taskMap: state.taskMap,
+    events: workflowStore.use(s => s.events),
+    phase: workflowStore.use(s => s.phase),
+    currentTask: workflowStore.use(s => s.currentTask),
+    totalTasks: workflowStore.use(s => s.totalTasks),
+    localCount: workflowStore.use(s => s.localCount),
+    escalatedCount: workflowStore.use(s => s.escalatedCount),
+    taskMap: workflowStore.use(s => s.taskMap),
     inputMode: inputMode.mode,
     inputHint: inputMode.hint,
-    reviewFilePath: state.reviewFilePath,
+    reviewFilePath,
     handleInput,
   };
 }

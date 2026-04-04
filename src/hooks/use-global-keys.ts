@@ -1,33 +1,35 @@
 import { useInput } from 'ink';
 import { useCtrlC } from './use-ctrl-c.js';
-import type { Screen, OverlayType } from '../types.js';
+import { overlayStore } from '../stores/overlay.js';
+import { routerStore } from '../stores/router.js';
+import { errorStore } from '../stores/error.js';
 
-interface UseGlobalKeysOptions {
-  screen: Screen;
-  overlay: { isOpen: boolean; open: (t: OverlayType) => void };
-  exit: () => void;
-  setErrorMessage: (msg: string | null) => void;
-}
+export function useGlobalKeys({ exit }: { exit: () => void }) {
+  const screen = routerStore.use(s => s.screen);
+  const isOpen = overlayStore.use(s => s.active) !== 'none';
 
-export function useGlobalKeys({ screen, overlay, exit, setErrorMessage }: UseGlobalKeysOptions) {
-  useCtrlC(screen, exit, setErrorMessage);
+  useCtrlC(screen, exit, errorStore.setError);
 
   useInput(
     (input, key) => {
       if (key.ctrl && input === 'k') {
-        overlay.open('command-palette');
+        overlayStore.open('command-palette');
         return;
       }
       if (key.ctrl && input === 's' && screen === 'home') {
-        overlay.open('skills');
+        overlayStore.open('skills');
         return;
       }
       if (key.ctrl && input === 'i' && screen === 'home') {
-        overlay.open('picker');
+        overlayStore.open('picker');
         return;
       }
       if (input === '\x1f') {
-        overlay.open('help');
+        overlayStore.open('help');
+        return;
+      }
+      if (key.ctrl && input === ',') {
+        overlayStore.open('settings');
         return;
       }
       if (key.ctrl && input === 'q') {
@@ -35,6 +37,6 @@ export function useGlobalKeys({ screen, overlay, exit, setErrorMessage }: UseGlo
         return;
       }
     },
-    { isActive: !overlay.isOpen },
+    { isActive: !isOpen },
   );
 }
