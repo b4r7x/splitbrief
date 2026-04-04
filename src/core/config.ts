@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import type { Config, PlannerTool } from './types.js';
-import { DEFAULT_BASES } from '../engine/providers.js';
+import { getProvider } from '../engine/providers/registry.js';
 import { validateConfig } from './config-validation.js';
 
 const CONFIG_DIR = '.tiny-spec';
@@ -59,7 +59,7 @@ export function createDefaultConfig(): Config {
     implementer: {
       provider: 'ollama',
       model: 'qwen2.5-coder:7b',
-      apiBase: DEFAULT_BASES.ollama.baseURL,
+      apiBase: getProvider('ollama').baseURL,
       contextLength: 32768,
       temperature: 0.3,
     },
@@ -74,6 +74,7 @@ export function createDefaultConfig(): Config {
       autoApprovePlan: false,
       maxRetries: 3,
       commitPerTask: true,
+      mode: 'standard',
     },
     theme: 'terminal',
     shikiTheme: 'github-dark',
@@ -82,11 +83,11 @@ export function createDefaultConfig(): Config {
 }
 
 export function loadConfig(projectDir: string): Config {
-  const configPath = path.join(projectDir, CONFIG_DIR, CONFIG_FILE);
+  const filePath = configPath(projectDir);
 
-  if (!fs.existsSync(configPath)) return createDefaultConfig();
+  if (!fs.existsSync(filePath)) return createDefaultConfig();
 
-  const raw = fs.readFileSync(configPath, 'utf-8');
+  const raw = fs.readFileSync(filePath, 'utf-8');
   const parsed = YAML.parse(raw);
 
   if (!parsed || typeof parsed !== 'object') return createDefaultConfig();
@@ -144,14 +145,7 @@ export function writeConfigSelection(
   config.implementer.provider = implementer.provider;
   config.implementer.model = implementer.model;
 
-  const base = DEFAULT_BASES[implementer.provider];
-  config.implementer.apiBase = implementer.apiBase ?? base?.baseURL ?? config.implementer.apiBase;
+  config.implementer.apiBase = implementer.apiBase ?? (getProvider(implementer.provider).baseURL || config.implementer.apiBase);
 
-  const dirPath = path.join(projectDir, CONFIG_DIR);
-  fs.mkdirSync(dirPath, { recursive: true });
-  fs.writeFileSync(
-    path.join(dirPath, CONFIG_FILE),
-    YAML.stringify(toYaml(config)),
-    'utf-8',
-  );
+  writeConfig(projectDir, config);
 }

@@ -35,6 +35,16 @@ describe('transition', () => {
     expect(next.phase).toBe('researching');
   });
 
+  it('START_QUICK -> implementing with tasks set', () => {
+    const tasks = [makeTask('t1'), makeTask('t2')];
+    const state = createInitialState('feat');
+    const next = transition(state, { type: 'START_QUICK', tasks });
+    expect(next.phase).toBe('implementing');
+    expect(next.tasks).toEqual(tasks);
+    expect(next.currentTaskIndex).toBe(0);
+    expect(next.attempt).toBe(0);
+  });
+
   it('RESEARCH_DONE -> specifying', () => {
     const state = { ...createInitialState('feat'), phase: 'researching' as const };
     const next = transition(state, { type: 'RESEARCH_DONE' });

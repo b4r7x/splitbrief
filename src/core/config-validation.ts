@@ -1,3 +1,5 @@
+import { KNOWN_PROVIDER_NAMES } from '../engine/providers/registry.js';
+
 const VALID_PLANNER_TOOLS = ['claude-code', 'codex', 'opencode', 'aider', 'agent-sdk', 'shell'] as const;
 
 function get(obj: unknown, ...keys: string[]): unknown {
@@ -62,12 +64,11 @@ export function validateConfig(config: Record<string, unknown>): ConfigError[] {
     errors.push({ path: 'implementer.outputFormat', message: `Must be one of: stream-json, jsonl, text (got ${JSON.stringify(implOutputFormat)})` });
   }
 
-  const knownProviders = ['ollama', 'lm-studio', 'deepseek', 'openrouter'];
   const provider = get(config, 'implementer', 'provider');
   if (provider !== undefined && typeof provider !== 'string') {
     errors.push({ path: 'implementer.provider', message: 'Must be a string' });
   }
-  if (provider !== undefined && typeof provider === 'string' && !knownProviders.includes(provider)) {
+  if (provider !== undefined && typeof provider === 'string' && !KNOWN_PROVIDER_NAMES.includes(provider)) {
     const apiBase = get(config, 'implementer', 'apiBase');
     if (!apiBase || typeof apiBase !== 'string') {
       errors.push({ path: 'implementer.apiBase', message: `Unknown provider "${provider}" requires implementer.apiBase to be set` });
@@ -104,6 +105,11 @@ export function validateConfig(config: Record<string, unknown>): ConfigError[] {
   const testCmd = get(config, 'validation', 'testCommand');
   if (testCmd !== undefined && (typeof testCmd !== 'string' || testCmd.length === 0)) {
     errors.push({ path: 'validation.testCommand', message: 'Must be a non-empty string' });
+  }
+
+  const workflowMode = get(config, 'workflow', 'mode');
+  if (workflowMode !== undefined && workflowMode !== 'quick' && workflowMode !== 'standard' && workflowMode !== 'full') {
+    errors.push({ path: 'workflow.mode', message: `Must be one of: quick, standard, full (got ${JSON.stringify(workflowMode)})` });
   }
 
   const retries = get(config, 'workflow', 'maxRetries');

@@ -1,17 +1,19 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../ui/theme.js';
-import type { Theme } from '../ui/theme.js';
+import type { TaskCompletionMethod } from '../types.js';
 
 interface TaskSummaryProps {
   index: number;
   title: string;
-  method: 'local' | 'escalated' | 'failed' | 'skipped';
+  method: TaskCompletionMethod;
   retries?: number;
   duration?: number;
   reason?: string;
 }
 
-export function renderTaskSummary({ index, title, method, retries, duration, reason }: TaskSummaryProps, t: Theme) {
+export default function TaskSummary({ index, title, method, retries, duration, reason }: TaskSummaryProps) {
+  const t = useTheme();
+
   if (method === 'failed') {
     return (
       <Box>
@@ -30,7 +32,8 @@ export function renderTaskSummary({ index, title, method, retries, duration, rea
     );
   }
 
-  const meta: string[] = [method];
+  const label = method === 'escalated-hint' ? 'hint' : method === 'escalated-full' ? 'escalated' : method;
+  const meta: string[] = [label];
   if (retries && retries > 0) meta.push(`${retries} ${retries === 1 ? 'retry' : 'retries'}`);
   if (duration != null) meta.push(`${duration}s`);
 
@@ -41,9 +44,4 @@ export function renderTaskSummary({ index, title, method, retries, duration, rea
       <Text color={t.textDim}> — {meta.join(', ')}</Text>
     </Box>
   );
-}
-
-export default function TaskSummary(props: TaskSummaryProps) {
-  const t = useTheme();
-  return renderTaskSummary(props, t);
 }

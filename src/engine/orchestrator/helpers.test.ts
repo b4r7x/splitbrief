@@ -7,12 +7,12 @@ vi.mock('node:fs', () => ({
   existsSync: vi.fn(),
 }));
 
-vi.mock('../../state-persistence.js', () => ({
+vi.mock('../../core/state-persistence.js', () => ({
   saveState: vi.fn(),
 }));
 
 import { readFileSync, existsSync } from 'node:fs';
-import { saveState } from '../../state-persistence.js';
+import { saveState } from '../../core/state-persistence.js';
 import { refreshCurrentCode, allValidationsPassed, addUsageAndSave, withSignalHandlers } from './helpers.js';
 
 function makeState(overrides?: Partial<WorkflowState>): WorkflowState {

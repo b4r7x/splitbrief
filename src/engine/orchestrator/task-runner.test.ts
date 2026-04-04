@@ -1,19 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { WorkflowState, OrchestratorCallbacks, TuiEvent, ValidationResult } from '../../types.js';
-import { createInitialState } from '../../state.js';
+import { createInitialState } from '../../core/state.js';
 import { makeTask, makeConfig } from '#testing/helpers/fixtures.js';
 
 vi.mock('../../utils/git.js', () => ({
   commitChanges: vi.fn(),
 }));
-vi.mock('../../state-persistence.js', () => ({
+vi.mock('../../core/state-persistence.js', () => ({
   saveState: vi.fn(),
   appendEvent: vi.fn(),
 }));
 
 import { validateCommitAndAdvance } from './task-runner.js';
 import { commitChanges } from '../../utils/git.js';
-import { saveState } from '../../state-persistence.js';
+import { saveState } from '../../core/state-persistence.js';
 
 beforeEach(() => {
   vi.clearAllMocks();

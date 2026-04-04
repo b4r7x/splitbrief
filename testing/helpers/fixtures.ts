@@ -24,6 +24,7 @@ export function makeConfig(overrides?: Partial<Config> & { implementer?: Partial
       autoApprovePlan: false,
       maxRetries: 3,
       commitPerTask: true,
+      mode: 'standard',
       ...overrides?.workflow,
     },
   };

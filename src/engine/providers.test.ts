@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createClient, DEFAULT_BASES } from './providers.js';
+import { createClient } from './providers.js';
 import { makeConfig as makeBaseConfig } from '#testing/helpers/fixtures.js';
 import type { Config } from '../types.js';
 
@@ -57,42 +57,3 @@ describe('createClient', () => {
   });
 });
 
-describe('DEFAULT_BASES', () => {
-  it('is exported and contains known providers', () => {
-    expect(DEFAULT_BASES.ollama).toBeTruthy();
-    expect(DEFAULT_BASES['lm-studio']).toBeTruthy();
-    expect(DEFAULT_BASES.deepseek).toBeTruthy();
-    expect(DEFAULT_BASES.openrouter).toBeTruthy();
-  });
-
-  it('Ollama default baseURL ends with /v1', () => {
-    expect(DEFAULT_BASES.ollama.baseURL).toBe('http://localhost:11434/v1');
-  });
-});
-
-describe('Ollama URL construction for native API', () => {
-  it('strips /v1 suffix from default Ollama baseURL', () => {
-    const base = DEFAULT_BASES.ollama.baseURL.replace(/\/v1\/?$/, '');
-    expect(base).toBe('http://localhost:11434');
-    expect(`${base}/api/show`).toBe('http://localhost:11434/api/show');
-  });
-
-  it('strips /v1 suffix from custom Ollama apiBase', () => {
-    const apiBase = 'http://my-server:11434/v1';
-    const base = apiBase.replace(/\/v1\/?$/, '');
-    expect(base).toBe('http://my-server:11434');
-    expect(`${base}/api/show`).toBe('http://my-server:11434/api/show');
-  });
-
-  it('strips /v1/ with trailing slash', () => {
-    const apiBase = 'http://my-server:11434/v1/';
-    const base = apiBase.replace(/\/v1\/?$/, '');
-    expect(base).toBe('http://my-server:11434');
-  });
-
-  it('does not strip partial /v1 matches', () => {
-    const apiBase = 'http://my-server:11434/v1beta';
-    const base = apiBase.replace(/\/v1\/?$/, '');
-    expect(base).toBe('http://my-server:11434/v1beta');
-  });
-});

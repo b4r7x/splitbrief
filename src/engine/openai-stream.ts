@@ -1,5 +1,5 @@
 import type OpenAI from 'openai';
-import type { Config, ImplementerTokenUsage } from '../types.js';
+import type { ImplementerTokenUsage } from '../types.js';
 
 const STREAM_TIMEOUT_MS = 60_000;
 
@@ -11,24 +11,25 @@ interface CompletionResult {
 interface StreamCompletionOptions {
   temperature: number;
   onProgress: (text: string) => void;
-  config: Config;
+  endpoint?: { provider: string; apiBase?: string };
   maxTokens?: number;
 }
 
-function mapStreamError(err: unknown, config: Config): void {
+function throwMappedError(err: unknown, endpoint?: { provider: string; apiBase?: string }): never {
   const errObj = err as Record<string, unknown>;
   const causeObj = (typeof errObj?.cause === 'object' && errObj.cause !== null ? errObj.cause : {}) as Record<string, unknown>;
   if (errObj?.code === 'ECONNREFUSED' || causeObj?.code === 'ECONNREFUSED') {
-    const baseURL = config.implementer.apiBase || `${config.implementer.provider} default`;
+    const baseURL = endpoint?.apiBase || 'unknown endpoint';
     throw new Error(
-      `Cannot connect to ${config.implementer.provider} at ${baseURL}. Is it running?`,
+      `Cannot connect to ${endpoint?.provider || 'provider'} at ${baseURL}. Is it running?`,
     );
   }
   if (typeof errObj?.status === 'number' && errObj.status >= 400) {
     throw new Error(
-      `API error ${errObj.status} from ${config.implementer.provider}: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      `API error ${errObj.status} from ${endpoint?.provider || 'provider'}: ${err instanceof Error ? err.message : 'Unknown error'}`,
     );
   }
+  throw err;
 }
 
 export async function streamCompletion(
@@ -37,7 +38,7 @@ export async function streamCompletion(
   messages: Array<{ role: 'system' | 'user'; content: string }>,
   opts: StreamCompletionOptions,
 ): Promise<CompletionResult> {
-  const { temperature, onProgress, config, maxTokens } = opts;
+  const { temperature, onProgress, endpoint, maxTokens } = opts;
   let stream;
   try {
     stream = await client.chat.completions.create({
@@ -49,8 +50,7 @@ export async function streamCompletion(
       ...(maxTokens ? { max_tokens: maxTokens } : {}),
     });
   } catch (err: unknown) {
-    mapStreamError(err, config);
-    throw err;
+    throwMappedError(err, endpoint);
   }
 
   let fullResponse = '';
@@ -91,8 +91,7 @@ export async function streamCompletion(
     if (err instanceof Object && 'isTimeout' in err) {
       throw err;
     }
-    mapStreamError(err, config);
-    throw err;
+    throwMappedError(err, endpoint);
   } finally {
     clearTimeout(timerId!);
   }

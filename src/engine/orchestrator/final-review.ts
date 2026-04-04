@@ -1,7 +1,7 @@
 import type { OrchestratorCallbacks, PlannerTokenUsage } from '../../types.js';
 import { getCurrentDiff } from '../../utils/git.js';
 import { readSpecFile } from '../../utils/fs.js';
-import { buildFinalReviewPrompt } from '../spec/templates.js';
+import { buildFinalReviewPrompt } from '../spec/review-prompts.js';
 import { parseStreamLine } from '../claude-stream.js';
 import { spawnWithStdin } from '../planners/spawn.js';
 import { createTextHandler } from './events.js';

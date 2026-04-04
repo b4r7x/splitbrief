@@ -50,7 +50,7 @@ export function extractQuestionsFromStream(text: string): ClarificationQuestion[
     }
 
     try {
-      const parsed = JSON.parse(text.substring(jsonStart, afterJson + 1));
+      const parsed = JSON.parse(text.substring(jsonStart, afterJson));
       if (
         typeof parsed.id === 'string' &&
         typeof parsed.type === 'string' &&

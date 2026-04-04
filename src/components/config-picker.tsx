@@ -14,10 +14,8 @@ import {
 import { writeConfigSelection } from "../core/config.js";
 import { FilterPanel, filterItem } from "./filter-panel.js";
 import type { PickerItem } from "./filter-panel.js";
-import type {
-  PlannerDetection,
-  ImplementerDetection,
-} from "../engine/detection.js";
+import type { PlannerDetection } from "../engine/detection.js";
+import type { ProviderDetection } from "../engine/providers/types.js";
 import type { PlannerTool } from "../types.js";
 
 function buildPlannerItems(planners: PlannerDetection[]): PickerItem[] {
@@ -40,7 +38,7 @@ function buildPlannerItems(planners: PlannerDetection[]): PickerItem[] {
   return items;
 }
 
-function buildModelItems(implementers: ImplementerDetection[]): PickerItem[] {
+function buildModelItems(implementers: ProviderDetection[]): PickerItem[] {
   const items: PickerItem[] = [
     {
       id: "__custom__",

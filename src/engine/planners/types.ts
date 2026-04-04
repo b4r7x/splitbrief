@@ -60,6 +60,13 @@ export interface PlannerBackend {
     callbacks: { onOutput: (text: string) => void },
   ): Promise<EscalationResult>;
 
+  quickPlan?(
+    feature: string,
+    projectDir: string,
+    config: Config,
+    callbacks: PlannerCallbacks,
+  ): Promise<PlanResult>;
+
   isAvailable(): Promise<boolean>;
 
   getVersion(): Promise<string | null>;

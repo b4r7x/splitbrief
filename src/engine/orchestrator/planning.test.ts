@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { OrchestratorCallbacks, TuiEvent, WorkflowState } from '../../types.js';
 import type { PlannerBackend } from '../planners/types.js';
-import { createInitialState, transition } from '../../state.js';
+import { createInitialState, transition } from '../../core/state.js';
 import { makeConfig, makeTask } from '#testing/helpers/fixtures.js';
 
-vi.mock('../../state-persistence.js', () => ({
+vi.mock('../../core/state-persistence.js', () => ({
   saveState: vi.fn(),
   appendEvent: vi.fn(),
 }));
@@ -148,6 +148,76 @@ describe('runPlanningPhase', () => {
     expect(result.cancelled).toBe(false);
   });
 
+  it('quick mode skips approval and uses quickPlan', async () => {
+    const quickPlan = vi.fn().mockResolvedValue({
+      spec: '',
+      plan: '',
+      tasks: [makeTask()],
+      usage: { inputTokens: 50, outputTokens: 25 },
+    });
+    const onApprovalNeeded = vi.fn();
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const planner = makePlanner({ quickPlan });
+    const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'quick' } });
+
+    const result = await runPlanningPhase({
+      feature: 'test-feature',
+      projectDir: '/tmp/proj',
+      config,
+      callbacks,
+      planner,
+      state: prepareState(),
+    });
+
+    expect(quickPlan).toHaveBeenCalled();
+    expect(onApprovalNeeded).not.toHaveBeenCalled();
+    expect(result.cancelled).toBe(false);
+    expect(result.tasks).toHaveLength(1);
+    expect(result.state.phase).toBe('implementing');
+  });
+
+  it('standard mode auto-approves plan after spec approval', async () => {
+    const onApprovalNeeded = vi.fn()
+      .mockResolvedValueOnce({ approved: true }); // approve spec only
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const planner = makePlanner();
+    const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'standard' } });
+
+    const result = await runPlanningPhase({
+      feature: 'test-feature',
+      projectDir: '/tmp/proj',
+      config,
+      callbacks,
+      planner,
+      state: prepareState(),
+    });
+
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
+    expect(result.cancelled).toBe(false);
+    expect(result.tasks).toHaveLength(1);
+  });
+
+  it('full mode requires both spec and plan approval', async () => {
+    const onApprovalNeeded = vi.fn()
+      .mockResolvedValueOnce({ approved: true }) // spec
+      .mockResolvedValueOnce({ approved: true }); // plan
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const planner = makePlanner();
+    const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'full' } });
+
+    const result = await runPlanningPhase({
+      feature: 'test-feature',
+      projectDir: '/tmp/proj',
+      config,
+      callbacks,
+      planner,
+      state: prepareState(),
+    });
+
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
+    expect(result.cancelled).toBe(false);
+  });
+
   it('user rejects plan → returns cancelled', async () => {
     const onApprovalNeeded = vi.fn()
       .mockResolvedValueOnce({ approved: true }) // approve spec
@@ -155,7 +225,7 @@ describe('runPlanningPhase', () => {
 
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const planner = makePlanner();
-    const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false } });
+    const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'full' } });
 
     const result = await runPlanningPhase({
       feature: 'test-feature',

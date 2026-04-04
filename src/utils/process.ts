@@ -41,7 +41,7 @@ export function killProcess(proc: ChildProcess, options?: { group?: boolean }): 
     } else {
       proc.kill('SIGTERM');
     }
-  } catch {}
+  } catch { /* process already dead — safe to ignore */ }
   setTimeout(() => {
     if (proc.pid === undefined) return;
     try {
@@ -51,7 +51,7 @@ export function killProcess(proc: ChildProcess, options?: { group?: boolean }): 
       } else {
         proc.kill('SIGKILL');
       }
-    } catch {}
+    } catch { /* process already dead — safe to ignore */ }
   }, SIGKILL_DELAY);
 }
 

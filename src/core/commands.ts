@@ -1,6 +1,8 @@
-import { ALL_SCREENS } from './types.js';
-import type { Screen, SlashCommandDef, CommandContext, CommandPaletteItem } from './types.js';
+import { ALL_SCREENS, WORKFLOW_MODES } from './types.js';
+import type { Screen, SlashCommandDef, CommandContext, CommandPaletteItem, WorkflowMode } from './types.js';
 import { getShortcutKey } from './shortcuts.js';
+import { configStore } from '../stores/config.js';
+import { feedbackStore } from '../stores/error.js';
 
 export function createCommands(ctx: CommandContext): SlashCommandDef[] {
   return [
@@ -44,6 +46,43 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
       handler: () => ctx.openOverlay('settings'),
     },
     {
+      name: '/mode',
+      label: 'Mode',
+      description: 'Show or set workflow mode (quick, standard, full)',
+      validScreens: ALL_SCREENS,
+      handler: (args?: string) => {
+        const config = configStore.get().config;
+        if (!config) return;
+        const validModes = WORKFLOW_MODES;
+        if (!args) {
+          const current = config.workflow.mode ?? 'standard';
+          feedbackStore.setMessage(`Workflow mode: ${current}. Use /mode <${validModes.join('|')}> to change.`);
+          return;
+        }
+        const mode = args.trim().toLowerCase();
+        if (!validModes.includes(mode as WorkflowMode)) {
+          feedbackStore.setError(`Invalid mode: ${mode}. Valid modes: ${validModes.join(', ')}`);
+          return;
+        }
+        const updated = { ...config, workflow: { ...config.workflow, mode: mode as WorkflowMode } };
+        configStore.set({ ...configStore.get(), config: updated });
+        feedbackStore.setMessage(`Workflow mode set to: ${mode}`);
+      },
+    },
+    {
+      name: '/model',
+      label: 'Model',
+      description: 'Show current planner and implementer model config',
+      validScreens: ALL_SCREENS,
+      handler: () => {
+        const config = configStore.get().config;
+        if (!config) return;
+        const plannerInfo = `Planner: ${config.planner.tool}${config.planner.model ? ` (${config.planner.model})` : ''}`;
+        const implInfo = `Implementer: ${config.implementer.model} (${config.implementer.provider})`;
+        feedbackStore.setMessage(`${plannerInfo} | ${implInfo}`);
+      },
+    },
+    {
       name: '/quit',
       label: 'Quit',
       description: 'Exit application',
@@ -77,7 +116,9 @@ export function executeSlashCommand(
   screen: Screen,
   onError: (msg: string) => void,
 ): void {
-  const name = raw.split(' ')[0].toLowerCase();
+  const parts = raw.split(' ');
+  const name = parts[0].toLowerCase();
+  const args = parts.slice(1).join(' ').trim() || undefined;
   const cmd = findCommand(commands, name);
   if (!cmd) {
     onError(`Unknown command: ${name}. Type /help for available commands.`);
@@ -87,5 +128,5 @@ export function executeSlashCommand(
     onError(`${cmd.name} is only available on the ${cmd.validScreens.join(', ')} screen.`);
     return;
   }
-  cmd.handler();
+  cmd.handler(args);
 }

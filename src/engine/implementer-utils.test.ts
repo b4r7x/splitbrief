@@ -19,7 +19,7 @@ vi.mock('../utils/fs.js', () => ({
   validateTaskPath: vi.fn(),
 }));
 
-import { createGenEventEmitter, processImplementerOutput } from './implementer-utils.js';
+import { createGenEventEmitter, processImplementerOutput } from './implementers/base.js';
 import { extractCode } from './extractor.js';
 import { applyCode } from './apply.js';
 import { computeDiff } from '../utils/diff.js';

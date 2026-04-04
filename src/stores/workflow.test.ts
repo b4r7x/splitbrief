@@ -48,7 +48,7 @@ describe('workflowStore', () => {
     });
 
     it('increments escalatedCount on task-complete with method=escalated', () => {
-      const event = makeTaskComplete({ method: 'escalated' });
+      const event = makeTaskComplete({ method: 'escalated-hint' });
       workflowStore.addEvent(event);
       expect(workflowStore.get().escalatedCount).toBe(1);
     });

@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { WorkflowState, OrchestratorCallbacks, ValidationResult } from '../../types.js';
 import { makeUsage } from '#testing/helpers/fixtures.js';
 
-vi.mock('../../state-persistence.js', () => ({
+vi.mock('../../core/state-persistence.js', () => ({
   appendEvent: vi.fn(),
 }));
 
-import { appendEvent } from '../../state-persistence.js';
+import { appendEvent } from '../../core/state-persistence.js';
 import { emit, emitValidationStart, emitValidationResult, createTextHandler } from './events.js';
 
 function makeState(overrides?: Partial<WorkflowState>): WorkflowState {

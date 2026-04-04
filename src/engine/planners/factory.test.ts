@@ -31,42 +31,42 @@ const KNOWN_TOOLS = ['claude-code', 'codex', 'opencode', 'aider', 'agent-sdk'] a
 
 describe('createPlanner', () => {
   it('claude-code returns a backend with name "claude-code"', async () => {
-    const backend = await createPlanner(makeConfig('claude-code'));
-    expect(backend.name).toBe('claude-code');
+    const planner = await createPlanner(makeConfig('claude-code'));
+    expect(planner.name).toBe('claude-code');
   });
 
   it('codex returns a backend with name "codex"', async () => {
-    const backend = await createPlanner(makeConfig('codex'));
-    expect(backend.name).toBe('codex');
+    const planner = await createPlanner(makeConfig('codex'));
+    expect(planner.name).toBe('codex');
   });
 
   it('opencode returns a backend with name "opencode"', async () => {
-    const backend = await createPlanner(makeConfig('opencode'));
-    expect(backend.name).toBe('opencode');
+    const planner = await createPlanner(makeConfig('opencode'));
+    expect(planner.name).toBe('opencode');
   });
 
   it('aider returns a backend with name "aider"', async () => {
-    const backend = await createPlanner(makeConfig('aider'));
-    expect(backend.name).toBe('aider');
+    const planner = await createPlanner(makeConfig('aider'));
+    expect(planner.name).toBe('aider');
   });
 
   it('agent-sdk returns a backend with name "agent-sdk"', async () => {
-    const backend = await createPlanner(makeConfig('agent-sdk'));
-    expect(backend.name).toBe('agent-sdk');
+    const planner = await createPlanner(makeConfig('agent-sdk'));
+    expect(planner.name).toBe('agent-sdk');
   });
 
   it('shell returns a backend with name starting with "shell:"', async () => {
-    const backend = await createPlanner(makeConfig('shell', { command: 'echo' }));
-    expect(backend.name.startsWith('shell:')).toBeTruthy();
+    const planner = await createPlanner(makeConfig('shell', { command: 'echo' }));
+    expect(planner.name.startsWith('shell:')).toBeTruthy();
   });
 
   it('shell backend has all required functions', async () => {
-    const backend = await createPlanner(makeConfig('shell', { command: 'echo' }));
-    expect(typeof backend.plan).toBe('function');
-    expect(typeof backend.escalateHint).toBe('function');
-    expect(typeof backend.escalateFull).toBe('function');
-    expect(typeof backend.isAvailable).toBe('function');
-    expect(typeof backend.getPricing).toBe('function');
+    const planner = await createPlanner(makeConfig('shell', { command: 'echo' }));
+    expect(typeof planner.plan).toBe('function');
+    expect(typeof planner.escalateHint).toBe('function');
+    expect(typeof planner.escalateFull).toBe('function');
+    expect(typeof planner.isAvailable).toBe('function');
+    expect(typeof planner.getPricing).toBe('function');
   });
 
   it('unknown tool throws error with helpful message', async () => {
@@ -77,17 +77,17 @@ describe('createPlanner', () => {
 
   for (const tool of KNOWN_TOOLS) {
     it(`${tool} backend has all required functions`, async () => {
-      const backend = await createPlanner(makeConfig(tool));
-      expect(typeof backend.plan).toBe('function');
-      expect(typeof backend.escalateHint).toBe('function');
-      expect(typeof backend.escalateFull).toBe('function');
-      expect(typeof backend.isAvailable).toBe('function');
-      expect(typeof backend.getPricing).toBe('function');
+      const planner = await createPlanner(makeConfig(tool));
+      expect(typeof planner.plan).toBe('function');
+      expect(typeof planner.escalateHint).toBe('function');
+      expect(typeof planner.escalateFull).toBe('function');
+      expect(typeof planner.isAvailable).toBe('function');
+      expect(typeof planner.getPricing).toBe('function');
     });
 
     it(`${tool} getPricing() returns non-null PricingInfo`, async () => {
-      const backend = await createPlanner(makeConfig(tool));
-      const pricing = backend.getPricing();
+      const planner = await createPlanner(makeConfig(tool));
+      const pricing = planner.getPricing();
       expect(pricing).toBeTruthy();
       expect(typeof pricing.inputPer1M).toBe('number');
       expect(typeof pricing.outputPer1M).toBe('number');

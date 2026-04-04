@@ -1,9 +1,9 @@
 import { join } from 'node:path';
 import type { Config, WorkflowState, Task, OrchestratorCallbacks, SkillMeta, StateAction, OrchestratorEventType } from '../../types.js';
-import { transition } from '../../state.js';
-import { saveState } from '../../state-persistence.js';
+import { transition } from '../../core/state.js';
+import { saveState } from '../../core/state-persistence.js';
 import { readSpecFile, writeSpecFile } from '../../utils/fs.js';
-import { buildRegeneratePrompt } from '../spec/templates.js';
+import { buildRegeneratePrompt } from '../spec/planning-prompts.js';
 import { buildSkillsSection } from '../skills.js';
 import type { ClarificationQuestion } from '../question-parser.js';
 import type { PlannerBackend } from '../planners/types.js';
@@ -129,7 +129,34 @@ type PlanningPhaseOptions = {
   selectedSkills?: SkillMeta[];
 };
 
-export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<{ state: WorkflowState; tasks: Task[]; cancelled: boolean }> {
+async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<{ state: WorkflowState; tasks: Task[]; cancelled: boolean }> {
+  const { feature, projectDir, callbacks, planner, config } = opts;
+  let { state } = opts;
+
+  let planResult: Awaited<ReturnType<PlannerBackend['plan']>>;
+  try {
+    const quickPlanFn = planner.quickPlan ?? planner.plan;
+    planResult = await quickPlanFn.call(planner, feature, projectDir, config, {
+      onOutput: createTextHandler(callbacks),
+    });
+  } catch (err) {
+    callbacks.onEvent({ type: 'error', ts: Date.now(), message: `Planning failed: ${toErrorMessage(err)}` });
+    state = transition(state, { type: 'CANCEL' });
+    saveState(projectDir, state);
+    return { state, tasks: [], cancelled: true };
+  }
+
+  state = addUsageAndSave(projectDir, state, 'planner', planResult.usage);
+
+  state = transition(state, { type: 'START_QUICK', tasks: planResult.tasks });
+  saveState(projectDir, state);
+  callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: state.phase, status: 'running' });
+  emit(projectDir, state, 'plan_approved');
+
+  return { state, tasks: planResult.tasks, cancelled: false };
+}
+
+async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boolean): Promise<{ state: WorkflowState; tasks: Task[]; cancelled: boolean }> {
   const { feature, projectDir, config, callbacks, planner, selectedSkills } = opts;
   let { state } = opts;
   const MAX_CLARIFICATION_QUESTIONS = 5;
@@ -183,7 +210,7 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<{ st
 
   const planPath = join(projectDir, '.tiny-spec', 'current', 'plan.md');
 
-  if (!config.workflow.autoApprovePlan) {
+  if (!skipPlanApproval && !config.workflow.autoApprovePlan) {
     const planLoop = await runApprovalLoop({ type: 'plan', filePath: planPath, planner, projectDir, callbacks, state });
     state = planLoop.state;
     if (planLoop.rejected) return { state, tasks: [], cancelled: true };
@@ -192,4 +219,15 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<{ st
   state = transitionAndEmit({ state, projectDir, callbacks, action: { type: 'APPROVE_PLAN' }, eventName: 'plan_approved', status: 'running' });
 
   return { state, tasks, cancelled: false };
+}
+
+export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<{ state: WorkflowState; tasks: Task[]; cancelled: boolean }> {
+  const mode = opts.config.workflow.mode ?? 'standard';
+
+  if (mode === 'quick') {
+    return runQuickPlanning(opts);
+  }
+
+  const skipPlanApproval = mode === 'standard';
+  return runFullPlanning(opts, skipPlanApproval);
 }

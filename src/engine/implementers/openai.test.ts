@@ -13,9 +13,16 @@ vi.mock('../openai-stream.js', () => ({
   streamCompletion: vi.fn(),
 }));
 
-vi.mock('../implementer-utils.js', () => ({
-  createGenEventEmitter: vi.fn().mockReturnValue(vi.fn()),
-  processImplementerOutput: vi.fn(),
+vi.mock('../extractor.js', () => ({
+  extractCode: vi.fn(),
+}));
+
+vi.mock('../apply.js', () => ({
+  applyCode: vi.fn(),
+}));
+
+vi.mock('../../utils/diff.js', () => ({
+  computeDiff: vi.fn(),
 }));
 
 vi.mock('../spec/formatter.js', () => ({
@@ -29,10 +36,12 @@ vi.mock('../spec/token-budget.js', () => ({
 }));
 
 import { streamCompletion } from '../openai-stream.js';
-import { processImplementerOutput } from '../implementer-utils.js';
-import { implementTaskViaOpenAI, retryTaskViaOpenAI } from './openai.js';
+import { extractCode } from '../extractor.js';
+import { applyCode } from '../apply.js';
+import { computeDiff } from '../../utils/diff.js';
+import { createOpenAIImplementer } from './openai.js';
 
-describe('implementTaskViaOpenAI', () => {
+describe('openai implementer', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('returns success with usage on successful implementation', async () => {
@@ -41,14 +50,12 @@ describe('implementTaskViaOpenAI', () => {
       text: 'export function hello() {}',
       usage,
     });
-    vi.mocked(processImplementerOutput).mockResolvedValue({
-      success: true,
-      diff: '+export function hello() {}',
-      linesAdded: 1,
-      linesRemoved: 0,
-    });
+    vi.mocked(extractCode).mockReturnValue({ code: 'export function hello() {}', confidence: 'high' });
+    vi.mocked(applyCode).mockReturnValue({ success: true });
+    vi.mocked(computeDiff).mockReturnValue({ diff: '+export function hello() {}', linesAdded: 1, linesRemoved: 0 });
 
-    const result = await implementTaskViaOpenAI({
+    const implementer = createOpenAIImplementer(makeConfig());
+    const result = await implementer.implement({
       task: makeTask(),
       projectDir: '/tmp/proj',
       config: makeConfig(),
@@ -65,12 +72,10 @@ describe('implementTaskViaOpenAI', () => {
       text: 'no code here, just explanation',
       usage: null,
     });
-    vi.mocked(processImplementerOutput).mockResolvedValue({
-      success: false,
-      error: 'No code found in response',
-    });
+    vi.mocked(extractCode).mockReturnValue({ error: 'No code found in response' });
 
-    const result = await implementTaskViaOpenAI({
+    const implementer = createOpenAIImplementer(makeConfig());
+    const result = await implementer.implement({
       task: makeTask(),
       projectDir: '/tmp/proj',
       config: makeConfig(),
@@ -85,7 +90,8 @@ describe('implementTaskViaOpenAI', () => {
   it('returns error when stream throws', async () => {
     vi.mocked(streamCompletion).mockRejectedValue(new Error('Connection timeout'));
 
-    const result = await implementTaskViaOpenAI({
+    const implementer = createOpenAIImplementer(makeConfig());
+    const result = await implementer.implement({
       task: makeTask(),
       projectDir: '/tmp/proj',
       config: makeConfig(),
@@ -98,7 +104,7 @@ describe('implementTaskViaOpenAI', () => {
   });
 });
 
-describe('retryTaskViaOpenAI', () => {
+describe('openai implementer retry', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('returns success on successful retry', async () => {
@@ -106,14 +112,12 @@ describe('retryTaskViaOpenAI', () => {
       text: 'fixed code',
       usage: { inputTokens: 200, outputTokens: 100 },
     });
-    vi.mocked(processImplementerOutput).mockResolvedValue({
-      success: true,
-      diff: '+fixed',
-      linesAdded: 1,
-      linesRemoved: 0,
-    });
+    vi.mocked(extractCode).mockReturnValue({ code: 'fixed code', confidence: 'high' });
+    vi.mocked(applyCode).mockReturnValue({ success: true });
+    vi.mocked(computeDiff).mockReturnValue({ diff: '+fixed', linesAdded: 1, linesRemoved: 0 });
 
-    const result = await retryTaskViaOpenAI({
+    const implementer = createOpenAIImplementer(makeConfig());
+    const result = await implementer.retry({
       task: makeTask(),
       projectDir: '/tmp/proj',
       config: makeConfig(),

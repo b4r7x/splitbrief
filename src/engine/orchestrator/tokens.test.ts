@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createInitialState } from '../../state.js';
+import { createInitialState } from '../../core/state.js';
 import { addUsage, tokenDelta } from './tokens.js';
 import type { UsageCategory } from './tokens.js';
 

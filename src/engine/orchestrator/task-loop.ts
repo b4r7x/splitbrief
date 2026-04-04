@@ -1,16 +1,19 @@
-import type { Task, Config, WorkflowState, OrchestratorCallbacks, ProjectContext, TaskTokenUsage, TokenUsage } from '../../types.js';
-import { transition } from '../../state.js';
-import { saveState, loadState } from '../../state-persistence.js';
-import { implementTask } from '../implementer.js';
+import type { Task, WorkflowState, OrchestratorCallbacks, TaskTokenUsage, TokenUsage } from '../../types.js';
+import { transition } from '../../core/state.js';
+import { saveState, loadState } from '../../core/state-persistence.js';
 import { validateTask, formatValidationError } from '../validator.js';
 import { hasExternalChanges } from '../../utils/git.js';
 
-import type { PlannerBackend } from '../planners/types.js';
+import type { WorkflowContext } from './types.js';
 import { tokenDelta } from './tokens.js';
 import { emit, emitValidationStart, emitValidationResult, createTextHandler } from './events.js';
 import { validateCommitAndAdvance } from './task-runner.js';
 import { handleRetryAndEscalation } from './escalation.js';
 import { refreshCurrentCode, addUsageAndSave } from './helpers.js';
+
+function markTask(task: Task, status: Task['status']): void {
+  task.status = status;
+}
 
 export function hasDependencyFailed(task: Task, failedTasks: string[], skippedTasks: string[]): boolean {
   const blocked = new Set([...failedTasks, ...skippedTasks]);
@@ -78,7 +81,7 @@ type HandleSkippedTaskOptions = {
 
 function handleSkippedTask(opts: HandleSkippedTaskOptions): WorkflowState {
   const { task, projectDir, callbacks, taskBreakdowns, index } = opts;
-  task.status = 'skipped';
+  markTask(task, 'skipped');
   const state = {
     ...opts.state,
     skippedTasks: [...opts.state.skippedTasks, task.id],
@@ -95,13 +98,9 @@ function handleSkippedTask(opts: HandleSkippedTaskOptions): WorkflowState {
 }
 
 type RetryAndRecordOptions = {
+  wctx: WorkflowContext;
   task: Task;
   initialError: string;
-  projectDir: string;
-  config: Config;
-  context: ProjectContext;
-  planner: PlannerBackend;
-  callbacks: OrchestratorCallbacks;
   state: WorkflowState;
   taskStartTime: number;
   tokensBefore: TokenUsage;
@@ -110,10 +109,11 @@ type RetryAndRecordOptions = {
 };
 
 async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ state: WorkflowState; completed: boolean }> {
-  const { task, initialError, projectDir, config, context, planner, callbacks, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState } = opts;
+  const { wctx, task, initialError, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState } = opts;
+  const { projectDir, config, callbacks, planner, context, implementer } = wctx;
   const retryResult = await handleRetryAndEscalation({
     task, initialError, projectDir, config, context, planner, callbacks,
-    currentState: opts.state, taskStartTime,
+    currentState: opts.state, taskStartTime, implementer,
   });
   const state = loadState(projectDir) ?? opts.state;
   setTrackedState(state);
@@ -123,25 +123,22 @@ async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ state: Wor
 }
 
 type RunSingleTaskOptions = {
+  wctx: WorkflowContext;
   task: Task;
   index: number;
   totalTasks: number;
   state: WorkflowState;
-  projectDir: string;
-  config: Config;
-  callbacks: OrchestratorCallbacks;
-  context: ProjectContext;
-  planner: PlannerBackend;
   taskBreakdowns: TaskTokenUsage[];
   setTrackedState: (s: WorkflowState) => void;
   setCurrentTask: (t: { file: string; action: string } | undefined) => void;
 };
 
 async function runSingleTask(opts: RunSingleTaskOptions): Promise<WorkflowState> {
-  const { task, index, totalTasks, projectDir, config, callbacks, context, planner, taskBreakdowns, setTrackedState, setCurrentTask } = opts;
+  const { wctx, task, index, totalTasks, taskBreakdowns, setTrackedState, setCurrentTask } = opts;
+  const { projectDir, config, callbacks, context } = wctx;
   let state = opts.state;
 
-  task.status = 'in_progress';
+  markTask(task, 'in_progress');
   setCurrentTask(task);
   const taskStartTime = Date.now();
   callbacks.onEvent({ type: 'task-start', ts: taskStartTime, taskId: task.id, title: task.title, index, total: totalTasks, file: task.file, action: task.action });
@@ -153,8 +150,8 @@ async function runSingleTask(opts: RunSingleTaskOptions): Promise<WorkflowState>
 
   const tokensBefore = { ...state.tokenUsage };
 
-  const implResult = await implementTask(task, {
-    projectDir, config, context,
+  const implResult = await wctx.implementer.implement({
+    task, projectDir, config, context,
     onProgress: createTextHandler(callbacks),
     onEvent: callbacks.onEvent,
   });
@@ -163,8 +160,8 @@ async function runSingleTask(opts: RunSingleTaskOptions): Promise<WorkflowState>
 
   if (!implResult.success) {
     const retry = await retryAndRecord({
-      task, initialError: implResult.error ?? 'Implementation failed to produce valid code',
-      projectDir, config, context, planner, callbacks, state, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState,
+      wctx, task, initialError: implResult.error ?? 'Implementation failed to produce valid code',
+      state, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState,
     });
     return retry.state;
   }
@@ -190,25 +187,22 @@ async function runSingleTask(opts: RunSingleTaskOptions): Promise<WorkflowState>
 
   const errorText = formatValidationError(validationResults);
   const retry = await retryAndRecord({
-    task, initialError: errorText,
-    projectDir, config, context, planner, callbacks, state, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState,
+    wctx, task, initialError: errorText,
+    state, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState,
   });
   return retry.state;
 }
 
 type RunTaskLoopOptions = {
-  projectDir: string;
-  config: Config;
-  callbacks: OrchestratorCallbacks;
-  context: ProjectContext;
-  planner: PlannerBackend;
+  wctx: WorkflowContext;
   initialState: WorkflowState;
   setTrackedState: (s: WorkflowState) => void;
   setCurrentTask: (t: { file: string; action: string } | undefined) => void;
 };
 
 export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: WorkflowState; taskBreakdowns: TaskTokenUsage[] }> {
-  const { projectDir, config, callbacks, context, planner, setTrackedState, setCurrentTask } = opts;
+  const { wctx, setTrackedState, setCurrentTask } = opts;
+  const { projectDir, callbacks } = wctx;
   let state = opts.initialState;
   const totalTasks = state.tasks.length;
   const taskBreakdowns: TaskTokenUsage[] = [];
@@ -224,7 +218,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: Wo
       continue;
     }
 
-    state = await runSingleTask({ task, index: i, totalTasks, state, projectDir, config, callbacks, context, planner, taskBreakdowns, setTrackedState, setCurrentTask });
+    state = await runSingleTask({ wctx, task, index: i, totalTasks, state, taskBreakdowns, setTrackedState, setCurrentTask });
   }
   setCurrentTask(undefined);
 

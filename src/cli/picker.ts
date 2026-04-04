@@ -1,9 +1,6 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import YAML from 'yaml';
-import { createDefaultConfig, initConfig, toYaml } from '../core/config.js';
-import { DEFAULT_BASES } from '../engine/providers.js';
+import { createDefaultConfig, initConfig, writeConfig } from '../core/config.js';
+import { getProvider } from '../engine/providers/registry.js';
 import { detectAvailablePlanners, detectAvailableImplementers } from '../engine/detection.js';
 import type { PlannerTool } from '../types.js';
 
@@ -81,16 +78,9 @@ export async function runPicker(projectDir: string): Promise<void> {
     defaults.implementer.model = allModels[idx].model;
   }
 
-  const base = DEFAULT_BASES[defaults.implementer.provider];
-  defaults.implementer.apiBase = base?.baseURL ?? defaults.implementer.apiBase;
+  defaults.implementer.apiBase = getProvider(defaults.implementer.provider).baseURL || defaults.implementer.apiBase;
 
-  const dirPath = join(projectDir, '.tiny-spec');
-  mkdirSync(dirPath, { recursive: true });
-  writeFileSync(
-    join(dirPath, 'config.yaml'),
-    YAML.stringify(toYaml(defaults)),
-    'utf-8',
-  );
+  writeConfig(projectDir, defaults);
 
   console.log(`\nCreated .tiny-spec/config.yaml (planner: ${selectedTool}, model: ${defaults.implementer.provider} / ${defaults.implementer.model})`);
 }

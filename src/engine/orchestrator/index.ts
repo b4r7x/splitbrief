@@ -1,14 +1,16 @@
 import { join } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
 import type { Config, WorkflowState, TaskTokenUsage, Summary, OrchestratorCallbacks, SkillMeta, ProjectContext } from '../../types.js';
-import { createInitialState, transition } from '../../state.js';
-import { saveState } from '../../state-persistence.js';
+import { createInitialState, transition } from '../../core/state.js';
+import { saveState } from '../../core/state-persistence.js';
 import { ensureTinySpecDir, writeSpecFile } from '../../utils/fs.js';
 import { killAllProcesses } from '../../utils/process.js';
 import { discardTaskChanges } from '../../utils/git.js';
 import { toErrorMessage } from '../../utils/format.js';
 import { createPlanner } from '../planners/factory.js';
+import { createImplementer } from '../implementers/factory.js';
 
+import type { WorkflowContext } from './types.js';
 import { buildSummary } from './cost.js';
 import { emit } from './events.js';
 import { addUsageAndSave, withSignalHandlers } from './helpers.js';
@@ -16,6 +18,7 @@ import { runFinalReview } from './final-review.js';
 import { runPlanningPhase } from './planning.js';
 import { runTaskLoop } from './task-loop.js';
 
+export type { WorkflowContext } from './types.js';
 export { estimateCostSavings, calculateCostBreakdown } from './cost.js';
 export { allValidationsPassed } from './helpers.js';
 export { hasDependencyFailed } from './task-loop.js';
@@ -32,7 +35,7 @@ export type RunWorkflowOptions = {
 type SummaryBase = { feature: string; startTime: number; plannerTool: string; implementerProvider: string };
 
 type InitResult =
-  | { ok: true; state: WorkflowState; planner: Awaited<ReturnType<typeof createPlanner>>; context: ProjectContext }
+  | { ok: true; state: WorkflowState; wctx: WorkflowContext }
   | { ok: false; summary: Summary };
 
 function readProjectName(projectDir: string): string {
@@ -67,6 +70,8 @@ async function initializeWorkflow(
     return { ok: false, summary: buildSummary({ ...summaryBase, state: createInitialState(feature) }) };
   }
 
+  const implementer = await createImplementer(config);
+
   let state: WorkflowState;
 
   if (savedState) {
@@ -90,7 +95,9 @@ async function initializeWorkflow(
     testCommand: config.validation.testCommand,
   };
 
-  return { ok: true, state, planner, context };
+  const wctx: WorkflowContext = { projectDir, config, callbacks, planner, context, implementer };
+
+  return { ok: true, state, wctx };
 }
 
 async function runFinalReviewPhase(
@@ -149,18 +156,18 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
       if (!init.ok) { result = init.summary; return; }
 
       let { state } = init;
-      const { planner, context } = init;
+      const { wctx } = init;
       trackedState = state;
 
       if (!savedState) {
-        const planning = await runPlanningPhase({ feature, projectDir, config, callbacks, planner, state, selectedSkills });
+        const planning = await runPlanningPhase({ feature, projectDir, config, callbacks, planner: wctx.planner, state, selectedSkills });
         state = planning.state;
         trackedState = state;
         if (planning.cancelled) { result = buildSummary({ ...summaryBase, state }); return; }
       }
 
       const taskResult = await runTaskLoop({
-        projectDir, config, callbacks, context, planner, initialState: state,
+        wctx, initialState: state,
         setTrackedState: (s) => { trackedState = s; },
         setCurrentTask: (t) => { currentTask = t; },
       });

@@ -1,6 +1,7 @@
 import { createStore, storeBase } from './create-store.js';
 import { loadConfig } from '../core/config.js';
-import type { Config, PlannerTool } from '../types.js';
+import { WORKFLOW_MODES } from '../types.js';
+import type { Config, PlannerTool, WorkflowMode } from '../types.js';
 
 interface ConfigOverrides {
   modelOverride?: string;
@@ -9,6 +10,7 @@ interface ConfigOverrides {
   plannerOverride?: string;
   plannerModelOverride?: string;
   autoApprove?: boolean;
+  modeOverride?: string;
 }
 
 interface ConfigState {
@@ -36,6 +38,13 @@ function load(projectDir: string, overrides: ConfigOverrides = {}) {
     cfg.workflow.autoApproveSpec = true;
     cfg.workflow.autoApprovePlan = true;
   }
+  if (overrides.modeOverride !== undefined) {
+    const valid = WORKFLOW_MODES;
+    if (!valid.includes(overrides.modeOverride as WorkflowMode)) {
+      throw new Error(`Invalid workflow mode: ${overrides.modeOverride}. Must be: ${valid.join(', ')}`);
+    }
+    cfg.workflow.mode = overrides.modeOverride as WorkflowMode;
+  }
   store.set({ config: cfg, projectDir, overrides });
 }
 
@@ -50,4 +59,4 @@ function useConfig(): Config {
   return config;
 }
 
-export const configStore = { ...storeBase(store), load, reload, useConfig };
+export const configStore = { ...storeBase(store), set: store.set, load, reload, useConfig };

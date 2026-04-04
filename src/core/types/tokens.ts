@@ -1,5 +1,6 @@
-export type PlannerTokenUsage = { inputTokens: number; outputTokens: number };
-export type ImplementerTokenUsage = { inputTokens: number; outputTokens: number };
+export type ModelTokenUsage = { inputTokens: number; outputTokens: number };
+export type PlannerTokenUsage = ModelTokenUsage;
+export type ImplementerTokenUsage = ModelTokenUsage;
 
 export interface TokenUsage {
   plannerInput: number;
@@ -10,10 +11,12 @@ export interface TokenUsage {
   escalationOutput: number;
 }
 
+export type TaskCompletionMethod = 'local' | 'escalated-hint' | 'escalated-full' | 'failed' | 'skipped';
+
 export interface TaskTokenUsage {
   taskId: string;
   taskTitle: string;
-  method: 'local' | 'escalated-hint' | 'escalated-full' | 'failed' | 'skipped';
+  method: TaskCompletionMethod;
   implementerTokens: number;
   escalationTokens: number;
   retryCount: number;

@@ -31,10 +31,7 @@ export function useFilterableList<T>({
 
   const filtered = filter ? items.filter((item) => filterFn(item, filter)) : items;
 
-  const clampedIndex = Math.min(selectedIndex, Math.max(0, filtered.length - 1));
-  if (clampedIndex !== selectedIndex && filtered.length > 0) {
-    setSelectedIndex(clampedIndex);
-  }
+  const effectiveIndex = Math.min(selectedIndex, Math.max(0, filtered.length - 1));
 
   useInput(
     (input, key) => {
@@ -43,7 +40,7 @@ export function useFilterableList<T>({
         return;
       }
       if (key.return && filtered.length > 0) {
-        onSelect(filtered[selectedIndex]);
+        onSelect(filtered[effectiveIndex]);
         return;
       }
       if (key.upArrow) {
@@ -68,5 +65,5 @@ export function useFilterableList<T>({
     { isActive },
   );
 
-  return { filter, setFilter, filtered, selectedIndex, setSelectedIndex };
+  return { filter, setFilter, filtered, selectedIndex: effectiveIndex, setSelectedIndex };
 }

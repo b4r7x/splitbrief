@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
 import type { Config } from '../../types.js';
-import { implementTaskViaAgent, retryTaskViaAgent } from './agent.js';
+import { createAgentImplementer } from './agent.js';
 import { makeConfig as makeBaseConfig, makeTask, defaultContext } from '#testing/helpers/fixtures.js';
 
 function makeConfig(extra?: Partial<Config['implementer']>): Config {
@@ -46,7 +46,8 @@ describe('agent implementer', () => {
     });
 
     const output: string[] = [];
-    const result = await implementTaskViaAgent({
+    const implementer = createAgentImplementer(config);
+    const result = await implementer.implement({
       task: makeTask(),
       projectDir: testDir,
       config,
@@ -63,7 +64,8 @@ describe('agent implementer', () => {
       args: ['no files written'],
     });
 
-    const result = await implementTaskViaAgent({
+    const implementer = createAgentImplementer(config);
+    const result = await implementer.implement({
       task: makeTask(),
       projectDir: testDir,
       config,
@@ -82,7 +84,8 @@ describe('agent implementer', () => {
       timeout: 100,
     });
 
-    const result = await implementTaskViaAgent({
+    const implementer = createAgentImplementer(config);
+    const result = await implementer.implement({
       task: makeTask(),
       projectDir: testDir,
       config,
@@ -99,8 +102,9 @@ describe('agent implementer', () => {
       command: 'nonexistent-command-xyz-12345',
     });
 
+    const implementer = createAgentImplementer(config);
     await expect(
-      implementTaskViaAgent({
+      implementer.implement({
         task: makeTask(),
         projectDir: testDir,
         config,
@@ -117,7 +121,8 @@ describe('agent implementer', () => {
       args: ['-c', `echo "{prompt}" | head -c 100 > ${outFile}`],
     });
 
-    const result = await implementTaskViaAgent({
+    const implementer = createAgentImplementer(config);
+    const result = await implementer.implement({
       task: makeTask({ description: 'test prompt content' }),
       projectDir: testDir,
       config,
@@ -135,7 +140,8 @@ describe('agent implementer', () => {
       args: ['-c', `echo "retry" > ${outFile}`],
     });
 
-    const result = await retryTaskViaAgent({
+    const implementer = createAgentImplementer(config);
+    const result = await implementer.retry({
       task: makeTask(),
       projectDir: testDir,
       config,
@@ -156,7 +162,8 @@ describe('agent implementer', () => {
     });
 
     const chunks: string[] = [];
-    const result = await implementTaskViaAgent({
+    const implementer = createAgentImplementer(config);
+    const result = await implementer.implement({
       task: makeTask(),
       projectDir: testDir,
       config,

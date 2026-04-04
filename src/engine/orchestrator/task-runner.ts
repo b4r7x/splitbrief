@@ -1,6 +1,6 @@
-import type { Task, Config, WorkflowState, OrchestratorCallbacks, ValidationResult } from '../../types.js';
-import { transition } from '../../state.js';
-import { saveState } from '../../state-persistence.js';
+import type { Task, Config, WorkflowState, OrchestratorCallbacks, ValidationResult, TaskCompletionMethod } from '../../types.js';
+import { transition } from '../../core/state.js';
+import { saveState } from '../../core/state-persistence.js';
 import { commitChanges } from '../../utils/git.js';
 import { emit } from './events.js';
 import { allValidationsPassed } from './helpers.js';
@@ -12,7 +12,7 @@ type ValidateCommitOptions = {
   config: Config;
   state: WorkflowState;
   callbacks: OrchestratorCallbacks;
-  method: 'local' | 'local_with_hints' | 'escalated';
+  method: TaskCompletionMethod;
   transitionType: 'VALIDATION_PASS' | 'HINT_SUCCESS' | 'FULL_SUCCESS';
   commitSuffix?: string;
   taskStartTime?: number;
@@ -38,11 +38,10 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
 
   const nextState = transition(state, { type: transitionType });
   saveState(projectDir, nextState);
-  task.status = method === 'escalated' ? 'escalated' : 'done';
-  const taskMethod = method === 'escalated' ? 'escalated' as const : 'local' as const;
+  task.status = method === 'escalated-full' ? 'escalated' : 'done';
   callbacks.onEvent({
     type: 'task-complete', ts: Date.now(), taskId: task.id, title: task.title,
-    method: taskMethod, retries: state.attempt,
+    method, retries: state.attempt,
     duration: taskStartTime ? Date.now() - taskStartTime : 0,
   });
   emit(projectDir, nextState, 'task_completed', task.id, { method });

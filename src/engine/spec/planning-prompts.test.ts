@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildResearchPrompt, buildSpecPrompt, buildPlanPrompt, buildTasksPrompt, buildRegeneratePrompt } from './planning-prompts.js';
+import { buildResearchPrompt, buildSpecPrompt, buildPlanPrompt, buildTasksPrompt, buildRegeneratePrompt, buildQuickPlanPrompt } from './planning-prompts.js';
 
 describe('buildResearchPrompt', () => {
   it('contains the feature description', () => {
@@ -52,16 +52,7 @@ describe('buildSpecPrompt', () => {
     expect(result).toContain('### Functional Requirements');
   });
 
-  it('includes clarifications when provided', () => {
-    const result = buildSpecPrompt('feature', 'research', [
-      { question: 'Use JWT?', answer: 'Yes' },
-    ]);
-    expect(result).toContain('Use JWT?');
-    expect(result).toContain('Yes');
-    expect(result).toContain('## User Clarifications');
-  });
-
-  it('omits clarifications section when not provided', () => {
+  it('does not contain clarifications section', () => {
     const result = buildSpecPrompt('feature', 'research');
     expect(result).not.toContain('## User Clarifications');
   });
@@ -110,6 +101,26 @@ describe('buildTasksPrompt', () => {
     expect(result).toContain('Self-contained');
     expect(result).toContain('Atomic');
     expect(result).toContain('Dependency-ordered');
+  });
+});
+
+describe('buildQuickPlanPrompt', () => {
+  it('contains feature and project context', () => {
+    const result = buildQuickPlanPrompt('add auth', 'project ctx');
+    expect(result).toContain('add auth');
+    expect(result).toContain('project ctx');
+  });
+
+  it('contains task format instructions', () => {
+    const result = buildQuickPlanPrompt('feature', 'ctx');
+    expect(result).toContain('### Description');
+    expect(result).toContain('### Signature');
+    expect(result).toContain('### Implementation Steps');
+  });
+
+  it('does not mention spec or plan documents', () => {
+    const result = buildQuickPlanPrompt('feature', 'ctx');
+    expect(result).toContain('No spec or plan document needed');
   });
 });
 

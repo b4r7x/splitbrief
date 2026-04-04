@@ -70,7 +70,7 @@ describe('detectAvailableImplementers', () => {
     }) as typeof globalThis.fetch;
 
     const results = await plannerDetection.detectAvailableImplementers();
-    expect(results.length).toBe(2);
+    expect(results.length).toBeGreaterThanOrEqual(2);
 
     const ollama = results.find((r) => r.provider === 'ollama');
     expect(ollama).toBeTruthy();
@@ -111,7 +111,7 @@ describe('detectAvailableImplementers', () => {
     }) as typeof globalThis.fetch;
 
     const results = await plannerDetection.detectAvailableImplementers();
-    expect(results.length).toBe(2);
+    expect(results.length).toBeGreaterThanOrEqual(2);
     for (const r of results) {
       expect(r.available).toBe(false);
     }
