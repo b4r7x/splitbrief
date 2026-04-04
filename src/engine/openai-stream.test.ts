@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { streamCompletion } from './openai-stream.js';
-import { makeConfig } from '#testing/helpers/fixtures.js';
+
 
 function makeMockClient(chunks: Array<{ content?: string; usage?: { prompt_tokens: number; completion_tokens: number } }>) {
   return {
@@ -41,7 +41,7 @@ describe('streamCompletion', () => {
     const result = await streamCompletion(
       client, 'test-model',
       [{ role: 'user', content: 'hi' }],
-      { temperature: 0.2, onProgress: () => {}, config: makeConfig() },
+      { temperature: 0.2, onProgress: () => {} },
     );
 
     expect(result.text).toBe('Hello world');
@@ -58,7 +58,7 @@ describe('streamCompletion', () => {
     await streamCompletion(
       client, 'test-model',
       [{ role: 'user', content: 'hi' }],
-      { temperature: 0.2, onProgress: (text) => progressCalls.push(text), config: makeConfig() },
+      { temperature: 0.2, onProgress: (text) => progressCalls.push(text) },
     );
 
     expect(progressCalls).toEqual(['a', 'b', 'c']);
@@ -73,7 +73,7 @@ describe('streamCompletion', () => {
     const result = await streamCompletion(
       client, 'test-model',
       [{ role: 'user', content: 'hi' }],
-      { temperature: 0.2, onProgress: () => {}, config: makeConfig() },
+      { temperature: 0.2, onProgress: () => {} },
     );
 
     expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
@@ -101,7 +101,7 @@ describe('streamCompletion', () => {
       streamCompletion(
         client, 'test-model',
         [{ role: 'user', content: 'hi' }],
-        { temperature: 0.2, onProgress: () => {}, config: makeConfig() },
+        { temperature: 0.2, onProgress: () => {} },
       ),
     ).rejects.toThrow(/Cannot connect to/);
   });
@@ -121,7 +121,7 @@ describe('streamCompletion', () => {
       streamCompletion(
         client, 'test-model',
         [{ role: 'user', content: 'hi' }],
-        { temperature: 0.2, onProgress: () => {}, config: makeConfig() },
+        { temperature: 0.2, onProgress: () => {} },
       ),
     ).rejects.toThrow(/API error 404/);
   });

@@ -3,8 +3,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { guardIntegration, type TestGuard } from './guard.js';
-import { createInitialState } from '../../src/state.js';
-import { saveState, loadState } from '../../src/state-persistence.js';
+import { createInitialState } from '../../src/core/state.js';
+import { saveState, loadState } from '../../src/core/state-persistence.js';
 import type { WorkflowState } from '../../src/types.js';
 import { makeTask as makeTaskBase } from '../helpers/fixtures.js';
 
@@ -47,6 +47,7 @@ describe('Resume with token preservation integration', () => {
       const loaded = loadState(tmpDir);
 
       expect(loaded).toBeTruthy();
+      if (!loaded) throw new Error('expected loaded state');
       expect(loaded.phase).toBe('implementing');
       expect(loaded.currentTaskIndex).toBe(3);
       expect(loaded.feature).toBe('resume-feature');

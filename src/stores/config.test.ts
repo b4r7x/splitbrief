@@ -21,12 +21,12 @@ describe('configStore', () => {
   it('loads config from disk', () => {
     configStore.load('/tmp/project');
     expect(configStore.get().projectDir).toBe('/tmp/project');
-    expect(configStore.get().config.planner.tool).toBe('claude-code');
+    expect(configStore.get().config!.planner.tool).toBe('claude-code');
   });
 
   it('applies overrides', () => {
     configStore.load('/tmp/project', { modelOverride: 'custom-model' });
-    expect(configStore.get().config.implementer.model).toBe('custom-model');
+    expect(configStore.get().config!.implementer.model).toBe('custom-model');
   });
 
   it('reload re-reads config', () => {
