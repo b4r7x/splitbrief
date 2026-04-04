@@ -1,22 +1,29 @@
 import { Box, Text } from 'ink';
-import { useAppContext } from '../app.js';
 import { useTheme } from '../ui/theme.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
-import type { Screen } from '../types.js';
+import type { Screen, SlashCommandDef } from '../types.js';
 import { getShortcutsForScreen } from '../core/shortcuts.js';
 
-const LABEL_COL_WIDTH = 14;
+const PADDING_BORDER = 6;
 
 interface HelpOverlayProps {
   currentScreen: Screen;
+  commands: SlashCommandDef[];
 }
 
-export function HelpOverlay({ currentScreen }: HelpOverlayProps) {
+export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
   const t = useTheme();
-  const { commands } = useAppContext();
-  const { cols, rows, isSmall } = useResponsiveLayout();
+  const { cols, rows } = useResponsiveLayout();
   const shortcuts = getShortcutsForScreen(currentScreen);
-  const contentWidth = Math.min(cols - 4, isSmall ? 50 : 60);
+  const labelColWidth = Math.max(
+    ...commands.map((c) => c.name.length),
+    ...shortcuts.map((s) => s.key.length),
+  ) + 2;
+  const maxDescWidth = Math.max(
+    ...commands.map((c) => c.description.length),
+    ...shortcuts.map((s) => s.description.length),
+  );
+  const contentWidth = Math.min(cols - 4, labelColWidth + maxDescWidth + PADDING_BORDER);
 
   return (
     <Box width={cols} height={rows} alignItems="center" justifyContent="center">
@@ -36,7 +43,7 @@ export function HelpOverlay({ currentScreen }: HelpOverlayProps) {
           <Text bold color={t.text}>Commands</Text>
           {commands.map((cmd) => (
             <Box key={cmd.name}>
-              <Box width={LABEL_COL_WIDTH}><Text color={t.accent}>{cmd.name}</Text></Box>
+              <Box width={labelColWidth}><Text color={t.accent}>{cmd.name}</Text></Box>
               <Text color={t.textDim}>{cmd.description}</Text>
             </Box>
           ))}
@@ -46,7 +53,7 @@ export function HelpOverlay({ currentScreen }: HelpOverlayProps) {
           <Text bold color={t.text}>Keyboard Shortcuts</Text>
           {shortcuts.map((s) => (
             <Box key={s.key}>
-              <Box width={LABEL_COL_WIDTH}><Text color={t.accent}>{s.key}</Text></Box>
+              <Box width={labelColWidth}><Text color={t.accent}>{s.key}</Text></Box>
               <Text color={t.textDim}>{s.description}</Text>
             </Box>
           ))}

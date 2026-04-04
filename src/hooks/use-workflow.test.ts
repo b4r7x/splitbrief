@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '#testing/helpers/render-hook.js';
 import { makeConfig } from '#testing/helpers/fixtures.js';
 
@@ -11,8 +11,10 @@ vi.mock('../utils/process.js', () => ({
 }));
 
 import { useWorkflow } from './use-workflow.js';
+import { workflowStore } from '../stores/workflow.js';
 
 describe('useWorkflow', () => {
+  beforeEach(() => workflowStore.reset());
   it('mounts without error and returns expected shape', () => {
     const config = makeConfig();
     const onComplete = vi.fn();

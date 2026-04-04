@@ -5,14 +5,13 @@ import { SlashSuggestions } from './slash-suggestions.js';
 import { useFilterableList } from '../hooks/use-filterable-list.js';
 import { useTheme } from '../ui/theme.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
+import { errorStore } from '../stores/error.js';
 import type { InputMode, Screen, SlashCommandDef } from '../types.js';
 
 interface InputBarProps {
   onSubmit: (text: string) => void;
   onSlashCommand: (command: string) => void;
   commands: SlashCommandDef[];
-  errorMessage?: string | null;
-  onClearError?: () => void;
   mode: InputMode;
   hint: string;
   currentScreen: Screen;
@@ -24,14 +23,13 @@ export function InputBar({
   onSubmit,
   onSlashCommand,
   commands,
-  errorMessage,
-  onClearError,
   mode,
   hint,
   currentScreen,
   width,
   disabled,
 }: InputBarProps) {
+  const errorMessage = errorStore.use(s => s.message);
   const theme = useTheme();
   const { cols } = useResponsiveLayout();
   const inputColumns = (width ?? cols) - 6;
@@ -89,10 +87,10 @@ export function InputBar({
   );
 
   useEffect(() => {
-    if (!errorMessage || !onClearError) return;
-    const timer = setTimeout(onClearError, 3000);
+    if (!errorMessage) return;
+    const timer = setTimeout(() => errorStore.setError(null), 3000);
     return () => clearTimeout(timer);
-  }, [errorMessage, onClearError]);
+  }, [errorMessage]);
 
   const handleSubmit = (text: string) => {
     if (showSuggestions) return;
@@ -111,7 +109,7 @@ export function InputBar({
     <Box flexDirection="column" width="100%">
       {!showSuggestions && currentScreen === 'home' && (
         <Box justifyContent="center">
-          <Text color={theme.textDim}>/help /status /init Ctrl+K palette</Text>
+          <Text color={theme.textDim}>/help /config /skills Ctrl+K</Text>
         </Box>
       )}
       {showSuggestions && (

@@ -10,8 +10,25 @@ import { createPlanner } from './engine/planners/factory.js';
 import { runPicker } from './cli/picker.js';
 import { renderApp } from './cli/render.js';
 import { addWorkflowOptions, setupWorkflow, ensureGitAndConfig, resolveProjectDir, loadConfigOrExit } from './cli/workflow.js';
+import { configStore } from './stores/config.js';
+import { sessionsStore } from './stores/sessions.js';
+import { skillsStore } from './stores/skills.js';
+import { routerStore } from './stores/router.js';
 import type { WorkflowOpts } from './cli/workflow.js';
 import type { Phase } from './types.js';
+
+function initStores(projectDir: string, opts: WorkflowOpts) {
+  configStore.load(projectDir, {
+    modelOverride: opts.model,
+    providerOverride: opts.provider,
+    plannerOverride: opts.planner,
+    plannerModelOverride: opts.plannerModel,
+    autoApprove: opts.auto,
+  });
+  const storeConfig = configStore.get().config!;
+  sessionsStore.load(storeConfig.sessions?.scope ?? 'project', projectDir);
+  skillsStore.discover(storeConfig.planner.tool, projectDir);
+}
 
 const program = new Command();
 
@@ -25,19 +42,14 @@ addWorkflowOptions(
     .command('start [feature]')
     .description('Full workflow: plan with Claude, implement with local model'),
 ).action(async (feature: string | undefined, opts: WorkflowOpts) => {
-    const { projectDir, config, useFullscreen } = await setupWorkflow(opts);
+    const { projectDir, useFullscreen } = await setupWorkflow(opts);
 
-    const appElement = createElement(App, {
-      feature,
-      projectDir,
-      modelOverride: opts.model,
-      providerOverride: opts.provider,
-      plannerOverride: opts.planner,
-      plannerModelOverride: opts.plannerModel,
-      contextLengthOverride: config.implementer.contextLength,
-    });
+    initStores(projectDir, opts);
+    if (feature) {
+      routerStore.init({ screen: 'workflow', feature });
+    }
 
-    await renderApp(appElement, useFullscreen);
+    await renderApp(createElement(App), useFullscreen);
   });
 
 program
@@ -148,20 +160,12 @@ addWorkflowOptions(
 
     console.log(`Resuming: ${state.feature} (phase: ${state.phase}, task ${state.currentTaskIndex + 1}/${state.tasks.length})`);
 
-    const { config, useFullscreen } = await setupWorkflow(opts);
+    const { useFullscreen } = await setupWorkflow(opts);
 
-    const appElement = createElement(App, {
-      feature: state.feature,
-      projectDir,
-      modelOverride: opts.model,
-      providerOverride: opts.provider,
-      plannerOverride: opts.planner,
-      plannerModelOverride: opts.plannerModel,
-      contextLengthOverride: config.implementer.contextLength,
-      savedState: state,
-    });
+    initStores(projectDir, opts);
+    routerStore.init({ screen: 'workflow', feature: state.feature, resumeState: state });
 
-    await renderApp(appElement, useFullscreen);
+    await renderApp(createElement(App), useFullscreen);
   });
 
 program.parseAsync().catch((err) => {

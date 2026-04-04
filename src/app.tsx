@@ -1,108 +1,100 @@
-import { createContext, useContext, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useApp } from 'ink';
-import { useRouter } from './hooks/use-router.js';
-import { useSessions } from './hooks/use-sessions.js';
-import { useOverlay } from './hooks/use-overlay.js';
-import { useConfig } from './hooks/use-config.js';
-import { useSkills } from './hooks/use-skills.js';
 import { createCommands, toPaletteItems, executeSlashCommand } from './core/commands.js';
 import { useGlobalKeys } from './hooks/use-global-keys.js';
-import { Router } from './router.js';
+import { Layout } from './layout.js';
 import { ThemeProvider, getTheme } from './ui/theme.js';
-import type { WorkflowState, RouteData, CommandContext, Screen, SkillMeta, Config, SlashCommandDef } from './types.js';
+import { routerStore } from './stores/router.js';
+import { configStore } from './stores/config.js';
+import { overlayStore } from './stores/overlay.js';
+import { errorStore } from './stores/error.js';
+import { HomeScreen } from './screens/home.js';
+import { WorkflowScreen } from './screens/workflow.js';
+import { SummaryScreen } from './screens/summary.js';
+import { HelpOverlay } from './components/help-overlay.js';
+import { CommandPalette } from './components/command-palette.js';
+import { SkillsPicker } from './components/skills-picker.js';
+import { ConfigPicker } from './components/config-picker.js';
+import { SettingsOverlay } from './components/settings-overlay.js';
+import type { Screen, OverlayType, SlashCommandDef, CommandContext, CommandPaletteItem } from './types.js';
 
-interface AppContextValue {
-  config: Config;
-  reloadConfig: () => void;
-  commands: SlashCommandDef[];
-  errorMessage: string | null;
-  onClearError: () => void;
-  projectDir: string;
-  availableSkills: SkillMeta[];
-  selectedSkillIds: Set<string>;
-  onSkillsConfirm: (ids: Set<string>) => void;
-  selectedSkillMetas: SkillMeta[];
-}
-
-const AppContext = createContext<AppContextValue | null>(null);
-
-export function useAppContext(): AppContextValue {
-  const ctx = useContext(AppContext);
-  if (!ctx) throw new Error('useAppContext must be used within AppContext.Provider');
-  return ctx;
-}
-
-interface AppProps {
-  feature?: string;
-  projectDir: string;
-  modelOverride?: string;
-  providerOverride?: string;
-  contextLengthOverride?: number;
-  plannerOverride?: string;
-  plannerModelOverride?: string;
-  savedState?: WorkflowState;
-}
-
-export default function App({ feature, projectDir, modelOverride, providerOverride, contextLengthOverride, plannerOverride, plannerModelOverride, savedState }: AppProps) {
-  const initialRoute: RouteData | undefined = feature
-    ? { screen: 'workflow', feature, resumeState: savedState }
-    : undefined;
-
-  const { screen, routeData, navigate } = useRouter(initialRoute);
+export default function App() {
+  const screen = routerStore.use(s => s.screen);
   const { exit } = useApp();
-  const overlay = useOverlay();
-  const { config, reloadConfig } = useConfig(projectDir, { modelOverride, providerOverride, contextLengthOverride, plannerOverride, plannerModelOverride });
+  const overlayActive = overlayStore.use(s => s.active);
+  const config = configStore.useConfig();
   const theme = getTheme(config.theme);
-  const sessionsScope = config.sessions?.scope ?? 'project';
-  const { sessions } = useSessions(sessionsScope, projectDir);
-  const skills = useSkills(config.planner.tool, projectDir);
-
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const ctx: CommandContext = {
-    openOverlay: overlay.open,
-    closeOverlay: overlay.close,
-    showStatus: () => setErrorMessage('No active workflow'),
-    quit: () => exit(),
+    openOverlay: overlayStore.open,
+    closeOverlay: overlayStore.close,
+    quit: exit,
   };
   const commands = createCommands(ctx);
   const paletteItems = toPaletteItems(commands);
   const handleSlashCommand = (raw: string, from: Screen) =>
-    executeSlashCommand(commands, raw, from, setErrorMessage);
+    executeSlashCommand(commands, raw, from, errorStore.setError);
 
-  useGlobalKeys({ screen, overlay, exit, setErrorMessage });
-
-  const onClearError = () => setErrorMessage(null);
-  const appContextValue: AppContextValue = {
-    config,
-    reloadConfig,
-    commands,
-    errorMessage,
-    onClearError,
-    projectDir,
-    availableSkills: skills.available,
-    selectedSkillIds: skills.selected,
-    onSkillsConfirm: skills.setSelected,
-    selectedSkillMetas: skills.selectedMetas,
-  };
+  useGlobalKeys({ exit });
 
   return (
     <ThemeProvider theme={theme}>
-    <AppContext.Provider value={appContextValue}>
-      <Router
-        screen={screen}
-        routeData={routeData}
-        overlayActive={overlay.active}
-        exclusiveInput={overlay.exclusiveInput}
-        onCloseOverlay={overlay.close}
-        onOpenOverlay={overlay.open}
-        onSetExclusive={overlay.setExclusive}
-        sessions={sessions}
-        paletteItems={paletteItems}
-        onSlashCommand={handleSlashCommand}
-        navigate={navigate}
+      <Layout
+        screen={renderScreen({ screen, commands, onSlash: handleSlashCommand })}
+        overlay={renderOverlay({ active: overlayActive, screen, commands, paletteItems })}
       />
-    </AppContext.Provider>
     </ThemeProvider>
   );
+}
+
+function renderScreen({ screen, commands, onSlash }: {
+  screen: Screen;
+  commands: SlashCommandDef[];
+  onSlash: (raw: string, from: Screen) => void;
+}): ReactNode {
+  switch (screen) {
+    case 'home':
+      return (
+        <HomeScreen
+          commands={commands}
+          onSlashCommand={(raw) => onSlash(raw, 'home')}
+        />
+      );
+    case 'workflow':
+      return (
+        <WorkflowScreen
+          commands={commands}
+          onSlashCommand={(raw) => onSlash(raw, 'workflow')}
+        />
+      );
+    case 'summary':
+      return (
+        <SummaryScreen
+          commands={commands}
+          onSlashCommand={(raw) => onSlash(raw, 'summary')}
+        />
+      );
+  }
+}
+
+function renderOverlay({ active, screen, commands, paletteItems }: {
+  active: OverlayType;
+  screen: Screen;
+  commands: SlashCommandDef[];
+  paletteItems: CommandPaletteItem[];
+}): ReactNode | null {
+  switch (active) {
+    case 'none':
+      return null;
+    case 'help':
+      return <HelpOverlay currentScreen={screen} commands={commands} />;
+    case 'command-palette':
+      return <CommandPalette items={paletteItems} currentScreen={screen} />;
+    case 'skills':
+      return <SkillsPicker />;
+    case 'picker':
+      return <ConfigPicker />;
+    case 'settings':
+      return <SettingsOverlay />;
+  }
 }

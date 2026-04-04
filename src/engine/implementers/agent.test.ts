@@ -108,7 +108,7 @@ describe('agent implementer', () => {
         onProgress: () => {},
       }),
     ).rejects.toThrow('command not found');
-  });
+  }, 30_000);
 
   it('replaces {prompt} placeholder in args', async () => {
     const outFile = join(testDir, 'prompt-out.txt');

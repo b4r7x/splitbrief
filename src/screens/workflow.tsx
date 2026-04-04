@@ -1,7 +1,6 @@
 import { useRef } from 'react';
 import { Box, useInput } from 'ink';
-import { useAppContext } from '../app.js';
-import type { Summary, WorkflowState } from '../types.js';
+import type { SlashCommandDef, Summary } from '../types.js';
 import Header from '../components/header.js';
 import ConversationFlow from '../components/conversation-flow.js';
 import type { ConversationFlowHandle } from '../components/conversation-flow.js';
@@ -10,36 +9,34 @@ import { InputBar } from '../components/input-bar.js';
 import ReviewView from '../components/review-view.js';
 import Sidebar from '../components/sidebar.js';
 import { useSidebar } from '../hooks/use-sidebar.js';
-import { useWorkflow } from '../hooks/use-workflow.js';
+import { useWorkflow, REVIEW_HINT } from '../hooks/use-workflow.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
+import { configStore } from '../stores/config.js';
+import { skillsStore } from '../stores/skills.js';
+import { overlayStore } from '../stores/overlay.js';
+import { routerStore } from '../stores/router.js';
 
 interface WorkflowScreenProps {
-  feature: string;
-  onComplete: (summary: Summary) => void;
-  resumeState?: WorkflowState;
-  hasOverlay?: boolean;
+  commands: SlashCommandDef[];
   onSlashCommand: (command: string) => void;
 }
 
-export function WorkflowScreen({ feature, onComplete, resumeState, hasOverlay, onSlashCommand }: WorkflowScreenProps) {
-  const { config, commands, errorMessage, onClearError, projectDir, selectedSkillMetas } = useAppContext();
+export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps) {
+  const config = configStore.useConfig();
+  const projectDir = configStore.use(s => s.projectDir);
+  const selectedSkillMetas = skillsStore.use(s => s.available.filter(m => s.selected.has(m.id)));
+  const hasOverlay = overlayStore.use(s => s.active) !== 'none';
+  const feature = routerStore.use(s => s.screen === 'workflow' ? s.feature : '');
+  const resumeState = routerStore.use(s => s.screen === 'workflow' ? s.resumeState : undefined);
   const { cols, rows, isSmall } = useResponsiveLayout();
   const flowRef = useRef<ConversationFlowHandle>(null);
-
-  const workflow = useWorkflow({ feature, projectDir, config, onComplete, resumeState, selectedSkills: selectedSkillMetas });
-
-  const sidebar = useSidebar(isSmall);
   const startedAt = useRef(new Date().toISOString());
 
-  const sidebarTasks = Array.from(workflow.taskMap.values());
+  const onComplete = (summary: Summary) =>
+    routerStore.navigate('summary', { summary });
 
-  const localRate = (workflow.localCount + workflow.escalatedCount) > 0
-    ? (workflow.localCount / (workflow.localCount + workflow.escalatedCount)) * 100
-    : 0;
-
-  const showSidebar = sidebar.visible && !isSmall;
-  const sidebarWidth = Math.floor(cols * 0.25);
-  const contentHeight = Math.max(0, rows - 4);
+  const workflow = useWorkflow({ feature, projectDir, config, onComplete, resumeState, selectedSkills: selectedSkillMetas });
+  const sidebar = useSidebar(isSmall);
 
   useInput(
     (input, key) => {
@@ -50,6 +47,16 @@ export function WorkflowScreen({ feature, onComplete, resumeState, hasOverlay, o
     },
     { isActive: !hasOverlay },
   );
+
+  const sidebarTasks = Array.from(workflow.taskMap.values());
+
+  const localRate = (workflow.localCount + workflow.escalatedCount) > 0
+    ? (workflow.localCount / (workflow.localCount + workflow.escalatedCount)) * 100
+    : 0;
+
+  const showSidebar = sidebar.visible && !isSmall;
+  const sidebarWidth = Math.floor(cols * 0.25);
+  const contentHeight = Math.max(0, rows - 4);
 
   return (
     <Box flexDirection="column" height={rows}>
@@ -80,10 +87,8 @@ export function WorkflowScreen({ feature, onComplete, resumeState, hasOverlay, o
         onSubmit={workflow.handleInput}
         onSlashCommand={onSlashCommand}
         commands={commands}
-        errorMessage={errorMessage}
-        onClearError={onClearError}
         mode={workflow.inputMode}
-        hint={workflow.inputHint || (workflow.inputMode === 'review' ? 'approve / edit / comment <text> / quit' : '')}
+        hint={workflow.inputHint || (workflow.inputMode === 'review' ? REVIEW_HINT : '')}
         currentScreen="workflow"
         disabled={hasOverlay}
       />

@@ -5,12 +5,11 @@ import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 import { useFilterableList } from '../hooks/use-filterable-list.js';
 import { truncate } from '../utils/format.js';
 import { computeScrollOffset } from '../ui/picker-utils.js';
+import { overlayStore } from '../stores/overlay.js';
 
 interface CommandPaletteProps {
   items: CommandPaletteItem[];
   currentScreen: Screen;
-  onExecute: (item: CommandPaletteItem) => void;
-  onClose: () => void;
 }
 
 const filterPaletteItem = (item: CommandPaletteItem, query: string) => {
@@ -18,7 +17,7 @@ const filterPaletteItem = (item: CommandPaletteItem, query: string) => {
   return item.label.toLowerCase().includes(lower) || item.description.toLowerCase().includes(lower);
 };
 
-export function CommandPalette({ items, currentScreen, onExecute, onClose }: CommandPaletteProps) {
+export function CommandPalette({ items, currentScreen }: CommandPaletteProps) {
   const t = useTheme();
   const { cols, rows, isSmall } = useResponsiveLayout();
 
@@ -34,7 +33,8 @@ export function CommandPalette({ items, currentScreen, onExecute, onClose }: Com
   const { filter, filtered, selectedIndex } = useFilterableList<CommandPaletteItem>({
     items: screenItems,
     filterFn: filterPaletteItem,
-    onSelect: onExecute,
+    onSelect: (item) => { overlayStore.close(); item.action(); },
+    onClose: () => overlayStore.close(),
   });
 
   const maxVisible = Math.max(rows - 12, 5);

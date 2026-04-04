@@ -8,7 +8,6 @@ function makeCtx(): CommandContext {
   return {
     openOverlay: noop,
     closeOverlay: noop,
-    showStatus: noop,
     quit: noop,
   };
 }
@@ -78,9 +77,9 @@ describe('executeSlashCommand', () => {
   it('calls onError when command not valid for screen', () => {
     let errorMsg = '';
     const cmds: SlashCommandDef[] = [
-      { name: '/init', description: 'test', validScreens: ['home'], handler: noop },
+      { name: '/test-home-only', description: 'test', validScreens: ['home'], handler: noop },
     ];
-    executeSlashCommand(cmds, '/init', 'workflow', (msg) => { errorMsg = msg; });
+    executeSlashCommand(cmds, '/test-home-only', 'workflow', (msg) => { errorMsg = msg; });
     expect(errorMsg).toContain('only available');
   });
 });

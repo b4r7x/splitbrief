@@ -13,13 +13,6 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
       handler: () => ctx.openOverlay('help'),
     },
     {
-      name: '/status',
-      label: 'Status',
-      description: 'Show workflow status',
-      validScreens: ALL_SCREENS,
-      handler: () => ctx.showStatus(),
-    },
-    {
       name: '/palette',
       label: 'Palette',
       description: 'Open command palette',
@@ -41,6 +34,14 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
       shortcut: getShortcutKey('config'),
       validScreens: ['home'],
       handler: () => ctx.openOverlay('picker'),
+    },
+    {
+      name: '/settings',
+      label: 'Settings',
+      description: 'Open settings',
+      shortcut: getShortcutKey('settings'),
+      validScreens: ALL_SCREENS,
+      handler: () => ctx.openOverlay('settings'),
     },
     {
       name: '/quit',

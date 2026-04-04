@@ -15,6 +15,7 @@ const SHORTCUTS: ShortcutInfo[] = [
   { id: 'quit', key: 'Ctrl+Q', description: 'Quit', screens: ALL_SCREENS },
   { id: 'skills', key: 'Ctrl+S', description: 'Skills picker', screens: ['home'] },
   { id: 'config', key: 'Ctrl+I', description: 'Config picker', screens: ['home'] },
+  { id: 'settings', key: 'Ctrl+,', description: 'Settings', screens: ALL_SCREENS },
   { key: 'Escape', description: 'Close overlay', screens: ALL_SCREENS },
   { id: 'toggle-sidebar', key: 'Ctrl+E', description: 'Toggle sidebar', screens: ['workflow'] },
   { id: 'toggle-diff', key: 'Ctrl+D', description: 'Toggle diff', screens: ['workflow'] },
