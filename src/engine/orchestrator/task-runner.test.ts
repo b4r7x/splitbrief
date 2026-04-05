@@ -100,7 +100,7 @@ describe('validateCommitAndAdvance', () => {
   it('commits when commitPerTask is true and validation passes', async () => {
     const state = makeState();
     const { callbacks } = makeCallbacks();
-    vi.mocked(commitChanges).mockResolvedValue();
+    vi.mocked(commitChanges).mockResolvedValue('abc123');
 
     const result = await validateCommitAndAdvance({
       task: state.tasks[0],
@@ -138,7 +138,7 @@ describe('validateCommitAndAdvance', () => {
   it('emits git-commit event on successful commit', async () => {
     const state = makeState();
     const { callbacks, events } = makeCallbacks();
-    vi.mocked(commitChanges).mockResolvedValue();
+    vi.mocked(commitChanges).mockResolvedValue('abc123');
 
     await validateCommitAndAdvance({
       task: state.tasks[0],
@@ -162,7 +162,7 @@ describe('validateCommitAndAdvance', () => {
   it('emits task-complete event with results', async () => {
     const state = makeState();
     const { callbacks, events } = makeCallbacks();
-    vi.mocked(commitChanges).mockResolvedValue();
+    vi.mocked(commitChanges).mockResolvedValue('abc123');
 
     await validateCommitAndAdvance({
       task: state.tasks[0],

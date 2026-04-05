@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { guardIntegration, type TestGuard } from './guard.js';
-import { createInitialState, transition } from '../../src/state.js';
+import { createInitialState, transition } from '../../src/core/state.js';
 import type { WorkflowState } from '../../src/types.js';
 import { makeTask as makeTaskBase } from '../helpers/fixtures.js';
 

@@ -3,8 +3,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { guardIntegration, type TestGuard } from './guard.js';
-import { createInitialState } from '../../src/state.js';
-import { saveState, loadState } from '../../src/state-persistence.js';
+import { createInitialState } from '../../src/core/state.js';
+import { saveState, loadState } from '../../src/core/state-persistence.js';
 import { estimateCostSavings } from '../../src/engine/orchestrator/index.js';
 
 let g: TestGuard;
@@ -32,6 +32,7 @@ describe('Token accumulation integration', () => {
       const loaded = loadState(tmpDir);
 
       expect(loaded).toBeTruthy();
+      if (!loaded) throw new Error('expected loaded state');
       expect(loaded.tokenUsage.plannerInput).toBe(1000);
       expect(loaded.tokenUsage.plannerOutput).toBe(500);
       expect(loaded.tokenUsage.implementerInput).toBe(2000);

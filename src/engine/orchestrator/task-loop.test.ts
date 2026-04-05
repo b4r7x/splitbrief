@@ -137,7 +137,7 @@ describe('runTaskLoop', () => {
 
     const implementer = makeImplementer();
     vi.mocked(validateTask).mockResolvedValue(passingResults);
-    vi.mocked(commitChanges).mockResolvedValue();
+    vi.mocked(commitChanges).mockResolvedValue('abc123');
 
     const { callbacks, events } = makeCallbacks();
     const setCurrentTask = vi.fn();
@@ -166,7 +166,7 @@ describe('runTaskLoop', () => {
       implement: vi.fn().mockResolvedValue({ success: true, output: 'code', usage: { inputTokens: 500, outputTokens: 200 } }),
     });
     vi.mocked(validateTask).mockResolvedValue(passingResults);
-    vi.mocked(commitChanges).mockResolvedValue();
+    vi.mocked(commitChanges).mockResolvedValue('abc123');
 
     const { callbacks } = makeCallbacks();
 

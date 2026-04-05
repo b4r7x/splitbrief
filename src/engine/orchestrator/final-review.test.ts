@@ -119,7 +119,7 @@ describe('runFinalReview', () => {
     await runFinalReview('/project', callbacks);
 
     const textEvents = (callbacks.onEvent as ReturnType<typeof vi.fn>).mock.calls
-      .filter(([e]: [{ type: string }]) => e.type === 'planner-text');
+      .filter(([e]: { type: string }[]) => e.type === 'planner-text');
     expect(textEvents.length).toBe(2);
     expect(textEvents[0][0].text).toBe('chunk1');
     expect(textEvents[1][0].text).toBe('chunk2');
