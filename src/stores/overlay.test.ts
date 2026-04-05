@@ -15,7 +15,7 @@ describe('overlayStore', () => {
   });
 
   it('closes an overlay and resets exclusive', () => {
-    overlayStore.open('picker');
+    overlayStore.open('settings');
     overlayStore.setExclusive(true);
     overlayStore.close();
     expect(overlayStore.get().active).toBe('none');
@@ -33,5 +33,58 @@ describe('overlayStore', () => {
     expect(overlayStore.get().exclusive).toBe(true);
     overlayStore.setExclusive(false);
     expect(overlayStore.get().exclusive).toBe(false);
+  });
+
+  it('short-circuits when open() called with same type', () => {
+    overlayStore.open('help');
+    const before = overlayStore.get();
+    overlayStore.open('help');
+    expect(overlayStore.get()).toBe(before);
+  });
+
+  it('short-circuits when setExclusive() called with same value', () => {
+    overlayStore.setExclusive(true);
+    overlayStore.setExclusive(true);
+    expect(overlayStore.get().exclusive).toBe(true);
+  });
+
+  it('open() resets exclusive to false', () => {
+    overlayStore.open('settings');
+    overlayStore.setExclusive(true);
+    overlayStore.open('planner-picker');
+    expect(overlayStore.get().active).toBe('planner-picker');
+    expect(overlayStore.get().exclusive).toBe(false);
+  });
+
+  describe('focus', () => {
+    it('stores focus when opening with focus param', () => {
+      overlayStore.open('settings', 'planner.tool');
+      expect(overlayStore.get().focus).toBe('planner.tool');
+    });
+
+    it('clears focus when opening without focus param', () => {
+      overlayStore.open('settings', 'planner.tool');
+      overlayStore.open('settings');
+      expect(overlayStore.get().focus).toBeUndefined();
+    });
+
+    it('short-circuits when same type and same focus', () => {
+      overlayStore.open('settings', 'planner.tool');
+      const before = overlayStore.get();
+      overlayStore.open('settings', 'planner.tool');
+      expect(overlayStore.get()).toBe(before);
+    });
+
+    it('updates when same type but different focus', () => {
+      overlayStore.open('settings', 'planner.tool');
+      overlayStore.open('settings', 'implementer.model');
+      expect(overlayStore.get().focus).toBe('implementer.model');
+    });
+
+    it('close clears focus', () => {
+      overlayStore.open('settings', 'planner.tool');
+      overlayStore.close();
+      expect(overlayStore.get().focus).toBeUndefined();
+    });
   });
 });

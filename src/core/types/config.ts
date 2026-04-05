@@ -3,7 +3,7 @@ export const WORKFLOW_MODES: readonly WorkflowMode[] = ['quick', 'standard', 'fu
 
 export type ThemeMode = 'terminal' | 'mono';
 
-export type PlannerTool = 'claude-code' | 'codex' | 'opencode' | 'aider' | 'agent-sdk' | 'shell';
+export type PlannerTool = 'claude-code' | 'codex' | 'opencode' | 'aider' | 'agent-sdk' | 'shell' | 'anthropic' | 'openrouter';
 
 export type OutputFormat = 'stream-json' | 'jsonl' | 'text' | 'opencode';
 

@@ -21,10 +21,12 @@ function formatElapsed(startedAt: string): string {
 }
 
 export default function Header({ feature, startedAt, phase }: HeaderProps) {
-  const { isSmall } = useResponsiveLayout();
+  const { cols, isSmall } = useResponsiveLayout();
   const t = useTheme();
   const [elapsed, setElapsed] = useState(() => formatElapsed(startedAt));
-  const maxFeatureLength = isSmall ? 25 : 40;
+  const timerWidth = 10;
+  const pipelineWidth = isSmall ? 30 : 35;
+  const featureWidth = Math.max(8, cols - pipelineWidth - timerWidth - 4);
 
   useEffect(() => {
     const id = setInterval(() => setElapsed(formatElapsed(startedAt)), 1000);
@@ -33,9 +35,13 @@ export default function Header({ feature, startedAt, phase }: HeaderProps) {
 
   return (
     <Box width="100%" paddingX={1} justifyContent="space-between">
-      <Text color={t.text}>{truncate(feature, maxFeatureLength)}</Text>
+      <Box width={featureWidth}>
+        <Text color={t.text}>{truncate(feature, featureWidth)}</Text>
+      </Box>
       <PipelineBar phase={phase} />
-      <Text color={t.textDim}>{elapsed}</Text>
+      <Box width={timerWidth} justifyContent="flex-end">
+        <Text color={t.textDim}>{elapsed}</Text>
+      </Box>
     </Box>
   );
 }

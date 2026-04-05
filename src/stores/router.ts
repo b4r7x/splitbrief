@@ -3,7 +3,7 @@ import type { Screen, RouteData, Summary, WorkflowState } from '../types.js';
 
 const transitions: Record<Screen, Screen[]> = {
   home: ['workflow'],
-  workflow: ['summary'],
+  workflow: ['summary', 'home'],
   summary: ['home', 'workflow'],
 };
 

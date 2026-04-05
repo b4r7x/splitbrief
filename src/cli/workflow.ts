@@ -7,11 +7,15 @@ import { isGitRepo } from '../utils/git.js';
 import { runPicker } from './picker.js';
 
 export interface WorkflowOpts {
-  auto: boolean;
+  auto?: boolean;
   model?: string;
   provider?: string;
   planner?: string;
   plannerModel?: string;
+  plannerCommand?: string;
+  implementer?: string;
+  implementerModel?: string;
+  implementerCommand?: string;
   project?: string;
   fullscreen?: boolean;
   mode?: string;
@@ -19,11 +23,15 @@ export interface WorkflowOpts {
 
 export function addWorkflowOptions(cmd: Command): Command {
   return cmd
-    .option('--auto', 'Auto-approve spec and plan', false)
-    .option('--model <model>', 'Override implementer model')
-    .option('--provider <provider>', 'Override implementer provider')
-    .option('--planner <provider>', 'Override planner backend (claude-code, codex, opencode, aider, agent-sdk)')
-    .option('--planner-model <model>', 'Override planner model')
+    .option('--auto', 'Auto-approve spec and plan')
+    .option('--model <model>', 'Override implementer model (alias for --implementer-model)')
+    .option('--provider <provider>', 'Override implementer provider (alias for --implementer)')
+    .option('--planner <backend>', 'Planner backend (claude-code, codex, opencode, aider, agent-sdk, anthropic, openrouter, shell)')
+    .option('--planner-model <model>', 'Planner model (for API backends)')
+    .option('--planner-command <cmd>', 'Custom planner command (when --planner=shell)')
+    .option('--implementer <backend>', 'Implementer backend (ollama, lm-studio, deepseek, openrouter, shell)')
+    .option('--implementer-model <model>', 'Implementer model')
+    .option('--implementer-command <cmd>', 'Custom implementer command (when --implementer=shell)')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--no-fullscreen', 'Disable fullscreen alternate screen buffer')
     .option('--mode <mode>', 'Workflow mode: quick, standard, or full');
@@ -42,11 +50,15 @@ export function loadConfigOrExit(projectDir: string): ReturnType<typeof loadConf
   }
 }
 
-export async function ensureGitAndConfig(projectDir: string): Promise<void> {
+async function assertGitRepo(projectDir: string): Promise<void> {
   if (!(await isGitRepo(projectDir))) {
     console.error('Error: not a git repository. Run `git init` first.');
     process.exit(1);
   }
+}
+
+export async function ensureGitAndConfig(projectDir: string): Promise<void> {
+  await assertGitRepo(projectDir);
 
   if (!existsSync(configPath(projectDir))) {
     console.log('No config found. Creating default .tiny-spec/config.yaml');
@@ -57,12 +69,9 @@ export async function ensureGitAndConfig(projectDir: string): Promise<void> {
 export async function setupWorkflow(opts: WorkflowOpts): Promise<{ projectDir: string; useFullscreen: boolean; contextLength?: number }> {
   const projectDir = resolveProjectDir(opts.project);
 
-  if (!(await isGitRepo(projectDir))) {
-    console.error('Error: not a git repository. Run `git init` first.');
-    process.exit(1);
-  }
+  await assertGitRepo(projectDir);
 
-  const hasOverrides = !!(opts.model || opts.provider || opts.planner);
+  const hasOverrides = !!(opts.model || opts.provider || opts.planner || opts.plannerModel || opts.plannerCommand || opts.implementer || opts.implementerModel || opts.implementerCommand || opts.mode || opts.auto);
   if (!existsSync(configPath(projectDir))) {
     if (hasOverrides) {
       console.log('No config found. Creating default .tiny-spec/config.yaml');

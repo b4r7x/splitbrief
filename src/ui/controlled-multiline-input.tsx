@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
-import { Box, Spacer, Text, measureElement } from 'ink';
+import { Box, Spacer, Text, measureElement, type DOMElement } from 'ink';
 
 function expandTabs(text: string, tabSize: number): string {
   return text.replace(/\t/g, ' '.repeat(tabSize));
@@ -47,7 +47,7 @@ export interface ControlledMultilineInputProps {
 }
 
 const MeasureBox = ({ children, onHeightChange }: { children: ReactNode; onHeightChange?: (height: number) => void }) => {
-  const ref = useRef<any>(null);
+  const ref = useRef<DOMElement>(null);
   const lastHeightRef = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (ref.current) {

@@ -1,21 +1,16 @@
-import type { Task, Config, WorkflowState, OrchestratorCallbacks, ProjectContext, ValidationResult, TaskTokenUsage, TaskCompletionMethod } from '../../types.js';
+import type { Task, WorkflowState, ValidationResult, TaskTokenUsage, TaskCompletionMethod } from '../../types.js';
 import { transition } from '../../core/state.js';
 import { saveState } from '../../core/state-persistence.js';
 import { validateTask, formatValidationError } from '../validator.js';
 import { discardTaskChanges } from '../../utils/git.js';
-import type { PlannerBackend } from '../planners/types.js';
-import type { ImplementerBackend } from '../implementers/types.js';
-import { emit, emitValidationStart, emitValidationResult, createTextHandler } from './events.js';
+import type { WorkflowContext } from './types.js';
+import { emit, emitValidationStart, emitValidationProgress, emitValidationResult, createTextHandler } from './events.js';
 import { refreshCurrentCode, addUsageAndSave } from './helpers.js';
 import { validateCommitAndAdvance } from './task-runner.js';
 
 type RetryResult = { completed: boolean; method: TaskTokenUsage['method'] };
 
-type EscalationContext = {
-  task: Task; projectDir: string; config: Config; context: ProjectContext;
-  planner: PlannerBackend; callbacks: OrchestratorCallbacks; taskStartTime?: number;
-  implementer: ImplementerBackend;
-};
+type EscalationContext = WorkflowContext & { task: Task; taskStartTime?: number };
 
 async function validateAndCommit(
   ctx: EscalationContext, state: WorkflowState,
@@ -25,7 +20,9 @@ async function validateAndCommit(
 ): Promise<{ state: WorkflowState; completed: boolean; validationResults: ValidationResult[] }> {
   const valStart = Date.now();
   emitValidationStart(ctx.callbacks);
-  const validationResults = await validateTask(ctx.task, ctx.projectDir, ctx.config);
+  const validationResults = await validateTask(ctx.task, ctx.projectDir, ctx.config, (stages) => {
+    emitValidationProgress(ctx.callbacks, stages, valStart);
+  });
   emitValidationResult(ctx.callbacks, validationResults, valStart);
   const result = await validateCommitAndAdvance({
     task: ctx.task, results: validationResults, projectDir: ctx.projectDir, config: ctx.config,
@@ -56,7 +53,7 @@ async function runLocalRetries(
       error: lastError, attempt,
       onProgress: createTextHandler(ctx.callbacks), onEvent: ctx.callbacks.onEvent,
     });
-    state = addUsageAndSave(ctx.projectDir, state, 'implementer', retryResult.usage);
+    state = addUsageAndSave(ctx.projectDir, state, 'implementer', retryResult.usage, ctx.callbacks);
 
     if (!retryResult.success) {
       lastError = retryResult.error ?? 'Retry failed to produce valid code';
@@ -85,21 +82,23 @@ async function runTier1Hint(
   const tier1Result = await ctx.planner.escalateHint(ctx.task, lastError, ctx.projectDir, {
     onOutput: createTextHandler(ctx.callbacks),
   });
-  state = addUsageAndSave(ctx.projectDir, state, 'escalation', tier1Result.usage);
+  state = addUsageAndSave(ctx.projectDir, state, 'escalation', tier1Result.usage, ctx.callbacks);
 
   if (tier1Result.output) {
     ctx.callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text: tier1Result.output });
   }
 
   const hintError = `${lastError}\n\n## Hints from senior reviewer:\n${tier1Result.output}`;
-  refreshCurrentCode(ctx.task, ctx.projectDir);
+  if (ctx.task.action === 'modify' || ctx.task.action === 'create') {
+    refreshCurrentCode(ctx.task, ctx.projectDir);
+  }
 
   const hintRetryResult = await ctx.implementer.retry({
     task: ctx.task, projectDir: ctx.projectDir, config: ctx.config, context: ctx.context,
     error: hintError, attempt: ctx.config.workflow.maxRetries + 1,
     onProgress: createTextHandler(ctx.callbacks), onEvent: ctx.callbacks.onEvent,
   });
-  state = addUsageAndSave(ctx.projectDir, state, 'implementer', hintRetryResult.usage);
+  state = addUsageAndSave(ctx.projectDir, state, 'implementer', hintRetryResult.usage, ctx.callbacks);
 
   if (hintRetryResult.success) {
     const commitResult = await validateAndCommit(ctx, state, 'escalated-hint', 'HINT_SUCCESS', 'with hints');
@@ -123,7 +122,7 @@ async function runTier2Full(
   const tier2Result = await ctx.planner.escalateFull(ctx.task, lastError, ctx.projectDir, {
     onOutput: createTextHandler(ctx.callbacks),
   });
-  state = addUsageAndSave(ctx.projectDir, state, 'escalation', tier2Result.usage);
+  state = addUsageAndSave(ctx.projectDir, state, 'escalation', tier2Result.usage, ctx.callbacks);
 
   if (tier2Result.success) {
     const commitResult = await validateAndCommit(ctx, state, 'escalated-full', 'FULL_SUCCESS', 'escalated');
@@ -141,21 +140,16 @@ async function runTier2Full(
 }
 
 type HandleRetryOptions = {
+  wctx: WorkflowContext;
   task: Task;
   initialError: string;
-  projectDir: string;
-  config: Config;
-  context: ProjectContext;
-  planner: PlannerBackend;
-  callbacks: OrchestratorCallbacks;
   currentState: WorkflowState;
   taskStartTime?: number;
-  implementer: ImplementerBackend;
 };
 
 export async function handleRetryAndEscalation(opts: HandleRetryOptions): Promise<RetryResult> {
-  const { task, initialError, projectDir, config, context, planner, callbacks, currentState, taskStartTime, implementer } = opts;
-  const ctx: EscalationContext = { task, projectDir, config, context, planner, callbacks, taskStartTime, implementer };
+  const { wctx, task, initialError, currentState, taskStartTime } = opts;
+  const ctx: EscalationContext = { ...wctx, task, taskStartTime };
 
   const retries = await runLocalRetries(ctx, currentState, initialError);
   if (retries.result) return retries.result;

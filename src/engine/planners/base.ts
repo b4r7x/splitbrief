@@ -13,6 +13,7 @@ import type { ClarificationQuestion } from '../question-parser.js';
 import { buildProjectContextMarkdown } from './context.js';
 import { accumulateUsage } from '../output-parsers.js';
 
+// Static check by tool name — called before PlannerBackend is instantiated (see orchestrator/planning.ts)
 export function supportsConversational(tool: PlannerTool): boolean {
   return tool === 'claude-code' || tool === 'agent-sdk';
 }

@@ -18,15 +18,26 @@ import { routerStore } from './stores/router.js';
 import type { WorkflowOpts } from './cli/workflow.js';
 import type { Phase } from './types.js';
 
+const RESUMABLE_PHASES: ReadonlySet<Phase> = new Set<Phase>([
+  'reviewing-spec', 'reviewing-plan', 'implementing',
+  'validating-task', 'escalating', 'final-review',
+]);
+
 function initStores(projectDir: string, opts: WorkflowOpts & { contextLength?: number }) {
   configStore.load(projectDir, {
-    modelOverride: opts.model,
-    providerOverride: opts.provider,
-    contextLengthOverride: opts.contextLength,
-    plannerOverride: opts.planner,
-    plannerModelOverride: opts.plannerModel,
+    planner: {
+      tool: opts.planner,
+      model: opts.plannerModel,
+      command: opts.plannerCommand,
+    },
+    implementer: {
+      provider: opts.implementer ?? opts.provider,
+      model: opts.implementerModel ?? opts.model,
+      command: opts.implementerCommand,
+    },
+    contextLength: opts.contextLength,
     autoApprove: opts.auto,
-    modeOverride: opts.mode,
+    mode: opts.mode,
   });
   const storeConfig = configStore.get().config!;
   if (storeConfig.shikiTheme) setHighlightTheme(storeConfig.shikiTheme);
@@ -153,10 +164,6 @@ addWorkflowOptions(
       process.exit(1);
     }
 
-    const RESUMABLE_PHASES: ReadonlySet<Phase> = new Set<Phase>([
-      'reviewing-spec', 'reviewing-plan', 'implementing',
-      'validating-task', 'escalating', 'final-review',
-    ]);
     if (!RESUMABLE_PHASES.has(state.phase)) {
       console.error(`Cannot resume from phase "${state.phase}".`);
       process.exit(1);

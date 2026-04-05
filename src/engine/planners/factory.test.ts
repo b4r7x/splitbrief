@@ -27,7 +27,7 @@ function makeConfig(tool: string, extra?: Partial<Config['planner']>): Config {
   };
 }
 
-const KNOWN_TOOLS = ['claude-code', 'codex', 'opencode', 'aider', 'agent-sdk'] as const;
+const KNOWN_TOOLS = ['claude-code', 'codex', 'opencode', 'aider', 'agent-sdk', 'anthropic', 'openrouter'] as const;
 
 describe('createPlanner', () => {
   it('claude-code returns a backend with name "claude-code"', async () => {
@@ -69,6 +69,22 @@ describe('createPlanner', () => {
     expect(typeof planner.getPricing).toBe('function');
   });
 
+  it('anthropic routes to API planner with provider set', async () => {
+    const planner = await createPlanner(makeConfig('anthropic'));
+    expect(planner.name).toBe('api:anthropic');
+  });
+
+  it('openrouter routes to API planner with provider set', async () => {
+    const planner = await createPlanner(makeConfig('openrouter'));
+    expect(planner.name).toBe('api:openrouter');
+  });
+
+  it('planner.provider without explicit tool routes to API planner', async () => {
+    const config = makeConfig('claude-code', { provider: 'deepseek', model: 'deepseek-chat', apiBase: 'https://api.deepseek.com/v1' });
+    const planner = await createPlanner(config);
+    expect(planner.name).toBe('api:deepseek');
+  });
+
   it('unknown tool throws error with helpful message', async () => {
     await expect(
       createPlanner(makeConfig('unknown-tool' as any)),
@@ -82,6 +98,7 @@ describe('createPlanner', () => {
       expect(typeof planner.escalateHint).toBe('function');
       expect(typeof planner.escalateFull).toBe('function');
       expect(typeof planner.isAvailable).toBe('function');
+      expect(typeof planner.getVersion).toBe('function');
       expect(typeof planner.getPricing).toBe('function');
     });
 

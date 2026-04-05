@@ -1,4 +1,3 @@
-import type { Config } from '../../types.js';
 import type { PlannerBackend } from './types.js';
 import { createPlannerBase, createIsAvailable, createGetVersion, type InvokeResult } from './base.js';
 import { spawnAndCollect } from './spawn.js';
@@ -46,8 +45,7 @@ function aiderAskArgs(model: string | undefined, prompt: string, readDirs?: stri
   return args;
 }
 
-export function createAiderPlanner(config?: Config): PlannerBackend {
-  const model = config?.planner.model;
+export function createAiderPlanner(model?: string): PlannerBackend {
 
   return createPlannerBase({
     name: 'aider',

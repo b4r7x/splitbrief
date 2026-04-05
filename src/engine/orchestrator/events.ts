@@ -19,6 +19,12 @@ export function emitValidationStart(callbacks: OrchestratorCallbacks): void {
   });
 }
 
+export function emitValidationProgress(callbacks: OrchestratorCallbacks, stages: { tsc: boolean; lint: boolean; test: boolean }, startTime: number): void {
+  callbacks.onEvent({
+    type: 'validate', ts: startTime, status: 'running', passed: false, stages,
+  });
+}
+
 export function emitValidationResult(callbacks: OrchestratorCallbacks, validationResults: ValidationResult[], startTime: number): void {
   const passed = allValidationsPassed(validationResults);
   const failedStage = validationResults.find(r => !r.passed);

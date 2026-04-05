@@ -25,24 +25,9 @@ vi.mock('../output-parsers.js', () => ({
 }));
 
 vi.mock('./base.js', async (importOriginal) => {
+  const { mockPlannerBase } = await import('#testing/mocks/planner-base.js');
   const orig = await importOriginal<typeof import('./base.js')>();
-  return {
-    ...orig,
-    createPlannerBase: vi.fn().mockImplementation((config) => ({
-      name: config.name,
-      conversational: config.conversational ?? false,
-      plan: vi.fn(),
-      regenerate: vi.fn(),
-      escalateHint: vi.fn(),
-      escalateFull: vi.fn(),
-      isAvailable: config.isAvailable,
-      getVersion: config.getVersion,
-      getPricing: vi.fn(),
-      _config: config,
-    })),
-    createIsAvailable: vi.fn().mockReturnValue(vi.fn().mockResolvedValue(false)),
-    createGetVersion: vi.fn().mockReturnValue(vi.fn().mockResolvedValue(null)),
-  };
+  return { ...orig, ...mockPlannerBase() };
 });
 
 import { createCodexPlanner } from './codex.js';
@@ -112,6 +97,29 @@ describe('codex planner', () => {
     const callArgs = mockSpawnAndCollect.mock.calls[0][0];
     expect(callArgs.args).toContain('--cd');
     expect(callArgs.args).toContain('/my/project');
+  });
+
+  it('passes --model when configured', async () => {
+    mockSpawnAndCollect.mockResolvedValue({ text: 'result', usage: null });
+
+    createCodexPlanner('o3-pro');
+    const baseConfig = vi.mocked(createPlannerBase).mock.calls[0][0];
+    await baseConfig.invokePlan('prompt', '/project', () => {});
+
+    const callArgs = mockSpawnAndCollect.mock.calls[0][0];
+    expect(callArgs.args).toContain('--model');
+    expect(callArgs.args).toContain('o3-pro');
+  });
+
+  it('omits --model when not configured', async () => {
+    mockSpawnAndCollect.mockResolvedValue({ text: 'result', usage: null });
+
+    createCodexPlanner();
+    const baseConfig = vi.mocked(createPlannerBase).mock.calls[0][0];
+    await baseConfig.invokePlan('prompt', '/project', () => {});
+
+    const callArgs = mockSpawnAndCollect.mock.calls[0][0];
+    expect(callArgs.args).not.toContain('--model');
   });
 
   it('uses parseJsonlLine as line parser', async () => {

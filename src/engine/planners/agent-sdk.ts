@@ -1,4 +1,4 @@
-import type { Config, PlannerTokenUsage } from '../../types.js';
+import type { PlannerTokenUsage } from '../../types.js';
 import type { PlannerBackend } from './types.js';
 import { createPlannerBase } from './base.js';
 import type { InvokeResult } from './base.js';
@@ -109,13 +109,13 @@ async function runQuery(
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const ALLOWED_TOOLS = ['Read', 'Glob', 'Grep', 'Write'];
 
-export function createAgentSdkPlanner(config?: Config): PlannerBackend {
+export function createAgentSdkPlanner(model?: string): PlannerBackend {
 
-  const model = config?.planner.model ?? DEFAULT_MODEL;
+  const effectiveModel = model ?? DEFAULT_MODEL;
 
   async function invoke(prompt: string, projectDir: string, onOutput: (text: string) => void): Promise<InvokeResult> {
     return runQuery(prompt, projectDir, {
-      model, allowedTools: ALLOWED_TOOLS, permissionMode: 'acceptEdits', onOutput,
+      model: effectiveModel, allowedTools: ALLOWED_TOOLS, permissionMode: 'acceptEdits', onOutput,
     });
   }
 

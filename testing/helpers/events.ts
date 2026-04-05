@@ -45,3 +45,17 @@ export function makeGitCommit(overrides?: Partial<EventOfType<'git-commit'>>): E
 export function makeErrorEvent(overrides?: Partial<EventOfType<'error'>>): EventOfType<'error'> {
   return { type: 'error', ts: Date.now(), message: 'Something went wrong', ...overrides };
 }
+
+const DEFAULT_TOKEN_USAGE = {
+  plannerInput: 100, plannerOutput: 50,
+  implementerInput: 200, implementerOutput: 100,
+  escalationInput: 0, escalationOutput: 0,
+};
+
+export function makeCostUpdate(overrides?: Partial<EventOfType<'cost-update'>>): EventOfType<'cost-update'> {
+  return { type: 'cost-update', ts: Date.now(), tokenUsage: DEFAULT_TOKEN_USAGE, ...overrides };
+}
+
+export function makeWorkflowCancelled(ts = Date.now()): TuiEvent {
+  return { type: 'workflow-cancelled', ts };
+}

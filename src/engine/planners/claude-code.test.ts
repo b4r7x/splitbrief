@@ -14,7 +14,10 @@ vi.mock('../claude-stream.js', () => ({
     try {
       const event = JSON.parse(line);
       if (event.type === 'assistant') {
-        return { text: event.text ?? null, sessionId: event.session_id ?? null, isResult: false, usage: null, costUsd: null };
+        const tools = event.message?.content?.filter((b: any) => b.type === 'tool_use').map((b: any) => ({ name: b.name, input: b.input ?? {} })) ?? [];
+        const texts = event.message?.content?.filter((b: any) => b.type === 'text').map((b: any) => b.text) ?? [];
+        const text = event.text ?? (texts.length > 0 ? texts.join('') : null);
+        return { text, sessionId: event.session_id ?? null, isResult: false, usage: null, toolUse: tools.length > 0 ? tools : null };
       }
       if (event.type === 'result') {
         return {
@@ -22,12 +25,12 @@ vi.mock('../claude-stream.js', () => ({
           sessionId: event.session_id ?? null,
           isResult: true,
           usage: event.usage ? { inputTokens: event.usage.input_tokens, outputTokens: event.usage.output_tokens } : null,
-          costUsd: null,
-        };
+          toolUse: null,
+};
       }
-      return { text: null, sessionId: event.session_id ?? null, isResult: false, usage: null, costUsd: null };
+      return { text: null, sessionId: event.session_id ?? null, isResult: false, usage: null, toolUse: null };
     } catch {
-      return { text: null, sessionId: null, isResult: false, usage: null, costUsd: null };
+      return { text: null, sessionId: null, isResult: false, usage: null, toolUse: null };
     }
   }),
 }));
@@ -130,6 +133,70 @@ describe('claude-code planner', () => {
     createClaudeCodePlanner();
     const baseConfig = vi.mocked(createPlannerBase).mock.calls[0][0];
     expect(baseConfig.escalateHintSuccess!({ text: 'anything', usage: null })).toBe(false);
+  });
+
+  it('passes --model to invokePlan when model is configured', async () => {
+    mockSpawnWithStreaming.mockImplementation(async (_cmd, _args, onStdout) => {
+      onStdout(JSON.stringify({ type: 'result', result: 'ok' }));
+      return { code: 0, killed: false };
+    });
+
+    createClaudeCodePlanner('claude-sonnet-4-20250514');
+    const baseConfig = vi.mocked(createPlannerBase).mock.calls[0][0];
+    await baseConfig.invokePlan('test prompt', '/project', () => {});
+
+    const [, args] = mockSpawnWithStreaming.mock.calls[0];
+    expect(args).toContain('--model');
+    expect(args).toContain('claude-sonnet-4-20250514');
+  });
+
+  it('passes --model to invokeEscalate when model is configured', async () => {
+    mockSpawnWithStdin.mockImplementation(async (opts) => {
+      opts.onLine(JSON.stringify({ type: 'result', result: 'ok' }));
+      return { text: '', stderrOutput: '', code: 0 };
+    });
+
+    createClaudeCodePlanner('claude-sonnet-4-20250514');
+    const baseConfig = vi.mocked(createPlannerBase).mock.calls[0][0];
+    await baseConfig.invokeEscalate('test prompt', '/project', () => {});
+
+    const callArgs = mockSpawnWithStdin.mock.calls[0][0];
+    expect(callArgs.args).toContain('--model');
+    expect(callArgs.args).toContain('claude-sonnet-4-20250514');
+  });
+
+  it('does not pass --model when model is not configured', async () => {
+    mockSpawnWithStreaming.mockImplementation(async (_cmd, _args, onStdout) => {
+      onStdout(JSON.stringify({ type: 'result', result: 'ok' }));
+      return { code: 0, killed: false };
+    });
+
+    createClaudeCodePlanner();
+    const baseConfig = vi.mocked(createPlannerBase).mock.calls[0][0];
+    await baseConfig.invokePlan('test prompt', '/project', () => {});
+
+    const [, args] = mockSpawnWithStreaming.mock.calls[0];
+    expect(args).not.toContain('--model');
+  });
+
+  it('forwards formatted tool use lines through onOutput', async () => {
+    mockSpawnWithStreaming.mockImplementation(async (_cmd, _args, onStdout) => {
+      onStdout(JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: '/tmp/test.ts' } }] },
+      }));
+      onStdout(JSON.stringify({ type: 'result', result: 'done' }));
+      return { code: 0, killed: false };
+    });
+
+    createClaudeCodePlanner();
+    const baseConfig = vi.mocked(createPlannerBase).mock.calls[0][0];
+    const outputs: string[] = [];
+    await baseConfig.invokePlan('test', '/project', (text) => outputs.push(text));
+
+    const joined = outputs.join('');
+    expect(joined).toContain('Read');
+    expect(joined).toContain('/tmp/test.ts');
   });
 
   it('tracks session ID across invokePlan calls', async () => {

@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createCommands, findCommand, toPaletteItems, executeSlashCommand } from './commands.js';
 import { configStore } from '../stores/config.js';
 import { feedbackStore } from '../stores/error.js';
+import { makeConfig } from '#testing/helpers/fixtures.js';
 import type { SlashCommandDef, CommandContext } from './types.js';
 
 const noop = () => {};
@@ -9,7 +10,7 @@ const noop = () => {};
 function makeCtx(): CommandContext {
   return {
     openOverlay: noop,
-    closeOverlay: noop,
+    navigate: noop,
     quit: noop,
   };
 }
@@ -104,34 +105,28 @@ describe('executeSlashCommand', () => {
   });
 });
 
-function makeConfig() {
-  return {
-    planner: { tool: 'claude-code' as const, model: 'opus-4' },
-    implementer: { provider: 'ollama', model: 'qwen2.5-coder:7b', apiBase: '', contextLength: 8192, temperature: 0.3 },
-    validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitPerTask: true },
-  };
-}
-
 describe('/mode command', () => {
   beforeEach(() => {
     configStore.reset();
     feedbackStore.reset();
   });
 
-  it('shows current mode when called without args', () => {
+  it('opens mode selector when called without args', () => {
     configStore.set({ config: makeConfig(), projectDir: '/tmp', overrides: {} });
-    const commands = createCommands(makeCtx());
+    const openOverlay = vi.fn();
+    const commands = createCommands({ ...makeCtx(), openOverlay });
     findCommand(commands, '/mode')!.handler();
-    expect(feedbackStore.get().message).toContain('standard');
+    expect(openOverlay).toHaveBeenCalledWith('mode-selector');
   });
 
-  it('sets mode to quick', () => {
+  it('sets mode to quick without opening overlay', () => {
     configStore.set({ config: makeConfig(), projectDir: '/tmp', overrides: {} });
-    const commands = createCommands(makeCtx());
+    const openOverlay = vi.fn();
+    const commands = createCommands({ ...makeCtx(), openOverlay });
     findCommand(commands, '/mode')!.handler('quick');
     expect(configStore.get().config!.workflow.mode).toBe('quick');
     expect(feedbackStore.get().message).toContain('quick');
+    expect(openOverlay).not.toHaveBeenCalled();
   });
 
   it('sets mode to full', () => {
@@ -149,20 +144,60 @@ describe('/mode command', () => {
   });
 });
 
-describe('/model command', () => {
-  beforeEach(() => {
-    configStore.reset();
-    feedbackStore.reset();
+describe('/planner command', () => {
+  it('has correct label and description', () => {
+    const commands = createCommands(makeCtx());
+    const cmd = findCommand(commands, '/planner');
+    expect(cmd).toBeTruthy();
+    expect(cmd!.label).toBe('Planner');
+    expect(cmd!.description).toBe('Select planner backend');
   });
 
-  it('shows planner and implementer info', () => {
-    configStore.set({ config: makeConfig(), projectDir: '/tmp', overrides: {} });
+  it('opens planner-picker overlay', () => {
+    const openOverlay = vi.fn();
+    const commands = createCommands({ ...makeCtx(), openOverlay });
+    findCommand(commands, '/planner')!.handler();
+    expect(openOverlay).toHaveBeenCalledWith('planner-picker');
+  });
+});
+
+describe('/home command', () => {
+  it('calls ctx.navigate with home', () => {
+    const navigate = vi.fn();
+    const commands = createCommands({ ...makeCtx(), navigate });
+    findCommand(commands, '/home')!.handler();
+    expect(navigate).toHaveBeenCalledWith('home');
+  });
+
+  it('is only valid on workflow and summary screens', () => {
     const commands = createCommands(makeCtx());
-    findCommand(commands, '/model')!.handler();
-    const msg = feedbackStore.get().message!;
-    expect(msg).toContain('claude-code');
-    expect(msg).toContain('opus-4');
-    expect(msg).toContain('qwen2.5-coder:7b');
-    expect(msg).toContain('ollama');
+    const cmd = findCommand(commands, '/home')!;
+    expect(cmd.validScreens).toEqual(['workflow', 'summary']);
+  });
+});
+
+describe('/config alias', () => {
+  it('resolves /config to /settings', () => {
+    const commands = createCommands(makeCtx());
+    const cmd = findCommand(commands, '/config');
+    expect(cmd).toBeTruthy();
+    expect(cmd!.name).toBe('/settings');
+  });
+});
+
+describe('/implementer command', () => {
+  it('has correct label and description', () => {
+    const commands = createCommands(makeCtx());
+    const cmd = findCommand(commands, '/implementer');
+    expect(cmd).toBeTruthy();
+    expect(cmd!.label).toBe('Implementer');
+    expect(cmd!.description).toBe('Select implementer backend');
+  });
+
+  it('opens implementer-picker overlay', () => {
+    const openOverlay = vi.fn();
+    const commands = createCommands({ ...makeCtx(), openOverlay });
+    findCommand(commands, '/implementer')!.handler();
+    expect(openOverlay).toHaveBeenCalledWith('implementer-picker');
   });
 });

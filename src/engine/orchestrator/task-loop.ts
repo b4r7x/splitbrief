@@ -6,14 +6,10 @@ import { hasExternalChanges } from '../../utils/git.js';
 
 import type { WorkflowContext } from './types.js';
 import { tokenDelta } from './tokens.js';
-import { emit, emitValidationStart, emitValidationResult, createTextHandler } from './events.js';
+import { emit, emitValidationStart, emitValidationProgress, emitValidationResult, createTextHandler } from './events.js';
 import { validateCommitAndAdvance } from './task-runner.js';
 import { handleRetryAndEscalation } from './escalation.js';
 import { refreshCurrentCode, addUsageAndSave } from './helpers.js';
-
-function markTask(task: Task, status: Task['status']): void {
-  task.status = status;
-}
 
 export function hasDependencyFailed(task: Task, failedTasks: string[], skippedTasks: string[]): boolean {
   const blocked = new Set([...failedTasks, ...skippedTasks]);
@@ -81,7 +77,7 @@ type HandleSkippedTaskOptions = {
 
 function handleSkippedTask(opts: HandleSkippedTaskOptions): WorkflowState {
   const { task, projectDir, callbacks, taskBreakdowns, index } = opts;
-  markTask(task, 'skipped');
+  task.status = 'skipped';
   const state = {
     ...opts.state,
     skippedTasks: [...opts.state.skippedTasks, task.id],
@@ -110,10 +106,9 @@ type RetryAndRecordOptions = {
 
 async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ state: WorkflowState; completed: boolean }> {
   const { wctx, task, initialError, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState } = opts;
-  const { projectDir, config, callbacks, planner, context, implementer } = wctx;
+  const { projectDir } = wctx;
   const retryResult = await handleRetryAndEscalation({
-    task, initialError, projectDir, config, context, planner, callbacks,
-    currentState: opts.state, taskStartTime, implementer,
+    wctx, task, initialError, currentState: opts.state, taskStartTime,
   });
   const state = loadState(projectDir) ?? opts.state;
   setTrackedState(state);
@@ -138,13 +133,13 @@ async function runSingleTask(opts: RunSingleTaskOptions): Promise<WorkflowState>
   const { projectDir, config, callbacks, context } = wctx;
   let state = opts.state;
 
-  markTask(task, 'in_progress');
+  task.status = 'in_progress';
   setCurrentTask(task);
   const taskStartTime = Date.now();
   callbacks.onEvent({ type: 'task-start', ts: taskStartTime, taskId: task.id, title: task.title, index, total: totalTasks, file: task.file, action: task.action });
   emit(projectDir, state, 'task_started', task.id);
 
-  if (task.action === 'modify') {
+  if (task.action === 'modify' || task.action === 'create') {
     refreshCurrentCode(task, projectDir);
   }
 
@@ -156,7 +151,8 @@ async function runSingleTask(opts: RunSingleTaskOptions): Promise<WorkflowState>
     onEvent: callbacks.onEvent,
   });
 
-  state = addUsageAndSave(projectDir, state, 'implementer', implResult.usage);
+  state = addUsageAndSave(projectDir, state, 'implementer', implResult.usage, callbacks);
+  setTrackedState(state);
 
   if (!implResult.success) {
     const retry = await retryAndRecord({
@@ -168,10 +164,13 @@ async function runSingleTask(opts: RunSingleTaskOptions): Promise<WorkflowState>
 
   state = transition(state, { type: 'TASK_SENT' });
   saveState(projectDir, state);
+  setTrackedState(state);
 
   const valStartTime = Date.now();
   emitValidationStart(callbacks);
-  const validationResults = await validateTask(task, projectDir, config);
+  const validationResults = await validateTask(task, projectDir, config, (stages) => {
+    emitValidationProgress(callbacks, stages, valStartTime);
+  });
   emitValidationResult(callbacks, validationResults, valStartTime);
 
   const commitResult = await validateCommitAndAdvance({
@@ -208,6 +207,8 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: Wo
   const taskBreakdowns: TaskTokenUsage[] = [];
 
   for (let i = state.currentTaskIndex; i < totalTasks; i++) {
+    if (wctx.signal?.aborted) return { state, taskBreakdowns };
+
     const task = state.tasks[i];
 
     const cancelledState = await checkExternalChanges(projectDir, callbacks, state, task.id);

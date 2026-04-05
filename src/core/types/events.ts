@@ -1,7 +1,7 @@
 import type { ClarificationQuestion } from '../../engine/question-parser.js';
 import type { Phase } from './workflow.js';
 import type { Summary } from './summary.js';
-import type { TaskCompletionMethod } from './tokens.js';
+import type { TaskCompletionMethod, TokenUsage } from './tokens.js';
 
 export type TuiEvent =
   | {
@@ -85,6 +85,15 @@ export type TuiEvent =
       type: 'error';
       ts: number;
       message: string;
+    }
+  | {
+      type: 'cost-update';
+      ts: number;
+      tokenUsage: TokenUsage;
+    }
+  | {
+      type: 'workflow-cancelled';
+      ts: number;
     };
 
 export interface OrchestratorEvent {

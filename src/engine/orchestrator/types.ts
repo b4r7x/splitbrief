@@ -9,4 +9,6 @@ export interface WorkflowContext {
   planner: PlannerBackend;
   context: ProjectContext;
   implementer: ImplementerBackend;
+  /** Checked between workflow phases (cooperative cancellation), not passed to subprocess operations. */
+  signal?: AbortSignal;
 }

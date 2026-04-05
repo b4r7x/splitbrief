@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { useInput } from 'ink';
 import { killAllProcesses } from '../utils/process.js';
+import { workflowStore } from '../stores/workflow.js';
 import type { Screen } from '../types.js';
 
 const DOUBLE_PRESS_WINDOW = 3000;
@@ -21,7 +22,16 @@ export function useCtrlC(
     }
 
     lastPressRef.current = Date.now();
-    if (screen === 'workflow') killAllProcesses();
-    setErrorMessage('Press Ctrl+C again to exit');
+    if (screen === 'workflow') {
+      const { cancelled } = workflowStore.get();
+      if (!cancelled) {
+        workflowStore.requestCancel();
+      } else {
+        killAllProcesses();
+      }
+      setErrorMessage('Cancelling workflow... Ctrl+C to exit');
+    } else {
+      setErrorMessage('Press Ctrl+C again to exit');
+    }
   });
 }

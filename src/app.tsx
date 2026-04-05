@@ -14,8 +14,10 @@ import { SummaryScreen } from './screens/summary.js';
 import { HelpOverlay } from './components/help-overlay.js';
 import { CommandPalette } from './components/command-palette.js';
 import { SkillsPicker } from './components/skills-picker.js';
-import { ConfigPicker } from './components/config-picker.js';
 import { SettingsOverlay } from './components/settings-overlay.js';
+import { ModeSelector } from './components/mode-selector.js';
+import { PlannerPicker } from './components/planner-picker.js';
+import { ImplementerPicker } from './components/implementer-picker.js';
 import type { Screen, OverlayType, SlashCommandDef, CommandContext, CommandPaletteItem } from './types.js';
 
 export default function App() {
@@ -27,7 +29,7 @@ export default function App() {
 
   const ctx: CommandContext = {
     openOverlay: overlayStore.open,
-    closeOverlay: overlayStore.close,
+    navigate: routerStore.navigate,
     quit: exit,
   };
   const commands = createCommands(ctx);
@@ -74,6 +76,10 @@ function renderScreen({ screen, commands, onSlash }: {
           onSlashCommand={(raw) => onSlash(raw, 'summary')}
         />
       );
+    default: {
+      const _exhaustive: never = screen;
+      return null;
+    }
   }
 }
 
@@ -92,9 +98,17 @@ function renderOverlay({ active, screen, commands, paletteItems }: {
       return <CommandPalette items={paletteItems} currentScreen={screen} />;
     case 'skills':
       return <SkillsPicker />;
-    case 'picker':
-      return <ConfigPicker />;
     case 'settings':
       return <SettingsOverlay />;
+    case 'mode-selector':
+      return <ModeSelector />;
+    case 'planner-picker':
+      return <PlannerPicker />;
+    case 'implementer-picker':
+      return <ImplementerPicker />;
+    default: {
+      const _exhaustive: never = active;
+      return null;
+    }
   }
 }

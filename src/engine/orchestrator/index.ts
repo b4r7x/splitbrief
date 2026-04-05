@@ -30,6 +30,7 @@ export type RunWorkflowOptions = {
   callbacks: OrchestratorCallbacks;
   savedState?: WorkflowState;
   selectedSkills?: SkillMeta[];
+  signal?: AbortSignal;
 };
 
 type SummaryBase = { feature: string; startTime: number; plannerTool: string; implementerProvider: string };
@@ -95,7 +96,7 @@ async function initializeWorkflow(
     testCommand: config.validation.testCommand,
   };
 
-  const wctx: WorkflowContext = { projectDir, config, callbacks, planner, context, implementer };
+  const wctx: WorkflowContext = { projectDir, config, callbacks, planner, context, implementer, signal: opts.signal };
 
   return { ok: true, state, wctx };
 }
@@ -117,7 +118,7 @@ async function runFinalReviewPhase(
   try {
     const reviewResult = await runFinalReview(projectDir, callbacks);
     writeSpecFile(projectDir, 'review.md', reviewResult.text);
-    state = addUsageAndSave(projectDir, state, 'planner', reviewResult.usage);
+    state = addUsageAndSave(projectDir, state, 'planner', reviewResult.usage, callbacks);
   } catch (err) {
     callbacks.onEvent({ type: 'error', ts: Date.now(), message: `Final review failed: ${toErrorMessage(err)}` });
   }
@@ -166,11 +167,15 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
         if (planning.cancelled) { result = buildSummary({ ...summaryBase, state }); return; }
       }
 
+      if (opts.signal?.aborted) { result = buildSummary({ ...summaryBase, state }); return; }
+
       const taskResult = await runTaskLoop({
         wctx, initialState: state,
         setTrackedState: (s) => { trackedState = s; },
         setCurrentTask: (t) => { currentTask = t; },
       });
+
+      if (opts.signal?.aborted) { result = buildSummary({ ...summaryBase, state: taskResult.state, taskBreakdowns: taskResult.taskBreakdowns }); return; }
 
       result = await runFinalReviewPhase(
         { projectDir, callbacks, state: taskResult.state },
@@ -179,10 +184,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     } catch (err) {
       const msg = toErrorMessage(err);
       if (trackedState) {
-        try {
-          trackedState = transition(trackedState, { type: 'CANCEL' });
-          saveState(projectDir, trackedState);
-        } catch { /* best-effort */ }
+        try { saveState(projectDir, trackedState); } catch { /* best-effort */ }
       }
       killAllProcesses();
       callbacks.onEvent({ type: 'error', ts: Date.now(), message: msg });

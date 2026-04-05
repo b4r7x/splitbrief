@@ -5,7 +5,7 @@ import type { PlannerBackend, EscalationResult } from './types.js';
 import { createPlannerBase, createGetVersion, createIsAvailable, type InvokeResult } from './base.js';
 import { spawnWithStdin } from './spawn.js';
 import { spawnWithStreaming, isENOENT } from '../../utils/process.js';
-import { parseStreamLine } from '../claude-stream.js';
+import { parseStreamLine, type ToolUseInfo } from '../claude-stream.js';
 import { validateTaskPath } from '../../utils/fs.js';
 import { createQuestionAccumulator, type ClarificationQuestion } from '../question-parser.js';
 
@@ -23,6 +23,40 @@ interface StreamHandlerCallbacks {
   onQuestion?: (questions: ClarificationQuestion[]) => void;
 }
 
+function formatToolUse(tool: ToolUseInfo): string {
+  const input = tool.input;
+  switch (tool.name) {
+    case 'Read':
+      return `→ Read ${input.file_path ?? ''}`;
+    case 'Grep':
+      return `→ Grep "${input.pattern ?? ''}"`;
+    case 'Glob':
+      return `→ Glob ${input.pattern ?? ''}`;
+    case 'Write':
+      return `→ Write ${input.file_path ?? ''}`;
+    case 'Edit':
+      return `→ Edit ${input.file_path ?? ''}`;
+    case 'Bash':
+      return `→ Bash ${String(input.command ?? '').slice(0, 60)}`;
+    case 'Skill':
+      return `→ Skill ${input.skill ?? ''}`;
+    case 'Agent':
+      return `→ Agent ${input.subagent_type ? input.subagent_type + ': ' : ''}${String(input.description ?? '').slice(0, 60)}`;
+    case 'WebSearch':
+      return `→ WebSearch "${input.query ?? ''}"`;
+    case 'WebFetch':
+      return `→ WebFetch ${String(input.url ?? '').slice(0, 80)}`;
+    case 'ToolSearch':
+      return `→ ToolSearch "${input.query ?? ''}"`;
+    case 'NotebookEdit':
+      return `→ NotebookEdit ${input.file_path ?? ''}`;
+    default: {
+      const hint = Object.values(input).find(v => typeof v === 'string');
+      return `→ ${tool.name}${hint ? ' ' + String(hint).slice(0, 60) : ''}`;
+    }
+  }
+}
+
 function createStreamHandler(callbacks: StreamHandlerCallbacks) {
   const state: StreamHandlerState = { text: '', sessionId: null, usage: null };
   const questionAccumulator = callbacks.onQuestion ? createQuestionAccumulator() : null;
@@ -33,6 +67,11 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     if (parsed.sessionId) {
       state.sessionId = parsed.sessionId;
       callbacks.onSessionId?.(parsed.sessionId);
+    }
+
+    if (parsed.toolUse) {
+      const toolLines = parsed.toolUse.map(formatToolUse).join('\n');
+      callbacks.onOutput(toolLines + '\n');
     }
 
     if (parsed.text) {
@@ -74,8 +113,12 @@ async function spawnClaudePlanner(
   sessionId: string | null,
   onOutput: (text: string) => void,
   onQuestion?: (questions: ClarificationQuestion[]) => void,
+  model?: string,
 ): Promise<StreamResult> {
   const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose'];
+  if (model) {
+    args.push('--model', model);
+  }
   if (sessionId) {
     args.push('--session-id', sessionId);
   }
@@ -120,12 +163,17 @@ async function spawnClaudeWithStdin(
   prompt: string,
   projectDir: string,
   onOutput: (text: string) => void,
+  model?: string,
 ): Promise<InvokeResult> {
   const { state, handleLine } = createStreamHandler({ onOutput });
+  const args = ['-p', '--output-format', 'stream-json', '--verbose'];
+  if (model) {
+    args.push('--model', model);
+  }
 
   await spawnWithStdin({
     command: 'claude',
-    args: ['-p', '--output-format', 'stream-json', '--verbose'],
+    args,
     cwd: projectDir,
     stdin: prompt,
     notFoundMessage: NOT_FOUND,
@@ -135,7 +183,7 @@ async function spawnClaudeWithStdin(
   return { text: state.text, usage: state.usage };
 }
 
-export function createClaudeCodePlanner(): PlannerBackend {
+export function createClaudeCodePlanner(model?: string): PlannerBackend {
   let currentSessionId: string | null = null;
 
   return createPlannerBase({
@@ -144,13 +192,13 @@ export function createClaudeCodePlanner(): PlannerBackend {
     conversational: true,
 
     async invokePlan(prompt, projectDir, onOutput, onQuestion) {
-      const result = await spawnClaudePlanner(prompt, projectDir, currentSessionId, onOutput, onQuestion);
+      const result = await spawnClaudePlanner(prompt, projectDir, currentSessionId, onOutput, onQuestion, model);
       currentSessionId = result.sessionId;
       return { text: result.text, usage: result.usage };
     },
 
     async invokeEscalate(prompt, projectDir, onOutput) {
-      return spawnClaudeWithStdin(prompt, projectDir, onOutput);
+      return spawnClaudeWithStdin(prompt, projectDir, onOutput, model);
     },
 
     isAvailable: createIsAvailable('claude'),

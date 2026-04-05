@@ -1,6 +1,6 @@
 import { KNOWN_PROVIDER_NAMES } from '../engine/providers/registry.js';
 
-const VALID_PLANNER_TOOLS = ['claude-code', 'codex', 'opencode', 'aider', 'agent-sdk', 'shell'] as const;
+const VALID_PLANNER_TOOLS = ['claude-code', 'codex', 'opencode', 'aider', 'agent-sdk', 'shell', 'anthropic', 'openrouter'] as const;
 
 function get(obj: unknown, ...keys: string[]): unknown {
   let current: unknown = obj;
@@ -24,10 +24,18 @@ export function validateConfig(config: Record<string, unknown>): ConfigError[] {
     errors.push({ path: 'planner.tool', message: `Must be one of: ${VALID_PLANNER_TOOLS.join(', ')} (got ${JSON.stringify(tool)})` });
   }
 
-  if (tool === 'agent-sdk') {
+  if (tool === 'agent-sdk' || tool === 'anthropic') {
     const apiKey = get(config, 'planner', 'apiKey') ?? process.env['ANTHROPIC_API_KEY'];
     if (!apiKey) {
-      errors.push({ path: 'planner.apiKey', message: 'Agent SDK requires planner.apiKey or ANTHROPIC_API_KEY env var' });
+      const label = tool === 'agent-sdk' ? 'Agent SDK' : 'Anthropic planner';
+      errors.push({ path: 'planner.apiKey', message: `${label} requires planner.apiKey or ANTHROPIC_API_KEY env var` });
+    }
+  }
+
+  if (tool === 'openrouter') {
+    const apiKey = get(config, 'planner', 'apiKey') ?? process.env['OPENROUTER_API_KEY'];
+    if (!apiKey) {
+      errors.push({ path: 'planner.apiKey', message: 'OpenRouter planner requires planner.apiKey or OPENROUTER_API_KEY env var' });
     }
   }
 

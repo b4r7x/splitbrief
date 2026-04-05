@@ -30,17 +30,10 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
       handler: () => ctx.openOverlay('skills'),
     },
     {
-      name: '/config',
-      label: 'Config',
-      description: 'Change planner & model',
-      shortcut: getShortcutKey('config'),
-      validScreens: ['home'],
-      handler: () => ctx.openOverlay('picker'),
-    },
-    {
       name: '/settings',
+      aliases: ['/config'],
       label: 'Settings',
-      description: 'Open settings',
+      description: 'Planner, model & settings',
       shortcut: getShortcutKey('settings'),
       validScreens: ALL_SCREENS,
       handler: () => ctx.openOverlay('settings'),
@@ -48,39 +41,46 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
     {
       name: '/mode',
       label: 'Mode',
-      description: 'Show or set workflow mode (quick, standard, full)',
+      description: 'Select workflow mode \u2192',
       validScreens: ALL_SCREENS,
       handler: (args?: string) => {
         const config = configStore.get().config;
         if (!config) return;
-        const validModes = WORKFLOW_MODES;
         if (!args) {
-          const current = config.workflow.mode ?? 'standard';
-          feedbackStore.setMessage(`Workflow mode: ${current}. Use /mode <${validModes.join('|')}> to change.`);
+          ctx.openOverlay('mode-selector');
           return;
         }
+        const validModes = WORKFLOW_MODES;
         const mode = args.trim().toLowerCase();
         if (!validModes.includes(mode as WorkflowMode)) {
           feedbackStore.setError(`Invalid mode: ${mode}. Valid modes: ${validModes.join(', ')}`);
           return;
         }
         const updated = { ...config, workflow: { ...config.workflow, mode: mode as WorkflowMode } };
-        configStore.set({ ...configStore.get(), config: updated });
+        configStore.save(updated);
         feedbackStore.setMessage(`Workflow mode set to: ${mode}`);
       },
     },
     {
-      name: '/model',
-      label: 'Model',
-      description: 'Show current planner and implementer model config',
+      name: '/planner',
+      label: 'Planner',
+      description: 'Select planner backend',
       validScreens: ALL_SCREENS,
-      handler: () => {
-        const config = configStore.get().config;
-        if (!config) return;
-        const plannerInfo = `Planner: ${config.planner.tool}${config.planner.model ? ` (${config.planner.model})` : ''}`;
-        const implInfo = `Implementer: ${config.implementer.model} (${config.implementer.provider})`;
-        feedbackStore.setMessage(`${plannerInfo} | ${implInfo}`);
-      },
+      handler: () => ctx.openOverlay('planner-picker'),
+    },
+    {
+      name: '/implementer',
+      label: 'Implementer',
+      description: 'Select implementer backend',
+      validScreens: ALL_SCREENS,
+      handler: () => ctx.openOverlay('implementer-picker'),
+    },
+    {
+      name: '/home',
+      label: 'Home',
+      description: 'Return to home screen',
+      validScreens: ['workflow', 'summary'],
+      handler: () => ctx.navigate('home'),
     },
     {
       name: '/quit',
@@ -95,7 +95,9 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
 
 export function findCommand(commands: SlashCommandDef[], name: string): SlashCommandDef | undefined {
   const lower = name.toLowerCase();
-  return commands.find((cmd) => cmd.name.toLowerCase() === lower);
+  return commands.find((cmd) =>
+    cmd.name.toLowerCase() === lower || cmd.aliases?.some(a => a.toLowerCase() === lower),
+  );
 }
 
 export function toPaletteItems(commands: SlashCommandDef[]): CommandPaletteItem[] {
