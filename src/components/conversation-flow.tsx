@@ -14,20 +14,23 @@ import {
 interface ConversationFlowProps {
   events: TuiEvent[];
   height: number;
+  width?: number;
 }
 
 export interface ConversationFlowHandle {
   scrollUp: () => void;
   scrollDown: () => void;
+  scrollToBottom: () => void;
   toggleDiff: () => void;
 }
 
 const ConversationFlow = forwardRef<ConversationFlowHandle, ConversationFlowProps>(
-  function ConversationFlow({ events, height: rawHeight }, ref) {
+  function ConversationFlow({ events, height: rawHeight, width }, ref) {
     const t = useTheme();
     const height = Math.max(0, rawHeight);
     const [scrollOffset, setScrollOffset] = useState(0);
     const [expandedDiffs, setExpandedDiffs] = useState<Set<number>>(() => new Set());
+    const [eventCountAtScroll, setEventCountAtScroll] = useState(events.length);
 
     const sections = groupEventsIntoSections(events);
     const maxScrollOffset = Math.max(0, events.length - 1);
@@ -46,12 +49,26 @@ const ConversationFlow = forwardRef<ConversationFlowHandle, ConversationFlowProp
       });
     };
 
+    const newEventCount = scrollOffset > 0 ? Math.max(0, events.length - eventCountAtScroll) : 0;
+
     useImperativeHandle(ref, () => ({
       scrollUp() {
-        setScrollOffset(prev => Math.min(prev + 1, maxScrollOffset));
+        setScrollOffset(prev => {
+          const next = Math.min(prev + 1, maxScrollOffset);
+          if (prev === 0 && next > 0) setEventCountAtScroll(events.length);
+          return next;
+        });
       },
       scrollDown() {
-        setScrollOffset(prev => Math.max(0, prev - 1));
+        setScrollOffset(prev => {
+          const next = Math.max(0, prev - 1);
+          if (next === 0) setEventCountAtScroll(events.length);
+          return next;
+        });
+      },
+      scrollToBottom() {
+        setScrollOffset(0);
+        setEventCountAtScroll(events.length);
       },
       toggleDiff,
     }));
@@ -73,9 +90,7 @@ const ConversationFlow = forwardRef<ConversationFlowHandle, ConversationFlowProp
     const visibleDynamic: DynamicSection[] = [];
 
     if (!needsTrim) {
-      for (const section of dynamicSections) {
-        visibleDynamic.push(section);
-      }
+      visibleDynamic.push(...dynamicSections);
     } else {
       let skipLines = scrollOffset;
       for (let i = dynamicSections.length - 1; i >= 0 && remainingHeight > 0; i--) {
@@ -111,24 +126,33 @@ const ConversationFlow = forwardRef<ConversationFlowHandle, ConversationFlowProp
               method={item.method}
               retries={item.retries}
               duration={item.duration}
+              file={item.file}
               reason={item.reason}
             />
           )}
         </Static>
-        <Box flexDirection="column" height={height} overflow="hidden">
+        <Box flexDirection="column" height={height} width={width} overflow="hidden">
           {visibleDynamic.length === 0 && completedItems.length === 0 && (
             <Text color={t.textDim}>No events yet</Text>
           )}
           {visibleDynamic.map((section) => {
-            return section.items.map((event, i) => (
-              <Box key={`${section.startIndex + i}`} marginY={1}>
-                <EventCard
-                  event={event}
-                  diffExpanded={expandedDiffs.has(section.startIndex + i)}
-                />
-              </Box>
-            ));
+            return section.items.map((event, i) => {
+              const tight = event.type === 'planner-text' || event.type === 'planner-status';
+              return (
+                <Box key={`${section.startIndex + i}`} marginY={tight ? 0 : 1}>
+                  <EventCard
+                    event={event}
+                    diffExpanded={expandedDiffs.has(section.startIndex + i)}
+                  />
+                </Box>
+              );
+            });
           })}
+          {newEventCount > 0 && (
+            <Box justifyContent="center">
+              <Text color={t.textDim}>{`─── ↓ ${newEventCount} new event${newEventCount === 1 ? '' : 's'} ───`}</Text>
+            </Box>
+          )}
         </Box>
       </>
     );

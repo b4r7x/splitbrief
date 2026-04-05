@@ -4,6 +4,8 @@ import { ControlledMultilineInput, normalizeLineEndings } from './controlled-mul
 import type { ControlledMultilineInputProps } from './controlled-multiline-input.js';
 import { resolveEditAction, applyEditAction } from '../core/text-editing.js';
 
+const MULTI_BYTE_SUPPRESS_MS = 50;
+
 export interface MultilineInputProps extends ControlledMultilineInputProps {
   onChange: (value: string) => void;
   onSubmit?: (value: string) => void;
@@ -71,7 +73,7 @@ export const MultilineInput = ({
       setCursorIndex(editResult.cursor);
       setPasteLength(0);
       if (action === 'delete-line-backward' && editResult.value !== value) {
-        suppressUntilRef.current = Date.now() + 50;
+        suppressUntilRef.current = Date.now() + MULTI_BYTE_SUPPRESS_MS;
       }
       return;
     }

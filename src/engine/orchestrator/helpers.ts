@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
-import type { Task, WorkflowState, PlannerTokenUsage, ImplementerTokenUsage, ValidationResult } from '../../types.js';
+import type { Task, WorkflowState, PlannerTokenUsage, ImplementerTokenUsage, ValidationResult, OrchestratorCallbacks } from '../../types.js';
 import { saveState } from '../../core/state-persistence.js';
 import { addUsage, type UsageCategory } from './tokens.js';
 
@@ -17,9 +17,13 @@ export function allValidationsPassed(results: ValidationResult[]): boolean {
 
 export function addUsageAndSave(
   projectDir: string, state: WorkflowState, category: UsageCategory, usage: PlannerTokenUsage | ImplementerTokenUsage | null | undefined,
+  callbacks: OrchestratorCallbacks,
 ): WorkflowState {
   const next = addUsage(state, category, usage);
   saveState(projectDir, next);
+  if (usage) {
+    callbacks.onEvent({ type: 'cost-update', ts: Date.now(), tokenUsage: next.tokenUsage });
+  }
   return next;
 }
 

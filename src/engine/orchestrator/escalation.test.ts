@@ -99,8 +99,8 @@ describe('handleRetryAndEscalation', () => {
     vi.mocked(validateTask).mockResolvedValue(passingResults);
 
     const result = await handleRetryAndEscalation({
-      task, initialError: 'type error', projectDir: '/tmp/proj',
-      config, context: defaultContext, planner, callbacks, currentState: state, implementer,
+      wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer },
+      task, initialError: 'type error', currentState: state,
     });
 
     expect(result.completed).toBe(true);
@@ -122,8 +122,8 @@ describe('handleRetryAndEscalation', () => {
     vi.mocked(validateTask).mockResolvedValue(failingResults);
 
     const result = await handleRetryAndEscalation({
-      task, initialError: 'error', projectDir: '/tmp/proj',
-      config, context: defaultContext, planner, callbacks, currentState: state, implementer,
+      wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer },
+      task, initialError: 'error', currentState: state,
     });
 
     // Planner should have been called for escalation
@@ -153,8 +153,8 @@ describe('handleRetryAndEscalation', () => {
     });
 
     const result = await handleRetryAndEscalation({
-      task, initialError: 'error', projectDir: '/tmp/proj',
-      config, context: defaultContext, planner, callbacks, currentState: state, implementer,
+      wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer },
+      task, initialError: 'error', currentState: state,
     });
 
     expect(result.completed).toBe(true);
@@ -182,8 +182,8 @@ describe('handleRetryAndEscalation', () => {
     });
 
     const result = await handleRetryAndEscalation({
-      task, initialError: 'error', projectDir: '/tmp/proj',
-      config, context: defaultContext, planner, callbacks, currentState: state, implementer,
+      wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer },
+      task, initialError: 'error', currentState: state,
     });
 
     expect(result.completed).toBe(true);
@@ -208,8 +208,8 @@ describe('handleRetryAndEscalation', () => {
     });
 
     const result = await handleRetryAndEscalation({
-      task, initialError: 'error', projectDir: '/tmp/proj',
-      config, context: defaultContext, planner, callbacks, currentState: state, implementer,
+      wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer },
+      task, initialError: 'error', currentState: state,
     });
 
     expect(result.completed).toBe(false);
@@ -235,8 +235,8 @@ describe('handleRetryAndEscalation', () => {
     });
 
     await handleRetryAndEscalation({
-      task, initialError: 'error', projectDir: '/tmp/proj',
-      config, context: defaultContext, planner, callbacks, currentState: state, implementer,
+      wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer },
+      task, initialError: 'error', currentState: state,
     });
 
     // 5 local retries + 1 hint retry = 6 total retry calls

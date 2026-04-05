@@ -80,6 +80,8 @@ export function makeHookWorkflowState(overrides?: Partial<Omit<HookWorkflowState
     escalatedCount: 0,
     reviewFilePath: null,
     taskMap: new Map(),
+    tokenUsage: null,
+    cancelled: false,
   };
   return { ...defaults, ...overrides, taskMap: overrides?.taskMap ?? defaults.taskMap };
 }

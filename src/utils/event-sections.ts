@@ -2,7 +2,7 @@ import type { TuiEvent, TaskCompletionMethod } from '../types.js';
 
 export type Section =
   | { type: 'events'; items: TuiEvent[]; startIndex: number }
-  | { type: 'completed-task'; summary: { index: number; title: string; method: TaskCompletionMethod; retries: number; duration: number; reason?: string } }
+  | { type: 'completed-task'; summary: { index: number; title: string; method: TaskCompletionMethod; retries: number; duration: number; file?: string; reason?: string } }
   | { type: 'active-task'; items: TuiEvent[]; startIndex: number };
 
 export function groupEventsIntoSections(events: TuiEvent[]): Section[] {
@@ -44,6 +44,7 @@ export function groupEventsIntoSections(events: TuiEvent[]): Section[] {
             method: endEvent.method,
             retries: endEvent.retries,
             duration: Math.round(endEvent.duration / 1000),
+            file: range.startEvent.file,
           },
         });
       } else if (endEvent.type === 'task-skipped') {
@@ -76,6 +77,8 @@ export function groupEventsIntoSections(events: TuiEvent[]): Section[] {
 
 function estimateEventHeight(event: TuiEvent, diffExpanded?: boolean): number {
   switch (event.type) {
+    case 'planner-text':
+      return Math.max(3, event.text.split('\n').length + 2);
     case 'task-start':
       return 4;
     case 'implementer-generate':

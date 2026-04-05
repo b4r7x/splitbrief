@@ -1,20 +1,25 @@
 import type { PlannerTokenUsage } from '../types.js';
 
+export interface ToolUseInfo {
+  name: string;
+  input: Record<string, unknown>;
+}
+
 interface StreamParseResult {
   text: string | null;
   sessionId: string | null;
   isResult: boolean;
   usage: PlannerTokenUsage | null;
-  costUsd: number | null;
+  toolUse: ToolUseInfo[] | null;
 }
 
-const NULL_RESULT: StreamParseResult = {
+const NULL_RESULT: StreamParseResult = Object.freeze({
   text: null,
   sessionId: null,
   isResult: false,
   usage: null,
-  costUsd: null,
-};
+  toolUse: null,
+});
 
 export function parseStreamLine(line: string): StreamParseResult {
   if (!line.trim()) return NULL_RESULT;
@@ -24,9 +29,12 @@ export function parseStreamLine(line: string): StreamParseResult {
 
     if (event.type === 'assistant' && event.message?.content) {
       const texts: string[] = [];
+      const tools: ToolUseInfo[] = [];
       for (const block of event.message.content) {
         if (block.type === 'text' && block.text) {
           texts.push(block.text);
+        } else if (block.type === 'tool_use' && block.name) {
+          tools.push({ name: block.name, input: block.input ?? {} });
         }
       }
       return {
@@ -34,7 +42,7 @@ export function parseStreamLine(line: string): StreamParseResult {
         sessionId: event.session_id ?? null,
         isResult: false,
         usage: null,
-        costUsd: null,
+        toolUse: tools.length > 0 ? tools : null,
       };
     }
 
@@ -47,7 +55,7 @@ export function parseStreamLine(line: string): StreamParseResult {
         sessionId: event.session_id ?? null,
         isResult: true,
         usage,
-        costUsd: typeof event.total_cost_usd === 'number' ? event.total_cost_usd : null,
+        toolUse: null,
       };
     }
 

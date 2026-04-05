@@ -17,11 +17,11 @@ vi.mock('../claude-stream.js', () => ({
   parseStreamLine: vi.fn().mockImplementation((line: string) => {
     try {
       const event = JSON.parse(line);
-      if (event.type === 'assistant') return { text: event.text, isResult: false, usage: null, sessionId: null, costUsd: null };
-      if (event.type === 'result') return { text: event.text, isResult: true, usage: event.usage ?? null, sessionId: null, costUsd: null };
-      return { text: null, isResult: false, usage: null, sessionId: null, costUsd: null };
+      if (event.type === 'assistant') return { text: event.text, isResult: false, usage: null, sessionId: null };
+      if (event.type === 'result') return { text: event.text, isResult: true, usage: event.usage ?? null, sessionId: null };
+      return { text: null, isResult: false, usage: null, sessionId: null };
     } catch {
-      return { text: null, isResult: false, usage: null, sessionId: null, costUsd: null };
+      return { text: null, isResult: false, usage: null, sessionId: null };
     }
   }),
 }));

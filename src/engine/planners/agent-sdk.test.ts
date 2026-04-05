@@ -2,24 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { PlannerBackend } from './types.js';
 
 vi.mock('./base.js', async (importOriginal) => {
+  const { mockPlannerBase } = await import('#testing/mocks/planner-base.js');
   const orig = await importOriginal<typeof import('./base.js')>();
-  return {
-    ...orig,
-    createPlannerBase: vi.fn().mockImplementation((config) => {
-      return {
-        name: config.name,
-        conversational: config.conversational ?? false,
-        plan: vi.fn(),
-        regenerate: vi.fn(),
-        escalateHint: vi.fn(),
-        escalateFull: vi.fn(),
-        isAvailable: config.isAvailable,
-        getVersion: config.getVersion,
-        getPricing: vi.fn(),
-        _config: config,
-      };
-    }),
-  };
+  return { ...orig, ...mockPlannerBase() };
 });
 
 vi.mock('../output-parsers.js', () => ({

@@ -18,23 +18,20 @@ describe('parseStreamLine', () => {
     expect(result.sessionId).toBe('sess-1');
     expect(result.isResult).toBe(false);
     expect(result.usage).toBe(null);
-    expect(result.costUsd).toBe(null);
   });
 
-  it('extracts text, usage, and costUsd from result event', () => {
+  it('extracts text and usage from result event', () => {
     const line = JSON.stringify({
       type: 'result',
       session_id: 'sess-2',
       result: 'Final answer here',
       usage: { input_tokens: 1000, output_tokens: 500 },
-      total_cost_usd: 0.42,
     });
     const result = parseStreamLine(line);
     expect(result.text).toBe('Final answer here');
     expect(result.sessionId).toBe('sess-2');
     expect(result.isResult).toBe(true);
     expect(result.usage).toEqual({ inputTokens: 1000, outputTokens: 500 });
-    expect(result.costUsd).toBe(0.42);
   });
 
   it('extracts session_id from any event type', () => {
@@ -54,7 +51,6 @@ describe('parseStreamLine', () => {
     expect(result.sessionId).toBe(null);
     expect(result.isResult).toBe(false);
     expect(result.usage).toBe(null);
-    expect(result.costUsd).toBe(null);
   });
 
   it('returns null fields for empty line', () => {
@@ -79,7 +75,6 @@ describe('parseStreamLine', () => {
     expect(result.text).toBe('Answer');
     expect(result.isResult).toBe(true);
     expect(result.usage).toBe(null);
-    expect(result.costUsd).toBe(null);
     expect(result.sessionId).toBe(null);
   });
 
@@ -90,19 +85,6 @@ describe('parseStreamLine', () => {
     });
     const result = parseStreamLine(line);
     expect(result.text).toBe(null);
-  });
-
-  it('result event without total_cost_usd returns costUsd null', () => {
-    const line = JSON.stringify({
-      type: 'result',
-      session_id: 'sess-no-cost',
-      result: 'Some result',
-      usage: { input_tokens: 100, output_tokens: 50 },
-    });
-    const result = parseStreamLine(line);
-    expect(result.isResult).toBe(true);
-    expect(result.costUsd).toBe(null);
-    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
   });
 
   it('assistant event with multiple content blocks concatenates text', () => {
@@ -147,6 +129,49 @@ describe('parseStreamLine', () => {
     expect(result.sessionId).toBe('sess-ping');
     expect(result.isResult).toBe(false);
     expect(result.usage).toBe(null);
-    expect(result.costUsd).toBe(null);
+  });
+
+  it('parses tool_use content blocks into toolUse array', () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      session_id: 'sess-tool',
+      message: {
+        content: [
+          { type: 'tool_use', name: 'read_file', input: { path: '/tmp/test.ts' } },
+        ],
+      },
+    });
+    const result = parseStreamLine(line);
+    expect(result.toolUse).toEqual([{ name: 'read_file', input: { path: '/tmp/test.ts' } }]);
+    expect(result.text).toBe(null);
+  });
+
+  it('returns both text and toolUse for mixed content blocks', () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      session_id: 'sess-mixed',
+      message: {
+        content: [
+          { type: 'text', text: 'Let me read that file.' },
+          { type: 'tool_use', name: 'write_file', input: { path: '/tmp/out.ts', content: 'code' } },
+        ],
+      },
+    });
+    const result = parseStreamLine(line);
+    expect(result.text).toBe('Let me read that file.');
+    expect(result.toolUse).toEqual([{ name: 'write_file', input: { path: '/tmp/out.ts', content: 'code' } }]);
+  });
+
+  it('defaults tool_use input to empty object when missing', () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'tool_use', name: 'list_files' },
+        ],
+      },
+    });
+    const result = parseStreamLine(line);
+    expect(result.toolUse).toEqual([{ name: 'list_files', input: {} }]);
   });
 });

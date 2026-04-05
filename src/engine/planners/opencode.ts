@@ -5,14 +5,19 @@ import { spawnAndCollect } from './spawn.js';
 import { parseOpencodeLine } from '../output-parsers.js';
 
 async function spawnOpenCode(
+  model: string | undefined,
   agent: string,
   prompt: string,
   projectDir: string,
   onOutput: (text: string) => void,
 ): Promise<InvokeResult> {
+  const args = ['run', '--format', 'json', '--agent', agent, prompt];
+  if (model) {
+    args.unshift('--model', model);
+  }
   return spawnAndCollect({
     command: 'opencode',
-    args: ['run', '--format', 'json', '--agent', agent, prompt],
+    args,
     cwd: projectDir,
     notFoundMessage: 'OpenCode CLI not found. Install it from https://github.com/nicholasoxford/opencode',
     parseLine: parseOpencodeLine,
@@ -20,17 +25,18 @@ async function spawnOpenCode(
   });
 }
 
-export function createOpenCodePlanner(): PlannerBackend {
+export function createOpenCodePlanner(model?: string): PlannerBackend {
+
   return createPlannerBase({
     name: 'opencode',
     pricingKey: 'opencode',
 
     async invokePlan(prompt, projectDir, onOutput) {
-      return spawnOpenCode('plan', prompt, projectDir, onOutput);
+      return spawnOpenCode(model, 'plan', prompt, projectDir, onOutput);
     },
 
     async invokeEscalate(prompt, projectDir, onOutput) {
-      return spawnOpenCode('plan', prompt, projectDir, onOutput);
+      return spawnOpenCode(model, 'plan', prompt, projectDir, onOutput);
     },
 
     isAvailable: createIsAvailable('opencode', { timeout: 5000 }),

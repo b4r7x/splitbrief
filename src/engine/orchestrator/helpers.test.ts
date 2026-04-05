@@ -86,24 +86,28 @@ describe('addUsageAndSave', () => {
     const state = makeState({
       tokenUsage: makeUsage({ plannerInput: 100, plannerOutput: 50 }),
     });
+    const callbacks = { onEvent: vi.fn() } as any;
 
     const result = addUsageAndSave('/tmp/proj', state, 'planner', {
       inputTokens: 200,
       outputTokens: 100,
-    });
+    }, callbacks);
 
     expect(result.tokenUsage.plannerInput).toBe(300);
     expect(result.tokenUsage.plannerOutput).toBe(150);
     expect(saveState).toHaveBeenCalledOnce();
     expect(saveState).toHaveBeenCalledWith('/tmp/proj', result);
+    expect(callbacks.onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'cost-update' }));
   });
 
   it('returns unchanged state when usage is null', () => {
     const state = makeState();
-    const result = addUsageAndSave('/tmp/proj', state, 'implementer', null);
+    const callbacks = { onEvent: vi.fn() } as any;
+    const result = addUsageAndSave('/tmp/proj', state, 'implementer', null, callbacks);
 
     expect(result).toBe(state);
     expect(saveState).toHaveBeenCalledWith('/tmp/proj', state);
+    expect(callbacks.onEvent).not.toHaveBeenCalled();
   });
 });
 

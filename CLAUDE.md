@@ -65,7 +65,6 @@ src/
 │   ├── shortcuts.ts          # Keyboard shortcut definitions per screen
 │   ├── state.ts              # State machine (re-export)
 │   ├── state-persistence.ts  # State persistence to .tiny-spec/state.json
-│   ├── theme.ts              # Centralized color palette — zero hardcoded colors elsewhere
 │   └── types/                # All shared types (split by domain)
 │       ├── index.ts          # Re-exports all type modules
 │       ├── config.ts         # Config, PlannerTool, OutputFormat, ThemeMode
@@ -80,6 +79,7 @@ src/
 │   └── workflow.ts           # CLI command handlers (start, spec, init, etc.)
 ├── engine/                   # Workflow logic (zero React/Ink imports)
 │   ├── orchestrator/         # Main workflow loop (decomposed into focused modules)
+│   │   ├── types.ts          # WorkflowContext (bundles projectDir, config, callbacks, planner, context)
 │   │   ├── index.ts          # runWorkflow main loop + re-exports
 │   │   ├── cost.ts           # Cost breakdown calculations + buildSummary
 │   │   ├── escalation.ts     # Escalation logic (hints → full planner fix)
@@ -87,15 +87,9 @@ src/
 │   │   ├── helpers.ts        # Shared utilities (context, validation helpers)
 │   │   ├── tokens.ts         # Token usage accounting (planner/implementer/escalation)
 │   │   ├── task-runner.ts    # Retry/escalation cascade + validateCommitAndAdvance
-│   │   ├── task-loop.ts      # Per-task iteration (implement, validate, retry)
-│   │   ├── planning.ts       # Planning phase + approval loops
-│   │   └── final-review.ts   # Final review subprocess (Claude CLI)
-│   ├── orchestrator/         # Main workflow loop (decomposed into focused modules)
-│   │   ├── types.ts          # WorkflowContext (bundles projectDir, config, callbacks, planner, context)
-│   │   ├── index.ts          # runWorkflow main loop + re-exports
-│   │   ├── planning.ts       # Mode-aware planning (quick/standard/full)
 │   │   ├── task-loop.ts      # Per-task iteration with WorkflowContext
-│   │   └── ...               # cost, escalation, events, helpers, tokens, task-runner, final-review
+│   │   ├── planning.ts       # Mode-aware planning (quick/standard/full)
+│   │   └── final-review.ts   # Final review subprocess (Claude CLI)
 │   ├── planners/             # Pluggable planner backends (subprocess + API)
 │   │   ├── base.ts           # Shared planner factory (createPlannerBase, quickPlan)
 │   │   ├── types.ts          # PlannerBackend interface (plan, quickPlan, escalate, isAvailable, getPricing)
@@ -152,28 +146,34 @@ src/
 │   ├── home.tsx              # Home screen (banner, session list, input)
 │   ├── workflow.tsx          # Workflow screen (header, events, footer, input)
 │   └── summary.tsx           # Post-run summary screen
-├── ui/                       # Ink UI components (all colors from theme.ts)
+├── components/               # Feature components (business logic + rendering)
 │   ├── command-palette.tsx   # Ctrl+K command palette overlay
 │   ├── conversation-flow.tsx # Scrollable event card list with auto-follow + virtual scroll
-│   ├── markdown.tsx          # Shared markdown rendering (parseBlocks, renderMarkdownLine, HighlightedCode)
+│   ├── cost-footer.tsx       # Real-time cost savings: Task N/M | Local: X% | Saved: ~$X
 │   ├── event-card.tsx        # Renders single TuiEvent as visual card (switch on type)
-│   ├── pipeline-bar.tsx      # Phase progress: ● res ● spec ◉ impl ○ rev
-│   ├── cost-footer.tsx       # Real-time cost savings: Task N/M │ Local: X% │ Saved: ~$X
-│   ├── diff-view.tsx         # Collapsible syntax-highlighted diff
-│   ├── task-summary.tsx      # Collapsed completed task: ✓ T1 title — local, 12s
+│   ├── gutter.tsx            # Colored gutter line for planner/implementer role
 │   ├── header.tsx            # Top header (feature name, pipeline bar, elapsed time)
 │   ├── help-overlay.tsx      # Keyboard shortcut help overlay
+│   ├── implementer-picker.tsx # Implementer backend + model selection (two-column)
 │   ├── input-bar.tsx         # Multiline input with slash command suggestions
-│   ├── picker-shell.tsx      # Generic PickerShell<T> — shared layout for all pickers
-│   ├── model-picker.tsx      # Model selection picker (grouped by provider)
-│   ├── planner-picker.tsx    # Planner selection picker (CLI + API)
-│   ├── init-wizard.tsx       # Multi-step init wizard (detect → planner → model)
-│   ├── picker-utils.ts       # Shared picker helpers (scroll offset, truncation)
+│   ├── known-planner-models.ts # Static known model lists per planner backend
+│   ├── mode-selector.tsx     # Workflow mode picker (quick/standard/full)
+│   ├── pipeline-bar.tsx      # Phase progress: res spec plan impl rev
+│   ├── planner-picker.tsx    # Planner backend + model selection (two-column)
 │   ├── review-view.tsx       # Spec/plan review display (markdown file viewer)
+│   ├── settings-defs.ts      # Setting definitions, getConfigValue, applyEdits
+│   ├── settings-overlay.tsx  # Unified settings overlay (all config fields + sub-pickers)
 │   ├── sidebar.tsx           # Task list sidebar (progress, status)
 │   ├── skills-picker.tsx     # Skill selection overlay
 │   ├── slash-suggestions.tsx # Slash command autocomplete dropdown
-│   └── spinner.tsx           # Braille spinner component
+│   ├── task-summary.tsx      # Collapsed completed task with file path
+│   └── two-column-picker.tsx # Generic two-column picker layout
+├── ui/                       # Low-level UI primitives (no business logic)
+│   ├── diff-view.tsx         # Collapsible syntax-highlighted diff
+│   ├── markdown.tsx          # Shared markdown rendering (parseBlocks, renderMarkdownLine, HighlightedCode)
+│   ├── picker-utils.ts       # Shared picker helpers (scroll offset, truncation)
+│   ├── spinner.tsx           # Braille spinner component with elapsed time
+│   └── theme.tsx             # Centralized color palette — zero hardcoded colors elsewhere
 ├── hooks/                    # React hooks (Ink-dependent lifecycle)
 │   ├── use-ctrl-c.ts         # Double Ctrl+C exit handler (Ink useInput)
 │   ├── use-filterable-list.ts # Filterable list state (search, scroll, selection)
@@ -194,7 +194,7 @@ src/
     └── sessions.ts           # Session directory management (project + global scope)
 ```
 
-All `*.test.ts` files are colocated next to their implementations (89 test files, not shown above).
+All `*.test.ts` files are colocated next to their implementations (not shown above).
 
 ## Commands
 
@@ -316,7 +316,7 @@ Conversation flow layout with structured event cards. Key design:
 - `TuiEvent` union type drives all UI rendering via `EventCard` switch
 - Planner output: markdown with Shiki-highlighted code blocks. Implementer: structured tool-call cards.
 - Collapsible syntax-highlighted diffs, collapsible completed tasks, pipeline progress bar, cost savings footer.
-- All colors from `src/core/theme.ts` (zero hardcoded hex in `src/ui/`)
+- All colors from `src/ui/theme.tsx` (zero hardcoded hex in components)
 - Zero React/Ink imports in `src/engine/` (clean engine/UI separation)
 
 ### State Management (External Stores)

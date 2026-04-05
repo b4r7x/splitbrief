@@ -19,26 +19,19 @@ vi.mock('../output-parsers.js', () => ({
 }));
 
 vi.mock('./base.js', async (importOriginal) => {
+  const { mockPlannerBase } = await import('#testing/mocks/planner-base.js');
   const orig = await importOriginal<typeof import('./base.js')>();
+  const base = mockPlannerBase();
   return {
     ...orig,
-    createPlannerBase: vi.fn().mockImplementation((config) => ({
-      name: config.name,
-      conversational: config.conversational ?? false,
-      plan: vi.fn().mockImplementation(async (_f, projectDir, _c, callbacks) => {
-        const result = await config.invokePlan('prompt', projectDir, callbacks.onOutput);
+    ...base,
+    createPlannerBase: vi.fn().mockImplementation((config: Record<string, unknown>) => ({
+      ...base.createPlannerBase(config),
+      plan: vi.fn().mockImplementation(async (_f: string, projectDir: string, _c: unknown, callbacks: { onOutput: (t: string) => void }) => {
+        const result = await (config as any).invokePlan('prompt', projectDir, callbacks.onOutput);
         return { spec: '', plan: '', tasks: [], usage: result.usage };
       }),
-      regenerate: vi.fn(),
-      escalateHint: vi.fn(),
-      escalateFull: vi.fn(),
-      isAvailable: config.isAvailable,
-      getVersion: config.getVersion,
-      getPricing: vi.fn(),
-      _config: config,
     })),
-    createIsAvailable: vi.fn().mockReturnValue(vi.fn().mockResolvedValue(false)),
-    createGetVersion: vi.fn().mockReturnValue(vi.fn().mockResolvedValue(null)),
   };
 });
 
@@ -115,7 +108,7 @@ describe('aider planner', () => {
   it('uses configured model when provided', async () => {
     mockSpawnAndCollect.mockResolvedValue({ text: 'result', usage: null });
 
-    createAiderPlanner({ planner: { tool: 'aider', model: 'gpt-4o' }, implementer: { provider: 'ollama', model: 'x', apiBase: '', contextLength: 8192, temperature: 0.2 }, validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' }, workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitPerTask: true } });
+    createAiderPlanner('gpt-4o');
     const baseConfig = vi.mocked(createPlannerBase).mock.calls[0][0];
     await baseConfig.invokePlan('prompt', '/project', () => {});
 

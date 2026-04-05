@@ -36,10 +36,11 @@ export default function PipelineBar({ phase }: PipelineBarProps) {
         } else {
           symbol = '○'; color = t.textDim;
         }
+        const labelColor = i === currentIndex && stage === 'impl' ? t.implementer : color;
         return (
           <Box key={stage}>
             <Text color={color}>{symbol} </Text>
-            <Text color={color}>{stage}</Text>
+            <Text color={labelColor}>{stage}</Text>
             {i < STAGES.length - 1 && <Text> </Text>}
           </Box>
         );

@@ -6,6 +6,7 @@ import { InputBar } from '../components/input-bar.js';
 import { formatRelativeTime } from '../utils/format.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 import { configStore } from '../stores/config.js';
+import { getProvider } from '../engine/providers/registry.js';
 import { skillsStore } from '../stores/skills.js';
 import { sessionsStore } from '../stores/sessions.js';
 import { overlayStore } from '../stores/overlay.js';
@@ -56,7 +57,7 @@ export function HomeScreen({ commands, onSlashCommand }: HomeScreenProps) {
   const config = configStore.use(s => s.config);
   const selectedSkillIds = skillsStore.use(s => s.selected);
   const sessions = sessionsStore.use(s => s.sessions);
-  const hasOverlay = overlayStore.use(s => s.active) !== 'none';
+  const hasOverlay = overlayStore.use(s => s.active !== 'none');
   const { cols, rows, isSmall } = useResponsiveLayout();
   if (!config) return null;
 
@@ -85,25 +86,35 @@ export function HomeScreen({ commands, onSlashCommand }: HomeScreenProps) {
 
         <Box flexDirection="column" marginBottom={1}>
           <Box>
-            <Text color={theme.textDim}>Planner: </Text>
+            <Text color={theme.textDim}>{'Planner'.padEnd(14)}</Text>
             <Text color={theme.planner}>{config.planner.tool}</Text>
             {config.planner.model && (
-              <Text color={theme.textDim}> ({config.planner.model})</Text>
+              <Text color={theme.planner}> › {config.planner.model}</Text>
             )}
+            <Text color={theme.textDim}>  /planner</Text>
           </Box>
           <Box>
-            <Text color={theme.textDim}>Model: </Text>
+            <Text color={theme.textDim}>{'Implementer'.padEnd(14)}</Text>
+            <Text color={theme.implementer}>{config.implementer.provider}</Text>
+            <Text color={theme.textDim}> › </Text>
             <Text color={theme.implementer}>{config.implementer.model}</Text>
-            <Text color={theme.textDim}> ({config.implementer.provider})</Text>
-            <Text color={theme.textDim}> /config to change</Text>
+            {getProvider(config.implementer.provider).isLocal && (
+              <Text color={theme.textDim}> (local)</Text>
+            )}
+            <Text color={theme.textDim}>  /implementer</Text>
           </Box>
           <Box>
-            <Text color={theme.textDim}>Skills: </Text>
-            <Text color={selectedSkillCount > 0 ? theme.accent : theme.textDim}>
-              {selectedSkillCount > 0 ? `${selectedSkillCount} active` : 'none'}
-            </Text>
-            <Text color={theme.textDim}> /skills to configure</Text>
+            <Text color={theme.textDim}>{'Mode'.padEnd(14)}</Text>
+            <Text color={theme.text}>{config.workflow.mode ?? 'standard'}</Text>
+            <Text color={theme.textDim}>  /mode</Text>
           </Box>
+          {selectedSkillCount > 0 && (
+            <Box>
+              <Text color={theme.textDim}>{'Skills'.padEnd(14)}</Text>
+              <Text color={theme.accent}>{selectedSkillCount} active</Text>
+              <Text color={theme.textDim}>  /skills</Text>
+            </Box>
+          )}
         </Box>
 
         <Box flexDirection="column" marginBottom={1}>

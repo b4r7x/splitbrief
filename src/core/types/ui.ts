@@ -24,7 +24,7 @@ export interface Session {
   stateFile: string | null;
 }
 
-export type OverlayType = 'none' | 'help' | 'command-palette' | 'picker' | 'skills' | 'settings';
+export type OverlayType = 'none' | 'help' | 'command-palette' | 'skills' | 'settings' | 'mode-selector' | 'planner-picker' | 'implementer-picker';
 
 export interface SkillMeta {
   id: string;
@@ -36,6 +36,7 @@ export interface SkillMeta {
 
 export interface SlashCommandDef {
   name: string;
+  aliases?: string[];
   label?: string;
   description: string;
   shortcut?: string | null;
@@ -44,8 +45,8 @@ export interface SlashCommandDef {
 }
 
 export interface CommandContext {
-  openOverlay: (type: OverlayType) => void;
-  closeOverlay: () => void;
+  openOverlay: (type: OverlayType, focus?: string) => void;
+  navigate: (screen: Screen) => void;
   quit: () => void;
 }
 

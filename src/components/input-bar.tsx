@@ -8,6 +8,20 @@ import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 import { feedbackStore } from '../stores/error.js';
 import type { InputMode, Screen, SlashCommandDef } from '../types.js';
 
+const ALLOW_ALL_CHARS = () => true;
+const BLOCK_ALL_CHARS = () => false;
+
+function borderColorForMode(mode: InputMode, theme: { planner: string; warning: string; border: string }): string {
+  if (mode === 'review') return theme.planner;
+  if (mode === 'question') return theme.warning;
+  return theme.border;
+}
+
+function matchesSlashQuery(cmd: SlashCommandDef, query: string): boolean {
+  if (cmd.name.toLowerCase().startsWith(query)) return true;
+  return cmd.aliases?.some(a => a.toLowerCase().startsWith(query)) ?? false;
+}
+
 interface InputBarProps {
   onSubmit: (text: string) => void;
   onSlashCommand: (command: string) => void;
@@ -29,7 +43,8 @@ export function InputBar({
   width,
   disabled,
 }: InputBarProps) {
-  const errorMessage = feedbackStore.use(s => s.message);
+  const feedbackMessage = feedbackStore.use(s => s.message);
+  const feedbackIsError = feedbackStore.use(s => s.isError);
   const theme = useTheme();
   const { cols } = useResponsiveLayout();
   const inputColumns = (width ?? cols) - 6;
@@ -46,24 +61,20 @@ export function InputBar({
 
   const onClose = () => setValue('');
 
+  const query = '/' + value.slice(1).toLowerCase();
   const filtered = slashMode
-    ? screenCmds.filter((cmd) =>
-        cmd.name.toLowerCase().startsWith('/' + value.slice(1).toLowerCase()),
-      )
+    ? screenCmds.filter(cmd => matchesSlashQuery(cmd, query))
     : [];
 
   const showSuggestions = slashMode && filtered.length > 0;
 
-  const passThroughFilter = () => true;
-  const blockAppend = () => false;
-
   const { selectedIndex } = useFilterableList({
     items: filtered,
-    filterFn: passThroughFilter,
+    filterFn: ALLOW_ALL_CHARS,
     onSelect,
     onClose,
     isActive: showSuggestions && !disabled,
-    shouldAppendChar: blockAppend,
+    shouldAppendChar: BLOCK_ALL_CHARS,
   });
 
   useInput(
@@ -107,7 +118,7 @@ export function InputBar({
       )}
       <Box
         borderStyle="round"
-        borderColor={theme.border}
+        borderColor={borderColorForMode(mode, theme)}
         paddingX={1}
         width="100%"
       >
@@ -138,9 +149,9 @@ export function InputBar({
           />
         </Box>
       </Box>
-      {errorMessage && (
+      {feedbackMessage && (
         <Box paddingX={2}>
-          <Text color={theme.error}>{errorMessage}</Text>
+          <Text color={feedbackIsError ? theme.error : theme.info}>{feedbackMessage}</Text>
         </Box>
       )}
     </Box>

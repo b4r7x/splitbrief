@@ -2,16 +2,22 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../ui/theme.js';
 import type { TaskCompletionMethod } from '../types.js';
 
+const METHOD_LABELS: Partial<Record<TaskCompletionMethod, string>> = {
+  'escalated-hint': 'hint',
+  'escalated-full': 'escalated',
+};
+
 interface TaskSummaryProps {
   index: number;
   title: string;
   method: TaskCompletionMethod;
   retries?: number;
   duration?: number;
+  file?: string;
   reason?: string;
 }
 
-export default function TaskSummary({ index, title, method, retries, duration, reason }: TaskSummaryProps) {
+export default function TaskSummary({ index, title, method, retries, duration, file, reason }: TaskSummaryProps) {
   const t = useTheme();
 
   if (method === 'failed') {
@@ -32,7 +38,7 @@ export default function TaskSummary({ index, title, method, retries, duration, r
     );
   }
 
-  const label = method === 'escalated-hint' ? 'hint' : method === 'escalated-full' ? 'escalated' : method;
+  const label = METHOD_LABELS[method] ?? method;
   const meta: string[] = [label];
   if (retries && retries > 0) meta.push(`${retries} ${retries === 1 ? 'retry' : 'retries'}`);
   if (duration != null) meta.push(`${duration}s`);
@@ -41,7 +47,8 @@ export default function TaskSummary({ index, title, method, retries, duration, r
     <Box>
       <Text color={t.success}>✓ </Text>
       <Text color={t.text}>T{index} {title}</Text>
-      <Text color={t.textDim}> — {meta.join(', ')}</Text>
+      {file && <Text color={t.textDim}>  {file}</Text>}
+      <Text color={t.textDim}>  {meta.join(' ')}</Text>
     </Box>
   );
 }

@@ -7,9 +7,10 @@ import { renderMarkdownLine } from '../ui/markdown.js';
 interface ReviewViewProps {
   filePath: string;
   height?: number;
+  width?: number;
 }
 
-export default function ReviewView({ filePath, height }: ReviewViewProps) {
+export default function ReviewView({ filePath, height, width }: ReviewViewProps) {
   const t = useTheme();
   const [content, setContent] = useState('');
   const [offset, setOffset] = useState(0);
@@ -36,7 +37,7 @@ export default function ReviewView({ filePath, height }: ReviewViewProps) {
   const visibleLines = lines.slice(offset, offset + visibleHeight);
 
   return (
-    <Box flexDirection="column" height={visibleHeight} overflow="hidden">
+    <Box flexDirection="column" height={visibleHeight} width={width} overflow="hidden">
       <Text color={t.textDim}>{filePath}</Text>
       <Box flexDirection="column">
         {visibleLines.map((line, i) => renderMarkdownLine(line, i, t))}

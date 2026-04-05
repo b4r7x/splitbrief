@@ -7,9 +7,6 @@ export function useInputMode() {
   const [modeState, setModeState] = useState<{ mode: InputMode; hint: string }>({ mode: 'normal', hint: '' });
   const reviewResolverRef = useRef<((value: ReviewResult) => void) | null>(null);
   const questionResolverRef = useRef<((value: string) => void) | null>(null);
-  const modeRef = useRef<InputMode>('normal');
-  modeRef.current = modeState.mode;
-
   const setReviewMode = (h: string): Promise<ReviewResult> => {
     return new Promise((resolve) => {
       reviewResolverRef.current = resolve;
@@ -25,7 +22,7 @@ export function useInputMode() {
   };
 
   const resolve = (value: ReviewResult | string): void => {
-    const currentMode = modeRef.current;
+    const currentMode = modeState.mode;
     setModeState({ mode: 'normal', hint: '' });
     if (currentMode === 'review' && typeof value === 'object') {
       const resolver = reviewResolverRef.current;

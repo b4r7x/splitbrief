@@ -31,6 +31,8 @@ export function findAffectedTestFile(taskFile: string, projectDir: string): stri
   const name = basename(taskFile).replace(/\.(ts|tsx|js|jsx)$/, '');
 
   const candidates = [
+    join(projectDir, dir, `${name}.test.ts`),
+    join(projectDir, dir, `${name}.test.tsx`),
     join(projectDir, dir.replace(/^src/, 'tests'), `${name}.test.ts`),
     join(projectDir, dir.replace(/^src/, 'test'), `${name}.test.ts`),
     join(projectDir, dir.replace(/^src/, 'tests'), `${name}.test.tsx`),
@@ -78,13 +80,17 @@ export async function validateTask(
   task: Task,
   projectDir: string,
   config: Config,
+  onStageComplete?: (stages: { tsc: boolean; lint: boolean; test: boolean }) => void,
 ): Promise<ValidationResult[]> {
   const results: ValidationResult[] = [];
+  const stages = { tsc: false, lint: false, test: false };
 
   if (config.validation.typecheck) {
     const result = await runValidationStep({ stage: 'typecheck', cmd: 'npx', args: ['tsc', '--noEmit'], cwd: projectDir, errorSource: 'stderr' });
     results.push(result);
     if (!result.passed) return results;
+    stages.tsc = true;
+    onStageComplete?.(stages);
   }
 
   if (config.validation.lint) {
@@ -97,6 +103,8 @@ export async function validateTask(
       const result = await runValidationStep({ stage: 'lint', cmd: 'npx', args, cwd: projectDir, errorSource: 'stdout' });
       results.push(result);
       if (!result.passed) return results;
+      stages.lint = true;
+      onStageComplete?.(stages);
     }
   }
 
@@ -107,6 +115,9 @@ export async function validateTask(
       const parts = testCommand.split(/\s+/);
       const result = await runValidationStep({ stage: 'test', cmd: parts[0], args: [...parts.slice(1), '--', testFile], cwd: projectDir, errorSource: 'stderr' });
       results.push(result);
+      if (!result.passed) return results;
+      stages.test = true;
+      onStageComplete?.(stages);
     }
   }
 

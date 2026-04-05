@@ -52,8 +52,7 @@ async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ state: Work
   const regeneratedEvent: OrchestratorEventType = type === 'spec' ? 'spec_regenerated' : 'plan_regenerated';
   const filename = `${eventName}.md`;
 
-  let done = false;
-  while (!done) {
+  while (true) {
     const result = await callbacks.onApprovalNeeded(type, filePath);
     if (!result.approved && !result.comment) {
       state = transition(state, { type: rejectType });
@@ -69,11 +68,11 @@ async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ state: Work
       const regenResult = await planner.regenerate(regenPrompt, type, projectDir, {
         onOutput: createTextHandler(callbacks),
       });
-      state = addUsageAndSave(projectDir, state, 'planner', regenResult.usage);
+      state = addUsageAndSave(projectDir, state, 'planner', regenResult.usage, callbacks);
       emit(projectDir, state, regeneratedEvent, undefined, { comment: result.comment });
       continue;
     }
-    done = true;
+    break;
   }
 
   return { state, rejected: false };
@@ -146,7 +145,7 @@ async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<{ state: Wo
     return { state, tasks: [], cancelled: true };
   }
 
-  state = addUsageAndSave(projectDir, state, 'planner', planResult.usage);
+  state = addUsageAndSave(projectDir, state, 'planner', planResult.usage, callbacks);
 
   state = transition(state, { type: 'START_QUICK', tasks: planResult.tasks });
   saveState(projectDir, state);
@@ -186,7 +185,7 @@ async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boo
 
   const { tasks } = planResult;
 
-  state = addUsageAndSave(projectDir, state, 'planner', planResult.usage);
+  state = addUsageAndSave(projectDir, state, 'planner', planResult.usage, callbacks);
 
   state = transitionAndEmit({ state, projectDir, callbacks, action: { type: 'RESEARCH_DONE' }, eventName: 'research_done' });
 

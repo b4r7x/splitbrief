@@ -5,6 +5,7 @@ import { useTheme } from '../ui/theme.js';
 import DiffView from '../ui/diff-view.js';
 import { PlannerText } from '../ui/markdown.js';
 import { Spinner } from '../ui/spinner.js';
+import { Gutter } from './gutter.js';
 import { formatDuration } from '../utils/format.js';
 
 interface EventCardProps {
@@ -12,19 +13,29 @@ interface EventCardProps {
   diffExpanded?: boolean;
 }
 
+const IMPL_PHASES: ReadonlySet<string> = new Set(['implementing', 'validating-task']);
+
+function phaseRole(phase: string): 'planner' | 'implementer' {
+  if (IMPL_PHASES.has(phase)) return 'implementer';
+  return 'planner';
+}
+
 function PlannerStatusCard({ event, theme: t }: { event: Extract<TuiEvent, { type: 'planner-status' }>; theme: Theme }) {
   const dur = event.duration ? ` ${formatDuration(event.duration)}` : '';
-  const statusText = event.status === 'done'
-    ? `${event.phase} done${dur}`
-    : `${event.phase}...`;
+  const role = phaseRole(event.phase);
+  const color = role === 'implementer' ? t.implementer : t.planner;
 
-  return (
-    <Box>
-      <Text color={t.planner}>planner </Text>
-      <Text color={t.text}>{statusText}</Text>
-      {event.summary && <Text color={t.textDim}> {event.summary}</Text>}
-    </Box>
-  );
+  if (event.status === 'done') {
+    return (
+      <Box>
+        <Text color={color}>{role}</Text>
+        <Text color={t.success}>  ✓ {event.phase}</Text>
+        <Text color={t.textDim}>{dur}</Text>
+        {event.summary && <Text color={t.textDim}>  {event.summary}</Text>}
+      </Box>
+    );
+  }
+  return <Spinner label={`${role}  ${event.phase}...`} color={color} startTime={event.ts} />;
 }
 
 function TaskStartCard({ event, theme: t }: { event: Extract<TuiEvent, { type: 'task-start' }>; theme: Theme }) {
@@ -38,15 +49,16 @@ function TaskStartCard({ event, theme: t }: { event: Extract<TuiEvent, { type: '
 
 function ImplementerCard({ event, diffExpanded, theme: t }: { event: Extract<TuiEvent, { type: 'implementer-generate' }>; diffExpanded: boolean; theme: Theme }) {
   if (event.status === 'running') {
-    return <Spinner label={`generating ${event.model ?? 'local'}...`} color={t.implementer} />;
+    const fileHint = event.file ? `generating ${event.file}...` : 'generating...';
+    return <Spinner label={`${event.model ?? 'local'}  ${fileHint}`} color={t.implementer} startTime={event.ts} />;
   }
 
-  const dur = event.duration ? `  ${formatDuration(event.duration)}` : '';
+  const dur = event.duration ? formatDuration(event.duration) : '';
 
   if (event.status === 'failed') {
     return (
       <Box>
-        <Text color={t.textDim}>implementer ({event.model ?? '?'})</Text>
+        <Text color={t.implementer}>{event.model ?? '?'}</Text>
         <Text color={t.error}>  failed</Text>
       </Box>
     );
@@ -55,7 +67,8 @@ function ImplementerCard({ event, diffExpanded, theme: t }: { event: Extract<Tui
   return (
     <Box flexDirection="column">
       <Box>
-        <Text color={t.textDim}>implementer ({event.model ?? '?'}){dur}</Text>
+        <Text color={t.implementer}>{event.model ?? '?'}</Text>
+        <Text color={t.textDim}>  {dur}</Text>
       </Box>
       {event.file && event.diff != null && event.linesAdded != null && event.linesRemoved != null ? (
         <DiffView
@@ -74,28 +87,48 @@ function ImplementerCard({ event, diffExpanded, theme: t }: { event: Extract<Tui
   );
 }
 
+const VALIDATION_STAGES = ['tsc', 'lint', 'test'] as const;
+
+function stageIndicator(name: string, passed: boolean, failed: boolean, isCurrent: boolean, t: Theme) {
+  if (passed) return <Box key={name}><Text color={t.textDim}>  {name} </Text><Text color={t.success}>✓</Text></Box>;
+  if (failed) return <Box key={name}><Text color={t.textDim}>  {name} </Text><Text color={t.error}>✗</Text></Box>;
+  if (isCurrent) return <Box key={name}><Text>  </Text></Box>;
+  return <Box key={name}><Text color={t.textDim}>  {name} </Text><Text color={t.textDim}>○</Text></Box>;
+}
+
 function ValidateCard({ event, theme: t }: { event: Extract<TuiEvent, { type: 'validate' }>; theme: Theme }) {
-  const dur = event.duration ? ` ${formatDuration(event.duration)}` : '';
-
-  const stageIcon = (passed: boolean) => passed
-    ? <Text color={t.success}>✓</Text>
-    : <Text color={t.error}>✗</Text>;
-
   if (event.status === 'running') {
-    const currentStage = !event.stages.tsc ? 'tsc' : !event.stages.lint ? 'lint' : 'test';
-    return <Spinner label={`validating ${currentStage}...`} color={t.validator} />;
+    const stages = event.stages;
+    const currentStage = VALIDATION_STAGES.find(s => !stages[s]) ?? 'test';
+    return (
+      <Box>
+        <Text color={t.validator}>validate</Text>
+        {VALIDATION_STAGES.map(s => stageIndicator(s, stages[s], false, currentStage === s, t))}
+        <Spinner label={currentStage} color={t.validator} startTime={event.ts} />
+      </Box>
+    );
   }
+
+  const dur = event.duration ? `  ${formatDuration(event.duration)}` : '';
+
+  if (event.passed) {
+    return (
+      <Box>
+        <Text color={t.validator}>validate</Text>
+        {VALIDATION_STAGES.map(s => stageIndicator(s, true, false, false, t))}
+        <Text color={t.textDim}>{dur}</Text>
+      </Box>
+    );
+  }
+
+  const failedStage = VALIDATION_STAGES.find(s => !event.stages[s]);
 
   return (
     <Box flexDirection="column">
       <Box>
-        <Text color={t.validator}>validator</Text>
+        <Text color={t.validator}>validate</Text>
+        {VALIDATION_STAGES.map(s => stageIndicator(s, event.stages[s], s === failedStage, false, t))}
         <Text color={t.textDim}>{dur}</Text>
-      </Box>
-      <Box marginLeft={2} gap={2}>
-        <Text color={t.textDim}>tsc {stageIcon(event.stages.tsc)}</Text>
-        <Text color={t.textDim}>lint {stageIcon(event.stages.lint)}</Text>
-        <Text color={t.textDim}>test {stageIcon(event.stages.test)}</Text>
       </Box>
       {event.error && (
         <Box marginLeft={2}>
@@ -119,8 +152,9 @@ function EscalateCard({ event, theme: t }: { event: Extract<TuiEvent, { type: 'e
   return (
     <Box flexDirection="column">
       <Box>
-        <Text color={t.warning} bold>escalate </Text>
+        <Text color={t.planner} bold>escalate </Text>
         <Text color={t.textDim}>tier {event.tier}</Text>
+        {event.hint && <Text color={t.textDim}> — hint</Text>}
       </Box>
       {event.hint && (
         <Box marginLeft={2}>
@@ -149,45 +183,79 @@ function ErrorCard({ event, theme: t }: { event: Extract<TuiEvent, { type: 'erro
   );
 }
 
-export function renderEvent(event: TuiEvent, t: Theme, diffExpanded?: boolean): React.JSX.Element | null {
+function getGutterRole(event: TuiEvent): 'planner' | 'implementer' | null {
+  switch (event.type) {
+    case 'planner-status':
+      return phaseRole(event.phase);
+    case 'planner-text':
+    case 'task-start':
+      return 'planner';
+    case 'implementer-generate':
+    case 'validate':
+    case 'git-commit':
+    case 'retry':
+      return 'implementer';
+    case 'escalate':
+      return 'planner';
+    case 'error':
+    case 'task-complete':
+    case 'task-skipped':
+    // cost-update: intercepted by workflowStore.addEvent — kept for exhaustive type checking
+    case 'cost-update':
+    case 'workflow-cancelled':
+      return null;
+  }
+}
+
+function renderEventContent(event: TuiEvent, t: Theme, diffExpanded?: boolean): React.JSX.Element | null {
   switch (event.type) {
     case 'planner-status':
       return <PlannerStatusCard event={event} theme={t} />;
-
     case 'planner-text':
       return <PlannerText text={event.text} theme={t} />;
-
     case 'task-start':
       return <TaskStartCard event={event} theme={t} />;
-
     case 'task-complete':
       return null;
-
     case 'task-skipped':
       return (
         <Box>
           <Text color={t.textDim}>skipped T{event.taskId} {event.title}: {event.reason}</Text>
         </Box>
       );
-
     case 'implementer-generate':
       return <ImplementerCard event={event} diffExpanded={diffExpanded ?? false} theme={t} />;
-
     case 'validate':
       return <ValidateCard event={event} theme={t} />;
-
     case 'retry':
       return <RetryCard event={event} theme={t} />;
-
     case 'escalate':
       return <EscalateCard event={event} theme={t} />;
-
     case 'git-commit':
       return <GitCommitCard event={event} theme={t} />;
-
     case 'error':
       return <ErrorCard event={event} theme={t} />;
+    case 'workflow-cancelled':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={t.warning} bold>Workflow cancelled</Text>
+          <Text color={t.textDim}>Resume with: <Text color={t.text}>tiny-spec resume</Text></Text>
+        </Box>
+      );
+    // cost-update: intercepted by workflowStore.addEvent — kept for exhaustive type checking
+    case 'cost-update':
+      return null;
   }
+}
+
+export function renderEvent(event: TuiEvent, t: Theme, diffExpanded?: boolean): React.JSX.Element | null {
+  const content = renderEventContent(event, t, diffExpanded);
+  if (!content) return null;
+
+  const role = getGutterRole(event);
+  if (!role) return content;
+
+  return <Gutter role={role}>{content}</Gutter>;
 }
 
 export default function EventCard({ event, diffExpanded }: EventCardProps) {
