@@ -33,7 +33,7 @@ describe('config loading', () => {
       expect(config.validation.lint).toBe(true);
       expect(config.validation.test).toBe(true);
       expect(config.workflow.maxRetries).toBe(3);
-      expect(config.workflow.commitPerTask).toBe(true);
+      expect(config.workflow.commitStrategy).toBe('none');
       expect(config.workflow.autoApproveSpec).toBe(false);
       expect(config.workflow.autoApprovePlan).toBe(false);
     });
@@ -60,7 +60,7 @@ describe('config loading', () => {
       expect(config.planner.tool).toBe('claude-code');
     });
 
-    it('converts snake_case keys to camelCase', () => {
+    it('converts snake_case keys to camelCase and migrates commitPerTask', () => {
       const dir = join(TMP, 'snake-case');
       writeConfigYaml(dir, {
         workflow: { max_retries: 5, commit_per_task: false },
@@ -68,7 +68,7 @@ describe('config loading', () => {
 
       const config = loadConfig(dir);
       expect(config.workflow.maxRetries).toBe(5);
-      expect(config.workflow.commitPerTask).toBe(false);
+      expect(config.workflow.commitStrategy).toBe('none');
     });
 
     it('deep merges nested objects', () => {
@@ -115,12 +115,12 @@ describe('config loading', () => {
 
     it('converts camelCase to snake_case in output', () => {
       const obj = {
-        workflow: { maxRetries: 3, commitPerTask: true, autoApproveSpec: false },
+        workflow: { maxRetries: 3, commitStrategy: 'per-task', autoApproveSpec: false },
       };
       const result = toYaml(obj) as Record<string, unknown>;
       const workflow = result.workflow as Record<string, unknown>;
       expect(workflow.max_retries).toBe(3);
-      expect(workflow.commit_per_task).toBe(true);
+      expect(workflow.commit_strategy).toBe('per-task');
       expect(workflow.auto_approve_spec).toBe(false);
       expect(workflow.maxRetries).toBeUndefined();
     });

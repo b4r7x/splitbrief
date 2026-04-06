@@ -5,6 +5,7 @@ import { makeTask, makeConfig } from '#testing/helpers/fixtures.js';
 
 vi.mock('../../utils/git.js', () => ({
   commitChanges: vi.fn(),
+  createCheckpoint: vi.fn(),
 }));
 vi.mock('../../core/state-persistence.js', () => ({
   saveState: vi.fn(),
@@ -12,7 +13,7 @@ vi.mock('../../core/state-persistence.js', () => ({
 }));
 
 import { validateCommitAndAdvance } from './task-runner.js';
-import { commitChanges } from '../../utils/git.js';
+import { commitChanges, createCheckpoint } from '../../utils/git.js';
 import { saveState } from '../../core/state-persistence.js';
 
 beforeEach(() => {
@@ -97,7 +98,7 @@ describe('validateCommitAndAdvance', () => {
     expect(saveState).toHaveBeenCalled();
   });
 
-  it('commits when commitPerTask is true and validation passes', async () => {
+  it('commits when commitStrategy is per-task and validation passes', async () => {
     const state = makeState();
     const { callbacks } = makeCallbacks();
     vi.mocked(commitChanges).mockResolvedValue('abc123');
@@ -106,7 +107,7 @@ describe('validateCommitAndAdvance', () => {
       task: state.tasks[0],
       results: passingResults,
       projectDir: '/tmp/proj',
-      config: makeConfig({ workflow: { commitPerTask: true } }),
+      config: makeConfig({ workflow: { commitStrategy: 'per-task' } }),
       state,
       callbacks,
       method: 'local',
@@ -117,7 +118,7 @@ describe('validateCommitAndAdvance', () => {
     expect(commitChanges).toHaveBeenCalledWith('/tmp/proj', expect.stringContaining('T001'));
   });
 
-  it('does not commit when commitPerTask is false', async () => {
+  it('does not commit when commitStrategy is none', async () => {
     const state = makeState();
     const { callbacks } = makeCallbacks();
 
@@ -125,7 +126,7 @@ describe('validateCommitAndAdvance', () => {
       task: state.tasks[0],
       results: passingResults,
       projectDir: '/tmp/proj',
-      config: makeConfig({ workflow: { commitPerTask: false } }),
+      config: makeConfig({ workflow: { commitStrategy: 'none' } }),
       state,
       callbacks,
       method: 'local',
@@ -133,6 +134,7 @@ describe('validateCommitAndAdvance', () => {
     });
 
     expect(commitChanges).not.toHaveBeenCalled();
+    expect(createCheckpoint).not.toHaveBeenCalled();
   });
 
   it('emits git-commit event on successful commit', async () => {
@@ -144,7 +146,7 @@ describe('validateCommitAndAdvance', () => {
       task: state.tasks[0],
       results: passingResults,
       projectDir: '/tmp/proj',
-      config: makeConfig({ workflow: { commitPerTask: true } }),
+      config: makeConfig({ workflow: { commitStrategy: 'per-task' } }),
       state,
       callbacks,
       method: 'local',
@@ -156,6 +158,33 @@ describe('validateCommitAndAdvance', () => {
     expect(gitEvent).toMatchObject({
       type: 'git-commit',
       message: expect.stringContaining('T001'),
+    });
+  });
+
+  it('creates checkpoint when commitStrategy is checkpoint', async () => {
+    const state = makeState();
+    const { callbacks, events } = makeCallbacks();
+    vi.mocked(createCheckpoint).mockResolvedValue('tiny-spec/T001');
+
+    await validateCommitAndAdvance({
+      task: state.tasks[0],
+      results: passingResults,
+      projectDir: '/tmp/proj',
+      config: makeConfig({ workflow: { commitStrategy: 'checkpoint' } }),
+      state,
+      callbacks,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+    });
+
+    expect(createCheckpoint).toHaveBeenCalledWith('/tmp/proj', 'T001');
+    expect(commitChanges).not.toHaveBeenCalled();
+    const cpEvent = events.find((e) => e.type === 'git-checkpoint');
+    expect(cpEvent).toBeDefined();
+    expect(cpEvent).toMatchObject({
+      type: 'git-checkpoint',
+      tag: 'tiny-spec/T001',
+      taskId: 'T001',
     });
   });
 

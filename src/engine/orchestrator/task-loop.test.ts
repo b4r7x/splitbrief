@@ -143,7 +143,7 @@ describe('runTaskLoop', () => {
     const setCurrentTask = vi.fn();
 
     const result = await runTaskLoop({
-      wctx: { projectDir: '/tmp/proj', config: makeConfig({ workflow: { commitPerTask: true } }), callbacks, context: defaultContext, planner: makePlanner(), implementer },
+      wctx: { projectDir: '/tmp/proj', config: makeConfig({ workflow: { commitStrategy: 'per-task' } }), callbacks, context: defaultContext, planner: makePlanner(), implementer },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask,

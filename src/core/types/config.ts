@@ -1,6 +1,9 @@
 export type WorkflowMode = 'quick' | 'standard' | 'full';
 export const WORKFLOW_MODES: readonly WorkflowMode[] = ['quick', 'standard', 'full'];
 
+export type CommitStrategy = 'none' | 'checkpoint' | 'per-task';
+export const COMMIT_STRATEGIES: readonly CommitStrategy[] = ['none', 'checkpoint', 'per-task'];
+
 export type ThemeMode = 'terminal' | 'mono';
 
 export type PlannerTool = 'claude-code' | 'codex' | 'opencode' | 'aider' | 'agent-sdk' | 'shell' | 'anthropic' | 'openrouter';
@@ -25,7 +28,7 @@ export interface Config {
     contextLength: number;
     temperature: number;
     apiKey?: string;
-    type?: 'api' | 'shell' | 'agent';
+    type?: 'api' | 'shell' | 'agent' | 'claude-code' | 'codex' | 'opencode' | 'aider';
     command?: string;
     args?: string[];
     outputFormat?: OutputFormat;
@@ -41,7 +44,7 @@ export interface Config {
     autoApproveSpec: boolean;
     autoApprovePlan: boolean;
     maxRetries: number;
-    commitPerTask: boolean;
+    commitStrategy: CommitStrategy;
     mode?: WorkflowMode;
   };
   theme?: ThemeMode;

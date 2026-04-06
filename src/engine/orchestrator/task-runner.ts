@@ -1,7 +1,7 @@
 import type { Task, Config, WorkflowState, OrchestratorCallbacks, ValidationResult, TaskCompletionMethod } from '../../types.js';
 import { transition } from '../../core/state.js';
 import { saveState } from '../../core/state-persistence.js';
-import { commitChanges } from '../../utils/git.js';
+import { commitChanges, createCheckpoint } from '../../utils/git.js';
 import { emit } from './events.js';
 import { allValidationsPassed } from './helpers.js';
 
@@ -25,7 +25,8 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
     return { state, completed: false };
   }
 
-  if (config.workflow.commitPerTask) {
+  const strategy = config.workflow.commitStrategy;
+  if (strategy === 'per-task') {
     const suffix = commitSuffix ? ` (${commitSuffix})` : '';
     const commitMsg = `feat(tiny-spec): ${task.id} - ${task.title}${suffix}`;
     try {
@@ -33,6 +34,16 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
       callbacks.onEvent({ type: 'git-commit', ts: Date.now(), message: commitMsg });
     } catch {
       // commit failure is non-fatal
+    }
+  } else if (strategy === 'checkpoint') {
+    const label = `${task.id}`;
+    try {
+      const tag = await createCheckpoint(projectDir, label);
+      if (tag) {
+        callbacks.onEvent({ type: 'git-checkpoint', ts: Date.now(), tag, taskId: task.id });
+      }
+    } catch {
+      // checkpoint failure is non-fatal
     }
   }
 

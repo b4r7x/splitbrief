@@ -58,12 +58,19 @@ describe('validateConfig', () => {
   it('rejects non-boolean validation fields', () => {
     const config = createDefaultConfig() as unknown as Record<string, unknown>;
     (config as any).validation.typecheck = 'yes';
-    (config as any).workflow.commitPerTask = 1;
     const errors = validateConfig(config);
-    expect(errors.length).toBe(2);
+    expect(errors.length).toBe(1);
     const paths = errors.map((e) => e.path);
     expect(paths).toContain('validation.typecheck');
-    expect(paths).toContain('workflow.commitPerTask');
+  });
+
+  it('rejects invalid commitStrategy value', () => {
+    const config = createDefaultConfig() as unknown as Record<string, unknown>;
+    (config as any).workflow.commitStrategy = 'invalid';
+    const errors = validateConfig(config);
+    expect(errors.length).toBe(1);
+    expect(errors[0].path).toBe('workflow.commitStrategy');
+    expect(errors[0].message).toContain('invalid');
   });
 
   it('collects multiple errors at once', () => {
@@ -289,7 +296,7 @@ describe('writeConfigSelection', () => {
     initial.validation.testCommand = 'yarn test';
     fs.writeFileSync(
       path.join(dirPath, 'config.yaml'),
-      YAML.stringify({ planner: { tool: 'claude-code' }, implementer: { provider: 'ollama', model: 'qwen2.5-coder:7b', api_base: 'http://localhost:11434/v1', context_length: 32768, temperature: 0.3 }, validation: { typecheck: true, lint: true, test: true, test_command: 'yarn test' }, workflow: { auto_approve_spec: false, auto_approve_plan: false, max_retries: 5, commit_per_task: true } }),
+      YAML.stringify({ planner: { tool: 'claude-code' }, implementer: { provider: 'ollama', model: 'qwen2.5-coder:7b', api_base: 'http://localhost:11434/v1', context_length: 32768, temperature: 0.3 }, validation: { typecheck: true, lint: true, test: true, test_command: 'yarn test' }, workflow: { auto_approve_spec: false, auto_approve_plan: false, max_retries: 5, commit_strategy: 'none' } }),
       'utf-8',
     );
     writeConfigSelection(

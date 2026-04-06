@@ -1,5 +1,5 @@
-export type { Config, PlannerTool, OutputFormat, WorkflowMode } from './config.js';
-export { WORKFLOW_MODES } from './config.js';
+export type { Config, PlannerTool, OutputFormat, WorkflowMode, CommitStrategy } from './config.js';
+export { WORKFLOW_MODES, COMMIT_STRATEGIES } from './config.js';
 export type {
   Phase,
   Task,

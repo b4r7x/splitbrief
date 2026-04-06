@@ -174,6 +174,15 @@ function GitCommitCard({ event, theme: t }: { event: Extract<TuiEvent, { type: '
   );
 }
 
+function GitCheckpointCard({ event, theme: t }: { event: Extract<TuiEvent, { type: 'git-checkpoint' }>; theme: Theme }) {
+  return (
+    <Box>
+      <Text color={t.success}>checkpoint </Text>
+      <Text color={t.textDim}>{event.tag}</Text>
+    </Box>
+  );
+}
+
 function ErrorCard({ event, theme: t }: { event: Extract<TuiEvent, { type: 'error' }>; theme: Theme }) {
   return (
     <Box>
@@ -193,6 +202,7 @@ function getGutterRole(event: TuiEvent): 'planner' | 'implementer' | null {
     case 'implementer-generate':
     case 'validate':
     case 'git-commit':
+    case 'git-checkpoint':
     case 'retry':
       return 'implementer';
     case 'escalate':
@@ -233,6 +243,8 @@ function renderEventContent(event: TuiEvent, t: Theme, diffExpanded?: boolean): 
       return <EscalateCard event={event} theme={t} />;
     case 'git-commit':
       return <GitCommitCard event={event} theme={t} />;
+    case 'git-checkpoint':
+      return <GitCheckpointCard event={event} theme={t} />;
     case 'error':
       return <ErrorCard event={event} theme={t} />;
     case 'workflow-cancelled':

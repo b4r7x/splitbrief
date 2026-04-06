@@ -5,7 +5,7 @@ const validConfig = {
   planner: { tool: 'claude-code' },
   implementer: { provider: 'ollama', model: 'qwen2.5-coder:7b', contextLength: 8192 },
   validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-  workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitPerTask: true },
+  workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none' },
 };
 
 describe('validateConfig', () => {
