@@ -7,11 +7,13 @@ describe('overlayStore', () => {
   it('starts with no active overlay', () => {
     expect(overlayStore.get().active).toBe('none');
     expect(overlayStore.get().exclusive).toBe(false);
+    expect(overlayStore.get().stack).toEqual([]);
   });
 
   it('opens an overlay', () => {
     overlayStore.open('help');
     expect(overlayStore.get().active).toBe('help');
+    expect(overlayStore.get().stack).toEqual([]);
   });
 
   it('closes an overlay and resets exclusive', () => {
@@ -20,12 +22,14 @@ describe('overlayStore', () => {
     overlayStore.close();
     expect(overlayStore.get().active).toBe('none');
     expect(overlayStore.get().exclusive).toBe(false);
+    expect(overlayStore.get().stack).toEqual([]);
   });
 
-  it('switches between overlays', () => {
+  it('switches between overlays and pushes onto stack', () => {
     overlayStore.open('help');
     overlayStore.open('skills');
     expect(overlayStore.get().active).toBe('skills');
+    expect(overlayStore.get().stack).toEqual([{ type: 'help', focus: undefined }]);
   });
 
   it('sets exclusive input', () => {
@@ -85,6 +89,65 @@ describe('overlayStore', () => {
       overlayStore.open('settings', 'planner.tool');
       overlayStore.close();
       expect(overlayStore.get().focus).toBeUndefined();
+    });
+  });
+
+  describe('stack', () => {
+    it('open from none does not push onto stack', () => {
+      overlayStore.open('planner-picker');
+      expect(overlayStore.get().active).toBe('planner-picker');
+      expect(overlayStore.get().stack).toEqual([]);
+    });
+
+    it('open from active overlay pushes parent onto stack', () => {
+      overlayStore.open('settings');
+      overlayStore.open('planner-picker', 'models');
+      expect(overlayStore.get().active).toBe('planner-picker');
+      expect(overlayStore.get().focus).toBe('models');
+      expect(overlayStore.get().stack).toEqual([{ type: 'settings', focus: undefined }]);
+    });
+
+    it('close pops stack and restores parent', () => {
+      overlayStore.open('settings');
+      overlayStore.open('planner-picker', 'models');
+      overlayStore.close();
+      expect(overlayStore.get().active).toBe('settings');
+      expect(overlayStore.get().focus).toBeUndefined();
+      expect(overlayStore.get().stack).toEqual([]);
+    });
+
+    it('close from restored parent goes to none', () => {
+      overlayStore.open('settings');
+      overlayStore.open('planner-picker');
+      overlayStore.close();
+      overlayStore.close();
+      expect(overlayStore.get().active).toBe('none');
+      expect(overlayStore.get().stack).toEqual([]);
+    });
+
+    it('close with empty stack returns to initial state', () => {
+      overlayStore.open('planner-picker');
+      overlayStore.close();
+      expect(overlayStore.get().active).toBe('none');
+      expect(overlayStore.get().stack).toEqual([]);
+    });
+
+    it('preserves parent focus in stack', () => {
+      overlayStore.open('settings', 'planner.tool');
+      overlayStore.open('planner-picker', 'models');
+      expect(overlayStore.get().stack).toEqual([{ type: 'settings', focus: 'planner.tool' }]);
+      overlayStore.close();
+      expect(overlayStore.get().active).toBe('settings');
+      expect(overlayStore.get().focus).toBe('planner.tool');
+    });
+
+    it('reset clears everything including stack', () => {
+      overlayStore.open('settings');
+      overlayStore.open('planner-picker');
+      overlayStore.reset();
+      expect(overlayStore.get().active).toBe('none');
+      expect(overlayStore.get().exclusive).toBe(false);
+      expect(overlayStore.get().stack).toEqual([]);
     });
   });
 });

@@ -26,7 +26,7 @@ describe('detectAvailablePlanners', () => {
     for (const r of results) {
       expect(typeof r.tool).toBe('string');
       expect(typeof r.type).toBe('string');
-      expect(['cli', 'api', 'shell']).toContain(r.type);
+      expect(['cli', 'api', 'shell', 'provider']).toContain(r.type);
       expect(typeof r.available).toBe('boolean');
     }
   });

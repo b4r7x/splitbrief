@@ -4,6 +4,7 @@ import { useTheme } from "../ui/theme.js";
 import { OverlayPanel } from "../ui/overlay-panel.js";
 import { configStore } from "../stores/config.js";
 import { overlayStore } from "../stores/overlay.js";
+import { feedbackStore } from "../stores/error.js";
 import { useResponsiveLayout } from "../hooks/use-terminal-size.js";
 import { computeScrollOffset } from "../ui/picker-utils.js";
 import {
@@ -14,8 +15,8 @@ import {
   validateNumber,
   displayValue,
   valueColor,
-} from "./settings-defs.js";
-import type { SettingDef } from "./settings-defs.js";
+} from "../core/settings-defs.js";
+import type { SettingDef } from "../core/settings-defs.js";
 
 export function SettingsOverlay() {
   const t = useTheme();
@@ -24,7 +25,6 @@ export function SettingsOverlay() {
   const focusSetting = overlayStore.use(s => s.focus);
   const { rows } = useResponsiveLayout();
 
-  const [edits, setEdits] = useState<Record<string, unknown>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBuffer, setEditBuffer] = useState("");
   const [filter, setFilter] = useState("");
@@ -43,24 +43,22 @@ export function SettingsOverlay() {
   const isDisabled = (def: SettingDef): boolean => !!(config && def.disabled?.(config));
 
   const getValue = (def: SettingDef): unknown => {
-    if (def.id in edits) return edits[def.id];
     return config ? getConfigValue(config, def.id) : undefined;
   };
 
-  const applyEdit = (dotPath: string, value: unknown) => {
-    setEdits(prev => ({ ...prev, [dotPath]: value }));
-  };
-
-  const saveAndClose = () => {
-    if (config && Object.keys(edits).length > 0) {
-      configStore.save(applyEdits(config, edits));
-    }
-    onClose();
+  const saveValue = (dotPath: string, value: unknown) => {
+    if (!config) return;
+    const updated = applyEdits(config, { [dotPath]: value });
+    configStore.save(updated);
+    feedbackStore.setMessage('Saved');
   };
 
   const openSubPicker = (def: SettingDef) => {
-    if (def.id.startsWith('planner.')) overlayStore.open('planner-picker');
-    else if (def.id.startsWith('implementer.')) overlayStore.open('implementer-picker');
+    // Update settings focus so it's preserved in the stack when sub-picker opens
+    overlayStore.open('settings', def.id);
+    const focus = def.id.endsWith('.model') ? 'models' : undefined;
+    if (def.id.startsWith('planner.')) overlayStore.open('planner-picker', focus);
+    else if (def.id.startsWith('implementer.')) overlayStore.open('implementer-picker', focus);
   };
 
   const startEditing = (def: SettingDef) => {
@@ -77,10 +75,10 @@ export function SettingsOverlay() {
 
     if (def.kind === "number") {
       const num = validateNumber(editBuffer, def);
-      if (num !== null) applyEdit(def.id, num);
+      if (num !== null) saveValue(def.id, num);
     } else {
       const trimmed = editBuffer.trim();
-      if (trimmed) applyEdit(def.id, trimmed);
+      if (trimmed) saveValue(def.id, trimmed);
     }
     setEditingId(null);
     setEditBuffer("");
@@ -106,7 +104,6 @@ export function SettingsOverlay() {
   useInput(
     (input, key) => {
       if (key.escape) { onClose(); return; }
-      if (input === 's' && key.ctrl) { saveAndClose(); return; }
       if (key.upArrow) {
         setSelectedIndex((prev) => (prev > 0 ? prev - 1 : filtered.length - 1));
         return;
@@ -120,12 +117,12 @@ export function SettingsOverlay() {
         if (isDisabled(def)) return;
         if (def.kind === "boolean") {
           const current = getValue(def);
-          applyEdit(def.id, !current);
+          saveValue(def.id, !current);
         } else if (def.kind === "enum" && def.options) {
           const current = String(getValue(def) ?? def.options[0]);
           const idx = def.options.indexOf(current);
           const next = def.options[(idx + 1) % def.options.length];
-          applyEdit(def.id, next);
+          saveValue(def.id, next);
         }
         return;
       }
@@ -169,7 +166,7 @@ export function SettingsOverlay() {
 
   const hintText = editingId
     ? "Enter confirm  Esc cancel"
-    : "\u2191\u2193 nav  Space toggle  Enter edit  ^S save  Esc discard";
+    : "\u2191\u2193 nav  Space toggle  Enter edit  Esc close";
 
   return (
     <OverlayPanel title="Settings" hint={hintText} compact maxWidth={60}>

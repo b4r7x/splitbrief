@@ -27,7 +27,7 @@ function makeConfig(tool: string, extra?: Partial<Config['planner']>): Config {
   };
 }
 
-const KNOWN_TOOLS = ['claude-code', 'codex', 'opencode', 'aider', 'agent-sdk', 'anthropic', 'openrouter'] as const;
+const KNOWN_TOOLS = ['claude-code', 'codex', 'opencode', 'aider', 'agent-sdk', 'anthropic', 'openrouter', 'ollama', 'lm-studio', 'deepseek'] as const;
 
 describe('createPlanner', () => {
   it('claude-code returns a backend with name "claude-code"', async () => {
@@ -82,6 +82,21 @@ describe('createPlanner', () => {
   it('planner.provider without explicit tool routes to API planner', async () => {
     const config = makeConfig('claude-code', { provider: 'deepseek', model: 'deepseek-chat', apiBase: 'https://api.deepseek.com/v1' });
     const planner = await createPlanner(config);
+    expect(planner.name).toBe('api:deepseek');
+  });
+
+  it('ollama routes to API planner with provider set', async () => {
+    const planner = await createPlanner(makeConfig('ollama'));
+    expect(planner.name).toBe('api:ollama');
+  });
+
+  it('lm-studio routes to API planner with provider set', async () => {
+    const planner = await createPlanner(makeConfig('lm-studio'));
+    expect(planner.name).toBe('api:lm-studio');
+  });
+
+  it('deepseek routes to API planner with provider set', async () => {
+    const planner = await createPlanner(makeConfig('deepseek'));
     expect(planner.name).toBe('api:deepseek');
   });
 

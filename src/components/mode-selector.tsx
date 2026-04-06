@@ -46,19 +46,29 @@ export function ModeSelector() {
         const isSelected = i === selected;
         const isCurrent = m.mode === currentMode;
         return (
-          <Box key={m.mode} justifyContent="space-between">
+          <Box key={m.mode}>
             <Text color={isSelected ? t.accent : t.textDim}>
               {isSelected ? '\u25B8 ' : '  '}
+            </Text>
+            <Box width={10}>
               <Text color={isSelected ? t.text : t.textDim} bold={isSelected}>
                 {m.mode}
               </Text>
-            </Text>
-            <Box gap={1}>
-              <Text color={t.textDim}>
-                {m.calls} call{m.calls === 1 ? '' : 's'} {'\u00B7'} {m.approvals} approval{m.approvals === 1 ? '' : 's'} {'\u00B7'} {m.size}
-              </Text>
-              {isCurrent && <Text color={t.success}>{'\u2713'}</Text>}
             </Box>
+            <Box width={9}>
+              <Text color={t.textDim}>
+                {m.calls} call{m.calls === 1 ? '' : 's'}
+              </Text>
+            </Box>
+            <Box width={13}>
+              <Text color={t.textDim}>
+                {m.approvals} approval{m.approvals === 1 ? '' : 's'}
+              </Text>
+            </Box>
+            <Box flexGrow={1}>
+              <Text color={t.textDim}>{m.size}</Text>
+            </Box>
+            {isCurrent && <Text color={t.success}>{'\u2713'}</Text>}
           </Box>
         );
       })}

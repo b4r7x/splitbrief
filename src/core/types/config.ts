@@ -6,7 +6,7 @@ export const COMMIT_STRATEGIES: readonly CommitStrategy[] = ['none', 'checkpoint
 
 export type ThemeMode = 'terminal' | 'mono';
 
-export type PlannerTool = 'claude-code' | 'codex' | 'opencode' | 'aider' | 'agent-sdk' | 'shell' | 'anthropic' | 'openrouter';
+export type PlannerTool = 'claude-code' | 'codex' | 'opencode' | 'aider' | 'agent-sdk' | 'shell' | 'anthropic' | 'openrouter' | 'ollama' | 'lm-studio' | 'deepseek';
 
 export type OutputFormat = 'stream-json' | 'jsonl' | 'text' | 'opencode';
 
@@ -20,6 +20,7 @@ export interface Config {
     command?: string;
     args?: string[];
     outputFormat?: OutputFormat;
+    customModels?: string[];
   };
   implementer: {
     provider: string;
@@ -28,11 +29,12 @@ export interface Config {
     contextLength: number;
     temperature: number;
     apiKey?: string;
-    type?: 'api' | 'shell' | 'agent' | 'claude-code' | 'codex' | 'opencode' | 'aider';
+    type?: 'api' | 'shell' | 'agent' | 'agent-sdk' | 'claude-code' | 'codex' | 'opencode' | 'aider';
     command?: string;
     args?: string[];
     outputFormat?: OutputFormat;
     timeout?: number;
+    customModels?: string[];
   };
   validation: {
     typecheck: boolean;

@@ -1,12 +1,12 @@
 import type { PlannerTool } from '../types.js';
 import { createPlanner } from './planners/factory.js';
-import { detectAvailableProviders, withTimeout, DETECTION_TIMEOUT_MS } from './providers/registry.js';
+import { detectAvailableProviders, withTimeout, DETECTION_TIMEOUT_MS, KNOWN_PROVIDERS } from './providers/registry.js';
 import type { ProviderDetection } from './providers/types.js';
 import { toErrorMessage } from '../utils/format.js';
 
 export interface PlannerDetection {
   tool: PlannerTool;
-  type: 'cli' | 'api' | 'shell';
+  type: 'cli' | 'api' | 'shell' | 'provider';
   available: boolean;
   version?: string | null;
   description?: string;
@@ -26,6 +26,12 @@ const CLI_DESCRIPTIONS: Record<string, string> = {
 const API_PLANNERS: { tool: PlannerTool; envKey: string; description: string }[] = [
   { tool: 'anthropic', envKey: 'ANTHROPIC_API_KEY', description: 'Anthropic API' },
   { tool: 'openrouter', envKey: 'OPENROUTER_API_KEY', description: 'OpenRouter API' },
+];
+
+const PROVIDER_PLANNERS: { tool: PlannerTool; description: string }[] = [
+  { tool: 'ollama', description: 'Ollama (local)' },
+  { tool: 'lm-studio', description: 'LM Studio (local)' },
+  { tool: 'deepseek', description: 'DeepSeek API' },
 ];
 
 function minimalConfig(tool: PlannerTool) {
@@ -63,14 +69,30 @@ export async function detectAvailablePlanners(): Promise<PlannerDetection[]> {
     description,
   }));
 
+  const providerResults = await Promise.all(
+    PROVIDER_PLANNERS.map(async ({ tool, description }): Promise<PlannerDetection> => {
+      const factory = KNOWN_PROVIDERS[tool];
+      if (!factory) return { tool, type: 'provider', available: false, description };
+      try {
+        const provider = factory();
+        const models = await withTimeout(provider.listModels(), DETECTION_TIMEOUT_MS);
+        return { tool, type: 'provider', available: models.length > 0, description };
+      } catch {
+        return { tool, type: 'provider', available: false, description };
+      }
+    }),
+  );
+
   const shellResult: PlannerDetection = {
     tool: 'shell',
     type: 'shell',
+    // Shell planner is always "available" — actual availability depends on
+    // the user-configured command, which we cannot validate here.
     available: true,
     description: 'Custom command',
   };
 
-  return [...cliResults, ...apiResults, shellResult];
+  return [...cliResults, ...apiResults, ...providerResults, shellResult];
 }
 
 export async function detectAvailableImplementers(): Promise<ProviderDetection[]> {

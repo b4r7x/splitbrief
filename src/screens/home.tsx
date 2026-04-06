@@ -4,9 +4,11 @@ import type { Session, SlashCommandDef } from '../types.js';
 import { useTheme, type Theme } from '../ui/theme.js';
 import { InputBar } from '../components/input-bar.js';
 import { formatRelativeTime } from '../utils/format.js';
+import { formatModelName } from '../utils/model-names.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 import { configStore } from '../stores/config.js';
 import { getProvider } from '../engine/providers/registry.js';
+import { getDisplayName } from '../engine/providers/backend-registry.js';
 import { skillsStore } from '../stores/skills.js';
 import { sessionsStore } from '../stores/sessions.js';
 import { overlayStore } from '../stores/overlay.js';
@@ -87,17 +89,17 @@ export function HomeScreen({ commands, onSlashCommand }: HomeScreenProps) {
         <Box flexDirection="column" marginBottom={1}>
           <Box>
             <Text color={theme.textDim}>{'Planner'.padEnd(14)}</Text>
-            <Text color={theme.planner}>{config.planner.tool}</Text>
+            <Text color={theme.planner}>{getDisplayName(config.planner.tool)}</Text>
             {config.planner.model && (
-              <Text color={theme.planner}> › {config.planner.model}</Text>
+              <Text color={theme.planner}> › {formatModelName(config.planner.model)}</Text>
             )}
             <Text color={theme.textDim}>  /planner</Text>
           </Box>
           <Box>
             <Text color={theme.textDim}>{'Implementer'.padEnd(14)}</Text>
-            <Text color={theme.implementer}>{config.implementer.provider}</Text>
+            <Text color={theme.implementer}>{getDisplayName(config.implementer.provider)}</Text>
             <Text color={theme.textDim}> › </Text>
-            <Text color={theme.implementer}>{config.implementer.model}</Text>
+            <Text color={theme.implementer}>{formatModelName(config.implementer.model)}</Text>
             {getProvider(config.implementer.provider).isLocal && (
               <Text color={theme.textDim}> (local)</Text>
             )}

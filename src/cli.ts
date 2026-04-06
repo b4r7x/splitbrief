@@ -14,6 +14,7 @@ import { setHighlightTheme } from './utils/highlight.js';
 import { sessionsStore } from './stores/sessions.js';
 import { skillsStore } from './stores/skills.js';
 import { routerStore } from './stores/router.js';
+import { detectionStore } from './stores/detection.js';
 import type { WorkflowOpts } from './cli/workflow.js';
 import type { Phase } from './types.js';
 
@@ -42,6 +43,7 @@ function initStores(projectDir: string, opts: WorkflowOpts & { contextLength?: n
   if (storeConfig.shikiTheme) setHighlightTheme(storeConfig.shikiTheme);
   sessionsStore.load(storeConfig.sessions?.scope ?? 'project', projectDir);
   skillsStore.discover(storeConfig.planner.tool, projectDir);
+  detectionStore.load();
 }
 
 const program = new Command();

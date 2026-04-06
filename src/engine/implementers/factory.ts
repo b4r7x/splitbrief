@@ -16,7 +16,18 @@ export async function createImplementer(config: Config): Promise<ImplementerBack
       const { createAgentImplementer } = await import('./agent.js');
       return createAgentImplementer(config);
     }
+    case 'claude-code':
+    case 'codex':
+    case 'opencode':
+    case 'aider': {
+      const { createToolImplementer } = await import('./tool.js');
+      return createToolImplementer(type, config);
+    }
+    case 'agent-sdk': {
+      const { createAgentSdkImplementer } = await import('./agent-sdk.js');
+      return createAgentSdkImplementer(config);
+    }
     default:
-      throw new Error(`Unknown implementer type: ${type}. Supported: api, shell, agent`);
+      throw new Error(`Unknown implementer type: ${type}. Supported: api, shell, agent, agent-sdk, claude-code, codex, opencode, aider`);
   }
 }
