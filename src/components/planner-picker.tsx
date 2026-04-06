@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../ui/theme.js';
 import { Spinner } from '../ui/spinner.js';
@@ -7,7 +7,6 @@ import { configStore } from '../stores/config.js';
 import { overlayStore } from '../stores/overlay.js';
 import { feedbackStore } from '../stores/error.js';
 import { detectAvailablePlanners } from '../engine/detection.js';
-import { truncate } from '../utils/format.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 import { useAsyncDetection } from '../hooks/use-async-detection.js';
 import { useShellCommand } from '../hooks/use-shell-command.js';
@@ -29,6 +28,11 @@ export function PlannerPicker() {
     KNOWN_MODELS[config.planner.tool] ?? [],
   );
   const [shellActive, setShellActive] = useState(false);
+  const [selectedTool, setSelectedTool] = useState(config.planner.tool);
+
+  useEffect(() => {
+    overlayStore.setExclusive(shellActive);
+  }, [shellActive]);
 
   const shell = useShellCommand(config.planner.command ?? '', {
     isActive: shellActive,
@@ -49,7 +53,6 @@ export function PlannerPicker() {
     );
   }
 
-  const currentTool = config.planner.tool;
   const currentModel = config.planner.model;
   const available = planners.filter(p => p.available);
   const unavailable = planners.filter(p => !p.available);
@@ -57,7 +60,7 @@ export function PlannerPicker() {
   return (
     <TwoColumnPicker<PlannerDetection, KnownModel>
       title="Planner"
-      leftLabel="Backends"
+      leftLabel="Tools"
       rightLabel="Models"
       leftItems={available}
       rightItems={shellActive ? [] : rightModels}
@@ -68,6 +71,7 @@ export function PlannerPicker() {
       rightFilterFn={(item, q) => item.name.toLowerCase().includes(q.toLowerCase())}
       onLeftChange={item => {
         const isShell = item.tool === 'shell';
+        setSelectedTool(item.tool);
         setRightModels(KNOWN_MODELS[item.tool] ?? []);
         setShellActive(isShell);
         if (isShell) shell.setCommandBuffer(config.planner.command ?? '');
@@ -86,25 +90,23 @@ export function PlannerPicker() {
       }}
       onCancel={() => overlayStore.close()}
       leftRenderRow={(item, isCursor) => {
-        const name = truncate(item.tool, 18).padEnd(18);
-        const isCfgMatch = item.tool === currentTool;
+        const isSelected = item.tool === selectedTool;
         return (
           <Box>
-            <Text color={isCursor ? t.accent : t.text} bold={isCursor}>{name}</Text>
-            <Text color={t.textDim}>  {typeLabel(item).padEnd(8)}</Text>
-            {item.version && <Text color={t.textDim}>v{item.version}  </Text>}
-            {isCfgMatch && <Text color={t.success}>{'\u2713'}</Text>}
+            <Text color={isCursor ? t.accent : t.text} bold={isCursor}>{item.tool}</Text>
+            <Text color={t.textDim}>  {typeLabel(item)}</Text>
+            {item.version && <Text color={t.textDim}> v{item.version}</Text>}
+            {isSelected && <Text color={t.success}> {'\u2713'}</Text>}
           </Box>
         );
       }}
       rightRenderRow={(item, isCursor) => {
-        const name = truncate(item.name, 34).padEnd(34);
         const isCfgMatch = item.name === currentModel;
         return (
           <Box>
-            <Text color={isCursor ? t.accent : t.text} bold={isCursor}>{name}</Text>
-            {item.isDefault && <Text color={t.textDim}>  (default)</Text>}
-            {isCfgMatch && <Text color={t.success}>  {'\u2713'}</Text>}
+            <Text color={isCursor ? t.accent : t.text} bold={isCursor}>{item.name}</Text>
+            {item.isDefault && <Text color={t.textDim}> (default)</Text>}
+            {isCfgMatch && <Text color={t.success}> {'\u2713'}</Text>}
           </Box>
         );
       }}

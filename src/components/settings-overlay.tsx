@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { useTheme } from "../ui/theme.js";
+import { OverlayPanel } from "../ui/overlay-panel.js";
 import { configStore } from "../stores/config.js";
 import { overlayStore } from "../stores/overlay.js";
 import { useResponsiveLayout } from "../hooks/use-terminal-size.js";
@@ -21,7 +22,7 @@ export function SettingsOverlay() {
   const config = configStore.use(s => s.config);
   const onClose = overlayStore.close;
   const focusSetting = overlayStore.use(s => s.focus);
-  const { cols, rows } = useResponsiveLayout();
+  const { rows } = useResponsiveLayout();
 
   const [edits, setEdits] = useState<Record<string, unknown>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -150,7 +151,6 @@ export function SettingsOverlay() {
 
   if (!config) return null;
 
-  const contentWidth = Math.min(cols - 4, 60);
   const maxVisible = rows - 10;
   const scrollOffset = computeScrollOffset(effectiveIndex, maxVisible, filtered.length);
   const visible = filtered.slice(scrollOffset, scrollOffset + maxVisible);
@@ -167,83 +167,73 @@ export function SettingsOverlay() {
   }
   const selectedDef = filtered[effectiveIndex];
 
+  const hintText = editingId
+    ? "Enter confirm  Esc cancel"
+    : "\u2191\u2193 nav  Space toggle  Enter edit  ^S save  Esc discard";
+
   return (
-    <Box width={cols} height={rows} alignItems="center" justifyContent="center">
-      <Box flexDirection="column" width={contentWidth} borderStyle="round" borderColor={t.border} paddingX={2} paddingY={1}>
-        <Box justifyContent="center" marginBottom={1}>
-          <Text bold color={t.accent}>Settings</Text>
-        </Box>
+    <OverlayPanel title="Settings" hint={hintText} compact maxWidth={60}>
+      <Box marginBottom={1}>
+        <Text color={t.textDim}>{`> ${filter || "type to filter..."}`}</Text>
+      </Box>
 
-        <Box marginBottom={1}>
-          <Text color={t.textDim}>{`> ${filter || "type to filter..."}`}</Text>
-        </Box>
+      {scrollOffset > 0 && <Text color={t.textDim}>{"  \u2191 more"}</Text>}
 
-        {scrollOffset > 0 && <Text color={t.textDim}>{"  \u2191 more"}</Text>}
+      <Box flexDirection="column">
+        {visible.map((def, i) => {
+          const globalIndex = scrollOffset + i;
+          const isSelected = globalIndex === effectiveIndex;
+          const isEditing = editingId === def.id;
+          const value = getValue(def);
+          const disabled = isDisabled(def);
+          const showSection = sectionBreaks.has(scrollOffset + i);
 
-        <Box flexDirection="column">
-          {visible.map((def, i) => {
-            const globalIndex = scrollOffset + i;
-            const isSelected = globalIndex === effectiveIndex;
-            const isEditing = editingId === def.id;
-            const value = getValue(def);
-            const disabled = isDisabled(def);
-            const showSection = sectionBreaks.has(scrollOffset + i);
-
-            return (
-              <Box key={def.id} flexDirection="column">
-                {showSection && (
-                  <Box marginTop={i > 0 ? 1 : 0}>
-                    <Text bold color={t.text}>{def.section}</Text>
-                  </Box>
-                )}
-                <Box justifyContent="space-between">
-                  <Text color={isSelected ? t.accent : t.textDim}>
-                    {isSelected ? "\u25B8 " : "  "}
-                    <Text color={disabled || !isSelected ? t.textDim : t.text}>
-                      {def.label}
-                    </Text>
-                  </Text>
-
-                  {isEditing ? (
-                    <Text color={t.accent}>[{editBuffer}|]</Text>
-                  ) : (
-                    <Text color={valueColor(def, value, disabled, t)}>
-                      {displayValue(def, value, disabled)}
-                      {def.kind === "picker" && !disabled ? " \u2192" : ""}
-                    </Text>
-                  )}
+          return (
+            <Box key={def.id} flexDirection="column">
+              {showSection && (
+                <Box marginTop={i > 0 ? 1 : 0}>
+                  <Text bold color={t.text}>{def.section}</Text>
                 </Box>
+              )}
+              <Box justifyContent="space-between">
+                <Text color={isSelected ? t.accent : t.textDim}>
+                  {isSelected ? "\u25B8 " : "  "}
+                  <Text color={disabled || !isSelected ? t.textDim : t.text}>
+                    {def.label}
+                  </Text>
+                </Text>
+
+                {isEditing ? (
+                  <Text color={t.accent}>[{editBuffer}|]</Text>
+                ) : (
+                  <Text color={valueColor(def, value, disabled, t)}>
+                    {displayValue(def, value, disabled)}
+                    {def.kind === "picker" && !disabled ? " \u2192" : ""}
+                  </Text>
+                )}
               </Box>
-            );
-          })}
+            </Box>
+          );
+        })}
+      </Box>
+
+      {scrollOffset + maxVisible < filtered.length && (
+        <Text color={t.textDim}>{"  \u2193 more"}</Text>
+      )}
+
+      {filtered.length === 0 && (
+        <Box justifyContent="center" marginY={1}>
+          <Text color={t.textDim}>No settings match filter</Text>
         </Box>
+      )}
 
-        {scrollOffset + maxVisible < filtered.length && (
-          <Text color={t.textDim}>{"  \u2193 more"}</Text>
-        )}
-
-        {filtered.length === 0 && (
-          <Box justifyContent="center" marginY={1}>
-            <Text color={t.textDim}>No settings match filter</Text>
-          </Box>
-        )}
-
+      {selectedDef && (
         <Box marginTop={1}>
           <Text color={t.textDim} dimColor>
-            {selectedDef ? selectedDef.description : ""}
+            {selectedDef.description}
           </Text>
         </Box>
-
-        <Box justifyContent="center">
-          {editingId ? (
-            <Text color={t.textDim}>Enter confirm Esc cancel</Text>
-          ) : (
-            <Text color={t.textDim}>
-              {"\u2191\u2193 nav  Space toggle  Enter edit  ^S save  Esc discard"}
-            </Text>
-          )}
-        </Box>
-      </Box>
-    </Box>
+      )}
+    </OverlayPanel>
   );
 }

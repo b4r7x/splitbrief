@@ -11,6 +11,7 @@ import { feedbackStore } from './stores/error.js';
 import { HomeScreen } from './screens/home.js';
 import { WorkflowScreen } from './screens/workflow.js';
 import { SummaryScreen } from './screens/summary.js';
+import { SetupScreen } from './screens/setup.js';
 import { HelpOverlay } from './components/help-overlay.js';
 import { CommandPalette } from './components/command-palette.js';
 import { SkillsPicker } from './components/skills-picker.js';
@@ -76,6 +77,8 @@ function renderScreen({ screen, commands, onSlash }: {
           onSlashCommand={(raw) => onSlash(raw, 'summary')}
         />
       );
+    case 'setup':
+      return <SetupScreen />;
     default: {
       const _exhaustive: never = screen;
       return null;

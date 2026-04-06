@@ -4,10 +4,9 @@ import { Command } from 'commander';
 import { createElement } from 'react';
 import { existsSync } from 'node:fs';
 import App from './app.js';
-import { configPath } from './core/config.js';
+import { configPath, initConfig } from './core/config.js';
 import { loadState } from './core/state-persistence.js';
 import { createPlanner } from './engine/planners/factory.js';
-import { runPicker } from './cli/picker.js';
 import { renderApp } from './cli/render.js';
 import { addWorkflowOptions, setupWorkflow, ensureGitAndConfig, resolveProjectDir, loadConfigOrExit } from './cli/workflow.js';
 import { configStore } from './stores/config.js';
@@ -57,10 +56,12 @@ addWorkflowOptions(
     .command('start [feature]')
     .description('Full workflow: plan with Claude, implement with local model'),
 ).action(async (feature: string | undefined, opts: WorkflowOpts) => {
-    const { projectDir, useFullscreen, contextLength } = await setupWorkflow(opts);
+    const { projectDir, useFullscreen, contextLength, needsSetup } = await setupWorkflow(opts);
 
     initStores(projectDir, { ...opts, contextLength });
-    if (feature) {
+    if (needsSetup) {
+      routerStore.init({ screen: 'setup', onComplete: feature ? 'workflow' : 'home', feature });
+    } else if (feature) {
       routerStore.init({ screen: 'workflow', feature });
     }
 
@@ -113,7 +114,10 @@ program
       return;
     }
 
-    await runPicker(projectDir);
+    initConfig(projectDir);
+    configStore.load(projectDir);
+    routerStore.init({ screen: 'setup', onComplete: 'home' });
+    await renderApp(createElement(App), true);
   });
 
 program
