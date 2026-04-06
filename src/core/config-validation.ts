@@ -100,7 +100,7 @@ export function validateConfig(config: Record<string, unknown>): ConfigError[] {
 
   const boolFields = [
     'validation.typecheck', 'validation.lint', 'validation.test',
-    'workflow.autoApproveSpec', 'workflow.autoApprovePlan', 'workflow.commitPerTask',
+    'workflow.autoApproveSpec', 'workflow.autoApprovePlan',
   ];
   for (const field of boolFields) {
     const [section, key] = field.split('.');
@@ -118,6 +118,11 @@ export function validateConfig(config: Record<string, unknown>): ConfigError[] {
   const workflowMode = get(config, 'workflow', 'mode');
   if (workflowMode !== undefined && workflowMode !== 'quick' && workflowMode !== 'standard' && workflowMode !== 'full') {
     errors.push({ path: 'workflow.mode', message: `Must be one of: quick, standard, full (got ${JSON.stringify(workflowMode)})` });
+  }
+
+  const commitStrategy = get(config, 'workflow', 'commitStrategy');
+  if (commitStrategy !== undefined && commitStrategy !== 'none' && commitStrategy !== 'checkpoint' && commitStrategy !== 'per-task') {
+    errors.push({ path: 'workflow.commitStrategy', message: `Must be one of: none, checkpoint, per-task (got ${JSON.stringify(commitStrategy)})` });
   }
 
   const retries = get(config, 'workflow', 'maxRetries');

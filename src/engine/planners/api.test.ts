@@ -41,7 +41,7 @@ function makeConfig(provider: string, overrides?: Partial<Config['planner']>): C
       autoApproveSpec: false,
       autoApprovePlan: false,
       maxRetries: 3,
-      commitPerTask: true,
+      commitStrategy: 'none',
     },
   };
 }

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
-import type { Config, PlannerTool } from './types.js';
+import type { Config, CommitStrategy, PlannerTool } from './types.js';
 import { getProvider } from '../engine/providers/registry.js';
 import { validateConfig } from './config-validation.js';
 
@@ -73,7 +73,7 @@ export function createDefaultConfig(): Config {
       autoApproveSpec: false,
       autoApprovePlan: false,
       maxRetries: 3,
-      commitPerTask: true,
+      commitStrategy: 'none' as CommitStrategy,
       mode: 'standard',
     },
     theme: 'terminal',
@@ -95,6 +95,12 @@ export function loadConfig(projectDir: string): Config {
   const camelCased = fromYaml(parsed) as Record<string, unknown>;
   const defaults = createDefaultConfig() as unknown as Record<string, unknown>;
   const merged = deepMerge(defaults, camelCased);
+
+  const workflow = merged.workflow as Record<string, unknown> | undefined;
+  if (workflow && 'commitPerTask' in workflow) {
+    workflow.commitStrategy = workflow.commitPerTask ? 'per-task' : 'none';
+    delete workflow.commitPerTask;
+  }
 
   const errors = validateConfig(merged);
   if (errors.length > 0) {

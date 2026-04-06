@@ -23,7 +23,7 @@ export function makeConfig(overrides?: Omit<Partial<Config>, 'implementer' | 'pl
       autoApproveSpec: false,
       autoApprovePlan: false,
       maxRetries: 3,
-      commitPerTask: true,
+      commitStrategy: 'none',
       mode: 'standard',
       ...overrides?.workflow,
     },

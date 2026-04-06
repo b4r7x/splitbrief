@@ -28,8 +28,8 @@ export const SETTINGS_DEFS: SettingDef[] = [
     id: "planner.model",
     label: "model",
     section: "Planner",
-    description: "Planner model",
-    kind: "string",
+    description: "Planner model \u2192 /planner",
+    kind: "picker",
   },
   {
     id: "implementer.provider",
@@ -135,11 +135,12 @@ export const SETTINGS_DEFS: SettingDef[] = [
     max: 10,
   },
   {
-    id: "workflow.commitPerTask",
-    label: "commitPerTask",
+    id: "workflow.commitStrategy",
+    label: "commitStrategy",
     section: "Workflow",
-    description: "Git commit after each task",
-    kind: "boolean",
+    description: "none | checkpoint (tags) | per-task (commits)",
+    kind: "enum",
+    options: ["none", "checkpoint", "per-task"],
   },
   {
     id: "theme",

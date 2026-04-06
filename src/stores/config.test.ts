@@ -5,7 +5,7 @@ vi.mock('../core/config.js', () => ({
   loadConfig: vi.fn(() => ({
     planner: { tool: 'claude-code', model: 'opus' },
     implementer: { provider: 'ollama', model: 'qwen2.5-coder', contextLength: 8192 },
-    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitPerTask: true, mode: 'standard' },
+    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', mode: 'standard' },
     theme: 'dark',
     sessions: { scope: 'project' },
   })),
@@ -46,7 +46,7 @@ describe('configStore', () => {
       implementer: { provider: 'ollama', model: 'qwen2.5-coder', contextLength: 8192 },
       theme: 'dark',
       sessions: { scope: 'project' },
-      workflow: { autoApproveSpec: true, autoApprovePlan: true, maxRetries: 3, commitPerTask: true },
+      workflow: { autoApproveSpec: true, autoApprovePlan: true, maxRetries: 3, commitStrategy: 'none' },
     } as any);
     configStore.load('/tmp/project', { autoApprove: undefined });
     expect(configStore.get().config!.workflow.autoApproveSpec).toBe(true);

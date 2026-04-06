@@ -22,7 +22,7 @@ function makeConfig(tool: string, extra?: Partial<Config['planner']>): Config {
       autoApproveSpec: false,
       autoApprovePlan: false,
       maxRetries: 3,
-      commitPerTask: true,
+      commitStrategy: 'none',
     },
   };
 }

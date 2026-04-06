@@ -82,6 +82,12 @@ export type TuiEvent =
       message: string;
     }
   | {
+      type: 'git-checkpoint';
+      ts: number;
+      tag: string;
+      taskId: string;
+    }
+  | {
       type: 'error';
       ts: number;
       message: string;

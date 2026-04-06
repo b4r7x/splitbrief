@@ -33,7 +33,7 @@ function minimalConfig(tool: PlannerTool) {
     planner: { tool },
     implementer: { provider: 'ollama', model: 'test', apiBase: '', contextLength: 8192, temperature: 0.3 },
     validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitPerTask: true },
+    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none' },
   } as const;
 }
 
