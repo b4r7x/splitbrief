@@ -4,7 +4,6 @@ import { resolve } from 'node:path';
 import { loadConfig, initConfig, configPath } from '../core/config.js';
 import { detectCapabilities } from '../engine/providers.js';
 import { isGitRepo } from '../utils/git.js';
-import { runPicker } from './picker.js';
 
 export interface WorkflowOpts {
   auto?: boolean;
@@ -66,7 +65,7 @@ export async function ensureGitAndConfig(projectDir: string): Promise<void> {
   }
 }
 
-export async function setupWorkflow(opts: WorkflowOpts): Promise<{ projectDir: string; useFullscreen: boolean; contextLength?: number }> {
+export async function setupWorkflow(opts: WorkflowOpts): Promise<{ projectDir: string; useFullscreen: boolean; contextLength?: number; needsSetup?: boolean }> {
   const projectDir = resolveProjectDir(opts.project);
 
   await assertGitRepo(projectDir);
@@ -77,7 +76,10 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<{ projectDir: s
       console.log('No config found. Creating default .tiny-spec/config.yaml');
       initConfig(projectDir);
     } else {
-      await runPicker(projectDir);
+      initConfig(projectDir);
+      const isInteractive = process.stdout.isTTY && !process.env['CI'];
+      const useFullscreen = opts.fullscreen !== false && isInteractive;
+      return { projectDir, useFullscreen, needsSetup: true };
     }
   }
 

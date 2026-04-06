@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../ui/theme.js';
+import { OverlayPanel } from '../ui/overlay-panel.js';
 import type { SkillMeta } from '../types.js';
 import type { Theme } from '../ui/theme.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
@@ -129,69 +130,58 @@ export function SkillsPicker() {
 
   if (skills.length === 0) {
     return (
-      <Box flexDirection="column" width={cols} height={rows} alignItems="center" justifyContent="center">
-        <Box flexDirection="column" width={contentWidth}>
-          <Box justifyContent="center" marginBottom={1}>
-            <Text bold color={t.accent}>Planner Skills</Text>
-          </Box>
-          <Text color={t.textDim}>  No skills found.</Text>
-          <Text color={t.textDim}>  Add skills to .claude/skills/ or .tiny-spec/skills/ to get started.</Text>
-          <Box justifyContent="center" marginTop={1}>
-            <Text color={t.textDim}>Esc close</Text>
-          </Box>
-        </Box>
-      </Box>
+      <OverlayPanel title="Planner Skills" hint="Esc close" compact>
+        <Text color={t.textDim}>  No skills found.</Text>
+        <Text color={t.textDim}>  Add skills to .claude/skills/ or .tiny-spec/skills/ to get started.</Text>
+      </OverlayPanel>
     );
   }
 
+  const hintText = navigating
+    ? 'Space toggle  Ctrl+A all  Enter confirm  Esc cancel'
+    : '\u2191\u2193 to navigate  Ctrl+A all  Enter confirm  Esc cancel';
+
+  const isCompact = flatList.length <= maxVisible;
   const showScrollUp = scrollOffset > 0;
   const showScrollDown = scrollOffset + maxVisible < flatList.length;
   const entries = buildSectionEntries(visibleSlice, scrollOffset, projectSkills.length, globalSkills.length);
 
   return (
-    <Box flexDirection="column" width={cols} height={rows} alignItems="center" paddingTop={1}>
-      <Box flexDirection="column" width={contentWidth}>
-        <Box justifyContent="center" marginBottom={1}>
-          <Text bold color={t.accent}>Planner Skills</Text>
-          <Text color={t.textDim}>{' ('}{checked.size}{' selected)'}</Text>
-        </Box>
-
-        <Box borderStyle="round" borderColor={t.border} paddingX={1} marginBottom={1} width={contentWidth}>
-          <Text color={t.accent}>{'> '}</Text>
-          <Text>{filter || <Text color={t.textDim}>Type to filter...</Text>}</Text>
-        </Box>
-
-        {showScrollUp && <Text color={t.textDim}>{'  \u2191 more'}</Text>}
-
-        <Box flexDirection="column">
-          {entries.map(({ skill, globalIndex, sectionHeader, sectionGap }) => (
-            <Fragment key={skill.id}>
-              {sectionHeader && (
-                <Box marginTop={sectionGap ? 1 : 0} marginBottom={0}>
-                  <Text bold color={t.text}>{'  '}{sectionHeader}</Text>
-                </Box>
-              )}
-              <SkillRow
-                skill={skill}
-                isCursor={globalIndex === selectedIndex}
-                isChecked={checked.has(skill.id)}
-                nameColWidth={nameColWidth}
-                descMaxWidth={descMaxWidth}
-                theme={t}
-              />
-            </Fragment>
-          ))}
-          {flatList.length === 0 && <Text color={t.textDim}>{'  No matching skills'}</Text>}
-        </Box>
-
-        {showScrollDown && <Text color={t.textDim}>{'  \u2193 more'}</Text>}
+    <OverlayPanel
+      title={`Planner Skills (${checked.size} selected)`}
+      hint={hintText}
+      compact={isCompact}
+      bordered={false}
+    >
+      <Box borderStyle="round" borderColor={t.border} paddingX={1} marginBottom={1}>
+        <Text color={t.accent}>{'> '}</Text>
+        <Text>{filter || <Text color={t.textDim}>Type to filter...</Text>}</Text>
       </Box>
 
-      <Box flexGrow={1} />
+      {showScrollUp && <Text color={t.textDim}>{'  \u2191 more'}</Text>}
 
-      <Box justifyContent="center" paddingBottom={1}>
-        <Text color={t.textDim}>{navigating ? 'Space toggle  Ctrl+A all  Enter confirm  Esc cancel' : '\u2191\u2193 to navigate  Ctrl+A all  Enter confirm  Esc cancel'}</Text>
+      <Box flexDirection="column">
+        {entries.map(({ skill, globalIndex, sectionHeader, sectionGap }) => (
+          <Fragment key={skill.id}>
+            {sectionHeader && (
+              <Box marginTop={sectionGap ? 1 : 0} marginBottom={0}>
+                <Text bold color={t.text}>{'  '}{sectionHeader}</Text>
+              </Box>
+            )}
+            <SkillRow
+              skill={skill}
+              isCursor={globalIndex === selectedIndex}
+              isChecked={checked.has(skill.id)}
+              nameColWidth={nameColWidth}
+              descMaxWidth={descMaxWidth}
+              theme={t}
+            />
+          </Fragment>
+        ))}
+        {flatList.length === 0 && <Text color={t.textDim}>{'  No matching skills'}</Text>}
       </Box>
-    </Box>
+
+      {showScrollDown && <Text color={t.textDim}>{'  \u2193 more'}</Text>}
+    </OverlayPanel>
   );
 }

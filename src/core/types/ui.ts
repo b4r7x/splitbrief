@@ -2,16 +2,17 @@ import type { TaskStatus } from './workflow.js';
 import type { Summary } from './summary.js';
 import type { WorkflowState } from './workflow.js';
 
-export type Screen = 'home' | 'workflow' | 'summary';
+export type Screen = 'home' | 'workflow' | 'summary' | 'setup';
 
-export const ALL_SCREENS: Screen[] = ['home', 'workflow', 'summary'];
+export const ALL_SCREENS: Screen[] = ['home', 'workflow', 'summary', 'setup'];
 
 export type InputMode = 'normal' | 'review' | 'question';
 
 export type RouteData =
   | { screen: 'home' }
   | { screen: 'workflow'; feature: string; resumeState?: WorkflowState }
-  | { screen: 'summary'; summary: Summary };
+  | { screen: 'summary'; summary: Summary }
+  | { screen: 'setup'; onComplete?: 'home' | 'workflow'; feature?: string };
 
 export interface Session {
   id: string;

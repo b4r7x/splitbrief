@@ -22,6 +22,7 @@ export interface TwoColumnPickerProps<L, R> {
   leftLabel?: string;
   rightLabel?: string;
   inputDisabled?: boolean;
+  stepLabel?: string;
 }
 
 export function TwoColumnPicker<L, R>({
@@ -38,9 +39,10 @@ export function TwoColumnPicker<L, R>({
   onConfirm,
   onCancel,
   rightPlaceholder,
-  leftLabel = 'Backends',
+  leftLabel = 'Tools',
   rightLabel = 'Models',
   inputDisabled,
+  stepLabel,
 }: TwoColumnPickerProps<L, R>) {
   const t = useTheme();
   const { cols, rows, isSmall } = useResponsiveLayout();
@@ -61,10 +63,9 @@ export function TwoColumnPicker<L, R>({
   const effectiveLeftIndex = Math.min(leftIndex, Math.max(0, filteredLeft.length - 1));
   const effectiveRightIndex = Math.min(rightIndex, Math.max(0, filteredRight.length - 1));
 
-  const contentWidth = Math.min(cols - 4, isSmall ? 76 : 110);
-  const leftWidth = Math.floor(contentWidth * 0.4);
-  const rightWidth = contentWidth - leftWidth - 2;
-  const maxVisible = Math.max(rows - 8, 5);
+  const contentMaxWidth = isSmall ? 76 : 110;
+  const columnHeight = Math.min(Math.floor(rows * 0.6), 22);
+  const maxVisible = Math.max(columnHeight - 5, 3);
 
   const leftScrollOffset = computeScrollOffset(effectiveLeftIndex, maxVisible, filteredLeft.length);
   const rightScrollOffset = computeScrollOffset(effectiveRightIndex, maxVisible, filteredRight.length);
@@ -167,79 +168,110 @@ export function TwoColumnPicker<L, R>({
   const showRightScrollUp = rightScrollOffset > 0;
   const showRightScrollDown = rightScrollOffset + maxVisible < filteredRight.length;
 
+  const displayTitle = stepLabel ? `${title} \u2014 ${stepLabel}` : title;
+
   return (
-    <Box flexDirection="column" width={cols} height={rows} alignItems="center" paddingTop={1}>
-      <Box flexDirection="column" width={contentWidth}>
-        <Box justifyContent="center" marginBottom={1}>
-          <Text bold color={t.accent}>{title}</Text>
+    <Box width={cols} height={rows} flexDirection="column" alignItems="center" justifyContent="center">
+      {/* Title */}
+      <Box justifyContent="center" marginBottom={1}>
+        <Text bold color={t.accent}>{displayTitle}</Text>
+      </Box>
+
+      {/* Columns */}
+      <Box gap={1} width={Math.min(cols - 4, contentMaxWidth)} flexDirection="row">
+        {/* Left column */}
+        <Box
+          flexDirection="column"
+          flexGrow={1}
+          flexBasis={0}
+          height={columnHeight}
+          borderStyle="round"
+          borderColor={leftActive ? t.accent : t.border}
+          paddingX={1}
+        >
+          <Text bold color={leftActive ? t.accent : t.textDim}>
+            {leftLabel}
+          </Text>
+          <Box marginBottom={1}>
+            <Text color={leftActive ? t.accent : t.textDim}>{'> '}</Text>
+            {leftFilter
+              ? <Text color={t.text}>{leftFilter}</Text>
+              : <Text color={t.textDim}>Type to filter...</Text>}
+          </Box>
+
+          {showLeftScrollUp && <Text color={t.textDim}>{'\u2191 more'}</Text>}
+
+          {filteredLeft.length === 0 ? (
+            <Text color={t.textDim}>No items</Text>
+          ) : (
+            leftSlice.map((item, i) => {
+              const idx = leftScrollOffset + i;
+              const isCursor = leftActive && idx === effectiveLeftIndex;
+              return (
+                <Box key={leftGetKey(item)}>
+                  <Text color={isCursor ? t.accent : t.textDim}>
+                    {isCursor ? '\u25B8 ' : '  '}
+                  </Text>
+                  {leftRenderRow(item, isCursor)}
+                </Box>
+              );
+            })
+          )}
+
+          {showLeftScrollDown && <Text color={t.textDim}>{'\u2193 more'}</Text>}
         </Box>
 
-        <Box gap={2}>
-          <Box flexDirection="column" width={leftWidth}>
-            <Text bold={leftActive} color={leftActive ? t.accent : t.textDim}>
-              {leftLabel}{leftFilter ? ` [${leftFilter}]` : ''}
-            </Text>
-            <Text color={leftActive ? t.accent : t.textDim}>
-              {'─'.repeat(leftWidth)}
-            </Text>
-
-            {showLeftScrollUp && <Text color={t.textDim}>{'  \u2191 more'}</Text>}
-
-            {filteredLeft.length === 0 ? (
-              <Text color={t.textDim}>  No items</Text>
-            ) : (
-              leftSlice.map((item, i) => {
-                const idx = leftScrollOffset + i;
-                const isCursor = leftActive && idx === effectiveLeftIndex;
-                return (
-                  <Box key={leftGetKey(item)}>
-                    <Text color={isCursor ? t.accent : t.textDim}>
-                      {isCursor ? '\u25B8 ' : '  '}
-                    </Text>
-                    {leftRenderRow(item, isCursor)}
-                  </Box>
-                );
-              })
-            )}
-
-            {showLeftScrollDown && <Text color={t.textDim}>{'  \u2193 more'}</Text>}
+        {/* Right column */}
+        <Box
+          flexDirection="column"
+          flexGrow={1}
+          flexBasis={0}
+          height={columnHeight}
+          borderStyle="round"
+          borderColor={rightActive ? t.accent : t.border}
+          paddingX={1}
+        >
+          <Text bold color={rightActive ? t.accent : t.textDim}>
+            {rightLabel}
+          </Text>
+          <Box marginBottom={1}>
+            <Text color={rightActive ? t.accent : t.textDim}>{'> '}</Text>
+            {rightFilter
+              ? <Text color={t.text}>{rightFilter}</Text>
+              : <Text color={t.textDim}>Type to filter...</Text>}
           </Box>
 
-          <Box flexDirection="column" width={rightWidth}>
-            <Text bold={rightActive} color={rightActive ? t.accent : t.textDim}>
-              {rightLabel}{rightFilter ? ` [${rightFilter}]` : ''}
-            </Text>
-            <Text color={rightActive ? t.accent : t.textDim}>
-              {'─'.repeat(rightWidth)}
-            </Text>
+          {showRightScrollUp && <Text color={t.textDim}>{'\u2191 more'}</Text>}
 
-            {showRightScrollUp && <Text color={t.textDim}>{'  \u2191 more'}</Text>}
+          {filteredRight.length === 0 ? (
+            rightPlaceholder ?? (
+              <Box flexDirection="column">
+                <Text color={t.textDim}>No models detected</Text>
+                <Text color={t.textDim} dimColor>Start a provider to see models:</Text>
+                <Text color={t.textDim} dimColor>  ollama serve</Text>
+              </Box>
+            )
+          ) : (
+            rightSlice.map((item, i) => {
+              const idx = rightScrollOffset + i;
+              const isCursor = rightActive && idx === effectiveRightIndex;
+              return (
+                <Box key={rightGetKey(item)}>
+                  <Text color={isCursor ? t.accent : t.textDim}>
+                    {isCursor ? '\u25B8 ' : '  '}
+                  </Text>
+                  {rightRenderRow(item, isCursor)}
+                </Box>
+              );
+            })
+          )}
 
-            {filteredRight.length === 0 ? (
-              rightPlaceholder ?? <Text color={t.textDim}>  No models available</Text>
-            ) : (
-              rightSlice.map((item, i) => {
-                const idx = rightScrollOffset + i;
-                const isCursor = rightActive && idx === effectiveRightIndex;
-                return (
-                  <Box key={rightGetKey(item)}>
-                    <Text color={isCursor ? t.accent : t.textDim}>
-                      {isCursor ? '\u25B8 ' : '  '}
-                    </Text>
-                    {rightRenderRow(item, isCursor)}
-                  </Box>
-                );
-              })
-            )}
-
-            {showRightScrollDown && <Text color={t.textDim}>{'  \u2193 more'}</Text>}
-          </Box>
+          {showRightScrollDown && <Text color={t.textDim}>{'\u2193 more'}</Text>}
         </Box>
       </Box>
 
-      <Box flexGrow={1} />
-
-      <Box justifyContent="center" paddingBottom={1}>
+      {/* Keys */}
+      <Box justifyContent="center" marginTop={1}>
         <Text color={t.textDim}>{'\u2190\u2192 column  \u2191\u2193 select  Enter confirm  Esc cancel'}</Text>
       </Box>
     </Box>

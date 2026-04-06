@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../ui/theme.js';
 import { Spinner } from '../ui/spinner.js';
@@ -8,7 +8,6 @@ import { overlayStore } from '../stores/overlay.js';
 import { feedbackStore } from '../stores/error.js';
 import { detectAvailableImplementers } from '../engine/detection.js';
 import { getProvider } from '../engine/providers/registry.js';
-import { truncate } from '../utils/format.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 import { useAsyncDetection } from '../hooks/use-async-detection.js';
 import { useShellCommand } from '../hooks/use-shell-command.js';
@@ -54,6 +53,10 @@ export function ImplementerPicker() {
     ? modelsForProvider(detections, effectiveProvider)
     : [];
 
+  useEffect(() => {
+    overlayStore.setExclusive(shellActive);
+  }, [shellActive]);
+
   const shell = useShellCommand(config.implementer.command ?? '', {
     isActive: shellActive,
     onCancel: () => setShellActive(false),
@@ -74,7 +77,6 @@ export function ImplementerPicker() {
   }
 
   const backends = buildBackendItems(detections);
-  const currentProvider = config.implementer.provider;
   const currentModel = config.implementer.model;
 
   return (
@@ -90,26 +92,24 @@ export function ImplementerPicker() {
       leftFilterFn={(item, q) => item.provider.toLowerCase().includes(q.toLowerCase())}
       rightFilterFn={(item, q) => item.model.toLowerCase().includes(q.toLowerCase())}
       leftRenderRow={(item, isCursor) => {
-        const name = truncate(item.provider, 18).padEnd(18);
         const locality = item.provider === 'shell'
           ? 'custom command'
           : item.isLocal ? 'local, free' : 'remote';
-        const isCurrent = item.provider === currentProvider;
+        const isSelected = item.provider === effectiveProvider;
         return (
           <Box>
-            <Text color={isCursor ? t.accent : t.text} bold={isCursor}>{name}</Text>
+            <Text color={isCursor ? t.accent : t.text} bold={isCursor}>{item.provider}</Text>
             <Text color={t.textDim}>  {locality}</Text>
-            {isCurrent && <Text color={t.success}>{' \u2713'}</Text>}
+            {isSelected && <Text color={t.success}> {'\u2713'}</Text>}
           </Box>
         );
       }}
       rightRenderRow={(item, isCursor) => {
-        const name = truncate(item.model, 40).padEnd(40);
         const isCurrent = item.model === currentModel;
         return (
           <Box>
-            <Text color={isCursor ? t.accent : t.text} bold={isCursor}>{name}</Text>
-            {isCurrent && <Text color={t.success}>{' \u2713'}</Text>}
+            <Text color={isCursor ? t.accent : t.text} bold={isCursor}>{item.model}</Text>
+            {isCurrent && <Text color={t.success}> {'\u2713'}</Text>}
           </Box>
         );
       }}

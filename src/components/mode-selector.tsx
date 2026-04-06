@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../ui/theme.js';
+import { OverlayPanel } from '../ui/overlay-panel.js';
 import { configStore } from '../stores/config.js';
 import { overlayStore } from '../stores/overlay.js';
 import { feedbackStore } from '../stores/error.js';
-import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 import type { WorkflowMode } from '../types.js';
 
 const MODES: { mode: WorkflowMode; calls: number; approvals: number; size: string }[] = [
@@ -16,7 +16,6 @@ const MODES: { mode: WorkflowMode; calls: number; approvals: number; size: strin
 export function ModeSelector() {
   const t = useTheme();
   const config = configStore.use(s => s.config);
-  const { cols, rows } = useResponsiveLayout();
   const currentMode = config?.workflow.mode ?? 'standard';
   const currentIdx = MODES.findIndex(m => m.mode === currentMode);
   const [selected, setSelected] = useState(Math.max(0, currentIdx));
@@ -36,40 +35,33 @@ export function ModeSelector() {
 
   if (!config) return null;
 
-  const width = Math.min(cols - 4, 55);
-
   return (
-    <Box width={cols} height={rows} alignItems="center" justifyContent="center">
-      <Box flexDirection="column" width={width} borderStyle="round" borderColor={t.border} paddingX={2} paddingY={1}>
-        <Box justifyContent="center" marginBottom={1}>
-          <Text bold color={t.accent}>Workflow Mode</Text>
-        </Box>
-
-        {MODES.map((m, i) => {
-          const isSelected = i === selected;
-          const isCurrent = m.mode === currentMode;
-          return (
-            <Box key={m.mode} justifyContent="space-between">
-              <Text color={isSelected ? t.accent : t.textDim}>
-                {isSelected ? '\u25B8 ' : '  '}
-                <Text color={isSelected ? t.text : t.textDim} bold={isSelected}>
-                  {m.mode}
-                </Text>
+    <OverlayPanel
+      title="Workflow Mode"
+      hint={'\u2191\u2193 select  Enter confirm  Esc cancel'}
+      compact
+      maxWidth={55}
+    >
+      {MODES.map((m, i) => {
+        const isSelected = i === selected;
+        const isCurrent = m.mode === currentMode;
+        return (
+          <Box key={m.mode} justifyContent="space-between">
+            <Text color={isSelected ? t.accent : t.textDim}>
+              {isSelected ? '\u25B8 ' : '  '}
+              <Text color={isSelected ? t.text : t.textDim} bold={isSelected}>
+                {m.mode}
               </Text>
-              <Box gap={1}>
-                <Text color={t.textDim}>
-                  {m.calls} call{m.calls === 1 ? '' : 's'} {'\u00B7'} {m.approvals} approval{m.approvals === 1 ? '' : 's'} {'\u00B7'} {m.size}
-                </Text>
-                {isCurrent && <Text color={t.success}>{'\u2713'}</Text>}
-              </Box>
+            </Text>
+            <Box gap={1}>
+              <Text color={t.textDim}>
+                {m.calls} call{m.calls === 1 ? '' : 's'} {'\u00B7'} {m.approvals} approval{m.approvals === 1 ? '' : 's'} {'\u00B7'} {m.size}
+              </Text>
+              {isCurrent && <Text color={t.success}>{'\u2713'}</Text>}
             </Box>
-          );
-        })}
-
-        <Box justifyContent="center" marginTop={1}>
-          <Text color={t.textDim}>{'\u2191\u2193'} select  Enter confirm  Esc cancel</Text>
-        </Box>
-      </Box>
-    </Box>
+          </Box>
+        );
+      })}
+    </OverlayPanel>
   );
 }

@@ -2,16 +2,17 @@ import { createStore, storeBase } from './create-store.js';
 import type { Screen, RouteData, Summary, WorkflowState } from '../types.js';
 
 const transitions: Record<Screen, Screen[]> = {
-  home: ['workflow'],
+  home: ['workflow', 'setup'],
   workflow: ['summary', 'home'],
   summary: ['home', 'workflow'],
+  setup: ['home', 'workflow'],
 };
 
 const initial: RouteData = { screen: 'home' };
 
 const store = createStore<RouteData>(initial);
 
-function navigate(to: Screen, data?: { feature?: string; summary?: Summary; resumeState?: WorkflowState }) {
+function navigate(to: Screen, data?: { feature?: string; summary?: Summary; resumeState?: WorkflowState; onComplete?: 'home' | 'workflow' }) {
   const current = store.get().screen;
   if (!transitions[current].includes(to)) {
     throw new Error(`Cannot navigate from "${current}" to "${to}"`);
@@ -27,6 +28,9 @@ function navigate(to: Screen, data?: { feature?: string; summary?: Summary; resu
     case 'summary':
       if (!data?.summary) throw new Error('Summary data required');
       store.set({ screen: 'summary', summary: data.summary });
+      break;
+    case 'setup':
+      store.set({ screen: 'setup', onComplete: data?.onComplete, feature: data?.feature });
       break;
   }
 }
