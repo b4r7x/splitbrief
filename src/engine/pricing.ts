@@ -1,3 +1,13 @@
+// Hardcoded model pricing table.
+//
+// Source: provider pricing pages, verified 2026-04-07.
+// Last updated: 2026-04-07
+//
+// For live pricing in the future, see options researched in
+// /Users/voitz/.claude/plans/agile-moseying-mango.md (Refactor 6).
+// OpenRouter (https://openrouter.ai/api/v1/models, no auth) is the
+// recommended source for a future pricing-fetcher.ts.
+
 export interface PricingInfo {
   inputPer1M: number;
   outputPer1M: number;
@@ -11,7 +21,7 @@ const PRICING: Record<string, PricingInfo> = {
   'claude-haiku-4-5': { inputPer1M: 1, outputPer1M: 5, isLocal: false, name: 'Claude Haiku 4.5' },
   'gpt-4o': { inputPer1M: 2.5, outputPer1M: 10, isLocal: false, name: 'GPT-4o' },
   'o3': { inputPer1M: 2, outputPer1M: 8, isLocal: false, name: 'o3' },
-  'o4-mini': { inputPer1M: 1.1, outputPer1M: 4.4, isLocal: false, name: 'o4-mini' },
+  'o4-mini': { inputPer1M: 0.55, outputPer1M: 2.2, isLocal: false, name: 'o4-mini' },
   'deepseek-chat': { inputPer1M: 0.28, outputPer1M: 0.42, isLocal: false, name: 'DeepSeek V3' },
   'deepseek-reasoner': { inputPer1M: 0.28, outputPer1M: 0.42, isLocal: false, name: 'DeepSeek R1' },
   'gemini-2.5-pro': { inputPer1M: 1.25, outputPer1M: 10, isLocal: false, name: 'Gemini 2.5 Pro' },
@@ -26,6 +36,9 @@ const DEFAULT_PLANNER_PRICING: Record<string, PricingInfo> = {
   'opencode': { ...PRICING['claude-sonnet-4-6'], name: 'OpenCode' },
   'aider': { ...PRICING['claude-sonnet-4-6'], name: 'Aider' },
   'agent-sdk': { ...PRICING['claude-opus-4-6'], name: 'Agent SDK (Opus)' },
+  'ollama': LOCAL_PRICING,
+  'lm-studio': LOCAL_PRICING,
+  'deepseek': { ...PRICING['deepseek-chat'], name: 'DeepSeek' },
 };
 
 export function getPricing(modelOrProvider: string): PricingInfo {
@@ -42,6 +55,11 @@ const IMPLEMENTER_PRICING: Record<string, PricingInfo> = {
   deepseek: { ...PRICING['deepseek-chat'], name: 'DeepSeek V3' },
   openrouter: { inputPer1M: 0.15, outputPer1M: 0.60, isLocal: false, name: 'OpenRouter' },
   shell: LOCAL_PRICING,
+  'claude-code': { ...PRICING['claude-opus-4-6'], name: 'Claude Code' },
+  codex: { ...PRICING['o4-mini'], name: 'Codex' },
+  opencode: { ...PRICING['claude-sonnet-4-6'], name: 'OpenCode' },
+  aider: { ...PRICING['claude-sonnet-4-6'], name: 'Aider' },
+  'agent-sdk': { ...PRICING['claude-opus-4-6'], name: 'Agent SDK' },
 };
 
 export function getImplementerPricing(provider: string): PricingInfo {

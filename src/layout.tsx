@@ -12,12 +12,13 @@ export function Layout({ screen, overlay }: LayoutProps) {
   const { cols, rows } = useResponsiveLayout();
   const hasOverlay = overlay !== null;
   const exclusive = overlayStore.use(s => s.exclusive);
+  const hasStack = overlayStore.use(s => s.stack.length > 0);
 
   useInput(
     (_input, key) => {
       if (key.escape) overlayStore.close();
     },
-    { isActive: hasOverlay && !exclusive },
+    { isActive: hasOverlay && !exclusive && !hasStack },
   );
 
   return (

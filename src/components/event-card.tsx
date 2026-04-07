@@ -7,6 +7,7 @@ import { PlannerText } from '../ui/markdown.js';
 import { Spinner } from '../ui/spinner.js';
 import { Gutter } from './gutter.js';
 import { formatDuration } from '../utils/format.js';
+import { formatModelName } from '../utils/model-names.js';
 
 interface EventCardProps {
   event: TuiEvent;
@@ -50,7 +51,7 @@ function TaskStartCard({ event, theme: t }: { event: Extract<TuiEvent, { type: '
 function ImplementerCard({ event, diffExpanded, theme: t }: { event: Extract<TuiEvent, { type: 'implementer-generate' }>; diffExpanded: boolean; theme: Theme }) {
   if (event.status === 'running') {
     const fileHint = event.file ? `generating ${event.file}...` : 'generating...';
-    return <Spinner label={`${event.model ?? 'local'}  ${fileHint}`} color={t.implementer} startTime={event.ts} />;
+    return <Spinner label={`${formatModelName(event.model ?? 'local')}  ${fileHint}`} color={t.implementer} startTime={event.ts} />;
   }
 
   const dur = event.duration ? formatDuration(event.duration) : '';
@@ -58,7 +59,7 @@ function ImplementerCard({ event, diffExpanded, theme: t }: { event: Extract<Tui
   if (event.status === 'failed') {
     return (
       <Box>
-        <Text color={t.implementer}>{event.model ?? '?'}</Text>
+        <Text color={t.implementer}>{formatModelName(event.model ?? '?')}</Text>
         <Text color={t.error}>  failed</Text>
       </Box>
     );
@@ -67,7 +68,7 @@ function ImplementerCard({ event, diffExpanded, theme: t }: { event: Extract<Tui
   return (
     <Box flexDirection="column">
       <Box>
-        <Text color={t.implementer}>{event.model ?? '?'}</Text>
+        <Text color={t.implementer}>{formatModelName(event.model ?? '?')}</Text>
         <Text color={t.textDim}>  {dur}</Text>
       </Box>
       {event.file && event.diff != null && event.linesAdded != null && event.linesRemoved != null ? (

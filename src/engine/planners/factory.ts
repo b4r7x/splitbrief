@@ -35,11 +35,14 @@ export async function createPlanner(config: Config): Promise<PlannerBackend> {
       return createShellPlanner(config);
     }
     case 'anthropic':
-    case 'openrouter': {
+    case 'openrouter':
+    case 'ollama':
+    case 'lm-studio':
+    case 'deepseek': {
       const { createApiPlanner } = await import('./api.js');
       return createApiPlanner({ ...config, planner: { ...config.planner, provider: tool } });
     }
     default:
-      throw new Error(`Unknown planner tool: ${tool}. Supported: claude-code, codex, opencode, aider, agent-sdk, shell, anthropic, openrouter`);
+      throw new Error(`Unknown planner tool: ${tool}. Supported: claude-code, codex, opencode, aider, agent-sdk, shell, anthropic, openrouter, ollama, lm-studio, deepseek`);
   }
 }

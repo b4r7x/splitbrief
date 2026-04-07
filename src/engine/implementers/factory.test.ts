@@ -28,6 +28,24 @@ describe('createImplementer', () => {
     expect(implementer.name).toBe('agent');
   });
 
+  it('creates a tool-based backend for type claude-code', async () => {
+    const config = makeConfig({ implementer: { type: 'claude-code' } });
+    const implementer = await createImplementer(config);
+    expect(implementer.name).toBe('tool:claude-code');
+  });
+
+  it('creates a tool-based backend for type codex', async () => {
+    const config = makeConfig({ implementer: { type: 'codex' } });
+    const implementer = await createImplementer(config);
+    expect(implementer.name).toBe('tool:codex');
+  });
+
+  it('creates an agent-sdk backend for type agent-sdk', async () => {
+    const config = makeConfig({ implementer: { type: 'agent-sdk' } });
+    const implementer = await createImplementer(config);
+    expect(implementer.name).toBe('agent-sdk');
+  });
+
   it('throws on unknown type', async () => {
     const config = makeConfig();
     (config.implementer as any).type = 'unknown';

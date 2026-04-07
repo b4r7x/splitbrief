@@ -27,8 +27,8 @@ describe('getPlannerPricing', () => {
 
   it('returns o4-mini pricing for codex', () => {
     const p = getPlannerPricing('codex');
-    expect(p.inputPer1M).toBe(1.1);
-    expect(p.outputPer1M).toBe(4.4);
+    expect(p.inputPer1M).toBe(0.55);
+    expect(p.outputPer1M).toBe(2.2);
     expect(p.isLocal).toBe(false);
   });
 });

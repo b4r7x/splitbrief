@@ -17,8 +17,7 @@ import { CommandPalette } from './components/command-palette.js';
 import { SkillsPicker } from './components/skills-picker.js';
 import { SettingsOverlay } from './components/settings-overlay.js';
 import { ModeSelector } from './components/mode-selector.js';
-import { PlannerPicker } from './components/planner-picker.js';
-import { ImplementerPicker } from './components/implementer-picker.js';
+import { ToolModelPicker } from './components/tool-model-picker.js';
 import type { Screen, OverlayType, SlashCommandDef, CommandContext, CommandPaletteItem } from './types.js';
 
 export default function App() {
@@ -106,9 +105,9 @@ function renderOverlay({ active, screen, commands, paletteItems }: {
     case 'mode-selector':
       return <ModeSelector />;
     case 'planner-picker':
-      return <PlannerPicker />;
+      return <ToolModelPicker role="planner" />;
     case 'implementer-picker':
-      return <ImplementerPicker />;
+      return <ToolModelPicker role="implementer" />;
     default: {
       const _exhaustive: never = active;
       return null;

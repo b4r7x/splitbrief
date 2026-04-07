@@ -1,6 +1,6 @@
 import { KNOWN_PROVIDER_NAMES } from '../engine/providers/registry.js';
 
-const VALID_PLANNER_TOOLS = ['claude-code', 'codex', 'opencode', 'aider', 'agent-sdk', 'shell', 'anthropic', 'openrouter'] as const;
+const VALID_PLANNER_TOOLS = ['claude-code', 'codex', 'opencode', 'aider', 'agent-sdk', 'shell', 'anthropic', 'openrouter', 'ollama', 'lm-studio', 'deepseek'] as const;
 
 function get(obj: unknown, ...keys: string[]): unknown {
   let current: unknown = obj;
@@ -39,6 +39,13 @@ export function validateConfig(config: Record<string, unknown>): ConfigError[] {
     }
   }
 
+  if (tool === 'deepseek') {
+    const apiKey = get(config, 'planner', 'apiKey') ?? process.env['DEEPSEEK_API_KEY'];
+    if (!apiKey) {
+      errors.push({ path: 'planner.apiKey', message: 'DeepSeek planner requires planner.apiKey or DEEPSEEK_API_KEY env var' });
+    }
+  }
+
   if (tool === 'shell') {
     const command = get(config, 'planner', 'command');
     if (!command || typeof command !== 'string') {
@@ -50,9 +57,10 @@ export function validateConfig(config: Record<string, unknown>): ConfigError[] {
     }
   }
 
+  const VALID_IMPL_TYPES = ['api', 'shell', 'agent', 'agent-sdk', 'claude-code', 'codex', 'opencode', 'aider'];
   const implType = get(config, 'implementer', 'type');
-  if (implType !== undefined && implType !== 'api' && implType !== 'shell' && implType !== 'agent') {
-    errors.push({ path: 'implementer.type', message: `Must be one of: api, shell, agent (got ${JSON.stringify(implType)})` });
+  if (implType !== undefined && (typeof implType !== 'string' || !VALID_IMPL_TYPES.includes(implType))) {
+    errors.push({ path: 'implementer.type', message: `Must be one of: ${VALID_IMPL_TYPES.join(', ')} (got ${JSON.stringify(implType)})` });
   }
 
   if (implType === 'shell' || implType === 'agent') {
