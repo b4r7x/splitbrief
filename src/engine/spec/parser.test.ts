@@ -78,8 +78,8 @@ describe('parseTasks', () => {
 
     expect(tasks.length).toBe(3);
 
-    const t1 = tasks.find((t) => t.id === 'T001')!;
-    expect(t1).toBeTruthy();
+    const t1 = tasks.find((t) => t.id === 'T001');
+    if (!t1) throw new Error('T001 not found');
     expect(t1.title).toBe('Create project structure');
     expect(t1.action).toBe('create');
     expect(t1.file).toBe('src/index.ts');
@@ -91,8 +91,8 @@ describe('parseTasks', () => {
     expect(t1.pattern).toBe('Use mkdir -p equivalent.');
     expect(t1.status).toBe('pending');
 
-    const t3 = tasks.find((t) => t.id === 'T003')!;
-    expect(t3).toBeTruthy();
+    const t3 = tasks.find((t) => t.id === 'T003');
+    if (!t3) throw new Error('T003 not found');
     expect(t3.action).toBe('modify');
     expect(t3.dependsOn).toEqual(['T001', 'T002']);
 
@@ -125,6 +125,7 @@ A task with no signature or pattern sections.
     expect(tasks.length).toBe(1);
 
     const task = tasks[0];
+    if (!task) throw new Error('expected task');
     expect(task.signature).toBe(undefined);
     expect(task.pattern).toBe(undefined);
     expect(task.description).toBe('A task with no signature or pattern sections.');
@@ -164,7 +165,7 @@ This task has missing required fields and invalid action.
 
     const tasks = parseTasks(input);
     expect(tasks.length).toBe(1);
-    expect(tasks[0].id).toBe('T020');
+    expect(tasks[0]?.id).toBe('T020');
   });
 
   it('parses bare depends_on without brackets as single-element array', () => {
@@ -188,7 +189,7 @@ Task with bare depends_on value.
 
     const tasks = parseTasks(input);
     expect(tasks.length).toBe(1);
-    expect(tasks[0].dependsOn).toEqual(['T001']);
+    expect(tasks[0]?.dependsOn).toEqual(['T001']);
   });
 
   it('strips double quotes from bare depends_on value', () => {
@@ -212,7 +213,7 @@ Task with double-quoted depends_on value.
 
     const tasks = parseTasks(input);
     expect(tasks.length).toBe(1);
-    expect(tasks[0].dependsOn).toEqual(['T001']);
+    expect(tasks[0]?.dependsOn).toEqual(['T001']);
   });
 
   it('strips single quotes from bare depends_on value', () => {
@@ -236,7 +237,7 @@ Task with single-quoted depends_on value.
 
     const tasks = parseTasks(input);
     expect(tasks.length).toBe(1);
-    expect(tasks[0].dependsOn).toEqual(['T001']);
+    expect(tasks[0]?.dependsOn).toEqual(['T001']);
   });
 
   it('strips quotes from array depends_on values', () => {
@@ -260,7 +261,7 @@ Task with quoted array depends_on values.
 
     const tasks = parseTasks(input);
     expect(tasks.length).toBe(1);
-    expect(tasks[0].dependsOn).toEqual(['T001', 'T002']);
+    expect(tasks[0]?.dependsOn).toEqual(['T001', 'T002']);
   });
 
   it('throws on circular dependencies', () => {
@@ -332,7 +333,7 @@ export interface Config {
 
     const tasks = parseTasks(input);
     expect(tasks.length).toBe(1);
-    expect(tasks[0].typeDefs).toBe('export interface Config {\n  name: string;\n}');
+    expect(tasks[0]?.typeDefs).toBe('export interface Config {\n  name: string;\n}');
   });
 
   it('parses Implementation Steps section', () => {
@@ -361,7 +362,7 @@ Implement something.
 
     const tasks = parseTasks(input);
     expect(tasks.length).toBe(1);
-    expect(tasks[0].implementationSteps).toEqual([
+    expect(tasks[0]?.implementationSteps).toEqual([
       'Import Config from types',
       'Create function that returns void',
       'Add validation logic',
@@ -393,8 +394,8 @@ Has implementation steps but no type definitions.
 
     const tasks = parseTasks(input);
     expect(tasks.length).toBe(1);
-    expect(tasks[0].typeDefs).toBe('');
-    expect(tasks[0].implementationSteps).toEqual([
+    expect(tasks[0]?.typeDefs).toBe('');
+    expect(tasks[0]?.implementationSteps).toEqual([
       'Read the file',
       'Transform the data',
     ]);

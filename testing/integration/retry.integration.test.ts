@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { guardIntegration, type TestGuard } from './guard.js';
-import { createInitialState, transition } from '../../src/core/state.js';
+import { createInitialState, transition } from '../../src/core/state/machine.js';
 import type { WorkflowState } from '../../src/types.js';
-import { makeTask as makeTaskBase } from '../helpers/fixtures.js';
+import { makeTask } from '../helpers/fixtures.js';
 
 let g: TestGuard;
 
@@ -10,15 +10,11 @@ beforeAll(async () => {
   g = await guardIntegration();
 });
 
-function makeTask(id: string) {
-  return makeTaskBase({ id, title: `Task ${id}`, file: `src/${id}.ts`, description: `Description for ${id}` });
-}
-
 describe('Retry flow integration', () => {
   it('exhausting retries transitions to escalating', { timeout: 10_000 }, async (t) => {
     if (g.skip) { t.skip(); return; }
 
-    const tasks = [makeTask('t1'), makeTask('t2')];
+    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
     let state: WorkflowState = {
       ...createInitialState('retry-test'),
       phase: 'implementing',
@@ -47,7 +43,7 @@ describe('Retry flow integration', () => {
   it('HINT_SUCCESS after escalation returns to implementing', { timeout: 10_000 }, async (t) => {
     if (g.skip) { t.skip(); return; }
 
-    const tasks = [makeTask('t1'), makeTask('t2')];
+    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
     let state: WorkflowState = {
       ...createInitialState('hint-test'),
       phase: 'escalating',
@@ -66,7 +62,7 @@ describe('Retry flow integration', () => {
   it('HINT_FAIL then FULL_SUCCESS completes the task as escalated', { timeout: 10_000 }, async (t) => {
     if (g.skip) { t.skip(); return; }
 
-    const tasks = [makeTask('t1'), makeTask('t2')];
+    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
     let state: WorkflowState = {
       ...createInitialState('full-escalation-test'),
       phase: 'escalating',

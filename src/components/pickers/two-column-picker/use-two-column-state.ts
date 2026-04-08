@@ -29,24 +29,24 @@ export interface TwoColumnNavState<L, R> {
   currentRightIsCustom: boolean;
 }
 
-export interface UseTwoColumnStateParams<L extends FilterableItem, R extends { id: string }> {
+interface UseTwoColumnStateParams<L extends FilterableItem, R extends { id: string }> {
   leftItems: L[];
   rightItems: R[];
   leftGetKey: (item: L) => string;
-  leftFilterFn?: (item: L, query: string) => boolean;
-  rightFilterFn?: (item: R, query: string) => boolean;
-  isLeftItemSpecial?: (item: L) => boolean;
-  isLeftItemDisabled?: (item: L) => boolean;
-  isRightItemCustom?: (item: R) => boolean;
-  initialColumn?: 'left' | 'right';
-  initialLeftIndex?: number;
-  allowCustomRight?: boolean;
-  rightPlaceholder?: ReactNode;
+  leftFilterFn?: ((item: L, query: string) => boolean) | undefined;
+  rightFilterFn?: ((item: R, query: string) => boolean) | undefined;
+  isLeftItemSpecial?: ((item: L) => boolean) | undefined;
+  isLeftItemDisabled?: ((item: L) => boolean) | undefined;
+  isRightItemCustom?: ((item: R) => boolean) | undefined;
+  initialColumn?: 'left' | 'right' | undefined;
+  initialLeftIndex?: number | undefined;
+  allowCustomRight?: boolean | undefined;
+  rightPlaceholder?: ReactNode | undefined;
   onLeftChange: (item: L) => void;
   onConfirm: (left: L, right: R | null) => void;
   onCancel: () => void;
-  onCustomRightOverlay?: (left: L) => void;
-  onDeleteRight?: (item: R) => void;
+  onCustomRightOverlay?: ((left: L) => void) | undefined;
+  onDeleteRight?: ((item: R) => void) | undefined;
 }
 
 function defaultLeftFilter<L extends FilterableItem>(item: L, query: string): boolean {
@@ -67,7 +67,9 @@ function findNextEnabled<T>(
   if (!isDisabled) return (from + direction + items.length) % items.length;
   let next = (from + direction + items.length) % items.length;
   let steps = 0;
-  while (isDisabled(items[next]) && steps < items.length) {
+  while (steps < items.length) {
+    const item = items[next];
+    if (item === undefined || !isDisabled(item)) break;
     next = (next + direction + items.length) % items.length;
     steps++;
   }

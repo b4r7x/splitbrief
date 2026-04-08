@@ -4,7 +4,7 @@ import { useTheme } from '../../ui/theme.js';
 import { ScrollIndicator } from '../../ui/scroll-indicator.js';
 import { CURSOR, NO_CURSOR, computeScrollOffset } from '../../ui/picker-utils.js';
 
-export interface SingleColumnPickerProps<T> {
+interface SingleColumnPickerProps<T> {
   label: string;
   items: T[];
   filter: string;

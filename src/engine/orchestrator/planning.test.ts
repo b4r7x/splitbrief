@@ -41,8 +41,6 @@ function makeCallbacks(overrides?: Partial<OrchestratorCallbacks>): { callbacks:
 
 function makePlanner(overrides?: Partial<Planner>): Planner {
   return {
-    name: 'test-planner',
-    conversational: false,
     plan: vi.fn().mockResolvedValue({
       spec: '# Spec',
       plan: '# Plan',
@@ -54,7 +52,7 @@ function makePlanner(overrides?: Partial<Planner>): Planner {
     escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     isAvailable: vi.fn().mockResolvedValue(true),
     getVersion: vi.fn().mockResolvedValue('1.0'),
-    getPricing: vi.fn().mockReturnValue({ inputPer1M: 0, outputPer1M: 0 }),
+    review: vi.fn().mockResolvedValue({ text: '', usage: null }),
     ...overrides,
   };
 }
@@ -82,7 +80,7 @@ describe('runPlanningPhase', () => {
 
     expect(result.cancelled).toBe(false);
     expect(result.tasks).toHaveLength(1);
-    expect(result.tasks[0].id).toBe('T001');
+    expect(result.tasks[0]?.id).toBe('T001');
   });
 
   it('user rejects spec → returns cancelled', async () => {

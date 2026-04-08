@@ -9,12 +9,12 @@ export function estimateCostSavings(tokenUsage: TokenUsage, plannerTool?: string
   return `$${breakdown.savingsAmount.toFixed(2)}`;
 }
 
-export type CostBreakdownOptions = {
+type CostBreakdownOptions = {
   tokenUsage: TokenUsage;
   totalTasks: number;
   escalatedCount: number;
-  plannerTool?: string;
-  implementerTool?: string;
+  plannerTool?: string | undefined;
+  implementerTool?: string | undefined;
 };
 
 export function calculateCostBreakdown(opts: CostBreakdownOptions): CostBreakdown {

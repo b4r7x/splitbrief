@@ -6,8 +6,6 @@ import { detectCapabilities } from '../engine/providers/index.js';
 import { isGitRepo } from '../utils/git.js';
 import type { WorkflowOpts } from '../types.js';
 
-export type { WorkflowOpts };
-
 export function addWorkflowOptions(cmd: Command): Command {
   return cmd
     .option('--auto', 'Auto-approve spec and plan')
@@ -53,7 +51,7 @@ export async function ensureGitAndConfig(projectDir: string): Promise<void> {
   }
 }
 
-export async function setupWorkflow(opts: WorkflowOpts): Promise<{ projectDir: string; useFullscreen: boolean; contextLength?: number; needsSetup?: boolean }> {
+export async function setupWorkflow(opts: WorkflowOpts): Promise<{ projectDir: string; useFullscreen: boolean; contextLength?: number | undefined; needsSetup?: boolean | undefined }> {
   const projectDir = resolveProjectDir(opts.project);
 
   await assertGitRepo(projectDir);

@@ -1,10 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useInput } from 'ink';
-import { useFilterableList } from '../../hooks/use-filterable-list.js';
 import type { Screen, SlashCommandDef } from '../../types.js';
-
-const ALLOW_ALL_CHARS = () => true;
-const BLOCK_ALL_CHARS = () => false;
 
 function matchesSlashQuery(cmd: SlashCommandDef, query: string): boolean {
   if (cmd.name.toLowerCase().startsWith(query)) return true;
@@ -17,7 +13,7 @@ interface UseSlashAutocompleteOptions {
   value: string;
   setValue: (v: string) => void;
   onSlashCommand: (command: string) => void;
-  disabled?: boolean;
+  disabled?: boolean | undefined;
 }
 
 interface UseSlashAutocompleteResult {
@@ -36,36 +32,43 @@ export function useSlashAutocomplete({
   disabled,
 }: UseSlashAutocompleteOptions): UseSlashAutocompleteResult {
   const [inputKey, setInputKey] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(0);
 
   const slashMode = value.startsWith('/');
-  const screenCmds = commands.filter((cmd) => cmd.validScreens.includes(currentScreen));
-
-  const onSelect = (cmd: SlashCommandDef) => {
-    onSlashCommand(cmd.name);
-    setValue('');
-  };
-
-  const onClose = () => setValue('');
-
   const query = '/' + value.slice(1).toLowerCase();
   const filtered = slashMode
-    ? screenCmds.filter(cmd => matchesSlashQuery(cmd, query))
+    ? commands.filter((cmd) => cmd.validScreens.includes(currentScreen) && matchesSlashQuery(cmd, query))
     : [];
 
   const showSuggestions = slashMode && filtered.length > 0;
 
-  const { selectedIndex } = useFilterableList({
-    items: filtered,
-    filterFn: ALLOW_ALL_CHARS,
-    onSelect,
-    onClose,
-    isActive: showSuggestions && !disabled,
-    shouldAppendChar: BLOCK_ALL_CHARS,
-  });
+  useEffect(() => {
+    if (selectedIndex >= filtered.length) setSelectedIndex(0);
+  }, [filtered.length, selectedIndex]);
 
   useInput(
     (_input, key) => {
-      if (key.tab && filtered.length > 0) {
+      if (key.upArrow) {
+        setSelectedIndex((i) => (i - 1 + filtered.length) % filtered.length);
+        return;
+      }
+      if (key.downArrow) {
+        setSelectedIndex((i) => (i + 1) % filtered.length);
+        return;
+      }
+      if (key.return) {
+        const selected = filtered[selectedIndex];
+        if (selected) {
+          onSlashCommand(selected.name);
+          setValue('');
+        }
+        return;
+      }
+      if (key.escape) {
+        setValue('');
+        return;
+      }
+      if (key.tab) {
         const selected = filtered[selectedIndex];
         if (selected) {
           setValue(selected.name);

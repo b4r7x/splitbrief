@@ -1,11 +1,12 @@
 import type { Config } from '../../types.js';
 import type { Implementer } from './types.js';
 import type { InvokeOpts } from './base.js';
-import { createImplementerBase, createChangeDetector, DEFAULT_TIMEOUT } from './base.js';
-import { isENOENT, runCommand } from '../../utils/process.js';
-import { spawnWithTimeout, createProcessError } from '../../utils/process.js';
+import { createImplementerBase, createChangeDetector, DEFAULT_TIMEOUT, assertSpawnSuccess } from './base.js';
+import { isENOENT } from '../../utils/process.js';
+import { spawnWithTimeout } from '../../utils/process.js';
 import type { SpawnResult } from '../../utils/process.js';
 import { CLI_TOOL_NAMES, type ToolName } from '../../types.js';
+import { CLI_TOOLS } from '../cli-tools.js';
 
 interface ToolConfig {
   command: string;
@@ -24,31 +25,31 @@ const TOOL_CONFIGS: Record<ToolName, ToolConfig> = {
     notFoundMessage: 'Claude Code CLI not found. Install it from https://claude.ai/code',
   },
   codex: {
-    command: 'codex',
+    command: CLI_TOOLS.codex.command,
     buildArgs: (prompt, model) => {
       const args: string[] = ['--quiet', '--full-auto', '-p', prompt];
       if (model) args.push('--model', model);
       return args;
     },
-    notFoundMessage: 'Codex CLI not found. Install it with: npm install -g @openai/codex',
+    notFoundMessage: CLI_TOOLS.codex.notFoundMessage,
   },
   opencode: {
-    command: 'opencode',
+    command: CLI_TOOLS.opencode.command,
     buildArgs: (prompt, model) => {
       const args = [prompt];
       if (model) args.push('--model', model);
       return args;
     },
-    notFoundMessage: 'OpenCode CLI not found. Install it from https://opencode.ai',
+    notFoundMessage: CLI_TOOLS.opencode.notFoundMessage,
   },
   aider: {
-    command: 'aider',
+    command: CLI_TOOLS.aider.command,
     buildArgs: (prompt, model) => {
       const args = ['--message', prompt, '--yes-always'];
       if (model) args.push('--model', model);
       return args;
     },
-    notFoundMessage: 'Aider not found. Install it from https://aider.chat',
+    notFoundMessage: CLI_TOOLS.aider.notFoundMessage,
   },
 };
 
@@ -61,8 +62,6 @@ export function createToolImplementer(toolName: string, config: Config): Impleme
   const timeout = config.implementer.timeout ?? DEFAULT_TIMEOUT;
 
   return createImplementerBase({
-    name: `tool:${toolName}`,
-    pricingKey: toolName,
     extractsCode: false,
 
     async invoke(opts: InvokeOpts) {
@@ -78,19 +77,11 @@ export function createToolImplementer(toolName: string, config: Config): Impleme
         throw err;
       }
 
-      if (result.code === 127) {
-        throw new Error(toolConfig.notFoundMessage);
-      }
-      if (result.timedOut) {
-        throw createProcessError(`Tool implementer (${toolName}) timed out after ${Math.round(timeout / 1000)}s`, result.output);
-      }
-      if (result.code !== 0) {
-        const detail = result.stderr.trim();
-        throw createProcessError(
-          `Tool implementer (${toolName}) exited with code ${result.code}${detail ? `: ${detail}` : ''}`,
-          result.output,
-        );
-      }
+      assertSpawnSuccess(result, {
+        label: `Tool implementer (${toolName})`,
+        timeoutMs: timeout,
+        notFoundMessage: toolConfig.notFoundMessage,
+      });
 
       return { text: result.output };
     },
@@ -102,15 +93,6 @@ export function createToolImplementer(toolName: string, config: Config): Impleme
         err.message.includes('not found') ||
         err.message.includes('timed out')
       );
-    },
-
-    async isAvailable() {
-      try {
-        const { code } = await runCommand(toolConfig.command, ['--version']);
-        return code === 0;
-      } catch {
-        return false;
-      }
     },
   });
 }

@@ -55,8 +55,8 @@ describe('appendEvent', () => {
     const raw = readFileSync(join(dir, '.tiny-spec', 'current', 'events.jsonl'), 'utf-8');
     const lines = raw.trim().split('\n');
     expect(lines).toHaveLength(2);
-    expect(JSON.parse(lines[0])).toEqual(event1);
-    expect(JSON.parse(lines[1])).toEqual(event2);
+    expect(JSON.parse(lines[0] ?? '')).toEqual(event1);
+    expect(JSON.parse(lines[1] ?? '')).toEqual(event2);
   });
 
   it('creates directory when it does not exist', () => {

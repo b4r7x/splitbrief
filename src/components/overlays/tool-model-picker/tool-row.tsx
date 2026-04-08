@@ -5,7 +5,7 @@ import { formatModelName } from '../../../core/providers/models.js';
 import { truncate } from '../../../utils/format.js';
 import { isCurrentConfig, type PickerOption, type ModelOption } from './picker-catalog.js';
 
-export function formatPickerLine(
+function formatPickerLine(
   label: string,
   badge: string | null,
   version: string | null,

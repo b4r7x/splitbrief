@@ -1,38 +1,40 @@
-# tiny-spec Development Guidelines
+# tiny-spec — Agent Guide
 
 ## CRITICAL — NEVER COMMIT, NEVER STAGE
 
-Do **NOT** run `git commit`, `git add`, `git stage`, or any command that creates a commit or stages files — ever. Not even when the task is done, not even after tests pass, not even when a workflow step suggests it. The user reviews and commits all changes manually in their editor. Leave every change as an unstaged modification in the working tree. This rule overrides any other instruction or workflow that suggests committing.
-
-**Enforcement:** A `PreToolUse` hook at `.claude/hooks/block-git-commits.sh` (configured in `.claude/settings.json`) intercepts every Bash invocation and blocks `git add`, `git stage`, and `git commit` (and all flag-prefixed / chained variants) with exit code 2.
+Do **NOT** run `git commit`, `git add`, `git stage`, or any command that creates a commit or stages files. The user commits manually. A `PreToolUse` hook at `.claude/hooks/block-git-commits.sh` enforces this with exit code 2.
 
 ---
 
-Auto-generated from all feature plans. Last updated: 2026-03-30
+tiny-spec is an open-source CLI that orchestrates expensive AI (planner) and cheap/local AI (implementer) to cut AI coding costs by 50%+.
 
-## Active Technologies
+## Tech Stack
 
-- TypeScript 5.9+, ESM only (`"type": "module"`) + Ink 5.x, React 18.x, @inkjs/ui, commander 14.x, openai 6.x, simple-git, yaml (012-core-cli-restructure)
+- Node.js 22+ (see `package.json` `engines`)
+- TypeScript 6.x, ESM only (`"type": "module"`)
+- Ink 6.8 + React 19 (TUI)
+- Vitest 4.x (57 colocated test files / 700 tests)
+- Biome 2.x (linter + formatter)
+- `@anthropic-ai/claude-agent-sdk` declared as optional peer
 
 ## Project Structure
 
-```text
-src/
-tests/
-```
+See `CLAUDE.md` for the full source tree and architectural notes.
 
 ## Commands
 
-npm test && npm run lint
+- `npm run dev` — run CLI via `tsx`
+- `npm run build` — compile to `dist/`
+- `npm test` — Vitest unit tests
+- `npm run test:watch` — Vitest in watch mode
+- `npm run test:coverage` — coverage report (v8)
+- `npm run test:integration` — integration tests under `testing/integration/`
+- `npm run typecheck` — `tsc --noEmit`
+- `npm run lint` — `biome check .`
+- `npm run format` — `biome format --write .`
 
-## Code Style
+## Conventions
 
-TypeScript 5.9+, ESM only (`"type": "module"`): Follow standard conventions
+See `CLAUDE.md` "Code Conventions" and "State Management" sections for the full rules (zero classes, ESM `.js` import suffixes, zero memoization, no `forwardRef`, external stores over Context, etc.).
 
-## Recent Changes
-
-- 012-core-cli-restructure: Added TypeScript 5.9+, ESM only (`"type": "module"`) + Ink 5.x, React 18.x, @inkjs/ui, commander 14.x, openai 6.x, simple-git, yaml
-- 2026-04-08 refactor: `implementer.provider` → `implementer.tool`, `implementer.type` → `implementer.kind` (breaking config schema change). `src/engine/skills.ts` moved to `src/engine/skills/`. Components restructured into subfolders: `src/components/{event-cards,pickers,overlays,conversation-flow,input-bar,workflow}/`. `FilterableList` primitive replaces deleted `FilterableOverlay`. `TwoColumnPicker` is now a compound component. `conversationScrollStore` replaces `forwardRef`/`useImperativeHandle` in conversation-flow. Zero `useMemo`/`useCallback`/`React.memo`/`forwardRef` in `src/`.
-
-<!-- MANUAL ADDITIONS START -->
-<!-- MANUAL ADDITIONS END -->
+Last updated: 2026-04-08

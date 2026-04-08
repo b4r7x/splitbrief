@@ -6,8 +6,7 @@ import { renderApp } from '../render.js';
 import { addWorkflowOptions, setupWorkflow, resolveProjectDir } from '../workflow.js';
 import { routerStore } from '../../stores/router.js';
 import { initStores } from '../init-stores.js';
-import type { WorkflowOpts } from '../workflow.js';
-import type { Phase } from '../../types.js';
+import type { WorkflowOpts, Phase } from '../../types.js';
 
 const RESUMABLE_PHASES: ReadonlySet<Phase> = new Set<Phase>([
   'reviewing-spec', 'reviewing-plan', 'implementing',

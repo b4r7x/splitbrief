@@ -12,13 +12,12 @@ type ValidateCommitOptions = {
   callbacks: OrchestratorCallbacks;
   method: TaskCompletionMethod;
   transitionType: 'VALIDATION_PASS' | 'HINT_SUCCESS' | 'FULL_SUCCESS';
-  commitSuffix?: string;
-  taskStartTime?: number;
+  commitSuffix?: string | undefined;
+  taskStartTime?: number | undefined;
 };
 
 export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Promise<{ state: WorkflowState; completed: boolean }> {
-  const { task, results, projectDir, config, callbacks, method, transitionType, commitSuffix, taskStartTime } = opts;
-  let { state } = opts;
+  const { task, results, projectDir, config, callbacks, method, transitionType, commitSuffix, taskStartTime, state } = opts;
   if (!allValidationsPassed(results)) {
     return { state, completed: false };
   }
@@ -34,9 +33,8 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
       callbacks.onEvent({ type: 'warning', ts: Date.now(), message: `Failed to commit: ${err}` });
     }
   } else if (strategy === 'checkpoint') {
-    const label = `${task.id}`;
     try {
-      const tag = await createCheckpoint(projectDir, label);
+      const tag = await createCheckpoint(projectDir, task.id);
       if (tag) {
         callbacks.onEvent({ type: 'git-checkpoint', ts: Date.now(), tag, taskId: task.id });
       }

@@ -5,13 +5,13 @@ interface UseFilterableListOptions<T> {
   items: T[];
   filterFn: (item: T, query: string) => boolean;
   onSelect: (item: T) => void;
-  onClose?: () => void;
-  isActive?: boolean;
-  shouldAppendChar?: (input: string) => boolean;
-  initialIndex?: number;
+  onClose?: (() => void) | undefined;
+  isActive?: boolean | undefined;
+  shouldAppendChar?: ((input: string) => boolean) | undefined;
+  initialIndex?: number | undefined;
 }
 
-export interface UseFilterableListResult<T> {
+interface UseFilterableListResult<T> {
   filter: string;
   setFilter: (f: string) => void;
   filtered: T[];
@@ -42,7 +42,8 @@ export function useFilterableList<T>({
         return;
       }
       if (key.return && filtered.length > 0) {
-        onSelect(filtered[effectiveIndex]);
+        const selected = filtered[effectiveIndex];
+        if (selected !== undefined) onSelect(selected);
         return;
       }
       if (key.upArrow) {

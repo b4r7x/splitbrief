@@ -42,25 +42,20 @@ function makeCallbacks(): { callbacks: OrchestratorCallbacks; events: TuiEvent[]
 
 function makePlanner(): Planner {
   return {
-    name: 'test',
-    conversational: false,
     plan: vi.fn(),
     regenerate: vi.fn(),
     escalateHint: vi.fn(),
     escalateFull: vi.fn(),
     isAvailable: vi.fn().mockResolvedValue(true),
     getVersion: vi.fn().mockResolvedValue('1.0'),
-    getPricing: vi.fn().mockReturnValue({ inputPer1M: 0, outputPer1M: 0 }),
+    review: vi.fn().mockResolvedValue({ text: '', usage: null }),
   };
 }
 
 function makeImplementer(overrides?: Partial<Implementer>): Implementer {
   return {
-    name: 'test',
     implement: vi.fn().mockResolvedValue({ success: true, output: 'code', usage: { inputTokens: 100, outputTokens: 50 } }),
     retry: vi.fn().mockResolvedValue({ success: true, output: 'code', usage: { inputTokens: 100, outputTokens: 50 } }),
-    isAvailable: vi.fn().mockResolvedValue(true),
-    getPricing: vi.fn().mockReturnValue({ inputPer1M: 0, outputPer1M: 0 }),
     ...overrides,
   };
 }
@@ -146,8 +141,10 @@ describe('runTaskLoop', () => {
 
     const taskStart = events.find((e) => e.type === 'task-start');
     expect(taskStart).toBeDefined();
+    expect(taskStart).toMatchObject({ type: 'task-start', taskId: 'T001', index: 0, total: 1 });
     const taskComplete = events.find((e) => e.type === 'task-complete');
     expect(taskComplete).toBeDefined();
+    expect(taskComplete).toMatchObject({ type: 'task-complete', taskId: 'T001', method: 'local' });
   });
 
   it('token usage accumulated via state persistence', async () => {

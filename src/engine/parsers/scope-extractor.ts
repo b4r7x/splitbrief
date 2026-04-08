@@ -14,23 +14,23 @@ function extractExportName(line: string): string | null {
   const trimmed = line.trimStart();
 
   const funcMatch = trimmed.match(/^export\s+(?:async\s+)?function\s+(\w+)/);
-  if (funcMatch) return funcMatch[1];
+  if (funcMatch?.[1]) return funcMatch[1];
 
   const constMatch = trimmed.match(/^export\s+const\s+(\w+)/);
-  if (constMatch) return constMatch[1];
+  if (constMatch?.[1]) return constMatch[1];
 
   const interfaceMatch = trimmed.match(/^export\s+interface\s+(\w+)/);
-  if (interfaceMatch) return interfaceMatch[1];
+  if (interfaceMatch?.[1]) return interfaceMatch[1];
 
   const typeMatch = trimmed.match(/^export\s+type\s+(\w+)/);
-  if (typeMatch) return typeMatch[1];
+  if (typeMatch?.[1]) return typeMatch[1];
 
   const classMatch = trimmed.match(/^export\s+class\s+(\w+)/);
-  if (classMatch) return classMatch[1];
+  if (classMatch?.[1]) return classMatch[1];
 
   if (trimmed.startsWith('export default function') || trimmed.startsWith('export default class')) {
     const defaultMatch = trimmed.match(/^export\s+default\s+(?:function|class)\s+(\w+)/);
-    if (defaultMatch) return defaultMatch[1];
+    if (defaultMatch?.[1]) return defaultMatch[1];
     return 'default';
   }
 
@@ -45,9 +45,9 @@ export function extractFunctionContext(
   const lines = fileContent.split('\n');
 
   let importEnd = 0;
-  for (let i = 0; i < lines.length; i++) {
-    if (isImportLine(lines[i]) || lines[i].trim() === '') {
-      if (isImportLine(lines[i])) importEnd = i + 1;
+  for (const [i, line] of lines.entries()) {
+    if (isImportLine(line) || line.trim() === '') {
+      if (isImportLine(line)) importEnd = i + 1;
     } else {
       break;
     }
@@ -55,9 +55,9 @@ export function extractFunctionContext(
   const imports = lines.slice(0, importEnd).join('\n');
 
   const boundaries: { lineIndex: number; name: string | null }[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (isExportBoundary(lines[i])) {
-      boundaries.push({ lineIndex: i, name: extractExportName(lines[i]) });
+  for (const [i, line] of lines.entries()) {
+    if (isExportBoundary(line)) {
+      boundaries.push({ lineIndex: i, name: extractExportName(line) });
     }
   }
 
@@ -69,12 +69,12 @@ export function extractFunctionContext(
     (b) => b.name !== null && wordBoundaryRegex.test(b.name),
   );
 
-  if (targetIndex === -1) return null;
-
   const target = boundaries[targetIndex];
+  if (targetIndex === -1 || !target) return null;
+
   const blockStart = target.lineIndex;
-  const blockEnd =
-    targetIndex + 1 < boundaries.length ? boundaries[targetIndex + 1].lineIndex : lines.length;
+  const nextBoundary = boundaries[targetIndex + 1];
+  const blockEnd = nextBoundary ? nextBoundary.lineIndex : lines.length;
 
   const extractStart = Math.max(0, blockStart - surroundingLines);
   const extractEnd = Math.min(lines.length, blockEnd + surroundingLines);

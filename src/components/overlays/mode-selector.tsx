@@ -21,14 +21,15 @@ export function ModeSelector() {
   const currentIdx = MODES.findIndex(m => m.mode === currentMode);
   const [selected, setSelected] = useState(Math.max(0, currentIdx));
 
-  useInput((input, key) => {
+  useInput((_input, key) => {
     if (key.upArrow) setSelected(prev => (prev > 0 ? prev - 1 : MODES.length - 1));
     if (key.downArrow) setSelected(prev => (prev < MODES.length - 1 ? prev + 1 : 0));
     if (key.return) {
-      const mode = MODES[selected].mode;
-      const updated = { ...config, workflow: { ...config.workflow, mode } };
+      const selectedMode = MODES[selected];
+      if (!selectedMode) return;
+      const updated = { ...config, workflow: { ...config.workflow, mode: selectedMode.mode } };
       configStore.save(updated);
-      feedbackStore.setMessage(`Mode set to: ${mode}`);
+      feedbackStore.setMessage(`Mode set to: ${selectedMode.mode}`);
       overlayStore.close();
     }
     if (key.escape) overlayStore.close();

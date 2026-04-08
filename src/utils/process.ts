@@ -1,6 +1,4 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import type { PlannerTokenUsage } from '../types.js';
-import { accumulateUsage } from '../engine/streaming/output-parsers.js';
 
 const SIGKILL_DELAY = 5000;
 
@@ -92,7 +90,7 @@ function spawnManaged<T>(
 export function runCommand(
   command: string,
   args: string[],
-  options?: { cwd?: string; timeout?: number },
+  options?: { cwd?: string | undefined; timeout?: number | undefined },
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const timeout = options?.timeout ?? 60_000;
 
@@ -125,10 +123,6 @@ export function isENOENT(err: unknown): boolean {
   return err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT';
 }
 
-// ---------------------------------------------------------------------------
-// subprocess helpers
-// ---------------------------------------------------------------------------
-
 export interface SpawnResult {
   output: string;
   code: number;
@@ -142,7 +136,7 @@ export interface SpawnOptions {
   cwd: string;
   timeout: number;
   onProgress: (text: string) => void;
-  stdinInput?: string;
+  stdinInput?: string | undefined;
 }
 
 export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
@@ -218,17 +212,13 @@ export function createProcessError(message: string, output: string): Error & { o
   return err;
 }
 
-// ---------------------------------------------------------------------------
-// planner spawn helpers
-// ---------------------------------------------------------------------------
-
 export async function spawnWithStdin(opts: {
   command: string;
   args: string[];
   cwd: string;
-  stdin?: string;
+  stdin?: string | undefined;
   onLine: (line: string) => void;
-  onStderr?: (chunk: string) => void;
+  onStderr?: ((chunk: string) => void) | undefined;
   notFoundMessage: string;
 }): Promise<{ text: string; stderrOutput: string; code: number }> {
   return new Promise((resolve, reject) => {
@@ -302,44 +292,3 @@ export async function spawnWithStdin(opts: {
   });
 }
 
-interface ParsedLine {
-  text?: string;
-  usage?: PlannerTokenUsage;
-}
-
-interface SpawnAndCollectOptions {
-  command: string;
-  args: string[];
-  cwd: string;
-  stdin?: string;
-  notFoundMessage: string;
-  parseLine: (line: string) => ParsedLine;
-  onOutput: (text: string) => void;
-  onStderr?: (chunk: string) => void;
-}
-
-export async function spawnAndCollect(opts: SpawnAndCollectOptions): Promise<{ text: string; usage: PlannerTokenUsage | null }> {
-  let collectedText = '';
-  let usage: PlannerTokenUsage | null = null;
-
-  await spawnWithStdin({
-    command: opts.command,
-    args: opts.args,
-    cwd: opts.cwd,
-    stdin: opts.stdin,
-    notFoundMessage: opts.notFoundMessage,
-    onStderr: opts.onStderr,
-    onLine(line) {
-      const parsed = opts.parseLine(line);
-      if (parsed.text) {
-        collectedText += parsed.text;
-        opts.onOutput(parsed.text);
-      }
-      if (parsed.usage) {
-        usage = accumulateUsage(usage, parsed.usage);
-      }
-    },
-  });
-
-  return { text: collectedText, usage };
-}

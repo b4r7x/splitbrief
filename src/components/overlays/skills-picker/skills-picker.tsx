@@ -1,13 +1,15 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme, type Theme } from '../../../ui/theme.js';
 import { OverlayPanel } from '../overlay-panel.js';
 import type { SkillMeta } from '../../../types.js';
 import { useResponsiveLayout } from '../../../hooks/use-terminal-size.js';
-import { CURSOR, NO_CURSOR, filterByFields } from '../../../ui/picker-utils.js';
+import { CURSOR, NO_CURSOR, filterByFields, computeScrollWindow } from '../../../ui/picker-utils.js';
 import { skillsStore } from '../../../stores/skills.js';
 import { overlayStore } from '../../../stores/overlay.js';
-import { FilterableList } from '../../pickers/filterable-list.js';
+import { useFilterableList } from '../../../hooks/use-filterable-list.js';
+import { FilterInput } from '../../../ui/filter-input.js';
+import { ScrollIndicator } from '../../../ui/scroll-indicator.js';
 import { toSectionedList } from '../../../utils/sectioned-list.js';
 import { truncate } from '../../../utils/format.js';
 
@@ -38,12 +40,11 @@ function SkillRow({ skill, isCursor, isChecked, nameColWidth, descMaxWidth, them
 
 export function SkillsPicker() {
   const t = useTheme();
-  const { cols, isSmall } = useResponsiveLayout();
+  const { cols, rows, isSmall } = useResponsiveLayout();
   const skills = skillsStore.use(s => s.available);
   const initial = skillsStore.use(s => s.selected);
   const [checked, setChecked] = useState<Set<string>>(new Set(initial));
   const [navigating, setNavigating] = useState(false);
-  const filteredRef = useRef<{ filtered: SkillMeta[]; cursor: number }>({ filtered: [], cursor: 0 });
 
   const sortedSkills = [
     ...skills.filter(s => s.scope === 'project'),
@@ -64,13 +65,24 @@ export function SkillsPicker() {
     overlayStore.close();
   };
 
+  const shouldAppendChar = (ch: string) => ch !== ' ' || !navigating;
+
+  const list = useFilterableList<SkillMeta>({
+    items: sortedSkills,
+    filterFn: filterSkill,
+    onSelect: handleConfirm,
+    onClose: () => overlayStore.close(),
+    shouldAppendChar,
+  });
+
+  const { filter, filtered, selectedIndex } = list;
+
   useInput((input, key) => {
     if (key.upArrow || key.downArrow) { setNavigating(true); return; }
     if (key.backspace || key.delete) { setNavigating(false); return; }
     if (key.ctrl && input === 'a') {
-      const { filtered } = filteredRef.current;
+      const ids = filtered.map(s => s.id);
       setChecked(prev => {
-        const ids = filtered.map(s => s.id);
         const allChecked = ids.length > 0 && ids.every(id => prev.has(id));
         const next = new Set(prev);
         if (allChecked) ids.forEach(id => next.delete(id));
@@ -80,14 +92,12 @@ export function SkillsPicker() {
       return;
     }
     if (input === ' ' && navigating) {
-      const { filtered, cursor } = filteredRef.current;
-      if (filtered.length > 0) toggle(filtered[cursor].id);
+      const item = filtered[selectedIndex];
+      if (item) toggle(item.id);
       return;
     }
     if (input && !key.ctrl && !key.meta && input !== ' ') setNavigating(false);
   });
-
-  const shouldAppendChar = (ch: string) => ch !== ' ' || !navigating;
 
   const hintText = navigating
     ? 'Space toggle  Ctrl+A all  Enter confirm  Esc cancel'
@@ -106,47 +116,43 @@ export function SkillsPicker() {
     );
   }
 
+  const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } =
+    computeScrollWindow(filtered, selectedIndex, rows, 12, 5);
+
+  const sectioned = toSectionedList(visibleSlice, (s) => s.scope);
+
   return (
-    <FilterableList
+    <OverlayPanel
       title={`Planner Skills (${checked.size} selected)`}
       hint={hintText}
-      items={sortedSkills}
-      filterFn={filterSkill}
-      getKey={(s) => s.id}
-      renderItem={() => null}
-      onConfirm={handleConfirm}
-      onCancel={() => overlayStore.close()}
-      shouldAppendChar={shouldAppendChar}
       bordered={false}
-      chromeRows={12}
-      maxVisible={5}
-      placeholder={<Text color={t.textDim}>{'  No matching skills'}</Text>}
     >
-      {({ filtered, cursor }) => {
-        filteredRef.current = { filtered, cursor };
-        const sectioned = toSectionedList(filtered, (s) => s.scope);
-        return (
-          <>
-            {sectioned.map(({ item: skill, sectionHeader }, i) => (
-              <Box key={skill.id} flexDirection="column">
-                {sectionHeader && (
-                  <Box marginTop={i > 0 ? 1 : 0}>
-                    <Text bold color={t.text}>{'  '}{sectionHeader === 'project' ? 'Project' : 'Global'}</Text>
-                  </Box>
-                )}
-                <SkillRow
-                  skill={skill}
-                  isCursor={i === cursor}
-                  isChecked={checked.has(skill.id)}
-                  nameColWidth={nameColWidth}
-                  descMaxWidth={descMaxWidth}
-                  theme={t}
-                />
-              </Box>
-            ))}
-          </>
-        );
-      }}
-    </FilterableList>
+      <FilterInput filter={filter} />
+      <ScrollIndicator show={showScrollUp} direction="up" />
+      <Box flexDirection="column">
+        {filtered.length === 0 && <Text color={t.textDim}>{'  No matching skills'}</Text>}
+        {sectioned.map(({ item: skill, sectionHeader }, i) => {
+          const globalIndex = scrollOffset + i;
+          return (
+            <Box key={skill.id} flexDirection="column">
+              {sectionHeader && (
+                <Box marginTop={i > 0 ? 1 : 0}>
+                  <Text bold color={t.text}>{'  '}{sectionHeader === 'project' ? 'Project' : 'Global'}</Text>
+                </Box>
+              )}
+              <SkillRow
+                skill={skill}
+                isCursor={globalIndex === selectedIndex}
+                isChecked={checked.has(skill.id)}
+                nameColWidth={nameColWidth}
+                descMaxWidth={descMaxWidth}
+                theme={t}
+              />
+            </Box>
+          );
+        })}
+      </Box>
+      <ScrollIndicator show={showScrollDown} direction="down" />
+    </OverlayPanel>
   );
 }

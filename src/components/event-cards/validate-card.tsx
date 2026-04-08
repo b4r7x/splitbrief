@@ -10,8 +10,8 @@ type ValidationStage = typeof VALIDATION_STAGES[number];
 
 interface StagesProps {
   stages: { tsc: boolean; lint: boolean; test: boolean };
-  currentStage?: ValidationStage;
-  failedStage?: ValidationStage;
+  currentStage?: ValidationStage | undefined;
+  failedStage?: ValidationStage | undefined;
 }
 
 function Stages({ stages, currentStage, failedStage }: StagesProps): React.ReactElement {

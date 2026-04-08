@@ -3,7 +3,10 @@
   "compilerOptions": {
     "rootDir": ".",
     "noEmit": true,
-    "types": ["node", "react"]
+    "types": ["node", "react"],
+    "paths": {
+      "#testing/*": ["./testing/*"]
+    }
   },
   "include": ["src/**/*", "src/**/*.test.ts", "src/**/*.test.tsx", "testing/**/*"],
   "exclude": ["node_modules", "dist"]

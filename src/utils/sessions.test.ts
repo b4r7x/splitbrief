@@ -47,8 +47,8 @@ describe('listSessions', () => {
 
     const sessions = listSessions(dir);
     expect(sessions).toHaveLength(1);
-    expect(sessions[0].id).toBe('sess-1');
-    expect(sessions[0].feature).toBe('auth');
+    expect(sessions[0]?.id).toBe('sess-1');
+    expect(sessions[0]?.feature).toBe('auth');
   });
 
   it('sorts sessions by startedAt descending', () => {
@@ -74,8 +74,8 @@ describe('listSessions', () => {
 
     const sessions = listSessions(dir);
     expect(sessions).toHaveLength(10);
-    expect(sessions[0].startedAt).toBe(14000);
-    expect(sessions[9].startedAt).toBe(5000);
+    expect(sessions[0]?.startedAt).toBe(14000);
+    expect(sessions[9]?.startedAt).toBe(5000);
   });
 
   it('skips malformed JSON files gracefully', () => {
@@ -86,7 +86,7 @@ describe('listSessions', () => {
 
     const sessions = listSessions(dir);
     expect(sessions).toHaveLength(1);
-    expect(sessions[0].id).toBe('good');
+    expect(sessions[0]?.id).toBe('good');
   });
 
   it('ignores non-JSON files', () => {
@@ -98,7 +98,7 @@ describe('listSessions', () => {
 
     const sessions = listSessions(dir);
     expect(sessions).toHaveLength(1);
-    expect(sessions[0].id).toBe('valid');
+    expect(sessions[0]?.id).toBe('valid');
   });
 });
 

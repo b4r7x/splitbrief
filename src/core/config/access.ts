@@ -11,17 +11,23 @@ export function getConfigValue(config: Config | Record<string, unknown>, dotPath
 }
 
 export function applyEdits(config: Config, edits: Record<string, unknown>): Config {
-  const clone: Record<string, unknown> = structuredClone(config) as unknown as Record<string, unknown>;
+  const clone = structuredClone(config);
+  const root = clone as unknown as Record<string, unknown>;
   for (const [dotPath, value] of Object.entries(edits)) {
     const parts = dotPath.split('.');
-    let current = clone;
+    const lastPart = parts[parts.length - 1];
+    if (lastPart === undefined) continue;
+    let current = root;
     for (let i = 0; i < parts.length - 1; i++) {
-      if (current[parts[i]] === undefined || current[parts[i]] === null || typeof current[parts[i]] !== 'object') {
-        current[parts[i]] = {};
+      const key = parts[i];
+      if (key === undefined) continue;
+      const existing = current[key];
+      if (existing === undefined || existing === null || typeof existing !== 'object') {
+        current[key] = {};
       }
-      current = current[parts[i]] as Record<string, unknown>;
+      current = current[key] as Record<string, unknown>;
     }
-    current[parts[parts.length - 1]] = value;
+    current[lastPart] = value;
   }
-  return clone as unknown as Config;
+  return clone;
 }

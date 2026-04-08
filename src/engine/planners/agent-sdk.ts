@@ -1,7 +1,7 @@
 import type { Planner } from './types.js';
 import { createPlannerBase } from './base.js';
 import type { InvokeResult } from './base.js';
-import { loadSdk, processStream } from '../agent-sdk/shared.js';
+import { loadSdk, processStream, isAgentSdkAvailable } from '../agent-sdk.js';
 import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/models.js';
 
 async function runQuery(
@@ -23,7 +23,6 @@ async function runQuery(
   );
 }
 
-// Update when new model versions are released; overridable via config.planner.model
 const DEFAULT_MODEL = DEFAULT_AGENT_SDK_MODEL;
 const ALLOWED_TOOLS = ['Read', 'Glob', 'Grep', 'Write'];
 
@@ -38,22 +37,10 @@ export function createAgentSdkPlanner(model?: string): Planner {
   }
 
   return createPlannerBase({
-    name: 'agent-sdk',
-    pricingKey: 'agent-sdk',
-    conversational: true,
-
     invokePlan: invoke,
     invokeEscalate: invoke,
 
-    async isAvailable() {
-      if (!process.env.ANTHROPIC_API_KEY) return false;
-      try {
-        await loadSdk();
-        return true;
-      } catch {
-        return false;
-      }
-    },
+    isAvailable: isAgentSdkAvailable,
 
     async getVersion() {
       return null;

@@ -175,7 +175,7 @@ describe('workflowStore', () => {
       const s = workflowStore.get();
       expect(s.cancelled).toBe(true);
       const last = s.events[s.events.length - 1];
-      expect(last.type).toBe('workflow-cancelled');
+      expect(last?.type).toBe('workflow-cancelled');
     });
 
     it('replaces running planner-status with done', () => {

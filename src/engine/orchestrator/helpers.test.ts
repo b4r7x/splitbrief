@@ -11,6 +11,15 @@ vi.mock('../../core/state/persistence.js', () => ({
 
 import { refreshCurrentCode, allValidationsPassed, addUsageAndSave, withSignalHandlers, isSignalError } from './helpers.js';
 
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2025-01-01T00:00:00Z'));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 function makeState(overrides?: Partial<WorkflowState>): WorkflowState {
   return {
     stateVersion: 1,
@@ -133,10 +142,10 @@ describe('withSignalHandlers', () => {
     const onSpy = vi.spyOn(process, 'on');
 
     let capturedSigintHandler: (() => void) | undefined;
-    onSpy.mockImplementation((event: string, listener: any) => {
-      if (event === 'SIGINT') capturedSigintHandler = listener;
+    onSpy.mockImplementation(((event: string | symbol, listener: (...args: unknown[]) => void) => {
+      if (event === 'SIGINT') capturedSigintHandler = listener as () => void;
       return process;
-    });
+    }) as typeof process.on);
 
     const promise = withSignalHandlers(handler, async () => {
       capturedSigintHandler!();

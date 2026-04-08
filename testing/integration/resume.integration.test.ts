@@ -3,10 +3,10 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { guardIntegration, type TestGuard } from './guard.js';
-import { createInitialState } from '../../src/core/state.js';
-import { saveState, loadState } from '../../src/core/state-persistence.js';
+import { createInitialState } from '../../src/core/state/machine.js';
+import { saveState, loadState } from '../../src/core/state/persistence.js';
 import type { WorkflowState } from '../../src/types.js';
-import { makeTask as makeTaskBase } from '../helpers/fixtures.js';
+import { makeTask } from '../helpers/fixtures.js';
 
 let g: TestGuard;
 
@@ -14,17 +14,19 @@ beforeAll(async () => {
   g = await guardIntegration();
 });
 
-function makeTask(id: string) {
-  return makeTaskBase({ id, title: `Task ${id}`, file: `src/${id}.ts`, description: `Description for ${id}` });
-}
-
 describe('Resume with token preservation integration', () => {
   it('loaded state matches saved state exactly', { timeout: 10_000 }, async (t) => {
     if (g.skip) { t.skip(); return; }
 
     const tmpDir = await mkdtemp(join(tmpdir(), 'tiny-spec-resume-'));
     try {
-      const tasks = [makeTask('t1'), makeTask('t2'), makeTask('t3'), makeTask('t4'), makeTask('t5')];
+      const tasks = [
+        makeTask({ id: 't1', title: 'Task t1', file: 'src/t1.ts', description: 'Description for t1' }),
+        makeTask({ id: 't2', title: 'Task t2', file: 'src/t2.ts', description: 'Description for t2' }),
+        makeTask({ id: 't3', title: 'Task t3', file: 'src/t3.ts', description: 'Description for t3' }),
+        makeTask({ id: 't4', title: 'Task t4', file: 'src/t4.ts', description: 'Description for t4' }),
+        makeTask({ id: 't5', title: 'Task t5', file: 'src/t5.ts', description: 'Description for t5' }),
+      ];
 
       const state: WorkflowState = {
         ...createInitialState('resume-feature'),

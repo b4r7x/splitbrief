@@ -11,15 +11,15 @@ interface CompletionResult {
 interface StreamCompletionOptions {
   temperature: number;
   onProgress: (text: string) => void;
-  endpoint?: { provider: string; apiBase?: string };
-  maxTokens?: number;
+  endpoint?: { provider: string; apiBase?: string | undefined } | undefined;
+  maxTokens?: number | undefined;
 }
 
 function isErrorLike(val: unknown): val is Record<string, unknown> {
   return typeof val === 'object' && val !== null;
 }
 
-function throwMappedError(err: unknown, endpoint?: { provider: string; apiBase?: string }): never {
+function throwMappedError(err: unknown, endpoint?: { provider: string; apiBase?: string | undefined }): never {
   if (!isErrorLike(err)) throw err;
   const cause = isErrorLike(err.cause) ? err.cause : {};
   if (err.code === 'ECONNREFUSED' || cause.code === 'ECONNREFUSED') {
@@ -59,16 +59,22 @@ export async function streamCompletion(
 
   let fullResponse = '';
   let usage: ImplementerTokenUsage | null = null;
-  let timerId: ReturnType<typeof setTimeout>;
-  let rejectTimeout: (err: Error) => void;
   const timeoutError = () => Object.assign(new Error('Model response timed out'), { isTimeout: true });
+  let timerId: ReturnType<typeof setTimeout> | null = null;
+  let rejectTimeout: ((err: Error) => void) | null = null;
+  const clearTimer = () => {
+    if (timerId !== null) {
+      clearTimeout(timerId);
+      timerId = null;
+    }
+  };
   const timeoutPromise = new Promise<never>((_, reject) => {
     rejectTimeout = reject;
     timerId = setTimeout(() => reject(timeoutError()), STREAM_TIMEOUT_MS);
   });
   const resetTimer = () => {
-    clearTimeout(timerId);
-    timerId = setTimeout(() => rejectTimeout(timeoutError()), STREAM_TIMEOUT_MS);
+    clearTimer();
+    timerId = setTimeout(() => rejectTimeout?.(timeoutError()), STREAM_TIMEOUT_MS);
   };
 
   try {
@@ -97,7 +103,7 @@ export async function streamCompletion(
     }
     throwMappedError(err, endpoint);
   } finally {
-    clearTimeout(timerId!);
+    clearTimer();
   }
 
   return { text: fullResponse, usage };

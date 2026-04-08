@@ -1,17 +1,35 @@
 import { join } from 'node:path';
 import type { Implementer, ImplementerOptions, RetryOptions } from './types.js';
 import type { Task, TuiEvent, ImplementerResult, ImplementerTokenUsage } from '../../types.js';
-import type { PricingInfo } from '../../core/providers/pricing.js';
 import { readFileOrEmpty } from '../../utils/fs.js';
-import { getImplementerPricing } from '../../core/providers/pricing.js';
 import { toErrorMessage } from '../../utils/format.js';
 import { getChangedFiles } from '../../utils/git.js';
 import { extractCode } from '../parsers/response-extractor.js';
-import { applyCode } from '../orchestrator/apply.js';
+import { applyCode } from './apply.js';
 import { computeDiff } from '../../utils/diff.js';
-import { buildFullPrompt, buildFullRetryPrompt } from '../spec/formatter.js';
+import { SYSTEM_PREAMBLE, formatTaskPrompt, formatRetryPrompt } from '../spec/formatter.js';
+import { createProcessError, type SpawnResult } from '../../utils/process.js';
 
 export const DEFAULT_TIMEOUT = 300_000;
+
+export function assertSpawnSuccess(
+  result: SpawnResult,
+  opts: { label: string; timeoutMs: number; notFoundMessage: string },
+): void {
+  if (result.code === 127) {
+    throw new Error(opts.notFoundMessage);
+  }
+  if (result.timedOut) {
+    throw createProcessError(`${opts.label} timed out after ${Math.round(opts.timeoutMs / 1000)}s`, result.output);
+  }
+  if (result.code !== 0) {
+    const detail = result.stderr.trim();
+    throw createProcessError(
+      `${opts.label} exited with code ${result.code}${detail ? `: ${detail}` : ''}`,
+      result.output,
+    );
+  }
+}
 
 export interface InvokeResult {
   text: string;
@@ -30,6 +48,7 @@ function createGenEventEmitter(
     if (status === 'running') {
       onEvent?.({ type: 'implementer-generate', ts: Date.now(), status: 'running', file });
     } else if (status === 'done') {
+      const diff = extra?.diff as string | undefined;
       onEvent?.({
         type: 'implementer-generate',
         ts: Date.now(),
@@ -38,7 +57,7 @@ function createGenEventEmitter(
         duration: Date.now() - startTime,
         linesAdded: (extra?.linesAdded as number) ?? 0,
         linesRemoved: (extra?.linesRemoved as number) ?? 0,
-        diff: extra?.diff as string | undefined,
+        ...(diff !== undefined && { diff }),
       });
     } else {
       onEvent?.({ type: 'implementer-generate', ts: Date.now(), status: 'failed', model });
@@ -61,7 +80,7 @@ async function processImplementerOutput(
   const applyResult = applyCode(extractResult.code, task, projectDir);
 
   if (!applyResult.success) {
-    return { success: false, error: applyResult.error! };
+    return { success: false, error: applyResult.error ?? 'Failed to apply code' };
   }
 
   const filePath = join(projectDir, task.file);
@@ -69,14 +88,6 @@ async function processImplementerOutput(
   const { diff, linesAdded, linesRemoved } = computeDiff(oldContent, newContent);
 
   return { success: true, diff, linesAdded, linesRemoved };
-}
-
-function defaultBuildPrompt(opts: ImplementerOptions): string {
-  return buildFullPrompt(opts.task, opts.context, opts.config.implementer.contextLength);
-}
-
-function defaultBuildRetryPrompt(opts: RetryOptions): string {
-  return buildFullRetryPrompt(opts.task, opts.context, opts.error, opts.attempt, opts.config.implementer.contextLength);
 }
 
 export function createChangeDetector(label: string) {
@@ -99,15 +110,11 @@ export interface InvokeOpts {
 }
 
 export interface ImplementerBaseConfig {
-  name: string;
-  pricingKey: string;
   extractsCode: boolean;
 
   invoke(opts: InvokeOpts): Promise<InvokeResult>;
   buildPrompt?(opts: ImplementerOptions): string;
   buildRetryPrompt?(opts: RetryOptions): string;
-
-  isAvailable(): Promise<boolean>;
 
   detectChanges?(projectDir: string): Promise<{ changed: boolean; output: string }>;
   retryTemperatureStep?: number;
@@ -126,8 +133,10 @@ function retryTemperature(base: number, step: number | undefined, attempt: numbe
 }
 
 export function createImplementerBase(config: ImplementerBaseConfig): Implementer {
-  const buildPrompt = config.buildPrompt ?? defaultBuildPrompt;
-  const buildRetryPrompt = config.buildRetryPrompt ?? defaultBuildRetryPrompt;
+  const buildPrompt = config.buildPrompt ?? ((opts: ImplementerOptions) =>
+    SYSTEM_PREAMBLE + '\n\n' + formatTaskPrompt(opts.task, opts.context, opts.config.implementer.contextLength));
+  const buildRetryPrompt = config.buildRetryPrompt ?? ((opts: RetryOptions) =>
+    SYSTEM_PREAMBLE + '\n\n' + formatRetryPrompt(opts.task, opts.context, opts.error, opts.attempt, opts.config.implementer.contextLength));
 
   async function runPipeline(
     opts: ImplementerOptions,
@@ -147,7 +156,10 @@ export function createImplementerBase(config: ImplementerBaseConfig): Implemente
     try {
       let invokeResult: InvokeResult;
       try {
-        invokeResult = await config.invoke({ prompt, task, projectDir, config: cfg, onProgress, temperature });
+        invokeResult = await config.invoke({
+          prompt, task, projectDir, config: cfg, onProgress,
+          ...(temperature !== undefined && { temperature }),
+        });
       } catch (err) {
         if (config.shouldThrow?.(err)) throw err;
         const output = hasStringProp(err, 'output') ? err.output : '';
@@ -155,14 +167,15 @@ export function createImplementerBase(config: ImplementerBaseConfig): Implemente
       }
 
       const usage = invokeResult.usage ?? null;
+      const usageField = usage ? { usage } : {};
 
       if (config.extractsCode) {
         const result = await processImplementerOutput(invokeResult.text, task, projectDir, oldContent);
         if (!result.success) {
-          return { success: false, output: invokeResult.text, error: result.error, usage: usage ?? undefined };
+          return { success: false, output: invokeResult.text, error: result.error, ...usageField };
         }
         emitGenEvent('done', { linesAdded: result.linesAdded, linesRemoved: result.linesRemoved, diff: result.diff });
-        implResult = { success: true, output: invokeResult.text, usage: usage ?? undefined };
+        implResult = { success: true, output: invokeResult.text, ...usageField };
         return implResult;
       }
 
@@ -174,7 +187,7 @@ export function createImplementerBase(config: ImplementerBaseConfig): Implemente
       }
 
       emitGenEvent('done');
-      implResult = { success: true, output: invokeResult.text, usage: usage ?? undefined };
+      implResult = { success: true, output: invokeResult.text, ...usageField };
       return implResult;
     } finally {
       if (!implResult?.success) emitGenEvent('failed');
@@ -182,8 +195,6 @@ export function createImplementerBase(config: ImplementerBaseConfig): Implemente
   }
 
   return {
-    name: config.name,
-
     async implement(opts: ImplementerOptions): Promise<ImplementerResult> {
       const prompt = buildPrompt(opts);
       return runPipeline(opts, prompt);
@@ -193,14 +204,6 @@ export function createImplementerBase(config: ImplementerBaseConfig): Implemente
       const prompt = buildRetryPrompt(opts);
       const temperature = retryTemperature(opts.config.implementer.temperature, config.retryTemperatureStep, opts.attempt);
       return runPipeline(opts, prompt, temperature);
-    },
-
-    async isAvailable(): Promise<boolean> {
-      return config.isAvailable();
-    },
-
-    getPricing(): PricingInfo {
-      return getImplementerPricing(config.pricingKey);
     },
   };
 }

@@ -2,16 +2,16 @@ import type { OutputFormat, PlannerTokenUsage } from '../../types.js';
 import { parseStreamLine } from './claude-stream.js';
 
 interface ParsedLine {
-  text?: string;
-  usage?: PlannerTokenUsage;
-  isResult?: boolean;
+  text?: string | undefined;
+  usage?: PlannerTokenUsage | undefined;
+  isResult?: boolean | undefined;
 }
 
 export function parseTextLine(line: string): ParsedLine {
   if (!line.trim()) return {};
 
   const tokenMatch = line.match(/Tokens:\s*([\d.]+k?)\s*sent,\s*([\d.]+k?)\s*received/i);
-  if (tokenMatch) {
+  if (tokenMatch?.[1] && tokenMatch[2]) {
     const parseK = (v: string) => {
       const n = parseFloat(v);
       return v.toLowerCase().endsWith('k') ? Math.round(n * 1000) : Math.round(n);

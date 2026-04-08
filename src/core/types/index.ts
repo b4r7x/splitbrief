@@ -8,11 +8,13 @@ export type {
   PlannerDetection,
   ProviderDetection,
   ToolName,
+  ImplementerKind,
 } from './config.js';
-export { WORKFLOW_MODES, CLI_TOOL_NAMES } from './config.js';
+export { WORKFLOW_MODES, CLI_TOOL_NAMES, IMPLEMENTER_KINDS } from './config.js';
 export type {
   Phase,
   Task,
+  TaskStatus,
   WorkflowState,
   StateAction,
   TokenBudget,

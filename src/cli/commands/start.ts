@@ -5,7 +5,7 @@ import { renderApp } from '../render.js';
 import { addWorkflowOptions, setupWorkflow } from '../workflow.js';
 import { routerStore } from '../../stores/router.js';
 import { initStores } from '../init-stores.js';
-import type { WorkflowOpts } from '../workflow.js';
+import type { WorkflowOpts } from '../../types.js';
 
 export function registerStartCommand(program: Command): void {
   addWorkflowOptions(

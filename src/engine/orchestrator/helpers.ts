@@ -39,11 +39,11 @@ export function addUsageAndSave(
   return next;
 }
 
-export interface SignalError extends Error {
+interface SignalError extends Error {
   signal: 'SIGINT' | 'SIGTERM';
 }
 
-export function makeSignalError(signal: 'SIGINT' | 'SIGTERM'): SignalError {
+function makeSignalError(signal: 'SIGINT' | 'SIGTERM'): SignalError {
   const err = new Error(`Process received ${signal}`) as SignalError;
   err.name = 'SignalError';
   err.signal = signal;

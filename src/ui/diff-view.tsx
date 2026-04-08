@@ -43,8 +43,7 @@ export default function DiffView({ file, linesAdded, linesRemoved, diff, expande
     let cancelled = false;
     const run = async () => {
       const results = new Map<number, string>();
-      for (let i = 0; i < visible.length; i++) {
-        const line = visible[i];
+      for (const [i, line] of visible.entries()) {
         if (line.startsWith('+ ') || line.startsWith('- ')) {
           const hl = await highlight(stripPrefix(line));
           if (cancelled) return;
@@ -82,10 +81,11 @@ export default function DiffView({ file, linesAdded, linesRemoved, diff, expande
           const bg = diffBg(isAdded, isRemoved, t.diff);
           const color = (!isAdded && !isRemoved) ? t.diff.context : undefined;
           const content = (isAdded || isRemoved) ? (highlighted.get(i) ?? stripPrefix(line)) : stripPrefix(line);
+          const colorProp = color !== undefined ? { color } : {};
           return (
             <Box key={`${i}-${line.slice(0, 30)}`}>
               <Text color={t.border}>{lineNum} </Text>
-              <Text color={color} backgroundColor={bg}>{content}</Text>
+              <Text {...colorProp} backgroundColor={bg}>{content}</Text>
             </Box>
           );
         })}

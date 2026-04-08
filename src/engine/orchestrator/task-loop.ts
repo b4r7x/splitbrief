@@ -62,7 +62,7 @@ type RunTaskLoopOptions = {
   wctx: WorkflowContext;
   initialState: WorkflowState;
   setTrackedState: (s: WorkflowState) => void;
-  setCurrentTask: (t: { file: string; action: string } | undefined) => void;
+  setCurrentTask: (t: Pick<Task, 'file' | 'action'> | undefined) => void;
 };
 
 export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: WorkflowState; taskBreakdowns: TaskTokenUsage[] }> {
@@ -76,6 +76,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: Wo
     if (wctx.signal?.aborted) return { state, taskBreakdowns };
 
     const task = state.tasks[i];
+    if (!task) continue;
 
     const cancelledState = await checkExternalChanges(projectDir, callbacks, state, task.id);
     if (cancelledState) return { state: cancelledState, taskBreakdowns };

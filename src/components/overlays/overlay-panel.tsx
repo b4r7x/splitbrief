@@ -3,15 +3,15 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../ui/theme.js';
 import { useResponsiveLayout } from '../../hooks/use-terminal-size.js';
 
-export interface OverlayPanelProps {
-  title?: string;
-  hint?: string;
+interface OverlayPanelProps {
+  title?: string | undefined;
+  hint?: string | undefined;
   children: ReactNode;
-  width?: number | 'auto';
-  maxWidth?: number;
-  bordered?: boolean;
-  paddingX?: number;
-  paddingY?: number;
+  width?: number | 'auto' | undefined;
+  maxWidth?: number | undefined;
+  bordered?: boolean | undefined;
+  paddingX?: number | undefined;
+  paddingY?: number | undefined;
 }
 
 export function OverlayPanel({

@@ -1,6 +1,7 @@
 import type { PlannerTool, PlannerDetection, ProviderDetection } from '../../types.js';
 import { createPlanner } from '../planners/factory.js';
-import { detectAvailableProviders, withTimeout, DETECTION_TIMEOUT_MS, KNOWN_PROVIDERS } from '../providers/registry.js';
+import { detectAvailableProviders, DETECTION_TIMEOUT_MS, KNOWN_PROVIDERS } from '../providers/registry.js';
+import { withTimeout } from '../../utils/with-timeout.js';
 import { toErrorMessage } from '../../utils/format.js';
 
 export type { PlannerDetection } from '../../types.js';
@@ -45,7 +46,7 @@ export async function detectAvailablePlanners(): Promise<PlannerDetection[]> {
         if (available) {
           try {
             version = await withTimeout(planner.getVersion(), DETECTION_TIMEOUT_MS);
-          } catch { /* non-fatal: version detection is best-effort */ }
+          } catch {}
         }
         return { tool, type: 'cli', available, version, description: CLI_DESCRIPTIONS[tool] };
       } catch (err) {

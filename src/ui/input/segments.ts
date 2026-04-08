@@ -19,9 +19,9 @@ export interface BuildSegmentsParams {
   placeholder: string;
   focus: boolean;
   showCursor: boolean;
-  mask?: string;
+  mask?: string | undefined;
   tabSize: number;
-  highlight?: { start: number; end: number };
+  highlight?: { start: number; end: number } | undefined;
 }
 
 export function buildSegments(params: BuildSegmentsParams): { preCursor: Segment[]; postCursor: Segment[] } {

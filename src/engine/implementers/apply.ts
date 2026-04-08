@@ -45,8 +45,8 @@ export function applyCode(code: string, task: Task, projectDir: string): { succe
 
   while ((match = searchReplaceRegex.exec(code)) !== null) {
     hasMarkers = true;
-    const search = match[1].trimEnd();
-    const replace = match[2].trimEnd();
+    const search = (match[1] ?? '').trimEnd();
+    const replace = (match[2] ?? '').trimEnd();
 
     if (!result.includes(search)) {
       return { success: false, error: `Search block not found in ${task.file}:\n${search.slice(0, 200)}` };

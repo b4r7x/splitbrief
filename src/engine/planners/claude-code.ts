@@ -18,8 +18,8 @@ interface StreamHandlerState {
 
 interface StreamHandlerCallbacks {
   onOutput: (text: string) => void;
-  onSessionId?: (id: string) => void;
-  onQuestion?: (questions: ClarificationQuestion[]) => void;
+  onSessionId?: ((id: string) => void) | undefined;
+  onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
 }
 
 interface ToolFormat {
@@ -164,10 +164,6 @@ export function createClaudeCodePlanner(model?: string): Planner {
   let currentSessionId: string | null = null;
 
   return createPlannerBase({
-    name: 'claude-code',
-    pricingKey: 'claude-code',
-    conversational: true,
-
     async invokePlan(prompt, projectDir, onOutput, onQuestion) {
       const result = await spawnClaudePlanner(prompt, projectDir, currentSessionId, onOutput, onQuestion, model);
       currentSessionId = result.sessionId;

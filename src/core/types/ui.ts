@@ -10,9 +10,9 @@ export type InputMode = 'normal' | 'review' | 'question';
 
 export type RouteData =
   | { screen: 'home' }
-  | { screen: 'workflow'; feature: string; resumeState?: WorkflowState }
+  | { screen: 'workflow'; feature: string; resumeState?: WorkflowState | undefined }
   | { screen: 'summary'; summary: Summary }
-  | { screen: 'setup'; onComplete?: 'home' | 'workflow'; feature?: string };
+  | { screen: 'setup'; onComplete?: 'home' | 'workflow' | undefined; feature?: string | undefined };
 
 export interface Session {
   id: string;

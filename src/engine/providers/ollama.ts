@@ -47,7 +47,7 @@ export function createOllamaProvider(overrides?: ProviderOverrides): ProviderDef
         const data = json as OllamaShowResponse;
         const params = data.parameters ?? '';
         const match = params.match(/num_ctx\s+(\d+)/);
-        return match ? parseInt(match[1], 10) : null;
+        return match?.[1] ? parseInt(match[1], 10) : null;
       } catch {
         return null;
       }

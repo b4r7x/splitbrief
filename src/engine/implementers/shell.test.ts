@@ -22,24 +22,28 @@ async function retryTask(task: ReturnType<typeof makeTask>, opts: { projectDir: 
 }
 
 describe('shell implementer', () => {
-  it('implementTask dispatches to shell when type is shell', async () => {
+  it('implementTask dispatches to shell when kind is shell (empty stdout → extraction fails)', async () => {
     const config = makeConfig({ command: '/bin/echo' });
     const task = makeTask();
 
     const result = await implementTask(task, { projectDir: '/tmp', config, context, onProgress: () => {} });
 
-    expect(typeof result.success).toBe('boolean');
-    expect(typeof result.output).toBe('string');
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toMatch(/extract|code/i);
+    }
   });
 
-  it('retryTask dispatches to shell when type is shell', async () => {
+  it('retryTask dispatches to shell when kind is shell (empty stdout → extraction fails)', async () => {
     const config = makeConfig({ command: '/bin/echo' });
     const task = makeTask();
 
     const result = await retryTask(task, { projectDir: '/tmp', config, context, error: 'previous error', attempt: 1, onProgress: () => {} });
 
-    expect(typeof result.success).toBe('boolean');
-    expect(typeof result.output).toBe('string');
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toMatch(/extract|code/i);
+    }
   });
 
   it('returns failure on non-zero exit code with no output', async () => {
@@ -91,7 +95,7 @@ describe('shell implementer', () => {
     const task = makeTask();
     const progressCalls: string[] = [];
 
-    const result = await retryTask(task, {
+    await retryTask(task, {
       projectDir: '/tmp', config, context,
       error: 'TypeError: x is not a function', attempt: 1,
       onProgress: (text) => { progressCalls.push(text); },

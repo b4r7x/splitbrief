@@ -4,8 +4,8 @@ import type { OverlayType } from '../types.js';
 interface OverlayState {
   active: OverlayType;
   exclusive: boolean;
-  focus?: string;
-  stack: { type: OverlayType; focus?: string }[];
+  focus?: string | undefined;
+  stack: { type: OverlayType; focus?: string | undefined }[];
 }
 
 const INITIAL: OverlayState = { active: 'none', exclusive: false, stack: [] };
@@ -22,8 +22,8 @@ export const overlayStore = {
     return { active: type, focus, exclusive: false, stack };
   }),
   close: () => store.set(s => {
-    if (s.stack.length === 0) return INITIAL;
     const prev = s.stack[s.stack.length - 1];
+    if (!prev) return INITIAL;
     return {
       active: prev.type,
       focus: prev.focus,

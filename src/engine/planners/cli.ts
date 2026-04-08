@@ -1,31 +1,27 @@
 import type { PlannerTokenUsage } from '../../types.js';
 import type { Planner } from './types.js';
 import { createPlannerBase, createIsAvailable, createGetVersion, type InvokeResult } from './base.js';
-import { spawnAndCollect } from '../../utils/process.js';
+import { spawnAndCollect } from './spawn-collect.js';
 import { parseJsonlLine, parseOpencodeLine, parseTextLine } from '../streaming/output-parsers.js';
+import { CLI_TOOLS, type CliToolName } from '../cli-tools.js';
 
-export type CliPlannerKind = 'codex' | 'opencode' | 'aider';
+type CliPlannerKind = CliToolName;
 
 interface ParsedLine {
-  text?: string;
-  usage?: PlannerTokenUsage;
+  text?: string | undefined;
+  usage?: PlannerTokenUsage | undefined;
+  isResult?: boolean | undefined;
 }
 
 interface CliPlannerSpec {
-  cmd: string;
-  pricingKey: string;
-  notFound: string;
   buildArgs: (model: string | undefined, prompt: string, projectDir: string, mode: 'plan' | 'escalate') => string[];
   parseLine: (line: string) => ParsedLine;
-  postProcess?: (text: string, stderrOutput: string, usage: PlannerTokenUsage | null) => InvokeResult;
-  isAvailableOpts?: { timeout?: number };
+  postProcess?: ((text: string, stderrOutput: string, usage: PlannerTokenUsage | null) => InvokeResult) | undefined;
+  isAvailableOpts?: { timeout?: number | undefined } | undefined;
 }
 
 const SPECS: Record<CliPlannerKind, CliPlannerSpec> = {
   codex: {
-    cmd: 'codex',
-    pricingKey: 'codex',
-    notFound: 'Codex CLI not found. Install it with: npm install -g @openai/codex',
     buildArgs: (model, prompt, projectDir) => {
       const args = ['exec', '--json', '--full-auto', '--cd', projectDir, prompt];
       if (model) args.unshift('--model', model);
@@ -34,9 +30,6 @@ const SPECS: Record<CliPlannerKind, CliPlannerSpec> = {
     parseLine: parseJsonlLine,
   },
   opencode: {
-    cmd: 'opencode',
-    pricingKey: 'opencode',
-    notFound: 'OpenCode CLI not found. Install it from https://github.com/nicholasoxford/opencode',
     buildArgs: (model, prompt) => {
       const args = ['run', '--format', 'json', '--agent', 'plan', prompt];
       if (model) args.splice(1, 0, '--model', model);
@@ -46,9 +39,6 @@ const SPECS: Record<CliPlannerKind, CliPlannerSpec> = {
     isAvailableOpts: { timeout: 5000 },
   },
   aider: {
-    cmd: 'aider',
-    pricingKey: 'aider',
-    notFound: 'Aider not found. Install it from https://aider.chat',
     buildArgs: (model, prompt, _projectDir, mode) => {
       const args = ['--chat-mode', 'ask', '--yes-always', '--no-stream', '--no-pretty', '--message', prompt];
       if (model) args.unshift('--model', model);
@@ -69,6 +59,7 @@ const SPECS: Record<CliPlannerKind, CliPlannerSpec> = {
 
 export function createCliPlanner(kind: CliPlannerKind, model?: string): Planner {
   const spec = SPECS[kind];
+  const tool = CLI_TOOLS[kind];
 
   async function invoke(
     prompt: string,
@@ -78,10 +69,10 @@ export function createCliPlanner(kind: CliPlannerKind, model?: string): Planner 
   ): Promise<InvokeResult> {
     let stderrOutput = '';
     const result = await spawnAndCollect({
-      command: spec.cmd,
+      command: tool.command,
       args: spec.buildArgs(model, prompt, projectDir, mode),
       cwd: projectDir,
-      notFoundMessage: spec.notFound,
+      notFoundMessage: tool.notFoundMessage,
       parseLine: spec.parseLine,
       onOutput,
       onStderr: spec.postProcess ? (chunk) => { stderrOutput += chunk; } : undefined,
@@ -92,13 +83,10 @@ export function createCliPlanner(kind: CliPlannerKind, model?: string): Planner 
   }
 
   return createPlannerBase({
-    name: kind,
-    pricingKey: spec.pricingKey,
-
     invokePlan: (prompt, projectDir, onOutput) => invoke(prompt, projectDir, onOutput, 'plan'),
     invokeEscalate: (prompt, projectDir, onOutput) => invoke(prompt, projectDir, onOutput, 'escalate'),
 
-    isAvailable: createIsAvailable(spec.cmd, spec.isAvailableOpts),
-    getVersion: createGetVersion(spec.cmd),
+    isAvailable: createIsAvailable(tool.command, spec.isAvailableOpts),
+    getVersion: createGetVersion(tool.command),
   });
 }

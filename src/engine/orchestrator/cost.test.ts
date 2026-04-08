@@ -1,7 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { buildSummary, calculateCostBreakdown, estimateCostSavings } from './cost.js';
 import type { BuildSummaryState } from './cost.js';
 import { makeUsage, makeTask } from '#testing/helpers/fixtures.js';
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2025-01-01T00:00:00Z'));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function makeState(overrides?: Partial<BuildSummaryState>): BuildSummaryState {
   return {

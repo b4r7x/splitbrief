@@ -14,7 +14,7 @@ export const PROVIDER_IDS = [
 
 export type ProviderId = typeof PROVIDER_IDS[number];
 
-export interface ProviderInfo {
+interface ProviderInfo {
   id: ProviderId;
   displayName: string;
   baseUrl?: string;
@@ -35,7 +35,7 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderInfo> = {
   shell: { id: 'shell', displayName: 'Custom Shell' },
 };
 
-export type KnownProviderName = 'ollama' | 'lm-studio' | 'deepseek' | 'openrouter';
+type KnownProviderName = 'ollama' | 'lm-studio' | 'deepseek' | 'openrouter';
 
 export const KNOWN_PROVIDER_NAMES: readonly string[] = ['ollama', 'lm-studio', 'deepseek', 'openrouter'];
 

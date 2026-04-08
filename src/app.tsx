@@ -79,7 +79,7 @@ function renderScreen({ screen, commands, onSlash }: {
     case 'setup':
       return <SetupScreen />;
     default: {
-      const _exhaustive: never = screen;
+      screen satisfies never;
       return null;
     }
   }
@@ -109,7 +109,7 @@ function renderOverlay({ active, screen, commands, paletteItems }: {
     case 'implementer-picker':
       return <ToolModelPicker role="implementer" />;
     default: {
-      const _exhaustive: never = active;
+      active satisfies never;
       return null;
     }
   }

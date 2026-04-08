@@ -6,8 +6,8 @@ export interface ClarificationQuestion {
   id: string;
   type: 'choice' | 'input' | 'confirm';
   text: string;
-  options?: string[];
-  default?: string | number | boolean;
+  options?: string[] | undefined;
+  default?: string | number | boolean | undefined;
 }
 
 export type TuiEvent =
@@ -16,8 +16,8 @@ export type TuiEvent =
       ts: number;
       phase: Phase;
       status: 'running' | 'done';
-      summary?: string;
-      duration?: number;
+      summary?: string | undefined;
+      duration?: number | undefined;
     }
   | {
       type: 'planner-text';
@@ -54,14 +54,14 @@ export type TuiEvent =
       type: 'implementer-generate';
       ts: number;
       status: 'running';
-      file?: string;
+      file?: string | undefined;
     }
   | {
       type: 'implementer-generate';
       ts: number;
       status: 'done';
       file: string;
-      diff?: string;
+      diff?: string | undefined;
       linesAdded: number;
       linesRemoved: number;
       duration: number;
@@ -78,8 +78,8 @@ export type TuiEvent =
       status: 'running' | 'done';
       passed: boolean;
       stages: { tsc: boolean; lint: boolean; test: boolean };
-      error?: string;
-      duration?: number;
+      error?: string | undefined;
+      duration?: number | undefined;
     }
   | {
       type: 'retry';
@@ -92,7 +92,7 @@ export type TuiEvent =
       type: 'escalate';
       ts: number;
       tier: 1 | 2;
-      hint?: string;
+      hint?: string | undefined;
     }
   | {
       type: 'git-commit';
@@ -128,9 +128,9 @@ export type TuiEvent =
 export interface OrchestratorEvent {
   ts: number;
   type: OrchestratorEventType;
-  taskId?: string;
+  taskId?: string | undefined;
   phase: Phase;
-  data?: Record<string, unknown>;
+  data?: Record<string, unknown> | undefined;
 }
 
 export type OrchestratorEventType =
@@ -163,8 +163,8 @@ export type OrchestratorEventType =
 
 export interface OrchestratorCallbacks {
   onEvent: (event: TuiEvent) => void;
-  onApprovalNeeded: (type: 'spec' | 'plan', filePath: string) => Promise<{ approved: boolean; comment?: string }>;
+  onApprovalNeeded: (type: 'spec' | 'plan', filePath: string) => Promise<{ approved: boolean; comment?: string | undefined }>;
   onExternalChanges: () => Promise<boolean>;
-  onQuestionAsked?: (question: ClarificationQuestion, num: number, total: number) => Promise<string>;
+  onQuestionAsked?: ((question: ClarificationQuestion, num: number, total: number) => Promise<string>) | undefined;
   onComplete: (summary: Summary) => void;
 }

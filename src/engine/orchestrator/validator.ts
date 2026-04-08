@@ -113,7 +113,8 @@ export async function validateTask(
     if (testFile) {
       const testCommand = config.validation.testCommand || 'npm test';
       const parts = testCommand.split(/\s+/);
-      const result = await runValidationStep({ stage: 'test', cmd: parts[0], args: [...parts.slice(1), '--', testFile], cwd: projectDir, errorSource: 'stderr' });
+      const cmd = parts[0] ?? 'npm';
+      const result = await runValidationStep({ stage: 'test', cmd, args: [...parts.slice(1), '--', testFile], cwd: projectDir, errorSource: 'stderr' });
       results.push(result);
       if (!result.passed) return results;
       stages.test = true;

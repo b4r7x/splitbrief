@@ -8,7 +8,7 @@ interface PipelineBarProps {
 
 const STAGES = ['res', 'spec', 'plan', 'impl', 'rev'] as const;
 
-export function getStageIndex(phase: Phase): number {
+function getStageIndex(phase: Phase): number {
   switch (phase) {
     case 'idle': return -1;
     case 'researching': return 0;

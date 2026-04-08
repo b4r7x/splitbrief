@@ -23,7 +23,7 @@ function makeConfig(provider: string, overrides?: Partial<Config['planner']>): C
       ...overrides,
     },
     implementer: {
-      provider: 'ollama',
+      tool: 'ollama',
       model: 'test',
       apiBase: '',
       contextLength: 8192,

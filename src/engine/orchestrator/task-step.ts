@@ -71,7 +71,7 @@ type RunSingleTaskOptions = {
   state: WorkflowState;
   taskBreakdowns: TaskTokenUsage[];
   setTrackedState: (s: WorkflowState) => void;
-  setCurrentTask: (t: { file: string; action: string } | undefined) => void;
+  setCurrentTask: (t: Pick<Task, 'file' | 'action'> | undefined) => void;
 };
 
 export async function runSingleTask(opts: RunSingleTaskOptions): Promise<WorkflowState> {

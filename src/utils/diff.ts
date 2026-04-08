@@ -22,26 +22,32 @@ function diffLines(oldLines: string[], newLines: string[]): Change[] {
   const n = newLines.length;
 
   // Myers-like LCS via DP to get edit script
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  const stride = n + 1;
+  const dp = new Int32Array((m + 1) * stride);
+  const lookup = (i: number, j: number): number => dp[i * stride + j] ?? 0;
   for (let i = 1; i <= m; i++) {
+    const oi = oldLines[i - 1] ?? '';
     for (let j = 1; j <= n; j++) {
-      dp[i][j] = oldLines[i - 1] === newLines[j - 1]
-        ? dp[i - 1][j - 1] + 1
-        : Math.max(dp[i - 1][j], dp[i][j - 1]);
+      const nj = newLines[j - 1] ?? '';
+      dp[i * stride + j] = oi === nj
+        ? lookup(i - 1, j - 1) + 1
+        : Math.max(lookup(i - 1, j), lookup(i, j - 1));
     }
   }
 
   const changes: Change[] = [];
   let i = m, j = n;
   while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
-      changes.push({ type: ' ', line: oldLines[i - 1] });
+    const oi = i > 0 ? oldLines[i - 1] ?? '' : '';
+    const nj = j > 0 ? newLines[j - 1] ?? '' : '';
+    if (i > 0 && j > 0 && oi === nj) {
+      changes.push({ type: ' ', line: oi });
       i--; j--;
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      changes.push({ type: '+', line: newLines[j - 1] });
+    } else if (j > 0 && (i === 0 || lookup(i, j - 1) >= lookup(i - 1, j))) {
+      changes.push({ type: '+', line: nj });
       j--;
     } else {
-      changes.push({ type: '-', line: oldLines[i - 1] });
+      changes.push({ type: '-', line: oi });
       i--;
     }
   }
@@ -51,9 +57,9 @@ function diffLines(oldLines: string[], newLines: string[]): Change[] {
 
 function formatWithContext(changes: Change[], contextLines: number): { diff: string; linesAdded: number; linesRemoved: number } {
   const changed = new Set<number>();
-  for (let i = 0; i < changes.length; i++) {
-    if (changes[i].type !== ' ') changed.add(i);
-  }
+  changes.forEach((ch, i) => {
+    if (ch.type !== ' ') changed.add(i);
+  });
 
   if (changed.size === 0) return { diff: '', linesAdded: 0, linesRemoved: 0 };
 
@@ -72,10 +78,9 @@ function formatWithContext(changes: Change[], contextLines: number): { diff: str
   }
 
   const lines: string[] = [];
-  for (let i = 0; i < changes.length; i++) {
-    if (!included.has(i)) continue;
-    lines.push(`${changes[i].type} ${changes[i].line}`);
-  }
+  changes.forEach((ch, i) => {
+    if (included.has(i)) lines.push(`${ch.type} ${ch.line}`);
+  });
 
   return { diff: lines.join('\n'), linesAdded, linesRemoved };
 }

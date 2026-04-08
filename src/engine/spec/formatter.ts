@@ -27,7 +27,7 @@ export function loadConfig(dir: string): Config {
   };
 }`;
 
-export function resolveCodeContext(
+function resolveCodeContext(
   fileContent: string,
   functionName: string | undefined,
   availableTokens: number,
@@ -156,14 +156,6 @@ export function formatTaskPrompt(task: Task, context: ProjectContext, contextLen
   return sections.join('\n');
 }
 
-export function buildFullPrompt(task: Task, context: ProjectContext, contextLength?: number): string {
-  return SYSTEM_PREAMBLE + '\n\n' + formatTaskPrompt(task, context, contextLength);
-}
-
-export function buildFullRetryPrompt(task: Task, context: ProjectContext, error: string, attempt: number, contextLength?: number): string {
-  return SYSTEM_PREAMBLE + '\n\n' + formatRetryPrompt(task, context, error, attempt, contextLength);
-}
-
 export function formatRetryPrompt(task: Task, context: ProjectContext, error: string, attempt: number, contextLength?: number): string {
   const framings: Record<number, string> = {
     1: 'Your previous attempt had an error. Fix it:',
@@ -171,7 +163,7 @@ export function formatRetryPrompt(task: Task, context: ProjectContext, error: st
     3: 'Multiple attempts have failed. Try a completely different approach:',
   };
 
-  const framing = framings[attempt] ?? framings[3];
+  const framing = framings[attempt] ?? framings[3] ?? '';
   const sections = buildTaskSections(task, context);
 
   sections.unshift(framing, '', 'Error from previous attempt:', error, '');

@@ -1,8 +1,8 @@
-export function snakeToCamel(s: string): string {
+function snakeToCamel(s: string): string {
   return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 }
 
-export function camelToSnake(s: string): string {
+function camelToSnake(s: string): string {
   return s.replace(/[A-Z]/g, (c) => '_' + c.toLowerCase());
 }
 

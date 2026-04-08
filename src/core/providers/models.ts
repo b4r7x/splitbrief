@@ -5,10 +5,7 @@ export interface KnownModel {
   isDefault?: boolean;
 }
 
-// Default model for both agent-sdk planner and implementer
 export const DEFAULT_AGENT_SDK_MODEL = 'claude-sonnet-4-6';
-
-// Shared model lists referenced by both planner and implementer maps
 
 const ANTHROPIC_MODELS: KnownModel[] = [
   { name: 'claude-sonnet-4-6', isDefault: true },
@@ -129,8 +126,6 @@ export const KNOWN_IMPLEMENTER_MODELS: Partial<Record<ProviderId, KnownModel[]>>
 };
 
 const MODEL_DISPLAY_NAMES: Record<string, string> = {
-  // Anthropic Claude (dash-separated — Claude Code, Agent SDK, direct API)
-  // Dot-separated OpenRouter variants handled by parseModelName heuristic.
   'claude-opus-4-6': 'Claude Opus 4.6',
   'claude-sonnet-4-6': 'Claude Sonnet 4.6',
   'claude-opus-4-5': 'Claude Opus 4.5',
@@ -138,7 +133,6 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   'claude-sonnet-4': 'Claude Sonnet 4',
   'claude-haiku-4-5': 'Claude Haiku 4.5',
 
-  // OpenAI GPT
   'gpt-4o': 'GPT-4o',
   'gpt-5.4': 'GPT-5.4',
   'gpt-5.4-mini': 'GPT-5.4 Mini',
@@ -151,13 +145,11 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   'gpt-5.1-codex-max': 'GPT-5.1 Codex Max',
   'gpt-5-codex-mini': 'GPT-5 Codex Mini',
 
-  // OpenAI o-series
   'o3': 'o3',
   'o3-mini': 'o3 Mini',
   'o4-mini': 'o4 Mini',
   'codex-mini-latest': 'Codex Mini',
 
-  // DeepSeek
   'deepseek-chat': 'DeepSeek V3',
   'deepseek-coder': 'DeepSeek Coder',
   'deepseek-reasoner': 'DeepSeek R1',
@@ -166,20 +158,16 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   'deepseek-v3.2': 'DeepSeek V3.2',
   'deepseek-coder-v2': 'DeepSeek Coder V2',
 
-  // Google Gemini
   'gemini-2.5-pro': 'Gemini 2.5 Pro',
   'gemini-2.5-flash': 'Gemini 2.5 Flash',
   'gemini-3-pro': 'Gemini 3 Pro',
   'gemini-3.1-pro-preview': 'Gemini 3.1 Pro Preview',
 
-  // Meta Llama
   'llama-4-scout': 'Llama 4 Scout',
   'llama3.3': 'Llama 3.3',
 
-  // Mistral
   'mistral-large-latest': 'Mistral Large',
 
-  // Ollama-tagged models (model:tag format)
   'qwen2.5-coder:7b': 'Qwen 2.5 Coder 7B',
   'qwen2.5-coder:14b': 'Qwen 2.5 Coder 14B',
   'qwen2.5-coder:32b': 'Qwen 2.5 Coder 32B',
@@ -188,7 +176,6 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   'codellama:13b': 'Code Llama 13B',
   'starcoder2:7b': 'StarCoder2 7B',
 
-  // LM Studio models (dash-separated, no tags)
   'qwen2.5-coder-7b': 'Qwen 2.5 Coder 7B',
   'qwen2.5-coder-14b': 'Qwen 2.5 Coder 14B',
   'qwen2.5-coder-32b': 'Qwen 2.5 Coder 32B',
@@ -257,7 +244,6 @@ export function parseModelName(rawId: string): string {
   if (!rawId) return '';
   const id = stripVendorPrefix(rawId);
 
-  // Split Ollama tag (model:tag)
   let base = id;
   let tagStr = '';
   const colon = id.indexOf(':');
@@ -271,8 +257,7 @@ export function parseModelName(rawId: string): string {
   const parts: string[] = [];
   let isGpt = false;
 
-  for (let i = 0; i < tokens.length; i++) {
-    const raw = tokens[i];
+  for (const [i, raw] of tokens.entries()) {
     const lower = raw.toLowerCase();
 
     if (DROP_TOKENS.has(lower)) continue;
@@ -281,7 +266,6 @@ export function parseModelName(rawId: string): string {
       // o-series: keep lowercase (o3, o4)
       if (O_SERIES_RE.test(lower)) { parts.push(lower); continue; }
 
-      // Exact brand match
       const brand = BRANDS[lower];
       if (brand) { parts.push(brand); if (lower === 'gpt') isGpt = true; continue; }
 
@@ -304,7 +288,7 @@ export function parseModelName(rawId: string): string {
   if (parts[0] === 'Claude' && parts.length >= 3) {
     const last = parts[parts.length - 1];
     const prev = parts[parts.length - 2];
-    if (/^\d$/.test(last) && /^\d$/.test(prev)) {
+    if (last && prev && /^\d$/.test(last) && /^\d$/.test(prev)) {
       parts.splice(parts.length - 2, 2, `${prev}.${last}`);
     }
   }

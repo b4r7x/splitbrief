@@ -1,6 +1,5 @@
-export type ModelTokenUsage = { inputTokens: number; outputTokens: number };
-export type PlannerTokenUsage = ModelTokenUsage;
-export type ImplementerTokenUsage = ModelTokenUsage;
+export type PlannerTokenUsage = { inputTokens: number; outputTokens: number };
+export type ImplementerTokenUsage = { inputTokens: number; outputTokens: number };
 
 export interface TokenUsage {
   plannerInput: number;
@@ -35,15 +34,15 @@ export interface CostBreakdown {
 export interface ImplementerResult {
   success: boolean;
   output: string;
-  error?: string;
-  usage?: ImplementerTokenUsage | null;
+  error?: string | undefined;
+  usage?: ImplementerTokenUsage | null | undefined;
 }
 
 export interface ValidationResult {
   passed: boolean;
   stage: 'typecheck' | 'lint' | 'test';
-  error?: string;
-  output?: string;
+  error?: string | undefined;
+  output?: string | undefined;
 }
 
 export interface Summary {
@@ -57,8 +56,8 @@ export interface Summary {
   tokenUsage: TokenUsage;
   estimatedCostSavings: string;
   escalationRate: number;
-  taskBreakdown?: TaskTokenUsage[];
-  costBreakdown?: CostBreakdown;
-  plannerTool?: string;
-  implementerTool?: string;
+  taskBreakdown?: TaskTokenUsage[] | undefined;
+  costBreakdown?: CostBreakdown | undefined;
+  plannerTool?: string | undefined;
+  implementerTool?: string | undefined;
 }

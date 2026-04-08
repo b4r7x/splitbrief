@@ -3,7 +3,7 @@ import { estimateSectionHeight } from '../../utils/event-sections.js';
 
 type DynamicSection = Extract<Section, { type: 'events' | 'active-task' }>;
 
-export interface ViewportTrimResult {
+interface ViewportTrimResult {
   visibleSections: DynamicSection[];
   totalHeight: number;
 }

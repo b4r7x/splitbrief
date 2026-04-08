@@ -28,7 +28,11 @@ const baseKey: KeyInfo = {
 };
 
 function press(overrides: Partial<KeyInfo>, input = '') {
-  capturedHandler!(input, { ...baseKey, ...overrides });
+  const merged: KeyInfo = { ...baseKey };
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v !== undefined) (merged as Record<string, boolean>)[k] = v;
+  }
+  capturedHandler!(input, merged);
 }
 
 beforeEach(() => {

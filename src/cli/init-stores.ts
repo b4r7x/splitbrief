@@ -6,7 +6,7 @@ import { setHighlightTheme } from '../utils/highlight.js';
 import type { WorkflowOpts } from '../types.js';
 
 export interface InitStoresOverrides extends WorkflowOpts {
-  contextLength?: number;
+  contextLength?: number | undefined;
 }
 
 export function initStores(projectDir: string, opts: InitStoresOverrides = {}): void {
@@ -25,7 +25,8 @@ export function initStores(projectDir: string, opts: InitStoresOverrides = {}): 
     autoApprove: opts.auto,
     mode: opts.mode,
   });
-  const storeConfig = configStore.get().config!;
+  const storeConfig = configStore.get().config;
+  if (!storeConfig) throw new Error('configStore.load did not populate config');
   if (storeConfig.shikiTheme) setHighlightTheme(storeConfig.shikiTheme);
   sessionsStore.load(storeConfig.sessions?.scope ?? 'project', projectDir);
   skillsStore.discover(storeConfig.planner.tool, projectDir);

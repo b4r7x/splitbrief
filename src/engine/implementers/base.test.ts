@@ -6,7 +6,7 @@ vi.mock('../parsers/response-extractor.js', () => ({
   extractCode: vi.fn(),
 }));
 
-vi.mock('../orchestrator/apply.js', () => ({
+vi.mock('./apply.js', () => ({
   applyCode: vi.fn(),
 }));
 
@@ -19,26 +19,16 @@ vi.mock('../../utils/fs.js', () => ({
 }));
 
 import { extractCode } from '../parsers/response-extractor.js';
-import { applyCode } from '../orchestrator/apply.js';
-import { computeDiff } from '../../utils/diff.js';
+import { applyCode } from './apply.js';
 
 function makeBaseConfig(overrides?: Partial<ImplementerBaseConfig>): ImplementerBaseConfig {
   return {
-    name: 'test',
-    pricingKey: 'ollama',
     extractsCode: true,
     invoke: vi.fn().mockResolvedValue({ text: 'code output', usage: { inputTokens: 10, outputTokens: 20 } }),
     buildPrompt: vi.fn().mockReturnValue('test prompt'),
     buildRetryPrompt: vi.fn().mockReturnValue('retry prompt'),
-    isAvailable: vi.fn().mockResolvedValue(true),
     ...overrides,
   };
-}
-
-function mockSuccessfulExtraction() {
-  vi.mocked(extractCode).mockReturnValue({ code: 'const x = 1;', confidence: 'high' });
-  vi.mocked(applyCode).mockReturnValue({ success: true });
-  vi.mocked(computeDiff).mockReturnValue({ diff: '+line', linesAdded: 1, linesRemoved: 0 });
 }
 
 describe('createImplementerBase', () => {

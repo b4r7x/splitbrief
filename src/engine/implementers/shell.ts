@@ -54,10 +54,8 @@ async function spawnShellImplementer(opts: SpawnShellOptions): Promise<ShellImpl
   return { text: collectedText, usage: rawUsage };
 }
 
-export function createShellImplementer(config: Config): Implementer {
+export function createShellImplementer(_config: Config): Implementer {
   return createImplementerBase({
-    name: 'shell',
-    pricingKey: 'shell',
     extractsCode: true,
 
     async invoke(opts: InvokeOpts) {
@@ -72,10 +70,6 @@ export function createShellImplementer(config: Config): Implementer {
 
     shouldThrow(err: unknown) {
       return err instanceof Error && err.message.includes('command not found');
-    },
-
-    async isAvailable() {
-      return true;
     },
   });
 }

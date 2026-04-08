@@ -1,11 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createInitialState, transition } from './machine.js';
 import type { WorkflowState } from '../types/index.js';
-import { makeTask as makeTaskBase } from '#testing/helpers/fixtures.js';
-
-function makeTask(id: string) {
-  return makeTaskBase({ id, title: `Task ${id}`, file: `src/${id}.ts`, description: `Description for ${id}` });
-}
+import { makeTask } from '#testing/helpers/fixtures.js';
 
 describe('createInitialState', () => {
   it('returns idle phase with feature set and empty arrays', () => {
@@ -36,7 +32,7 @@ describe('transition', () => {
   });
 
   it('START_QUICK -> implementing with tasks set', () => {
-    const tasks = [makeTask('t1'), makeTask('t2')];
+    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
     const state = createInitialState('feat');
     const next = transition(state, { type: 'START_QUICK', tasks });
     expect(next.phase).toBe('implementing');
@@ -52,7 +48,7 @@ describe('transition', () => {
   });
 
   it('VALIDATION_FAIL with attempt < 3 -> implementing with attempt incremented', () => {
-    const tasks = [makeTask('t1')];
+    const tasks = [makeTask({ id: 't1' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'validating-task',
@@ -75,7 +71,7 @@ describe('transition', () => {
   });
 
   it('HINT_SUCCESS -> implementing with index advanced', () => {
-    const tasks = [makeTask('t1'), makeTask('t2')];
+    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'escalating',
@@ -89,7 +85,7 @@ describe('transition', () => {
   });
 
   it('FULL_FAIL -> implementing with task in failedTasks', () => {
-    const tasks = [makeTask('t1'), makeTask('t2')];
+    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'escalating',
@@ -103,7 +99,7 @@ describe('transition', () => {
   });
 
   it('CANCEL -> idle with state preserved', () => {
-    const tasks = [makeTask('t1')];
+    const tasks = [makeTask({ id: 't1' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'implementing',
@@ -137,7 +133,7 @@ describe('transition', () => {
   });
 
   it('FULL_SUCCESS -> implementing with index advanced, task in escalatedTasks, attempt reset', () => {
-    const tasks = [makeTask('t1'), makeTask('t2')];
+    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'escalating',
@@ -159,7 +155,7 @@ describe('transition', () => {
   });
 
   it('HINT_SUCCESS resets attempt to 0', () => {
-    const tasks = [makeTask('t1'), makeTask('t2')];
+    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'escalating',
@@ -173,7 +169,7 @@ describe('transition', () => {
   });
 
   it('FULL_FAIL resets attempt to 0', () => {
-    const tasks = [makeTask('t1'), makeTask('t2')];
+    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'escalating',
@@ -187,7 +183,7 @@ describe('transition', () => {
   });
 
   it('configurable maxRetries: attempt < custom max stays in implementing', () => {
-    const tasks = [makeTask('t1')];
+    const tasks = [makeTask({ id: 't1' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'validating-task',
@@ -201,7 +197,7 @@ describe('transition', () => {
   });
 
   it('configurable maxRetries: attempt >= custom max transitions to escalating', () => {
-    const tasks = [makeTask('t1')];
+    const tasks = [makeTask({ id: 't1' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'validating-task',
@@ -214,7 +210,7 @@ describe('transition', () => {
   });
 
   it('VALIDATION_FAIL at default max transitions to escalating', () => {
-    const tasks = [makeTask('t1')];
+    const tasks = [makeTask({ id: 't1' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'validating-task',
@@ -227,7 +223,7 @@ describe('transition', () => {
   });
 
   it('full workflow: START through REVIEW_DONE', () => {
-    const tasks = [makeTask('t1'), makeTask('t2')];
+    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
 
     let s = createInitialState('full-flow');
     expect(s.phase).toBe('idle');
@@ -252,7 +248,6 @@ describe('transition', () => {
     expect(s.phase).toBe('implementing');
     expect(s.currentTaskIndex).toBe(0);
 
-    // Task 1: send and pass
     s = transition(s, { type: 'TASK_SENT' });
     expect(s.phase).toBe('validating-task');
     s = transition(s, { type: 'VALIDATION_PASS' });
@@ -260,7 +255,6 @@ describe('transition', () => {
     expect(s.currentTaskIndex).toBe(1);
     expect(s.completedTasks).toEqual(['t1']);
 
-    // Task 2: send and pass
     s = transition(s, { type: 'TASK_SENT' });
     expect(s.phase).toBe('validating-task');
     s = transition(s, { type: 'VALIDATION_PASS' });
@@ -274,7 +268,6 @@ describe('transition', () => {
     s = transition(s, { type: 'REVIEW_DONE' });
     expect(s.phase).toBe('complete');
 
-    // Verify final state
     expect(s.feature).toBe('full-flow');
     expect(s.completedTasks).toEqual(['t1', 't2']);
     expect(s.failedTasks).toEqual([]);

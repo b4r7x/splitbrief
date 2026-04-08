@@ -25,7 +25,7 @@ describe('useInputMode', () => {
   it('resolve with object resolves the review promise', async () => {
     const { result, act, unmount } = renderHook(() => useInputMode());
 
-    let resolved: { approved: boolean; comment?: string } | undefined;
+    let resolved: { approved: boolean; comment?: string | undefined } | undefined;
     await act(() => {
       result.current.setReviewMode('Approve?').then((v) => {
         resolved = v;
@@ -91,7 +91,7 @@ describe('useInputMode', () => {
   it('resetMode resolves pending review promise with { approved: false }', async () => {
     const { result, act, unmount } = renderHook(() => useInputMode());
 
-    let resolved: { approved: boolean; comment?: string } | undefined;
+    let resolved: { approved: boolean; comment?: string | undefined } | undefined;
     await act(() => {
       result.current.setReviewMode('Approve?').then((v) => {
         resolved = v;
@@ -127,7 +127,7 @@ describe('useInputMode', () => {
   it('unmount resolves pending review promise with { approved: false }', async () => {
     const { result, act, unmount } = renderHook(() => useInputMode());
 
-    let resolved: { approved: boolean; comment?: string } | undefined;
+    let resolved: { approved: boolean; comment?: string | undefined } | undefined;
     await act(() => {
       result.current.setReviewMode('Approve?').then((v) => {
         resolved = v;

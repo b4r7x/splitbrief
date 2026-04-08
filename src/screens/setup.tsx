@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Box, Text, useApp } from 'ink';
 import { useTheme } from '../ui/theme.js';
 import { OverlayPanel } from '../components/overlays/overlay-panel.js';
@@ -17,15 +17,8 @@ export function SetupScreen() {
   const { exit } = useApp();
   const planners = detectionStore.use(s => s.planners);
   const implementers = detectionStore.use(s => s.implementers);
-  const loading = detectionStore.use(s => s.loading);
 
   const [manualStep, setManualStep] = useState<Step | null>(null);
-
-  useEffect(() => {
-    if (!planners && !loading) {
-      detectionStore.load();
-    }
-  }, [planners, loading]);
 
   const detectedStep: Step = !planners || !implementers
     ? 'detecting'

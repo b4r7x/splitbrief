@@ -45,9 +45,6 @@ export function createApiPlanner(config: Config): Planner {
   });
 
   return createPlannerBase({
-    name: `api:${provider}`,
-    pricingKey: provider,
-
     async invokePlan(prompt, _projectDir, onOutput) {
       return invokeApi(client, model, config, prompt, onOutput);
     },

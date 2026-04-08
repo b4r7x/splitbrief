@@ -8,7 +8,7 @@ import { validateCommitAndAdvance } from './task-runner.js';
 
 type RetryResult = { completed: boolean; method: TaskTokenUsage['method'] };
 
-type EscalationContext = WorkflowContext & { task: Task; taskStartTime?: number };
+type EscalationContext = WorkflowContext & { task: Task; taskStartTime?: number | undefined };
 
 async function validateAndCommit(
   ctx: EscalationContext, state: WorkflowState,

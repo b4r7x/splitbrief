@@ -27,12 +27,14 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 - **Runtime**: Node.js 22+
 - **Language**: TypeScript 6.x, ESM only (`"type": "module"`)
 - **Dev runner**: `tsx` (handles TypeScript + JSX/TSX + ESM, no custom loaders needed)
-- **Testing**: Vitest 4.x (72 test files, colocated with implementations)
-- **TUI**: Ink 6.8 (React 19 for CLI) + @inkjs/ui 2.x + fullscreen-ink + ink-multiline-input
+- **Testing**: Vitest 4.x (57 colocated test files / 700 tests)
+- **Linter/formatter**: Biome 2.x (`npm run lint`, `npm run format`)
+- **TUI**: Ink 6.8 (React 19 for CLI) + fullscreen-ink (custom multiline-input primitive under `src/ui/input/`)
 - **Syntax highlighting**: Shiki 4.x (WASM-based, async)
 - **Terminal styling**: ansis (ANSI escape codes), cfonts (ASCII banners)
-- **Planner**: Pluggable — 6 built-in backends (claude-code, codex, opencode, aider, agent-sdk, shell) + any shell command via `planner.tool: shell`
+- **Planner**: Pluggable — subprocess backends (`claude-code`, `agent-sdk`, generic `cli`, `shell`) + API planner via any OpenAI-compatible endpoint
 - **Implementer**: `openai` SDK — any OpenAI-compatible endpoint (built-in: Ollama/LM Studio/DeepSeek/OpenRouter; custom: any provider with `apiBase`)
+- **Agent SDK**: `@anthropic-ai/claude-agent-sdk` (declared as optional peer dependency)
 - **Config**: `yaml` package
 - **Git**: `simple-git` package
 - **CLI**: `commander` package
@@ -51,6 +53,8 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 
 ## Project Structure
 
+`*.test.ts` / `*.test.tsx` files are colocated next to their implementations; omitted from the tree below.
+
 ```
 src/
 ├── cli.ts                    # CLI entry point (commander registration)
@@ -58,8 +62,7 @@ src/
 ├── layout.tsx                # Structural shell (2 props: screen + overlay as ReactNode)
 ├── types.ts                  # Re-exports from core/types/
 ├── stores/                   # External stores (useSyncExternalStore, zero deps)
-│   ├── create-store.ts       # Generic store factory (~45 lines)
-│   ├── bootstrap.ts          # Store bootstrap helpers
+│   ├── create-store.ts       # Generic store factory
 │   ├── overlay.ts            # Overlay active/exclusive state
 │   ├── router.ts             # Screen routing + transition validation
 │   ├── feedback.ts           # Feedback/error message state
@@ -71,36 +74,46 @@ src/
 │   └── workflow.ts           # Workflow events/phase/tasks (biggest store)
 ├── core/                     # Shared domain logic (config, types, commands, state)
 │   ├── commands/             # Slash command definitions and handlers
-│   │   ├── commands.ts
-│   │   ├── shortcuts.ts
-│   │   └── review-commands.ts
+│   │   ├── index.ts          # Public re-exports
+│   │   ├── commands.ts       # Command registry
+│   │   ├── shortcuts.ts      # Keyboard shortcut bindings
+│   │   └── review-commands.ts # Review-mode slash commands
 │   ├── config/               # YAML config loading, defaults, validation
-│   │   ├── access.ts
-│   │   ├── loading.ts
-│   │   ├── transforms.ts
-│   │   └── validation.ts
-│   ├── provider-catalog.ts   # Known model-vendor providers with API defaults
-│   ├── providers/            # Provider helpers (known-models.ts)
+│   │   ├── index.ts          # Public re-exports
+│   │   ├── access.ts         # Config read accessors
+│   │   ├── loading.ts        # YAML load/write + defaults
+│   │   ├── transforms.ts     # Config normalisation
+│   │   └── validation.ts     # Schema validation
+│   ├── providers/            # Shared model/provider catalog helpers
+│   │   ├── catalog.ts        # Known model-vendor providers with API defaults
+│   │   ├── models.ts         # Model metadata helpers
+│   │   └── pricing.ts        # Cost calculation (known model pricing + $0 local fallback)
 │   ├── settings/             # Setting definitions and catalog
 │   │   └── catalog.ts
 │   ├── state/                # Workflow state machine
-│   │   ├── machine.ts        # 11 phases, 20 transitions
+│   │   ├── machine.ts        # Phases + transitions
 │   │   └── persistence.ts    # State persistence to .tiny-spec/state.json
 │   └── types/                # All shared types (split by domain)
 │       ├── index.ts          # Re-exports all type modules
 │       ├── config.ts         # Config, PlannerTool, OutputFormat, ThemeMode
 │       ├── events.ts         # TuiEvent union type
 │       ├── summary.ts        # RunSummary, CostBreakdown
-│       ├── tokens.ts         # TokenUsage, TaskTokenUsage
 │       ├── ui.ts             # UI-specific types
 │       └── workflow.ts       # Phase, Task, TaskStatus, WorkflowState
 ├── cli/                      # CLI-specific logic (non-React)
-│   ├── picker.ts             # Interactive planner/implementer selection (readline)
+│   ├── commands/             # commander subcommand handlers
+│   │   ├── init.ts           # `tiny-spec init`
+│   │   ├── resume.ts         # `tiny-spec resume`
+│   │   ├── spec.ts           # `tiny-spec spec`
+│   │   ├── start.ts          # `tiny-spec start`
+│   │   └── status.ts         # `tiny-spec status`
+│   ├── init-stores.ts        # Eager store bootstrap before React renders
 │   ├── render.ts             # Ink/fullscreen rendering setup
-│   └── workflow.ts           # CLI command handlers (start, spec, init, etc.)
+│   └── workflow.ts           # Shared CLI workflow helpers
 ├── engine/                   # Workflow logic (zero React/Ink imports)
+│   ├── agent-sdk.ts          # Shared Anthropic Agent SDK loader (optional peer dep)
+│   ├── cli-tools.ts          # Shared CLI-tool detection / spawn helpers
 │   ├── orchestrator/         # Main workflow loop (decomposed into focused modules)
-│   │   ├── types.ts          # WorkflowContext (bundles projectDir, config, callbacks, planner, context)
 │   │   ├── index.ts          # runWorkflow main loop + re-exports
 │   │   ├── run.ts            # Top-level run entry point
 │   │   ├── cost.ts           # Cost breakdown calculations + buildSummary
@@ -112,64 +125,65 @@ src/
 │   │   ├── task-loop.ts      # Per-task iteration with WorkflowContext
 │   │   ├── task-step.ts      # Single task step execution
 │   │   ├── planning.ts       # Mode-aware planning (quick/standard/full)
-│   │   ├── planning-quick.ts # Quick mode planner
-│   │   ├── planning-full.ts  # Full mode planner
-│   │   ├── final-review.ts   # Final review subprocess (Claude CLI)
-│   │   ├── apply.ts          # Code application (whole-file write + search/replace markers)
 │   │   └── validator.ts      # tsc → lint → test pipeline (stops on first failure)
 │   ├── planners/             # Pluggable planner backends (subprocess + API)
-│   │   ├── base.ts           # Shared planner factory (createPlannerBase, quickPlan)
+│   │   ├── index.ts          # Public re-exports
 │   │   ├── types.ts          # PlannerBackend interface
 │   │   ├── factory.ts        # createPlanner(config) — API planner if provider set, else tool switch
+│   │   ├── base.ts           # Shared planner factory (createPlannerBase, quickPlan)
 │   │   ├── api.ts            # API-based planner (any OpenAI-compatible endpoint)
 │   │   ├── claude-code.ts    # Claude Code CLI (stream-json, session chaining)
-│   │   ├── codex.ts          # OpenAI Codex CLI (jsonl output)
-│   │   ├── opencode.ts       # OpenCode CLI
-│   │   ├── aider.ts          # Aider CLI (text output, regex token parsing)
 │   │   ├── agent-sdk.ts      # Anthropic Agent SDK (programmatic, no subprocess)
+│   │   ├── cli.ts            # Generic CLI planner backend
 │   │   ├── shell.ts          # Generic shell — any command via config
-│   │   ├── context.ts        # Project context builder
-│   │   └── spawn.ts          # Shared subprocess spawning
+│   │   ├── spawn-collect.ts  # Subprocess spawn + collect helper
+│   │   └── context.ts        # Project context builder
 │   ├── implementers/         # Pluggable implementer backends (mirrors planner pattern)
-│   │   ├── types.ts          # ImplementerBackend interface (implement, retry, isAvailable, listModels, getPricing)
+│   │   ├── index.ts          # Public re-exports
+│   │   ├── types.ts          # ImplementerBackend interface
 │   │   ├── base.ts           # createImplementerBase() factory — shared pipeline
 │   │   ├── factory.ts        # createImplementer(config) — routing (api/shell/agent)
-│   │   ├── pipeline.ts       # Shared implementation pipeline
 │   │   ├── openai.ts         # OpenAI-compatible API implementer
 │   │   ├── shell.ts          # Shell subprocess implementer
-│   │   ├── subprocess.ts     # Subprocess helpers
-│   │   ├── tool.ts           # Tool-based implementer
-│   │   └── agent.ts          # Agent subprocess implementer
-│   ├── providers/            # Shared provider registry (used by both planners and implementers)
+│   │   ├── agent.ts          # Agent subprocess implementer
+│   │   ├── agent-sdk.ts      # Anthropic Agent SDK implementer
+│   │   ├── tool.ts           # Tool-based implementer helper
+│   │   └── apply.ts          # Code application (whole-file write + search/replace markers)
+│   ├── providers/            # Provider registry (used by both planners and implementers)
+│   │   ├── index.ts          # Re-exports
 │   │   ├── types.ts          # ProviderDef interface, ModelsResponse, ProviderOverrides
 │   │   ├── registry.ts       # KNOWN_PROVIDERS, getProvider(), detectAvailableProviders()
 │   │   ├── client.ts         # Shared HTTP client
 │   │   ├── openai-compat.ts  # Shared factory for remote OpenAI-compatible providers
 │   │   ├── ollama.ts         # Ollama (local, /api/tags, /api/show)
-│   │   ├── lm-studio.ts      # LM Studio (local, /v1/models)
-│   │   ├── pricing.ts        # Cost calculation (known model pricing + $0 local fallback)
-│   │   └── index.ts          # Re-exports
+│   │   └── lm-studio.ts      # LM Studio (local, /v1/models)
 │   ├── spec/                 # Spec parsing, formatting & prompt generation
 │   │   ├── parser.ts         # tasks.md → Task[] with topological sort
 │   │   ├── formatter.ts      # Task → self-contained prompt for local model
 │   │   ├── token-budget.ts   # Token budget calculation and context fitting
-│   │   ├── planning-prompts.ts    # Planner prompt generation (research, spec, plan, tasks)
-│   │   ├── execution-prompts.ts   # Implementer prompt generation (implement, retry)
-│   │   ├── review-prompts.ts      # Review prompt generation (final review, escalation)
-│   │   └── prompts/               # Individual prompt templates (plan, quick-plan, research, spec, tasks)
-│   ├── detection/            # Auto-detect planners (CLI) and implementers (delegates to provider registry)
-│   │   ├── detection.ts
-│   │   ├── code-detection.ts
-│   │   └── patterns.ts
+│   │   └── prompts/          # Individual prompt templates
+│   │       ├── plan.ts
+│   │       ├── quick-plan.ts
+│   │       ├── research.ts
+│   │       ├── spec.ts
+│   │       ├── tasks.ts
+│   │       ├── review.ts
+│   │       └── escalation.ts
+│   ├── detection/            # Auto-detect planners (CLI) and implementers
+│   │   ├── index.ts          # Public re-exports
+│   │   └── detection.ts      # Detection entry point
 │   ├── parsers/              # Response parsers (question, code extraction)
 │   │   ├── question-parser.ts    # Parse <!-- Q:{JSON} --> markers from planner stream
 │   │   ├── response-extractor.ts # Code extraction from model responses
-│   │   └── scope-extractor.ts    # Function-level code extraction for large files
+│   │   ├── scope-extractor.ts    # Function-level code extraction for large files
+│   │   ├── code-detection.ts     # Code-language sniffer
+│   │   └── code-patterns.ts      # Shared regex patterns
 │   ├── streaming/            # Streaming transport layer
 │   │   ├── claude-stream.ts  # Claude Code stream-json parsing
 │   │   ├── openai-stream.ts  # OpenAI-compatible streaming client (timeout, error handling)
 │   │   └── output-parsers.ts # Unified output format parsers (text, stream-json, jsonl)
 │   └── skills/               # Skill discovery (frontmatter parsing, .claude/skills scanning)
+│       ├── index.ts          # Public re-exports
 │       └── skills.ts
 ├── screens/                  # Top-level screen components
 │   ├── home.tsx              # Home screen (banner, session list, input)
@@ -177,22 +191,18 @@ src/
 │   ├── workflow.tsx          # Workflow screen (header, events, footer, input)
 │   └── summary.tsx           # Post-run summary screen
 ├── components/               # Feature components (business logic + rendering)
-│   ├── gutter.tsx            # Colored gutter line for planner/implementer role
 │   ├── conversation-flow/    # Scrollable event card list with auto-follow + virtual scroll
+│   │   ├── index.ts
 │   │   ├── conversation-flow.tsx
 │   │   ├── use-scrollable-flow.ts
 │   │   └── viewport-trimming.ts
 │   ├── event-cards/          # TuiEvent rendering — typed renderer registry
 │   │   ├── index.tsx         # Renderer registry (switch on event type)
 │   │   ├── card.tsx          # <Card> primitive — canonical base for all event cards
-│   │   ├── stages.tsx        # Stage-based card layouts
 │   │   ├── implementer-card.tsx
-│   │   ├── planner-status-card.tsx
-│   │   ├── task-start-card.tsx
-│   │   ├── validate-card.tsx
-│   │   ├── escalate-card.tsx
-│   │   └── cancelled-card.tsx
+│   │   └── validate-card.tsx
 │   ├── input-bar/            # Multiline input with slash command suggestions
+│   │   ├── index.ts
 │   │   ├── input-bar.tsx
 │   │   ├── slash-suggestions.tsx
 │   │   └── use-slash-autocomplete.ts
@@ -207,9 +217,9 @@ src/
 │   │   ├── filterable-list.tsx  # FilterableList — canonical list-with-filter primitive (render-prop children API)
 │   │   ├── single-column-picker.tsx
 │   │   └── two-column-picker/   # Compound component (TwoColumnPicker.Columns, .Left, .Right, .Hint)
+│   │       ├── index.ts
 │   │       ├── two-column-picker.tsx
-│   │       ├── two-column-picker-context.ts
-│   │       └── two-column-picker-types.ts
+│   │       └── use-two-column-state.ts
 │   └── overlays/             # Overlay components
 │       ├── command-palette.tsx   # Ctrl+K command palette overlay
 │       ├── help-overlay.tsx      # Keyboard shortcut help overlay
@@ -217,43 +227,38 @@ src/
 │       ├── overlay-panel.tsx     # Overlay panel primitive
 │       ├── text-input-overlay.tsx
 │       ├── settings-overlay/     # Unified settings overlay (all config fields + sub-pickers)
+│       │   ├── index.ts
 │       │   ├── settings-overlay.tsx
-│       │   ├── use-settings-editor.ts
-│       │   └── use-settings-layout.ts
+│       │   ├── settings-presentation.ts
+│       │   └── use-settings-editor.ts
 │       ├── skills-picker/        # Skill selection overlay
-│       │   ├── skills-picker.tsx
-│       │   └── skill-row.tsx
+│       │   ├── index.ts
+│       │   └── skills-picker.tsx
 │       └── tool-model-picker/    # Planner/implementer backend + model selection
+│           ├── index.ts
 │           ├── tool-model-picker.tsx
+│           ├── tool-row.tsx
 │           ├── picker-catalog.ts
-│           ├── picker-rows.tsx
+│           ├── picker-view.tsx
 │           ├── use-picker-actions.ts
-│           ├── use-picker-catalog.ts
-│           ├── use-picker-view.ts
-│           ├── view-state.ts
-│           └── views/            # Per-state view components
-│               ├── loading-view.tsx
-│               ├── custom-command-view.tsx
-│               ├── custom-model-view.tsx
-│               └── picker-view.tsx
+│           └── use-picker-catalog.ts
 ├── ui/                       # Low-level UI primitives (no business logic)
 │   ├── diff-view.tsx         # Collapsible syntax-highlighted diff
 │   ├── filter-input.tsx      # Reusable filter text input
 │   ├── input/                # Controlled multiline input primitives
+│   │   ├── multiline-input.tsx
+│   │   ├── segments.ts       # Visual segment helpers
+│   │   └── text-editing.ts   # Pure text-editing operations
 │   ├── markdown.tsx          # Shared markdown rendering (parseBlocks, renderMarkdownLine, HighlightedCode)
 │   ├── picker-utils.ts       # Shared picker helpers (scroll offset, truncation)
 │   ├── scroll-indicator.tsx  # Scroll position indicator
 │   ├── spinner.tsx           # Braille spinner component with elapsed time
 │   └── theme.tsx             # Centralized color palette — zero hardcoded colors elsewhere
 ├── hooks/                    # React hooks (Ink-dependent lifecycle)
-│   ├── use-ctrl-c.ts         # Double Ctrl+C exit handler (Ink useInput)
 │   ├── use-filterable-list.ts # Filterable list state (search, scroll, selection)
 │   ├── use-global-keys.ts    # Global keyboard shortcuts (reads stores, takes only { exit })
-│   ├── use-inline-edit.ts    # Inline edit state
 │   ├── use-input-mode.ts     # Input mode state (Promise-based, workflow-scoped)
 │   ├── use-latest-ref.ts     # Ref that always holds the latest value
-│   ├── use-sectioned-list.ts # Sectioned list state; exports toSectionedList pure function
-│   ├── use-sidebar.ts        # Sidebar visibility toggle (viewport-responsive)
 │   ├── use-terminal-size.ts  # Terminal resize tracking + responsive layout
 │   └── use-workflow.ts       # Orchestrator lifecycle (useEffect + store reads)
 └── utils/                    # Helpers (no React/Ink dependencies)
@@ -264,15 +269,12 @@ src/
     ├── fs.ts                 # .tiny-spec/ directory management, archiving
     ├── git.ts                # Git operations (commit, diff, status, discard changes)
     ├── highlight.ts          # Shiki-based syntax highlighting (async, WASM)
-    ├── model-names.ts        # Model name normalisation helpers
-    ├── phase-role.ts         # Phase → role mapping
     ├── process.ts            # Subprocess spawn, streaming, lifecycle, cleanup
+    ├── sectioned-list.ts     # Sectioned list helpers (grouping, flattening)
     ├── sessions.ts           # Session directory management (project + global scope)
     ├── topo-sort.ts          # Topological sort for task dependencies
     └── with-timeout.ts       # Promise timeout wrapper
 ```
-
-All `*.test.ts` files are colocated next to their implementations (not shown above).
 
 ## Commands
 
@@ -286,6 +288,12 @@ npm run dev -- init              # Create config (Ink-based picker with model di
 npm run dev -- status            # Show workflow state
 npm run dev -- resume            # Resume interrupted workflow
 npm test                         # Run unit tests (vitest)
+npm run test:watch               # Vitest in watch mode
+npm run test:coverage            # Vitest with v8 coverage
+npm run test:integration         # Integration tests under testing/integration/
+npm run typecheck                # tsc --noEmit
+npm run lint                     # Biome check
+npm run format                   # Biome format --write
 npm run build                    # tsc → dist/
 ```
 
@@ -375,20 +383,16 @@ implementer:
   apiKey: ""                    # optional, falls back to <TOOL>_API_KEY env var
 ```
 
-Built-in planner tools (subprocess): `claude-code`, `codex`, `opencode`, `aider`, `agent-sdk`, `shell`
-Built-in planner providers (API): any provider from the registry (`ollama`, `lm-studio`, `deepseek`, `openrouter`, custom)
-Known implementer tools (with defaults): `ollama`, `lm-studio`, `deepseek`, `openrouter`
+Built-in planner backends: `claude-code`, `agent-sdk`, generic `cli`, `shell`, and API planner (any OpenAI-compatible endpoint).
+Known implementer tools (with defaults): `ollama`, `lm-studio`, `deepseek`, `openrouter`. Any other tool name works as long as you supply `apiBase`.
 
 Provider registry (`src/engine/providers/registry.ts`): `getProvider(name, overrides?)` returns known providers with defaults or creates generic ones for unknown names.
-Provider catalog (`src/core/provider-catalog.ts`): static list of known model-vendor providers with their API base URLs and model lists.
+Provider catalog (`src/core/providers/catalog.ts`): static list of known model-vendor providers with their API base URLs and model lists.
 
 ## Implementation Status
 
-All 45 tasks from `specs/002-cost-optimized-orchestrator/tasks.md` are complete.
-v0.7: Symmetric provider architecture, formal ImplementerBackend, workflow modes, API planner, Ink picker.
-~130 source files, 89 colocated test files.
-
-See `docs/REFACTOR-v0.7-symmetric-providers.md` for full refactor documentation.
+All 45 tasks from `specs/002-cost-optimized-orchestrator/tasks.md` are complete (45 checked, 0 pending).
+Current package version: `0.1.0` (see `package.json`). Test suite: 57 colocated test files / 700 tests.
 
 ### TUI Architecture
 
@@ -399,8 +403,8 @@ Conversation flow layout with structured event cards. Key design:
 - Collapsible syntax-highlighted diffs, collapsible completed tasks, pipeline progress bar, cost savings footer.
 - All colors from `src/ui/theme.tsx` (zero hardcoded hex in components)
 - Zero React/Ink imports in `src/engine/` (clean engine/UI separation)
-- `FilterableList` (`src/components/pickers/filterable-list.tsx`) is the canonical list-with-filter primitive; it replaced the deleted `FilterableOverlay`. Uses a render-prop children API for advanced layouts.
-- `TwoColumnPicker` is a compound component: `<TwoColumnPicker.Columns>`, `.Left`, `.Right`, `.Hint`. No default hardcoded placeholder text — callers supply it.
+- `FilterableList` (`src/components/pickers/filterable-list.tsx`) is the canonical list-with-filter primitive. For advanced cases that need access to filter state from outside, consumers call `useFilterableList` directly instead of wrapping `FilterableList`.
+- `TwoColumnPicker` (`src/components/pickers/two-column-picker/two-column-picker.tsx`) is a direct-props component: pass `leftProps` and `rightProps` objects. No React Context, no compound-component reflection.
 
 ### State Management (External Stores)
 
@@ -435,10 +439,10 @@ CLI (initStores → store.load) → render(<App />)
 **What stays as React hooks (can't be stores):**
 - `useInputMode` — Promise-based resolver pattern (workflow-scoped lifecycle)
 - `useWorkflow` — orchestrator lifecycle (useEffect + store reads + engine bridge)
-- `useGlobalKeys` / `useCtrlC` — Ink's `useInput` required
-- `useSidebar` — viewport-responsive state
+- `useGlobalKeys` — Ink's `useInput` required for keybinding dispatch
 - `useFilterableList` — keyboard-driven list state
-- `useSectionedList` — sectioned list state; also exports `toSectionedList` pure function
+- `useTerminalSize` — terminal resize tracking
+- `useLatestRef` — ref that always holds the latest value (used by hooks that bridge engine callbacks)
 
 **What NOT to do:**
 - Don't add `useMemo`, `useCallback`, or `React.memo` — store selectors make them unnecessary

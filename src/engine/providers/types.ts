@@ -10,6 +10,6 @@ export interface ProviderDef {
 export type { ProviderDetection } from '../../types.js';
 
 export interface ProviderOverrides {
-  apiBase?: string;
-  apiKey?: string;
+  apiBase?: string | undefined;
+  apiKey?: string | undefined;
 }

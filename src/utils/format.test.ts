@@ -1,23 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { formatTokens, formatCost, formatTime, formatDuration, toErrorMessage, formatRelativeTime, parseVersion } from './format.js';
-
-describe('formatTokens', () => {
-  it('formats small numbers as-is', () => {
-    expect(formatTokens(500)).toBe('500');
-  });
-
-  it('formats thousands with K suffix', () => {
-    expect(formatTokens(1500)).toBe('1.5K');
-  });
-
-  it('formats millions with M suffix', () => {
-    expect(formatTokens(1_500_000)).toBe('1.5M');
-  });
-
-  it('formats zero', () => {
-    expect(formatTokens(0)).toBe('0');
-  });
-});
+import { formatCost, formatTime, formatDuration, toErrorMessage, formatRelativeTime, parseVersion } from './format.js';
 
 describe('formatCost', () => {
   it('formats zero as $0.00', () => {

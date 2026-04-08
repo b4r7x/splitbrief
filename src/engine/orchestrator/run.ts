@@ -1,4 +1,4 @@
-import type { Config, WorkflowState, TaskTokenUsage, Summary, OrchestratorCallbacks, SkillMeta, ProjectContext, PlannerTokenUsage } from '../../types.js';
+import type { Config, WorkflowState, TaskTokenUsage, Summary, OrchestratorCallbacks, SkillMeta, ProjectContext, PlannerTokenUsage, Task } from '../../types.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
 import { ensureTinySpecDir, writeSpecFile, readPackageJson, readSpecFile } from '../../utils/fs.js';
@@ -24,8 +24,7 @@ export interface WorkflowContext {
   planner: Planner;
   context: ProjectContext;
   implementer: Implementer;
-  /** Checked between workflow phases (cooperative cancellation), not passed to subprocess operations. */
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 export type RunWorkflowOptions = {
@@ -33,9 +32,9 @@ export type RunWorkflowOptions = {
   projectDir: string;
   config: Config;
   callbacks: OrchestratorCallbacks;
-  savedState?: WorkflowState;
-  selectedSkills?: SkillMeta[];
-  signal?: AbortSignal;
+  savedState?: WorkflowState | undefined;
+  selectedSkills?: SkillMeta[] | undefined;
+  signal?: AbortSignal | undefined;
 };
 
 type SummaryBase = { feature: string; startTime: number; plannerTool: string; implementerTool: string };
@@ -43,11 +42,6 @@ type SummaryBase = { feature: string; startTime: number; plannerTool: string; im
 type InitResult =
   | { ok: true; state: WorkflowState; wctx: WorkflowContext }
   | { ok: false; summary: Summary };
-
-function readProjectName(projectDir: string): string {
-  const pkg = readPackageJson(projectDir);
-  return (pkg?.name as string) ?? 'unknown';
-}
 
 async function initializeWorkflow(
   opts: RunWorkflowOptions,
@@ -87,8 +81,9 @@ async function initializeWorkflow(
     emit(projectDir, state, 'workflow_started');
   }
 
+  const pkg = readPackageJson(projectDir);
   const context: ProjectContext = {
-    name: readProjectName(projectDir),
+    name: (pkg?.name as string) ?? 'unknown',
     dir: projectDir,
     runtime: 'node',
     testCommand: config.validation.testCommand,
@@ -146,7 +141,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   const startTime = Date.now();
   const summaryBase: SummaryBase = { feature, startTime, plannerTool: config.planner.tool, implementerTool: config.implementer.tool };
   let trackedState: WorkflowState | undefined;
-  let currentTask: { file: string; action: string } | undefined;
+  let currentTask: Pick<Task, 'file' | 'action'> | undefined;
   let result: Summary | undefined;
 
   const shutdown = () => {
@@ -157,7 +152,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
       }
     }
     if (currentTask) {
-      try { discardTaskChanges(projectDir, currentTask.file, currentTask.action as 'create' | 'modify'); } catch (err) {
+      try { discardTaskChanges(projectDir, currentTask.file, currentTask.action); } catch (err) {
         process.stderr.write(`Warning: failed to discard changes during shutdown: ${err}\n`);
       }
     }

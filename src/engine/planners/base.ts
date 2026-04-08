@@ -9,7 +9,6 @@ import { buildQuickPlanPrompt } from '../spec/prompts/quick-plan.js';
 import { parseTasks } from '../spec/parser.js';
 import { writeSpecFile } from '../../utils/fs.js';
 import { extractCode } from '../parsers/response-extractor.js';
-import { getPlannerPricing } from '../../core/providers/pricing.js';
 import { runCommand } from '../../utils/process.js';
 import { parseVersion } from '../../utils/format.js';
 import type { ClarificationQuestion } from '../parsers/question-parser.js';
@@ -29,9 +28,6 @@ type InvokeFn = (
 ) => Promise<InvokeResult>;
 
 interface PlannerBaseConfig {
-  name: string;
-  pricingKey: string;
-  conversational?: boolean;
   invokePlan: InvokeFn;
   invokeEscalate: InvokeFn;
   isAvailable: () => Promise<boolean>;
@@ -47,24 +43,21 @@ export function createGetVersion(command: string, versionArgs?: string[]): () =>
       if (code !== 0) return null;
       const ver = parseVersion(stdout);
       return ver ? ver.join('.') : null;
-    } catch { return null; /* non-fatal: version probe failed */ }
+    } catch { return null; }
   };
 }
 
-export function createIsAvailable(command: string, opts?: { timeout?: number }): () => Promise<boolean> {
+export function createIsAvailable(command: string, opts?: { timeout?: number | undefined }): () => Promise<boolean> {
   return async () => {
     try {
       const { code } = await runCommand(command, ['--version'], opts);
       return code === 0;
-    } catch { return false; /* non-fatal: availability check failed */ }
+    } catch { return false; }
   };
 }
 
 export function createPlannerBase(config: PlannerBaseConfig): Planner {
   return {
-    name: config.name,
-    conversational: config.conversational ?? false,
-
     async plan(
       feature: string,
       projectDir: string,
@@ -163,16 +156,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       return config.invokeEscalate(prompt, projectDir, callbacks.onOutput);
     },
 
-    async isAvailable(): Promise<boolean> {
-      return config.isAvailable();
-    },
-
-    async getVersion(): Promise<string | null> {
-      return config.getVersion();
-    },
-
-    getPricing() {
-      return getPlannerPricing(config.pricingKey);
-    },
+    isAvailable: config.isAvailable,
+    getVersion: config.getVersion,
   };
 }

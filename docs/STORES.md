@@ -1,6 +1,6 @@
 # Store Architecture
 
-tiny-spec uses a DIY external store system built on React's `useSyncExternalStore`. The entire framework is 45 lines. It provides the same core capabilities as Zustand with zero dependencies.
+tiny-spec uses a DIY external store system built on React's `useSyncExternalStore`. The entire framework is 42 lines. It provides the same core capabilities as Zustand with zero dependencies.
 
 ## Why DIY
 
@@ -37,14 +37,16 @@ Each domain store wraps the factory with named actions. Raw `set` is never expor
 
 ```
 src/stores/
-├── create-store.ts    # Factory (45 LOC)
-├── overlay.ts         # Active overlay panel
-├── router.ts          # Screen routing + transition guards
-├── error.ts           # Global error message
-├── config.ts          # Config from disk + CLI overrides
-├── skills.ts          # Available + selected skills
-├── sessions.ts        # Session history
-└── workflow.ts        # Event log, phase, task counters, sidebar map
+├── create-store.ts       # Factory (42 LOC)
+├── overlay.ts            # Active overlay panel
+├── router.ts             # Screen routing + transition guards
+├── feedback.ts           # Info/error feedback messages (replaces old error store)
+├── config.ts             # Config from disk + CLI overrides
+├── detection.ts          # Provider/CLI tool detection state
+├── skills.ts             # Available + selected skills
+├── sessions.ts           # Session history
+├── conversation-scroll.ts # Scroll position + expanded diffs for conversation flow
+└── workflow.ts           # Event log, phase, task counters, sidebar map
 ```
 
 **Pattern:**
@@ -119,11 +121,13 @@ routerStore.navigate('workflow', { feature: 'auth' });
 |-------|-------------|-------------|
 | `overlayStore` | `{ active: OverlayType, exclusive: boolean }` | `open()`, `close()`, `setExclusive()` |
 | `routerStore` | `RouteData` (discriminated union on `screen`) | `navigate()`, `init()` — with transition guards |
-| `errorStore` | `{ message: string \| null }` | `setError()`, `clearError()` |
+| `feedbackStore` | `{ message: string \| null, kind: 'info' \| 'error' }` | `setMessage()`, `setError()`, `clear()` |
 | `configStore` | `{ config: Config \| null, projectDir, overrides }` | `load()`, `reload()`, `useConfig()` |
+| `detectionStore` | `{ planners, implementers, loading }` | `load()` |
 | `skillsStore` | `{ available: SkillMeta[], selected: Set<string> }` | `discover()`, `setSelected()` |
 | `sessionsStore` | `{ sessions: Session[] }` | `load()` |
-| `workflowStore` | `{ events, phase, currentTask, totalTasks, ... taskMap }` | `addEvent()`, `setReviewFile()` |
+| `conversationScrollStore` | `{ scrollOffset, expandedDiffs }` | `scrollToBottom()`, `toggleDiff()`, `reset()` |
+| `workflowStore` | `{ events, phase, currentTask, totalTasks, taskMap, ... }` | `addEvent()`, `setReviewFile()`, `reset()` |
 
 ## Design Decisions
 
