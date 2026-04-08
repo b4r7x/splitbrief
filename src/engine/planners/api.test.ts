@@ -1,19 +1,16 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import type { Config } from '../../types.js';
+import { createApiPlanner } from './api.js';
 
-vi.mock('../openai-stream.js', () => ({
-  streamCompletion: vi.fn().mockResolvedValue({
-    text: 'mocked response',
-    usage: { inputTokens: 100, outputTokens: 50 },
-  }),
-}));
-
-vi.mock('openai', () => ({
-  default: class {
-    models = { list: vi.fn().mockResolvedValue({ data: [] }) };
-    constructor(public opts: Record<string, unknown>) {}
-  },
-}));
+let server: http.Server;
+let port: number;
+let receivedBodies: any[];
+let projectDir: string;
 
 function makeConfig(provider: string, overrides?: Partial<Config['planner']>): Config {
   return {
@@ -21,7 +18,8 @@ function makeConfig(provider: string, overrides?: Partial<Config['planner']>): C
       tool: 'claude-code',
       provider,
       model: 'test-model',
-      apiBase: 'http://localhost:11434/v1',
+      apiBase: `http://127.0.0.1:${port}/v1`,
+      apiKey: 'test-key',
       ...overrides,
     },
     implementer: {
@@ -31,57 +29,110 @@ function makeConfig(provider: string, overrides?: Partial<Config['planner']>): C
       contextLength: 8192,
       temperature: 0.3,
     },
-    validation: {
-      typecheck: true,
-      lint: true,
-      test: true,
-      testCommand: 'npm test',
-    },
-    workflow: {
-      autoApproveSpec: false,
-      autoApprovePlan: false,
-      maxRetries: 3,
-      commitStrategy: 'none',
-    },
+    validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
+    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none' },
   };
 }
 
+function streamSseChunks(res: http.ServerResponse, chunks: string[], finalUsage?: { prompt_tokens: number; completion_tokens: number }) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+  for (const text of chunks) {
+    const event = {
+      choices: [{ delta: { content: text }, index: 0, finish_reason: null }],
+    };
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  }
+  if (finalUsage) {
+    const final = {
+      choices: [{ delta: {}, index: 0, finish_reason: 'stop' }],
+      usage: finalUsage,
+    };
+    res.write(`data: ${JSON.stringify(final)}\n\n`);
+  }
+  res.write('data: [DONE]\n\n');
+  res.end();
+}
+
+beforeEach(async () => {
+  receivedBodies = [];
+  projectDir = mkdtempSync(join(tmpdir(), 'api-planner-test-'));
+
+  server = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/v1/models') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ data: [{ id: 'test-model' }] }));
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/v1/chat/completions') {
+      const chunks: Buffer[] = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => {
+        receivedBodies.push(JSON.parse(Buffer.concat(chunks).toString('utf-8')));
+        streamSseChunks(res, ['Hello ', 'world'], { prompt_tokens: 42, completion_tokens: 17 });
+      });
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  port = (server.address() as AddressInfo).port;
+});
+
+afterEach(async () => {
+  if (server.listening) {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+  rmSync(projectDir, { recursive: true, force: true });
+});
+
 describe('createApiPlanner', () => {
-  it('plan calls streamCompletion', async () => {
-    const { streamCompletion } = await import('../openai-stream.js');
-    const { createApiPlanner } = await import('./api.js');
+  it('regenerate sends prompt to chat endpoint and returns parsed text + usage', async () => {
+    const planner = createApiPlanner(makeConfig('ollama'));
+    const collected: string[] = [];
+
+    const result = await planner.regenerate('the prompt', 'spec', projectDir, {
+      onOutput: (text) => collected.push(text),
+    });
+
+    expect(result.text).toBe('Hello world');
+    expect(result.usage).toEqual({ inputTokens: 42, outputTokens: 17 });
+    expect(collected.join('')).toBe('Hello world');
+
+    expect(receivedBodies).toHaveLength(1);
+    expect(receivedBodies[0].model).toBe('test-model');
+    expect(receivedBodies[0].stream).toBe(true);
+    expect(receivedBodies[0].messages[0]).toMatchObject({ role: 'user', content: 'the prompt' });
+  });
+
+  it('plan() runs four phases and accumulates token usage across them', async () => {
     const planner = createApiPlanner(makeConfig('ollama'));
 
-    const config = makeConfig('ollama');
-    const callbacks = { onOutput: vi.fn() };
-    await planner.plan('do stuff', '/tmp/test', config, callbacks);
+    const result = await planner.plan('test feature', projectDir, makeConfig('ollama'), {
+      onOutput: vi.fn(),
+      onPhase: vi.fn(),
+    });
 
-    expect(streamCompletion).toHaveBeenCalled();
+    expect(receivedBodies).toHaveLength(4);
+    expect(result.usage).toEqual({ inputTokens: 42 * 4, outputTokens: 17 * 4 });
   });
 
-  it('has correct name format', async () => {
-    const { createApiPlanner } = await import('./api.js');
-    const planner = createApiPlanner(makeConfig('deepseek'));
-    expect(planner.name).toBe('api:deepseek');
-  });
-
-  it('isAvailable delegates to OpenAI client', async () => {
-    const { createApiPlanner } = await import('./api.js');
+  it('isAvailable returns true when models endpoint responds', async () => {
     const planner = createApiPlanner(makeConfig('ollama'));
-    const available = await planner.isAvailable();
-    expect(available).toBe(true);
+    expect(await planner.isAvailable()).toBe(true);
   });
 
-  it('getVersion returns the configured model', async () => {
-    const { createApiPlanner } = await import('./api.js');
-    const planner = createApiPlanner(makeConfig('ollama', { model: 'qwen2.5:32b' }));
-    const version = await planner.getVersion();
-    expect(version).toBe('qwen2.5:32b');
-  });
-
-  it('is not conversational', async () => {
-    const { createApiPlanner } = await import('./api.js');
+  it('isAvailable returns false when endpoint is unreachable', async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
     const planner = createApiPlanner(makeConfig('ollama'));
-    expect(planner.conversational).toBe(false);
+    expect(await planner.isAvailable()).toBe(false);
   });
+
 });

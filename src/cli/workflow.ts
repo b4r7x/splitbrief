@@ -1,34 +1,22 @@
 import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { loadConfig, initConfig, configPath } from '../core/config.js';
-import { detectCapabilities } from '../engine/providers.js';
+import { loadConfig, initConfig, configPath } from '../core/config/index.js';
+import { detectCapabilities } from '../engine/providers/index.js';
 import { isGitRepo } from '../utils/git.js';
+import type { WorkflowOpts } from '../types.js';
 
-export interface WorkflowOpts {
-  auto?: boolean;
-  model?: string;
-  provider?: string;
-  planner?: string;
-  plannerModel?: string;
-  plannerCommand?: string;
-  implementer?: string;
-  implementerModel?: string;
-  implementerCommand?: string;
-  project?: string;
-  fullscreen?: boolean;
-  mode?: string;
-}
+export type { WorkflowOpts };
 
 export function addWorkflowOptions(cmd: Command): Command {
   return cmd
     .option('--auto', 'Auto-approve spec and plan')
     .option('--model <model>', 'Override implementer model (alias for --implementer-model)')
     .option('--provider <provider>', 'Override implementer provider (alias for --implementer)')
-    .option('--planner <backend>', 'Planner backend (claude-code, codex, opencode, aider, agent-sdk, anthropic, openrouter, shell)')
-    .option('--planner-model <model>', 'Planner model (for API backends)')
+    .option('--planner <tool>', 'Planner tool (claude-code, codex, opencode, aider, agent-sdk, anthropic, openrouter, shell)')
+    .option('--planner-model <model>', 'Planner model (for API planners)')
     .option('--planner-command <cmd>', 'Custom planner command (when --planner=shell)')
-    .option('--implementer <backend>', 'Implementer backend (ollama, lm-studio, deepseek, openrouter, shell)')
+    .option('--implementer <provider>', 'Implementer provider (ollama, lm-studio, deepseek, openrouter, shell)')
     .option('--implementer-model <model>', 'Implementer model')
     .option('--implementer-command <cmd>', 'Custom implementer command (when --implementer=shell)')
     .option('--project <dir>', 'Project directory (default: cwd)')

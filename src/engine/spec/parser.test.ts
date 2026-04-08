@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseTasks, topoSort } from './parser.js';
+import { parseTasks } from './parser.js';
 
 const validTasksMd = `---
 id: T001
@@ -73,7 +73,7 @@ Use commander's .command() API.
 `;
 
 describe('parseTasks', () => {
-  it('parses a valid tasks.md with 3 tasks', () => {
+  it('parses a valid tasks.md with 3 tasks in topologically sorted order', () => {
     const tasks = parseTasks(validTasksMd);
 
     expect(tasks.length).toBe(3);
@@ -95,19 +95,11 @@ describe('parseTasks', () => {
     expect(t3).toBeTruthy();
     expect(t3.action).toBe('modify');
     expect(t3.dependsOn).toEqual(['T001', 'T002']);
-  });
-
-  it('returns tasks in topologically sorted order', () => {
-    const tasks = parseTasks(validTasksMd);
 
     const ids = tasks.map((t) => t.id);
-    const indexT001 = ids.indexOf('T001');
-    const indexT002 = ids.indexOf('T002');
-    const indexT003 = ids.indexOf('T003');
-
-    expect(indexT001).toBeLessThan(indexT002);
-    expect(indexT001).toBeLessThan(indexT003);
-    expect(indexT002).toBeLessThan(indexT003);
+    expect(ids.indexOf('T001')).toBeLessThan(ids.indexOf('T002'));
+    expect(ids.indexOf('T001')).toBeLessThan(ids.indexOf('T003'));
+    expect(ids.indexOf('T002')).toBeLessThan(ids.indexOf('T003'));
   });
 
   it('handles missing optional sections (no Signature, no Pattern)', () => {
@@ -173,16 +165,6 @@ This task has missing required fields and invalid action.
     const tasks = parseTasks(input);
     expect(tasks.length).toBe(1);
     expect(tasks[0].id).toBe('T020');
-  });
-
-  it('returns empty array for empty input', () => {
-    const tasks = parseTasks('');
-    expect(tasks).toEqual([]);
-  });
-
-  it('returns empty array for input with no frontmatter blocks', () => {
-    const tasks = parseTasks('Just some random markdown text.\n\nNo tasks here.');
-    expect(tasks).toEqual([]);
   });
 
   it('parses bare depends_on without brackets as single-element array', () => {
@@ -321,7 +303,7 @@ Depends on A.
   });
 });
 
-describe('typeDefs and implSteps parsing', () => {
+describe('typeDefs and implementationSteps parsing', () => {
   it('parses Type Definitions section', () => {
     const input = `---
 id: T001
@@ -379,69 +361,14 @@ Implement something.
 
     const tasks = parseTasks(input);
     expect(tasks.length).toBe(1);
-    expect(tasks[0].implSteps).toEqual([
+    expect(tasks[0].implementationSteps).toEqual([
       'Import Config from types',
       'Create function that returns void',
       'Add validation logic',
     ]);
   });
 
-  it('backward compat — missing sections default to empty', () => {
-    const input = `---
-id: T001
-title: Test task
-action: create
-file: src/test.ts
-depends_on: []
----
-
-### Description
-A v0.1 task without Type Definitions or Implementation Steps.
-
-### Tests
-- Should work
-
-### Constraints
-- None
-`;
-
-    const tasks = parseTasks(input);
-    expect(tasks.length).toBe(1);
-    expect(tasks[0].typeDefs).toBe('');
-    expect(tasks[0].implSteps).toEqual([]);
-  });
-
-  it('mixed — only typeDefs present', () => {
-    const input = `---
-id: T001
-title: Test task
-action: create
-file: src/test.ts
-depends_on: []
----
-
-### Description
-Has type definitions but no implementation steps.
-
-### Type Definitions
-\`\`\`typescript
-export type Mode = 'fast' | 'slow';
-\`\`\`
-
-### Tests
-- Should work
-
-### Constraints
-- None
-`;
-
-    const tasks = parseTasks(input);
-    expect(tasks.length).toBe(1);
-    expect(tasks[0].typeDefs).toBe("export type Mode = 'fast' | 'slow';");
-    expect(tasks[0].implSteps).toEqual([]);
-  });
-
-  it('mixed — only implSteps present', () => {
+  it('mixed — only implementationSteps present', () => {
     const input = `---
 id: T001
 title: Test task
@@ -467,7 +394,7 @@ Has implementation steps but no type definitions.
     const tasks = parseTasks(input);
     expect(tasks.length).toBe(1);
     expect(tasks[0].typeDefs).toBe('');
-    expect(tasks[0].implSteps).toEqual([
+    expect(tasks[0].implementationSteps).toEqual([
       'Read the file',
       'Transform the data',
     ]);

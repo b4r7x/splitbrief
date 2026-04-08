@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { formatTokens, formatCost, formatTime, formatDuration, toErrorMessage, formatRelativeTime } from './format.js';
+import { formatTokens, formatCost, formatTime, formatDuration, toErrorMessage, formatRelativeTime, parseVersion } from './format.js';
 
 describe('formatTokens', () => {
   it('formats small numbers as-is', () => {
@@ -108,5 +108,39 @@ describe('formatRelativeTime', () => {
     const now = Date.now();
     vi.spyOn(Date, 'now').mockReturnValue(now);
     expect(formatRelativeTime(now - 2 * 24 * 60 * 60 * 1000)).toBe('2d ago');
+  });
+});
+
+describe('parseVersion', () => {
+  it('parses standard semver string', () => {
+    expect(parseVersion('2.1.84')).toEqual([2, 1, 84]);
+  });
+
+  it('parses version with prefix text', () => {
+    expect(parseVersion('codex-cli 0.111.0')).toEqual([0, 111, 0]);
+  });
+
+  it('parses version with v prefix', () => {
+    expect(parseVersion('aider v0.82.1')).toEqual([0, 82, 1]);
+  });
+
+  it('parses version with suffix text', () => {
+    expect(parseVersion('2.1.84 (Claude Code)')).toEqual([2, 1, 84]);
+  });
+
+  it('returns null for non-version string', () => {
+    expect(parseVersion('no version here')).toBe(null);
+  });
+
+  it('returns null for empty string', () => {
+    expect(parseVersion('')).toBe(null);
+  });
+
+  it('returns null for partial version', () => {
+    expect(parseVersion('1.2')).toBe(null);
+  });
+
+  it('parses version from multiline output', () => {
+    expect(parseVersion('1.2.27\nsome other output')).toEqual([1, 2, 27]);
   });
 });

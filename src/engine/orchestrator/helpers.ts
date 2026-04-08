@@ -1,8 +1,20 @@
 import { join } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
-import type { Task, WorkflowState, PlannerTokenUsage, ImplementerTokenUsage, ValidationResult, OrchestratorCallbacks } from '../../types.js';
-import { saveState } from '../../core/state-persistence.js';
+import type { Task, WorkflowState, PlannerTokenUsage, ImplementerTokenUsage, ValidationResult, OrchestratorCallbacks, StateAction } from '../../types.js';
+import { transition } from '../../core/state/machine.js';
+import { saveState } from '../../core/state/persistence.js';
 import { addUsage, type UsageCategory } from './tokens.js';
+
+export function transitionAndSave(
+  projectDir: string,
+  state: WorkflowState,
+  action: StateAction,
+  maxRetries?: number,
+): WorkflowState {
+  const next = transition(state, action, maxRetries);
+  saveState(projectDir, next);
+  return next;
+}
 
 export function refreshCurrentCode(task: Task, projectDir: string): void {
   const filePath = join(projectDir, task.file);
@@ -27,20 +39,42 @@ export function addUsageAndSave(
   return next;
 }
 
+export interface SignalError extends Error {
+  signal: 'SIGINT' | 'SIGTERM';
+}
+
+export function makeSignalError(signal: 'SIGINT' | 'SIGTERM'): SignalError {
+  const err = new Error(`Process received ${signal}`) as SignalError;
+  err.name = 'SignalError';
+  err.signal = signal;
+  return err;
+}
+
+export function isSignalError(e: unknown): e is SignalError {
+  return e instanceof Error && e.name === 'SignalError';
+}
+
 export async function withSignalHandlers(
   handler: () => void,
   fn: () => Promise<void>,
 ): Promise<void> {
-  const onSignal = () => {
+  let receivedSignal: 'SIGINT' | 'SIGTERM' | null = null;
+
+  const onSignal = (sig: 'SIGINT' | 'SIGTERM') => {
+    receivedSignal = sig;
     handler();
-    process.exit(130);
   };
-  process.on('SIGINT', onSignal);
-  process.on('SIGTERM', onSignal);
+
+  const onSigint = () => onSignal('SIGINT');
+  const onSigterm = () => onSignal('SIGTERM');
+
+  process.on('SIGINT', onSigint);
+  process.on('SIGTERM', onSigterm);
   try {
     await fn();
+    if (receivedSignal) throw makeSignalError(receivedSignal);
   } finally {
-    process.removeListener('SIGINT', onSignal);
-    process.removeListener('SIGTERM', onSignal);
+    process.removeListener('SIGINT', onSigint);
+    process.removeListener('SIGTERM', onSigterm);
   }
 }

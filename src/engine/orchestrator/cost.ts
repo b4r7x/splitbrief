@@ -1,10 +1,10 @@
 import type { TokenUsage, CostBreakdown, Summary, TaskTokenUsage, WorkflowState } from '../../types.js';
-import { getPlannerPricing, getImplementerPricing, calculateCost } from '../pricing.js';
+import { getPlannerPricing, getImplementerPricing, calculateCost } from '../../core/providers/pricing.js';
 
 export type BuildSummaryState = Pick<WorkflowState, 'tasks' | 'completedTasks' | 'escalatedTasks' | 'skippedTasks' | 'failedTasks' | 'tokenUsage'>;
 
-export function estimateCostSavings(tokenUsage: TokenUsage, plannerTool?: string, implementerProvider?: string): string {
-  const breakdown = calculateCostBreakdown({ tokenUsage, totalTasks: 0, escalatedCount: 0, plannerTool, implementerProvider });
+export function estimateCostSavings(tokenUsage: TokenUsage, plannerTool?: string, implementerTool?: string): string {
+  const breakdown = calculateCostBreakdown({ tokenUsage, totalTasks: 0, escalatedCount: 0, plannerTool, implementerTool });
   if (breakdown.savingsAmount <= 0) return '$0.00';
   return `$${breakdown.savingsAmount.toFixed(2)}`;
 }
@@ -14,13 +14,13 @@ export type CostBreakdownOptions = {
   totalTasks: number;
   escalatedCount: number;
   plannerTool?: string;
-  implementerProvider?: string;
+  implementerTool?: string;
 };
 
 export function calculateCostBreakdown(opts: CostBreakdownOptions): CostBreakdown {
-  const { tokenUsage, totalTasks, escalatedCount, plannerTool, implementerProvider } = opts;
+  const { tokenUsage, totalTasks, escalatedCount, plannerTool, implementerTool } = opts;
   const plannerPricing = getPlannerPricing(plannerTool ?? 'claude-code');
-  const implPricing = getImplementerPricing(implementerProvider ?? 'ollama');
+  const implementerPricing = getImplementerPricing(implementerTool ?? 'ollama');
 
   const hypotheticalCost = calculateCost(
     tokenUsage.implementerInput, tokenUsage.implementerOutput, plannerPricing,
@@ -33,7 +33,7 @@ export function calculateCostBreakdown(opts: CostBreakdownOptions): CostBreakdow
   );
 
   const actualImplementerCost = calculateCost(
-    tokenUsage.implementerInput, tokenUsage.implementerOutput, implPricing,
+    tokenUsage.implementerInput, tokenUsage.implementerOutput, implementerPricing,
   );
 
   const totalActualCost = actualPlannerCost + actualImplementerCost;
@@ -58,11 +58,11 @@ type BuildSummaryOptions = {
   startTime: number;
   taskBreakdowns?: TaskTokenUsage[];
   plannerTool?: string;
-  implementerProvider?: string;
+  implementerTool?: string;
 };
 
 export function buildSummary(opts: BuildSummaryOptions): Summary {
-  const { feature, state, startTime, taskBreakdowns, plannerTool, implementerProvider } = opts;
+  const { feature, state, startTime, taskBreakdowns, plannerTool, implementerTool } = opts;
   const totalTasks = state.tasks.length;
   const completedByLocal = state.completedTasks.length;
   const escalatedToPlanner = state.escalatedTasks.length;
@@ -80,11 +80,11 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     failed,
     totalTime,
     tokenUsage: state.tokenUsage,
-    estimatedCostSavings: estimateCostSavings(state.tokenUsage, plannerTool, implementerProvider),
+    estimatedCostSavings: estimateCostSavings(state.tokenUsage, plannerTool, implementerTool),
     escalationRate,
     taskBreakdown: taskBreakdowns,
-    costBreakdown: calculateCostBreakdown({ tokenUsage: state.tokenUsage, totalTasks, escalatedCount: escalatedToPlanner, plannerTool, implementerProvider }),
-    plannerName: plannerTool,
-    implementerName: implementerProvider,
+    costBreakdown: calculateCostBreakdown({ tokenUsage: state.tokenUsage, totalTasks, escalatedCount: escalatedToPlanner, plannerTool, implementerTool }),
+    plannerTool,
+    implementerTool,
   };
 }

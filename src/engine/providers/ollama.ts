@@ -27,17 +27,11 @@ export function createOllamaProvider(overrides?: ProviderOverrides): ProviderDef
     async listModels(): Promise<string[]> {
       const res = await fetch(`${nativeBase(baseURL)}/api/tags`);
       if (!res.ok) return [];
-      const data = (await res.json()) as OllamaTagsResponse;
+      const json: unknown = await res.json();
+      if (typeof json !== 'object' || json === null) return [];
+      const data = json as OllamaTagsResponse;
+      if (data.models !== undefined && !Array.isArray(data.models)) return [];
       return (data.models ?? []).map((m) => m.name);
-    },
-
-    async isAvailable(): Promise<boolean> {
-      try {
-        const models = await this.listModels();
-        return models.length > 0;
-      } catch {
-        return false;
-      }
     },
 
     async detectContextLength(model: string): Promise<number | null> {
@@ -48,7 +42,9 @@ export function createOllamaProvider(overrides?: ProviderOverrides): ProviderDef
           body: JSON.stringify({ name: model }),
         });
         if (!res.ok) return null;
-        const data = (await res.json()) as OllamaShowResponse;
+        const json: unknown = await res.json();
+        if (typeof json !== 'object' || json === null) return null;
+        const data = json as OllamaShowResponse;
         const params = data.parameters ?? '';
         const match = params.match(/num_ctx\s+(\d+)/);
         return match ? parseInt(match[1], 10) : null;

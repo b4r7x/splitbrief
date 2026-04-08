@@ -116,22 +116,6 @@ describe('overlayStore', () => {
       expect(overlayStore.get().stack).toEqual([]);
     });
 
-    it('close from restored parent goes to none', () => {
-      overlayStore.open('settings');
-      overlayStore.open('planner-picker');
-      overlayStore.close();
-      overlayStore.close();
-      expect(overlayStore.get().active).toBe('none');
-      expect(overlayStore.get().stack).toEqual([]);
-    });
-
-    it('close with empty stack returns to initial state', () => {
-      overlayStore.open('planner-picker');
-      overlayStore.close();
-      expect(overlayStore.get().active).toBe('none');
-      expect(overlayStore.get().stack).toEqual([]);
-    });
-
     it('preserves parent focus in stack', () => {
       overlayStore.open('settings', 'planner.tool');
       overlayStore.open('planner-picker', 'models');

@@ -1,5 +1,5 @@
 import type { Task, ProjectContext, CodeContext } from '../../types.js';
-import { extractFunctionContext } from '../context-extractor.js';
+import { extractFunctionContext } from '../parsers/scope-extractor.js';
 import { estimateTokens, truncateMiddle, computeTokenBudget } from './token-budget.js';
 
 export const SYSTEM_PREAMBLE = `SYSTEM: You are a TypeScript code generator. You write clean, working TypeScript code.
@@ -88,8 +88,8 @@ function buildTaskSections(task: Task, context?: ProjectContext): string[] {
   if (task.typeDefs) {
     sections.push('', '### Type Definitions', task.typeDefs);
   }
-  if (task.implSteps.length > 0) {
-    sections.push('', '### Implementation Steps', ...task.implSteps.map((s, i) => `${i + 1}. ${s}`));
+  if (task.implementationSteps.length > 0) {
+    sections.push('', '### Implementation Steps', ...task.implementationSteps.map((s, i) => `${i + 1}. ${s}`));
   }
   if (task.tests.length > 0) {
     sections.push('', '### Tests (must pass after implementation)', task.tests.join('\n'));

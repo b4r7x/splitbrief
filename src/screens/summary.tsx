@@ -2,8 +2,8 @@ import { Box, Text } from 'ink';
 import type { Summary, SlashCommandDef } from '../types.js';
 import { useTheme, type Theme } from '../ui/theme.js';
 import { formatTime, formatCost, truncate } from '../utils/format.js';
-import { getDisplayName } from '../engine/providers/backend-registry.js';
-import { InputBar } from '../components/input-bar.js';
+import { getProviderDisplayName } from '../core/providers/catalog.js';
+import { InputBar } from '../components/input-bar/index.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 import { routerStore } from '../stores/router.js';
 
@@ -52,8 +52,8 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
       <Box flexDirection="column" marginTop={1} gap={isSmall ? 0 : 1}>
         <Box><Box width={labelWidth}><Text color={theme.textDim}>Feature</Text></Box><Text bold>{summary.feature}</Text></Box>
         <Box><Box width={labelWidth}><Text color={theme.textDim}>Time</Text></Box><Text>{formatTime(summary.totalTime)}</Text></Box>
-        {summary.plannerName && <Box><Box width={labelWidth}><Text color={theme.textDim}>Planner</Text></Box><Text>{getDisplayName(summary.plannerName)}</Text></Box>}
-        {summary.implementerName && <Box><Box width={labelWidth}><Text color={theme.textDim}>Implementer</Text></Box><Text>{getDisplayName(summary.implementerName)}</Text></Box>}
+        {summary.plannerTool && <Box><Box width={labelWidth}><Text color={theme.textDim}>Planner</Text></Box><Text>{getProviderDisplayName(summary.plannerTool)}</Text></Box>}
+        {summary.implementerTool && <Box><Box width={labelWidth}><Text color={theme.textDim}>Implementer</Text></Box><Text>{getProviderDisplayName(summary.implementerTool)}</Text></Box>}
         <Box><Box width={labelWidth}><Text color={theme.textDim}>Savings</Text></Box><Text bold color={theme.success}>{summary.estimatedCostSavings}</Text></Box>
       </Box>
 

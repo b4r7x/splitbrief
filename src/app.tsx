@@ -1,23 +1,23 @@
 import type { ReactNode } from 'react';
 import { useApp } from 'ink';
-import { createCommands, toPaletteItems, executeSlashCommand } from './core/commands.js';
+import { createCommands, toPaletteItems, executeSlashCommand } from './core/commands/index.js';
 import { useGlobalKeys } from './hooks/use-global-keys.js';
 import { Layout } from './layout.js';
 import { ThemeProvider, getTheme } from './ui/theme.js';
 import { routerStore } from './stores/router.js';
 import { configStore } from './stores/config.js';
 import { overlayStore } from './stores/overlay.js';
-import { feedbackStore } from './stores/error.js';
+import { feedbackStore } from './stores/feedback.js';
 import { HomeScreen } from './screens/home.js';
 import { WorkflowScreen } from './screens/workflow.js';
 import { SummaryScreen } from './screens/summary.js';
 import { SetupScreen } from './screens/setup.js';
-import { HelpOverlay } from './components/help-overlay.js';
-import { CommandPalette } from './components/command-palette.js';
-import { SkillsPicker } from './components/skills-picker.js';
-import { SettingsOverlay } from './components/settings-overlay.js';
-import { ModeSelector } from './components/mode-selector.js';
-import { ToolModelPicker } from './components/tool-model-picker.js';
+import { HelpOverlay } from './components/overlays/help-overlay.js';
+import { CommandPalette } from './components/overlays/command-palette.js';
+import { SkillsPicker } from './components/overlays/skills-picker/index.js';
+import { SettingsOverlay } from './components/overlays/settings-overlay/index.js';
+import { ModeSelector } from './components/overlays/mode-selector.js';
+import { ToolModelPicker } from './components/overlays/tool-model-picker/index.js';
 import type { Screen, OverlayType, SlashCommandDef, CommandContext, CommandPaletteItem } from './types.js';
 
 export default function App() {

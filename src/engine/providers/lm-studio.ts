@@ -18,7 +18,10 @@ export function createLmStudioProvider(overrides?: ProviderOverrides): ProviderD
   async function fetchModels(): Promise<LmStudioModel[]> {
     const res = await fetch(`${baseURL}/models`);
     if (!res.ok) return [];
-    const data = (await res.json()) as LmStudioModelsResponse;
+    const json: unknown = await res.json();
+    if (typeof json !== 'object' || json === null) return [];
+    const data = json as LmStudioModelsResponse;
+    if (data.data !== undefined && !Array.isArray(data.data)) return [];
     return data.data ?? [];
   }
 
@@ -31,15 +34,6 @@ export function createLmStudioProvider(overrides?: ProviderOverrides): ProviderD
     async listModels(): Promise<string[]> {
       const models = await fetchModels();
       return models.map((m) => m.id);
-    },
-
-    async isAvailable(): Promise<boolean> {
-      try {
-        const models = await this.listModels();
-        return models.length > 0;
-      } catch {
-        return false;
-      }
     },
 
     async detectContextLength(model: string): Promise<number | null> {

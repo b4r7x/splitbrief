@@ -1,9 +1,7 @@
 import type { Task, Config, WorkflowState, OrchestratorCallbacks, ValidationResult, TaskCompletionMethod } from '../../types.js';
-import { transition } from '../../core/state.js';
-import { saveState } from '../../core/state-persistence.js';
 import { commitChanges, createCheckpoint } from '../../utils/git.js';
 import { emit } from './events.js';
-import { allValidationsPassed } from './helpers.js';
+import { allValidationsPassed, transitionAndSave } from './helpers.js';
 
 type ValidateCommitOptions = {
   task: Task;
@@ -32,8 +30,8 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
     try {
       await commitChanges(projectDir, commitMsg);
       callbacks.onEvent({ type: 'git-commit', ts: Date.now(), message: commitMsg });
-    } catch {
-      // commit failure is non-fatal
+    } catch (err) {
+      callbacks.onEvent({ type: 'warning', ts: Date.now(), message: `Failed to commit: ${err}` });
     }
   } else if (strategy === 'checkpoint') {
     const label = `${task.id}`;
@@ -42,13 +40,12 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
       if (tag) {
         callbacks.onEvent({ type: 'git-checkpoint', ts: Date.now(), tag, taskId: task.id });
       }
-    } catch {
-      // checkpoint failure is non-fatal
+    } catch (err) {
+      callbacks.onEvent({ type: 'warning', ts: Date.now(), message: `Failed to create checkpoint: ${err}` });
     }
   }
 
-  const nextState = transition(state, { type: transitionType });
-  saveState(projectDir, nextState);
+  const nextState = transitionAndSave(projectDir, state, { type: transitionType });
   task.status = method === 'escalated-full' ? 'escalated' : 'done';
   callbacks.onEvent({
     type: 'task-complete', ts: Date.now(), taskId: task.id, title: task.title,

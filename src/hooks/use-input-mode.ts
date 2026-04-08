@@ -1,10 +1,12 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { InputMode } from '../types.js';
 
 type ReviewResult = { approved: boolean; comment?: string };
 
 export function useInputMode() {
   const [modeState, setModeState] = useState<{ mode: InputMode; hint: string }>({ mode: 'normal', hint: '' });
+  const modeRef = useRef(modeState.mode);
+  modeRef.current = modeState.mode;
   const reviewResolverRef = useRef<((value: ReviewResult) => void) | null>(null);
   const questionResolverRef = useRef<((value: string) => void) | null>(null);
   const setReviewMode = (h: string): Promise<ReviewResult> => {
@@ -22,7 +24,7 @@ export function useInputMode() {
   };
 
   const resolve = (value: ReviewResult | string): void => {
-    const currentMode = modeState.mode;
+    const currentMode = modeRef.current;
     setModeState({ mode: 'normal', hint: '' });
     if (currentMode === 'review' && typeof value === 'object') {
       const resolver = reviewResolverRef.current;
@@ -44,6 +46,15 @@ export function useInputMode() {
     reviewResolver?.({ approved: false });
     questionResolver?.('');
   };
+
+  useEffect(() => {
+    return () => {
+      reviewResolverRef.current?.({ approved: false });
+      questionResolverRef.current?.('');
+      reviewResolverRef.current = null;
+      questionResolverRef.current = null;
+    };
+  }, []);
 
   return { mode: modeState.mode, hint: modeState.hint, setReviewMode, setQuestionMode, resolve, resetMode };
 }

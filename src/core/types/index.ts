@@ -1,9 +1,18 @@
-export type { Config, PlannerTool, OutputFormat, WorkflowMode, CommitStrategy } from './config.js';
-export { WORKFLOW_MODES, COMMIT_STRATEGIES } from './config.js';
+export type {
+  Config,
+  PlannerTool,
+  OutputFormat,
+  WorkflowMode,
+  CommitStrategy,
+  WorkflowOpts,
+  PlannerDetection,
+  ProviderDetection,
+  ToolName,
+} from './config.js';
+export { WORKFLOW_MODES, CLI_TOOL_NAMES } from './config.js';
 export type {
   Phase,
   Task,
-  TaskStatus,
   WorkflowState,
   StateAction,
   TokenBudget,
@@ -17,13 +26,16 @@ export type {
   TaskTokenUsage,
   TaskCompletionMethod,
   CostBreakdown,
-} from './tokens.js';
-export type { ImplementerResult, ValidationResult, Summary } from './summary.js';
+  ImplementerResult,
+  ValidationResult,
+  Summary,
+} from './summary.js';
 export type {
   TuiEvent,
   OrchestratorEvent,
   OrchestratorEventType,
   OrchestratorCallbacks,
+  ClarificationQuestion,
 } from './events.js';
 export type {
   Screen,

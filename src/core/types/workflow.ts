@@ -1,4 +1,4 @@
-import type { TokenUsage } from './tokens.js';
+import type { TokenUsage } from './summary.js';
 
 export type Phase =
   | 'idle'
@@ -28,7 +28,7 @@ export interface Task {
   constraints: string[];
   pattern?: string;
   typeDefs: string;
-  implSteps: string[];
+  implementationSteps: string[];
   status: TaskStatus;
 }
 

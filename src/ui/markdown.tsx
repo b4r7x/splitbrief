@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import type { Theme } from './theme.js';
+import { useTheme } from './theme.js';
 import { highlight } from '../utils/highlight.js';
 
 type CodeBlock = { type: 'code'; lang: string; code: string };
@@ -108,7 +109,8 @@ function HighlightedCode({ code, lang, theme: t }: { code: string; lang: string;
   );
 }
 
-export function PlannerText({ text, theme: t }: { text: string; theme: Theme }) {
+export function PlannerText({ text }: { text: string }) {
+  const t = useTheme();
   const blocks = parseBlocks(text);
 
   return (

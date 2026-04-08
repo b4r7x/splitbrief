@@ -1,9 +1,9 @@
 import type { Config } from '../../types.js';
-import type { PlannerBackend } from './types.js';
+import type { Planner } from './types.js';
 import type { InvokeResult } from './base.js';
 import { createPlannerBase } from './base.js';
 import { getProvider } from '../providers/registry.js';
-import { streamCompletion } from '../openai-stream.js';
+import { streamCompletion } from '../streaming/openai-stream.js';
 import OpenAI from 'openai';
 
 async function invokeApi(
@@ -30,7 +30,7 @@ async function invokeApi(
   };
 }
 
-export function createApiPlanner(config: Config): PlannerBackend {
+export function createApiPlanner(config: Config): Planner {
   if (!config.planner.provider) throw new Error('API planner requires planner.provider');
   const provider = config.planner.provider;
   const model = config.planner.model ?? 'default';

@@ -4,16 +4,10 @@ export interface ProviderDef {
   readonly apiKey: () => string;
   readonly isLocal: boolean;
   listModels(): Promise<string[]>;
-  isAvailable(): Promise<boolean>;
   detectContextLength?(model: string): Promise<number | null>;
 }
 
-export interface ProviderDetection {
-  provider: string;
-  available: boolean;
-  models?: string[];
-  isLocal: boolean;
-}
+export type { ProviderDetection } from '../../types.js';
 
 export interface ProviderOverrides {
   apiBase?: string;

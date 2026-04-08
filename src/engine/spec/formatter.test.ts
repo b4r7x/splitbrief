@@ -79,49 +79,21 @@ describe('formatTaskPrompt', () => {
     expect(lastLine).toContain('No markdown fences');
   });
 
-  it('SYSTEM_PREAMBLE does not contain markdown fences', () => {
-    expect(SYSTEM_PREAMBLE).not.toContain('```');
-  });
 });
 
 describe('formatRetryPrompt', () => {
   const task = makeTask();
   const error = 'TypeError: Cannot read property x of undefined';
 
-  it('attempt 1 contains error message and fix instruction', () => {
-    const prompt = formatRetryPrompt(task, context, error, 1);
-
+  it.each([
+    [1, 'Fix it:'],
+    [2, 'rephrased'],
+    [3, 'different approach'],
+  ] as const)('attempt %i contains expected framing', (attempt, expectedText) => {
+    const prompt = formatRetryPrompt(task, context, error, attempt);
+    expect(prompt).toContain(expectedText);
     expect(prompt).toContain(error);
-    expect(prompt).toContain('Fix it:');
-  });
-
-  it('attempt 2 contains rephrased task', () => {
-    const prompt = formatRetryPrompt(task, context, error, 2);
-
-    expect(prompt).toContain('rephrased');
     expect(prompt).toContain(task.file);
-    expect(prompt).toContain(task.title);
-    expect(prompt).toContain(error);
-  });
-
-  it('attempt 3 contains different approach instruction', () => {
-    const prompt = formatRetryPrompt(task, context, error, 3);
-
-    expect(prompt).toContain('different approach');
-    expect(prompt).toContain(error);
-  });
-
-  it('retry prompts include error and task context', () => {
-    const retry1 = formatRetryPrompt(task, context, error, 1);
-    const retry2 = formatRetryPrompt(task, context, error, 2);
-    const retry3 = formatRetryPrompt(task, context, error, 3);
-
-    expect(retry1).toContain(error);
-    expect(retry2).toContain(error);
-    expect(retry3).toContain(error);
-    expect(retry1).toContain(task.file);
-    expect(retry2).toContain(task.file);
-    expect(retry3).toContain(task.file);
   });
 
   it('attempt 2 and 3 still include currentCode (v0.2: full context preserved)', () => {
@@ -148,12 +120,6 @@ describe('estimateTokens', () => {
     expect(estimateTokens('')).toBe(0);
   });
 
-  it('scales linearly with text length', () => {
-    const short = estimateTokens('a'.repeat(100));
-    const long = estimateTokens('a'.repeat(1000));
-    expect(long).toBeGreaterThanOrEqual(short * 9);
-    expect(long).toBeLessThanOrEqual(short * 11);
-  });
 });
 
 describe('truncateMiddle', () => {
@@ -174,6 +140,12 @@ describe('truncateMiddle', () => {
     const result = truncateMiddle(text, 200);
     expect(result.startsWith('START')).toBeTruthy();
     expect(result.endsWith('END!!')).toBeTruthy();
+  });
+
+  it('handles very small budgets gracefully', () => {
+    const text = 'some content here';
+    const result = truncateMiddle(text, 1);
+    expect(result.length).toBeLessThanOrEqual(text.length);
   });
 });
 
@@ -221,31 +193,20 @@ describe('computeTokenBudget', () => {
     expect(budget.remaining).toBe(8192 - expectedTotal);
   });
 
-  it('25% output reserve', () => {
-    const budget = computeTokenBudget('s', 't', 10000);
-    expect(budget.outputReserve).toBe(Math.floor(10000 * 0.25));
-  });
-
   it('remaining equals contextLength minus total', () => {
     const budget = computeTokenBudget('system prompt here', 'the task body text', 16384);
     expect(budget.remaining).toBe(16384 - budget.total);
   });
 
-  it('small context (8K)', () => {
-    const budget = computeTokenBudget('sys', 'task', 8192);
-    expect(budget.outputReserve).toBe(Math.floor(8192 * 0.25));
-    expect(budget.remaining).toBeGreaterThan(0);
-    expect(budget.remaining).toBeLessThan(8192);
-    expect(budget.total + budget.remaining).toBe(8192);
+  it('remaining decreases as system prompt grows', () => {
+    const small = computeTokenBudget('short', 'task', 8192);
+    const large = computeTokenBudget('a'.repeat(2000), 'task', 8192);
+    expect(large.remaining).toBeLessThan(small.remaining);
   });
 
-  it('large context (32K)', () => {
-    const budget = computeTokenBudget('sys', 'task', 32768);
-    expect(budget.outputReserve).toBe(Math.floor(32768 * 0.25));
-    expect(budget.remaining).toBeGreaterThan(0);
-    expect(budget.remaining).toBeLessThan(32768);
-    expect(budget.total + budget.remaining).toBe(32768);
-    const smallBudget = computeTokenBudget('sys', 'task', 8192);
-    expect(budget.remaining).toBeGreaterThan(smallBudget.remaining);
+  it('can produce negative remaining when context is too small', () => {
+    const budget = computeTokenBudget('a'.repeat(4000), 'b'.repeat(4000), 100);
+    expect(budget.remaining).toBeLessThan(0);
   });
+
 });

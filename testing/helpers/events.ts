@@ -22,8 +22,15 @@ export function makeTaskSkipped(overrides?: Partial<EventOfType<'task-skipped'>>
   return { type: 'task-skipped', ts: Date.now(), taskId: 'T001', title: 'Test task', reason: 'dependency failed', ...overrides };
 }
 
-export function makeImplementerGenerate(overrides?: Partial<EventOfType<'implementer-generate'>>): EventOfType<'implementer-generate'> {
-  return { type: 'implementer-generate', ts: Date.now(), status: 'done', model: 'qwen2.5-coder:7b', file: 'src/test.ts', linesAdded: 10, linesRemoved: 2, ...overrides };
+export function makeImplementerGenerate(overrides?: Record<string, unknown>): EventOfType<'implementer-generate'> {
+  const status = (overrides?.status as string) ?? 'done';
+  if (status === 'running') {
+    return { type: 'implementer-generate', ts: Date.now(), status: 'running', ...overrides } as EventOfType<'implementer-generate'>;
+  }
+  if (status === 'failed') {
+    return { type: 'implementer-generate', ts: Date.now(), status: 'failed', model: 'qwen2.5-coder:7b', ...overrides } as EventOfType<'implementer-generate'>;
+  }
+  return { type: 'implementer-generate', ts: Date.now(), status: 'done', file: 'src/test.ts', linesAdded: 10, linesRemoved: 2, duration: 5000, ...overrides } as EventOfType<'implementer-generate'>;
 }
 
 export function makeValidate(overrides?: Partial<EventOfType<'validate'>>): EventOfType<'validate'> {

@@ -1,5 +1,5 @@
 import type { WorkflowState, OrchestratorCallbacks, ValidationResult, OrchestratorEventType } from '../../types.js';
-import { appendEvent } from '../../core/state-persistence.js';
+import { appendEvent } from '../../core/state/persistence.js';
 import { allValidationsPassed } from './helpers.js';
 
 export function emit(projectDir: string, state: WorkflowState, type: OrchestratorEventType, taskId?: string, data?: Record<string, unknown>): void {

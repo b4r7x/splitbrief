@@ -1,9 +1,9 @@
 import type { Config, OutputFormat } from '../../types.js';
-import type { PlannerBackend } from './types.js';
+import type { Planner } from './types.js';
 import { createPlannerBase, createIsAvailable } from './base.js';
 import type { InvokeResult } from './base.js';
-import { spawnAndCollect } from './spawn.js';
-import { getLineParser } from '../output-parsers.js';
+import { spawnAndCollect } from '../../utils/process.js';
+import { getLineParser } from '../streaming/output-parsers.js';
 
 async function spawnShellCommand(
   prompt: string,
@@ -27,7 +27,7 @@ async function spawnShellCommand(
   });
 }
 
-export function createShellPlanner(config: Config): PlannerBackend {
+export function createShellPlanner(config: Config): Planner {
   const command = config.planner.command!;
   const baseArgs = config.planner.args ?? [];
   const format: OutputFormat = config.planner.outputFormat ?? 'text';

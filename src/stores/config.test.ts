@@ -1,22 +1,39 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import YAML from 'yaml';
 import { configStore } from './config.js';
+import { feedbackStore } from './feedback.js';
 
-vi.mock('../core/config.js', () => ({
-  loadConfig: vi.fn(() => ({
-    planner: { tool: 'claude-code', model: 'opus' },
-    implementer: { provider: 'ollama', model: 'qwen2.5-coder', contextLength: 8192 },
-    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', mode: 'standard' },
-    theme: 'dark',
+let tmpDir: string;
+
+function writeConfigYaml(extras: Record<string, unknown> = {}) {
+  mkdirSync(join(tmpDir, '.tiny-spec'), { recursive: true });
+  const base = {
+    planner: { tool: 'claude-code' },
+    implementer: { tool: 'ollama', model: 'qwen2.5-coder:7b', context_length: 8192, temperature: 0.3 },
+    validation: { typecheck: true, lint: true, test: true, test_command: 'npm test' },
+    workflow: { auto_approve_spec: false, auto_approve_plan: false, max_retries: 3, commit_strategy: 'none', mode: 'standard' },
+    theme: 'terminal',
     sessions: { scope: 'project' },
-  })),
-  writeConfig: vi.fn(),
-}));
+    ...extras,
+  };
+  writeFileSync(join(tmpDir, '.tiny-spec', 'config.yaml'), YAML.stringify(base), 'utf-8');
+}
 
-import { loadConfig, writeConfig } from '../core/config.js';
-import { feedbackStore } from './error.js';
+describe('configStore.load', () => {
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'config-store-test-'));
+    configStore.reset();
+    feedbackStore.reset();
+  });
 
-describe('configStore', () => {
-  beforeEach(() => configStore.reset());
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    configStore.reset();
+    feedbackStore.reset();
+  });
 
   it('starts empty', () => {
     expect(configStore.get().config).toBeNull();
@@ -24,81 +41,73 @@ describe('configStore', () => {
   });
 
   it('loads config from disk', () => {
-    configStore.load('/tmp/project');
-    expect(configStore.get().projectDir).toBe('/tmp/project');
+    writeConfigYaml();
+    configStore.load(tmpDir);
+    expect(configStore.get().projectDir).toBe(tmpDir);
     expect(configStore.get().config!.planner.tool).toBe('claude-code');
+    expect(configStore.get().config!.implementer.model).toBe('qwen2.5-coder:7b');
   });
 
-  it('applies overrides', () => {
-    configStore.load('/tmp/project', { implementer: { model: 'custom-model' } });
-    expect(configStore.get().config!.implementer.model).toBe('custom-model');
+  it('falls back to defaults when no config file exists', () => {
+    configStore.load(tmpDir);
+    expect(configStore.get().config!.planner.tool).toBe('claude-code');
+    expect(configStore.get().config!.implementer.tool).toBe('ollama');
   });
 
-  it('reload re-reads config with overrides', () => {
-    configStore.load('/tmp/project', { implementer: { model: 'a' } });
-    configStore.reload();
-    expect(configStore.get().config!.implementer.model).toBe('a');
+  it('applies implementer override to provider and model', () => {
+    writeConfigYaml();
+    configStore.load(tmpDir, { implementer: { tool: 'deepseek', model: 'deepseek-r1' } });
+    expect(configStore.get().config!.implementer.tool).toBe('deepseek');
+    expect(configStore.get().config!.implementer.model).toBe('deepseek-r1');
   });
 
-  it('autoApprove undefined does not override config-file values', () => {
-    vi.mocked(loadConfig).mockReturnValueOnce({
-      planner: { tool: 'claude-code', model: 'opus' },
-      implementer: { provider: 'ollama', model: 'qwen2.5-coder', contextLength: 8192 },
-      theme: 'dark',
-      sessions: { scope: 'project' },
-      workflow: { autoApproveSpec: true, autoApprovePlan: true, maxRetries: 3, commitStrategy: 'none' },
-    } as any);
-    configStore.load('/tmp/project', { autoApprove: undefined });
+  it('applies planner overrides', () => {
+    writeConfigYaml();
+    configStore.load(tmpDir, { planner: { tool: 'aider', model: 'opus', command: 'my-planner' } });
+    expect(configStore.get().config!.planner.tool).toBe('aider');
+    expect(configStore.get().config!.planner.model).toBe('opus');
+    expect(configStore.get().config!.planner.command).toBe('my-planner');
+  });
+
+  it('applies contextLength override', () => {
+    writeConfigYaml();
+    configStore.load(tmpDir, { contextLength: 16384 });
+    expect(configStore.get().config!.implementer.contextLength).toBe(16384);
+  });
+
+  it('applies mode override', () => {
+    writeConfigYaml();
+    configStore.load(tmpDir, { mode: 'full' });
+    expect(configStore.get().config!.workflow.mode).toBe('full');
+  });
+
+  it('autoApprove undefined preserves config-file values', () => {
+    writeConfigYaml({ workflow: { auto_approve_spec: true, auto_approve_plan: true, max_retries: 3, commit_strategy: 'none', mode: 'standard' } });
+    configStore.load(tmpDir, { autoApprove: undefined });
     expect(configStore.get().config!.workflow.autoApproveSpec).toBe(true);
     expect(configStore.get().config!.workflow.autoApprovePlan).toBe(true);
   });
 
-  it('applies implementerOverride to implementer.provider', () => {
-    configStore.load('/tmp/project', { implementer: { provider: 'deepseek' } });
-    expect(configStore.get().config!.implementer.provider).toBe('deepseek');
-  });
-
-  it('applies implementerModelOverride to implementer.model', () => {
-    configStore.load('/tmp/project', { implementer: { model: 'deepseek-r1' } });
-    expect(configStore.get().config!.implementer.model).toBe('deepseek-r1');
-  });
-
-  it('applies plannerCommandOverride to planner.command', () => {
-    configStore.load('/tmp/project', { planner: { command: 'my-planner' } });
-    expect(configStore.get().config!.planner.command).toBe('my-planner');
-  });
-
-  it('applies plannerOverride to planner.tool', () => {
-    configStore.load('/tmp/project', { planner: { tool: 'aider' } });
-    expect(configStore.get().config!.planner.tool).toBe('aider');
-  });
-
-  it('applies plannerModelOverride to planner.model', () => {
-    configStore.load('/tmp/project', { planner: { model: 'opus' } });
-    expect(configStore.get().config!.planner.model).toBe('opus');
-  });
-
-  it('applies contextLengthOverride to implementer.contextLength', () => {
-    configStore.load('/tmp/project', { contextLength: 16384 });
-    expect(configStore.get().config!.implementer.contextLength).toBe(16384);
-  });
-
-  it('applies implementerCommandOverride to implementer.command', () => {
-    configStore.load('/tmp/project', { implementer: { command: 'my-impl' } });
-    expect(configStore.get().config!.implementer.command).toBe('my-impl');
-  });
-
-  it('applies valid modeOverride to workflow.mode', () => {
-    configStore.load('/tmp/project', { mode: 'full' });
-    expect(configStore.get().config!.workflow.mode).toBe('full');
+  it('reload re-reads config and re-applies overrides', () => {
+    writeConfigYaml();
+    configStore.load(tmpDir, { implementer: { model: 'first' } });
+    expect(configStore.get().config!.implementer.model).toBe('first');
+    configStore.reload();
+    expect(configStore.get().config!.implementer.model).toBe('first');
   });
 });
 
 describe('configStore.save', () => {
   beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'config-store-test-'));
     configStore.reset();
     feedbackStore.reset();
-    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    configStore.reset();
+    feedbackStore.reset();
   });
 
   it('throws when save is called before load', () => {
@@ -106,42 +115,42 @@ describe('configStore.save', () => {
   });
 
   it('writes config to disk and updates store', () => {
-    configStore.load('/tmp/project');
+    writeConfigYaml();
+    configStore.load(tmpDir);
     const updated = { ...configStore.get().config!, theme: 'mono' as const };
     configStore.save(updated);
-    expect(writeConfig).toHaveBeenCalledWith('/tmp/project', updated);
+
     expect(configStore.get().config!.theme).toBe('mono');
+    const written = YAML.parse(readFileSync(join(tmpDir, '.tiny-spec', 'config.yaml'), 'utf-8'));
+    expect(written.theme).toBe('mono');
   });
 
-  it('calls feedbackStore.setError when writeConfig throws', () => {
-    configStore.load('/tmp/project');
-    vi.mocked(writeConfig).mockImplementationOnce(() => { throw new Error('disk full'); });
-    const spy = vi.spyOn(feedbackStore, 'setError');
+  it('reports error to feedbackStore when write fails', () => {
+    writeConfigYaml();
+    configStore.load(tmpDir);
+    // Replace projectDir with a path containing a null byte to force mkdirSync to throw
+    configStore.reset({ ...configStore.get(), projectDir: '/tmp/\0invalid' });
     configStore.save(configStore.get().config!);
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining('disk full'));
-    spy.mockRestore();
+    expect(feedbackStore.get().message).toMatch(/Failed to save config/);
+    expect(feedbackStore.get().isError).toBe(true);
   });
 
   it('save does not re-apply CLI overrides', () => {
-    configStore.load('/tmp/project', { implementer: { model: 'custom' } });
-    expect(configStore.get().config!.implementer.model).toBe('custom');
+    writeConfigYaml();
+    configStore.load(tmpDir, { implementer: { model: 'cli-override' } });
+    expect(configStore.get().config!.implementer.model).toBe('cli-override');
     const updated = { ...configStore.get().config!, implementer: { ...configStore.get().config!.implementer, model: 'picker-choice' } };
     configStore.save(updated);
     expect(configStore.get().config!.implementer.model).toBe('picker-choice');
-  });
-
-  it('reload still applies CLI overrides', () => {
-    configStore.load('/tmp/project', { implementer: { model: 'custom' } });
-    configStore.reload();
-    expect(configStore.get().config!.implementer.model).toBe('custom');
   });
 
   it('save then reload re-applies overrides, overwriting picker selection', () => {
-    configStore.load('/tmp/project', { implementer: { model: 'custom' } });
+    writeConfigYaml();
+    configStore.load(tmpDir, { implementer: { model: 'cli-override' } });
     const updated = { ...configStore.get().config!, implementer: { ...configStore.get().config!.implementer, model: 'picker-choice' } };
     configStore.save(updated);
     expect(configStore.get().config!.implementer.model).toBe('picker-choice');
     configStore.reload();
-    expect(configStore.get().config!.implementer.model).toBe('custom');
+    expect(configStore.get().config!.implementer.model).toBe('cli-override');
   });
 });

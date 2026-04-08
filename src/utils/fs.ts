@@ -1,8 +1,8 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, resolve, isAbsolute } from 'node:path';
 
-const TINY_SPEC_DIR = '.tiny-spec';
-const CURRENT_DIR = 'current';
+export const TINY_SPEC_DIR = '.tiny-spec';
+export const CURRENT_DIR = 'current';
 
 function currentDir(projectDir: string): string {
   return join(projectDir, TINY_SPEC_DIR, CURRENT_DIR);
@@ -36,4 +36,14 @@ export function validateTaskPath(projectDir: string, filePath: string): string {
 
 export function readFileOrEmpty(filePath: string): string {
   return existsSync(filePath) ? readFileSync(filePath, 'utf-8') : '';
+}
+
+export function readPackageJson(projectDir: string): Record<string, unknown> | null {
+  const pkgPath = join(projectDir, 'package.json');
+  if (!existsSync(pkgPath)) return null;
+  try {
+    return JSON.parse(readFileSync(pkgPath, 'utf-8'));
+  } catch {
+    return null;
+  }
 }

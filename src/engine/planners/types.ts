@@ -1,6 +1,6 @@
 import type { Task, Config, PlannerTokenUsage } from '../../types.js';
-import type { PricingInfo } from '../pricing.js';
-import type { ClarificationQuestion } from '../question-parser.js';
+import type { PricingInfo } from '../../core/providers/pricing.js';
+import type { ClarificationQuestion } from '../parsers/question-parser.js';
 
 export interface PlannerCallbacks {
   onOutput: (text: string) => void;
@@ -27,7 +27,7 @@ export interface RegenerateResult {
   usage: PlannerTokenUsage | null;
 }
 
-export interface PlannerBackend {
+export interface Planner {
   readonly name: string;
   readonly conversational: boolean;
 
@@ -68,6 +68,12 @@ export interface PlannerBackend {
   ): Promise<PlanResult>;
 
   isAvailable(): Promise<boolean>;
+
+  review(
+    prompt: string,
+    projectDir: string,
+    callbacks: { onOutput: (text: string) => void },
+  ): Promise<{ text: string; usage: PlannerTokenUsage | null }>;
 
   getVersion(): Promise<string | null>;
 

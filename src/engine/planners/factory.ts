@@ -1,7 +1,7 @@
 import type { Config } from '../../types.js';
-import type { PlannerBackend } from './types.js';
+import type { Planner } from './types.js';
 
-export async function createPlanner(config: Config): Promise<PlannerBackend> {
+export async function createPlanner(config: Config): Promise<Planner> {
   const tool = config.planner.tool ?? 'claude-code';
 
   if (tool === 'claude-code' && config.planner.provider) {
@@ -14,17 +14,11 @@ export async function createPlanner(config: Config): Promise<PlannerBackend> {
       const { createClaudeCodePlanner } = await import('./claude-code.js');
       return createClaudeCodePlanner(config.planner.model);
     }
-    case 'codex': {
-      const { createCodexPlanner } = await import('./codex.js');
-      return createCodexPlanner(config.planner.model);
-    }
-    case 'opencode': {
-      const { createOpenCodePlanner } = await import('./opencode.js');
-      return createOpenCodePlanner(config.planner.model);
-    }
+    case 'codex':
+    case 'opencode':
     case 'aider': {
-      const { createAiderPlanner } = await import('./aider.js');
-      return createAiderPlanner(config.planner.model);
+      const { createCliPlanner } = await import('./cli.js');
+      return createCliPlanner(tool, config.planner.model);
     }
     case 'agent-sdk': {
       const { createAgentSdkPlanner } = await import('./agent-sdk.js');

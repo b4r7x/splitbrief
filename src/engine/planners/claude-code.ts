@@ -1,13 +1,12 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { PlannerTokenUsage } from '../../types.js';
-import type { PlannerBackend, EscalationResult } from './types.js';
+import type { Planner, EscalationResult } from './types.js';
 import { createPlannerBase, createGetVersion, createIsAvailable, type InvokeResult } from './base.js';
-import { spawnWithStdin } from './spawn.js';
-import { spawnWithStreaming, isENOENT } from '../../utils/process.js';
-import { parseStreamLine, type ToolUseInfo } from '../claude-stream.js';
+import { spawnWithStdin } from '../../utils/process.js';
+import { parseStreamLine, type ToolUseInfo } from '../streaming/claude-stream.js';
 import { validateTaskPath } from '../../utils/fs.js';
-import { createQuestionAccumulator, type ClarificationQuestion } from '../question-parser.js';
+import { createQuestionAccumulator, type ClarificationQuestion } from '../parsers/question-parser.js';
 
 const NOT_FOUND = 'Claude Code CLI not found. Install it from https://claude.ai/code';
 
@@ -23,38 +22,41 @@ interface StreamHandlerCallbacks {
   onQuestion?: (questions: ClarificationQuestion[]) => void;
 }
 
+interface ToolFormat {
+  field: string;
+  quoted?: boolean;
+  maxLen?: number;
+}
+
+const TOOL_FORMATS: Record<string, ToolFormat> = {
+  Read:         { field: 'file_path' },
+  Write:        { field: 'file_path' },
+  Edit:         { field: 'file_path' },
+  Glob:         { field: 'pattern' },
+  Skill:        { field: 'skill' },
+  NotebookEdit: { field: 'file_path' },
+  Grep:         { field: 'pattern', quoted: true },
+  WebSearch:    { field: 'query', quoted: true },
+  ToolSearch:   { field: 'query', quoted: true },
+  Bash:         { field: 'command', maxLen: 60 },
+  WebFetch:     { field: 'url', maxLen: 80 },
+};
+
 function formatToolUse(tool: ToolUseInfo): string {
-  const input = tool.input;
-  switch (tool.name) {
-    case 'Read':
-      return `→ Read ${input.file_path ?? ''}`;
-    case 'Grep':
-      return `→ Grep "${input.pattern ?? ''}"`;
-    case 'Glob':
-      return `→ Glob ${input.pattern ?? ''}`;
-    case 'Write':
-      return `→ Write ${input.file_path ?? ''}`;
-    case 'Edit':
-      return `→ Edit ${input.file_path ?? ''}`;
-    case 'Bash':
-      return `→ Bash ${String(input.command ?? '').slice(0, 60)}`;
-    case 'Skill':
-      return `→ Skill ${input.skill ?? ''}`;
-    case 'Agent':
-      return `→ Agent ${input.subagent_type ? input.subagent_type + ': ' : ''}${String(input.description ?? '').slice(0, 60)}`;
-    case 'WebSearch':
-      return `→ WebSearch "${input.query ?? ''}"`;
-    case 'WebFetch':
-      return `→ WebFetch ${String(input.url ?? '').slice(0, 80)}`;
-    case 'ToolSearch':
-      return `→ ToolSearch "${input.query ?? ''}"`;
-    case 'NotebookEdit':
-      return `→ NotebookEdit ${input.file_path ?? ''}`;
-    default: {
-      const hint = Object.values(input).find(v => typeof v === 'string');
-      return `→ ${tool.name}${hint ? ' ' + String(hint).slice(0, 60) : ''}`;
-    }
+  if (tool.name === 'Agent') {
+    const prefix = tool.input.subagent_type ? `${tool.input.subagent_type}: ` : '';
+    return `→ Agent ${prefix}${String(tool.input.description ?? '').slice(0, 60)}`;
   }
+
+  const fmt = TOOL_FORMATS[tool.name];
+  if (fmt) {
+    let value = String(tool.input[fmt.field] ?? '');
+    if (fmt.maxLen) value = value.slice(0, fmt.maxLen);
+    return fmt.quoted ? `→ ${tool.name} "${value}"` : `→ ${tool.name} ${value}`;
+  }
+
+  const hint = Object.values(tool.input).find(v => typeof v === 'string');
+  return `→ ${tool.name}${hint ? ' ' + String(hint).slice(0, 60) : ''}`;
 }
 
 function createStreamHandler(callbacks: StreamHandlerCallbacks) {
@@ -104,9 +106,6 @@ interface StreamResult {
   usage: PlannerTokenUsage | null;
 }
 
-// NOTE: The ENOENT/exit-127/non-zero error handling below duplicates spawnWithStdin (spawn.ts).
-// This function uses spawnWithStreaming instead because it needs session-id tracking via
-// the stream handler, which spawnWithStdin doesn't support.
 async function spawnClaudePlanner(
   prompt: string,
   projectDir: string,
@@ -125,36 +124,14 @@ async function spawnClaudePlanner(
 
   const { state, handleLine } = createStreamHandler({ onOutput, onQuestion });
   state.sessionId = sessionId;
-  let stderrOutput = '';
 
-  let result: { code: number; killed: boolean };
-  try {
-    result = await spawnWithStreaming(
-      'claude',
-      args,
-      handleLine,
-      (line) => {
-        stderrOutput += line + '\n';
-      },
-      { cwd: projectDir },
-    );
-  } catch (err: unknown) {
-    if (isENOENT(err)) {
-      throw new Error(NOT_FOUND);
-    }
-    throw err;
-  }
-
-  if (result.code === 127) {
-    throw new Error(NOT_FOUND);
-  }
-
-  if (result.code !== 0 && !state.text) {
-    const detail = stderrOutput.trim();
-    throw new Error(
-      `Claude CLI exited with code ${result.code}${detail ? `: ${detail}` : ''}`,
-    );
-  }
+  await spawnWithStdin({
+    command: 'claude',
+    args,
+    cwd: projectDir,
+    notFoundMessage: NOT_FOUND,
+    onLine: handleLine,
+  });
 
   return { text: state.text, sessionId: state.sessionId, usage: state.usage };
 }
@@ -183,7 +160,7 @@ async function spawnClaudeWithStdin(
   return { text: state.text, usage: state.usage };
 }
 
-export function createClaudeCodePlanner(model?: string): PlannerBackend {
+export function createClaudeCodePlanner(model?: string): Planner {
   let currentSessionId: string | null = null;
 
   return createPlannerBase({

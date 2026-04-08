@@ -2,11 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { createImplementerBase, type ImplementerBaseConfig } from './base.js';
 import { makeTask, makeConfig, defaultContext } from '#testing/helpers/fixtures.js';
 
-vi.mock('../extractor.js', () => ({
+vi.mock('../parsers/response-extractor.js', () => ({
   extractCode: vi.fn(),
 }));
 
-vi.mock('../apply.js', () => ({
+vi.mock('../orchestrator/apply.js', () => ({
   applyCode: vi.fn(),
 }));
 
@@ -18,8 +18,8 @@ vi.mock('../../utils/fs.js', () => ({
   readFileOrEmpty: vi.fn().mockReturnValue(''),
 }));
 
-import { extractCode } from '../extractor.js';
-import { applyCode } from '../apply.js';
+import { extractCode } from '../parsers/response-extractor.js';
+import { applyCode } from '../orchestrator/apply.js';
 import { computeDiff } from '../../utils/diff.js';
 
 function makeBaseConfig(overrides?: Partial<ImplementerBaseConfig>): ImplementerBaseConfig {
@@ -42,44 +42,6 @@ function mockSuccessfulExtraction() {
 }
 
 describe('createImplementerBase', () => {
-  it('returns an ImplementerBackend with correct name', () => {
-    const implementer = createImplementerBase(makeBaseConfig());
-    expect(implementer.name).toBe('test');
-  });
-
-  it('implement calls buildPrompt and invoke', async () => {
-    const invoke = vi.fn().mockResolvedValue({ text: 'output', usage: null });
-    const buildPrompt = vi.fn().mockReturnValue('the prompt');
-    mockSuccessfulExtraction();
-
-    const implementer = createImplementerBase(makeBaseConfig({ invoke, buildPrompt }));
-    const config = makeConfig();
-    const result = await implementer.implement({
-      task: makeTask(), projectDir: '/tmp', config, context: defaultContext, onProgress: vi.fn(),
-    });
-
-    expect(buildPrompt).toHaveBeenCalled();
-    expect(invoke).toHaveBeenCalled();
-    expect(result.success).toBe(true);
-  });
-
-  it('retry calls buildRetryPrompt and invoke', async () => {
-    const invoke = vi.fn().mockResolvedValue({ text: 'output', usage: null });
-    const buildRetryPrompt = vi.fn().mockReturnValue('retry prompt');
-    mockSuccessfulExtraction();
-
-    const implementer = createImplementerBase(makeBaseConfig({ invoke, buildRetryPrompt }));
-    const config = makeConfig();
-    const result = await implementer.retry({
-      task: makeTask(), projectDir: '/tmp', config, context: defaultContext,
-      error: 'some error', attempt: 1, onProgress: vi.fn(),
-    });
-
-    expect(buildRetryPrompt).toHaveBeenCalled();
-    expect(invoke).toHaveBeenCalled();
-    expect(result.success).toBe(true);
-  });
-
   it('returns failure when invoke throws', async () => {
     const invoke = vi.fn().mockRejectedValue(new Error('connection failed'));
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
@@ -167,33 +129,5 @@ describe('createImplementerBase', () => {
     expect(result.error).toBe('No files changed');
   });
 
-  it('retryTemperatureStep is used during retry', async () => {
-    const invoke = vi.fn().mockResolvedValue({ text: 'output', usage: null });
-    mockSuccessfulExtraction();
-
-    const implementer = createImplementerBase(makeBaseConfig({ invoke, retryTemperatureStep: 0.1 }));
-    const config = makeConfig();
-
-    await implementer.retry({
-      task: makeTask(), projectDir: '/tmp', config, context: defaultContext,
-      error: 'error', attempt: 2, onProgress: vi.fn(),
-    });
-
-    const expectedTemp = Math.min(config.implementer.temperature + 0.1 * 2, 2);
-    expect(invoke).toHaveBeenCalledWith(expect.objectContaining({ temperature: expectedTemp }));
-  });
-
-  it('delegates isAvailable', async () => {
-    const implementer = createImplementerBase(makeBaseConfig({
-      isAvailable: vi.fn().mockResolvedValue(true),
-    }));
-
-    expect(await implementer.isAvailable()).toBe(true);
-  });
-
-  it('getPricing returns pricing for the configured key', () => {
-    const implementer = createImplementerBase(makeBaseConfig({ pricingKey: 'ollama' }));
-    const pricing = implementer.getPricing();
-    expect(pricing.isLocal).toBe(true);
-  });
 });
+

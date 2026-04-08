@@ -1,17 +1,16 @@
 import type { Config } from '../../types.js';
-import type { ImplementerOptions, RetryOptions } from './base.js';
-import type { ImplementerBackend } from './types.js';
+import type { Implementer, ImplementerOptions, RetryOptions } from './types.js';
 import type { InvokeOpts } from './base.js';
 import { createImplementerBase } from './base.js';
-import { createClient } from '../providers.js';
+import { createClient } from '../providers/index.js';
 import { formatTaskPrompt, formatRetryPrompt, SYSTEM_PREAMBLE } from '../spec/formatter.js';
 import { estimateTokens } from '../spec/token-budget.js';
-import { streamCompletion } from '../openai-stream.js';
+import { streamCompletion } from '../streaming/openai-stream.js';
 
-export function createOpenAIImplementer(config: Config): ImplementerBackend {
+export function createOpenAIImplementer(config: Config): Implementer {
   return createImplementerBase({
     name: 'openai',
-    pricingKey: config.implementer.provider,
+    pricingKey: config.implementer.tool,
     extractsCode: true,
 
     async invoke(opts: InvokeOpts) {
@@ -29,7 +28,7 @@ export function createOpenAIImplementer(config: Config): ImplementerBackend {
           { role: 'system', content: SYSTEM_PREAMBLE },
           { role: 'user', content: prompt },
         ],
-        { temperature, onProgress, endpoint: { provider: cfg.implementer.provider, apiBase: cfg.implementer.apiBase }, maxTokens },
+        { temperature, onProgress, endpoint: { provider: cfg.implementer.tool, apiBase: cfg.implementer.apiBase }, maxTokens },
       );
 
       return { text: completion.text, usage: completion.usage };

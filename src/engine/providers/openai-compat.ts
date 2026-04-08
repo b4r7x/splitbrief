@@ -27,19 +27,13 @@ export function createOpenAICompatProvider(
         if (key) headers['Authorization'] = `Bearer ${key}`;
         const res = await fetch(`${baseURL.replace(/\/v1\/?$/, '/v1')}/models`, { headers });
         if (!res.ok) return [];
-        const data = (await res.json()) as ModelsResponse;
+        const json: unknown = await res.json();
+        if (typeof json !== 'object' || json === null) return [];
+        const data = json as ModelsResponse;
+        if (data.data !== undefined && !Array.isArray(data.data)) return [];
         return (data.data ?? []).map((m) => m.id);
       } catch {
         return [];
-      }
-    },
-
-    async isAvailable(): Promise<boolean> {
-      try {
-        const models = await this.listModels();
-        return models.length > 0;
-      } catch {
-        return false;
       }
     },
   };

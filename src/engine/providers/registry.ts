@@ -1,35 +1,29 @@
 import type { ProviderDef, ProviderDetection, ProviderOverrides } from './types.js';
 import { createOllamaProvider } from './ollama.js';
 import { createLmStudioProvider } from './lm-studio.js';
-import { createDeepSeekProvider } from './deepseek.js';
-import { createOpenRouterProvider } from './openrouter.js';
-import { createGenericProvider } from './generic.js';
+import { createOpenAICompatProvider } from './openai-compat.js';
+import { KNOWN_PROVIDER_NAMES, KNOWN_PROVIDER_BASE_URLS } from '../../core/providers/catalog.js';
+import { withTimeout } from '../../utils/with-timeout.js';
+
+export { KNOWN_PROVIDER_NAMES };
+export { withTimeout } from '../../utils/with-timeout.js';
 
 export const DETECTION_TIMEOUT_MS = 5000;
 
 export const KNOWN_PROVIDERS: Record<string, (overrides?: ProviderOverrides) => ProviderDef> = {
   ollama: createOllamaProvider,
   'lm-studio': createLmStudioProvider,
-  deepseek: createDeepSeekProvider,
-  openrouter: createOpenRouterProvider,
+  deepseek: (overrides?: ProviderOverrides) =>
+    createOpenAICompatProvider('deepseek', KNOWN_PROVIDER_BASE_URLS.deepseek, 'DEEPSEEK_API_KEY', false, overrides),
+  openrouter: (overrides?: ProviderOverrides) =>
+    createOpenAICompatProvider('openrouter', KNOWN_PROVIDER_BASE_URLS.openrouter, 'OPENROUTER_API_KEY', false, overrides),
 };
-
-export const KNOWN_PROVIDER_NAMES = Object.keys(KNOWN_PROVIDERS);
 
 export function getProvider(name: string, overrides?: ProviderOverrides): ProviderDef {
   const factory = KNOWN_PROVIDERS[name];
   if (factory) return factory(overrides);
-  return createGenericProvider(name, overrides?.apiBase ?? '', overrides?.apiKey);
-}
-
-export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('timeout')), ms);
-    promise.then(
-      (v) => { clearTimeout(timer); resolve(v); },
-      (e) => { clearTimeout(timer); reject(e); },
-    );
-  });
+  const envKey = `${name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`;
+  return createOpenAICompatProvider(name, overrides?.apiBase ?? '', envKey, false, overrides);
 }
 
 export async function detectAvailableProviders(): Promise<ProviderDetection[]> {
@@ -44,6 +38,7 @@ export async function detectAvailableProviders(): Promise<ProviderDetection[]> {
           available: models.length > 0,
           models: models.length > 0 ? models : undefined,
           isLocal: provider.isLocal,
+          hasKey: !provider.isLocal ? !!provider.apiKey() : undefined,
         };
       } catch {
         return { provider: name, available: false, isLocal: provider.isLocal };

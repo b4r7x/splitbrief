@@ -32,7 +32,7 @@ export function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-export type SemVer = [number, number, number];
+type SemVer = [number, number, number];
 
 export function parseVersion(raw: string): SemVer | null {
   const m = raw.match(/(\d+)\.(\d+)\.(\d+)/);

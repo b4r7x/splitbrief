@@ -1,19 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { WorkflowState, Task } from '../../types.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import type { WorkflowState } from '../../types.js';
 import { makeTask, makeUsage } from '#testing/helpers/fixtures.js';
 
-vi.mock('node:fs', () => ({
-  readFileSync: vi.fn(),
-  existsSync: vi.fn(),
-}));
-
-vi.mock('../../core/state-persistence.js', () => ({
+vi.mock('../../core/state/persistence.js', () => ({
   saveState: vi.fn(),
 }));
 
-import { readFileSync, existsSync } from 'node:fs';
-import { saveState } from '../../core/state-persistence.js';
-import { refreshCurrentCode, allValidationsPassed, addUsageAndSave, withSignalHandlers } from './helpers.js';
+import { refreshCurrentCode, allValidationsPassed, addUsageAndSave, withSignalHandlers, isSignalError } from './helpers.js';
 
 function makeState(overrides?: Partial<WorkflowState>): WorkflowState {
   return {
@@ -35,58 +31,51 @@ function makeState(overrides?: Partial<WorkflowState>): WorkflowState {
 }
 
 describe('refreshCurrentCode', () => {
-  beforeEach(() => vi.clearAllMocks());
+  let projectDir: string;
 
-  it('reads file content into task.currentCode when file exists', () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue('const x = 1;');
+  beforeEach(() => {
+    projectDir = mkdtempSync(join(tmpdir(), 'helpers-refresh-'));
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(projectDir, { recursive: true, force: true });
+  });
+
+  it('populates task.currentCode with file contents when file exists', () => {
+    writeFileSync(join(projectDir, 'src', 'hello.ts'), 'const x = 1;');
 
     const task = makeTask({ file: 'src/hello.ts' });
-    refreshCurrentCode(task, '/tmp/proj');
+    refreshCurrentCode(task, projectDir);
 
-    expect(existsSync).toHaveBeenCalledWith('/tmp/proj/src/hello.ts');
     expect(task.currentCode).toBe('const x = 1;');
   });
 
-  it('does not set currentCode when file does not exist', () => {
-    vi.mocked(existsSync).mockReturnValue(false);
-
+  it('leaves currentCode undefined when file does not exist', () => {
     const task = makeTask({ file: 'src/missing.ts' });
-    refreshCurrentCode(task, '/tmp/proj');
+    refreshCurrentCode(task, projectDir);
 
     expect(task.currentCode).toBeUndefined();
-    expect(readFileSync).not.toHaveBeenCalled();
   });
 });
 
 describe('allValidationsPassed', () => {
-  it('returns true for empty array', () => {
+  it('returns true when all pass, false when any fails', () => {
     expect(allValidationsPassed([])).toBe(true);
-  });
-
-  it('returns true when all pass', () => {
-    expect(allValidationsPassed([
-      { stage: 'typecheck', passed: true },
-      { stage: 'lint', passed: true },
-    ])).toBe(true);
-  });
-
-  it('returns false when any fails', () => {
-    expect(allValidationsPassed([
-      { stage: 'typecheck', passed: true },
-      { stage: 'lint', passed: false, error: 'err' },
-    ])).toBe(false);
+    expect(allValidationsPassed([{ stage: 'typecheck', passed: true }, { stage: 'lint', passed: true }])).toBe(true);
+    expect(allValidationsPassed([{ stage: 'typecheck', passed: true }, { stage: 'lint', passed: false, error: 'err' }])).toBe(false);
   });
 });
 
 describe('addUsageAndSave', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('adds usage tokens and saves state', () => {
+  it('accumulates token usage and emits cost-update event', () => {
     const state = makeState({
       tokenUsage: makeUsage({ plannerInput: 100, plannerOutput: 50 }),
     });
-    const callbacks = { onEvent: vi.fn() } as any;
+    const events: any[] = [];
+    const callbacks = { onEvent: (e: any) => events.push(e) } as any;
 
     const result = addUsageAndSave('/tmp/proj', state, 'planner', {
       inputTokens: 200,
@@ -95,39 +84,33 @@ describe('addUsageAndSave', () => {
 
     expect(result.tokenUsage.plannerInput).toBe(300);
     expect(result.tokenUsage.plannerOutput).toBe(150);
-    expect(saveState).toHaveBeenCalledOnce();
-    expect(saveState).toHaveBeenCalledWith('/tmp/proj', result);
-    expect(callbacks.onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'cost-update' }));
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: 'cost-update' });
   });
 
-  it('returns unchanged state when usage is null', () => {
+  it('returns unchanged state and emits no event when usage is null', () => {
     const state = makeState();
-    const callbacks = { onEvent: vi.fn() } as any;
+    const events: any[] = [];
+    const callbacks = { onEvent: (e: any) => events.push(e) } as any;
     const result = addUsageAndSave('/tmp/proj', state, 'implementer', null, callbacks);
 
     expect(result).toBe(state);
-    expect(saveState).toHaveBeenCalledWith('/tmp/proj', state);
-    expect(callbacks.onEvent).not.toHaveBeenCalled();
+    expect(events).toHaveLength(0);
   });
 });
 
 describe('withSignalHandlers', () => {
-  it('registers and removes signal handlers around fn execution', async () => {
-    const handler = vi.fn();
-    const onSpy = vi.spyOn(process, 'on');
+  it('executes the function to completion and cleans up handlers', async () => {
+    let executed = false;
     const removeSpy = vi.spyOn(process, 'removeListener');
 
-    await withSignalHandlers(handler, async () => {
-      // During execution, handlers should be registered
-      expect(onSpy).toHaveBeenCalledWith('SIGINT', expect.any(Function));
-      expect(onSpy).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
+    await withSignalHandlers(vi.fn(), async () => {
+      executed = true;
     });
 
-    // After execution, handlers should be removed
+    expect(executed).toBe(true);
     expect(removeSpy).toHaveBeenCalledWith('SIGINT', expect.any(Function));
     expect(removeSpy).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
-
-    onSpy.mockRestore();
     removeSpy.mockRestore();
   });
 
@@ -143,5 +126,34 @@ describe('withSignalHandlers', () => {
     expect(removeSpy).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
 
     removeSpy.mockRestore();
+  });
+
+  it('calls handler and throws SignalError when signal received during fn', async () => {
+    const handler = vi.fn();
+    const onSpy = vi.spyOn(process, 'on');
+
+    let capturedSigintHandler: (() => void) | undefined;
+    onSpy.mockImplementation((event: string, listener: any) => {
+      if (event === 'SIGINT') capturedSigintHandler = listener;
+      return process;
+    });
+
+    const promise = withSignalHandlers(handler, async () => {
+      capturedSigintHandler!();
+    });
+
+    await expect(promise).rejects.toSatisfy(isSignalError);
+    await expect(promise).rejects.toThrow('SIGINT');
+    expect(handler).toHaveBeenCalledOnce();
+
+    onSpy.mockRestore();
+  });
+
+  it('does not throw SignalError when no signal received', async () => {
+    const handler = vi.fn();
+    await expect(
+      withSignalHandlers(handler, async () => {}),
+    ).resolves.toBeUndefined();
+    expect(handler).not.toHaveBeenCalled();
   });
 });

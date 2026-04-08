@@ -40,6 +40,12 @@ export async function hasExternalChanges(dir: string): Promise<boolean> {
   return status.modified.length > 0 || status.not_added.length > 0;
 }
 
+export async function getChangedFiles(dir: string): Promise<string[]> {
+  const git = getGit(dir);
+  const status = await git.status();
+  return [...status.modified, ...status.not_added, ...status.created, ...status.deleted];
+}
+
 export async function discardTaskChanges(dir: string, taskFile: string, action: 'create' | 'modify'): Promise<void> {
   const git = getGit(dir);
   if (action === 'modify') {

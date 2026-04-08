@@ -1,7 +1,14 @@
-import type { ClarificationQuestion } from '../../engine/question-parser.js';
 import type { Phase } from './workflow.js';
 import type { Summary } from './summary.js';
-import type { TaskCompletionMethod, TokenUsage } from './tokens.js';
+import type { TaskCompletionMethod, TokenUsage } from './summary.js';
+
+export interface ClarificationQuestion {
+  id: string;
+  type: 'choice' | 'input' | 'confirm';
+  text: string;
+  options?: string[];
+  default?: string | number | boolean;
+}
 
 export type TuiEvent =
   | {
@@ -46,13 +53,24 @@ export type TuiEvent =
   | {
       type: 'implementer-generate';
       ts: number;
-      status: 'running' | 'done' | 'failed';
-      model?: string;
+      status: 'running';
       file?: string;
-      linesAdded?: number;
-      linesRemoved?: number;
+    }
+  | {
+      type: 'implementer-generate';
+      ts: number;
+      status: 'done';
+      file: string;
       diff?: string;
-      duration?: number;
+      linesAdded: number;
+      linesRemoved: number;
+      duration: number;
+    }
+  | {
+      type: 'implementer-generate';
+      ts: number;
+      status: 'failed';
+      model: string;
     }
   | {
       type: 'validate';
@@ -86,6 +104,11 @@ export type TuiEvent =
       ts: number;
       tag: string;
       taskId: string;
+    }
+  | {
+      type: 'warning';
+      ts: number;
+      message: string;
     }
   | {
       type: 'error';
