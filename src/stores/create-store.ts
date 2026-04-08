@@ -15,7 +15,11 @@ export function createStore<T>(initial: T): Store<T> {
   let state = initial;
   const listeners = new Set<Listener>();
 
-  const notify = () => listeners.forEach(l => l());
+  const notify = () => {
+    listeners.forEach(listener => {
+      listener();
+    });
+  };
 
   const get = () => state;
 

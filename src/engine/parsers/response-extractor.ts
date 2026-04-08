@@ -10,8 +10,7 @@ export function stripMarkdownFences(text: string): string {
 function extractFencedBlocks(response: string): string[] {
   const blocks: string[] = [];
   const regex = /```(?:typescript|ts)?\s*\n([\s\S]*?)```/g;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(response)) !== null) {
+  for (let match = regex.exec(response); match !== null; match = regex.exec(response)) {
     if (match[1] !== undefined) blocks.push(match[1].trim());
   }
   return blocks;

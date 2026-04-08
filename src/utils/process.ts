@@ -222,7 +222,7 @@ export async function spawnWithStdin(opts: {
   notFoundMessage: string;
 }): Promise<{ text: string; stderrOutput: string; code: number }> {
   return new Promise((resolve, reject) => {
-    let proc;
+    let proc: ChildProcess;
     try {
       proc = spawn(opts.command, opts.args, {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -291,4 +291,3 @@ export async function spawnWithStdin(opts: {
     proc.stdin.end();
   });
 }
-

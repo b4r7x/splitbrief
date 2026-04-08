@@ -51,7 +51,7 @@ describe('runCommand', () => {
 
 describe('killProcess', () => {
   it('kills a long-running process', async () => {
-    const proc = spawn('sleep', ['60'], { stdio: 'ignore' });
+    const proc = spawn('node', ['-e', 'setTimeout(() => {}, 60_000)'], { stdio: 'ignore' });
     await new Promise<void>((resolve) => {
       proc.on('spawn', resolve);
     });
@@ -101,8 +101,8 @@ describe('spawnWithTimeout', () => {
 
   it('captures stderr', async () => {
     const result = await spawnWithTimeout({
-      command: 'bash',
-      args: ['-c', 'echo err >&2'],
+      command: 'node',
+      args: ['-e', 'console.error("err")'],
       cwd: process.cwd(),
       timeout: 5000,
       onProgress: () => {},
@@ -113,8 +113,8 @@ describe('spawnWithTimeout', () => {
 
   it('times out long-running processes', async () => {
     const result = await spawnWithTimeout({
-      command: 'sleep',
-      args: ['10'],
+      command: 'node',
+      args: ['-e', 'setTimeout(() => {}, 10_000)'],
       cwd: process.cwd(),
       timeout: 100,
       onProgress: () => {},
@@ -125,8 +125,8 @@ describe('spawnWithTimeout', () => {
 
   it('writes stdinInput when provided', async () => {
     const result = await spawnWithTimeout({
-      command: 'cat',
-      args: [],
+      command: 'node',
+      args: ['-e', 'process.stdin.pipe(process.stdout)'],
       cwd: process.cwd(),
       timeout: 5000,
       onProgress: () => {},
@@ -178,8 +178,8 @@ describe('spawnWithStdin', () => {
   it('writes stdin to process', async () => {
     const lines: string[] = [];
     const result = await spawnWithStdin({
-      command: 'cat',
-      args: [],
+      command: 'node',
+      args: ['-e', 'process.stdin.pipe(process.stdout)'],
       cwd: '.',
       stdin: 'piped input',
       notFoundMessage: 'cat not found',
@@ -242,4 +242,3 @@ describe('spawnWithStdin', () => {
     expect(result.code).toBe(1);
   });
 });
-

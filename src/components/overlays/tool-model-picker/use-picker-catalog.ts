@@ -21,8 +21,7 @@ export interface PickerCatalog {
   currentModel: string | undefined;
   currentCommand: string | undefined;
   customModels: string[];
-  selectedItem: PickerOption | null;
-  setSelectedItem: (item: PickerOption | null) => void;
+  setCurrentItem: (item: PickerOption) => void;
 }
 
 export function usePickerCatalog(
@@ -38,7 +37,7 @@ export function usePickerCatalog(
   const loading = detectionStore.use(s => s.loading);
   const ready = !!(isPlanner ? plannerDetections : implementerDetections) && !loading;
 
-  const [selectedItem, setSelectedItem] = useState<PickerOption | null>(null);
+  const [currentItemId, setCurrentItemId] = useState<string | null>(null);
 
   const items = isPlanner
     ? (plannerDetections ? buildPlannerPickerOptions(plannerDetections) : [])
@@ -46,20 +45,21 @@ export function usePickerCatalog(
 
   const configId = isPlanner
     ? config.planner.tool
-    : (selectedItem?.id ?? config.implementer.kind ?? config.implementer.tool);
+    : (config.implementer.kind ?? config.implementer.tool);
   const configItemIndex = items.findIndex(item => item.id === configId);
-  const initialLeftIdx = focusModels && configItemIndex >= 0 ? configItemIndex : preservedLeftIndex;
+  const preservedIndex = Math.min(preservedLeftIndex, Math.max(0, items.length - 1));
+  const initialLeftIdx = focusModels && configItemIndex >= 0 ? configItemIndex : preservedIndex;
 
   const customModels = isPlanner
     ? (config.planner.customModels ?? [])
     : (config.implementer.customModels ?? []);
 
-  const currentItem = items.find(item => item.id === configId) ?? items[0];
+  const initialItem = items[initialLeftIdx] ?? items[0];
+  const currentItem = items.find(item => item.id === currentItemId) ?? initialItem;
 
   const rightModels = buildRightModels({
     isPlanner,
     customModels,
-    plannerTool: config.planner.tool,
     implementerDetections,
     currentItem,
   });
@@ -79,7 +79,6 @@ export function usePickerCatalog(
     currentModel,
     currentCommand,
     customModels,
-    selectedItem,
-    setSelectedItem,
+    setCurrentItem: (item) => setCurrentItemId(item.id),
   };
 }

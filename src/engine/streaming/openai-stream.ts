@@ -1,4 +1,3 @@
-import type OpenAI from 'openai';
 import type { ImplementerTokenUsage } from '../../types.js';
 
 const STREAM_TIMEOUT_MS = 60_000;
@@ -13,6 +12,29 @@ interface StreamCompletionOptions {
   onProgress: (text: string) => void;
   endpoint?: { provider: string; apiBase?: string | undefined } | undefined;
   maxTokens?: number | undefined;
+}
+
+interface StreamChunk {
+  choices: Array<{ delta?: { content?: string | null } }>;
+  usage?: {
+    prompt_tokens?: number | null;
+    completion_tokens?: number | null;
+  } | null;
+}
+
+interface StreamClient {
+  chat: {
+    completions: {
+      create: (body: {
+        model: string;
+        messages: Array<{ role: 'system' | 'user'; content: string }>;
+        temperature: number;
+        stream: true;
+        stream_options: { include_usage: true };
+        max_tokens?: number | undefined;
+      }) => Promise<AsyncIterable<StreamChunk>>;
+    };
+  };
 }
 
 function isErrorLike(val: unknown): val is Record<string, unknown> {
@@ -37,13 +59,13 @@ function throwMappedError(err: unknown, endpoint?: { provider: string; apiBase?:
 }
 
 export async function streamCompletion(
-  client: OpenAI,
+  client: StreamClient,
   model: string,
   messages: Array<{ role: 'system' | 'user'; content: string }>,
   opts: StreamCompletionOptions,
 ): Promise<CompletionResult> {
   const { temperature, onProgress, endpoint, maxTokens } = opts;
-  let stream;
+  let stream: AsyncIterable<StreamChunk>;
   try {
     stream = await client.chat.completions.create({
       model,

@@ -12,7 +12,9 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsc",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "npm run typecheck:src && npm run typecheck:test",
+    "typecheck:src": "tsc --noEmit",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "lint": "biome check .",
     "format": "biome format --write .",
     "test": "vitest run",

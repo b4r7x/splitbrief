@@ -3,18 +3,23 @@ import { createPlanner } from '../planners/factory.js';
 import { detectAvailableProviders, DETECTION_TIMEOUT_MS, KNOWN_PROVIDERS } from '../providers/registry.js';
 import { withTimeout } from '../../utils/with-timeout.js';
 import { toErrorMessage } from '../../utils/format.js';
+import { CLI_TOOLS } from '../cli-tools.js';
 
 export type { PlannerDetection } from '../../types.js';
 
-const KNOWN_CLI_TOOLS: PlannerTool[] = ['claude-code', 'codex', 'opencode', 'aider', 'agent-sdk'];
-
-const CLI_DESCRIPTIONS: Record<string, string> = {
+const DIRECT_CLI_DESCRIPTIONS: Record<'claude-code' | 'agent-sdk', string> = {
   'claude-code': 'Claude Code CLI',
-  'codex': 'OpenAI Codex CLI',
-  'opencode': 'OpenCode CLI',
-  'aider': 'Aider CLI',
   'agent-sdk': 'Anthropic Agent SDK',
 };
+
+const CLI_PLANNERS: Array<{ tool: PlannerTool; description: string }> = [
+  { tool: 'claude-code', description: DIRECT_CLI_DESCRIPTIONS['claude-code'] },
+  ...Object.entries(CLI_TOOLS).map(([tool, meta]) => ({
+    tool: tool as PlannerTool,
+    description: meta.description,
+  })),
+  { tool: 'agent-sdk', description: DIRECT_CLI_DESCRIPTIONS['agent-sdk'] },
+];
 
 const API_PLANNERS: { tool: PlannerTool; envKey: string; description: string }[] = [
   { tool: 'anthropic', envKey: 'ANTHROPIC_API_KEY', description: 'Anthropic API' },
@@ -38,7 +43,7 @@ function minimalConfig(tool: PlannerTool) {
 
 export async function detectAvailablePlanners(): Promise<PlannerDetection[]> {
   const cliResults = await Promise.all(
-    KNOWN_CLI_TOOLS.map(async (tool): Promise<PlannerDetection> => {
+    CLI_PLANNERS.map(async ({ tool, description }): Promise<PlannerDetection> => {
       try {
         const planner = await createPlanner(minimalConfig(tool));
         const available = await withTimeout(planner.isAvailable(), DETECTION_TIMEOUT_MS);
@@ -48,9 +53,9 @@ export async function detectAvailablePlanners(): Promise<PlannerDetection[]> {
             version = await withTimeout(planner.getVersion(), DETECTION_TIMEOUT_MS);
           } catch {}
         }
-        return { tool, type: 'cli', available, version, description: CLI_DESCRIPTIONS[tool] };
+        return { tool, type: 'cli', available, version, description };
       } catch (err) {
-        return { tool, type: 'cli', available: false, description: CLI_DESCRIPTIONS[tool], error: toErrorMessage(err) };
+        return { tool, type: 'cli', available: false, description, error: toErrorMessage(err) };
       }
     }),
   );
@@ -79,8 +84,6 @@ export async function detectAvailablePlanners(): Promise<PlannerDetection[]> {
   const shellResult: PlannerDetection = {
     tool: 'shell',
     type: 'shell',
-    // Shell planner is always "available" — actual availability depends on
-    // the user-configured command, which we cannot validate here.
     available: true,
     description: 'Custom command',
   };

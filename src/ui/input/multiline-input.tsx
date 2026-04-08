@@ -44,7 +44,6 @@ interface ControlledMultilineInputProps {
   tabSize?: number | undefined;
   cursorIndex?: number | undefined;
   highlight?: { start: number; end: number } | undefined;
-  refreshKey?: string | number | undefined;
 }
 
 function ControlledMultilineInput({
@@ -158,7 +157,6 @@ interface MultilineInputProps extends ControlledMultilineInputProps {
   onChange: (value: string) => void;
   onSubmit?: (value: string) => void;
   columns?: number;
-  useCustomInput?: (handler: (input: string, key: Key) => void, isActive: boolean) => void;
   keyBindings?: {
     submit?: (key: Key) => boolean;
     newline?: (key: Key) => boolean;
@@ -176,7 +174,6 @@ export function MultilineInput({
   showCursor = true,
   highlightPastedText = false,
   focus = true,
-  useCustomInput = (handler: (input: string, key: Key) => void, isActive: boolean) => useInput(handler, { isActive }),
   ...controlledProps
 }: MultilineInputProps) {
   const [cursorIndex, setCursorIndex] = useState(value.length);
@@ -191,7 +188,7 @@ export function MultilineInput({
     }
   }, [value, cursorIndex]);
 
-  useCustomInput((input, key) => {
+  useInput((input, key) => {
     if (Date.now() < suppressUntilRef.current) return;
 
     const submitKey = keyBindings?.submit ?? ((k: Key) => k.return && k.ctrl);
@@ -270,7 +267,7 @@ export function MultilineInput({
         setPasteLength(nextPasteLength);
       }
     }
-  }, focus);
+  }, { isActive: focus });
 
   const highlight = highlightPastedText && pasteLength > 1
     ? { start: Math.max(0, cursorIndex - pasteLength), end: cursorIndex }
