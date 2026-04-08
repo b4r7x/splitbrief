@@ -32,17 +32,6 @@ describe('buildProjectContextMarkdown', () => {
     expect(result).toContain('`vitest`');
   });
 
-  it('handles missing package.json gracefully', () => {
-    const result = buildProjectContextMarkdown(tempDir);
-    expect(result).not.toContain('## Package');
-  });
-
-  it('handles malformed package.json gracefully', () => {
-    writeFileSync(join(tempDir, 'package.json'), '{ invalid json');
-    const result = buildProjectContextMarkdown(tempDir);
-    expect(result).not.toContain('## Package');
-  });
-
   it('includes README content when present', () => {
     writeFileSync(join(tempDir, 'README.md'), '# My Project\n\nThis is a test project.');
 

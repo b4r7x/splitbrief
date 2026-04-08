@@ -1,0 +1,48 @@
+export function buildSpecPrompt(feature: string, researchOutput: string): string {
+  return `# Write Feature Specification
+
+You are writing a detailed specification for a new feature. Use the research findings below to ground your spec in the actual codebase.
+
+## Feature Request
+${feature}
+
+## Research Findings
+${researchOutput}
+
+## Instructions
+
+Write a complete \`spec.md\` document that defines **what** to build (not how). The spec should be detailed enough that a developer unfamiliar with the feature request could implement it correctly.
+
+## Required Sections
+
+### Overview
+One-paragraph summary of the feature and its purpose.
+
+### User Scenarios
+Concrete usage scenarios showing how users will interact with this feature. Include:
+- Primary happy path
+- Common variations
+- Edge cases and error scenarios
+
+For each scenario, describe the user action and expected outcome.
+
+### Acceptance Criteria
+Numbered list of specific, testable criteria that define "done." Each criterion must be verifiable  -  no subjective language like "should be fast" or "should be clean."
+
+### Functional Requirements
+Detailed requirements organized by area:
+- **Inputs**: What data/configuration does the feature accept?
+- **Processing**: What transformations, validations, or logic are involved?
+- **Outputs**: What does the feature produce?
+- **Error handling**: How should failures be communicated?
+
+### Non-Functional Requirements
+Performance, security, compatibility, and other quality constraints relevant to this feature.
+
+### Out of Scope
+Explicitly list what this feature does NOT include to prevent scope creep.
+
+## Output
+
+Write the complete spec.md content. Use clear, precise language. Reference specific files and patterns from the research findings where relevant.`;
+}

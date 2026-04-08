@@ -5,7 +5,7 @@ export function makeConfig(overrides?: Omit<Partial<Config>, 'implementer' | 'pl
   const base: Config = {
     planner: { tool: 'claude-code', ...overrides?.planner },
     implementer: {
-      provider: 'ollama',
+      tool: 'ollama',
       model: 'qwen2.5-coder:7b',
       apiBase: '',
       contextLength: 32768,
@@ -45,7 +45,7 @@ export function makeTask(overrides?: Partial<Task>): Task {
     tests: [],
     constraints: [],
     typeDefs: '',
-    implSteps: [],
+    implementationSteps: [],
     status: 'pending',
     ...overrides,
   };

@@ -1,11 +1,9 @@
 import type { Config, OutputFormat, ImplementerTokenUsage } from '../../types.js';
-import type { ImplementerOptions, RetryOptions } from './base.js';
-import type { ImplementerBackend } from './types.js';
+import type { Implementer } from './types.js';
 import type { InvokeOpts } from './base.js';
 import { createImplementerBase } from './base.js';
-import { buildFullPrompt, buildFullRetryPrompt } from '../spec/formatter.js';
-import { spawnWithStdin } from '../planners/spawn.js';
-import { getLineParser, accumulateUsage } from '../output-parsers.js';
+import { spawnWithStdin } from '../../utils/process.js';
+import { getLineParser, accumulateUsage } from '../streaming/output-parsers.js';
 
 interface ShellImplResult {
   text: string;
@@ -56,7 +54,7 @@ async function spawnShellImplementer(opts: SpawnShellOptions): Promise<ShellImpl
   return { text: collectedText, usage: rawUsage };
 }
 
-export function createShellImplementer(config: Config): ImplementerBackend {
+export function createShellImplementer(config: Config): Implementer {
   return createImplementerBase({
     name: 'shell',
     pricingKey: 'shell',
@@ -70,14 +68,6 @@ export function createShellImplementer(config: Config): ImplementerBackend {
 
       const result = await spawnShellImplementer({ command, args, prompt, projectDir, format, onProgress });
       return { text: result.text, usage: result.usage };
-    },
-
-    buildPrompt(opts: ImplementerOptions) {
-      return buildFullPrompt(opts.task, opts.context, opts.config.implementer.contextLength);
-    },
-
-    buildRetryPrompt(opts: RetryOptions) {
-      return buildFullRetryPrompt(opts.task, opts.context, opts.error, opts.attempt, opts.config.implementer.contextLength);
     },
 
     shouldThrow(err: unknown) {

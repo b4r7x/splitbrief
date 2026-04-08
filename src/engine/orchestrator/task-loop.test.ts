@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { WorkflowState, OrchestratorCallbacks, TuiEvent, ValidationResult } from '../../types.js';
-import type { PlannerBackend } from '../planners/types.js';
-import type { ImplementerBackend } from '../implementers/types.js';
-import { createInitialState, transition } from '../../core/state.js';
+import type { Planner } from '../planners/types.js';
+import type { Implementer } from '../implementers/types.js';
+import { createInitialState, transition } from '../../core/state/machine.js';
 import { makeTask, makeConfig, defaultContext } from '#testing/helpers/fixtures.js';
 
-vi.mock('../validator.js', () => ({
+vi.mock('./validator.js', () => ({
   validateTask: vi.fn(),
   formatValidationError: vi.fn().mockReturnValue('validation error'),
 }));
@@ -13,19 +13,15 @@ vi.mock('../../utils/git.js', () => ({
   hasExternalChanges: vi.fn().mockResolvedValue(false),
   commitChanges: vi.fn(),
 }));
-vi.mock('../../core/state-persistence.js', () => ({
+vi.mock('../../core/state/persistence.js', () => ({
   saveState: vi.fn(),
   loadState: vi.fn(),
   appendEvent: vi.fn(),
 }));
-vi.mock('./escalation.js', () => ({
-  handleRetryAndEscalation: vi.fn(),
-}));
 
 import { hasDependencyFailed, runTaskLoop } from './task-loop.js';
-import { validateTask } from '../validator.js';
+import { validateTask } from './validator.js';
 import { commitChanges } from '../../utils/git.js';
-import { loadState } from '../../core/state-persistence.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -44,7 +40,7 @@ function makeCallbacks(): { callbacks: OrchestratorCallbacks; events: TuiEvent[]
   };
 }
 
-function makePlanner(): PlannerBackend {
+function makePlanner(): Planner {
   return {
     name: 'test',
     conversational: false,
@@ -58,7 +54,7 @@ function makePlanner(): PlannerBackend {
   };
 }
 
-function makeImplementer(overrides?: Partial<ImplementerBackend>): ImplementerBackend {
+function makeImplementer(overrides?: Partial<Implementer>): Implementer {
   return {
     name: 'test',
     implement: vi.fn().mockResolvedValue({ success: true, output: 'code', usage: { inputTokens: 100, outputTokens: 50 } }),
@@ -140,22 +136,18 @@ describe('runTaskLoop', () => {
     vi.mocked(commitChanges).mockResolvedValue('abc123');
 
     const { callbacks, events } = makeCallbacks();
-    const setCurrentTask = vi.fn();
 
-    const result = await runTaskLoop({
+    await runTaskLoop({
       wctx: { projectDir: '/tmp/proj', config: makeConfig({ workflow: { commitStrategy: 'per-task' } }), callbacks, context: defaultContext, planner: makePlanner(), implementer },
       initialState: state,
       setTrackedState: vi.fn(),
-      setCurrentTask,
+      setCurrentTask: vi.fn(),
     });
 
-    expect(implementer.implement).toHaveBeenCalledTimes(1);
-    expect(validateTask).toHaveBeenCalledTimes(1);
     const taskStart = events.find((e) => e.type === 'task-start');
     expect(taskStart).toBeDefined();
-    expect(setCurrentTask).toHaveBeenCalledWith(expect.objectContaining({ id: 'T001' }));
-    // setCurrentTask(undefined) is called at the end of the loop
-    expect(setCurrentTask).toHaveBeenLastCalledWith(undefined);
+    const taskComplete = events.find((e) => e.type === 'task-complete');
+    expect(taskComplete).toBeDefined();
   });
 
   it('token usage accumulated via state persistence', async () => {

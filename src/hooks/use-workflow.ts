@@ -1,64 +1,40 @@
-import { useRef, useEffect, useEffectEvent } from 'react';
-import { spawn } from 'node:child_process';
+import { useRef, useEffect, useEffectEvent, useState } from 'react';
 import type { Config, Summary, WorkflowState as WfState, SkillMeta, TuiEvent } from '../types.js';
 import { useInputMode } from './use-input-mode.js';
-import { useLatestRef } from './use-latest-ref.js';
 import { workflowStore } from '../stores/workflow.js';
-import { feedbackStore } from '../stores/error.js';
+import { feedbackStore } from '../stores/feedback.js';
 import { runWorkflow } from '../engine/orchestrator/index.js';
 import { killAllProcesses } from '../utils/process.js';
-
-export const REVIEW_HINT = 'approve / edit / comment <text> / quit';
-
-// Known limitation: editor inherits Ink's alternate screen buffer and Ink
-// continues rendering during the session. Terminal vim handles this, others may not.
-function openInEditor(filePath: string): Promise<void> {
-  const editor = process.env.EDITOR || 'vi';
-  return new Promise<void>((resolve) => {
-    const child = spawn(editor, [filePath], { stdio: 'inherit' });
-    child.on('close', () => resolve());
-    child.on('error', (err) => {
-      feedbackStore.setError(`Failed to open editor: ${err.message}`);
-      resolve();
-    });
-  });
-}
-
-const APPROVE_ALIASES = new Set(['approve', 'yes', 'y', 'ok', 'lgtm', 'continue']);
-const QUIT_ALIASES = new Set(['quit', 'reject', 'no', 'n']);
-
-type ReviewAction = { action: 'approve'; comment?: string } | { action: 'quit' } | { action: 'edit' } | null;
-
-export function parseReviewCommand(text: string): ReviewAction {
-  const cmd = text.toLowerCase().trim();
-  if (APPROVE_ALIASES.has(cmd)) return { action: 'approve' };
-  if (QUIT_ALIASES.has(cmd)) return { action: 'quit' };
-  if (cmd === 'edit') return { action: 'edit' };
-  if (cmd.startsWith('comment ')) {
-    const trimmed = text.trim();
-    return { action: 'approve', comment: trimmed.slice(8).trim() };
-  }
-  return null;
-}
+import { REVIEW_HINT, parseReviewCommand } from '../core/commands/review-commands.js';
+import { openInEditor } from '../utils/editor.js';
+import { calculateCostBreakdown } from '../engine/orchestrator/cost.js';
+import { loadState } from '../core/state/persistence.js';
 
 interface UseWorkflowOptions {
   feature: string;
   projectDir: string;
   config: Config;
   onComplete: (summary: Summary) => void;
-  resumeState?: WfState;
+  initialResumeState?: WfState;
   selectedSkills?: SkillMeta[];
-  runId: number;
 }
 
-export function useWorkflow({ feature, projectDir, config, onComplete, resumeState, selectedSkills, runId }: UseWorkflowOptions) {
+export function useWorkflow({ feature, projectDir, config, onComplete, initialResumeState, selectedSkills }: UseWorkflowOptions) {
   const inputMode = useInputMode();
   const abortedRef = useRef(false);
+  const [startedAt] = useState(() => new Date().toISOString());
+  const [runId, setRunId] = useState(0);
+  const [inlineResume, setInlineResume] = useState<WfState | undefined>(undefined);
 
-  const configRef = useLatestRef(config);
+  const resumeState = inlineResume ?? initialResumeState;
+
+  const configRef = useRef(config);
+  configRef.current = config;
+  const resumeStateRef = useRef(resumeState);
+  resumeStateRef.current = resumeState;
+  const selectedSkillsRef = useRef(selectedSkills);
+  selectedSkillsRef.current = selectedSkills;
   const stableOnComplete = useEffectEvent(onComplete);
-  const resumeStateRef = useLatestRef(resumeState);
-  const selectedSkillsRef = useLatestRef(selectedSkills);
 
   useEffect(() => {
     abortedRef.current = false;
@@ -115,6 +91,35 @@ export function useWorkflow({ feature, projectDir, config, onComplete, resumeSta
   }, [feature, projectDir, runId]);
 
   const reviewFilePath = workflowStore.use(s => s.reviewFilePath);
+  const tokenUsage = workflowStore.use(s => s.tokenUsage);
+  const cancelled = workflowStore.use(s => s.cancelled);
+  const localCount = workflowStore.use(s => s.localCount);
+  const escalatedCount = workflowStore.use(s => s.escalatedCount);
+  const totalTasks = workflowStore.use(s => s.totalTasks);
+
+  const localRate = (localCount + escalatedCount) > 0
+    ? (localCount / (localCount + escalatedCount)) * 100
+    : 0;
+
+  const costBreakdown = tokenUsage
+    ? calculateCostBreakdown({
+        tokenUsage,
+        totalTasks,
+        escalatedCount,
+        plannerTool: config.planner.tool,
+        implementerTool: config.implementer.tool,
+      })
+    : null;
+
+  const handleResume = () => {
+    const saved = loadState(projectDir);
+    if (!saved) {
+      feedbackStore.setError('No saved state to resume. Press ESC to return home.');
+      return;
+    }
+    setInlineResume(saved);
+    setRunId(id => id + 1);
+  };
 
   const handleInput = async (text: string) => {
     if (inputMode.mode === 'review') {
@@ -130,7 +135,7 @@ export function useWorkflow({ feature, projectDir, config, onComplete, resumeSta
       } else if (parsed.action === 'edit') {
         const filePath = workflowStore.get().reviewFilePath;
         if (filePath) {
-          await openInEditor(filePath);
+          await openInEditor(filePath, (msg) => feedbackStore.setError(msg));
         }
       }
       return;
@@ -145,13 +150,18 @@ export function useWorkflow({ feature, projectDir, config, onComplete, resumeSta
     events: workflowStore.use(s => s.events),
     phase: workflowStore.use(s => s.phase),
     currentTask: workflowStore.use(s => s.currentTask),
-    totalTasks: workflowStore.use(s => s.totalTasks),
-    localCount: workflowStore.use(s => s.localCount),
-    escalatedCount: workflowStore.use(s => s.escalatedCount),
+    totalTasks,
+    localCount,
+    escalatedCount,
     taskMap: workflowStore.use(s => s.taskMap),
     inputMode: inputMode.mode,
     inputHint: inputMode.hint,
     reviewFilePath,
     handleInput,
+    cancelled,
+    localRate,
+    costBreakdown,
+    handleResume,
+    startedAt,
   };
 }

@@ -22,13 +22,6 @@ describe('useInputMode', () => {
     unmount();
   });
 
-  it('setReviewMode returns a promise', () => {
-    const { result, unmount } = renderHook(() => useInputMode());
-    const p = result.current.setReviewMode('hint');
-    expect(p).toBeInstanceOf(Promise);
-    unmount();
-  });
-
   it('resolve with object resolves the review promise', async () => {
     const { result, act, unmount } = renderHook(() => useInputMode());
 
@@ -130,4 +123,21 @@ describe('useInputMode', () => {
     expect(resolved).toBe('');
     unmount();
   });
+
+  it('unmount resolves pending review promise with { approved: false }', async () => {
+    const { result, act, unmount } = renderHook(() => useInputMode());
+
+    let resolved: { approved: boolean; comment?: string } | undefined;
+    await act(() => {
+      result.current.setReviewMode('Approve?').then((v) => {
+        resolved = v;
+      });
+    });
+
+    unmount();
+    await Promise.resolve();
+
+    expect(resolved).toEqual({ approved: false });
+  });
+
 });

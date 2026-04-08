@@ -1,23 +1,23 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { readPackageJson } from '../../utils/fs.js';
 
 export function buildProjectContextMarkdown(projectDir: string): string {
   const parts: string[] = [];
 
-  const pkgPath = join(projectDir, 'package.json');
-  if (existsSync(pkgPath)) {
+  const pkg = readPackageJson(projectDir);
+  if (pkg) {
     try {
-      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-      parts.push(`## Package: ${pkg.name ?? 'unknown'}`);
-      if (pkg.description) parts.push(pkg.description);
+      parts.push(`## Package: ${(pkg.name as string) ?? 'unknown'}`);
+      if (pkg.description) parts.push(pkg.description as string);
       if (pkg.scripts) {
         parts.push('\n### Scripts');
-        for (const [name, cmd] of Object.entries(pkg.scripts)) {
+        for (const [name, cmd] of Object.entries(pkg.scripts as Record<string, string>)) {
           parts.push(`- \`${name}\`: \`${cmd}\``);
         }
       }
     } catch {
-      // malformed package.json
+      // malformed package.json fields
     }
   }
 

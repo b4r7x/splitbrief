@@ -9,15 +9,15 @@ vi.mock('../../utils/fs.js', () => ({
   readFileOrEmpty: vi.fn().mockReturnValue(''),
 }));
 
-vi.mock('../openai-stream.js', () => ({
+vi.mock('../streaming/openai-stream.js', () => ({
   streamCompletion: vi.fn(),
 }));
 
-vi.mock('../extractor.js', () => ({
+vi.mock('../parsers/response-extractor.js', () => ({
   extractCode: vi.fn(),
 }));
 
-vi.mock('../apply.js', () => ({
+vi.mock('../orchestrator/apply.js', () => ({
   applyCode: vi.fn(),
 }));
 
@@ -35,9 +35,9 @@ vi.mock('../spec/token-budget.js', () => ({
   estimateTokens: vi.fn().mockReturnValue(100),
 }));
 
-import { streamCompletion } from '../openai-stream.js';
-import { extractCode } from '../extractor.js';
-import { applyCode } from '../apply.js';
+import { streamCompletion } from '../streaming/openai-stream.js';
+import { extractCode } from '../parsers/response-extractor.js';
+import { applyCode } from '../orchestrator/apply.js';
 import { computeDiff } from '../../utils/diff.js';
 import { createOpenAIImplementer } from './openai.js';
 
@@ -104,29 +104,3 @@ describe('openai implementer', () => {
   });
 });
 
-describe('openai implementer retry', () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it('returns success on successful retry', async () => {
-    vi.mocked(streamCompletion).mockResolvedValue({
-      text: 'fixed code',
-      usage: { inputTokens: 200, outputTokens: 100 },
-    });
-    vi.mocked(extractCode).mockReturnValue({ code: 'fixed code', confidence: 'high' });
-    vi.mocked(applyCode).mockReturnValue({ success: true });
-    vi.mocked(computeDiff).mockReturnValue({ diff: '+fixed', linesAdded: 1, linesRemoved: 0 });
-
-    const implementer = createOpenAIImplementer(makeConfig());
-    const result = await implementer.retry({
-      task: makeTask(),
-      projectDir: '/tmp/proj',
-      config: makeConfig(),
-      context: defaultContext,
-      error: 'TS2322',
-      attempt: 1,
-      onProgress: vi.fn(),
-    });
-
-    expect(result.success).toBe(true);
-  });
-});

@@ -1,5 +1,5 @@
 import { createStore, storeBase } from './create-store.js';
-import { discoverSkills } from '../engine/skills.js';
+import { discoverSkills } from '../engine/skills/index.js';
 import type { PlannerTool, SkillMeta } from '../types.js';
 
 interface SkillsState {

@@ -4,7 +4,7 @@ import type { Phase, SidebarTask, TuiEvent, TokenUsage } from '../types.js';
 
 export const MAX_EVENTS = 10_000;
 
-export interface WorkflowState {
+export interface WorkflowViewState {
   events: TuiEvent[];
   phase: Phase;
   currentTask: number;
@@ -17,7 +17,7 @@ export interface WorkflowState {
   cancelled: boolean;
 }
 
-const initial: WorkflowState = {
+const initial: WorkflowViewState = {
   events: [],
   phase: 'idle',
   currentTask: 0,
@@ -32,9 +32,9 @@ const initial: WorkflowState = {
 
 let abortController: AbortController | null = null;
 
-const store = createStore<WorkflowState>(initial);
+const store = createStore<WorkflowViewState>(initial);
 
-export function mergeEvent(events: TuiEvent[], event: TuiEvent): TuiEvent[] {
+function mergeEvent(events: TuiEvent[], event: TuiEvent): TuiEvent[] {
   const last = events[events.length - 1];
   let next: TuiEvent[];
   if (event.type === 'planner-text' && last?.type === 'planner-text') {
@@ -47,7 +47,7 @@ export function mergeEvent(events: TuiEvent[], event: TuiEvent): TuiEvent[] {
   return next.length > MAX_EVENTS ? next.slice(-MAX_EVENTS) : next;
 }
 
-export function updateCounts(state: WorkflowState, event: TuiEvent): Pick<WorkflowState, 'phase' | 'currentTask' | 'totalTasks' | 'localCount' | 'escalatedCount'> {
+function updateCounts(state: WorkflowViewState, event: TuiEvent): Pick<WorkflowViewState, 'phase' | 'currentTask' | 'totalTasks' | 'localCount' | 'escalatedCount'> {
   let { phase, currentTask, totalTasks, localCount, escalatedCount } = state;
   if (event.type === 'planner-status') phase = event.phase as Phase;
   if (event.type === 'task-start') {
@@ -61,7 +61,7 @@ export function updateCounts(state: WorkflowState, event: TuiEvent): Pick<Workfl
   return { phase, currentTask, totalTasks, localCount, escalatedCount };
 }
 
-export function updateTaskMap(taskMap: Map<string, SidebarTask>, event: TuiEvent): Map<string, SidebarTask> {
+function updateTaskMap(taskMap: Map<string, SidebarTask>, event: TuiEvent): Map<string, SidebarTask> {
   if (event.type === 'task-start') {
     const next = new Map(taskMap);
     next.set(event.taskId, { id: event.taskId, title: event.title, status: 'in_progress' });
@@ -120,7 +120,7 @@ function requestCancel() {
 
 export const workflowStore = {
   ...storeBase(store),
-  reset: (init?: Partial<WorkflowState>) => {
+  reset: (init?: Partial<WorkflowViewState>) => {
     abortController = null;
     store.reset(init ? { ...initial, ...init } : undefined);
   },

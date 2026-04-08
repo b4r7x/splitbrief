@@ -7,8 +7,6 @@ let highlighter: HighlighterCore | null = null;
 let currentThemeName = 'github-dark';
 const cache = new Map<string, string>();
 
-export const AVAILABLE_SHIKI_THEMES = ['github-dark', 'github-light'] as const;
-
 export function setHighlightTheme(theme: string): void {
   if (theme !== currentThemeName) {
     currentThemeName = theme;

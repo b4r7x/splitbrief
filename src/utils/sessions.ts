@@ -2,12 +2,13 @@ import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { Session } from '../types.js';
+import { TINY_SPEC_DIR } from './fs.js';
 
 export function getSessionDir(scope: 'project' | 'global', projectDir: string): string {
   if (scope === 'global') {
-    return join(homedir(), '.tiny-spec', 'sessions');
+    return join(homedir(), TINY_SPEC_DIR, 'sessions');
   }
-  return join(projectDir, '.tiny-spec', 'sessions');
+  return join(projectDir, TINY_SPEC_DIR, 'sessions');
 }
 
 function readSession(filePath: string): Session | null {

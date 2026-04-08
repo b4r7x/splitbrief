@@ -1,22 +1,20 @@
-import type { Task, Config, PlannerTool, PlannerTokenUsage } from '../../types.js';
-import type { PlannerBackend, PlannerCallbacks, PlanResult, EscalationResult, RegenerateResult } from './types.js';
-import { buildResearchPrompt, buildSpecPrompt, buildPlanPrompt, buildTasksPrompt } from '../spec/planning-prompts.js';
-import { buildHintPrompt, buildEscalationPrompt } from '../spec/execution-prompts.js';
-import { buildQuickPlanPrompt } from '../spec/planning-prompts.js';
+import type { Task, Config, PlannerTokenUsage } from '../../types.js';
+import type { Planner, PlannerCallbacks, PlanResult, EscalationResult, RegenerateResult } from './types.js';
+import { buildResearchPrompt } from '../spec/prompts/research.js';
+import { buildSpecPrompt } from '../spec/prompts/spec.js';
+import { buildPlanPrompt } from '../spec/prompts/plan.js';
+import { buildTasksPrompt } from '../spec/prompts/tasks.js';
+import { buildHintPrompt, buildEscalationPrompt } from '../spec/prompts/escalation.js';
+import { buildQuickPlanPrompt } from '../spec/prompts/quick-plan.js';
 import { parseTasks } from '../spec/parser.js';
 import { writeSpecFile } from '../../utils/fs.js';
-import { extractCode } from '../extractor.js';
-import { getPlannerPricing } from '../pricing.js';
+import { extractCode } from '../parsers/response-extractor.js';
+import { getPlannerPricing } from '../../core/providers/pricing.js';
 import { runCommand } from '../../utils/process.js';
 import { parseVersion } from '../../utils/format.js';
-import type { ClarificationQuestion } from '../question-parser.js';
+import type { ClarificationQuestion } from '../parsers/question-parser.js';
 import { buildProjectContextMarkdown } from './context.js';
-import { accumulateUsage } from '../output-parsers.js';
-
-// Static check by tool name — called before PlannerBackend is instantiated (see orchestrator/planning.ts)
-export function supportsConversational(tool: PlannerTool): boolean {
-  return tool === 'claude-code' || tool === 'agent-sdk';
-}
+import { accumulateUsage } from '../streaming/output-parsers.js';
 
 export interface InvokeResult {
   text: string;
@@ -49,7 +47,7 @@ export function createGetVersion(command: string, versionArgs?: string[]): () =>
       if (code !== 0) return null;
       const ver = parseVersion(stdout);
       return ver ? ver.join('.') : null;
-    } catch { return null; }
+    } catch { return null; /* non-fatal: version probe failed */ }
   };
 }
 
@@ -58,11 +56,11 @@ export function createIsAvailable(command: string, opts?: { timeout?: number }):
     try {
       const { code } = await runCommand(command, ['--version'], opts);
       return code === 0;
-    } catch { return false; }
+    } catch { return false; /* non-fatal: availability check failed */ }
   };
 }
 
-export function createPlannerBase(config: PlannerBaseConfig): PlannerBackend {
+export function createPlannerBase(config: PlannerBaseConfig): Planner {
   return {
     name: config.name,
     conversational: config.conversational ?? false,
@@ -155,6 +153,14 @@ export function createPlannerBase(config: PlannerBaseConfig): PlannerBackend {
       }
 
       return { success: true, output: result.text, code: extracted.code, usage: result.usage };
+    },
+
+    async review(
+      prompt: string,
+      projectDir: string,
+      callbacks: { onOutput: (text: string) => void },
+    ): Promise<{ text: string; usage: PlannerTokenUsage | null }> {
+      return config.invokeEscalate(prompt, projectDir, callbacks.onOutput);
     },
 
     async isAvailable(): Promise<boolean> {

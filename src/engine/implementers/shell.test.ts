@@ -5,7 +5,7 @@ import { createImplementer } from './factory.js';
 
 function makeConfig(extra?: Partial<Config['implementer']>): Config {
   return makeBaseConfig({
-    implementer: { model: 'test', contextLength: 8192, temperature: 0.3, type: 'shell', command: 'my-ai-tool', outputFormat: 'text', ...extra },
+    implementer: { model: 'test', contextLength: 8192, temperature: 0.3, kind: 'shell', command: 'my-ai-tool', outputFormat: 'text', ...extra },
   });
 }
 
@@ -72,26 +72,6 @@ describe('shell implementer', () => {
     expect(result.output).toContain('hello');
   });
 
-  it('handles text output format', async () => {
-    const code = 'export const x = 1;';
-    const config = makeConfig({ command: '/usr/bin/printf', args: ['%s', code], outputFormat: 'text' });
-    const task = makeTask();
-
-    const result = await implementTask(task, { projectDir: '/tmp', config, context, onProgress: () => {} });
-
-    expect(typeof result.success).toBe('boolean');
-  });
-
-  it('handles jsonl output format', async () => {
-    const jsonlLine = JSON.stringify({ text: 'export const x = 1;' });
-    const config = makeConfig({ command: '/usr/bin/printf', args: ['%s\n', jsonlLine], outputFormat: 'jsonl' });
-    const task = makeTask();
-
-    const result = await implementTask(task, { projectDir: '/tmp', config, context, onProgress: () => {} });
-
-    expect(typeof result.success).toBe('boolean');
-  });
-
   it('reports progress via onProgress callback', async () => {
     const code = 'export const x = 1;\n';
     const config = makeConfig({ command: '/usr/bin/printf', args: ['%s', code] });
@@ -121,26 +101,4 @@ describe('shell implementer', () => {
     expect(fullOutput).toContain('TypeError: x is not a function');
   });
 
-  it('does not dispatch to shell when type is api', async () => {
-    const config = makeConfig({ type: 'api' });
-    delete (config.implementer as any).command;
-
-    const task = makeTask();
-
-    const result = await implementTask(task, { projectDir: '/tmp', config, context, onProgress: () => {} });
-    expect(result.success).toBe(false);
-    expect(result.error).toBeTruthy();
-  });
-
-  it('does not dispatch to shell when type is undefined', async () => {
-    const config = makeConfig();
-    delete (config.implementer as any).type;
-    delete (config.implementer as any).command;
-
-    const task = makeTask();
-
-    const result = await implementTask(task, { projectDir: '/tmp', config, context, onProgress: () => {} });
-    expect(result.success).toBe(false);
-    expect(result.error).toBeTruthy();
-  });
 });

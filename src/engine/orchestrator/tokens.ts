@@ -28,12 +28,12 @@ export function addUsage(
 }
 
 export function tokenDelta(before: TokenUsage, after: TokenUsage): { implementerTokens: number; escalationTokens: number } {
-  const implBefore = before.implementerInput + before.implementerOutput;
-  const implAfter = after.implementerInput + after.implementerOutput;
+  const implementerBefore = before.implementerInput + before.implementerOutput;
+  const implementerAfter = after.implementerInput + after.implementerOutput;
   const escBefore = before.escalationInput + before.escalationOutput;
   const escAfter = after.escalationInput + after.escalationOutput;
   return {
-    implementerTokens: implAfter - implBefore,
+    implementerTokens: implementerAfter - implementerBefore,
     escalationTokens: escAfter - escBefore,
   };
 }

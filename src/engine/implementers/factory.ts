@@ -1,8 +1,8 @@
 import type { Config } from '../../types.js';
-import type { ImplementerBackend } from './types.js';
+import type { Implementer } from './types.js';
 
-export async function createImplementer(config: Config): Promise<ImplementerBackend> {
-  const type = config.implementer.type ?? 'api';
+export async function createImplementer(config: Config): Promise<Implementer> {
+  const type = config.implementer.kind ?? 'api';
   switch (type) {
     case 'api': {
       const { createOpenAIImplementer } = await import('./openai.js');

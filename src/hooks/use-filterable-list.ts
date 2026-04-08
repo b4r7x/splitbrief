@@ -8,9 +8,10 @@ interface UseFilterableListOptions<T> {
   onClose?: () => void;
   isActive?: boolean;
   shouldAppendChar?: (input: string) => boolean;
+  initialIndex?: number;
 }
 
-interface UseFilterableListResult<T> {
+export interface UseFilterableListResult<T> {
   filter: string;
   setFilter: (f: string) => void;
   filtered: T[];
@@ -25,9 +26,10 @@ export function useFilterableList<T>({
   onClose,
   isActive = true,
   shouldAppendChar,
+  initialIndex,
 }: UseFilterableListOptions<T>): UseFilterableListResult<T> {
   const [filter, setFilter] = useState('');
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(initialIndex ?? 0);
 
   const filtered = filter ? items.filter((item) => filterFn(item, filter)) : items;
 

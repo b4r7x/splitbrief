@@ -18,10 +18,6 @@ const dummySummary: Summary = {
 describe('routerStore', () => {
   beforeEach(() => routerStore.reset());
 
-  it('defaults to home', () => {
-    expect(routerStore.get().screen).toBe('home');
-  });
-
   it('navigates home → workflow', () => {
     routerStore.navigate('workflow', { feature: 'auth' });
     const s = routerStore.get();

@@ -3,7 +3,7 @@ import { useStdout } from "ink";
 
 const MEDIUM_BREAKPOINT = 120;
 
-function useTerminalSize() {
+export function useResponsiveLayout() {
   const { stdout } = useStdout();
   const [dimensions, setDimensions] = useState({
     cols: stdout?.columns ?? 80,
@@ -17,15 +17,9 @@ function useTerminalSize() {
     return () => { stdout.off("resize", onResize); };
   }, [stdout]);
 
-  return dimensions;
-}
-
-export function useResponsiveLayout() {
-  const { cols, rows } = useTerminalSize();
-  
   return {
-    cols,
-    rows,
-    isSmall: cols < MEDIUM_BREAKPOINT,
+    cols: dimensions.cols,
+    rows: dimensions.rows,
+    isSmall: dimensions.cols < MEDIUM_BREAKPOINT,
   };
 }

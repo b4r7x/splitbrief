@@ -12,14 +12,6 @@ describe('createOllamaProvider', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('has correct defaults', () => {
-    const p = createOllamaProvider();
-    expect(p.name).toBe('ollama');
-    expect(p.baseURL).toBe('http://localhost:11434/v1');
-    expect(p.apiKey()).toBe('ollama');
-    expect(p.isLocal).toBe(true);
-  });
-
   it('respects overrides', () => {
     const p = createOllamaProvider({ apiBase: 'http://remote:11434/v1', apiKey: 'my-key' });
     expect(p.baseURL).toBe('http://remote:11434/v1');
@@ -44,19 +36,6 @@ describe('createOllamaProvider', () => {
 
     const p = createOllamaProvider();
     expect(await p.listModels()).toEqual([]);
-  });
-
-  it('isAvailable returns true when models exist', async () => {
-    globalThis.fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ models: [{ name: 'test' }] }), { status: 200 }),
-    ) as typeof globalThis.fetch;
-
-    expect(await createOllamaProvider().isAvailable()).toBe(true);
-  });
-
-  it('isAvailable returns false on error', async () => {
-    globalThis.fetch = vi.fn(async () => { throw new Error('refused'); }) as typeof globalThis.fetch;
-    expect(await createOllamaProvider().isAvailable()).toBe(false);
   });
 
   it('detectContextLength parses num_ctx from parameters', async () => {

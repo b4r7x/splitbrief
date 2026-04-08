@@ -1,11 +1,9 @@
 import type { Task, WorkflowState, ValidationResult, TaskTokenUsage, TaskCompletionMethod } from '../../types.js';
-import { transition } from '../../core/state.js';
-import { saveState } from '../../core/state-persistence.js';
-import { validateTask, formatValidationError } from '../validator.js';
+import { validateTask, formatValidationError } from './validator.js';
 import { discardTaskChanges } from '../../utils/git.js';
-import type { WorkflowContext } from './types.js';
+import type { WorkflowContext } from './run.js';
 import { emit, emitValidationStart, emitValidationProgress, emitValidationResult, createTextHandler } from './events.js';
-import { refreshCurrentCode, addUsageAndSave } from './helpers.js';
+import { refreshCurrentCode, addUsageAndSave, transitionAndSave } from './helpers.js';
 import { validateCommitAndAdvance } from './task-runner.js';
 
 type RetryResult = { completed: boolean; method: TaskTokenUsage['method'] };
@@ -39,14 +37,11 @@ async function runLocalRetries(
   const maxRetries = ctx.config.workflow.maxRetries;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    state = transition(state, { type: 'VALIDATION_FAIL' }, maxRetries);
-    saveState(ctx.projectDir, state);
+    state = transitionAndSave(ctx.projectDir, state, { type: 'VALIDATION_FAIL' }, maxRetries);
     ctx.callbacks.onEvent({ type: 'retry', ts: Date.now(), taskId: ctx.task.id, attempt, maxRetries });
     emit(ctx.projectDir, state, 'task_retry', ctx.task.id, { attempt, error: lastError });
 
-    if (ctx.task.action === 'modify' || ctx.task.action === 'create') {
-      refreshCurrentCode(ctx.task, ctx.projectDir);
-    }
+    refreshCurrentCode(ctx.task, ctx.projectDir);
 
     const retryResult = await ctx.implementer.retry({
       task: ctx.task, projectDir: ctx.projectDir, config: ctx.config, context: ctx.context,
@@ -73,8 +68,7 @@ async function runLocalRetries(
 async function runTier1Hint(
   ctx: EscalationContext, state: WorkflowState, lastError: string,
 ): Promise<{ state: WorkflowState; lastError: string; result?: RetryResult }> {
-  state = transition(state, { type: 'ESCALATE' });
-  saveState(ctx.projectDir, state);
+  state = transitionAndSave(ctx.projectDir, state, { type: 'ESCALATE' });
   ctx.callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: state.phase, status: 'running' });
   emit(ctx.projectDir, state, 'task_escalating', ctx.task.id);
 
@@ -89,9 +83,7 @@ async function runTier1Hint(
   }
 
   const hintError = `${lastError}\n\n## Hints from senior reviewer:\n${tier1Result.output}`;
-  if (ctx.task.action === 'modify' || ctx.task.action === 'create') {
-    refreshCurrentCode(ctx.task, ctx.projectDir);
-  }
+  refreshCurrentCode(ctx.task, ctx.projectDir);
 
   const hintRetryResult = await ctx.implementer.retry({
     task: ctx.task, projectDir: ctx.projectDir, config: ctx.config, context: ctx.context,
@@ -114,8 +106,7 @@ async function runTier1Hint(
 async function runTier2Full(
   ctx: EscalationContext, state: WorkflowState, lastError: string,
 ): Promise<{ state: WorkflowState; result: RetryResult }> {
-  state = transition(state, { type: 'HINT_FAIL' });
-  saveState(ctx.projectDir, state);
+  state = transitionAndSave(ctx.projectDir, state, { type: 'HINT_FAIL' });
   emit(ctx.projectDir, state, 'hint_failed', ctx.task.id);
 
   ctx.callbacks.onEvent({ type: 'escalate', ts: Date.now(), tier: 2 });
@@ -131,11 +122,12 @@ async function runTier2Full(
     }
   }
 
-  state = transition(state, { type: 'FULL_FAIL' });
-  saveState(ctx.projectDir, state);
+  state = transitionAndSave(ctx.projectDir, state, { type: 'FULL_FAIL' });
   ctx.task.status = 'failed';
   emit(ctx.projectDir, state, 'task_full_fail', ctx.task.id);
-  try { await discardTaskChanges(ctx.projectDir, ctx.task.file, ctx.task.action); } catch { /* best effort */ }
+  try { await discardTaskChanges(ctx.projectDir, ctx.task.file, ctx.task.action); } catch (err) {
+    ctx.callbacks.onEvent({ type: 'warning', ts: Date.now(), message: `Failed to discard changes for ${ctx.task.file}: ${err}` });
+  }
   return { state, result: { completed: false, method: 'failed' } };
 }
 

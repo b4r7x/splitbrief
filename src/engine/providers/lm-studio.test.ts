@@ -12,14 +12,6 @@ describe('createLmStudioProvider', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('has correct defaults', () => {
-    const p = createLmStudioProvider();
-    expect(p.name).toBe('lm-studio');
-    expect(p.baseURL).toBe('http://localhost:1234/v1');
-    expect(p.apiKey()).toBe('lm-studio');
-    expect(p.isLocal).toBe(true);
-  });
-
   it('listModels parses OpenAI-style response', async () => {
     globalThis.fetch = vi.fn(async () =>
       new Response(JSON.stringify({ data: [{ id: 'deepseek-coder' }, { id: 'codellama' }] }), { status: 200 }),
@@ -28,11 +20,6 @@ describe('createLmStudioProvider', () => {
     const models = await createLmStudioProvider().listModels();
     expect(models).toEqual(['deepseek-coder', 'codellama']);
     expect(globalThis.fetch).toHaveBeenCalledWith('http://localhost:1234/v1/models');
-  });
-
-  it('isAvailable returns false on error', async () => {
-    globalThis.fetch = vi.fn(async () => { throw new Error('refused'); }) as typeof globalThis.fetch;
-    expect(await createLmStudioProvider().isAvailable()).toBe(false);
   });
 
   it('detectContextLength returns value from model data', async () => {

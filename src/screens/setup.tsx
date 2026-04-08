@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Box, Text, useApp } from 'ink';
 import { useTheme } from '../ui/theme.js';
-import { OverlayPanel } from '../ui/overlay-panel.js';
+import { OverlayPanel } from '../components/overlays/overlay-panel.js';
 import { Spinner } from '../ui/spinner.js';
-import { ToolModelPicker } from '../components/tool-model-picker.js';
+import { ToolModelPicker } from '../components/overlays/tool-model-picker/index.js';
 import { routerStore } from '../stores/router.js';
 import { configStore } from '../stores/config.js';
 import { detectionStore } from '../stores/detection.js';
-import { writeConfig } from '../core/config.js';
+import { writeConfig } from '../core/config/index.js';
 import type { Config } from '../types.js';
 
 type Step = 'detecting' | 'no-planners' | 'planner' | 'implementer';
@@ -15,13 +15,11 @@ type Step = 'detecting' | 'no-planners' | 'planner' | 'implementer';
 export function SetupScreen() {
   const t = useTheme();
   const { exit } = useApp();
-  const route = routerStore.use(s => s);
-
   const planners = detectionStore.use(s => s.planners);
   const implementers = detectionStore.use(s => s.implementers);
   const loading = detectionStore.use(s => s.loading);
 
-  const [step, setStep] = useState<Step>('detecting');
+  const [manualStep, setManualStep] = useState<Step | null>(null);
 
   useEffect(() => {
     if (!planners && !loading) {
@@ -29,17 +27,19 @@ export function SetupScreen() {
     }
   }, [planners, loading]);
 
-  useEffect(() => {
-    if (step !== 'detecting' || !planners || !implementers) return;
-    const availablePlanners = planners.filter(p => p.available);
-    setStep(availablePlanners.length === 0 ? 'no-planners' : 'planner');
-  }, [step, planners, implementers]);
+  const detectedStep: Step = !planners || !implementers
+    ? 'detecting'
+    : planners.filter(p => p.available).length === 0
+      ? 'no-planners'
+      : 'planner';
+  const step = manualStep ?? detectedStep;
 
   const finalize = (finalConfig: Config) => {
     const projectDir = configStore.get().projectDir;
     if (!projectDir) return;
     writeConfig(projectDir, finalConfig);
     configStore.reload();
+    const route = routerStore.get();
     const onComplete = route.screen === 'setup' ? route.onComplete : undefined;
     const feature = route.screen === 'setup' ? route.feature : undefined;
     if (onComplete === 'workflow' && feature) {
@@ -51,7 +51,7 @@ export function SetupScreen() {
 
   if (step === 'detecting') {
     return (
-      <OverlayPanel title="Setup" compact>
+      <OverlayPanel title="Setup">
         <Box flexDirection="column" alignItems="center" gap={1}>
           <Spinner label="Detecting available tools..." color={t.accent} />
           <Text color={t.textDim}>Scanning for planners and model providers</Text>
@@ -79,7 +79,7 @@ export function SetupScreen() {
         stepLabel="Choose Planner (1/2)"
         onConfirm={(updated) => {
           configStore.save(updated);
-          setStep('implementer');
+          setManualStep('implementer');
         }}
         onCancel={exit}
       />
@@ -91,7 +91,7 @@ export function SetupScreen() {
       role="implementer"
       stepLabel="Choose Model (2/2)"
       onConfirm={finalize}
-      onCancel={() => setStep('planner')}
+      onCancel={() => setManualStep('planner')}
     />
   );
 }

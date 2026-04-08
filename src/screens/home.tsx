@@ -2,13 +2,12 @@ import { Box, Text } from 'ink';
 import cfonts from 'cfonts';
 import type { Session, SlashCommandDef } from '../types.js';
 import { useTheme, type Theme } from '../ui/theme.js';
-import { InputBar } from '../components/input-bar.js';
+import { InputBar } from '../components/input-bar/index.js';
 import { formatRelativeTime } from '../utils/format.js';
-import { formatModelName } from '../utils/model-names.js';
+import { formatModelName } from '../core/providers/models.js';
 import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
 import { configStore } from '../stores/config.js';
-import { getProvider } from '../engine/providers/registry.js';
-import { getDisplayName } from '../engine/providers/backend-registry.js';
+import { getProviderDisplayName, isProviderLocal } from '../core/providers/catalog.js';
 import { skillsStore } from '../stores/skills.js';
 import { sessionsStore } from '../stores/sessions.js';
 import { overlayStore } from '../stores/overlay.js';
@@ -56,12 +55,11 @@ interface HomeScreenProps {
 
 export function HomeScreen({ commands, onSlashCommand }: HomeScreenProps) {
   const theme = useTheme();
-  const config = configStore.use(s => s.config);
+  const config = configStore.useConfig();
   const selectedSkillIds = skillsStore.use(s => s.selected);
   const sessions = sessionsStore.use(s => s.sessions);
   const hasOverlay = overlayStore.use(s => s.active !== 'none');
   const { cols, rows, isSmall } = useResponsiveLayout();
-  if (!config) return null;
 
   const selectedSkillCount = selectedSkillIds.size;
   const banner = getBanner();
@@ -89,7 +87,7 @@ export function HomeScreen({ commands, onSlashCommand }: HomeScreenProps) {
         <Box flexDirection="column" marginBottom={1}>
           <Box>
             <Text color={theme.textDim}>{'Planner'.padEnd(14)}</Text>
-            <Text color={theme.planner}>{getDisplayName(config.planner.tool)}</Text>
+            <Text color={theme.planner}>{getProviderDisplayName(config.planner.tool)}</Text>
             {config.planner.model && (
               <Text color={theme.planner}> › {formatModelName(config.planner.model)}</Text>
             )}
@@ -97,10 +95,10 @@ export function HomeScreen({ commands, onSlashCommand }: HomeScreenProps) {
           </Box>
           <Box>
             <Text color={theme.textDim}>{'Implementer'.padEnd(14)}</Text>
-            <Text color={theme.implementer}>{getDisplayName(config.implementer.provider)}</Text>
+            <Text color={theme.implementer}>{getProviderDisplayName(config.implementer.tool)}</Text>
             <Text color={theme.textDim}> › </Text>
             <Text color={theme.implementer}>{formatModelName(config.implementer.model)}</Text>
-            {getProvider(config.implementer.provider).isLocal && (
+            {isProviderLocal(config.implementer.tool) && (
               <Text color={theme.textDim}> (local)</Text>
             )}
             <Text color={theme.textDim}>  /implementer</Text>

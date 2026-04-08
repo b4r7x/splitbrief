@@ -1,4 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import type { PlannerTokenUsage } from '../types.js';
+import { accumulateUsage } from '../engine/streaming/output-parsers.js';
 
 const SIGKILL_DELAY = 5000;
 
@@ -41,7 +43,7 @@ export function killProcess(proc: ChildProcess, options?: { group?: boolean }): 
     } else {
       proc.kill('SIGTERM');
     }
-  } catch { /* process already dead — safe to ignore */ }
+  } catch {}
   setTimeout(() => {
     if (proc.pid === undefined) return;
     try {
@@ -51,7 +53,7 @@ export function killProcess(proc: ChildProcess, options?: { group?: boolean }): 
       } else {
         proc.kill('SIGKILL');
       }
-    } catch { /* process already dead — safe to ignore */ }
+    } catch {}
   }, SIGKILL_DELAY);
 }
 
@@ -84,33 +86,6 @@ function spawnManaged<T>(
       unregisterProcess(proc);
       resolve(onClose(code, signal));
     });
-  });
-}
-
-export function spawnWithStreaming(
-  command: string,
-  args: string[],
-  onStdout: (line: string) => void,
-  onStderr?: (line: string) => void,
-  options?: { cwd?: string },
-): Promise<{ code: number; killed: boolean }> {
-  return spawnManaged(command, args, options?.cwd, (proc) => {
-    const stdoutBuf = createLineBuffer(line => onStdout(line));
-    const stderrBuf = createLineBuffer(line => onStderr?.(line));
-
-    proc.stdout!.on('data', (chunk: Buffer) => stdoutBuf.push(chunk.toString()));
-    proc.stderr!.on('data', (chunk: Buffer) => stderrBuf.push(chunk.toString()));
-
-    return {
-      onClose: (code, signal) => {
-        stdoutBuf.flush();
-        stderrBuf.flush();
-        return {
-          code: code ?? (signal ? 1 : 0),
-          killed: proc.killed || signal === 'SIGTERM' || signal === 'SIGINT',
-        };
-      },
-    };
   });
 }
 
@@ -148,4 +123,223 @@ export function killAllProcesses(): void {
 
 export function isENOENT(err: unknown): boolean {
   return err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT';
+}
+
+// ---------------------------------------------------------------------------
+// subprocess helpers
+// ---------------------------------------------------------------------------
+
+export interface SpawnResult {
+  output: string;
+  code: number;
+  timedOut: boolean;
+  stderr: string;
+}
+
+export interface SpawnOptions {
+  command: string;
+  args: string[];
+  cwd: string;
+  timeout: number;
+  onProgress: (text: string) => void;
+  stdinInput?: string;
+}
+
+export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
+  const { command, args, cwd, timeout, onProgress, stdinInput } = opts;
+  return new Promise((resolve, reject) => {
+    let proc: ChildProcess;
+    try {
+      proc = spawn(command, args, {
+        cwd,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        detached: true,
+      });
+    } catch (err: unknown) {
+      reject(err);
+      return;
+    }
+
+    registerProcess(proc);
+
+    let output = '';
+    let stderrOutput = '';
+    let timedOut = false;
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killProcess(proc, { group: true });
+    }, timeout);
+
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString();
+      output += text;
+      onProgress(text);
+    });
+
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      stderrOutput += chunk.toString();
+    });
+
+    proc.on('error', (err: NodeJS.ErrnoException) => {
+      clearTimeout(timer);
+      unregisterProcess(proc);
+      reject(err);
+    });
+
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      unregisterProcess(proc);
+      resolve({ output, code: code ?? 1, timedOut, stderr: stderrOutput });
+    });
+
+    if (stdinInput !== undefined) {
+      proc.stdin?.write(stdinInput);
+    }
+    proc.stdin?.end();
+  });
+}
+
+export async function spawnWithShellFallback(opts: SpawnOptions): Promise<SpawnResult> {
+  try {
+    return await spawnWithTimeout(opts);
+  } catch (err: unknown) {
+    if (!isENOENT(err)) throw err;
+
+    const userShell = process.env['SHELL'] ?? '/bin/bash';
+    const fullCommand = [opts.command, ...opts.args].map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+    return spawnWithTimeout({ ...opts, command: userShell, args: ['-lc', fullCommand] });
+  }
+}
+
+export function createProcessError(message: string, output: string): Error & { output: string } {
+  const err = new Error(message) as Error & { output: string };
+  err.output = output;
+  return err;
+}
+
+// ---------------------------------------------------------------------------
+// planner spawn helpers
+// ---------------------------------------------------------------------------
+
+export async function spawnWithStdin(opts: {
+  command: string;
+  args: string[];
+  cwd: string;
+  stdin?: string;
+  onLine: (line: string) => void;
+  onStderr?: (chunk: string) => void;
+  notFoundMessage: string;
+}): Promise<{ text: string; stderrOutput: string; code: number }> {
+  return new Promise((resolve, reject) => {
+    let proc;
+    try {
+      proc = spawn(opts.command, opts.args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: opts.cwd,
+      });
+    } catch (err: unknown) {
+      if (isENOENT(err)) {
+        reject(new Error(opts.notFoundMessage));
+        return;
+      }
+      reject(err);
+      return;
+    }
+
+    registerProcess(proc);
+
+    let rawText = '';
+    let stderrOutput = '';
+    const stdoutBuf = createLineBuffer(line => opts.onLine(line));
+
+    proc.on('error', (err: NodeJS.ErrnoException) => {
+      unregisterProcess(proc);
+      if (isENOENT(err)) {
+        reject(new Error(opts.notFoundMessage));
+      } else {
+        reject(err);
+      }
+    });
+
+    proc.stdout.on('data', (chunk: Buffer) => {
+      const str = chunk.toString();
+      rawText += str;
+      stdoutBuf.push(str);
+    });
+
+    proc.stderr.on('data', (chunk: Buffer) => {
+      const text = chunk.toString();
+      stderrOutput += text;
+      opts.onStderr?.(text);
+    });
+
+    proc.on('close', (code) => {
+      unregisterProcess(proc);
+
+      stdoutBuf.flush();
+
+      if (code === 127) {
+        reject(new Error(opts.notFoundMessage));
+        return;
+      }
+
+      if (code !== 0 && !rawText) {
+        const detail = stderrOutput.trim();
+        reject(new Error(
+          `${opts.command} exited with code ${code}${detail ? `: ${detail}` : ''}`,
+        ));
+        return;
+      }
+
+      resolve({ text: rawText, stderrOutput, code: code ?? 0 });
+    });
+
+    if (opts.stdin != null) {
+      proc.stdin.write(opts.stdin);
+    }
+    proc.stdin.end();
+  });
+}
+
+interface ParsedLine {
+  text?: string;
+  usage?: PlannerTokenUsage;
+}
+
+interface SpawnAndCollectOptions {
+  command: string;
+  args: string[];
+  cwd: string;
+  stdin?: string;
+  notFoundMessage: string;
+  parseLine: (line: string) => ParsedLine;
+  onOutput: (text: string) => void;
+  onStderr?: (chunk: string) => void;
+}
+
+export async function spawnAndCollect(opts: SpawnAndCollectOptions): Promise<{ text: string; usage: PlannerTokenUsage | null }> {
+  let collectedText = '';
+  let usage: PlannerTokenUsage | null = null;
+
+  await spawnWithStdin({
+    command: opts.command,
+    args: opts.args,
+    cwd: opts.cwd,
+    stdin: opts.stdin,
+    notFoundMessage: opts.notFoundMessage,
+    onStderr: opts.onStderr,
+    onLine(line) {
+      const parsed = opts.parseLine(line);
+      if (parsed.text) {
+        collectedText += parsed.text;
+        opts.onOutput(parsed.text);
+      }
+      if (parsed.usage) {
+        usage = accumulateUsage(usage, parsed.usage);
+      }
+    },
+  });
+
+  return { text: collectedText, usage };
 }

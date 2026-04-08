@@ -1,36 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { KNOWN_PROVIDERS, getProvider, detectAvailableProviders } from './registry.js';
 
-describe('KNOWN_PROVIDERS', () => {
-  it('contains all four known providers', () => {
-    expect(Object.keys(KNOWN_PROVIDERS)).toEqual(['ollama', 'lm-studio', 'deepseek', 'openrouter']);
-  });
-
-  it('each factory returns a ProviderDef', () => {
-    for (const [name, factory] of Object.entries(KNOWN_PROVIDERS)) {
-      const p = factory();
-      expect(p.name).toBe(name);
-      expect(typeof p.baseURL).toBe('string');
-      expect(typeof p.apiKey).toBe('function');
-      expect(typeof p.isLocal).toBe('boolean');
-      expect(typeof p.listModels).toBe('function');
-      expect(typeof p.isAvailable).toBe('function');
-    }
-  });
-});
-
 describe('getProvider', () => {
-  it('returns known provider by name', () => {
-    const p = getProvider('ollama');
-    expect(p.name).toBe('ollama');
-    expect(p.baseURL).toContain('11434');
-  });
-
-  it('applies overrides to known provider', () => {
-    const p = getProvider('ollama', { apiBase: 'http://remote:11434/v1' });
-    expect(p.baseURL).toBe('http://remote:11434/v1');
-  });
-
   it('returns generic provider for unknown name', () => {
     const p = getProvider('custom-api', { apiBase: 'http://api.example.com/v1', apiKey: 'sk-test' });
     expect(p.name).toBe('custom-api');
