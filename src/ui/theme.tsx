@@ -12,15 +12,34 @@ export interface Theme {
   implementer: string;
   validator: string;
   border: string;
-  panelBg: string;
+  panelBg: string | undefined;
   selectionBg: string;
+  spinner: string;
+  scrollIndicator: string;
   diff: {
     added: string;
-    addedBg: string;
+    addedBg: string | undefined;
     removed: string;
-    removedBg: string;
+    removedBg: string | undefined;
     context: string;
-    contextBg: string;
+    contextBg: string | undefined;
+  };
+  markdown: {
+    heading: string;
+    bold: string;
+    italic: string;
+    code: string;
+  };
+  cursor: {
+    fg: string;
+    bg: string;
+  };
+  review: {
+    file: string;
+  };
+  highlight: {
+    bg: string;
+    fg: string;
   };
 }
 
@@ -36,15 +55,34 @@ const terminalTheme: Theme = {
   implementer: 'cyan',
   validator: 'green',
   border: 'gray',
-  panelBg: '',
+  panelBg: undefined,
   selectionBg: '#333333',
+  spinner: 'cyan',
+  scrollIndicator: 'gray',
   diff: {
     added: 'green',
-    addedBg: '',
+    addedBg: undefined,
     removed: 'red',
-    removedBg: '',
+    removedBg: undefined,
     context: 'gray',
-    contextBg: '',
+    contextBg: undefined,
+  },
+  markdown: {
+    heading: 'cyan',
+    bold: 'white',
+    italic: 'gray',
+    code: 'yellow',
+  },
+  cursor: {
+    fg: 'black',
+    bg: 'white',
+  },
+  review: {
+    file: 'white',
+  },
+  highlight: {
+    bg: '#333333',
+    fg: 'white',
   },
 };
 
@@ -62,6 +100,8 @@ const monoTheme: Theme = {
   border: '#3b3b3b',
   panelBg: '#1a1a1a',
   selectionBg: '#2a2a3a',
+  spinner: '#7aa2f7',
+  scrollIndicator: '#666666',
   diff: {
     added: '#4fd6be',
     addedBg: '#20303b',
@@ -69,6 +109,23 @@ const monoTheme: Theme = {
     removedBg: '#37222c',
     context: '#828bb8',
     contextBg: '#141414',
+  },
+  markdown: {
+    heading: '#7aa2f7',
+    bold: '#c0c0c0',
+    italic: '#828bb8',
+    code: '#e0af68',
+  },
+  cursor: {
+    fg: '#1a1a1a',
+    bg: '#c0c0c0',
+  },
+  review: {
+    file: '#c0c0c0',
+  },
+  highlight: {
+    bg: '#2a2a3a',
+    fg: '#c0c0c0',
   },
 };
 

@@ -1,14 +1,10 @@
-import type { Phase } from './workflow.js';
-import type { Summary } from './summary.js';
-import type { TaskCompletionMethod, TokenUsage } from './summary.js';
+import type { Phase, TaskId } from './workflow.js';
+import type { Summary, TaskCompletionMethod, TokenUsage } from './summary.js';
 
-export interface ClarificationQuestion {
-  id: string;
-  type: 'choice' | 'input' | 'confirm';
-  text: string;
-  options?: string[] | undefined;
-  default?: string | number | boolean | undefined;
-}
+export type ClarificationQuestion =
+  | { id: string; type: 'choice'; text: string; options: string[]; default?: string | undefined }
+  | { id: string; type: 'input'; text: string; default?: string | undefined }
+  | { id: string; type: 'confirm'; text: string; default?: boolean | undefined };
 
 export type TuiEvent =
   | {
@@ -27,7 +23,7 @@ export type TuiEvent =
   | {
       type: 'task-start';
       ts: number;
-      taskId: string;
+      taskId: TaskId;
       title: string;
       index: number;
       total: number;
@@ -37,7 +33,7 @@ export type TuiEvent =
   | {
       type: 'task-complete';
       ts: number;
-      taskId: string;
+      taskId: TaskId;
       title: string;
       method: TaskCompletionMethod;
       retries: number;
@@ -46,20 +42,18 @@ export type TuiEvent =
   | {
       type: 'task-skipped';
       ts: number;
-      taskId: string;
+      taskId: TaskId;
       title: string;
       reason: string;
     }
   | {
-      type: 'implementer-generate';
+      type: 'implementer-generate-running';
       ts: number;
-      status: 'running';
       file?: string | undefined;
     }
   | {
-      type: 'implementer-generate';
+      type: 'implementer-generate-done';
       ts: number;
-      status: 'done';
       file: string;
       diff?: string | undefined;
       linesAdded: number;
@@ -67,9 +61,8 @@ export type TuiEvent =
       duration: number;
     }
   | {
-      type: 'implementer-generate';
+      type: 'implementer-generate-failed';
       ts: number;
-      status: 'failed';
       model: string;
     }
   | {
@@ -84,7 +77,7 @@ export type TuiEvent =
   | {
       type: 'retry';
       ts: number;
-      taskId: string;
+      taskId: TaskId;
       attempt: number;
       maxRetries: number;
     }
@@ -103,7 +96,7 @@ export type TuiEvent =
       type: 'git-checkpoint';
       ts: number;
       tag: string;
-      taskId: string;
+      taskId: TaskId;
     }
   | {
       type: 'warning';
@@ -125,41 +118,52 @@ export type TuiEvent =
       ts: number;
     };
 
-export interface OrchestratorEvent {
-  ts: number;
-  type: OrchestratorEventType;
-  taskId?: string | undefined;
-  phase: Phase;
-  data?: Record<string, unknown> | undefined;
-}
+export type OrchestratorEventPayloadMap = {
+  workflow_started: Record<string, never>;
+  workflow_resumed: Record<string, never>;
+  workflow_complete: Record<string, never>;
+  all_tasks_done: Record<string, never>;
+  task_started: Record<string, never>;
+  task_completed: { method: TaskCompletionMethod };
+  task_failed: Record<string, never>;
+  task_skipped: Record<string, never>;
+  task_retry: { attempt: number; error: string };
+  task_escalating: Record<string, never>;
+  task_full_fail: Record<string, never>;
+  task_tokens: {
+    method: TaskCompletionMethod;
+    implementerTokens: number;
+    escalationTokens: number;
+    retryCount: number;
+  };
+  hint_failed: Record<string, never>;
+  paused_external_changes: Record<string, never>;
+  spec_rejected: Record<string, never>;
+  spec_regenerated: { comment: string };
+  plan_rejected: Record<string, never>;
+  plan_regenerated: { comment: string };
+  clarifications_collected: {
+    count: number;
+    clarifications: Array<{ question: string; answer: string }>;
+  };
+  research_done: Record<string, never>;
+  spec_done: Record<string, never>;
+  spec_approved: Record<string, never>;
+  plan_done: { taskCount: number };
+  plan_approved: Record<string, never>;
+};
 
-export type OrchestratorEventType =
-  | 'workflow_started'
-  | 'workflow_resumed'
-  | 'workflow_complete'
-  | 'all_tasks_done'
-  | 'task_started'
-  | 'task_completed'
-  | 'task_failed'
-  | 'task_skipped'
-  | 'task_retry'
-  | 'task_escalating'
-  | 'task_full_fail'
-  | 'task_tokens'
-  | 'hint_failed'
-  | 'paused_external_changes'
-  | 'spec'
-  | 'spec_rejected'
-  | 'spec_regenerated'
-  | 'plan'
-  | 'plan_rejected'
-  | 'plan_regenerated'
-  | 'clarifications_collected'
-  | 'research_done'
-  | 'spec_done'
-  | 'spec_approved'
-  | 'plan_done'
-  | 'plan_approved';
+export type OrchestratorEventType = keyof OrchestratorEventPayloadMap;
+
+export type OrchestratorEvent<T extends OrchestratorEventType = OrchestratorEventType> = {
+  [K in T]: {
+    ts: number;
+    type: K;
+    taskId?: TaskId | undefined;
+    phase: Phase;
+    data: OrchestratorEventPayloadMap[K];
+  };
+}[T];
 
 export interface OrchestratorCallbacks {
   onEvent: (event: TuiEvent) => void;

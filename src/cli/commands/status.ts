@@ -1,5 +1,11 @@
 import { Command } from 'commander';
+import ansis from 'ansis';
 import { loadState } from '../../core/state/persistence.js';
+import {
+  getCompletedTaskIds,
+  getEscalatedTaskIds,
+  getFailedTaskIds,
+} from '../../core/state/selectors.js';
 import { resolveProjectDir } from '../workflow.js';
 
 export function registerStatusCommand(program: Command): void {
@@ -16,19 +22,22 @@ export function registerStatusCommand(program: Command): void {
         return;
       }
 
-      console.log(`Feature:  ${state.feature}`);
-      console.log(`Phase:    ${state.phase}`);
-      console.log(`Task:     ${state.currentTaskIndex + 1}/${state.tasks.length}`);
-      console.log(`Started:  ${state.startedAt}`);
+      console.log(`${ansis.dim('Feature:')}  ${ansis.bold(state.feature)}`);
+      console.log(`${ansis.dim('Phase:')}    ${ansis.bold(state.phase)}`);
+      console.log(`${ansis.dim('Task:')}     ${state.currentTaskIndex + 1}/${state.tasks.length}`);
+      console.log(`${ansis.dim('Started:')}  ${state.startedAt}`);
 
-      if (state.completedTasks.length > 0) {
-        console.log(`Done:     ${state.completedTasks.length}`);
+      const completed = getCompletedTaskIds(state);
+      const escalated = getEscalatedTaskIds(state);
+      const failed = getFailedTaskIds(state);
+      if (completed.length > 0) {
+        console.log(`${ansis.dim('Done:')}     ${ansis.green(String(completed.length))}`);
       }
-      if (state.escalatedTasks.length > 0) {
-        console.log(`Escalated: ${state.escalatedTasks.length}`);
+      if (escalated.length > 0) {
+        console.log(`${ansis.dim('Escalated:')} ${ansis.yellow(String(escalated.length))}`);
       }
-      if (state.failedTasks.length > 0) {
-        console.log(`Failed:   ${state.failedTasks.length}`);
+      if (failed.length > 0) {
+        console.log(`${ansis.dim('Failed:')}   ${ansis.red(String(failed.length))}`);
       }
     });
 }

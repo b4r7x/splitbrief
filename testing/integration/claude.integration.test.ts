@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { spawn } from 'node:child_process';
 import { guardClaude } from './guard.js';
 
@@ -17,11 +17,6 @@ function collectStream(command: string, args: string[]): Promise<{ lines: string
 }
 
 describe('Claude Code planner integration', { timeout: 30_000 }, () => {
-  beforeAll(async () => {
-    const guard = await guardClaude();
-    if (guard.skip) return; // node:test skips when before() doesn't throw but test uses skip
-  });
-
   it('spawns subprocess and receives stream-json output', { timeout: 30_000 }, async (t) => {
     const guard = await guardClaude();
     if (guard.skip) { t.skip(); return; }

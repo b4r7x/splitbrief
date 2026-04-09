@@ -1,63 +1,58 @@
-import type { Config } from '../../types.js';
+import type { Config, InvokeResult } from '../../types.js';
 import type { Planner } from './types.js';
-import type { InvokeResult } from './base.js';
 import { createPlannerBase } from './base.js';
-import { getProvider } from '../providers/registry.js';
-import { streamCompletion } from '../streaming/openai-stream.js';
-import OpenAI from 'openai';
+import { getProvider } from '../provider-clients/registry.js';
+import { createClientFromProvider } from '../provider-clients/client.js';
+import { asStreamClient, streamCompletion } from '../streaming/openai-stream.js';
+import type OpenAI from 'openai';
 
 async function invokeApi(
   client: OpenAI,
   model: string,
-  config: Config,
+  planner: { provider: string; apiBase?: string | undefined },
   prompt: string,
   onOutput: (text: string) => void,
 ): Promise<InvokeResult> {
-  const result = await streamCompletion(client, model, [
+  const result = await streamCompletion(asStreamClient(client), model, [
     { role: 'user', content: prompt },
   ], {
     temperature: 0.3,
     onProgress: onOutput,
-    endpoint: { provider: config.planner.provider || 'api', apiBase: config.planner.apiBase },
+    endpoint: { provider: planner.provider, apiBase: planner.apiBase },
   });
 
   return {
     text: result.text,
-    usage: result.usage ? {
-      inputTokens: result.usage.inputTokens ?? 0,
-      outputTokens: result.usage.outputTokens ?? 0,
-    } : null,
+    usage: result.usage,
   };
 }
 
 export function createApiPlanner(config: Config): Planner {
-  if (!config.planner.provider) throw new Error('API planner requires planner.provider');
-  const provider = config.planner.provider;
-  const model = config.planner.model ?? 'default';
+  if (config.planner.kind !== 'api') {
+    throw new Error(`createApiPlanner requires planner.kind = 'api' (got ${config.planner.kind})`);
+  }
+  const plannerCfg = config.planner;
+  const provider = plannerCfg.provider;
+  const model = plannerCfg.model;
   const resolved = getProvider(provider, {
-    apiBase: config.planner.apiBase,
-    apiKey: config.planner.apiKey,
+    apiBase: plannerCfg.apiBase,
+    apiKey: plannerCfg.apiKey,
   });
 
-  const client = new OpenAI({
-    baseURL: resolved.baseURL,
-    apiKey: resolved.apiKey(),
-  });
+  const client = createClientFromProvider(resolved);
+
+  const invoke = ({ prompt, callbacks }: { prompt: string; projectDir: string; callbacks: { onOutput: (text: string) => void } }) =>
+    invokeApi(client, model, { provider, apiBase: plannerCfg.apiBase }, prompt, callbacks.onOutput);
 
   return createPlannerBase({
-    async invokePlan(prompt, _projectDir, onOutput) {
-      return invokeApi(client, model, config, prompt, onOutput);
-    },
-
-    async invokeEscalate(prompt, _projectDir, onOutput) {
-      return invokeApi(client, model, config, prompt, onOutput);
-    },
+    invokePlan: invoke,
+    invokeEscalate: invoke,
 
     async isAvailable() {
       try {
         await client.models.list();
         return true;
-      } catch {
+      } catch { /* API unreachable — treat as unavailable */
         return false;
       }
     },

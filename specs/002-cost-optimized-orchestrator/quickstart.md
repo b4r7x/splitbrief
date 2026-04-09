@@ -13,7 +13,7 @@
      ```bash
      brew install ollama
      ollama pull qwen2.5-coder:7b
-     export OLLAMA_CONTEXT_LENGTH=32768  # default 2048 is too small
+     export TINY_SPEC_CONTEXT_LENGTH=32768  # default 2048 is too small
      ```
    - **LM Studio**: download a coding model via the UI
    - **Any OpenAI-compatible API**: set `api_base` in config
@@ -157,7 +157,7 @@ For a medium-complexity feature (10-15 tasks):
 
 **Tasks keep failing**: Your model may be too small. Try `qwen3.5:27b` (Mac) or `qwen2.5-coder:14b`.
 
-**"Context length exceeded"**: Set `OLLAMA_CONTEXT_LENGTH=32768` in your shell profile.
+**"Context length exceeded"**: Set `TINY_SPEC_CONTEXT_LENGTH=32768` in your shell profile.
 
 **Validation skipped**: Ensure `tsc` is available (`npx tsc --version`) and your project has a test command in `package.json`.
 

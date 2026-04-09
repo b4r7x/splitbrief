@@ -1,6 +1,7 @@
 import { render } from 'ink';
 import { withFullScreen } from 'fullscreen-ink';
 import type { createElement } from 'react';
+import { warnError } from '../utils/format.js';
 
 export async function renderApp(appElement: ReturnType<typeof createElement>, fullscreen: boolean): Promise<void> {
   const termProgram = process.env['TERM_PROGRAM'] ?? '';
@@ -16,10 +17,13 @@ export async function renderApp(appElement: ReturnType<typeof createElement>, fu
       const ink = withFullScreen(appElement, { exitOnCtrlC: false, kittyKeyboard });
       await ink.start();
       await ink.waitUntilExit();
-    } catch {
-      renderFallback();
+    } catch (err) {
+      warnError('Fullscreen init failed, falling back to inline mode', err);
+      const inst = renderFallback();
+      await inst.waitUntilExit();
     }
   } else {
-    renderFallback();
+    const inst = renderFallback();
+    await inst.waitUntilExit();
   }
 }

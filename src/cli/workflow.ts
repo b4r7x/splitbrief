@@ -2,9 +2,14 @@ import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadConfig, initConfig, configPath } from '../core/config/index.js';
-import { detectCapabilities } from '../engine/providers/index.js';
+import { detectCapabilities } from '../engine/index.js';
 import { isGitRepo } from '../utils/git.js';
+import { TINY_SPEC_DIR, CONFIG_FILE } from '../core/paths.js';
+import { cliError } from './errors.js';
+import { toErrorMessage, warnError } from '../utils/format.js';
 import type { WorkflowOpts } from '../types.js';
+
+const NO_CONFIG_MSG = `No config found. Creating default ${TINY_SPEC_DIR}/${CONFIG_FILE}`;
 
 export function addWorkflowOptions(cmd: Command): Command {
   return cmd
@@ -30,15 +35,13 @@ export function loadConfigOrExit(projectDir: string): ReturnType<typeof loadConf
   try {
     return loadConfig(projectDir);
   } catch (err) {
-    console.error((err as Error).message);
-    process.exit(2);
+    throw cliError(toErrorMessage(err), 2);
   }
 }
 
 async function assertGitRepo(projectDir: string): Promise<void> {
   if (!(await isGitRepo(projectDir))) {
-    console.error('Error: not a git repository. Run `git init` first.');
-    process.exit(1);
+    throw cliError('Error: not a git repository. Run `git init` first.', 1);
   }
 }
 
@@ -46,25 +49,33 @@ export async function ensureGitAndConfig(projectDir: string): Promise<void> {
   await assertGitRepo(projectDir);
 
   if (!existsSync(configPath(projectDir))) {
-    console.log('No config found. Creating default .tiny-spec/config.yaml');
+    console.log(NO_CONFIG_MSG);
     initConfig(projectDir);
   }
 }
 
-export async function setupWorkflow(opts: WorkflowOpts): Promise<{ projectDir: string; useFullscreen: boolean; contextLength?: number | undefined; needsSetup?: boolean | undefined }> {
+export interface SetupResult {
+  projectDir: string;
+  useFullscreen: boolean;
+  contextLength?: number | undefined;
+  needsSetup?: boolean | undefined;
+}
+
+export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
   const projectDir = resolveProjectDir(opts.project);
 
   await assertGitRepo(projectDir);
 
+  const isInteractive = process.stdout.isTTY && !process.env['CI'];
+  const useFullscreen = opts.fullscreen !== false && isInteractive;
+
   const hasOverrides = !!(opts.model || opts.provider || opts.planner || opts.plannerModel || opts.plannerCommand || opts.implementer || opts.implementerModel || opts.implementerCommand || opts.mode || opts.auto);
   if (!existsSync(configPath(projectDir))) {
     if (hasOverrides) {
-      console.log('No config found. Creating default .tiny-spec/config.yaml');
+      console.log(NO_CONFIG_MSG);
       initConfig(projectDir);
     } else {
       initConfig(projectDir);
-      const isInteractive = process.stdout.isTTY && !process.env['CI'];
-      const useFullscreen = opts.fullscreen !== false && isInteractive;
       return { projectDir, useFullscreen, needsSetup: true };
     }
   }
@@ -77,12 +88,9 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<{ projectDir: s
     if (caps.contextLength) {
       contextLength = caps.contextLength;
     }
-  } catch {
-    // provider not reachable, use config default
+  } catch (err) {
+    warnError('Could not detect provider capabilities', err);
   }
-
-  const isInteractive = process.stdout.isTTY && !process.env['CI'];
-  const useFullscreen = opts.fullscreen !== false && isInteractive;
 
   return { projectDir, useFullscreen, contextLength };
 }

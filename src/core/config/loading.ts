@@ -1,13 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
-import type { Config, CommitStrategy, PlannerTool } from '../types/index.js';
-import { KNOWN_PROVIDER_BASE_URLS, getProviderBaseUrl } from '../providers/catalog.js';
+import type { Config } from '../types/index.js';
+import { KNOWN_PROVIDER_BASE_URLS } from '../providers/catalog.js';
 import { validateConfig } from './validation.js';
 import { fromYaml, toYaml } from './transforms.js';
-import { TINY_SPEC_DIR } from '../../utils/fs.js';
-
-const CONFIG_FILE = 'config.yaml';
+import { TINY_SPEC_DIR, CONFIG_FILE } from '../paths.js';
+import { migratePlannerConfig } from './migration.js';
+import { ConfigSchema } from '../types/schemas/config.js';
+import { narrowRecord } from '../../utils/type-guards.js';
 
 export function configPath(projectDir: string): string {
   return path.join(projectDir, TINY_SPEC_DIR, CONFIG_FILE);
@@ -28,8 +29,9 @@ function deepMerge(base: Record<string, unknown>, override: Record<string, unkno
 
 export function createDefaultConfig(): Config {
   return {
-    planner: { tool: 'claude-code' },
+    planner: { kind: 'cli', tool: 'claude-code' },
     implementer: {
+      kind: 'api',
       tool: 'ollama',
       model: 'qwen2.5-coder:7b',
       apiBase: KNOWN_PROVIDER_BASE_URLS.ollama,
@@ -46,7 +48,7 @@ export function createDefaultConfig(): Config {
       autoApproveSpec: false,
       autoApprovePlan: false,
       maxRetries: 3,
-      commitStrategy: 'none' as CommitStrategy,
+      commitStrategy: 'none',
       mode: 'standard',
     },
     theme: 'terminal',
@@ -60,31 +62,44 @@ export function loadConfig(projectDir: string): Config {
 
   if (!fs.existsSync(filePath)) return createDefaultConfig();
 
-  const raw = fs.readFileSync(filePath, 'utf-8');
-  const parsed = YAML.parse(raw);
+  const yamlText = fs.readFileSync(filePath, 'utf-8');
+  const parsed = YAML.parse(yamlText);
 
   if (!parsed || typeof parsed !== 'object') return createDefaultConfig();
 
-  const camelCased = fromYaml(parsed) as Record<string, unknown>;
-  const defaults = createDefaultConfig() as unknown as Record<string, unknown>;
-  const merged = deepMerge(defaults, camelCased);
+  const camelCased = fromYaml(parsed);
 
-  const workflow = merged.workflow as Record<string, unknown> | undefined;
+  // Extract raw planner separately — defaults use a DU shape and would merge
+  // incorrectly with a legacy flat YAML shape. Migrate the raw YAML planner
+  // into the DU, then attach it to the merged config.
+  const rawPlanner = narrowRecord(camelCased.planner) ?? {};
+  const withoutPlanner = { ...camelCased };
+  delete withoutPlanner.planner;
+
+  const defaults = structuredClone(createDefaultConfig());
+  const { planner: _defaultPlanner, ...defaultsWithoutPlanner } = defaults as Record<string, unknown> & Config;
+
+  const merged = deepMerge(defaultsWithoutPlanner, withoutPlanner);
+
+  const workflow = narrowRecord(merged.workflow);
   if (workflow && 'commitPerTask' in workflow) {
     workflow.commitStrategy = workflow.commitPerTask ? 'per-task' : 'none';
     delete workflow.commitPerTask;
   }
 
+  const hasPlannerKeys = Object.keys(rawPlanner).length > 0;
+  merged.planner = hasPlannerKeys ? migratePlannerConfig(rawPlanner) : defaults.planner;
+
   const errors = validateConfig(merged);
   if (errors.length > 0) {
-    const lines = ['Configuration errors in .tiny-spec/config.yaml:'];
+    const lines = [`Configuration errors in ${TINY_SPEC_DIR}/${CONFIG_FILE}:`];
     for (const err of errors) {
       lines.push(`  ${err.path}: ${err.message}`);
     }
     throw new Error(lines.join('\n'));
   }
 
-  return merged as unknown as Config;
+  return ConfigSchema.parse(merged);
 }
 
 export function writeConfig(projectDir: string, config: Config): void {
@@ -107,24 +122,4 @@ export function initConfig(projectDir: string, opts: { force?: boolean } = {}): 
 
   const yamlObj = toYaml(createDefaultConfig());
   fs.writeFileSync(configFilePath, YAML.stringify(yamlObj), 'utf-8');
-}
-
-export function writeConfigSelection(
-  projectDir: string,
-  planner: { tool: PlannerTool; command?: string },
-  implementer: { tool: string; model: string; apiBase?: string },
-): void {
-  const config = loadConfig(projectDir);
-
-  config.planner.tool = planner.tool;
-  if (planner.tool === 'shell' && planner.command) {
-    config.planner.command = planner.command;
-  }
-
-  config.implementer.tool = implementer.tool;
-  config.implementer.model = implementer.model;
-
-  config.implementer.apiBase = implementer.apiBase ?? (getProviderBaseUrl(implementer.tool) || config.implementer.apiBase);
-
-  writeConfig(projectDir, config);
 }

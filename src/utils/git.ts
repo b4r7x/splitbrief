@@ -18,17 +18,6 @@ export async function commitChanges(dir: string, message: string): Promise<strin
   return result.commit;
 }
 
-export async function createCheckpoint(dir: string, label: string): Promise<string> {
-  const git = getGit(dir);
-  await git.add('.');
-  const stashSha = (await git.raw(['stash', 'create', `tiny-spec checkpoint: ${label}`])).trim();
-  if (!stashSha) return '';
-  const tagName = `tiny-spec/${label}`;
-  await git.tag([tagName, stashSha]);
-  await git.reset();
-  return tagName;
-}
-
 export async function getCurrentDiff(dir: string): Promise<string> {
   const git = getGit(dir);
   const [staged, unstaged] = await Promise.all([
@@ -50,11 +39,3 @@ export async function getChangedFiles(dir: string): Promise<string[]> {
   return getStatusPaths(status);
 }
 
-export async function discardTaskChanges(dir: string, taskFile: string, action: 'create' | 'modify'): Promise<void> {
-  const git = getGit(dir);
-  if (action === 'modify') {
-    await git.checkout(['--', taskFile]);
-  } else {
-    await git.clean('f', ['--', taskFile]);
-  }
-}

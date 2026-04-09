@@ -1,9 +1,17 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
-import { createDefaultConfig, loadConfig, writeConfigSelection } from './loading.js';
+import { createDefaultConfig, loadConfig } from './loading.js';
 import { toYaml } from './transforms.js';
+import type { PlannerConfig } from '../types/index.js';
+import { TINY_SPEC_DIR } from '../paths.js';
+
+function expectCli(p: PlannerConfig): Extract<PlannerConfig, { kind: 'cli' }> {
+  if (p.kind !== 'cli') throw new Error(`Expected cli planner, got ${p.kind}`);
+  return p;
+}
+
 
 const TMP = join(import.meta.dirname, '.tmp-config-loading-test');
 
@@ -17,7 +25,7 @@ afterAll(() => {
 });
 
 function writeConfigYaml(projectDir: string, obj: Record<string, unknown>) {
-  const dir = join(projectDir, '.tiny-spec');
+  const dir = join(projectDir, TINY_SPEC_DIR);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'config.yaml'), YAML.stringify(obj), 'utf-8');
 }
@@ -42,7 +50,7 @@ describe('config loading', () => {
 
       const config = loadConfig(dir);
       expect(config.implementer.model).toBe('codellama:13b');
-      expect(config.planner.tool).toBe('claude-code');
+      expect(expectCli(config.planner).tool).toBe('claude-code');
     });
 
     it('converts snake_case keys to camelCase and migrates commitPerTask', () => {
@@ -66,7 +74,7 @@ describe('config loading', () => {
       });
 
       const config = loadConfig(dir);
-      expect(config.planner.tool).toBe('codex');
+      expect(expectCli(config.planner).tool).toBe('codex');
       expect(config.implementer.temperature).toBe(0.7);
       expect(config.implementer.tool).toBe('ollama');
       expect(config.validation.lint).toBe(false);
@@ -105,80 +113,4 @@ describe('config loading', () => {
     });
   });
 
-  describe('writeConfigSelection', () => {
-    let tmpDir: string;
-
-    afterEach(() => {
-      if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
-    });
-
-    it('creates config file with selected planner and implementer', () => {
-      tmpDir = join(TMP, 'write-basic');
-      mkdirSync(tmpDir, { recursive: true });
-      writeConfigSelection(
-        tmpDir,
-        { tool: 'codex' },
-        { tool: 'ollama', model: 'llama3:8b' },
-      );
-      const configFile = join(tmpDir, '.tiny-spec', 'config.yaml');
-      expect(existsSync(configFile)).toBe(true);
-      const config = loadConfig(tmpDir);
-      expect(config.planner.tool).toBe('codex');
-      expect(config.implementer.tool).toBe('ollama');
-      expect(config.implementer.model).toBe('llama3:8b');
-    });
-
-    it('sets shell command for custom planner', () => {
-      tmpDir = join(TMP, 'write-shell');
-      mkdirSync(tmpDir, { recursive: true });
-      writeConfigSelection(
-        tmpDir,
-        { tool: 'shell', command: 'my-cli --json' },
-        { tool: 'ollama', model: 'qwen2.5-coder:7b' },
-      );
-      const config = loadConfig(tmpDir);
-      expect(config.planner.tool).toBe('shell');
-      expect(config.planner.command).toBe('my-cli --json');
-    });
-
-    it('uses custom apiBase when provided', () => {
-      tmpDir = join(TMP, 'write-apibase');
-      mkdirSync(tmpDir, { recursive: true });
-      writeConfigSelection(
-        tmpDir,
-        { tool: 'claude-code' },
-        { tool: 'custom', model: 'my-model', apiBase: 'http://localhost:9999/v1' },
-      );
-      const config = loadConfig(tmpDir);
-      expect(config.implementer.apiBase).toBe('http://localhost:9999/v1');
-      expect(config.implementer.tool).toBe('custom');
-    });
-
-    it('preserves existing config fields when updating', () => {
-      tmpDir = join(TMP, 'write-preserve');
-      mkdirSync(tmpDir, { recursive: true });
-      const dirPath = join(tmpDir, '.tiny-spec');
-      mkdirSync(dirPath, { recursive: true });
-      writeFileSync(
-        join(dirPath, 'config.yaml'),
-        YAML.stringify({
-          planner: { tool: 'claude-code' },
-          implementer: { tool: 'ollama', model: 'qwen2.5-coder:7b' },
-          validation: { test_command: 'yarn test' },
-          workflow: { max_retries: 5, commit_strategy: 'none' },
-        }),
-        'utf-8',
-      );
-      writeConfigSelection(
-        tmpDir,
-        { tool: 'aider' },
-        { tool: 'lm-studio', model: 'codellama' },
-      );
-      const config = loadConfig(tmpDir);
-      expect(config.planner.tool).toBe('aider');
-      expect(config.implementer.tool).toBe('lm-studio');
-      expect(config.workflow.maxRetries).toBe(5);
-      expect(config.validation.testCommand).toBe('yarn test');
-    });
-  });
 });

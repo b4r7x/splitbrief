@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import type { WorkflowState } from '../../types.js';
+import type { WorkflowState, OrchestratorCallbacks, TuiEvent } from '../../types.js';
 import { makeTask, makeUsage } from '#testing/helpers/fixtures.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 vi.mock('../../core/state/persistence.js', () => ({
   saveState: vi.fn(),
 }));
 
-import { refreshCurrentCode, allValidationsPassed, addUsageAndSave, withSignalHandlers, isSignalError } from './helpers.js';
+import { refreshCurrentCode, allValidationsPassed, addUsageAndSave, withSignalHandlers } from './helpers.js';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -28,10 +28,6 @@ function makeState(overrides?: Partial<WorkflowState>): WorkflowState {
     currentTaskIndex: 0,
     attempt: 0,
     tasks: [],
-    completedTasks: [],
-    escalatedTasks: [],
-    skippedTasks: [],
-    failedTasks: [],
     sessionId: null,
     startedAt: new Date().toISOString(),
     tokenUsage: makeUsage(),
@@ -43,28 +39,30 @@ describe('refreshCurrentCode', () => {
   let projectDir: string;
 
   beforeEach(() => {
-    projectDir = mkdtempSync(join(tmpdir(), 'helpers-refresh-'));
+    projectDir = createTempDir('helpers-refresh');
     mkdirSync(join(projectDir, 'src'), { recursive: true });
   });
 
   afterEach(() => {
-    rmSync(projectDir, { recursive: true, force: true });
+    cleanupTempDir(projectDir);
   });
 
-  it('populates task.currentCode with file contents when file exists', () => {
+  it('returns a new task with currentCode populated from file contents when file exists', async () => {
     writeFileSync(join(projectDir, 'src', 'hello.ts'), 'const x = 1;');
 
     const task = makeTask({ file: 'src/hello.ts' });
-    refreshCurrentCode(task, projectDir);
+    const refreshed = await refreshCurrentCode(task, projectDir);
 
-    expect(task.currentCode).toBe('const x = 1;');
+    expect(refreshed.currentCode).toBe('const x = 1;');
+    expect(task.currentCode).toBeUndefined();
   });
 
-  it('leaves currentCode undefined when file does not exist', () => {
+  it('returns the original task unchanged when file does not exist', async () => {
     const task = makeTask({ file: 'src/missing.ts' });
-    refreshCurrentCode(task, projectDir);
+    const refreshed = await refreshCurrentCode(task, projectDir);
 
-    expect(task.currentCode).toBeUndefined();
+    expect(refreshed).toBe(task);
+    expect(refreshed.currentCode).toBeUndefined();
   });
 });
 
@@ -83,8 +81,8 @@ describe('addUsageAndSave', () => {
     const state = makeState({
       tokenUsage: makeUsage({ plannerInput: 100, plannerOutput: 50 }),
     });
-    const events: any[] = [];
-    const callbacks = { onEvent: (e: any) => events.push(e) } as any;
+    const events: TuiEvent[] = [];
+    const callbacks = { onEvent: (e: TuiEvent) => events.push(e) } as Partial<OrchestratorCallbacks> as OrchestratorCallbacks;
 
     const result = addUsageAndSave('/tmp/proj', state, 'planner', {
       inputTokens: 200,
@@ -99,8 +97,8 @@ describe('addUsageAndSave', () => {
 
   it('returns unchanged state and emits no event when usage is null', () => {
     const state = makeState();
-    const events: any[] = [];
-    const callbacks = { onEvent: (e: any) => events.push(e) } as any;
+    const events: TuiEvent[] = [];
+    const callbacks = { onEvent: (e: TuiEvent) => events.push(e) } as Partial<OrchestratorCallbacks> as OrchestratorCallbacks;
     const result = addUsageAndSave('/tmp/proj', state, 'implementer', null, callbacks);
 
     expect(result).toBe(state);
@@ -113,11 +111,12 @@ describe('withSignalHandlers', () => {
     let executed = false;
     const removeSpy = vi.spyOn(process, 'removeListener');
 
-    await withSignalHandlers(vi.fn(), async () => {
+    const result = await withSignalHandlers(vi.fn(), async () => {
       executed = true;
     });
 
     expect(executed).toBe(true);
+    expect(result).toEqual({ cancelled: false });
     expect(removeSpy).toHaveBeenCalledWith('SIGINT', expect.any(Function));
     expect(removeSpy).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
     removeSpy.mockRestore();
@@ -137,7 +136,7 @@ describe('withSignalHandlers', () => {
     removeSpy.mockRestore();
   });
 
-  it('calls handler and throws SignalError when signal received during fn', async () => {
+  it('returns cancelled=true and calls handler when signal received during fn', async () => {
     const handler = vi.fn();
     const onSpy = vi.spyOn(process, 'on');
 
@@ -147,22 +146,20 @@ describe('withSignalHandlers', () => {
       return process;
     }) as typeof process.on);
 
-    const promise = withSignalHandlers(handler, async () => {
+    const result = await withSignalHandlers(handler, async () => {
       capturedSigintHandler!();
     });
 
-    await expect(promise).rejects.toSatisfy(isSignalError);
-    await expect(promise).rejects.toThrow('SIGINT');
+    expect(result).toEqual({ cancelled: true });
     expect(handler).toHaveBeenCalledOnce();
 
     onSpy.mockRestore();
   });
 
-  it('does not throw SignalError when no signal received', async () => {
+  it('returns cancelled=false when no signal received', async () => {
     const handler = vi.fn();
-    await expect(
-      withSignalHandlers(handler, async () => {}),
-    ).resolves.toBeUndefined();
+    const result = await withSignalHandlers(handler, async () => {});
+    expect(result).toEqual({ cancelled: false });
     expect(handler).not.toHaveBeenCalled();
   });
 });

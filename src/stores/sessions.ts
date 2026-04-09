@@ -1,5 +1,5 @@
 import { createStore, storeBase } from './create-store.js';
-import { getSessionDir, listSessions } from '../utils/sessions.js';
+import { getSessionDir, listSessions } from '../core/sessions/io.js';
 import type { Session } from '../types.js';
 
 interface SessionsState {

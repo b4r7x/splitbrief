@@ -4,8 +4,8 @@ import { OverlayPanel } from '../overlays/overlay-panel.js';
 import { FilterInput } from '../../ui/filter-input.js';
 import { ScrollIndicator } from '../../ui/scroll-indicator.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
-import { useResponsiveLayout } from '../../hooks/use-terminal-size.js';
-import { computeScrollWindow } from '../../ui/picker-utils.js';
+import { terminalSizeStore } from '../../stores/terminal-size.js';
+import { computeScrollWindow } from './picker-utils.js';
 
 interface FilterableListProps<T> {
   items: T[];
@@ -42,7 +42,7 @@ export function FilterableList<T>({
   shouldAppendChar,
   isActive,
 }: FilterableListProps<T>) {
-  const { rows } = useResponsiveLayout();
+  const rows = terminalSizeStore.use(s => s.rows);
 
   const list = useFilterableList<T>({
     items,

@@ -1,23 +1,25 @@
 import { createStore, storeBase } from './create-store.js';
 
-interface ErrorState {
+const FEEDBACK_AUTO_CLEAR_MS = 3000;
+
+interface FeedbackState {
   message: string | null;
   isError: boolean;
 }
 
-const store = createStore<ErrorState>({ message: null, isError: false });
+const store = createStore<FeedbackState>({ message: null, isError: false });
 
 let clearTimer: ReturnType<typeof setTimeout> | undefined;
 
 const setError = (msg: string | null) => {
   clearTimeout(clearTimer);
-  store.set({ message: msg, isError: true });
+  store.set({ message: msg, isError: msg !== null });
 };
 
 const setMessage = (msg: string | null) => {
   clearTimeout(clearTimer);
   if (msg) {
-    clearTimer = setTimeout(() => store.set({ message: null, isError: false }), 3000);
+    clearTimer = setTimeout(() => store.set({ message: null, isError: false }), FEEDBACK_AUTO_CLEAR_MS);
   }
   store.set({ message: msg, isError: false });
 };

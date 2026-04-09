@@ -1,75 +1,44 @@
-import type { TokenUsage, CostBreakdown, Summary, TaskTokenUsage, WorkflowState } from '../../types.js';
-import { getPlannerPricing, getImplementerPricing, calculateCost } from '../../core/providers/pricing.js';
+import type { Summary, TaskTokenUsage, WorkflowState } from '../../types.js';
+import { calculateCostBreakdown } from '../../core/providers/pricing.js';
+import { formatCost } from '../../utils/format.js';
+import {
+  getCompletedTaskIds,
+  getEscalatedTaskIds,
+  getFailedTaskIds,
+  getSkippedTaskIds,
+} from '../../core/state/selectors.js';
 
-export type BuildSummaryState = Pick<WorkflowState, 'tasks' | 'completedTasks' | 'escalatedTasks' | 'skippedTasks' | 'failedTasks' | 'tokenUsage'>;
+export type BuildSummaryState = Pick<WorkflowState, 'tasks' | 'tokenUsage'>;
 
-export function estimateCostSavings(tokenUsage: TokenUsage, plannerTool?: string, implementerTool?: string): string {
-  const breakdown = calculateCostBreakdown({ tokenUsage, totalTasks: 0, escalatedCount: 0, plannerTool, implementerTool });
-  if (breakdown.savingsAmount <= 0) return '$0.00';
-  return `$${breakdown.savingsAmount.toFixed(2)}`;
-}
-
-type CostBreakdownOptions = {
-  tokenUsage: TokenUsage;
-  totalTasks: number;
-  escalatedCount: number;
-  plannerTool?: string | undefined;
-  implementerTool?: string | undefined;
-};
-
-export function calculateCostBreakdown(opts: CostBreakdownOptions): CostBreakdown {
-  const { tokenUsage, totalTasks, escalatedCount, plannerTool, implementerTool } = opts;
-  const plannerPricing = getPlannerPricing(plannerTool ?? 'claude-code');
-  const implementerPricing = getImplementerPricing(implementerTool ?? 'ollama');
-
-  const hypotheticalCost = calculateCost(
-    tokenUsage.implementerInput, tokenUsage.implementerOutput, plannerPricing,
-  );
-
-  const actualPlannerCost = calculateCost(
-    tokenUsage.plannerInput + tokenUsage.escalationInput,
-    tokenUsage.plannerOutput + tokenUsage.escalationOutput,
-    plannerPricing,
-  );
-
-  const actualImplementerCost = calculateCost(
-    tokenUsage.implementerInput, tokenUsage.implementerOutput, implementerPricing,
-  );
-
-  const totalActualCost = actualPlannerCost + actualImplementerCost;
-  const savingsAmount = hypotheticalCost - totalActualCost;
-  const savingsPercentage = hypotheticalCost > 0 ? (savingsAmount / hypotheticalCost) * 100 : 0;
-  const localCompletionRate = totalTasks > 0 ? (totalTasks - escalatedCount) / totalTasks : 0;
-
-  return {
-    hypotheticalCost,
-    actualPlannerCost,
-    actualImplementerCost,
-    totalActualCost,
-    savingsAmount: Math.max(0, savingsAmount),
-    savingsPercentage: Math.max(0, savingsPercentage),
-    localCompletionRate,
-  };
-}
+export type SummaryBase = { feature: string; startTime: number; plannerTool: string; implementerTool: string };
 
 type BuildSummaryOptions = {
   feature: string;
   state: BuildSummaryState;
   startTime: number;
   taskBreakdowns?: TaskTokenUsage[];
-  plannerTool?: string;
-  implementerTool?: string;
+  plannerTool: string;
+  implementerTool: string;
 };
 
 export function buildSummary(opts: BuildSummaryOptions): Summary {
   const { feature, state, startTime, taskBreakdowns, plannerTool, implementerTool } = opts;
   const totalTasks = state.tasks.length;
-  const completedByLocal = state.completedTasks.length;
-  const escalatedToPlanner = state.escalatedTasks.length;
-  const skipped = state.skippedTasks.length;
-  const failed = state.failedTasks.length;
+  const completedByLocal = getCompletedTaskIds(state).length;
+  const escalatedToPlanner = getEscalatedTaskIds(state).length;
+  const skipped = getSkippedTaskIds(state).length;
+  const failed = getFailedTaskIds(state).length;
   const totalTime = Date.now() - startTime;
   const escalationRate = totalTasks > 0 ? escalatedToPlanner / totalTasks : 0;
+
+  const costBreakdown = calculateCostBreakdown({
+    tokenUsage: state.tokenUsage,
+    totalTasks,
+    escalatedCount: escalatedToPlanner,
+    plannerTool,
+    implementerTool,
+  });
+  const estimatedCostSavings = formatCost(costBreakdown.savingsAmount);
 
   return {
     feature,
@@ -80,10 +49,10 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     failed,
     totalTime,
     tokenUsage: state.tokenUsage,
-    estimatedCostSavings: estimateCostSavings(state.tokenUsage, plannerTool, implementerTool),
+    estimatedCostSavings,
     escalationRate,
     taskBreakdown: taskBreakdowns,
-    costBreakdown: calculateCostBreakdown({ tokenUsage: state.tokenUsage, totalTasks, escalatedCount: escalatedToPlanner, plannerTool, implementerTool }),
+    costBreakdown,
     plannerTool,
     implementerTool,
   };

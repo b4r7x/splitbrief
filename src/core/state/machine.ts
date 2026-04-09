@@ -1,4 +1,6 @@
-import type { WorkflowState, StateAction, TokenUsage } from '../types/index.js';
+import type { WorkflowState, StateAction, TaskStatus, TokenUsage, TaskId } from '../types/index.js';
+
+export const CURRENT_STATE_VERSION = 2;
 
 const zeroTokenUsage: TokenUsage = {
   plannerInput: 0,
@@ -11,30 +13,33 @@ const zeroTokenUsage: TokenUsage = {
 
 export function createInitialState(feature: string): WorkflowState {
   return {
-    stateVersion: 2,
+    stateVersion: CURRENT_STATE_VERSION,
     phase: 'idle',
     feature,
     currentTaskIndex: 0,
     attempt: 0,
     tasks: [],
-    completedTasks: [],
-    escalatedTasks: [],
-    skippedTasks: [],
-    failedTasks: [],
     sessionId: null,
     startedAt: new Date().toISOString(),
     tokenUsage: { ...zeroTokenUsage },
   };
 }
 
-function advanceTask(state: WorkflowState, list: 'completedTasks' | 'escalatedTasks' | 'failedTasks'): WorkflowState {
-  const taskId = state.tasks[state.currentTaskIndex]?.id;
+function setTaskStatus(state: WorkflowState, taskId: TaskId, status: TaskStatus): WorkflowState {
   return {
     ...state,
+    tasks: state.tasks.map(t => t.id === taskId ? { ...t, status } : t),
+  };
+}
+
+function advanceTask(state: WorkflowState, status: TaskStatus): WorkflowState {
+  const currentId = state.tasks[state.currentTaskIndex]?.id;
+  const withStatus = currentId ? setTaskStatus(state, currentId, status) : state;
+  return {
+    ...withStatus,
     phase: 'implementing',
     currentTaskIndex: state.currentTaskIndex + 1,
     attempt: 0,
-    [list]: taskId ? [...state[list], taskId] : state[list],
   };
 }
 
@@ -67,11 +72,14 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
     case 'REJECT_PLAN':
       return { ...state, phase: 'idle' };
 
+    case 'START_TASK':
+      return setTaskStatus(state, action.taskId, 'in_progress');
+
     case 'TASK_SENT':
       return { ...state, phase: 'validating-task' };
 
     case 'VALIDATION_PASS':
-      return advanceTask(state, 'completedTasks');
+      return advanceTask(state, 'done');
 
     case 'VALIDATION_FAIL':
       if (state.attempt < maxRetries) {
@@ -83,16 +91,30 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
       return { ...state, phase: 'escalating' };
 
     case 'HINT_SUCCESS':
-      return advanceTask(state, 'completedTasks');
+      return advanceTask(state, 'done');
 
     case 'HINT_FAIL':
       return { ...state, phase: 'escalating' };
 
     case 'FULL_SUCCESS':
-      return advanceTask(state, 'escalatedTasks');
+      return advanceTask(state, 'escalated');
 
     case 'FULL_FAIL':
-      return advanceTask(state, 'failedTasks');
+      return advanceTask(state, 'failed');
+
+    case 'SKIP_TASK': {
+      const withStatus = setTaskStatus(state, action.taskId, 'skipped');
+      return {
+        ...withStatus,
+        currentTaskIndex: state.currentTaskIndex + 1,
+      };
+    }
+
+    case 'UPDATE_TASK_CODE':
+      return {
+        ...state,
+        tasks: state.tasks.map(t => t.id === action.taskId ? { ...t, currentCode: action.code } : t),
+      };
 
     case 'ALL_DONE':
       return { ...state, phase: 'final-review' };

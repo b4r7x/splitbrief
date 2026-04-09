@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { buildSummary, calculateCostBreakdown, estimateCostSavings } from './cost.js';
+import { buildSummary } from './cost.js';
+import { calculateCostBreakdown } from '../../core/providers/pricing.js';
 import type { BuildSummaryState } from './cost.js';
+import { taskId } from '../../core/types/workflow.js';
 import { makeUsage, makeTask } from '#testing/helpers/fixtures.js';
 
 beforeEach(() => {
@@ -14,11 +16,11 @@ afterEach(() => {
 
 function makeState(overrides?: Partial<BuildSummaryState>): BuildSummaryState {
   return {
-    tasks: [makeTask({ id: 'T001' }), makeTask({ id: 'T002' }), makeTask({ id: 'T003' })],
-    completedTasks: ['T001', 'T002', 'T003'],
-    escalatedTasks: [],
-    skippedTasks: [],
-    failedTasks: [],
+    tasks: [
+      makeTask({ id: 'T001', status: 'done' }),
+      makeTask({ id: 'T002', status: 'done' }),
+      makeTask({ id: 'T003', status: 'done' }),
+    ],
     tokenUsage: makeUsage(),
     ...overrides,
   };
@@ -44,11 +46,12 @@ describe('buildSummary', () => {
 
   it('mix of local/escalated/skipped/failed → correct counts', () => {
     const state = makeState({
-      tasks: [makeTask({ id: 'T001' }), makeTask({ id: 'T002' }), makeTask({ id: 'T003' }), makeTask({ id: 'T004' })],
-      completedTasks: ['T001'],
-      escalatedTasks: ['T002'],
-      skippedTasks: ['T003'],
-      failedTasks: ['T004'],
+      tasks: [
+        makeTask({ id: 'T001', status: 'done' }),
+        makeTask({ id: 'T002', status: 'escalated' }),
+        makeTask({ id: 'T003', status: 'skipped' }),
+        makeTask({ id: 'T004', status: 'failed' }),
+      ],
       tokenUsage: makeUsage({ plannerInput: 1000, implementerInput: 2000, escalationInput: 500 }),
     });
 
@@ -56,6 +59,8 @@ describe('buildSummary', () => {
       feature: 'mixed',
       state,
       startTime: Date.now() - 10000,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
     });
 
     expect(summary.totalTasks).toBe(4);
@@ -69,16 +74,14 @@ describe('buildSummary', () => {
   it('zero tasks → no division by zero', () => {
     const state = makeState({
       tasks: [],
-      completedTasks: [],
-      escalatedTasks: [],
-      skippedTasks: [],
-      failedTasks: [],
     });
 
     const summary = buildSummary({
       feature: 'empty',
       state,
       startTime: Date.now(),
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
     });
 
     expect(summary.totalTasks).toBe(0);
@@ -103,6 +106,8 @@ describe('buildSummary', () => {
       feature: 'tokens',
       state,
       startTime: Date.now() - 1000,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
     });
 
     expect(summary.tokenUsage).toEqual(usage);
@@ -110,7 +115,7 @@ describe('buildSummary', () => {
 
   it('taskBreakdowns passed through to summary', () => {
     const breakdowns = [
-      { taskId: 'T001', taskTitle: 'task 1', method: 'local' as const, implementerTokens: 100, escalationTokens: 0, retryCount: 0 },
+      { taskId: taskId('T001'), taskTitle: 'task 1', method: 'local' as const, implementerTokens: 100, escalationTokens: 0, retryCount: 0 },
     ];
 
     const summary = buildSummary({
@@ -118,6 +123,8 @@ describe('buildSummary', () => {
       state: makeState(),
       startTime: Date.now(),
       taskBreakdowns: breakdowns,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
     });
 
     expect(summary.taskBreakdown).toEqual(breakdowns);
@@ -180,15 +187,29 @@ describe('calculateCostBreakdown', () => {
   });
 });
 
-describe('estimateCostSavings', () => {
+describe('buildSummary estimatedCostSavings', () => {
   it('returns $0.00 when no implementer tokens used', () => {
     const usage = makeUsage({ plannerInput: 1000, plannerOutput: 500 });
-    expect(estimateCostSavings(usage, 'claude-code', 'ollama')).toBe('$0.00');
+    const summary = buildSummary({
+      feature: 'f',
+      state: makeState({ tasks: [], tokenUsage: usage }),
+      startTime: Date.now(),
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    });
+    expect(summary.estimatedCostSavings).toBe('$0.00');
   });
 
   it('calculates savings for known token values', () => {
     const usage = makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 });
-    expect(estimateCostSavings(usage, 'claude-code', 'ollama')).toBe('$30.00');
+    const summary = buildSummary({
+      feature: 'f',
+      state: makeState({ tasks: [], tokenUsage: usage }),
+      startTime: Date.now(),
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    });
+    expect(summary.estimatedCostSavings).toBe('$30.00');
   });
 
   it('subtracts actual Opus cost from hypothetical', () => {
@@ -198,7 +219,14 @@ describe('estimateCostSavings', () => {
       implementerInput: 2_000_000,
       implementerOutput: 500_000,
     });
-    expect(estimateCostSavings(usage, 'claude-code', 'ollama')).toBe('$15.00');
+    const summary = buildSummary({
+      feature: 'f',
+      state: makeState({ tasks: [], tokenUsage: usage }),
+      startTime: Date.now(),
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    });
+    expect(summary.estimatedCostSavings).toBe('$15.00');
   });
 
   it('returns $0.00 when savings would be negative', () => {
@@ -208,6 +236,13 @@ describe('estimateCostSavings', () => {
       implementerInput: 100,
       implementerOutput: 50,
     });
-    expect(estimateCostSavings(usage, 'claude-code', 'ollama')).toBe('$0.00');
+    const summary = buildSummary({
+      feature: 'f',
+      state: makeState({ tasks: [], tokenUsage: usage }),
+      startTime: Date.now(),
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    });
+    expect(summary.estimatedCostSavings).toBe('$0.00');
   });
 });

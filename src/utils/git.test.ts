@@ -1,17 +1,14 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
-import { isGitRepo, commitChanges, getCurrentDiff, hasExternalChanges, discardTaskChanges } from './git.js';
+import { isGitRepo, commitChanges, getCurrentDiff, hasExternalChanges } from './git.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
 
 function setupGitRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'tiny-spec-git-test-'));
-  execSync('git init', { cwd: dir, stdio: 'ignore' });
-  execSync('git config user.email "test@test.com"', { cwd: dir, stdio: 'ignore' });
-  execSync('git config user.name "Test"', { cwd: dir, stdio: 'ignore' });
-  writeFileSync(join(dir, 'init.txt'), 'init');
-  execSync('git add . && git commit -m "init"', { cwd: dir, stdio: 'ignore' });
+  const dir = createTempDir('tiny-spec-git-test');
+  createTestGitRepo(dir);
   return dir;
 }
 
@@ -19,7 +16,7 @@ let dirs: string[] = [];
 
 afterEach(() => {
   for (const d of dirs) {
-    if (existsSync(d)) rmSync(d, { recursive: true, force: true });
+    cleanupTempDir(d);
   }
   dirs = [];
 });
@@ -37,7 +34,7 @@ describe('git utils', () => {
     });
 
     it('returns false outside a git repo', async () => {
-      const dir = tracked(mkdtempSync(join(tmpdir(), 'tiny-spec-nogit-')));
+      const dir = tracked(createTempDir('tiny-spec-nogit'));
       expect(await isGitRepo(dir)).toBe(false);
     });
   });
@@ -101,20 +98,4 @@ describe('git utils', () => {
     });
   });
 
-  describe('discardTaskChanges', () => {
-    it('checks out modified file on modify action', async () => {
-      const dir = tracked(setupGitRepo());
-      writeFileSync(join(dir, 'init.txt'), 'modified');
-      await discardTaskChanges(dir, 'init.txt', 'modify');
-      const content = readFileSync(join(dir, 'init.txt'), 'utf-8');
-      expect(content).toBe('init');
-    });
-
-    it('cleans created file on create action', async () => {
-      const dir = tracked(setupGitRepo());
-      writeFileSync(join(dir, 'created.txt'), 'new file');
-      await discardTaskChanges(dir, 'created.txt', 'create');
-      expect(existsSync(join(dir, 'created.txt'))).toBe(false);
-    });
-  });
 });

@@ -1,4 +1,10 @@
+import type { InvokeResult } from '../types.js';
 import { accumulateUsage } from './streaming/output-parsers.js';
+import { toTokenDelta } from './streaming/token-utils.js';
+import { createChangeDetector } from './implementers/base.js';
+
+export const PLANNER_ALLOWED_TOOLS = ['Read', 'Glob', 'Grep', 'Write'] as const;
+export const IMPLEMENTER_ALLOWED_TOOLS = ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'] as const;
 
 interface SdkBlock {
   type: string;
@@ -32,7 +38,7 @@ export async function loadSdk(): Promise<SdkClient> {
   try {
     // @ts-expect-error optional dependency
     return await import('@anthropic-ai/claude-agent-sdk');
-  } catch {
+  } catch { /* optional peer dep missing — rethrow with install instructions */
     throw new Error(
       'Agent SDK not installed. Run: npm install @anthropic-ai/claude-agent-sdk',
     );
@@ -44,7 +50,7 @@ export async function isAgentSdkAvailable(): Promise<boolean> {
   try {
     await loadSdk();
     return true;
-  } catch {
+  } catch { /* SDK not installed — treat as unavailable */
     return false;
   }
 }
@@ -79,11 +85,8 @@ export async function processStream(
     }
 
     if (message.type === 'result') {
-      if (message.usage) {
-        const delta = {
-          inputTokens: message.usage.input_tokens ?? 0,
-          outputTokens: message.usage.output_tokens ?? 0,
-        };
+      const delta = toTokenDelta(message.usage);
+      if (delta) {
         usage = accumulateUsage(usage, delta);
       }
       const resultText = extractTextFromMessage(message);
@@ -94,4 +97,42 @@ export async function processStream(
   }
 
   return { text: collectedText, usage };
+}
+
+export interface AgentSdkBackendOpts {
+  allowedTools: string[];
+  permissionMode?: 'acceptEdits' | undefined;
+  detectChanges?: boolean | undefined;
+}
+
+export interface AgentSdkInvokeOpts {
+  prompt: string;
+  projectDir: string;
+  model: string;
+  onOutput: (text: string) => void;
+}
+
+export interface AgentSdkBackend {
+  invoke(opts: AgentSdkInvokeOpts): Promise<InvokeResult>;
+  detectChanges?: (projectDir: string) => Promise<{ changed: boolean; output: string }>;
+}
+
+export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBackend {
+  const permissionMode = opts.permissionMode ?? 'acceptEdits';
+
+  const backend: AgentSdkBackend = {
+    async invoke({ prompt, projectDir, model, onOutput }) {
+      const { query } = await loadSdk();
+      return processStream(
+        query({ prompt, options: { allowedTools: opts.allowedTools, permissionMode, model, cwd: projectDir } }),
+        onOutput,
+      );
+    },
+  };
+
+  if (opts.detectChanges) {
+    backend.detectChanges = createChangeDetector('Agent SDK');
+  }
+
+  return backend;
 }

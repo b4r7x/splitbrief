@@ -1,30 +1,24 @@
 import type { Config } from '../../types.js';
 import type { Implementer } from './types.js';
 import type { InvokeOpts } from './base.js';
-import { createImplementerBase, createChangeDetector } from './base.js';
-import { loadSdk, processStream } from '../agent-sdk.js';
+import { createImplementerBase } from './base.js';
+import { createAgentSdkBackend, isAgentSdkAvailable, IMPLEMENTER_ALLOWED_TOOLS } from '../agent-sdk.js';
 import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/models.js';
 
-const DEFAULT_MODEL = DEFAULT_AGENT_SDK_MODEL;
-const ALLOWED_TOOLS = ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'];
-
 export function createAgentSdkImplementer(config: Config): Implementer {
-  const effectiveModel = config.implementer.model || DEFAULT_MODEL;
+  const effectiveModel = config.implementer.model || DEFAULT_AGENT_SDK_MODEL;
+  const backend = createAgentSdkBackend({ allowedTools: [...IMPLEMENTER_ALLOWED_TOOLS], detectChanges: true });
 
   return createImplementerBase({
     extractsCode: false,
 
     async invoke(opts: InvokeOpts) {
-      const { prompt, projectDir, onProgress } = opts;
-      const model = opts.config.implementer.model || effectiveModel;
-      const { query } = await loadSdk();
-
-      return processStream(
-        query({ prompt, options: { allowedTools: ALLOWED_TOOLS, permissionMode: 'acceptEdits', model, cwd: projectDir } }),
-        onProgress,
-      );
+      const { prompt, projectDir, onOutput } = opts;
+      return backend.invoke({ prompt, projectDir, model: effectiveModel, onOutput });
     },
 
-    detectChanges: createChangeDetector('Agent SDK implementer'),
+    ...(backend.detectChanges && { detectChanges: backend.detectChanges }),
+
+    isAvailable: isAgentSdkAvailable,
   });
 }

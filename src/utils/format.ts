@@ -33,6 +33,22 @@ export function parseVersion(raw: string): SemVer | null {
   return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
 }
 
+export function warnStderr(message: string): void {
+  process.stderr.write(`\x1b[2m${message}\x1b[0m\n`);
+}
+
+export function warnError(context: string, err: unknown): void {
+  warnStderr(`${context}: ${toErrorMessage(err)}`);
+}
+
+export function formatTimeHHMMSS(ms: number): string {
+  const totalSecs = Math.max(0, Math.floor(ms / 1000));
+  const h = String(Math.floor(totalSecs / 3600)).padStart(2, '0');
+  const m = String(Math.floor((totalSecs % 3600) / 60)).padStart(2, '0');
+  const s = String(totalSecs % 60).padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
 export function formatRelativeTime(timestamp: number): string {
   const now = Date.now();
   const diffMs = now - timestamp;

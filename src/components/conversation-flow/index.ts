@@ -1,1 +1,1 @@
-export { default } from './conversation-flow.js';
+export { ConversationFlow } from './flow.js';

@@ -1,32 +1,34 @@
-import type { Task, WorkflowState, OrchestratorCallbacks, TaskTokenUsage } from '../../types.js';
-import { saveState } from '../../core/state/persistence.js';
+import type { Task, TaskId, WorkflowState, OrchestratorCallbacks, TaskTokenUsage } from '../../types.js';
 import { hasExternalChanges } from '../../utils/git.js';
+import { toErrorMessage } from '../../utils/format.js';
+import { getFailedTaskIds, getSkippedTaskIds } from '../../core/state/selectors.js';
 
 import type { WorkflowContext } from './run.js';
-import { emit } from './events.js';
-import { runSingleTask, emitTaskTokens } from './task-step.js';
+import { emit, emitWarning, emitTaskSkipped } from './events.js';
+import { runSingleTask } from './task-step.js';
+import { emitTaskTokens } from './tokens.js';
 import { transitionAndSave } from './helpers.js';
 
-export function hasDependencyFailed(task: Task, failedTasks: string[], skippedTasks: string[]): boolean {
-  const blocked = new Set([...failedTasks, ...skippedTasks]);
+export function hasDependencyFailed(task: Task, failedTasks: TaskId[], skippedTasks: TaskId[]): boolean {
+  const blocked = new Set<string>([...failedTasks, ...skippedTasks]);
   return task.dependsOn.some((dep) => blocked.has(dep));
 }
 
 async function checkExternalChanges(
-  projectDir: string, callbacks: OrchestratorCallbacks, state: WorkflowState, taskId: string,
+  projectDir: string, callbacks: OrchestratorCallbacks, state: WorkflowState, taskId: TaskId,
 ): Promise<WorkflowState | null> {
   try {
     const externalChanges = await hasExternalChanges(projectDir);
     if (externalChanges) {
       const proceed = await callbacks.onExternalChanges();
       if (!proceed) {
-        emit(projectDir, state, 'paused_external_changes', taskId);
+        emit(projectDir, state, 'paused_external_changes', taskId, {});
         const cancelled = transitionAndSave(projectDir, state, { type: 'CANCEL' });
         return cancelled;
       }
     }
   } catch (err) {
-    callbacks.onEvent({ type: 'warning', ts: Date.now(), message: `Failed to check external changes: ${err}` });
+    emitWarning(callbacks, `Failed to check external changes: ${toErrorMessage(err)}`);
   }
   return null;
 }
@@ -37,24 +39,21 @@ type HandleSkippedTaskOptions = {
   projectDir: string;
   callbacks: OrchestratorCallbacks;
   taskBreakdowns: TaskTokenUsage[];
-  index: number;
 };
 
 function handleSkippedTask(opts: HandleSkippedTaskOptions): WorkflowState {
-  const { task, projectDir, callbacks, taskBreakdowns, index } = opts;
-  task.status = 'skipped';
-  const state = {
-    ...opts.state,
-    skippedTasks: [...opts.state.skippedTasks, task.id],
-    currentTaskIndex: index + 1,
-  };
-  const skipReason = `dependency failed: ${task.dependsOn.filter((d) => state.failedTasks.includes(d) || state.skippedTasks.includes(d)).join(', ')}`;
-  callbacks.onEvent({ type: 'task-skipped', ts: Date.now(), taskId: task.id, title: task.title, reason: skipReason });
-  emit(projectDir, state, 'task_skipped', task.id);
+  const { task, projectDir, callbacks, taskBreakdowns } = opts;
+  const blockedBy = new Set<string>([
+    ...getFailedTaskIds(opts.state),
+    ...getSkippedTaskIds(opts.state),
+  ]);
+  const skipReason = `dependency failed: ${task.dependsOn.filter((d) => blockedBy.has(d)).join(', ')}`;
+  const state = transitionAndSave(projectDir, opts.state, { type: 'SKIP_TASK', taskId: task.id });
+  emitTaskSkipped(callbacks, { taskId: task.id, title: task.title, reason: skipReason });
+  emit(projectDir, state, 'task_skipped', task.id, {});
   const usage: TaskTokenUsage = { taskId: task.id, taskTitle: task.title, method: 'skipped', implementerTokens: 0, escalationTokens: 0, retryCount: 0 };
   taskBreakdowns.push(usage);
   emitTaskTokens(projectDir, state, task.id, usage);
-  saveState(projectDir, state);
   return state;
 }
 
@@ -81,8 +80,8 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: Wo
     const cancelledState = await checkExternalChanges(projectDir, callbacks, state, task.id);
     if (cancelledState) return { state: cancelledState, taskBreakdowns };
 
-    if (hasDependencyFailed(task, state.failedTasks, state.skippedTasks)) {
-      state = handleSkippedTask({ task, state, projectDir, callbacks, taskBreakdowns, index: i });
+    if (hasDependencyFailed(task, getFailedTaskIds(state), getSkippedTaskIds(state))) {
+      state = handleSkippedTask({ task, state, projectDir, callbacks, taskBreakdowns });
       continue;
     }
 

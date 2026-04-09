@@ -6,26 +6,22 @@ function camelToSnake(s: string): string {
   return s.replace(/[A-Z]/g, (c) => '_' + c.toLowerCase());
 }
 
-export function fromYaml(obj: unknown): unknown {
-  if (Array.isArray(obj)) return obj.map(fromYaml);
+function transformKeys(obj: unknown, keyFn: (key: string) => string): unknown {
+  if (Array.isArray(obj)) return obj.map(item => transformKeys(item, keyFn));
   if (obj !== null && typeof obj === 'object') {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
-      result[snakeToCamel(key)] = fromYaml(value);
+      result[keyFn(key)] = transformKeys(value, keyFn);
     }
     return result;
   }
   return obj;
 }
 
+export function fromYaml(obj: unknown): Record<string, unknown> {
+  return transformKeys(obj, snakeToCamel) as Record<string, unknown>;
+}
+
 export function toYaml(obj: unknown): unknown {
-  if (Array.isArray(obj)) return obj.map(toYaml);
-  if (obj !== null && typeof obj === 'object') {
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
-      result[camelToSnake(key)] = toYaml(value);
-    }
-    return result;
-  }
-  return obj;
+  return transformKeys(obj, camelToSnake);
 }

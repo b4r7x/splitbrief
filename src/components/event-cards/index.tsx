@@ -3,18 +3,14 @@ import { Box, Text } from 'ink';
 import type { TuiEvent } from '../../types.js';
 import type { Theme } from '../../ui/theme.js';
 import { useTheme } from '../../ui/theme.js';
-import { PlannerText } from '../../ui/markdown.js';
+import { MarkdownBlock } from '../../ui/markdown.js';
 import { Spinner } from '../../ui/spinner.js';
 import { formatDuration } from '../../utils/format.js';
+import { phaseRole } from '../../core/phases.js';
+import { assertNever } from '../../utils/type-guards.js';
 import { Card } from './card.js';
-import { ImplementerCard } from './implementer-card.js';
+import { ImplementerCard, type ImplementerGenerateEvent } from './implementer-card.js';
 import { ValidateCard } from './validate-card.js';
-
-const IMPLEMENTER_PHASES: ReadonlySet<string> = new Set(['implementing', 'validating-task']);
-
-function phaseRole(phase: string): 'planner' | 'implementer' {
-  return IMPLEMENTER_PHASES.has(phase) ? 'implementer' : 'planner';
-}
 
 interface EventCardProps {
   event: TuiEvent;
@@ -28,6 +24,9 @@ type RenderCtx = {
 
 type EventRenderer<K extends TuiEvent['type']> =
   (e: Extract<TuiEvent, { type: K }>, ctx: RenderCtx) => React.ReactNode;
+
+const implementerRenderer = (e: ImplementerGenerateEvent, { diffExpanded }: RenderCtx) =>
+  <ImplementerCard event={e} diffExpanded={diffExpanded} />;
 
 const RENDERERS: { [K in TuiEvent['type']]: EventRenderer<K> } = {
   'planner-status':      (e, { t }) => {
@@ -46,11 +45,13 @@ const RENDERERS: { [K in TuiEvent['type']]: EventRenderer<K> } = {
       </Text>
     );
   },
-  'planner-text':        e => <PlannerText text={e.text} />,
-  'task-start':          (e, { t }) => <Card label={<Text bold>T{e.index + 1}: {e.title}</Text>} value={`${e.file} (${e.action})`} valueColor={t.textDim} />,
+  'planner-text':        e => <MarkdownBlock text={e.text} />,
+  'task-start':          (e, { t }) => <Card label={<Text bold>T{e.index + 1}: {e.title}</Text>} labelColor={t.text} value={`${e.file} (${e.action})`} valueColor={t.textDim} />,
   'task-complete':       () => null,
   'task-skipped':        (e, { t }) => <Card label="skipped" labelColor={t.textDim} value={`T${e.taskId} ${e.title}: ${e.reason}`} valueColor={t.textDim} />,
-  'implementer-generate': (e, { diffExpanded }) => <ImplementerCard event={e} diffExpanded={diffExpanded} />,
+  'implementer-generate-running': implementerRenderer,
+  'implementer-generate-done':    implementerRenderer,
+  'implementer-generate-failed':  implementerRenderer,
   'validate':            e => <ValidateCard event={e} />,
   'retry':               (e, { t }) => <Card label="retry" labelColor={t.warning} value={`attempt ${e.attempt}/${e.maxRetries}`} valueColor={t.textDim} />,
   'escalate':            (e, { t }) => (
@@ -87,7 +88,9 @@ function getGutterRole(event: TuiEvent): 'planner' | 'implementer' | null {
     case 'planner-text':
     case 'task-start':
       return 'planner';
-    case 'implementer-generate':
+    case 'implementer-generate-running':
+    case 'implementer-generate-done':
+    case 'implementer-generate-failed':
     case 'validate':
     case 'git-commit':
     case 'git-checkpoint':
@@ -102,10 +105,12 @@ function getGutterRole(event: TuiEvent): 'planner' | 'implementer' | null {
     case 'cost-update':
     case 'workflow-cancelled':
       return null;
+    default:
+      return assertNever(event);
   }
 }
 
-export default function EventCard({ event, diffExpanded }: EventCardProps) {
+export function EventCard({ event, diffExpanded }: EventCardProps) {
   const t = useTheme();
   const render = RENDERERS[event.type] as EventRenderer<typeof event.type>;
   const ctx: RenderCtx = { t, diffExpanded: diffExpanded ?? false };

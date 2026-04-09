@@ -1,10 +1,10 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { Task } from '../../types.js';
-import { validateTaskPath } from '../../utils/fs.js';
+import { validateTaskPath } from '../../core/paths-io.js';
 import { toErrorMessage } from '../../utils/format.js';
 
-const SEARCH_REPLACE_THRESHOLD = 200;
+const SEARCH_REPLACE_LINE_THRESHOLD = 200;
 
 export function applyCode(code: string, task: Task, projectDir: string): { success: boolean; error?: string } {
   try {
@@ -33,7 +33,7 @@ export function applyCode(code: string, task: Task, projectDir: string): { succe
   const existing = readFileSync(filePath, 'utf-8');
   const lineCount = existing.split('\n').length;
 
-  if (lineCount < SEARCH_REPLACE_THRESHOLD) {
+  if (lineCount < SEARCH_REPLACE_LINE_THRESHOLD) {
     writeFileSync(filePath, code, 'utf-8');
     return { success: true };
   }
@@ -42,8 +42,13 @@ export function applyCode(code: string, task: Task, projectDir: string): { succe
   let hasMarkers = false;
   let result = existing;
 
-  for (let match = searchReplaceRegex.exec(code); match !== null; match = searchReplaceRegex.exec(code)) {
+  for (const match of code.matchAll(searchReplaceRegex)) {
     hasMarkers = true;
+    // Models commonly emit a trailing newline before the `=======` / `>>>>>>>`
+    // delimiter that isn't part of the intended search target. We strip
+    // trailing whitespace from both halves to make matches resilient to that.
+    // Tradeoff: if the user genuinely needs to match trailing whitespace, this
+    // will silently lose it — acceptable for code-edit use cases.
     const search = (match[1] ?? '').trimEnd();
     const replace = (match[2] ?? '').trimEnd();
 

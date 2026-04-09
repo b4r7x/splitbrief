@@ -1,13 +1,22 @@
-import type { Task } from '../../types.js';
-import { topoSort } from '../../utils/topo-sort.js';
+import { z } from 'zod';
+import type { Task, TaskId } from '../../types.js';
+import { taskId } from '../../types.js';
+import { topoSort } from '../../core/state/topo-sort.js';
+import { parseSimpleYamlFrontmatter, extractFrontmatter } from '../../utils/frontmatter.js';
+import { extractFirstFencedBlock } from '../parsers/code-patterns.js';
 
-interface TaskFrontmatter {
-  id: string;
-  title: string;
-  action: 'create' | 'modify';
-  file: string;
-  depends_on?: string[] | undefined;
-}
+const TaskFrontmatterSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  action: z.enum(['create', 'modify']),
+  file: z.string().min(1),
+  depends_on: z.union([
+    z.array(z.string()),
+    z.string().transform(s => [s]),
+  ]).optional().default([]),
+});
+
+type TaskFrontmatter = z.infer<typeof TaskFrontmatterSchema>;
 
 export function parseTasks(tasksMarkdown: string): Task[] {
   const blocks = splitTaskBlocks(tasksMarkdown);
@@ -19,30 +28,27 @@ function splitTaskBlocks(markdown: string): string[] {
   const blocks: string[] = [];
   const lines = markdown.split('\n');
   let current: string[] = [];
-  let inFrontmatter = false;
-  let foundFrontmatter = false;
+  let state: 'idle' | 'in-frontmatter' | 'in-body' = 'idle';
 
   for (const line of lines) {
-    if (line.trim() === '---') {
-      if (!inFrontmatter && !foundFrontmatter) {
-        inFrontmatter = true;
-        current = [line];
-      } else if (inFrontmatter) {
-        inFrontmatter = false;
-        foundFrontmatter = true;
-        current.push(line);
-      } else if (foundFrontmatter) {
-        blocks.push(current.join('\n'));
-        current = [line];
-        inFrontmatter = true;
-        foundFrontmatter = false;
-      }
+    const isSeparator = line.trim() === '---';
+
+    if (state === 'idle' && isSeparator) {
+      current = [line];
+      state = 'in-frontmatter';
+    } else if (state === 'in-frontmatter' && isSeparator) {
+      current.push(line);
+      state = 'in-body';
+    } else if (state === 'in-body' && isSeparator) {
+      blocks.push(current.join('\n'));
+      current = [line];
+      state = 'in-frontmatter';
     } else {
       current.push(line);
     }
   }
 
-  if (foundFrontmatter && current.length > 0) {
+  if (state === 'in-body' && current.length > 0) {
     blocks.push(current.join('\n'));
   }
 
@@ -50,15 +56,15 @@ function splitTaskBlocks(markdown: string): string[] {
 }
 
 function parseTaskBlock(block: string): Task | null {
-  const frontmatter = extractFrontmatter(block);
+  const frontmatter = extractTaskFrontmatter(block);
   if (!frontmatter) return null;
 
   const { id, title, action, file } = frontmatter;
-  const dependsOn: string[] = frontmatter.depends_on ?? [];
+  const dependsOn: TaskId[] = (frontmatter.depends_on ?? []).map(taskId);
   const sections = extractSections(block);
 
   return {
-    id,
+    id: taskId(id),
     title,
     action,
     file,
@@ -74,59 +80,12 @@ function parseTaskBlock(block: string): Task | null {
   };
 }
 
-function parseDependsOnValue(value: string): string[] {
-  if (value === '[]' || value.length === 0) return [];
-  if (value.startsWith('[') && value.endsWith(']')) {
-    return value.slice(1, -1).split(',')
-      .map((s: string) => s.trim().replace(/^['"]|['"]$/g, ''))
-      .filter(Boolean);
-  }
-  return [value.trim().replace(/^['"]|['"]$/g, '')];
-}
+function extractTaskFrontmatter(block: string): TaskFrontmatter | null {
+  const raw = parseSimpleYamlFrontmatter(block);
+  if (!raw) return null;
 
-function extractFrontmatter(block: string): TaskFrontmatter | null {
-  const match = block.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return null;
-
-  const yaml = match[1];
-  if (yaml === undefined) return null;
-  const raw: Record<string, unknown> = {};
-
-  for (const line of yaml.split('\n')) {
-    const colonIdx = line.indexOf(':');
-    if (colonIdx === -1) continue;
-
-    const key = line.slice(0, colonIdx).trim();
-    let value = line.slice(colonIdx + 1).trim();
-
-    if (key === 'depends_on') {
-      raw[key] = parseDependsOnValue(value);
-      continue;
-    }
-
-    if ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    raw[key] = value;
-  }
-
-  if (typeof raw.id !== 'string' || typeof raw.title !== 'string' ||
-      typeof raw.action !== 'string' || typeof raw.file !== 'string') {
-    return null;
-  }
-
-  if (raw.action !== 'create' && raw.action !== 'modify') return null;
-
-  if (raw.depends_on !== undefined && !Array.isArray(raw.depends_on)) return null;
-
-  return {
-    id: raw.id,
-    title: raw.title,
-    action: raw.action,
-    file: raw.file,
-    depends_on: raw.depends_on as string[] | undefined,
-  };
+  const result = TaskFrontmatterSchema.safeParse(raw);
+  return result.success ? result.data : null;
 }
 
 interface Sections {
@@ -140,7 +99,7 @@ interface Sections {
 }
 
 function extractSections(block: string): Sections {
-  const body = block.replace(/^---\n[\s\S]*?\n---\n?/, '');
+  const { body } = extractFrontmatter(block);
 
   const sectionMap: Record<string, string> = {};
   let currentHeader = '';
@@ -167,8 +126,8 @@ function extractSections(block: string): Sections {
 }
 
 function extractCodeBlock(text: string): string {
-  const match = text.match(/```[\w]*\n([\s\S]*?)```/);
-  if (match?.[1] !== undefined) return match[1].trim();
+  const block = extractFirstFencedBlock(text);
+  if (block !== null) return block;
   return text.trim();
 }
 

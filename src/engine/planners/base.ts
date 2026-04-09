@@ -1,59 +1,33 @@
-import type { Task, Config, PlannerTokenUsage } from '../../types.js';
+import type { Task, InvokeResult, TokenDelta } from '../../types.js';
 import type { Planner, PlannerCallbacks, PlanResult, EscalationResult, RegenerateResult } from './types.js';
 import { buildResearchPrompt } from '../spec/prompts/research.js';
 import { buildSpecPrompt } from '../spec/prompts/spec.js';
-import { buildPlanPrompt } from '../spec/prompts/plan.js';
+import { buildPlanPromptFromSpec } from '../spec/prompts/plan.js';
 import { buildTasksPrompt } from '../spec/prompts/tasks.js';
 import { buildHintPrompt, buildEscalationPrompt } from '../spec/prompts/escalation.js';
 import { buildQuickPlanPrompt } from '../spec/prompts/quick-plan.js';
 import { parseTasks } from '../spec/parser.js';
-import { writeSpecFile } from '../../utils/fs.js';
+import { writeSpecFile } from '../../core/paths-io.js';
+import { RESEARCH_FILE, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 import { extractCode } from '../parsers/response-extractor.js';
-import { runCommand } from '../../utils/process.js';
-import { parseVersion } from '../../utils/format.js';
-import type { ClarificationQuestion } from '../parsers/question-parser.js';
 import { buildProjectContextMarkdown } from './context.js';
 import { accumulateUsage } from '../streaming/output-parsers.js';
+import { DEFAULT_AVAILABILITY } from '../../utils/availability.js';
 
-export interface InvokeResult {
-  text: string;
-  usage: PlannerTokenUsage | null;
-}
-
-type InvokeFn = (
-  prompt: string,
-  projectDir: string,
-  onOutput: (text: string) => void,
-  onQuestion?: (questions: ClarificationQuestion[]) => void,
-) => Promise<InvokeResult>;
+type InternalInvokeFn = (opts: {
+  prompt: string;
+  projectDir: string;
+  callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion'>;
+}) => Promise<InvokeResult>;
 
 interface PlannerBaseConfig {
-  invokePlan: InvokeFn;
-  invokeEscalate: InvokeFn;
+  invokePlan: InternalInvokeFn;
+  invokeEscalate: InternalInvokeFn;
   isAvailable: () => Promise<boolean>;
-  getVersion: () => Promise<string | null>;
+  getVersion?: () => Promise<string | null>;
   escalateHintSuccess?: (result: InvokeResult) => boolean;
+  // One consumer (claude-code) — justified for the pluggable backend architecture.
   escalateFullPostProcess?: (task: Task, result: InvokeResult, extracted: { code: string }, projectDir: string) => EscalationResult;
-}
-
-export function createGetVersion(command: string, versionArgs?: string[]): () => Promise<string | null> {
-  return async () => {
-    try {
-      const { stdout, code } = await runCommand(command, versionArgs ?? ['--version']);
-      if (code !== 0) return null;
-      const ver = parseVersion(stdout);
-      return ver ? ver.join('.') : null;
-    } catch { return null; }
-  };
-}
-
-export function createIsAvailable(command: string, opts?: { timeout?: number | undefined }): () => Promise<boolean> {
-  return async () => {
-    try {
-      const { code } = await runCommand(command, ['--version'], opts);
-      return code === 0;
-    } catch { return false; }
-  };
 }
 
 export function createPlannerBase(config: PlannerBaseConfig): Planner {
@@ -61,25 +35,28 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
     async plan(
       feature: string,
       projectDir: string,
-      _config: Config,
       callbacks: PlannerCallbacks,
       skillsContext?: string,
     ): Promise<PlanResult> {
-      const projectContext = buildProjectContextMarkdown(projectDir);
-      let usage: PlannerTokenUsage | null = null;
+      const projectContext = await buildProjectContextMarkdown(projectDir);
+      let usage: TokenDelta | null = null;
 
       async function runPhase(phase: string, prompt: string, filename: string): Promise<string> {
         callbacks.onPhase?.(phase);
-        const result = await config.invokePlan(prompt, projectDir, callbacks.onOutput, callbacks.onQuestion);
+        const result = await config.invokePlan({
+          prompt,
+          projectDir,
+          callbacks: { onOutput: callbacks.onOutput, onQuestion: callbacks.onQuestion },
+        });
         if (result.usage) usage = accumulateUsage(usage, result.usage);
         writeSpecFile(projectDir, filename, result.text);
         return result.text;
       }
 
-      const research = await runPhase('researching', buildResearchPrompt(feature, projectContext, skillsContext), 'research.md');
-      const spec = await runPhase('specifying', buildSpecPrompt(feature, research), 'spec.md');
-      const plan = await runPhase('planning', buildPlanPrompt(spec, projectContext, skillsContext), 'plan.md');
-      const tasksMarkdown = await runPhase('generating-tasks', buildTasksPrompt(spec, plan), 'tasks.md');
+      const research = await runPhase('researching', buildResearchPrompt(feature, projectContext, skillsContext), RESEARCH_FILE);
+      const spec = await runPhase('specifying', buildSpecPrompt(feature, research), SPEC_FILE);
+      const plan = await runPhase('planning', buildPlanPromptFromSpec(spec, projectContext, skillsContext), PLAN_FILE);
+      const tasksMarkdown = await runPhase('generating-tasks', buildTasksPrompt(spec, plan), TASKS_FILE);
 
       const tasks = parseTasks(tasksMarkdown);
 
@@ -89,15 +66,14 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
     async quickPlan(
       feature: string,
       projectDir: string,
-      _config: Config,
       callbacks: PlannerCallbacks,
     ): Promise<PlanResult> {
-      const projectContext = buildProjectContextMarkdown(projectDir);
+      const projectContext = await buildProjectContextMarkdown(projectDir);
       const prompt = buildQuickPlanPrompt(feature, projectContext);
 
       callbacks.onPhase?.('quick-planning');
-      const result = await config.invokePlan(prompt, projectDir, callbacks.onOutput);
-      writeSpecFile(projectDir, 'tasks.md', result.text);
+      const result = await config.invokePlan({ prompt, projectDir, callbacks: { onOutput: callbacks.onOutput, onQuestion: callbacks.onQuestion } });
+      writeSpecFile(projectDir, TASKS_FILE, result.text);
 
       const tasks = parseTasks(result.text);
       return { spec: '', plan: '', tasks, usage: result.usage };
@@ -109,8 +85,8 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       projectDir: string,
       callbacks: { onOutput: (text: string) => void },
     ): Promise<RegenerateResult> {
-      const result = await config.invokeEscalate(prompt, projectDir, callbacks.onOutput);
-      const filename = artifactType === 'spec' ? 'spec.md' : 'plan.md';
+      const result = await config.invokeEscalate({ prompt, projectDir, callbacks });
+      const filename = artifactType === 'spec' ? SPEC_FILE : PLAN_FILE;
       writeSpecFile(projectDir, filename, result.text);
       return { text: result.text, usage: result.usage };
     },
@@ -122,7 +98,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       callbacks: { onOutput: (text: string) => void },
     ): Promise<EscalationResult> {
       const hintPrompt = buildHintPrompt(task, error);
-      const result = await config.invokeEscalate(hintPrompt, projectDir, callbacks.onOutput);
+      const result = await config.invokeEscalate({ prompt: hintPrompt, projectDir, callbacks });
       const success = config.escalateHintSuccess ? config.escalateHintSuccess(result) : true;
       return { success, output: result.text, code: null, usage: result.usage };
     },
@@ -134,7 +110,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       callbacks: { onOutput: (text: string) => void },
     ): Promise<EscalationResult> {
       const escalationPrompt = buildEscalationPrompt(task, task.currentCode ?? '', error);
-      const result = await config.invokeEscalate(escalationPrompt, projectDir, callbacks.onOutput);
+      const result = await config.invokeEscalate({ prompt: escalationPrompt, projectDir, callbacks });
 
       const extracted = extractCode(result.text);
       if ('error' in extracted) {
@@ -152,11 +128,12 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       prompt: string,
       projectDir: string,
       callbacks: { onOutput: (text: string) => void },
-    ): Promise<{ text: string; usage: PlannerTokenUsage | null }> {
-      return config.invokeEscalate(prompt, projectDir, callbacks.onOutput);
+    ): Promise<{ text: string; usage: TokenDelta | null }> {
+      return config.invokeEscalate({ prompt, projectDir, callbacks });
     },
 
+    ...DEFAULT_AVAILABILITY,
     isAvailable: config.isAvailable,
-    getVersion: config.getVersion,
+    ...(config.getVersion && { getVersion: config.getVersion }),
   };
 }

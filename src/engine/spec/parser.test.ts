@@ -96,7 +96,7 @@ describe('parseTasks', () => {
     expect(t3.action).toBe('modify');
     expect(t3.dependsOn).toEqual(['T001', 'T002']);
 
-    const ids = tasks.map((t) => t.id);
+    const ids: string[] = tasks.map((t) => t.id);
     expect(ids.indexOf('T001')).toBeLessThan(ids.indexOf('T002'));
     expect(ids.indexOf('T001')).toBeLessThan(ids.indexOf('T003'));
     expect(ids.indexOf('T002')).toBeLessThan(ids.indexOf('T003'));

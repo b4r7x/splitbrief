@@ -3,8 +3,8 @@ import type { TaskCompletionMethod } from '../../types.js';
 import {
   type Section,
   groupEventsIntoSections,
-} from '../../utils/event-sections.js';
-import { trimSectionsToViewport } from './viewport-trimming.js';
+} from '../../core/event-sections.js';
+import { trimSectionsToViewport, type DynamicSection } from './viewport-trimming.js';
 import { conversationScrollStore } from '../../stores/conversation-scroll.js';
 
 export interface TaskCompletedSummary {
@@ -16,8 +16,6 @@ export interface TaskCompletedSummary {
   file?: string;
   reason?: string;
 }
-
-type DynamicSection = Extract<Section, { type: 'events' | 'active-task' }>;
 
 export interface UseScrollableFlowResult {
   completedItems: TaskCompletedSummary[];

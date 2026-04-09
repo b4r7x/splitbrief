@@ -6,13 +6,13 @@ interface ConversationScrollState {
   eventCountAtScroll: number;
 }
 
-const INITIAL: ConversationScrollState = {
+const makeInitial = (): ConversationScrollState => ({
   scrollOffset: 0,
   expandedDiffs: new Set(),
   eventCountAtScroll: 0,
-};
+});
 
-const store = createStore<ConversationScrollState>(INITIAL);
+const store = createStore<ConversationScrollState>(makeInitial);
 
 export const conversationScrollStore = {
   ...storeBase(store),
@@ -39,5 +39,4 @@ export const conversationScrollStore = {
     }
     return { ...s, expandedDiffs: next };
   }),
-  reset: () => store.set({ ...INITIAL, expandedDiffs: new Set() }),
 };

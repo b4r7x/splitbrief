@@ -3,9 +3,11 @@ import { Box, Text } from 'ink';
 import { useTheme } from './theme.js';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const STILL_WAITING_THRESHOLD_SECONDS = 60;
 
-export function Spinner({ label, color, startTime }: { label: string; color: string; startTime?: number }) {
+export function Spinner({ label, color, startTime }: { label: string; color?: string; startTime?: number }) {
   const t = useTheme();
+  const resolvedColor = color ?? t.spinner;
   const [frame, setFrame] = useState(0);
   const [elapsed, setElapsed] = useState(0);
 
@@ -24,10 +26,10 @@ export function Spinner({ label, color, startTime }: { label: string; color: str
 
   return (
     <Box>
-      <Text color={color}>{SPINNER_FRAMES[frame]}</Text>
-      <Text color={color}> {label}</Text>
-      {startTime != null && elapsed > 0 && <Text color={color}>  {elapsed}s</Text>}
-      {elapsed > 60 && <Text color={t.textDim}>  (still waiting...)</Text>}
+      <Text color={resolvedColor}>{SPINNER_FRAMES[frame]}</Text>
+      <Text color={resolvedColor}> {label}</Text>
+      {startTime != null && elapsed > 0 && <Text color={resolvedColor}>  {elapsed}s</Text>}
+      {elapsed > STILL_WAITING_THRESHOLD_SECONDS && <Text color={t.textDim}>  (still waiting...)</Text>}
     </Box>
   );
 }

@@ -4,41 +4,36 @@ import {
   matchesFilter,
   validateNumber,
   displayValue,
-} from '../../components/overlays/settings-overlay/settings-presentation.js';
+} from './presentation.js';
 
 describe('displayValue with formatValue', () => {
   it('formats tool fields with getDisplayName', () => {
-    const def = SETTINGS_DEFS.find(d => d.id === 'planner.tool')!;
-    expect(displayValue(def, 'claude-code', false)).toBe('[Claude Code]');
-    expect(displayValue(def, 'ollama', false)).toBe('[Ollama]');
+    const def = SETTINGS_DEFS.find(d => d.id === 'planner.kind')!;
+    expect(displayValue(def, 'claude-code')).toBe('[Claude Code]');
+    expect(displayValue(def, 'ollama')).toBe('[Ollama]');
   });
 
   it('formats model fields with formatModelName', () => {
     const def = SETTINGS_DEFS.find(d => d.id === 'implementer.model')!;
-    expect(displayValue(def, 'qwen2.5-coder:7b', false)).toBe('[Qwen 2.5 Coder 7B]');
-    expect(displayValue(def, 'deepseek-chat', false)).toBe('[DeepSeek V3]');
+    expect(displayValue(def, 'qwen2.5-coder:7b')).toBe('[Qwen 2.5 Coder 7B]');
+    expect(displayValue(def, 'deepseek-chat')).toBe('[DeepSeek V3]');
   });
 
   it('shows raw value for defs without formatValue', () => {
     const def = SETTINGS_DEFS.find(d => d.id === 'validation.testCommand')!;
-    expect(displayValue(def, 'npm test', false)).toBe('[npm test]');
-  });
-
-  it('shows disabled placeholder', () => {
-    const def = SETTINGS_DEFS.find(d => d.id === 'planner.model')!;
-    expect(displayValue(def, 'claude-sonnet-4-6', true)).toBe('[\u2014]');
+    expect(displayValue(def, 'npm test')).toBe('[npm test]');
   });
 
   it('shows boolean checkmarks', () => {
     const def = SETTINGS_DEFS.find(d => d.id === 'validation.typecheck')!;
-    expect(displayValue(def, true, false)).toBe('[\u2713]');
-    expect(displayValue(def, false, false)).toBe('[\u2717]');
+    expect(displayValue(def, true)).toBe('[\u2713]');
+    expect(displayValue(def, false)).toBe('[\u2717]');
   });
 
   it('shows null placeholder for undefined values', () => {
     const def = SETTINGS_DEFS.find(d => d.id === 'planner.model')!;
-    expect(displayValue(def, undefined, false)).toBe('[\u2014]');
-    expect(displayValue(def, null, false)).toBe('[\u2014]');
+    expect(displayValue(def, undefined)).toBe('[\u2014]');
+    expect(displayValue(def, null)).toBe('[\u2014]');
   });
 });
 

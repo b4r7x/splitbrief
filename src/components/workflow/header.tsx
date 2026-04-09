@@ -1,28 +1,26 @@
 import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
-import type { Phase } from '../../types.js';
-import PipelineBar from './pipeline-bar.js';
+import { PipelineBar } from './pipeline-bar.js';
 import { useTheme } from '../../ui/theme.js';
-import { useResponsiveLayout } from '../../hooks/use-terminal-size.js';
-import { truncate } from '../../utils/format.js';
+import { terminalSizeStore } from '../../stores/terminal-size.js';
+import { truncate, formatTimeHHMMSS } from '../../utils/format.js';
+import { routerStore } from '../../stores/router.js';
+import { workflowStore } from '../../stores/workflow.js';
 
 interface HeaderProps {
-  feature: string;
   startedAt: string;
-  phase: Phase;
 }
 
 function formatElapsed(startedAt: string): string {
-  const diff = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
-  const h = String(Math.floor(diff / 3600)).padStart(2, '0');
-  const m = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
-  const s = String(diff % 60).padStart(2, '0');
-  return `${h}:${m}:${s}`;
+  return formatTimeHHMMSS(Date.now() - new Date(startedAt).getTime());
 }
 
-export default function Header({ feature, startedAt, phase }: HeaderProps) {
-  const { cols, isSmall } = useResponsiveLayout();
+export function Header({ startedAt }: HeaderProps) {
+  const cols = terminalSizeStore.use(s => s.cols);
+  const isSmall = terminalSizeStore.use(s => s.isSmall);
   const t = useTheme();
+  const feature = routerStore.use(s => s.screen === 'workflow' ? s.feature : '');
+  const phase = workflowStore.use(s => s.phase);
   const [elapsed, setElapsed] = useState(() => formatElapsed(startedAt));
   const timerWidth = 10;
   const pipelineWidth = isSmall ? 30 : 35;

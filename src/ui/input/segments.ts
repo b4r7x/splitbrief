@@ -68,7 +68,8 @@ export function buildSegments(params: BuildSegmentsParams): { preCursor: Segment
     const formattedBefore = formatText(textBefore);
     const formattedAfter = formatText(textAfter);
     const lineStart = formattedBefore.lastIndexOf('\n') + 1;
-    const lineEnd = formattedAfter.indexOf('\n');
+    const rawEnd = formattedAfter.indexOf('\n');
+    const lineEnd = rawEnd === -1 ? formattedAfter.length : rawEnd;
     return {
       preCursor: [
         { value: formattedBefore.slice(0, lineStart) },
@@ -81,6 +82,9 @@ export function buildSegments(params: BuildSegmentsParams): { preCursor: Segment
       ],
     };
   }
+
+  const hlStartAfter = Math.max(highlight.start - cursorIndex, 0);
+  const hlEndAfter = Math.max(highlight.end - cursorIndex, 0);
 
   return {
     preCursor: [
@@ -95,25 +99,12 @@ export function buildSegments(params: BuildSegmentsParams): { preCursor: Segment
       { value: ' ', type: 'cursor' },
     ],
     postCursor: [
+      { value: formatText(textAfter.slice(0, hlStartAfter)) },
       {
-        value: formatText(
-          textAfter.slice(0, Math.max(highlight.start - cursorIndex, 0)),
-        ),
-      },
-      {
-        value: formatText(
-          textAfter.slice(
-            Math.max(highlight.start - cursorIndex, 0),
-            Math.max(highlight.end - cursorIndex, 0),
-          ),
-        ),
+        value: formatText(textAfter.slice(hlStartAfter, hlEndAfter)),
         type: 'highlight',
       },
-      {
-        value: formatText(
-          textAfter.slice(Math.max(highlight.end - cursorIndex, 0)),
-        ),
-      },
+      { value: formatText(textAfter.slice(hlEndAfter)) },
     ],
   };
 }

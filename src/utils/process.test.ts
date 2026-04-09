@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { runCommand, killProcess, isENOENT, getActiveProcessCount, spawnWithTimeout, spawnWithStdin, createProcessError } from './process.js';
-import { spawn } from 'node:child_process';
-
+import { runCommand, isENOENT, spawnWithTimeout, spawnWithStdin, createProcessError } from './process.js';
+import { getActiveProcessCount } from './process-lifecycle.js';
 describe('runCommand', () => {
   it('resolves with stdout, stderr, and exit code', async () => {
     const result = await runCommand('echo', ['hello']);
@@ -46,21 +45,6 @@ describe('runCommand', () => {
   it('returns nonzero exit code on failure', async () => {
     const result = await runCommand('node', ['-e', 'process.exit(42)']);
     expect(result.code).toBe(42);
-  });
-});
-
-describe('killProcess', () => {
-  it('kills a long-running process', async () => {
-    const proc = spawn('node', ['-e', 'setTimeout(() => {}, 60_000)'], { stdio: 'ignore' });
-    await new Promise<void>((resolve) => {
-      proc.on('spawn', resolve);
-    });
-    expect(proc.exitCode).toBe(null);
-    killProcess(proc);
-    await new Promise<void>((resolve) => {
-      proc.on('close', () => resolve());
-    });
-    expect(proc.killed).toBeTruthy();
   });
 });
 

@@ -1,10 +1,88 @@
-import type { OutputFormat, PlannerTokenUsage } from '../../types.js';
-import { parseStreamLine } from './claude-stream.js';
+import { z } from 'zod';
+import type { OutputFormat, ParsedLine, TokenDelta } from '../../types.js';
+import { toTokenDelta } from './token-utils.js';
 
-interface ParsedLine {
+export interface ToolUseInfo {
+  name: string;
+  input: Record<string, unknown>;
+}
+
+interface StreamParseResult {
   text?: string | undefined;
-  usage?: PlannerTokenUsage | undefined;
+  sessionId?: string | undefined;
   isResult?: boolean | undefined;
+  usage?: TokenDelta | undefined;
+  toolUse?: ToolUseInfo[] | undefined;
+}
+
+const EMPTY_RESULT: StreamParseResult = Object.freeze({});
+
+const TextBlock = z.object({ type: z.literal('text'), text: z.string() });
+const ToolUseBlock = z.object({
+  type: z.literal('tool_use'),
+  name: z.string(),
+  input: z.record(z.string(), z.unknown()).optional(),
+});
+
+const AssistantEvent = z.object({
+  type: z.literal('assistant'),
+  session_id: z.string().optional(),
+  message: z.object({ content: z.array(z.unknown()) }),
+});
+
+const ResultEvent = z.object({
+  type: z.literal('result'),
+  result: z.string().optional(),
+  session_id: z.string().optional(),
+  usage: z.record(z.string(), z.unknown()).optional(),
+});
+
+const SessionEvent = z.object({
+  session_id: z.string(),
+});
+
+export function parseStreamLine(line: string): StreamParseResult {
+  if (!line.trim()) return EMPTY_RESULT;
+
+  try {
+    const event: unknown = JSON.parse(line);
+
+    const assistant = AssistantEvent.safeParse(event);
+    if (assistant.success) {
+      const texts: string[] = [];
+      const tools: ToolUseInfo[] = [];
+      for (const raw of assistant.data.message.content) {
+        const tb = TextBlock.safeParse(raw);
+        if (tb.success) { texts.push(tb.data.text); continue; }
+        const tu = ToolUseBlock.safeParse(raw);
+        if (tu.success) { tools.push({ name: tu.data.name, input: tu.data.input ?? {} }); }
+      }
+      return {
+        text: texts.length > 0 ? texts.join('') : undefined,
+        sessionId: assistant.data.session_id ?? undefined,
+        toolUse: tools.length > 0 ? tools : undefined,
+      };
+    }
+
+    const result = ResultEvent.safeParse(event);
+    if (result.success) {
+      return {
+        text: result.data.result ?? undefined,
+        sessionId: result.data.session_id ?? undefined,
+        isResult: true,
+        usage: toTokenDelta(result.data.usage ?? undefined) ?? undefined,
+      };
+    }
+
+    const session = SessionEvent.safeParse(event);
+    if (session.success) {
+      return { sessionId: session.data.session_id };
+    }
+
+    return EMPTY_RESULT;
+  } catch { /* malformed stream-json line — skip */
+    return EMPTY_RESULT;
+  }
 }
 
 export function parseTextLine(line: string): ParsedLine {
@@ -22,85 +100,113 @@ export function parseTextLine(line: string): ParsedLine {
   return { text: line + '\n' };
 }
 
+const JsonlTextBlock = z.object({
+  type: z.enum(['text', 'output_text']),
+  text: z.string(),
+});
+
+const ItemCompletedEvent = z.object({
+  type: z.literal('item.completed'),
+  item: z.object({
+    type: z.literal('agent_message'),
+    content: z.array(z.unknown()).optional(),
+    text: z.string().optional(),
+  }),
+});
+
+const TurnCompletedEvent = z.object({
+  type: z.literal('turn.completed'),
+  usage: z.record(z.string(), z.unknown()),
+});
+
 export function parseJsonlLine(line: string): ParsedLine {
   if (!line.trim()) return {};
 
   try {
-    const event = JSON.parse(line);
+    const event: unknown = JSON.parse(line);
 
-    if (event.type === 'item.completed' && event.item?.type === 'agent_message') {
-      const content = event.item.content;
-      if (Array.isArray(content)) {
+    const item = ItemCompletedEvent.safeParse(event);
+    if (item.success) {
+      if (item.data.item.content) {
         const texts: string[] = [];
-        for (const block of content) {
-          if ((block.type === 'text' || block.type === 'output_text') && block.text) {
-            texts.push(block.text);
-          }
+        for (const raw of item.data.item.content) {
+          const tb = JsonlTextBlock.safeParse(raw);
+          if (tb.success) texts.push(tb.data.text);
         }
         if (texts.length > 0) return { text: texts.join('') };
       }
-      if (typeof event.item.text === 'string') return { text: event.item.text };
+      if (item.data.item.text) return { text: item.data.item.text };
     }
 
-    if (event.type === 'turn.completed' && event.usage) {
-      return {
-        usage: {
-          inputTokens: event.usage.input_tokens ?? event.usage.prompt_tokens ?? 0,
-          outputTokens: event.usage.output_tokens ?? event.usage.completion_tokens ?? 0,
-        },
-      };
+    const turn = TurnCompletedEvent.safeParse(event);
+    if (turn.success) {
+      const usage = toTokenDelta(turn.data.usage);
+      if (usage) return { usage };
     }
 
-    if (event.text) return { text: event.text };
-    if (event.content) return { text: typeof event.content === 'string' ? event.content : JSON.stringify(event.content) };
+    // Fallback for simple text/content events — too simple for schemas
+    if (typeof event === 'object' && event !== null) {
+      const e = event as Record<string, unknown>;
+      if (typeof e.text === 'string') return { text: e.text };
+      if (e.content != null) return { text: typeof e.content === 'string' ? e.content : JSON.stringify(e.content) };
+    }
 
     return {};
-  } catch {
+  } catch { /* malformed JSONL line — skip */
     return {};
   }
 }
 
 export function getLineParser(format: OutputFormat): (line: string) => ParsedLine {
   switch (format) {
-    case 'stream-json': return (line) => {
-      const r = parseStreamLine(line);
-      return { text: r.text ?? undefined, usage: r.usage ?? undefined, isResult: r.isResult || undefined };
-    };
+    case 'stream-json': return parseStreamLine;
     case 'jsonl': return parseJsonlLine;
     case 'text': return parseTextLine;
     case 'opencode': return parseOpencodeLine;
   }
 }
 
+const OpencodeTextEvent = z.object({
+  type: z.literal('text'),
+  text: z.string(),
+});
+
+const OpencodeStepFinishEvent = z.object({
+  type: z.literal('step_finish'),
+  usage: z.object({
+    tokens: z.object({
+      input: z.number(),
+      output: z.number(),
+    }),
+  }),
+});
+
 export function parseOpencodeLine(line: string): ParsedLine {
   const trimmed = line.trim();
   if (!trimmed) return {};
 
-  let parsed: Record<string, unknown>;
+  let event: unknown;
   try {
-    parsed = JSON.parse(trimmed);
-  } catch {
+    event = JSON.parse(trimmed);
+  } catch { /* malformed opencode JSON — skip */
     return {};
   }
 
-  if (parsed.type === 'text' && typeof parsed.text === 'string') {
-    return { text: parsed.text };
-  }
+  const text = OpencodeTextEvent.safeParse(event);
+  if (text.success) return { text: text.data.text };
 
-  if (parsed.type === 'step_finish') {
-    const usage = parsed.usage as { tokens: { input: number; output: number } } | undefined;
-    if (usage?.tokens) {
-      return { usage: { inputTokens: usage.tokens.input, outputTokens: usage.tokens.output } };
-    }
+  const step = OpencodeStepFinishEvent.safeParse(event);
+  if (step.success) {
+    return { usage: { inputTokens: step.data.usage.tokens.input, outputTokens: step.data.usage.tokens.output } };
   }
 
   return {};
 }
 
 export function accumulateUsage(
-  current: PlannerTokenUsage | null,
-  delta: PlannerTokenUsage,
-): PlannerTokenUsage {
+  current: TokenDelta | null,
+  delta: TokenDelta,
+): TokenDelta {
   if (current) {
     return {
       inputTokens: current.inputTokens + delta.inputTokens,

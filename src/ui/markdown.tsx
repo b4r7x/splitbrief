@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import type { Theme } from './theme.js';
 import { useTheme } from './theme.js';
-import { highlight } from '../utils/highlight.js';
+import { useAsyncHighlight } from './use-async-highlight.js';
 
 type CodeBlock = { type: 'code'; lang: string; code: string };
 type TextBlock = { type: 'text'; lines: string[] };
@@ -45,14 +44,14 @@ function parseBlocks(text: string): Block[] {
   return blocks;
 }
 
-function renderInlineItalic(segment: string, baseKey: string, _t: Theme) {
+function renderInlineItalic(segment: string, baseKey: string, t: Theme) {
   const parts = segment.split(/\*([^*]+)\*/g);
   if (parts.length === 1) return <Text key={baseKey}>{segment}</Text>;
   return (
     <>
       {parts.map((part, i) =>
         i % 2 === 1
-          ? <Text key={`${baseKey}-${i}`} italic>{part}</Text>
+          ? <Text key={`${baseKey}-${i}`} italic color={t.markdown.italic}>{part}</Text>
           : <Text key={`${baseKey}-${i}`}>{part}</Text>
       )}
     </>
@@ -62,55 +61,35 @@ function renderInlineItalic(segment: string, baseKey: string, _t: Theme) {
 export function renderMarkdownLine(line: string, key: number, t: Theme) {
   if (line.startsWith('# ') || line.startsWith('## ') || line.startsWith('### ')) {
     const text = line.replace(/^#+\s*/, '');
-    return <Text key={key} color={t.accent} bold>{text}</Text>;
+    return <Text key={key} color={t.markdown.heading} bold>{text}</Text>;
   }
   const boldParts = line.split(/\*\*([^*]+)\*\*/g);
-  if (boldParts.length > 1) {
-    return (
-      <Text key={key} color={t.text}>
-        {boldParts.map((part, i) =>
-          i % 2 === 1
-            ? <Text key={i} color={t.warning}>{part}</Text>
-            : renderInlineItalic(part, `${key}-${i}`, t)
-        )}
-      </Text>
-    );
+  if (boldParts.length === 1) {
+    return <Text key={key} color={t.text}>{renderInlineItalic(line, `${key}-i`, t)}</Text>;
   }
-  const emParts = line.split(/\*([^*]+)\*/g);
-  if (emParts.length > 1) {
-    return (
-      <Text key={key} color={t.text}>
-        {emParts.map((part, i) =>
-          i % 2 === 1
-            ? <Text key={i} italic>{part}</Text>
-            : <Text key={i}>{part}</Text>
-        )}
-      </Text>
-    );
-  }
-  return <Text key={key} color={t.text}>{line}</Text>;
+  return (
+    <Text key={key} color={t.text}>
+      {boldParts.map((part, i) =>
+        i % 2 === 1
+          ? <Text key={i} color={t.markdown.bold} bold>{part}</Text>
+          : renderInlineItalic(part, `${key}-${i}`, t)
+      )}
+    </Text>
+  );
 }
 
 function HighlightedCode({ code, lang, theme: t }: { code: string; lang: string; theme: Theme }) {
-  const [hl, setHl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    highlight(code, lang).then(result => {
-      if (!cancelled) setHl(result.replace(/\n$/, ''));
-    });
-    return () => { cancelled = true; };
-  }, [code, lang]);
-
+  const hl = useAsyncHighlight(code, lang);
   const bgProp = t.panelBg ? { backgroundColor: t.panelBg } : {};
+  const colorProp = hl ? {} : { color: t.markdown.code };
   return (
     <Box marginY={0} paddingX={1} flexDirection="column">
-      <Text {...bgProp}>{hl ?? code}</Text>
+      <Text {...bgProp} {...colorProp}>{hl ?? code}</Text>
     </Box>
   );
 }
 
-export function PlannerText({ text }: { text: string }) {
+export function MarkdownBlock({ text }: { text: string }) {
   const t = useTheme();
   const blocks = parseBlocks(text);
 
@@ -118,10 +97,10 @@ export function PlannerText({ text }: { text: string }) {
     <Box marginLeft={2} flexDirection="column">
       {blocks.map((block, i) => {
         if (block.type === 'code') {
-          return <HighlightedCode key={`code-${i}-${block.lang}-${block.code.slice(0, 40)}`} code={block.code} lang={block.lang} theme={t} />;
+          return <HighlightedCode key={i} code={block.code} lang={block.lang} theme={t} />;
         }
         return (
-          <Box key={`text-${i}-${block.lines[0]?.slice(0, 30) ?? ''}`} flexDirection="column">
+          <Box key={i} flexDirection="column">
             {block.lines.map((line, j) => renderMarkdownLine(line, j, t))}
           </Box>
         );

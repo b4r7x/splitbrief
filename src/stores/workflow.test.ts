@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { workflowStore, MAX_EVENTS } from './workflow.js';
+import { workflowStore } from './workflow.js';
+import { MAX_EVENTS } from './workflow-reducers.js';
+import { taskId } from '../core/types/workflow.js';
 import {
   makePlannerStatus,
   makePlannerText,
@@ -37,7 +39,7 @@ describe('workflowStore', () => {
     });
 
     it('adds task to taskMap as in_progress on task-start', () => {
-      const event = makeTaskStart({ taskId: 'T010', title: 'New task' });
+      const event = makeTaskStart({ taskId: taskId('T010'), title: 'New task' });
       workflowStore.addEvent(event);
       expect(workflowStore.get().taskMap.get('T010')).toEqual({ id: 'T010', title: 'New task', status: 'in_progress' });
     });
@@ -56,27 +58,27 @@ describe('workflowStore', () => {
     });
 
     it('updates taskMap status to done on task-complete', () => {
-      workflowStore.addEvent(makeTaskStart({ taskId: 'T001', title: 'Test' }));
-      workflowStore.addEvent(makeTaskComplete({ taskId: 'T001' }));
+      workflowStore.addEvent(makeTaskStart({ taskId: taskId('T001'), title: 'Test' }));
+      workflowStore.addEvent(makeTaskComplete({ taskId: taskId('T001') }));
       expect(workflowStore.get().taskMap.get('T001')!.status).toBe('done');
     });
 
     it('updates taskMap status to skipped on task-skipped', () => {
-      workflowStore.addEvent(makeTaskStart({ taskId: 'T001', title: 'Test' }));
-      workflowStore.addEvent(makeTaskSkipped({ taskId: 'T001' }));
+      workflowStore.addEvent(makeTaskStart({ taskId: taskId('T001'), title: 'Test' }));
+      workflowStore.addEvent(makeTaskSkipped({ taskId: taskId('T001') }));
       expect(workflowStore.get().taskMap.get('T001')!.status).toBe('skipped');
     });
 
     it('does not update taskMap for unknown taskId on task-complete', () => {
-      const event = makeTaskComplete({ taskId: 'UNKNOWN' });
+      const event = makeTaskComplete({ taskId: taskId('UNKNOWN') });
       workflowStore.addEvent(event);
       expect(workflowStore.get().taskMap.size).toBe(0);
     });
 
     it('trims events to MAX_EVENTS when exceeded', () => {
-      const events = Array.from({ length: MAX_EVENTS }, (_, i) => makeRetry({ taskId: `T${i}` }));
+      const events = Array.from({ length: MAX_EVENTS }, (_, i) => makeRetry({ taskId: taskId(`T${i}`) }));
       for (const e of events) workflowStore.addEvent(e);
-      workflowStore.addEvent(makeRetry({ taskId: 'overflow' }));
+      workflowStore.addEvent(makeRetry({ taskId: taskId('overflow') }));
       const s = workflowStore.get();
       expect(s.events).toHaveLength(MAX_EVENTS);
       expect((s.events[s.events.length - 1] as { taskId: string }).taskId).toBe('overflow');
@@ -205,14 +207,14 @@ describe('workflowStore', () => {
       expect(workflowStore.get().events.filter(e => e.type === 'planner-status')).toHaveLength(0);
     });
 
-    it('aborts the abort controller signal', () => {
+    it('invokes the registered cancel handler', () => {
       const controller = new AbortController();
-      workflowStore.setAbortController(controller);
+      workflowStore.setCancelHandler(() => controller.abort());
       workflowStore.requestCancel();
       expect(controller.signal.aborted).toBe(true);
     });
 
-    it('does not throw when no abort controller set', () => {
+    it('does not throw when no cancel handler set', () => {
       expect(() => workflowStore.requestCancel()).not.toThrow();
     });
   });

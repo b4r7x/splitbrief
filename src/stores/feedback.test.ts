@@ -15,6 +15,7 @@ describe('feedbackStore', () => {
     feedbackStore.setError('oops');
     feedbackStore.setError(null);
     expect(feedbackStore.get().message).toBeNull();
+    expect(feedbackStore.get().isError).toBe(false);
   });
 
   it('sets informational message with isError false', () => {

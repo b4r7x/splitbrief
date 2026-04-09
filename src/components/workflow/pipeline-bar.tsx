@@ -1,5 +1,6 @@
 import { Box, Text } from 'ink';
 import type { Phase } from '../../types.js';
+import { assertNever } from '../../utils/type-guards.js';
 import { useTheme } from '../../ui/theme.js';
 
 interface PipelineBarProps {
@@ -17,10 +18,12 @@ function getStageIndex(phase: Phase): number {
     case 'implementing': case 'validating-task': case 'escalating': return 3;
     case 'final-review': return 4;
     case 'complete': return 5;
+    default:
+      return assertNever(phase);
   }
 }
 
-export default function PipelineBar({ phase }: PipelineBarProps) {
+export function PipelineBar({ phase }: PipelineBarProps) {
   const t = useTheme();
   const currentIndex = getStageIndex(phase);
 

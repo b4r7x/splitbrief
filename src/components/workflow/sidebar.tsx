@@ -2,17 +2,11 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../ui/theme.js';
 import type { Theme } from '../../ui/theme.js';
 import type { SidebarTask } from '../../types.js';
-import { truncate } from '../../utils/format.js';
-
-interface CostData {
-  localRate: number;
-  spent: number;
-  saved: number;
-}
+import { truncate, formatCost } from '../../utils/format.js';
+import { workflowStore } from '../../stores/workflow.js';
+import { useCostStats } from '../../hooks/use-cost-stats.js';
 
 interface SidebarProps {
-  tasks: SidebarTask[];
-  costData: CostData;
   width: number;
 }
 
@@ -34,8 +28,12 @@ function statusColor(status: SidebarTask['status'], t: Theme): string {
   }
 }
 
-export default function Sidebar({ tasks, costData, width }: SidebarProps) {
+export function Sidebar({ width }: SidebarProps) {
   const t = useTheme();
+  const taskMap = workflowStore.use(s => s.taskMap);
+  const { localRate, costBreakdown } = useCostStats();
+
+  const tasks = Array.from(taskMap.values());
   const doneCount = tasks.filter((tk) => tk.status === 'done').length;
   const labelWidth = Math.max(10, width - 4);
 
@@ -59,9 +57,9 @@ export default function Sidebar({ tasks, costData, width }: SidebarProps) {
 
       <Box flexDirection="column" paddingX={1}>
         <Text bold color={t.text}>Cost</Text>
-        <Text color={t.textDim}>Local: <Text color={t.accent}>{Math.round(costData.localRate)}%</Text></Text>
-        <Text color={t.textDim}>Spent: <Text color={t.text}>${costData.spent.toFixed(2)}</Text></Text>
-        <Text color={t.textDim}>Saved: <Text color={t.success}>~${costData.saved.toFixed(2)}</Text></Text>
+        <Text color={t.textDim}>Local: <Text color={t.accent}>{Math.round(localRate)}%</Text></Text>
+        <Text color={t.textDim}>Spent: <Text color={t.text}>{formatCost(costBreakdown?.totalActualCost ?? 0)}</Text></Text>
+        <Text color={t.textDim}>Saved: <Text color={t.success}>~{formatCost(costBreakdown?.savingsAmount ?? 0)}</Text></Text>
       </Box>
     </Box>
   );

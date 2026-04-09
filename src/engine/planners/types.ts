@@ -1,5 +1,4 @@
-import type { Task, Config, PlannerTokenUsage } from '../../types.js';
-import type { ClarificationQuestion } from '../parsers/question-parser.js';
+import type { Task, TokenDelta, ClarificationQuestion, Backend } from '../../types.js';
 
 export interface PlannerCallbacks {
   onOutput: (text: string) => void;
@@ -11,26 +10,25 @@ export interface PlanResult {
   spec: string;
   plan: string;
   tasks: Task[];
-  usage: PlannerTokenUsage | null;
+  usage: TokenDelta | null;
 }
 
 export interface EscalationResult {
   success: boolean;
   output: string;
   code: string | null;
-  usage: PlannerTokenUsage | null;
+  usage: TokenDelta | null;
 }
 
 export interface RegenerateResult {
   text: string;
-  usage: PlannerTokenUsage | null;
+  usage: TokenDelta | null;
 }
 
-export interface Planner {
+export interface Planner extends Backend {
   plan(
     feature: string,
     projectDir: string,
-    config: Config,
     callbacks: PlannerCallbacks,
     skillsContext?: string,
   ): Promise<PlanResult>;
@@ -56,20 +54,15 @@ export interface Planner {
     callbacks: { onOutput: (text: string) => void },
   ): Promise<EscalationResult>;
 
-  quickPlan?(
+  quickPlan(
     feature: string,
     projectDir: string,
-    config: Config,
     callbacks: PlannerCallbacks,
   ): Promise<PlanResult>;
-
-  isAvailable(): Promise<boolean>;
 
   review(
     prompt: string,
     projectDir: string,
     callbacks: { onOutput: (text: string) => void },
-  ): Promise<{ text: string; usage: PlannerTokenUsage | null }>;
-
-  getVersion(): Promise<string | null>;
+  ): Promise<{ text: string; usage: TokenDelta | null }>;
 }

@@ -1,18 +1,24 @@
 import { describe, it, expect } from 'vitest';
 import { createInitialState, transition } from './machine.js';
+import {
+  getCompletedTaskIds,
+  getEscalatedTaskIds,
+  getFailedTaskIds,
+  getSkippedTaskIds,
+} from './selectors.js';
 import type { WorkflowState } from '../types/index.js';
 import { makeTask } from '#testing/helpers/fixtures.js';
 
 describe('createInitialState', () => {
-  it('returns idle phase with feature set and empty arrays', () => {
+  it('returns idle phase with feature set and empty tasks', () => {
     const state = createInitialState('feature');
     expect(state.phase).toBe('idle');
     expect(state.feature).toBe('feature');
     expect(state.tasks).toEqual([]);
-    expect(state.completedTasks).toEqual([]);
-    expect(state.escalatedTasks).toEqual([]);
-    expect(state.skippedTasks).toEqual([]);
-    expect(state.failedTasks).toEqual([]);
+    expect(getCompletedTaskIds(state)).toEqual([]);
+    expect(getEscalatedTaskIds(state)).toEqual([]);
+    expect(getSkippedTaskIds(state)).toEqual([]);
+    expect(getFailedTaskIds(state)).toEqual([]);
     expect(state.currentTaskIndex).toBe(0);
     expect(state.attempt).toBe(0);
     expect(state.tokenUsage.plannerInput).toBe(0);
@@ -81,7 +87,7 @@ describe('transition', () => {
     const next = transition(state, { type: 'HINT_SUCCESS' });
     expect(next.phase).toBe('implementing');
     expect(next.currentTaskIndex).toBe(1);
-    expect(next.completedTasks).toEqual(['t1']);
+    expect(getCompletedTaskIds(next)).toEqual(['t1']);
   });
 
   it('FULL_FAIL -> implementing with task in failedTasks', () => {
@@ -95,22 +101,21 @@ describe('transition', () => {
     const next = transition(state, { type: 'FULL_FAIL' });
     expect(next.phase).toBe('implementing');
     expect(next.currentTaskIndex).toBe(1);
-    expect(next.failedTasks).toEqual(['t1']);
+    expect(getFailedTaskIds(next)).toEqual(['t1']);
   });
 
   it('CANCEL -> idle with state preserved', () => {
-    const tasks = [makeTask({ id: 't1' })];
+    const tasks = [makeTask({ id: 't0', status: 'done' }), makeTask({ id: 't1' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'implementing',
       tasks,
-      currentTaskIndex: 0,
-      completedTasks: ['t0'],
+      currentTaskIndex: 1,
     };
     const next = transition(state, { type: 'CANCEL' });
     expect(next.phase).toBe('idle');
     expect(next.tasks).toEqual(tasks);
-    expect(next.completedTasks).toEqual(['t0']);
+    expect(getCompletedTaskIds(next)).toEqual(['t0']);
     expect(next.feature).toBe('feat');
   });
 
@@ -144,7 +149,7 @@ describe('transition', () => {
     const next = transition(state, { type: 'FULL_SUCCESS' });
     expect(next.phase).toBe('implementing');
     expect(next.currentTaskIndex).toBe(1);
-    expect(next.escalatedTasks).toEqual(['t1']);
+    expect(getEscalatedTaskIds(next)).toEqual(['t1']);
     expect(next.attempt).toBe(0);
   });
 
@@ -253,14 +258,14 @@ describe('transition', () => {
     s = transition(s, { type: 'VALIDATION_PASS' });
     expect(s.phase).toBe('implementing');
     expect(s.currentTaskIndex).toBe(1);
-    expect(s.completedTasks).toEqual(['t1']);
+    expect(getCompletedTaskIds(s)).toEqual(['t1']);
 
     s = transition(s, { type: 'TASK_SENT' });
     expect(s.phase).toBe('validating-task');
     s = transition(s, { type: 'VALIDATION_PASS' });
     expect(s.phase).toBe('implementing');
     expect(s.currentTaskIndex).toBe(2);
-    expect(s.completedTasks).toEqual(['t1', 't2']);
+    expect(getCompletedTaskIds(s)).toEqual(['t1', 't2']);
 
     s = transition(s, { type: 'ALL_DONE' });
     expect(s.phase).toBe('final-review');
@@ -269,10 +274,10 @@ describe('transition', () => {
     expect(s.phase).toBe('complete');
 
     expect(s.feature).toBe('full-flow');
-    expect(s.completedTasks).toEqual(['t1', 't2']);
-    expect(s.failedTasks).toEqual([]);
-    expect(s.escalatedTasks).toEqual([]);
-    expect(s.skippedTasks).toEqual([]);
+    expect(getCompletedTaskIds(s)).toEqual(['t1', 't2']);
+    expect(getFailedTaskIds(s)).toEqual([]);
+    expect(getEscalatedTaskIds(s)).toEqual([]);
+    expect(getSkippedTaskIds(s)).toEqual([]);
     expect(s.currentTaskIndex).toBe(2);
   });
 });

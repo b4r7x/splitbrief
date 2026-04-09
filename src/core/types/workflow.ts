@@ -1,52 +1,16 @@
-import type { TokenUsage } from './summary.js';
+import type { z } from 'zod';
+import type { WorkflowStateSchema } from './schemas/workflow.js';
+import type { TaskSchema } from './schemas/task.js';
 
-export type Phase =
-  | 'idle'
-  | 'researching'
-  | 'specifying'
-  | 'reviewing-spec'
-  | 'planning'
-  | 'reviewing-plan'
-  | 'implementing'
-  | 'validating-task'
-  | 'escalating'
-  | 'final-review'
-  | 'complete';
+export type { Phase, TaskStatus } from './schemas/enums.js';
+export { PHASES, TASK_STATUSES } from './schemas/enums.js';
 
-export type TaskStatus = 'pending' | 'in_progress' | 'done' | 'failed' | 'escalated' | 'skipped';
+export type TaskId = string & { readonly __brand: 'TaskId' };
+export const taskId = (s: string): TaskId => s as TaskId;
 
-export interface Task {
-  id: string;
-  title: string;
-  action: 'create' | 'modify';
-  file: string;
-  dependsOn: string[];
-  description: string;
-  signature?: string | undefined;
-  currentCode?: string | undefined;
-  tests: string[];
-  constraints: string[];
-  pattern?: string | undefined;
-  typeDefs: string;
-  implementationSteps: string[];
-  status: TaskStatus;
-}
+export type Task = z.infer<typeof TaskSchema>;
 
-export interface WorkflowState {
-  stateVersion: number;
-  phase: Phase;
-  feature: string;
-  currentTaskIndex: number;
-  attempt: number;
-  tasks: Task[];
-  completedTasks: string[];
-  escalatedTasks: string[];
-  skippedTasks: string[];
-  failedTasks: string[];
-  sessionId: string | null;
-  startedAt: string;
-  tokenUsage: TokenUsage;
-}
+export type WorkflowState = z.infer<typeof WorkflowStateSchema>;
 
 export type StateAction =
   | { type: 'START'; feature: string }
@@ -58,6 +22,7 @@ export type StateAction =
   | { type: 'PLAN_DONE'; tasks: Task[] }
   | { type: 'APPROVE_PLAN' }
   | { type: 'REJECT_PLAN' }
+  | { type: 'START_TASK'; taskId: TaskId }
   | { type: 'TASK_SENT' }
   | { type: 'VALIDATION_PASS' }
   | { type: 'VALIDATION_FAIL' }
@@ -66,6 +31,8 @@ export type StateAction =
   | { type: 'HINT_FAIL' }
   | { type: 'FULL_SUCCESS' }
   | { type: 'FULL_FAIL' }
+  | { type: 'SKIP_TASK'; taskId: TaskId }
+  | { type: 'UPDATE_TASK_CODE'; taskId: TaskId; code: string }
   | { type: 'ALL_DONE' }
   | { type: 'REVIEW_DONE' }
   | { type: 'CANCEL' }

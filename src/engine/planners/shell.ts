@@ -1,54 +1,33 @@
 import type { Config, OutputFormat } from '../../types.js';
 import type { Planner } from './types.js';
-import { createPlannerBase, createIsAvailable } from './base.js';
-import type { InvokeResult } from './base.js';
-import { spawnAndCollect } from './spawn-collect.js';
-import { getLineParser } from '../streaming/output-parsers.js';
-
-async function spawnShellCommand(
-  prompt: string,
-  projectDir: string,
-  opts: {
-    command: string;
-    args: string[];
-    format: OutputFormat;
-    onOutput: (text: string) => void;
-  },
-): Promise<InvokeResult> {
-  const { command, args, format, onOutput } = opts;
-  return spawnAndCollect({
-    command,
-    args,
-    cwd: projectDir,
-    stdin: prompt,
-    notFoundMessage: `Shell planner command not found: ${command}`,
-    parseLine: getLineParser(format),
-    onOutput,
-  });
-}
+import { createPlannerBase } from './base.js';
+import { createCommandAvailability } from '../../utils/availability.js';
+import { spawnAndCollect } from '../streaming/spawn-collect.js';
 
 export function createShellPlanner(config: Config): Planner {
-  const command = config.planner.command!;
-  const baseArgs = config.planner.args ?? [];
-  const format: OutputFormat = config.planner.outputFormat ?? 'text';
+  if (config.planner.kind !== 'shell') {
+    throw new Error(`createShellPlanner requires planner.kind = 'shell' (got ${config.planner.kind})`);
+  }
+  const plannerCfg = config.planner;
+  const command = plannerCfg.command;
+  const baseArgs = plannerCfg.args ?? [];
+  const format: OutputFormat = plannerCfg.outputFormat ?? 'text';
+  const notFoundMessage = `Shell planner command not found: ${command}`;
+
+  const invoke = ({ prompt, projectDir, callbacks }: { prompt: string; projectDir: string; callbacks: { onOutput: (text: string) => void } }) =>
+    spawnAndCollect({
+      command,
+      args: baseArgs,
+      cwd: projectDir,
+      stdin: prompt,
+      format,
+      notFoundMessage,
+      onText: callbacks.onOutput,
+    });
 
   return createPlannerBase({
-    async invokePlan(prompt, projectDir, onOutput) {
-      return spawnShellCommand(prompt, projectDir, {
-        command, args: baseArgs, format, onOutput,
-      });
-    },
-
-    async invokeEscalate(prompt, projectDir, onOutput) {
-      return spawnShellCommand(prompt, projectDir, {
-        command, args: baseArgs, format, onOutput,
-      });
-    },
-
-    isAvailable: createIsAvailable(command),
-
-    async getVersion() {
-      return null;
-    },
+    invokePlan: invoke,
+    invokeEscalate: invoke,
+    ...createCommandAvailability(command),
   });
 }

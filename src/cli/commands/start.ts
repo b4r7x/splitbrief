@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { createElement } from 'react';
-import App from '../../app.js';
+import { App } from '../../app.js';
 import { renderApp } from '../render.js';
 import { addWorkflowOptions, setupWorkflow } from '../workflow.js';
 import { routerStore } from '../../stores/router.js';
@@ -15,7 +15,7 @@ export function registerStartCommand(program: Command): void {
   ).action(async (feature: string | undefined, opts: WorkflowOpts) => {
     const { projectDir, useFullscreen, contextLength, needsSetup } = await setupWorkflow(opts);
 
-    initStores(projectDir, { ...opts, contextLength });
+    await initStores(projectDir, { ...opts, contextLength });
     if (needsSetup) {
       routerStore.init({ screen: 'setup', onComplete: feature ? 'workflow' : 'home', feature });
     } else if (feature) {

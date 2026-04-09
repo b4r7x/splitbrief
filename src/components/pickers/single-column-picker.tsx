@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../ui/theme.js';
 import { ScrollIndicator } from '../../ui/scroll-indicator.js';
-import { CURSOR, NO_CURSOR, computeScrollOffset } from '../../ui/picker-utils.js';
+import { CURSOR, NO_CURSOR, computeScrollOffset } from './picker-utils.js';
 
 interface SingleColumnPickerProps<T> {
   label: string;

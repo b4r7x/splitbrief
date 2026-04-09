@@ -1,7 +1,7 @@
-import type { Section } from '../../utils/event-sections.js';
-import { estimateSectionHeight } from '../../utils/event-sections.js';
+import type { Section } from '../../core/event-sections.js';
+import { estimateSectionHeight } from '../../core/event-sections.js';
 
-type DynamicSection = Extract<Section, { type: 'events' | 'active-task' }>;
+export type DynamicSection = Extract<Section, { type: 'events' | 'active-task' }>;
 
 interface ViewportTrimResult {
   visibleSections: DynamicSection[];

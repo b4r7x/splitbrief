@@ -116,7 +116,7 @@ describe('Ollama integration', () => {
 
     const lastWithUsage = withUsage[withUsage.length - 1];
     expect(lastWithUsage).toBeDefined();
-    if (!lastWithUsage || !lastWithUsage.usage) throw new Error('no usage chunk');
+    if (!lastWithUsage?.usage) throw new Error('no usage chunk');
     const usage = lastWithUsage.usage;
     expect(usage.prompt_tokens).toBeGreaterThan(0);
     expect(usage.completion_tokens).toBeGreaterThan(0);

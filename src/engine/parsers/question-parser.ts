@@ -1,9 +1,13 @@
 import type { ClarificationQuestion } from '../../core/types/events.js';
-
-export type { ClarificationQuestion };
+import { ClarificationQuestionSchema } from '../../core/types/schemas/index.js';
 
 const MARKER_PREFIX = '<!-- Q:';
 const MARKER_SUFFIX = ' -->';
+
+function narrowQuestion(raw: unknown): ClarificationQuestion | null {
+  const result = ClarificationQuestionSchema.safeParse(raw);
+  return result.success ? result.data : null;
+}
 
 function findBalancedBrace(text: string, start: number): number {
   if (text[start] !== '{') return -1;
@@ -47,14 +51,9 @@ export function extractQuestionsFromStream(text: string): ClarificationQuestion[
 
     try {
       const parsed = JSON.parse(text.substring(jsonStart, afterJson));
-      if (
-        typeof parsed.id === 'string' &&
-        typeof parsed.type === 'string' &&
-        typeof parsed.text === 'string'
-      ) {
-        questions.push(parsed as ClarificationQuestion);
-      }
-    } catch {}
+      const narrowed = narrowQuestion(parsed);
+      if (narrowed) questions.push(narrowed);
+    } catch { /* malformed question marker JSON — skip */ }
 
     searchFrom = afterJson + MARKER_SUFFIX.length;
   }
@@ -86,11 +85,6 @@ export function createQuestionAccumulator() {
     },
     getAll(): ClarificationQuestion[] {
       return [...allQuestions];
-    },
-    reset() {
-      buffer = '';
-      seenIds.clear();
-      allQuestions.length = 0;
     },
   };
 }

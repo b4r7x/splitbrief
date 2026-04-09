@@ -20,7 +20,7 @@ import { ModeSelector } from './components/overlays/mode-selector.js';
 import { ToolModelPicker } from './components/overlays/tool-model-picker/index.js';
 import type { Screen, OverlayType, SlashCommandDef, CommandContext, CommandPaletteItem } from './types.js';
 
-export default function App() {
+export function App() {
   const screen = routerStore.use(s => s.screen);
   const { exit } = useApp();
   const overlayActive = overlayStore.use(s => s.active);
@@ -31,6 +31,13 @@ export default function App() {
     openOverlay: overlayStore.open,
     navigate: routerStore.navigate,
     quit: exit,
+    setWorkflowMode: (mode) => {
+      const current = configStore.get().config;
+      if (!current) return;
+      configStore.save({ ...current, workflow: { ...current.workflow, mode } });
+    },
+    setFeedbackMessage: feedbackStore.setMessage,
+    setFeedbackError: feedbackStore.setError,
   };
   const commands = createCommands(ctx);
   const paletteItems = toPaletteItems(commands);

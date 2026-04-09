@@ -1,4 +1,13 @@
-import { NATURAL_LANGUAGE_PREFIXES, CODE_LINE_STARTS, CODE_LINE_CHARS } from './code-patterns.js';
+import {
+  NATURAL_LANGUAGE_PREFIXES,
+  CODE_LINE_STARTS,
+  CODE_LINE_CHARS,
+  TS_IMPORT_EXPORT_RE,
+  TS_KEYWORDS_RE,
+  SEMICOLON_RE,
+  OPEN_BRACE_RE,
+  CLOSE_BRACE_RE,
+} from './code-patterns.js';
 
 export function isCodeLine(line: string): boolean {
   const trimmed = line.trimStart();
@@ -16,11 +25,11 @@ export function isCodeLine(line: string): boolean {
 }
 
 export function looksLikeTypeScript(text: string): boolean {
-  const hasImportOrExport = /\b(import|export)\b/.test(text);
-  const hasTypeKeywords = /\b(interface|type|const|function|async|await)\b/.test(text);
-  const semicolons = (text.match(/;/g) || []).length;
-  const openBraces = (text.match(/{/g) || []).length;
-  const closeBraces = (text.match(/}/g) || []).length;
+  const hasImportOrExport = TS_IMPORT_EXPORT_RE.test(text);
+  const hasTypeKeywords = TS_KEYWORDS_RE.test(text);
+  const semicolons = (text.match(SEMICOLON_RE) || []).length;
+  const openBraces = (text.match(OPEN_BRACE_RE) || []).length;
+  const closeBraces = (text.match(CLOSE_BRACE_RE) || []).length;
 
   const indicators = [
     hasImportOrExport,

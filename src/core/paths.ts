@@ -1,0 +1,12 @@
+export const TINY_SPEC_DIR = '.tiny-spec';
+export const CURRENT_DIR = 'current';
+export const SKILLS_DIR = 'skills';
+export const SESSIONS_DIR = 'sessions';
+export const SPEC_FILE = 'spec.md';
+export const PLAN_FILE = 'plan.md';
+export const TASKS_FILE = 'tasks.md';
+export const RESEARCH_FILE = 'research.md';
+export const REVIEW_FILE = 'review.md';
+export const STATE_FILE = 'state.json';
+export const EVENTS_FILE = 'events.jsonl';
+export const CONFIG_FILE = 'config.yaml';

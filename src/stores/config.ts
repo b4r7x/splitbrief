@@ -1,8 +1,12 @@
 import { createStore, storeBase } from './create-store.js';
 import { loadConfig, writeConfig } from '../core/config/index.js';
 import { feedbackStore } from './feedback.js';
+import { toErrorMessage } from '../utils/format.js';
 import { WORKFLOW_MODES } from '../types.js';
-import type { Config, PlannerTool, WorkflowMode } from '../types.js';
+import { buildPlannerConfig } from '../core/config/planner-config.js';
+import { PROVIDER_IDS } from '../core/providers/catalog.js';
+import type { Config, PlannerConfig } from '../types.js';
+import { includes } from '../utils/type-guards.js';
 
 interface CLIOverrides {
   planner?: { tool?: string | undefined; model?: string | undefined; command?: string | undefined };
@@ -26,12 +30,42 @@ const empty: ConfigState = {
 
 const store = createStore<ConfigState>(empty);
 
+function applyPlannerOverrides(existing: PlannerConfig, override: { tool?: string; model?: string; command?: string }): PlannerConfig {
+  const { tool, model, command } = override;
+
+  if (tool !== undefined) {
+    if (!includes(PROVIDER_IDS, tool)) {
+      throw new Error(`Invalid planner tool: ${tool}. Must be one of: ${PROVIDER_IDS.join(', ')}`);
+    }
+    const next = buildPlannerConfig(tool, { model, existing });
+    if (command !== undefined && next.kind === 'shell') {
+      return { ...next, command };
+    }
+    return next;
+  }
+
+  if (command !== undefined) {
+    // command-only override implies shell kind.
+    return { kind: 'shell', command, ...(model !== undefined && { model }) };
+  }
+
+  if (model !== undefined) {
+    return { ...existing, model };
+  }
+
+  return existing;
+}
+
 function load(projectDir: string, overrides: CLIOverrides = {}) {
   const cfg = structuredClone(loadConfig(projectDir));
   if (overrides.contextLength !== undefined) cfg.implementer.contextLength = overrides.contextLength;
-  if (overrides.planner?.tool !== undefined) cfg.planner.tool = overrides.planner.tool as PlannerTool;
-  if (overrides.planner?.model !== undefined) cfg.planner.model = overrides.planner.model;
-  if (overrides.planner?.command !== undefined) cfg.planner.command = overrides.planner.command;
+  if (overrides.planner) {
+    cfg.planner = applyPlannerOverrides(cfg.planner, {
+      ...(overrides.planner.tool !== undefined && { tool: overrides.planner.tool }),
+      ...(overrides.planner.model !== undefined && { model: overrides.planner.model }),
+      ...(overrides.planner.command !== undefined && { command: overrides.planner.command }),
+    });
+  }
   if (overrides.implementer?.tool !== undefined) cfg.implementer.tool = overrides.implementer.tool;
   if (overrides.implementer?.model !== undefined) cfg.implementer.model = overrides.implementer.model;
   if (overrides.implementer?.command !== undefined) cfg.implementer.command = overrides.implementer.command;
@@ -40,11 +74,10 @@ function load(projectDir: string, overrides: CLIOverrides = {}) {
     cfg.workflow.autoApprovePlan = overrides.autoApprove;
   }
   if (overrides.mode !== undefined) {
-    const valid = WORKFLOW_MODES;
-    if (!valid.includes(overrides.mode as WorkflowMode)) {
-      throw new Error(`Invalid workflow mode: ${overrides.mode}. Must be: ${valid.join(', ')}`);
+    if (!includes(WORKFLOW_MODES, overrides.mode)) {
+      throw new Error(`Invalid workflow mode: ${overrides.mode}. Must be: ${WORKFLOW_MODES.join(', ')}`);
     }
-    cfg.workflow.mode = overrides.mode as WorkflowMode;
+    cfg.workflow.mode = overrides.mode;
   }
   store.set({ config: cfg, projectDir, overrides });
 }
@@ -61,7 +94,7 @@ function save(updated: Config) {
     writeConfig(projectDir, updated);
     store.set(s => ({ ...s, config: updated }));
   } catch (err) {
-    feedbackStore.setError(`Failed to save config: ${err instanceof Error ? err.message : String(err)}`);
+    feedbackStore.setError(`Failed to save config: ${toErrorMessage(err)}`);
   }
 }
 

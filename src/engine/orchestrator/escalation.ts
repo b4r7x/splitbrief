@@ -1,52 +1,51 @@
-import type { Task, WorkflowState, ValidationResult, TaskTokenUsage, TaskCompletionMethod } from '../../types.js';
-import { validateTask, formatValidationError } from './validator.js';
-import { discardTaskChanges } from '../../utils/git.js';
+import type { Task, WorkflowState, TaskCompletionMethod } from '../../types.js';
+import { formatValidationError } from './validator.js';
+import { discardTaskChanges } from './git-ops.js';
 import type { WorkflowContext } from './run.js';
-import { emit, emitValidationStart, emitValidationProgress, emitValidationResult, createTextHandler } from './events.js';
-import { refreshCurrentCode, addUsageAndSave, transitionAndSave } from './helpers.js';
-import { validateCommitAndAdvance } from './task-runner.js';
+import { emit, createTextHandler, emitWarning, emitPlannerStatus, emitRetry, emitEscalate } from './events.js';
+import { refreshAndPersistCode, addUsageAndSave, transitionAndSave, warnOnFailure, validateAndCommitTask } from './helpers.js';
 
-type RetryResult = { completed: boolean; method: TaskTokenUsage['method'] };
+type RetryResult =
+  | { completed: true; method: Exclude<TaskCompletionMethod, 'failed' | 'skipped'>; attempts: number }
+  | { completed: false; method: 'failed'; attempts: number };
 
-type EscalationContext = WorkflowContext & { task: Task; taskStartTime?: number | undefined };
+type EscalationContext = WorkflowContext & { taskStartTime?: number | undefined };
 
 async function validateAndCommit(
-  ctx: EscalationContext, state: WorkflowState,
+  ctx: EscalationContext, task: Task, state: WorkflowState,
   method: TaskCompletionMethod,
   transitionType: 'VALIDATION_PASS' | 'HINT_SUCCESS' | 'FULL_SUCCESS',
   commitSuffix?: string,
-): Promise<{ state: WorkflowState; completed: boolean; validationResults: ValidationResult[] }> {
-  const valStart = Date.now();
-  emitValidationStart(ctx.callbacks);
-  const validationResults = await validateTask(ctx.task, ctx.projectDir, ctx.config, (stages) => {
-    emitValidationProgress(ctx.callbacks, stages, valStart);
+) {
+  return validateAndCommitTask({
+    task, projectDir: ctx.projectDir, config: ctx.config, callbacks: ctx.callbacks,
+    state, method, transitionType, commitSuffix, taskStartTime: ctx.taskStartTime,
   });
-  emitValidationResult(ctx.callbacks, validationResults, valStart);
-  const result = await validateCommitAndAdvance({
-    task: ctx.task, results: validationResults, projectDir: ctx.projectDir, config: ctx.config,
-    state, callbacks: ctx.callbacks, method, transitionType, commitSuffix, taskStartTime: ctx.taskStartTime,
-  });
-  return { ...result, validationResults };
 }
 
 async function runLocalRetries(
-  ctx: EscalationContext, initialState: WorkflowState, initialError: string,
-): Promise<{ state: WorkflowState; lastError: string; result?: RetryResult }> {
+  ctx: EscalationContext, initialTask: Task, initialState: WorkflowState, initialError: string,
+): Promise<{ state: WorkflowState; task: Task; lastError: string; attempts: number; result?: RetryResult }> {
   let state = initialState;
+  let task = initialTask;
   let lastError = initialError;
+  let attempts = 0;
   const maxRetries = ctx.config.workflow.maxRetries;
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    state = transitionAndSave(ctx.projectDir, state, { type: 'VALIDATION_FAIL' }, maxRetries);
-    ctx.callbacks.onEvent({ type: 'retry', ts: Date.now(), taskId: ctx.task.id, attempt, maxRetries });
-    emit(ctx.projectDir, state, 'task_retry', ctx.task.id, { attempt, error: lastError });
+  const textHandler = createTextHandler(ctx.callbacks);
 
-    refreshCurrentCode(ctx.task, ctx.projectDir);
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    attempts = attempt;
+    state = transitionAndSave(ctx.projectDir, state, { type: 'VALIDATION_FAIL' }, maxRetries);
+    emitRetry(ctx.callbacks, task.id, attempt, maxRetries);
+    emit(ctx.projectDir, state, 'task_retry', task.id, { attempt, error: lastError });
+
+    ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, state));
 
     const retryResult = await ctx.implementer.retry({
-      task: ctx.task, projectDir: ctx.projectDir, config: ctx.config, context: ctx.context,
-      error: lastError, attempt,
-      onProgress: createTextHandler(ctx.callbacks), onEvent: ctx.callbacks.onEvent,
+      task, projectDir: ctx.projectDir, config: ctx.config, context: ctx.context,
+      error: lastError, attempt, kind: 'local',
+      onOutput: textHandler, onEvent: ctx.callbacks.onEvent,
     });
     state = addUsageAndSave(ctx.projectDir, state, 'implementer', retryResult.usage, ctx.callbacks);
 
@@ -55,80 +54,85 @@ async function runLocalRetries(
       continue;
     }
 
-    const commitResult = await validateAndCommit(ctx, state, 'local', 'VALIDATION_PASS');
+    const commitResult = await validateAndCommit(ctx, task, state, 'local', 'VALIDATION_PASS');
     if (commitResult.completed) {
-      return { state: commitResult.state, lastError, result: { completed: true, method: 'local' } };
+      return { state: commitResult.state, task, lastError, attempts, result: { completed: true, method: 'local', attempts } };
     }
     lastError = formatValidationError(commitResult.validationResults);
   }
 
-  return { state, lastError };
+  return { state, task, lastError, attempts };
 }
 
 async function runTier1Hint(
-  ctx: EscalationContext, state: WorkflowState, lastError: string,
-): Promise<{ state: WorkflowState; lastError: string; result?: RetryResult }> {
+  ctx: EscalationContext, initialTask: Task, state: WorkflowState, lastError: string, priorAttempts: number,
+): Promise<{ state: WorkflowState; task: Task; lastError: string; attempts: number; result?: RetryResult }> {
+  const attempts = priorAttempts + 1;
+  let task = initialTask;
+  const textHandler = createTextHandler(ctx.callbacks);
   state = transitionAndSave(ctx.projectDir, state, { type: 'ESCALATE' });
-  ctx.callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: state.phase, status: 'running' });
-  emit(ctx.projectDir, state, 'task_escalating', ctx.task.id);
+  emitPlannerStatus(ctx.callbacks, state, 'running');
+  emit(ctx.projectDir, state, 'task_escalating', task.id, {});
 
-  ctx.callbacks.onEvent({ type: 'escalate', ts: Date.now(), tier: 1 });
-  const tier1Result = await ctx.planner.escalateHint(ctx.task, lastError, ctx.projectDir, {
-    onOutput: createTextHandler(ctx.callbacks),
+  emitEscalate(ctx.callbacks, 1);
+  const tier1Result = await ctx.planner.escalateHint(task, lastError, ctx.projectDir, {
+    onOutput: textHandler,
   });
   state = addUsageAndSave(ctx.projectDir, state, 'escalation', tier1Result.usage, ctx.callbacks);
 
   if (tier1Result.output) {
-    ctx.callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text: tier1Result.output });
+    textHandler(tier1Result.output);
   }
 
   const hintError = `${lastError}\n\n## Hints from senior reviewer:\n${tier1Result.output}`;
-  refreshCurrentCode(ctx.task, ctx.projectDir);
+  ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, state));
 
   const hintRetryResult = await ctx.implementer.retry({
-    task: ctx.task, projectDir: ctx.projectDir, config: ctx.config, context: ctx.context,
-    error: hintError, attempt: ctx.config.workflow.maxRetries + 1,
-    onProgress: createTextHandler(ctx.callbacks), onEvent: ctx.callbacks.onEvent,
+    task, projectDir: ctx.projectDir, config: ctx.config, context: ctx.context,
+    error: hintError, attempt: ctx.config.workflow.maxRetries + 1, kind: 'hint',
+    onOutput: textHandler, onEvent: ctx.callbacks.onEvent,
   });
   state = addUsageAndSave(ctx.projectDir, state, 'implementer', hintRetryResult.usage, ctx.callbacks);
 
   if (hintRetryResult.success) {
-    const commitResult = await validateAndCommit(ctx, state, 'escalated-hint', 'HINT_SUCCESS', 'with hints');
+    const commitResult = await validateAndCommit(ctx, task, state, 'escalated-hint', 'HINT_SUCCESS', 'with hints');
     if (commitResult.completed) {
-      return { state: commitResult.state, lastError, result: { completed: true, method: 'escalated-hint' } };
+      return { state: commitResult.state, task, lastError, attempts, result: { completed: true, method: 'escalated-hint', attempts } };
     }
-    return { state, lastError: formatValidationError(commitResult.validationResults) };
+    return { state, task, lastError: formatValidationError(commitResult.validationResults), attempts };
   }
 
-  return { state, lastError: hintRetryResult.error ?? 'Tier-1 hint retry failed to produce valid code' };
+  return { state, task, lastError: hintRetryResult.error ?? 'Tier-1 hint retry failed to produce valid code', attempts };
 }
 
 async function runTier2Full(
-  ctx: EscalationContext, state: WorkflowState, lastError: string,
+  ctx: EscalationContext, task: Task, state: WorkflowState, lastError: string, priorAttempts: number,
 ): Promise<{ state: WorkflowState; result: RetryResult }> {
+  const attempts = priorAttempts + 1;
+  const textHandler = createTextHandler(ctx.callbacks);
   state = transitionAndSave(ctx.projectDir, state, { type: 'HINT_FAIL' });
-  emit(ctx.projectDir, state, 'hint_failed', ctx.task.id);
+  emit(ctx.projectDir, state, 'hint_failed', task.id, {});
 
-  ctx.callbacks.onEvent({ type: 'escalate', ts: Date.now(), tier: 2 });
-  const tier2Result = await ctx.planner.escalateFull(ctx.task, lastError, ctx.projectDir, {
-    onOutput: createTextHandler(ctx.callbacks),
+  emitEscalate(ctx.callbacks, 2);
+  const tier2Result = await ctx.planner.escalateFull(task, lastError, ctx.projectDir, {
+    onOutput: textHandler,
   });
   state = addUsageAndSave(ctx.projectDir, state, 'escalation', tier2Result.usage, ctx.callbacks);
 
   if (tier2Result.success) {
-    const commitResult = await validateAndCommit(ctx, state, 'escalated-full', 'FULL_SUCCESS', 'escalated');
+    const commitResult = await validateAndCommit(ctx, task, state, 'escalated-full', 'FULL_SUCCESS', 'escalated');
     if (commitResult.completed) {
-      return { state: commitResult.state, result: { completed: true, method: 'escalated-full' } };
+      return { state: commitResult.state, result: { completed: true, method: 'escalated-full', attempts } };
     }
+    emitWarning(ctx.callbacks, `Tier-2 escalation produced code but validation failed: ${formatValidationError(commitResult.validationResults)}`);
   }
 
   state = transitionAndSave(ctx.projectDir, state, { type: 'FULL_FAIL' });
-  ctx.task.status = 'failed';
-  emit(ctx.projectDir, state, 'task_full_fail', ctx.task.id);
-  try { await discardTaskChanges(ctx.projectDir, ctx.task.file, ctx.task.action); } catch (err) {
-    ctx.callbacks.onEvent({ type: 'warning', ts: Date.now(), message: `Failed to discard changes for ${ctx.task.file}: ${err}` });
-  }
-  return { state, result: { completed: false, method: 'failed' } };
+  emit(ctx.projectDir, state, 'task_full_fail', task.id, {});
+  await warnOnFailure(ctx.callbacks, `discard changes for ${task.file}`, () =>
+    discardTaskChanges(ctx.projectDir, task.file, task.action),
+  );
+  return { state, result: { completed: false, method: 'failed', attempts } };
 }
 
 type HandleRetryOptions = {
@@ -139,16 +143,16 @@ type HandleRetryOptions = {
   taskStartTime?: number;
 };
 
-export async function handleRetryAndEscalation(opts: HandleRetryOptions): Promise<RetryResult> {
+export async function handleRetryAndEscalation(opts: HandleRetryOptions): Promise<{ state: WorkflowState; result: RetryResult }> {
   const { wctx, task, initialError, currentState, taskStartTime } = opts;
-  const ctx: EscalationContext = { ...wctx, task, taskStartTime };
+  const ctx: EscalationContext = { ...wctx, taskStartTime };
 
-  const retries = await runLocalRetries(ctx, currentState, initialError);
-  if (retries.result) return retries.result;
+  const retries = await runLocalRetries(ctx, task, currentState, initialError);
+  if (retries.result) return { state: retries.state, result: retries.result };
 
-  const tier1 = await runTier1Hint(ctx, retries.state, retries.lastError);
-  if (tier1.result) return tier1.result;
+  const tier1 = await runTier1Hint(ctx, retries.task, retries.state, retries.lastError, retries.attempts);
+  if (tier1.result) return { state: tier1.state, result: tier1.result };
 
-  const tier2 = await runTier2Full(ctx, tier1.state, tier1.lastError);
-  return tier2.result;
+  const tier2 = await runTier2Full(ctx, tier1.task, tier1.state, tier1.lastError, tier1.attempts);
+  return { state: tier2.state, result: tier2.result };
 }

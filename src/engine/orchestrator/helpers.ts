@@ -1,9 +1,17 @@
 import { join } from 'node:path';
-import { readFileSync, existsSync } from 'node:fs';
-import type { Task, WorkflowState, PlannerTokenUsage, ImplementerTokenUsage, ValidationResult, OrchestratorCallbacks, StateAction } from '../../types.js';
+import { readFile } from 'node:fs/promises';
+import type { Task, WorkflowState, TokenDelta, ValidationResult, OrchestratorCallbacks, StateAction, Config, TaskCompletionMethod } from '../../types.js';
+import { toErrorMessage } from '../../utils/format.js';
+import { isENOENT } from '../../utils/process-errors.js';
 import { transition } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
+import { writeSpecFile } from '../../core/paths-io.js';
+import { SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE } from '../../core/paths.js';
 import { addUsage, type UsageCategory } from './tokens.js';
+import { createTextHandler, emitWarning, emitCostUpdate } from './events.js';
+import type { Planner } from '../planners/types.js';
+import { runValidationWithEvents } from './validator.js';
+import { validateCommitAndAdvance } from './task-commit.js';
 
 export function transitionAndSave(
   projectDir: string,
@@ -16,65 +24,119 @@ export function transitionAndSave(
   return next;
 }
 
-export function refreshCurrentCode(task: Task, projectDir: string): void {
+export async function refreshCurrentCode(task: Task, projectDir: string): Promise<Task> {
   const filePath = join(projectDir, task.file);
-  if (existsSync(filePath)) {
-    task.currentCode = readFileSync(filePath, 'utf-8');
+  try {
+    const currentCode = await readFile(filePath, 'utf-8');
+    return { ...task, currentCode };
+  } catch (err) {
+    if (isENOENT(err)) return task;
+    throw err;
   }
 }
 
+export async function refreshAndPersistCode(
+  task: Task, projectDir: string, state: WorkflowState,
+): Promise<{ task: Task; state: WorkflowState }> {
+  const refreshed = await refreshCurrentCode(task, projectDir);
+  if (refreshed.currentCode !== undefined) {
+    state = transitionAndSave(projectDir, state, { type: 'UPDATE_TASK_CODE', taskId: refreshed.id, code: refreshed.currentCode });
+  }
+  return { task: refreshed, state };
+}
+
 export function allValidationsPassed(results: ValidationResult[]): boolean {
-  return results.length === 0 || results.every((r) => r.passed);
+  return results.every((r) => r.passed);
 }
 
 export function addUsageAndSave(
-  projectDir: string, state: WorkflowState, category: UsageCategory, usage: PlannerTokenUsage | ImplementerTokenUsage | null | undefined,
+  projectDir: string, state: WorkflowState, category: UsageCategory, usage: TokenDelta | null | undefined,
   callbacks: OrchestratorCallbacks,
 ): WorkflowState {
   const next = addUsage(state, category, usage);
   saveState(projectDir, next);
   if (usage) {
-    callbacks.onEvent({ type: 'cost-update', ts: Date.now(), tokenUsage: next.tokenUsage });
+    emitCostUpdate(callbacks, next.tokenUsage);
   }
   return next;
 }
 
-interface SignalError extends Error {
-  signal: 'SIGINT' | 'SIGTERM';
-}
+type RunPlannerReviewOptions = {
+  planner: Planner;
+  prompt: string;
+  projectDir: string;
+  callbacks: OrchestratorCallbacks;
+  state: WorkflowState;
+  writeTo?: typeof SPEC_FILE | typeof PLAN_FILE | typeof TASKS_FILE | typeof REVIEW_FILE;
+};
 
-function makeSignalError(signal: 'SIGINT' | 'SIGTERM'): SignalError {
-  const err = new Error(`Process received ${signal}`) as SignalError;
-  err.name = 'SignalError';
-  err.signal = signal;
-  return err;
-}
-
-export function isSignalError(e: unknown): e is SignalError {
-  return e instanceof Error && e.name === 'SignalError';
+export async function runPlannerReview(
+  opts: RunPlannerReviewOptions,
+): Promise<{ state: WorkflowState; text: string }> {
+  const { planner, prompt, projectDir, callbacks, writeTo } = opts;
+  const result = await planner.review(prompt, projectDir, {
+    onOutput: createTextHandler(callbacks),
+  });
+  const state = addUsageAndSave(projectDir, opts.state, 'planner', result.usage, callbacks);
+  if (writeTo) writeSpecFile(projectDir, writeTo, result.text);
+  return { state, text: result.text };
 }
 
 export async function withSignalHandlers(
   handler: () => void,
   fn: () => Promise<void>,
-): Promise<void> {
-  let receivedSignal: 'SIGINT' | 'SIGTERM' | null = null;
+): Promise<{ cancelled: boolean }> {
+  let receivedSignal = false;
 
-  const onSignal = (sig: 'SIGINT' | 'SIGTERM') => {
-    receivedSignal = sig;
+  const onSignal = () => {
+    receivedSignal = true;
     handler();
   };
 
-  const onSigint = () => onSignal('SIGINT');
-  const onSigterm = () => onSignal('SIGTERM');
+  const onSigint = () => onSignal();
+  const onSigterm = () => onSignal();
 
   process.on('SIGINT', onSigint);
   process.on('SIGTERM', onSigterm);
   try {
     await fn();
-    if (receivedSignal) throw makeSignalError(receivedSignal);
+    return { cancelled: receivedSignal };
   } finally {
     process.removeListener('SIGINT', onSigint);
     process.removeListener('SIGTERM', onSigterm);
   }
+}
+
+export async function warnOnFailure(
+  callbacks: OrchestratorCallbacks,
+  action: string,
+  fn: () => Promise<void>,
+): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    emitWarning(callbacks, `Failed to ${action}: ${toErrorMessage(err)}`);
+  }
+}
+
+type ValidateAndCommitTaskOpts = {
+  task: Task;
+  projectDir: string;
+  config: Config;
+  callbacks: OrchestratorCallbacks;
+  state: WorkflowState;
+  method: TaskCompletionMethod;
+  transitionType: 'VALIDATION_PASS' | 'HINT_SUCCESS' | 'FULL_SUCCESS';
+  commitSuffix?: string | undefined;
+  taskStartTime?: number | undefined;
+};
+
+export async function validateAndCommitTask(
+  opts: ValidateAndCommitTaskOpts,
+): Promise<{ state: WorkflowState; completed: boolean; validationResults: ValidationResult[] }> {
+  const validationResults = await runValidationWithEvents(opts.task, opts.projectDir, opts.config, opts.callbacks);
+  const result = await validateCommitAndAdvance({
+    ...opts, results: validationResults,
+  });
+  return { ...result, validationResults };
 }

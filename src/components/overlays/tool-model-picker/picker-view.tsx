@@ -2,8 +2,8 @@ import { Box, Text } from 'ink';
 import { TwoColumnPicker } from '../../pickers/two-column-picker/index.js';
 import { useTheme } from '../../../ui/theme.js';
 import { overlayStore } from '../../../stores/overlay.js';
-import { configStore } from '../../../stores/config.js';
 import type { PickerOption, ModelOption } from './picker-catalog.js';
+import { isCustomModel } from './picker-catalog.js';
 import { renderToolRow, renderModelRow } from './tool-row.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
@@ -45,8 +45,13 @@ function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }
 
 export function PickerView({ role, stepLabel, onCancel, catalog, actions }: PickerViewProps) {
   const t = useTheme();
-  const config = configStore.useConfig();
   const isPlanner = role === 'planner';
+
+  const currentModelIdx = catalog.focusModels
+    ? catalog.rightModels.findIndex(m => m.id === catalog.currentModel)
+    : -1;
+  // +1 offset accounts for virtual custom row prepended by allowCustomRight
+  const initialRightIndex = currentModelIdx >= 0 ? currentModelIdx + 1 : undefined;
 
   return (
     <TwoColumnPicker<PickerOption, ModelOption>
@@ -72,8 +77,6 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
           renderToolRow({
             item, isCursor, isSelected, maxWidth, isPlanner,
             currentCommand: catalog.currentCommand,
-            config,
-            role,
             theme: t,
           }),
       }}
@@ -81,12 +84,13 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
         items: catalog.rightModels,
         label: 'Models',
         getKey: item => item.id,
+        initialIndex: initialRightIndex,
         onLeftChange: actions.leftChange,
         placeholder: <ProviderHint currentItem={catalog.currentItem} />,
         customRow: {
           onSelect: actions.openCustomModel,
           onDelete: actions.deleteRight,
-          isCustom: (item) => 'isCustom' in item && Boolean(item.isCustom),
+          isCustom: isCustomModel,
         },
         renderRow: (item, { isCursor, maxWidth }) =>
           renderModelRow({ item, isCursor, maxWidth, currentModel: catalog.currentModel, theme: t }),

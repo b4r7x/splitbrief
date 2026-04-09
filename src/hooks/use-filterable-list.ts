@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useInput } from 'ink';
+import { useInput, type Key } from 'ink';
 
 interface UseFilterableListOptions<T> {
   items: T[];
@@ -9,6 +9,7 @@ interface UseFilterableListOptions<T> {
   isActive?: boolean | undefined;
   shouldAppendChar?: ((input: string) => boolean) | undefined;
   initialIndex?: number | undefined;
+  customKeys?: (input: string, key: Key, ctx: { filtered: T[]; selectedIndex: number }) => boolean | undefined;
 }
 
 interface UseFilterableListResult<T> {
@@ -27,6 +28,7 @@ export function useFilterableList<T>({
   isActive = true,
   shouldAppendChar,
   initialIndex,
+  customKeys,
 }: UseFilterableListOptions<T>): UseFilterableListResult<T> {
   const [filter, setFilter] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(initialIndex ?? 0);
@@ -37,6 +39,7 @@ export function useFilterableList<T>({
 
   useInput(
     (input, key) => {
+      if (customKeys?.(input, key, { filtered, selectedIndex: effectiveIndex })) return;
       if (key.escape) {
         onClose?.();
         return;

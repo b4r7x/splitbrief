@@ -1,10 +1,13 @@
-import type { ImplementerTokenUsage } from '../../types.js';
+import type { TokenDelta } from '../../types.js';
+import { toErrorMessage } from '../../utils/format.js';
+import { IdleTimeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
+import { toTokenDelta } from './token-utils.js';
 
 const STREAM_TIMEOUT_MS = 60_000;
 
 interface CompletionResult {
   text: string;
-  usage: ImplementerTokenUsage | null;
+  usage: TokenDelta | null;
 }
 
 interface StreamCompletionOptions {
@@ -22,7 +25,7 @@ interface StreamChunk {
   } | null;
 }
 
-interface StreamClient {
+export interface StreamClient {
   chat: {
     completions: {
       create: (body: {
@@ -35,6 +38,10 @@ interface StreamClient {
       }) => Promise<AsyncIterable<StreamChunk>>;
     };
   };
+}
+
+export function asStreamClient(client: { chat: { completions: { create: (...args: never[]) => unknown } } }): StreamClient {
+  return client as StreamClient;
 }
 
 function isErrorLike(val: unknown): val is Record<string, unknown> {
@@ -52,7 +59,7 @@ function throwMappedError(err: unknown, endpoint?: { provider: string; apiBase?:
   }
   if (typeof err.status === 'number' && err.status >= 400) {
     throw new Error(
-      `API error ${err.status} from ${endpoint?.provider || 'provider'}: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      `API error ${err.status} from ${endpoint?.provider || 'provider'}: ${toErrorMessage(err)}`,
     );
   }
   throw err;
@@ -80,52 +87,22 @@ export async function streamCompletion(
   }
 
   let fullResponse = '';
-  let usage: ImplementerTokenUsage | null = null;
-  const timeoutError = () => Object.assign(new Error('Model response timed out'), { isTimeout: true });
-  let timerId: ReturnType<typeof setTimeout> | null = null;
-  let rejectTimeout: ((err: Error) => void) | null = null;
-  const clearTimer = () => {
-    if (timerId !== null) {
-      clearTimeout(timerId);
-      timerId = null;
-    }
-  };
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    rejectTimeout = reject;
-    timerId = setTimeout(() => reject(timeoutError()), STREAM_TIMEOUT_MS);
-  });
-  const resetTimer = () => {
-    clearTimer();
-    timerId = setTimeout(() => rejectTimeout?.(timeoutError()), STREAM_TIMEOUT_MS);
-  };
+  let usage: TokenDelta | null = null;
 
   try {
-    await Promise.race([
-      (async () => {
-        for await (const chunk of stream) {
-          resetTimer();
-          const content = chunk.choices[0]?.delta?.content;
-          if (content) {
-            fullResponse += content;
-            onProgress(content);
-          }
-          if (chunk.usage) {
-            usage = {
-              inputTokens: chunk.usage.prompt_tokens ?? 0,
-              outputTokens: chunk.usage.completion_tokens ?? 0,
-            };
-          }
-        }
-      })(),
-      timeoutPromise,
-    ]);
-  } catch (err: unknown) {
-    if (err instanceof Object && 'isTimeout' in err) {
-      throw err;
+    for await (const chunk of withIdleTimeout(stream, STREAM_TIMEOUT_MS, 'Model response timed out')) {
+      const content = chunk.choices[0]?.delta?.content;
+      if (content) {
+        fullResponse += content;
+        onProgress(content);
+      }
+      if (chunk.usage) {
+        usage = toTokenDelta(chunk.usage) ?? usage;
+      }
     }
+  } catch (err: unknown) {
+    if (err instanceof IdleTimeoutError) throw err;
     throwMappedError(err, endpoint);
-  } finally {
-    clearTimer();
   }
 
   return { text: fullResponse, usage };

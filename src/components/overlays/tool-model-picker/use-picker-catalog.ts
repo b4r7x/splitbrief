@@ -2,16 +2,17 @@ import { useState } from 'react';
 import { configStore } from '../../../stores/config.js';
 import { overlayStore } from '../../../stores/overlay.js';
 import { detectionStore } from '../../../stores/detection.js';
+import { getPlannerCommand } from '../../../core/config/planner-config.js';
 import {
   buildPlannerPickerOptions,
   buildImplementerPickerOptions,
   buildRightModels,
+  isCurrentConfig,
   type PickerOption,
   type ModelOption,
 } from './picker-catalog.js';
 
 export interface PickerCatalog {
-  ready: boolean;
   items: PickerOption[];
   rightModels: ModelOption[];
   currentItem: PickerOption | undefined;
@@ -34,21 +35,20 @@ export function usePickerCatalog(
 
   const plannerDetections = detectionStore.use(s => s.planners);
   const implementerDetections = detectionStore.use(s => s.implementers);
-  const loading = detectionStore.use(s => s.loading);
-  const ready = !!(isPlanner ? plannerDetections : implementerDetections) && !loading;
 
   const [currentItemId, setCurrentItemId] = useState<string | null>(null);
 
-  const items = isPlanner
-    ? (plannerDetections ? buildPlannerPickerOptions(plannerDetections) : [])
-    : (implementerDetections ? buildImplementerPickerOptions(implementerDetections) : []);
+  const rawItems = isPlanner
+    ? buildPlannerPickerOptions(plannerDetections)
+    : buildImplementerPickerOptions(implementerDetections);
+  const items: PickerOption[] = rawItems.map(item => ({
+    ...item,
+    isCurrent: isCurrentConfig(item, config, role),
+  }));
 
-  const configId = isPlanner
-    ? config.planner.tool
-    : (config.implementer.kind ?? config.implementer.tool);
-  const configItemIndex = items.findIndex(item => item.id === configId);
+  const configItemIndex = items.findIndex(item => item.isCurrent);
   const preservedIndex = Math.min(preservedLeftIndex, Math.max(0, items.length - 1));
-  const initialLeftIdx = focusModels && configItemIndex >= 0 ? configItemIndex : preservedIndex;
+  const initialLeftIdx = configItemIndex >= 0 ? configItemIndex : preservedIndex;
 
   const customModels = isPlanner
     ? (config.planner.customModels ?? [])
@@ -66,10 +66,9 @@ export function usePickerCatalog(
 
   const roleLabel = isPlanner ? 'Planner' : 'Implementer';
   const currentModel = isPlanner ? config.planner.model : config.implementer.model;
-  const currentCommand = isPlanner ? config.planner.command : config.implementer.command;
+  const currentCommand = isPlanner ? getPlannerCommand(config.planner) : config.implementer.command;
 
   return {
-    ready,
     items,
     rightModels,
     currentItem,

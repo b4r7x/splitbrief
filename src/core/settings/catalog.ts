@@ -1,6 +1,9 @@
 import type { Config } from '../types/index.js';
 import { formatModelName } from '../providers/models.js';
 import { getProviderDisplayName } from '../providers/catalog.js';
+import { getPlannerToolName } from '../config/planner-config.js';
+
+const MAX_RETRIES_LIMIT = 10;
 
 export type SettingKind = 'boolean' | 'number' | 'string' | 'enum' | 'picker';
 
@@ -14,17 +17,23 @@ export interface SettingDef {
   min?: number;
   max?: number;
   integer?: boolean;
-  disabled?: (config: Config) => boolean;
+  /**
+   * Override for reading the display value. Used when the DU makes a direct
+   * dot-path read impossible (e.g. `planner.tool` only exists on cli variant,
+   * but the picker needs the canonical tool name across all variants).
+   */
+  readValue?: (config: Config) => unknown;
   formatValue?: (value: unknown) => string;
 }
 
 export const SETTINGS_DEFS: SettingDef[] = [
   {
-    id: 'planner.tool',
+    id: 'planner.kind',
     label: 'Tool',
     section: 'Planner',
     description: 'Planner tool or API provider \u2192 /planner',
     kind: 'picker',
+    readValue: (config) => getPlannerToolName(config.planner),
     formatValue: (v) => getProviderDisplayName(String(v ?? '')),
   },
   {
@@ -33,6 +42,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     section: 'Planner',
     description: 'Planner model \u2192 /planner',
     kind: 'picker',
+    readValue: (config) => config.planner.model,
     formatValue: (v) => formatModelName(String(v ?? '')),
   },
   {
@@ -138,7 +148,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     kind: 'number',
     min: 0,
     integer: true,
-    max: 10,
+    max: MAX_RETRIES_LIMIT,
   },
   {
     id: 'workflow.commitStrategy',

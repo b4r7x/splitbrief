@@ -1,41 +1,23 @@
-export type PlannerTokenUsage = { inputTokens: number; outputTokens: number };
-export type ImplementerTokenUsage = { inputTokens: number; outputTokens: number };
+import type { z } from 'zod';
+import type { TokenUsageSchema, TokenDeltaSchema } from './schemas/tokens.js';
+import type { TaskTokenUsageSchema, CostBreakdownSchema, SummarySchema } from './schemas/summary.js';
 
-export interface TokenUsage {
-  plannerInput: number;
-  plannerOutput: number;
-  implementerInput: number;
-  implementerOutput: number;
-  escalationInput: number;
-  escalationOutput: number;
-}
+export type { TaskCompletionMethod } from './schemas/enums.js';
+export { TASK_COMPLETION_METHODS } from './schemas/enums.js';
 
-export type TaskCompletionMethod = 'local' | 'escalated-hint' | 'escalated-full' | 'failed' | 'skipped';
+export type TokenDelta = z.infer<typeof TokenDeltaSchema>;
 
-export interface TaskTokenUsage {
-  taskId: string;
-  taskTitle: string;
-  method: TaskCompletionMethod;
-  implementerTokens: number;
-  escalationTokens: number;
-  retryCount: number;
-}
+export type TokenUsage = z.infer<typeof TokenUsageSchema>;
 
-export interface CostBreakdown {
-  hypotheticalCost: number;
-  actualPlannerCost: number;
-  actualImplementerCost: number;
-  totalActualCost: number;
-  savingsAmount: number;
-  savingsPercentage: number;
-  localCompletionRate: number;
-}
+export type TaskTokenUsage = z.infer<typeof TaskTokenUsageSchema>;
+
+export type CostBreakdown = z.infer<typeof CostBreakdownSchema>;
 
 export interface ImplementerResult {
   success: boolean;
   output: string;
   error?: string | undefined;
-  usage?: ImplementerTokenUsage | null | undefined;
+  usage?: TokenDelta | undefined;
 }
 
 export interface ValidationResult {
@@ -45,19 +27,4 @@ export interface ValidationResult {
   output?: string | undefined;
 }
 
-export interface Summary {
-  feature: string;
-  totalTasks: number;
-  completedByLocal: number;
-  escalatedToPlanner: number;
-  skipped: number;
-  failed: number;
-  totalTime: number;
-  tokenUsage: TokenUsage;
-  estimatedCostSavings: string;
-  escalationRate: number;
-  taskBreakdown?: TaskTokenUsage[] | undefined;
-  costBreakdown?: CostBreakdown | undefined;
-  plannerTool?: string | undefined;
-  implementerTool?: string | undefined;
-}
+export type Summary = z.infer<typeof SummarySchema>;

@@ -1,19 +1,23 @@
-import type { Config, WorkflowState, TaskTokenUsage, Summary, OrchestratorCallbacks, SkillMeta, ProjectContext, PlannerTokenUsage, Task } from '../../types.js';
+import type { Config, WorkflowState, TaskTokenUsage, Summary, OrchestratorCallbacks, SkillMeta, ProjectContext, Task } from '../../types.js';
+import { getPlannerToolName } from '../../core/config/planner-config.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
-import { ensureTinySpecDir, writeSpecFile, readPackageJson, readSpecFile } from '../../utils/fs.js';
+import { ensureTinySpecDir, readSpecFileOrEmpty } from '../../core/paths-io.js';
+import { readPackageJson } from '../../utils/fs.js';
+import { SPEC_FILE, REVIEW_FILE } from '../../core/paths.js';
 import { killAllProcesses } from '../../utils/process.js';
-import { discardTaskChanges, getCurrentDiff } from '../../utils/git.js';
-import { toErrorMessage } from '../../utils/format.js';
+import { getCurrentDiff } from '../../utils/git.js';
+import { discardTaskChanges } from './git-ops.js';
+import { toErrorMessage, warnError } from '../../utils/format.js';
 import { createPlanner } from '../planners/factory.js';
 import { createImplementer } from '../implementers/factory.js';
 import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
 
 import type { Planner } from '../planners/types.js';
 import type { Implementer } from '../implementers/types.js';
-import { buildSummary } from './cost.js';
-import { createTextHandler, emit } from './events.js';
-import { addUsageAndSave, transitionAndSave, withSignalHandlers, isSignalError } from './helpers.js';
+import { buildSummary, type SummaryBase } from './cost.js';
+import { emit, emitError, emitWarning, emitPlannerStatus } from './events.js';
+import { transitionAndSave, withSignalHandlers, runPlannerReview } from './helpers.js';
 import { runPlanningPhase } from './planning.js';
 import { runTaskLoop } from './task-loop.js';
 
@@ -37,8 +41,6 @@ export type RunWorkflowOptions = {
   signal?: AbortSignal | undefined;
 };
 
-type SummaryBase = { feature: string; startTime: number; plannerTool: string; implementerTool: string };
-
 type InitResult =
   | { ok: true; state: WorkflowState; wctx: WorkflowContext }
   | { ok: false; summary: Summary };
@@ -51,7 +53,7 @@ async function initializeWorkflow(
   const { feature, projectDir, config, callbacks, savedState } = opts;
 
   if (config.implementer.kind === 'shell' && !config.implementer.command) {
-    callbacks.onEvent({ type: 'error', ts: Date.now(), message: 'Shell implementer requires implementer.command to be set in config.' });
+    emitError(callbacks, 'Shell implementer requires implementer.command to be set in config.');
     return { ok: false, summary: buildSummary({ ...summaryBase, state: createInitialState(feature) }) };
   }
 
@@ -60,7 +62,7 @@ async function initializeWorkflow(
   const planner = await createPlanner(config);
   const available = await planner.isAvailable();
   if (!available) {
-    callbacks.onEvent({ type: 'error', ts: Date.now(), message: `Planner '${config.planner.tool}' is not available. Make sure it's installed.` });
+    emitError(callbacks, `Planner '${getPlannerToolName(config.planner)}' is not available. Make sure it's installed.`);
     return { ok: false, summary: buildSummary({ ...summaryBase, state: createInitialState(feature) }) };
   }
 
@@ -71,19 +73,19 @@ async function initializeWorkflow(
   if (savedState) {
     state = savedState;
     setTrackedState(state);
-    callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: state.phase, status: 'running' });
-    emit(projectDir, state, 'workflow_resumed');
+    emitPlannerStatus(callbacks, state, 'running');
+    emit(projectDir, state, 'workflow_resumed', undefined, {});
   } else {
     state = createInitialState(feature);
     state = transitionAndSave(projectDir, state, { type: 'START', feature });
     setTrackedState(state);
-    callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: state.phase, status: 'running' });
-    emit(projectDir, state, 'workflow_started');
+    emitPlannerStatus(callbacks, state, 'running');
+    emit(projectDir, state, 'workflow_started', undefined, {});
   }
 
   const pkg = readPackageJson(projectDir);
   const context: ProjectContext = {
-    name: (pkg?.name as string) ?? 'unknown',
+    name: typeof pkg?.['name'] === 'string' ? pkg['name'] : 'unknown',
     dir: projectDir,
     runtime: 'node',
     testCommand: config.validation.testCommand,
@@ -92,18 +94,6 @@ async function initializeWorkflow(
   const wctx: WorkflowContext = { projectDir, config, callbacks, planner, context, implementer, signal: opts.signal };
 
   return { ok: true, state, wctx };
-}
-
-async function runFinalReview(
-  projectDir: string,
-  callbacks: OrchestratorCallbacks,
-  planner: Planner,
-): Promise<{ text: string; usage: PlannerTokenUsage | null }> {
-  const diff = await getCurrentDiff(projectDir);
-  const spec = readSpecFile(projectDir, 'spec.md') ?? '';
-  const prompt = buildFinalReviewPrompt(spec, diff);
-  const emitText = createTextHandler(callbacks);
-  return planner.review(prompt, projectDir, { onOutput: emitText });
 }
 
 async function runFinalReviewPhase(
@@ -116,49 +106,65 @@ async function runFinalReviewPhase(
 
   state = transitionAndSave(projectDir, state, { type: 'ALL_DONE' });
   const finalReviewStart = Date.now();
-  callbacks.onEvent({ type: 'planner-status', ts: finalReviewStart, phase: state.phase, status: 'running' });
-  emit(projectDir, state, 'all_tasks_done');
+  emitPlannerStatus(callbacks, state, 'running');
+  emit(projectDir, state, 'all_tasks_done', undefined, {});
 
   try {
-    const reviewResult = await runFinalReview(projectDir, callbacks, planner);
-    writeSpecFile(projectDir, 'review.md', reviewResult.text);
-    state = addUsageAndSave(projectDir, state, 'planner', reviewResult.usage, callbacks);
+    const diff = await getCurrentDiff(projectDir);
+    const spec = readSpecFileOrEmpty(projectDir, SPEC_FILE);
+    const review = await runPlannerReview({
+      planner,
+      prompt: buildFinalReviewPrompt(spec, diff),
+      projectDir,
+      callbacks,
+      state,
+      writeTo: REVIEW_FILE,
+    });
+    state = review.state;
   } catch (err) {
-    callbacks.onEvent({ type: 'error', ts: Date.now(), message: `Final review failed: ${toErrorMessage(err)}` });
+    emitError(callbacks, `Final review failed: ${toErrorMessage(err)}`);
   }
 
   state = transitionAndSave(projectDir, state, { type: 'REVIEW_DONE' });
-  callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: state.phase, status: 'done', duration: Date.now() - finalReviewStart });
-  emit(projectDir, state, 'workflow_complete');
+  emitPlannerStatus(callbacks, state, 'done', { duration: Date.now() - finalReviewStart });
+  emit(projectDir, state, 'workflow_complete', undefined, {});
 
   const summary = buildSummary({ ...summaryBase, state, taskBreakdowns });
   callbacks.onComplete(summary);
   return summary;
 }
 
+function shutdownWorkflow(
+  projectDir: string,
+  getTrackedState: () => WorkflowState | undefined,
+  getCurrentTask: () => Pick<Task, 'file' | 'action'> | undefined,
+): void {
+  killAllProcesses();
+  const trackedState = getTrackedState();
+  if (trackedState) {
+    try { saveState(projectDir, trackedState); } catch (err) {
+      warnError('Failed to save state during shutdown', err);
+    }
+  }
+  const currentTask = getCurrentTask();
+  if (currentTask) {
+    try { discardTaskChanges(projectDir, currentTask.file, currentTask.action); } catch (err) {
+      warnError('Failed to discard changes during shutdown', err);
+    }
+  }
+}
+
 export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   const { feature, projectDir, config, callbacks, savedState, selectedSkills } = opts;
   const startTime = Date.now();
-  const summaryBase: SummaryBase = { feature, startTime, plannerTool: config.planner.tool, implementerTool: config.implementer.tool };
+  const summaryBase: SummaryBase = { feature, startTime, plannerTool: getPlannerToolName(config.planner), implementerTool: config.implementer.tool };
   let trackedState: WorkflowState | undefined;
   let currentTask: Pick<Task, 'file' | 'action'> | undefined;
   let result: Summary | undefined;
 
-  const shutdown = () => {
-    killAllProcesses();
-    if (trackedState) {
-      try { saveState(projectDir, trackedState); } catch (err) {
-        process.stderr.write(`Warning: failed to save state during shutdown: ${err}\n`);
-      }
-    }
-    if (currentTask) {
-      try { discardTaskChanges(projectDir, currentTask.file, currentTask.action); } catch (err) {
-        process.stderr.write(`Warning: failed to discard changes during shutdown: ${err}\n`);
-      }
-    }
-  };
+  const shutdown = () => shutdownWorkflow(projectDir, () => trackedState, () => currentTask);
 
-  await withSignalHandlers(shutdown, async () => {
+  const { cancelled } = await withSignalHandlers(shutdown, async () => {
     try {
       const init = await initializeWorkflow(opts, summaryBase, (s) => { trackedState = s; });
       if (!init.ok) { result = init.summary; return; }
@@ -191,18 +197,20 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     } catch (err) {
       if (trackedState) {
         try { saveState(projectDir, trackedState); } catch (saveErr) {
-          callbacks.onEvent({ type: 'warning', ts: Date.now(), message: `Failed to save state: ${saveErr}` });
+          emitWarning(callbacks, `Failed to save state: ${toErrorMessage(saveErr)}`);
         }
       }
       killAllProcesses();
-      if (!isSignalError(err)) {
-        const msg = toErrorMessage(err);
-        callbacks.onEvent({ type: 'error', ts: Date.now(), message: msg });
-      }
+      emitError(callbacks, toErrorMessage(err));
       result = buildSummary({ ...summaryBase, state: trackedState ?? createInitialState(feature) });
     }
   });
 
-  if (!result) throw new Error('Unreachable: workflow did not produce a summary');
+  if (!result) {
+    if (cancelled) {
+      return buildSummary({ ...summaryBase, state: trackedState ?? createInitialState(feature) });
+    }
+    throw new Error('Unreachable: workflow did not produce a summary');
+  }
   return result;
 }

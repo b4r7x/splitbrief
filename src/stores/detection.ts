@@ -1,28 +1,27 @@
 import { createStore, storeBase } from './create-store.js';
 import type { PlannerDetection, ProviderDetection } from '../types.js';
-import { detectAvailablePlanners, detectAvailableImplementers } from '../engine/detection/index.js';
 
 interface DetectionState {
-  planners: PlannerDetection[] | null;
-  implementers: ProviderDetection[] | null;
-  loading: boolean;
+  planners: PlannerDetection[];
+  implementers: ProviderDetection[];
 }
 
 const initial: DetectionState = {
-  planners: null,
-  implementers: null,
-  loading: false,
+  planners: [],
+  implementers: [],
 };
 
 const store = createStore<DetectionState>(initial);
 
-async function load(): Promise<void> {
-  store.set(s => ({ ...s, loading: true }));
+async function load(
+  detectPlanners: () => Promise<PlannerDetection[]>,
+  detectImplementers: () => Promise<ProviderDetection[]>,
+): Promise<void> {
   const [planners, implementers] = await Promise.all([
-    detectAvailablePlanners(),
-    detectAvailableImplementers(),
+    detectPlanners(),
+    detectImplementers(),
   ]);
-  store.set({ planners, implementers, loading: false });
+  store.set({ planners, implementers });
 }
 
 export const detectionStore = { ...storeBase(store), load };

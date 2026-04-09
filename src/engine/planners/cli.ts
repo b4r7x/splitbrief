@@ -1,65 +1,19 @@
-import type { PlannerTokenUsage } from '../../types.js';
+import type { InvokeResult } from '../../types.js';
 import type { Planner } from './types.js';
-import { createPlannerBase, createIsAvailable, createGetVersion, type InvokeResult } from './base.js';
-import { spawnAndCollect } from './spawn-collect.js';
-import { parseJsonlLine, parseOpencodeLine, parseTextLine } from '../streaming/output-parsers.js';
-import { CLI_TOOLS, type CliToolName } from '../cli-tools.js';
+import { createPlannerBase } from './base.js';
+import { createCommandAvailability } from '../../utils/availability.js';
+import { spawnAndCollect } from '../streaming/spawn-collect.js';
+import type { CliPlannerTool } from '../../types.js';
+import { CLI_TOOLS } from '../cli-tools.js';
 
-type CliPlannerKind = CliToolName;
-
-interface ParsedLine {
-  text?: string | undefined;
-  usage?: PlannerTokenUsage | undefined;
-  isResult?: boolean | undefined;
-}
-
-interface CliPlannerSpec {
-  buildArgs: (model: string | undefined, prompt: string, projectDir: string, mode: 'plan' | 'escalate') => string[];
-  parseLine: (line: string) => ParsedLine;
-  postProcess?: ((text: string, stderrOutput: string, usage: PlannerTokenUsage | null) => InvokeResult) | undefined;
-  isAvailableOpts?: { timeout?: number | undefined } | undefined;
-}
-
-const SPECS: Record<CliPlannerKind, CliPlannerSpec> = {
-  codex: {
-    buildArgs: (model, prompt, projectDir) => {
-      const args = ['exec', '--json', '--full-auto', '--cd', projectDir, prompt];
-      if (model) args.unshift('--model', model);
-      return args;
-    },
-    parseLine: parseJsonlLine,
-  },
-  opencode: {
-    buildArgs: (model, prompt) => {
-      const args = ['run', '--format', 'json', '--agent', 'plan', prompt];
-      if (model) args.splice(1, 0, '--model', model);
-      return args;
-    },
-    parseLine: parseOpencodeLine,
-    isAvailableOpts: { timeout: 5000 },
-  },
-  aider: {
-    buildArgs: (model, prompt, _projectDir, mode) => {
-      const args = ['--chat-mode', 'ask', '--yes-always', '--no-stream', '--no-pretty', '--message', prompt];
-      if (model) args.unshift('--model', model);
-      if (mode === 'plan') args.push('--read', 'src/');
-      return args;
-    },
-    parseLine: (line) => ({ text: line + '\n' }),
-    postProcess: (text, stderrOutput, usage) => {
-      const allOutput = text + stderrOutput;
-      for (const line of allOutput.split('\n')) {
-        const parsed = parseTextLine(line);
-        if (parsed.usage) return { text: text.trim(), usage: parsed.usage };
-      }
-      return { text: text.trim(), usage };
-    },
-  },
-};
+type CliPlannerKind = Exclude<CliPlannerTool, 'claude-code'>;
 
 export function createCliPlanner(kind: CliPlannerKind, model?: string): Planner {
-  const spec = SPECS[kind];
   const tool = CLI_TOOLS[kind];
+  if (!tool.planner) {
+    throw new Error(`CLI tool '${kind}' has no planner configuration`);
+  }
+  const planner = tool.planner;
 
   async function invoke(
     prompt: string,
@@ -70,23 +24,22 @@ export function createCliPlanner(kind: CliPlannerKind, model?: string): Planner 
     let stderrOutput = '';
     const result = await spawnAndCollect({
       command: tool.command,
-      args: spec.buildArgs(model, prompt, projectDir, mode),
+      args: planner.buildArgs({ prompt, model, projectDir, mode }),
       cwd: projectDir,
       notFoundMessage: tool.notFoundMessage,
-      parseLine: spec.parseLine,
-      onOutput,
-      onStderr: spec.postProcess ? (chunk) => { stderrOutput += chunk; } : undefined,
+      parseLine: planner.parseLine,
+      onText: onOutput,
+      onStderr: planner.postProcess ? (chunk) => { stderrOutput += chunk; } : undefined,
     });
 
-    if (spec.postProcess) return spec.postProcess(result.text, stderrOutput, result.usage);
+    if (planner.postProcess) return planner.postProcess(result.text, stderrOutput, result.usage);
     return result;
   }
 
   return createPlannerBase({
-    invokePlan: (prompt, projectDir, onOutput) => invoke(prompt, projectDir, onOutput, 'plan'),
-    invokeEscalate: (prompt, projectDir, onOutput) => invoke(prompt, projectDir, onOutput, 'escalate'),
+    invokePlan: ({ prompt, projectDir, callbacks }) => invoke(prompt, projectDir, callbacks.onOutput, 'plan'),
+    invokeEscalate: ({ prompt, projectDir, callbacks }) => invoke(prompt, projectDir, callbacks.onOutput, 'escalate'),
 
-    isAvailable: createIsAvailable(tool.command, spec.isAvailableOpts),
-    getVersion: createGetVersion(tool.command),
+    ...createCommandAvailability(tool.command, planner.isAvailableOpts),
   });
 }
