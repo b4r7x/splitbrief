@@ -1,4 +1,6 @@
-# UI/UX Redesign (v0.8)
+> **Archived:** this document describes a pre-refactor design exploration. For the current codebase layout, see `CLAUDE.md`.
+
+# UI/UX Redesign (v0.8 proposal)
 
 ## Overview
 

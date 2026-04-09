@@ -4,7 +4,6 @@ import {
   matchesFilter,
   validateNumber,
   displayValue,
-  valueColor,
 } from '../../components/overlays/settings-overlay/settings-presentation.js';
 
 describe('displayValue with formatValue', () => {

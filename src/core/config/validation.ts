@@ -1,9 +1,8 @@
-import { KNOWN_PROVIDER_NAMES } from '../providers/catalog.js';
+import type { OutputFormat } from '../types/index.js';
+import { IMPLEMENTER_KINDS } from '../types/index.js';
+import { KNOWN_PROVIDER_NAMES, PROVIDER_IDS } from '../providers/catalog.js';
 import { getConfigValue } from './access.js';
-
-const VALID_PLANNER_TOOLS = ['claude-code', 'codex', 'opencode', 'aider', 'agent-sdk', 'shell', 'anthropic', 'openrouter', 'ollama', 'lm-studio', 'deepseek'] as const;
-const VALID_IMPLEMENTER_TYPES = ['api', 'shell', 'agent', 'agent-sdk', 'claude-code', 'codex', 'opencode', 'aider'];
-const VALID_OUTPUT_FORMATS = ['stream-json', 'jsonl', 'text'];
+const VALID_OUTPUT_FORMATS: readonly OutputFormat[] = ['stream-json', 'jsonl', 'text', 'opencode'] as const;
 
 export interface ConfigError {
   path: string;
@@ -61,7 +60,7 @@ function apiKeyValidator(
 }
 
 const validators: ValidatorFn[] = [
-  enumValidator('planner.tool', VALID_PLANNER_TOOLS),
+  enumValidator('planner.tool', PROVIDER_IDS),
 
   apiKeyValidator(['agent-sdk', 'anthropic'], 'ANTHROPIC_API_KEY', (config) => {
     const tool = getConfigValue(config, 'planner.tool');
@@ -79,13 +78,13 @@ const validators: ValidatorFn[] = [
       errors.push({ path: 'planner.command', message: 'Shell planner requires planner.command to be set' });
     }
     const outputFormat = getConfigValue(config, 'planner.outputFormat');
-    if (outputFormat !== undefined && (typeof outputFormat !== 'string' || !VALID_OUTPUT_FORMATS.includes(outputFormat))) {
+    if (outputFormat !== undefined && (typeof outputFormat !== 'string' || !(VALID_OUTPUT_FORMATS as readonly string[]).includes(outputFormat))) {
       errors.push({ path: 'planner.outputFormat', message: `Must be one of: ${VALID_OUTPUT_FORMATS.join(', ')} (got ${JSON.stringify(outputFormat)})` });
     }
     return errors;
   },
 
-  enumValidator('implementer.kind', VALID_IMPLEMENTER_TYPES),
+  enumValidator('implementer.kind', IMPLEMENTER_KINDS),
 
   (config) => {
     const implementerKind = getConfigValue(config, 'implementer.kind');

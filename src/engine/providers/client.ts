@@ -23,7 +23,7 @@ export async function detectCapabilities(config: Config): Promise<{ contextLengt
     try {
       const ctx = await provider.detectContextLength(config.implementer.model);
       if (ctx) return { contextLength: ctx };
-    } catch { /* non-fatal: context length fetch is best-effort */ }
+    } catch {}
   }
 
   return fallback;

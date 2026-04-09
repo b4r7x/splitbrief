@@ -37,7 +37,7 @@ export function extractQuestionsFromStream(text: string): ClarificationQuestion[
     }
 
     const jsonEnd = findBalancedBrace(text, jsonStart);
-    if (jsonEnd === -1) break; // incomplete — not enough data yet
+    if (jsonEnd === -1) break;
 
     const afterJson = jsonEnd + 1;
     if (text.substring(afterJson, afterJson + MARKER_SUFFIX.length) !== MARKER_SUFFIX) {
@@ -54,9 +54,7 @@ export function extractQuestionsFromStream(text: string): ClarificationQuestion[
       ) {
         questions.push(parsed as ClarificationQuestion);
       }
-    } catch {
-      // skip malformed JSON
-    }
+    } catch {}
 
     searchFrom = afterJson + MARKER_SUFFIX.length;
   }
@@ -79,7 +77,6 @@ export function createQuestionAccumulator() {
         allQuestions.push(q);
       }
 
-      // Trim buffer: keep only content after the last complete marker
       const lastSuffix = buffer.lastIndexOf(MARKER_SUFFIX);
       if (lastSuffix !== -1) {
         buffer = buffer.substring(lastSuffix + MARKER_SUFFIX.length);

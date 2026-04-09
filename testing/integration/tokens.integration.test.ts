@@ -3,9 +3,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { guardIntegration, type TestGuard } from './guard.js';
-import { createInitialState } from '../../src/core/state.js';
-import { saveState, loadState } from '../../src/core/state-persistence.js';
-import { estimateCostSavings } from '../../src/engine/orchestrator/index.js';
+import { createInitialState } from '../../src/core/state/machine.js';
+import { saveState, loadState } from '../../src/core/state/persistence.js';
+import { estimateCostSavings } from '../../src/engine/orchestrator/cost.js';
 
 let g: TestGuard;
 

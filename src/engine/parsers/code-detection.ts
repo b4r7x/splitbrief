@@ -44,12 +44,16 @@ export function stripNaturalLanguage(text: string): string {
   const lines = text.split('\n');
 
   let start = 0;
-  while (start < lines.length && (isNaturalLanguageLine(lines[start]) || lines[start].trim() === '')) {
+  while (start < lines.length) {
+    const line = lines[start] ?? '';
+    if (!isNaturalLanguageLine(line) && line.trim() !== '') break;
     start++;
   }
 
   let end = lines.length - 1;
-  while (end > start && (isNaturalLanguageLine(lines[end]) || lines[end].trim() === '')) {
+  while (end > start) {
+    const line = lines[end] ?? '';
+    if (!isNaturalLanguageLine(line) && line.trim() !== '') break;
     end--;
   }
 

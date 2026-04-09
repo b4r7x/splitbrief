@@ -3,6 +3,7 @@ import type { Config, Summary, WorkflowState as WfState, SkillMeta, TuiEvent } f
 import { useInputMode } from './use-input-mode.js';
 import { workflowStore } from '../stores/workflow.js';
 import { feedbackStore } from '../stores/feedback.js';
+import { conversationScrollStore } from '../stores/conversation-scroll.js';
 import { runWorkflow } from '../engine/orchestrator/index.js';
 import { killAllProcesses } from '../utils/process.js';
 import { REVIEW_HINT, parseReviewCommand } from '../core/commands/review-commands.js';
@@ -15,8 +16,8 @@ interface UseWorkflowOptions {
   projectDir: string;
   config: Config;
   onComplete: (summary: Summary) => void;
-  initialResumeState?: WfState;
-  selectedSkills?: SkillMeta[];
+  initialResumeState?: WfState | undefined;
+  selectedSkills?: SkillMeta[] | undefined;
 }
 
 export function useWorkflow({ feature, projectDir, config, onComplete, initialResumeState, selectedSkills }: UseWorkflowOptions) {
@@ -28,23 +29,13 @@ export function useWorkflow({ feature, projectDir, config, onComplete, initialRe
 
   const resumeState = inlineResume ?? initialResumeState;
 
-  const configRef = useRef(config);
-  configRef.current = config;
-  const resumeStateRef = useRef(resumeState);
-  resumeStateRef.current = resumeState;
-  const selectedSkillsRef = useRef(selectedSkills);
-  selectedSkillsRef.current = selectedSkills;
-  const stableOnComplete = useEffectEvent(onComplete);
-
-  useEffect(() => {
-    abortedRef.current = false;
-
-    const controller = new AbortController();
+  const startWorkflow = useEffectEvent((controller: AbortController) => {
     workflowStore.reset({
-      phase: resumeStateRef.current?.phase ?? 'idle',
-      currentTask: resumeStateRef.current?.currentTaskIndex ?? 0,
-      totalTasks: resumeStateRef.current?.tasks?.length ?? 0,
+      phase: resumeState?.phase ?? 'idle',
+      currentTask: resumeState?.currentTaskIndex ?? 0,
+      totalTasks: resumeState?.tasks?.length ?? 0,
     });
+    conversationScrollStore.reset();
     workflowStore.setAbortController(controller);
 
     const addEvent = (event: TuiEvent) => {
@@ -55,7 +46,7 @@ export function useWorkflow({ feature, projectDir, config, onComplete, initialRe
     runWorkflow({
       feature,
       projectDir,
-      config: configRef.current,
+      config,
       signal: controller.signal,
       callbacks: {
         onEvent: addEvent,
@@ -70,24 +61,28 @@ export function useWorkflow({ feature, projectDir, config, onComplete, initialRe
         onQuestionAsked: (question, num, total) =>
           inputMode.setQuestionMode(`Question ${num}/${total}: ${question.text}`),
         onComplete: (summary) => {
-          if (!abortedRef.current) stableOnComplete(summary);
+          if (!abortedRef.current) onComplete(summary);
         },
       },
-      savedState: resumeStateRef.current,
-      selectedSkills: selectedSkillsRef.current,
+      savedState: resumeState,
+      selectedSkills,
     }).catch((err) => {
       if (!abortedRef.current && !workflowStore.get().cancelled) {
         workflowStore.addEvent({ type: 'planner-text', ts: Date.now(), text: `Error: ${String(err)}` });
       }
     });
+  });
 
+  useEffect(() => {
+    abortedRef.current = false;
+    const controller = new AbortController();
+    startWorkflow(controller);
     return () => {
       abortedRef.current = true;
       controller.abort();
       inputMode.resetMode();
       killAllProcesses();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refs for config/resumeState/selectedSkills avoid restarting workflow; stableOnComplete via useEffectEvent; inputMode methods use internal refs; runId forces re-run on resume
   }, [feature, projectDir, runId]);
 
   const reviewFilePath = workflowStore.use(s => s.reviewFilePath);

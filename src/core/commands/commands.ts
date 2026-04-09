@@ -1,5 +1,5 @@
-import { ALL_SCREENS, WORKFLOW_MODES } from '../../types.js';
-import type { Screen, SlashCommandDef, CommandContext, CommandPaletteItem, WorkflowMode } from '../../types.js';
+import { ALL_SCREENS, WORKFLOW_MODES } from '../types/index.js';
+import type { Screen, SlashCommandDef, CommandContext, CommandPaletteItem, WorkflowMode } from '../types/index.js';
 import { getShortcutKey } from './shortcuts.js';
 import { configStore } from '../../stores/config.js';
 import { feedbackStore } from '../../stores/feedback.js';
@@ -119,7 +119,7 @@ export function executeSlashCommand(
   onError: (msg: string) => void,
 ): void {
   const parts = raw.split(' ');
-  const name = parts[0].toLowerCase();
+  const name = (parts[0] ?? '').toLowerCase();
   const args = parts.slice(1).join(' ').trim() || undefined;
   const cmd = findCommand(commands, name);
   if (!cmd) {

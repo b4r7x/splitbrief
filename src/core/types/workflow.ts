@@ -22,11 +22,11 @@ export interface Task {
   file: string;
   dependsOn: string[];
   description: string;
-  signature?: string;
-  currentCode?: string;
+  signature?: string | undefined;
+  currentCode?: string | undefined;
   tests: string[];
   constraints: string[];
-  pattern?: string;
+  pattern?: string | undefined;
   typeDefs: string;
   implementationSteps: string[];
   status: TaskStatus;

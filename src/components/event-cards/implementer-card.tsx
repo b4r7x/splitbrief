@@ -1,4 +1,3 @@
-import React from 'react';
 import { Box, Text } from 'ink';
 import type { TuiEvent } from '../../types.js';
 import { useTheme } from '../../ui/theme.js';

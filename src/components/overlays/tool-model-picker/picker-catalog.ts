@@ -10,14 +10,14 @@ export interface PickerOption {
   kind: 'cli' | 'api' | 'provider' | 'shell';
   available: boolean;
   badge: string;
-  version?: string | null;
+  version?: string | null | undefined;
 }
 
 export interface ModelOption {
   id: string;
-  isDefault?: boolean;
-  isDetected?: boolean;
-  isCustom?: boolean;
+  isDefault?: boolean | undefined;
+  isDetected?: boolean | undefined;
+  isCustom?: boolean | undefined;
 }
 
 function sortByAvailability(a: PickerOption, b: PickerOption): number {

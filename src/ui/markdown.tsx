@@ -45,7 +45,7 @@ function parseBlocks(text: string): Block[] {
   return blocks;
 }
 
-function renderInlineItalic(segment: string, baseKey: string, t: Theme) {
+function renderInlineItalic(segment: string, baseKey: string, _t: Theme) {
   const parts = segment.split(/\*([^*]+)\*/g);
   if (parts.length === 1) return <Text key={baseKey}>{segment}</Text>;
   return (
@@ -102,9 +102,10 @@ function HighlightedCode({ code, lang, theme: t }: { code: string; lang: string;
     return () => { cancelled = true; };
   }, [code, lang]);
 
+  const bgProp = t.panelBg ? { backgroundColor: t.panelBg } : {};
   return (
     <Box marginY={0} paddingX={1} flexDirection="column">
-      <Text backgroundColor={t.panelBg || undefined}>{hl ?? code}</Text>
+      <Text {...bgProp}>{hl ?? code}</Text>
     </Box>
   );
 }

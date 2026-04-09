@@ -1,11 +1,11 @@
-import { accumulateUsage } from '../streaming/output-parsers.js';
+import { accumulateUsage } from './streaming/output-parsers.js';
 
-export interface SdkBlock {
+interface SdkBlock {
   type: string;
   text?: string;
 }
 
-export interface SdkMessage {
+interface SdkMessage {
   type: string;
   content: SdkBlock[];
   usage?: {
@@ -14,7 +14,7 @@ export interface SdkMessage {
   };
 }
 
-export interface SdkQueryOptions {
+interface SdkQueryOptions {
   prompt: string;
   options: {
     allowedTools: string[];
@@ -24,7 +24,7 @@ export interface SdkQueryOptions {
   };
 }
 
-export interface SdkClient {
+interface SdkClient {
   query: (opts: SdkQueryOptions) => AsyncIterable<SdkMessage>;
 }
 
@@ -39,7 +39,17 @@ export async function loadSdk(): Promise<SdkClient> {
   }
 }
 
-export function extractTextFromMessage(message: SdkMessage): string {
+export async function isAgentSdkAvailable(): Promise<boolean> {
+  if (!process.env.ANTHROPIC_API_KEY) return false;
+  try {
+    await loadSdk();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function extractTextFromMessage(message: SdkMessage): string {
   if (!message?.content) return '';
   return message.content
     .filter((block: SdkBlock) => block.type === 'text')
@@ -47,7 +57,7 @@ export function extractTextFromMessage(message: SdkMessage): string {
     .join('');
 }
 
-export interface StreamResult {
+interface StreamResult {
   text: string;
   usage: { inputTokens: number; outputTokens: number } | null;
 }

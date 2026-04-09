@@ -1,12 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import type { InputMode } from '../types.js';
 
-type ReviewResult = { approved: boolean; comment?: string };
+type ReviewResult = { approved: boolean; comment?: string | undefined };
 
 export function useInputMode() {
   const [modeState, setModeState] = useState<{ mode: InputMode; hint: string }>({ mode: 'normal', hint: '' });
-  const modeRef = useRef(modeState.mode);
-  modeRef.current = modeState.mode;
   const reviewResolverRef = useRef<((value: ReviewResult) => void) | null>(null);
   const questionResolverRef = useRef<((value: string) => void) | null>(null);
   const setReviewMode = (h: string): Promise<ReviewResult> => {
@@ -24,7 +22,7 @@ export function useInputMode() {
   };
 
   const resolve = (value: ReviewResult | string): void => {
-    const currentMode = modeRef.current;
+    const currentMode = modeState.mode;
     setModeState({ mode: 'normal', hint: '' });
     if (currentMode === 'review' && typeof value === 'object') {
       const resolver = reviewResolverRef.current;

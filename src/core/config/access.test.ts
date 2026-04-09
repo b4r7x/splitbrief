@@ -5,7 +5,7 @@ import type { Config } from '../types/index.js';
 const mockConfig = {
   planner: { tool: 'claude-code', model: 'claude-sonnet-4-6' },
   implementer: {
-    provider: 'ollama',
+    tool: 'ollama',
     model: 'qwen2.5-coder:7b',
     apiBase: 'http://localhost:11434/v1',
     contextLength: 32768,

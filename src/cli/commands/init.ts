@@ -22,7 +22,7 @@ export function registerInitCommand(program: Command): void {
         return;
       }
 
-      initConfig(projectDir);
+      initConfig(projectDir, { force: opts.reconfigure });
       configStore.load(projectDir);
       routerStore.init({ screen: 'setup', onComplete: 'home' });
       await renderApp(createElement(App), true);

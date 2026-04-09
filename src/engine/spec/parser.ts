@@ -6,7 +6,7 @@ interface TaskFrontmatter {
   title: string;
   action: 'create' | 'modify';
   file: string;
-  depends_on?: string[];
+  depends_on?: string[] | undefined;
 }
 
 export function parseTasks(tasksMarkdown: string): Task[] {
@@ -32,7 +32,6 @@ function splitTaskBlocks(markdown: string): string[] {
         foundFrontmatter = true;
         current.push(line);
       } else if (foundFrontmatter) {
-        // New block starting  -  save previous
         blocks.push(current.join('\n'));
         current = [line];
         inFrontmatter = true;
@@ -90,6 +89,7 @@ function extractFrontmatter(block: string): TaskFrontmatter | null {
   if (!match) return null;
 
   const yaml = match[1];
+  if (yaml === undefined) return null;
   const raw: Record<string, unknown> = {};
 
   for (const line of yaml.split('\n')) {
@@ -148,11 +148,10 @@ function extractSections(block: string): Sections {
 
   for (const line of lines) {
     const headerMatch = line.match(/^###\s+(.+)/);
-    if (headerMatch) {
+    if (headerMatch?.[1]) {
       currentHeader = headerMatch[1].trim().toLowerCase();
     } else if (currentHeader) {
-      if (!sectionMap[currentHeader]) sectionMap[currentHeader] = '';
-      sectionMap[currentHeader] += line + '\n';
+      sectionMap[currentHeader] = (sectionMap[currentHeader] ?? '') + line + '\n';
     }
   }
 
@@ -169,22 +168,24 @@ function extractSections(block: string): Sections {
 
 function extractCodeBlock(text: string): string {
   const match = text.match(/```[\w]*\n([\s\S]*?)```/);
-  if (match) return match[1].trim();
+  if (match?.[1] !== undefined) return match[1].trim();
   return text.trim();
 }
 
 function extractListItems(text: string): string[] {
-  return text
-    .split('\n')
-    .map((line) => line.match(/^-\s+(.*)/))
-    .filter((m): m is RegExpMatchArray => m !== null)
-    .map((m) => m[1].trim());
+  const items: string[] = [];
+  for (const line of text.split('\n')) {
+    const m = line.match(/^-\s+(.*)/);
+    if (m?.[1] !== undefined) items.push(m[1].trim());
+  }
+  return items;
 }
 
 function extractNumberedItems(text: string): string[] {
-  return text
-    .split('\n')
-    .map((line) => line.match(/^\d+\.\s+(.*)/))
-    .filter((m): m is RegExpMatchArray => m !== null)
-    .map((m) => m[1].trim());
+  const items: string[] = [];
+  for (const line of text.split('\n')) {
+    const m = line.match(/^\d+\.\s+(.*)/);
+    if (m?.[1] !== undefined) items.push(m[1].trim());
+  }
+  return items;
 }

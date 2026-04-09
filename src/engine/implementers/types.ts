@@ -1,5 +1,4 @@
 import type { Task, Config, ProjectContext, TuiEvent, ImplementerResult } from '../../types.js';
-import type { PricingInfo } from '../../core/providers/pricing.js';
 
 export interface ImplementerOptions {
   task: Task;
@@ -16,9 +15,6 @@ export interface RetryOptions extends ImplementerOptions {
 }
 
 export interface Implementer {
-  readonly name: string;
   implement(opts: ImplementerOptions): Promise<ImplementerResult>;
   retry(opts: RetryOptions): Promise<ImplementerResult>;
-  isAvailable(): Promise<boolean>;
-  getPricing(): PricingInfo;
 }

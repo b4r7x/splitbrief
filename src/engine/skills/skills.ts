@@ -7,13 +7,14 @@ const MAX_SKILL_CHARS = 16_000;
 
 export function parseFrontmatter(raw: string): { name: string; description: string } | null {
   const match = raw.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return null;
-  const nameMatch = match[1].match(/^name:\s*(.+)$/m);
-  if (!nameMatch) return null;
-  const descMatch = match[1].match(/^description:\s*(.+)$/m);
+  const frontmatter = match?.[1];
+  if (!frontmatter) return null;
+  const nameMatch = frontmatter.match(/^name:\s*(.+)$/m);
+  if (!nameMatch?.[1]) return null;
+  const descMatch = frontmatter.match(/^description:\s*(.+)$/m);
   return {
     name: nameMatch[1].trim(),
-    description: descMatch ? descMatch[1].trim() : '',
+    description: descMatch?.[1]?.trim() ?? '',
   };
 }
 
@@ -33,7 +34,7 @@ function discoverFromDir(dir: string, scope: SkillMeta['scope']): SkillMeta[] {
         const stat = statSync(fullPath);
         isFile = stat.isFile();
         isDir = stat.isDirectory();
-      } catch { continue; /* non-fatal: skip inaccessible entries */ }
+      } catch { continue; }
     }
 
     if (isFile && entry.name.endsWith('.md')) {
@@ -102,7 +103,7 @@ function mergeSkills(global: SkillMeta[], project: SkillMeta[]): SkillMeta[] {
 function getGlobalDir(tool: PlannerTool): string | null {
   switch (tool) {
     case 'claude-code': return join(homedir(), '.claude', 'skills');
-    case 'codex': return null; // handled in discoverAgentsMd
+    case 'codex': return null;
     case 'aider': return null;
     default: return join(homedir(), '.tiny-spec', 'skills');
   }
@@ -111,7 +112,7 @@ function getGlobalDir(tool: PlannerTool): string | null {
 function getProjectDir(tool: PlannerTool, projectDir: string): string | null {
   switch (tool) {
     case 'claude-code': return join(projectDir, '.claude', 'skills');
-    case 'codex': return null; // handled in discoverAgentsMd
+    case 'codex': return null;
     case 'aider': return null;
     default: return join(projectDir, '.tiny-spec', 'skills');
   }

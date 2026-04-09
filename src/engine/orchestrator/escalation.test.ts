@@ -40,26 +40,21 @@ function makeCallbacks(): { callbacks: OrchestratorCallbacks; events: TuiEvent[]
 
 function makePlanner(overrides?: Partial<Planner>): Planner {
   return {
-    name: 'test',
-    conversational: false,
     plan: vi.fn(),
     regenerate: vi.fn(),
     escalateHint: vi.fn().mockResolvedValue({ success: false, output: 'hint text', code: null, usage: { inputTokens: 10, outputTokens: 5 } }),
     escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: { inputTokens: 20, outputTokens: 10 } }),
     isAvailable: vi.fn().mockResolvedValue(true),
     getVersion: vi.fn().mockResolvedValue('1.0'),
-    getPricing: vi.fn().mockReturnValue({ inputPer1M: 0, outputPer1M: 0 }),
+    review: vi.fn().mockResolvedValue({ text: '', usage: null }),
     ...overrides,
   };
 }
 
 function makeImplementer(overrides?: Partial<Implementer>): Implementer {
   return {
-    name: 'test',
     implement: vi.fn().mockResolvedValue({ success: true, output: 'code', usage: { inputTokens: 50, outputTokens: 25 } }),
     retry: vi.fn().mockResolvedValue({ success: true, output: 'fixed code', usage: { inputTokens: 50, outputTokens: 25 } }),
-    isAvailable: vi.fn().mockResolvedValue(true),
-    getPricing: vi.fn().mockReturnValue({ inputPer1M: 0, outputPer1M: 0 }),
     ...overrides,
   };
 }

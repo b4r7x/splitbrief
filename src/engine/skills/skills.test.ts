@@ -53,8 +53,8 @@ describe('discoverSkills', () => {
     const skills = discoverSkills('claude-code', TMP);
     const proj = skills.filter((s: SkillMeta) => s.scope === 'project');
     expect(proj.length).toBe(1);
-    expect(proj[0].id).toBe('test-skill');
-    expect(proj[0].name).toBe('Test Skill');
+    expect(proj[0]?.id).toBe('test-skill');
+    expect(proj[0]?.name).toBe('Test Skill');
 
     rmSync(join(TMP, '.claude'), { recursive: true, force: true });
   });
@@ -67,7 +67,7 @@ describe('discoverSkills', () => {
     const skills = discoverSkills('claude-code', TMP);
     const proj = skills.filter((s: SkillMeta) => s.scope === 'project');
     expect(proj.length).toBe(1);
-    expect(proj[0].id).toBe('my-skill');
+    expect(proj[0]?.id).toBe('my-skill');
 
     rmSync(join(TMP, '.claude'), { recursive: true, force: true });
   });
@@ -79,8 +79,8 @@ describe('discoverSkills', () => {
 
     const skills = discoverSkills('claude-code', TMP);
     expect(skills.length).toBe(1);
-    expect(skills[0].scope).toBe('global');
-    expect(skills[0].id).toBe('global-skill');
+    expect(skills[0]?.scope).toBe('global');
+    expect(skills[0]?.id).toBe('global-skill');
 
     rmSync(join(FAKE_HOME, '.claude'), { recursive: true, force: true });
   });
@@ -97,8 +97,8 @@ describe('discoverSkills', () => {
     const skills = discoverSkills('claude-code', TMP);
     const shared = skills.filter((s: SkillMeta) => s.id === 'shared');
     expect(shared.length).toBe(1);
-    expect(shared[0].scope).toBe('project');
-    expect(shared[0].name).toBe('Project Version');
+    expect(shared[0]?.scope).toBe('project');
+    expect(shared[0]?.name).toBe('Project Version');
 
     rmSync(join(TMP, '.claude'), { recursive: true, force: true });
     rmSync(join(FAKE_HOME, '.claude'), { recursive: true, force: true });
@@ -128,7 +128,7 @@ describe('discoverSkills', () => {
     const skills = discoverSkills('codex', TMP);
     const proj = skills.filter((s: SkillMeta) => s.scope === 'project');
     expect(proj.length).toBe(1);
-    expect(proj[0].id).toBe('agents-root');
+    expect(proj[0]?.id).toBe('agents-root');
 
     rmSync(join(TMP, 'AGENTS.md'), { force: true });
   });
@@ -138,8 +138,8 @@ describe('discoverSkills', () => {
 
     const skills = discoverSkills('aider', TMP);
     expect(skills.length).toBe(1);
-    expect(skills[0].id).toBe('conventions');
-    expect(skills[0].scope).toBe('project');
+    expect(skills[0]?.id).toBe('conventions');
+    expect(skills[0]?.scope).toBe('project');
 
     rmSync(join(TMP, 'CONVENTIONS.md'), { force: true });
   });
@@ -152,7 +152,7 @@ describe('discoverSkills', () => {
     const skills = discoverSkills('shell', TMP);
     const proj = skills.filter((s: SkillMeta) => s.scope === 'project');
     expect(proj.length).toBe(1);
-    expect(proj[0].id).toBe('custom');
+    expect(proj[0]?.id).toBe('custom');
 
     rmSync(join(TMP, '.tiny-spec'), { recursive: true, force: true });
   });
@@ -168,8 +168,8 @@ describe('discoverSkills', () => {
 
     const skills = discoverSkills('claude-code', TMP);
     expect(skills.length).toBe(1);
-    expect(skills[0].id).toBe('symlinked-skill');
-    expect(skills[0].scope).toBe('global');
+    expect(skills[0]?.id).toBe('symlinked-skill');
+    expect(skills[0]?.scope).toBe('global');
 
     rmSync(join(FAKE_HOME, '.claude'), { recursive: true, force: true });
     rmSync(realDir, { recursive: true, force: true });
@@ -188,7 +188,7 @@ describe('discoverSkills', () => {
     const skills = discoverSkills('claude-code', TMP);
     const proj = skills.filter((s: SkillMeta) => s.scope === 'project');
     expect(proj.length).toBe(1);
-    expect(proj[0].name).toBe('Good');
+    expect(proj[0]?.name).toBe('Good');
 
     rmSync(join(TMP, '.claude'), { recursive: true, force: true });
   });

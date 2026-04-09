@@ -1,106 +1,155 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { makeTask, makeConfig, defaultContext } from '#testing/helpers/fixtures.js';
 
-vi.mock('../providers.js', () => ({
-  createClient: vi.fn(),
-}));
-
-vi.mock('../../utils/fs.js', () => ({
-  readFileOrEmpty: vi.fn().mockReturnValue(''),
+vi.mock('../providers/index.js', () => ({
+  createClient: vi.fn(() => ({ __mockClient: true })),
+  detectCapabilities: vi.fn(),
 }));
 
 vi.mock('../streaming/openai-stream.js', () => ({
   streamCompletion: vi.fn(),
 }));
 
-vi.mock('../parsers/response-extractor.js', () => ({
-  extractCode: vi.fn(),
-}));
-
-vi.mock('../orchestrator/apply.js', () => ({
-  applyCode: vi.fn(),
-}));
-
-vi.mock('../../utils/diff.js', () => ({
-  computeDiff: vi.fn(),
-}));
-
-vi.mock('../spec/formatter.js', () => ({
-  formatTaskPrompt: vi.fn().mockReturnValue('formatted prompt'),
-  formatRetryPrompt: vi.fn().mockReturnValue('retry prompt'),
-  SYSTEM_PREAMBLE: 'system preamble',
-}));
-
-vi.mock('../spec/token-budget.js', () => ({
-  estimateTokens: vi.fn().mockReturnValue(100),
-}));
-
 import { streamCompletion } from '../streaming/openai-stream.js';
-import { extractCode } from '../parsers/response-extractor.js';
-import { applyCode } from '../orchestrator/apply.js';
-import { computeDiff } from '../../utils/diff.js';
+import { createClient } from '../providers/index.js';
 import { createOpenAIImplementer } from './openai.js';
 
 describe('openai implementer', () => {
-  beforeEach(() => vi.clearAllMocks());
+  let projectDir: string;
 
-  it('returns success with usage on successful implementation', async () => {
-    const usage = { inputTokens: 100, outputTokens: 50 };
+  beforeEach(() => {
+    vi.clearAllMocks();
+    projectDir = mkdtempSync(join(tmpdir(), 'openai-impl-test-'));
+  });
+
+  afterEach(() => {
+    rmSync(projectDir, { recursive: true, force: true });
+  });
+
+  it('writes extracted code to disk and returns success with usage', async () => {
+    const code = 'export function hello() {\n  return "hi";\n}\n';
     vi.mocked(streamCompletion).mockResolvedValue({
-      text: 'export function hello() {}',
-      usage,
+      text: '```typescript\n' + code + '```',
+      usage: { inputTokens: 100, outputTokens: 50 },
     });
-    vi.mocked(extractCode).mockReturnValue({ code: 'export function hello() {}', confidence: 'high' });
-    vi.mocked(applyCode).mockReturnValue({ success: true });
-    vi.mocked(computeDiff).mockReturnValue({ diff: '+export function hello() {}', linesAdded: 1, linesRemoved: 0 });
 
     const implementer = createOpenAIImplementer(makeConfig());
+    const task = makeTask({ id: 'T001', file: 'src/hello.ts', action: 'create' });
+
     const result = await implementer.implement({
-      task: makeTask(),
-      projectDir: '/tmp/proj',
+      task,
+      projectDir,
       config: makeConfig(),
       context: defaultContext,
       onProgress: vi.fn(),
     });
 
     expect(result.success).toBe(true);
-    expect(result.usage).toEqual(usage);
+    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
+
+    const written = readFileSync(join(projectDir, 'src/hello.ts'), 'utf-8');
+    expect(written).toContain('export function hello()');
+    expect(written).toContain('return "hi"');
+
+    expect(createClient).toHaveBeenCalled();
+    expect(streamCompletion).toHaveBeenCalledTimes(1);
   });
 
-  it('returns error when extraction fails', async () => {
+  it('returns failure when stream response has no extractable code', async () => {
     vi.mocked(streamCompletion).mockResolvedValue({
-      text: 'no code here, just explanation',
+      text: 'I think you should try writing this yourself.',
       usage: null,
     });
-    vi.mocked(extractCode).mockReturnValue({ error: 'No code found in response' });
 
     const implementer = createOpenAIImplementer(makeConfig());
+    const task = makeTask({ id: 'T001', file: 'src/nowrite.ts', action: 'create' });
+
     const result = await implementer.implement({
-      task: makeTask(),
-      projectDir: '/tmp/proj',
+      task,
+      projectDir,
       config: makeConfig(),
       context: defaultContext,
       onProgress: vi.fn(),
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe('No code found in response');
+    if (!result.success) {
+      expect(result.error).toMatch(/extract|code/i);
+    }
+
+    expect(existsSync(join(projectDir, 'src/nowrite.ts'))).toBe(false);
   });
 
-  it('returns error when stream throws', async () => {
+  it('returns failure with error message when streamCompletion rejects', async () => {
     vi.mocked(streamCompletion).mockRejectedValue(new Error('Connection timeout'));
 
     const implementer = createOpenAIImplementer(makeConfig());
+    const task = makeTask({ id: 'T001', file: 'src/failed.ts', action: 'create' });
+
     const result = await implementer.implement({
-      task: makeTask(),
-      projectDir: '/tmp/proj',
+      task,
+      projectDir,
       config: makeConfig(),
       context: defaultContext,
       onProgress: vi.fn(),
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('Connection timeout');
+    if (!result.success) {
+      expect(result.error).toContain('Connection timeout');
+    }
+    expect(existsSync(join(projectDir, 'src/failed.ts'))).toBe(false);
+  });
+
+  it('propagates token usage from stream response through to the result', async () => {
+    const code = 'export const answer = 42;\n';
+    vi.mocked(streamCompletion).mockResolvedValue({
+      text: code,
+      usage: { inputTokens: 777, outputTokens: 333 },
+    });
+
+    const implementer = createOpenAIImplementer(makeConfig());
+    const task = makeTask({ id: 'T002', file: 'src/answer.ts', action: 'create' });
+
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onProgress: vi.fn(),
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.usage).toEqual({ inputTokens: 777, outputTokens: 333 });
+  });
+
+  it('retry() uses retry prompt and bumps temperature by retryTemperatureStep', async () => {
+    vi.mocked(streamCompletion).mockResolvedValue({
+      text: 'export const x = 1;\n',
+      usage: { inputTokens: 10, outputTokens: 5 },
+    });
+
+    const cfg = makeConfig({ implementer: { temperature: 0.2 } });
+    const implementer = createOpenAIImplementer(cfg);
+    const task = makeTask({ id: 'T003', file: 'src/retry.ts', action: 'create' });
+
+    await implementer.retry({
+      task,
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onProgress: vi.fn(),
+      error: 'previous failure',
+      attempt: 2,
+    });
+
+    const call = vi.mocked(streamCompletion).mock.calls[0];
+    expect(call).toBeDefined();
+    if (!call) throw new Error('no stream call');
+    const opts = call[3];
+    expect(opts.temperature).toBeCloseTo(0.2 + 0.1 * 2, 5);
   });
 });
-

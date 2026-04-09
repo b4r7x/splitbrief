@@ -10,7 +10,21 @@ import { usePickerCatalog } from './use-picker-catalog.js';
 import { usePickerActions } from './use-picker-actions.js';
 import { PickerView } from './picker-view.js';
 import type { PickerOption } from './picker-catalog.js';
-import type { ViewState, ViewAction } from './use-picker-view.js';
+
+export type View =
+  | { kind: 'picker' }
+  | { kind: 'custom-command' }
+  | { kind: 'custom-model'; item: PickerOption };
+
+export type ViewAction =
+  | { type: 'open-custom-command'; preservedLeftIndex: number }
+  | { type: 'open-custom-model'; item: PickerOption }
+  | { type: 'close' };
+
+export interface ViewState {
+  view: View;
+  preservedLeftIndex: number;
+}
 
 const initialViewState: ViewState = {
   view: { kind: 'picker' },
@@ -30,9 +44,9 @@ function viewReducer(state: ViewState, action: ViewAction): ViewState {
 
 interface ToolModelPickerProps {
   role: 'planner' | 'implementer';
-  stepLabel?: string;
-  onConfirm?: (updated: Config) => void;
-  onCancel?: () => void;
+  stepLabel?: string | undefined;
+  onConfirm?: ((updated: Config) => void) | undefined;
+  onCancel?: (() => void) | undefined;
 }
 
 export function ToolModelPicker({ role, stepLabel, onConfirm, onCancel }: ToolModelPickerProps) {

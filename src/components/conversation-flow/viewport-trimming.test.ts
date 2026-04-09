@@ -7,7 +7,8 @@ type DynamicSection = Extract<Section, { type: 'events' | 'active-task' }>;
 
 function makeEventsSection(count: number, startIndex = 0): DynamicSection {
   const items: TuiEvent[] = Array.from({ length: count }, (_, i) => ({
-    type: 'status' as const,
+    type: 'planner-text' as const,
+    ts: i,
     text: `event-${i}`,
   }));
   return { type: 'events', items, startIndex };
@@ -15,7 +16,8 @@ function makeEventsSection(count: number, startIndex = 0): DynamicSection {
 
 function makeActiveTaskSection(count: number, startIndex = 0): DynamicSection {
   const items: TuiEvent[] = Array.from({ length: count }, (_, i) => ({
-    type: 'status' as const,
+    type: 'planner-text' as const,
+    ts: i,
     text: `task-event-${i}`,
   }));
   return { type: 'active-task', items, startIndex };

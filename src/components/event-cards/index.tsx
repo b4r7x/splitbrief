@@ -5,43 +5,15 @@ import type { Theme } from '../../ui/theme.js';
 import { useTheme } from '../../ui/theme.js';
 import { PlannerText } from '../../ui/markdown.js';
 import { Spinner } from '../../ui/spinner.js';
-import { phaseRole } from '../../utils/phase-role.js';
 import { formatDuration } from '../../utils/format.js';
 import { Card } from './card.js';
 import { ImplementerCard } from './implementer-card.js';
 import { ValidateCard } from './validate-card.js';
 
-function Gutter({ role, children }: { role: 'planner' | 'implementer'; children: React.ReactNode }) {
-  const t = useTheme();
-  const color = role === 'implementer' ? t.implementer : t.planner;
-  const char = role === 'implementer' ? '┆' : '│';
-  const indent = role === 'implementer' ? '  ' : '';
-  return (
-    <Box flexDirection="row">
-      <Text color={color}>{indent}{char} </Text>
-      <Box flexDirection="column" flexGrow={1}>{children}</Box>
-    </Box>
-  );
-}
+const IMPLEMENTER_PHASES: ReadonlySet<string> = new Set(['implementing', 'validating-task']);
 
-function PlannerStatusCard({ event }: { event: Extract<TuiEvent, { type: 'planner-status' }> }) {
-  const t = useTheme();
-  const role = phaseRole(event.phase);
-  const color = role === 'implementer' ? t.implementer : t.planner;
-
-  if (event.status === 'running') {
-    return <Spinner label={`${role}  ${event.phase}...`} color={color} startTime={event.ts} />;
-  }
-
-  const dur = event.duration ? ` ${formatDuration(event.duration)}` : '';
-  return (
-    <Text>
-      <Text color={color}>{role}</Text>
-      <Text color={t.success}>  ✓ {event.phase}</Text>
-      <Text color={t.textDim}>{dur}</Text>
-      {event.summary && <Text color={t.textDim}>  {event.summary}</Text>}
-    </Text>
-  );
+function phaseRole(phase: string): 'planner' | 'implementer' {
+  return IMPLEMENTER_PHASES.has(phase) ? 'implementer' : 'planner';
 }
 
 interface EventCardProps {
@@ -58,7 +30,22 @@ type EventRenderer<K extends TuiEvent['type']> =
   (e: Extract<TuiEvent, { type: K }>, ctx: RenderCtx) => React.ReactNode;
 
 const RENDERERS: { [K in TuiEvent['type']]: EventRenderer<K> } = {
-  'planner-status':      e => <PlannerStatusCard event={e} />,
+  'planner-status':      (e, { t }) => {
+    const role = phaseRole(e.phase);
+    const color = role === 'implementer' ? t.implementer : t.planner;
+    if (e.status === 'running') {
+      return <Spinner label={`${role}  ${e.phase}...`} color={color} startTime={e.ts} />;
+    }
+    const dur = e.duration ? ` ${formatDuration(e.duration)}` : '';
+    return (
+      <Text>
+        <Text color={color}>{role}</Text>
+        <Text color={t.success}>  ✓ {e.phase}</Text>
+        <Text color={t.textDim}>{dur}</Text>
+        {e.summary && <Text color={t.textDim}>  {e.summary}</Text>}
+      </Text>
+    );
+  },
   'planner-text':        e => <PlannerText text={e.text} />,
   'task-start':          (e, { t }) => <Card label={<Text bold>T{e.index + 1}: {e.title}</Text>} value={`${e.file} (${e.action})`} valueColor={t.textDim} />,
   'task-complete':       () => null,
@@ -127,5 +114,13 @@ export default function EventCard({ event, diffExpanded }: EventCardProps) {
 
   const role = getGutterRole(event);
   if (!role) return <>{content}</>;
-  return <Gutter role={role}>{content}</Gutter>;
+  const color = role === 'implementer' ? t.implementer : t.planner;
+  const char = role === 'implementer' ? '┆' : '│';
+  const indent = role === 'implementer' ? '  ' : '';
+  return (
+    <Box flexDirection="row">
+      <Text color={color}>{indent}{char} </Text>
+      <Box flexDirection="column" flexGrow={1}>{content}</Box>
+    </Box>
+  );
 }

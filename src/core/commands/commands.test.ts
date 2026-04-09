@@ -3,7 +3,7 @@ import { createCommands, findCommand, toPaletteItems, executeSlashCommand } from
 import { configStore } from '../../stores/config.js';
 import { feedbackStore } from '../../stores/feedback.js';
 import { makeConfig } from '#testing/helpers/fixtures.js';
-import type { SlashCommandDef, CommandContext } from '../../types.js';
+import type { SlashCommandDef, CommandContext } from '../types/index.js';
 
 const noop = () => {};
 
@@ -57,7 +57,7 @@ describe('toPaletteItems', () => {
     ];
     const items = toPaletteItems(cmds);
     expect(items.length).toBe(1);
-    expect(items[0].label).toBe('Labeled');
+    expect(items[0]?.label).toBe('Labeled');
   });
 });
 

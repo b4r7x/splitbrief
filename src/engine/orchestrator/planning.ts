@@ -17,7 +17,7 @@ export type PlanningPhaseOptions = {
   callbacks: OrchestratorCallbacks;
   planner: Planner;
   state: WorkflowState;
-  selectedSkills?: SkillMeta[];
+  selectedSkills?: SkillMeta[] | undefined;
 };
 
 type TransitionAndEmitOptions = {
@@ -26,8 +26,8 @@ type TransitionAndEmitOptions = {
   callbacks: OrchestratorCallbacks;
   action: StateAction;
   eventName: OrchestratorEventType;
-  status?: 'running' | 'done';
-  emitData?: Record<string, unknown>;
+  status?: 'running' | 'done' | undefined;
+  emitData?: Record<string, unknown> | undefined;
 };
 
 function transitionAndEmit(opts: TransitionAndEmitOptions): WorkflowState {
@@ -53,10 +53,9 @@ async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ state: Work
   const { type, filePath, planner, projectDir, callbacks } = opts;
   let { state } = opts;
   const rejectType = type === 'spec' ? 'REJECT_SPEC' : 'REJECT_PLAN';
-  const eventName: 'spec' | 'plan' = type === 'spec' ? 'spec' : 'plan';
   const rejectedEvent: OrchestratorEventType = type === 'spec' ? 'spec_rejected' : 'plan_rejected';
   const regeneratedEvent: OrchestratorEventType = type === 'spec' ? 'spec_regenerated' : 'plan_regenerated';
-  const filename = `${eventName}.md`;
+  const filename = `${type}.md`;
 
   while (true) {
     const result = await callbacks.onApprovalNeeded(type, filePath);
@@ -70,7 +69,7 @@ async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ state: Work
 
     const current = readSpecFile(projectDir, filename) ?? '';
     const regenPrompt = buildRegeneratePrompt(type, current, result.comment);
-    callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text: `\n[Regenerating ${eventName} with feedback: ${result.comment}]\n` });
+    callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text: `\n[Regenerating ${type} with feedback: ${result.comment}]\n` });
     const regenResult = await planner.regenerate(regenPrompt, type, projectDir, {
       onOutput: createTextHandler(callbacks),
     });
@@ -88,8 +87,7 @@ async function collectAndPersistClarifications(
   const clarifications: Array<{ question: string; answer: string }> = [];
   const total = questions.length;
 
-  for (let qi = 0; qi < total; qi++) {
-    const question = questions[qi];
+  for (const [qi, question] of questions.entries()) {
     const answer = await onQuestionAsked(question, qi + 1, total);
 
     if (answer === 'done') break;

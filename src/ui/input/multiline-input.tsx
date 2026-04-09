@@ -33,18 +33,18 @@ function MeasureBox({ children, onHeightChange }: { children: ReactNode; onHeigh
 
 interface ControlledMultilineInputProps {
   value: string;
-  rows?: number;
-  maxRows?: number;
-  highlightStyle?: TextStyle;
-  textStyle?: TextStyle;
-  placeholder?: string;
-  mask?: string;
-  showCursor?: boolean;
-  focus?: boolean;
-  tabSize?: number;
-  cursorIndex?: number;
-  highlight?: { start: number; end: number };
-  refreshKey?: string | number;
+  rows?: number | undefined;
+  maxRows?: number | undefined;
+  highlightStyle?: TextStyle | undefined;
+  textStyle?: TextStyle | undefined;
+  placeholder?: string | undefined;
+  mask?: string | undefined;
+  showCursor?: boolean | undefined;
+  focus?: boolean | undefined;
+  tabSize?: number | undefined;
+  cursorIndex?: number | undefined;
+  highlight?: { start: number; end: number } | undefined;
+  refreshKey?: string | number | undefined;
 }
 
 function ControlledMultilineInput({
@@ -154,7 +154,7 @@ function ControlledMultilineInput({
   );
 }
 
-export interface MultilineInputProps extends ControlledMultilineInputProps {
+interface MultilineInputProps extends ControlledMultilineInputProps {
   onChange: (value: string) => void;
   onSubmit?: (value: string) => void;
   columns?: number;

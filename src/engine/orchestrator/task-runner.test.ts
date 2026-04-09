@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { WorkflowState, OrchestratorCallbacks, TuiEvent, ValidationResult } from '../../types.js';
+import type { WorkflowState, OrchestratorCallbacks, TuiEvent, ValidationResult, Task } from '../../types.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { makeTask, makeConfig } from '#testing/helpers/fixtures.js';
+
+function firstTask(state: WorkflowState): Task {
+  const t = state.tasks[0];
+  if (!t) throw new Error('expected first task in state');
+  return t;
+}
 
 vi.mock('../../utils/git.js', () => ({
   commitChanges: vi.fn(),
@@ -63,7 +69,7 @@ describe('validateCommitAndAdvance', () => {
     const { callbacks } = makeCallbacks();
 
     const result = await validateCommitAndAdvance({
-      task: state.tasks[0],
+      task: firstTask(state),
       results: failingResults,
       projectDir: '/tmp/proj',
       config: makeConfig(),
@@ -84,7 +90,7 @@ describe('validateCommitAndAdvance', () => {
     const { callbacks } = makeCallbacks();
 
     const result = await validateCommitAndAdvance({
-      task: state.tasks[0],
+      task: firstTask(state),
       results: passingResults,
       projectDir: '/tmp/proj',
       config: makeConfig(),
@@ -104,7 +110,7 @@ describe('validateCommitAndAdvance', () => {
     vi.mocked(commitChanges).mockResolvedValue('abc123');
 
     const result = await validateCommitAndAdvance({
-      task: state.tasks[0],
+      task: firstTask(state),
       results: passingResults,
       projectDir: '/tmp/proj',
       config: makeConfig({ workflow: { commitStrategy: 'per-task' } }),
@@ -123,7 +129,7 @@ describe('validateCommitAndAdvance', () => {
     const { callbacks } = makeCallbacks();
 
     await validateCommitAndAdvance({
-      task: state.tasks[0],
+      task: firstTask(state),
       results: passingResults,
       projectDir: '/tmp/proj',
       config: makeConfig({ workflow: { commitStrategy: 'none' } }),
@@ -143,7 +149,7 @@ describe('validateCommitAndAdvance', () => {
     vi.mocked(commitChanges).mockResolvedValue('abc123');
 
     await validateCommitAndAdvance({
-      task: state.tasks[0],
+      task: firstTask(state),
       results: passingResults,
       projectDir: '/tmp/proj',
       config: makeConfig({ workflow: { commitStrategy: 'per-task' } }),
@@ -163,7 +169,7 @@ describe('validateCommitAndAdvance', () => {
     vi.mocked(createCheckpoint).mockResolvedValue('tiny-spec/T001');
 
     await validateCommitAndAdvance({
-      task: state.tasks[0],
+      task: firstTask(state),
       results: passingResults,
       projectDir: '/tmp/proj',
       config: makeConfig({ workflow: { commitStrategy: 'checkpoint' } }),
@@ -190,7 +196,7 @@ describe('validateCommitAndAdvance', () => {
     vi.mocked(commitChanges).mockResolvedValue('abc123');
 
     await validateCommitAndAdvance({
-      task: state.tasks[0],
+      task: firstTask(state),
       results: passingResults,
       projectDir: '/tmp/proj',
       config: makeConfig(),

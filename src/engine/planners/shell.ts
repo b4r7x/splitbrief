@@ -2,7 +2,7 @@ import type { Config, OutputFormat } from '../../types.js';
 import type { Planner } from './types.js';
 import { createPlannerBase, createIsAvailable } from './base.js';
 import type { InvokeResult } from './base.js';
-import { spawnAndCollect } from '../../utils/process.js';
+import { spawnAndCollect } from './spawn-collect.js';
 import { getLineParser } from '../streaming/output-parsers.js';
 
 async function spawnShellCommand(
@@ -33,9 +33,6 @@ export function createShellPlanner(config: Config): Planner {
   const format: OutputFormat = config.planner.outputFormat ?? 'text';
 
   return createPlannerBase({
-    name: `shell:${command}`,
-    pricingKey: 'shell',
-
     async invokePlan(prompt, projectDir, onOutput) {
       return spawnShellCommand(prompt, projectDir, {
         command, args: baseArgs, format, onOutput,

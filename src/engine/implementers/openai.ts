@@ -7,10 +7,8 @@ import { formatTaskPrompt, formatRetryPrompt, SYSTEM_PREAMBLE } from '../spec/fo
 import { estimateTokens } from '../spec/token-budget.js';
 import { streamCompletion } from '../streaming/openai-stream.js';
 
-export function createOpenAIImplementer(config: Config): Implementer {
+export function createOpenAIImplementer(_config: Config): Implementer {
   return createImplementerBase({
-    name: 'openai',
-    pricingKey: config.implementer.tool,
     extractsCode: true,
 
     async invoke(opts: InvokeOpts) {
@@ -43,10 +41,6 @@ export function createOpenAIImplementer(config: Config): Implementer {
     },
 
     retryTemperatureStep: 0.1,
-
-    async isAvailable() {
-      return true;
-    },
   });
 }
 

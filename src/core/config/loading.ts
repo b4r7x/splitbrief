@@ -97,11 +97,11 @@ export function writeConfig(projectDir: string, config: Config): void {
   );
 }
 
-export function initConfig(projectDir: string): void {
+export function initConfig(projectDir: string, opts: { force?: boolean } = {}): void {
   const dirPath = path.join(projectDir, TINY_SPEC_DIR);
   const configFilePath = path.join(dirPath, CONFIG_FILE);
 
-  if (fs.existsSync(configFilePath)) return;
+  if (!opts.force && fs.existsSync(configFilePath)) return;
 
   fs.mkdirSync(dirPath, { recursive: true });
 

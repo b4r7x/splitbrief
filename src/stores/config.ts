@@ -5,11 +5,11 @@ import { WORKFLOW_MODES } from '../types.js';
 import type { Config, PlannerTool, WorkflowMode } from '../types.js';
 
 interface CLIOverrides {
-  planner?: { tool?: string; model?: string; command?: string };
-  implementer?: { tool?: string; model?: string; command?: string };
-  contextLength?: number;
-  autoApprove?: boolean;
-  mode?: string;
+  planner?: { tool?: string | undefined; model?: string | undefined; command?: string | undefined };
+  implementer?: { tool?: string | undefined; model?: string | undefined; command?: string | undefined };
+  contextLength?: number | undefined;
+  autoApprove?: boolean | undefined;
+  mode?: string | undefined;
 }
 
 interface ConfigState {

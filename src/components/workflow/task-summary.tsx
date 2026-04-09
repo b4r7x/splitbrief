@@ -11,10 +11,10 @@ interface TaskSummaryProps {
   index: number;
   title: string;
   method: TaskCompletionMethod;
-  retries?: number;
-  duration?: number;
-  file?: string;
-  reason?: string;
+  retries?: number | undefined;
+  duration?: number | undefined;
+  file?: string | undefined;
+  reason?: string | undefined;
 }
 
 export default function TaskSummary({ index, title, method, retries, duration, file, reason }: TaskSummaryProps) {

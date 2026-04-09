@@ -115,6 +115,8 @@ See `.specify/memory/constitution.md` for the 6 constitutional principles (v1.3.
 
 ## Version History
 
+> `v0.x` labels are feature milestones and do not match the semver in `package.json`. Current `package.json` version: `0.1.0`.
+
 | Version | Date | Key Changes |
 |---------|------|-------------|
 | v0.1 | 2026-03 | Core orchestrator, 45 tasks, end-to-end workflow |
@@ -123,3 +125,4 @@ See `.specify/memory/constitution.md` for the 6 constitutional principles (v1.3.
 | v0.4 | 2026-03 | TUI conversation flow redesign — event model, collapsible diffs, pipeline bar |
 | v0.5 | 2026-03 | OpenCode visual restructure — Ink 6/React 19, Shiki highlighting, theme system, engine/ui architecture |
 | v0.6 | 2026-04 | Core extraction (core/, cli/, types/), colocated tests, slash commands, skills, global keys |
+| v0.7 | 2026-04 | Symmetric provider/implementer architecture; cleanup pass — useRef anti-patterns removed, TwoColumnPicker Context eliminated, layer inversions fixed, tsconfig tier-2 strict flags, Biome linter, doc accuracy pass |

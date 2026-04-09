@@ -1,11 +1,10 @@
 import type { Task, Config, PlannerTokenUsage } from '../../types.js';
-import type { PricingInfo } from '../../core/providers/pricing.js';
 import type { ClarificationQuestion } from '../parsers/question-parser.js';
 
 export interface PlannerCallbacks {
   onOutput: (text: string) => void;
-  onPhase?: (phase: string) => void;
-  onQuestion?: (questions: ClarificationQuestion[]) => void;
+  onPhase?: ((phase: string) => void) | undefined;
+  onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
 }
 
 export interface PlanResult {
@@ -28,9 +27,6 @@ export interface RegenerateResult {
 }
 
 export interface Planner {
-  readonly name: string;
-  readonly conversational: boolean;
-
   plan(
     feature: string,
     projectDir: string,
@@ -76,6 +72,4 @@ export interface Planner {
   ): Promise<{ text: string; usage: PlannerTokenUsage | null }>;
 
   getVersion(): Promise<string | null>;
-
-  getPricing(): PricingInfo;
 }

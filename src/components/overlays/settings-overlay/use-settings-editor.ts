@@ -12,43 +12,6 @@ import { matchesFilter, validateNumber } from './settings-presentation.js';
 import { useFilterableList } from '../../../hooks/use-filterable-list.js';
 import type { Config } from '../../../types.js';
 
-interface InlineEditState {
-  editingId: string | null;
-  editBuffer: string;
-  isEditing: boolean;
-  startEditing: (id: string, initialValue: string) => void;
-}
-
-function useInlineEdit(onSave: (id: string, value: string) => void): InlineEditState {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editBuffer, setEditBuffer] = useState('');
-
-  const startEditing = (id: string, initialValue: string) => {
-    setEditingId(id);
-    setEditBuffer(initialValue);
-    overlayStore.setExclusive(true);
-  };
-
-  const finish = (commit: boolean) => {
-    if (commit && editingId) onSave(editingId, editBuffer);
-    setEditingId(null);
-    setEditBuffer('');
-    overlayStore.setExclusive(false);
-  };
-
-  useInput(
-    (input, key) => {
-      if (key.escape) { finish(false); return; }
-      if (key.return) { finish(true); return; }
-      if (key.backspace || key.delete) { setEditBuffer((prev) => prev.slice(0, -1)); return; }
-      if (input && !key.ctrl && !key.meta) setEditBuffer((prev) => prev + input);
-    },
-    { isActive: !!editingId },
-  );
-
-  return { editingId, editBuffer, isEditing: !!editingId, startEditing };
-}
-
 interface UseSettingsEditorParams {
   config: Config;
   focusSetting: string | undefined;
@@ -56,7 +19,7 @@ interface UseSettingsEditorParams {
   onOpenSubPicker: (def: SettingDef) => void;
 }
 
-export interface SettingsEditorState {
+interface SettingsEditorState {
   filter: string;
   filtered: SettingDef[];
   effectiveIndex: number;
@@ -83,17 +46,43 @@ export function useSettingsEditor({
     feedbackStore.setMessage('Saved');
   };
 
-  const edit = useInlineEdit((id, value) => {
-    const def = SETTINGS_DEFS.find((d) => d.id === id);
-    if (!def) return;
-    if (def.kind === 'number') {
-      const num = validateNumber(value, def);
-      if (num !== null) saveValue(def.id, num);
-    } else {
-      const trimmed = value.trim();
-      if (trimmed) saveValue(def.id, trimmed);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editBuffer, setEditBuffer] = useState('');
+  const isEditing = !!editingId;
+
+  const startEditing = (id: string, initialValue: string) => {
+    setEditingId(id);
+    setEditBuffer(initialValue);
+    overlayStore.setExclusive(true);
+  };
+
+  const finishEditing = (commit: boolean) => {
+    if (commit && editingId) {
+      const def = SETTINGS_DEFS.find((d) => d.id === editingId);
+      if (def) {
+        if (def.kind === 'number') {
+          const num = validateNumber(editBuffer, def);
+          if (num !== null) saveValue(def.id, num);
+        } else {
+          const trimmed = editBuffer.trim();
+          if (trimmed) saveValue(def.id, trimmed);
+        }
+      }
     }
-  });
+    setEditingId(null);
+    setEditBuffer('');
+    overlayStore.setExclusive(false);
+  };
+
+  useInput(
+    (input, key) => {
+      if (key.escape) { finishEditing(false); return; }
+      if (key.return) { finishEditing(true); return; }
+      if (key.backspace || key.delete) { setEditBuffer((prev) => prev.slice(0, -1)); return; }
+      if (input && !key.ctrl && !key.meta) setEditBuffer((prev) => prev + input);
+    },
+    { isActive: isEditing },
+  );
 
   const initialIndex = focusSetting
     ? Math.max(0, SETTINGS_DEFS.findIndex((d) => d.id === focusSetting))
@@ -107,38 +96,39 @@ export function useSettingsEditor({
       if (def.kind === 'picker') { onOpenSubPicker(def); return; }
       if (def.kind === 'string' || def.kind === 'number') {
         const current = getValue(def);
-        edit.startEditing(def.id, current != null ? String(current) : '');
+        startEditing(def.id, current != null ? String(current) : '');
       }
     },
     onClose,
-    isActive: !edit.isEditing,
+    isActive: !isEditing,
     shouldAppendChar: (c) => c !== ' ',
     initialIndex,
   });
 
-  // Space key: toggle boolean / cycle enum (not handled by useFilterableList)
   useInput(
     (input) => {
       if (input !== ' ' || list.filtered.length === 0) return;
       const def = list.filtered[list.selectedIndex];
-      if (isDisabled(def)) return;
+      if (!def || isDisabled(def)) return;
       if (def.kind === 'boolean') {
         saveValue(def.id, !getValue(def));
       } else if (def.kind === 'enum' && def.options) {
-        const current = String(getValue(def) ?? def.options[0]);
+        const firstOption = def.options[0];
+        const current = String(getValue(def) ?? firstOption ?? '');
         const idx = def.options.indexOf(current);
-        saveValue(def.id, def.options[(idx + 1) % def.options.length]);
+        const next = def.options[(idx + 1) % def.options.length];
+        if (next !== undefined) saveValue(def.id, next);
       }
     },
-    { isActive: !edit.isEditing },
+    { isActive: !isEditing },
   );
 
   return {
     filter: list.filter,
     filtered: list.filtered,
     effectiveIndex: list.selectedIndex,
-    editingId: edit.editingId,
-    editBuffer: edit.editBuffer,
+    editingId,
+    editBuffer,
     selectedDef: list.filtered[list.selectedIndex],
     isDisabled,
     getValue,

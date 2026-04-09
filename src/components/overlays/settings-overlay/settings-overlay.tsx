@@ -16,23 +16,16 @@ const MIN_VISIBLE_ROWS = 3;
 const DESCRIPTION_MIN_TERMINAL_ROWS = 18;
 const MAX_PANEL_WIDTH = 80;
 
-function useSettingsLayout() {
-  const { cols, rows } = useResponsiveLayout();
-  const showDescription = rows >= DESCRIPTION_MIN_TERMINAL_ROWS;
-  const chrome = 9 + (showDescription ? 3 : 0);
-  return {
-    panelWidth: Math.min(cols - 4, MAX_PANEL_WIDTH),
-    maxVisible: Math.max(rows - chrome, MIN_VISIBLE_ROWS),
-    showDescription,
-  };
-}
-
 export function SettingsOverlay() {
   const t = useTheme();
   const config = configStore.useConfig();
   const onClose = overlayStore.close;
   const focusSetting = overlayStore.use(s => s.focus);
-  const { panelWidth, maxVisible, showDescription } = useSettingsLayout();
+  const { cols, rows } = useResponsiveLayout();
+  const showDescription = rows >= DESCRIPTION_MIN_TERMINAL_ROWS;
+  const chrome = 9 + (showDescription ? 3 : 0);
+  const panelWidth = Math.min(cols - 4, MAX_PANEL_WIDTH);
+  const maxVisible = Math.max(rows - chrome, MIN_VISIBLE_ROWS);
 
   const openSubPicker = (def: SettingDef) => {
     overlayStore.open('settings', def.id);

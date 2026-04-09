@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -9,7 +9,7 @@ import { makeConfig as makeBaseConfig, makeTask, defaultContext } from '#testing
 
 function makeConfig(extra?: Partial<Config['implementer']>): Config {
   return makeBaseConfig({
-    implementer: { model: 'test', contextLength: 8192, temperature: 0.3, type: 'agent', command: 'echo', ...extra },
+    implementer: { model: 'test', contextLength: 8192, temperature: 0.3, kind: 'agent', command: 'echo', ...extra },
   });
 }
 

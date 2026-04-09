@@ -16,9 +16,7 @@ export function buildProjectContextMarkdown(projectDir: string): string {
           parts.push(`- \`${name}\`: \`${cmd}\``);
         }
       }
-    } catch {
-      // malformed package.json fields
-    }
+    } catch {}
   }
 
   const readmePath = join(projectDir, 'README.md');

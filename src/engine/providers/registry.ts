@@ -2,11 +2,8 @@ import type { ProviderDef, ProviderDetection, ProviderOverrides } from './types.
 import { createOllamaProvider } from './ollama.js';
 import { createLmStudioProvider } from './lm-studio.js';
 import { createOpenAICompatProvider } from './openai-compat.js';
-import { KNOWN_PROVIDER_NAMES, KNOWN_PROVIDER_BASE_URLS } from '../../core/providers/catalog.js';
+import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers/catalog.js';
 import { withTimeout } from '../../utils/with-timeout.js';
-
-export { KNOWN_PROVIDER_NAMES };
-export { withTimeout } from '../../utils/with-timeout.js';
 
 export const DETECTION_TIMEOUT_MS = 5000;
 

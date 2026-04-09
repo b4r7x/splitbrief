@@ -12,7 +12,7 @@ function extractFencedBlocks(response: string): string[] {
   const regex = /```(?:typescript|ts)?\s*\n([\s\S]*?)```/g;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(response)) !== null) {
-    blocks.push(match[1].trim());
+    if (match[1] !== undefined) blocks.push(match[1].trim());
   }
   return blocks;
 }

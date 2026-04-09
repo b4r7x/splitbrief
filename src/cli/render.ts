@@ -2,15 +2,14 @@ import { render } from 'ink';
 import { withFullScreen } from 'fullscreen-ink';
 import type { createElement } from 'react';
 
-function resolveKittyMode(): 'auto' | 'enabled' {
+export async function renderApp(appElement: ReturnType<typeof createElement>, fullscreen: boolean): Promise<void> {
   const termProgram = process.env['TERM_PROGRAM'] ?? '';
   // These terminals support Kitty protocol but Ink's auto mode doesn't detect them
-  if (termProgram === 'iTerm.app' || termProgram === 'zed') return 'enabled';
-  return 'auto';
-}
+  const kittyMode: 'auto' | 'enabled' =
+    termProgram === 'iTerm.app' || termProgram === 'zed' ? 'enabled' : 'auto';
+  const kittyKeyboard = { mode: kittyMode, flags: ['disambiguateEscapeCodes' as const] };
 
-export async function renderApp(appElement: ReturnType<typeof createElement>, fullscreen: boolean): Promise<void> {
-  const kittyKeyboard = { mode: resolveKittyMode(), flags: ['disambiguateEscapeCodes' as const] };
+  const renderFallback = () => render(appElement, { incrementalRendering: true, maxFps: 30, kittyKeyboard });
 
   if (fullscreen) {
     try {
@@ -18,9 +17,9 @@ export async function renderApp(appElement: ReturnType<typeof createElement>, fu
       await ink.start();
       await ink.waitUntilExit();
     } catch {
-      render(appElement, { incrementalRendering: true, maxFps: 30, kittyKeyboard });
+      renderFallback();
     }
   } else {
-    render(appElement, { incrementalRendering: true, maxFps: 30, kittyKeyboard });
+    renderFallback();
   }
 }

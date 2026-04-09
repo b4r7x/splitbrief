@@ -9,7 +9,8 @@ export function toSectionedList<T>(
 ): SectionedItem<T>[] {
   return items.map((item, i) => {
     const key = sectionKey(item);
-    const prevKey = i > 0 ? sectionKey(items[i - 1]) : null;
+    const prev = i > 0 ? items[i - 1] : undefined;
+    const prevKey = prev !== undefined ? sectionKey(prev) : null;
     return { item, sectionHeader: key !== prevKey ? key : null };
   });
 }

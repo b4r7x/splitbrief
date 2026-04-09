@@ -12,6 +12,9 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome format --write .",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -30,8 +33,15 @@
     "#testing/*": "./testing/*"
   },
   "license": "MIT",
+  "peerDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "*"
+  },
+  "peerDependenciesMeta": {
+    "@anthropic-ai/claude-agent-sdk": {
+      "optional": true
+    }
+  },
   "dependencies": {
-    "@inkjs/ui": "^2.0.0",
     "ansis": "^3.0.0",
     "cfonts": "^3.3.1",
     "commander": "^14.0.0",
@@ -45,6 +55,7 @@
     "yaml": "^2.0.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@vitest/coverage-v8": "^4.1.2",

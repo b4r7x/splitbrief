@@ -5,7 +5,7 @@ import { formatModelName } from '../../../core/providers/models.js';
 import { getProvider } from '../../../engine/providers/registry.js';
 import type { Config, PlannerTool } from '../../../types.js';
 import type { PickerOption, ModelOption } from './picker-catalog.js';
-import type { ViewAction, ViewState } from './use-picker-view.js';
+import type { ViewAction, ViewState } from './tool-model-picker.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 
 function patchRole(config: Config, role: 'planner' | 'implementer', patch: Record<string, unknown>): Config {
@@ -38,7 +38,6 @@ function commitImplementerSelection(config: Config, selection: PickerOption, mod
 }
 
 function commitCustomCommand(config: Config, role: 'planner' | 'implementer', command: string): Config {
-  // Planner uses `tool` as its identity field; implementer uses `kind` for backend dispatch.
   const toolKey = role === 'planner' ? 'tool' : 'kind';
   return patchRole(config, role, { [toolKey]: 'shell', command });
 }

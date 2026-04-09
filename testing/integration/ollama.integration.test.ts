@@ -58,7 +58,10 @@ describe('Ollama integration', () => {
     };
 
     expect(data.choices.length).toBeGreaterThan(0);
-    const content = data.choices[0].message.content;
+    const firstChoice = data.choices[0];
+    expect(firstChoice).toBeDefined();
+    if (!firstChoice) throw new Error('no choice');
+    const content = firstChoice.message.content;
     expect(typeof content === 'string' && content.length > 0).toBeTruthy();
 
     expect(data.usage).toBeTruthy();
@@ -111,7 +114,10 @@ describe('Ollama integration', () => {
     const withUsage = chunks.filter((c) => c.usage);
     expect(withUsage.length).toBeGreaterThan(0);
 
-    const usage = withUsage[withUsage.length - 1].usage!;
+    const lastWithUsage = withUsage[withUsage.length - 1];
+    expect(lastWithUsage).toBeDefined();
+    if (!lastWithUsage || !lastWithUsage.usage) throw new Error('no usage chunk');
+    const usage = lastWithUsage.usage;
     expect(usage.prompt_tokens).toBeGreaterThan(0);
     expect(usage.completion_tokens).toBeGreaterThan(0);
   });

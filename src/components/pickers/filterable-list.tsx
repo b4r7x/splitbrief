@@ -23,13 +23,6 @@ interface FilterableListProps<T> {
   width?: number;
   shouldAppendChar?: (ch: string) => boolean;
   isActive?: boolean;
-  // Render-prop escape hatch: when provided, replaces the default item-list body.
-  // Gives consumers access to the filtered items + cursor position without a ref.
-  children?: (state: {
-    filtered: T[];
-    cursor: number;
-    query: string;
-  }) => ReactNode;
 }
 
 export function FilterableList<T>({
@@ -48,7 +41,6 @@ export function FilterableList<T>({
   width,
   shouldAppendChar,
   isActive,
-  children,
 }: FilterableListProps<T>) {
   const { rows } = useResponsiveLayout();
 
@@ -66,22 +58,6 @@ export function FilterableList<T>({
   const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } =
     computeScrollWindow(filtered, selectedIndex, rows, chromeRows, maxVisibleProp);
 
-  const body = children
-    ? children({ filtered, cursor: selectedIndex, query: filter })
-    : (
-      <>
-        {visibleSlice.map((item, i) => {
-          const globalIndex = scrollOffset + i;
-          return (
-            <Box key={getKey(item)}>
-              {renderItem(item, { isCursor: globalIndex === selectedIndex })}
-            </Box>
-          );
-        })}
-        {filtered.length === 0 && placeholder}
-      </>
-    );
-
   return (
     <OverlayPanel
       title={title}
@@ -92,7 +68,15 @@ export function FilterableList<T>({
       <FilterInput filter={filter} />
       <ScrollIndicator show={showScrollUp} direction="up" />
       <Box flexDirection="column">
-        {body}
+        {visibleSlice.map((item, i) => {
+          const globalIndex = scrollOffset + i;
+          return (
+            <Box key={getKey(item)}>
+              {renderItem(item, { isCursor: globalIndex === selectedIndex })}
+            </Box>
+          );
+        })}
+        {filtered.length === 0 && placeholder}
       </Box>
       <ScrollIndicator show={showScrollDown} direction="down" />
     </OverlayPanel>

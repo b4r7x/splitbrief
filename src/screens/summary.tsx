@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import type { Summary, SlashCommandDef } from '../types.js';
+import type { SlashCommandDef } from '../types.js';
 import { useTheme, type Theme } from '../ui/theme.js';
 import { formatTime, formatCost, truncate } from '../utils/format.js';
 import { getProviderDisplayName } from '../core/providers/catalog.js';

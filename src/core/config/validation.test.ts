@@ -17,8 +17,8 @@ describe('validateConfig', () => {
     const config = { ...validConfig, planner: { tool: 'unknown-tool' } };
     const errors = validateConfig(config);
     expect(errors).toHaveLength(1);
-    expect(errors[0].path).toBe('planner.tool');
-    expect(errors[0].message).toContain('unknown-tool');
+    expect(errors[0]?.path).toBe('planner.tool');
+    expect(errors[0]?.message).toContain('unknown-tool');
   });
 
   it.each([
@@ -32,8 +32,8 @@ describe('validateConfig', () => {
       const config = { ...validConfig, planner: { tool } };
       const errors = validateConfig(config);
       expect(errors).toHaveLength(1);
-      expect(errors[0].path).toBe('planner.apiKey');
-      expect(errors[0].message).toContain(envKey);
+      expect(errors[0]?.path).toBe('planner.apiKey');
+      expect(errors[0]?.message).toContain(envKey);
     } finally {
       if (orig === undefined) delete process.env[envKey];
       else process.env[envKey] = orig;
@@ -89,43 +89,43 @@ describe('validateConfig', () => {
     const config = { ...validConfig, implementer: { ...validConfig.implementer, tool: 'custom-ollama', apiBase: '' } };
     const errors = validateConfig(config);
     expect(errors).toHaveLength(1);
-    expect(errors[0].path).toBe('implementer.apiBase');
-    expect(errors[0].message).toContain('custom-ollama');
+    expect(errors[0]?.path).toBe('implementer.apiBase');
+    expect(errors[0]?.message).toContain('custom-ollama');
   });
 
   it('rejects non-number temperature', () => {
     const config = { ...validConfig, implementer: { ...validConfig.implementer, temperature: 'hot' } };
     const errors = validateConfig(config);
     expect(errors).toHaveLength(1);
-    expect(errors[0].path).toBe('implementer.temperature');
+    expect(errors[0]?.path).toBe('implementer.temperature');
   });
 
   it('rejects temperature out of range', () => {
     const config = { ...validConfig, implementer: { ...validConfig.implementer, temperature: 3 } };
     const errors = validateConfig(config);
     expect(errors).toHaveLength(1);
-    expect(errors[0].path).toBe('implementer.temperature');
+    expect(errors[0]?.path).toBe('implementer.temperature');
   });
 
   it('rejects negative maxRetries', () => {
     const config = { ...validConfig, workflow: { ...validConfig.workflow, maxRetries: -1 } };
     const errors = validateConfig(config);
     expect(errors).toHaveLength(1);
-    expect(errors[0].path).toBe('workflow.maxRetries');
+    expect(errors[0]?.path).toBe('workflow.maxRetries');
   });
 
   it('rejects non-boolean validation fields', () => {
     const config = { ...validConfig, validation: { ...validConfig.validation, typecheck: 'yes' } };
     const errors = validateConfig(config);
     expect(errors).toHaveLength(1);
-    expect(errors[0].path).toBe('validation.typecheck');
+    expect(errors[0]?.path).toBe('validation.typecheck');
   });
 
   it('rejects invalid commitStrategy value', () => {
     const config = { ...validConfig, workflow: { ...validConfig.workflow, commitStrategy: 'invalid' } };
     const errors = validateConfig(config);
     expect(errors).toHaveLength(1);
-    expect(errors[0].path).toBe('workflow.commitStrategy');
+    expect(errors[0]?.path).toBe('workflow.commitStrategy');
   });
 
   it('accepts planner.tool = codex', () => {
@@ -142,14 +142,14 @@ describe('validateConfig', () => {
     const config = { ...validConfig, planner: { tool: 'shell' } };
     const errors = validateConfig(config);
     expect(errors).toHaveLength(1);
-    expect(errors[0].path).toBe('planner.command');
+    expect(errors[0]?.path).toBe('planner.command');
   });
 
   it('rejects shell planner with invalid outputFormat', () => {
     const config = { ...validConfig, planner: { tool: 'shell', command: 'my-tool', outputFormat: 'xml' } };
     const errors = validateConfig(config);
     expect(errors).toHaveLength(1);
-    expect(errors[0].path).toBe('planner.outputFormat');
+    expect(errors[0]?.path).toBe('planner.outputFormat');
   });
 
   it('accepts implementer.kind = api', () => {
