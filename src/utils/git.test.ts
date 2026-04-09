@@ -80,6 +80,25 @@ describe('git utils', () => {
       const dir = tracked(setupGitRepo());
       expect(await hasExternalChanges(dir)).toBe(false);
     });
+
+    it('returns true for staged created files', async () => {
+      const dir = tracked(setupGitRepo());
+      writeFileSync(join(dir, 'created.txt'), 'created');
+      execSync('git add created.txt', { cwd: dir, stdio: 'ignore' });
+      expect(await hasExternalChanges(dir)).toBe(true);
+    });
+
+    it('returns true for deleted files', async () => {
+      const dir = tracked(setupGitRepo());
+      rmSync(join(dir, 'init.txt'));
+      expect(await hasExternalChanges(dir)).toBe(true);
+    });
+
+    it('returns true for renamed files', async () => {
+      const dir = tracked(setupGitRepo());
+      execSync('git mv init.txt renamed.txt', { cwd: dir, stdio: 'ignore' });
+      expect(await hasExternalChanges(dir)).toBe(true);
+    });
   });
 
   describe('discardTaskChanges', () => {

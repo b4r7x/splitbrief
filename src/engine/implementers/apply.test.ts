@@ -93,11 +93,12 @@ describe('applyCode', () => {
     lines[20] = 'const d = "old4";';
     writeFileSync(filePath, lines.join('\n'));
 
+    const templateLine = 'const a = `Hello ' + '${variable}`;';
     const patchCode = [
       '<<<<<<< SEARCH',
       'const a = "old1";',
       '=======',
-      'const a = `Hello ${variable}`;',
+      templateLine,
       '>>>>>>> REPLACE',
       '<<<<<<< SEARCH',
       'const b = "old2";',
@@ -120,7 +121,7 @@ describe('applyCode', () => {
 
     expect(result.success).toBe(true);
     const content = readFileSync(filePath, 'utf-8');
-    expect(content).toContain('const a = `Hello ${variable}`;');
+    expect(content).toContain(templateLine);
     expect(content).toContain('const b = "$1 captured group";');
     expect(content).toContain('const c = "$& matched text";');
     expect(content).toContain('const d = "$$ escaped dollar";');

@@ -1,12 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { streamCompletion } from "./openai-stream.js";
 
+type MockClient = Parameters<typeof streamCompletion>[0];
+
 function makeMockClient(
   chunks: Array<{
     content?: string;
     usage?: { prompt_tokens: number; completion_tokens: number };
   }>,
-) {
+) : MockClient {
   return {
     chat: {
       completions: {
@@ -34,7 +36,7 @@ function makeMockClient(
         },
       },
     },
-  } as any;
+  };
 }
 
 describe("streamCompletion", () => {
@@ -89,7 +91,7 @@ describe("streamCompletion", () => {
   });
 
   it("maps ECONNREFUSED to a user-friendly error", async () => {
-    const client = {
+    const client: MockClient = {
       chat: {
         completions: {
           create: async () => {
@@ -99,7 +101,7 @@ describe("streamCompletion", () => {
           },
         },
       },
-    } as any;
+    };
 
     await expect(
       streamCompletion(
@@ -112,7 +114,7 @@ describe("streamCompletion", () => {
   });
 
   it("maps HTTP error status to a user-friendly error", async () => {
-    const client = {
+    const client: MockClient = {
       chat: {
         completions: {
           create: async () => {
@@ -120,7 +122,7 @@ describe("streamCompletion", () => {
           },
         },
       },
-    } as any;
+    };
 
     await expect(
       streamCompletion(

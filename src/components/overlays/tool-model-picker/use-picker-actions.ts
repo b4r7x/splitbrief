@@ -131,7 +131,7 @@ export function usePickerActions(
       }
     },
     leftChange(item: PickerOption) {
-      if (!isPlanner && item.kind !== 'shell') catalog.setSelectedItem(item);
+      catalog.setCurrentItem(item);
     },
     deleteRight(item: ModelOption) {
       const updated = removeCustomModel(config, role, item.id);

@@ -39,11 +39,10 @@ export function applyCode(code: string, task: Task, projectDir: string): { succe
   }
 
   const searchReplaceRegex = /<<<<<<< SEARCH\n([\s\S]*?)=======\n([\s\S]*?)>>>>>>> REPLACE/g;
-  let match: RegExpExecArray | null;
   let hasMarkers = false;
   let result = existing;
 
-  while ((match = searchReplaceRegex.exec(code)) !== null) {
+  for (let match = searchReplaceRegex.exec(code); match !== null; match = searchReplaceRegex.exec(code)) {
     hasMarkers = true;
     const search = (match[1] ?? '').trimEnd();
     const replace = (match[2] ?? '').trimEnd();
@@ -52,8 +51,6 @@ export function applyCode(code: string, task: Task, projectDir: string): { succe
       return { success: false, error: `Search block not found in ${task.file}:\n${search.slice(0, 200)}` };
     }
 
-    // String.replace with a string pattern replaces only the first occurrence.
-    // This is intentional — search blocks should be unique within the file.
     result = result.replace(search, () => replace);
   }
 

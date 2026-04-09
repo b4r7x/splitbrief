@@ -8,7 +8,7 @@ export function matchesFilter(def: SettingDef, query: string): boolean {
 
 export function validateNumber(value: string, def: SettingDef): number | null {
   const num = Number(value);
-  if (isNaN(num)) return null;
+  if (Number.isNaN(num)) return null;
   if (def.min !== undefined && num < def.min) return null;
   if (def.max !== undefined && num > def.max) return null;
   if (def.integer && !Number.isInteger(num)) return null;

@@ -1,10 +1,14 @@
 import { join } from 'node:path';
 import type { Config, WorkflowState, Task, OrchestratorCallbacks, SkillMeta, StateAction, OrchestratorEventType } from '../../types.js';
 import { readSpecFile, writeSpecFile } from '../../utils/fs.js';
+import { parseTasks } from '../spec/parser.js';
 import { buildRegeneratePrompt } from '../spec/prompts/plan.js';
+import { buildPlanPrompt } from '../spec/prompts/plan.js';
+import { buildTasksPrompt } from '../spec/prompts/tasks.js';
 import { buildSkillsSection } from '../skills/index.js';
 import type { ClarificationQuestion } from '../parsers/question-parser.js';
 import type { Planner } from '../planners/types.js';
+import { buildProjectContextMarkdown } from '../planners/context.js';
 import { supportsConversational } from '../../core/types/config.js';
 import { emit, createTextHandler } from './events.js';
 import { addUsageAndSave, transitionAndSave } from './helpers.js';
@@ -49,9 +53,10 @@ type ApprovalLoopOptions = {
   state: WorkflowState;
 };
 
-async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ state: WorkflowState; rejected: boolean }> {
+async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ state: WorkflowState; rejected: boolean; regenerated: boolean }> {
   const { type, filePath, planner, projectDir, callbacks } = opts;
   let { state } = opts;
+  let regenerated = false;
   const rejectType = type === 'spec' ? 'REJECT_SPEC' : 'REJECT_PLAN';
   const rejectedEvent: OrchestratorEventType = type === 'spec' ? 'spec_rejected' : 'plan_rejected';
   const regeneratedEvent: OrchestratorEventType = type === 'spec' ? 'spec_regenerated' : 'plan_regenerated';
@@ -63,9 +68,9 @@ async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ state: Work
       state = transitionAndSave(projectDir, state, { type: rejectType });
       callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: state.phase, status: 'done' });
       emit(projectDir, state, rejectedEvent);
-      return { state, rejected: true };
+      return { state, rejected: true, regenerated };
     }
-    if (!result.comment) return { state, rejected: false };
+    if (!result.comment) return { state, rejected: false, regenerated };
 
     const current = readSpecFile(projectDir, filename) ?? '';
     const regenPrompt = buildRegeneratePrompt(type, current, result.comment);
@@ -74,8 +79,10 @@ async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ state: Work
       onOutput: createTextHandler(callbacks),
     });
     state = addUsageAndSave(projectDir, state, 'planner', regenResult.usage, callbacks);
+    regenerated = true;
     emit(projectDir, state, regeneratedEvent, undefined, { comment: result.comment });
   }
+
 }
 
 async function collectAndPersistClarifications(
@@ -117,6 +124,32 @@ async function collectAndPersistClarifications(
   });
 }
 
+async function regeneratePlan(projectDir: string, planner: Planner, callbacks: OrchestratorCallbacks, state: WorkflowState, skillsContext?: string): Promise<{ state: WorkflowState; plan: string }> {
+  const spec = readSpecFile(projectDir, 'spec.md') ?? '';
+  const projectContext = buildProjectContextMarkdown(projectDir);
+  const result = await planner.review(
+    buildPlanPrompt(spec, projectContext, skillsContext),
+    projectDir,
+    { onOutput: createTextHandler(callbacks) },
+  );
+  const nextState = addUsageAndSave(projectDir, state, 'planner', result.usage, callbacks);
+  writeSpecFile(projectDir, 'plan.md', result.text);
+  return { state: nextState, plan: result.text };
+}
+
+async function regenerateTasks(projectDir: string, planner: Planner, callbacks: OrchestratorCallbacks, state: WorkflowState, planOverride?: string): Promise<{ state: WorkflowState; tasks: Task[] }> {
+  const spec = readSpecFile(projectDir, 'spec.md') ?? '';
+  const plan = planOverride ?? readSpecFile(projectDir, 'plan.md') ?? '';
+  const result = await planner.review(
+    buildTasksPrompt(spec, plan),
+    projectDir,
+    { onOutput: createTextHandler(callbacks) },
+  );
+  const nextState = addUsageAndSave(projectDir, state, 'planner', result.usage, callbacks);
+  writeSpecFile(projectDir, 'tasks.md', result.text);
+  return { state: nextState, tasks: parseTasks(result.text) };
+}
+
 async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<{ state: WorkflowState; tasks: Task[]; cancelled: boolean }> {
   const { feature, projectDir, callbacks, planner, config } = opts;
   let { state } = opts;
@@ -147,12 +180,11 @@ async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boo
   let { state } = opts;
   const MAX_CLARIFICATION_QUESTIONS = 5;
   const collectedQuestions: ClarificationQuestion[] = [];
-  const conversational = supportsConversational(config.planner.tool);
+  const conversational = config.planner.tool !== 'agent-sdk' && supportsConversational(config.planner.tool);
+  const skillsContext = selectedSkills?.length ? buildSkillsSection(selectedSkills) : undefined;
 
   let planResult: Awaited<ReturnType<Planner['plan']>>;
   try {
-    const skillsContext = selectedSkills?.length ? buildSkillsSection(selectedSkills) : undefined;
-
     planResult = await planner.plan(feature, projectDir, config, {
       onOutput: createTextHandler(callbacks),
       onQuestion: conversational ? (questions) => {
@@ -169,7 +201,7 @@ async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boo
     return { state, tasks: [], cancelled: true };
   }
 
-  const { tasks } = planResult;
+  let tasks = planResult.tasks;
 
   state = addUsageAndSave(projectDir, state, 'planner', planResult.usage, callbacks);
 
@@ -177,6 +209,11 @@ async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boo
 
   if (conversational && collectedQuestions.length > 0 && callbacks.onQuestionAsked) {
     await collectAndPersistClarifications(collectedQuestions, projectDir, state, callbacks.onQuestionAsked);
+    const planRegen = await regeneratePlan(projectDir, planner, callbacks, state, skillsContext);
+    state = planRegen.state;
+    const taskRegen = await regenerateTasks(projectDir, planner, callbacks, state, planRegen.plan);
+    state = taskRegen.state;
+    tasks = taskRegen.tasks;
   }
 
   state = transitionAndEmit({ state, projectDir, callbacks, action: { type: 'SPEC_DONE' }, eventName: 'spec_done', status: 'running' });
@@ -187,6 +224,13 @@ async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boo
     const specLoop = await runApprovalLoop({ type: 'spec', filePath: specPath, planner, projectDir, callbacks, state });
     state = specLoop.state;
     if (specLoop.rejected) return { state, tasks: [], cancelled: true };
+    if (specLoop.regenerated) {
+      const planRegen = await regeneratePlan(projectDir, planner, callbacks, state, skillsContext);
+      state = planRegen.state;
+      const taskRegen = await regenerateTasks(projectDir, planner, callbacks, state, planRegen.plan);
+      state = taskRegen.state;
+      tasks = taskRegen.tasks;
+    }
   }
 
   state = transitionAndEmit({ state, projectDir, callbacks, action: { type: 'APPROVE_SPEC' }, eventName: 'spec_approved', status: 'running' });
@@ -199,6 +243,11 @@ async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boo
     const planLoop = await runApprovalLoop({ type: 'plan', filePath: planPath, planner, projectDir, callbacks, state });
     state = planLoop.state;
     if (planLoop.rejected) return { state, tasks: [], cancelled: true };
+    if (planLoop.regenerated) {
+      const taskRegen = await regenerateTasks(projectDir, planner, callbacks, state);
+      state = taskRegen.state;
+      tasks = taskRegen.tasks;
+    }
   }
 
   state = transitionAndEmit({ state, projectDir, callbacks, action: { type: 'APPROVE_PLAN' }, eventName: 'plan_approved', status: 'running' });

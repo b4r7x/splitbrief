@@ -2,6 +2,10 @@ import { simpleGit, type SimpleGit } from 'simple-git';
 
 const getGit = (dir: string): SimpleGit => simpleGit(dir);
 
+function getStatusPaths(status: Awaited<ReturnType<SimpleGit['status']>>): string[] {
+  return status.files.map((file) => file.path);
+}
+
 export async function isGitRepo(dir: string): Promise<boolean> {
   const git = getGit(dir);
   return git.checkIsRepo();
@@ -37,13 +41,13 @@ export async function getCurrentDiff(dir: string): Promise<string> {
 export async function hasExternalChanges(dir: string): Promise<boolean> {
   const git = getGit(dir);
   const status = await git.status();
-  return status.modified.length > 0 || status.not_added.length > 0;
+  return getStatusPaths(status).length > 0;
 }
 
 export async function getChangedFiles(dir: string): Promise<string[]> {
   const git = getGit(dir);
   const status = await git.status();
-  return [...status.modified, ...status.not_added, ...status.created, ...status.deleted];
+  return getStatusPaths(status);
 }
 
 export async function discardTaskChanges(dir: string, taskFile: string, action: 'create' | 'modify'): Promise<void> {

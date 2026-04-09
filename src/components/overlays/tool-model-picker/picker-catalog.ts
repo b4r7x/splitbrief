@@ -164,17 +164,17 @@ export function modelsForImplementerProvider(
 export function buildRightModels(params: {
   isPlanner: boolean;
   customModels: string[];
-  plannerTool: string;
   implementerDetections: ProviderDetection[] | null;
   currentItem: PickerOption | undefined;
 }): ModelOption[] {
   const customOptions: ModelOption[] = params.customModels.map(id => ({ id, isCustom: true }));
-  if (params.isPlanner) {
-    return [...customOptions, ...modelsForPlannerTool(params.plannerTool)];
-  }
-  const knownModels = params.implementerDetections && params.currentItem
-    ? modelsForImplementerProvider(params.implementerDetections, params.currentItem.id, params.currentItem.kind)
-    : [];
+  const knownModels = !params.currentItem
+    ? []
+    : params.isPlanner
+      ? modelsForPlannerTool(params.currentItem.id)
+      : params.implementerDetections
+        ? modelsForImplementerProvider(params.implementerDetections, params.currentItem.id, params.currentItem.kind)
+        : [];
   return [...customOptions, ...knownModels];
 }
 

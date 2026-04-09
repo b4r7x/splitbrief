@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, useState, type ReactNode } from 'react';
 import { useInput } from 'ink';
 import { filterByFields, type FilterableItem } from '../../../ui/picker-utils.js';
 
@@ -116,6 +116,17 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const currentRightIsCustom = rightActive && !!rightCurrentItem && !isOnVirtual
     && (isRightItemCustom?.(rightCurrentItem as R) ?? false);
 
+  const syncLeftItem = useEffectEvent((item: L) => {
+    onLeftChange(item);
+    setRightIndex(0);
+    setRightFilter('');
+  });
+
+  useEffect(() => {
+    if (!leftCurrentItem) return;
+    syncLeftItem(leftCurrentItem);
+  }, [leftCurrentItem]);
+
   useInput((input, key) => {
     if (key.escape) {
       onCancel();
@@ -153,12 +164,6 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
         if (leftFiltered.length === 0) return;
         const next = findNextEnabled(leftFiltered, leftEffectiveIndex, direction, isLeftItemDisabled);
         setLeftIndex(next);
-        const nextItem = leftFiltered[next];
-        if (nextItem) {
-          onLeftChange(nextItem);
-          setRightIndex(0);
-          setRightFilter('');
-        }
       } else {
         if (filteredRight.length === 0) return;
         const next = findNextEnabled(filteredRight, rightEffectiveIndex, direction);

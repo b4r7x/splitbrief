@@ -85,8 +85,15 @@ export function SkillsPicker() {
       setChecked(prev => {
         const allChecked = ids.length > 0 && ids.every(id => prev.has(id));
         const next = new Set(prev);
-        if (allChecked) ids.forEach(id => next.delete(id));
-        else ids.forEach(id => next.add(id));
+        if (allChecked) {
+          ids.forEach(id => {
+            next.delete(id);
+          });
+        } else {
+          ids.forEach(id => {
+            next.add(id);
+          });
+        }
         return next;
       });
       return;
