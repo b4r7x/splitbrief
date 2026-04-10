@@ -154,4 +154,23 @@ describe('api implementer', () => {
     const opts = call[3];
     expect(opts.temperature).toBeCloseTo(0.2 + 0.1 * 2, 5);
   });
+
+  it('throws if model is "auto"', async () => {
+    const cfg = makeConfig({ implementer: { model: 'auto' } });
+    const implementer = createApiImplementer(cfg);
+    const task = makeTask({ id: 'T-auto', file: 'src/auto.ts', action: 'create' });
+
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toMatch(/API implementer requires an explicit model/);
+    }
+  });
 });

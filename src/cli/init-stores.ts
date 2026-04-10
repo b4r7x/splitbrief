@@ -33,5 +33,5 @@ export async function initStores(projectDir: string, opts: InitStoresOverrides =
   if (storeConfig.shikiTheme) setHighlightTheme(storeConfig.shikiTheme);
   sessionsStore.load(storeConfig.sessions?.scope ?? 'project', projectDir);
   await skillsStore.discover(discoverSkills, getPlannerToolName(storeConfig.planner), projectDir);
-  await detectionStore.load(detectAvailablePlanners, detectAvailableImplementers);
+  await detectionStore.load(detectAvailablePlanners, detectAvailableImplementers, projectDir);
 }

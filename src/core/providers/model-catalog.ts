@@ -7,6 +7,11 @@ export interface KnownModel {
 
 export const DEFAULT_AGENT_SDK_MODEL = 'claude-sonnet-4-6';
 
+export function resolveAutoModel(model: string | undefined): string | undefined {
+  if (!model || model.trim() === '' || model.toLowerCase() === 'auto') return undefined;
+  return model;
+}
+
 const ANTHROPIC_MODELS: KnownModel[] = [
   { name: 'claude-sonnet-4-6', isDefault: true },
   { name: 'claude-opus-4-6' },
@@ -59,9 +64,13 @@ const DEEPSEEK_MODELS: KnownModel[] = [
 ];
 
 export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
-  'claude-code': ANTHROPIC_MODELS,
+  'claude-code': [
+    { name: 'auto', isDefault: true },
+    ...ANTHROPIC_MODELS.map(m => m.isDefault ? { name: m.name } : m),
+  ],
   codex: [
-    { name: 'gpt-5.4', isDefault: true },
+    { name: 'auto', isDefault: true },
+    { name: 'gpt-5.4' },
     { name: 'gpt-5.4-mini' },
     { name: 'gpt-5.3-codex' },
     { name: 'gpt-5.3-codex-spark' },
@@ -76,7 +85,8 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
     { name: 'codex-mini-latest' },
   ],
   aider: [
-    { name: 'claude-sonnet-4-6', isDefault: true },
+    { name: 'auto', isDefault: true },
+    { name: 'claude-sonnet-4-6' },
     { name: 'claude-opus-4-6' },
     { name: 'claude-opus-4-5' },
     { name: 'claude-sonnet-4-5' },
@@ -92,7 +102,8 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
     { name: 'google/gemini-3-pro' },
   ],
   opencode: [
-    { name: 'anthropic/claude-sonnet-4-6', isDefault: true },
+    { name: 'auto', isDefault: true },
+    { name: 'anthropic/claude-sonnet-4-6' },
     { name: 'anthropic/claude-opus-4-6' },
     { name: 'anthropic/claude-opus-4-5' },
     { name: 'anthropic/claude-sonnet-4-5' },
@@ -108,6 +119,12 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
     { name: 'deepseek/deepseek-v3.2' },
     { name: 'deepseek/deepseek-r1' },
   ],
+  copilot: [
+    { name: 'auto', isDefault: true },
+  ],
+  'kilo-code': [
+    { name: 'auto', isDefault: true },
+  ],
   'agent-sdk': ANTHROPIC_MODELS,
   anthropic: ANTHROPIC_MODELS,
   openrouter: OPENROUTER_MODELS,
@@ -117,6 +134,7 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
 };
 
 export const MODEL_DISPLAY_NAMES: Record<string, string> = {
+  'auto': 'Auto (tool default)',
   'deepseek-chat': 'DeepSeek V3',
   'deepseek-reasoner': 'DeepSeek R1',
   'deepseek-r1-0528': 'DeepSeek R1',

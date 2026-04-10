@@ -3,6 +3,7 @@ export {
   DEFAULT_AGENT_SDK_MODEL,
   KNOWN_MODELS,
   MODEL_DISPLAY_NAMES,
+  resolveAutoModel,
 } from './model-catalog.js';
 
 import { MODEL_DISPLAY_NAMES } from './model-catalog.js';

@@ -133,4 +133,10 @@ describe('createApiPlanner', () => {
     expect(await planner.isAvailable()).toBe(false);
   });
 
+  it('throws if model is "auto"', () => {
+    const cfg = makeConfig('ollama');
+    cfg.planner.model = 'auto';
+    expect(() => createApiPlanner(cfg)).toThrow(/API planner requires an explicit model/);
+  });
+
 });

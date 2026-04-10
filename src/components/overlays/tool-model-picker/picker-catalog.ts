@@ -76,21 +76,27 @@ function implementerBadge(item: { kind: string; isLocal?: boolean }): string {
   return item.isLocal ? 'local, free' : 'remote';
 }
 
-export function buildImplementerPickerOptions(
-  detections: ProviderDetection[],
-  hasApiKey: (provider: string) => boolean = defaultHasApiKey,
-): PickerOption[] {
+export interface ImplementerPickerOpts {
+  detections: ProviderDetection[];
+  hasApiKey?: (provider: string) => boolean;
+  plannerDetections?: PlannerDetection[];
+}
+
+export function buildImplementerPickerOptions(opts: ImplementerPickerOpts): PickerOption[] {
+  const { detections, hasApiKey = defaultHasApiKey, plannerDetections = [] } = opts;
   const items: PickerOption[] = [];
 
   items.push(makeShellOption());
 
   for (const tool of CLI_TOOL_NAMES) {
+    const plannerDet = plannerDetections.find(d => d.tool === tool);
     items.push({
       id: tool,
       displayName: getProviderDisplayName(tool),
       kind: 'cli' as const,
-      available: true,
+      available: plannerDet?.available ?? false,
       badge: 'CLI tool',
+      version: plannerDet?.version,
     });
   }
 

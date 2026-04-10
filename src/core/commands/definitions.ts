@@ -87,6 +87,19 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
     },
     {
       kind: 'noarg',
+      name: '/refresh',
+      label: 'Refresh',
+      description: 'Re-detect available tools',
+      validScreens: ALL_SCREENS,
+      handler: () => {
+        ctx.setFeedbackMessage('Refreshing tool detection…');
+        ctx.refreshDetection()
+          .then(() => ctx.setFeedbackMessage('Tool detection refreshed'))
+          .catch(() => ctx.setFeedbackError('Tool detection failed'));
+      },
+    },
+    {
+      kind: 'noarg',
       name: '/quit',
       label: 'Quit',
       description: 'Exit application',
