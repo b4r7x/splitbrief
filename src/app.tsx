@@ -8,6 +8,8 @@ import { routerStore } from './stores/router.js';
 import { configStore } from './stores/config.js';
 import { overlayStore } from './stores/overlay.js';
 import { feedbackStore } from './stores/feedback.js';
+import { detectionStore } from './stores/detection.js';
+import { detectAvailablePlanners, detectAvailableImplementers } from './engine/index.js';
 import { HomeScreen } from './screens/home.js';
 import { WorkflowScreen } from './screens/workflow.js';
 import { SummaryScreen } from './screens/summary.js';
@@ -38,6 +40,11 @@ export function App() {
     },
     setFeedbackMessage: feedbackStore.setMessage,
     setFeedbackError: feedbackStore.setError,
+    refreshDetection: async () => {
+      const projectDir = configStore.get().projectDir;
+      if (projectDir) await detectionStore.invalidate(projectDir).catch(() => {});
+      await detectionStore.load(detectAvailablePlanners, detectAvailableImplementers, projectDir);
+    },
   };
   const commands = createCommands(ctx);
   const paletteItems = toPaletteItems(commands);

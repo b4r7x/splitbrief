@@ -14,6 +14,8 @@ export async function createImplementer(config: Config): Promise<Implementer> {
     codex: async () => (await import('./tool.js')).createToolImplementer('codex', config),
     opencode: async () => (await import('./tool.js')).createToolImplementer('opencode', config),
     aider: async () => (await import('./tool.js')).createToolImplementer('aider', config),
+    copilot: async () => (await import('./tool.js')).createToolImplementer('copilot', config),
+    'kilo-code': async () => (await import('./tool.js')).createToolImplementer('kilo-code', config),
   };
 
   return createBackend(type, registry, 'implementer type');

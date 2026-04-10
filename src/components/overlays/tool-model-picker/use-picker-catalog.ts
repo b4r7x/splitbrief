@@ -40,7 +40,7 @@ export function usePickerCatalog(
 
   const rawItems = isPlanner
     ? buildPlannerPickerOptions(plannerDetections)
-    : buildImplementerPickerOptions(implementerDetections);
+    : buildImplementerPickerOptions({ detections: implementerDetections, plannerDetections });
   const items: PickerOption[] = rawItems.map(item => ({
     ...item,
     isCurrent: isCurrentConfig(item, config, role),

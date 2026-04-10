@@ -8,6 +8,7 @@ import type { CliPlannerTool } from '../../types.js';
 import { CLI_TOOLS } from '../cli-tools.js';
 import { createCommandAvailability } from '../../utils/availability.js';
 import { runClaudeOneShot } from '../claude-runner.js';
+import { resolveAutoModel } from '../../core/providers/models.js';
 
 export function createToolImplementer(toolName: CliPlannerTool, config: Config): Implementer {
   const tool = CLI_TOOLS[toolName];
@@ -18,7 +19,7 @@ export function createToolImplementer(toolName: CliPlannerTool, config: Config):
 
     async invoke(opts: InvokeOpts) {
       const { prompt, projectDir, onOutput } = opts;
-      const effectiveModel = opts.config.implementer.model;
+      const effectiveModel = resolveAutoModel(opts.config.implementer.model);
 
       if (toolName === 'claude-code') {
         return runClaudeOneShot({ prompt, projectDir, onOutput, model: effectiveModel });

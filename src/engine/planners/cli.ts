@@ -5,10 +5,12 @@ import { createCommandAvailability } from '../../utils/availability.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import type { CliPlannerTool } from '../../types.js';
 import { CLI_TOOLS } from '../cli-tools.js';
+import { resolveAutoModel } from '../../core/providers/models.js';
 
 type CliPlannerKind = Exclude<CliPlannerTool, 'claude-code'>;
 
 export function createCliPlanner(kind: CliPlannerKind, model?: string): Planner {
+  const resolvedModel = resolveAutoModel(model);
   const tool = CLI_TOOLS[kind];
   if (!tool.planner) {
     throw new Error(`CLI tool '${kind}' has no planner configuration`);
@@ -24,7 +26,7 @@ export function createCliPlanner(kind: CliPlannerKind, model?: string): Planner 
     let stderrOutput = '';
     const result = await spawnAndCollect({
       command: tool.command,
-      args: planner.buildArgs({ prompt, model, projectDir, mode }),
+      args: planner.buildArgs({ prompt, model: resolvedModel, projectDir, mode }),
       cwd: projectDir,
       notFoundMessage: tool.notFoundMessage,
       parseLine: planner.parseLine,

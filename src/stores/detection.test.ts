@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import type { PlannerDetection, ProviderDetection } from '../types.js';
 import { detectionStore } from './detection.js';
 
@@ -76,5 +79,58 @@ describe('detectionStore', () => {
     const s = detectionStore.get();
     expect(s.planners).toEqual([]);
     expect(s.implementers).toEqual([]);
+  });
+
+  describe('cache integration', () => {
+    let tempDir: string;
+
+    beforeEach(async () => {
+      tempDir = await mkdtemp(join(tmpdir(), 'tiny-spec-detection-store-test-'));
+      detectPlannersMock.mockReset();
+      detectImplementersMock.mockReset();
+      detectionStore.reset();
+      detectPlannersMock.mockResolvedValue([makePlanner()]);
+      detectImplementersMock.mockResolvedValue([makeImplementer()]);
+    });
+
+    afterEach(async () => {
+      await rm(tempDir, { recursive: true, force: true });
+    });
+
+    it('load() with projectDir uses cache on second call', async () => {
+      await detectionStore.load(detectPlannersMock, detectImplementersMock, tempDir);
+      expect(detectPlannersMock).toHaveBeenCalledOnce();
+      expect(detectImplementersMock).toHaveBeenCalledOnce();
+
+      // Let the fire-and-forget saveDetectionCache complete
+      await new Promise((r) => setTimeout(r, 50));
+
+      await detectionStore.load(detectPlannersMock, detectImplementersMock, tempDir);
+      expect(detectPlannersMock).toHaveBeenCalledTimes(1);
+      expect(detectImplementersMock).toHaveBeenCalledTimes(1);
+
+      const state = detectionStore.get();
+      expect(state.planners).toHaveLength(1);
+      expect(state.implementers).toHaveLength(1);
+    });
+
+    it('load() without projectDir always runs detection', async () => {
+      await detectionStore.load(detectPlannersMock, detectImplementersMock);
+      await detectionStore.load(detectPlannersMock, detectImplementersMock);
+
+      expect(detectPlannersMock).toHaveBeenCalledTimes(2);
+      expect(detectImplementersMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('invalidate() forces re-detection on next load', async () => {
+      await detectionStore.load(detectPlannersMock, detectImplementersMock, tempDir);
+      expect(detectPlannersMock).toHaveBeenCalledOnce();
+
+      await detectionStore.invalidate(tempDir);
+
+      await detectionStore.load(detectPlannersMock, detectImplementersMock, tempDir);
+      expect(detectPlannersMock).toHaveBeenCalledTimes(2);
+      expect(detectImplementersMock).toHaveBeenCalledTimes(2);
+    });
   });
 });

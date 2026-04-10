@@ -12,6 +12,7 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
     setWorkflowMode: noop,
     setFeedbackMessage: noop,
     setFeedbackError: noop,
+    refreshDetection: async () => {},
     ...overrides,
   };
 }
@@ -118,6 +119,17 @@ describe('/mode command', () => {
     executeSlashCommand(commands, '/mode turbo', 'home', noop);
     expect(setWorkflowMode).not.toHaveBeenCalled();
     expect(setFeedbackError).toHaveBeenCalledWith(expect.stringContaining('Invalid mode'));
+  });
+});
+
+describe('/refresh command', () => {
+  it('calls refreshDetection and shows feedback', () => {
+    const refreshDetection = vi.fn().mockResolvedValue(undefined);
+    const setFeedbackMessage = vi.fn();
+    const commands = createCommands(makeCtx({ refreshDetection, setFeedbackMessage }));
+    executeSlashCommand(commands, '/refresh', 'home', noop);
+    expect(refreshDetection).toHaveBeenCalled();
+    expect(setFeedbackMessage).toHaveBeenCalledWith(expect.stringContaining('Refresh'));
   });
 });
 

@@ -48,6 +48,7 @@ export interface CommandContext {
   setWorkflowMode: (mode: WorkflowMode) => void;
   setFeedbackMessage: (msg: string) => void;
   setFeedbackError: (msg: string) => void;
+  refreshDetection: () => Promise<void>;
 }
 
 export interface CommandPaletteItem {

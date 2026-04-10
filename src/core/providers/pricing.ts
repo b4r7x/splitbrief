@@ -20,6 +20,10 @@ const TOOL_PRICING: Record<ProviderId, PricingInfo> = {
   codex: { ...GPT_54, name: 'Codex' },
   opencode: { ...CLAUDE_SONNET_46, name: 'OpenCode' },
   aider: { ...CLAUDE_SONNET_46, name: 'Aider' },
+  // Subscription-based — no per-token charges; cost tracked via subscription
+  copilot: { inputPer1M: 0, outputPer1M: 0, isLocal: false, name: 'Copilot' },
+  // Open-source tool — uses external model providers; cost depends on chosen provider
+  'kilo-code': { inputPer1M: 0, outputPer1M: 0, isLocal: false, name: 'Kilo Code' },
   'agent-sdk': { ...CLAUDE_OPUS_46, name: 'Agent SDK' },
   anthropic: { ...CLAUDE_SONNET_46, name: 'Anthropic' },
   openrouter: { inputPer1M: 0.15, outputPer1M: 0.60, isLocal: false, name: 'OpenRouter' },

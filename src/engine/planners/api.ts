@@ -4,6 +4,7 @@ import { createPlannerBase } from './base.js';
 import { getProvider } from '../provider-clients/registry.js';
 import { createClientFromProvider } from '../provider-clients/client.js';
 import { asStreamClient, streamCompletion } from '../streaming/openai-stream.js';
+import { resolveAutoModel } from '../../core/providers/models.js';
 import type OpenAI from 'openai';
 
 async function invokeApi(
@@ -33,7 +34,8 @@ export function createApiPlanner(config: Config): Planner {
   }
   const plannerCfg = config.planner;
   const provider = plannerCfg.provider;
-  const model = plannerCfg.model;
+  const model = resolveAutoModel(plannerCfg.model);
+  if (!model) throw new Error(`API planner requires an explicit model name — 'auto' is not supported for API backends. Set planner.model in your config.`);
   const resolved = getProvider(provider, {
     apiBase: plannerCfg.apiBase,
     apiKey: plannerCfg.apiKey,

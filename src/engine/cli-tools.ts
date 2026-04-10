@@ -100,4 +100,45 @@ export const CLI_TOOLS: Record<CliPlannerTool, CliToolEntry> = {
       },
     },
   },
+  copilot: {
+    command: 'copilot',
+    description: 'GitHub Copilot CLI',
+    notFoundMessage: 'Copilot CLI not found. Install: npm install -g @github/copilot — or see https://github.com/github/copilot-cli',
+    planner: {
+      buildArgs: ({ prompt, model }) => {
+        const args = ['-p', prompt, '--output-format', 'json', '--allow-all'];
+        if (model) args.unshift('--model', model);
+        return args;
+      },
+      parseLine: parseJsonlLine,
+    },
+    implementer: {
+      buildArgs: ({ prompt, model }) => {
+        const args = ['-p', prompt, '--allow-all'];
+        if (model) args.unshift('--model', model);
+        return args;
+      },
+    },
+  },
+  'kilo-code': {
+    command: 'kilo',
+    description: 'Kilo Code CLI',
+    notFoundMessage: 'Kilo Code CLI not found. Install it with: npm install -g @kilocode/cli',
+    planner: {
+      buildArgs: ({ prompt, model }) => {
+        const args = ['run', '--auto', '--json', '-m', 'architect', prompt];
+        if (model) args.push('--model', model);
+        return args;
+      },
+      parseLine: parseJsonlLine,
+      isAvailableOpts: { timeout: 5000 },
+    },
+    implementer: {
+      buildArgs: ({ prompt, model }) => {
+        const args = ['run', '--auto', '--yolo', prompt];
+        if (model) args.push('--model', model);
+        return args;
+      },
+    },
+  },
 };

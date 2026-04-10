@@ -64,6 +64,8 @@ npm install -g tiny-spec
 # Have a planner ready (pick one):
 #   Claude Code (default) — uses existing subscription, $0 extra
 #   Codex: npm install -g @openai/codex
+#   Copilot: npm install -g @github/copilot
+#   Kilo Code: npm install -g @kilocode/cli
 #   Any CLI tool: configure as shell planner
 
 # Have an implementer ready (pick one):
@@ -102,7 +104,7 @@ export TINY_SPEC_CONTEXT_LENGTH=32768
 
 ```yaml
 planner:
-  tool: claude-code          # claude-code | codex | opencode | aider | agent-sdk | shell
+  tool: claude-code          # claude-code | codex | opencode | aider | copilot | kilo-code | agent-sdk | shell
 
 implementer:
   provider: ollama           # any string — see Custom Providers below
@@ -128,7 +130,7 @@ workflow:
 
 ### Planner backends
 
-Six built-in, plus anything via shell:
+Eight built-in, plus anything via shell:
 
 | Tool | Output Format | Notes |
 |------|---------------|-------|
@@ -136,6 +138,8 @@ Six built-in, plus anything via shell:
 | `codex` | jsonl | OpenAI Codex CLI |
 | `opencode` | jsonl | OpenCode CLI |
 | `aider` | text | Parses `Tokens: Xk sent, Yk received` |
+| `copilot` | json | GitHub Copilot CLI |
+| `kilo-code` | json | Kilo Code CLI |
 | `agent-sdk` | — | Requires `ANTHROPIC_API_KEY` |
 | `shell` | configurable | Any command, see below |
 
@@ -177,6 +181,15 @@ implementer:
 ```
 
 API key resolution: config `api_key` → `<PROVIDER>_API_KEY` env var → `"no-key"` fallback.
+
+#### CLI tool implementers
+
+Any planner CLI tool can also be used as an implementer:
+
+```yaml
+implementer:
+  kind: claude-code           # or codex, opencode, aider, copilot, kilo-code
+```
 
 #### Shell implementer
 
