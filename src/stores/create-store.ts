@@ -11,8 +11,11 @@ export interface Store<T> {
   reset: (state?: T) => void;
 }
 
-export function createStore<T>(initial: T): Store<T> {
-  let state = initial;
+export function createStore<T>(initialOrFactory: T | (() => T)): Store<T> {
+  const getInitial = (): T =>
+    typeof initialOrFactory === 'function' ? (initialOrFactory as () => T)() : initialOrFactory;
+
+  let state = getInitial();
   const listeners = new Set<Listener>();
 
   const notify = () => {
@@ -38,7 +41,7 @@ export function createStore<T>(initial: T): Store<T> {
   const use = <S>(selector: (s: T) => S): S =>
     useSyncExternalStore(subscribe, () => selector(get()));
 
-  const reset = (next?: T) => set(next ?? initial);
+  const reset = (next?: T) => set(next ?? getInitial());
 
   return { get, set, subscribe, use, reset };
 }

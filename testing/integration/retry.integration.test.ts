@@ -1,17 +1,13 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-import { guardIntegration, type TestGuard } from './guard.js';
+import { describe, it, expect } from 'vitest';
+import { guardIntegration } from './guard.js';
 import { createInitialState, transition } from '../../src/core/state/machine.js';
+import { getCompletedTaskIds, getEscalatedTaskIds } from '../../src/core/state/selectors.js';
 import type { WorkflowState } from '../../src/types.js';
 import { makeTask } from '../helpers/fixtures.js';
 
-let g: TestGuard;
-
-beforeAll(async () => {
-  g = await guardIntegration();
-});
-
 describe('Retry flow integration', () => {
   it('exhausting retries transitions to escalating', { timeout: 10_000 }, async (t) => {
+    const g = await guardIntegration();
     if (g.skip) { t.skip(); return; }
 
     const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
@@ -41,6 +37,7 @@ describe('Retry flow integration', () => {
   });
 
   it('HINT_SUCCESS after escalation returns to implementing', { timeout: 10_000 }, async (t) => {
+    const g = await guardIntegration();
     if (g.skip) { t.skip(); return; }
 
     const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
@@ -56,10 +53,11 @@ describe('Retry flow integration', () => {
     expect(state.phase).toBe('implementing');
     expect(state.currentTaskIndex).toBe(1);
     expect(state.attempt).toBe(0);
-    expect(state.completedTasks).toEqual(['t1']);
+    expect(getCompletedTaskIds(state)).toEqual(['t1']);
   });
 
   it('HINT_FAIL then FULL_SUCCESS completes the task as escalated', { timeout: 10_000 }, async (t) => {
+    const g = await guardIntegration();
     if (g.skip) { t.skip(); return; }
 
     const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
@@ -78,7 +76,7 @@ describe('Retry flow integration', () => {
     expect(state.phase).toBe('implementing');
     expect(state.currentTaskIndex).toBe(1);
     expect(state.attempt).toBe(0);
-    expect(state.escalatedTasks).toEqual(['t1']);
-    expect(state.completedTasks).toEqual([]);
+    expect(getEscalatedTaskIds(state)).toEqual(['t1']);
+    expect(getCompletedTaskIds(state)).toEqual([]);
   });
 });

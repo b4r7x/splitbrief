@@ -1,20 +1,16 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { guardIntegration, type TestGuard } from './guard.js';
+import { guardIntegration } from './guard.js';
 import { createInitialState } from '../../src/core/state/machine.js';
 import { saveState, loadState } from '../../src/core/state/persistence.js';
-import { estimateCostSavings } from '../../src/engine/orchestrator/cost.js';
-
-let g: TestGuard;
-
-beforeAll(async () => {
-  g = await guardIntegration();
-});
+import { calculateCostBreakdown } from '../../src/core/providers/pricing.js';
+import { formatCost } from '../../src/utils/format.js';
 
 describe('Token accumulation integration', () => {
   it('token values survive save/load round-trip', { timeout: 10_000 }, async (t) => {
+    const g = await guardIntegration();
     if (g.skip) { t.skip(); return; }
 
     const tmpDir = await mkdtemp(join(tmpdir(), 'tiny-spec-tokens-'));
@@ -44,17 +40,25 @@ describe('Token accumulation integration', () => {
     }
   });
 
-  it('estimateCostSavings returns non-zero for combined usage', { timeout: 10_000 }, async (t) => {
+  it('cost breakdown returns non-zero savings for combined usage', { timeout: 10_000 }, async (t) => {
+    const g = await guardIntegration();
     if (g.skip) { t.skip(); return; }
 
-    const savings = estimateCostSavings({
-      plannerInput: 1000,
-      plannerOutput: 500,
-      implementerInput: 2000,
-      implementerOutput: 1000,
-      escalationInput: 500,
-      escalationOutput: 200,
+    const breakdown = calculateCostBreakdown({
+      tokenUsage: {
+        plannerInput: 1000,
+        plannerOutput: 500,
+        implementerInput: 2000,
+        implementerOutput: 1000,
+        escalationInput: 500,
+        escalationOutput: 200,
+      },
+      totalTasks: 0,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
     });
+    const savings = formatCost(Math.max(0, breakdown.savingsAmount));
 
     expect(savings).not.toBe('$0.00');
     expect(savings.startsWith('$')).toBeTruthy();

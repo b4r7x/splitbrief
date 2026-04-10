@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatModelName, parseModelName } from './models.js';
+import { formatModelName } from './models.js';
 
 describe('formatModelName', () => {
   describe('edge cases', () => {
@@ -17,7 +17,7 @@ describe('formatModelName', () => {
   });
 });
 
-describe('parseModelName (heuristic)', () => {
+describe('formatModelName (heuristic)', () => {
   describe('brand capitalization', () => {
     it.each([
       ['claude-haiku-5-2', 'Claude Haiku 5.2'],
@@ -26,7 +26,7 @@ describe('parseModelName (heuristic)', () => {
       ['deepseek-v4', 'DeepSeek V4'],
       ['mistral-medium', 'Mistral Medium'],
     ])('%s → %s', (input, expected) => {
-      expect(parseModelName(input)).toBe(expected);
+      expect(formatModelName(input)).toBe(expected);
     });
   });
 
@@ -37,7 +37,7 @@ describe('parseModelName (heuristic)', () => {
       ['gemma4', 'Gemma 4'],
       ['phi4-mini', 'Phi 4 Mini'],
     ])('%s → %s', (input, expected) => {
-      expect(parseModelName(input)).toBe(expected);
+      expect(formatModelName(input)).toBe(expected);
     });
   });
 
@@ -48,7 +48,7 @@ describe('parseModelName (heuristic)', () => {
       ['somemodel:latest', 'Somemodel'],
       ['deepseek-coder:6.7b', 'DeepSeek Coder 6.7B'],
     ])('%s → %s', (input, expected) => {
-      expect(parseModelName(input)).toBe(expected);
+      expect(formatModelName(input)).toBe(expected);
     });
   });
 
@@ -57,7 +57,7 @@ describe('parseModelName (heuristic)', () => {
       ['custom-model-7b', 'Custom Model 7B'],
       ['custom-model-70b', 'Custom Model 70B'],
     ])('%s → %s', (input, expected) => {
-      expect(parseModelName(input)).toBe(expected);
+      expect(formatModelName(input)).toBe(expected);
     });
   });
 
@@ -66,7 +66,7 @@ describe('parseModelName (heuristic)', () => {
       ['o5-turbo', 'o5 Turbo'],
       ['o6-mini', 'o6 Mini'],
     ])('%s → %s', (input, expected) => {
-      expect(parseModelName(input)).toBe(expected);
+      expect(formatModelName(input)).toBe(expected);
     });
   });
 
@@ -75,19 +75,19 @@ describe('parseModelName (heuristic)', () => {
       ['deepseek-coder-v3', 'DeepSeek Coder V3'],
       ['custom-v2-pro', 'Custom V2 Pro'],
     ])('%s → %s', (input, expected) => {
-      expect(parseModelName(input)).toBe(expected);
+      expect(formatModelName(input)).toBe(expected);
     });
   });
 
   describe('vendor prefix stripping', () => {
     it('strips unknown vendor prefixes', () => {
-      expect(parseModelName('custom-org/some-model')).toBe('Some Model');
+      expect(formatModelName('custom-org/some-model')).toBe('Some Model');
     });
   });
 
   describe('GPT hyphen format', () => {
     it('preserves hyphen after GPT brand', () => {
-      expect(parseModelName('gpt-7-nano')).toBe('GPT-7 Nano');
+      expect(formatModelName('gpt-7-nano')).toBe('GPT-7 Nano');
     });
   });
 });

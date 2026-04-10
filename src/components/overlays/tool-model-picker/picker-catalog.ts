@@ -1,8 +1,10 @@
 import type { PlannerDetection, ProviderDetection } from '../../../types.js';
 import type { Config } from '../../../types.js';
-import { KNOWN_PLANNER_MODELS, KNOWN_IMPLEMENTER_MODELS, type KnownModel } from '../../../core/providers/models.js';
+import { KNOWN_MODELS, type KnownModel } from '../../../core/providers/models.js';
 import { CLI_TOOL_NAMES } from '../../../types.js';
-import { getProviderDisplayName, type ProviderId } from '../../../core/providers/catalog.js';
+import { getPlannerToolName } from '../../../core/config/planner-config.js';
+import { getProviderDisplayName, hasApiKey as defaultHasApiKey, isProviderId } from '../../../core/providers/catalog.js';
+import { typedKeys } from '../../../utils/type-guards.js';
 
 export interface PickerOption {
   id: string;
@@ -10,7 +12,8 @@ export interface PickerOption {
   kind: 'cli' | 'api' | 'provider' | 'shell';
   available: boolean;
   badge: string;
-  version?: string | null | undefined;
+  version?: string | undefined;
+  isCurrent?: boolean;
 }
 
 export interface ModelOption {
@@ -18,6 +21,10 @@ export interface ModelOption {
   isDefault?: boolean | undefined;
   isDetected?: boolean | undefined;
   isCustom?: boolean | undefined;
+}
+
+export function isCustomModel(item: ModelOption): boolean {
+  return 'isCustom' in item && Boolean(item.isCustom);
 }
 
 function sortByAvailability(a: PickerOption, b: PickerOption): number {
@@ -35,11 +42,6 @@ function makeShellOption(): PickerOption {
     badge: 'Custom',
   };
 }
-
-const API_KEY_ENV: Record<string, string> = {
-  anthropic: 'ANTHROPIC_API_KEY',
-  openrouter: 'OPENROUTER_API_KEY',
-};
 
 function plannerBadge(d: PlannerDetection): string {
   if (d.type === 'shell') return 'Custom';
@@ -74,11 +76,6 @@ function implementerBadge(item: { kind: string; isLocal?: boolean }): string {
   return item.isLocal ? 'local, free' : 'remote';
 }
 
-function defaultHasApiKey(provider: string): boolean {
-  const envVar = API_KEY_ENV[provider];
-  return envVar ? !!process.env[envVar] : false;
-}
-
 export function buildImplementerPickerOptions(
   detections: ProviderDetection[],
   hasApiKey: (provider: string) => boolean = defaultHasApiKey,
@@ -108,7 +105,7 @@ export function buildImplementerPickerOptions(
   }
 
   const detectedNames = new Set(detections.map(d => d.provider));
-  for (const provider of Object.keys(KNOWN_IMPLEMENTER_MODELS)) {
+  for (const provider of typedKeys(KNOWN_MODELS)) {
     if (!detectedNames.has(provider)) {
       items.push({
         id: provider,
@@ -133,7 +130,8 @@ function knownToModelOptions(models: KnownModel[], isDetected = false): ModelOpt
 }
 
 export function modelsForPlannerTool(toolId: string): ModelOption[] {
-  return knownToModelOptions(KNOWN_PLANNER_MODELS[toolId as ProviderId] ?? []);
+  if (!isProviderId(toolId)) return [];
+  return knownToModelOptions(KNOWN_MODELS[toolId] ?? []);
 }
 
 export function modelsForImplementerProvider(
@@ -142,14 +140,17 @@ export function modelsForImplementerProvider(
   providerKind: PickerOption['kind'],
 ): ModelOption[] {
   if (providerKind === 'cli') {
-    return knownToModelOptions(KNOWN_PLANNER_MODELS[providerId as ProviderId] ?? []);
+    if (!isProviderId(providerId)) return [];
+    return knownToModelOptions(KNOWN_MODELS[providerId] ?? []);
   }
 
   if (providerKind === 'shell') return [];
 
   const d = detections.find(det => det.provider === providerId);
   const detected = (d?.models ?? []).map(m => ({ id: m, isDetected: true }));
-  const known = knownToModelOptions(KNOWN_IMPLEMENTER_MODELS[providerId as ProviderId] ?? []);
+  const known = isProviderId(providerId)
+    ? knownToModelOptions(KNOWN_MODELS[providerId] ?? [])
+    : [];
 
   if (detected.length === 0) return known;
 
@@ -164,17 +165,14 @@ export function modelsForImplementerProvider(
 export function buildRightModels(params: {
   isPlanner: boolean;
   customModels: string[];
-  implementerDetections: ProviderDetection[] | null;
+  implementerDetections: ProviderDetection[];
   currentItem: PickerOption | undefined;
 }): ModelOption[] {
   const customOptions: ModelOption[] = params.customModels.map(id => ({ id, isCustom: true }));
-  const knownModels = !params.currentItem
-    ? []
-    : params.isPlanner
-      ? modelsForPlannerTool(params.currentItem.id)
-      : params.implementerDetections
-        ? modelsForImplementerProvider(params.implementerDetections, params.currentItem.id, params.currentItem.kind)
-        : [];
+  if (!params.currentItem) return customOptions;
+  const knownModels = params.isPlanner
+    ? modelsForPlannerTool(params.currentItem.id)
+    : modelsForImplementerProvider(params.implementerDetections, params.currentItem.id, params.currentItem.kind);
   return [...customOptions, ...knownModels];
 }
 
@@ -183,7 +181,7 @@ export function isCurrentConfig(
   config: Config,
   role: 'planner' | 'implementer',
 ): boolean {
-  if (role === 'planner') return item.id === config.planner.tool;
+  if (role === 'planner') return item.id === getPlannerToolName(config.planner);
   if (item.kind === 'cli') return item.id === config.implementer.kind;
   return item.id === config.implementer.tool;
 }

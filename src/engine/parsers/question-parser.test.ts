@@ -55,7 +55,11 @@ describe('extractQuestionsFromStream', () => {
     const text = '<!-- Q:{"id":"q1","type":"choice","text":"Pick one","options":[]} -->';
     const questions = extractQuestionsFromStream(text);
     expect(questions.length).toBe(1);
-    expect(questions[0]?.options).toEqual([]);
+    const q = questions[0];
+    expect(q?.type).toBe('choice');
+    if (q && q.type === 'choice') {
+      expect(q.options).toEqual([]);
+    }
   });
 });
 
@@ -96,13 +100,13 @@ describe('createQuestionAccumulator', () => {
     expect(all[1]?.id).toBe('q2');
   });
 
-  it('reset clears the buffer and count', () => {
-    const acc = createQuestionAccumulator();
-    acc.addChunk('<!-- Q:{"id":"q1","type":"confirm","text":"A?"} -->');
-    acc.reset();
-    const all = acc.getAll();
+  it('fresh accumulator starts clean', () => {
+    const acc1 = createQuestionAccumulator();
+    acc1.addChunk('<!-- Q:{"id":"q1","type":"confirm","text":"A?"} -->');
+    const acc2 = createQuestionAccumulator();
+    const all = acc2.getAll();
     expect(all.length).toBe(0);
-    const r = acc.addChunk('<!-- Q:{"id":"q2","type":"input","text":"B?"} -->');
+    const r = acc2.addChunk('<!-- Q:{"id":"q2","type":"input","text":"B?"} -->');
     expect(r.length).toBe(1);
     expect(r[0]?.id).toBe('q2');
   });

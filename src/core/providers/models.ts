@@ -1,187 +1,11 @@
-import type { ProviderId } from './catalog.js';
+export type { KnownModel } from './model-catalog.js';
+export {
+  DEFAULT_AGENT_SDK_MODEL,
+  KNOWN_MODELS,
+  MODEL_DISPLAY_NAMES,
+} from './model-catalog.js';
 
-export interface KnownModel {
-  name: string;
-  isDefault?: boolean;
-}
-
-export const DEFAULT_AGENT_SDK_MODEL = 'claude-sonnet-4-6';
-
-const ANTHROPIC_MODELS: KnownModel[] = [
-  { name: 'claude-sonnet-4-6', isDefault: true },
-  { name: 'claude-opus-4-6' },
-  { name: 'claude-opus-4-5' },
-  { name: 'claude-sonnet-4-5' },
-  { name: 'claude-sonnet-4' },
-  { name: 'claude-haiku-4-5' },
-];
-
-const OPENROUTER_MODELS: KnownModel[] = [
-  { name: 'anthropic/claude-sonnet-4.6', isDefault: true },
-  { name: 'anthropic/claude-opus-4.6' },
-  { name: 'anthropic/claude-opus-4.5' },
-  { name: 'anthropic/claude-sonnet-4.5' },
-  { name: 'anthropic/claude-haiku-4.5' },
-  { name: 'openai/gpt-5.4' },
-  { name: 'openai/gpt-5.4-mini' },
-  { name: 'openai/gpt-5.2' },
-  { name: 'openai/o4-mini' },
-  { name: 'google/gemini-3.1-pro-preview' },
-  { name: 'google/gemini-3-pro' },
-  { name: 'deepseek/deepseek-v3.2' },
-  { name: 'deepseek/deepseek-r1-0528' },
-  { name: 'meta-llama/llama-4-scout' },
-  { name: 'mistralai/mistral-large-latest' },
-];
-
-const OLLAMA_MODELS: KnownModel[] = [
-  { name: 'qwen2.5-coder:7b', isDefault: true },
-  { name: 'qwen2.5-coder:14b' },
-  { name: 'qwen2.5-coder:32b' },
-  { name: 'llama3.3:latest' },
-  { name: 'deepseek-coder-v2:16b' },
-  { name: 'codellama:13b' },
-];
-
-const LM_STUDIO_MODELS: KnownModel[] = [
-  { name: 'qwen2.5-coder-7b', isDefault: true },
-  { name: 'qwen2.5-coder-14b' },
-  { name: 'qwen2.5-coder-32b' },
-  { name: 'llama3.3' },
-  { name: 'deepseek-coder-v2-16b' },
-  { name: 'codellama-13b' },
-];
-
-const DEEPSEEK_MODELS: KnownModel[] = [
-  { name: 'deepseek-chat', isDefault: true },
-  { name: 'deepseek-coder' },
-  { name: 'deepseek-reasoner' },
-];
-
-// Each tool should have exactly one entry with isDefault: true
-export const KNOWN_PLANNER_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
-  'claude-code': ANTHROPIC_MODELS,
-  codex: [
-    { name: 'gpt-5.4', isDefault: true },
-    { name: 'gpt-5.4-mini' },
-    { name: 'gpt-5.3-codex' },
-    { name: 'gpt-5.3-codex-spark' },
-    { name: 'gpt-5.2-codex' },
-    { name: 'gpt-5.2' },
-    { name: 'gpt-5.1-codex-max' },
-    { name: 'gpt-5.1-codex' },
-    { name: 'gpt-5.1' },
-    { name: 'gpt-5-codex-mini' },
-    { name: 'o4-mini' },
-    { name: 'o3-mini' },
-    { name: 'codex-mini-latest' },
-  ],
-  aider: [
-    { name: 'claude-sonnet-4-6', isDefault: true },
-    { name: 'claude-opus-4-6' },
-    { name: 'claude-opus-4-5' },
-    { name: 'claude-sonnet-4-5' },
-    { name: 'claude-haiku-4-5' },
-    { name: 'gpt-5.4' },
-    { name: 'gpt-5.4-mini' },
-    { name: 'gpt-5.3-codex' },
-    { name: 'gpt-5.2' },
-    { name: 'o4-mini' },
-    { name: 'o3-mini' },
-    { name: 'deepseek/deepseek-r1' },
-    { name: 'deepseek/deepseek-v3.2' },
-    { name: 'google/gemini-3-pro' },
-  ],
-  opencode: [
-    { name: 'anthropic/claude-sonnet-4-6', isDefault: true },
-    { name: 'anthropic/claude-opus-4-6' },
-    { name: 'anthropic/claude-opus-4-5' },
-    { name: 'anthropic/claude-sonnet-4-5' },
-    { name: 'anthropic/claude-sonnet-4' },
-    { name: 'anthropic/claude-haiku-4-5' },
-    { name: 'openai/gpt-5.4' },
-    { name: 'openai/gpt-5.4-mini' },
-    { name: 'openai/gpt-5.2' },
-    { name: 'openai/o4-mini' },
-    { name: 'google/gemini-3.1-pro-preview' },
-    { name: 'google/gemini-3-pro' },
-    { name: 'google/gemini-2.5-pro' },
-    { name: 'deepseek/deepseek-v3.2' },
-    { name: 'deepseek/deepseek-r1' },
-  ],
-  'agent-sdk': ANTHROPIC_MODELS,
-  anthropic: ANTHROPIC_MODELS,
-  openrouter: OPENROUTER_MODELS,
-  ollama: OLLAMA_MODELS,
-  'lm-studio': LM_STUDIO_MODELS,
-  deepseek: DEEPSEEK_MODELS,
-};
-
-export const KNOWN_IMPLEMENTER_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
-  ollama: [...OLLAMA_MODELS, { name: 'starcoder2:7b' }],
-  'lm-studio': LM_STUDIO_MODELS,
-  deepseek: DEEPSEEK_MODELS,
-  openrouter: OPENROUTER_MODELS,
-  anthropic: ANTHROPIC_MODELS,
-};
-
-const MODEL_DISPLAY_NAMES: Record<string, string> = {
-  'claude-opus-4-6': 'Claude Opus 4.6',
-  'claude-sonnet-4-6': 'Claude Sonnet 4.6',
-  'claude-opus-4-5': 'Claude Opus 4.5',
-  'claude-sonnet-4-5': 'Claude Sonnet 4.5',
-  'claude-sonnet-4': 'Claude Sonnet 4',
-  'claude-haiku-4-5': 'Claude Haiku 4.5',
-
-  'gpt-4o': 'GPT-4o',
-  'gpt-5.4': 'GPT-5.4',
-  'gpt-5.4-mini': 'GPT-5.4 Mini',
-  'gpt-5.3-codex': 'GPT-5.3 Codex',
-  'gpt-5.3-codex-spark': 'GPT-5.3 Codex Spark',
-  'gpt-5.2': 'GPT-5.2',
-  'gpt-5.2-codex': 'GPT-5.2 Codex',
-  'gpt-5.1': 'GPT-5.1',
-  'gpt-5.1-codex': 'GPT-5.1 Codex',
-  'gpt-5.1-codex-max': 'GPT-5.1 Codex Max',
-  'gpt-5-codex-mini': 'GPT-5 Codex Mini',
-
-  'o3': 'o3',
-  'o3-mini': 'o3 Mini',
-  'o4-mini': 'o4 Mini',
-  'codex-mini-latest': 'Codex Mini',
-
-  'deepseek-chat': 'DeepSeek V3',
-  'deepseek-coder': 'DeepSeek Coder',
-  'deepseek-reasoner': 'DeepSeek R1',
-  'deepseek-r1': 'DeepSeek R1',
-  'deepseek-r1-0528': 'DeepSeek R1',
-  'deepseek-v3.2': 'DeepSeek V3.2',
-  'deepseek-coder-v2': 'DeepSeek Coder V2',
-
-  'gemini-2.5-pro': 'Gemini 2.5 Pro',
-  'gemini-2.5-flash': 'Gemini 2.5 Flash',
-  'gemini-3-pro': 'Gemini 3 Pro',
-  'gemini-3.1-pro-preview': 'Gemini 3.1 Pro Preview',
-
-  'llama-4-scout': 'Llama 4 Scout',
-  'llama3.3': 'Llama 3.3',
-
-  'mistral-large-latest': 'Mistral Large',
-
-  'qwen2.5-coder:7b': 'Qwen 2.5 Coder 7B',
-  'qwen2.5-coder:14b': 'Qwen 2.5 Coder 14B',
-  'qwen2.5-coder:32b': 'Qwen 2.5 Coder 32B',
-  'llama3.3:latest': 'Llama 3.3',
-  'deepseek-coder-v2:16b': 'DeepSeek Coder V2 16B',
-  'codellama:13b': 'Code Llama 13B',
-  'starcoder2:7b': 'StarCoder2 7B',
-
-  'qwen2.5-coder-7b': 'Qwen 2.5 Coder 7B',
-  'qwen2.5-coder-14b': 'Qwen 2.5 Coder 14B',
-  'qwen2.5-coder-32b': 'Qwen 2.5 Coder 32B',
-  'deepseek-coder-v2-16b': 'DeepSeek Coder V2 16B',
-  'codellama-13b': 'Code Llama 13B',
-};
+import { MODEL_DISPLAY_NAMES } from './model-catalog.js';
 
 const BRANDS: Record<string, string> = {
   codellama: 'Code Llama',
@@ -198,7 +22,6 @@ const BRANDS: Record<string, string> = {
   phi: 'Phi',
 };
 
-// Sorted once by prefix length descending so longer prefixes match first.
 const BRAND_ENTRIES = Object.entries(BRANDS).sort((a, b) => b[0].length - a[0].length);
 
 const DROP_TOKENS = new Set(['latest']);
@@ -239,8 +62,7 @@ function formatTag(tag: string): string {
   }).filter(Boolean).join(' ');
 }
 
-/** Heuristic formatter for model IDs not in the static registry. */
-export function parseModelName(rawId: string): string {
+function parseModelName(rawId: string): string {
   if (!rawId) return '';
   const id = stripVendorPrefix(rawId);
 
@@ -263,13 +85,11 @@ export function parseModelName(rawId: string): string {
     if (DROP_TOKENS.has(lower)) continue;
 
     if (i === 0) {
-      // o-series: keep lowercase (o3, o4)
       if (O_SERIES_RE.test(lower)) { parts.push(lower); continue; }
 
       const brand = BRANDS[lower];
       if (brand) { parts.push(brand); if (lower === 'gpt') isGpt = true; continue; }
 
-      // Compound brand+version: qwen2.5, llama3.3, gemma4
       const compound = tryCompoundBrand(lower);
       if (compound) { parts.push(compound); continue; }
     }
@@ -284,7 +104,6 @@ export function parseModelName(rawId: string): string {
     parts.push(raw.charAt(0).toUpperCase() + raw.slice(1));
   }
 
-  // Claude version convention: trailing single-digit pair → dot-joined (4-6 → 4.6)
   if (parts[0] === 'Claude' && parts.length >= 3) {
     const last = parts[parts.length - 1];
     const prev = parts[parts.length - 2];
@@ -293,7 +112,6 @@ export function parseModelName(rawId: string): string {
     }
   }
 
-  // GPT uses hyphen-joined format: "GPT-5.4 Mini"
   const name = isGpt && parts.length > 1
     ? parts[0] + '-' + parts.slice(1).join(' ')
     : parts.join(' ');
@@ -301,13 +119,6 @@ export function parseModelName(rawId: string): string {
   return tag ? `${name} ${tag}` : name;
 }
 
-/**
- * Format a model ID for display. Checks the static registry first,
- * then falls back to the heuristic parser for unknown models.
- *
- * Handles vendor-prefixed IDs (e.g. "anthropic/claude-sonnet-4.6"),
- * Ollama tags ("qwen2.5-coder:14b"), and arbitrary model strings.
- */
 export function formatModelName(modelId: string): string {
   if (!modelId) return '';
 

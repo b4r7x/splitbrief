@@ -1,10 +1,11 @@
-import type { Config, Task, TokenUsage, ProjectContext, Summary, SidebarTask, TaskStatus } from '../../src/types.js';
-import type { WorkflowViewState as HookWorkflowState } from '../../src/stores/workflow.js';
+import type { Config, PlannerConfig, Task, TokenUsage, ProjectContext } from '../../src/types.js';
+import { taskId as brand } from '../../src/core/types/workflow.js';
 
-export function makeConfig(overrides?: Omit<Partial<Config>, 'implementer' | 'planner' | 'validation' | 'workflow'> & { implementer?: Partial<Config['implementer']>; planner?: Partial<Config['planner']>; validation?: Partial<Config['validation']>; workflow?: Partial<Config['workflow']> }): Config {
+export function makeConfig(overrides?: Omit<Partial<Config>, 'implementer' | 'planner' | 'validation' | 'workflow'> & { implementer?: Partial<Config['implementer']>; planner?: PlannerConfig; validation?: Partial<Config['validation']>; workflow?: Partial<Config['workflow']> }): Config {
   const base: Config = {
-    planner: { tool: 'claude-code', ...overrides?.planner },
+    planner: overrides?.planner ?? { kind: 'cli', tool: 'claude-code' },
     implementer: {
+      kind: 'api',
       tool: 'ollama',
       model: 'qwen2.5-coder:7b',
       apiBase: '',
@@ -34,20 +35,26 @@ export function makeConfig(overrides?: Omit<Partial<Config>, 'implementer' | 'pl
   return base;
 }
 
-export function makeTask(overrides?: Partial<Task>): Task {
+type TaskOverrides = Omit<Partial<Task>, 'id' | 'dependsOn'> & {
+  id?: string;
+  dependsOn?: string[];
+};
+
+export function makeTask(overrides?: TaskOverrides): Task {
+  const { id, dependsOn, ...rest } = overrides ?? {};
   return {
-    id: 'T001',
+    id: brand(id ?? 'T001'),
     title: 'Create hello module',
     action: 'create',
     file: 'src/hello.ts',
-    dependsOn: [],
+    dependsOn: (dependsOn ?? []).map(brand),
     description: 'Create a hello world module',
     tests: [],
     constraints: [],
     typeDefs: '',
     implementationSteps: [],
     status: 'pending',
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -69,51 +76,3 @@ export const defaultContext: ProjectContext = {
   runtime: 'Node.js 22',
   testCommand: 'npm test',
 };
-
-export function makeHookWorkflowState(overrides?: Partial<Omit<HookWorkflowState, 'taskMap'>> & { taskMap?: Map<string, SidebarTask> }): HookWorkflowState {
-  const defaults: HookWorkflowState = {
-    events: [],
-    phase: 'idle',
-    currentTask: 0,
-    totalTasks: 0,
-    localCount: 0,
-    escalatedCount: 0,
-    reviewFilePath: null,
-    taskMap: new Map(),
-    tokenUsage: null,
-    cancelled: false,
-  };
-  return { ...defaults, ...overrides, taskMap: overrides?.taskMap ?? defaults.taskMap };
-}
-
-export function makeSummary(overrides?: Partial<Summary>): Summary {
-  return {
-    feature: 'test feature',
-    totalTasks: 3,
-    completedByLocal: 2,
-    escalatedToPlanner: 1,
-    skipped: 0,
-    failed: 0,
-    totalTime: 30000,
-    tokenUsage: {
-      plannerInput: 1000,
-      plannerOutput: 500,
-      implementerInput: 2000,
-      implementerOutput: 1000,
-      escalationInput: 500,
-      escalationOutput: 250,
-    },
-    estimatedCostSavings: '$0.50',
-    escalationRate: 0.33,
-    ...overrides,
-  };
-}
-
-export function makeSidebarTask(overrides?: Partial<SidebarTask>): SidebarTask {
-  return {
-    id: 'T001',
-    title: 'Test task',
-    status: 'pending' as TaskStatus,
-    ...overrides,
-  };
-}

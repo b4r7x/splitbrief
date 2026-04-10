@@ -15,7 +15,7 @@ vi.mock('../../utils/diff.js', () => ({
 }));
 
 vi.mock('../../utils/fs.js', () => ({
-  readFileOrEmpty: vi.fn().mockReturnValue(''),
+  readFileOrEmpty: vi.fn().mockResolvedValue(''),
 }));
 
 import { extractCode } from '../parsers/response-extractor.js';
@@ -38,7 +38,7 @@ describe('createImplementerBase', () => {
     const config = makeConfig();
 
     const result = await implementer.implement({
-      task: makeTask(), projectDir: '/tmp', config, context: defaultContext, onProgress: vi.fn(),
+      task: makeTask(), projectDir: '/tmp', config, context: defaultContext, onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(false);
@@ -54,7 +54,7 @@ describe('createImplementerBase', () => {
     const config = makeConfig();
 
     await expect(
-      implementer.implement({ task: makeTask(), projectDir: '/tmp', config, context: defaultContext, onProgress: vi.fn() }),
+      implementer.implement({ task: makeTask(), projectDir: '/tmp', config, context: defaultContext, onOutput: vi.fn() }),
     ).rejects.toThrow('command not found');
   });
 
@@ -65,7 +65,7 @@ describe('createImplementerBase', () => {
     const config = makeConfig();
 
     const result = await implementer.implement({
-      task: makeTask(), projectDir: '/tmp', config, context: defaultContext, onProgress: vi.fn(),
+      task: makeTask(), projectDir: '/tmp', config, context: defaultContext, onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(false);
@@ -80,7 +80,7 @@ describe('createImplementerBase', () => {
     const config = makeConfig();
 
     const result = await implementer.implement({
-      task: makeTask(), projectDir: '/tmp', config, context: defaultContext, onProgress: vi.fn(),
+      task: makeTask(), projectDir: '/tmp', config, context: defaultContext, onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(false);
@@ -96,7 +96,7 @@ describe('createImplementerBase', () => {
     const config = makeConfig();
 
     const result = await implementer.implement({
-      task: makeTask(), projectDir: '/tmp', config, context: defaultContext, onProgress: vi.fn(),
+      task: makeTask(), projectDir: '/tmp', config, context: defaultContext, onOutput: vi.fn(),
     });
 
     expect(detectChanges).toHaveBeenCalled();
@@ -112,7 +112,7 @@ describe('createImplementerBase', () => {
     const config = makeConfig();
 
     const result = await implementer.implement({
-      task: makeTask(), projectDir: '/tmp', config, context: defaultContext, onProgress: vi.fn(),
+      task: makeTask(), projectDir: '/tmp', config, context: defaultContext, onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(false);

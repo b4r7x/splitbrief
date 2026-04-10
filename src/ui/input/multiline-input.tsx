@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { Box, Spacer, Text, useInput, measureElement, type DOMElement, type Key } from 'ink';
 import { buildSegments, normalizeLineEndings, type SegmentType } from './segments.js';
 import { resolveEditAction, applyEditAction, navigateVertically } from './text-editing.js';
+import { computeViewportScroll } from './viewport-scroll.js';
+import { useTheme } from '../theme.js';
 
 const MULTI_BYTE_SUPPRESS_MS = 50;
 
@@ -60,7 +62,8 @@ function ControlledMultilineInput({
   cursorIndex = 0,
   highlight,
 }: ControlledMultilineInputProps) {
-  const [scrollOffset, setScrollOffset] = useState(0);
+  const t = useTheme();
+  const scrollOffsetRef = useRef(0);
   const [contentHeight, setContentHeight] = useState(0);
   const [markerHeight, setMarkerHeight] = useState(0);
 
@@ -75,52 +78,42 @@ function ControlledMultilineInput({
     highlight,
   });
 
-  const visibleRows = contentHeight !== undefined
-    ? Math.max(rows ?? maxRows ?? 1, Math.min(maxRows ?? rows ?? 1, contentHeight))
-    : 1;
+  const minRows = rows ?? maxRows ?? 1;
+  const capRows = maxRows ?? rows ?? 1;
+  const effectiveVisibleRows = Math.max(minRows, Math.min(capRows, contentHeight));
 
-  useEffect(() => {
-    if (markerHeight !== undefined && visibleRows !== undefined) {
-      const cursorLineEnd = markerHeight;
-      setScrollOffset((prevOffset) => {
-        const viewportStart = prevOffset;
-        const viewportEnd = prevOffset + visibleRows;
-        if (cursorLineEnd <= viewportStart) {
-          return Math.max(0, cursorLineEnd - 1);
-        } else if (cursorLineEnd > viewportEnd) {
-          return cursorLineEnd - visibleRows;
-        } else if (contentHeight) {
-          if (contentHeight < visibleRows) {
-            return 0;
-          } else if (contentHeight < viewportEnd) {
-            return contentHeight - visibleRows;
-          }
-        }
-        return prevOffset;
-      });
-    }
-  }, [markerHeight, visibleRows, contentHeight]);
+  // Derived during render: scrollOffset is a pure function of measurement
+  // inputs plus the previous value (for relative clamping). Using a ref
+  // avoids a derived-state useEffect.
+  const scrollOffset = computeViewportScroll({
+    previous: scrollOffsetRef.current,
+    markerHeight,
+    visibleRows: effectiveVisibleRows,
+    contentHeight,
+  });
+  scrollOffsetRef.current = scrollOffset;
+
+  const resolvedHighlightStyle: TextStyle = highlightStyle ?? { backgroundColor: t.highlight.bg, color: t.highlight.fg };
 
   const getStyle = (type: SegmentType): TextStyle => {
     switch (type) {
       case 'placeholder':
         return { ...textStyle, dimColor: true };
       case 'highlight':
-        return highlightStyle ?? textStyle ?? {};
+        return resolvedHighlightStyle;
       case 'cursor':
-        return {
-          ...(highlightStyle ?? textStyle),
-          inverse: showCursor && focus,
-        };
+        return showCursor && focus
+          ? { ...textStyle, backgroundColor: t.cursor.bg, color: t.cursor.fg }
+          : (textStyle ?? {});
       default:
         return textStyle ?? {};
     }
   };
 
   return (
-    <Box height={visibleRows} overflow="hidden" flexDirection="column" flexGrow={0} flexShrink={0}>
+    <Box height={effectiveVisibleRows} overflow="hidden" flexDirection="column" flexGrow={0} flexShrink={0}>
       <Box flexDirection="column">
-        <Box height={visibleRows} overflowY="hidden" flexShrink={0} flexDirection="column">
+        <Box height={effectiveVisibleRows} overflowY="hidden" flexShrink={0} flexDirection="column">
           <Box marginTop={-scrollOffset} flexDirection="column">
             <MeasureBox onHeightChange={setContentHeight}>
               <Text>
@@ -176,17 +169,15 @@ export function MultilineInput({
   focus = true,
   ...controlledProps
 }: MultilineInputProps) {
-  const [cursorIndex, setCursorIndex] = useState(value.length);
+  const [rawCursorIndex, setCursorIndex] = useState(value.length);
   const [pasteLength, setPasteLength] = useState(0);
   // Suppress rapid-fire key events after delete-line-backward (Cmd+Backspace
   // in non-Kitty terminals sends multiple raw bytes parsed as separate events)
   const suppressUntilRef = useRef(0);
 
-  useEffect(() => {
-    if (cursorIndex > value.length) {
-      setCursorIndex(value.length);
-    }
-  }, [value, cursorIndex]);
+  // Clamp during render so stale cursor state from a shrinking `value` prop
+  // is corrected before any consumer reads it.
+  const cursorIndex = Math.min(rawCursorIndex, value.length);
 
   useInput((input, key) => {
     if (Date.now() < suppressUntilRef.current) return;

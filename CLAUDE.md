@@ -73,9 +73,10 @@ src/
 │   ├── sessions.ts           # Session list (loaded from disk)
 │   └── workflow.ts           # Workflow events/phase/tasks (biggest store)
 ├── core/                     # Shared domain logic (config, types, commands, state)
+│   ├── phases.ts             # Phase role mapping + cancellable/implementer phase sets
 │   ├── commands/             # Slash command definitions and handlers
 │   │   ├── index.ts          # Public re-exports
-│   │   ├── commands.ts       # Command registry
+│   │   ├── definitions.ts    # Command registry
 │   │   ├── shortcuts.ts      # Keyboard shortcut bindings
 │   │   └── review-commands.ts # Review-mode slash commands
 │   ├── config/               # YAML config loading, defaults, validation
@@ -88,6 +89,8 @@ src/
 │   │   ├── catalog.ts        # Known model-vendor providers with API defaults
 │   │   ├── models.ts         # Model metadata helpers
 │   │   └── pricing.ts        # Cost calculation (known model pricing + $0 local fallback)
+│   ├── sessions/             # Session domain helpers
+│   │   └── status.ts         # Status icon + colour mapping (Session['status'] → Theme)
 │   ├── settings/             # Setting definitions and catalog
 │   │   └── catalog.ts
 │   ├── state/                # Workflow state machine
@@ -136,7 +139,6 @@ src/
 │   │   ├── agent-sdk.ts      # Anthropic Agent SDK (programmatic, no subprocess)
 │   │   ├── cli.ts            # Generic CLI planner backend
 │   │   ├── shell.ts          # Generic shell — any command via config
-│   │   ├── spawn-collect.ts  # Subprocess spawn + collect helper
 │   │   └── context.ts        # Project context builder
 │   ├── implementers/         # Pluggable implementer backends (mirrors planner pattern)
 │   │   ├── index.ts          # Public re-exports
@@ -181,7 +183,8 @@ src/
 │   ├── streaming/            # Streaming transport layer
 │   │   ├── claude-stream.ts  # Claude Code stream-json parsing
 │   │   ├── openai-stream.ts  # OpenAI-compatible streaming client (timeout, error handling)
-│   │   └── output-parsers.ts # Unified output format parsers (text, stream-json, jsonl)
+│   │   ├── output-parsers.ts # Unified output format parsers (text, stream-json, jsonl)
+│   │   └── spawn-collect.ts  # Subprocess spawn + collect helper (stdin → parsed lines)
 │   └── skills/               # Skill discovery (frontmatter parsing, .claude/skills scanning)
 │       ├── index.ts          # Public re-exports
 │       └── skills.ts
@@ -191,6 +194,11 @@ src/
 │   ├── workflow.tsx          # Workflow screen (header, events, footer, input)
 │   └── summary.tsx           # Post-run summary screen
 ├── components/               # Feature components (business logic + rendering)
+│   ├── labeled-row.tsx       # <LabeledRow label value /> — canonical label + value row
+│   ├── screen-shell.tsx      # <ScreenShell header footer /> — outer frame for screens
+│   ├── home/                 # Home screen sub-components
+│   │   ├── config-summary.tsx
+│   │   └── recent-sessions.tsx
 │   ├── conversation-flow/    # Scrollable event card list with auto-follow + virtual scroll
 │   │   ├── index.ts
 │   │   ├── conversation-flow.tsx
@@ -255,12 +263,15 @@ src/
 │   ├── spinner.tsx           # Braille spinner component with elapsed time
 │   └── theme.tsx             # Centralized color palette — zero hardcoded colors elsewhere
 ├── hooks/                    # React hooks (Ink-dependent lifecycle)
+│   ├── use-async-highlight.ts # Shared Shiki highlight effect with cancellation
 │   ├── use-filterable-list.ts # Filterable list state (search, scroll, selection)
 │   ├── use-global-keys.ts    # Global keyboard shortcuts (reads stores, takes only { exit })
 │   ├── use-input-mode.ts     # Input mode state (Promise-based, workflow-scoped)
-│   ├── use-latest-ref.ts     # Ref that always holds the latest value
+│   ├── use-static-selector.ts # Fixed-list up/down/return/escape selector (no-filter peer)
 │   ├── use-terminal-size.ts  # Terminal resize tracking + responsive layout
-│   └── use-workflow.ts       # Orchestrator lifecycle (useEffect + store reads)
+│   ├── use-workflow.ts       # Thin composition of runner + review-input hooks
+│   ├── use-workflow-runner.ts # Engine invocation + abort lifecycle
+│   └── use-workflow-review-input.ts # Review/question command parsing + handling
 └── utils/                    # Helpers (no React/Ink dependencies)
     ├── diff.ts               # Line-level diff computation
     ├── editor.ts             # $EDITOR subprocess helpers
@@ -441,8 +452,12 @@ CLI (initStores → store.load) → render(<App />)
 - `useWorkflow` — orchestrator lifecycle (useEffect + store reads + engine bridge)
 - `useGlobalKeys` — Ink's `useInput` required for keybinding dispatch
 - `useFilterableList` — keyboard-driven list state
+- `useStaticSelector` — peer of `useFilterableList` for no-filter overlays
 - `useTerminalSize` — terminal resize tracking
-- `useLatestRef` — ref that always holds the latest value (used by hooks that bridge engine callbacks)
+- `useAsyncHighlight` — wraps the Shiki async highlight pipeline with cancellation
+
+**Keyboard input convention:**
+Global keyboard handling lives in `src/hooks/use-global-keys.ts`. Local input primitives (multiline-input, filter-input, filterable-list, static-selector, etc.) may use `useInput` directly with their own focus/active gating. Avoid putting `useInput` directly in screen components — route through `useGlobalKeys` instead.
 
 **What NOT to do:**
 - Don't add `useMemo`, `useCallback`, or `React.memo` — store selectors make them unnecessary

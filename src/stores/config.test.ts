@@ -1,15 +1,27 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import YAML from 'yaml';
 import { configStore } from './config.js';
 import { feedbackStore } from './feedback.js';
+import type { PlannerConfig } from '../types.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { TINY_SPEC_DIR } from '../core/paths.js';
+
+function expectCli(p: PlannerConfig): Extract<PlannerConfig, { kind: 'cli' }> {
+  if (p.kind !== 'cli') throw new Error(`Expected cli planner, got ${p.kind}`);
+  return p;
+}
+
+function expectShell(p: PlannerConfig): Extract<PlannerConfig, { kind: 'shell' }> {
+  if (p.kind !== 'shell') throw new Error(`Expected shell planner, got ${p.kind}`);
+  return p;
+}
 
 let tmpDir: string;
 
 function writeConfigYaml(extras: Record<string, unknown> = {}) {
-  mkdirSync(join(tmpDir, '.tiny-spec'), { recursive: true });
+  mkdirSync(join(tmpDir, TINY_SPEC_DIR), { recursive: true });
   const base = {
     planner: { tool: 'claude-code' },
     implementer: { tool: 'ollama', model: 'qwen2.5-coder:7b', context_length: 8192, temperature: 0.3 },
@@ -19,18 +31,18 @@ function writeConfigYaml(extras: Record<string, unknown> = {}) {
     sessions: { scope: 'project' },
     ...extras,
   };
-  writeFileSync(join(tmpDir, '.tiny-spec', 'config.yaml'), YAML.stringify(base), 'utf-8');
+  writeFileSync(join(tmpDir, TINY_SPEC_DIR, 'config.yaml'), YAML.stringify(base), 'utf-8');
 }
 
 describe('configStore.load', () => {
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'config-store-test-'));
+    tmpDir = createTempDir('config-store-test');
     configStore.reset();
     feedbackStore.reset();
   });
 
   afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
     configStore.reset();
     feedbackStore.reset();
   });
@@ -44,13 +56,13 @@ describe('configStore.load', () => {
     writeConfigYaml();
     configStore.load(tmpDir);
     expect(configStore.get().projectDir).toBe(tmpDir);
-    expect(configStore.get().config!.planner.tool).toBe('claude-code');
+    expect(expectCli(configStore.get().config!.planner).tool).toBe('claude-code');
     expect(configStore.get().config!.implementer.model).toBe('qwen2.5-coder:7b');
   });
 
   it('falls back to defaults when no config file exists', () => {
     configStore.load(tmpDir);
-    expect(configStore.get().config!.planner.tool).toBe('claude-code');
+    expect(expectCli(configStore.get().config!.planner).tool).toBe('claude-code');
     expect(configStore.get().config!.implementer.tool).toBe('ollama');
   });
 
@@ -61,12 +73,18 @@ describe('configStore.load', () => {
     expect(configStore.get().config!.implementer.model).toBe('deepseek-r1');
   });
 
-  it('applies planner overrides', () => {
+  it('applies planner overrides for cli tool', () => {
     writeConfigYaml();
-    configStore.load(tmpDir, { planner: { tool: 'aider', model: 'opus', command: 'my-planner' } });
-    expect(configStore.get().config!.planner.tool).toBe('aider');
-    expect(configStore.get().config!.planner.model).toBe('opus');
-    expect(configStore.get().config!.planner.command).toBe('my-planner');
+    configStore.load(tmpDir, { planner: { tool: 'aider', model: 'opus' } });
+    const planner = expectCli(configStore.get().config!.planner);
+    expect(planner.tool).toBe('aider');
+    expect(planner.model).toBe('opus');
+  });
+
+  it('applies planner overrides for shell command', () => {
+    writeConfigYaml();
+    configStore.load(tmpDir, { planner: { tool: 'shell', command: 'my-planner' } });
+    expect(expectShell(configStore.get().config!.planner).command).toBe('my-planner');
   });
 
   it('applies contextLength override', () => {
@@ -99,13 +117,13 @@ describe('configStore.load', () => {
 
 describe('configStore.save', () => {
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'config-store-test-'));
+    tmpDir = createTempDir('config-store-test');
     configStore.reset();
     feedbackStore.reset();
   });
 
   afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
     configStore.reset();
     feedbackStore.reset();
   });
@@ -121,7 +139,7 @@ describe('configStore.save', () => {
     configStore.save(updated);
 
     expect(configStore.get().config!.theme).toBe('mono');
-    const written = YAML.parse(readFileSync(join(tmpDir, '.tiny-spec', 'config.yaml'), 'utf-8'));
+    const written = YAML.parse(readFileSync(join(tmpDir, TINY_SPEC_DIR, 'config.yaml'), 'utf-8'));
     expect(written.theme).toBe('mono');
   });
 

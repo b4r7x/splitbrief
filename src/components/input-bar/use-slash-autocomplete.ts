@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useInput } from 'ink';
 import type { Screen, SlashCommandDef } from '../../types.js';
 
@@ -41,23 +41,26 @@ export function useSlashAutocomplete({
     : [];
 
   const showSuggestions = slashMode && filtered.length > 0;
-
-  useEffect(() => {
-    if (selectedIndex >= filtered.length) setSelectedIndex(0);
-  }, [filtered.length, selectedIndex]);
+  const effectiveSelectedIndex = Math.min(selectedIndex, Math.max(0, filtered.length - 1));
 
   useInput(
     (_input, key) => {
       if (key.upArrow) {
-        setSelectedIndex((i) => (i - 1 + filtered.length) % filtered.length);
+        setSelectedIndex((i) => {
+          const clamped = Math.min(i, Math.max(0, filtered.length - 1));
+          return (clamped - 1 + filtered.length) % filtered.length;
+        });
         return;
       }
       if (key.downArrow) {
-        setSelectedIndex((i) => (i + 1) % filtered.length);
+        setSelectedIndex((i) => {
+          const clamped = Math.min(i, Math.max(0, filtered.length - 1));
+          return (clamped + 1) % filtered.length;
+        });
         return;
       }
       if (key.return) {
-        const selected = filtered[selectedIndex];
+        const selected = filtered[effectiveSelectedIndex];
         if (selected) {
           onSlashCommand(selected.name);
           setValue('');
@@ -69,7 +72,7 @@ export function useSlashAutocomplete({
         return;
       }
       if (key.tab) {
-        const selected = filtered[selectedIndex];
+        const selected = filtered[effectiveSelectedIndex];
         if (selected) {
           setValue(selected.name);
           setInputKey((k) => k + 1);
@@ -79,5 +82,5 @@ export function useSlashAutocomplete({
     { isActive: showSuggestions && !disabled },
   );
 
-  return { filtered, selectedIndex, showSuggestions, inputKey };
+  return { filtered, selectedIndex: effectiveSelectedIndex, showSuggestions, inputKey };
 }

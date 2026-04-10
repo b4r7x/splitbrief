@@ -1,3 +1,5 @@
+const LARGE_FILE_THRESHOLD = 5000;
+
 export function computeDiff(oldContent: string, newContent: string): { diff: string; linesAdded: number; linesRemoved: number } {
   if (oldContent === newContent) return { diff: '', linesAdded: 0, linesRemoved: 0 };
 
@@ -11,7 +13,27 @@ export function computeDiff(oldContent: string, newContent: string): { diff: str
     return { diff: oldLines.map(l => `- ${l}`).join('\n'), linesAdded: 0, linesRemoved: oldLines.length };
   }
 
+  if (oldLines.length > LARGE_FILE_THRESHOLD || newLines.length > LARGE_FILE_THRESHOLD) {
+    return diffLinesSimple(oldLines, newLines);
+  }
+
   const changes = diffLines(oldLines, newLines);
+  return formatWithContext(changes, 2);
+}
+
+function diffLinesSimple(oldLines: string[], newLines: string[]): { diff: string; linesAdded: number; linesRemoved: number } {
+  const changes: Change[] = [];
+  const maxLen = Math.max(oldLines.length, newLines.length);
+  for (let i = 0; i < maxLen; i++) {
+    const oldLine = i < oldLines.length ? oldLines[i]! : undefined;
+    const newLine = i < newLines.length ? newLines[i]! : undefined;
+    if (oldLine === newLine) {
+      changes.push({ type: ' ', line: oldLine! });
+    } else {
+      if (oldLine !== undefined) changes.push({ type: '-', line: oldLine });
+      if (newLine !== undefined) changes.push({ type: '+', line: newLine });
+    }
+  }
   return formatWithContext(changes, 2);
 }
 

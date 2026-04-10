@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
-import { Box, useInput } from 'ink';
-import { useResponsiveLayout } from './hooks/use-terminal-size.js';
-import { overlayStore } from './stores/overlay.js';
+import { Box } from 'ink';
+import { terminalSizeStore } from './stores/terminal-size.js';
 
 interface LayoutProps {
   screen: ReactNode;
@@ -9,17 +8,9 @@ interface LayoutProps {
 }
 
 export function Layout({ screen, overlay }: LayoutProps) {
-  const { cols, rows } = useResponsiveLayout();
+  const cols = terminalSizeStore.use(s => s.cols);
+  const rows = terminalSizeStore.use(s => s.rows);
   const hasOverlay = overlay !== null;
-  const exclusive = overlayStore.use(s => s.exclusive);
-  const hasStack = overlayStore.use(s => s.stack.length > 0);
-
-  useInput(
-    (_input, key) => {
-      if (key.escape) overlayStore.close();
-    },
-    { isActive: hasOverlay && !exclusive && !hasStack },
-  );
 
   return (
     <Box width={cols} height={rows}>

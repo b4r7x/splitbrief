@@ -2,6 +2,10 @@ import { createHighlighterCore } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 import type { HighlighterCore } from 'shiki/core';
 import ansis from 'ansis';
+import { warnError } from './format.js';
+
+const CACHE_MAX = 500;
+const CACHE_EVICT = 100;
 
 let highlighter: HighlighterCore | null = null;
 let currentThemeName = 'github-dark';
@@ -57,14 +61,14 @@ export async function highlight(code: string, lang: string = 'typescript'): Prom
       output += '\n';
     }
 
-    if (cache.size > 500) {
-      const keysToDelete = [...cache.keys()].slice(0, 100);
+    if (cache.size > CACHE_MAX) {
+      const keysToDelete = [...cache.keys()].slice(0, CACHE_EVICT);
       for (const k of keysToDelete) cache.delete(k);
     }
     cache.set(key, output);
     return output;
-  } catch {
-    // fallback to plain text on Shiki/WASM init or highlight failure
+  } catch (err) {
+    warnError('Highlight error', err);
     return code;
   }
 }

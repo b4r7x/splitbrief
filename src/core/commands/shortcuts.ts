@@ -5,7 +5,7 @@ interface ShortcutInfo {
   id: string;
   key: string;
   description: string;
-  screens: Screen[];
+  screens: readonly Screen[];
 }
 
 const SHORTCUTS: ShortcutInfo[] = [

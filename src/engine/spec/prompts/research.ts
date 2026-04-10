@@ -1,17 +1,15 @@
+import { buildPrompt } from './_shared.js';
+
 export function buildResearchPrompt(feature: string, projectContext: string, skillsContext?: string): string {
-  return `# Research Task
-
-You are preparing to implement a new feature. Before writing any specification, you need to deeply understand the existing codebase.
-
-## Feature Request
-${feature}
-
-## Project Context
-${projectContext}
-${skillsContext ? `\n${skillsContext}\n` : ''}
-## Instructions
-
-Analyze this codebase thoroughly:
+  return buildPrompt({
+    title: 'Research Task',
+    intro: 'You are preparing to implement a new feature. Before writing any specification, you need to deeply understand the existing codebase.',
+    sections: [
+      { heading: 'Feature Request', body: feature },
+      { heading: 'Project Context', body: `${projectContext}${skillsContext ? `\n${skillsContext}` : ''}` },
+      {
+        heading: 'Instructions',
+        body: `Analyze this codebase thoroughly:
 
 1. **Read key files**  -  Identify and read the most important source files: entry points, core modules, configuration, and type definitions.
 
@@ -31,11 +29,11 @@ Analyze this codebase thoroughly:
    - Coding conventions (naming, style, error handling)
    - Testing patterns and test infrastructure
    - Build and runtime requirements
-   - Any technical debt or limitations that affect this feature
-
-## Output Format
-
-Write a structured research report in markdown with these sections:
+   - Any technical debt or limitations that affect this feature`,
+      },
+      {
+        heading: 'Output Format',
+        body: `Write a structured research report in markdown with these sections:
 
 ### Project Overview
 Brief summary of what the project does and how it's built.
@@ -53,11 +51,11 @@ Coding patterns, conventions, and styles found in the codebase that new code mus
 Technical constraints, runtime requirements, and existing limitations.
 
 ### Implementation Considerations
-Initial thoughts on how the feature might fit into the existing architecture.
-
-## User Interaction
-
-After completing your research, if you identify important decisions or design ambiguities that would benefit from user input, embed them as interactive questions using this exact format:
+Initial thoughts on how the feature might fit into the existing architecture.`,
+      },
+      {
+        heading: 'User Interaction',
+        body: `After completing your research, if you identify important decisions or design ambiguities that would benefit from user input, embed them as interactive questions using this exact format:
 
 <!-- Q:{"id":"unique_id","type":"choice","text":"Your question here?","options":["Option 1","Option 2","Option 3"],"default":0} -->
 
@@ -70,5 +68,8 @@ Rules:
 - Maximum 5 questions
 - Only ask about decisions that materially impact the spec
 - Base questions on what you found in the codebase (not generic)
-- If you found the answer in the codebase, don't ask — just use it`;
+- If you found the answer in the codebase, don't ask — just use it`,
+      },
+    ],
+  });
 }

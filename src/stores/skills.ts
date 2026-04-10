@@ -1,5 +1,4 @@
 import { createStore, storeBase } from './create-store.js';
-import { discoverSkills } from '../engine/skills/index.js';
 import type { PlannerTool, SkillMeta } from '../types.js';
 
 interface SkillsState {
@@ -7,10 +6,19 @@ interface SkillsState {
   selected: Set<string>;
 }
 
-const store = createStore<SkillsState>({ available: [], selected: new Set() });
+const store = createStore<SkillsState>(() => ({ available: [], selected: new Set() }));
 
-function discover(plannerTool: PlannerTool, projectDir: string) {
-  store.set(s => ({ ...s, available: discoverSkills(plannerTool, projectDir) }));
+async function discover(
+  discoverFn: (tool: PlannerTool, projectDir: string) => Promise<SkillMeta[]>,
+  plannerTool: PlannerTool,
+  projectDir: string,
+) {
+  const available = await discoverFn(plannerTool, projectDir);
+  const availableIds = new Set(available.map(s => s.id));
+  store.set(s => ({
+    available,
+    selected: new Set([...s.selected].filter(id => availableIds.has(id))),
+  }));
 }
 
 function setSelected(ids: Set<string>) {

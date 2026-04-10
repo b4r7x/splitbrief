@@ -85,7 +85,7 @@ A new contributor clones the repo and reads CLAUDE.md and README.md. The documen
 
 2. **Given** README.md, **When** read by a new user, **Then** it documents the supported context window range (8K-32K+) and the auto-degradation behavior.
 
-3. **Given** the quickstart guide, **When** read by a first-time user, **Then** it mentions setting OLLAMA_CONTEXT_LENGTH and explains why (default 2048 is too small).
+3. **Given** the quickstart guide, **When** read by a first-time user, **Then** it mentions setting TINY_SPEC_CONTEXT_LENGTH and explains why (default 2048 is too small).
 
 ---
 

@@ -1,4 +1,5 @@
 import type { Config } from '../types/index.js';
+import { ConfigSchema } from '../types/schemas/config.js';
 
 export function getConfigValue(config: Config | Record<string, unknown>, dotPath: string): unknown {
   const parts = dotPath.split('.');
@@ -15,12 +16,10 @@ export function applyEdits(config: Config, edits: Record<string, unknown>): Conf
   const root = clone as unknown as Record<string, unknown>;
   for (const [dotPath, value] of Object.entries(edits)) {
     const parts = dotPath.split('.');
-    const lastPart = parts[parts.length - 1];
-    if (lastPart === undefined) continue;
+    const lastPart = parts[parts.length - 1]!;
     let current = root;
     for (let i = 0; i < parts.length - 1; i++) {
-      const key = parts[i];
-      if (key === undefined) continue;
+      const key = parts[i]!;
       const existing = current[key];
       if (existing === undefined || existing === null || typeof existing !== 'object') {
         current[key] = {};
@@ -29,5 +28,5 @@ export function applyEdits(config: Config, edits: Record<string, unknown>): Conf
     }
     current[lastPart] = value;
   }
-  return clone;
+  return ConfigSchema.parse(clone);
 }

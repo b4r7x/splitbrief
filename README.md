@@ -81,7 +81,7 @@ Needs **Node.js 22+** and **git** in the project.
 If using Ollama, bump the context window — the default 2048 tokens is too small:
 
 ```bash
-export OLLAMA_CONTEXT_LENGTH=32768
+export TINY_SPEC_CONTEXT_LENGTH=32768
 ```
 
 ## Commands

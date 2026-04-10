@@ -1,4 +1,5 @@
 import wrapAnsi from 'wrap-ansi';
+import { normalizeLineEndings } from './segments.js';
 
 export interface EditResult {
   value: string;
@@ -108,6 +109,16 @@ export function resolveEditAction(
   return null;
 }
 
+const editHandlers: Record<
+  NonNullable<EditAction>,
+  (value: string, cursor: number, columns?: number) => EditResult
+> = {
+  'delete-word-backward': (value, cursor) => deleteWordBackward(value, cursor),
+  'delete-line-backward': (value, cursor, columns) => deleteLineBackward(value, cursor, columns),
+  'move-line-start': (value, cursor, columns) => moveToLineStart(value, cursor, columns),
+  'move-line-end': (value, cursor) => moveToLineEnd(value, cursor),
+};
+
 export function applyEditAction(
   action: EditAction,
   value: string,
@@ -115,12 +126,7 @@ export function applyEditAction(
   columns?: number,
 ): EditResult | null {
   if (action === null) return null;
-  let result: EditResult | null = null;
-  if (action === 'delete-word-backward') result = deleteWordBackward(value, cursor);
-  else if (action === 'delete-line-backward') result = deleteLineBackward(value, cursor, columns);
-  else if (action === 'move-line-start') result = moveToLineStart(value, cursor, columns);
-  else if (action === 'move-line-end') result = moveToLineEnd(value, cursor);
-  return result;
+  return editHandlers[action](value, cursor, columns);
 }
 
 export function navigateVertically(
@@ -128,7 +134,7 @@ export function navigateVertically(
   value: string,
   cursorIndex: number,
 ): number | undefined {
-  const lines = value.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  const lines = normalizeLineEndings(value).split('\n');
   let currentLineIndex = 0;
   let currentPos = 0;
   let col = 0;

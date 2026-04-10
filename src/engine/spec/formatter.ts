@@ -1,5 +1,6 @@
 import type { Task, ProjectContext, CodeContext } from '../../types.js';
 import { extractFunctionContext } from '../parsers/scope-extractor.js';
+import { DECLARATION_NAME_RE } from '../parsers/code-patterns.js';
 import { estimateTokens, truncateMiddle, computeTokenBudget } from './token-budget.js';
 
 export const SYSTEM_PREAMBLE = `SYSTEM: You are a TypeScript code generator. You write clean, working TypeScript code.
@@ -121,7 +122,7 @@ function insertCodeContext(sections: string[], task: Task, budget?: { remaining:
 
   let functionName: string | undefined;
   if (task.signature) {
-    const match = task.signature.match(/(?:function|const|class|interface|type)\s+(\w+)/);
+    const match = task.signature.match(DECLARATION_NAME_RE);
     if (match) functionName = match[1];
   }
 

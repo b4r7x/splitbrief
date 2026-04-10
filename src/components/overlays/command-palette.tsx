@@ -1,9 +1,9 @@
 import { Text } from 'ink';
 import { useTheme } from '../../ui/theme.js';
 import type { CommandPaletteItem, Screen } from '../../types.js';
-import { useResponsiveLayout } from '../../hooks/use-terminal-size.js';
+import { terminalSizeStore } from '../../stores/terminal-size.js';
 import { truncate } from '../../utils/format.js';
-import { filterByFields } from '../../ui/picker-utils.js';
+import { filterByFields } from '../pickers/picker-utils.js';
 import { overlayStore } from '../../stores/overlay.js';
 import { FilterableList } from '../pickers/filterable-list.js';
 
@@ -17,7 +17,7 @@ const filterPaletteItem = (item: CommandPaletteItem, query: string) =>
 
 export function CommandPalette({ items, currentScreen }: CommandPaletteProps) {
   const t = useTheme();
-  const { isSmall } = useResponsiveLayout();
+  const isSmall = terminalSizeStore.use(s => s.isSmall);
 
   const maxWidth = isSmall ? 60 : 80;
   const nameColWidth = isSmall ? 14 : 18;

@@ -31,7 +31,6 @@ export const overlayStore = {
       stack: s.stack.slice(0, -1),
     };
   }),
-  reset: () => store.set(() => INITIAL),
   setExclusive: (v: boolean) => store.set(s =>
     s.exclusive === v ? s : { ...s, exclusive: v }
   ),

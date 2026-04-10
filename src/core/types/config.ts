@@ -1,63 +1,31 @@
 import type { ProviderId } from '../providers/catalog.js';
+import type { z } from 'zod';
+import type { PlannerConfigSchema, ImplementerConfigSchema, ConfigSchema } from './schemas/config.js';
+import {
+  CLI_TOOL_NAMES,
+  type CliPlannerTool,
+} from './schemas/enums.js';
 
-export type WorkflowMode = 'quick' | 'standard' | 'full';
-export const WORKFLOW_MODES: readonly WorkflowMode[] = ['quick', 'standard', 'full'];
+export type {
+  WorkflowMode, CommitStrategy, ThemeMode, ShikiTheme,
+  OutputFormat, PlannerKind, ImplementerKind, CliPlannerTool,
+} from './schemas/enums.js';
+export {
+  WORKFLOW_MODES, COMMIT_STRATEGIES, THEME_MODES, SHIKI_THEMES,
+  OUTPUT_FORMATS, PLANNER_KINDS, IMPLEMENTER_KINDS, CLI_TOOL_NAMES,
+} from './schemas/enums.js';
 
-export type CommitStrategy = 'none' | 'checkpoint' | 'per-task';
-
-export type ThemeMode = 'terminal' | 'mono';
-
-/** CLI tool name or API provider used for planning. CLI tools run as subprocesses; providers use the API planner. */
 export type PlannerTool = ProviderId;
 
-export type OutputFormat = 'stream-json' | 'jsonl' | 'text' | 'opencode';
-
-export const IMPLEMENTER_KINDS = ['api', 'shell', 'agent', 'agent-sdk', 'claude-code', 'codex', 'opencode', 'aider'] as const;
-export type ImplementerKind = typeof IMPLEMENTER_KINDS[number];
-
-export interface Config {
-  planner: {
-    tool: PlannerTool;
-    provider?: string | undefined;
-    model?: string | undefined;
-    apiKey?: string | undefined;
-    apiBase?: string | undefined;
-    command?: string | undefined;
-    args?: string[] | undefined;
-    outputFormat?: OutputFormat | undefined;
-    customModels?: string[] | undefined;
-  };
-  implementer: {
-    tool: string;
-    model: string;
-    apiBase: string;
-    contextLength: number;
-    temperature: number;
-    apiKey?: string | undefined;
-    kind?: ImplementerKind | undefined;
-    command?: string | undefined;
-    args?: string[] | undefined;
-    outputFormat?: OutputFormat | undefined;
-    timeout?: number | undefined;
-    customModels?: string[] | undefined;
-  };
-  validation: {
-    typecheck: boolean;
-    lint: boolean;
-    test: boolean;
-    testCommand: string;
-  };
-  workflow: {
-    autoApproveSpec: boolean;
-    autoApprovePlan: boolean;
-    maxRetries: number;
-    commitStrategy: CommitStrategy;
-    mode?: WorkflowMode | undefined;
-  };
-  theme?: ThemeMode | undefined;
-  shikiTheme?: string | undefined;
-  sessions?: { scope?: 'project' | 'global' | undefined } | undefined;
+export function isCliTool(tool: string): tool is CliPlannerTool {
+  return (CLI_TOOL_NAMES as readonly string[]).includes(tool);
 }
+
+export type PlannerConfig = z.infer<typeof PlannerConfigSchema>;
+
+export type ImplementerConfig = z.infer<typeof ImplementerConfigSchema>;
+
+export type Config = z.infer<typeof ConfigSchema>;
 
 export interface WorkflowOpts {
   auto?: boolean | undefined;
@@ -76,24 +44,18 @@ export interface WorkflowOpts {
 
 export interface PlannerDetection {
   tool: PlannerTool;
+  // agent-sdk excluded: it's programmatic (not detectable via CLI probe).
   type: 'cli' | 'api' | 'shell';
   available: boolean;
-  version?: string | null | undefined;
+  version?: string | undefined;
   description?: string | undefined;
   error?: string | undefined;
 }
 
 export interface ProviderDetection {
-  provider: string;
+  provider: ProviderId;
   available: boolean;
   models?: string[] | undefined;
   isLocal: boolean;
   hasKey?: boolean | undefined;
-}
-
-export const CLI_TOOL_NAMES = ['claude-code', 'codex', 'opencode', 'aider'] as const;
-export type ToolName = (typeof CLI_TOOL_NAMES)[number];
-
-export function supportsConversational(tool: PlannerTool): boolean {
-  return tool === 'claude-code' || tool === 'agent-sdk';
 }

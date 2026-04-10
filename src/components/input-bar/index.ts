@@ -1,1 +1,1 @@
-export { InputBar } from './input-bar.js';
+export { InputBar } from './bar.js';

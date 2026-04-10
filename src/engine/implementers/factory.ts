@@ -1,33 +1,20 @@
 import type { Config } from '../../types.js';
 import type { Implementer } from './types.js';
+import { createBackend } from '../../utils/backend-factory.js';
 
 export async function createImplementer(config: Config): Promise<Implementer> {
   const type = config.implementer.kind ?? 'api';
-  switch (type) {
-    case 'api': {
-      const { createOpenAIImplementer } = await import('./openai.js');
-      return createOpenAIImplementer(config);
-    }
-    case 'shell': {
-      const { createShellImplementer } = await import('./shell.js');
-      return createShellImplementer(config);
-    }
-    case 'agent': {
-      const { createAgentImplementer } = await import('./agent.js');
-      return createAgentImplementer(config);
-    }
-    case 'claude-code':
-    case 'codex':
-    case 'opencode':
-    case 'aider': {
-      const { createToolImplementer } = await import('./tool.js');
-      return createToolImplementer(type, config);
-    }
-    case 'agent-sdk': {
-      const { createAgentSdkImplementer } = await import('./agent-sdk.js');
-      return createAgentSdkImplementer(config);
-    }
-    default:
-      throw new Error(`Unknown implementer type: ${type}. Supported: api, shell, agent, agent-sdk, claude-code, codex, opencode, aider`);
-  }
+
+  const registry: Record<string, () => Promise<Implementer>> = {
+    api: async () => (await import('./api.js')).createApiImplementer(config),
+    shell: async () => (await import('./shell.js')).createShellImplementer(config),
+    agent: async () => (await import('./agent.js')).createAgentImplementer(config),
+    'agent-sdk': async () => (await import('./agent-sdk.js')).createAgentSdkImplementer(config),
+    'claude-code': async () => (await import('./tool.js')).createToolImplementer('claude-code', config),
+    codex: async () => (await import('./tool.js')).createToolImplementer('codex', config),
+    opencode: async () => (await import('./tool.js')).createToolImplementer('opencode', config),
+    aider: async () => (await import('./tool.js')).createToolImplementer('aider', config),
+  };
+
+  return createBackend(type, registry, 'implementer type');
 }

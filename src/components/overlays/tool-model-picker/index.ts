@@ -1,1 +1,1 @@
-export { ToolModelPicker } from './tool-model-picker.js';
+export { ToolModelPicker } from './picker.js';

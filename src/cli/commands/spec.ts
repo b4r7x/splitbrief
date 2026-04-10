@@ -1,6 +1,11 @@
 import { Command } from 'commander';
-import { createPlanner } from '../../engine/planners/factory.js';
+import ansis from 'ansis';
+import { createPlanner, type PlanResult } from '../../engine/index.js';
+import { getPlannerToolName } from '../../core/config/planner-config.js';
 import { ensureGitAndConfig, resolveProjectDir, loadConfigOrExit } from '../workflow.js';
+import { cliError } from '../errors.js';
+import { toErrorMessage } from '../../utils/format.js';
+import { TINY_SPEC_DIR, CURRENT_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 
 export function registerSpecCommand(program: Command): void {
   program
@@ -19,20 +24,26 @@ export function registerSpecCommand(program: Command): void {
       }
       const planner = await createPlanner(config);
 
-      console.log(`Planning feature: ${feature} (planner: ${config.planner.tool ?? 'claude-code'})\n`);
+      console.log(`Planning feature: ${feature} (planner: ${getPlannerToolName(config.planner)})\n`);
 
-      const result = await planner.plan(feature, projectDir, config, {
-        onOutput(text: string) {
-          process.stdout.write(text);
-        },
-        onPhase(phase: string) {
-          console.log(`\n--- ${phase} ---\n`);
-        },
-      });
+      let result: PlanResult;
+      try {
+        result = await planner.plan(feature, projectDir, {
+          onOutput(text: string) {
+            process.stdout.write(text);
+          },
+          onPhase(phase: string) {
+            console.log(`\n${ansis.bold(`--- ${phase} ---`)}\n`);
+          },
+        });
+      } catch (err) {
+        throw cliError(toErrorMessage(err));
+      }
 
+      const currentPath = `${TINY_SPEC_DIR}/${CURRENT_DIR}`;
       console.log('\nSpec generation complete.');
-      console.log(`  Spec:  .tiny-spec/current/spec.md`);
-      console.log(`  Plan:  .tiny-spec/current/plan.md`);
-      console.log(`  Tasks: .tiny-spec/current/tasks.md (${result.tasks.length} tasks)`);
+      console.log(`  Spec:  ${ansis.dim(`${currentPath}/${SPEC_FILE}`)}`);
+      console.log(`  Plan:  ${ansis.dim(`${currentPath}/${PLAN_FILE}`)}`);
+      console.log(`  Tasks: ${ansis.dim(`${currentPath}/${TASKS_FILE}`)} (${result.tasks.length} tasks)`);
     });
 }

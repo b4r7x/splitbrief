@@ -2,86 +2,19 @@ import { configStore } from '../../../stores/config.js';
 import { overlayStore } from '../../../stores/overlay.js';
 import { feedbackStore } from '../../../stores/feedback.js';
 import { formatModelName } from '../../../core/providers/models.js';
-import { getProvider } from '../../../engine/providers/registry.js';
-import type { Config, PlannerTool } from '../../../types.js';
+import type { Config } from '../../../types.js';
 import type { PickerOption, ModelOption } from './picker-catalog.js';
-import type { ViewAction, ViewState } from './tool-model-picker.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
+import {
+  commitPlannerSelection,
+  commitImplementerSelection,
+  commitCustomCommand,
+  commitCustomModel,
+  removeCustomModel,
+} from './config-transforms.js';
+import type { ViewState, ViewAction } from './view-state.js';
 
-function patchRole(config: Config, role: 'planner' | 'implementer', patch: Record<string, unknown>): Config {
-  return { ...config, [role]: { ...config[role], ...patch } } as Config;
-}
-
-function commitPlannerSelection(config: Config, selection: PickerOption, model: ModelOption | null): Config {
-  return patchRole(config, 'planner', {
-    tool: selection.id as PlannerTool,
-    model: model ? model.id : undefined,
-  });
-}
-
-function commitImplementerSelection(config: Config, selection: PickerOption, model: ModelOption | null): Config {
-  if (selection.kind === 'cli') {
-    return patchRole(config, 'implementer', {
-      kind: selection.id as Config['implementer']['kind'],
-      ...(model && { model: model.id }),
-    });
-  }
-
-  const toolChanged = selection.id !== config.implementer.tool;
-  const providerDef = getProvider(selection.id);
-  return patchRole(config, 'implementer', {
-    kind: 'api' as const,
-    tool: selection.id,
-    ...(model && { model: model.id }),
-    ...(toolChanged && { apiBase: providerDef.baseURL }),
-  });
-}
-
-function commitCustomCommand(config: Config, role: 'planner' | 'implementer', command: string): Config {
-  const toolKey = role === 'planner' ? 'tool' : 'kind';
-  return patchRole(config, role, { [toolKey]: 'shell', command });
-}
-
-function commitCustomModel(
-  config: Config,
-  role: 'planner' | 'implementer',
-  selection: PickerOption,
-  modelName: string,
-  customModels: string[],
-): Config {
-  const newCustomModels = customModels.includes(modelName)
-    ? customModels
-    : [...customModels, modelName];
-
-  if (role === 'planner') {
-    return patchRole(config, 'planner', {
-      tool: selection.id as PlannerTool,
-      model: modelName,
-      customModels: newCustomModels,
-    });
-  }
-
-  const isTool = selection.kind === 'cli';
-  const providerDef = isTool ? null : getProvider(selection.id);
-  return patchRole(config, 'implementer', {
-    ...(isTool
-      ? { kind: selection.id as Config['implementer']['kind'] }
-      : {
-          kind: 'api' as const,
-          tool: selection.id,
-          ...(selection.id !== config.implementer.tool && providerDef && { apiBase: providerDef.baseURL }),
-        }),
-    model: modelName,
-    customModels: newCustomModels,
-  });
-}
-
-function removeCustomModel(config: Config, role: 'planner' | 'implementer', modelId: string): Config {
-  const current = role === 'planner'
-    ? (config.planner.customModels ?? [])
-    : (config.implementer.customModels ?? []);
-  return patchRole(config, role, { customModels: current.filter(m => m !== modelId) });
-}
+export { initialViewState, viewReducer } from './view-state.js';
 
 export interface PickerActions {
   confirm(selection: PickerOption, model: ModelOption | null): void;

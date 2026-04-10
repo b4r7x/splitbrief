@@ -1,6 +1,37 @@
 import { useEffect, useEffectEvent, useState, type ReactNode } from 'react';
 import { useInput } from 'ink';
-import { filterByFields, type FilterableItem } from '../../../ui/picker-utils.js';
+import { filterByFields, type FilterableItem } from '../picker-utils.js';
+import { handleKeyboardInput } from './two-column-keyboard.js';
+
+export interface LeftColumnProps<L> {
+  items: L[];
+  label?: string | undefined;
+  filterBy?: ((item: L, query: string) => boolean) | undefined;
+  renderRow: (item: L, meta: { isCursor: boolean; isSelected: boolean; maxWidth: number }) => ReactNode;
+  getKey: (item: L) => string;
+  isSpecial?: ((item: L) => boolean) | undefined;
+  isDisabled?: ((item: L) => boolean) | undefined;
+  initialIndex?: number | undefined;
+  specialHelp?: ReactNode | undefined;
+}
+
+export interface CustomRowOptions<L, R> {
+  onSelect: (left: L) => void;
+  isCustom?: ((item: R) => boolean) | undefined;
+  onDelete?: ((item: R) => void) | undefined;
+}
+
+export interface RightColumnProps<L, R> {
+  items: R[];
+  label?: string | undefined;
+  filterBy?: ((item: R, query: string) => boolean) | undefined;
+  renderRow: (item: R, meta: { isCursor: boolean; maxWidth: number }) => ReactNode;
+  getKey: (item: R) => string;
+  placeholder?: ReactNode | undefined;
+  customRow?: CustomRowOptions<L, R> | undefined;
+  onLeftChange?: ((item: L) => void) | undefined;
+  initialIndex?: number | undefined;
+}
 
 export const CUSTOM_ROW_ID = '__custom__' as const;
 
@@ -30,23 +61,11 @@ export interface TwoColumnNavState<L, R> {
 }
 
 interface UseTwoColumnStateParams<L extends FilterableItem, R extends { id: string }> {
-  leftItems: L[];
-  rightItems: R[];
-  leftGetKey: (item: L) => string;
-  leftFilterFn?: ((item: L, query: string) => boolean) | undefined;
-  rightFilterFn?: ((item: R, query: string) => boolean) | undefined;
-  isLeftItemSpecial?: ((item: L) => boolean) | undefined;
-  isLeftItemDisabled?: ((item: L) => boolean) | undefined;
-  isRightItemCustom?: ((item: R) => boolean) | undefined;
+  leftProps: LeftColumnProps<L>;
+  rightProps: RightColumnProps<L, R>;
   initialColumn?: 'left' | 'right' | undefined;
-  initialLeftIndex?: number | undefined;
-  allowCustomRight?: boolean | undefined;
-  rightPlaceholder?: ReactNode | undefined;
-  onLeftChange: (item: L) => void;
   onConfirm: (left: L, right: R | null) => void;
   onCancel: () => void;
-  onCustomRightOverlay?: ((left: L) => void) | undefined;
-  onDeleteRight?: ((item: R) => void) | undefined;
 }
 
 function defaultLeftFilter<L extends FilterableItem>(item: L, query: string): boolean {
@@ -57,41 +76,41 @@ function defaultRightFilter<R extends { id: string }>(item: R, query: string): b
   return filterByFields(item, query, ['id']);
 }
 
-function findNextEnabled<T>(
-  items: T[],
-  from: number,
-  direction: 1 | -1,
-  isDisabled?: (item: T) => boolean,
-): number {
-  if (items.length === 0) return from;
-  if (!isDisabled) return (from + direction + items.length) % items.length;
-  let next = (from + direction + items.length) % items.length;
-  let steps = 0;
-  while (steps < items.length) {
-    const item = items[next];
-    if (item === undefined || !isDisabled(item)) break;
-    next = (next + direction + items.length) % items.length;
-    steps++;
-  }
-  return steps >= items.length ? from : next;
-}
+const clampIndex = (index: number, length: number) => Math.min(index, Math.max(0, length - 1));
 
 export function useTwoColumnState<L extends FilterableItem, R extends { id: string }>(
   params: UseTwoColumnStateParams<L, R>,
 ): TwoColumnNavState<L, R> {
-  const {
-    leftItems, rightItems, leftGetKey, leftFilterFn, rightFilterFn,
-    isLeftItemSpecial, isLeftItemDisabled, isRightItemCustom,
-    initialColumn = 'left', initialLeftIndex, allowCustomRight, rightPlaceholder,
-    onLeftChange, onConfirm, onCancel, onCustomRightOverlay, onDeleteRight,
-  } = params;
+  const { leftProps, rightProps, initialColumn = 'left', onConfirm, onCancel } = params;
 
-  const [activeColumn, setActiveColumn] = useState<'left' | 'right'>(initialColumn);
+  const leftItems = leftProps.items;
+  const rightItems = rightProps.items;
+  const leftGetKey = leftProps.getKey;
+  const leftFilterFn = leftProps.filterBy;
+  const rightFilterFn = rightProps.filterBy;
+  const isLeftItemSpecial = leftProps.isSpecial;
+  const isLeftItemDisabled = leftProps.isDisabled;
+  const isRightItemCustom = rightProps.customRow?.isCustom;
+  const initialLeftIndex = leftProps.initialIndex;
+  const initialRightIndex = rightProps.initialIndex;
+  const allowCustomRight = !!rightProps.customRow;
+  const rightPlaceholder = rightProps.placeholder;
+  const onLeftChange = rightProps.onLeftChange ?? (() => {});
+  const onCustomRightOverlay = rightProps.customRow?.onSelect;
+  const onDeleteRight = rightProps.customRow?.onDelete;
+
+  const initialLeftItem = leftItems[initialLeftIndex ?? 0];
+  const initialLeftDisabled = initialLeftItem ? (isLeftItemDisabled?.(initialLeftItem) ?? false) : false;
+  const effectiveInitialColumn = initialColumn === 'right' && initialLeftDisabled ? 'left' : initialColumn;
+
+  const [activeColumn, setActiveColumn] = useState<'left' | 'right'>(effectiveInitialColumn);
   const [selectedLeftKey, setSelectedLeftKey] = useState<string | null>(null);
   const [leftFilter, setLeftFilter] = useState('');
   const [rightFilter, setRightFilter] = useState('');
   const [leftIndex, setLeftIndex] = useState(initialLeftIndex ?? 0);
-  const [rightIndex, setRightIndex] = useState(0);
+  const [rightIndex, setRightIndex] = useState(initialRightIndex ?? 0);
+
+  const resetRight = () => { setRightIndex(0); setRightFilter(''); };
 
   const leftFilterFnEff = leftFilterFn ?? defaultLeftFilter;
   const rightFilterFnEff = rightFilterFn ?? defaultRightFilter;
@@ -100,11 +119,11 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const rightFiltered = rightFilter ? rightItems.filter((it) => rightFilterFnEff(it, rightFilter)) : rightItems;
 
   const filteredRight: RightItemOrVirtual<R>[] = allowCustomRight
-    ? [{ id: CUSTOM_ROW_ID, isVirtual: true } as VirtualCustomItem, ...rightFiltered]
+    ? [{ id: CUSTOM_ROW_ID, isVirtual: true as const }, ...rightFiltered]
     : rightFiltered;
 
-  const leftEffectiveIndex = Math.min(leftIndex, Math.max(0, leftFiltered.length - 1));
-  const rightEffectiveIndex = Math.min(rightIndex, Math.max(0, filteredRight.length - 1));
+  const leftEffectiveIndex = clampIndex(leftIndex, leftFiltered.length);
+  const rightEffectiveIndex = clampIndex(rightIndex, filteredRight.length);
   const leftCurrentItem = leftFiltered[leftEffectiveIndex];
   const rightCurrentItem = filteredRight[rightEffectiveIndex];
 
@@ -116,103 +135,28 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const currentRightIsCustom = rightActive && !!rightCurrentItem && !isOnVirtual
     && (isRightItemCustom?.(rightCurrentItem as R) ?? false);
 
-  const syncLeftItem = useEffectEvent((item: L) => {
-    onLeftChange(item);
-    setRightIndex(0);
-    setRightFilter('');
+  // Track selected left by key: firing the effect only when the selection
+  // key actually changes, not on every render/reference change.
+  const currentLeftKey = leftCurrentItem ? leftGetKey(leftCurrentItem) : null;
+  const syncLeftItem = useEffectEvent(() => {
+    if (!leftCurrentItem) return;
+    onLeftChange(leftCurrentItem);
   });
 
   useEffect(() => {
-    if (!leftCurrentItem) return;
-    syncLeftItem(leftCurrentItem);
-  }, [leftCurrentItem]);
+    if (currentLeftKey === null) return;
+    syncLeftItem();
+  }, [currentLeftKey]);
 
   useInput((input, key) => {
-    if (key.escape) {
-      onCancel();
-      return;
-    }
-
-    if (key.ctrl && input === 'd') {
-      if (rightActive && currentRightIsCustom && onDeleteRight) {
-        const item = filteredRight[rightEffectiveIndex];
-        if (item && !isVirtualCustomItem(item) && isRightItemCustom?.(item)) {
-          onDeleteRight(item);
-        }
-      }
-      return;
-    }
-
-    if (key.leftArrow) {
-      if (rightActive) {
-        setActiveColumn('left');
-        setSelectedLeftKey(null);
-      }
-      return;
-    }
-
-    if (key.rightArrow) {
-      if (leftActive && leftCurrentItem && !isDisabled && !isSpecial && (rightItems.length > 0 || rightPlaceholder)) {
-        setActiveColumn('right');
-      }
-      return;
-    }
-
-    if (key.upArrow || key.downArrow) {
-      const direction: 1 | -1 = key.upArrow ? -1 : 1;
-      if (leftActive) {
-        if (leftFiltered.length === 0) return;
-        const next = findNextEnabled(leftFiltered, leftEffectiveIndex, direction, isLeftItemDisabled);
-        setLeftIndex(next);
-      } else {
-        if (filteredRight.length === 0) return;
-        const next = findNextEnabled(filteredRight, rightEffectiveIndex, direction);
-        setRightIndex(next);
-      }
-      return;
-    }
-
-    if (key.return) {
-      if (leftActive) {
-        if (!leftCurrentItem || isDisabled) return;
-        if (isSpecial) {
-          onConfirm(leftCurrentItem, null);
-          return;
-        }
-        setSelectedLeftKey(leftGetKey(leftCurrentItem));
-        if (rightItems.length > 0 || rightPlaceholder) setActiveColumn('right');
-        return;
-      }
-      if (isOnVirtual) {
-        if (onCustomRightOverlay && leftCurrentItem) onCustomRightOverlay(leftCurrentItem);
-        return;
-      }
-      const rc = filteredRight[rightEffectiveIndex];
-      const ri = rc && !isVirtualCustomItem(rc) ? rc : null;
-      if (leftFiltered[leftEffectiveIndex]) onConfirm(leftFiltered[leftEffectiveIndex], ri);
-      return;
-    }
-
-    if (key.backspace || key.delete) {
-      if (leftActive && !isSpecial) {
-        setLeftFilter((prev) => prev.slice(0, -1));
-        setLeftIndex(0);
-      } else if (rightActive) {
-        setRightFilter((prev) => prev.slice(0, -1));
-        setRightIndex(0);
-      }
-      return;
-    }
-
-    if (input && !key.ctrl && !key.meta) {
-      if (leftActive && !isSpecial) {
-        setLeftFilter((prev) => prev + input);
-        setLeftIndex(0);
-      } else if (rightActive) {
-        setRightFilter((prev) => prev + input);
-        setRightIndex(0);
-      }
-    }
+    handleKeyboardInput(input, key, {
+      leftActive, rightActive, isSpecial, isDisabled, isOnVirtual, currentRightIsCustom,
+      leftCurrentItem, leftFiltered, filteredRight, leftEffectiveIndex, rightEffectiveIndex,
+      rightItems, rightPlaceholder, leftGetKey, isRightItemCustom, onDeleteRight,
+      onCustomRightOverlay, onConfirm, onCancel,
+      setActiveColumn, setSelectedLeftKey, setLeftFilter, setRightFilter,
+      setLeftIndex, setRightIndex, resetRight,
+    });
   }, { isActive: true });
 
   return {

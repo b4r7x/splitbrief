@@ -8,7 +8,7 @@ import {
   type SettingDef,
 } from '../../../core/settings/catalog.js';
 import { getConfigValue, applyEdits } from '../../../core/config/index.js';
-import { matchesFilter, validateNumber } from './settings-presentation.js';
+import { matchesFilter, validateNumber } from '../../../core/settings/presentation.js';
 import { useFilterableList } from '../../../hooks/use-filterable-list.js';
 import type { Config } from '../../../types.js';
 
@@ -26,7 +26,6 @@ interface SettingsEditorState {
   editingId: string | null;
   editBuffer: string;
   selectedDef: SettingDef | undefined;
-  isDisabled: (def: SettingDef) => boolean;
   getValue: (def: SettingDef) => unknown;
 }
 
@@ -36,9 +35,8 @@ export function useSettingsEditor({
   onClose,
   onOpenSubPicker,
 }: UseSettingsEditorParams): SettingsEditorState {
-  const isDisabled = (def: SettingDef): boolean => !!def.disabled?.(config);
-
-  const getValue = (def: SettingDef): unknown => getConfigValue(config, def.id);
+  const getValue = (def: SettingDef): unknown =>
+    def.readValue ? def.readValue(config) : getConfigValue(config, def.id);
 
   const saveValue = (dotPath: string, value: unknown) => {
     const updated = applyEdits(config, { [dotPath]: value });
@@ -92,7 +90,6 @@ export function useSettingsEditor({
     items: SETTINGS_DEFS,
     filterFn: matchesFilter,
     onSelect: (def) => {
-      if (isDisabled(def)) return;
       if (def.kind === 'picker') { onOpenSubPicker(def); return; }
       if (def.kind === 'string' || def.kind === 'number') {
         const current = getValue(def);
@@ -109,7 +106,7 @@ export function useSettingsEditor({
     (input) => {
       if (input !== ' ' || list.filtered.length === 0) return;
       const def = list.filtered[list.selectedIndex];
-      if (!def || isDisabled(def)) return;
+      if (!def) return;
       if (def.kind === 'boolean') {
         saveValue(def.id, !getValue(def));
       } else if (def.kind === 'enum' && def.options) {
@@ -130,7 +127,6 @@ export function useSettingsEditor({
     editingId,
     editBuffer,
     selectedDef: list.filtered[list.selectedIndex],
-    isDisabled,
     getValue,
   };
 }

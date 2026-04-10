@@ -1,5 +1,7 @@
 import { createStore, storeBase } from './create-store.js';
+import { feedbackStore } from './feedback.js';
 import type { Screen, RouteData, Summary, WorkflowState } from '../types.js';
+import { assertNever } from '../utils/type-guards.js';
 
 const transitions: Record<Screen, Screen[]> = {
   home: ['workflow', 'setup'],
@@ -15,7 +17,8 @@ const store = createStore<RouteData>(initial);
 function navigate(to: Screen, data?: { feature?: string; summary?: Summary; resumeState?: WorkflowState; onComplete?: 'home' | 'workflow' }) {
   const current = store.get().screen;
   if (!transitions[current].includes(to)) {
-    throw new Error(`Cannot navigate from "${current}" to "${to}"`);
+    feedbackStore.setError(`Cannot navigate from "${current}" to "${to}"`);
+    return;
   }
 
   switch (to) {
@@ -32,6 +35,8 @@ function navigate(to: Screen, data?: { feature?: string; summary?: Summary; resu
     case 'setup':
       store.set({ screen: 'setup', onComplete: data?.onComplete, feature: data?.feature });
       break;
+    default:
+      assertNever(to);
   }
 }
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { routerStore } from './router.js';
+import { feedbackStore } from './feedback.js';
 import type { Summary } from '../types.js';
 
 const dummySummary: Summary = {
@@ -16,7 +17,10 @@ const dummySummary: Summary = {
 };
 
 describe('routerStore', () => {
-  beforeEach(() => routerStore.reset());
+  beforeEach(() => {
+    routerStore.reset();
+    feedbackStore.reset();
+  });
 
   it('navigates home → workflow', () => {
     routerStore.navigate('workflow', { feature: 'auth' });
@@ -40,9 +44,11 @@ describe('routerStore', () => {
     expect(routerStore.get().screen).toBe('home');
   });
 
-  it('throws on invalid transition home → summary', () => {
-    expect(() => routerStore.navigate('summary', { summary: dummySummary }))
-      .toThrow(/Cannot navigate from "home" to "summary"/);
+  it('reports error and stays put on invalid transition home → summary', () => {
+    routerStore.navigate('summary', { summary: dummySummary });
+    expect(routerStore.get().screen).toBe('home');
+    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().message).toMatch(/Cannot navigate from "home" to "summary"/);
   });
 
   it('throws when summary data missing', () => {

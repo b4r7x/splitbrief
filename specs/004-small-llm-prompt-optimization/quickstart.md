@@ -34,7 +34,7 @@ implementer:
 
 **IMPORTANT**: Also set Ollama's context length:
 ```bash
-export OLLAMA_CONTEXT_LENGTH=8192
+export TINY_SPEC_CONTEXT_LENGTH=8192
 ```
 
 ## What Happens Under the Hood

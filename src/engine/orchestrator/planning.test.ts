@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { OrchestratorCallbacks, TuiEvent, WorkflowState } from '../../types.js';
-import type { Planner } from '../planners/types.js';
+import type { WorkflowState } from '../../types.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { makeConfig, makeTask } from '#testing/helpers/fixtures.js';
+import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-fixtures.js';
 
 vi.mock('../../core/state/persistence.js', () => ({
   saveState: vi.fn(),
@@ -11,12 +11,13 @@ vi.mock('../../core/state/persistence.js', () => ({
 vi.mock('../../utils/fs.js', () => ({
   readSpecFile: vi.fn().mockReturnValue('# Spec content'),
   writeSpecFile: vi.fn(),
+  readPackageJson: vi.fn().mockReturnValue(null),
+}));
+vi.mock('../spec/parser.js', () => ({
+  parseTasks: vi.fn().mockReturnValue([makeTask()]),
 }));
 vi.mock('../skills/index.js', () => ({
-  buildSkillsSection: vi.fn().mockReturnValue(''),
-}));
-vi.mock('../../core/types/config.js', () => ({
-  supportsConversational: vi.fn().mockReturnValue(false),
+  buildSkillsSection: vi.fn().mockResolvedValue(''),
 }));
 
 import { runPlanningPhase } from './planning.js';
@@ -24,38 +25,6 @@ import { runPlanningPhase } from './planning.js';
 beforeEach(() => {
   vi.clearAllMocks();
 });
-
-function makeCallbacks(overrides?: Partial<OrchestratorCallbacks>): { callbacks: OrchestratorCallbacks; events: TuiEvent[] } {
-  const events: TuiEvent[] = [];
-  return {
-    events,
-    callbacks: {
-      onEvent: (e) => events.push(e),
-      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
-      onExternalChanges: vi.fn().mockResolvedValue(false),
-      onComplete: vi.fn(),
-      ...overrides,
-    },
-  };
-}
-
-function makePlanner(overrides?: Partial<Planner>): Planner {
-  return {
-    plan: vi.fn().mockResolvedValue({
-      spec: '# Spec',
-      plan: '# Plan',
-      tasks: [makeTask()],
-      usage: { inputTokens: 100, outputTokens: 50 },
-    }),
-    regenerate: vi.fn().mockResolvedValue({ text: 'regenerated', usage: null }),
-    escalateHint: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
-    escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
-    isAvailable: vi.fn().mockResolvedValue(true),
-    getVersion: vi.fn().mockResolvedValue('1.0'),
-    review: vi.fn().mockResolvedValue({ text: '', usage: null }),
-    ...overrides,
-  };
-}
 
 function prepareState(): WorkflowState {
   let state = createInitialState('test-feature');

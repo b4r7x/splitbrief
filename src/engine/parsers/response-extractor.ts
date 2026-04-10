@@ -1,23 +1,10 @@
 import { isCodeLine, looksLikeTypeScript, stripNaturalLanguage } from './code-detection.js';
+import { extractFencedBlocks, hasCodePrefix, stripMarkdownFences } from './code-patterns.js';
 
-export function stripMarkdownFences(text: string): string {
-  return text
-    .replace(/^```(?:typescript|ts)?\s*\n/gm, '')
-    .replace(/^```\s*$/gm, '')
-    .trim();
-}
-
-function extractFencedBlocks(response: string): string[] {
-  const blocks: string[] = [];
-  const regex = /```(?:typescript|ts)?\s*\n([\s\S]*?)```/g;
-  for (let match = regex.exec(response); match !== null; match = regex.exec(response)) {
-    if (match[1] !== undefined) blocks.push(match[1].trim());
-  }
-  return blocks;
-}
+export type ExtractedCode = { code: string; confidence: 'high' | 'medium' | 'low' };
 
 export type ExtractionResult =
-  | { code: string; confidence: 'high' | 'medium' | 'low' }
+  | ExtractedCode
   | { error: string };
 
 export function extractCode(response: string): ExtractionResult {
@@ -30,7 +17,7 @@ export function extractCode(response: string): ExtractionResult {
     return { code: longest, confidence: 'high' };
   }
 
-  if (/^(import |export |\/\/|\/\*)/.test(trimmed)) {
+  if (hasCodePrefix(trimmed)) {
     return { code: trimmed, confidence: 'high' };
   }
 

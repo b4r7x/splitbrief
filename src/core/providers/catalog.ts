@@ -14,46 +14,65 @@ export const PROVIDER_IDS = [
 
 export type ProviderId = typeof PROVIDER_IDS[number];
 
-interface ProviderInfo {
+export function isProviderId(id: string): id is ProviderId {
+  return (PROVIDER_IDS as readonly string[]).includes(id);
+}
+
+export interface ProviderInfo {
   id: ProviderId;
   displayName: string;
-  baseUrl?: string;
+  baseURL?: string;
   isLocal?: boolean;
+  apiKeyEnv?: string;
 }
+
+// Source of truth for known provider base URLs. `PROVIDER_CATALOG` references
+// these by name, so the catalog never owns a base URL the rest of the code
+// would otherwise have to assert non-null.
+export const KNOWN_PROVIDER_BASE_URLS = {
+  ollama: 'http://localhost:11434/v1',
+  'lm-studio': 'http://localhost:1234/v1',
+  deepseek: 'https://api.deepseek.com/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+} as const;
+
+export const KNOWN_PROVIDER_NAMES = Object.keys(KNOWN_PROVIDER_BASE_URLS) as readonly (keyof typeof KNOWN_PROVIDER_BASE_URLS)[];
 
 export const PROVIDER_CATALOG: Record<ProviderId, ProviderInfo> = {
   'claude-code': { id: 'claude-code', displayName: 'Claude Code' },
   codex: { id: 'codex', displayName: 'Codex' },
   opencode: { id: 'opencode', displayName: 'OpenCode' },
   aider: { id: 'aider', displayName: 'Aider' },
-  'agent-sdk': { id: 'agent-sdk', displayName: 'Agent SDK' },
-  anthropic: { id: 'anthropic', displayName: 'Anthropic' },
-  openrouter: { id: 'openrouter', displayName: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
-  ollama: { id: 'ollama', displayName: 'Ollama', baseUrl: 'http://localhost:11434/v1', isLocal: true },
-  'lm-studio': { id: 'lm-studio', displayName: 'LM Studio', baseUrl: 'http://localhost:1234/v1', isLocal: true },
-  deepseek: { id: 'deepseek', displayName: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1' },
+  'agent-sdk': { id: 'agent-sdk', displayName: 'Agent SDK', apiKeyEnv: 'ANTHROPIC_API_KEY' },
+  anthropic: { id: 'anthropic', displayName: 'Anthropic', apiKeyEnv: 'ANTHROPIC_API_KEY' },
+  openrouter: { id: 'openrouter', displayName: 'OpenRouter', baseURL: KNOWN_PROVIDER_BASE_URLS.openrouter, apiKeyEnv: 'OPENROUTER_API_KEY' },
+  ollama: { id: 'ollama', displayName: 'Ollama', baseURL: KNOWN_PROVIDER_BASE_URLS.ollama, isLocal: true },
+  'lm-studio': { id: 'lm-studio', displayName: 'LM Studio', baseURL: KNOWN_PROVIDER_BASE_URLS['lm-studio'], isLocal: true },
+  deepseek: { id: 'deepseek', displayName: 'DeepSeek', baseURL: KNOWN_PROVIDER_BASE_URLS.deepseek, apiKeyEnv: 'DEEPSEEK_API_KEY' },
   shell: { id: 'shell', displayName: 'Custom Shell' },
 };
 
-type KnownProviderName = 'ollama' | 'lm-studio' | 'deepseek' | 'openrouter';
-
-export const KNOWN_PROVIDER_NAMES: readonly string[] = ['ollama', 'lm-studio', 'deepseek', 'openrouter'];
-
-export const KNOWN_PROVIDER_BASE_URLS: Record<KnownProviderName, string> = {
-  ollama: PROVIDER_CATALOG.ollama.baseUrl!,
-  'lm-studio': PROVIDER_CATALOG['lm-studio'].baseUrl!,
-  deepseek: PROVIDER_CATALOG.deepseek.baseUrl!,
-  openrouter: PROVIDER_CATALOG.openrouter.baseUrl!,
-};
-
 export function getProviderDisplayName(id: string): string {
-  return PROVIDER_CATALOG[id as ProviderId]?.displayName ?? id;
+  if (!isProviderId(id)) return id;
+  return PROVIDER_CATALOG[id].displayName;
 }
 
-export function getProviderBaseUrl(id: string): string {
-  return PROVIDER_CATALOG[id as ProviderId]?.baseUrl ?? '';
+export function getProviderBaseURL(id: string): string {
+  if (!isProviderId(id)) return '';
+  return PROVIDER_CATALOG[id].baseURL ?? '';
 }
 
 export function isProviderLocal(id: string): boolean {
-  return PROVIDER_CATALOG[id as ProviderId]?.isLocal === true;
+  if (!isProviderId(id)) return false;
+  return PROVIDER_CATALOG[id].isLocal === true;
+}
+
+export function getProviderApiKeyEnv(id: string): string | undefined {
+  if (!isProviderId(id)) return undefined;
+  return PROVIDER_CATALOG[id].apiKeyEnv;
+}
+
+export function hasApiKey(providerId: string): boolean {
+  const envVar = getProviderApiKeyEnv(providerId);
+  return envVar ? !!process.env[envVar] : false;
 }

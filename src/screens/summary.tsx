@@ -1,26 +1,18 @@
 import { Box, Text } from 'ink';
 import type { SlashCommandDef } from '../types.js';
-import { useTheme, type Theme } from '../ui/theme.js';
+import { useTheme } from '../ui/theme.js';
 import { formatTime, formatCost, truncate } from '../utils/format.js';
 import { getProviderDisplayName } from '../core/providers/catalog.js';
+import { getMethodDisplay } from '../core/sessions/status.js';
 import { InputBar } from '../components/input-bar/index.js';
-import { useResponsiveLayout } from '../hooks/use-terminal-size.js';
+import { LabeledRow } from '../components/labeled-row.js';
+import { ScreenShell } from '../components/screen-shell.js';
+import { terminalSizeStore } from '../stores/terminal-size.js';
 import { routerStore } from '../stores/router.js';
 
 interface SummaryScreenProps {
   commands: SlashCommandDef[];
   onSlashCommand: (command: string) => void;
-}
-
-function methodLabel(method: string, theme: Theme): { text: string; color: string } {
-  switch (method) {
-    case 'local': return { text: 'local', color: theme.success };
-    case 'escalated-hint': return { text: 'hint', color: theme.warning };
-    case 'escalated-full': return { text: 'opus', color: theme.error };
-    case 'failed': return { text: 'fail', color: theme.error };
-    case 'skipped': return { text: 'skip', color: theme.textDim };
-    default: return { text: method, color: theme.textDim };
-  }
 }
 
 function progressBar(completed: number, total: number, width: number): string {
@@ -31,7 +23,7 @@ function progressBar(completed: number, total: number, width: number): string {
 
 export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) {
   const theme = useTheme();
-  const { isSmall } = useResponsiveLayout();
+  const isSmall = terminalSizeStore.use(s => s.isSmall);
 
   const summary = routerStore.use(s => s.screen === 'summary' ? s.summary : null);
   if (!summary) return null;
@@ -44,17 +36,17 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
   const truncateLength = isSmall ? 18 : 28;
 
   return (
-    <Box flexDirection="column" padding={1}>
+    <ScreenShell padding={1}>
       <Box justifyContent="center" width="100%">
         <Text bold color={theme.success}>tiny-spec complete</Text>
       </Box>
 
       <Box flexDirection="column" marginTop={1} gap={isSmall ? 0 : 1}>
-        <Box><Box width={labelWidth}><Text color={theme.textDim}>Feature</Text></Box><Text bold>{summary.feature}</Text></Box>
-        <Box><Box width={labelWidth}><Text color={theme.textDim}>Time</Text></Box><Text>{formatTime(summary.totalTime)}</Text></Box>
-        {summary.plannerTool && <Box><Box width={labelWidth}><Text color={theme.textDim}>Planner</Text></Box><Text>{getProviderDisplayName(summary.plannerTool)}</Text></Box>}
-        {summary.implementerTool && <Box><Box width={labelWidth}><Text color={theme.textDim}>Implementer</Text></Box><Text>{getProviderDisplayName(summary.implementerTool)}</Text></Box>}
-        <Box><Box width={labelWidth}><Text color={theme.textDim}>Savings</Text></Box><Text bold color={theme.success}>{summary.estimatedCostSavings}</Text></Box>
+        <LabeledRow label="Feature" labelWidth={labelWidth}><Text bold>{summary.feature}</Text></LabeledRow>
+        <LabeledRow label="Time" labelWidth={labelWidth}><Text>{formatTime(summary.totalTime)}</Text></LabeledRow>
+        {summary.plannerTool && <LabeledRow label="Planner" labelWidth={labelWidth}><Text>{getProviderDisplayName(summary.plannerTool)}</Text></LabeledRow>}
+        {summary.implementerTool && <LabeledRow label="Implementer" labelWidth={labelWidth}><Text>{getProviderDisplayName(summary.implementerTool)}</Text></LabeledRow>}
+        <LabeledRow label="Savings" labelWidth={labelWidth}><Text bold color={theme.success}>{summary.estimatedCostSavings}</Text></LabeledRow>
       </Box>
 
       <Box flexDirection="column" marginTop={1}>
@@ -71,16 +63,16 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
 
       {summary.costBreakdown && (
         <Box flexDirection="column" marginTop={1} gap={isSmall ? 0 : 1}>
-          <Box><Box width={labelWidth}><Text color={theme.textDim}>Actual cost</Text></Box><Text bold>{formatCost(summary.costBreakdown.totalActualCost)}</Text></Box>
-          <Box><Box width={labelWidth}><Text color={theme.textDim}>Saved</Text></Box><Text color={theme.success}>{formatCost(summary.costBreakdown.savingsAmount)} ({summary.costBreakdown.savingsPercentage.toFixed(0)}%)</Text></Box>
-          <Box><Box width={labelWidth}><Text color={theme.textDim}>Local rate</Text></Box><Text color={theme.success}>{(summary.costBreakdown.localCompletionRate * 100).toFixed(0)}%</Text></Box>
+          <LabeledRow label="Actual cost" labelWidth={labelWidth}><Text bold>{formatCost(summary.costBreakdown.totalActualCost)}</Text></LabeledRow>
+          <LabeledRow label="Saved" labelWidth={labelWidth}><Text color={theme.success}>{`${formatCost(summary.costBreakdown.savingsAmount)} (${summary.costBreakdown.savingsPercentage.toFixed(0)}%)`}</Text></LabeledRow>
+          <LabeledRow label="Local rate" labelWidth={labelWidth}><Text color={theme.success}>{`${(summary.costBreakdown.localCompletionRate * 100).toFixed(0)}%`}</Text></LabeledRow>
         </Box>
       )}
 
       {summary.taskBreakdown && summary.taskBreakdown.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
           {summary.taskBreakdown.map((task) => {
-            const m = methodLabel(task.method, theme);
+            const m = getMethodDisplay(task.method, theme);
             return (
               <Box key={task.taskId}>
                 <Box width={6}><Text color={theme.textDim}>{task.taskId}</Text></Box>
@@ -103,6 +95,6 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
           currentScreen="summary"
         />
       </Box>
-    </Box>
+    </ScreenShell>
   );
 }

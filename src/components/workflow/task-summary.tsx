@@ -1,11 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../ui/theme.js';
 import type { TaskCompletionMethod } from '../../types.js';
-
-const METHOD_LABELS: Partial<Record<TaskCompletionMethod, string>> = {
-  'escalated-hint': 'hint',
-  'escalated-full': 'escalated',
-};
+import { getMethodDisplay } from '../../core/sessions/status.js';
 
 interface TaskSummaryProps {
   index: number;
@@ -17,7 +13,7 @@ interface TaskSummaryProps {
   reason?: string | undefined;
 }
 
-export default function TaskSummary({ index, title, method, retries, duration, file, reason }: TaskSummaryProps) {
+export function TaskSummary({ index, title, method, retries, duration, file, reason }: TaskSummaryProps) {
   const t = useTheme();
 
   if (method === 'failed') {
@@ -38,7 +34,7 @@ export default function TaskSummary({ index, title, method, retries, duration, f
     );
   }
 
-  const label = METHOD_LABELS[method] ?? method;
+  const label = getMethodDisplay(method, t).text;
   const meta: string[] = [label];
   if (retries && retries > 0) meta.push(`${retries} ${retries === 1 ? 'retry' : 'retries'}`);
   if (duration != null) meta.push(`${duration}s`);

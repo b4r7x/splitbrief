@@ -1,11 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { execSync } from 'node:child_process';
 import type { Config } from '../../types.js';
 import { createAgentImplementer } from './agent.js';
 import { makeConfig as makeBaseConfig, makeTask, defaultContext } from '#testing/helpers/fixtures.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
 
 function makeConfig(extra?: Partial<Config['implementer']>): Config {
   return makeBaseConfig({
@@ -18,13 +17,8 @@ const context = { ...defaultContext, runtime: 'node' };
 let testDir: string;
 
 function setupGitRepo(): string {
-  const dir = join(tmpdir(), `tiny-spec-agent-test-${Date.now()}`);
-  mkdirSync(dir, { recursive: true });
-  execSync('git init', { cwd: dir, stdio: 'ignore' });
-  execSync('git config user.email "test@test.com"', { cwd: dir, stdio: 'ignore' });
-  execSync('git config user.name "Test"', { cwd: dir, stdio: 'ignore' });
-  writeFileSync(join(dir, 'init.txt'), 'init');
-  execSync('git add . && git commit -m "init"', { cwd: dir, stdio: 'ignore' });
+  const dir = createTempDir('tiny-spec-agent-test');
+  createTestGitRepo(dir);
   return dir;
 }
 
@@ -34,9 +28,7 @@ describe('agent implementer', () => {
   });
 
   afterEach(() => {
-    if (testDir && existsSync(testDir)) {
-      rmSync(testDir, { recursive: true, force: true });
-    }
+    if (testDir) cleanupTempDir(testDir);
   });
 
   it('succeeds when agent writes a file', async () => {
@@ -52,7 +44,7 @@ describe('agent implementer', () => {
       projectDir: testDir,
       config,
       context: { ...context, dir: testDir },
-      onProgress: (text) => output.push(text),
+      onOutput: (text) => output.push(text),
     });
 
     expect(result.success).toBe(true);
@@ -70,7 +62,7 @@ describe('agent implementer', () => {
       projectDir: testDir,
       config,
       context: { ...context, dir: testDir },
-      onProgress: () => {},
+      onOutput: () => {},
     });
 
     expect(result.success).toBe(false);
@@ -90,7 +82,7 @@ describe('agent implementer', () => {
       projectDir: testDir,
       config,
       context: { ...context, dir: testDir },
-      onProgress: () => {},
+      onOutput: () => {},
     });
 
     expect(result.success).toBe(false);
@@ -109,7 +101,7 @@ describe('agent implementer', () => {
         projectDir: testDir,
         config,
         context: { ...context, dir: testDir },
-        onProgress: () => {},
+        onOutput: () => {},
       }),
     ).rejects.toThrow('command not found');
   }, 30_000);
@@ -127,7 +119,7 @@ describe('agent implementer', () => {
       projectDir: testDir,
       config,
       context: { ...context, dir: testDir },
-      onProgress: () => {},
+      onOutput: () => {},
     });
 
     expect(result.success).toBe(true);
@@ -148,7 +140,8 @@ describe('agent implementer', () => {
       context: { ...context, dir: testDir },
       error: 'tsc error: missing semicolon',
       attempt: 1,
-      onProgress: () => {},
+      kind: 'local',
+      onOutput: () => {},
     });
 
     expect(result.success).toBe(true);
@@ -168,7 +161,7 @@ describe('agent implementer', () => {
       projectDir: testDir,
       config,
       context: { ...context, dir: testDir },
-      onProgress: (text) => chunks.push(text),
+      onOutput: (text) => chunks.push(text),
     });
 
     expect(result.success).toBe(true);

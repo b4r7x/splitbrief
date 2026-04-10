@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
+import ansis from 'ansis';
 import { registerStartCommand } from './cli/commands/start.js';
 import { registerSpecCommand } from './cli/commands/spec.js';
 import { registerInitCommand } from './cli/commands/init.js';
 import { registerStatusCommand } from './cli/commands/status.js';
 import { registerResumeCommand } from './cli/commands/resume.js';
+import { isCliError } from './cli/errors.js';
+import { toErrorMessage } from './utils/format.js';
 
 const program = new Command();
 
@@ -21,6 +24,10 @@ registerStatusCommand(program);
 registerResumeCommand(program);
 
 program.parseAsync().catch((err) => {
-  console.error((err as Error).message);
+  if (isCliError(err)) {
+    console.error(`${ansis.red('Error:')} ${err.message}`);
+    process.exit(err.exitCode);
+  }
+  console.error(`${ansis.red('Error:')} ${toErrorMessage(err)}`);
   process.exit(1);
 });

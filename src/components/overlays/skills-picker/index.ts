@@ -1,1 +1,1 @@
-export { SkillsPicker } from './skills-picker.js';
+export { SkillsPicker } from './picker.js';

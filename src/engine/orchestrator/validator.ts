@@ -1,9 +1,16 @@
 import { existsSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
-import type { Task, Config, ValidationResult } from '../../types.js';
+import type { Task, Config, ValidationResult, OrchestratorCallbacks } from '../../types.js';
 import { runCommand, isENOENT } from '../../utils/process.js';
+import { emitValidationStart, emitValidationProgress, emitValidationResult } from './events.js';
+
+const MAX_ERROR_LINES = 20;
+
+let cachedLinter: { dir: string; result: 'eslint' | 'biome' | null } | null = null;
 
 export function detectLinter(projectDir: string): 'eslint' | 'biome' | null {
+  if (cachedLinter?.dir === projectDir) return cachedLinter.result;
+
   const eslintPatterns = [
     'eslint.config.js',
     'eslint.config.mjs',
@@ -17,14 +24,17 @@ export function detectLinter(projectDir: string): 'eslint' | 'biome' | null {
     '.eslintrc.yaml',
   ];
 
+  let result: 'eslint' | 'biome' | null = null;
   for (const pattern of eslintPatterns) {
-    if (existsSync(join(projectDir, pattern))) return 'eslint';
+    if (existsSync(join(projectDir, pattern))) { result = 'eslint'; break; }
   }
 
-  if (existsSync(join(projectDir, 'biome.json'))) return 'biome';
+  if (!result && existsSync(join(projectDir, 'biome.json'))) result = 'biome';
 
-  return null;
+  cachedLinter = { dir: projectDir, result };
+  return result;
 }
+
 
 export function findAffectedTestFile(taskFile: string, projectDir: string): string | null {
   const dir = dirname(taskFile);
@@ -76,7 +86,7 @@ async function runValidationStep(opts: {
   }
 }
 
-export async function validateTask(
+async function validateTask(
   task: Task,
   projectDir: string,
   config: Config,
@@ -125,11 +135,26 @@ export async function validateTask(
   return results;
 }
 
+export async function runValidationWithEvents(
+  task: Task,
+  projectDir: string,
+  config: Config,
+  callbacks: OrchestratorCallbacks,
+): Promise<ValidationResult[]> {
+  const startTime = Date.now();
+  emitValidationStart(callbacks);
+  const results = await validateTask(task, projectDir, config, (stages) => {
+    emitValidationProgress(callbacks, stages, startTime);
+  });
+  emitValidationResult(callbacks, results, startTime);
+  return results;
+}
+
 export function formatValidationError(results: ValidationResult[]): string {
   const failed = results.find((r) => !r.passed);
   if (!failed) return '';
 
-  const errorLines = (failed.error || '').split('\n').slice(0, 20).join('\n');
+  const errorLines = (failed.error || '').split('\n').slice(0, MAX_ERROR_LINES).join('\n');
 
   return [
     'Your previous code had an error. Fix it.',

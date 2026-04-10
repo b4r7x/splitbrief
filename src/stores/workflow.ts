@@ -1,8 +1,7 @@
 import { createStore, storeBase } from './create-store.js';
 import { killAllProcesses } from '../utils/process.js';
+import { mergeEvent, updateCounts, updateTaskMap } from './workflow-reducers.js';
 import type { Phase, SidebarTask, TuiEvent, TokenUsage } from '../types.js';
-
-export const MAX_EVENTS = 10_000;
 
 export interface WorkflowViewState {
   events: TuiEvent[];
@@ -12,9 +11,13 @@ export interface WorkflowViewState {
   localCount: number;
   escalatedCount: number;
   reviewFilePath: string | null;
+  reviewScrollOffset: number;
+  reviewLineCount: number;
   taskMap: Map<string, SidebarTask>;
   tokenUsage: TokenUsage | null;
   cancelled: boolean;
+  sidebarVisible: boolean;
+  inputInteractive: boolean;
 }
 
 const initial: WorkflowViewState = {
@@ -25,59 +28,18 @@ const initial: WorkflowViewState = {
   localCount: 0,
   escalatedCount: 0,
   reviewFilePath: null,
+  reviewScrollOffset: 0,
+  reviewLineCount: 0,
   taskMap: new Map(),
   tokenUsage: null,
   cancelled: false,
+  sidebarVisible: false,
+  inputInteractive: false,
 };
 
-let abortController: AbortController | null = null;
+let cancelHandler: (() => void) | null = null;
 
 const store = createStore<WorkflowViewState>(initial);
-
-function mergeEvent(events: TuiEvent[], event: TuiEvent): TuiEvent[] {
-  const last = events[events.length - 1];
-  let next: TuiEvent[];
-  if (event.type === 'planner-text' && last?.type === 'planner-text') {
-    next = [...events.slice(0, -1), { ...last, text: last.text + event.text }];
-  } else if (event.type === 'validate' && event.status === 'running' && last?.type === 'validate' && last.status === 'running') {
-    next = [...events.slice(0, -1), event];
-  } else {
-    next = [...events, event];
-  }
-  return next.length > MAX_EVENTS ? next.slice(-MAX_EVENTS) : next;
-}
-
-function updateCounts(state: WorkflowViewState, event: TuiEvent): Pick<WorkflowViewState, 'phase' | 'currentTask' | 'totalTasks' | 'localCount' | 'escalatedCount'> {
-  let { phase, currentTask, totalTasks, localCount, escalatedCount } = state;
-  if (event.type === 'planner-status') phase = event.phase as Phase;
-  if (event.type === 'task-start') {
-    currentTask = event.index + 1;
-    totalTasks = event.total;
-  }
-  if (event.type === 'task-complete') {
-    if (event.method === 'local') localCount += 1;
-    else if (event.method === 'escalated-hint' || event.method === 'escalated-full') escalatedCount += 1;
-  }
-  return { phase, currentTask, totalTasks, localCount, escalatedCount };
-}
-
-function updateTaskMap(taskMap: Map<string, SidebarTask>, event: TuiEvent): Map<string, SidebarTask> {
-  if (event.type === 'task-start') {
-    const next = new Map(taskMap);
-    next.set(event.taskId, { id: event.taskId, title: event.title, status: 'in_progress' });
-    return next;
-  }
-  if (event.type === 'task-complete' || event.type === 'task-skipped') {
-    const status = event.type === 'task-complete' ? 'done' : 'skipped';
-    const existing = taskMap.get(event.taskId);
-    if (existing) {
-      const next = new Map(taskMap);
-      next.set(event.taskId, { ...existing, status });
-      return next;
-    }
-  }
-  return taskMap;
-}
 
 function addEvent(event: TuiEvent) {
   store.set(state => {
@@ -93,18 +55,25 @@ function addEvent(event: TuiEvent) {
 }
 
 function setReviewFile(path: string | null) {
-  store.set(s => s.reviewFilePath === path ? s : { ...s, reviewFilePath: path });
+  store.set(s => s.reviewFilePath === path ? s : { ...s, reviewFilePath: path, reviewScrollOffset: 0, reviewLineCount: 0 });
 }
 
-function setAbortController(controller: AbortController | null) {
-  if (abortController && controller !== abortController) abortController.abort();
-  abortController = controller;
+function setReviewScroll(offset: number) {
+  store.set(s => s.reviewScrollOffset === offset ? s : { ...s, reviewScrollOffset: offset });
+}
+
+function setReviewLineCount(count: number) {
+  store.set(s => s.reviewLineCount === count ? s : { ...s, reviewLineCount: count });
+}
+
+function setCancelHandler(handler: (() => void) | null) {
+  cancelHandler = handler;
 }
 
 function requestCancel() {
   const state = store.get();
   if (state.cancelled) return;
-  if (abortController) abortController.abort();
+  if (cancelHandler) cancelHandler();
   const now = Date.now();
   store.set(s => {
     const events = s.events.map(ev =>
@@ -118,14 +87,26 @@ function requestCancel() {
   try { killAllProcesses(); } catch { /* process cleanup is best-effort */ }
 }
 
+function toggleSidebar() {
+  store.set(s => ({ ...s, sidebarVisible: !s.sidebarVisible }));
+}
+
+function setInputInteractive(active: boolean) {
+  store.set(s => s.inputInteractive === active ? s : { ...s, inputInteractive: active });
+}
+
 export const workflowStore = {
   ...storeBase(store),
   reset: (init?: Partial<WorkflowViewState>) => {
-    abortController = null;
+    cancelHandler = null;
     store.reset(init ? { ...initial, ...init } : undefined);
   },
   addEvent,
   setReviewFile,
-  setAbortController,
+  setReviewScroll,
+  setReviewLineCount,
+  setCancelHandler,
   requestCancel,
+  toggleSidebar,
+  setInputInteractive,
 };

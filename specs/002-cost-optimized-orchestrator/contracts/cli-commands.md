@@ -116,7 +116,7 @@ workflow:
 | `DEEPSEEK_API_KEY` | DeepSeek provider | API key for DeepSeek |
 | `OPENROUTER_API_KEY` | OpenRouter provider | API key for OpenRouter |
 | `EDITOR` / `VISUAL` | Spec review | Editor to open spec for review |
-| `OLLAMA_CONTEXT_LENGTH` | Ollama provider | Override Ollama's 2048-token default |
+| `TINY_SPEC_CONTEXT_LENGTH` | Any provider | Override the default context length |
 
 ## Keyboard Shortcuts (TUI)
 

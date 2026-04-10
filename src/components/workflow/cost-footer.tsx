@@ -1,6 +1,7 @@
 import { Box, Text } from 'ink';
 import { formatCost } from '../../utils/format.js';
 import { useTheme } from '../../ui/theme.js';
+import { useCostStats } from '../../hooks/use-cost-stats.js';
 
 function rateColor(rate: number, t: { success: string; warning: string; error: string }): string {
   if (rate >= 50) return t.success;
@@ -8,15 +9,11 @@ function rateColor(rate: number, t: { success: string; warning: string; error: s
   return t.error;
 }
 
-interface CostFooterProps {
-  currentTask: number;
-  totalTasks: number;
-  localRate: number;
-  estimatedSavings: number;
-}
-
-export default function CostFooter({ currentTask, totalTasks, localRate, estimatedSavings }: CostFooterProps) {
+export function CostFooter() {
   const t = useTheme();
+  const { localRate, costBreakdown, currentTask, totalTasks } = useCostStats();
+
+  const estimatedSavings = costBreakdown?.savingsAmount ?? 0;
   const color = rateColor(localRate, t);
 
   return (

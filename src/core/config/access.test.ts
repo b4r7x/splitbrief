@@ -3,8 +3,9 @@ import { getConfigValue, applyEdits } from './access.js';
 import type { Config } from '../types/index.js';
 
 const mockConfig = {
-  planner: { tool: 'claude-code', model: 'claude-sonnet-4-6' },
+  planner: { kind: 'cli' as const, tool: 'claude-code' as const, model: 'claude-sonnet-4-6' },
   implementer: {
+    kind: 'api' as const,
     tool: 'ollama',
     model: 'qwen2.5-coder:7b',
     apiBase: 'http://localhost:11434/v1',
@@ -71,5 +72,9 @@ describe('applyEdits', () => {
     const original = structuredClone(mockConfig);
     applyEdits(mockConfig, { 'theme': 'mono' });
     expect(mockConfig).toEqual(original);
+  });
+
+  it('throws on edits that produce an invalid config', () => {
+    expect(() => applyEdits(mockConfig, { 'implementer.model': '' })).toThrow();
   });
 });

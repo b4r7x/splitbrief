@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
-import { highlight } from '../utils/highlight.js';
-import { useTheme } from './theme.js';
+import { useAsyncHighlight } from './use-async-highlight.js';
+import { useTheme, type Theme } from './theme.js';
 
 export interface DiffViewProps {
   file: string;
@@ -9,9 +8,25 @@ export interface DiffViewProps {
   linesRemoved: number;
   diff: string;
   expanded: boolean;
+  rows: number;
 }
 
-const MAX_LINES = 50;
+const MAX_LINES_RATIO = 0.5;
+const MIN_MAX_LINES = 10;
+
+const EXT_TO_LANG: Record<string, string> = {
+  ts: 'typescript',
+  tsx: 'tsx',
+  js: 'javascript',
+  jsx: 'jsx',
+};
+
+function langFromFile(file: string): string {
+  const dot = file.lastIndexOf('.');
+  if (dot < 0) return 'typescript';
+  const ext = file.slice(dot + 1).toLowerCase();
+  return EXT_TO_LANG[ext] ?? 'typescript';
+}
 
 function stripPrefix(line: string): string {
   if (line.startsWith('+ ') || line.startsWith('- ')) return line.slice(2);
@@ -19,42 +34,43 @@ function stripPrefix(line: string): string {
   return line;
 }
 
-function diffBg(isAdded: boolean, isRemoved: boolean, diff: { addedBg: string; removedBg: string; contextBg: string }): string {
+function diffBg(isAdded: boolean, isRemoved: boolean, diff: { addedBg: string | undefined; removedBg: string | undefined; contextBg: string | undefined }): string | undefined {
   if (isAdded) return diff.addedBg;
   if (isRemoved) return diff.removedBg;
   return diff.contextBg;
 }
 
-export default function DiffView({ file, linesAdded, linesRemoved, diff, expanded }: DiffViewProps) {
+function diffColor(isAdded: boolean, isRemoved: boolean, diff: Theme['diff']): string {
+  if (isAdded) return diff.added;
+  if (isRemoved) return diff.removed;
+  return diff.context;
+}
+
+function DiffLine({ line, lineNum, lang, theme: t }: { line: string; lineNum: string; lang: string; theme: Theme }) {
+  const isAdded = line.startsWith('+ ');
+  const isRemoved = line.startsWith('- ');
+  const stripped = stripPrefix(line);
+  const highlighted = useAsyncHighlight(isAdded || isRemoved ? stripped : '', lang);
+  const bg = diffBg(isAdded, isRemoved, t.diff);
+  const fallbackColor = diffColor(isAdded, isRemoved, t.diff);
+  const content = (isAdded || isRemoved) ? (highlighted ?? stripped) : stripped;
+  const colorProp = highlighted && (isAdded || isRemoved) ? {} : { color: fallbackColor };
+  const bgProp = bg !== undefined ? { backgroundColor: bg } : {};
+  return (
+    <Box>
+      <Text color={t.border}>{lineNum} </Text>
+      <Text {...colorProp} {...bgProp}>{content}</Text>
+    </Box>
+  );
+}
+
+export function DiffView({ file, linesAdded, linesRemoved, diff, expanded, rows }: DiffViewProps) {
   const t = useTheme();
-  const [highlighted, setHighlighted] = useState<Map<number, string>>(new Map());
 
+  const maxLines = Math.max(MIN_MAX_LINES, Math.floor(rows * MAX_LINES_RATIO));
   const lines = diff ? diff.split('\n').filter(l => l.length > 0) : [];
-  const visible = lines.slice(0, MAX_LINES);
-  useEffect(() => {
-    if (!expanded) return;
-    if (visible.length === 0) {
-      setHighlighted(new Map());
-      return;
-    }
-
-    setHighlighted(new Map());
-
-    let cancelled = false;
-    const run = async () => {
-      const results = new Map<number, string>();
-      for (const [i, line] of visible.entries()) {
-        if (line.startsWith('+ ') || line.startsWith('- ')) {
-          const hl = await highlight(stripPrefix(line));
-          if (cancelled) return;
-          results.set(i, hl.replace(/\n$/, ''));
-        }
-      }
-      if (!cancelled) setHighlighted(results);
-    };
-    run();
-    return () => { cancelled = true; };
-  }, [expanded, diff]);
+  const visible = lines.slice(0, maxLines);
+  const lang = langFromFile(file);
 
   if (!expanded || lines.length === 0) {
     return (
@@ -74,21 +90,15 @@ export default function DiffView({ file, linesAdded, linesRemoved, diff, expande
         <Text color={t.accent}>  Ctrl+D</Text>
       </Box>
       <Box flexDirection="column" marginLeft={4}>
-        {visible.map((line, i) => {
-          const lineNum = String(i + 1).padStart(3, ' ');
-          const isAdded = line.startsWith('+ ');
-          const isRemoved = line.startsWith('- ');
-          const bg = diffBg(isAdded, isRemoved, t.diff);
-          const color = (!isAdded && !isRemoved) ? t.diff.context : undefined;
-          const content = (isAdded || isRemoved) ? (highlighted.get(i) ?? stripPrefix(line)) : stripPrefix(line);
-          const colorProp = color !== undefined ? { color } : {};
-          return (
-            <Box key={`${i}-${line.slice(0, 30)}`}>
-              <Text color={t.border}>{lineNum} </Text>
-              <Text {...colorProp} backgroundColor={bg}>{content}</Text>
-            </Box>
-          );
-        })}
+        {visible.map((line, i) => (
+          <DiffLine
+            key={i}
+            line={line}
+            lineNum={String(i + 1).padStart(3, ' ')}
+            lang={lang}
+            theme={t}
+          />
+        ))}
         {remaining > 0 && <Text color={t.textDim}>    ...{remaining} more lines</Text>}
       </Box>
     </Box>

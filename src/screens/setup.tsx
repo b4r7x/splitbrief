@@ -1,57 +1,36 @@
 import { useState } from 'react';
-import { Box, Text, useApp } from 'ink';
+import { Text, useApp } from 'ink';
 import { useTheme } from '../ui/theme.js';
 import { OverlayPanel } from '../components/overlays/overlay-panel.js';
-import { Spinner } from '../ui/spinner.js';
 import { ToolModelPicker } from '../components/overlays/tool-model-picker/index.js';
 import { routerStore } from '../stores/router.js';
 import { configStore } from '../stores/config.js';
 import { detectionStore } from '../stores/detection.js';
-import { writeConfig } from '../core/config/index.js';
 import type { Config } from '../types.js';
 
-type Step = 'detecting' | 'no-planners' | 'planner' | 'implementer';
+type Step = 'no-planners' | 'planner' | 'implementer';
 
 export function SetupScreen() {
   const t = useTheme();
   const { exit } = useApp();
   const planners = detectionStore.use(s => s.planners);
-  const implementers = detectionStore.use(s => s.implementers);
+  const projectDir = configStore.use(s => s.projectDir);
+  const onComplete = routerStore.use(s => s.screen === 'setup' ? s.onComplete : undefined);
+  const pendingFeature = routerStore.use(s => s.screen === 'setup' ? s.feature : undefined);
 
-  const [manualStep, setManualStep] = useState<Step | null>(null);
-
-  const detectedStep: Step = !planners || !implementers
-    ? 'detecting'
-    : planners.filter(p => p.available).length === 0
-      ? 'no-planners'
-      : 'planner';
-  const step = manualStep ?? detectedStep;
+  const [step, setStep] = useState<Step>(() =>
+    planners.filter(p => p.available).length === 0 ? 'no-planners' : 'planner',
+  );
 
   const finalize = (finalConfig: Config) => {
-    const projectDir = configStore.get().projectDir;
     if (!projectDir) return;
-    writeConfig(projectDir, finalConfig);
-    configStore.reload();
-    const route = routerStore.get();
-    const onComplete = route.screen === 'setup' ? route.onComplete : undefined;
-    const feature = route.screen === 'setup' ? route.feature : undefined;
-    if (onComplete === 'workflow' && feature) {
-      routerStore.navigate('workflow', { feature });
+    configStore.save(finalConfig);
+    if (onComplete === 'workflow' && pendingFeature) {
+      routerStore.navigate('workflow', { feature: pendingFeature });
     } else {
       routerStore.navigate('home');
     }
   };
-
-  if (step === 'detecting') {
-    return (
-      <OverlayPanel title="Setup">
-        <Box flexDirection="column" alignItems="center" gap={1}>
-          <Spinner label="Detecting available tools..." color={t.accent} />
-          <Text color={t.textDim}>Scanning for planners and model providers</Text>
-        </Box>
-      </OverlayPanel>
-    );
-  }
 
   if (step === 'no-planners') {
     return (
@@ -72,7 +51,7 @@ export function SetupScreen() {
         stepLabel="Choose Planner (1/2)"
         onConfirm={(updated) => {
           configStore.save(updated);
-          setManualStep('implementer');
+          setStep('implementer');
         }}
         onCancel={exit}
       />
@@ -84,7 +63,7 @@ export function SetupScreen() {
       role="implementer"
       stepLabel="Choose Model (2/2)"
       onConfirm={finalize}
-      onCancel={() => setManualStep('planner')}
+      onCancel={() => setStep('planner')}
     />
   );
 }

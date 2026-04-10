@@ -4,7 +4,7 @@ import { Box, Text, useInput } from 'ink';
 import { OverlayPanel } from './overlay-panel.js';
 import { MultilineInput } from '../../ui/input/multiline-input.js';
 import { useTheme } from '../../ui/theme.js';
-import { useResponsiveLayout } from '../../hooks/use-terminal-size.js';
+import { terminalSizeStore } from '../../stores/terminal-size.js';
 import { overlayStore } from '../../stores/overlay.js';
 
 interface TextInputOverlayProps {
@@ -31,7 +31,7 @@ export function TextInputOverlay({
   onCancel,
 }: TextInputOverlayProps) {
   const t = useTheme();
-  const { cols } = useResponsiveLayout();
+  const cols = terminalSizeStore.use(s => s.cols);
   const [value, setValue] = useState(initialValue);
 
   useEffect(() => {

@@ -1,1 +1,1 @@
-export { createCommands, toPaletteItems, executeSlashCommand } from './commands.js';
+export { createCommands, toPaletteItems, executeSlashCommand } from './definitions.js';

@@ -1,9 +1,11 @@
 import { Text } from 'ink';
 import type { Theme } from '../../../ui/theme.js';
-import type { Config } from '../../../types.js';
 import { formatModelName } from '../../../core/providers/models.js';
 import { truncate } from '../../../utils/format.js';
-import { isCurrentConfig, type PickerOption, type ModelOption } from './picker-catalog.js';
+import type { PickerOption, ModelOption } from './picker-catalog.js';
+import { isCustomModel } from './picker-catalog.js';
+
+const CHECKMARK_WIDTH = 2;
 
 function formatPickerLine(
   label: string,
@@ -12,31 +14,32 @@ function formatPickerLine(
   status: string | null,
   checkmark: boolean,
   maxWidth: number,
-): { label: string; suffix: string } {
+): { label: string; suffix: string; checkmark: boolean } {
   const suffixParts: string[] = [];
   if (badge) suffixParts.push(`  ${badge}`);
   if (version) suffixParts.push(` v${version}`);
   if (status) suffixParts.push(` ${status}`);
-  if (checkmark) suffixParts.push(' \u2713');
 
+  const checkmarkWidth = checkmark ? CHECKMARK_WIDTH : 0;
   const fullSuffix = suffixParts.join('');
-  const availableForLabel = maxWidth - fullSuffix.length;
+  const availableForLabel = maxWidth - fullSuffix.length - checkmarkWidth;
 
   if (label.length <= availableForLabel) {
-    return { label, suffix: fullSuffix };
+    return { label, suffix: fullSuffix, checkmark };
   }
 
   const suffixNoVersion = suffixParts.filter(p => !p.startsWith(' v')).join('');
-  const availableNoVersion = maxWidth - suffixNoVersion.length;
+  const availableNoVersion = maxWidth - suffixNoVersion.length - checkmarkWidth;
   if (label.length <= availableNoVersion) {
-    return { label, suffix: suffixNoVersion };
+    return { label, suffix: suffixNoVersion, checkmark };
   }
 
-  const essentialSuffix = (status ? ` ${status}` : '') + (checkmark ? ' \u2713' : '');
-  const availableForTruncatedLabel = maxWidth - essentialSuffix.length;
+  const essentialSuffix = status ? ` ${status}` : '';
+  const availableForTruncatedLabel = maxWidth - essentialSuffix.length - checkmarkWidth;
   return {
     label: truncate(label, availableForTruncatedLabel),
     suffix: essentialSuffix,
+    checkmark,
   };
 }
 
@@ -47,8 +50,6 @@ interface ToolRowParams {
   maxWidth: number;
   isPlanner: boolean;
   currentCommand: string | undefined;
-  config: Config;
-  role: 'planner' | 'implementer';
   theme: Theme;
 }
 
@@ -59,8 +60,6 @@ export function renderToolRow({
   maxWidth,
   isPlanner,
   currentCommand,
-  config,
-  role,
   theme: t,
 }: ToolRowParams) {
   const isShell = item.kind === 'shell';
@@ -69,8 +68,8 @@ export function renderToolRow({
     ? (currentCommand ? `shell: ${currentCommand}` : '+ Add custom...')
     : item.displayName;
   const labelColor = dimmed ? t.textDim : isCursor ? t.accent : t.text;
-  const showCheck = (isSelected || isCurrentConfig(item, config, role)) && !dimmed;
-  const { label, suffix } = formatPickerLine(
+  const showCheck = (isSelected || item.isCurrent === true) && !dimmed;
+  const { label, suffix, checkmark } = formatPickerLine(
     rawLabel,
     isShell ? null : item.badge,
     isShell ? null : (isPlanner ? item.version ?? null : null),
@@ -81,10 +80,8 @@ export function renderToolRow({
   return (
     <Text>
       <Text color={labelColor} bold={isCursor && !dimmed}>{label}</Text>
-      <Text color={showCheck && suffix.endsWith('\u2713') ? t.success : t.textDim}>
-        {suffix.replace(' \u2713', '')}
-      </Text>
-      {showCheck && <Text color={t.success}> {'\u2713'}</Text>}
+      <Text color={t.textDim}>{suffix}</Text>
+      {checkmark && <Text color={t.success}> {'\u2713'}</Text>}
     </Text>
   );
 }
@@ -99,21 +96,17 @@ interface ModelRowParams {
 
 export function renderModelRow({ item, isCursor, maxWidth, currentModel, theme: t }: ModelRowParams) {
   const isCfgMatch = item.id === currentModel;
-  const isCustom = 'isCustom' in item && Boolean(item.isCustom);
   const modelName = formatModelName(item.id);
 
-  const suffixParts: string[] = [];
-  if (isCustom) suffixParts.push(' (custom)');
-  if (item.isDefault) suffixParts.push(' (default)');
-  if (isCfgMatch) suffixParts.push(' \u2713');
-  const suffix = suffixParts.join('');
-  const truncatedName = truncate(modelName, maxWidth - suffix.length);
+  const badge = isCustomModel(item) ? '(custom)' : null;
+  const status = item.isDefault ? '(default)' : null;
+  const { label, suffix, checkmark } = formatPickerLine(modelName, badge, null, status, isCfgMatch, maxWidth);
 
   return (
     <Text>
-      <Text color={isCursor ? t.accent : t.text} bold={isCursor}>{truncatedName}</Text>
-      <Text color={t.textDim}>{suffix.replace(' \u2713', '')}</Text>
-      {isCfgMatch && <Text color={t.success}> {'\u2713'}</Text>}
+      <Text color={isCursor ? t.accent : t.text} bold={isCursor}>{label}</Text>
+      <Text color={t.textDim}>{suffix}</Text>
+      {checkmark && <Text color={t.success}> {'\u2713'}</Text>}
     </Text>
   );
 }

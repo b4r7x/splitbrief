@@ -1,21 +1,19 @@
+import { buildPrompt } from './_shared.js';
+
 export function buildSpecPrompt(feature: string, researchOutput: string): string {
-  return `# Write Feature Specification
-
-You are writing a detailed specification for a new feature. Use the research findings below to ground your spec in the actual codebase.
-
-## Feature Request
-${feature}
-
-## Research Findings
-${researchOutput}
-
-## Instructions
-
-Write a complete \`spec.md\` document that defines **what** to build (not how). The spec should be detailed enough that a developer unfamiliar with the feature request could implement it correctly.
-
-## Required Sections
-
-### Overview
+  return buildPrompt({
+    title: 'Write Feature Specification',
+    intro: 'You are writing a detailed specification for a new feature. Use the research findings below to ground your spec in the actual codebase.',
+    sections: [
+      { heading: 'Feature Request', body: feature },
+      { heading: 'Research Findings', body: researchOutput },
+      {
+        heading: 'Instructions',
+        body: 'Write a complete `spec.md` document that defines **what** to build (not how). The spec should be detailed enough that a developer unfamiliar with the feature request could implement it correctly.',
+      },
+      {
+        heading: 'Required Sections',
+        body: `### Overview
 One-paragraph summary of the feature and its purpose.
 
 ### User Scenarios
@@ -40,9 +38,9 @@ Detailed requirements organized by area:
 Performance, security, compatibility, and other quality constraints relevant to this feature.
 
 ### Out of Scope
-Explicitly list what this feature does NOT include to prevent scope creep.
-
-## Output
-
-Write the complete spec.md content. Use clear, precise language. Reference specific files and patterns from the research findings where relevant.`;
+Explicitly list what this feature does NOT include to prevent scope creep.`,
+      },
+    ],
+    output: 'Write the complete spec.md content. Use clear, precise language. Reference specific files and patterns from the research findings where relevant.',
+  });
 }

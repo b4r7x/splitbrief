@@ -1,4 +1,5 @@
 import type { TuiEvent } from '../../src/types.js';
+import { taskId } from '../../src/core/types/workflow.js';
 
 type EventOfType<T extends TuiEvent['type']> = Extract<TuiEvent, { type: T }>;
 
@@ -11,26 +12,32 @@ export function makePlannerText(overrides?: Partial<EventOfType<'planner-text'>>
 }
 
 export function makeTaskStart(overrides?: Partial<EventOfType<'task-start'>>): EventOfType<'task-start'> {
-  return { type: 'task-start', ts: Date.now(), taskId: 'T001', title: 'Test task', index: 0, total: 3, file: 'src/test.ts', action: 'modify', ...overrides };
+  return { type: 'task-start', ts: Date.now(), taskId: taskId('T001'), title: 'Test task', index: 0, total: 3, file: 'src/test.ts', action: 'modify', ...overrides };
 }
 
 export function makeTaskComplete(overrides?: Partial<EventOfType<'task-complete'>>): EventOfType<'task-complete'> {
-  return { type: 'task-complete', ts: Date.now(), taskId: 'T001', title: 'Test task', method: 'local', retries: 0, duration: 5000, ...overrides };
+  return { type: 'task-complete', ts: Date.now(), taskId: taskId('T001'), title: 'Test task', method: 'local', retries: 0, duration: 5000, ...overrides };
 }
 
 export function makeTaskSkipped(overrides?: Partial<EventOfType<'task-skipped'>>): EventOfType<'task-skipped'> {
-  return { type: 'task-skipped', ts: Date.now(), taskId: 'T001', title: 'Test task', reason: 'dependency failed', ...overrides };
+  return { type: 'task-skipped', ts: Date.now(), taskId: taskId('T001'), title: 'Test task', reason: 'dependency failed', ...overrides };
 }
 
-export function makeImplementerGenerate(overrides?: Record<string, unknown>): EventOfType<'implementer-generate'> {
+type ImplementerGenerateEvent = Extract<
+  TuiEvent,
+  { type: 'implementer-generate-running' | 'implementer-generate-done' | 'implementer-generate-failed' }
+>;
+
+export function makeImplementerGenerate(overrides?: Record<string, unknown>): ImplementerGenerateEvent {
   const status = (overrides?.status as string) ?? 'done';
+  const { status: _drop, ...rest } = overrides ?? {};
   if (status === 'running') {
-    return { type: 'implementer-generate', ts: Date.now(), status: 'running', ...overrides } as EventOfType<'implementer-generate'>;
+    return { type: 'implementer-generate-running', ts: Date.now(), ...rest } as ImplementerGenerateEvent;
   }
   if (status === 'failed') {
-    return { type: 'implementer-generate', ts: Date.now(), status: 'failed', model: 'qwen2.5-coder:7b', ...overrides } as EventOfType<'implementer-generate'>;
+    return { type: 'implementer-generate-failed', ts: Date.now(), model: 'qwen2.5-coder:7b', ...rest } as ImplementerGenerateEvent;
   }
-  return { type: 'implementer-generate', ts: Date.now(), status: 'done', file: 'src/test.ts', linesAdded: 10, linesRemoved: 2, duration: 5000, ...overrides } as EventOfType<'implementer-generate'>;
+  return { type: 'implementer-generate-done', ts: Date.now(), file: 'src/test.ts', linesAdded: 10, linesRemoved: 2, duration: 5000, ...rest } as ImplementerGenerateEvent;
 }
 
 export function makeValidate(overrides?: Partial<EventOfType<'validate'>>): EventOfType<'validate'> {
@@ -38,7 +45,7 @@ export function makeValidate(overrides?: Partial<EventOfType<'validate'>>): Even
 }
 
 export function makeRetry(overrides?: Partial<EventOfType<'retry'>>): EventOfType<'retry'> {
-  return { type: 'retry', ts: Date.now(), taskId: 'T001', attempt: 1, maxRetries: 3, ...overrides };
+  return { type: 'retry', ts: Date.now(), taskId: taskId('T001'), attempt: 1, maxRetries: 3, ...overrides };
 }
 
 export function makeEscalate(overrides?: Partial<EventOfType<'escalate'>>): EventOfType<'escalate'> {

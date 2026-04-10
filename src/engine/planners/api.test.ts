@@ -1,28 +1,26 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import type { Config } from '../../types.js';
+import type { Config, PlannerTool } from '../../types.js';
 import { createApiPlanner } from './api.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let server: http.Server;
 let port: number;
 let receivedBodies: any[];
 let projectDir: string;
 
-function makeConfig(provider: string, overrides?: Partial<Config['planner']>): Config {
+function makeConfig(provider: string): Config {
   return {
     planner: {
-      tool: 'claude-code',
-      provider,
+      kind: 'api',
+      provider: provider as PlannerTool,
       model: 'test-model',
       apiBase: `http://127.0.0.1:${port}/v1`,
       apiKey: 'test-key',
-      ...overrides,
     },
     implementer: {
+      kind: 'api',
       tool: 'ollama',
       model: 'test',
       apiBase: '',
@@ -59,7 +57,7 @@ function streamSseChunks(res: http.ServerResponse, chunks: string[], finalUsage?
 
 beforeEach(async () => {
   receivedBodies = [];
-  projectDir = mkdtempSync(join(tmpdir(), 'api-planner-test-'));
+  projectDir = createTempDir('api-planner-test');
 
   server = http.createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/v1/models') {
@@ -90,7 +88,7 @@ afterEach(async () => {
   if (server.listening) {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
-  rmSync(projectDir, { recursive: true, force: true });
+  cleanupTempDir(projectDir);
 });
 
 describe('createApiPlanner', () => {
@@ -115,7 +113,7 @@ describe('createApiPlanner', () => {
   it('plan() runs four phases and accumulates token usage across them', async () => {
     const planner = createApiPlanner(makeConfig('ollama'));
 
-    const result = await planner.plan('test feature', projectDir, makeConfig('ollama'), {
+    const result = await planner.plan('test feature', projectDir, {
       onOutput: vi.fn(),
       onPhase: vi.fn(),
     });

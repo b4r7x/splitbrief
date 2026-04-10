@@ -1,14 +1,14 @@
 export {
   TwoColumnPicker,
   type TwoColumnPickerProps,
-  type LeftColumnProps,
-  type RightColumnProps,
-  type CustomRowOptions,
-} from './two-column-picker.js';
+} from './picker.js';
 export {
   useTwoColumnState,
   CUSTOM_ROW_ID,
   isVirtualCustomItem,
+  type LeftColumnProps,
+  type RightColumnProps,
+  type CustomRowOptions,
   type RightItemOrVirtual,
   type TwoColumnNavState,
   type ColumnState,

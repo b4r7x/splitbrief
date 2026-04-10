@@ -1,4 +1,4 @@
-const EXPORT_BOUNDARY_RE = /^export\s+(default\s+(function|class)|async\s+function|function|const|interface|type|class)\b/;
+import { EXPORT_BOUNDARY_RE, EXPORT_DEFAULT_NAME_RE, EXPORT_NAME_PATTERNS } from './code-patterns.js';
 
 function isImportLine(line: string): boolean {
   return line.trimStart().startsWith('import ');
@@ -13,23 +13,13 @@ function isExportBoundary(line: string): boolean {
 function extractExportName(line: string): string | null {
   const trimmed = line.trimStart();
 
-  const funcMatch = trimmed.match(/^export\s+(?:async\s+)?function\s+(\w+)/);
-  if (funcMatch?.[1]) return funcMatch[1];
-
-  const constMatch = trimmed.match(/^export\s+const\s+(\w+)/);
-  if (constMatch?.[1]) return constMatch[1];
-
-  const interfaceMatch = trimmed.match(/^export\s+interface\s+(\w+)/);
-  if (interfaceMatch?.[1]) return interfaceMatch[1];
-
-  const typeMatch = trimmed.match(/^export\s+type\s+(\w+)/);
-  if (typeMatch?.[1]) return typeMatch[1];
-
-  const classMatch = trimmed.match(/^export\s+class\s+(\w+)/);
-  if (classMatch?.[1]) return classMatch[1];
+  for (const { re } of EXPORT_NAME_PATTERNS) {
+    const match = trimmed.match(re);
+    if (match?.[1]) return match[1];
+  }
 
   if (trimmed.startsWith('export default function') || trimmed.startsWith('export default class')) {
-    const defaultMatch = trimmed.match(/^export\s+default\s+(?:function|class)\s+(\w+)/);
+    const defaultMatch = trimmed.match(EXPORT_DEFAULT_NAME_RE);
     if (defaultMatch?.[1]) return defaultMatch[1];
     return 'default';
   }

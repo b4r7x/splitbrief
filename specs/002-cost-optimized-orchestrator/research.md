@@ -48,7 +48,7 @@ claude -p "prompt" --output-format json --bare
 
 **Critical trap -- Ollama context window**: Default is 2048 tokens. The `/v1/` endpoint does NOT support `num_ctx` parameter. Must use either:
 1. Custom Modelfile with `PARAMETER num_ctx 32768`
-2. `OLLAMA_CONTEXT_LENGTH` environment variable
+2. `TINY_SPEC_CONTEXT_LENGTH` environment variable
 3. Ollama native API (`/api/chat`) with `num_ctx` in options (not OpenAI-compat)
 
 **Model capability detection**:

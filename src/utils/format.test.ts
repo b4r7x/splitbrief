@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { formatCost, formatTime, formatDuration, toErrorMessage, formatRelativeTime, parseVersion } from './format.js';
+import { formatCost, formatTime, formatTimeHHMMSS, formatDuration, toErrorMessage, formatRelativeTime, parseVersion } from './format.js';
 
 describe('formatCost', () => {
   it('formats zero as $0.00', () => {
@@ -30,6 +30,32 @@ describe('formatTime', () => {
 
   it('formats zero milliseconds', () => {
     expect(formatTime(0)).toBe('0s');
+  });
+});
+
+describe('formatTimeHHMMSS', () => {
+  it('formats zero', () => {
+    expect(formatTimeHHMMSS(0)).toBe('00:00:00');
+  });
+
+  it('formats seconds only', () => {
+    expect(formatTimeHHMMSS(5000)).toBe('00:00:05');
+  });
+
+  it('formats minutes and seconds', () => {
+    expect(formatTimeHHMMSS(65_000)).toBe('00:01:05');
+  });
+
+  it('formats hours, minutes, and seconds', () => {
+    expect(formatTimeHHMMSS(3_665_000)).toBe('01:01:05');
+  });
+
+  it('pads single digits', () => {
+    expect(formatTimeHHMMSS(61_000)).toBe('00:01:01');
+  });
+
+  it('clamps negative values to zero', () => {
+    expect(formatTimeHHMMSS(-5000)).toBe('00:00:00');
   });
 });
 

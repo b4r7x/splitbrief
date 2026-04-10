@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { extractCode, stripMarkdownFences } from './response-extractor.js';
+import { extractCode } from './response-extractor.js';
+import { stripMarkdownFences } from './code-patterns.js';
 
 describe('extractCode', () => {
   it('extracts code from ```typescript fenced block with high confidence', () => {

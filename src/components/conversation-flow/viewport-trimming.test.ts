@@ -1,9 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { trimSectionsToViewport } from './viewport-trimming.js';
+import { trimSectionsToViewport, type DynamicSection } from './viewport-trimming.js';
 import type { TuiEvent } from '../../types.js';
-import type { Section } from '../../utils/event-sections.js';
-
-type DynamicSection = Extract<Section, { type: 'events' | 'active-task' }>;
 
 function makeEventsSection(count: number, startIndex = 0): DynamicSection {
   const items: TuiEvent[] = Array.from({ length: count }, (_, i) => ({

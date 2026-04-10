@@ -1,10 +1,10 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, mkdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { applyCode } from './apply.js';
 import { makeTask as makeBaseTask } from '#testing/helpers/fixtures.js';
 import type { Task } from '../../types.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return makeBaseTask({ title: 'Test task', file: 'src/test.ts', description: 'test', ...overrides });
@@ -14,13 +14,11 @@ describe('applyCode', () => {
   let tempDir: string;
 
   afterEach(() => {
-    if (tempDir && existsSync(tempDir)) {
-      rmSync(tempDir, { recursive: true, force: true });
-    }
+    if (tempDir) cleanupTempDir(tempDir);
   });
 
   it('create action writes a new file', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'impl-test-'));
+    tempDir = createTempDir('impl-test');
     const task = makeTask({ action: 'create', file: 'src/new.ts' });
     const code = 'export const x = 1;\n';
 
@@ -31,7 +29,7 @@ describe('applyCode', () => {
   });
 
   it('modify action with file <200 lines does whole-file replacement', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'impl-test-'));
+    tempDir = createTempDir('impl-test');
     const filePath = join(tempDir, 'src', 'existing.ts');
     const task = makeTask({ action: 'modify', file: 'src/existing.ts' });
 
@@ -46,7 +44,7 @@ describe('applyCode', () => {
   });
 
   it('modify action with search/replace markers applies patch', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'impl-test-'));
+    tempDir = createTempDir('impl-test');
     const filePath = join(tempDir, 'src', 'large.ts');
     const task = makeTask({ action: 'modify', file: 'src/large.ts' });
 
@@ -65,7 +63,7 @@ describe('applyCode', () => {
   });
 
   it('search/replace returns error when search block not found', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'impl-test-'));
+    tempDir = createTempDir('impl-test');
     const filePath = join(tempDir, 'src', 'large2.ts');
     const task = makeTask({ action: 'modify', file: 'src/large2.ts' });
 
@@ -81,7 +79,7 @@ describe('applyCode', () => {
   });
 
   it('search/replace preserves dollar sign patterns verbatim', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'impl-test-'));
+    tempDir = createTempDir('impl-test');
     const filePath = join(tempDir, 'src', 'dollar.ts');
     const task = makeTask({ action: 'modify', file: 'src/dollar.ts' });
 
@@ -93,6 +91,7 @@ describe('applyCode', () => {
     lines[20] = 'const d = "old4";';
     writeFileSync(filePath, lines.join('\n'));
 
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: fixture must contain a literal ${...} to verify the patch handles template literals
     const templateLine = 'const a = `Hello ' + '${variable}`;';
     const patchCode = [
       '<<<<<<< SEARCH',
@@ -128,7 +127,7 @@ describe('applyCode', () => {
   });
 
   it('rejects path traversal in task file', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'impl-test-'));
+    tempDir = createTempDir('impl-test');
     const task = makeTask({ action: 'create', file: '../../etc/evil.ts' });
     const result = applyCode('malicious code', task, tempDir);
     expect(result.success).toBe(false);

@@ -1,1 +1,1 @@
-export { SettingsOverlay } from './settings-overlay.js';
+export { SettingsOverlay } from './overlay.js';
