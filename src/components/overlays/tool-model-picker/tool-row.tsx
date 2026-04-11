@@ -62,17 +62,17 @@ export function renderToolRow({
   currentCommand,
   theme: t,
 }: ToolRowParams) {
-  const isShell = item.kind === 'shell';
-  const dimmed = !item.available && !isShell;
-  const rawLabel = isShell
-    ? (currentCommand ? `shell: ${currentCommand}` : '+ Add custom...')
+  const isCommandBased = item.kind === 'shell' || item.kind === 'agent';
+  const dimmed = !item.available && !isCommandBased && item.kind !== 'agent-sdk';
+  const rawLabel = isCommandBased
+    ? (currentCommand ? `${item.kind}: ${currentCommand}` : '+ Add custom...')
     : item.displayName;
   const labelColor = dimmed ? t.textDim : isCursor ? t.accent : t.text;
   const showCheck = (isSelected || item.isCurrent === true) && !dimmed;
   const { label, suffix, checkmark } = formatPickerLine(
     rawLabel,
-    isShell ? null : item.badge,
-    isShell ? null : (isPlanner ? item.version ?? null : null),
+    isCommandBased ? null : item.badge,
+    isCommandBased ? null : (isPlanner ? item.version ?? null : null),
     dimmed ? '(unavailable)' : null,
     showCheck,
     maxWidth,

@@ -64,8 +64,8 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
         items: catalog.items,
         label: 'Tools',
         getKey: item => item.id,
-        isSpecial: item => item.kind === 'shell',
-        isDisabled: item => !item.available && item.kind !== 'shell',
+        isSpecial: item => item.kind === 'shell' || item.kind === 'agent',
+        isDisabled: item => !item.available && item.kind !== 'shell' && item.kind !== 'agent' && item.kind !== 'agent-sdk',
         initialIndex: catalog.initialLeftIdx,
         specialHelp: (
           <Box flexDirection="column" marginTop={1} paddingX={1}>

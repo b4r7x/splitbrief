@@ -4,7 +4,7 @@ import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import type { PlannerTool, SkillMeta } from '../../types.js';
 import { parseSimpleYamlFrontmatter, extractFrontmatter } from '../../utils/frontmatter.js';
-import { TINY_SPEC_DIR, SKILLS_DIR } from '../../core/paths.js';
+import { TINY_SPEC_DIR, CODEX_DIR, SKILLS_DIR } from '../../core/paths.js';
 import { isENOENT } from '../../utils/process-errors.js';
 import { warnError } from '../../utils/format.js';
 
@@ -72,7 +72,7 @@ async function discoverFromDir(dir: string, scope: SkillMeta['scope']): Promise<
 async function discoverAgentsMd(projectDir: string): Promise<SkillMeta[]> {
   const skills: SkillMeta[] = [];
 
-  const globalSkillsDir = join(homedir(), '.codex', 'skills');
+  const globalSkillsDir = join(homedir(), CODEX_DIR, SKILLS_DIR);
   skills.push(...await discoverFromDir(globalSkillsDir, 'global'));
 
   const rootAgents = join(projectDir, 'AGENTS.md');

@@ -4,14 +4,14 @@ import { configStore } from '../../stores/config.js';
 import { skillsStore } from '../../stores/skills.js';
 import { getProviderDisplayName, isProviderLocal } from '../../core/providers/catalog.js';
 import { formatModelName } from '../../core/providers/models.js';
-import { getPlannerToolName } from '../../core/config/planner-config.js';
+import { getRunnerDisplayName } from '../../core/config/index.js';
 import { LabeledRow } from '../labeled-row.js';
 
 export function HomeConfigSummary() {
   const theme = useTheme();
   const config = configStore.useConfig();
   const selectedSkillCount = skillsStore.use(s => s.selected.size);
-  const plannerToolName = getPlannerToolName(config.planner);
+  const plannerToolName = getRunnerDisplayName(config.planner);
   const plannerModel = config.planner.model;
 
   return (
@@ -24,10 +24,10 @@ export function HomeConfigSummary() {
         <Text color={theme.textDim}>  /planner</Text>
       </LabeledRow>
       <LabeledRow label="Implementer">
-        <Text color={theme.implementer}>{getProviderDisplayName(config.implementer.tool)}</Text>
+        <Text color={theme.implementer}>{getProviderDisplayName(getRunnerDisplayName(config.implementer))}</Text>
         <Text color={theme.textDim}> › </Text>
         <Text color={theme.implementer}>{formatModelName(config.implementer.model)}</Text>
-        {isProviderLocal(config.implementer.tool) && (
+        {isProviderLocal(getRunnerDisplayName(config.implementer)) && (
           <Text color={theme.textDim}> (local)</Text>
         )}
         <Text color={theme.textDim}>  /implementer</Text>

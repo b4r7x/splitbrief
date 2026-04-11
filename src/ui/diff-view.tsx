@@ -46,15 +46,22 @@ function diffColor(isAdded: boolean, isRemoved: boolean, diff: Theme['diff']): s
   return diff.context;
 }
 
-function DiffLine({ line, lineNum, lang, theme: t }: { line: string; lineNum: string; lang: string; theme: Theme }) {
+interface DiffLineProps {
+  line: string;
+  lineNum: string;
+  highlightedContent: string | null;
+  theme: Theme;
+}
+
+function DiffLine({ line, lineNum, highlightedContent, theme: t }: DiffLineProps) {
   const isAdded = line.startsWith('+ ');
   const isRemoved = line.startsWith('- ');
   const stripped = stripPrefix(line);
-  const highlighted = useAsyncHighlight(isAdded || isRemoved ? stripped : '', lang);
   const bg = diffBg(isAdded, isRemoved, t.diff);
   const fallbackColor = diffColor(isAdded, isRemoved, t.diff);
-  const content = (isAdded || isRemoved) ? (highlighted ?? stripped) : stripped;
-  const colorProp = highlighted && (isAdded || isRemoved) ? {} : { color: fallbackColor };
+  const content = (isAdded || isRemoved) && highlightedContent ? highlightedContent : stripped;
+  const hasHighlight = !!(isAdded || isRemoved) && highlightedContent;
+  const colorProp = hasHighlight ? {} : { color: fallbackColor };
   const bgProp = bg !== undefined ? { backgroundColor: bg } : {};
   return (
     <Box>
@@ -72,6 +79,17 @@ export function DiffView({ file, linesAdded, linesRemoved, diff, expanded, rows 
   const visible = lines.slice(0, maxLines);
   const lang = langFromFile(file);
 
+  const codeToHighlight = (!expanded || visible.length === 0)
+    ? ''
+    : visible
+      .filter(l => l.startsWith('+ ') || l.startsWith('- '))
+      .map(stripPrefix)
+      .join('\n');
+
+  const highlighted = useAsyncHighlight(codeToHighlight, lang);
+
+  const highlightedLines = highlighted ? highlighted.split('\n') : null;
+
   if (!expanded || lines.length === 0) {
     return (
       <Box>
@@ -82,6 +100,7 @@ export function DiffView({ file, linesAdded, linesRemoved, diff, expanded, rows 
   }
 
   const remaining = lines.length - visible.length;
+  let highlightIdx = 0;
 
   return (
     <Box flexDirection="column">
@@ -90,15 +109,21 @@ export function DiffView({ file, linesAdded, linesRemoved, diff, expanded, rows 
         <Text color={t.accent}>  Ctrl+D</Text>
       </Box>
       <Box flexDirection="column" marginLeft={4}>
-        {visible.map((line, i) => (
-          <DiffLine
-            key={i}
-            line={line}
-            lineNum={String(i + 1).padStart(3, ' ')}
-            lang={lang}
-            theme={t}
-          />
-        ))}
+        {visible.map((line, i) => {
+          const needsHighlight = line.startsWith('+ ') || line.startsWith('- ');
+          const highlightedContent = needsHighlight && highlightedLines
+            ? highlightedLines[highlightIdx++] ?? null
+            : null;
+          return (
+            <DiffLine
+              key={i}
+              line={line}
+              lineNum={String(i + 1).padStart(3, ' ')}
+              highlightedContent={highlightedContent}
+              theme={t}
+            />
+          );
+        })}
         {remaining > 0 && <Text color={t.textDim}>    ...{remaining} more lines</Text>}
       </Box>
     </Box>

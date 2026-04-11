@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import ansis from 'ansis';
 import { createPlanner, type PlanResult } from '../../engine/index.js';
-import { getPlannerToolName } from '../../core/config/planner-config.js';
+import { getRunnerDisplayName } from '../../core/config/index.js';
 import { ensureGitAndConfig, resolveProjectDir, loadConfigOrExit } from '../workflow.js';
 import { cliError } from '../errors.js';
 import { toErrorMessage } from '../../utils/format.js';
@@ -22,9 +22,9 @@ export function registerSpecCommand(program: Command): void {
         config.workflow.autoApproveSpec = true;
         config.workflow.autoApprovePlan = true;
       }
-      const planner = await createPlanner(config);
+      const planner = createPlanner(config);
 
-      console.log(`Planning feature: ${feature} (planner: ${getPlannerToolName(config.planner)})\n`);
+      console.log(`Planning feature: ${feature} (planner: ${getRunnerDisplayName(config.planner)})\n`);
 
       let result: PlanResult;
       try {

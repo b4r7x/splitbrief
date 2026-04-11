@@ -69,8 +69,8 @@ describe('refreshCurrentCode', () => {
 describe('allValidationsPassed', () => {
   it('returns true when all pass, false when any fails', () => {
     expect(allValidationsPassed([])).toBe(true);
-    expect(allValidationsPassed([{ stage: 'typecheck', passed: true }, { stage: 'lint', passed: true }])).toBe(true);
-    expect(allValidationsPassed([{ stage: 'typecheck', passed: true }, { stage: 'lint', passed: false, error: 'err' }])).toBe(false);
+    expect(allValidationsPassed([{ stage: 'tsc', passed: true }, { stage: 'lint', passed: true }])).toBe(true);
+    expect(allValidationsPassed([{ stage: 'tsc', passed: true }, { stage: 'lint', passed: false, error: 'err' }])).toBe(false);
   });
 });
 

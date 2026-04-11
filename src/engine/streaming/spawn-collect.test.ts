@@ -9,7 +9,7 @@ describe('spawnAndCollect', () => {
       args: ['collected'],
       cwd: '.',
       notFoundMessage: 'echo not found',
-      parseLine: (line) => ({ text: line.trim() ? line + '\n' : undefined }),
+      parseLine: (line) => line.trim() ? { text: line + '\n' } : {},
       onText: (text) => outputChunks.push(text),
     });
 

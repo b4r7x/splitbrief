@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { Session } from '../types/index.js';
@@ -30,6 +30,27 @@ function readSession(filePath: string): Session | null {
     }
     return null;
   }
+}
+
+function validateSessionId(id: string): void {
+  if (!id?.trim()) {
+    throw new Error(`Invalid session id '${id}'`);
+  }
+  if (id.includes('/') || id.includes('\\') || id.includes('..')) {
+    throw new Error(`Invalid session id '${id}': must not contain '/', '\\' or '..'`);
+  }
+}
+
+export function saveSession(dir: string, session: Session): void {
+  validateSessionId(session.id);
+  const result = SessionSchema.safeParse(session);
+  if (!result.success) {
+    throw new Error(`Invalid session data: ${result.error.message}`);
+  }
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const filePath = join(dir, `${session.id}.json`);
+  writeFileSync(filePath, JSON.stringify(session, null, 2) + '\n');
+  chmodSync(filePath, 0o600);
 }
 
 const MAX_RECENT_SESSIONS = 10;

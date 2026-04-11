@@ -1,7 +1,7 @@
 import type { InvokeResult } from '../types.js';
 import { accumulateUsage } from './streaming/output-parsers.js';
 import { toTokenDelta } from './streaming/token-utils.js';
-import { createChangeDetector } from './implementers/base.js';
+import { createChangeDetector } from './implementers/utils.js';
 
 export const PLANNER_ALLOWED_TOOLS = ['Read', 'Glob', 'Grep', 'Write'] as const;
 export const IMPLEMENTER_ALLOWED_TOOLS = ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'] as const;

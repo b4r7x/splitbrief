@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { isENOENT, CommandNotFoundError } from './process-errors.js';
+import { redactSecrets } from './redact.js';
 import { registerProcess, unregisterProcess, killProcess } from './process-lifecycle.js';
 
 export { isNodeError, isENOENT, CommandNotFoundError, CommandTimeoutError, ProcessOutputError, createProcessError } from './process-errors.js';
@@ -214,7 +215,7 @@ export async function spawnWithStdin(opts: {
       if (code !== 0 && !rawText) {
         const detail = stderrOutput.trim();
         throw new Error(
-          `${opts.command} exited with code ${code}${detail ? `: ${detail}` : ''}`,
+          redactSecrets(`${opts.command} exited with code ${code}${detail ? `: ${detail}` : ''}`),
         );
       }
 

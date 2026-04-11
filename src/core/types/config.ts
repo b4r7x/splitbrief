@@ -1,4 +1,4 @@
-import type { ProviderId } from '../providers/catalog.js';
+import type { PlannerToolId, ProviderId } from './schemas/enums.js';
 import type { z } from 'zod';
 import type { PlannerConfigSchema, ImplementerConfigSchema, ConfigSchema } from './schemas/config.js';
 import {
@@ -8,14 +8,29 @@ import {
 
 export type {
   WorkflowMode, CommitStrategy, ThemeMode, ShikiTheme,
-  OutputFormat, PlannerKind, ImplementerKind, CliPlannerTool,
+  OutputFormat, CliPlannerTool, RunnerKind,
 } from './schemas/enums.js';
 export {
   WORKFLOW_MODES, COMMIT_STRATEGIES, THEME_MODES, SHIKI_THEMES,
-  OUTPUT_FORMATS, PLANNER_KINDS, IMPLEMENTER_KINDS, CLI_TOOL_NAMES,
+  OUTPUT_FORMATS, CLI_TOOL_NAMES, RUNNER_KINDS, RunnerKindSchema,
 } from './schemas/enums.js';
 
-export type PlannerTool = ProviderId;
+export type {
+  CliImplementerConfig,
+  ApiImplementerConfig,
+  ShellImplementerConfig,
+  AgentImplementerConfig,
+  AgentSdkImplementerConfig,
+} from './schemas/implementer-config.js';
+export type {
+  CliPlannerConfig,
+  ApiPlannerConfig,
+  ShellPlannerConfig,
+  AgentPlannerConfig,
+  AgentSdkPlannerConfig,
+} from './schemas/planner-config.js';
+
+export type PlannerTool = PlannerToolId;
 
 export function isCliTool(tool: string): tool is CliPlannerTool {
   return (CLI_TOOL_NAMES as readonly string[]).includes(tool);
@@ -40,6 +55,7 @@ export interface WorkflowOpts {
   project?: string | undefined;
   fullscreen?: boolean | undefined;
   mode?: string | undefined;
+  budget?: number | undefined;
 }
 
 export interface PlannerDetection {

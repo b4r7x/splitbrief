@@ -1,5 +1,59 @@
 import { z } from 'zod';
-import { PROVIDER_IDS } from '../../providers/catalog.js';
+
+// Semantic provider groups — CLI tools, API providers, local servers, meta
+export const CLI_TOOL_IDS = ['claude-code', 'codex', 'opencode', 'aider', 'copilot', 'kilo-code'] as const;
+export const API_PROVIDER_IDS = ['agent-sdk', 'anthropic', 'openrouter', 'deepseek'] as const;
+export const LOCAL_PROVIDER_IDS = ['ollama', 'lm-studio'] as const;
+export const META_PROVIDER_IDS = ['shell'] as const;
+
+// Complete list for backward compatibility — must enumerate all values explicitly
+// for TypeScript to infer the correct tuple type for z.enum()
+export const PROVIDER_IDS = [
+  'claude-code',
+  'codex',
+  'opencode',
+  'aider',
+  'copilot',
+  'kilo-code',
+  'agent-sdk',
+  'anthropic',
+  'openrouter',
+  'deepseek',
+  'ollama',
+  'lm-studio',
+  'shell',
+  'agent',
+] as const;
+
+// Planner-only tools: CLI tools + API providers + shell. Excludes local-only providers (ollama, lm-studio).
+export const PLANNER_TOOL_IDS = [
+  'claude-code',
+  'codex',
+  'opencode',
+  'aider',
+  'copilot',
+  'kilo-code',
+  'agent-sdk',
+  'anthropic',
+  'openrouter',
+  'deepseek',
+  'shell',
+] as const;
+
+export type CliToolId = (typeof CLI_TOOL_IDS)[number];
+export type ApiProviderId = (typeof API_PROVIDER_IDS)[number];
+export type LocalProviderId = (typeof LOCAL_PROVIDER_IDS)[number];
+export type MetaProviderId = (typeof META_PROVIDER_IDS)[number];
+export type ProviderId = (typeof PROVIDER_IDS)[number];
+export type PlannerToolId = (typeof PLANNER_TOOL_IDS)[number];
+
+export function isProviderId(id: string): id is ProviderId {
+  return (PROVIDER_IDS as readonly string[]).includes(id);
+}
+
+export function isPlannerToolId(id: string): id is PlannerToolId {
+  return (PLANNER_TOOL_IDS as readonly string[]).includes(id);
+}
 
 export const PHASES = ['idle', 'researching', 'specifying', 'reviewing-spec', 'planning', 'reviewing-plan', 'implementing', 'validating-task', 'escalating', 'final-review', 'complete'] as const;
 export const PhaseSchema = z.enum(PHASES);
@@ -9,7 +63,7 @@ export const TASK_STATUSES = ['pending', 'in_progress', 'done', 'failed', 'escal
 export const TaskStatusSchema = z.enum(TASK_STATUSES);
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
-export const TASK_COMPLETION_METHODS = ['local', 'escalated-hint', 'escalated-full', 'failed', 'skipped'] as const;
+export const TASK_COMPLETION_METHODS = ['local', 'escalated-intermediate', 'escalated-hint', 'escalated-full', 'failed', 'skipped'] as const;
 export const TaskCompletionMethodSchema = z.enum(TASK_COMPLETION_METHODS);
 export type TaskCompletionMethod = z.infer<typeof TaskCompletionMethodSchema>;
 
@@ -33,16 +87,18 @@ export const OUTPUT_FORMATS = ['stream-json', 'jsonl', 'text', 'opencode'] as co
 export const OutputFormatSchema = z.enum(OUTPUT_FORMATS);
 export type OutputFormat = z.infer<typeof OutputFormatSchema>;
 
-export const PLANNER_KINDS = ['cli', 'agent-sdk', 'api', 'shell'] as const;
-export const PlannerKindSchema = z.enum(PLANNER_KINDS);
-export type PlannerKind = z.infer<typeof PlannerKindSchema>;
-
-export const IMPLEMENTER_KINDS = ['api', 'shell', 'agent', 'agent-sdk', 'claude-code', 'codex', 'opencode', 'aider', 'copilot', 'kilo-code'] as const;
-export const ImplementerKindSchema = z.enum(IMPLEMENTER_KINDS);
-export type ImplementerKind = z.infer<typeof ImplementerKindSchema>;
-
-export const CLI_TOOL_NAMES = ['claude-code', 'codex', 'opencode', 'aider', 'copilot', 'kilo-code'] as const;
-export const CliPlannerToolSchema = z.enum(CLI_TOOL_NAMES);
+export const CLI_TOOL_NAMES = CLI_TOOL_IDS;
+export const CliToolIdSchema = z.enum(CLI_TOOL_IDS);
+export const CliPlannerToolSchema = CliToolIdSchema;
 export type CliPlannerTool = z.infer<typeof CliPlannerToolSchema>;
 
-export const ProviderIdSchema = z.enum(PROVIDER_IDS);
+// Runner kind discriminant values
+export const RUNNER_KINDS = ['cli', 'api', 'shell', 'agent', 'agent-sdk'] as const;
+export const RunnerKindSchema = z.enum(RUNNER_KINDS);
+export type RunnerKind = z.infer<typeof RunnerKindSchema>;
+
+// API provider categories
+export const CLOUD_API_PROVIDERS = ['anthropic', 'openrouter', 'deepseek'] as const;
+export const LOCAL_API_PROVIDERS = ['ollama', 'lm-studio'] as const;
+export const KNOWN_API_PROVIDERS = [...LOCAL_API_PROVIDERS, ...CLOUD_API_PROVIDERS] as const;
+

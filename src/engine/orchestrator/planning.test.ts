@@ -4,6 +4,8 @@ import { createInitialState, transition } from '../../core/state/machine.js';
 import { makeConfig, makeTask } from '#testing/helpers/fixtures.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-fixtures.js';
 
+const TEST_PROJECT_DIR = '/mock/project';
+
 vi.mock('../../core/state/persistence.js', () => ({
   saveState: vi.fn(),
   appendEvent: vi.fn(),
@@ -12,6 +14,14 @@ vi.mock('../../utils/fs.js', () => ({
   readSpecFile: vi.fn().mockReturnValue('# Spec content'),
   writeSpecFile: vi.fn(),
   readPackageJson: vi.fn().mockReturnValue(null),
+  SECURE_DIR_MODE: 0o700,
+  SECURE_FILE_MODE: 0o600,
+  checkConfigPermissions: vi.fn().mockReturnValue(true),
+}));
+vi.mock('../../core/paths-io.js', () => ({
+  readSpecFileOrEmpty: vi.fn().mockReturnValue(''),
+  writeSpecFile: vi.fn(),
+  ensureTinySpecDir: vi.fn(),
 }));
 vi.mock('../spec/parser.js', () => ({
   parseTasks: vi.fn().mockReturnValue([makeTask()]),
@@ -39,12 +49,10 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false } });
 
     const result = await runPlanningPhase({
-      feature: 'test-feature',
-      projectDir: '/tmp/proj',
-      config,
-      callbacks,
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks },
       planner,
       state: prepareState(),
+      feature: 'test-feature',
     });
 
     expect(result.cancelled).toBe(false);
@@ -53,18 +61,15 @@ describe('runPlanningPhase', () => {
   });
 
   it('user rejects spec → returns cancelled', async () => {
-    const onApprovalNeeded = vi.fn().mockResolvedValue({ approved: false });
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false }) });
     const planner = makePlanner();
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false } });
 
     const result = await runPlanningPhase({
-      feature: 'test-feature',
-      projectDir: '/tmp/proj',
-      config,
-      callbacks,
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks },
       planner,
       state: prepareState(),
+      feature: 'test-feature',
     });
 
     expect(result.cancelled).toBe(true);
@@ -83,12 +88,10 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false } });
 
     const result = await runPlanningPhase({
-      feature: 'test-feature',
-      projectDir: '/tmp/proj',
-      config,
-      callbacks,
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks },
       planner,
       state: prepareState(),
+      feature: 'test-feature',
     });
 
     expect(result.cancelled).toBe(false);
@@ -102,12 +105,10 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
 
     const result = await runPlanningPhase({
-      feature: 'test-feature',
-      projectDir: '/tmp/proj',
-      config,
-      callbacks,
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks },
       planner,
       state: prepareState(),
+      feature: 'test-feature',
     });
 
     expect(result.cancelled).toBe(false);
@@ -127,12 +128,10 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'quick' } });
 
     const result = await runPlanningPhase({
-      feature: 'test-feature',
-      projectDir: '/tmp/proj',
-      config,
-      callbacks,
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks },
       planner,
       state: prepareState(),
+      feature: 'test-feature',
     });
 
     expect(result.cancelled).toBe(false);
@@ -148,12 +147,10 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'standard' } });
 
     const result = await runPlanningPhase({
-      feature: 'test-feature',
-      projectDir: '/tmp/proj',
-      config,
-      callbacks,
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks },
       planner,
       state: prepareState(),
+      feature: 'test-feature',
     });
 
     expect(result.cancelled).toBe(false);
@@ -170,12 +167,10 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'full' } });
 
     const result = await runPlanningPhase({
-      feature: 'test-feature',
-      projectDir: '/tmp/proj',
-      config,
-      callbacks,
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks },
       planner,
       state: prepareState(),
+      feature: 'test-feature',
     });
 
     expect(result.cancelled).toBe(false);
@@ -193,12 +188,10 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'full' } });
 
     const result = await runPlanningPhase({
-      feature: 'test-feature',
-      projectDir: '/tmp/proj',
-      config,
-      callbacks,
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks },
       planner,
       state: prepareState(),
+      feature: 'test-feature',
     });
 
     expect(result.cancelled).toBe(true);

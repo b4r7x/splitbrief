@@ -69,6 +69,12 @@ describe('workflowStore', () => {
       expect(workflowStore.get().taskMap.get('T001')!.status).toBe('skipped');
     });
 
+    it('tracks task duration in taskCompletionTimes on task-complete', () => {
+      workflowStore.addEvent(makeTaskComplete({ duration: 5000 }));
+      workflowStore.addEvent(makeTaskComplete({ taskId: taskId('T002'), duration: 8000 }));
+      expect(workflowStore.get().taskCompletionTimes).toEqual([5000, 8000]);
+    });
+
     it('does not update taskMap for unknown taskId on task-complete', () => {
       const event = makeTaskComplete({ taskId: taskId('UNKNOWN') });
       workflowStore.addEvent(event);
@@ -219,23 +225,17 @@ describe('workflowStore', () => {
     });
   });
 
-  describe('setReviewFile', () => {
-    it('sets reviewFilePath', () => {
-      workflowStore.setReviewFile('/tmp/spec.md');
-      expect(workflowStore.get().reviewFilePath).toBe('/tmp/spec.md');
+  describe('toggleSidebar', () => {
+    it('flips sidebarVisible from false to true', () => {
+      expect(workflowStore.get().sidebarVisible).toBe(false);
+      workflowStore.toggleSidebar();
+      expect(workflowStore.get().sidebarVisible).toBe(true);
     });
 
-    it('clears reviewFilePath when null', () => {
-      workflowStore.setReviewFile('/tmp/spec.md');
-      workflowStore.setReviewFile(null);
-      expect(workflowStore.get().reviewFilePath).toBeNull();
-    });
-
-    it('short-circuits when setReviewFile() called with same value', () => {
-      workflowStore.setReviewFile('/tmp/spec.md');
-      const before = workflowStore.get();
-      workflowStore.setReviewFile('/tmp/spec.md');
-      expect(workflowStore.get()).toBe(before);
+    it('flips sidebarVisible from true to false', () => {
+      workflowStore.reset({ sidebarVisible: true });
+      workflowStore.toggleSidebar();
+      expect(workflowStore.get().sidebarVisible).toBe(false);
     });
   });
 

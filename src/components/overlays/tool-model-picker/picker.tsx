@@ -4,11 +4,8 @@ import type { Config } from '../../../types.js';
 import { useTheme } from '../../../ui/theme.js';
 import { TextInputOverlay } from '../text-input-overlay.js';
 import { usePickerCatalog } from './use-picker-catalog.js';
-import {
-  usePickerActions,
-  viewReducer,
-  initialViewState,
-} from './use-picker-actions.js';
+import { usePickerActions } from './use-picker-actions.js';
+import { viewReducer, initialViewState } from './view-state.js';
 import { PickerView } from './picker-view.js';
 
 interface ToolModelPickerProps {

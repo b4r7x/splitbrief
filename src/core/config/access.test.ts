@@ -3,10 +3,11 @@ import { getConfigValue, applyEdits } from './access.js';
 import type { Config } from '../types/index.js';
 
 const mockConfig = {
+  version: 2 as const,
   planner: { kind: 'cli' as const, tool: 'claude-code' as const, model: 'claude-sonnet-4-6' },
   implementer: {
     kind: 'api' as const,
-    tool: 'ollama',
+    provider: 'ollama',
     model: 'qwen2.5-coder:7b',
     apiBase: 'http://localhost:11434/v1',
     contextLength: 32768,

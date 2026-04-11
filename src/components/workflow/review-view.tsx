@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import { useTheme } from '../../ui/theme.js';
 import { renderMarkdownLine } from '../../ui/markdown.js';
 import { feedbackStore } from '../../stores/feedback.js';
-import { workflowStore } from '../../stores/workflow.js';
+import { reviewStore } from '../../stores/review.js';
 import { toErrorMessage } from '../../utils/format.js';
 
 interface ReviewViewProps {
@@ -14,8 +14,8 @@ interface ReviewViewProps {
 
 export function ReviewView({ height, width }: ReviewViewProps) {
   const t = useTheme();
-  const filePath = workflowStore.use(s => s.reviewFilePath);
-  const offset = workflowStore.use(s => s.reviewScrollOffset);
+  const filePath = reviewStore.use(s => s.filePath);
+  const offset = reviewStore.use(s => s.scrollOffset);
   const [content, setContent] = useState('');
 
   useEffect(() => {
@@ -24,12 +24,12 @@ export function ReviewView({ height, width }: ReviewViewProps) {
     fs.readFile(filePath, 'utf-8').then(data => {
       if (!cancelled) {
         setContent(data);
-        workflowStore.setReviewLineCount(data.split('\n').length);
+        reviewStore.setLineCount(data.split('\n').length);
       }
     }).catch((err: unknown) => {
       if (cancelled) return;
       setContent('');
-      workflowStore.setReviewLineCount(0);
+      reviewStore.setLineCount(0);
       feedbackStore.setError(`Failed to read ${filePath}: ${toErrorMessage(err)}`);
     });
     return () => { cancelled = true; };

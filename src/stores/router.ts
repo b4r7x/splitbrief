@@ -29,6 +29,8 @@ function navigate(to: Screen, data?: { feature?: string; summary?: Summary; resu
       store.set({ screen: 'workflow', feature: data?.feature ?? '', resumeState: data?.resumeState });
       break;
     case 'summary':
+      // Programming error: navigate() was called without required data.
+      // Missing summary is a bug in the caller, not a user-recoverable issue.
       if (!data?.summary) throw new Error('Summary data required');
       store.set({ screen: 'summary', summary: data.summary });
       break;

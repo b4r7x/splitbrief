@@ -13,9 +13,9 @@ export function registerStartCommand(program: Command): void {
       .command('start [feature]')
       .description('Full workflow: plan with Claude, implement with local model'),
   ).action(async (feature: string | undefined, opts: WorkflowOpts) => {
-    const { projectDir, useFullscreen, contextLength, needsSetup } = await setupWorkflow(opts);
+    const { projectDir, useFullscreen, needsSetup } = await setupWorkflow(opts);
 
-    await initStores(projectDir, { ...opts, contextLength });
+    await initStores(projectDir, opts);
     if (needsSetup) {
       routerStore.init({ screen: 'setup', onComplete: feature ? 'workflow' : 'home', feature });
     } else if (feature) {

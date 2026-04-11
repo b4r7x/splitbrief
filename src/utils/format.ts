@@ -1,13 +1,26 @@
+import { redactSecrets } from './redact.js';
+import { getProviderDisplayName } from '../core/providers/catalog.js';
+
+export function formatToolModel(tool?: string, model?: string): string {
+  if (!tool && !model) return '';
+  const display = getProviderDisplayName(tool ?? '');
+  if (model) return display ? `${display} · ${model}` : model;
+  return display || '';
+}
+
 export function formatDuration(ms: number): string {
-  return `${(ms / 1000).toFixed(1)}s`;
+  if (!Number.isFinite(ms)) return '0.0s';
+  return `${(Math.max(0, ms) / 1000).toFixed(1)}s`;
 }
 
 export function formatCost(dollars: number): string {
-  return `$${dollars.toFixed(2)}`;
+  if (!Number.isFinite(dollars)) return '$0.00';
+  return `$${Math.max(0, dollars).toFixed(2)}`;
 }
 
 export function formatTime(ms: number): string {
-  const totalSecs = Math.floor(ms / 1000);
+  if (!Number.isFinite(ms)) return '0s';
+  const totalSecs = Math.floor(Math.max(0, ms) / 1000);
   const hours = Math.floor(totalSecs / 3600);
   const mins = Math.floor((totalSecs % 3600) / 60);
   const secs = totalSecs % 60;
@@ -23,7 +36,7 @@ export function truncate(str: string, max: number): string {
 }
 
 export function toErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return redactSecrets(err instanceof Error ? err.message : String(err));
 }
 
 type SemVer = [number, number, number];
@@ -42,6 +55,7 @@ export function warnError(context: string, err: unknown): void {
 }
 
 export function formatTimeHHMMSS(ms: number): string {
+  if (!Number.isFinite(ms)) return '00:00:00';
   const totalSecs = Math.max(0, Math.floor(ms / 1000));
   const h = String(Math.floor(totalSecs / 3600)).padStart(2, '0');
   const m = String(Math.floor((totalSecs % 3600) / 60)).padStart(2, '0');
@@ -49,7 +63,13 @@ export function formatTimeHHMMSS(ms: number): string {
   return `${h}:${m}:${s}`;
 }
 
+export function formatEta(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '';
+  return `~${formatTime(ms)} remaining`;
+}
+
 export function formatRelativeTime(timestamp: number): string {
+  if (!Number.isFinite(timestamp)) return 'just now';
   const now = Date.now();
   const diffMs = now - timestamp;
   const diffSecs = Math.floor(diffMs / 1000);

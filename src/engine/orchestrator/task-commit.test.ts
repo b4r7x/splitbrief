@@ -44,7 +44,7 @@ function makeState(overrides?: Partial<WorkflowState>): WorkflowState {
 }
 
 const failingResults: ValidationResult[] = [
-  { passed: true, stage: 'typecheck' },
+  { passed: true, stage: 'tsc' },
   { passed: false, stage: 'lint', error: 'Lint error' },
 ];
 

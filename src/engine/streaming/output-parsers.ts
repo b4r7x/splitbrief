@@ -157,9 +157,17 @@ export function parseJsonlLine(line: string): ParsedLine {
   }
 }
 
+function wrapStreamParser(line: string): ParsedLine {
+  const result = parseStreamLine(line);
+  if (result.text) return { text: result.text, usage: result.usage, isResult: result.isResult, sessionId: result.sessionId };
+  if (result.usage) return { usage: result.usage, isResult: result.isResult, sessionId: result.sessionId };
+  if (result.sessionId) return { sessionId: result.sessionId };
+  return {};
+}
+
 export function getLineParser(format: OutputFormat): (line: string) => ParsedLine {
   switch (format) {
-    case 'stream-json': return parseStreamLine;
+    case 'stream-json': return wrapStreamParser;
     case 'jsonl': return parseJsonlLine;
     case 'text': return parseTextLine;
     case 'opencode': return parseOpencodeLine;

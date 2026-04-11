@@ -22,6 +22,6 @@ export function fromYaml(obj: unknown): Record<string, unknown> {
   return transformKeys(obj, snakeToCamel) as Record<string, unknown>;
 }
 
-export function toYaml(obj: unknown): unknown {
-  return transformKeys(obj, camelToSnake);
+export function toYaml(obj: Record<string, unknown>): Record<string, unknown> {
+  return transformKeys(obj, camelToSnake) as Record<string, unknown>;
 }

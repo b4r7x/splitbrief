@@ -31,11 +31,11 @@ export function addUsage(
 function tokenDelta(before: TokenUsage, after: TokenUsage): { implementerTokens: number; escalationTokens: number } {
   const implementerBefore = before.implementerInput + before.implementerOutput;
   const implementerAfter = after.implementerInput + after.implementerOutput;
-  const escBefore = before.escalationInput + before.escalationOutput;
-  const escAfter = after.escalationInput + after.escalationOutput;
+  const escalationBefore = before.escalationInput + before.escalationOutput;
+  const escalationAfter = after.escalationInput + after.escalationOutput;
   return {
     implementerTokens: implementerAfter - implementerBefore,
-    escalationTokens: escAfter - escBefore,
+    escalationTokens: escalationAfter - escalationBefore,
   };
 }
 
@@ -57,15 +57,19 @@ type BuildAndRecordUsageOptions = {
   state: WorkflowState;
   taskBreakdowns: TaskTokenUsage[];
   retryCount?: number;
+  tool?: string;
+  model?: string;
 };
 
 export function buildAndRecordUsage(opts: BuildAndRecordUsageOptions): void {
-  const { task, method, tokensBefore, currentUsage, projectDir, state, taskBreakdowns, retryCount } = opts;
+  const { task, method, tokensBefore, currentUsage, projectDir, state, taskBreakdowns, retryCount, tool, model } = opts;
   const delta = tokenDelta(tokensBefore, currentUsage);
   const usage: TaskTokenUsage = {
     taskId: task.id, taskTitle: task.title, method,
     implementerTokens: delta.implementerTokens, escalationTokens: delta.escalationTokens,
     retryCount: retryCount ?? 0,
+    ...(tool !== undefined && { tool }),
+    ...(model !== undefined && { model }),
   };
   taskBreakdowns.push(usage);
   emitTaskTokens(projectDir, state, task.id, usage);

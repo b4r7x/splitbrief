@@ -1,19 +1,20 @@
-import type { InvokeResult } from '../../types.js';
+import type { Config, InvokeResult } from '../../types.js';
 import type { Planner } from './types.js';
 import { createPlannerBase } from './base.js';
 import { createCommandAvailability } from '../../utils/availability.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
-import type { CliPlannerTool } from '../../types.js';
 import { CLI_TOOLS } from '../cli-tools.js';
 import { resolveAutoModel } from '../../core/providers/models.js';
 
-type CliPlannerKind = Exclude<CliPlannerTool, 'claude-code'>;
-
-export function createCliPlanner(kind: CliPlannerKind, model?: string): Planner {
-  const resolvedModel = resolveAutoModel(model);
-  const tool = CLI_TOOLS[kind];
+export function createCliPlanner(config: Config): Planner {
+  if (config.planner.kind !== 'cli') {
+    throw new Error(`createCliPlanner requires planner.kind = 'cli' (got ${config.planner.kind})`);
+  }
+  const plannerCfg = config.planner;
+  const resolvedModel = resolveAutoModel(plannerCfg.model);
+  const tool = CLI_TOOLS[plannerCfg.tool];
   if (!tool.planner) {
-    throw new Error(`CLI tool '${kind}' has no planner configuration`);
+    throw new Error(`CLI tool '${plannerCfg.tool}' has no planner configuration`);
   }
   const planner = tool.planner;
 
@@ -41,6 +42,7 @@ export function createCliPlanner(kind: CliPlannerKind, model?: string): Planner 
   return createPlannerBase({
     invokePlan: ({ prompt, projectDir, callbacks }) => invoke(prompt, projectDir, callbacks.onOutput, 'plan'),
     invokeEscalate: ({ prompt, projectDir, callbacks }) => invoke(prompt, projectDir, callbacks.onOutput, 'escalate'),
+    hintSuccessMode: 'files',
 
     ...createCommandAvailability(tool.command, planner.isAvailableOpts),
   });

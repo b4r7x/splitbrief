@@ -1,15 +1,16 @@
 import { join } from 'node:path';
-import type { Config, WorkflowState, Task, OrchestratorCallbacks, SkillMeta, StateAction, ClarificationQuestion } from '../../types.js';
+import type { OrchestratorCallbacks, WorkflowState, Task, SkillMeta, StateAction, ClarificationQuestion } from '../../types.js';
 import type { OrchestratorEventPayloadMap } from '../../core/types/events.js';
-import { readSpecFileOrEmpty } from '../../core/paths-io.js';
+import type { PlannerCallbacksContext } from './run.js';
+import { readSpecFileOrEmpty, writeSpecFile } from '../../core/paths-io.js';
 import { TINY_SPEC_DIR, CURRENT_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 import { parseTasks } from '../spec/parser.js';
 import { buildPlanPromptFromSpec } from '../spec/prompts/plan.js';
 import { buildTasksPrompt } from '../spec/prompts/tasks.js';
 import { buildSkillsSection } from '../skills/index.js';
-import type { Planner } from '../planners/types.js';
+import type { Planner, PlanResult } from '../planners/types.js';
 import { buildProjectContextMarkdown } from '../planners/context.js';
-import { getPlannerToolName } from '../../core/config/planner-config.js';
+import { getRunnerDisplayName } from '../../core/config/index.js';
 import { emit, createTextHandler, emitError, emitPlannerStatus } from './events.js';
 import { addUsageAndSave, transitionAndSave, runPlannerReview } from './helpers.js';
 import { toErrorMessage } from '../../utils/format.js';
@@ -18,20 +19,25 @@ import { runApprovalLoop } from './approval.js';
 
 const MAX_CLARIFICATION_QUESTIONS = 5;
 
+/** Persist phases to disk (orchestrator owns file-writing, not the planner). */
+function persistPhases(projectDir: string, phases: PlanResult['phases']): void {
+  for (const phase of phases ?? []) {
+    writeSpecFile(projectDir, phase.filename, phase.text);
+  }
+}
+
 function handlePlanningFailure(
-  err: unknown, projectDir: string, state: WorkflowState, callbacks: OrchestratorCallbacks,
+  err: unknown, projectDir: string, state: WorkflowState, callbacks: PlannerCallbacksContext['callbacks'],
 ): { state: WorkflowState; tasks: Task[]; cancelled: true } {
   emitError(callbacks, `Planning failed: ${toErrorMessage(err)}`);
   return { state: transitionAndSave(projectDir, state, { type: 'CANCEL' }), tasks: [], cancelled: true };
 }
 
 export type PlanningPhaseOptions = {
-  feature: string;
-  projectDir: string;
-  config: Config;
-  callbacks: OrchestratorCallbacks;
+  wctx: PlannerCallbacksContext;
   planner: Planner;
   state: WorkflowState;
+  feature: string;
   selectedSkills?: SkillMeta[] | undefined;
 };
 
@@ -94,7 +100,8 @@ async function regeneratePlanAndTasks(
 }
 
 async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<{ state: WorkflowState; tasks: Task[]; cancelled: boolean }> {
-  const { feature, projectDir, callbacks, planner } = opts;
+  const { wctx, feature, planner } = opts;
+  const { projectDir, callbacks } = wctx;
   let { state } = opts;
 
   let planResult: Awaited<ReturnType<Planner['plan']>>;
@@ -107,6 +114,7 @@ async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<{ state: Wo
     return handlePlanningFailure(err, projectDir, state, callbacks);
   }
 
+  persistPhases(projectDir, planResult.phases);
   state = addUsageAndSave(projectDir, state, 'planner', planResult.usage, callbacks);
 
   state = transitionAndSave(projectDir, state, { type: 'START_QUICK', tasks: planResult.tasks });
@@ -117,10 +125,11 @@ async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<{ state: Wo
 }
 
 async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boolean): Promise<{ state: WorkflowState; tasks: Task[]; cancelled: boolean }> {
-  const { feature, projectDir, config, callbacks, planner, selectedSkills } = opts;
+  const { wctx, feature, planner, selectedSkills } = opts;
+  const { projectDir, config, callbacks } = wctx;
   let { state } = opts;
   const collectedQuestions: ClarificationQuestion[] = [];
-  const plannerName = getPlannerToolName(config.planner);
+  const plannerName = getRunnerDisplayName(config.planner);
   const conversational = plannerName === 'claude-code';
   const skillsContext = selectedSkills?.length ? await buildSkillsSection(selectedSkills) : undefined;
 
@@ -140,6 +149,7 @@ async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boo
     return handlePlanningFailure(err, projectDir, state, callbacks);
   }
 
+  persistPhases(projectDir, planResult.phases);
   let tasks = planResult.tasks;
 
   state = addUsageAndSave(projectDir, state, 'planner', planResult.usage, callbacks);
@@ -187,7 +197,7 @@ async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boo
 }
 
 export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<{ state: WorkflowState; tasks: Task[]; cancelled: boolean }> {
-  const mode = opts.config.workflow.mode ?? 'standard';
+  const mode = opts.wctx.config.workflow.mode ?? 'standard';
 
   if (mode === 'quick') {
     return runQuickPlanning(opts);

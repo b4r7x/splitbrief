@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { Config, PlannerTool } from '../../types.js';
+import type { Config } from '../../types.js';
 import { createApiPlanner } from './api.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
@@ -12,18 +12,19 @@ let projectDir: string;
 
 function makeConfig(provider: string): Config {
   return {
+    version: 2,
     planner: {
       kind: 'api',
-      provider: provider as PlannerTool,
+      provider,
       model: 'test-model',
       apiBase: `http://127.0.0.1:${port}/v1`,
       apiKey: 'test-key',
     },
     implementer: {
       kind: 'api',
-      tool: 'ollama',
+      provider: 'ollama',
       model: 'test',
-      apiBase: '',
+      apiBase: 'http://localhost:11434/v1',
       contextLength: 8192,
       temperature: 0.3,
     },

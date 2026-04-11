@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { configStore } from '../../../stores/config.js';
 import { overlayStore } from '../../../stores/overlay.js';
 import { detectionStore } from '../../../stores/detection.js';
-import { getPlannerCommand } from '../../../core/config/planner-config.js';
+import { getRunnerCommand } from '../../../core/config/runner-config.js';
 import {
   buildPlannerPickerOptions,
   buildImplementerPickerOptions,
@@ -39,7 +39,7 @@ export function usePickerCatalog(
   const [currentItemId, setCurrentItemId] = useState<string | null>(null);
 
   const rawItems = isPlanner
-    ? buildPlannerPickerOptions(plannerDetections)
+    ? buildPlannerPickerOptions({ detections: plannerDetections, implementerDetections })
     : buildImplementerPickerOptions({ detections: implementerDetections, plannerDetections });
   const items: PickerOption[] = rawItems.map(item => ({
     ...item,
@@ -66,7 +66,7 @@ export function usePickerCatalog(
 
   const roleLabel = isPlanner ? 'Planner' : 'Implementer';
   const currentModel = isPlanner ? config.planner.model : config.implementer.model;
-  const currentCommand = isPlanner ? getPlannerCommand(config.planner) : config.implementer.command;
+  const currentCommand = isPlanner ? getRunnerCommand(config.planner) : getRunnerCommand(config.implementer);
 
   return {
     items,

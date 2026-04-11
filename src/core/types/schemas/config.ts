@@ -1,65 +1,16 @@
 import { z } from 'zod';
-import {
-  WorkflowModeSchema, CommitStrategySchema, ThemeModeSchema, ShikiThemeSchema,
-  OutputFormatSchema, ImplementerKindSchema,
-  CliPlannerToolSchema, ProviderIdSchema,
-} from './enums.js';
+import { WorkflowModeSchema, CommitStrategySchema, ThemeModeSchema, ShikiThemeSchema } from './enums.js';
+import { PlannerConfigSchema } from './planner-config.js';
+import { ImplementerConfigSchema } from './implementer-config.js';
 
-const CliPlannerSchema = z.object({
-  kind: z.literal('cli'),
-  tool: CliPlannerToolSchema,
-  model: z.string().optional(),
-  args: z.array(z.string()).optional(),
-  outputFormat: OutputFormatSchema.optional(),
-  customModels: z.array(z.string()).optional(),
-});
-
-const AgentSdkPlannerSchema = z.object({
-  kind: z.literal('agent-sdk'),
-  model: z.string().optional(),
-  permissionMode: z.literal('acceptEdits').optional(),
-  apiKey: z.string().optional(),
-  customModels: z.array(z.string()).optional(),
-});
-
-const ApiPlannerSchema = z.object({
-  kind: z.literal('api'),
-  provider: ProviderIdSchema,
-  model: z.string(),
-  apiKey: z.string().optional(),
-  apiBase: z.string().optional(),
-  customModels: z.array(z.string()).optional(),
-});
-
-const ShellPlannerSchema = z.object({
-  kind: z.literal('shell'),
-  command: z.string(),
-  model: z.string().optional(),
-  args: z.array(z.string()).optional(),
-  outputFormat: OutputFormatSchema.optional(),
-  customModels: z.array(z.string()).optional(),
-});
-
-export const PlannerConfigSchema = z.discriminatedUnion('kind', [
-  CliPlannerSchema, AgentSdkPlannerSchema, ApiPlannerSchema, ShellPlannerSchema,
-]);
-
-export const ImplementerConfigSchema = z.object({
-  kind: ImplementerKindSchema.default('api'),
-  tool: z.string(),
-  model: z.string().min(1),
-  apiBase: z.string(),
-  contextLength: z.number().int().positive(),
-  temperature: z.number().min(0).max(2),
-  apiKey: z.string().optional(),
-  command: z.string().optional(),
-  args: z.array(z.string()).optional(),
-  outputFormat: OutputFormatSchema.optional(),
-  timeout: z.number().positive().max(600000).optional(),
-  customModels: z.array(z.string()).optional(),
+export const EscalationConfigSchema = z.object({
+  intermediateProvider: z.string().optional(),
+  intermediateModel: z.string().optional(),
+  enabled: z.boolean().optional(),
 });
 
 export const ConfigSchema = z.object({
+  version: z.literal(2),
   planner: PlannerConfigSchema,
   implementer: ImplementerConfigSchema,
   validation: z.object({
@@ -74,10 +25,19 @@ export const ConfigSchema = z.object({
     maxRetries: z.number().int().min(0),
     commitStrategy: CommitStrategySchema,
     mode: WorkflowModeSchema.optional(),
+    maxBudget: z.number().positive().optional(),
   }),
   theme: ThemeModeSchema.optional(),
   shikiTheme: ShikiThemeSchema.optional(),
   sessions: z.object({
     scope: z.enum(['project', 'global']).optional(),
   }).optional(),
+  escalation: EscalationConfigSchema.optional(),
 });
+
+export type Config = z.infer<typeof ConfigSchema>;
+
+export type { PlannerConfig, PlannerRunnerKind } from './planner-config.js';
+export type { ImplementerConfig, ImplementerRunnerKind } from './implementer-config.js';
+
+export { PlannerConfigSchema, ImplementerConfigSchema };

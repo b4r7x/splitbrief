@@ -1,4 +1,5 @@
 export const TINY_SPEC_DIR = '.tiny-spec';
+export const CODEX_DIR = '.codex';
 export const CURRENT_DIR = 'current';
 export const SKILLS_DIR = 'skills';
 export const SESSIONS_DIR = 'sessions';

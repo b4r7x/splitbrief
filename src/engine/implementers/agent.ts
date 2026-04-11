@@ -1,42 +1,57 @@
-import type { Config } from '../../types.js';
+import type { Config, AgentImplementerConfig } from '../../types.js';
 import type { Implementer } from './types.js';
-import type { InvokeOpts } from './base.js';
-import { createImplementerBase, createChangeDetector, DEFAULT_TIMEOUT, assertSpawnSuccess } from './base.js';
+import type { InvokeOpts } from './utils.js';
+import { DEFAULT_TIMEOUT } from './utils.js';
+import { createImplementerBase } from './base.js';
 import { createCommandAvailability } from '../../utils/availability.js';
-import { spawnWithShellFallback, type SpawnResult } from '../../utils/process.js';
+import { invokeCommandBasedRunner } from '../runners/command-based.js';
+import { getChangedFiles } from '../../utils/git.js';
 
-function substitutePrompt(args: string[], prompt: string): { args: string[]; useStdin: boolean } {
-  const hasPlaceholder = args.some(a => a.includes('{prompt}'));
-  if (!hasPlaceholder) return { args, useStdin: true };
-  return {
-    args: args.map(a => a.replace('{prompt}', prompt)),
-    useStdin: false,
-  };
+function asAgentConfig(config: Config): AgentImplementerConfig {
+  if (config.implementer.kind !== 'agent') throw new Error('Expected agent implementer config');
+  return config.implementer;
 }
 
-export function createAgentImplementer(config: Config): Implementer {
-  const command = config.implementer.command ?? '';
+export function createAgentImplementer(initialConfig: Config): Implementer {
+  const agentConfig = asAgentConfig(initialConfig);
+  const command = agentConfig.command;
 
   return createImplementerBase({
     extractsCode: false,
 
     async invoke(opts: InvokeOpts) {
-      const { prompt, projectDir, config: cfg, onOutput } = opts;
-      const cmd = cfg.implementer.command!;
-      const rawArgs = cfg.implementer.args ?? [];
-      const timeout = cfg.implementer.timeout ?? DEFAULT_TIMEOUT;
-
-      const { args, useStdin } = substitutePrompt(rawArgs, prompt);
+      const { prompt, projectDir, config, onOutput } = opts;
+      const impl = asAgentConfig(config);
+      const cmd = impl.command;
+      const timeout = config.implementer.timeout ?? DEFAULT_TIMEOUT;
 
       const notFoundMessage = `Agent implementer command not found: ${cmd}`;
 
-      const result: SpawnResult = await spawnWithShellFallback({ command: cmd, args, cwd: projectDir, timeout, onProgress: onOutput, stdinInput: useStdin ? prompt : undefined, notFoundMessage });
+      const result = await invokeCommandBasedRunner(
+        {
+          command: cmd,
+          args: impl.args,
+          outputFormat: impl.outputFormat,
+          extractsCode: false,
+          supportPromptPlaceholder: true,
+          timeout,
+          notFoundMessage,
+        },
+        prompt,
+        projectDir,
+        onOutput,
+      );
 
-      assertSpawnSuccess(result, { label: 'Agent implementer', timeoutMs: timeout, notFoundMessage });
-      return { text: result.output, usage: null };
+      return { text: result.stdout, usage: null };
     },
 
-    detectChanges: createChangeDetector('Agent implementer'),
+    async detectChanges(projectDir: string) {
+      const changedFiles = await getChangedFiles(projectDir);
+      if (changedFiles.length === 0) {
+        return { changed: false, output: 'Agent implementer exited without changing any files' };
+      }
+      return { changed: true, output: '' };
+    },
 
     ...createCommandAvailability(command),
   });

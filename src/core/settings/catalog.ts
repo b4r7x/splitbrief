@@ -1,7 +1,7 @@
 import type { Config } from '../types/index.js';
 import { formatModelName } from '../providers/models.js';
 import { getProviderDisplayName } from '../providers/catalog.js';
-import { getPlannerToolName } from '../config/planner-config.js';
+import { getRunnerDisplayName } from '../config/index.js';
 
 const MAX_RETRIES_LIMIT = 10;
 
@@ -33,7 +33,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     section: 'Planner',
     description: 'Planner tool or API provider \u2192 /planner',
     kind: 'picker',
-    readValue: (config) => getPlannerToolName(config.planner),
+    readValue: (config) => getRunnerDisplayName(config.planner),
     formatValue: (v) => getProviderDisplayName(String(v ?? '')),
   },
   {
@@ -51,6 +51,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     section: 'Implementer',
     description: 'Implementer tool or API provider \u2192 /implementer',
     kind: 'picker',
+    readValue: (config) => getRunnerDisplayName(config.implementer),
     formatValue: (v) => getProviderDisplayName(String(v ?? '')),
   },
   {

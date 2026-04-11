@@ -20,7 +20,7 @@ function parseInlineArray(value: string): string[] {
 }
 
 export function parseSimpleYamlFrontmatter(raw: string): FrontmatterRecord | null {
-  const match = raw.match(/^---\n([\s\S]*?)\n---/);
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   const body = match?.[1];
   if (body === undefined) return null;
 
@@ -74,7 +74,7 @@ export function parseSimpleYamlFrontmatter(raw: string): FrontmatterRecord | nul
 export function extractFrontmatter(
   raw: string,
 ): { frontmatter: FrontmatterRecord | null; body: string } {
-  const match = raw.match(/^---\n([\s\S]*?)\n---\n?/);
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if (!match) return { frontmatter: null, body: raw };
   const frontmatter = parseSimpleYamlFrontmatter(raw);
   const body = raw.slice(match[0].length);

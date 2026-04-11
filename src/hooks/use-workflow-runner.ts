@@ -1,6 +1,7 @@
 import { useRef, useEffect, useEffectEvent, useState } from 'react';
 import type { Config, Summary, WorkflowState, SkillMeta, TuiEvent } from '../types.js';
 import { workflowStore } from '../stores/workflow.js';
+import { reviewStore } from '../stores/review.js';
 import { feedbackStore } from '../stores/feedback.js';
 import { conversationScrollStore } from '../stores/conversation-scroll.js';
 import { runWorkflow } from '../engine/orchestrator/index.js';
@@ -62,13 +63,15 @@ export function useWorkflowRunner({
       callbacks: {
         onEvent: addEvent,
         onApprovalNeeded: async (_type, filePath) => {
-          workflowStore.setReviewFile(filePath);
+          reviewStore.setReviewFile(filePath);
           const result = await inputMode.setReviewMode(REVIEW_HINT);
-          workflowStore.setReviewFile(null);
+          reviewStore.clearReview();
           return result;
         },
         onExternalChanges: async () =>
           (await inputMode.setReviewMode('External changes detected. continue / quit')).approved,
+        onBudgetExceeded: async (currentCost, maxBudget) =>
+          (await inputMode.setReviewMode(`Budget exceeded: $${currentCost.toFixed(2)} of $${maxBudget.toFixed(2)}. continue / quit`)).approved,
         onQuestionAsked: (question, num, total) =>
           inputMode.setQuestionMode(`Question ${num}/${total}: ${question.text}`),
         onComplete: (summary) => {
@@ -79,7 +82,7 @@ export function useWorkflowRunner({
       selectedSkills,
     }).catch((err) => {
       if (!abortedRef.current && !workflowStore.get().cancelled) {
-        workflowStore.addEvent({ type: 'planner-text', ts: Date.now(), text: `Error: ${String(err)}` });
+        workflowStore.addEvent({ type: 'error', ts: Date.now(), message: String(err) });
       }
     });
   });
@@ -95,6 +98,9 @@ export function useWorkflowRunner({
       inputMode.resetMode();
       killAllProcesses();
     };
+  // config is intentionally excluded from the dep array: config changes mid-workflow
+  // should NOT restart the workflow. The latest config is captured via useEffectEvent
+  // when startWorkflow fires.
   }, [feature, projectDir, runId]);
 
   const handleResume = () => {

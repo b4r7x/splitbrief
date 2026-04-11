@@ -11,6 +11,9 @@ export interface Store<T> {
   reset: (state?: T) => void;
 }
 
+const isDev = typeof process !== 'undefined' && process.env?.['NODE_ENV'] === 'development';
+const checkedSelectors = new WeakSet<(s: unknown) => unknown>();
+
 export function createStore<T>(initialOrFactory: T | (() => T)): Store<T> {
   const getInitial = (): T =>
     typeof initialOrFactory === 'function' ? (initialOrFactory as () => T)() : initialOrFactory;
@@ -38,8 +41,21 @@ export function createStore<T>(initialOrFactory: T | (() => T)): Store<T> {
     return () => { listeners.delete(listener); };
   };
 
-  const use = <S>(selector: (s: T) => S): S =>
-    useSyncExternalStore(subscribe, () => selector(get()));
+  const use = <S>(selector: (s: T) => S): S => {
+    if (isDev && !checkedSelectors.has(selector as (s: unknown) => unknown)) {
+      checkedSelectors.add(selector as (s: unknown) => unknown);
+      const a = selector(state);
+      const b = selector(state);
+      if (!Object.is(a, b)) {
+        console.warn(
+          '[store] Unstable selector detected: returns different object on consecutive calls with same state. ' +
+          'This will cause infinite re-renders. Selector:',
+          selector.toString().slice(0, 100),
+        );
+      }
+    }
+    return useSyncExternalStore(subscribe, () => selector(get()));
+  };
 
   const reset = (next?: T) => set(next ?? getInitial());
 

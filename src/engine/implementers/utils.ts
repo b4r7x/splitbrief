@@ -54,8 +54,9 @@ export function extractOutput(err: unknown): string {
 }
 
 const MAX_TEMPERATURE = 2;
+const DEFAULT_TEMPERATURE = 0.7;
 
-export function retryTemperature(base: number, step: number | undefined, attempt: number): number | undefined {
+export function retryTemperature(base: number | undefined, step: number | undefined, attempt: number): number | undefined {
   if (step == null) return undefined;
-  return Math.min(base + step * attempt, MAX_TEMPERATURE);
+  return Math.min((base ?? DEFAULT_TEMPERATURE) + step * attempt, MAX_TEMPERATURE);
 }

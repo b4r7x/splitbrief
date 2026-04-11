@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
@@ -76,7 +76,8 @@ describe('config loading', () => {
       const config = loadConfig(dir);
       expect(expectCli(config.planner).tool).toBe('codex');
       expect(config.implementer.temperature).toBe(0.7);
-      expect(config.implementer.tool).toBe('ollama');
+      // v2 uses 'provider' instead of 'tool' for API implementers
+      expect((config.implementer as { provider: string }).provider).toBe('ollama');
       expect(config.validation.lint).toBe(false);
       expect(config.validation.typecheck).toBe(true);
       expect(config.workflow.autoApproveSpec).toBe(true);
@@ -94,8 +95,96 @@ describe('config loading', () => {
       expect(config.planner).toEqual(defaults.planner);
       expect(config.validation).toEqual(defaults.validation);
       expect(config.workflow).toEqual(defaults.workflow);
-      expect(config.implementer.tool).toBe(defaults.implementer.tool);
-      expect(config.implementer.contextLength).toBe(defaults.implementer.contextLength);
+      // v2 uses 'provider' instead of 'tool' for API implementers
+      const defaultImpl = defaults.implementer as { provider: string; contextLength: number };
+      const configImpl = config.implementer as { provider: string; contextLength: number };
+      expect(configImpl.provider).toBe(defaultImpl.provider);
+      expect(configImpl.contextLength).toBe(defaultImpl.contextLength);
+    });
+
+    it('emits security warnings to stderr via console.warn', () => {
+      const dir = join(TMP, 'security-warn');
+      const orig = process.env['ANTHROPIC_API_KEY'];
+      delete process.env['ANTHROPIC_API_KEY'];
+      const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        writeConfigYaml(dir, {
+          planner: { kind: 'api', provider: 'anthropic', model: 'm', api_key: 'sk-ant-test' },
+        });
+
+        loadConfig(dir);
+        expect(spy).toHaveBeenCalled();
+        const calls = spy.mock.calls.map(c => c[0] as string);
+        expect(calls.some(c => c.startsWith('⚠') && c.includes('ANTHROPIC_API_KEY'))).toBe(true);
+      } finally {
+        spy.mockRestore();
+        if (orig === undefined) delete process.env['ANTHROPIC_API_KEY'];
+        else process.env['ANTHROPIC_API_KEY'] = orig;
+      }
+    });
+
+    it('does not emit warnings when no api keys in config', () => {
+      const dir = join(TMP, 'no-warn');
+      const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        writeConfigYaml(dir, {
+          implementer: { model: 'codellama:13b' },
+        });
+
+        loadConfig(dir);
+        expect(spy).not.toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('returns defaults when YAML parses to a primitive', () => {
+      const dir = join(TMP, 'yaml-primitive');
+      const configDir = join(dir, TINY_SPEC_DIR);
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, 'config.yaml'), '42', 'utf-8');
+
+      const config = loadConfig(dir);
+      expect(config).toEqual(createDefaultConfig());
+    });
+
+    it('returns defaults when YAML parses to an array', () => {
+      const dir = join(TMP, 'yaml-array');
+      const configDir = join(dir, TINY_SPEC_DIR);
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, 'config.yaml'), '- item1\n- item2', 'utf-8');
+
+      const config = loadConfig(dir);
+      expect(config).toEqual(createDefaultConfig());
+    });
+
+    it('migrates commitPerTask true to commitStrategy per-task', () => {
+      const dir = join(TMP, 'commit-per-task-true');
+      writeConfigYaml(dir, {
+        workflow: { commit_per_task: true },
+      });
+
+      const config = loadConfig(dir);
+      expect(config.workflow.commitStrategy).toBe('per-task');
+    });
+
+    it('returns defaults for an empty YAML file', () => {
+      const dir = join(TMP, 'empty-yaml');
+      const configDir = join(dir, TINY_SPEC_DIR);
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, 'config.yaml'), '', 'utf-8');
+
+      const config = loadConfig(dir);
+      expect(config).toEqual(createDefaultConfig());
+    });
+
+    it('throws a helpful error for malformed YAML', () => {
+      const dir = join(TMP, 'malformed-yaml');
+      const configDir = join(dir, TINY_SPEC_DIR);
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, 'config.yaml'), 'implementer:\n  model: "unmatched quote\n  tool: broken:', 'utf-8');
+
+      expect(() => loadConfig(dir)).toThrow(/Malformed YAML/);
     });
   });
 
@@ -104,7 +193,7 @@ describe('config loading', () => {
       const obj = {
         workflow: { maxRetries: 3, commitStrategy: 'per-task', autoApproveSpec: false },
       };
-      const result = toYaml(obj) as Record<string, unknown>;
+      const result = toYaml(obj);
       const workflow = result.workflow as Record<string, unknown>;
       expect(workflow.max_retries).toBe(3);
       expect(workflow.commit_strategy).toBe('per-task');

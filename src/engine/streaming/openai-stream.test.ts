@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { streamCompletion } from "./openai-stream.js";
+import { streamCompletion, asStreamClient } from "./openai-stream.js";
 
 type MockClient = Parameters<typeof streamCompletion>[0];
 
@@ -132,5 +132,32 @@ describe("streamCompletion", () => {
         { temperature: 0.2, onProgress: () => {} },
       ),
     ).rejects.toThrow(/API error 404/);
+  });
+});
+
+describe("asStreamClient", () => {
+  it("returns the client when it has a valid shape", () => {
+    const client = { chat: { completions: { create: () => {} } } };
+    expect(asStreamClient(client)).toBe(client);
+  });
+
+  it("throws TypeError for null", () => {
+    expect(() => asStreamClient(null)).toThrow(TypeError);
+  });
+
+  it("throws TypeError when chat is missing", () => {
+    expect(() => asStreamClient({})).toThrow(TypeError);
+  });
+
+  it("throws TypeError when completions is missing", () => {
+    expect(() => asStreamClient({ chat: {} })).toThrow(TypeError);
+  });
+
+  it("throws TypeError when create is missing", () => {
+    expect(() => asStreamClient({ chat: { completions: {} } })).toThrow(TypeError);
+  });
+
+  it("throws TypeError when create is not a function", () => {
+    expect(() => asStreamClient({ chat: { completions: { create: "not-a-fn" } } })).toThrow(TypeError);
   });
 });

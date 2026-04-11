@@ -4,7 +4,9 @@ import { overlayStore } from '../stores/overlay.js';
 import { routerStore } from '../stores/router.js';
 import { feedbackStore } from '../stores/feedback.js';
 import { workflowStore } from '../stores/workflow.js';
+import { reviewStore } from '../stores/review.js';
 import { conversationScrollStore } from '../stores/conversation-scroll.js';
+import { inputModeStore } from '../stores/input-mode.js';
 import { killAllProcesses } from '../utils/process.js';
 import { CANCELLABLE_PHASES } from '../core/phases.js';
 import { findLatestDiffEventIndex } from '../core/event-sections.js';
@@ -30,7 +32,7 @@ function applyAction(action: KeyAction, exit: () => void) {
     case 'open-overlay': overlayStore.open(action.overlay); return;
     case 'toggle-sidebar': workflowStore.toggleSidebar(); return;
     case 'toggle-diff': conversationScrollStore.toggleDiff(action.index); return;
-    case 'review-scroll': workflowStore.setReviewScroll(action.offset); return;
+    case 'review-scroll': reviewStore.setScrollOffset(action.offset); return;
     case 'conversation-scroll-up': conversationScrollStore.scrollUp(action.maxOffset, action.eventCount); return;
     case 'conversation-scroll-down': conversationScrollStore.scrollDown(); return;
     case 'conversation-scroll-bottom': conversationScrollStore.scrollToBottom(action.eventCount); return;
@@ -82,18 +84,18 @@ export function useGlobalKeys({ exit }: { exit: () => void }) {
       if (shortcut.type !== 'none') { applyAction(shortcut, exit); return; }
 
       if (screen === 'workflow') {
-        const workflow = workflowStore.get();
-        const events = workflow.events;
+        const events = workflowStore.get().events;
 
         const chord = handleWorkflowCtrlChords(input, key, isSmall, events, findLatestDiffEventIndex);
         if (chord.type !== 'none') { applyAction(chord, exit); return; }
 
-        if (workflow.inputInteractive) return;
+        if (inputModeStore.get().interactive) return;
 
-        if (workflow.reviewFilePath) {
+        const review = reviewStore.get();
+        if (review.filePath) {
           const visibleHeight = terminalSizeStore.get().rows - CHROME_HEIGHT;
-          const review = handleReviewScroll(input, key, workflow.reviewScrollOffset, workflow.reviewLineCount, visibleHeight);
-          if (review.type !== 'none') { applyAction(review, exit); return; }
+          const reviewAction = handleReviewScroll(input, key, review.scrollOffset, review.lineCount, visibleHeight);
+          if (reviewAction.type !== 'none') { applyAction(reviewAction, exit); return; }
         }
 
         const scroll = handleConversationScroll(input, key, events.length);

@@ -1,4 +1,4 @@
-import type { Task, TokenDelta, ClarificationQuestion, Backend } from '../../types.js';
+import type { Task, TokenDelta, ClarificationQuestion, RunnerRuntime } from '../../types.js';
 
 export interface PlannerCallbacks {
   onOutput: (text: string) => void;
@@ -6,11 +6,19 @@ export interface PlannerCallbacks {
   onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
 }
 
+/** Result from a single planning phase. */
+export interface PhaseResult {
+  text: string;
+  filename: string;
+}
+
 export interface PlanResult {
   spec: string;
   plan: string;
   tasks: Task[];
   usage: TokenDelta | null;
+  /** Phase outputs to be persisted by the orchestrator. */
+  phases?: PhaseResult[] | undefined;
 }
 
 export interface EscalationResult {
@@ -25,7 +33,7 @@ export interface RegenerateResult {
   usage: TokenDelta | null;
 }
 
-export interface Planner extends Backend {
+export interface Planner extends RunnerRuntime {
   plan(
     feature: string,
     projectDir: string,

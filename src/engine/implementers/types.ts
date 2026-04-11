@@ -1,4 +1,4 @@
-import type { Task, Config, ProjectContext, TuiEvent, ImplementerResult, Backend } from '../../types.js';
+import type { Task, Config, ProjectContext, TuiEvent, ImplementerResult, RunnerRuntime } from '../../types.js';
 
 export interface ImplementerOptions {
   task: Task;
@@ -15,7 +15,7 @@ export interface RetryOptions extends ImplementerOptions {
   kind: 'local' | 'hint';
 }
 
-export interface Implementer extends Backend {
+export interface Implementer extends RunnerRuntime {
   implement(opts: ImplementerOptions): Promise<ImplementerResult>;
   retry(opts: RetryOptions): Promise<ImplementerResult>;
 }

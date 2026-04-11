@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import type { TuiEvent } from '../../types.js';
+import type { TuiEvent, ValidationStages } from '../../types.js';
 import { useTheme } from '../../ui/theme.js';
 import { Spinner } from '../../ui/spinner.js';
 import { formatDuration } from '../../utils/format.js';
@@ -10,7 +10,7 @@ const VALIDATION_STAGES = ['tsc', 'lint', 'test'] as const;
 type ValidationStage = typeof VALIDATION_STAGES[number];
 
 interface StagesProps {
-  stages: { tsc: boolean; lint: boolean; test: boolean };
+  stages: ValidationStages;
   currentStage?: ValidationStage | undefined;
   failedStage?: ValidationStage | undefined;
 }

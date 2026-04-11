@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { Box } from 'ink';
 import type { InputMode, SlashCommandDef, Summary } from '../types.js';
 import { Header } from '../components/workflow/header.js';
@@ -16,6 +15,7 @@ import { skillsStore } from '../stores/skills.js';
 import { overlayStore } from '../stores/overlay.js';
 import { routerStore } from '../stores/router.js';
 import { workflowStore } from '../stores/workflow.js';
+import { reviewStore } from '../stores/review.js';
 
 interface WorkflowScreenProps {
   commands: SlashCommandDef[];
@@ -56,14 +56,9 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
 
   const events = workflowStore.use(s => s.events);
   const cancelled = workflowStore.use(s => s.cancelled);
-  const reviewFilePath = workflowStore.use(s => s.reviewFilePath);
+  const reviewFilePath = reviewStore.use(s => s.filePath);
   const sidebarVisible = workflowStore.use(s => s.sidebarVisible);
   const showSidebar = sidebarVisible && !isSmall;
-
-  useEffect(() => {
-    workflowStore.setInputInteractive(workflow.inputMode !== 'normal');
-    return () => workflowStore.setInputInteractive(false);
-  }, [workflow.inputMode]);
 
   const sidebarWidth = Math.floor(cols * 0.25);
   const contentHeight = Math.max(0, rows - 4);

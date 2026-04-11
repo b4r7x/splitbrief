@@ -20,14 +20,11 @@ const emptyState: WorkflowViewState = {
   totalTasks: 0,
   localCount: 0,
   escalatedCount: 0,
-  reviewFilePath: null,
-  reviewScrollOffset: 0,
-  reviewLineCount: 0,
+  taskCompletionTimes: [],
   taskMap: new Map(),
   tokenUsage: null,
   cancelled: false,
-  sidebarVisible: true,
-  inputInteractive: true,
+  sidebarVisible: false,
 };
 
 describe('mergeEvent', () => {
@@ -87,6 +84,14 @@ describe('updateCounts', () => {
     expect(hintNext.escalatedCount).toBe(1);
     const fullNext = updateCounts(emptyState, makeTaskComplete({ method: 'escalated-full' }));
     expect(fullNext.escalatedCount).toBe(1);
+  });
+
+  it('tracks task duration on task-complete', () => {
+    const next = updateCounts(
+      { ...emptyState, taskCompletionTimes: [3000] },
+      makeTaskComplete({ method: 'local', duration: 5000 }),
+    );
+    expect(next.taskCompletionTimes).toEqual([3000, 5000]);
   });
 
   it('sets currentTask and totalTasks on task-start', () => {

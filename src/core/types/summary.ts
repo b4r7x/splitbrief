@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import type { TokenUsageSchema, TokenDeltaSchema } from './schemas/tokens.js';
-import type { TaskTokenUsageSchema, CostBreakdownSchema, SummarySchema } from './schemas/summary.js';
+import type { TaskTokenUsageSchema, CostBreakdownSchema, SummarySchema, CostPredictionSchema } from './schemas/summary.js';
 
 export type { TaskCompletionMethod } from './schemas/enums.js';
 export { TASK_COMPLETION_METHODS } from './schemas/enums.js';
@@ -22,9 +22,11 @@ export interface ImplementerResult {
 
 export interface ValidationResult {
   passed: boolean;
-  stage: 'typecheck' | 'lint' | 'test';
+  stage: 'tsc' | 'lint' | 'test';
   error?: string | undefined;
   output?: string | undefined;
 }
+
+export type CostPrediction = z.infer<typeof CostPredictionSchema>;
 
 export type Summary = z.infer<typeof SummarySchema>;

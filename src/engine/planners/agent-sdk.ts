@@ -14,6 +14,5 @@ export function createAgentSdkPlanner(model?: string): Planner {
     invokePlan: invoke,
     invokeEscalate: invoke,
     isAvailable: isAgentSdkAvailable,
-    escalateHintSuccess: (r) => r.text.length > 0,
   });
 }
