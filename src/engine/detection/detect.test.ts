@@ -10,10 +10,7 @@ describe('detectAvailablePlanners', () => {
   it('shell planner is always available', async () => {
     const results = await plannerDetection.detectAvailablePlanners();
     const shell = results.find((r) => r.tool === 'shell');
-    expect(shell).toBeTruthy();
-    expect(shell!.type).toBe('shell');
-    expect(shell!.available).toBe(true);
-    expect(shell!.description).toBe('Custom command');
+    expect(shell).toMatchObject({ type: 'shell', available: true, description: 'Custom command' });
   });
 
   it('anthropic API planner available when ANTHROPIC_API_KEY is set', async () => {
@@ -22,10 +19,7 @@ describe('detectAvailablePlanners', () => {
     try {
       const results = await plannerDetection.detectAvailablePlanners();
       const anthropic = results.find((r) => r.tool === 'anthropic');
-      expect(anthropic).toBeTruthy();
-      expect(anthropic!.available).toBe(true);
-      expect(anthropic!.type).toBe('api');
-      expect(anthropic!.description).toBe('Anthropic API');
+      expect(anthropic).toMatchObject({ available: true, type: 'api', description: 'Anthropic API' });
     } finally {
       if (orig === undefined) delete process.env.ANTHROPIC_API_KEY;
       else process.env.ANTHROPIC_API_KEY = orig;
@@ -44,10 +38,7 @@ describe('detectAvailablePlanners', () => {
     try {
       const results = await plannerDetection.detectAvailablePlanners();
       const openrouter = results.find((r) => r.tool === 'openrouter');
-      expect(openrouter).toBeTruthy();
-      expect(openrouter!.available).toBe(false);
-      expect(openrouter!.type).toBe('api');
-      expect(openrouter!.description).toBe('OpenRouter API');
+      expect(openrouter).toMatchObject({ available: false, type: 'api', description: 'OpenRouter API' });
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -84,14 +75,10 @@ describe('detectAvailableImplementers', () => {
     expect(results.length).toBeGreaterThanOrEqual(2);
 
     const ollama = results.find((r) => r.provider === 'ollama');
-    expect(ollama).toBeTruthy();
-    expect(ollama!.available).toBe(true);
-    expect(ollama!.models).toEqual(['qwen2.5-coder:7b', 'llama3:8b']);
+    expect(ollama).toMatchObject({ available: true, models: [{ id: 'qwen2.5-coder:7b' }, { id: 'llama3:8b' }] });
 
     const lmStudio = results.find((r) => r.provider === 'lm-studio');
-    expect(lmStudio).toBeTruthy();
-    expect(lmStudio!.available).toBe(true);
-    expect(lmStudio!.models).toEqual(['deepseek-coder-v2']);
+    expect(lmStudio).toMatchObject({ available: true, models: [{ id: 'deepseek-coder-v2' }] });
   });
 
   it('handles ollama running but lm-studio not running', async () => {
@@ -107,13 +94,9 @@ describe('detectAvailableImplementers', () => {
     const ollama = results.find((r) => r.provider === 'ollama');
     const lmStudio = results.find((r) => r.provider === 'lm-studio');
 
-    expect(ollama).toBeTruthy();
-    expect(ollama!.available).toBe(true);
-    expect(ollama!.models).toEqual(['codellama:7b']);
-
-    expect(lmStudio).toBeTruthy();
-    expect(lmStudio!.available).toBe(false);
-    expect(lmStudio!.models).toBe(undefined);
+    expect(ollama).toMatchObject({ available: true, models: [{ id: 'codellama:7b' }] });
+    expect(lmStudio).toMatchObject({ available: false });
+    expect(lmStudio).toHaveProperty('models', undefined);
   });
 
   it.each([

@@ -35,6 +35,9 @@ export const KNOWN_PROVIDER_BASE_URLS = {
   'lm-studio': 'http://localhost:1234/v1',
   deepseek: 'https://api.deepseek.com/v1',
   openrouter: 'https://openrouter.ai/api/v1',
+  openai: 'https://api.openai.com/v1',
+  groq: 'https://api.groq.com/openai/v1',
+  together: 'https://api.together.xyz/v1',
 } as const;
 
 // Extended base URL map including API-only providers (e.g., anthropic).
@@ -48,8 +51,6 @@ export function resolveDefaultApiBase(providerId: string): string | null {
   return KNOWN_API_BASE_URLS[providerId] ?? null;
 }
 
-export const KNOWN_PROVIDER_NAMES = Object.keys(KNOWN_PROVIDER_BASE_URLS) as readonly (keyof typeof KNOWN_PROVIDER_BASE_URLS)[];
-
 export const PROVIDER_CATALOG: Record<ProviderId, ProviderInfo> = {
   'claude-code': { id: 'claude-code', displayName: 'Claude Code' },
   codex: { id: 'codex', displayName: 'Codex' },
@@ -62,9 +63,12 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderInfo> = {
   // Use claude-code (CLI), agent-sdk (SDK), or openrouter (API proxy) for Anthropic models.
   anthropic: { id: 'anthropic', displayName: 'Anthropic', apiKeyEnv: 'ANTHROPIC_API_KEY' },
   openrouter: { id: 'openrouter', displayName: 'OpenRouter', baseURL: KNOWN_PROVIDER_BASE_URLS.openrouter, apiKeyEnv: 'OPENROUTER_API_KEY' },
+  deepseek: { id: 'deepseek', displayName: 'DeepSeek', baseURL: KNOWN_PROVIDER_BASE_URLS.deepseek, apiKeyEnv: 'DEEPSEEK_API_KEY' },
+  openai: { id: 'openai', displayName: 'OpenAI', baseURL: KNOWN_PROVIDER_BASE_URLS.openai, apiKeyEnv: 'OPENAI_API_KEY' },
+  groq: { id: 'groq', displayName: 'Groq', baseURL: KNOWN_PROVIDER_BASE_URLS.groq, apiKeyEnv: 'GROQ_API_KEY' },
+  together: { id: 'together', displayName: 'Together AI', baseURL: KNOWN_PROVIDER_BASE_URLS.together, apiKeyEnv: 'TOGETHER_API_KEY' },
   ollama: { id: 'ollama', displayName: 'Ollama', baseURL: KNOWN_PROVIDER_BASE_URLS.ollama, isLocal: true },
   'lm-studio': { id: 'lm-studio', displayName: 'LM Studio', baseURL: KNOWN_PROVIDER_BASE_URLS['lm-studio'], isLocal: true },
-  deepseek: { id: 'deepseek', displayName: 'DeepSeek', baseURL: KNOWN_PROVIDER_BASE_URLS.deepseek, apiKeyEnv: 'DEEPSEEK_API_KEY' },
   shell: { id: 'shell', displayName: 'Custom Shell' },
   agent: { id: 'agent', displayName: 'Agent' },
 };
@@ -84,7 +88,7 @@ export function isProviderLocal(id: string): boolean {
   return PROVIDER_CATALOG[id].isLocal === true;
 }
 
-export function getProviderApiKeyEnv(id: string): string | undefined {
+function getProviderApiKeyEnv(id: string): string | undefined {
   if (!isProviderId(id)) return undefined;
   return PROVIDER_CATALOG[id].apiKeyEnv;
 }

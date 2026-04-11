@@ -6,6 +6,15 @@ import {
   type CliPlannerTool,
 } from './schemas/enums.js';
 
+export interface DetectedModel {
+  id: string;
+  contextLength?: number;
+  pricingInput?: number;
+  pricingOutput?: number;
+  isFree?: boolean;
+  capabilities?: string[];
+}
+
 export type {
   WorkflowMode, CommitStrategy, ThemeMode, ShikiTheme,
   OutputFormat, CliPlannerTool, RunnerKind,
@@ -71,7 +80,7 @@ export interface PlannerDetection {
 export interface ProviderDetection {
   provider: ProviderId;
   available: boolean;
-  models?: string[] | undefined;
+  models?: DetectedModel[] | undefined;
   isLocal: boolean;
   hasKey?: boolean | undefined;
 }

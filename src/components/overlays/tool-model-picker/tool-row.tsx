@@ -1,6 +1,7 @@
 import { Text } from 'ink';
 import type { Theme } from '../../../ui/theme.js';
 import { formatModelName } from '../../../core/providers/models.js';
+import { formatContextLength, formatPrice } from '../../../core/providers/model-metadata.js';
 import { truncate } from '../../../utils/format.js';
 import type { PickerOption, ModelOption } from './picker-catalog.js';
 import { isCustomModel } from './picker-catalog.js';
@@ -98,14 +99,29 @@ export function renderModelRow({ item, isCursor, maxWidth, currentModel, theme: 
   const isCfgMatch = item.id === currentModel;
   const modelName = formatModelName(item.id);
 
+  const metaParts: string[] = [];
+  if (item.contextLength) {
+    metaParts.push(formatContextLength(item.contextLength));
+  }
+  if (item.pricingInput !== undefined && !item.isFree) {
+    metaParts.push(formatPrice(item.pricingInput));
+  }
+  const metaSuffix = metaParts.length > 0 ? ` ${metaParts.join(' | ')}` : '';
+
   const badge = isCustomModel(item) ? '(custom)' : null;
   const status = item.isDefault ? '(default)' : null;
-  const { label, suffix, checkmark } = formatPickerLine(modelName, badge, null, status, isCfgMatch, maxWidth);
+
+  const freeWidth = item.isFree ? 6 : 0;
+  const effectiveMaxWidth = maxWidth - freeWidth - metaSuffix.length;
+
+  const { label, suffix, checkmark } = formatPickerLine(modelName, badge, null, status, isCfgMatch, effectiveMaxWidth);
 
   return (
     <Text>
+      {item.isFree && <Text color={t.success} bold> FREE </Text>}
       <Text color={isCursor ? t.accent : t.text} bold={isCursor}>{label}</Text>
       <Text color={t.textDim}>{suffix}</Text>
+      <Text color={t.textDim} dimColor>{metaSuffix}</Text>
       {checkmark && <Text color={t.success}> {'\u2713'}</Text>}
     </Text>
   );

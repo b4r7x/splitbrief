@@ -11,6 +11,7 @@ export interface PricingInfo {
 const CLAUDE_OPUS_46: PricingInfo = { inputPer1M: 5, outputPer1M: 25, isLocal: false, name: 'Claude Opus 4.6' };
 const CLAUDE_SONNET_46: PricingInfo = { inputPer1M: 3, outputPer1M: 15, isLocal: false, name: 'Claude Sonnet 4.6' };
 const GPT_54: PricingInfo = { inputPer1M: 2.5, outputPer1M: 15, isLocal: false, name: 'GPT-5.4' };
+const GPT_4O: PricingInfo = { inputPer1M: 2.50, outputPer1M: 10, isLocal: false, name: 'GPT-4o' };
 const DEEPSEEK_CHAT: PricingInfo = { inputPer1M: 0.14, outputPer1M: 0.28, isLocal: false, name: 'DeepSeek V3' };
 
 const LOCAL_PRICING: PricingInfo = { inputPer1M: 0, outputPer1M: 0, isLocal: true, name: 'Local model' };
@@ -25,7 +26,7 @@ const MODEL_PRICING: Record<string, PricingInfo> = {
 
   // OpenAI
   'gpt-5.4': GPT_54,
-  'gpt-4o': { inputPer1M: 2.50, outputPer1M: 10, isLocal: false, name: 'GPT-4o' },
+  'gpt-4o': GPT_4O,
   'gpt-4o-mini': { inputPer1M: 0.15, outputPer1M: 0.60, isLocal: false, name: 'GPT-4o mini' },
   'gpt-4.1': { inputPer1M: 2, outputPer1M: 8, isLocal: false, name: 'GPT-4.1' },
   'gpt-4.1-mini': { inputPer1M: 0.40, outputPer1M: 1.60, isLocal: false, name: 'GPT-4.1 mini' },
@@ -57,6 +58,9 @@ export function getModelPricing(model: string): PricingInfo | undefined {
   return MODEL_PRICING[normalized] ?? MODEL_PRICING[model];
 }
 
+const GROQ_LLAMA: PricingInfo = { inputPer1M: 0.05, outputPer1M: 0.08, isLocal: false, name: 'Groq Llama' };
+const TOGETHER_LLAMA: PricingInfo = { inputPer1M: 0.20, outputPer1M: 0.20, isLocal: false, name: 'Together Llama' };
+
 const TOOL_PRICING: Record<ProviderId, PricingInfo> = {
   'claude-code': { ...CLAUDE_OPUS_46, name: 'Claude Code' },
   codex: { ...GPT_54, name: 'Codex' },
@@ -69,9 +73,12 @@ const TOOL_PRICING: Record<ProviderId, PricingInfo> = {
   'agent-sdk': { ...CLAUDE_OPUS_46, name: 'Agent SDK' },
   anthropic: { ...CLAUDE_SONNET_46, name: 'Anthropic' },
   openrouter: { inputPer1M: 0.15, outputPer1M: 0.60, isLocal: false, name: 'OpenRouter' },
+  deepseek: { ...DEEPSEEK_CHAT, name: 'DeepSeek' },
+  openai: { ...GPT_4O, name: 'OpenAI' },
+  groq: { ...GROQ_LLAMA, name: 'Groq' },
+  together: { ...TOGETHER_LLAMA, name: 'Together AI' },
   ollama: LOCAL_PRICING,
   'lm-studio': LOCAL_PRICING,
-  deepseek: { ...DEEPSEEK_CHAT, name: 'DeepSeek' },
   shell: LOCAL_PRICING,
   agent: LOCAL_PRICING,
 };

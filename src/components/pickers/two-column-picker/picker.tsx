@@ -22,6 +22,7 @@ export interface TwoColumnPickerProps<L extends FilterableItem, R extends { id: 
   rightProps: RightColumnProps<L, R>;
   onConfirm: (left: L, right: R | null) => void;
   onCancel: () => void;
+  onRefresh?: (() => void) | undefined;
 }
 
 const BORDER_WIDTH = 2;
@@ -29,14 +30,15 @@ const INNER_PADDING = 4;
 const CURSOR_WIDTH = 2;
 const COLUMN_GAP = 3;
 
-function getHint(nav: { isOnCustomItem: boolean; currentRightIsCustom: boolean }): string {
+function getHint(nav: { isOnCustomItem: boolean; currentRightIsCustom: boolean }, hasRefresh: boolean): string {
+  const refreshHint = hasRefresh ? '  Ctrl+R refresh' : '';
   if (nav.isOnCustomItem) {
-    return '\u2190 back  Enter add custom  Esc cancel';
+    return `\u2190 back  Enter add custom  Esc cancel${refreshHint}`;
   }
   if (nav.currentRightIsCustom) {
-    return '\u2190\u2192 column  \u2191\u2193 select  Enter confirm  Ctrl+D delete  Esc cancel';
+    return `\u2190\u2192 column  \u2191\u2193 select  Enter confirm  Ctrl+D delete  Esc cancel${refreshHint}`;
   }
-  return '\u2190\u2192 column  \u2191\u2193 select  Enter confirm  Esc cancel';
+  return `\u2190\u2192 column  \u2191\u2193 select  Enter confirm  Esc cancel${refreshHint}`;
 }
 
 export function TwoColumnPicker<L extends FilterableItem, R extends { id: string }>({
@@ -47,6 +49,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
   rightProps,
   onConfirm,
   onCancel,
+  onRefresh,
 }: TwoColumnPickerProps<L, R>) {
   const t = useTheme();
   const cols = terminalSizeStore.use(s => s.cols);
@@ -66,13 +69,14 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
     initialColumn,
     onConfirm,
     onCancel,
+    onRefresh,
   });
 
   const displayTitle = stepLabel ? `${title} \u2014 ${stepLabel}` : title;
   const hideRightFilter = nav.isSpecial;
   const rightItems = nav.isOnLeftCustomItem ? [] : nav.right.items;
   const placeholderNode = nav.isOnLeftCustomItem && leftProps.specialHelp ? leftProps.specialHelp : rightProps.placeholder;
-  const hint = getHint(nav);
+  const hint = getHint(nav, !!onRefresh);
 
   return (
     <Box width={cols} height={rows} flexDirection="column" alignItems="center" justifyContent="center">

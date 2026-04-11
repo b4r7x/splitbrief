@@ -41,6 +41,7 @@ export interface KeyboardContext<L extends FilterableItem, R extends { id: strin
   onCustomRightOverlay: ((item: L) => void) | undefined;
   onConfirm: (left: L, right: R | null) => void;
   onCancel: () => void;
+  onRefresh?: (() => void) | undefined;
   setActiveColumn: (col: 'left' | 'right') => void;
   setSelectedLeftKey: (key: string | null) => void;
   setLeftFilter: (fn: (prev: string) => string) => void;
@@ -65,6 +66,13 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
       if (item && !isVirtualCustomItem(item) && ctx.isRightItemCustom?.(item)) {
         ctx.onDeleteRight(item);
       }
+    }
+    return;
+  }
+
+  if (key.ctrl && input === 'r') {
+    if (ctx.onRefresh) {
+      ctx.onRefresh();
     }
     return;
   }

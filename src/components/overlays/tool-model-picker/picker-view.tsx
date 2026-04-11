@@ -2,6 +2,10 @@ import { Box, Text } from 'ink';
 import { TwoColumnPicker } from '../../pickers/two-column-picker/index.js';
 import { useTheme } from '../../../ui/theme.js';
 import { overlayStore } from '../../../stores/overlay.js';
+import { modelCacheStore } from '../../../stores/model-cache.js';
+import { detectionStore } from '../../../stores/detection.js';
+import { configStore } from '../../../stores/config.js';
+import { feedbackStore } from '../../../stores/feedback.js';
 import type { PickerOption, ModelOption } from './picker-catalog.js';
 import { isCustomModel } from './picker-catalog.js';
 import { renderToolRow, renderModelRow } from './tool-row.js';
@@ -53,6 +57,15 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
   // +1 offset accounts for virtual custom row prepended by allowCustomRight
   const initialRightIndex = currentModelIdx >= 0 ? currentModelIdx + 1 : undefined;
 
+  const handleRefresh = () => {
+    modelCacheStore.invalidateAll();
+    const projectDir = configStore.get().projectDir;
+    if (projectDir) {
+      detectionStore.invalidate(projectDir).then(() => detectionStore.load(projectDir));
+    }
+    feedbackStore.setMessage('Refreshing models...');
+  };
+
   return (
     <TwoColumnPicker<PickerOption, ModelOption>
       title={catalog.roleLabel}
@@ -60,6 +73,7 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
       initialColumn={catalog.focusModels ? 'right' : 'left'}
       onConfirm={actions.confirm}
       onCancel={onCancel ?? (() => overlayStore.close())}
+      onRefresh={handleRefresh}
       leftProps={{
         items: catalog.items,
         label: 'Tools',
