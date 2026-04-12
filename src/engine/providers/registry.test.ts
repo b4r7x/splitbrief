@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { KNOWN_PROVIDERS, getProvider, detectAvailableProviders } from './registry.js';
+import { setupFetchMock } from './testing.js';
 
 describe('getProvider', () => {
   it('returns generic provider for unknown name', () => {
@@ -21,33 +22,18 @@ describe('getProvider', () => {
   });
 });
 
-describe('KNOWN_PROVIDERS', () => {
-  it('contains exactly the expected provider ids', () => {
-    expect(Object.keys(KNOWN_PROVIDERS).sort()).toEqual(
-      ['ollama', 'lm-studio', 'deepseek', 'openrouter', 'openai', 'groq', 'together'].sort(),
-    );
-  });
-});
 
 describe('detectAvailableProviders', () => {
-  let originalFetch: typeof globalThis.fetch;
-
-  beforeEach(() => {
-    originalFetch = globalThis.fetch;
-  });
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-  });
+  setupFetchMock();
 
   it('returns detection for each known provider', async () => {
-    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+    vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL | Request) => {
       const urlStr = typeof url === 'string' ? url : url.toString();
       if (urlStr.includes('11434')) {
         return new Response(JSON.stringify({ models: [{ name: 'qwen:7b' }] }), { status: 200 });
       }
       throw new Error('refused');
-    }) as typeof globalThis.fetch;
+    });
 
     const results = await detectAvailableProviders();
     expect(results.length).toBe(Object.keys(KNOWN_PROVIDERS).length);
@@ -60,7 +46,7 @@ describe('detectAvailableProviders', () => {
   });
 
   it('handles all providers failing', async () => {
-    globalThis.fetch = vi.fn(async () => { throw new Error('refused'); }) as typeof globalThis.fetch;
+    vi.mocked(globalThis.fetch).mockRejectedValue(new Error('refused'));
 
     const results = await detectAvailableProviders();
     for (const r of results) {
@@ -69,7 +55,7 @@ describe('detectAvailableProviders', () => {
   });
 
   it('handles timeout', { timeout: 30000 }, async () => {
-    globalThis.fetch = vi.fn(async () => new Promise<Response>(() => {})) as typeof globalThis.fetch;
+    vi.mocked(globalThis.fetch).mockReturnValue(new Promise<Response>(() => {}));
 
     const results = await detectAvailableProviders();
     for (const r of results) {

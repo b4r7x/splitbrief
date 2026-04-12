@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../ui/theme.js';
 import { formatCost } from '../../utils/format.js';
-import { getProviderDisplayName } from '../../core/providers/catalog.js';
+import { getProviderDisplayName } from '../../core/providers.js';
 import { LabeledRow } from '../labeled-row.js';
 import type { CostBreakdown } from '../../types.js';
 

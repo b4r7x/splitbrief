@@ -3,7 +3,7 @@ import { createPlannerBase } from './base.js';
 import { createCommandAvailability } from '../../utils/availability.js';
 import { writeProjectFile } from '../../core/paths-io.js';
 import { runClaudePlannerStream, runClaudeOneShot } from '../claude-runner.js';
-import { resolveAutoModel } from '../../core/providers/models.js';
+import { resolveAutoModel } from '../../core/providers.js';
 
 export function createClaudeCodePlanner(model?: string): Planner {
   const resolvedModel = resolveAutoModel(model);

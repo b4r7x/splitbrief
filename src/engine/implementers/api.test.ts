@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { makeTask, makeConfig, defaultContext } from '#testing/helpers/fixtures.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
-vi.mock('../provider-clients/index.js', () => ({
+vi.mock('../providers/registry.js', () => ({
   createClient: vi.fn(() => ({ __mockClient: true })),
   detectCapabilities: vi.fn(),
 }));
@@ -15,7 +15,7 @@ vi.mock('../streaming/openai-stream.js', () => ({
 }));
 
 import { streamCompletion } from '../streaming/openai-stream.js';
-import { createClient } from '../provider-clients/index.js';
+import { createClient } from '../providers/registry.js';
 import { createApiImplementer } from './api.js';
 
 describe('api implementer', () => {

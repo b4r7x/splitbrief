@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { modelCacheStore, type DetectedModel } from './model-cache.js';
+import { modelCacheStore, MODELS_DEV_TTL_MS, type DetectedModel } from './model-cache.js';
+import type { ModelsDevCatalog } from '../engine/providers/models-dev.js';
 
 describe('modelCacheStore', () => {
   beforeEach(() => {
@@ -173,6 +174,109 @@ describe('modelCacheStore', () => {
 
       expect(modelCacheStore.get().providers).toEqual({});
       expect(modelCacheStore.get().isRefreshing).toBe(false);
+    });
+  });
+
+  describe('Models.dev catalog caching', () => {
+    const sampleCatalog: ModelsDevCatalog = {
+      openai: { id: 'openai', models: { 'gpt-4o': { id: 'gpt-4o' } } },
+    };
+
+    describe('setModelsDevCatalog', () => {
+      it('stores the catalog', () => {
+        modelCacheStore.setModelsDevCatalog(sampleCatalog);
+        expect(modelCacheStore.get().modelsDevCatalog).toEqual(sampleCatalog);
+      });
+
+      it('sets modelsDevFetchedAt to current time', () => {
+        const now = Date.now();
+        modelCacheStore.setModelsDevCatalog(sampleCatalog);
+        expect(modelCacheStore.get().modelsDevFetchedAt).toBe(now);
+      });
+    });
+
+    describe('getModelsDevCatalog', () => {
+      it('returns catalog when fresh', () => {
+        modelCacheStore.setModelsDevCatalog(sampleCatalog);
+        expect(modelCacheStore.getModelsDevCatalog()).toEqual(sampleCatalog);
+      });
+
+      it('returns null when no catalog is set', () => {
+        expect(modelCacheStore.getModelsDevCatalog()).toBeNull();
+      });
+
+      it('returns null when stale', () => {
+        modelCacheStore.setModelsDevCatalog(sampleCatalog);
+        vi.advanceTimersByTime(MODELS_DEV_TTL_MS);
+        expect(modelCacheStore.getModelsDevCatalog()).toBeNull();
+      });
+
+      it('returns catalog just before TTL expires', () => {
+        modelCacheStore.setModelsDevCatalog(sampleCatalog);
+        vi.advanceTimersByTime(MODELS_DEV_TTL_MS - 1);
+        expect(modelCacheStore.getModelsDevCatalog()).toEqual(sampleCatalog);
+      });
+    });
+
+    describe('isModelsDevStale', () => {
+      it('returns true when no catalog is set', () => {
+        expect(modelCacheStore.isModelsDevStale()).toBe(true);
+      });
+
+      it('returns false when catalog is fresh', () => {
+        modelCacheStore.setModelsDevCatalog(sampleCatalog);
+        expect(modelCacheStore.isModelsDevStale()).toBe(false);
+      });
+
+      it('returns true after TTL expires', () => {
+        modelCacheStore.setModelsDevCatalog(sampleCatalog);
+        vi.advanceTimersByTime(MODELS_DEV_TTL_MS);
+        expect(modelCacheStore.isModelsDevStale()).toBe(true);
+      });
+    });
+
+    describe('invalidateAll clears Models.dev catalog', () => {
+      it('sets modelsDevCatalog to null', () => {
+        modelCacheStore.setModelsDevCatalog(sampleCatalog);
+        modelCacheStore.invalidateAll();
+        expect(modelCacheStore.get().modelsDevCatalog).toBeNull();
+      });
+
+      it('sets modelsDevFetchedAt to null', () => {
+        modelCacheStore.setModelsDevCatalog(sampleCatalog);
+        modelCacheStore.invalidateAll();
+        expect(modelCacheStore.get().modelsDevFetchedAt).toBeNull();
+      });
+
+      it('also marks all providers stale', () => {
+        modelCacheStore.setProviderModels('ollama', sampleModels);
+        modelCacheStore.setModelsDevCatalog(sampleCatalog);
+
+        modelCacheStore.invalidateAll();
+
+        expect(modelCacheStore.get().providers['ollama']?.isStale).toBe(true);
+        expect(modelCacheStore.getModelsDevCatalog()).toBeNull();
+      });
+    });
+
+    describe('per-provider caching still works', () => {
+      it('provider cache is independent of Models.dev catalog', () => {
+        modelCacheStore.setProviderModels('ollama', sampleModels);
+        modelCacheStore.setModelsDevCatalog(sampleCatalog);
+
+        expect(modelCacheStore.getProviderModels('ollama')).toEqual(sampleModels);
+        expect(modelCacheStore.getModelsDevCatalog()).toEqual(sampleCatalog);
+      });
+
+      it('provider TTL expiry does not affect Models.dev catalog', () => {
+        modelCacheStore.setProviderModels('ollama', sampleModels);
+        modelCacheStore.setModelsDevCatalog(sampleCatalog);
+
+        vi.advanceTimersByTime(modelCacheStore.TTL_MS);
+
+        expect(modelCacheStore.getProviderModels('ollama')).toBeNull();
+        expect(modelCacheStore.getModelsDevCatalog()).toEqual(sampleCatalog);
+      });
     });
   });
 });

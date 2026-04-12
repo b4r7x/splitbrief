@@ -1,7 +1,8 @@
 import type { Planner } from './types.js';
 import { createPlannerBase } from './base.js';
 import { createAgentSdkBackend, isAgentSdkAvailable, PLANNER_ALLOWED_TOOLS } from '../agent-sdk.js';
-import { DEFAULT_AGENT_SDK_MODEL, resolveAutoModel } from '../../core/providers/models.js';
+import { resolveAutoModel } from '../../core/providers.js';
+import { DEFAULT_AGENT_SDK_MODEL } from '../providers/known.js';
 
 export function createAgentSdkPlanner(model?: string): Planner {
   const effectiveModel = resolveAutoModel(model) ?? DEFAULT_AGENT_SDK_MODEL;

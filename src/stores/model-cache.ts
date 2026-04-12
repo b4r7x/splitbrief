@@ -1,6 +1,7 @@
 import { createStore } from './create-store.js';
-import type { ProviderId } from '../core/providers/catalog.js';
+import { isProviderId, type ProviderId } from '../core/providers.js';
 import type { DetectedModel } from '../core/types/config.js';
+import type { ModelsDevCatalog } from '../engine/providers/models-dev.js';
 export type { DetectedModel } from '../core/types/config.js';
 
 interface ProviderModelCache {
@@ -12,13 +13,18 @@ interface ProviderModelCache {
 interface ModelCacheState {
   providers: Partial<Record<ProviderId, ProviderModelCache>>;
   isRefreshing: boolean;
+  modelsDevCatalog: ModelsDevCatalog | null;
+  modelsDevFetchedAt: number | null;
 }
 
 const TTL_MS = 5 * 60 * 1000; // 5 minutes
+export const MODELS_DEV_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 const initial: ModelCacheState = {
   providers: {},
   isRefreshing: false,
+  modelsDevCatalog: null,
+  modelsDevFetchedAt: null,
 };
 
 const store = createStore<ModelCacheState>(initial);
@@ -77,16 +83,33 @@ export const modelCacheStore = {
   },
 
   invalidateAll(): void {
-    store.set(prev => ({
-      ...prev,
-      providers: Object.fromEntries(
-        Object.entries(prev.providers).map(([k, v]) => [
-          k,
-          v ? { ...v, isStale: true } : v,
-        ])
-      ) as Partial<Record<ProviderId, ProviderModelCache>>,
-    }));
+    store.set(prev => {
+      const providers: Partial<Record<ProviderId, ProviderModelCache>> = {};
+      for (const [k, v] of Object.entries(prev.providers)) {
+        if (!isProviderId(k)) continue;
+        if (v) providers[k] = { ...v, isStale: true };
+      }
+      return { ...prev, providers, modelsDevCatalog: null, modelsDevFetchedAt: null };
+    });
+  },
+
+  setModelsDevCatalog(catalog: ModelsDevCatalog): void {
+    store.set(prev => ({ ...prev, modelsDevCatalog: catalog, modelsDevFetchedAt: Date.now() }));
+  },
+
+  getModelsDevCatalog(): ModelsDevCatalog | null {
+    const { modelsDevCatalog, modelsDevFetchedAt } = store.get();
+    if (!modelsDevCatalog || modelsDevFetchedAt === null) return null;
+    if (Date.now() - modelsDevFetchedAt >= MODELS_DEV_TTL_MS) return null;
+    return modelsDevCatalog;
+  },
+
+  isModelsDevStale(): boolean {
+    const { modelsDevFetchedAt } = store.get();
+    if (modelsDevFetchedAt === null) return true;
+    return Date.now() - modelsDevFetchedAt >= MODELS_DEV_TTL_MS;
   },
 
   TTL_MS,
+  MODELS_DEV_TTL_MS,
 };

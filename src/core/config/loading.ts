@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import type { Config } from '../types/index.js';
-import { resolveDefaultApiBase } from '../providers/catalog.js';
+import { resolveDefaultApiBase, KNOWN_PROVIDER_BASE_URLS } from '../providers.js';
 import { validateConfig } from './validation.js';
 import { fromYaml, toYaml } from './transforms.js';
 import { TINY_SPEC_DIR, CONFIG_FILE } from '../paths.js';
@@ -22,7 +22,7 @@ export function createDefaultConfig(): Config {
       kind: 'api',
       provider: 'ollama',
       model: 'qwen2.5-coder:7b',
-      apiBase: resolveDefaultApiBase('ollama')!,
+      apiBase: resolveDefaultApiBase('ollama') ?? KNOWN_PROVIDER_BASE_URLS.ollama,
       contextLength: 32768,
       temperature: 0.3,
     },

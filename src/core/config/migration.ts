@@ -1,5 +1,5 @@
 import { CLI_TOOL_IDS } from '../types/schemas/enums.js';
-import { resolveDefaultApiBase } from '../providers/catalog.js';
+import { resolveDefaultApiBase } from '../providers.js';
 
 /**
  * Migrate config from any version to current (v2).

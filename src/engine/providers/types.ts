@@ -11,6 +11,11 @@ export interface ProviderDef {
   detectContextLength?(model: string): Promise<number | null>;
 }
 
+export interface ProviderDefWithMetadata extends ProviderDef {
+  listModelsWithMetadata(): Promise<DetectedModel[]>;
+  detectContextLength(model: string): Promise<number | null>;
+}
+
 export interface ProviderOverrides {
   apiBase?: string | undefined;
   apiKey?: string | undefined;

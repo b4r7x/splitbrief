@@ -1,15 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createOpenAICompatProvider } from './openai-compat.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { createOpenAICompatProvider } from './compat.js';
+import { setupFetchMock } from './testing.js';
 
 describe('createOpenAICompatProvider', () => {
-  let originalFetch: typeof globalThis.fetch;
-
-  beforeEach(() => {
-    originalFetch = globalThis.fetch;
-  });
+  setupFetchMock();
 
   afterEach(() => {
-    globalThis.fetch = originalFetch;
     delete process.env.TEST_PROVIDER_API_KEY;
   });
 
@@ -32,9 +28,9 @@ describe('createOpenAICompatProvider', () => {
   });
 
   it('listModels fetches and parses model list from /v1/models', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ data: [{ id: 'gpt-4' }, { id: 'gpt-3.5' }] }), { status: 200 }),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createOpenAICompatProvider('test', 'https://api.example.com/v1', 'TEST_PROVIDER_API_KEY', false);
     const models = await p.listModels();
@@ -47,9 +43,9 @@ describe('createOpenAICompatProvider', () => {
   });
 
   it('listModels normalises baseURL trailing slash', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ data: [{ id: 'm1' }] }), { status: 200 }),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createOpenAICompatProvider('test', 'https://api.example.com/v1/', 'TEST_PROVIDER_API_KEY', false);
     await p.listModels();
@@ -66,16 +62,16 @@ describe('createOpenAICompatProvider', () => {
     ['malformed JSON', async () => new Response('not json', { status: 200 })],
     ['missing data field', async () => new Response(JSON.stringify({ models: ['a'] }), { status: 200 })],
   ] as const)('listModels returns empty on %s', async (_label, mockFetch) => {
-    globalThis.fetch = vi.fn(mockFetch) as typeof globalThis.fetch;
+    vi.mocked(globalThis.fetch).mockImplementation(mockFetch);
     const p = createOpenAICompatProvider('test', 'https://api.example.com/v1', 'TEST_PROVIDER_API_KEY', false);
     expect(await p.listModels()).toEqual([]);
   });
 
   it('sends Authorization header when api key is available', async () => {
     process.env.TEST_PROVIDER_API_KEY = 'env-key-123';
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ data: [] }), { status: 200 }),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createOpenAICompatProvider('test', 'https://api.example.com/v1', 'TEST_PROVIDER_API_KEY', false);
     await p.listModels();
@@ -87,9 +83,9 @@ describe('createOpenAICompatProvider', () => {
   });
 
   it('omits Authorization header when no api key', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ data: [] }), { status: 200 }),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createOpenAICompatProvider('test', 'https://api.example.com/v1', 'TEST_PROVIDER_API_KEY', false);
     await p.listModels();

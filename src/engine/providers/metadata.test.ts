@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   formatContextLength,
   formatPrice,
-} from './model-metadata.js';
+} from './metadata.js';
 
 describe('formatContextLength', () => {
   it('returns empty string for undefined', () => {
@@ -71,4 +71,3 @@ describe('formatPrice', () => {
     expect(formatPrice(75)).toBe('$75/1M');
   });
 });
-

@@ -1,5 +1,5 @@
 import { redactSecrets } from './redact.js';
-import { getProviderDisplayName } from '../core/providers/catalog.js';
+import { getProviderDisplayName } from '../core/providers.js';
 
 export function formatToolModel(tool?: string, model?: string): string {
   if (!tool && !model) return '';

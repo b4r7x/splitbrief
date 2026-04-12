@@ -1,24 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createTogetherProvider } from './together.js';
+import { setupFetchMock, setupEnvMock } from './testing.js';
 
 describe('createTogetherProvider', () => {
-  let originalFetch: typeof globalThis.fetch;
-  let originalEnv: string | undefined;
-
-  beforeEach(() => {
-    originalFetch = globalThis.fetch;
-    originalEnv = process.env.TOGETHER_API_KEY;
-    process.env.TOGETHER_API_KEY = 'test-key';
-  });
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-    if (originalEnv === undefined) {
-      delete process.env.TOGETHER_API_KEY;
-    } else {
-      process.env.TOGETHER_API_KEY = originalEnv;
-    }
-  });
+  setupFetchMock();
+  setupEnvMock('TOGETHER_API_KEY', 'test-key');
 
   it('creates provider with correct properties', () => {
     const p = createTogetherProvider();
@@ -37,7 +23,7 @@ describe('createTogetherProvider', () => {
   });
 
   it('listModels returns model IDs', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(
         JSON.stringify({
           data: [
@@ -47,7 +33,7 @@ describe('createTogetherProvider', () => {
         }),
         { status: 200 },
       ),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createTogetherProvider();
     const models = await p.listModels();
@@ -59,7 +45,7 @@ describe('createTogetherProvider', () => {
   });
 
   it('listModelsWithMetadata returns full metadata with pricing', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(
         JSON.stringify({
           data: [
@@ -72,7 +58,7 @@ describe('createTogetherProvider', () => {
         }),
         { status: 200 },
       ),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createTogetherProvider();
     const models = await p.listModelsWithMetadata();
@@ -86,28 +72,28 @@ describe('createTogetherProvider', () => {
   });
 
   it('detectContextLength returns context length for known model', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(
         JSON.stringify({
           data: [{ id: 'mistralai/Mixtral-8x7B-Instruct-v0.1', context_length: 32768 }],
         }),
         { status: 200 },
       ),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createTogetherProvider();
     expect(await p.detectContextLength('mistralai/Mixtral-8x7B-Instruct-v0.1')).toBe(32768);
   });
 
   it('detectContextLength returns null for unknown model', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(
         JSON.stringify({
           data: [{ id: 'other-model', context_length: 4096 }],
         }),
         { status: 200 },
       ),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createTogetherProvider();
     expect(await p.detectContextLength('unknown-model')).toBeNull();
@@ -120,39 +106,37 @@ describe('createTogetherProvider', () => {
   });
 
   it('returns empty array on non-ok response', async () => {
-    globalThis.fetch = vi.fn(async () => new Response('error', { status: 500 })) as typeof globalThis.fetch;
+    vi.mocked(globalThis.fetch).mockResolvedValue(new Response('error', { status: 500 }));
 
     const p = createTogetherProvider();
     expect(await p.listModels()).toEqual([]);
   });
 
   it('returns empty array on fetch error', async () => {
-    globalThis.fetch = vi.fn(async () => {
-      throw new Error('network error');
-    }) as typeof globalThis.fetch;
+    vi.mocked(globalThis.fetch).mockRejectedValue(new Error('network error'));
 
     const p = createTogetherProvider();
     expect(await p.listModels()).toEqual([]);
   });
 
   it('returns empty array on invalid response shape', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ invalid: 'shape' }), { status: 200 }),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createTogetherProvider();
     expect(await p.listModels()).toEqual([]);
   });
 
   it('handles model without context_length or pricing', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(
         JSON.stringify({
           data: [{ id: 'minimal-model' }],
         }),
         { status: 200 },
       ),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createTogetherProvider();
     const models = await p.listModelsWithMetadata();
@@ -161,7 +145,7 @@ describe('createTogetherProvider', () => {
   });
 
   it('handles model with partial pricing', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(
         JSON.stringify({
           data: [
@@ -174,7 +158,7 @@ describe('createTogetherProvider', () => {
         }),
         { status: 200 },
       ),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createTogetherProvider();
     const models = await p.listModelsWithMetadata();

@@ -1,10 +1,10 @@
 import type { Config, InvokeResult } from '../../types.js';
 import type { Planner } from './types.js';
 import { createPlannerBase } from './base.js';
-import { getProvider } from '../provider-clients/registry.js';
-import { createClientFromProvider } from '../provider-clients/client.js';
+import { getProvider } from '../providers/registry.js';
+import { createClientFromProvider } from '../providers/client.js';
 import { asStreamClient, streamCompletion } from '../streaming/openai-stream.js';
-import { resolveAutoModel } from '../../core/providers/models.js';
+import { resolveAutoModel } from '../../core/providers.js';
 import type OpenAI from 'openai';
 
 async function invokeApi(

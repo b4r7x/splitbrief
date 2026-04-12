@@ -7,7 +7,7 @@ import { setHighlightTheme } from '../utils/highlight.js';
 import { warnError } from '../utils/format.js';
 import { discoverSkills, detectCapabilities } from '../engine/index.js';
 import type { WorkflowOpts, Config, PlannerTool } from '../types.js';
-import { isPlannerToolId } from '../core/providers/catalog.js';
+import { isPlannerToolId } from '../core/providers.js';
 import { cliError } from './errors.js';
 
 export function getPlannerToolId(config: Config['planner']): PlannerTool {

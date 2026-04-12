@@ -1,7 +1,7 @@
 import { Text } from 'ink';
 import type { Theme } from '../../../ui/theme.js';
-import { formatModelName } from '../../../core/providers/models.js';
-import { formatContextLength, formatPrice } from '../../../core/providers/model-metadata.js';
+import { formatModelName } from '../../../core/providers.js';
+import { formatContextLength, formatPrice } from '../../../engine/providers/metadata.js';
 import { truncate } from '../../../utils/format.js';
 import type { PickerOption, ModelOption } from './picker-catalog.js';
 import { isCustomModel } from './picker-catalog.js';
