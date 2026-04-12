@@ -10,14 +10,11 @@ export interface WorkflowViewState {
   totalTasks: number;
   localCount: number;
   escalatedCount: number;
-  reviewFilePath: string | null;
-  reviewScrollOffset: number;
-  reviewLineCount: number;
+  taskCompletionTimes: number[];
   taskMap: Map<string, SidebarTask>;
   tokenUsage: TokenUsage | null;
   cancelled: boolean;
   sidebarVisible: boolean;
-  inputInteractive: boolean;
 }
 
 const initial: WorkflowViewState = {
@@ -27,14 +24,11 @@ const initial: WorkflowViewState = {
   totalTasks: 0,
   localCount: 0,
   escalatedCount: 0,
-  reviewFilePath: null,
-  reviewScrollOffset: 0,
-  reviewLineCount: 0,
+  taskCompletionTimes: [],
   taskMap: new Map(),
   tokenUsage: null,
   cancelled: false,
   sidebarVisible: false,
-  inputInteractive: false,
 };
 
 let cancelHandler: (() => void) | null = null;
@@ -54,28 +48,16 @@ function addEvent(event: TuiEvent) {
   });
 }
 
-function setReviewFile(path: string | null) {
-  store.set(s => s.reviewFilePath === path ? s : { ...s, reviewFilePath: path, reviewScrollOffset: 0, reviewLineCount: 0 });
-}
-
-function setReviewScroll(offset: number) {
-  store.set(s => s.reviewScrollOffset === offset ? s : { ...s, reviewScrollOffset: offset });
-}
-
-function setReviewLineCount(count: number) {
-  store.set(s => s.reviewLineCount === count ? s : { ...s, reviewLineCount: count });
-}
-
 function setCancelHandler(handler: (() => void) | null) {
   cancelHandler = handler;
 }
 
 function requestCancel() {
-  const state = store.get();
-  if (state.cancelled) return;
-  if (cancelHandler) cancelHandler();
+  let shouldCallHandler = false;
   const now = Date.now();
   store.set(s => {
+    if (s.cancelled) return s;
+    shouldCallHandler = true;
     const events = s.events.map(ev =>
       ev.type === 'planner-status' && ev.status === 'running'
         ? { ...ev, status: 'done' as const }
@@ -84,15 +66,13 @@ function requestCancel() {
     const final = [...events, { type: 'workflow-cancelled' as const, ts: now }];
     return { ...s, cancelled: true, events: final };
   });
+  if (!shouldCallHandler) return;
+  if (cancelHandler) cancelHandler();
   try { killAllProcesses(); } catch { /* process cleanup is best-effort */ }
 }
 
 function toggleSidebar() {
   store.set(s => ({ ...s, sidebarVisible: !s.sidebarVisible }));
-}
-
-function setInputInteractive(active: boolean) {
-  store.set(s => s.inputInteractive === active ? s : { ...s, inputInteractive: active });
 }
 
 export const workflowStore = {
@@ -102,11 +82,7 @@ export const workflowStore = {
     store.reset(init ? { ...initial, ...init } : undefined);
   },
   addEvent,
-  setReviewFile,
-  setReviewScroll,
-  setReviewLineCount,
   setCancelHandler,
   requestCancel,
   toggleSidebar,
-  setInputInteractive,
 };

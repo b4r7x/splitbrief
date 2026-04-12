@@ -6,6 +6,14 @@ import { toErrorMessage } from '../../utils/format.js';
 
 const SEARCH_REPLACE_LINE_THRESHOLD = 200;
 
+/**
+ * Apply generated code to a task's target file.
+ *
+ * **Threshold behavior:** Files under {@link SEARCH_REPLACE_LINE_THRESHOLD} lines
+ * always receive a whole-file overwrite, even if the model emits search/replace
+ * markers. Search/replace markers are only parsed for larger files. This is
+ * intentional — small files are more reliably updated via full replacement.
+ */
 export function applyCode(code: string, task: Task, projectDir: string): { success: boolean; error?: string } {
   try {
     validateTaskPath(projectDir, task.file);
@@ -56,6 +64,7 @@ export function applyCode(code: string, task: Task, projectDir: string): { succe
       return { success: false, error: `Search block not found in ${task.file}:\n${search.slice(0, 200)}` };
     }
 
+    // Intentional: only replace first occurrence to avoid unintended multi-site edits
     result = result.replace(search, () => replace);
   }
 

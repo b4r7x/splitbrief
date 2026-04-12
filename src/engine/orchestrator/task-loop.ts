@@ -1,13 +1,15 @@
 import type { Task, TaskId, WorkflowState, OrchestratorCallbacks, TaskTokenUsage } from '../../types.js';
 import { hasExternalChanges } from '../../utils/git.js';
 import { toErrorMessage } from '../../utils/format.js';
-import { getFailedTaskIds, getSkippedTaskIds } from '../../core/state/selectors.js';
+import { getFailedTaskIds, getSkippedTaskIds, getEscalatedTaskIds } from '../../core/state/selectors.js';
 
 import type { WorkflowContext } from './run.js';
 import { emit, emitWarning, emitTaskSkipped } from './events.js';
 import { runSingleTask } from './task-step.js';
 import { emitTaskTokens } from './tokens.js';
 import { transitionAndSave } from './helpers.js';
+import { enforceBudget } from './budget.js';
+import { getRunnerDisplayName } from '../../core/config/runner-config.js';
 
 export function hasDependencyFailed(task: Task, failedTasks: TaskId[], skippedTasks: TaskId[]): boolean {
   const blocked = new Set<string>([...failedTasks, ...skippedTasks]);
@@ -66,10 +68,11 @@ type RunTaskLoopOptions = {
 
 export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: WorkflowState; taskBreakdowns: TaskTokenUsage[] }> {
   const { wctx, setTrackedState, setCurrentTask } = opts;
-  const { projectDir, callbacks } = wctx;
+  const { projectDir, config, callbacks } = wctx;
   let state = opts.initialState;
   const totalTasks = state.tasks.length;
   const taskBreakdowns: TaskTokenUsage[] = [];
+  let budgetWarningEmitted = false;
 
   for (let i = state.currentTaskIndex; i < totalTasks; i++) {
     if (wctx.signal?.aborted) return { state, taskBreakdowns };
@@ -86,6 +89,25 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: Wo
     }
 
     state = await runSingleTask({ wctx, task, index: i, totalTasks, state, taskBreakdowns, setTrackedState, setCurrentTask });
+
+    if (config.workflow.maxBudget !== undefined) {
+      const budgetResult = await enforceBudget({
+        tokenUsage: state.tokenUsage,
+        maxBudget: config.workflow.maxBudget,
+        totalTasks,
+        escalatedCount: getEscalatedTaskIds(state).length,
+        plannerTool: state.plannerTool ?? getRunnerDisplayName(config.planner),
+        implementerTool: getRunnerDisplayName(config.implementer),
+        callbacks,
+        warningEmitted: budgetWarningEmitted,
+      });
+      budgetWarningEmitted = budgetResult.warningEmitted;
+      if (budgetResult.stop) {
+        setCurrentTask(undefined);
+        const cancelled = transitionAndSave(projectDir, state, { type: 'CANCEL' });
+        return { state: cancelled, taskBreakdowns };
+      }
+    }
   }
   setCurrentTask(undefined);
 

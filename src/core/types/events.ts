@@ -1,10 +1,10 @@
 import type { Phase, TaskId } from './workflow.js';
-import type { Summary, TaskCompletionMethod, TokenUsage } from './summary.js';
+import type { Summary, TaskCompletionMethod, TokenUsage, CostPrediction } from './summary.js';
+import type { WorkflowMode } from './config.js';
+export type { ClarificationQuestion } from './schemas/question.js';
+import type { ClarificationQuestion } from './schemas/question.js';
 
-export type ClarificationQuestion =
-  | { id: string; type: 'choice'; text: string; options: string[]; default?: string | undefined }
-  | { id: string; type: 'input'; text: string; default?: string | undefined }
-  | { id: string; type: 'confirm'; text: string; default?: boolean | undefined };
+export type ValidationStages = { tsc: boolean; lint: boolean; test: boolean };
 
 export type TuiEvent =
   | {
@@ -14,6 +14,8 @@ export type TuiEvent =
       status: 'running' | 'done';
       summary?: string | undefined;
       duration?: number | undefined;
+      tool?: string | undefined;
+      model?: string | undefined;
     }
   | {
       type: 'planner-text';
@@ -29,6 +31,8 @@ export type TuiEvent =
       total: number;
       file: string;
       action: 'create' | 'modify';
+      tool?: string | undefined;
+      model?: string | undefined;
     }
   | {
       type: 'task-complete';
@@ -38,6 +42,8 @@ export type TuiEvent =
       method: TaskCompletionMethod;
       retries: number;
       duration: number;
+      tool?: string | undefined;
+      model?: string | undefined;
     }
   | {
       type: 'task-skipped';
@@ -70,7 +76,7 @@ export type TuiEvent =
       ts: number;
       status: 'running' | 'done';
       passed: boolean;
-      stages: { tsc: boolean; lint: boolean; test: boolean };
+      stages: ValidationStages;
       error?: string | undefined;
       duration?: number | undefined;
     }
@@ -84,8 +90,10 @@ export type TuiEvent =
   | {
       type: 'escalate';
       ts: number;
-      tier: 1 | 2;
+      tier: 0 | 1 | 2;
       hint?: string | undefined;
+      tool?: string | undefined;
+      model?: string | undefined;
     }
   | {
       type: 'git-commit';
@@ -114,8 +122,34 @@ export type TuiEvent =
       tokenUsage: TokenUsage;
     }
   | {
+      type: 'cost-prediction';
+      ts: number;
+      prediction: CostPrediction;
+    }
+  | {
+      type: 'budget-warning';
+      ts: number;
+      currentCost: number;
+      maxBudget: number;
+    }
+  | {
+      type: 'budget-exceeded';
+      ts: number;
+      currentCost: number;
+      maxBudget: number;
+    }
+  | {
       type: 'workflow-cancelled';
       ts: number;
+    }
+  | {
+      type: 'workflow-config';
+      ts: number;
+      mode: WorkflowMode;
+      plannerTool: string;
+      plannerModel?: string | undefined;
+      implementerTool: string;
+      implementerModel?: string | undefined;
     };
 
 export type OrchestratorEventPayloadMap = {
@@ -170,5 +204,6 @@ export interface OrchestratorCallbacks {
   onApprovalNeeded: (type: 'spec' | 'plan', filePath: string) => Promise<{ approved: boolean; comment?: string | undefined }>;
   onExternalChanges: () => Promise<boolean>;
   onQuestionAsked?: ((question: ClarificationQuestion, num: number, total: number) => Promise<string>) | undefined;
+  onBudgetExceeded?: ((currentCost: number, maxBudget: number) => Promise<boolean>) | undefined;
   onComplete: (summary: Summary) => void;
 }

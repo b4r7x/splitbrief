@@ -1,3 +1,5 @@
+import { redactSecrets } from './redact.js';
+
 export function isNodeError(err: unknown): err is NodeJS.ErrnoException {
   return err instanceof Error && 'code' in err;
 }
@@ -36,5 +38,5 @@ export class ProcessOutputError extends Error {
 }
 
 export function createProcessError(message: string, output: string): ProcessOutputError {
-  return new ProcessOutputError(message, output);
+  return new ProcessOutputError(redactSecrets(message), redactSecrets(output));
 }

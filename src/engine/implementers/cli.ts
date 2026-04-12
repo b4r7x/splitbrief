@@ -1,25 +1,26 @@
-import type { Config } from '../../types.js';
+import type { CliImplementerConfig } from '../../types.js';
 import type { Implementer } from './types.js';
-import type { InvokeOpts } from './base.js';
-import { createImplementerBase, createChangeDetector, DEFAULT_TIMEOUT, assertSpawnSuccess } from './base.js';
+import type { InvokeOpts } from './utils.js';
+import { createChangeDetector, DEFAULT_TIMEOUT, assertSpawnSuccess } from './utils.js';
+import { createImplementerBase } from './base.js';
 import { CommandNotFoundError, CommandTimeoutError, spawnWithTimeout } from '../../utils/process.js';
 import type { SpawnResult } from '../../utils/process.js';
-import type { CliPlannerTool } from '../../types.js';
 import { CLI_TOOLS } from '../cli-tools.js';
 import { createCommandAvailability } from '../../utils/availability.js';
 import { runClaudeOneShot } from '../claude-runner.js';
 import { resolveAutoModel } from '../../core/providers/models.js';
 
-export function createToolImplementer(toolName: CliPlannerTool, config: Config): Implementer {
+export function createCliImplementer(config: CliImplementerConfig): Implementer {
+  const toolName = config.tool;
   const tool = CLI_TOOLS[toolName];
-  const timeout = config.implementer.timeout ?? DEFAULT_TIMEOUT;
+  const timeout = config.timeout ?? DEFAULT_TIMEOUT;
 
   return createImplementerBase({
     extractsCode: false,
 
     async invoke(opts: InvokeOpts) {
       const { prompt, projectDir, onOutput } = opts;
-      const effectiveModel = resolveAutoModel(opts.config.implementer.model);
+      const effectiveModel = resolveAutoModel(config.model);
 
       if (toolName === 'claude-code') {
         return runClaudeOneShot({ prompt, projectDir, onOutput, model: effectiveModel });

@@ -14,8 +14,6 @@ import {
 } from './config-transforms.js';
 import type { ViewState, ViewAction } from './view-state.js';
 
-export { initialViewState, viewReducer } from './view-state.js';
-
 export interface PickerActions {
   confirm(selection: PickerOption, model: ModelOption | null): void;
   leftChange(item: PickerOption): void;
@@ -46,12 +44,13 @@ export function usePickerActions(
     overlayStore.close();
   };
 
-  const shellIndex = catalog.items.findIndex(item => item.kind === 'shell');
+  const commandBasedIndex = catalog.items.findIndex(item => item.kind === 'shell' || item.kind === 'agent');
 
   return {
     confirm(selection: PickerOption, model: ModelOption | null) {
-      if (selection.kind === 'shell') {
-        dispatchView({ type: 'open-custom-command', preservedLeftIndex: shellIndex >= 0 ? shellIndex : 0 });
+      if (selection.kind === 'shell' || selection.kind === 'agent') {
+        const selectionIndex = catalog.items.findIndex(item => item.id === selection.id);
+        dispatchView({ type: 'open-custom-command', preservedLeftIndex: selectionIndex >= 0 ? selectionIndex : commandBasedIndex >= 0 ? commandBasedIndex : 0, intendedKind: selection.kind });
         return;
       }
       const label = model
@@ -72,7 +71,10 @@ export function usePickerActions(
       feedbackStore.setMessage(`Removed custom model: ${item.id}`);
     },
     customCommand(cmd: string) {
-      commit(commitCustomCommand(config, role, cmd), `${catalog.roleLabel} set to: shell: ${cmd}`);
+      if (viewState.view.kind !== 'custom-command') {
+        throw new Error('customCommand called outside custom-command view');
+      }
+      commit(commitCustomCommand(config, role, cmd, viewState.view.intendedKind), `${catalog.roleLabel} set to: ${viewState.view.intendedKind}: ${cmd}`);
     },
     customModel(modelName: string) {
       if (viewState.view.kind !== 'custom-model') return;

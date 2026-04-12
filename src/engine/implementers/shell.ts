@@ -1,33 +1,49 @@
-import type { Config, OutputFormat } from '../../types.js';
+import type { Config, ShellImplementerConfig } from '../../types.js';
 import type { Implementer } from './types.js';
-import type { InvokeOpts } from './base.js';
+import type { InvokeOpts } from './utils.js';
 import { createImplementerBase } from './base.js';
 import { createCommandAvailability } from '../../utils/availability.js';
-import { spawnAndCollect } from '../streaming/spawn-collect.js';
+import { invokeCommandBasedRunner } from '../runners/command-based.js';
+import { CommandNotFoundError } from '../../utils/process.js';
 
-export function createShellImplementer(config: Config): Implementer {
-  const command = config.implementer.command ?? '';
+function asShellConfig(config: Config): ShellImplementerConfig {
+  if (config.implementer.kind !== 'shell') throw new Error('Expected shell implementer config');
+  return config.implementer;
+}
+
+export function createShellImplementer(initialConfig: Config): Implementer {
+  const shellConfig = asShellConfig(initialConfig);
+  const command = shellConfig.command;
 
   return createImplementerBase({
     extractsCode: true,
 
     async invoke(opts: InvokeOpts) {
-      const { prompt, projectDir, config: cfg, onOutput } = opts;
-      const args = cfg.implementer.args ?? [];
-      const format: OutputFormat = cfg.implementer.outputFormat ?? 'text';
+      const { prompt, projectDir, config, onOutput } = opts;
+      const impl = asShellConfig(config);
 
-      return spawnAndCollect({
-        command: command,
-        args,
-        cwd: projectDir,
-        stdin: prompt,
-        format,
-        notFoundMessage: `Shell implementer command not found: ${command}`,
-        onText: onOutput,
-      });
+      try {
+        const result = await invokeCommandBasedRunner(
+          {
+            command,
+            args: impl.args ?? [],
+            extractsCode: true,
+            ...(impl.outputFormat && { outputFormat: impl.outputFormat }),
+          },
+          prompt,
+          projectDir,
+          onOutput,
+        );
+
+        return { text: result.stdout, usage: null };
+      } catch (err) {
+        if (err instanceof CommandNotFoundError) {
+          throw new CommandNotFoundError(`Shell implementer command not found: ${command}`);
+        }
+        throw err;
+      }
     },
 
     ...createCommandAvailability(command),
   });
 }
-

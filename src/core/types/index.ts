@@ -2,7 +2,6 @@ export type {
   Config,
   ImplementerConfig,
   PlannerConfig,
-  PlannerKind,
   PlannerTool,
   CliPlannerTool,
   OutputFormat,
@@ -13,11 +12,17 @@ export type {
   WorkflowOpts,
   PlannerDetection,
   ProviderDetection,
-  ImplementerKind,
+  CliImplementerConfig,
+  ApiImplementerConfig,
+  ShellImplementerConfig,
+  AgentImplementerConfig,
+  AgentSdkImplementerConfig,
+  RunnerKind,
 } from './config.js';
 export {
   WORKFLOW_MODES, COMMIT_STRATEGIES, THEME_MODES, SHIKI_THEMES,
-  CLI_TOOL_NAMES, IMPLEMENTER_KINDS, PLANNER_KINDS, OUTPUT_FORMATS, isCliTool,
+  CLI_TOOL_NAMES, OUTPUT_FORMATS, isCliTool,
+  RUNNER_KINDS, RunnerKindSchema,
 } from './config.js';
 export type {
   Phase,
@@ -37,14 +42,16 @@ export type {
   TaskTokenUsage,
   TaskCompletionMethod,
   CostBreakdown,
+  CostPrediction,
   ImplementerResult,
   ValidationResult,
   Summary,
 } from './summary.js';
 export { TASK_COMPLETION_METHODS } from './summary.js';
-export type { ParsedLine, InvokeResult, Backend } from './backends.js';
+export type { ParsedLine, InvokeResult, RunnerRuntime } from './runner.js';
 export type {
   TuiEvent,
+  ValidationStages,
   OrchestratorEvent,
   OrchestratorEventPayloadMap,
   OrchestratorCallbacks,

@@ -1,6 +1,6 @@
 import type { Config } from '../../types.js';
 import type { Implementer } from './types.js';
-import type { InvokeOpts } from './base.js';
+import type { InvokeOpts } from './utils.js';
 import { createImplementerBase } from './base.js';
 import { createAgentSdkBackend, isAgentSdkAvailable, IMPLEMENTER_ALLOWED_TOOLS } from '../agent-sdk.js';
 import { DEFAULT_AGENT_SDK_MODEL, resolveAutoModel } from '../../core/providers/models.js';

@@ -18,10 +18,19 @@ vi.mock('../../core/state/persistence.js', () => ({
   saveState: vi.fn(),
   appendEvent: vi.fn(),
 }));
+vi.mock('../runners/factory.js', () => ({
+  createImplementer: vi.fn(),
+}));
+vi.mock('./task-commit.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('./task-commit.js')>();
+  return { ...mod, validateCommitAndAdvance: vi.fn(mod.validateCommitAndAdvance) };
+});
 
 import { handleRetryAndEscalation } from './escalation.js';
 import { runValidationWithEvents } from './validator.js';
 import { discardTaskChanges } from './git-ops.js';
+import { createImplementer } from '../runners/factory.js';
+import { validateCommitAndAdvance } from './task-commit.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -162,6 +171,301 @@ describe('handleRetryAndEscalation', () => {
     expect(result.completed).toBe(false);
     expect(result.method).toBe('failed');
     expect(discardTaskChanges).toHaveBeenCalled();
+  });
+
+  describe('intermediate escalation (Tier 0)', () => {
+    it('intermediate provider configured and succeeds → no further escalation', async () => {
+      const { callbacks } = makeCallbacks();
+      const task = makeTask();
+      const config = makeConfig({
+        workflow: { maxRetries: 1 },
+        escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-coder', enabled: true },
+      });
+      const state = makeValidatingState();
+
+      const implementer = makeImplementer({
+        retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
+      });
+
+      const intermediateImplementer = makeImplementer({
+        retry: vi.fn().mockResolvedValue({ success: true, output: 'fixed', usage: { inputTokens: 30, outputTokens: 15 } }),
+      });
+      vi.mocked(createImplementer).mockReturnValue(intermediateImplementer);
+
+      vi.mocked(runValidationWithEvents).mockResolvedValue(passingResults);
+
+      const planner = makePlanner();
+
+      const { result } = await handleRetryAndEscalation({
+        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer },
+        task, initialError: 'error', currentState: state,
+      });
+
+      expect(result.completed).toBe(true);
+      expect(result.method).toBe('escalated-intermediate');
+      expect(planner.escalateHint).not.toHaveBeenCalled();
+      expect(planner.escalateFull).not.toHaveBeenCalled();
+    });
+
+    it('intermediate provider configured and fails → falls through to Tier 1', async () => {
+      const { callbacks } = makeCallbacks();
+      const task = makeTask();
+      const config = makeConfig({
+        workflow: { maxRetries: 1 },
+        escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-coder', enabled: true },
+      });
+      const state = makeValidatingState();
+
+      const implementer = makeImplementer({
+        retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
+      });
+
+      const intermediateImplementer = makeImplementer({
+        retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'intermediate fail', usage: { inputTokens: 30, outputTokens: 15 } }),
+      });
+      vi.mocked(createImplementer).mockReturnValue(intermediateImplementer);
+
+      vi.mocked(runValidationWithEvents).mockResolvedValue(failingResults);
+
+      const planner = makePlanner({
+        escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'hint', code: null, usage: null }),
+        escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      });
+
+      const { result } = await handleRetryAndEscalation({
+        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer },
+        task, initialError: 'error', currentState: state,
+      });
+
+      expect(planner.escalateHint).toHaveBeenCalled();
+      expect(result.completed).toBe(false);
+    });
+
+    it('intermediate provider not configured → behaves exactly as before', async () => {
+      const { callbacks } = makeCallbacks();
+      const task = makeTask();
+      const config = makeConfig({ workflow: { maxRetries: 1 } });
+      const state = makeValidatingState();
+
+      const implementer = makeImplementer({
+        retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
+      });
+      vi.mocked(runValidationWithEvents).mockResolvedValue(failingResults);
+
+      const planner = makePlanner({
+        escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'hint', code: null, usage: null }),
+        escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      });
+
+      const { result } = await handleRetryAndEscalation({
+        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer },
+        task, initialError: 'error', currentState: state,
+      });
+
+      expect(createImplementer).not.toHaveBeenCalled();
+      expect(planner.escalateHint).toHaveBeenCalled();
+      expect(result.completed).toBe(false);
+    });
+
+    it('escalation.enabled is false → skips intermediate, goes to Tier 1', async () => {
+      const { callbacks } = makeCallbacks();
+      const task = makeTask();
+      const config = makeConfig({
+        workflow: { maxRetries: 1 },
+        escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-coder', enabled: false },
+      });
+      const state = makeValidatingState();
+
+      const implementer = makeImplementer({
+        retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
+      });
+      vi.mocked(runValidationWithEvents).mockResolvedValue(failingResults);
+
+      const planner = makePlanner({
+        escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'hint', code: null, usage: null }),
+        escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      });
+
+      const { result } = await handleRetryAndEscalation({
+        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer },
+        task, initialError: 'error', currentState: state,
+      });
+
+      expect(createImplementer).not.toHaveBeenCalled();
+      expect(planner.escalateHint).toHaveBeenCalled();
+      expect(result.completed).toBe(false);
+    });
+
+    it('intermediate provider creation fails → skips to Tier 1 gracefully', async () => {
+      const { callbacks } = makeCallbacks();
+      const task = makeTask();
+      const config = makeConfig({
+        workflow: { maxRetries: 1 },
+        escalation: { intermediateProvider: 'unknown-provider', intermediateModel: 'some-model', enabled: true },
+      });
+      const state = makeValidatingState();
+
+      const implementer = makeImplementer({
+        retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
+      });
+      vi.mocked(createImplementer).mockImplementation(() => { throw new Error('Unknown provider'); });
+
+      vi.mocked(runValidationWithEvents).mockResolvedValue(failingResults);
+
+      const planner = makePlanner({
+        escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'hint', code: null, usage: null }),
+        escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      });
+
+      const { result } = await handleRetryAndEscalation({
+        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer },
+        task, initialError: 'error', currentState: state,
+      });
+
+      expect(planner.escalateHint).toHaveBeenCalled();
+      expect(result.completed).toBe(false);
+    });
+
+    it('intermediate succeeds but validation fails → falls through to Tier 1', async () => {
+      const { callbacks } = makeCallbacks();
+      const task = makeTask();
+      const config = makeConfig({
+        workflow: { maxRetries: 1 },
+        escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-coder', enabled: true },
+      });
+      const state = makeValidatingState();
+
+      const implementer = makeImplementer({
+        retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
+      });
+
+      const intermediateImplementer = makeImplementer({
+        retry: vi.fn().mockResolvedValue({ success: true, output: 'fixed', usage: { inputTokens: 30, outputTokens: 15 } }),
+      });
+      vi.mocked(createImplementer).mockReturnValue(intermediateImplementer);
+
+      vi.mocked(runValidationWithEvents).mockResolvedValue(failingResults);
+
+      const planner = makePlanner({
+        escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'hint', code: null, usage: null }),
+        escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      });
+
+      const { result } = await handleRetryAndEscalation({
+        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer },
+        task, initialError: 'error', currentState: state,
+      });
+
+      expect(planner.escalateHint).toHaveBeenCalled();
+      expect(result.completed).toBe(false);
+    });
+
+    it('tier 0 validation failure propagates commitResult.state, not stale local state', async () => {
+      const { callbacks } = makeCallbacks();
+      const task = makeTask();
+      const config = makeConfig({
+        workflow: { maxRetries: 1 },
+        escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-coder', enabled: true },
+      });
+      const state = makeValidatingState();
+
+      const implementer = makeImplementer({
+        retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
+      });
+
+      const intermediateImplementer = makeImplementer({
+        retry: vi.fn().mockResolvedValue({ success: true, output: 'fixed', usage: { inputTokens: 30, outputTokens: 15 } }),
+      });
+      vi.mocked(createImplementer).mockReturnValue(intermediateImplementer);
+
+      // Override validateCommitAndAdvance to return a state with a marker value
+      // proving the returned state comes from commitResult, not the local variable
+      const MARKER = 777;
+      vi.mocked(validateCommitAndAdvance).mockImplementationOnce(async (opts) => ({
+        state: { ...opts.state, tokenUsage: { ...opts.state.tokenUsage, escalationInput: MARKER } },
+        completed: false,
+      }));
+      vi.mocked(runValidationWithEvents).mockResolvedValue(failingResults);
+
+      // Tier 1 implementer retry fails → no validation call
+      // Tier 2 escalateFull fails → no validation call
+      const planner = makePlanner({
+        escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'hint', code: null, usage: null }),
+        escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      });
+
+      const { state: finalState } = await handleRetryAndEscalation({
+        wctx: { projectDir: '/proj', config, context: defaultContext, planner, callbacks, implementer },
+        task, initialError: 'error', currentState: state,
+      });
+
+      // The marker value should propagate through subsequent tiers.
+      // With the bug (returning local `state`), escalationInput would be 30 (from addUsageAndSave).
+      // With the fix (returning commitResult.state), escalationInput starts at MARKER (777).
+      expect(finalState.tokenUsage.escalationInput).toBeGreaterThanOrEqual(MARKER);
+    });
+
+    it('emits escalate event with tier 0 for intermediate', async () => {
+      const { callbacks, events } = makeCallbacks();
+      const task = makeTask();
+      const config = makeConfig({
+        workflow: { maxRetries: 1 },
+        escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-coder', enabled: true },
+      });
+      const state = makeValidatingState();
+
+      const implementer = makeImplementer({
+        retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
+      });
+
+      const intermediateImplementer = makeImplementer({
+        retry: vi.fn().mockResolvedValue({ success: true, output: 'fixed', usage: { inputTokens: 30, outputTokens: 15 } }),
+      });
+      vi.mocked(createImplementer).mockReturnValue(intermediateImplementer);
+      vi.mocked(runValidationWithEvents).mockResolvedValue(passingResults);
+
+      const planner = makePlanner();
+
+      await handleRetryAndEscalation({
+        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer },
+        task, initialError: 'error', currentState: state,
+      });
+
+      const escalateEvents = events.filter(e => e.type === 'escalate');
+      expect(escalateEvents).toHaveLength(1);
+      expect(escalateEvents[0]).toMatchObject({ type: 'escalate', tier: 0 });
+    });
+
+    it('records intermediate tokens as implementer category, not escalation', async () => {
+      const { callbacks } = makeCallbacks();
+      const task = makeTask();
+      const config = makeConfig({
+        workflow: { maxRetries: 1 },
+        escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-coder', enabled: true },
+      });
+      const state = makeValidatingState();
+
+      const implementer = makeImplementer({
+        retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'fail', usage: { inputTokens: 10, outputTokens: 5 } }),
+      });
+
+      const intermediateImplementer = makeImplementer({
+        retry: vi.fn().mockResolvedValue({ success: true, output: 'fixed', usage: { inputTokens: 300, outputTokens: 150 } }),
+      });
+      vi.mocked(createImplementer).mockReturnValue(intermediateImplementer);
+      vi.mocked(runValidationWithEvents).mockResolvedValue(passingResults);
+
+      const planner = makePlanner();
+
+      const { state: finalState } = await handleRetryAndEscalation({
+        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer },
+        task, initialError: 'error', currentState: state,
+      });
+
+      // Intermediate tokens should be under implementer, not escalation
+      expect(finalState.tokenUsage.implementerInput).toBeGreaterThanOrEqual(300);
+      expect(finalState.tokenUsage.escalationInput).toBe(0);
+    });
   });
 
 });

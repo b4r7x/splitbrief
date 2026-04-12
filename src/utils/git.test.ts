@@ -1,8 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { writeFileSync, rmSync } from 'node:fs';
+import { writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { isGitRepo, commitChanges, getCurrentDiff, hasExternalChanges } from './git.js';
+import { isGitRepo, commitChanges, getCurrentDiff, hasExternalChanges, ensureGitignore, getChangedFiles } from './git.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 
@@ -95,6 +95,64 @@ describe('git utils', () => {
       const dir = tracked(setupGitRepo());
       execSync('git mv init.txt renamed.txt', { cwd: dir, stdio: 'ignore' });
       expect(await hasExternalChanges(dir)).toBe(true);
+    });
+  });
+
+  describe('getChangedFiles', () => {
+    it('returns modified file paths', async () => {
+      const dir = tracked(setupGitRepo());
+      writeFileSync(join(dir, 'init.txt'), 'modified');
+      const files = await getChangedFiles(dir);
+      expect(files).toContain('init.txt');
+    });
+
+    it('returns empty array for clean working tree', async () => {
+      const dir = tracked(setupGitRepo());
+      const files = await getChangedFiles(dir);
+      expect(files).toEqual([]);
+    });
+
+    it('includes new untracked files', async () => {
+      const dir = tracked(setupGitRepo());
+      writeFileSync(join(dir, 'new-file.txt'), 'content');
+      const files = await getChangedFiles(dir);
+      expect(files).toContain('new-file.txt');
+    });
+  });
+
+  describe('ensureGitignore', () => {
+    it('creates .gitignore with entry when file does not exist', () => {
+      const dir = tracked(createTempDir('tiny-spec-gitignore'));
+      ensureGitignore(dir, '.tiny-spec/');
+      const content = readFileSync(join(dir, '.gitignore'), 'utf-8');
+      expect(content).toBe('.tiny-spec/\n');
+    });
+
+    it('appends entry to existing .gitignore', () => {
+      const dir = tracked(createTempDir('tiny-spec-gitignore'));
+      writeFileSync(join(dir, '.gitignore'), 'node_modules/\n');
+      ensureGitignore(dir, '.tiny-spec/');
+      const content = readFileSync(join(dir, '.gitignore'), 'utf-8');
+      expect(content).toContain('node_modules/');
+      expect(content).toContain('.tiny-spec/');
+    });
+
+    it('does not duplicate entry if already present', () => {
+      const dir = tracked(createTempDir('tiny-spec-gitignore'));
+      writeFileSync(join(dir, '.gitignore'), '.tiny-spec/\n');
+      ensureGitignore(dir, '.tiny-spec/');
+      const content = readFileSync(join(dir, '.gitignore'), 'utf-8');
+      const matches = content.split('\n').filter(l => l.trim() === '.tiny-spec/');
+      expect(matches).toHaveLength(1);
+    });
+
+    it('does not produce double blank lines when file lacks trailing newline', () => {
+      const dir = tracked(createTempDir('tiny-spec-gitignore'));
+      writeFileSync(join(dir, '.gitignore'), 'node_modules/');
+      ensureGitignore(dir, '.tiny-spec/');
+      const content = readFileSync(join(dir, '.gitignore'), 'utf-8');
+      expect(content).not.toContain('\n\n');
+      expect(content).toContain('.tiny-spec/');
     });
   });
 

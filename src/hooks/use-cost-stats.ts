@@ -1,7 +1,7 @@
 import { workflowStore } from '../stores/workflow.js';
 import { configStore } from '../stores/config.js';
 import { calculateCostBreakdown } from '../core/providers/pricing.js';
-import { getPlannerToolName } from '../core/config/planner-config.js';
+import { getRunnerDisplayName } from '../core/config/index.js';
 import type { CostBreakdown } from '../types.js';
 
 export interface CostStats {
@@ -9,6 +9,7 @@ export interface CostStats {
   costBreakdown: CostBreakdown | null;
   currentTask: number;
   totalTasks: number;
+  taskCompletionTimes: number[];
 }
 
 export function useCostStats(): CostStats {
@@ -19,6 +20,8 @@ export function useCostStats(): CostStats {
   const localCount = workflowStore.use(s => s.localCount);
   const escalatedCount = workflowStore.use(s => s.escalatedCount);
 
+  const taskCompletionTimes = workflowStore.use(s => s.taskCompletionTimes);
+
   const localRate = (localCount + escalatedCount) > 0
     ? (localCount / (localCount + escalatedCount)) * 100
     : 0;
@@ -28,10 +31,10 @@ export function useCostStats(): CostStats {
         tokenUsage,
         totalTasks,
         escalatedCount,
-        plannerTool: getPlannerToolName(config.planner),
-        implementerTool: config.implementer.tool,
+        plannerTool: getRunnerDisplayName(config.planner),
+        implementerTool: getRunnerDisplayName(config.implementer),
       })
     : null;
 
-  return { localRate, costBreakdown, currentTask, totalTasks };
+  return { localRate, costBreakdown, currentTask, totalTasks, taskCompletionTimes };
 }

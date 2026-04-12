@@ -50,6 +50,8 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
     taskId: task.id, title: task.title,
     method, retries: state.attempt,
     duration: taskStartTime ? Date.now() - taskStartTime : 0,
+    ...(state.implementerTool !== undefined && { tool: state.implementerTool }),
+    ...(state.implementerModel !== undefined && { model: state.implementerModel }),
   });
   emit(projectDir, nextState, 'task_completed', task.id, { method });
 

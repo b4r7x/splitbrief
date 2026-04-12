@@ -29,7 +29,7 @@ export function createClaudeCodePlanner(model?: string): Planner {
 
     ...createCommandAvailability('claude'),
 
-    escalateHintSuccess: () => false,
+    supportsHintEscalation: false,
 
     escalateFullPostProcess(task, result, extracted, projectDir): EscalationResult {
       writeProjectFile(projectDir, task.file, extracted.code);

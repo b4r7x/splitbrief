@@ -7,6 +7,7 @@ import { feedbackStore } from './feedback.js';
 import type { PlannerConfig } from '../types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { TINY_SPEC_DIR } from '../core/paths.js';
+import { createDefaultConfig } from '../core/config/index.js';
 
 function expectCli(p: PlannerConfig): Extract<PlannerConfig, { kind: 'cli' }> {
   if (p.kind !== 'cli') throw new Error(`Expected cli planner, got ${p.kind}`);
@@ -63,13 +64,13 @@ describe('configStore.load', () => {
   it('falls back to defaults when no config file exists', () => {
     configStore.load(tmpDir);
     expect(expectCli(configStore.get().config!.planner).tool).toBe('claude-code');
-    expect(configStore.get().config!.implementer.tool).toBe('ollama');
+    expect((configStore.get().config!.implementer as any).provider).toBe('ollama');
   });
 
   it('applies implementer override to provider and model', () => {
     writeConfigYaml();
     configStore.load(tmpDir, { implementer: { tool: 'deepseek', model: 'deepseek-r1' } });
-    expect(configStore.get().config!.implementer.tool).toBe('deepseek');
+    expect((configStore.get().config!.implementer as any).provider).toBe('deepseek');
     expect(configStore.get().config!.implementer.model).toBe('deepseek-r1');
   });
 
@@ -97,6 +98,27 @@ describe('configStore.load', () => {
     writeConfigYaml();
     configStore.load(tmpDir, { mode: 'full' });
     expect(configStore.get().config!.workflow.mode).toBe('full');
+  });
+
+  it('throws on NaN budget override', () => {
+    writeConfigYaml();
+    expect(() => configStore.load(tmpDir, { budget: NaN })).toThrow('Invalid budget');
+  });
+
+  it('throws on zero budget override', () => {
+    writeConfigYaml();
+    expect(() => configStore.load(tmpDir, { budget: 0 })).toThrow('Invalid budget');
+  });
+
+  it('throws on negative budget override', () => {
+    writeConfigYaml();
+    expect(() => configStore.load(tmpDir, { budget: -5 })).toThrow('Invalid budget');
+  });
+
+  it('applies valid budget override', () => {
+    writeConfigYaml();
+    configStore.load(tmpDir, { budget: 10.5 });
+    expect(configStore.get().config!.workflow.maxBudget).toBe(10.5);
   });
 
   it('autoApprove undefined preserves config-file values', () => {
@@ -129,7 +151,7 @@ describe('configStore.save', () => {
   });
 
   it('throws when save is called before load', () => {
-    expect(() => configStore.save({} as any)).toThrow('configStore.load must be called before save');
+    expect(() => configStore.save(createDefaultConfig())).toThrow('configStore.load must be called before save');
   });
 
   it('writes config to disk and updates store', () => {

@@ -17,10 +17,12 @@ export function getMethodDisplay(
 ): MethodDisplay {
   switch (method) {
     case 'local': return { text: 'local', color: theme.success };
+    case 'escalated-intermediate': return { text: 'intermediate', color: theme.warning };
     case 'escalated-hint': return { text: 'hint', color: theme.warning };
     case 'escalated-full': return { text: 'escalated', color: theme.error };
     case 'failed': return { text: 'fail', color: theme.error };
     case 'skipped': return { text: 'skip', color: theme.textDim };
+    default: { const _exhaustive: never = method; return _exhaustive; }
   }
 }
 

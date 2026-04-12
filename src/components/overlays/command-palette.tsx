@@ -34,7 +34,6 @@ export function CommandPalette({ items, currentScreen }: CommandPaletteProps) {
       filterFn={filterPaletteItem}
       getKey={(item) => item.label}
       onConfirm={(item) => { overlayStore.close(); item.action(); }}
-      onCancel={() => overlayStore.close()}
       width={maxWidth}
       bordered={false}
       chromeRows={12}

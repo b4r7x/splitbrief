@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { formatCost, formatTime, formatTimeHHMMSS, formatDuration, toErrorMessage, formatRelativeTime, parseVersion } from './format.js';
+import { formatCost, formatTime, formatTimeHHMMSS, formatDuration, formatEta, toErrorMessage, formatRelativeTime, parseVersion, truncate, formatToolModel } from './format.js';
 
 describe('formatCost', () => {
   it('formats zero as $0.00', () => {
@@ -12,6 +12,14 @@ describe('formatCost', () => {
 
   it('rounds sub-cent amounts to $0.00', () => {
     expect(formatCost(0.001)).toBe('$0.00');
+  });
+
+  it.each([NaN, Infinity, -Infinity])('returns $0.00 for %s', (v) => {
+    expect(formatCost(v)).toBe('$0.00');
+  });
+
+  it('clamps negative values to $0.00', () => {
+    expect(formatCost(-5.50)).toBe('$0.00');
   });
 });
 
@@ -30,6 +38,40 @@ describe('formatTime', () => {
 
   it('formats zero milliseconds', () => {
     expect(formatTime(0)).toBe('0s');
+  });
+
+  it.each([NaN, Infinity, -Infinity])('returns 0s for %s', (v) => {
+    expect(formatTime(v)).toBe('0s');
+  });
+
+  it('clamps negative values to 0s', () => {
+    expect(formatTime(-5000)).toBe('0s');
+  });
+});
+
+describe('formatToolModel', () => {
+  it('returns empty string when both tool and model are undefined', () => {
+    expect(formatToolModel(undefined, undefined)).toBe('');
+  });
+
+  it('returns empty string when both tool and model are empty strings', () => {
+    expect(formatToolModel('', '')).toBe('');
+  });
+
+  it('returns display name + separator + model for known tool', () => {
+    expect(formatToolModel('ollama', 'qwen2.5-coder:7b')).toBe('Ollama · qwen2.5-coder:7b');
+  });
+
+  it('passes through raw tool name + model for unknown tool', () => {
+    expect(formatToolModel('my-provider', 'some-model')).toBe('my-provider · some-model');
+  });
+
+  it('returns just the display name when only tool is provided', () => {
+    expect(formatToolModel('ollama')).toBe('Ollama');
+  });
+
+  it('returns just the model when only model is provided', () => {
+    expect(formatToolModel(undefined, 'gpt-4o')).toBe('gpt-4o');
   });
 });
 
@@ -57,6 +99,10 @@ describe('formatTimeHHMMSS', () => {
   it('clamps negative values to zero', () => {
     expect(formatTimeHHMMSS(-5000)).toBe('00:00:00');
   });
+
+  it.each([NaN, Infinity, -Infinity])('returns 00:00:00 for %s', (v) => {
+    expect(formatTimeHHMMSS(v)).toBe('00:00:00');
+  });
 });
 
 describe('formatDuration', () => {
@@ -70,6 +116,14 @@ describe('formatDuration', () => {
 
   it('handles large values', () => {
     expect(formatDuration(120000)).toBe('120.0s');
+  });
+
+  it.each([NaN, Infinity, -Infinity])('returns 0.0s for %s', (v) => {
+    expect(formatDuration(v)).toBe('0.0s');
+  });
+
+  it('clamps negative values to 0.0s', () => {
+    expect(formatDuration(-3000)).toBe('0.0s');
   });
 });
 
@@ -116,6 +170,70 @@ describe('formatRelativeTime', () => {
     const now = Date.now();
     vi.spyOn(Date, 'now').mockReturnValue(now);
     expect(formatRelativeTime(now - 2 * 24 * 60 * 60 * 1000)).toBe('2d ago');
+  });
+
+  it.each([NaN, Infinity, -Infinity])('returns just now for %s', (v) => {
+    expect(formatRelativeTime(v)).toBe('just now');
+  });
+});
+
+describe('formatEta', () => {
+  it('returns empty string for zero ms', () => {
+    expect(formatEta(0)).toBe('');
+  });
+
+  it('returns empty string for negative ms', () => {
+    expect(formatEta(-1000)).toBe('');
+  });
+
+  it('formats seconds remaining', () => {
+    expect(formatEta(45_000)).toBe('~45s remaining');
+  });
+
+  it('formats minutes remaining', () => {
+    expect(formatEta(240_000)).toBe('~4m 0s remaining');
+  });
+
+  it.each([NaN, Infinity, -Infinity])('returns empty string for %s', (v) => {
+    expect(formatEta(v)).toBe('');
+  });
+});
+
+describe('truncate', () => {
+  it('returns empty string for empty input', () => {
+    expect(truncate('', 10)).toBe('');
+  });
+
+  it('returns original string when shorter than max', () => {
+    expect(truncate('hello', 10)).toBe('hello');
+  });
+
+  it('returns original string when equal to max', () => {
+    expect(truncate('hello', 5)).toBe('hello');
+  });
+
+  it('truncates and adds ellipsis when longer than max', () => {
+    expect(truncate('hello world', 5)).toBe('hell\u2026');
+  });
+
+  it('returns empty string for max=0', () => {
+    expect(truncate('hello', 0)).toBe('');
+  });
+
+  it('returns empty string for max=1 with non-empty input', () => {
+    expect(truncate('hi', 1)).toBe('\u2026');
+  });
+
+  it('truncates to single char + ellipsis for max=2', () => {
+    expect(truncate('hello', 2)).toBe('h\u2026');
+  });
+
+  it('handles non-ASCII characters', () => {
+    expect(truncate('café ☕ naïve', 6)).toBe('caf\u00e9 \u2026');
+  });
+
+  it('returns empty string for negative max', () => {
+    expect(truncate('hello', -1)).toBe('');
   });
 });
 

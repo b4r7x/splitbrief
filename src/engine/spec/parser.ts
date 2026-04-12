@@ -19,9 +19,16 @@ const TaskFrontmatterSchema = z.object({
 type TaskFrontmatter = z.infer<typeof TaskFrontmatterSchema>;
 
 export function parseTasks(tasksMarkdown: string): Task[] {
-  const blocks = splitTaskBlocks(tasksMarkdown);
+  const stripped = stripFileFrontmatter(tasksMarkdown);
+  const blocks = splitTaskBlocks(stripped);
   const tasks = blocks.map(parseTaskBlock).filter((t): t is Task => t !== null);
   return topoSort(tasks);
+}
+
+export function stripFileFrontmatter(content: string): string {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+  if (!match?.[1]?.includes('generated_by:')) return content;
+  return content.slice(match[0].length);
 }
 
 function splitTaskBlocks(markdown: string): string[] {

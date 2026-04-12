@@ -5,15 +5,16 @@ import { FilterInput } from '../../ui/filter-input.js';
 import { ScrollIndicator } from '../../ui/scroll-indicator.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
 import { terminalSizeStore } from '../../stores/terminal-size.js';
+import { overlayStore } from '../../stores/overlay.js';
 import { computeScrollWindow } from './picker-utils.js';
+import { toSectionedList } from '../../utils/sectioned-list.js';
 
 interface FilterableListProps<T> {
   items: T[];
   filterFn: (item: T, query: string) => boolean;
   getKey: (item: T) => string;
-  renderItem: (item: T, ctx: { isCursor: boolean }) => ReactNode;
+  renderItem: (item: T, ctx: { isCursor: boolean; globalIndex: number }) => ReactNode;
   onConfirm?: (item: T) => void;
-  onCancel?: () => void;
   title?: string;
   hint?: string;
   placeholder?: ReactNode;
@@ -23,6 +24,8 @@ interface FilterableListProps<T> {
   width?: number;
   shouldAppendChar?: (ch: string) => boolean;
   isActive?: boolean;
+  sectionBy?: (item: T) => string;
+  renderSectionHeader?: (section: string, index: number) => ReactNode;
 }
 
 export function FilterableList<T>({
@@ -31,7 +34,6 @@ export function FilterableList<T>({
   getKey,
   renderItem,
   onConfirm,
-  onCancel,
   title,
   hint,
   placeholder,
@@ -41,6 +43,8 @@ export function FilterableList<T>({
   width,
   shouldAppendChar,
   isActive,
+  sectionBy,
+  renderSectionHeader,
 }: FilterableListProps<T>) {
   const rows = terminalSizeStore.use(s => s.rows);
 
@@ -48,7 +52,7 @@ export function FilterableList<T>({
     items,
     filterFn,
     onSelect: (item) => onConfirm?.(item),
-    onClose: onCancel,
+    onClose: () => overlayStore.close(),
     shouldAppendChar,
     isActive,
   });
@@ -57,6 +61,9 @@ export function FilterableList<T>({
 
   const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } =
     computeScrollWindow(filtered, selectedIndex, rows, chromeRows, maxVisibleProp);
+
+  const useSections = sectionBy && renderSectionHeader;
+  const sectionedSlice = useSections ? toSectionedList(visibleSlice, sectionBy) : null;
 
   return (
     <OverlayPanel
@@ -68,14 +75,24 @@ export function FilterableList<T>({
       <FilterInput filter={filter} />
       <ScrollIndicator show={showScrollUp} direction="up" />
       <Box flexDirection="column">
-        {visibleSlice.map((item, i) => {
-          const globalIndex = scrollOffset + i;
-          return (
-            <Box key={getKey(item)}>
-              {renderItem(item, { isCursor: globalIndex === selectedIndex })}
-            </Box>
-          );
-        })}
+        {sectionedSlice && renderSectionHeader
+          ? sectionedSlice.map(({ item, sectionHeader }, i) => {
+              const globalIndex = scrollOffset + i;
+              return (
+                <Box key={getKey(item)} flexDirection="column">
+                  {sectionHeader && renderSectionHeader(sectionHeader, i)}
+                  {renderItem(item, { isCursor: globalIndex === selectedIndex, globalIndex })}
+                </Box>
+              );
+            })
+          : visibleSlice.map((item, i) => {
+              const globalIndex = scrollOffset + i;
+              return (
+                <Box key={getKey(item)}>
+                  {renderItem(item, { isCursor: globalIndex === selectedIndex, globalIndex })}
+                </Box>
+              );
+            })}
         {filtered.length === 0 && placeholder}
       </Box>
       <ScrollIndicator show={showScrollDown} direction="down" />

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseTasks } from './parser.js';
+import { parseTasks, stripFileFrontmatter } from './parser.js';
 
 const validTasksMd = `---
 id: T001
@@ -264,6 +264,32 @@ Task with quoted array depends_on values.
     expect(tasks[0]?.dependsOn).toEqual(['T001', 'T002']);
   });
 
+  it('returns empty array for empty input', () => {
+    expect(parseTasks('')).toEqual([]);
+  });
+
+  it('returns a task from a frontmatter-only block with no body sections', () => {
+    const input = `---
+id: T090
+title: "Frontmatter only"
+action: create
+file: src/fm.ts
+depends_on: []
+---
+`;
+
+    const tasks = parseTasks(input);
+    expect(tasks.length).toBe(1);
+    expect(tasks[0]?.id).toBe('T090');
+    expect(tasks[0]?.description).toBe('');
+    expect(tasks[0]?.tests).toEqual([]);
+    expect(tasks[0]?.constraints).toEqual([]);
+    expect(tasks[0]?.signature).toBeUndefined();
+    expect(tasks[0]?.pattern).toBeUndefined();
+    expect(tasks[0]?.typeDefs).toBe('');
+    expect(tasks[0]?.implementationSteps).toEqual([]);
+  });
+
   it('throws on circular dependencies', () => {
     const input = `---
 id: A
@@ -399,5 +425,82 @@ Has implementation steps but no type definitions.
       'Read the file',
       'Transform the data',
     ]);
+  });
+});
+
+describe('stripFileFrontmatter', () => {
+  it('strips frontmatter containing generated_by', () => {
+    const input = `---
+generated_by: tiny-spec v0.1.0
+planner: claude-code
+mode: standard
+created_at: 2025-01-01T00:00:00.000Z
+---
+# Remaining content`;
+
+    const result = stripFileFrontmatter(input);
+    expect(result).toBe('# Remaining content');
+  });
+
+  it('returns original string when no frontmatter', () => {
+    const input = '# Just a heading\nSome content';
+    expect(stripFileFrontmatter(input)).toBe(input);
+  });
+
+  it('returns original string when frontmatter has no generated_by (task frontmatter)', () => {
+    const input = `---
+id: T001
+title: "Create something"
+action: create
+file: src/index.ts
+---
+
+### Description
+Do stuff.`;
+
+    expect(stripFileFrontmatter(input)).toBe(input);
+  });
+
+  it('handles empty string', () => {
+    expect(stripFileFrontmatter('')).toBe('');
+  });
+
+  it('strips frontmatter with Windows line endings', () => {
+    const content = '---\r\ngenerated_by: tiny-spec v0.1.0\r\n---\r\nactual content';
+    expect(stripFileFrontmatter(content)).toBe('actual content');
+  });
+});
+
+describe('parseTasks with file-level frontmatter', () => {
+  it('strips file-level frontmatter before parsing task blocks', () => {
+    const input = `---
+generated_by: tiny-spec v0.1.0
+planner: claude-code
+implementer: ollama
+mode: standard
+created_at: 2025-01-01T00:00:00.000Z
+---
+---
+id: T001
+title: "Create project structure"
+action: create
+file: src/index.ts
+depends_on: []
+---
+
+### Description
+Set up the initial project directory structure.
+
+### Tests
+- Should create src/ directory
+
+### Constraints
+- Must be idempotent
+`;
+
+    const tasks = parseTasks(input);
+    expect(tasks.length).toBe(1);
+    expect(tasks[0]?.id).toBe('T001');
+    expect(tasks[0]?.title).toBe('Create project structure');
   });
 });

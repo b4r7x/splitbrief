@@ -2,11 +2,10 @@ import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadConfig, initConfig, configPath } from '../core/config/index.js';
-import { detectCapabilities } from '../engine/index.js';
 import { isGitRepo } from '../utils/git.js';
 import { TINY_SPEC_DIR, CONFIG_FILE } from '../core/paths.js';
 import { cliError } from './errors.js';
-import { toErrorMessage, warnError } from '../utils/format.js';
+import { toErrorMessage } from '../utils/format.js';
 import type { WorkflowOpts } from '../types.js';
 
 const NO_CONFIG_MSG = `No config found. Creating default ${TINY_SPEC_DIR}/${CONFIG_FILE}`;
@@ -24,7 +23,8 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--implementer-command <cmd>', 'Custom implementer command (when --implementer=shell)')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--no-fullscreen', 'Disable fullscreen alternate screen buffer')
-    .option('--mode <mode>', 'Workflow mode: quick, standard, or full');
+    .option('--mode <mode>', 'Workflow mode: quick, standard, or full')
+    .option('--budget <amount>', 'Maximum budget in dollars (e.g., 2.00)', parseFloat);
 }
 
 export function resolveProjectDir(dir?: string): string {
@@ -57,7 +57,6 @@ export async function ensureGitAndConfig(projectDir: string): Promise<void> {
 export interface SetupResult {
   projectDir: string;
   useFullscreen: boolean;
-  contextLength?: number | undefined;
   needsSetup?: boolean | undefined;
 }
 
@@ -69,7 +68,7 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
   const isInteractive = process.stdout.isTTY && !process.env['CI'];
   const useFullscreen = opts.fullscreen !== false && isInteractive;
 
-  const hasOverrides = !!(opts.model || opts.provider || opts.planner || opts.plannerModel || opts.plannerCommand || opts.implementer || opts.implementerModel || opts.implementerCommand || opts.mode || opts.auto);
+  const hasOverrides = !!(opts.model || opts.provider || opts.planner || opts.plannerModel || opts.plannerCommand || opts.implementer || opts.implementerModel || opts.implementerCommand || opts.mode || opts.auto || opts.budget);
   if (!existsSync(configPath(projectDir))) {
     if (hasOverrides) {
       console.log(NO_CONFIG_MSG);
@@ -80,17 +79,5 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
     }
   }
 
-  const config = loadConfigOrExit(projectDir);
-  let contextLength: number | undefined;
-
-  try {
-    const caps = await detectCapabilities(config);
-    if (caps.contextLength) {
-      contextLength = caps.contextLength;
-    }
-  } catch (err) {
-    warnError('Could not detect provider capabilities', err);
-  }
-
-  return { projectDir, useFullscreen, contextLength };
+  return { projectDir, useFullscreen };
 }

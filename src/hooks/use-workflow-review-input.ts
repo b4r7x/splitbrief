@@ -1,4 +1,4 @@
-import { workflowStore } from '../stores/workflow.js';
+import { reviewStore } from '../stores/review.js';
 import { feedbackStore } from '../stores/feedback.js';
 import { parseReviewCommand } from '../core/commands/review-commands.js';
 import { openInEditor } from '../utils/editor.js';
@@ -16,6 +16,8 @@ export function useWorkflowReviewInput({
   inputMode,
 }: UseWorkflowReviewInputOptions): UseWorkflowReviewInputResult {
   const handleInput = async (text: string) => {
+    if (inputMode.mode === 'normal') return;
+
     if (inputMode.mode === 'review') {
       const parsed = parseReviewCommand(text);
       if (!parsed) {
@@ -27,7 +29,7 @@ export function useWorkflowReviewInput({
       } else if (parsed.action === 'quit') {
         inputMode.resolve({ approved: false });
       } else if (parsed.action === 'edit') {
-        const filePath = workflowStore.get().reviewFilePath;
+        const filePath = reviewStore.get().filePath;
         if (filePath) {
           await openInEditor(filePath).catch((err) =>
             feedbackStore.setError(`Failed to open editor: ${err instanceof Error ? err.message : String(err)}`),

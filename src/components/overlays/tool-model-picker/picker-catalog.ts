@@ -1,15 +1,15 @@
 import type { PlannerDetection, ProviderDetection } from '../../../types.js';
 import type { Config } from '../../../types.js';
 import { KNOWN_MODELS, type KnownModel } from '../../../core/providers/models.js';
-import { CLI_TOOL_NAMES } from '../../../types.js';
-import { getPlannerToolName } from '../../../core/config/planner-config.js';
-import { getProviderDisplayName, hasApiKey as defaultHasApiKey, isProviderId } from '../../../core/providers/catalog.js';
-import { typedKeys } from '../../../utils/type-guards.js';
+import { CLI_TOOL_IDS, KNOWN_API_PROVIDERS } from '../../../core/types/schemas/enums.js';
+import { getRunnerDisplayName } from '../../../core/config/runner-config.js';
+import { getProviderDisplayName, hasApiKey, isProviderId } from '../../../core/providers/catalog.js';
+import { includes } from '../../../utils/type-guards.js';
 
 export interface PickerOption {
   id: string;
   displayName: string;
-  kind: 'cli' | 'api' | 'provider' | 'shell';
+  kind: 'cli' | 'api' | 'shell' | 'agent' | 'agent-sdk';
   available: boolean;
   badge: string;
   version?: string | undefined;
@@ -24,7 +24,7 @@ export interface ModelOption {
 }
 
 export function isCustomModel(item: ModelOption): boolean {
-  return 'isCustom' in item && Boolean(item.isCustom);
+  return item.isCustom === true;
 }
 
 function sortByAvailability(a: PickerOption, b: PickerOption): number {
@@ -43,19 +43,47 @@ function makeShellOption(): PickerOption {
   };
 }
 
+function makeAgentOption(): PickerOption {
+  return {
+    id: 'agent',
+    displayName: getProviderDisplayName('agent'),
+    kind: 'agent',
+    available: true,
+    badge: 'Custom',
+  };
+}
+
+function makeAgentSdkOption(): PickerOption {
+  return {
+    id: 'agent-sdk',
+    displayName: getProviderDisplayName('agent-sdk'),
+    kind: 'agent-sdk',
+    available: true,
+    badge: 'SDK',
+  };
+}
+
 function plannerBadge(d: PlannerDetection): string {
   if (d.type === 'shell') return 'Custom';
   return d.type === 'cli' ? 'CLI' : 'API';
 }
 
-export function buildPlannerPickerOptions(detections: PlannerDetection[]): PickerOption[] {
+export interface PlannerPickerOpts {
+  detections: PlannerDetection[];
+  implementerDetections?: ProviderDetection[];
+  hasApiKeyOverride?: (provider: string) => boolean;
+}
+
+export function buildPlannerPickerOptions(opts: PlannerPickerOpts): PickerOption[] {
   const items: PickerOption[] = [];
 
-  if (detections.some(d => d.type === 'shell')) {
+  if (opts.detections.some(d => d.type === 'shell')) {
     items.push(makeShellOption());
   }
 
-  for (const d of detections.filter(d => d.type !== 'shell')) {
+  items.push(makeAgentSdkOption());
+
+  for (const d of opts.detections.filter(d => d.type !== 'shell')) {
     items.push({
       id: d.tool,
       displayName: getProviderDisplayName(d.tool),
@@ -66,59 +94,77 @@ export function buildPlannerPickerOptions(detections: PlannerDetection[]): Picke
     });
   }
 
+  const addedIds = new Set(items.map(i => i.id));
+  for (const provider of KNOWN_API_PROVIDERS) {
+    if (!addedIds.has(provider) && !includes(CLI_TOOL_IDS, provider)) {
+      const det = opts.implementerDetections?.find(d => d.provider === provider);
+      items.push({
+        id: provider,
+        displayName: getProviderDisplayName(provider),
+        kind: 'api',
+        available: det?.available ?? (opts.hasApiKeyOverride ?? hasApiKey)(provider),
+        badge: det?.isLocal ? 'API, local' : 'API',
+      });
+    }
+  }
+
   items.sort(sortByAvailability);
   return items;
 }
 
-function implementerBadge(item: { kind: string; isLocal?: boolean }): string {
-  if (item.kind === 'shell') return 'Custom';
-  if (item.kind === 'cli') return 'CLI tool';
-  return item.isLocal ? 'local, free' : 'remote';
+function implementerBadge(item: { kind: PickerOption['kind']; isLocal?: boolean }): string {
+  if (item.kind === 'shell' || item.kind === 'agent') return 'Custom';
+  if (item.kind === 'cli') return 'CLI';
+  if (item.kind === 'agent-sdk') return 'SDK';
+  return item.isLocal ? 'API, local' : 'API';
 }
 
 export interface ImplementerPickerOpts {
   detections: ProviderDetection[];
-  hasApiKey?: (provider: string) => boolean;
+  hasApiKeyOverride?: (provider: string) => boolean;
   plannerDetections?: PlannerDetection[];
 }
 
 export function buildImplementerPickerOptions(opts: ImplementerPickerOpts): PickerOption[] {
-  const { detections, hasApiKey = defaultHasApiKey, plannerDetections = [] } = opts;
+  const { detections, hasApiKeyOverride = hasApiKey, plannerDetections = [] } = opts;
   const items: PickerOption[] = [];
 
   items.push(makeShellOption());
+  items.push(makeAgentOption());
 
-  for (const tool of CLI_TOOL_NAMES) {
+  for (const tool of CLI_TOOL_IDS) {
     const plannerDet = plannerDetections.find(d => d.tool === tool);
     items.push({
       id: tool,
       displayName: getProviderDisplayName(tool),
       kind: 'cli' as const,
       available: plannerDet?.available ?? false,
-      badge: 'CLI tool',
+      badge: 'CLI',
       version: plannerDet?.version,
     });
   }
 
+  const addedIds = new Set(items.map(i => i.id));
+
   for (const d of detections) {
+    if (addedIds.has(d.provider)) continue;
     items.push({
       id: d.provider,
       displayName: getProviderDisplayName(d.provider),
-      kind: 'provider',
+      kind: 'api',
       available: d.available,
-      badge: implementerBadge({ kind: 'provider', isLocal: d.isLocal }),
+      badge: implementerBadge({ kind: 'api', isLocal: d.isLocal }),
     });
+    addedIds.add(d.provider);
   }
-
-  const detectedNames = new Set(detections.map(d => d.provider));
-  for (const provider of typedKeys(KNOWN_MODELS)) {
-    if (!detectedNames.has(provider)) {
+  for (const provider of KNOWN_API_PROVIDERS) {
+    if (!addedIds.has(provider)) {
       items.push({
         id: provider,
         displayName: getProviderDisplayName(provider),
-        kind: 'provider',
-        available: hasApiKey(provider),
-        badge: 'remote',
+        kind: 'api',
+        available: hasApiKeyOverride(provider),
+        badge: 'API',
       });
     }
   }
@@ -150,7 +196,7 @@ export function modelsForImplementerProvider(
     return knownToModelOptions(KNOWN_MODELS[providerId] ?? []);
   }
 
-  if (providerKind === 'shell') return [];
+  if (providerKind === 'shell' || providerKind === 'agent' || providerKind === 'agent-sdk') return [];
 
   const d = detections.find(det => det.provider === providerId);
   const detected = (d?.models ?? []).map(m => ({ id: m, isDetected: true }));
@@ -187,7 +233,6 @@ export function isCurrentConfig(
   config: Config,
   role: 'planner' | 'implementer',
 ): boolean {
-  if (role === 'planner') return item.id === getPlannerToolName(config.planner);
-  if (item.kind === 'cli') return item.id === config.implementer.kind;
-  return item.id === config.implementer.tool;
+  const runnerConfig = role === 'planner' ? config.planner : config.implementer;
+  return item.id === getRunnerDisplayName(runnerConfig);
 }

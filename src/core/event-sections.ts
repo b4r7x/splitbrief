@@ -108,7 +108,14 @@ function estimateEventHeight(event: TuiEvent, diffExpanded?: boolean): number {
       return 3;
     case 'cost-update':
       return 1;
+    case 'cost-prediction':
+      return 5;
+    case 'budget-warning':
+    case 'budget-exceeded':
+      return 3;
     case 'workflow-cancelled':
+      return 3;
+    case 'workflow-config':
       return 3;
     default:
       return assertNever(event);

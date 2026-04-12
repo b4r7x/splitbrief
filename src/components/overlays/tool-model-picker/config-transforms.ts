@@ -1,60 +1,49 @@
-import { getProviderBaseURL, isProviderId } from '../../../core/providers/catalog.js';
-import { IMPLEMENTER_KINDS, type Config, type PlannerConfig, type PlannerTool } from '../../../types.js';
-import { buildPlannerConfig } from '../../../core/config/planner-config.js';
-import { includes } from '../../../utils/type-guards.js';
-
-function toImplementerKind(id: string): Config['implementer']['kind'] {
-  return includes(IMPLEMENTER_KINDS, id) ? id : 'api';
-}
-
-function toPlannerTool(id: string): PlannerTool {
-  return isProviderId(id) ? id : 'claude-code';
-}
-
-function patchImplementer(config: Config, patch: Partial<Config['implementer']>): Config {
-  return { ...config, implementer: { ...config.implementer, ...patch } };
-}
-
-function implementerApiPatch(config: Config, toolId: string): Partial<Config['implementer']> {
-  const baseURL = getProviderBaseURL(toolId);
-  const toolChanged = toolId !== config.implementer.tool;
-  return {
-    kind: 'api' as const,
-    tool: toolId,
-    ...(toolChanged && baseURL && { apiBase: baseURL }),
-  };
-}
+import { type Config, type PlannerConfig, type ImplementerConfig } from '../../../types.js';
+import { buildRunnerConfig } from '../../../core/config/build-runner.js';
+import type { PickerOption } from './picker-catalog.js';
 
 function setPlanner(config: Config, planner: PlannerConfig): Config {
   return { ...config, planner };
 }
 
-import type { PickerOption } from './picker-catalog.js';
+function setImplementer(config: Config, implementer: ImplementerConfig): Config {
+  return { ...config, implementer };
+}
+
+function commitForRole(config: Config, role: 'planner' | 'implementer', opts: Parameters<typeof buildRunnerConfig>[1]): Config {
+  if (role === 'planner') return setPlanner(config, buildRunnerConfig('planner', opts));
+  return setImplementer(config, buildRunnerConfig('implementer', opts));
+}
 
 export function commitPlannerSelection(config: Config, selection: PickerOption, model: { id: string } | null): Config {
-  const modelId = model ? model.id : undefined;
-  return setPlanner(config, buildPlannerConfig(toPlannerTool(selection.id), { model: modelId, existing: config.planner }));
+  const opts = {
+    ...(selection.kind === 'agent-sdk' && { kind: 'agent-sdk' as const }),
+    tool: selection.id,
+    model: model?.id,
+    existing: config.planner,
+  };
+  return setPlanner(config, buildRunnerConfig('planner', opts));
 }
 
 export function commitImplementerSelection(config: Config, selection: PickerOption, model: { id: string } | null): Config {
-  if (selection.kind === 'cli') {
-    return patchImplementer(config, {
-      kind: toImplementerKind(selection.id),
-      ...(model && { model: model.id }),
-    });
-  }
-
-  return patchImplementer(config, {
-    ...implementerApiPatch(config, selection.id),
-    ...(model && { model: model.id }),
-  });
+  const opts = {
+    ...(selection.kind === 'agent-sdk' && { kind: 'agent-sdk' as const }),
+    tool: selection.id,
+    model: model?.id ?? config.implementer.model,
+    existing: config.implementer,
+  };
+  return setImplementer(config, buildRunnerConfig('implementer', opts));
 }
 
-export function commitCustomCommand(config: Config, role: 'planner' | 'implementer', command: string): Config {
-  if (role === 'planner') {
-    return setPlanner(config, { kind: 'shell', command });
-  }
-  return patchImplementer(config, { kind: 'shell', command });
+export function commitCustomCommand(config: Config, role: 'planner' | 'implementer', command: string, kind: 'shell' | 'agent'): Config {
+  const opts = {
+    kind,
+    command,
+    existing: role === 'planner' ? config.planner : config.implementer,
+    ...(role === 'implementer' && { model: config.implementer.model }),
+  };
+
+  return commitForRole(config, role, opts);
 }
 
 export function commitCustomModel(
@@ -68,23 +57,14 @@ export function commitCustomModel(
     ? customModels
     : [...customModels, modelName];
 
-  if (role === 'planner') {
-    return setPlanner(config, buildPlannerConfig(toPlannerTool(selection.id), { model: modelName, customModels: newCustomModels, existing: config.planner }));
-  }
-
-  if (selection.kind === 'cli') {
-    return patchImplementer(config, {
-      kind: toImplementerKind(selection.id),
-      model: modelName,
-      customModels: newCustomModels,
-    });
-  }
-
-  return patchImplementer(config, {
-    ...implementerApiPatch(config, selection.id),
+  const opts = {
+    tool: selection.id,
     model: modelName,
     customModels: newCustomModels,
-  });
+    existing: role === 'planner' ? config.planner : config.implementer,
+  };
+  
+  return commitForRole(config, role, opts);
 }
 
 export function removeCustomModel(config: Config, role: 'planner' | 'implementer', modelId: string): Config {
@@ -94,5 +74,6 @@ export function removeCustomModel(config: Config, role: 'planner' | 'implementer
     return setPlanner(config, { ...config.planner, customModels: filtered });
   }
   const current = config.implementer.customModels ?? [];
-  return patchImplementer(config, { customModels: current.filter(m => m !== modelId) });
+  const filtered = current.filter(m => m !== modelId);
+  return setImplementer(config, { ...config.implementer, customModels: filtered });
 }

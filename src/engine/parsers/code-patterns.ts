@@ -52,9 +52,9 @@ export const CODE_LINE_STARTS = [
 
 export const CODE_LINE_CHARS = ['{', '}', ')', ';', '//', '/*', ' *', '*/'];
 
-const FENCED_BLOCK_WITH_LANG_PATTERN = '```(?:typescript|ts)?\\s*\\n([\\s\\S]*?)```';
+const FENCED_BLOCK_WITH_LANG_PATTERN = '```[\\w]*\\s*\\n([\\s\\S]*?)```';
 const FENCED_ANY_BLOCK_RE = /```[\w]*\n([\s\S]*?)```/;
-const FENCE_OPEN_LINE_RE = /^```(?:typescript|ts)?\s*\n/gm;
+const FENCE_OPEN_LINE_RE = /^```[\w]*\s*\n/gm;
 const FENCE_CLOSE_LINE_RE = /^```\s*$/gm;
 const CODE_PREFIX_RE = /^(import |export |\/\/|\/\*)/;
 

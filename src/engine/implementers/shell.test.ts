@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Config, TuiEvent } from '../../types.js';
 import { makeConfig as makeBaseConfig, makeTask, defaultContext } from '#testing/helpers/fixtures.js';
-import { createImplementer } from './factory.js';
+import { createImplementer } from '../runners/factory.js';
 
 function makeConfig(extra?: Partial<Config['implementer']>): Config {
   return makeBaseConfig({
@@ -12,12 +12,12 @@ function makeConfig(extra?: Partial<Config['implementer']>): Config {
 const context = { ...defaultContext, dir: '/tmp', runtime: 'node' };
 
 async function implementTask(task: ReturnType<typeof makeTask>, opts: { projectDir: string; config: Config; context: typeof defaultContext; onOutput: (text: string) => void; onEvent?: (event: TuiEvent) => void }) {
-  const implementer = await createImplementer(opts.config);
+  const implementer = createImplementer(opts.config);
   return implementer.implement({ ...opts, task });
 }
 
 async function retryTask(task: ReturnType<typeof makeTask>, opts: { projectDir: string; config: Config; context: typeof defaultContext; error: string; attempt: number; onOutput: (text: string) => void; onEvent?: (event: TuiEvent) => void }) {
-  const implementer = await createImplementer(opts.config);
+  const implementer = createImplementer(opts.config);
   return implementer.retry({ ...opts, task, kind: 'local' });
 }
 

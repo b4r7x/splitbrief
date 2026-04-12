@@ -28,6 +28,24 @@ describe('saveState / loadState roundtrip', () => {
     expect(loaded).toEqual(state);
   });
 
+  it('preserves tool/model fields in roundtrip', () => {
+    const dir = makeTmp();
+    const state = {
+      ...createInitialState('model-test'),
+      plannerTool: 'openrouter',
+      plannerModel: 'claude-sonnet-4-20250514',
+      implementerTool: 'ollama',
+      implementerModel: 'qwen2.5-coder:14b',
+    };
+    saveState(dir, state);
+    const loaded = loadState(dir);
+    expect(loaded).not.toBeNull();
+    expect(loaded!.plannerTool).toBe('openrouter');
+    expect(loaded!.plannerModel).toBe('claude-sonnet-4-20250514');
+    expect(loaded!.implementerTool).toBe('ollama');
+    expect(loaded!.implementerModel).toBe('qwen2.5-coder:14b');
+  });
+
   it('creates .tiny-spec/current/ directory when it does not exist', () => {
     const dir = makeTmp();
     const nested = join(dir, 'deep', 'nested');

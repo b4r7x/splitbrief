@@ -1,9 +1,20 @@
-import type { Task, WorkflowState, TaskCompletionMethod } from '../../types.js';
+import type { Task, WorkflowState, TaskCompletionMethod, ApiImplementerConfig, Config } from '../../types.js';
+import { hasApiBase } from '../../core/config/runner-config.js';
 import { formatValidationError } from './validator.js';
 import { discardTaskChanges } from './git-ops.js';
 import type { WorkflowContext } from './run.js';
 import { emit, createTextHandler, emitWarning, emitPlannerStatus, emitRetry, emitEscalate } from './events.js';
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave, warnOnFailure, validateAndCommitTask } from './helpers.js';
+import { createImplementer } from '../runners/factory.js';
+import type { Implementer } from '../implementers/types.js';
+import { getProviderBaseURL } from '../../core/providers/catalog.js';
+
+const MAX_HINT_ERROR_LENGTH = 4000;
+
+function getApiBase(config: Config): string | undefined {
+  if (hasApiBase(config.implementer)) return config.implementer.apiBase;
+  return undefined;
+}
 
 type RetryResult =
   | { completed: true; method: Exclude<TaskCompletionMethod, 'failed' | 'skipped'>; attempts: number }
@@ -64,6 +75,80 @@ async function runLocalRetries(
   return { state, task, lastError, attempts };
 }
 
+async function runTier0Intermediate(
+  ctx: EscalationContext, initialTask: Task, state: WorkflowState, lastError: string, priorAttempts: number,
+): Promise<{ state: WorkflowState; task: Task; lastError: string; attempts: number; result?: RetryResult }> {
+  const escalation = ctx.config.escalation;
+  if (!escalation?.intermediateProvider || escalation.enabled === false) {
+    return { state, task: initialTask, lastError, attempts: priorAttempts };
+  }
+
+  const attempts = priorAttempts + 1;
+  let task = initialTask;
+  const textHandler = createTextHandler(ctx.callbacks);
+
+  emitEscalate(ctx.callbacks, 0, undefined, escalation.intermediateProvider, escalation.intermediateModel ?? ctx.config.implementer.model);
+
+  const resolvedApiBase = getProviderBaseURL(escalation.intermediateProvider);
+  if (!resolvedApiBase) {
+    emitWarning(ctx.callbacks, `Unknown intermediate provider "${escalation.intermediateProvider}" — falling back to current implementer endpoint`);
+  }
+
+  const currentApiBase = getApiBase(ctx.config);
+  const effectiveApiBase = resolvedApiBase || currentApiBase;
+  if (!effectiveApiBase) {
+    emitWarning(ctx.callbacks, `Cannot escalate: no API base URL available for intermediate provider "${escalation.intermediateProvider}"`);
+    return { state, task, lastError, attempts: priorAttempts };
+  }
+
+  const intermediateImplConfig: ApiImplementerConfig = {
+    kind: 'api',
+    provider: escalation.intermediateProvider,
+    model: escalation.intermediateModel ?? ctx.config.implementer.model,
+    apiBase: effectiveApiBase,
+    contextLength: ctx.config.implementer.contextLength,
+    temperature: ctx.config.implementer.temperature,
+    timeout: ctx.config.implementer.timeout,
+    customModels: ctx.config.implementer.customModels,
+  };
+
+  const intermediateConfig: Config = {
+    ...ctx.config,
+    implementer: intermediateImplConfig,
+  };
+
+  let intermediateImplementer: Implementer;
+  try {
+    intermediateImplementer = createImplementer(intermediateConfig);
+  } catch (err) {
+    emitWarning(ctx.callbacks, `Intermediate provider failed to initialize: ${err instanceof Error ? err.message : String(err)}`);
+    return { state, task, lastError, attempts: priorAttempts };
+  }
+
+  ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, state));
+
+  const retryResult = await intermediateImplementer.retry({
+    task, projectDir: ctx.projectDir, config: intermediateConfig, context: ctx.context,
+    error: lastError, attempt: attempts, kind: 'local',
+    onOutput: textHandler, onEvent: ctx.callbacks.onEvent,
+  });
+  // Intermediate provider is implementer-class (cheap API), not planner-class.
+  // Recording as 'implementer' avoids ~35x cost overstatement that occurs when
+  // escalation tokens are priced at planner rates (e.g., DeepSeek $0.28 vs Claude $5).
+  state = addUsageAndSave(ctx.projectDir, state, 'implementer', retryResult.usage, ctx.callbacks);
+
+  if (!retryResult.success) {
+    return { state, task, lastError: retryResult.error ?? 'Intermediate escalation failed', attempts };
+  }
+
+  const commitResult = await validateAndCommit(ctx, task, state, 'escalated-intermediate', 'VALIDATION_PASS', 'intermediate');
+  if (commitResult.completed) {
+    return { state: commitResult.state, task, lastError, attempts, result: { completed: true, method: 'escalated-intermediate', attempts } };
+  }
+
+  return { state: commitResult.state, task, lastError: formatValidationError(commitResult.validationResults), attempts };
+}
+
 async function runTier1Hint(
   ctx: EscalationContext, initialTask: Task, state: WorkflowState, lastError: string, priorAttempts: number,
 ): Promise<{ state: WorkflowState; task: Task; lastError: string; attempts: number; result?: RetryResult }> {
@@ -84,12 +169,15 @@ async function runTier1Hint(
     textHandler(tier1Result.output);
   }
 
-  const hintError = `${lastError}\n\n## Hints from senior reviewer:\n${tier1Result.output}`;
+  let hintError = `${lastError}\n\n## Hints from senior reviewer:\n${tier1Result.output}`;
+  if (hintError.length > MAX_HINT_ERROR_LENGTH) {
+    hintError = hintError.slice(0, MAX_HINT_ERROR_LENGTH) + '...[truncated]';
+  }
   ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, state));
 
   const hintRetryResult = await ctx.implementer.retry({
     task, projectDir: ctx.projectDir, config: ctx.config, context: ctx.context,
-    error: hintError, attempt: ctx.config.workflow.maxRetries + 1, kind: 'hint',
+    error: hintError, attempt: attempts, kind: 'hint',
     onOutput: textHandler, onEvent: ctx.callbacks.onEvent,
   });
   state = addUsageAndSave(ctx.projectDir, state, 'implementer', hintRetryResult.usage, ctx.callbacks);
@@ -99,7 +187,7 @@ async function runTier1Hint(
     if (commitResult.completed) {
       return { state: commitResult.state, task, lastError, attempts, result: { completed: true, method: 'escalated-hint', attempts } };
     }
-    return { state, task, lastError: formatValidationError(commitResult.validationResults), attempts };
+    return { state: commitResult.state, task, lastError: formatValidationError(commitResult.validationResults), attempts };
   }
 
   return { state, task, lastError: hintRetryResult.error ?? 'Tier-1 hint retry failed to produce valid code', attempts };
@@ -150,8 +238,17 @@ export async function handleRetryAndEscalation(opts: HandleRetryOptions): Promis
   const retries = await runLocalRetries(ctx, task, currentState, initialError);
   if (retries.result) return { state: retries.state, result: retries.result };
 
-  const tier1 = await runTier1Hint(ctx, retries.task, retries.state, retries.lastError, retries.attempts);
+  if (ctx.signal?.aborted) return { state: retries.state, result: { completed: false, method: 'failed', attempts: retries.attempts } };
+
+  const tier0 = await runTier0Intermediate(ctx, retries.task, retries.state, retries.lastError, retries.attempts);
+  if (tier0.result) return { state: tier0.state, result: tier0.result };
+
+  if (ctx.signal?.aborted) return { state: tier0.state, result: { completed: false, method: 'failed', attempts: tier0.attempts } };
+
+  const tier1 = await runTier1Hint(ctx, tier0.task, tier0.state, tier0.lastError, tier0.attempts);
   if (tier1.result) return { state: tier1.state, result: tier1.result };
+
+  if (ctx.signal?.aborted) return { state: tier1.state, result: { completed: false, method: 'failed', attempts: tier1.attempts } };
 
   const tier2 = await runTier2Full(ctx, tier1.task, tier1.state, tier1.lastError, tier1.attempts);
   return { state: tier2.state, result: tier2.result };

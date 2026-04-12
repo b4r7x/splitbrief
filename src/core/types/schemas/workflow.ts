@@ -13,4 +13,8 @@ export const WorkflowStateSchema = z.object({
   sessionId: z.string().nullable(),
   startedAt: z.string(),
   tokenUsage: TokenUsageSchema,
+  plannerTool: z.string().optional(),
+  plannerModel: z.string().optional(),
+  implementerTool: z.string().optional(),
+  implementerModel: z.string().optional(),
 });

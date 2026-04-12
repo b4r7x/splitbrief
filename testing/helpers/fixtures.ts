@@ -1,18 +1,24 @@
-import type { Config, PlannerConfig, Task, TokenUsage, ProjectContext } from '../../src/types.js';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { Config, PlannerConfig, Task, TokenUsage, ProjectContext, ApiImplementerConfig, ImplementerConfig } from '../../src/types.js';
 import { taskId as brand } from '../../src/core/types/workflow.js';
 
-export function makeConfig(overrides?: Omit<Partial<Config>, 'implementer' | 'planner' | 'validation' | 'workflow'> & { implementer?: Partial<Config['implementer']>; planner?: PlannerConfig; validation?: Partial<Config['validation']>; workflow?: Partial<Config['workflow']> }): Config {
+const defaultApiImplementer: ApiImplementerConfig = {
+  kind: 'api',
+  provider: 'ollama',
+  model: 'qwen2.5-coder:7b',
+  apiBase: 'http://localhost:11434/v1',
+  contextLength: 32768,
+  temperature: 0.2,
+};
+
+export function makeConfig(overrides?: Omit<Partial<Config>, 'implementer' | 'planner' | 'validation' | 'workflow'> & { implementer?: Partial<ImplementerConfig>; planner?: PlannerConfig; validation?: Partial<Config['validation']>; workflow?: Partial<Config['workflow']> }): Config {
   const base: Config = {
+    version: 2,
     planner: overrides?.planner ?? { kind: 'cli', tool: 'claude-code' },
-    implementer: {
-      kind: 'api',
-      tool: 'ollama',
-      model: 'qwen2.5-coder:7b',
-      apiBase: '',
-      contextLength: 32768,
-      temperature: 0.2,
-      ...overrides?.implementer,
-    },
+    implementer: overrides?.implementer
+      ? { ...defaultApiImplementer, ...overrides.implementer } as ImplementerConfig
+      : defaultApiImplementer,
     validation: {
       typecheck: true,
       lint: true,
@@ -32,6 +38,7 @@ export function makeConfig(overrides?: Omit<Partial<Config>, 'implementer' | 'pl
   if (overrides?.theme !== undefined) base.theme = overrides.theme;
   if (overrides?.shikiTheme !== undefined) base.shikiTheme = overrides.shikiTheme;
   if (overrides?.sessions !== undefined) base.sessions = overrides.sessions;
+  if (overrides?.escalation !== undefined) base.escalation = overrides.escalation;
   return base;
 }
 
@@ -72,7 +79,7 @@ export function makeUsage(overrides?: Partial<TokenUsage>): TokenUsage {
 
 export const defaultContext: ProjectContext = {
   name: 'test-project',
-  dir: '/tmp/test-project',
+  dir: join(tmpdir(), `tiny-spec-test-${process.pid}`),
   runtime: 'Node.js 22',
   testCommand: 'npm test',
 };

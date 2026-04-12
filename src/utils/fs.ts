@@ -1,6 +1,20 @@
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+
+// Node.js ignores file mode on Windows — these are effective on Unix/macOS only.
+export const SECURE_DIR_MODE = 0o700;
+export const SECURE_FILE_MODE = 0o600;
+
+export function checkConfigPermissions(filePath: string): boolean {
+  try {
+    const stats = statSync(filePath);
+    const perms = stats.mode & 0o777;
+    return (perms & 0o022) === 0;
+  } catch {
+    return false;
+  }
+}
 
 export async function readFileOrEmpty(filePath: string): Promise<string> {
   try {

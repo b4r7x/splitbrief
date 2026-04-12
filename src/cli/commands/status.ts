@@ -7,14 +7,71 @@ import {
   getFailedTaskIds,
 } from '../../core/state/selectors.js';
 import { resolveProjectDir } from '../workflow.js';
+import { listSessions, getSessionDir } from '../../core/sessions/io.js';
+import { aggregateSessionCosts } from '../../core/sessions/analytics.js';
+import { formatCost, toErrorMessage } from '../../utils/format.js';
+import { getProviderDisplayName } from '../../core/providers/catalog.js';
+import { formatModelName } from '../../core/providers/models.js';
+
+function printCostHistory(projectDir: string): void {
+  try {
+    const projectSessions = listSessions(getSessionDir('project', projectDir));
+    const globalSessions = listSessions(getSessionDir('global', projectDir));
+
+    const seen = new Set(projectSessions.map(s => s.id));
+    const merged = [...projectSessions];
+    for (const s of globalSessions) {
+      if (!seen.has(s.id)) merged.push(s);
+    }
+
+    const analytics = aggregateSessionCosts(merged);
+
+    if (analytics.completedSessions === 0) {
+      console.log(ansis.dim('No completed sessions with cost data.'));
+      return;
+    }
+
+    console.log(
+      `\n${ansis.bold(`Cost History (${analytics.completedSessions} session${analytics.completedSessions === 1 ? '' : 's'})`)}`,
+    );
+    console.log(`  ${ansis.dim('Total spent:')}    ${formatCost(analytics.totalCost)}`);
+    console.log(`  ${ansis.dim('Total saved:')}    ~${formatCost(analytics.totalSavings)}`);
+    console.log(
+      `  ${ansis.dim('Avg savings:')}    ${Math.round(analytics.averageSavingsPercentage)}%`,
+    );
+    console.log(
+      `  ${ansis.dim('Avg local rate:')} ${Math.round(analytics.averageLocalCompletionRate)}%`,
+    );
+
+    const providers = Object.entries(analytics.providerTotals);
+    if (providers.length > 0) {
+      console.log(`\n  ${ansis.bold('By Provider:')}`);
+      for (const [id, data] of providers) {
+        const name = getProviderDisplayName(id);
+        console.log(
+          `    ${ansis.dim(`${name}:`)}  ${formatCost(data.cost)} (${data.sessions} session${data.sessions === 1 ? '' : 's'})`,
+        );
+      }
+    }
+  } catch (err) {
+    console.error(`Cannot load session history: ${toErrorMessage(err)}`);
+  }
+}
 
 export function registerStatusCommand(program: Command): void {
   program
     .command('status')
     .description('Show current workflow state')
     .option('--project <dir>', 'Project directory (default: cwd)')
-    .action((opts: { project?: string }) => {
+    .option('--history', 'Show cost history across sessions')
+    .action((opts: { project?: string; history?: boolean }) => {
       const projectDir = resolveProjectDir(opts.project);
+
+      if (opts.history) {
+        printCostHistory(projectDir);
+        return;
+      }
+
       const state = loadState(projectDir);
 
       if (!state) {
@@ -26,6 +83,15 @@ export function registerStatusCommand(program: Command): void {
       console.log(`${ansis.dim('Phase:')}    ${ansis.bold(state.phase)}`);
       console.log(`${ansis.dim('Task:')}     ${state.currentTaskIndex + 1}/${state.tasks.length}`);
       console.log(`${ansis.dim('Started:')}  ${state.startedAt}`);
+
+      if (state.plannerTool) {
+        const model = state.plannerModel ? ` (${formatModelName(state.plannerModel)})` : '';
+        console.log(`${ansis.dim('Planner:')}  ${getProviderDisplayName(state.plannerTool)}${model}`);
+      }
+      if (state.implementerTool) {
+        const model = state.implementerModel ? ` (${formatModelName(state.implementerModel)})` : '';
+        console.log(`${ansis.dim('Impl:')}     ${getProviderDisplayName(state.implementerTool)}${model}`);
+      }
 
       const completed = getCompletedTaskIds(state);
       const escalated = getEscalatedTaskIds(state);

@@ -73,7 +73,7 @@ describe('findAffectedTestFile', () => {
 describe('formatValidationError', () => {
   it('returns empty string when all passed', () => {
     const results: ValidationResult[] = [
-      { passed: true, stage: 'typecheck', output: 'ok' },
+      { passed: true, stage: 'tsc', output: 'ok' },
       { passed: true, stage: 'lint', output: 'ok' },
     ];
     expect(formatValidationError(results)).toBe('');
@@ -85,7 +85,7 @@ describe('formatValidationError', () => {
 
   it('extracts first failed result', () => {
     const results: ValidationResult[] = [
-      { passed: true, stage: 'typecheck', output: 'ok' },
+      { passed: true, stage: 'tsc', output: 'ok' },
       { passed: false, stage: 'lint', error: 'Unexpected token' },
       { passed: false, stage: 'test', error: 'Test failed' },
     ];
@@ -97,7 +97,7 @@ describe('formatValidationError', () => {
   it('truncates error to 20 lines', () => {
     const longError = Array.from({ length: 30 }, (_, i) => `Error line ${i + 1}`).join('\n');
     const results: ValidationResult[] = [
-      { passed: false, stage: 'typecheck', error: longError },
+      { passed: false, stage: 'tsc', error: longError },
     ];
     const error = formatValidationError(results);
     expect(error).not.toContain('Error line 21');

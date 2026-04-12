@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { buildSummary } from './cost.js';
+import { buildSummary, calculateTaskCost } from './cost.js';
 import { calculateCostBreakdown } from '../../core/providers/pricing.js';
 import type { BuildSummaryState } from './cost.js';
 import { taskId } from '../../core/types/workflow.js';
@@ -127,7 +127,65 @@ describe('buildSummary', () => {
       implementerTool: 'ollama',
     });
 
-    expect(summary.taskBreakdown).toEqual(breakdowns);
+    expect(summary.taskBreakdown).toEqual([
+      { taskId: taskId('T001'), taskTitle: 'task 1', method: 'local' as const, implementerTokens: 100, escalationTokens: 0, retryCount: 0, cost: 0 },
+    ]);
+    // Verify input array was NOT mutated
+    expect(breakdowns[0]).not.toHaveProperty('cost');
+  });
+
+  it('includes model fields when provided', () => {
+    const summary = buildSummary({
+      feature: 'models',
+      state: makeState(),
+      startTime: Date.now() - 1000,
+      plannerTool: 'openrouter',
+      plannerModel: 'claude-sonnet-4-20250514',
+      implementerTool: 'ollama',
+      implementerModel: 'qwen2.5-coder:14b',
+    });
+
+    expect(summary.plannerModel).toBe('claude-sonnet-4-20250514');
+    expect(summary.implementerModel).toBe('qwen2.5-coder:14b');
+  });
+
+  it('omits model fields when not provided', () => {
+    const summary = buildSummary({
+      feature: 'no-models',
+      state: makeState(),
+      startTime: Date.now(),
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    });
+
+    expect(summary.plannerModel).toBeUndefined();
+    expect(summary.implementerModel).toBeUndefined();
+  });
+
+  it('includes phaseTimings when provided', () => {
+    const timings = { planning: 10_000, implementing: 50_000, review: 5_000 };
+    const summary = buildSummary({
+      feature: 'with-timings',
+      state: makeState(),
+      startTime: Date.now() - 65_000,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+      phaseTimings: timings,
+    });
+
+    expect(summary.phaseTimings).toEqual(timings);
+  });
+
+  it('omits phaseTimings when not provided', () => {
+    const summary = buildSummary({
+      feature: 'no-timings',
+      state: makeState(),
+      startTime: Date.now(),
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    });
+
+    expect(summary.phaseTimings).toBeUndefined();
   });
 });
 
@@ -244,5 +302,97 @@ describe('buildSummary estimatedCostSavings', () => {
       implementerTool: 'ollama',
     });
     expect(summary.estimatedCostSavings).toBe('$0.00');
+  });
+});
+
+describe('calculateTaskCost', () => {
+  it('returns 0 for local implementer with no escalation', () => {
+    const task = { taskId: taskId('T001'), taskTitle: 'test', method: 'local' as const, implementerTokens: 1000, escalationTokens: 0, retryCount: 0 };
+    const globalUsage = { implementerInput: 500, implementerOutput: 500, escalationInput: 0, escalationOutput: 0 };
+    const cost = calculateTaskCost(task, globalUsage, 'ollama', 'claude-code');
+    expect(cost).toBe(0);
+  });
+
+  it('calculates cost using blended rate from global token ratio', () => {
+    const task = { taskId: taskId('T001'), taskTitle: 'test', method: 'local' as const, implementerTokens: 300_000, escalationTokens: 0, retryCount: 0 };
+    const globalUsage = { implementerInput: 200_000, implementerOutput: 100_000, escalationInput: 0, escalationOutput: 0 };
+    const cost = calculateTaskCost(task, globalUsage, 'deepseek', 'claude-code');
+    expect(cost).toBeGreaterThan(0);
+    expect(cost).toBeCloseTo(0.14 * 200_000 / 1_000_000 + 0.28 * 100_000 / 1_000_000, 6);
+  });
+
+  it('includes escalation cost when escalation tokens present', () => {
+    const task = { taskId: taskId('T001'), taskTitle: 'test', method: 'escalated-full' as const, implementerTokens: 1000, escalationTokens: 150_000, retryCount: 2 };
+    const globalUsage = { implementerInput: 500, implementerOutput: 500, escalationInput: 100_000, escalationOutput: 50_000 };
+    const cost = calculateTaskCost(task, globalUsage, 'ollama', 'claude-code');
+    expect(cost).toBeGreaterThan(0);
+  });
+
+  it('handles zero global tokens gracefully', () => {
+    const task = { taskId: taskId('T001'), taskTitle: 'test', method: 'local' as const, implementerTokens: 0, escalationTokens: 0, retryCount: 0 };
+    const globalUsage = { implementerInput: 0, implementerOutput: 0, escalationInput: 0, escalationOutput: 0 };
+    const cost = calculateTaskCost(task, globalUsage, 'ollama', 'claude-code');
+    expect(cost).toBe(0);
+  });
+
+  it('allocates cost uniformly across tasks regardless of individual token usage', () => {
+    const globalUsage = { implementerInput: 600_000, implementerOutput: 400_000, escalationInput: 0, escalationOutput: 0 };
+    const heavyTask = { taskId: taskId('T001'), taskTitle: 'heavy', method: 'local' as const, implementerTokens: 800_000, escalationTokens: 0, retryCount: 0 };
+    const lightTask = { taskId: taskId('T002'), taskTitle: 'light', method: 'local' as const, implementerTokens: 200_000, escalationTokens: 0, retryCount: 0 };
+
+    const heavyCost = calculateTaskCost(heavyTask, globalUsage, 'deepseek', 'claude-code');
+    const lightCost = calculateTaskCost(lightTask, globalUsage, 'deepseek', 'claude-code');
+
+    // Per-task cost uses blended rate × task tokens — tasks with more tokens cost proportionally more
+    expect(heavyCost / lightCost).toBeCloseTo(800_000 / 200_000, 5);
+    // Both use the same blended cost-per-token derived from global input/output ratio
+    expect(heavyCost / 800_000).toBeCloseTo(lightCost / 200_000, 10);
+  });
+});
+
+describe('buildSummary task costs', () => {
+  it('populates cost on each task breakdown', () => {
+    const usage = makeUsage({
+      implementerInput: 200_000,
+      implementerOutput: 100_000,
+    });
+    const breakdowns = [
+      { taskId: taskId('T001'), taskTitle: 'task 1', method: 'local' as const, implementerTokens: 150_000, escalationTokens: 0, retryCount: 0 },
+      { taskId: taskId('T002'), taskTitle: 'task 2', method: 'local' as const, implementerTokens: 150_000, escalationTokens: 0, retryCount: 0 },
+    ];
+
+    const summary = buildSummary({
+      feature: 'with-costs',
+      state: makeState({ tokenUsage: usage }),
+      startTime: Date.now(),
+      taskBreakdowns: breakdowns,
+      plannerTool: 'claude-code',
+      implementerTool: 'deepseek',
+    });
+
+    expect(summary.taskBreakdown![0]!.cost).toBeDefined();
+    expect(summary.taskBreakdown![1]!.cost).toBeDefined();
+    expect(summary.taskBreakdown![0]!.cost! + summary.taskBreakdown![1]!.cost!).toBeCloseTo(
+      summary.costBreakdown!.actualImplementerCost,
+      6,
+    );
+  });
+
+  it('task cost is 0 for local implementer', () => {
+    const usage = makeUsage({ implementerInput: 100_000, implementerOutput: 50_000 });
+    const breakdowns = [
+      { taskId: taskId('T001'), taskTitle: 'task 1', method: 'local' as const, implementerTokens: 150_000, escalationTokens: 0, retryCount: 0 },
+    ];
+
+    const summary = buildSummary({
+      feature: 'local-cost',
+      state: makeState({ tokenUsage: usage }),
+      startTime: Date.now(),
+      taskBreakdowns: breakdowns,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    });
+
+    expect(summary.taskBreakdown![0]!.cost).toBe(0);
   });
 });

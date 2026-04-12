@@ -6,11 +6,13 @@ import { CURRENT_STATE_VERSION } from './machine.js';
 import { STATE_FILE, EVENTS_FILE } from '../paths.js';
 import { currentDir } from '../paths-io.js';
 import { narrowRecord } from '../../utils/type-guards.js';
+import { SECURE_DIR_MODE, SECURE_FILE_MODE } from '../../utils/fs.js';
+import { warnStderr } from '../../utils/format.js';
 
 export function saveState(projectDir: string, state: WorkflowState): void {
   const dir = currentDir(projectDir);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, STATE_FILE), JSON.stringify(state, null, 2) + '\n');
+  mkdirSync(dir, { recursive: true, mode: SECURE_DIR_MODE });
+  writeFileSync(join(dir, STATE_FILE), JSON.stringify(state, null, 2) + '\n', { mode: SECURE_FILE_MODE });
 }
 
 export function loadState(projectDir: string): WorkflowState | null {
@@ -20,6 +22,7 @@ export function loadState(projectDir: string): WorkflowState | null {
   try {
     raw = JSON.parse(readFileSync(filePath, 'utf-8'));
   } catch {
+    warnStderr('Warning: corrupt state file, ignoring');
     return null;
   }
   const record = narrowRecord(raw);
@@ -32,6 +35,6 @@ export function loadState(projectDir: string): WorkflowState | null {
 
 export function appendEvent(projectDir: string, event: OrchestratorEvent): void {
   const dir = currentDir(projectDir);
-  mkdirSync(dir, { recursive: true });
-  appendFileSync(join(dir, EVENTS_FILE), JSON.stringify(event) + '\n');
+  mkdirSync(dir, { recursive: true, mode: SECURE_DIR_MODE });
+  appendFileSync(join(dir, EVENTS_FILE), JSON.stringify(event) + '\n', { mode: SECURE_FILE_MODE });
 }

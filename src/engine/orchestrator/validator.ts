@@ -1,15 +1,15 @@
 import { existsSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
-import type { Task, Config, ValidationResult, OrchestratorCallbacks } from '../../types.js';
+import type { Task, Config, ValidationResult, ValidationStages, OrchestratorCallbacks } from '../../types.js';
 import { runCommand, isENOENT } from '../../utils/process.js';
 import { emitValidationStart, emitValidationProgress, emitValidationResult } from './events.js';
 
 const MAX_ERROR_LINES = 20;
 
-let cachedLinter: { dir: string; result: 'eslint' | 'biome' | null } | null = null;
+let cachedLinter: { dir: string; linter: 'eslint' | 'biome' | null } | null = null;
 
 export function detectLinter(projectDir: string): 'eslint' | 'biome' | null {
-  if (cachedLinter?.dir === projectDir) return cachedLinter.result;
+  if (cachedLinter?.dir === projectDir) return cachedLinter.linter;
 
   const eslintPatterns = [
     'eslint.config.js',
@@ -24,15 +24,15 @@ export function detectLinter(projectDir: string): 'eslint' | 'biome' | null {
     '.eslintrc.yaml',
   ];
 
-  let result: 'eslint' | 'biome' | null = null;
+  let detectedLinter: 'eslint' | 'biome' | null = null;
   for (const pattern of eslintPatterns) {
-    if (existsSync(join(projectDir, pattern))) { result = 'eslint'; break; }
+    if (existsSync(join(projectDir, pattern))) { detectedLinter = 'eslint'; break; }
   }
 
-  if (!result && existsSync(join(projectDir, 'biome.json'))) result = 'biome';
+  if (!detectedLinter && existsSync(join(projectDir, 'biome.json'))) detectedLinter = 'biome';
 
-  cachedLinter = { dir: projectDir, result };
-  return result;
+  cachedLinter = { dir: projectDir, linter: detectedLinter };
+  return detectedLinter;
 }
 
 
@@ -90,13 +90,13 @@ async function validateTask(
   task: Task,
   projectDir: string,
   config: Config,
-  onStageComplete?: (stages: { tsc: boolean; lint: boolean; test: boolean }) => void,
+  onStageComplete?: (stages: ValidationStages) => void,
 ): Promise<ValidationResult[]> {
   const results: ValidationResult[] = [];
   const stages = { tsc: false, lint: false, test: false };
 
   if (config.validation.typecheck) {
-    const result = await runValidationStep({ stage: 'typecheck', cmd: 'npx', args: ['tsc', '--noEmit'], cwd: projectDir, errorSource: 'stderr' });
+    const result = await runValidationStep({ stage: 'tsc', cmd: 'npx', args: ['tsc', '--noEmit'], cwd: projectDir, errorSource: 'stderr' });
     results.push(result);
     if (!result.passed) return results;
     stages.tsc = true;

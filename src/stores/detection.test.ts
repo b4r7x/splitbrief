@@ -5,8 +5,13 @@ import { tmpdir } from 'node:os';
 import type { PlannerDetection, ProviderDetection } from '../types.js';
 import { detectionStore } from './detection.js';
 
-const detectPlannersMock = vi.fn<() => Promise<PlannerDetection[]>>();
-const detectImplementersMock = vi.fn<() => Promise<ProviderDetection[]>>();
+vi.mock('../engine/detection/index.js', () => ({
+  detectAll: vi.fn(),
+}));
+
+import { detectAll } from '../engine/detection/index.js';
+
+const detectAllMock = vi.mocked(detectAll);
 
 const makePlanner = (overrides?: Partial<PlannerDetection>): PlannerDetection => ({
   tool: 'claude-code',
@@ -24,8 +29,7 @@ const makeImplementer = (overrides?: Partial<ProviderDetection>): ProviderDetect
 
 describe('detectionStore', () => {
   beforeEach(() => {
-    detectPlannersMock.mockReset();
-    detectImplementersMock.mockReset();
+    detectAllMock.mockReset();
     detectionStore.reset();
   });
 
@@ -35,43 +39,22 @@ describe('detectionStore', () => {
     expect(s.implementers).toEqual([]);
   });
 
-  it('load() populates both planners and implementers from parallel detection', async () => {
+  it('load() populates both planners and implementers from detectAll', async () => {
     const planners = [makePlanner({ tool: 'claude-code' }), makePlanner({ tool: 'codex', available: false })];
     const implementers = [makeImplementer({ provider: 'ollama' }), makeImplementer({ provider: 'lm-studio', available: false })];
-    detectPlannersMock.mockResolvedValue(planners);
-    detectImplementersMock.mockResolvedValue(implementers);
+    detectAllMock.mockResolvedValue({ planners, implementers });
 
-    await detectionStore.load(detectPlannersMock, detectImplementersMock);
+    await detectionStore.load();
 
-    expect(detectPlannersMock).toHaveBeenCalledOnce();
-    expect(detectImplementersMock).toHaveBeenCalledOnce();
+    expect(detectAllMock).toHaveBeenCalledOnce();
     const state = detectionStore.get();
     expect(state.planners).toBe(planners);
     expect(state.implementers).toBe(implementers);
   });
 
-  it('load() resolves when both detectors are called in parallel', async () => {
-    let plannerResolved = false;
-    let implementerResolved = false;
-    detectPlannersMock.mockImplementation(async () => {
-      plannerResolved = true;
-      return [];
-    });
-    detectImplementersMock.mockImplementation(async () => {
-      implementerResolved = true;
-      return [];
-    });
-
-    await detectionStore.load(detectPlannersMock, detectImplementersMock);
-
-    expect(plannerResolved).toBe(true);
-    expect(implementerResolved).toBe(true);
-  });
-
   it('reset() clears populated detection state', async () => {
-    detectPlannersMock.mockResolvedValue([makePlanner()]);
-    detectImplementersMock.mockResolvedValue([makeImplementer()]);
-    await detectionStore.load(detectPlannersMock, detectImplementersMock);
+    detectAllMock.mockResolvedValue({ planners: [makePlanner()], implementers: [makeImplementer()] });
+    await detectionStore.load();
     expect(detectionStore.get().planners).toHaveLength(1);
 
     detectionStore.reset();
@@ -86,28 +69,24 @@ describe('detectionStore', () => {
 
     beforeEach(async () => {
       tempDir = await mkdtemp(join(tmpdir(), 'tiny-spec-detection-store-test-'));
-      detectPlannersMock.mockReset();
-      detectImplementersMock.mockReset();
+      detectAllMock.mockReset();
       detectionStore.reset();
-      detectPlannersMock.mockResolvedValue([makePlanner()]);
-      detectImplementersMock.mockResolvedValue([makeImplementer()]);
+      detectAllMock.mockResolvedValue({ planners: [makePlanner()], implementers: [makeImplementer()] });
     });
 
     afterEach(async () => {
+      await detectionStore._pendingSave;
       await rm(tempDir, { recursive: true, force: true });
     });
 
     it('load() with projectDir uses cache on second call', async () => {
-      await detectionStore.load(detectPlannersMock, detectImplementersMock, tempDir);
-      expect(detectPlannersMock).toHaveBeenCalledOnce();
-      expect(detectImplementersMock).toHaveBeenCalledOnce();
+      await detectionStore.load(tempDir);
+      expect(detectAllMock).toHaveBeenCalledOnce();
 
-      // Let the fire-and-forget saveDetectionCache complete
-      await new Promise((r) => setTimeout(r, 50));
+      await detectionStore._pendingSave;
 
-      await detectionStore.load(detectPlannersMock, detectImplementersMock, tempDir);
-      expect(detectPlannersMock).toHaveBeenCalledTimes(1);
-      expect(detectImplementersMock).toHaveBeenCalledTimes(1);
+      await detectionStore.load(tempDir);
+      expect(detectAllMock).toHaveBeenCalledTimes(1);
 
       const state = detectionStore.get();
       expect(state.planners).toHaveLength(1);
@@ -115,22 +94,20 @@ describe('detectionStore', () => {
     });
 
     it('load() without projectDir always runs detection', async () => {
-      await detectionStore.load(detectPlannersMock, detectImplementersMock);
-      await detectionStore.load(detectPlannersMock, detectImplementersMock);
+      await detectionStore.load();
+      await detectionStore.load();
 
-      expect(detectPlannersMock).toHaveBeenCalledTimes(2);
-      expect(detectImplementersMock).toHaveBeenCalledTimes(2);
+      expect(detectAllMock).toHaveBeenCalledTimes(2);
     });
 
     it('invalidate() forces re-detection on next load', async () => {
-      await detectionStore.load(detectPlannersMock, detectImplementersMock, tempDir);
-      expect(detectPlannersMock).toHaveBeenCalledOnce();
+      await detectionStore.load(tempDir);
+      expect(detectAllMock).toHaveBeenCalledOnce();
 
       await detectionStore.invalidate(tempDir);
 
-      await detectionStore.load(detectPlannersMock, detectImplementersMock, tempDir);
-      expect(detectPlannersMock).toHaveBeenCalledTimes(2);
-      expect(detectImplementersMock).toHaveBeenCalledTimes(2);
+      await detectionStore.load(tempDir);
+      expect(detectAllMock).toHaveBeenCalledTimes(2);
     });
   });
 });

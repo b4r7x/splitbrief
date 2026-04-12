@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { z } from 'zod';
-import type { Config } from '../../types.js';
+import type { Config, ApiImplementerConfig } from '../../types.js';
+import { hasApiBase } from '../../core/config/runner-config.js';
 import type { ProviderDef } from './types.js';
 import { getProvider } from './registry.js';
 import { warnError } from '../../utils/format.js';
@@ -47,10 +48,16 @@ export async function fetchModelList<T = string>(
   }
 }
 
+function asApiConfig(config: Config): ApiImplementerConfig {
+  if (!hasApiBase(config.implementer)) throw new Error('Expected api implementer config');
+  return config.implementer;
+}
+
 function getImplementerProvider(config: Config): ProviderDef {
-  return getProvider(config.implementer.tool, {
-    apiBase: config.implementer.apiBase,
-    apiKey: config.implementer.apiKey,
+  const impl = asApiConfig(config);
+  return getProvider(impl.provider, {
+    apiBase: impl.apiBase,
+    apiKey: impl.apiKey,
   });
 }
 
@@ -61,7 +68,8 @@ export function createClient(config: Config): OpenAI {
 export async function detectCapabilities(config: Config): Promise<{ contextLength: number }> {
   const envCtx = process.env.TINY_SPEC_CONTEXT_LENGTH;
   const parsed = envCtx ? parseInt(envCtx, 10) : NaN;
-  const fallback = { contextLength: Number.isNaN(parsed) ? config.implementer.contextLength : parsed };
+  const configCtx = config.implementer.contextLength ?? 8192;
+  const fallback = { contextLength: Number.isNaN(parsed) ? configCtx : parsed };
 
   const provider = getImplementerProvider(config);
 

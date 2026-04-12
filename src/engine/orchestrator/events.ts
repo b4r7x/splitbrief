@@ -1,4 +1,5 @@
-import type { WorkflowState, OrchestratorCallbacks, ValidationResult, TaskId, TaskCompletionMethod, TokenUsage, Phase } from '../../types.js';
+import type { WorkflowState, OrchestratorCallbacks, ValidationResult, ValidationStages, TaskId, TaskCompletionMethod, TokenUsage, Phase, WorkflowMode } from '../../types.js';
+import type { CostPrediction } from '../../core/types/summary.js';
 import type { OrchestratorEvent, OrchestratorEventPayloadMap, OrchestratorEventType } from '../../core/types/events.js';
 import { appendEvent } from '../../core/state/persistence.js';
 
@@ -34,18 +35,18 @@ export function emitValidationStart(callbacks: OrchestratorCallbacks): void {
   });
 }
 
-export function emitValidationProgress(callbacks: OrchestratorCallbacks, stages: { tsc: boolean; lint: boolean; test: boolean }, startTime: number): void {
+export function emitValidationProgress(callbacks: OrchestratorCallbacks, stages: ValidationStages, startTime: number): void {
   callbacks.onEvent({
     type: 'validate', ts: startTime, status: 'running', passed: false, stages,
   });
 }
 
 export function emitValidationResult(callbacks: OrchestratorCallbacks, validationResults: ValidationResult[], startTime: number): void {
-  const stages = { tsc: true, lint: true, test: true };
+  const stages = { tsc: false, lint: false, test: false };
   let failedError: string | undefined;
   let passed = true;
   for (const r of validationResults) {
-    if (r.stage === 'typecheck') stages.tsc = r.passed;
+    if (r.stage === 'tsc') stages.tsc = r.passed;
     else if (r.stage === 'lint') stages.lint = r.passed;
     else if (r.stage === 'test') stages.test = r.passed;
     if (!r.passed) {
@@ -75,14 +76,21 @@ export function emitWarning(callbacks: OrchestratorCallbacks, message: string): 
 
 export function emitPlannerStatus(
   callbacks: OrchestratorCallbacks, state: WorkflowState,
-  status: 'running' | 'done', extra?: { duration?: number; summary?: string },
+  status: 'running' | 'done', extra?: { duration?: number; summary?: string; tool?: string; model?: string },
 ): void {
-  callbacks.onEvent({ type: 'planner-status', ts: Date.now(), phase: state.phase, status, ...extra });
+  const tool = extra?.tool ?? state.plannerTool;
+  const model = extra?.model ?? state.plannerModel;
+  callbacks.onEvent({
+    type: 'planner-status', ts: Date.now(), phase: state.phase, status,
+    ...extra,
+    ...(tool !== undefined && { tool }),
+    ...(model !== undefined && { model }),
+  });
 }
 
 export function emitTaskStart(
   callbacks: OrchestratorCallbacks,
-  opts: { taskId: TaskId; title: string; index: number; total: number; file: string; action: 'create' | 'modify' },
+  opts: { taskId: TaskId; title: string; index: number; total: number; file: string; action: 'create' | 'modify'; tool?: string; model?: string },
 ): void {
   callbacks.onEvent({ type: 'task-start', ts: Date.now(), ...opts });
 }
@@ -96,7 +104,7 @@ export function emitTaskSkipped(
 
 export function emitTaskComplete(
   callbacks: OrchestratorCallbacks,
-  opts: { taskId: TaskId; title: string; method: TaskCompletionMethod; retries: number; duration: number },
+  opts: { taskId: TaskId; title: string; method: TaskCompletionMethod; retries: number; duration: number; tool?: string; model?: string },
 ): void {
   callbacks.onEvent({ type: 'task-complete', ts: Date.now(), ...opts });
 }
@@ -113,10 +121,44 @@ export function emitRetry(callbacks: OrchestratorCallbacks, taskId: TaskId, atte
   callbacks.onEvent({ type: 'retry', ts: Date.now(), taskId, attempt, maxRetries });
 }
 
-export function emitEscalate(callbacks: OrchestratorCallbacks, tier: 1 | 2): void {
-  callbacks.onEvent({ type: 'escalate', ts: Date.now(), tier });
+export function emitEscalate(callbacks: OrchestratorCallbacks, tier: 0 | 1 | 2, hint?: string, tool?: string, model?: string): void {
+  callbacks.onEvent({
+    type: 'escalate', ts: Date.now(), tier,
+    ...(hint !== undefined && { hint }),
+    ...(tool !== undefined && { tool }),
+    ...(model !== undefined && { model }),
+  });
 }
 
 export function emitCostUpdate(callbacks: OrchestratorCallbacks, tokenUsage: TokenUsage): void {
   callbacks.onEvent({ type: 'cost-update', ts: Date.now(), tokenUsage });
+}
+
+export function emitCostPrediction(callbacks: OrchestratorCallbacks, prediction: CostPrediction): void {
+  callbacks.onEvent({ type: 'cost-prediction', ts: Date.now(), prediction });
+}
+
+export function emitBudgetWarning(callbacks: OrchestratorCallbacks, currentCost: number, maxBudget: number): void {
+  callbacks.onEvent({ type: 'budget-warning', ts: Date.now(), currentCost, maxBudget });
+}
+
+export function emitBudgetExceeded(callbacks: OrchestratorCallbacks, currentCost: number, maxBudget: number): void {
+  callbacks.onEvent({ type: 'budget-exceeded', ts: Date.now(), currentCost, maxBudget });
+}
+
+export function emitWorkflowConfig(callbacks: OrchestratorCallbacks, opts: {
+  mode: WorkflowMode;
+  plannerTool: string;
+  plannerModel?: string | undefined;
+  implementerTool: string;
+  implementerModel?: string | undefined;
+}): void {
+  callbacks.onEvent({
+    type: 'workflow-config', ts: Date.now(),
+    mode: opts.mode,
+    plannerTool: opts.plannerTool,
+    ...(opts.plannerModel !== undefined && { plannerModel: opts.plannerModel }),
+    implementerTool: opts.implementerTool,
+    ...(opts.implementerModel !== undefined && { implementerModel: opts.implementerModel }),
+  });
 }

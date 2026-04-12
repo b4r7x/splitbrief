@@ -3,6 +3,7 @@ import type { Implementer, ImplementerOptions, RetryOptions } from './types.js';
 import type { Task, TuiEvent, ImplementerResult, InvokeResult } from '../../types.js';
 import { readFileOrEmpty } from '../../utils/fs.js';
 import { toErrorMessage } from '../../utils/format.js';
+import { formatErrorWithHint } from '../../utils/error-hints.js';
 import { extractCode } from '../parsers/response-extractor.js';
 import { applyCode } from './apply.js';
 import { computeDiff } from '../../utils/diff.js';
@@ -10,9 +11,6 @@ import { SYSTEM_PREAMBLE, formatTaskPrompt, formatRetryPrompt } from '../spec/fo
 import { CommandNotFoundError } from '../../utils/process.js';
 import { extractOutput, retryTemperature, type InvokeOpts } from './utils.js';
 import { DEFAULT_AVAILABILITY } from '../../utils/availability.js';
-
-export { assertSpawnSuccess, createChangeDetector, DEFAULT_TIMEOUT } from './utils.js';
-export type { InvokeOpts } from './utils.js';
 
 type GenEventEmitter = (status: 'running' | 'done' | 'failed', extra?: Record<string, unknown>) => void;
 
@@ -32,8 +30,8 @@ function createGenEventEmitter(
         ts: Date.now(),
         file,
         duration: Date.now() - startTime,
-        linesAdded: (extra?.linesAdded as number) ?? 0,
-        linesRemoved: (extra?.linesRemoved as number) ?? 0,
+        linesAdded: typeof extra?.linesAdded === 'number' ? extra.linesAdded : 0,
+        linesRemoved: typeof extra?.linesRemoved === 'number' ? extra.linesRemoved : 0,
         ...(diff !== undefined && { diff }),
       });
     } else {
@@ -69,6 +67,11 @@ async function processImplementerOutput(
 
 export interface ImplementerBaseConfig {
   extractsCode: boolean;
+  /**
+   * If false, the backend handles SYSTEM_PREAMBLE separately (e.g., as a system message).
+   * If true or undefined (default), runPipeline prepends SYSTEM_PREAMBLE to the prompt.
+   */
+  prependSystemPreamble?: boolean;
 
   invoke(opts: InvokeOpts): Promise<InvokeResult>;
   buildPrompt?(opts: ImplementerOptions): string;
@@ -86,57 +89,65 @@ function defaultShouldThrow(err: unknown): boolean {
   return err instanceof CommandNotFoundError;
 }
 
-export function createImplementerBase(config: ImplementerBaseConfig): Implementer {
-  const shouldThrow = config.shouldThrow ?? defaultShouldThrow;
-  const buildPrompt = config.buildPrompt ?? ((opts: ImplementerOptions) =>
-    SYSTEM_PREAMBLE + '\n\n' + formatTaskPrompt(opts.task, opts.context, opts.config.implementer.contextLength));
-  const buildRetryPrompt = config.buildRetryPrompt ?? ((opts: RetryOptions) =>
-    SYSTEM_PREAMBLE + '\n\n' + formatRetryPrompt(opts.task, opts.context, opts.error, opts.attempt, opts.config.implementer.contextLength));
+export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implementer {
+  const shouldThrow = baseConfig.shouldThrow ?? defaultShouldThrow;
+  const prependSystemPreamble = baseConfig.prependSystemPreamble !== false;
+  const buildPrompt = baseConfig.buildPrompt ?? ((opts: ImplementerOptions) =>
+    formatTaskPrompt(opts.task, opts.context, opts.config.implementer.contextLength));
+  const buildRetryPrompt = baseConfig.buildRetryPrompt ?? ((opts: RetryOptions) =>
+    formatRetryPrompt(opts.task, opts.context, opts.error, opts.attempt, opts.config.implementer.contextLength));
 
   async function runPipeline(
     opts: ImplementerOptions,
-    prompt: string,
+    rawPrompt: string,
     temperature?: number,
   ): Promise<ImplementerResult> {
-    const { task, projectDir, config: cfg, onOutput, onEvent } = opts;
-    const emitGenEvent = createGenEventEmitter(onEvent, cfg.implementer.model, task.file);
+    const prompt = prependSystemPreamble ? SYSTEM_PREAMBLE + '\n\n' + rawPrompt : rawPrompt;
+    const { task, projectDir, config, onOutput, onEvent } = opts;
+    const emitGenEvent = createGenEventEmitter(onEvent, config.implementer.model, task.file);
 
     emitGenEvent('running');
 
-    const oldContent = config.extractsCode
-      ? await readFileOrEmpty(join(projectDir, task.file))
-      : '';
+    let oldContent = '';
+    if (baseConfig.extractsCode) {
+      oldContent = await readFileOrEmpty(join(projectDir, task.file));
+    }
 
     let invokeResult: InvokeResult;
     try {
-      invokeResult = await config.invoke({
-        prompt, task, projectDir, config: cfg, onOutput,
+      invokeResult = await baseConfig.invoke({
+        prompt, task, projectDir, config, onOutput,
         ...(temperature !== undefined && { temperature }),
       });
     } catch (err) {
       emitGenEvent('failed');
       if (shouldThrow(err)) throw err;
-      return { success: false, output: extractOutput(err), error: toErrorMessage(err) };
+      return { success: false, output: extractOutput(err), error: formatErrorWithHint(toErrorMessage(err)) };
     }
 
     const usageField = invokeResult.usage ? { usage: invokeResult.usage } : {};
 
-    if (config.extractsCode) {
-      const result = await processImplementerOutput(invokeResult.text, task, projectDir, oldContent);
-      if (!result.success) {
-        emitGenEvent('failed');
-        return { success: false, output: invokeResult.text, error: result.error, ...usageField };
+    try {
+      if (baseConfig.extractsCode) {
+        const result = await processImplementerOutput(invokeResult.text, task, projectDir, oldContent);
+        if (!result.success) {
+          emitGenEvent('failed');
+          return { success: false, output: invokeResult.text, error: result.error, ...usageField };
+        }
+        emitGenEvent('done', { linesAdded: result.linesAdded, linesRemoved: result.linesRemoved, diff: result.diff });
+        return { success: true, output: invokeResult.text, ...usageField };
       }
-      emitGenEvent('done', { linesAdded: result.linesAdded, linesRemoved: result.linesRemoved, diff: result.diff });
-      return { success: true, output: invokeResult.text, ...usageField };
-    }
 
-    if (config.detectChanges) {
-      const changes = await config.detectChanges(projectDir);
-      if (!changes.changed) {
-        emitGenEvent('failed');
-        return { success: false, output: invokeResult.text, error: changes.output };
+      if (baseConfig.detectChanges) {
+        const changes = await baseConfig.detectChanges(projectDir);
+        if (!changes.changed) {
+          emitGenEvent('failed');
+          return { success: false, output: invokeResult.text, error: changes.output };
+        }
       }
+    } catch (err) {
+      emitGenEvent('failed');
+      return { success: false, output: invokeResult.text, error: toErrorMessage(err), ...usageField };
     }
 
     emitGenEvent('done');
@@ -153,12 +164,12 @@ export function createImplementerBase(config: ImplementerBaseConfig): Implemente
       const prompt = buildRetryPrompt(opts);
       const temperature = opts.kind === 'hint'
         ? opts.config.implementer.temperature
-        : retryTemperature(opts.config.implementer.temperature, config.retryTemperatureStep, opts.attempt);
+        : retryTemperature(opts.config.implementer.temperature, baseConfig.retryTemperatureStep, opts.attempt);
       return runPipeline(opts, prompt, temperature);
     },
 
     ...DEFAULT_AVAILABILITY,
-    ...(config.isAvailable && { isAvailable: config.isAvailable }),
-    ...(config.getVersion && { getVersion: config.getVersion }),
+    ...(baseConfig.isAvailable && { isAvailable: baseConfig.isAvailable }),
+    ...(baseConfig.getVersion && { getVersion: baseConfig.getVersion }),
   };
 }

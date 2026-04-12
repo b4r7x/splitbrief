@@ -1,5 +1,7 @@
 import type { TokenDelta } from '../../types.js';
 import { toErrorMessage } from '../../utils/format.js';
+import { formatErrorWithHint } from '../../utils/error-hints.js';
+import { redactSecrets } from '../../utils/redact.js';
 import { IdleTimeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
 import { toTokenDelta } from './token-utils.js';
 
@@ -40,8 +42,16 @@ export interface StreamClient {
   };
 }
 
-export function asStreamClient(client: { chat: { completions: { create: (...args: never[]) => unknown } } }): StreamClient {
-  return client as StreamClient;
+export function asStreamClient(client: unknown): StreamClient {
+  if (
+    typeof client === 'object' && client !== null &&
+    'chat' in client && typeof client.chat === 'object' && client.chat !== null &&
+    'completions' in client.chat && typeof client.chat.completions === 'object' && client.chat.completions !== null &&
+    'create' in client.chat.completions && typeof client.chat.completions.create === 'function'
+  ) {
+    return client as StreamClient;
+  }
+  throw new TypeError('Expected an OpenAI-compatible client with chat.completions.create()');
 }
 
 function isErrorLike(val: unknown): val is Record<string, unknown> {
@@ -53,14 +63,12 @@ function throwMappedError(err: unknown, endpoint?: { provider: string; apiBase?:
   const cause = isErrorLike(err.cause) ? err.cause : {};
   if (err.code === 'ECONNREFUSED' || cause.code === 'ECONNREFUSED') {
     const baseURL = endpoint?.apiBase || 'unknown endpoint';
-    throw new Error(
-      `Cannot connect to ${endpoint?.provider || 'provider'} at ${baseURL}. Is it running?`,
-    );
+    const raw = redactSecrets(`Cannot connect to ${endpoint?.provider || 'provider'} at ${baseURL}. ECONNREFUSED ${baseURL}`);
+    throw new Error(formatErrorWithHint(raw));
   }
   if (typeof err.status === 'number' && err.status >= 400) {
-    throw new Error(
-      `API error ${err.status} from ${endpoint?.provider || 'provider'}: ${toErrorMessage(err)}`,
-    );
+    const raw = redactSecrets(`API error ${err.status} from ${endpoint?.provider || 'provider'}: ${toErrorMessage(err)}`);
+    throw new Error(formatErrorWithHint(raw));
   }
   throw err;
 }
@@ -80,7 +88,7 @@ export async function streamCompletion(
       temperature,
       stream: true,
       stream_options: { include_usage: true },
-      ...(maxTokens ? { max_tokens: maxTokens } : {}),
+      ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
     });
   } catch (err: unknown) {
     throwMappedError(err, endpoint);
@@ -91,7 +99,7 @@ export async function streamCompletion(
 
   try {
     for await (const chunk of withIdleTimeout(stream, STREAM_TIMEOUT_MS, 'Model response timed out')) {
-      const content = chunk.choices[0]?.delta?.content;
+      const content = chunk.choices?.[0]?.delta?.content;
       if (content) {
         fullResponse += content;
         onProgress(content);
