@@ -24,7 +24,7 @@ describe('getProvider', () => {
 describe('KNOWN_PROVIDERS', () => {
   it('contains exactly the expected provider ids', () => {
     expect(Object.keys(KNOWN_PROVIDERS).sort()).toEqual(
-      ['ollama', 'lm-studio', 'deepseek', 'openrouter'].sort(),
+      ['ollama', 'lm-studio', 'deepseek', 'openrouter', 'openai', 'groq', 'together'].sort(),
     );
   });
 });
@@ -53,14 +53,10 @@ describe('detectAvailableProviders', () => {
     expect(results.length).toBe(Object.keys(KNOWN_PROVIDERS).length);
 
     const ollama = results.find((r) => r.provider === 'ollama');
-    expect(ollama).toBeTruthy();
-    expect(ollama!.available).toBe(true);
-    expect(ollama!.models).toEqual(['qwen:7b']);
-    expect(ollama!.isLocal).toBe(true);
+    expect(ollama).toMatchObject({ available: true, models: [{ id: 'qwen:7b' }], isLocal: true });
 
     const deepseek = results.find((r) => r.provider === 'deepseek');
-    expect(deepseek).toBeTruthy();
-    expect(deepseek!.available).toBe(false);
+    expect(deepseek).toMatchObject({ available: false });
   });
 
   it('handles all providers failing', async () => {

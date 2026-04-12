@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 // Semantic provider groups — CLI tools, API providers, local servers, meta
 export const CLI_TOOL_IDS = ['claude-code', 'codex', 'opencode', 'aider', 'copilot', 'kilo-code'] as const;
-export const API_PROVIDER_IDS = ['agent-sdk', 'anthropic', 'openrouter', 'deepseek'] as const;
+export const API_PROVIDER_IDS = ['agent-sdk', 'anthropic', 'openrouter', 'deepseek', 'openai', 'groq', 'together'] as const;
 export const LOCAL_PROVIDER_IDS = ['ollama', 'lm-studio'] as const;
 export const META_PROVIDER_IDS = ['shell'] as const;
 
@@ -19,6 +19,9 @@ export const PROVIDER_IDS = [
   'anthropic',
   'openrouter',
   'deepseek',
+  'openai',
+  'groq',
+  'together',
   'ollama',
   'lm-studio',
   'shell',
@@ -37,6 +40,9 @@ export const PLANNER_TOOL_IDS = [
   'anthropic',
   'openrouter',
   'deepseek',
+  'openai',
+  'groq',
+  'together',
   'shell',
 ] as const;
 
@@ -98,7 +104,7 @@ export const RunnerKindSchema = z.enum(RUNNER_KINDS);
 export type RunnerKind = z.infer<typeof RunnerKindSchema>;
 
 // API provider categories
-export const CLOUD_API_PROVIDERS = ['anthropic', 'openrouter', 'deepseek'] as const;
-export const LOCAL_API_PROVIDERS = ['ollama', 'lm-studio'] as const;
+const CLOUD_API_PROVIDERS = ['anthropic', 'openrouter', 'deepseek', 'openai', 'groq', 'together'] as const;
+const LOCAL_API_PROVIDERS = ['ollama', 'lm-studio'] as const;
 export const KNOWN_API_PROVIDERS = [...LOCAL_API_PROVIDERS, ...CLOUD_API_PROVIDERS] as const;
 

@@ -1,7 +1,10 @@
-import type { ProviderDef, ProviderOverrides } from './types.js';
+import type { DetectedModel, ProviderDef, ProviderOverrides } from './types.js';
 import type { ProviderDetection } from '../../types.js';
 import { createOllamaProvider } from './ollama.js';
 import { createLmStudioProvider } from './lm-studio.js';
+import { createOpenRouterProvider } from './openrouter.js';
+import { createGroqProvider } from './groq.js';
+import { createTogetherProvider } from './together.js';
 import { createOpenAICompatProvider } from './openai-compat.js';
 import { PROVIDER_CATALOG, isProviderId, type ProviderId } from '../../core/providers/catalog.js';
 import { withTimeout } from '../../utils/with-timeout.js';
@@ -13,6 +16,9 @@ type ProviderFactory = (overrides?: ProviderOverrides) => ProviderDef;
 const BESPOKE_PROVIDERS: Partial<Record<ProviderId, ProviderFactory>> = {
   ollama: createOllamaProvider,
   'lm-studio': createLmStudioProvider,
+  openrouter: createOpenRouterProvider,
+  groq: createGroqProvider,
+  together: createTogetherProvider,
 };
 
 function buildOpenAICompatFactories(): Partial<Record<ProviderId, ProviderFactory>> {
@@ -48,7 +54,14 @@ export async function detectAvailableProviders(): Promise<ProviderDetection[]> {
     entries.map(async ([name, factory]): Promise<ProviderDetection> => {
       const provider = factory();
       try {
-        const models = await withTimeout(provider.listModels(), DETECTION_TIMEOUT_MS);
+        // Prefer metadata-rich method if available
+        let models: DetectedModel[];
+        if (provider.listModelsWithMetadata) {
+          models = await withTimeout(provider.listModelsWithMetadata(), DETECTION_TIMEOUT_MS);
+        } else {
+          const ids = await withTimeout(provider.listModels(), DETECTION_TIMEOUT_MS);
+          models = ids.map((id) => ({ id }));
+        }
         return {
           provider: name,
           available: models.length > 0,

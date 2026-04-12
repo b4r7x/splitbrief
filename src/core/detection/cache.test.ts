@@ -19,7 +19,7 @@ describe('detection cache', () => {
     { tool: 'claude-code' as const, type: 'cli' as const, available: true, description: 'Claude Code CLI' },
   ];
   const implementers = [
-    { provider: 'ollama' as const, available: true, isLocal: true, models: ['qwen2.5-coder:7b'] },
+    { provider: 'ollama' as const, available: true, isLocal: true, models: [{ id: 'qwen2.5-coder:7b' }] },
   ];
 
   it('returns null when no cache exists', async () => {
@@ -30,9 +30,7 @@ describe('detection cache', () => {
   it('saves and loads cache', async () => {
     await saveDetectionCache(tempDir, planners, implementers);
     const result = await loadDetectionCache(tempDir);
-    expect(result).not.toBeNull();
-    expect(result!.planners).toEqual(planners);
-    expect(result!.implementers).toEqual(implementers);
+    expect(result).toEqual({ planners, implementers });
   });
 
   it('returns null when cache is expired (TTL=0)', async () => {
@@ -84,9 +82,7 @@ describe('detection cache', () => {
   it('roundtrips empty arrays', async () => {
     await saveDetectionCache(tempDir, [], []);
     const result = await loadDetectionCache(tempDir, 60_000);
-    expect(result).not.toBeNull();
-    expect(result!.planners).toEqual([]);
-    expect(result!.implementers).toEqual([]);
+    expect(result).toEqual({ planners: [], implementers: [] });
   });
 
   it('includes version in saved cache', async () => {

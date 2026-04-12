@@ -66,6 +66,7 @@ interface UseTwoColumnStateParams<L extends FilterableItem, R extends { id: stri
   initialColumn?: 'left' | 'right' | undefined;
   onConfirm: (left: L, right: R | null) => void;
   onCancel: () => void;
+  onRefresh?: (() => void) | undefined;
 }
 
 function defaultLeftFilter<L extends FilterableItem>(item: L, query: string): boolean {
@@ -153,7 +154,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
       leftActive, rightActive, isSpecial, isDisabled, isOnVirtual, currentRightIsCustom,
       leftCurrentItem, leftFiltered, filteredRight, leftEffectiveIndex, rightEffectiveIndex,
       rightItems, rightPlaceholder, leftGetKey, isRightItemCustom, onDeleteRight,
-      onCustomRightOverlay, onConfirm, onCancel,
+      onCustomRightOverlay, onConfirm, onCancel, onRefresh: params.onRefresh,
       setActiveColumn, setSelectedLeftKey, setLeftFilter, setRightFilter,
       setLeftIndex, setRightIndex, resetRight,
     });

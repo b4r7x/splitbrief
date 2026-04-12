@@ -21,10 +21,22 @@ export interface ModelOption {
   isDefault?: boolean | undefined;
   isDetected?: boolean | undefined;
   isCustom?: boolean | undefined;
+  contextLength?: number | undefined;
+  pricingInput?: number | undefined;
+  pricingOutput?: number | undefined;
+  isFree?: boolean | undefined;
 }
 
 export function isCustomModel(item: ModelOption): boolean {
   return item.isCustom === true;
+}
+
+export function sortModelsWithFreeFirst(models: ModelOption[]): ModelOption[] {
+  return [...models].sort((a, b) => {
+    if (a.isFree && !b.isFree) return -1;
+    if (!a.isFree && b.isFree) return 1;
+    return 0;
+  });
 }
 
 function sortByAvailability(a: PickerOption, b: PickerOption): number {
@@ -178,12 +190,17 @@ function knownToModelOptions(models: KnownModel[], isDetected = false): ModelOpt
     id: m.name,
     isDefault: m.isDefault,
     isDetected,
+    contextLength: m.contextLength,
+    pricingInput: m.pricingInput,
+    pricingOutput: m.pricingOutput,
+    isFree: m.isFree,
   }));
 }
 
 export function modelsForPlannerTool(toolId: string): ModelOption[] {
   if (!isProviderId(toolId)) return [];
-  return knownToModelOptions(KNOWN_MODELS[toolId] ?? []);
+  const models = knownToModelOptions(KNOWN_MODELS[toolId] ?? []);
+  return sortModelsWithFreeFirst(models);
 }
 
 export function modelsForImplementerProvider(
@@ -193,25 +210,39 @@ export function modelsForImplementerProvider(
 ): ModelOption[] {
   if (providerKind === 'cli') {
     if (!isProviderId(providerId)) return [];
-    return knownToModelOptions(KNOWN_MODELS[providerId] ?? []);
+    const models = knownToModelOptions(KNOWN_MODELS[providerId] ?? []);
+    return sortModelsWithFreeFirst(models);
   }
 
   if (providerKind === 'shell' || providerKind === 'agent' || providerKind === 'agent-sdk') return [];
 
   const d = detections.find(det => det.provider === providerId);
-  const detected = (d?.models ?? []).map(m => ({ id: m, isDetected: true }));
   const known = isProviderId(providerId)
     ? knownToModelOptions(KNOWN_MODELS[providerId] ?? [])
     : [];
+  const knownMap = new Map(known.map(k => [k.id, k]));
 
-  if (detected.length === 0) return known;
+  const detected: ModelOption[] = (d?.models ?? []).map(m => {
+    const knownData = knownMap.get(m.id);
+    return {
+      id: m.id,
+      isDetected: true,
+      isDefault: knownData?.isDefault,
+      contextLength: m.contextLength ?? knownData?.contextLength,
+      pricingInput: m.pricingInput ?? knownData?.pricingInput,
+      pricingOutput: m.pricingOutput ?? knownData?.pricingOutput,
+      isFree: m.isFree ?? knownData?.isFree,
+    };
+  });
+
+  if (detected.length === 0) return sortModelsWithFreeFirst(known);
 
   const detectedSet = new Set(detected.map(m => m.id));
   const merged: ModelOption[] = [...detected];
   for (const k of known) {
     if (!detectedSet.has(k.id)) merged.push(k);
   }
-  return merged;
+  return sortModelsWithFreeFirst(merged);
 }
 
 export function buildRightModels(params: {

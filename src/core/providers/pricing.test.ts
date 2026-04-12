@@ -168,27 +168,22 @@ describe('getModelPricing', () => {
     { model: 'codestral', inputPer1M: 0.30, outputPer1M: 0.90 },
   ])('returns correct pricing for $model', ({ model, inputPer1M, outputPer1M }) => {
     const pricing = getModelPricing(model);
-    expect(pricing).toBeDefined();
-    expect(pricing!.inputPer1M).toBe(inputPer1M);
-    expect(pricing!.outputPer1M).toBe(outputPer1M);
+    expect(pricing).toMatchObject({ inputPer1M, outputPer1M });
   });
 
   it('resolves model with date suffix via normalization', () => {
     const pricing = getModelPricing('claude-sonnet-4-20250514');
-    expect(pricing).toBeDefined();
-    expect(pricing!.inputPer1M).toBe(3);
+    expect(pricing).toMatchObject({ inputPer1M: 3 });
   });
 
   it('resolves model with provider prefix via normalization', () => {
     const pricing = getModelPricing('anthropic/claude-opus-4');
-    expect(pricing).toBeDefined();
-    expect(pricing!.inputPer1M).toBe(15);
+    expect(pricing).toMatchObject({ inputPer1M: 15 });
   });
 
   it('resolves model with both prefix and date suffix', () => {
     const pricing = getModelPricing('anthropic/claude-haiku-3-5-20241022');
-    expect(pricing).toBeDefined();
-    expect(pricing!.inputPer1M).toBe(0.80);
+    expect(pricing).toMatchObject({ inputPer1M: 0.80 });
   });
 
   it('returns undefined for unknown models', () => {
