@@ -6,7 +6,7 @@ import { saveState } from '../../core/state/persistence.js';
 import { saveSession, getSessionDir } from '../../core/sessions/io.js';
 import { ensureTinySpecDir, setSpecMetadata, resetSpecMetadata } from '../../core/paths-io.js';
 import { readPackageJson } from '../../utils/fs.js';
-import { resolveAutoModel } from '../../core/providers/models.js';
+import { resolveAutoModel } from '../../core/providers.js';
 import { killAllProcesses } from '../../utils/process.js';
 import { toErrorMessage, warnError } from '../../utils/format.js';
 import { createPlanner } from '../runners/factory.js';

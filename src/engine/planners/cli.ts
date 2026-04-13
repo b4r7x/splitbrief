@@ -4,7 +4,7 @@ import { createPlannerBase } from './base.js';
 import { createCommandAvailability } from '../../utils/availability.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { CLI_TOOLS } from '../cli-tools.js';
-import { resolveAutoModel } from '../../core/providers/models.js';
+import { resolveAutoModel } from '../../core/providers.js';
 
 export function createCliPlanner(config: Config): Planner {
   if (config.planner.kind !== 'cli') {

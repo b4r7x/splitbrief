@@ -1,14 +1,14 @@
 import { z } from 'zod';
 import type { TokenDelta } from '../../types.js';
 
-export const TokenUsageLikeSchema = z.object({
+export const TokenUsageLikeSchema = z.looseObject({
   input_tokens: z.number().optional(),
   output_tokens: z.number().optional(),
   prompt_tokens: z.number().optional(),
   completion_tokens: z.number().optional(),
   inputTokens: z.number().optional(),
   outputTokens: z.number().optional(),
-}).passthrough();
+});
 
 export type TokenUsageLike = z.infer<typeof TokenUsageLikeSchema>;
 

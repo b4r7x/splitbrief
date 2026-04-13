@@ -1,5 +1,5 @@
 import type { Config } from '../types/config.js';
-import { resolveAutoModel } from '../providers/models.js';
+import { resolveAutoModel } from '../providers.js';
 
 export type RunnerConfig = Config['planner'] | Config['implementer'];
 

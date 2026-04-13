@@ -1,5 +1,5 @@
 import type { TokenUsage, OrchestratorCallbacks } from '../../types.js';
-import { calculateCostBreakdown } from '../../core/providers/pricing.js';
+import { calculateCostBreakdown } from '../providers/pricing.js';
 import { emitBudgetWarning, emitBudgetExceeded, emitWarning } from './events.js';
 import { formatCost } from '../../utils/format.js';
 

@@ -1,16 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createOllamaProvider } from './ollama.js';
+import { setupFetchMock } from './testing.js';
 
 describe('createOllamaProvider', () => {
-  let originalFetch: typeof globalThis.fetch;
-
-  beforeEach(() => {
-    originalFetch = globalThis.fetch;
-  });
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-  });
+  setupFetchMock();
 
   it('respects overrides', () => {
     const p = createOllamaProvider({ apiBase: 'http://remote:11434/v1', apiKey: 'my-key' });
@@ -19,9 +12,9 @@ describe('createOllamaProvider', () => {
   });
 
   it('listModels parses Ollama tags response', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ models: [{ name: 'qwen:7b' }, { name: 'llama3:8b' }] }), { status: 200 }),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createOllamaProvider();
     const models = await p.listModels();
@@ -30,35 +23,39 @@ describe('createOllamaProvider', () => {
   });
 
   it('listModels returns empty on non-ok response', async () => {
-    globalThis.fetch = vi.fn(async () =>
-      new Response('error', { status: 500 }),
-    ) as typeof globalThis.fetch;
+    vi.mocked(globalThis.fetch).mockResolvedValue(new Response('error', { status: 500 }));
 
     const p = createOllamaProvider();
     expect(await p.listModels()).toEqual([]);
   });
 
   it('detectContextLength parses num_ctx from parameters', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ parameters: 'num_ctx 32768\ntemperature 0.7' }), { status: 200 }),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createOllamaProvider();
-    expect(await p.detectContextLength!('qwen:7b')).toBe(32768);
+    expect(p.detectContextLength).toBeDefined();
+    const result = await p.detectContextLength?.('qwen:7b');
+    expect(result).toBe(32768);
   });
 
   it('detectContextLength returns null when no num_ctx', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ parameters: 'temperature 0.7' }), { status: 200 }),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createOllamaProvider();
-    expect(await p.detectContextLength!('qwen:7b')).toBeNull();
+    expect(p.detectContextLength).toBeDefined();
+    const result = await p.detectContextLength?.('qwen:7b');
+    expect(result).toBeNull();
   });
 
   it('detectContextLength returns null on fetch error', async () => {
-    globalThis.fetch = vi.fn(async () => { throw new Error('refused'); }) as typeof globalThis.fetch;
+    vi.mocked(globalThis.fetch).mockRejectedValue(new Error('refused'));
     const p = createOllamaProvider();
-    expect(await p.detectContextLength!('qwen:7b')).toBeNull();
+    expect(p.detectContextLength).toBeDefined();
+    const result = await p.detectContextLength?.('qwen:7b');
+    expect(result).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 import type { TokenUsage } from '../../types.js';
 import type { CostPrediction } from '../../core/types/summary.js';
-import { getProviderPricing, calculateCost } from '../../core/providers/pricing.js';
+import { getProviderPricing, calculateCost } from '../providers/pricing.js';
 
 /**
  * Rough token estimates for cost prediction when no prior usage data exists.

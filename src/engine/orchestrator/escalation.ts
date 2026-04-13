@@ -7,7 +7,7 @@ import { emit, createTextHandler, emitWarning, emitPlannerStatus, emitRetry, emi
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave, warnOnFailure, validateAndCommitTask } from './helpers.js';
 import { createImplementer } from '../runners/factory.js';
 import type { Implementer } from '../implementers/types.js';
-import { getProviderBaseURL } from '../../core/providers/catalog.js';
+import { getProviderBaseURL } from '../../core/providers.js';
 
 const MAX_HINT_ERROR_LENGTH = 4000;
 

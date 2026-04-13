@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createOpenRouterProvider, parsePrice, toDetectedModel } from './openrouter.js';
+import { setupFetchMock, setupEnvMock } from './testing.js';
 
 describe('parsePrice', () => {
   it('returns 0 for undefined', () => {
@@ -109,23 +110,8 @@ describe('toDetectedModel', () => {
 });
 
 describe('createOpenRouterProvider', () => {
-  let originalFetch: typeof globalThis.fetch;
-  let originalEnv: string | undefined;
-
-  beforeEach(() => {
-    originalFetch = globalThis.fetch;
-    originalEnv = process.env.OPENROUTER_API_KEY;
-    process.env.OPENROUTER_API_KEY = 'test-key';
-  });
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-    if (originalEnv === undefined) {
-      delete process.env.OPENROUTER_API_KEY;
-    } else {
-      process.env.OPENROUTER_API_KEY = originalEnv;
-    }
-  });
+  setupFetchMock();
+  setupEnvMock('OPENROUTER_API_KEY', 'test-key');
 
   it('uses default base URL', () => {
     const p = createOpenRouterProvider();
@@ -142,7 +128,7 @@ describe('createOpenRouterProvider', () => {
   });
 
   it('listModels returns model IDs', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(
         JSON.stringify({
           data: [
@@ -152,7 +138,7 @@ describe('createOpenRouterProvider', () => {
         }),
         { status: 200 },
       ),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createOpenRouterProvider();
     const models = await p.listModels();
@@ -164,7 +150,7 @@ describe('createOpenRouterProvider', () => {
   });
 
   it('listModelsWithMetadata returns full metadata', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(
         JSON.stringify({
           data: [
@@ -178,7 +164,7 @@ describe('createOpenRouterProvider', () => {
         }),
         { status: 200 },
       ),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createOpenRouterProvider();
     const models = await p.listModelsWithMetadata();
@@ -195,28 +181,28 @@ describe('createOpenRouterProvider', () => {
   });
 
   it('detectContextLength returns context length for known model', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(
         JSON.stringify({
           data: [{ id: 'anthropic/claude-3-opus', context_length: 200000 }],
         }),
         { status: 200 },
       ),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createOpenRouterProvider();
     expect(await p.detectContextLength('anthropic/claude-3-opus')).toBe(200000);
   });
 
   it('detectContextLength returns null for unknown model', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(
         JSON.stringify({
           data: [{ id: 'other-model', context_length: 4096 }],
         }),
         { status: 200 },
       ),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createOpenRouterProvider();
     expect(await p.detectContextLength('unknown-model')).toBeNull();
@@ -229,25 +215,23 @@ describe('createOpenRouterProvider', () => {
   });
 
   it('returns empty array on non-ok response', async () => {
-    globalThis.fetch = vi.fn(async () => new Response('error', { status: 500 })) as typeof globalThis.fetch;
+    vi.mocked(globalThis.fetch).mockResolvedValue(new Response('error', { status: 500 }));
 
     const p = createOpenRouterProvider();
     expect(await p.listModels()).toEqual([]);
   });
 
   it('returns empty array on fetch error', async () => {
-    globalThis.fetch = vi.fn(async () => {
-      throw new Error('network error');
-    }) as typeof globalThis.fetch;
+    vi.mocked(globalThis.fetch).mockRejectedValue(new Error('network error'));
 
     const p = createOpenRouterProvider();
     expect(await p.listModels()).toEqual([]);
   });
 
   it('returns empty array on invalid response shape', async () => {
-    globalThis.fetch = vi.fn(async () =>
+    vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ invalid: 'shape' }), { status: 200 }),
-    ) as typeof globalThis.fetch;
+    );
 
     const p = createOpenRouterProvider();
     expect(await p.listModels()).toEqual([]);

@@ -1,5 +1,5 @@
 import type { Summary, TaskTokenUsage, WorkflowState } from '../../types.js';
-import { calculateCostBreakdown, getProviderPricing, calculateCost } from '../../core/providers/pricing.js';
+import { calculateCostBreakdown, getProviderPricing, calculateCost } from '../providers/pricing.js';
 import { formatCost } from '../../utils/format.js';
 import {
   getCompletedTaskIds,

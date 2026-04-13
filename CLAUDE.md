@@ -47,6 +47,8 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 - **Error at boundaries**  -  Internal functions propagate, callers decide
 - **JSX for Ink**  -  `.tsx` files for React components, `.ts` for everything else
 - **Colocated tests**  -  `foo.test.ts` lives next to `foo.ts` (no separate `tests/` directory)
+- **kebab-case file naming**  -  Use kebab-case for multi-word file and folder names (`models-dev.ts`, `lm-studio.ts`). Prefer single-word names where natural (`pricing.ts`, `known.ts`, `registry.ts`). File names should match their primary concept.
+- **No type assertions**  -  Never use `!` (non-null assertion) or `as` (type assertion). Use optional chaining (`?.`), type narrowing, or proper null checks instead.
 - **Zero memoization**  -  No `useMemo`, `useCallback`, or `React.memo` anywhere in `src/`. Store selectors make them unnecessary.
 - **No imperative handles**  -  No `forwardRef` / `useImperativeHandle`. React 19 + stores eliminate the need.
 
@@ -64,7 +66,8 @@ src/
 │   ├── config.ts             # Config + projectDir (loaded from disk)
 │   ├── conversation-scroll.ts # Scroll position (replaces forwardRef/useImperativeHandle)
 │   ├── create-store.ts       # Generic store factory
-│   ├── detection.ts          # Provider detection state
+│   ├── detection.ts          # Provider detection state (+ Models.dev + CLI discovery triggers)
+│   ├── model-cache.ts        # Per-provider model cache (5-min TTL) + Models.dev catalog (1-hour TTL)
 │   ├── feedback.ts           # Feedback/error message state
 │   ├── input-mode.ts         # Input mode state (interactive flag)
 │   ├── overlay.ts            # Overlay active/exclusive state
@@ -91,10 +94,7 @@ src/
 │   │   ├── migration.ts      # migrateConfig (v1 → v2)
 │   │   ├── runner-config.ts  # getRunnerDisplayName, getRunnerCommand, getRunnerApiKey
 │   │   └── build-runner.ts   # buildRunnerConfig(role, opts) — safe runner config constructor
-│   ├── providers/            # Shared model/provider catalog helpers
-│   │   ├── catalog.ts        # Known model-vendor providers with API defaults
-│   │   ├── models.ts         # Model metadata helpers
-│   │   └── pricing.ts        # Cost calculation (known model pricing + $0 local fallback)
+│   ├── (providers/ moved to engine/providers/ — see below)
 │   ├── sessions/             # Session domain helpers
 │   │   └── status.ts         # Status icon + colour mapping (Session['status'] → Theme)
 │   ├── settings/             # Setting definitions and catalog
@@ -180,14 +180,22 @@ src/
 │   ├── runners/              # Symmetric planner/implementer factory (static imports)
 │   │   ├── factory.ts        # createPlanner, createImplementer — dispatch by kind
 │   │   └── command-based.ts  # invokeCommandBasedRunner — shared spawn for shell/agent kinds
-│   ├── provider-clients/     # Provider registry (used by both planners and implementers)
-│   │   ├── index.ts          # Re-exports
-│   │   ├── types.ts          # ProviderDef interface, ModelsResponse, ProviderOverrides
-│   │   ├── registry.ts       # KNOWN_PROVIDERS, getProvider(), detectAvailableProviders()
-│   │   ├── client.ts         # Shared HTTP client
-│   │   ├── openai-compat.ts  # Shared factory for remote OpenAI-compatible providers
-│   │   ├── ollama.ts         # Ollama (local, /api/tags, /api/show)
-│   │   └── lm-studio.ts      # LM Studio (local, /v1/models)
+│   ├── providers/            # Consolidated provider registry, catalog, pricing, HTTP clients
+│   │   ├── known.ts          # KNOWN_MODELS — minimal offline fallback (2-3 per provider)
+│   │   ├── pricing.ts        # Cost calculation and model pricing
+│   │   ├── metadata.ts       # formatContextLength, formatPrice
+│   │   ├── types.ts          # ProviderDef, DetectedModel, ProviderOverrides
+│   │   ├── registry.ts       # KNOWN_PROVIDERS, getProvider(), createClient(), detectCapabilities(), detectAvailableProviders()
+│   │   ├── client.ts         # Shared HTTP client (createClientFromProvider, fetchModelList, createMetadataProvider)
+│   │   ├── compat.ts         # OpenAI-compatible provider factory
+│   │   ├── models-dev.ts     # Models.dev API client (3-layer enrichment)
+│   │   ├── discovery.ts      # CLI tool model discovery (aider, opencode, kilo)
+│   │   ├── ollama.ts         # Ollama (local, /api/tags)
+│   │   ├── lm-studio.ts      # LM Studio (local, /v1/models)
+│   │   ├── openrouter.ts     # OpenRouter (with pricing, capabilities)
+│   │   ├── groq.ts           # Groq (with context_window)
+│   │   ├── together.ts       # Together AI (with pricing)
+│   │   └── testing.ts        # Test helpers
 │   ├── spec/                 # Spec parsing, formatting & prompt generation
 │   │   ├── parser.ts         # tasks.md → Task[] with topological sort
 │   │   ├── formatter.ts      # Task → self-contained prompt for local model
@@ -447,7 +455,7 @@ implementer:
 Five runner kinds: `cli` (known CLI tools), `api` (OpenAI-compatible HTTP), `shell` (stdin→stdout subprocess), `agent` (subprocess that writes files), `agent-sdk` (Anthropic Agent SDK library call).
 
 Runner factory: `src/engine/runners/factory.ts` — `createPlanner(config)` and `createImplementer(config)` dispatch by `kind`.
-Provider catalog (`src/core/providers/catalog.ts`): static list of known providers with API base URLs. Known providers: `ollama`, `lm-studio`, `anthropic`, `openrouter`, `deepseek`.
+Provider catalog (`src/core/providers.ts`): static list of known providers with API base URLs. Known providers: `ollama`, `lm-studio`, `anthropic`, `openrouter`, `deepseek`.
 
 ## Implementation Status
 

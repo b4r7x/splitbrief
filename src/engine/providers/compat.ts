@@ -8,8 +8,8 @@ export function createOpenAICompatProvider(
   isLocal: boolean,
   overrides?: ProviderOverrides,
 ): ProviderDef {
-  const baseURL = overrides?.apiBase || defaultBaseURL;
-  const apiKey = () => overrides?.apiKey || process.env[envKeyName] || '';
+  const baseURL = overrides?.apiBase ?? defaultBaseURL;
+  const apiKey = () => overrides?.apiKey ?? process.env[envKeyName] ?? '';
 
   return {
     name,

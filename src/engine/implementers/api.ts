@@ -2,11 +2,11 @@ import type { Config, ApiImplementerConfig } from '../../types.js';
 import type { Implementer, ImplementerOptions, RetryOptions } from './types.js';
 import type { InvokeOpts } from './utils.js';
 import { createImplementerBase } from './base.js';
-import { createClient } from '../provider-clients/index.js';
+import { createClient } from '../providers/registry.js';
 import { formatTaskPrompt, formatRetryPrompt, SYSTEM_PREAMBLE } from '../spec/formatter.js';
 import { estimateTokens } from '../spec/token-budget.js';
 import { asStreamClient, streamCompletion } from '../streaming/openai-stream.js';
-import { resolveAutoModel } from '../../core/providers/models.js';
+import { resolveAutoModel } from '../../core/providers.js';
 
 function asApiConfig(config: Config): ApiImplementerConfig {
   if (config.implementer.kind !== 'api') throw new Error('Expected api implementer config');

@@ -11,6 +11,7 @@ import { isCustomModel } from './picker-catalog.js';
 import { renderToolRow, renderModelRow } from './tool-row.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
+import { PROVIDER_CATALOG, isProviderId } from '../../../core/providers.js';
 
 interface PickerViewProps {
   role: 'planner' | 'implementer';
@@ -22,15 +23,16 @@ interface PickerViewProps {
 
 function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }) {
   const t = useTheme();
-  const isOllama = currentItem?.id === 'ollama';
-  const isLmStudio = currentItem?.id === 'lm-studio';
+  if (!currentItem) return <Text color={t.textDim}>No models available.</Text>;
+
+  const isOllama = currentItem.id === 'ollama';
+  const isLmStudio = currentItem.id === 'lm-studio';
 
   if (isOllama) {
     return (
       <Box flexDirection="column">
-        <Text color={t.textDim}>No models detected.</Text>
-        <Text color={t.textDim} dimColor>Start Ollama to see models:</Text>
-        <Text color={t.textDim} dimColor>  ollama serve</Text>
+        <Text color={t.textDim}>No models pulled.</Text>
+        <Text color={t.textDim} dimColor>Run: ollama pull qwen2.5-coder:7b</Text>
       </Box>
     );
   }
@@ -38,13 +40,26 @@ function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }
   if (isLmStudio) {
     return (
       <Box flexDirection="column">
-        <Text color={t.textDim}>No models detected.</Text>
-        <Text color={t.textDim} dimColor>Start LM Studio and enable the server.</Text>
+        <Text color={t.textDim}>No models loaded.</Text>
+        <Text color={t.textDim} dimColor>Download a model in LM Studio.</Text>
       </Box>
     );
   }
 
-  return <Text color={t.textDim}>No models available.</Text>;
+  if (currentItem.kind === 'api' && !currentItem.available && isProviderId(currentItem.id)) {
+    const catalog = PROVIDER_CATALOG[currentItem.id];
+    const envVar = catalog?.apiKeyEnv;
+    if (envVar) {
+      return (
+        <Box flexDirection="column">
+          <Text color={t.textDim}>Provider not configured.</Text>
+          <Text color={t.textDim} dimColor>Set {envVar} to enable.</Text>
+        </Box>
+      );
+    }
+  }
+
+  return <Text color={t.textDim}>No models available. Press Ctrl+R to refresh.</Text>;
 }
 
 export function PickerView({ role, stepLabel, onCancel, catalog, actions }: PickerViewProps) {

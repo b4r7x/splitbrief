@@ -1,7 +1,7 @@
-import { isProviderId, type ProviderId } from './catalog.js';
-import type { TokenUsage, CostBreakdown } from '../types/summary.js';
+import { isProviderId, stripVendorPrefix, type ProviderId } from '../../core/providers.js';
+import type { TokenUsage, CostBreakdown } from '../../core/types/summary.js';
 
-export interface PricingInfo {
+interface PricingInfo {
   inputPer1M: number;
   outputPer1M: number;
   isLocal: boolean;
@@ -17,40 +17,27 @@ const DEEPSEEK_CHAT: PricingInfo = { inputPer1M: 0.14, outputPer1M: 0.28, isLoca
 const LOCAL_PRICING: PricingInfo = { inputPer1M: 0, outputPer1M: 0, isLocal: true, name: 'Local model' };
 
 const MODEL_PRICING: Record<string, PricingInfo> = {
-  // Anthropic
   'claude-opus-4': { inputPer1M: 15, outputPer1M: 75, isLocal: false, name: 'Claude Opus 4' },
   'claude-sonnet-4': { inputPer1M: 3, outputPer1M: 15, isLocal: false, name: 'Claude Sonnet 4' },
   'claude-haiku-3-5': { inputPer1M: 0.80, outputPer1M: 4, isLocal: false, name: 'Claude Haiku 3.5' },
   'claude-sonnet-4.6': CLAUDE_SONNET_46,
   'claude-opus-4.6': CLAUDE_OPUS_46,
-
-  // OpenAI
   'gpt-5.4': GPT_54,
   'gpt-4o': GPT_4O,
   'gpt-4o-mini': { inputPer1M: 0.15, outputPer1M: 0.60, isLocal: false, name: 'GPT-4o mini' },
   'gpt-4.1': { inputPer1M: 2, outputPer1M: 8, isLocal: false, name: 'GPT-4.1' },
   'gpt-4.1-mini': { inputPer1M: 0.40, outputPer1M: 1.60, isLocal: false, name: 'GPT-4.1 mini' },
   'o3-mini': { inputPer1M: 1.10, outputPer1M: 4.40, isLocal: false, name: 'o3-mini' },
-
-  // Google (via OpenRouter)
   'gemini-2.5-flash': { inputPer1M: 0.15, outputPer1M: 0.60, isLocal: false, name: 'Gemini 2.5 Flash' },
   'gemini-2.5-pro': { inputPer1M: 1.25, outputPer1M: 10, isLocal: false, name: 'Gemini 2.5 Pro' },
-
-  // DeepSeek
   'deepseek-chat': DEEPSEEK_CHAT,
   'deepseek-reasoner': { inputPer1M: 0.55, outputPer1M: 2.19, isLocal: false, name: 'DeepSeek Reasoner' },
-
-  // Mistral (via OpenRouter)
   'mistral-small-3.1': { inputPer1M: 0.10, outputPer1M: 0.30, isLocal: false, name: 'Mistral Small 3.1' },
   'codestral': { inputPer1M: 0.30, outputPer1M: 0.90, isLocal: false, name: 'Codestral' },
 };
 
-export function normalizeModelName(model: string): string {
-  let name = model;
-  const slashIdx = name.indexOf('/');
-  if (slashIdx !== -1) name = name.slice(slashIdx + 1);
-  name = name.replace(/-\d{8}$/, '');
-  return name;
+function normalizeModelName(model: string): string {
+  return stripVendorPrefix(model).replace(/-\d{8}$/, '');
 }
 
 export function getModelPricing(model: string): PricingInfo | undefined {
@@ -66,9 +53,7 @@ const TOOL_PRICING: Record<ProviderId, PricingInfo> = {
   codex: { ...GPT_54, name: 'Codex' },
   opencode: { ...CLAUDE_SONNET_46, name: 'OpenCode' },
   aider: { ...CLAUDE_SONNET_46, name: 'Aider' },
-  // Subscription-based — no per-token charges; cost tracked via subscription
   copilot: { inputPer1M: 0, outputPer1M: 0, isLocal: false, name: 'Copilot' },
-  // Open-source tool — uses external model providers; cost depends on chosen provider
   'kilo-code': { inputPer1M: 0, outputPer1M: 0, isLocal: false, name: 'Kilo Code' },
   'agent-sdk': { ...CLAUDE_OPUS_46, name: 'Agent SDK' },
   anthropic: { ...CLAUDE_SONNET_46, name: 'Anthropic' },

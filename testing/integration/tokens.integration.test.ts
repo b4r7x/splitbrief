@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { guardIntegration } from './guard.js';
 import { createInitialState } from '../../src/core/state/machine.js';
 import { saveState, loadState } from '../../src/core/state/persistence.js';
-import { calculateCostBreakdown } from '../../src/core/providers/pricing.js';
+import { calculateCostBreakdown } from '../../src/engine/providers/pricing.js';
 import { formatCost } from '../../src/utils/format.js';
 
 describe('Token accumulation integration', () => {

@@ -12,7 +12,7 @@ import {
 } from "../../utils/format.js";
 import { phaseRole } from "../../core/phases.js";
 import { assertNever } from "../../utils/type-guards.js";
-import { getProviderDisplayName } from "../../core/providers/catalog.js";
+import { getProviderDisplayName } from "../../core/providers.js";
 import { Card } from "./card.js";
 import {
   ImplementerCard,

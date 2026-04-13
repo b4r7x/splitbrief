@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { buildSummary, calculateTaskCost } from './cost.js';
-import { calculateCostBreakdown } from '../../core/providers/pricing.js';
+import { calculateCostBreakdown } from '../providers/pricing.js';
 import type { BuildSummaryState } from './cost.js';
 import { taskId } from '../../core/types/workflow.js';
 import { makeUsage, makeTask } from '#testing/helpers/fixtures.js';

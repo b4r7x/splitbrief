@@ -1,5 +1,5 @@
 import { CLI_TOOL_IDS, RUNNER_KINDS } from '../types/schemas/enums.js';
-import { resolveDefaultApiBase } from '../providers/catalog.js';
+import { resolveDefaultApiBase } from '../providers.js';
 import { PlannerConfigSchema } from '../types/schemas/planner-config.js';
 import { ImplementerConfigSchema } from '../types/schemas/implementer-config.js';
 import type { PlannerConfig } from '../types/schemas/planner-config.js';

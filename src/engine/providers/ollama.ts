@@ -1,17 +1,17 @@
 import { z } from 'zod';
 import type { ProviderDef, ProviderOverrides } from './types.js';
-import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers/catalog.js';
+import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers.js';
 import { fetchModelList, stripV1Suffix } from './client.js';
 
 const DEFAULT_BASE = KNOWN_PROVIDER_BASE_URLS.ollama;
 
 const OllamaTagsSchema = z.object({
-  models: z.array(z.object({ name: z.string() }).passthrough()),
+  models: z.array(z.looseObject({ name: z.string() })),
 });
 
-const OllamaShowSchema = z.object({
+const OllamaShowSchema = z.looseObject({
   parameters: z.string().optional(),
-}).passthrough();
+});
 
 function extractOllamaModels(data: unknown): string[] {
   const result = OllamaTagsSchema.safeParse(data);
@@ -20,8 +20,8 @@ function extractOllamaModels(data: unknown): string[] {
 }
 
 export function createOllamaProvider(overrides?: ProviderOverrides): ProviderDef {
-  const baseURL = overrides?.apiBase || DEFAULT_BASE;
-  const apiKey = () => overrides?.apiKey || 'ollama';
+  const baseURL = overrides?.apiBase ?? DEFAULT_BASE;
+  const apiKey = () => overrides?.apiKey ?? 'ollama';
 
   return {
     name: 'ollama',
@@ -45,7 +45,7 @@ export function createOllamaProvider(overrides?: ProviderOverrides): ProviderDef
         const params = result.data.parameters ?? '';
         const match = params.match(/num_ctx\s+(\d+)/);
         return match?.[1] ? parseInt(match[1], 10) : null;
-      } catch { /* Ollama API unreachable — fall back to config */
+      } catch {
         return null;
       }
     },

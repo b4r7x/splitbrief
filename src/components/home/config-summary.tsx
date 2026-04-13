@@ -2,8 +2,7 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../ui/theme.js';
 import { configStore } from '../../stores/config.js';
 import { skillsStore } from '../../stores/skills.js';
-import { getProviderDisplayName, isProviderLocal } from '../../core/providers/catalog.js';
-import { formatModelName } from '../../core/providers/models.js';
+import { getProviderDisplayName, isProviderLocal, formatModelName } from '../../core/providers.js';
 import { getRunnerDisplayName } from '../../core/config/index.js';
 import { LabeledRow } from '../labeled-row.js';
 

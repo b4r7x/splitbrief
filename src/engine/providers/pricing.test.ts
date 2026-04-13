@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { calculateCost, calculateCostBreakdown, getModelPricing, getProviderPricing, normalizeModelName, type PricingInfo } from './pricing.js';
+import { calculateCost, calculateCostBreakdown, getModelPricing, getProviderPricing } from './pricing.js';
 import { makeUsage } from '#testing/helpers/fixtures.js';
 
 describe('calculateCost', () => {
   it('returns 0 for local pricing', () => {
-    const pricing: PricingInfo = { inputPer1M: 0, outputPer1M: 0, isLocal: true, name: 'Local' };
+    const pricing = { inputPer1M: 0, outputPer1M: 0, isLocal: true, name: 'Local' };
     expect(calculateCost(500_000, 500_000, pricing)).toBe(0);
   });
 
   it('handles zero tokens', () => {
-    const pricing: PricingInfo = { inputPer1M: 10, outputPer1M: 20, isLocal: false, name: 'Test' };
+    const pricing = { inputPer1M: 10, outputPer1M: 20, isLocal: false, name: 'Test' };
     expect(calculateCost(0, 0, pricing)).toBe(0);
   });
 
@@ -23,7 +23,7 @@ describe('calculateCost', () => {
     { model: 'o4-mini', inputPer1M: 0.55, outputPer1M: 2.2, input: 200_000, output: 100_000, expected: 0.11 + 0.22 },
     { model: 'Claude Opus', inputPer1M: 5, outputPer1M: 25, input: 100_000, output: 50_000, expected: 0.5 + 1.25 },
   ])('calculates correctly for $model pricing', ({ inputPer1M, outputPer1M, input, output, expected }) => {
-    const pricing: PricingInfo = { inputPer1M, outputPer1M, isLocal: false, name: 'Test' };
+    const pricing = { inputPer1M, outputPer1M, isLocal: false, name: 'Test' };
     expect(calculateCost(input, output, pricing)).toBeCloseTo(expected, 6);
   });
 });
@@ -45,13 +45,15 @@ describe('calculateCostBreakdown providerCosts', () => {
     });
 
     expect(result.providerCosts).toBeDefined();
-    const pc = result.providerCosts!;
-    expect(pc['claude-code']).toBeDefined();
-    expect(pc['claude-code']!.cost).toBe(result.actualPlannerCost);
-    expect(pc['claude-code']!.inputTokens).toBe(100_000);
-    expect(pc['claude-code']!.outputTokens).toBe(50_000);
-    expect(pc['ollama']).toBeDefined();
-    expect(pc['ollama']!.cost).toBe(0);
+    const pc = result.providerCosts ?? {};
+    const claudeCode = pc['claude-code'];
+    expect(claudeCode).toBeDefined();
+    expect(claudeCode?.cost).toBe(result.actualPlannerCost);
+    expect(claudeCode?.inputTokens).toBe(100_000);
+    expect(claudeCode?.outputTokens).toBe(50_000);
+    const ollama = pc['ollama'];
+    expect(ollama).toBeDefined();
+    expect(ollama?.cost).toBe(0);
   });
 
   it('includes escalation tokens under planner provider', () => {
@@ -71,8 +73,10 @@ describe('calculateCostBreakdown providerCosts', () => {
       implementerTool: 'ollama',
     });
 
-    expect(result.providerCosts!['claude-code']!.inputTokens).toBe(300_000);
-    expect(result.providerCosts!['claude-code']!.outputTokens).toBe(150_000);
+    const claudeCodeEntry = result.providerCosts?.['claude-code'];
+    expect(claudeCodeEntry).toBeDefined();
+    expect(claudeCodeEntry?.inputTokens).toBe(300_000);
+    expect(claudeCodeEntry?.outputTokens).toBe(150_000);
   });
 
   it('merges when planner and implementer are the same provider', () => {
@@ -90,10 +94,13 @@ describe('calculateCostBreakdown providerCosts', () => {
       implementerTool: 'deepseek',
     });
 
-    expect(Object.keys(result.providerCosts!)).toHaveLength(1);
-    expect(result.providerCosts!['deepseek']!.inputTokens).toBe(300_000);
-    expect(result.providerCosts!['deepseek']!.outputTokens).toBe(150_000);
-    expect(result.providerCosts!['deepseek']!.cost).toBeCloseTo(result.totalActualCost, 6);
+    const pc1 = result.providerCosts ?? {};
+    expect(Object.keys(pc1)).toHaveLength(1);
+    const deepseek1 = pc1['deepseek'];
+    expect(deepseek1).toBeDefined();
+    expect(deepseek1?.inputTokens).toBe(300_000);
+    expect(deepseek1?.outputTokens).toBe(150_000);
+    expect(deepseek1?.cost).toBeCloseTo(result.totalActualCost, 6);
   });
 
   it('merges when same provider and planner has zero tokens', () => {
@@ -112,10 +119,13 @@ describe('calculateCostBreakdown providerCosts', () => {
     });
 
     expect(result.providerCosts).toBeDefined();
-    expect(Object.keys(result.providerCosts!)).toHaveLength(1);
-    expect(result.providerCosts!['deepseek']!.inputTokens).toBe(500_000);
-    expect(result.providerCosts!['deepseek']!.outputTokens).toBe(200_000);
-    expect(result.providerCosts!['deepseek']!.cost).toBeCloseTo(result.totalActualCost, 6);
+    const pc2 = result.providerCosts ?? {};
+    expect(Object.keys(pc2)).toHaveLength(1);
+    const deepseek2 = pc2['deepseek'];
+    expect(deepseek2).toBeDefined();
+    expect(deepseek2?.inputTokens).toBe(500_000);
+    expect(deepseek2?.outputTokens).toBe(200_000);
+    expect(deepseek2?.cost).toBeCloseTo(result.totalActualCost, 6);
   });
 
   it('returns undefined providerCosts when no tokens used', () => {
@@ -129,24 +139,6 @@ describe('calculateCostBreakdown providerCosts', () => {
     });
 
     expect(result.providerCosts).toBeUndefined();
-  });
-});
-
-describe('normalizeModelName', () => {
-  it('strips date suffixes', () => {
-    expect(normalizeModelName('claude-sonnet-4-20250514')).toBe('claude-sonnet-4');
-  });
-
-  it('strips provider prefixes', () => {
-    expect(normalizeModelName('anthropic/claude-sonnet-4')).toBe('claude-sonnet-4');
-  });
-
-  it('strips both prefix and date suffix', () => {
-    expect(normalizeModelName('anthropic/claude-opus-4-20250514')).toBe('claude-opus-4');
-  });
-
-  it('returns name unchanged when no prefix or suffix', () => {
-    expect(normalizeModelName('gpt-4o')).toBe('gpt-4o');
   });
 });
 
@@ -206,7 +198,7 @@ describe('getProviderPricing', () => {
     const ollamaPricing = getProviderPricing('ollama');
     const lmStudioPricing = getProviderPricing('lm-studio');
     const shellPricing = getProviderPricing('shell');
-    
+
     [ollamaPricing, lmStudioPricing, shellPricing].forEach(pricing => {
       expect(pricing).toEqual({
         inputPer1M: 0,

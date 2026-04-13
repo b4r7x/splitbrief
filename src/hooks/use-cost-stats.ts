@@ -1,6 +1,6 @@
 import { workflowStore } from '../stores/workflow.js';
 import { configStore } from '../stores/config.js';
-import { calculateCostBreakdown } from '../core/providers/pricing.js';
+import { calculateCostBreakdown } from '../engine/providers/pricing.js';
 import { getRunnerDisplayName } from '../core/config/index.js';
 import type { CostBreakdown } from '../types.js';
 
