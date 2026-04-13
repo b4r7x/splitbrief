@@ -20,7 +20,7 @@ export function createCliImplementer(config: CliImplementerConfig): Implementer 
 
     async invoke(opts: InvokeOpts) {
       const { prompt, projectDir, onOutput } = opts;
-      const effectiveModel = resolveAutoModel(config.model);
+      const effectiveModel = resolveAutoModel(config.model, toolName);
 
       if (toolName === 'claude-code') {
         return runClaudeOneShot({ prompt, projectDir, onOutput, model: effectiveModel });

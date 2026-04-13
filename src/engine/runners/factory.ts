@@ -2,7 +2,6 @@ import type { Config } from '../../types.js';
 import type { Planner } from '../planners/types.js';
 import type { Implementer } from '../implementers/types.js';
 import type { RunnerKind } from '../../core/types/schemas/enums.js';
-import type { CliImplementerConfig } from '../../core/types/schemas/implementer-config.js';
 
 import { createClaudeCodePlanner } from '../planners/claude-code.js';
 import { createCliPlanner } from '../planners/cli.js';
@@ -38,7 +37,7 @@ const PLANNER_FACTORIES: Record<RunnerKind, (config: Config) => Planner> = {
 const IMPLEMENTER_FACTORIES: Record<RunnerKind, (config: Config) => Implementer> = {
   cli: (c) => {
     if (c.implementer.kind !== 'cli') throw new Error(`IMPLEMENTER_FACTORIES['cli']: expected implementer.kind='cli', got '${c.implementer.kind}'`);
-    return createCliImplementer(c.implementer as CliImplementerConfig);
+    return createCliImplementer(c.implementer);
   },
   api: createApiImplementer,
   shell: createShellImplementer,

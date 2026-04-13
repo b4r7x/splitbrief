@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { DetectedModel } from './types.js';
 import type { CliToolId } from '../../core/types/schemas/enums.js';
 import { runCommand } from '../../utils/process.js';
-import { perTokenToPerMillion } from './metadata.js';
+import { perTokenToPerMillion, isModelFree } from './metadata.js';
 
 const SUBPROCESS_TIMEOUT_MS = 10_000;
 const HTTP_TIMEOUT_MS = 5_000;
@@ -82,6 +82,12 @@ export async function discoverKiloModels(): Promise<DetectedModel[]> {
       if (m.pricing?.completion !== undefined) {
         model.pricingOutput = perTokenToPerMillion(m.pricing.completion);
       }
+
+      const hasPricing = model.pricingInput !== undefined || model.pricingOutput !== undefined;
+      if (hasPricing) {
+        model.isFree = isModelFree(model.pricingInput, model.pricingOutput);
+      }
+
       return model;
     });
   } catch {

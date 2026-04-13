@@ -7,8 +7,9 @@ import { validateConfig } from './validation.js';
 import { fromYaml, toYaml } from './transforms.js';
 import { TINY_SPEC_DIR, CONFIG_FILE } from '../paths.js';
 import { migrateConfig } from './migration.js';
-import { SECURE_DIR_MODE, SECURE_FILE_MODE, checkConfigPermissions } from '../../utils/fs.js';
+import { writeSecureFile, checkConfigPermissions } from '../../utils/fs.js';
 import { ensureGitignore } from '../../utils/git.js';
+import { narrowRecord } from '../../utils/type-guards.js';
 
 export function configPath(projectDir: string): string {
   return path.join(projectDir, TINY_SPEC_DIR, CONFIG_FILE);
@@ -45,27 +46,27 @@ export function createDefaultConfig(): Config {
   };
 }
 
-function mergeWithDefaults(migrated: Config): Config {
+function mergeWithDefaults(migrated: Record<string, unknown>): Record<string, unknown> {
   const defaults = createDefaultConfig();
 
   return {
     version: 2,
-    planner: migrated.planner ?? defaults.planner,
-    implementer: migrated.implementer
-      ? { ...defaults.implementer, ...migrated.implementer }
+    planner: migrated['planner'] ?? defaults.planner,
+    implementer: narrowRecord(migrated['implementer'])
+      ? { ...defaults.implementer, ...narrowRecord(migrated['implementer']) }
       : defaults.implementer,
-    validation: migrated.validation
-      ? { ...defaults.validation, ...migrated.validation }
+    validation: narrowRecord(migrated['validation'])
+      ? { ...defaults.validation, ...narrowRecord(migrated['validation']) }
       : defaults.validation,
-    workflow: migrated.workflow
-      ? { ...defaults.workflow, ...migrated.workflow }
+    workflow: narrowRecord(migrated['workflow'])
+      ? { ...defaults.workflow, ...narrowRecord(migrated['workflow']) }
       : defaults.workflow,
-    theme: migrated.theme ?? defaults.theme,
-    shikiTheme: migrated.shikiTheme ?? defaults.shikiTheme,
-    sessions: migrated.sessions
-      ? { ...defaults.sessions, ...migrated.sessions }
+    theme: migrated['theme'] ?? defaults.theme,
+    shikiTheme: migrated['shikiTheme'] ?? defaults.shikiTheme,
+    sessions: narrowRecord(migrated['sessions'])
+      ? { ...defaults.sessions, ...narrowRecord(migrated['sessions']) }
       : defaults.sessions,
-    ...(migrated.escalation !== undefined && { escalation: migrated.escalation }),
+    ...(migrated['escalation'] !== undefined && { escalation: migrated['escalation'] }),
   };
 }
 
@@ -89,12 +90,10 @@ export function loadConfig(projectDir: string): Config {
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return createDefaultConfig();
 
-  // Convert snake_case to camelCase
   const camelCased = fromYaml(parsed);
 
-  const migrated = migrateConfig(camelCased) as Config;
+  const migrated = narrowRecord(migrateConfig(camelCased)) ?? {};
 
-  // Merge with defaults for missing sections
   const merged = mergeWithDefaults(migrated);
 
   const { errors, warnings, data } = validateConfig(merged);
@@ -115,24 +114,17 @@ export function loadConfig(projectDir: string): Config {
 }
 
 export function writeConfig(projectDir: string, config: Config): void {
-  const dirPath = path.join(projectDir, TINY_SPEC_DIR);
-  fs.mkdirSync(dirPath, { recursive: true, mode: SECURE_DIR_MODE });
-  fs.writeFileSync(
-    path.join(dirPath, CONFIG_FILE),
-    YAML.stringify(toYaml(config)),
-    { encoding: 'utf-8', mode: SECURE_FILE_MODE },
-  );
+  const configFilePath = path.join(projectDir, TINY_SPEC_DIR, CONFIG_FILE);
+  writeSecureFile(configFilePath, YAML.stringify(toYaml(config)));
 }
 
 export function initConfig(projectDir: string, opts: { force?: boolean } = {}): void {
-  const dirPath = path.join(projectDir, TINY_SPEC_DIR);
-  const configFilePath = path.join(dirPath, CONFIG_FILE);
+  const configFilePath = path.join(projectDir, TINY_SPEC_DIR, CONFIG_FILE);
 
   if (!opts.force && fs.existsSync(configFilePath)) return;
 
-  fs.mkdirSync(dirPath, { recursive: true, mode: SECURE_DIR_MODE });
   ensureGitignore(projectDir, '.tiny-spec/');
 
   const yamlObj = toYaml(createDefaultConfig());
-  fs.writeFileSync(configFilePath, YAML.stringify(yamlObj), { encoding: 'utf-8', mode: SECURE_FILE_MODE });
+  writeSecureFile(configFilePath, YAML.stringify(yamlObj));
 }

@@ -24,7 +24,7 @@ function createGenEventEmitter(
     if (status === 'running') {
       onEvent?.({ type: 'implementer-generate-running', ts: Date.now(), file });
     } else if (status === 'done') {
-      const diff = extra?.diff as string | undefined;
+      const diff = typeof extra?.diff === 'string' ? extra.diff : undefined;
       onEvent?.({
         type: 'implementer-generate-done',
         ts: Date.now(),

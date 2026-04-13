@@ -1,5 +1,6 @@
 import type { Config } from '../types/index.js';
-import { formatModelName, getProviderDisplayName } from '../providers.js';
+import { getProviderDisplayName } from '../providers.js';
+import { formatModelName } from '../model-display.js';
 import { getRunnerDisplayName } from '../config/index.js';
 
 const MAX_RETRIES_LIMIT = 10;

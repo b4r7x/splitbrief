@@ -65,7 +65,9 @@ export function SingleColumnPicker<T>({
         </Box>
       )}
 
-      {!hideFilterRow && <ScrollIndicator show={showScrollUp} direction="up" />}
+      {!hideFilterRow && (showScrollUp
+        ? <ScrollIndicator show direction="up" />
+        : <Text>{' '}</Text>)}
 
       {items.length === 0 ? (
         placeholderWhenEmpty ?? <Text color={t.textDim}>No items</Text>
@@ -86,7 +88,9 @@ export function SingleColumnPicker<T>({
 
       {footer}
 
-      {!hideFilterRow && <ScrollIndicator show={showScrollDown} direction="down" />}
+      {!hideFilterRow && (showScrollDown
+        ? <ScrollIndicator show direction="down" />
+        : <Text>{' '}</Text>)}
     </Box>
   );
 }

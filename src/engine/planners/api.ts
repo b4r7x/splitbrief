@@ -34,7 +34,7 @@ export function createApiPlanner(config: Config): Planner {
   }
   const plannerCfg = config.planner;
   const provider = plannerCfg.provider;
-  const model = resolveAutoModel(plannerCfg.model);
+  const model = resolveAutoModel(plannerCfg.model, provider);
   if (!model) throw new Error(`API planner requires an explicit model name — 'auto' is not supported for API backends. Set planner.model in your config.`);
   const resolved = getProvider(provider, {
     apiBase: plannerCfg.apiBase,

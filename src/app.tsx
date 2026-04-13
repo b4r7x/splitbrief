@@ -41,8 +41,7 @@ export function App() {
     setFeedbackError: feedbackStore.setError,
     refreshDetection: async () => {
       const projectDir = configStore.get().projectDir;
-      if (projectDir) await detectionStore.invalidate(projectDir).catch(() => {});
-      await detectionStore.load(projectDir);
+      await detectionStore.refresh(projectDir);
     },
   };
   const commands = createCommands(ctx);

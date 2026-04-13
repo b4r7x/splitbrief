@@ -20,12 +20,14 @@ export type PredictCostOptions = {
   taskCount: number;
   plannerTool: string;
   implementerTool: string;
+  plannerModel?: string | undefined;
+  implementerModel?: string | undefined;
   tokenUsage?: TokenUsage | undefined;
 };
 
 function estimatePlannerCost(opts: PredictCostOptions): number {
-  const { taskCount, plannerTool, tokenUsage } = opts;
-  const plannerPricing = getProviderPricing(plannerTool);
+  const { taskCount, plannerTool, plannerModel, tokenUsage } = opts;
+  const plannerPricing = getProviderPricing(plannerTool, plannerModel);
 
   if (tokenUsage && (tokenUsage.plannerInput > 0 || tokenUsage.plannerOutput > 0)) {
     return calculateCost(tokenUsage.plannerInput, tokenUsage.plannerOutput, plannerPricing);
@@ -35,9 +37,9 @@ function estimatePlannerCost(opts: PredictCostOptions): number {
   return calculateCost(estimatedTokens * 0.6, estimatedTokens * 0.4, plannerPricing);
 }
 
-function estimateImplementerCost(taskCount: number, escalationRate: number, plannerTool: string, implementerTool: string): number {
-  const implementerPricing = getProviderPricing(implementerTool);
-  const plannerPricing = getProviderPricing(plannerTool);
+function estimateImplementerCost(taskCount: number, escalationRate: number, plannerTool: string, implementerTool: string, plannerModel?: string, implementerModel?: string): number {
+  const implementerPricing = getProviderPricing(implementerTool, implementerModel);
+  const plannerPricing = getProviderPricing(plannerTool, plannerModel);
 
   const implementerTokens = taskCount * DEFAULT_IMPLEMENTER_TOKENS_PER_TASK;
   // Split implementer tokens roughly 60/40 input/output
@@ -51,7 +53,7 @@ function estimateImplementerCost(taskCount: number, escalationRate: number, plan
 }
 
 export function predictCost(opts: PredictCostOptions): CostPrediction {
-  const { plannerTool, implementerTool } = opts;
+  const { plannerTool, implementerTool, plannerModel, implementerModel } = opts;
   const taskCount = Math.max(0, opts.taskCount);
 
   if (taskCount === 0) {
@@ -60,9 +62,9 @@ export function predictCost(opts: PredictCostOptions): CostPrediction {
 
   const plannerCost = estimatePlannerCost(opts);
 
-  const lowImpl = estimateImplementerCost(taskCount, LOW_ESCALATION_RATE, plannerTool, implementerTool);
-  const expectedImpl = estimateImplementerCost(taskCount, EXPECTED_ESCALATION_RATE, plannerTool, implementerTool);
-  const highImpl = estimateImplementerCost(taskCount, HIGH_ESCALATION_RATE, plannerTool, implementerTool);
+  const lowImpl = estimateImplementerCost(taskCount, LOW_ESCALATION_RATE, plannerTool, implementerTool, plannerModel, implementerModel);
+  const expectedImpl = estimateImplementerCost(taskCount, EXPECTED_ESCALATION_RATE, plannerTool, implementerTool, plannerModel, implementerModel);
+  const highImpl = estimateImplementerCost(taskCount, HIGH_ESCALATION_RATE, plannerTool, implementerTool, plannerModel, implementerModel);
 
   return {
     estimatedTasks: taskCount,

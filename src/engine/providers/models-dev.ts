@@ -1,13 +1,15 @@
 import { z } from 'zod';
 import type { DetectedModel } from './types.js';
 import type { ProviderId } from '../../core/providers.js';
-import { perTokenToPerMillion } from './metadata.js';
+import { isModelFree } from './metadata.js';
 
 const ModelsDevModelSchema = z.looseObject({
   id: z.string(),
   name: z.string().optional(),
   cost: z.object({ input: z.number().optional(), output: z.number().optional() }).optional(),
   limit: z.object({ context: z.number().optional(), output: z.number().optional() }).optional(),
+  release_date: z.string().optional(),
+  last_updated: z.string().optional(),
 });
 
 const ModelsDevProviderSchema = z.looseObject({
@@ -24,36 +26,45 @@ export type ModelsDevCatalog = z.infer<typeof ModelsDevCatalogSchema>;
 
 const MODELS_DEV_URL = 'https://models.dev/api.json';
 
-const PROVIDER_ID_MAP: Record<string, string> = {
-  togetherai: 'together',
-  lmstudio: 'lm-studio',
-  'github-copilot': 'copilot',
-  kilo: 'kilo-code',
-  'opencode-go': 'opencode',
+const PROVIDER_TO_MODELS_DEV_IDS: Partial<Record<ProviderId, string[]>> = {
+  together: ['togetherai'],
+  'lm-studio': ['lmstudio'],
+  copilot: ['github-copilot'],
+  'kilo-code': ['kilo'],
+  opencode: ['opencode', 'opencode-go'],
 };
 
-function toModelsDevProviderId(providerId: ProviderId): string {
-  const reverse = Object.entries(PROVIDER_ID_MAP).find(([, v]) => v === providerId);
-  return reverse ? reverse[0] : providerId;
+function toModelsDevProviderIds(providerId: ProviderId): string[] {
+  return PROVIDER_TO_MODELS_DEV_IDS[providerId] ?? [providerId];
+}
+
+function pickFreshestDate(a: string | undefined, b: string | undefined): string | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return a >= b ? a : b;
 }
 
 function modelToDetected(model: ModelsDevModel): DetectedModel {
   const inputRaw = model.cost?.input;
   const outputRaw = model.cost?.output;
-  const pricingInput = inputRaw !== undefined ? perTokenToPerMillion(inputRaw) : 0;
-  const pricingOutput = outputRaw !== undefined ? perTokenToPerMillion(outputRaw) : 0;
-  const isFree = pricingInput === 0 && pricingOutput === 0;
+  const hasPricingData = inputRaw !== undefined || outputRaw !== undefined;
+  const pricingInput = inputRaw;
+  const pricingOutput = outputRaw;
+  const isFree = hasPricingData ? isModelFree(pricingInput, pricingOutput) : undefined;
 
   const result: DetectedModel = {
     id: model.id,
-    pricingInput,
-    pricingOutput,
-    isFree,
+    ...(pricingInput !== undefined && { pricingInput }),
+    ...(pricingOutput !== undefined && { pricingOutput }),
+    ...(isFree !== undefined && { isFree }),
   };
 
   if (model.limit?.context !== undefined) {
     result.contextLength = model.limit.context;
   }
+
+  const releaseDate = pickFreshestDate(model.release_date, model.last_updated);
+  if (releaseDate) result.releaseDate = releaseDate;
 
   return result;
 }
@@ -74,8 +85,16 @@ export async function fetchModelsDevCatalog(): Promise<ModelsDevCatalog> {
 }
 
 export function getModelsForProvider(catalog: ModelsDevCatalog, providerId: ProviderId): DetectedModel[] {
-  const modelsDevId = toModelsDevProviderId(providerId);
-  const provider = catalog[modelsDevId];
-  if (!provider?.models) return [];
-  return Object.values(provider.models).map(modelToDetected);
+  const merged = new Map<string, DetectedModel>();
+
+  for (const modelsDevId of toModelsDevProviderIds(providerId)) {
+    const provider = catalog[modelsDevId];
+    if (!provider?.models) continue;
+
+    for (const model of Object.values(provider.models).map(modelToDetected)) {
+      merged.set(model.id, model);
+    }
+  }
+
+  return [...merged.values()];
 }

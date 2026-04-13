@@ -1,10 +1,28 @@
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 
 // Node.js ignores file mode on Windows — these are effective on Unix/macOS only.
 export const SECURE_DIR_MODE = 0o700;
 export const SECURE_FILE_MODE = 0o600;
+
+export function ensureSecureDir(dir: string): void {
+  mkdirSync(dir, { recursive: true, mode: SECURE_DIR_MODE });
+}
+
+export function writeSecureFile(filePath: string, content: string): void {
+  ensureSecureDir(dirname(filePath));
+  writeFileSync(filePath, content, { mode: SECURE_FILE_MODE });
+}
+
+export function validateSafeIdentifier(id: string, label: string): void {
+  if (!id?.trim()) {
+    throw new Error(`Invalid ${label} '${id}'`);
+  }
+  if (id.includes('..') || id.includes('/') || id.includes('\\')) {
+    throw new Error(`Invalid ${label} '${id}': must not contain '..', '/' or '\\'`);
+  }
+}
 
 export function checkConfigPermissions(filePath: string): boolean {
   try {

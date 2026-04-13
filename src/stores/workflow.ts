@@ -1,10 +1,13 @@
 import { createStore, storeBase } from './create-store.js';
 import { killAllProcesses } from '../utils/process.js';
 import { mergeEvent, updateCounts, updateTaskMap } from './workflow-reducers.js';
+import { groupEventsIntoSections } from '../core/event-sections.js';
+import type { Section } from '../core/event-sections.js';
 import type { Phase, SidebarTask, TuiEvent, TokenUsage } from '../types.js';
 
 export interface WorkflowViewState {
   events: TuiEvent[];
+  sections: Section[];
   phase: Phase;
   currentTask: number;
   totalTasks: number;
@@ -12,6 +15,7 @@ export interface WorkflowViewState {
   escalatedCount: number;
   taskCompletionTimes: number[];
   taskMap: Map<string, SidebarTask>;
+  tasks: SidebarTask[];
   tokenUsage: TokenUsage | null;
   cancelled: boolean;
   sidebarVisible: boolean;
@@ -19,6 +23,7 @@ export interface WorkflowViewState {
 
 const initial: WorkflowViewState = {
   events: [],
+  sections: [],
   phase: 'idle',
   currentTask: 0,
   totalTasks: 0,
@@ -26,6 +31,7 @@ const initial: WorkflowViewState = {
   escalatedCount: 0,
   taskCompletionTimes: [],
   taskMap: new Map(),
+  tasks: [],
   tokenUsage: null,
   cancelled: false,
   sidebarVisible: false,
@@ -44,7 +50,9 @@ function addEvent(event: TuiEvent) {
     const events = mergeEvent(state.events, event);
     const counts = updateCounts(state, event);
     const taskMap = updateTaskMap(state.taskMap, event);
-    return { ...state, events, ...counts, taskMap };
+    const tasks = taskMap !== state.taskMap ? Array.from(taskMap.values()) : state.tasks;
+    const sections = events !== state.events ? groupEventsIntoSections(events) : state.sections;
+    return { ...state, events, sections, ...counts, taskMap, tasks };
   });
 }
 
@@ -64,7 +72,7 @@ function requestCancel() {
         : ev,
     );
     const final = [...events, { type: 'workflow-cancelled' as const, ts: now }];
-    return { ...s, cancelled: true, events: final };
+    return { ...s, cancelled: true, events: final, sections: groupEventsIntoSections(final) };
   });
   if (!shouldCallHandler) return;
   if (cancelHandler) cancelHandler();

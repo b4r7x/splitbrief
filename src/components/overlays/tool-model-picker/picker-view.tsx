@@ -2,7 +2,6 @@ import { Box, Text } from 'ink';
 import { TwoColumnPicker } from '../../pickers/two-column-picker/index.js';
 import { useTheme } from '../../../ui/theme.js';
 import { overlayStore } from '../../../stores/overlay.js';
-import { modelCacheStore } from '../../../stores/model-cache.js';
 import { detectionStore } from '../../../stores/detection.js';
 import { configStore } from '../../../stores/config.js';
 import { feedbackStore } from '../../../stores/feedback.js';
@@ -73,11 +72,8 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
   const initialRightIndex = currentModelIdx >= 0 ? currentModelIdx + 1 : undefined;
 
   const handleRefresh = () => {
-    modelCacheStore.invalidateAll();
     const projectDir = configStore.get().projectDir;
-    if (projectDir) {
-      detectionStore.invalidate(projectDir).then(() => detectionStore.load(projectDir));
-    }
+    detectionStore.refresh(projectDir);
     feedbackStore.setMessage('Refreshing models...');
   };
 
@@ -122,7 +118,9 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
           isCustom: isCustomModel,
         },
         renderRow: (item, { isCursor, maxWidth }) =>
-          renderModelRow({ item, isCursor, maxWidth, currentModel: catalog.currentModel, theme: t }),
+          renderModelRow({
+            item, isCursor, maxWidth, currentModel: catalog.currentModel, theme: t,
+          }),
       }}
     />
   );

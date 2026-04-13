@@ -5,7 +5,7 @@ import { useTheme } from '../../ui/theme.js';
 import { DiffView } from '../../ui/diff-view.js';
 import { Spinner } from '../../ui/spinner.js';
 import { formatDuration } from '../../utils/format.js';
-import { formatModelName } from '../../core/providers.js';
+import { formatModelName } from '../../core/model-display.js';
 import { Card } from './card.js';
 
 export type ImplementerGenerateEvent = Extract<

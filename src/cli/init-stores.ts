@@ -6,6 +6,9 @@ import { feedbackStore } from '../stores/feedback.js';
 import { setHighlightTheme } from '../utils/highlight.js';
 import { warnError } from '../utils/format.js';
 import { discoverSkills, detectCapabilities } from '../engine/index.js';
+import { detectAll } from '../engine/detection/index.js';
+import { fetchModelsDevCatalog } from '../engine/providers/models-dev.js';
+import { discoverAllCliTools } from '../engine/providers/discovery.js';
 import type { WorkflowOpts, Config, PlannerTool } from '../types.js';
 import { isPlannerToolId } from '../core/providers.js';
 import { cliError } from './errors.js';
@@ -65,6 +68,6 @@ export async function initStores(projectDir: string, opts: WorkflowOpts = {}): P
 
   await Promise.all([
     skillsStore.discover(discoverSkills, getPlannerToolId(storeConfig.planner), projectDir),
-    detectionStore.load(projectDir),
+    detectionStore.load({ detectAll, fetchModelsDevCatalog, discoverAllCliTools }, projectDir),
   ]);
 }

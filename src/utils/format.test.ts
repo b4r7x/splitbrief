@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { formatCost, formatTime, formatTimeHHMMSS, formatDuration, formatEta, toErrorMessage, formatRelativeTime, parseVersion, truncate, formatToolModel } from './format.js';
+import { formatCost, formatTime, formatTimeHHMMSS, formatDuration, formatEta, toErrorMessage, formatRelativeTime, parseVersion, truncate } from './format.js';
 
 describe('formatCost', () => {
   it('formats zero as $0.00', () => {
@@ -46,32 +46,6 @@ describe('formatTime', () => {
 
   it('clamps negative values to 0s', () => {
     expect(formatTime(-5000)).toBe('0s');
-  });
-});
-
-describe('formatToolModel', () => {
-  it('returns empty string when both tool and model are undefined', () => {
-    expect(formatToolModel(undefined, undefined)).toBe('');
-  });
-
-  it('returns empty string when both tool and model are empty strings', () => {
-    expect(formatToolModel('', '')).toBe('');
-  });
-
-  it('returns display name + separator + model for known tool', () => {
-    expect(formatToolModel('ollama', 'qwen2.5-coder:7b')).toBe('Ollama · qwen2.5-coder:7b');
-  });
-
-  it('passes through raw tool name + model for unknown tool', () => {
-    expect(formatToolModel('my-provider', 'some-model')).toBe('my-provider · some-model');
-  });
-
-  it('returns just the display name when only tool is provided', () => {
-    expect(formatToolModel('ollama')).toBe('Ollama');
-  });
-
-  it('returns just the model when only model is provided', () => {
-    expect(formatToolModel(undefined, 'gpt-4o')).toBe('gpt-4o');
   });
 });
 

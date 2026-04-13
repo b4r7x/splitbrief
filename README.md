@@ -203,6 +203,14 @@ implementer:
 
 ## Models
 
+tiny-spec now loads model metadata from [models.dev](https://models.dev) first. Runtime provider detection and CLI discovery are overlays. The bundled model list is only the last-resort offline fallback.
+
+### Catalog notes
+
+- Claude Code uses `default`, `sonnet`, `opus`, and `opusplan` in the picker. Legacy stored `auto` still resolves safely to `default`.
+- For `opencode` and `kilo-code`, prefer `auto` and configure the real default model in the tool itself before launching tiny-spec.
+- Dollar pricing is shown only for real API providers. CLI tools, subscriptions, and local backends are intentionally unpriced.
+
 ### By VRAM
 
 | VRAM | Model | Context | Config |

@@ -13,16 +13,17 @@ export async function buildProjectContextMarkdown(projectDir: string): Promise<s
     try {
       const name = typeof pkg.name === 'string' ? pkg.name : 'unknown';
       const description = typeof pkg.description === 'string' ? pkg.description : '';
-      const scripts = (typeof pkg.scripts === 'object' && pkg.scripts !== null && !Array.isArray(pkg.scripts))
-        ? pkg.scripts as Record<string, string>
+      const rawScripts = (typeof pkg.scripts === 'object' && pkg.scripts !== null && !Array.isArray(pkg.scripts))
+        ? pkg.scripts
         : {};
 
       parts.push(`## Package: ${name}`);
       if (description) parts.push(description);
-      if (Object.keys(scripts).length > 0) {
+      const scriptEntries = Object.entries(rawScripts).filter(([, v]) => typeof v === 'string');
+      if (scriptEntries.length > 0) {
         parts.push('\n### Scripts');
-        for (const [name, cmd] of Object.entries(scripts)) {
-          parts.push(`- \`${name}\`: \`${cmd}\``);
+        for (const [scriptName, cmd] of scriptEntries) {
+          parts.push(`- \`${scriptName}\`: \`${cmd}\``);
         }
       }
     } catch (err) { warnError('Failed to read package.json', err); }

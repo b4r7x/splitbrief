@@ -1,11 +1,10 @@
 import { redactSecrets } from './redact.js';
-import { getProviderDisplayName } from '../core/providers.js';
 
-export function formatToolModel(tool?: string, model?: string): string {
-  if (!tool && !model) return '';
-  const display = getProviderDisplayName(tool ?? '');
-  if (model) return display ? `${display} · ${model}` : model;
-  return display || '';
+export function formatContextLength(tokens: number | undefined): string {
+  if (tokens == null || tokens === 0) return '';
+  if (tokens >= 1_000_000)
+    return `${(tokens / 1_000_000).toFixed(tokens % 1_000_000 === 0 ? 0 : 1)}M`;
+  return `${Math.round(tokens / 1000)}K`;
 }
 
 export function formatDuration(ms: number): string {

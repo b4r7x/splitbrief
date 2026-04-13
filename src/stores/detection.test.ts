@@ -3,15 +3,10 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { PlannerDetection, ProviderDetection } from '../types.js';
+import { modelCacheStore } from './model-cache.js';
 import { detectionStore } from './detection.js';
-
-vi.mock('../engine/detection/index.js', () => ({
-  detectAll: vi.fn(),
-}));
-
-import { detectAll } from '../engine/detection/index.js';
-
-const detectAllMock = vi.mocked(detectAll);
+import type { DetectionDeps } from './detection.js';
+import type { fetchModelsDevCatalog } from '../engine/providers/models-dev.js';
 
 const makePlanner = (overrides?: Partial<PlannerDetection>): PlannerDetection => ({
   tool: 'claude-code',
@@ -27,10 +22,19 @@ const makeImplementer = (overrides?: Partial<ProviderDetection>): ProviderDetect
   ...overrides,
 });
 
+function makeDeps(overrides: Partial<DetectionDeps> = {}): DetectionDeps {
+  return {
+    detectAll: vi.fn().mockResolvedValue({ planners: [], implementers: [] }),
+    fetchModelsDevCatalog: vi.fn().mockResolvedValue({}),
+    discoverAllCliTools: vi.fn().mockResolvedValue({}),
+    ...overrides,
+  };
+}
+
 describe('detectionStore', () => {
   beforeEach(() => {
-    detectAllMock.mockReset();
     detectionStore.reset();
+    modelCacheStore.reset();
   });
 
   it('starts with empty planners and implementers', () => {
@@ -42,19 +46,19 @@ describe('detectionStore', () => {
   it('load() populates both planners and implementers from detectAll', async () => {
     const planners = [makePlanner({ tool: 'claude-code' }), makePlanner({ tool: 'codex', available: false })];
     const implementers = [makeImplementer({ provider: 'ollama' }), makeImplementer({ provider: 'lm-studio', available: false })];
-    detectAllMock.mockResolvedValue({ planners, implementers });
+    const deps = makeDeps({ detectAll: vi.fn().mockResolvedValue({ planners, implementers }) });
 
-    await detectionStore.load();
+    await detectionStore.load(deps);
 
-    expect(detectAllMock).toHaveBeenCalledOnce();
+    expect(deps.detectAll).toHaveBeenCalledOnce();
     const state = detectionStore.get();
     expect(state.planners).toBe(planners);
     expect(state.implementers).toBe(implementers);
   });
 
   it('reset() clears populated detection state', async () => {
-    detectAllMock.mockResolvedValue({ planners: [makePlanner()], implementers: [makeImplementer()] });
-    await detectionStore.load();
+    const deps = makeDeps({ detectAll: vi.fn().mockResolvedValue({ planners: [makePlanner()], implementers: [makeImplementer()] }) });
+    await detectionStore.load(deps);
     expect(detectionStore.get().planners).toHaveLength(1);
 
     detectionStore.reset();
@@ -69,9 +73,7 @@ describe('detectionStore', () => {
 
     beforeEach(async () => {
       tempDir = await mkdtemp(join(tmpdir(), 'tiny-spec-detection-store-test-'));
-      detectAllMock.mockReset();
       detectionStore.reset();
-      detectAllMock.mockResolvedValue({ planners: [makePlanner()], implementers: [makeImplementer()] });
     });
 
     afterEach(async () => {
@@ -80,34 +82,78 @@ describe('detectionStore', () => {
     });
 
     it('load() with projectDir uses cache on second call', async () => {
-      await detectionStore.load(tempDir);
-      expect(detectAllMock).toHaveBeenCalledOnce();
+      const deps = makeDeps({ detectAll: vi.fn().mockResolvedValue({ planners: [makePlanner()], implementers: [makeImplementer()] }) });
+
+      await detectionStore.load(deps, tempDir);
+      expect(deps.detectAll).toHaveBeenCalledOnce();
+      expect(deps.fetchModelsDevCatalog).toHaveBeenCalledOnce();
+      expect(deps.discoverAllCliTools).toHaveBeenCalledOnce();
 
       await detectionStore._pendingSave;
 
-      await detectionStore.load(tempDir);
-      expect(detectAllMock).toHaveBeenCalledTimes(1);
+      await detectionStore.load(deps, tempDir);
+      expect(deps.detectAll).toHaveBeenCalledTimes(1);
+      expect(deps.fetchModelsDevCatalog).toHaveBeenCalledTimes(2);
+      expect(deps.discoverAllCliTools).toHaveBeenCalledTimes(2);
 
       const state = detectionStore.get();
       expect(state.planners).toHaveLength(1);
       expect(state.implementers).toHaveLength(1);
     });
 
-    it('load() without projectDir always runs detection', async () => {
-      await detectionStore.load();
-      await detectionStore.load();
+    it('hydrates models.dev and CLI discovery on cache hit', async () => {
+      const catalog = {
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-sonnet-4-6': {
+              id: 'claude-sonnet-4-6',
+              cost: { input: 3, output: 15 },
+              limit: { context: 1_000_000 },
+            },
+          },
+        },
+      };
 
-      expect(detectAllMock).toHaveBeenCalledTimes(2);
+      const deps = makeDeps({
+        detectAll: vi.fn().mockResolvedValue({ planners: [makePlanner()], implementers: [makeImplementer()] }),
+        fetchModelsDevCatalog: vi.fn().mockResolvedValue(catalog) as typeof fetchModelsDevCatalog,
+        discoverAllCliTools: vi.fn().mockResolvedValue({ opencode: [{ id: 'anthropic/claude-sonnet-4.6' }] }),
+      });
+
+      await detectionStore.load(deps, tempDir);
+      await detectionStore._pendingSave;
+
+      detectionStore.reset();
+      modelCacheStore.reset();
+
+      await detectionStore.load(deps, tempDir);
+
+      expect(deps.detectAll).toHaveBeenCalledTimes(1);
+      expect(deps.fetchModelsDevCatalog).toHaveBeenCalledTimes(2);
+      expect(deps.discoverAllCliTools).toHaveBeenCalledTimes(2);
+      expect(modelCacheStore.getModelsDevCatalog()).toEqual(catalog);
+      expect(modelCacheStore.getProviderModels('opencode')).toEqual([{ id: 'anthropic/claude-sonnet-4.6' }]);
+    });
+
+    it('load() without projectDir always runs detection', async () => {
+      const deps = makeDeps();
+      await detectionStore.load(deps);
+      await detectionStore.load(deps);
+
+      expect(deps.detectAll).toHaveBeenCalledTimes(2);
     });
 
     it('invalidate() forces re-detection on next load', async () => {
-      await detectionStore.load(tempDir);
-      expect(detectAllMock).toHaveBeenCalledOnce();
+      const deps = makeDeps({ detectAll: vi.fn().mockResolvedValue({ planners: [makePlanner()], implementers: [makeImplementer()] }) });
+
+      await detectionStore.load(deps, tempDir);
+      expect(deps.detectAll).toHaveBeenCalledOnce();
 
       await detectionStore.invalidate(tempDir);
 
-      await detectionStore.load(tempDir);
-      expect(detectAllMock).toHaveBeenCalledTimes(2);
+      await detectionStore.load(deps, tempDir);
+      expect(deps.detectAll).toHaveBeenCalledTimes(2);
     });
   });
 });

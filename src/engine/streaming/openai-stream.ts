@@ -42,15 +42,17 @@ export interface StreamClient {
   };
 }
 
-export function asStreamClient(client: unknown): StreamClient {
-  if (
+function isStreamClient(client: unknown): client is StreamClient {
+  return (
     typeof client === 'object' && client !== null &&
     'chat' in client && typeof client.chat === 'object' && client.chat !== null &&
     'completions' in client.chat && typeof client.chat.completions === 'object' && client.chat.completions !== null &&
     'create' in client.chat.completions && typeof client.chat.completions.create === 'function'
-  ) {
-    return client as StreamClient;
-  }
+  );
+}
+
+export function asStreamClient(client: unknown): StreamClient {
+  if (isStreamClient(client)) return client;
   throw new TypeError('Expected an OpenAI-compatible client with chat.completions.create()');
 }
 

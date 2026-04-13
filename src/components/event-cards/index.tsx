@@ -1,4 +1,4 @@
-import React from "react";
+import type { ReactNode } from "react";
 import { Box, Text } from "ink";
 import type { TuiEvent } from "../../types.js";
 import type { Theme } from "../../ui/theme.js";
@@ -8,8 +8,8 @@ import { Spinner } from "../../ui/spinner.js";
 import {
   formatDuration,
   formatCost,
-  formatToolModel,
 } from "../../utils/format.js";
+import { formatToolModel } from "../../core/model-display.js";
 import { phaseRole } from "../../core/phases.js";
 import { assertNever } from "../../utils/type-guards.js";
 import { getProviderDisplayName } from "../../core/providers.js";
@@ -33,7 +33,7 @@ type RenderCtx = {
 type EventRenderer<K extends TuiEvent["type"]> = (
   e: Extract<TuiEvent, { type: K }>,
   ctx: RenderCtx,
-) => React.ReactNode;
+) => ReactNode;
 
 const implementerRenderer = (
   e: ImplementerGenerateEvent,
@@ -264,14 +264,37 @@ function getGutterRole(event: TuiEvent): "planner" | "implementer" | null {
   }
 }
 
+function renderEvent(event: TuiEvent, ctx: RenderCtx): ReactNode {
+  switch (event.type) {
+    case 'planner-status': return RENDERERS['planner-status'](event, ctx);
+    case 'planner-text': return RENDERERS['planner-text'](event, ctx);
+    case 'task-start': return RENDERERS['task-start'](event, ctx);
+    case 'task-complete': return RENDERERS['task-complete'](event, ctx);
+    case 'task-skipped': return RENDERERS['task-skipped'](event, ctx);
+    case 'implementer-generate-running': return RENDERERS['implementer-generate-running'](event, ctx);
+    case 'implementer-generate-done': return RENDERERS['implementer-generate-done'](event, ctx);
+    case 'implementer-generate-failed': return RENDERERS['implementer-generate-failed'](event, ctx);
+    case 'validate': return RENDERERS['validate'](event, ctx);
+    case 'retry': return RENDERERS['retry'](event, ctx);
+    case 'escalate': return RENDERERS['escalate'](event, ctx);
+    case 'git-commit': return RENDERERS['git-commit'](event, ctx);
+    case 'git-checkpoint': return RENDERERS['git-checkpoint'](event, ctx);
+    case 'warning': return RENDERERS['warning'](event, ctx);
+    case 'error': return RENDERERS['error'](event, ctx);
+    case 'cost-update': return RENDERERS['cost-update'](event, ctx);
+    case 'cost-prediction': return RENDERERS['cost-prediction'](event, ctx);
+    case 'budget-warning': return RENDERERS['budget-warning'](event, ctx);
+    case 'budget-exceeded': return RENDERERS['budget-exceeded'](event, ctx);
+    case 'workflow-cancelled': return RENDERERS['workflow-cancelled'](event, ctx);
+    case 'workflow-config': return RENDERERS['workflow-config'](event, ctx);
+    default: return assertNever(event);
+  }
+}
+
 export function EventCard({ event, diffExpanded }: EventCardProps) {
   const t = useTheme();
-  const render = RENDERERS[event.type] as EventRenderer<typeof event.type>;
   const ctx: RenderCtx = { t, diffExpanded: diffExpanded ?? false };
-  const content = render(
-    event as Extract<TuiEvent, { type: typeof event.type }>,
-    ctx,
-  );
+  const content = renderEvent(event, ctx);
   if (!content) return null;
 
   const role = getGutterRole(event);

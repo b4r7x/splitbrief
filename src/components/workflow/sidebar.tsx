@@ -2,9 +2,9 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../ui/theme.js';
 import type { Theme } from '../../ui/theme.js';
 import type { SidebarTask } from '../../types.js';
-import { truncate, formatCost } from '../../utils/format.js';
+import { truncate } from '../../utils/format.js';
 import { workflowStore } from '../../stores/workflow.js';
-import { useCostStats } from '../../hooks/use-cost-stats.js';
+import { useCostStats, formatCostDisplay } from '../../hooks/use-cost-stats.js';
 
 interface SidebarProps {
   width: number;
@@ -30,10 +30,10 @@ function statusColor(status: SidebarTask['status'], t: Theme): string {
 
 export function Sidebar({ width }: SidebarProps) {
   const t = useTheme();
-  const taskMap = workflowStore.use(s => s.taskMap);
+  const tasks = workflowStore.use(s => s.tasks);
   const { localRate, costBreakdown } = useCostStats();
-
-  const tasks = Array.from(taskMap.values());
+  const { localRatePct, savingsText, spentText, showSavings, hasPricedUsage } = formatCostDisplay(localRate, costBreakdown);
+  const showSpent = hasPricedUsage;
   const doneCount = tasks.filter((tk) => tk.status === 'done').length;
   const labelWidth = Math.max(10, width - 4);
 
@@ -57,9 +57,13 @@ export function Sidebar({ width }: SidebarProps) {
 
       <Box flexDirection="column" paddingX={1}>
         <Text bold color={t.text}>Cost</Text>
-        <Text color={t.textDim}>Local: <Text color={t.accent}>{Math.round(localRate)}%</Text></Text>
-        <Text color={t.textDim}>Spent: <Text color={t.text}>{formatCost(costBreakdown?.totalActualCost ?? 0)}</Text></Text>
-        <Text color={t.textDim}>Saved: <Text color={t.success}>~{formatCost(costBreakdown?.savingsAmount ?? 0)}</Text></Text>
+        <Text color={t.textDim}>Local: <Text color={t.accent}>{localRatePct}</Text></Text>
+        {showSpent && (
+          <Text color={t.textDim}>Spent: <Text color={t.text}>{spentText}</Text></Text>
+        )}
+        {showSavings && (
+          <Text color={t.textDim}>Saved: <Text color={t.success}>{savingsText}</Text></Text>
+        )}
       </Box>
     </Box>
   );

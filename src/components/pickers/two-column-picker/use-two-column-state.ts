@@ -39,7 +39,11 @@ export type VirtualCustomItem = { id: typeof CUSTOM_ROW_ID; isVirtual: true };
 export type RightItemOrVirtual<R> = R | VirtualCustomItem;
 
 export function isVirtualCustomItem<R extends { id: string }>(item: RightItemOrVirtual<R>): item is VirtualCustomItem {
-  return 'isVirtual' in item && (item as VirtualCustomItem).isVirtual === true;
+  return 'isVirtual' in item;
+}
+
+export function isRealItem<R extends { id: string }>(item: RightItemOrVirtual<R>): item is R {
+  return !isVirtualCustomItem(item);
 }
 
 export interface ColumnState<T> {
@@ -109,9 +113,9 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const [leftFilter, setLeftFilter] = useState('');
   const [rightFilter, setRightFilter] = useState('');
   const [leftIndex, setLeftIndex] = useState(initialLeftIndex ?? 0);
-  const [rightIndex, setRightIndex] = useState(initialRightIndex ?? 0);
+  const [rightIndex, setRightIndex] = useState(initialRightIndex ?? (allowCustomRight ? 1 : 0));
 
-  const resetRight = () => { setRightIndex(0); setRightFilter(''); };
+  const resetRight = () => { setRightIndex(allowCustomRight ? 1 : 0); setRightFilter(''); };
 
   const leftFilterFnEff = leftFilterFn ?? defaultLeftFilter;
   const rightFilterFnEff = rightFilterFn ?? defaultRightFilter;
@@ -134,7 +138,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const rightActive = activeColumn === 'right';
   const isOnVirtual = !!rightCurrentItem && isVirtualCustomItem(rightCurrentItem);
   const currentRightIsCustom = rightActive && !!rightCurrentItem && !isOnVirtual
-    && (isRightItemCustom?.(rightCurrentItem as R) ?? false);
+    && isRealItem(rightCurrentItem) && (isRightItemCustom?.(rightCurrentItem) ?? false);
 
   // Track selected left by key: firing the effect only when the selection
   // key actually changes, not on every render/reference change.

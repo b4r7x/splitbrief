@@ -2,12 +2,11 @@ export function perTokenToPerMillion(perToken: number): number {
   return perToken * 1_000_000;
 }
 
-export function formatContextLength(tokens: number | undefined): string {
-  if (tokens == null || tokens === 0) return '';
-  if (tokens >= 1_000_000)
-    return `${(tokens / 1_000_000).toFixed(tokens % 1_000_000 === 0 ? 0 : 1)}M`;
-  return `${Math.round(tokens / 1000)}K`;
+export function isModelFree(input?: number, output?: number): boolean {
+  return (input ?? 0) === 0 && (output ?? 0) === 0;
 }
+
+export { formatContextLength } from '../../utils/format.js';
 
 export function formatPrice(perMillion: number | undefined): string {
   if (perMillion === undefined) return '';

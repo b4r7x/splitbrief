@@ -2,8 +2,8 @@ import { runCommand } from './process.js';
 import { parseVersion } from './format.js';
 
 export const DEFAULT_AVAILABILITY = {
-  isAvailable: async () => true as boolean,
-  getVersion: async () => null as string | null,
+  isAvailable: async (): Promise<boolean> => true,
+  getVersion: async (): Promise<string | null> => null,
 };
 
 export function createGetVersion(command: string, versionArgs?: string[]): () => Promise<string | null> {

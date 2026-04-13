@@ -87,7 +87,7 @@ describe('getCurrentCost', () => {
     })).toBe(0);
   });
 
-  it('returns positive cost for non-local tools', () => {
+  it('returns positive cost for API-priced providers', () => {
     const usage: TokenUsage = {
       ...zeroUsage,
       plannerInput: 1_000_000,
@@ -97,7 +97,8 @@ describe('getCurrentCost', () => {
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
-      plannerTool: 'claude-code',
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'ollama',
     });
     expect(cost).toBeGreaterThan(0);
@@ -126,18 +127,24 @@ describe('enforceBudget', () => {
 
   it('emits warning at 80% and sets warningEmitted', async () => {
     const callbacks = makeCallbacks();
-    // Use claude-code planner with enough tokens to hit 80%
+    // Use an API-priced planner with enough tokens to hit 80%
     const usage: TokenUsage = {
       ...zeroUsage,
       plannerInput: 200_000,
       plannerOutput: 20_000,
     };
-    const cost = getCurrentCost({ ...baseOpts, tokenUsage: usage, plannerTool: 'claude-code' });
+    const cost = getCurrentCost({
+      ...baseOpts,
+      tokenUsage: usage,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+    });
     const budget = cost / 0.85; // make sure we're at ~85%
 
     const result = await enforceBudget({
       ...baseOpts,
-      plannerTool: 'claude-code',
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
       tokenUsage: usage,
       maxBudget: budget,
       callbacks,
@@ -157,12 +164,18 @@ describe('enforceBudget', () => {
       plannerInput: 200_000,
       plannerOutput: 20_000,
     };
-    const cost = getCurrentCost({ ...baseOpts, tokenUsage: usage, plannerTool: 'claude-code' });
+    const cost = getCurrentCost({
+      ...baseOpts,
+      tokenUsage: usage,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+    });
     const budget = cost / 0.85;
 
     const result = await enforceBudget({
       ...baseOpts,
-      plannerTool: 'claude-code',
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
       tokenUsage: usage,
       maxBudget: budget,
       callbacks,
@@ -181,12 +194,18 @@ describe('enforceBudget', () => {
       plannerInput: 1_000_000,
       plannerOutput: 100_000,
     };
-    const cost = getCurrentCost({ ...baseOpts, tokenUsage: usage, plannerTool: 'claude-code' });
+    const cost = getCurrentCost({
+      ...baseOpts,
+      tokenUsage: usage,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+    });
     const budget = cost * 0.5; // budget well below actual cost
 
     const result = await enforceBudget({
       ...baseOpts,
-      plannerTool: 'claude-code',
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
       tokenUsage: usage,
       maxBudget: budget,
       callbacks,
@@ -207,12 +226,18 @@ describe('enforceBudget', () => {
       plannerInput: 1_000_000,
       plannerOutput: 100_000,
     };
-    const cost = getCurrentCost({ ...baseOpts, tokenUsage: usage, plannerTool: 'claude-code' });
+    const cost = getCurrentCost({
+      ...baseOpts,
+      tokenUsage: usage,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+    });
     const budget = cost * 0.5;
 
     const result = await enforceBudget({
       ...baseOpts,
-      plannerTool: 'claude-code',
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
       tokenUsage: usage,
       maxBudget: budget,
       callbacks,
@@ -231,12 +256,18 @@ describe('enforceBudget', () => {
       plannerInput: 1_000_000,
       plannerOutput: 100_000,
     };
-    const cost = getCurrentCost({ ...baseOpts, tokenUsage: usage, plannerTool: 'claude-code' });
+    const cost = getCurrentCost({
+      ...baseOpts,
+      tokenUsage: usage,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+    });
     const budget = cost * 0.5;
 
     const result = await enforceBudget({
       ...baseOpts,
-      plannerTool: 'claude-code',
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
       tokenUsage: usage,
       maxBudget: budget,
       callbacks,

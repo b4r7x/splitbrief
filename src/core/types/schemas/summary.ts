@@ -29,6 +29,9 @@ export const CostBreakdownSchema = z.object({
   savingsAmount: z.number(),
   savingsPercentage: z.number(),
   localCompletionRate: z.number().nonnegative().max(1),
+  hasPricedUsage: z.boolean().optional(),
+  hasUnpricedUsage: z.boolean().optional(),
+  hasSavingsEstimate: z.boolean().optional(),
   providerCosts: z.record(z.string(), ProviderCostSchema).optional(),
 });
 

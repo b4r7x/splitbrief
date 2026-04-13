@@ -15,6 +15,8 @@ export type BudgetCheckOptions = {
   escalatedCount: number;
   plannerTool: string;
   implementerTool: string;
+  plannerModel?: string | undefined;
+  implementerModel?: string | undefined;
 };
 
 const BUDGET_WARNING_THRESHOLD = 0.8;
@@ -26,6 +28,8 @@ export function getCurrentCost(opts: Omit<BudgetCheckOptions, 'maxBudget'>): num
     escalatedCount: opts.escalatedCount,
     plannerTool: opts.plannerTool,
     implementerTool: opts.implementerTool,
+    plannerModel: opts.plannerModel,
+    implementerModel: opts.implementerModel,
   });
   return breakdown.totalActualCost;
 }
@@ -34,13 +38,8 @@ export function checkBudget(currentCost: number, maxBudget: number): BudgetCheck
   if (!Number.isFinite(maxBudget) || maxBudget <= 0) {
     return { action: 'exceeded', shouldStop: true };
   }
-  if (currentCost === Infinity || currentCost === -Infinity) {
-    return { action: 'exceeded', shouldStop: true };
-  }
-  // NaN comparisons always return false, so NaN >= budget silently passes.
-  // Treat NaN currentCost as a safe no-op rather than blocking the workflow.
-  if (Number.isNaN(currentCost)) {
-    return { action: 'ok' };
+  if (!Number.isFinite(currentCost)) {
+    return Number.isNaN(currentCost) ? { action: 'ok' } : { action: 'exceeded', shouldStop: true };
   }
   if (currentCost >= maxBudget) {
     return { action: 'exceeded', shouldStop: true };
@@ -58,6 +57,8 @@ export type EnforceBudgetOptions = {
   escalatedCount: number;
   plannerTool: string;
   implementerTool: string;
+  plannerModel?: string | undefined;
+  implementerModel?: string | undefined;
   callbacks: OrchestratorCallbacks;
   warningEmitted: boolean;
 };

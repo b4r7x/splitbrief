@@ -197,7 +197,14 @@ describe('calculateCostBreakdown', () => {
       implementerInput: 1_000_000,
       implementerOutput: 500_000,
     });
-    const result = calculateCostBreakdown({ tokenUsage: usage, totalTasks: 5, escalatedCount: 0, plannerTool: 'claude-code', implementerTool: 'ollama' });
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 5,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+    });
     expect(result.localCompletionRate).toBe(1);
     expect(result.savingsPercentage).toBeGreaterThan(0);
   });
@@ -209,7 +216,14 @@ describe('calculateCostBreakdown', () => {
       escalationInput: 1_000_000,
       escalationOutput: 500_000,
     });
-    const result = calculateCostBreakdown({ tokenUsage: usage, totalTasks: 3, escalatedCount: 3, plannerTool: 'claude-code', implementerTool: 'ollama' });
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 3,
+      escalatedCount: 3,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+    });
     expect(result.localCompletionRate).toBe(0);
   });
 
@@ -220,13 +234,27 @@ describe('calculateCostBreakdown', () => {
       escalationInput: 100_000,
       escalationOutput: 50_000,
     });
-    const result = calculateCostBreakdown({ tokenUsage: usage, totalTasks: 7, escalatedCount: 2, plannerTool: 'claude-code', implementerTool: 'ollama' });
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 7,
+      escalatedCount: 2,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+    });
     expect(Math.abs(result.localCompletionRate - 0.7142857142857143)).toBeLessThan(0.001);
   });
 
   it('zero tasks yields 0% localCompletionRate without division by zero', () => {
     const usage = makeUsage();
-    const result = calculateCostBreakdown({ tokenUsage: usage, totalTasks: 0, escalatedCount: 0, plannerTool: 'claude-code', implementerTool: 'ollama' });
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 0,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+    });
     expect(result.localCompletionRate).toBe(0);
     expect(result.savingsAmount).toBe(0);
     expect(Number.isFinite(result.savingsPercentage)).toBe(true);
@@ -239,7 +267,14 @@ describe('calculateCostBreakdown', () => {
       implementerInput: 100,
       implementerOutput: 50,
     });
-    const result = calculateCostBreakdown({ tokenUsage: usage, totalTasks: 1, escalatedCount: 0, plannerTool: 'claude-code', implementerTool: 'ollama' });
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+    });
     expect(result.savingsAmount).toBe(0);
     expect(result.savingsPercentage).toBe(0);
   });
@@ -252,7 +287,8 @@ describe('buildSummary estimatedCostSavings', () => {
       feature: 'f',
       state: makeState({ tasks: [], tokenUsage: usage }),
       startTime: Date.now(),
-      plannerTool: 'claude-code',
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'ollama',
     });
     expect(summary.estimatedCostSavings).toBe('$0.00');
@@ -264,13 +300,14 @@ describe('buildSummary estimatedCostSavings', () => {
       feature: 'f',
       state: makeState({ tasks: [], tokenUsage: usage }),
       startTime: Date.now(),
-      plannerTool: 'claude-code',
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'ollama',
     });
-    expect(summary.estimatedCostSavings).toBe('$30.00');
+    expect(summary.estimatedCostSavings).toBe('$18.00');
   });
 
-  it('subtracts actual Opus cost from hypothetical', () => {
+  it('subtracts actual planner cost from hypothetical', () => {
     const usage = makeUsage({
       plannerInput: 1_000_000,
       plannerOutput: 100_000,
@@ -281,10 +318,11 @@ describe('buildSummary estimatedCostSavings', () => {
       feature: 'f',
       state: makeState({ tasks: [], tokenUsage: usage }),
       startTime: Date.now(),
-      plannerTool: 'claude-code',
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'ollama',
     });
-    expect(summary.estimatedCostSavings).toBe('$15.00');
+    expect(summary.estimatedCostSavings).toBe('$9.00');
   });
 
   it('returns $0.00 when savings would be negative', () => {
@@ -298,7 +336,8 @@ describe('buildSummary estimatedCostSavings', () => {
       feature: 'f',
       state: makeState({ tasks: [], tokenUsage: usage }),
       startTime: Date.now(),
-      plannerTool: 'claude-code',
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'ollama',
     });
     expect(summary.estimatedCostSavings).toBe('$0.00');
@@ -318,13 +357,13 @@ describe('calculateTaskCost', () => {
     const globalUsage = { implementerInput: 200_000, implementerOutput: 100_000, escalationInput: 0, escalationOutput: 0 };
     const cost = calculateTaskCost(task, globalUsage, 'deepseek', 'claude-code');
     expect(cost).toBeGreaterThan(0);
-    expect(cost).toBeCloseTo(0.14 * 200_000 / 1_000_000 + 0.28 * 100_000 / 1_000_000, 6);
+    expect(cost).toBeCloseTo(0.28 * 200_000 / 1_000_000 + 0.42 * 100_000 / 1_000_000, 6);
   });
 
   it('includes escalation cost when escalation tokens present', () => {
     const task = { taskId: taskId('T001'), taskTitle: 'test', method: 'escalated-full' as const, implementerTokens: 1000, escalationTokens: 150_000, retryCount: 2 };
     const globalUsage = { implementerInput: 500, implementerOutput: 500, escalationInput: 100_000, escalationOutput: 50_000 };
-    const cost = calculateTaskCost(task, globalUsage, 'ollama', 'claude-code');
+    const cost = calculateTaskCost(task, globalUsage, 'ollama', 'anthropic');
     expect(cost).toBeGreaterThan(0);
   });
 

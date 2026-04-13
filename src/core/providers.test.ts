@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatModelName, resolveAutoModel } from './providers.js';
+import { normalizeConfiguredModel, resolveAutoModel } from './providers.js';
 
 describe('resolveAutoModel', () => {
   it('returns undefined for "auto"', () => {
@@ -33,95 +33,17 @@ describe('resolveAutoModel', () => {
   it('is case-insensitive for "aUtO"', () => {
     expect(resolveAutoModel('aUtO')).toBeUndefined();
   });
-});
 
-describe('formatModelName', () => {
-  describe('edge cases', () => {
-    it('returns empty string for empty input', () => {
-      expect(formatModelName('')).toBe('');
-    });
+  it('normalizes legacy Claude Code auto to default for picker/config consumers', () => {
+    expect(normalizeConfiguredModel('auto', 'claude-code')).toBe('default');
+  });
 
-    it('returns the ID unchanged for single-word unknown model', () => {
-      expect(formatModelName('custom')).toBe('Custom');
-    });
+  it('treats Claude Code default as no override at runtime', () => {
+    expect(resolveAutoModel('default', 'claude-code')).toBeUndefined();
+  });
 
-    it('handles already-pretty names gracefully', () => {
-      expect(formatModelName('MyModel')).toBe('MyModel');
-    });
+  it('resolves OpenAI auto to the bundled default model', () => {
+    expect(resolveAutoModel('auto', 'openai')).toBe('gpt-5.4');
   });
 });
 
-describe('formatModelName (heuristic)', () => {
-  describe('brand capitalization', () => {
-    it.each([
-      ['claude-haiku-5-2', 'Claude Haiku 5.2'],
-      ['gpt-6-turbo', 'GPT-6 Turbo'],
-      ['gemini-4-flash', 'Gemini 4 Flash'],
-      ['deepseek-v4', 'DeepSeek V4'],
-      ['mistral-medium', 'Mistral Medium'],
-    ])('%s → %s', (input, expected) => {
-      expect(formatModelName(input)).toBe(expected);
-    });
-  });
-
-  describe('compound brand+version tokens', () => {
-    it.each([
-      ['qwen3-coder', 'Qwen 3 Coder'],
-      ['llama4', 'Llama 4'],
-      ['gemma4', 'Gemma 4'],
-      ['phi4-mini', 'Phi 4 Mini'],
-    ])('%s → %s', (input, expected) => {
-      expect(formatModelName(input)).toBe(expected);
-    });
-  });
-
-  describe('Ollama tags', () => {
-    it.each([
-      ['gemma4:31b-cloud', 'Gemma 4 31B Cloud'],
-      ['llama3:8b', 'Llama 3 8B'],
-      ['somemodel:latest', 'Somemodel'],
-      ['deepseek-coder:6.7b', 'DeepSeek Coder 6.7B'],
-    ])('%s → %s', (input, expected) => {
-      expect(formatModelName(input)).toBe(expected);
-    });
-  });
-
-  describe('size indicators', () => {
-    it.each([
-      ['custom-model-7b', 'Custom Model 7B'],
-      ['custom-model-70b', 'Custom Model 70B'],
-    ])('%s → %s', (input, expected) => {
-      expect(formatModelName(input)).toBe(expected);
-    });
-  });
-
-  describe('o-series', () => {
-    it.each([
-      ['o5-turbo', 'o5 Turbo'],
-      ['o6-mini', 'o6 Mini'],
-    ])('%s → %s', (input, expected) => {
-      expect(formatModelName(input)).toBe(expected);
-    });
-  });
-
-  describe('version prefixes', () => {
-    it.each([
-      ['deepseek-coder-v3', 'DeepSeek Coder V3'],
-      ['custom-v2-pro', 'Custom V2 Pro'],
-    ])('%s → %s', (input, expected) => {
-      expect(formatModelName(input)).toBe(expected);
-    });
-  });
-
-  describe('vendor prefix stripping', () => {
-    it('strips unknown vendor prefixes', () => {
-      expect(formatModelName('custom-org/some-model')).toBe('Some Model');
-    });
-  });
-
-  describe('GPT hyphen format', () => {
-    it('preserves hyphen after GPT brand', () => {
-      expect(formatModelName('gpt-7-nano')).toBe('GPT-7 Nano');
-    });
-  });
-});

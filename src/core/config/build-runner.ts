@@ -1,4 +1,5 @@
 import { CLI_TOOL_IDS, RUNNER_KINDS } from '../types/schemas/enums.js';
+import { includes } from '../../utils/type-guards.js';
 import { resolveDefaultApiBase } from '../providers.js';
 import { PlannerConfigSchema } from '../types/schemas/planner-config.js';
 import { ImplementerConfigSchema } from '../types/schemas/implementer-config.js';
@@ -25,20 +26,6 @@ export interface BuildRunnerOpts {
   existing?: PlannerConfig | ImplementerConfig | undefined;
 }
 
-/**
- * Build a runner config from options.
- *
- * Decision tree:
- * 1. Use explicit `kind` if provided
- * 2. Infer from tool: if tool is in CLI_TOOL_IDS → cli
- * 3. Infer from apiBase: if present → api
- * 4. Infer from command: if present → shell
- * 5. Infer from existing config's kind
- * 6. Else → throw with actionable message naming what was provided
- *
- * For API kind with known provider, auto-fill apiBase from catalog.
- * For unknown provider without apiBase, throw with helpful error.
- */
 export function buildRunnerConfig(role: 'planner', opts: BuildRunnerOpts): PlannerConfig;
 export function buildRunnerConfig(role: 'implementer', opts: BuildRunnerOpts): ImplementerConfig;
 export function buildRunnerConfig(
@@ -100,7 +87,7 @@ function assertModelPresent(role: Role, model: string | undefined): void {
 
 function inferKind(role: Role, opts: BuildRunnerOpts): RunnerKind {
   if (opts.kind) return opts.kind;
-  if (opts.tool && CLI_TOOL_IDS.includes(opts.tool as (typeof CLI_TOOL_IDS)[number]))
+  if (opts.tool && includes(CLI_TOOL_IDS, opts.tool))
     return 'cli';
   if (opts.apiBase) return 'api';
   if (opts.command) return 'shell';
@@ -115,7 +102,7 @@ function buildCliConfig(
   opts: BuildRunnerOpts
 ): PlannerConfig | ImplementerConfig {
   if (!opts.tool) throw new Error(`${role} cli kind requires 'tool' field`);
-  if (!CLI_TOOL_IDS.includes(opts.tool as (typeof CLI_TOOL_IDS)[number])) {
+  if (!includes(CLI_TOOL_IDS, opts.tool)) {
     throw new Error(
       `Unknown CLI tool: ${opts.tool}. Valid tools: ${CLI_TOOL_IDS.join(', ')}`
     );

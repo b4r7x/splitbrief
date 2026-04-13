@@ -134,8 +134,8 @@ describe('createApiPlanner', () => {
     expect(await planner.isAvailable()).toBe(false);
   });
 
-  it('throws if model is "auto"', () => {
-    const cfg = makeConfig('ollama');
+  it('throws if model is "auto" for unknown provider', () => {
+    const cfg = makeConfig('custom-unknown-provider');
     cfg.planner.model = 'auto';
     expect(() => createApiPlanner(cfg)).toThrow(/API planner requires an explicit model/);
   });

@@ -57,8 +57,10 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
   const isSmall = terminalSizeStore.use(s => s.isSmall);
 
   const contentMaxWidth = isSmall ? 76 : 110;
-  const columnHeight = Math.min(Math.floor(rows * 0.6), 22);
-  const maxVisible = Math.max(columnHeight - 6, 3);
+  const outerChrome = 6; // title(1) + marginBottom(2) + hint(1) + marginTop(2)
+  const innerChrome = 7; // border(2) + label(1) + filter(1) + filterMargin(1) + scrollUp(1) + scrollDown(1)
+  const maxVisible = Math.min(Math.max(rows - outerChrome - innerChrome, 3), 20);
+  const columnHeight = maxVisible + innerChrome;
   const totalBoxWidth = Math.min(cols - 4, contentMaxWidth);
   const columnContentWidth =
     Math.floor((totalBoxWidth - COLUMN_GAP) / 2) - BORDER_WIDTH - INNER_PADDING - CURSOR_WIDTH;
@@ -95,13 +97,13 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
           getKey={leftProps.getKey}
           contentMaxWidth={columnContentWidth}
           hideFilterRow={false}
-          renderRow={(item, isCursor, maxWidth) =>
-            leftProps.renderRow(item, {
-              isCursor,
-              isSelected: nav.selectedLeftKey === leftProps.getKey(item),
-              maxWidth,
-            })
-          }
+          renderRow={(item, isCursor, maxWidth) => {
+            const key = leftProps.getKey(item);
+            const isSelected = nav.selectedLeftKey
+              ? nav.selectedLeftKey === key
+              : !!('isCurrent' in item && item.isCurrent);
+            return leftProps.renderRow(item, { isCursor, isSelected, maxWidth });
+          }}
         />
         <SingleColumnPicker<RightItemOrVirtual<R>>
           label={rightProps.label ?? 'Options'}
@@ -115,11 +117,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
           contentMaxWidth={columnContentWidth}
           hideFilterRow={hideRightFilter}
           placeholderWhenEmpty={placeholderNode}
-          footer={nav.isOnCustomItem ? (
-            <Box marginTop={1}>
-              <Text color={t.textDim} dimColor>Press Enter to add a custom model</Text>
-            </Box>
-          ) : null}
+          footer={null}
           renderRow={(item, isCursor, maxWidth) => {
             if (isVirtualCustomItem(item)) {
               return <Text color={isCursor ? t.accent : t.textDim} italic>+ Custom model...</Text>;

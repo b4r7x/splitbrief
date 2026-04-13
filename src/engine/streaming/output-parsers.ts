@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { OutputFormat, ParsedLine, TokenDelta } from '../../types.js';
 import { toTokenDelta } from './token-utils.js';
+import { narrowRecord } from '../../utils/type-guards.js';
 
 export interface ToolUseInfo {
   name: string;
@@ -145,8 +146,8 @@ export function parseJsonlLine(line: string): ParsedLine {
     }
 
     // Fallback for simple text/content events — too simple for schemas
-    if (typeof event === 'object' && event !== null) {
-      const e = event as Record<string, unknown>;
+    const e = narrowRecord(event);
+    if (e !== null) {
       if (typeof e.text === 'string') return { text: e.text };
       if (e.content != null) return { text: typeof e.content === 'string' ? e.content : JSON.stringify(e.content) };
     }

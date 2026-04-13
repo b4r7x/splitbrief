@@ -11,7 +11,7 @@ export function createCliPlanner(config: Config): Planner {
     throw new Error(`createCliPlanner requires planner.kind = 'cli' (got ${config.planner.kind})`);
   }
   const plannerCfg = config.planner;
-  const resolvedModel = resolveAutoModel(plannerCfg.model);
+  const resolvedModel = resolveAutoModel(plannerCfg.model, plannerCfg.tool);
   const tool = CLI_TOOLS[plannerCfg.tool];
   if (!tool.planner) {
     throw new Error(`CLI tool '${plannerCfg.tool}' has no planner configuration`);

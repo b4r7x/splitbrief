@@ -1,5 +1,7 @@
 import { isProviderId, type ProviderId } from './types/schemas/enums.js';
 
+export { formatModelName, stripVendorPrefix } from './model-display.js';
+
 export {
   PROVIDER_IDS,
   PLANNER_TOOL_IDS,
@@ -22,8 +24,203 @@ interface ProviderInfo {
   displayName: string;
   baseURL?: string;
   isLocal?: boolean;
+  isSubscription?: boolean;
   apiKeyEnv?: string;
 }
+
+export interface KnownModel {
+  name: string;
+  isDefault?: boolean;
+  contextLength?: number;
+  pricingInput?: number;
+  pricingOutput?: number;
+  isFree?: boolean;
+  aliases?: string[];
+  catalogProvider?: ProviderId;
+  catalogModelId?: string;
+  provenance?: string;
+}
+
+export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
+  'claude-code': [
+    { name: 'default', isDefault: true, aliases: ['auto'], provenance: 'Claude Code model aliases (2026-04)' },
+    {
+      name: 'sonnet',
+      contextLength: 1_000_000,
+      catalogProvider: 'anthropic',
+      catalogModelId: 'claude-sonnet-4-6',
+      provenance: 'Claude Code model aliases (2026-04)',
+    },
+    {
+      name: 'opus',
+      contextLength: 1_000_000,
+      catalogProvider: 'anthropic',
+      catalogModelId: 'claude-opus-4-6',
+      provenance: 'Claude Code model aliases (2026-04)',
+    },
+    {
+      name: 'opusplan',
+      contextLength: 1_000_000,
+      catalogProvider: 'anthropic',
+      catalogModelId: 'claude-opus-4-6',
+      provenance: 'Claude Code model aliases (2026-04)',
+    },
+  ],
+  codex: [
+    { name: 'auto', isDefault: true },
+    {
+      name: 'gpt-5.4',
+      contextLength: 1_050_000,
+      catalogProvider: 'openai',
+      provenance: 'OpenAI flagship coding model (2026-04)',
+    },
+    {
+      name: 'gpt-5-codex',
+      contextLength: 1_050_000,
+      catalogProvider: 'openai',
+      provenance: 'OpenAI coding-specialized model (2026-04)',
+    },
+  ],
+  aider: [
+    { name: 'auto', isDefault: true },
+    {
+      name: 'claude-sonnet-4-6',
+      contextLength: 1_000_000,
+      catalogProvider: 'anthropic',
+      provenance: 'Minimal bundled fallback (2026-04)',
+    },
+    {
+      name: 'gpt-5.4',
+      contextLength: 1_050_000,
+      catalogProvider: 'openai',
+      provenance: 'Minimal bundled fallback (2026-04)',
+    },
+  ],
+  opencode: [
+    { name: 'auto', isDefault: true },
+    {
+      name: 'anthropic/claude-sonnet-4.6',
+      contextLength: 1_000_000,
+      catalogProvider: 'openrouter',
+      provenance: 'Minimal bundled fallback (2026-04)',
+    },
+    {
+      name: 'openai/gpt-5.4',
+      contextLength: 1_050_000,
+      catalogProvider: 'openrouter',
+      provenance: 'Minimal bundled fallback (2026-04)',
+    },
+  ],
+  copilot: [
+    { name: 'auto', isDefault: true },
+    {
+      name: 'claude-opus-4.6',
+      contextLength: 1_000_000,
+      catalogProvider: 'anthropic',
+      catalogModelId: 'claude-opus-4-6',
+      provenance: 'Minimal bundled fallback (2026-04)',
+    },
+    {
+      name: 'gpt-5.2-codex',
+      contextLength: 1_050_000,
+      catalogProvider: 'openai',
+      provenance: 'Minimal bundled fallback (2026-04)',
+    },
+  ],
+  'kilo-code': [
+    { name: 'auto', isDefault: true },
+  ],
+  'agent-sdk': [
+    {
+      name: 'claude-sonnet-4-6',
+      isDefault: true,
+      contextLength: 1_000_000,
+      pricingInput: 3,
+      pricingOutput: 15,
+      catalogProvider: 'anthropic',
+      provenance: 'Anthropic Claude 4.6 fallback (2026-04)',
+    },
+    {
+      name: 'claude-opus-4-6',
+      contextLength: 1_000_000,
+      pricingInput: 5,
+      pricingOutput: 25,
+      catalogProvider: 'anthropic',
+      provenance: 'Anthropic Claude 4.6 fallback (2026-04)',
+    },
+  ],
+  anthropic: [
+    {
+      name: 'claude-sonnet-4-6',
+      isDefault: true,
+      contextLength: 1_000_000,
+      pricingInput: 3,
+      pricingOutput: 15,
+      provenance: 'Anthropic Claude 4.6 fallback (2026-04)',
+    },
+    {
+      name: 'claude-opus-4-6',
+      contextLength: 1_000_000,
+      pricingInput: 5,
+      pricingOutput: 25,
+      provenance: 'Anthropic Claude 4.6 fallback (2026-04)',
+    },
+  ],
+  openrouter: [
+    {
+      name: 'anthropic/claude-sonnet-4.6',
+      isDefault: true,
+      catalogProvider: 'openrouter',
+      provenance: 'Minimal bundled fallback (2026-04)',
+    },
+  ],
+  ollama:     [{ name: 'qwen2.5-coder:7b', isDefault: true }],
+  'lm-studio': [{ name: 'qwen2.5-coder-7b', isDefault: true }],
+  deepseek: [
+    {
+      name: 'deepseek-chat',
+      isDefault: true,
+      contextLength: 128_000,
+      pricingInput: 0.28,
+      pricingOutput: 0.42,
+      provenance: 'DeepSeek V3.2 fallback (2026-04)',
+    },
+    {
+      name: 'deepseek-reasoner',
+      contextLength: 128_000,
+      provenance: 'DeepSeek V3.2 fallback (2026-04)',
+    },
+  ],
+  openai: [
+    {
+      name: 'auto',
+      isDefault: true,
+      catalogProvider: 'openai',
+      catalogModelId: 'gpt-5.4',
+      provenance: 'OpenAI auto fallback -> bundled default (2026-04)',
+    },
+    {
+      name: 'gpt-5.4',
+      contextLength: 1_050_000,
+      pricingInput: 2.5,
+      pricingOutput: 15,
+      provenance: 'OpenAI flagship fallback (2026-04)',
+    },
+    {
+      name: 'gpt-5-codex',
+      contextLength: 1_050_000,
+      provenance: 'OpenAI coding-specialized fallback (2026-04)',
+    },
+  ],
+  groq:     [],
+  together: [
+    {
+      name: 'zai-org/GLM-5.1',
+      isDefault: true,
+      provenance: 'Together recommended Coding Agents model (2026-04)',
+    },
+  ],
+};
 
 export const KNOWN_PROVIDER_BASE_URLS = {
   ollama: 'http://localhost:11434/v1',
@@ -35,7 +232,7 @@ export const KNOWN_PROVIDER_BASE_URLS = {
   together: 'https://api.together.xyz/v1',
 } as const;
 
-export const KNOWN_API_BASE_URLS: Record<string, string> = {
+const KNOWN_API_BASE_URLS: Record<string, string> = {
   ...KNOWN_PROVIDER_BASE_URLS,
   anthropic: 'https://api.anthropic.com/v1',
 };
@@ -49,8 +246,8 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderInfo> = {
   codex: { id: 'codex', displayName: 'Codex' },
   opencode: { id: 'opencode', displayName: 'OpenCode' },
   aider: { id: 'aider', displayName: 'Aider' },
-  copilot: { id: 'copilot', displayName: 'Copilot' },
-  'kilo-code': { id: 'kilo-code', displayName: 'Kilo Code' },
+  copilot: { id: 'copilot', displayName: 'Copilot', isSubscription: true },
+  'kilo-code': { id: 'kilo-code', displayName: 'Kilo Code', isSubscription: true },
   'agent-sdk': { id: 'agent-sdk', displayName: 'Agent SDK', apiKeyEnv: 'ANTHROPIC_API_KEY' },
   anthropic: { id: 'anthropic', displayName: 'Anthropic', apiKeyEnv: 'ANTHROPIC_API_KEY' },
   openrouter: { id: 'openrouter', displayName: 'OpenRouter', baseURL: KNOWN_PROVIDER_BASE_URLS.openrouter, apiKeyEnv: 'OPENROUTER_API_KEY' },
@@ -76,7 +273,12 @@ export function getProviderBaseURL(id: string): string {
 
 export function isProviderLocal(id: string): boolean {
   if (!isProviderId(id)) return false;
-  return PROVIDER_CATALOG[id].isLocal === true;
+  return Boolean(PROVIDER_CATALOG[id].isLocal);
+}
+
+export function isProviderSubscription(id: string): boolean {
+  if (!isProviderId(id)) return false;
+  return Boolean(PROVIDER_CATALOG[id].isSubscription);
 }
 
 function getProviderApiKeyEnv(id: string): string | undefined {
@@ -86,144 +288,36 @@ function getProviderApiKeyEnv(id: string): string | undefined {
 
 export function hasApiKey(providerId: string): boolean {
   const envVar = getProviderApiKeyEnv(providerId);
-  return envVar ? !!process.env[envVar] : false;
+  return Boolean(envVar && process.env[envVar]);
 }
 
-export function resolveAutoModel(model: string | undefined): string | undefined {
-  if (!model || model.trim() === '' || model.toLowerCase() === 'auto') return undefined;
-  return model;
+function getDefaultResolvedModel(providerId: ProviderId): string | undefined {
+  const defaultModel = (KNOWN_MODELS[providerId] ?? []).find((entry) => entry.isDefault);
+  if (!defaultModel) return undefined;
+  if (defaultModel.catalogModelId) return defaultModel.catalogModelId;
+  if (defaultModel.name === 'auto' || defaultModel.name === 'default') return undefined;
+  return defaultModel.name;
 }
 
-export const MODEL_DISPLAY_NAMES: Record<string, string> = {
-  'auto': 'Auto (tool default)',
-  'deepseek-chat': 'DeepSeek V3',
-  'deepseek-reasoner': 'DeepSeek R1',
-  'deepseek-r1-0528': 'DeepSeek R1',
-  'starcoder2:7b': 'StarCoder2 7B',
-};
-
-const BRANDS: Record<string, string> = {
-  codellama: 'Code Llama',
-  starcoder: 'StarCoder',
-  deepseek: 'DeepSeek',
-  gemini: 'Gemini',
-  claude: 'Claude',
-  mistral: 'Mistral',
-  gemma: 'Gemma',
-  llama: 'Llama',
-  codex: 'Codex',
-  qwen: 'Qwen',
-  gpt: 'GPT',
-  phi: 'Phi',
-};
-
-const BRAND_ENTRIES = Object.entries(BRANDS).sort((a, b) => b[0].length - a[0].length);
-
-const DROP_TOKENS = new Set(['latest']);
-
-const SUFFIXES: Record<string, string> = {
-  mini: 'Mini', turbo: 'Turbo', pro: 'Pro', flash: 'Flash',
-  nano: 'Nano', max: 'Max', spark: 'Spark', scout: 'Scout',
-  instruct: 'Instruct', preview: 'Preview', cloud: 'Cloud',
-  coder: 'Coder', chat: 'Chat',
-};
-
-const SIZE_RE = /^\d+(?:\.\d+)?b$/i;
-const VERSION_RE = /^[\d.]+$/;
-const VERSION_PREFIX_RE = /^v\d/i;
-const O_SERIES_RE = /^o\d/;
-
-export function stripVendorPrefix(id: string): string {
-  const slash = id.indexOf('/');
-  return slash >= 0 ? id.slice(slash + 1) : id;
+export function normalizeConfiguredModel(model: string | undefined, providerId?: string): string | undefined {
+  if (!model) return undefined;
+  const trimmed = model.trim();
+  if (trimmed === '') return undefined;
+  if (providerId === 'claude-code' && trimmed.toLowerCase() === 'auto') return 'default';
+  return trimmed;
 }
 
-function tryCompoundBrand(token: string): string | null {
-  for (const [prefix, display] of BRAND_ENTRIES) {
-    if (token.startsWith(prefix) && token.length > prefix.length) {
-      const rest = token.slice(prefix.length);
-      if (/^\d/.test(rest)) return `${display} ${rest}`;
-    }
-  }
-  return null;
-}
+export function resolveAutoModel(model: string | undefined, providerId?: string): string | undefined {
+  const normalized = normalizeConfiguredModel(model, providerId);
+  if (!normalized) return undefined;
 
-function formatTag(tag: string): string {
-  if (!tag || tag === 'latest') return '';
-  return tag.split('-').map(part => {
-    if (SIZE_RE.test(part)) return part.toUpperCase();
-    return part.charAt(0).toUpperCase() + part.slice(1);
-  }).filter(Boolean).join(' ');
-}
-
-function parseModelName(rawId: string): string {
-  if (!rawId) return '';
-  const id = stripVendorPrefix(rawId);
-
-  let base = id;
-  let tagStr = '';
-  const colon = id.indexOf(':');
-  if (colon > 0) {
-    base = id.slice(0, colon);
-    tagStr = id.slice(colon + 1);
+  if (providerId === 'claude-code' && normalized.toLowerCase() === 'default') {
+    return undefined;
   }
 
-  const tag = formatTag(tagStr);
-  const tokens = base.split('-');
-  const parts: string[] = [];
-  let isGpt = false;
-
-  for (const [i, raw] of tokens.entries()) {
-    const lower = raw.toLowerCase();
-
-    if (DROP_TOKENS.has(lower)) continue;
-
-    if (i === 0) {
-      if (O_SERIES_RE.test(lower)) { parts.push(lower); continue; }
-
-      const brand = BRANDS[lower];
-      if (brand) { parts.push(brand); if (lower === 'gpt') isGpt = true; continue; }
-
-      const compound = tryCompoundBrand(lower);
-      if (compound) { parts.push(compound); continue; }
-    }
-
-    if (SIZE_RE.test(raw)) { parts.push(raw.toUpperCase()); continue; }
-    if (VERSION_RE.test(raw)) { parts.push(raw); continue; }
-    if (VERSION_PREFIX_RE.test(raw)) { parts.push('V' + raw.slice(1)); continue; }
-
-    const suffix = SUFFIXES[lower];
-    if (suffix) { parts.push(suffix); continue; }
-
-    parts.push(raw.charAt(0).toUpperCase() + raw.slice(1));
-  }
-
-  if (parts[0] === 'Claude' && parts.length >= 3) {
-    const last = parts[parts.length - 1];
-    const prev = parts[parts.length - 2];
-    if (last && prev && /^\d$/.test(last) && /^\d$/.test(prev)) {
-      parts.splice(parts.length - 2, 2, `${prev}.${last}`);
-    }
-  }
-
-  const name = isGpt && parts.length > 1
-    ? parts[0] + '-' + parts.slice(1).join(' ')
-    : parts.join(' ');
-
-  return tag ? `${name} ${tag}` : name;
+  if (normalized.toLowerCase() !== 'auto') return normalized;
+  return providerId && isProviderId(providerId)
+    ? getDefaultResolvedModel(providerId)
+    : undefined;
 }
 
-export function formatModelName(modelId: string): string {
-  if (!modelId) return '';
-
-  const direct = MODEL_DISPLAY_NAMES[modelId];
-  if (direct) return direct;
-
-  const stripped = stripVendorPrefix(modelId);
-  if (stripped !== modelId) {
-    const lookup = MODEL_DISPLAY_NAMES[stripped];
-    if (lookup) return lookup;
-  }
-
-  return parseModelName(stripped);
-}
