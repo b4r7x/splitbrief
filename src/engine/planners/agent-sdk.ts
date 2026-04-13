@@ -5,7 +5,7 @@ import { resolveAutoModel } from '../../core/providers.js';
 import { DEFAULT_AGENT_SDK_MODEL } from '../providers/known.js';
 
 export function createAgentSdkPlanner(model?: string): Planner {
-  const effectiveModel = resolveAutoModel(model) ?? DEFAULT_AGENT_SDK_MODEL;
+  const effectiveModel = resolveAutoModel(model, 'agent-sdk') ?? DEFAULT_AGENT_SDK_MODEL;
   const backend = createAgentSdkBackend({ allowedTools: [...PLANNER_ALLOWED_TOOLS] });
 
   const invoke = ({ prompt, projectDir, callbacks }: { prompt: string; projectDir: string; callbacks: { onOutput: (text: string) => void } }) =>

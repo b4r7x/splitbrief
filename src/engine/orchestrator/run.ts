@@ -192,7 +192,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   const { feature, projectDir, config, callbacks, savedState, selectedSkills } = opts;
   const startTime = Date.now();
   const plannerModel = getRunnerModelName(config.planner);
-  const implementerModel = resolveAutoModel(config.implementer.model);
+  const implementerModel = resolveAutoModel(config.implementer.model, getRunnerDisplayName(config.implementer));
   const summaryBase: SummaryBase = {
     feature, startTime,
     plannerTool: getRunnerDisplayName(config.planner),

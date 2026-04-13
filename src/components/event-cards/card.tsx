@@ -1,16 +1,16 @@
-import React from 'react';
+import type { ReactNode, ReactElement } from 'react';
 import { Box, Text } from 'ink';
 
 interface CardProps {
-  label?: React.ReactNode;
+  label?: ReactNode;
   labelColor?: string;
-  value?: React.ReactNode;
+  value?: ReactNode;
   valueColor?: string;
-  header?: React.ReactNode;
-  body?: React.ReactNode;
+  header?: ReactNode;
+  body?: ReactNode;
 }
 
-export function Card(props: CardProps): React.ReactElement {
+export function Card(props: CardProps): ReactElement {
   const { label, labelColor, value, valueColor, header, body } = props;
 
   const hasRow = label || value;

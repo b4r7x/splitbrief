@@ -85,8 +85,6 @@ function applyImplementerOverrides(config: Config, overrides: ImplementerOverrid
     return config;
   }
 
-  // tool='shell' is a special sentinel meaning "switch to shell kind with the given command"
-  // buildRunnerConfig does not treat 'shell' as a CLI tool id, so we map it to kind explicitly
   const opts: BuildRunnerOpts = {
     ...existingToOpts(config.implementer),
     ...(tool === 'shell' ? { kind: 'shell' } : { tool }),

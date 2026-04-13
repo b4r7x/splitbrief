@@ -1,11 +1,10 @@
 import type { Config, AgentImplementerConfig } from '../../types.js';
 import type { Implementer } from './types.js';
 import type { InvokeOpts } from './utils.js';
-import { DEFAULT_TIMEOUT } from './utils.js';
+import { DEFAULT_TIMEOUT, createChangeDetector } from './utils.js';
 import { createImplementerBase } from './base.js';
 import { createCommandAvailability } from '../../utils/availability.js';
 import { invokeCommandBasedRunner } from '../runners/command-based.js';
-import { getChangedFiles } from '../../utils/git.js';
 
 function asAgentConfig(config: Config): AgentImplementerConfig {
   if (config.implementer.kind !== 'agent') throw new Error('Expected agent implementer config');
@@ -45,13 +44,7 @@ export function createAgentImplementer(initialConfig: Config): Implementer {
       return { text: result.stdout, usage: null };
     },
 
-    async detectChanges(projectDir: string) {
-      const changedFiles = await getChangedFiles(projectDir);
-      if (changedFiles.length === 0) {
-        return { changed: false, output: 'Agent implementer exited without changing any files' };
-      }
-      return { changed: true, output: '' };
-    },
+    detectChanges: createChangeDetector('Agent implementer'),
 
     ...createCommandAvailability(command),
   });

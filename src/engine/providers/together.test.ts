@@ -68,6 +68,7 @@ describe('createTogetherProvider', () => {
       contextLength: 8192,
       pricingInput: expect.closeTo(0.9, 5),
       pricingOutput: expect.closeTo(0.9, 5),
+      isFree: false,
     }]);
   });
 
@@ -167,6 +168,7 @@ describe('createTogetherProvider', () => {
       id: 'partial-pricing-model',
       contextLength: 4096,
       pricingInput: 1,
+      isFree: false,
     }]);
   });
 });

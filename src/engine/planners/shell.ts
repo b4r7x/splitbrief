@@ -1,9 +1,8 @@
 import type { Config } from '../../types.js';
 import type { Planner } from './types.js';
 import { createPlannerBase } from './base.js';
-import { invokeCommandBasedRunner } from '../runners/command-based.js';
 import { createCommandAvailability } from '../../utils/availability.js';
-import { extractQuestionsFromStream } from '../parsers/question-parser.js';
+import { createCommandPlannerInvoke } from './command-invoke.js';
 
 export function createShellPlanner(config: Config): Planner {
   if (config.planner.kind !== 'shell') {
@@ -11,32 +10,14 @@ export function createShellPlanner(config: Config): Planner {
   }
   const plannerCfg = config.planner;
   const command = plannerCfg.command;
-  const baseArgs = plannerCfg.args ?? [];
-  const notFoundMessage = `Shell planner command not found: ${command}`;
 
-  const invoke: Parameters<typeof createPlannerBase>[0]['invokePlan'] = async ({ prompt, projectDir, callbacks }) => {
-    const result = await invokeCommandBasedRunner(
-      {
-        command,
-        args: baseArgs,
-        outputFormat: plannerCfg.outputFormat ?? 'text',
-        extractsCode: true,
-        notFoundMessage,
-      },
-      prompt,
-      projectDir,
-      callbacks.onOutput,
-    );
-
-    if (callbacks.onQuestion) {
-      const questions = extractQuestionsFromStream(result.stdout);
-      if (questions.length > 0) {
-        callbacks.onQuestion(questions);
-      }
-    }
-
-    return { text: result.stdout, usage: null };
-  };
+  const invoke = createCommandPlannerInvoke({
+    command,
+    args: plannerCfg.args ?? [],
+    outputFormat: plannerCfg.outputFormat ?? 'text',
+    extractsCode: true,
+    notFoundMessage: `Shell planner command not found: ${command}`,
+  });
 
   return createPlannerBase({
     invokePlan: invoke,

@@ -1,15 +1,7 @@
-import type { WorkflowState, OrchestratorCallbacks, ValidationResult, ValidationStages, TaskId, TaskCompletionMethod, TokenUsage, Phase, WorkflowMode } from '../../types.js';
+import type { WorkflowState, OrchestratorCallbacks, ValidationResult, ValidationStages, TaskId, TaskCompletionMethod, TokenUsage, WorkflowMode } from '../../types.js';
 import type { CostPrediction } from '../../core/types/summary.js';
-import type { OrchestratorEvent, OrchestratorEventPayloadMap, OrchestratorEventType } from '../../core/types/events.js';
+import type { OrchestratorEventPayloadMap } from '../../core/types/events.js';
 import { appendEvent } from '../../core/state/persistence.js';
-
-type EventShape<T extends OrchestratorEventType> = {
-  ts: number;
-  type: T;
-  taskId: TaskId | undefined;
-  phase: Phase;
-  data: OrchestratorEventPayloadMap[T];
-};
 
 export function emit<T extends keyof OrchestratorEventPayloadMap>(
   projectDir: string,
@@ -18,14 +10,13 @@ export function emit<T extends keyof OrchestratorEventPayloadMap>(
   taskId: TaskId | undefined,
   data: OrchestratorEventPayloadMap[T],
 ): void {
-  const event: EventShape<T> = {
+  appendEvent(projectDir, {
     ts: Date.now(),
     type,
     taskId,
     phase: state.phase,
     data,
-  };
-  appendEvent(projectDir, event as OrchestratorEvent);
+  });
 }
 
 export function emitValidationStart(callbacks: OrchestratorCallbacks): void {

@@ -14,13 +14,13 @@ const FIXTURE: ModelsDevCatalog = {
       'claude-sonnet-4-6': {
         id: 'claude-sonnet-4-6',
         name: 'Claude Sonnet 4.6',
-        cost: { input: 0.000003, output: 0.000015 },
+        cost: { input: 3, output: 15 },
         limit: { context: 200000, output: 8192 },
       },
       'claude-haiku-3': {
         id: 'claude-haiku-3',
         name: 'Claude Haiku 3',
-        cost: { input: 0.00000025, output: 0.00000125 },
+        cost: { input: 0.25, output: 1.25 },
         limit: { context: 200000, output: 4096 },
       },
     },
@@ -32,7 +32,7 @@ const FIXTURE: ModelsDevCatalog = {
       'meta-llama/Llama-3-70b': {
         id: 'meta-llama/Llama-3-70b',
         name: 'Llama 3 70B',
-        cost: { input: 0.0000009, output: 0.0000009 },
+        cost: { input: 0.9, output: 0.9 },
         limit: { context: 8192 },
       },
     },
@@ -68,8 +68,52 @@ const FIXTURE: ModelsDevCatalog = {
       'gpt-4o': {
         id: 'gpt-4o',
         name: 'GPT-4o',
-        cost: { input: 0.0000025, output: 0.00001 },
+        cost: { input: 2.5, output: 10 },
         limit: { context: 128000 },
+      },
+    },
+  },
+  'github-copilot': {
+    id: 'github-copilot',
+    name: 'GitHub Copilot',
+    models: {
+      'claude-opus-4.6': {
+        id: 'claude-opus-4.6',
+        name: 'Claude Opus 4.6',
+        limit: { context: 1_000_000 },
+      },
+    },
+  },
+  kilo: {
+    id: 'kilo',
+    name: 'Kilo Code',
+    models: {
+      'kimi-k2.5': {
+        id: 'kimi-k2.5',
+        name: 'Kimi K2.5',
+        limit: { context: 256000 },
+      },
+    },
+  },
+  opencode: {
+    id: 'opencode',
+    name: 'OpenCode',
+    models: {
+      'claude-sonnet-4-6': {
+        id: 'claude-sonnet-4-6',
+        name: 'Claude Sonnet 4.6',
+        limit: { context: 1_000_000 },
+      },
+    },
+  },
+  'opencode-go': {
+    id: 'opencode-go',
+    name: 'OpenCode Go',
+    models: {
+      'gpt-5.4': {
+        id: 'gpt-5.4',
+        name: 'GPT-5.4',
+        limit: { context: 400000 },
       },
     },
   },
@@ -83,7 +127,7 @@ describe('getModelsForProvider', () => {
     expect(models.at(1)?.id).toBe('claude-haiku-3');
   });
 
-  it('converts per-token pricing to per-1M tokens', () => {
+  it('keeps models.dev pricing in per-1M-token units', () => {
     const models = getModelsForProvider(FIXTURE, 'anthropic');
     const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
     expect(sonnet?.pricingInput).toBe(3);
@@ -106,6 +150,26 @@ describe('getModelsForProvider', () => {
     const models = getModelsForProvider(FIXTURE, 'lm-studio');
     expect(models).toHaveLength(1);
     expect(models.at(0)?.id).toBe('qwen2.5-7b');
+  });
+
+  it('maps github-copilot provider ID to copilot', () => {
+    const models = getModelsForProvider(FIXTURE, 'copilot');
+    expect(models).toHaveLength(1);
+    expect(models.at(0)?.id).toBe('claude-opus-4.6');
+  });
+
+  it('maps kilo provider ID to kilo-code', () => {
+    const models = getModelsForProvider(FIXTURE, 'kilo-code');
+    expect(models).toHaveLength(1);
+    expect(models.at(0)?.id).toBe('kimi-k2.5');
+  });
+
+  it('merges opencode and opencode-go provider IDs for opencode', () => {
+    const models = getModelsForProvider(FIXTURE, 'opencode');
+    expect(models).toHaveLength(2);
+    expect(models.map((model) => model.id)).toEqual(
+      expect.arrayContaining(['claude-sonnet-4-6', 'gpt-5.4']),
+    );
   });
 
   it('isFree is true when both costs are 0', () => {
@@ -139,10 +203,31 @@ describe('getModelsForProvider', () => {
       },
     };
     const models = getModelsForProvider(catalog, 'openai');
-    expect(models.at(0)?.pricingInput).toBe(0);
-    expect(models.at(0)?.pricingOutput).toBe(0);
-    expect(models.at(0)?.isFree).toBe(true);
+    expect(models.at(0)?.pricingInput).toBeUndefined();
+    expect(models.at(0)?.pricingOutput).toBeUndefined();
+    expect(models.at(0)?.isFree).toBeUndefined();
     expect(models.at(0)?.contextLength).toBeUndefined();
+  });
+
+  it('computes releaseDate as max of release_date and last_updated', () => {
+    const catalog: ModelsDevCatalog = {
+      openai: {
+        id: 'openai',
+        models: {
+          'gpt-old': { id: 'gpt-old', release_date: '2024-06-01', last_updated: '2025-03-15' },
+          'gpt-new': { id: 'gpt-new', release_date: '2025-11-18', last_updated: '2025-01-01' },
+          'gpt-release-only': { id: 'gpt-release-only', release_date: '2025-05-01' },
+          'gpt-update-only': { id: 'gpt-update-only', last_updated: '2025-08-01' },
+          'gpt-no-dates': { id: 'gpt-no-dates' },
+        },
+      },
+    };
+    const models = getModelsForProvider(catalog, 'openai');
+    expect(models.find((m) => m.id === 'gpt-old')?.releaseDate).toBe('2025-03-15');
+    expect(models.find((m) => m.id === 'gpt-new')?.releaseDate).toBe('2025-11-18');
+    expect(models.find((m) => m.id === 'gpt-release-only')?.releaseDate).toBe('2025-05-01');
+    expect(models.find((m) => m.id === 'gpt-update-only')?.releaseDate).toBe('2025-08-01');
+    expect(models.find((m) => m.id === 'gpt-no-dates')?.releaseDate).toBeUndefined();
   });
 });
 

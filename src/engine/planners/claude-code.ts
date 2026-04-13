@@ -6,7 +6,7 @@ import { runClaudePlannerStream, runClaudeOneShot } from '../claude-runner.js';
 import { resolveAutoModel } from '../../core/providers.js';
 
 export function createClaudeCodePlanner(model?: string): Planner {
-  const resolvedModel = resolveAutoModel(model);
+  const resolvedModel = resolveAutoModel(model, 'claude-code');
   let currentSessionId: string | null = null;
 
   return createPlannerBase({

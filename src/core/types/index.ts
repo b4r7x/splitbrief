@@ -21,7 +21,7 @@ export type {
 } from './config.js';
 export {
   WORKFLOW_MODES, COMMIT_STRATEGIES, THEME_MODES, SHIKI_THEMES,
-  CLI_TOOL_NAMES, OUTPUT_FORMATS, isCliTool,
+  OUTPUT_FORMATS,
   RUNNER_KINDS, RunnerKindSchema,
 } from './config.js';
 export type {

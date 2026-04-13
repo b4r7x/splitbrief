@@ -20,14 +20,18 @@ export function SummaryCostBreakdown({
 
   return (
     <Box flexDirection="column" marginTop={1} gap={isSmall ? 0 : 1}>
-      <LabeledRow label="Actual cost" labelWidth={labelWidth}>
-        <Text bold>{formatCost(costBreakdown.totalActualCost)}</Text>
-      </LabeledRow>
-      <LabeledRow label="Saved" labelWidth={labelWidth}>
-        <Text color={t.success}>
-          {`${formatCost(costBreakdown.savingsAmount)} (${costBreakdown.savingsPercentage.toFixed(0)}%)`}
-        </Text>
-      </LabeledRow>
+      {(costBreakdown.hasPricedUsage ?? true) && (
+        <LabeledRow label="Actual cost" labelWidth={labelWidth}>
+          <Text bold>{formatCost(costBreakdown.totalActualCost)}</Text>
+        </LabeledRow>
+      )}
+      {(costBreakdown.hasSavingsEstimate ?? true) && (
+        <LabeledRow label="Saved" labelWidth={labelWidth}>
+          <Text color={t.success}>
+            {`${formatCost(costBreakdown.savingsAmount)} (${costBreakdown.savingsPercentage.toFixed(0)}%)`}
+          </Text>
+        </LabeledRow>
+      )}
       <LabeledRow label="Local rate" labelWidth={labelWidth}>
         <Text color={t.success}>
           {`${(costBreakdown.localCompletionRate * 100).toFixed(0)}%`}

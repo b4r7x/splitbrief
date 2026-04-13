@@ -12,31 +12,35 @@ describe('predictCost', () => {
 
   it('produces correctly ordered low < expected < high for non-local implementer', () => {
     const result = predictCost({ taskCount: 10, plannerTool: 'claude-code', implementerTool: 'deepseek' });
-    expect(result.lowCost).toBeLessThan(result.expectedCost);
-    expect(result.expectedCost).toBeLessThan(result.highCost);
+    expect(result.lowCost).toBe(result.expectedCost);
+    expect(result.expectedCost).toBe(result.highCost);
   });
 
-  it('yields $0 implementer cost for local-only implementer', () => {
+  it('yields $0 predicted cost for CLI planner + local implementer', () => {
     const result = predictCost({ taskCount: 5, plannerTool: 'claude-code', implementerTool: 'ollama' });
-    // With ollama (local), the only cost comes from the planner and escalation.
-    // Low estimate has 0% escalation, so all implementation cost is $0.
-    // lowCost = plannerCost + 0 (no escalation)
-    // The difference between low and expected is purely escalation cost.
-    const plannerOnlyCost = result.lowCost;
-    expect(plannerOnlyCost).toBeGreaterThan(0);
-
-    // expectedCost > lowCost because escalation uses the planner (claude-code) pricing
-    expect(result.expectedCost).toBeGreaterThan(result.lowCost);
+    expect(result.lowCost).toBe(0);
+    expect(result.expectedCost).toBe(0);
+    expect(result.highCost).toBe(0);
   });
 
-  it('computes prediction with known tools (claude-code + ollama)', () => {
+  it('computes prediction with known tools (claude-code + deepseek)', () => {
+    const result = predictCost({ taskCount: 5, plannerTool: 'claude-code', implementerTool: 'deepseek' });
+    expect(result.estimatedTasks).toBe(5);
+    expect(result.plannerTool).toBe('claude-code');
+    expect(result.implementerTool).toBe('deepseek');
+    expect(result.lowCost).toBeGreaterThan(0);
+    expect(result.expectedCost).toBeGreaterThan(0);
+    expect(result.highCost).toBeGreaterThan(0);
+  });
+
+  it('returns zero prediction for known tools when both paths are unpriced', () => {
     const result = predictCost({ taskCount: 5, plannerTool: 'claude-code', implementerTool: 'ollama' });
     expect(result.estimatedTasks).toBe(5);
     expect(result.plannerTool).toBe('claude-code');
     expect(result.implementerTool).toBe('ollama');
-    expect(result.lowCost).toBeGreaterThan(0);
-    expect(result.expectedCost).toBeGreaterThan(0);
-    expect(result.highCost).toBeGreaterThan(0);
+    expect(result.lowCost).toBe(0);
+    expect(result.expectedCost).toBe(0);
+    expect(result.highCost).toBe(0);
   });
 
   it('uses actual planner token usage when provided', () => {
@@ -45,8 +49,8 @@ describe('predictCost', () => {
       implementerInput: 0, implementerOutput: 0,
       escalationInput: 0, escalationOutput: 0,
     };
-    const withUsage = predictCost({ taskCount: 5, plannerTool: 'claude-code', implementerTool: 'ollama', tokenUsage });
-    const withoutUsage = predictCost({ taskCount: 5, plannerTool: 'claude-code', implementerTool: 'ollama' });
+    const withUsage = predictCost({ taskCount: 5, plannerTool: 'anthropic', implementerTool: 'ollama', plannerModel: 'claude-sonnet-4-6', tokenUsage });
+    const withoutUsage = predictCost({ taskCount: 5, plannerTool: 'anthropic', implementerTool: 'ollama', plannerModel: 'claude-sonnet-4-6' });
 
     // Results should differ because actual usage differs from estimated
     expect(withUsage.lowCost).not.toBe(withoutUsage.lowCost);

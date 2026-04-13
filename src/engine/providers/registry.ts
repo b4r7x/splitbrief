@@ -1,7 +1,6 @@
 import OpenAI from 'openai';
 import type { DetectedModel, ProviderDef, ProviderOverrides } from './types.js';
-import type { Config, ApiImplementerConfig, ProviderDetection } from '../../types.js';
-import { hasApiBase } from '../../core/config/runner-config.js';
+import type { Config, ProviderDetection } from '../../types.js';
 import { createClientFromProvider } from './client.js';
 import { createOllamaProvider } from './ollama.js';
 import { createLmStudioProvider } from './lm-studio.js';
@@ -51,13 +50,9 @@ export function getProvider(name: string, overrides?: ProviderOverrides): Provid
   return createOpenAICompatProvider(name, overrides.apiBase, envKey, false, overrides);
 }
 
-function asApiConfig(config: Config): ApiImplementerConfig {
-  if (!hasApiBase(config.implementer)) throw new Error('Expected api implementer config');
-  return config.implementer;
-}
-
 function getImplementerProvider(config: Config): ProviderDef {
-  const impl = asApiConfig(config);
+  if (config.implementer.kind !== 'api') throw new Error('Expected api implementer config');
+  const impl = config.implementer;
   return getProvider(impl.provider, {
     apiBase: impl.apiBase,
     apiKey: impl.apiKey,

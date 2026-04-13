@@ -19,10 +19,11 @@ export function getActiveProcessCount(): number {
 
 export function killProcess(proc: ChildProcess, options?: { group?: boolean }): void {
   if (proc.exitCode !== null || proc.killed) return;
-  const useGroup = options?.group && proc.pid !== undefined;
+  const pid = proc.pid;
+  const useGroup = options?.group && pid !== undefined;
   try {
-    if (useGroup) {
-      process.kill(-proc.pid!, 'SIGTERM');
+    if (useGroup && pid !== undefined) {
+      process.kill(-pid, 'SIGTERM');
     } else {
       proc.kill('SIGTERM');
     }
@@ -32,11 +33,12 @@ export function killProcess(proc: ChildProcess, options?: { group?: boolean }): 
     }
   }
   setTimeout(() => {
-    if (proc.pid === undefined) return;
+    const currentPid = proc.pid;
+    if (currentPid === undefined) return;
     try {
-      process.kill(useGroup ? -proc.pid! : proc.pid, 0);
+      process.kill(useGroup ? -currentPid : currentPid, 0);
       if (useGroup) {
-        process.kill(-proc.pid!, 'SIGKILL');
+        process.kill(-currentPid, 'SIGKILL');
       } else {
         proc.kill('SIGKILL');
       }

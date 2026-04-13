@@ -7,7 +7,7 @@ import { resolveAutoModel } from '../../core/providers.js';
 import { DEFAULT_AGENT_SDK_MODEL } from '../providers/known.js';
 
 export function createAgentSdkImplementer(config: Config): Implementer {
-  const effectiveModel = resolveAutoModel(config.implementer.model) ?? DEFAULT_AGENT_SDK_MODEL;
+  const effectiveModel = resolveAutoModel(config.implementer.model, 'agent-sdk') ?? DEFAULT_AGENT_SDK_MODEL;
   const backend = createAgentSdkBackend({ allowedTools: [...IMPLEMENTER_ALLOWED_TOOLS], detectChanges: true });
 
   return createImplementerBase({

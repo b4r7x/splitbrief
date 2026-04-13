@@ -10,7 +10,8 @@ import { resolveProjectDir } from '../workflow.js';
 import { listSessions, getSessionDir } from '../../core/sessions/io.js';
 import { aggregateSessionCosts } from '../../core/sessions/analytics.js';
 import { formatCost, toErrorMessage } from '../../utils/format.js';
-import { getProviderDisplayName, formatModelName } from '../../core/providers.js';
+import { getProviderDisplayName } from '../../core/providers.js';
+import { formatModelName } from '../../core/model-display.js';
 
 function printCostHistory(projectDir: string): void {
   try {

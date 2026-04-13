@@ -155,8 +155,8 @@ describe('api implementer', () => {
     expect(opts.temperature).toBeCloseTo(0.2 + 0.1 * 2, 5);
   });
 
-  it('throws if model is "auto"', async () => {
-    const cfg = makeConfig({ implementer: { model: 'auto' } });
+  it('throws if model is "auto" for unknown provider', async () => {
+    const cfg = makeConfig({ implementer: { model: 'auto', provider: 'custom-unknown-provider' } });
     const implementer = createApiImplementer(cfg);
     const task = makeTask({ id: 'T-auto', file: 'src/auto.ts', action: 'create' });
 

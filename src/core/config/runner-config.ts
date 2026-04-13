@@ -33,7 +33,7 @@ export function getRunnerApiKey(runner: RunnerConfig): string | undefined {
 
 export function getRunnerModelName(runner: RunnerConfig): string | undefined {
   if ('model' in runner && typeof runner.model === 'string') {
-    return resolveAutoModel(runner.model);
+    return resolveAutoModel(runner.model, getRunnerDisplayName(runner));
   }
   return undefined;
 }

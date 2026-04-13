@@ -1,7 +1,8 @@
 import { Box, Text } from 'ink';
 import type { SlashCommandDef } from '../types.js';
 import { useTheme } from '../ui/theme.js';
-import { formatTime, formatToolModel } from '../utils/format.js';
+import { formatTime } from '../utils/format.js';
+import { formatToolModel } from '../core/model-display.js';
 import { InputBar } from '../components/input-bar/index.js';
 import { LabeledRow } from '../components/labeled-row.js';
 import { ScreenShell } from '../components/screen-shell.js';
@@ -44,7 +45,9 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
         <LabeledRow label="Time" labelWidth={labelWidth}><Text>{formatTime(summary.totalTime)}</Text></LabeledRow>
         {summary.plannerTool && <LabeledRow label="Planner" labelWidth={labelWidth}><Text>{formatToolModel(summary.plannerTool, summary.plannerModel)}</Text></LabeledRow>}
         {summary.implementerTool && <LabeledRow label="Implementer" labelWidth={labelWidth}><Text>{formatToolModel(summary.implementerTool, summary.implementerModel)}</Text></LabeledRow>}
-        <LabeledRow label="Savings" labelWidth={labelWidth}><Text bold color={theme.success}>{summary.estimatedCostSavings}</Text></LabeledRow>
+        {(summary.costBreakdown?.hasSavingsEstimate ?? true) && (
+          <LabeledRow label="Savings" labelWidth={labelWidth}><Text bold color={theme.success}>{summary.estimatedCostSavings}</Text></LabeledRow>
+        )}
       </Box>
 
       <SummaryProgress

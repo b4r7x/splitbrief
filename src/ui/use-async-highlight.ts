@@ -9,7 +9,7 @@ export function useAsyncHighlight(code: string, lang?: string): string | null {
     setResult(null);
     highlight(code, lang).then((out) => {
       if (!cancelled) setResult(out.replace(/\n$/, ''));
-    }).catch(() => {});
+    }).catch(() => { /* highlight failure is non-critical — render unhighlighted */ });
     return () => {
       cancelled = true;
     };

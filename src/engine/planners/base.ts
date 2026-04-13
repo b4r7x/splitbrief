@@ -20,13 +20,7 @@ type InternalInvokeFn = (opts: {
   callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion'>;
 }) => Promise<InvokeResult>;
 
-/**
- * Configuration for the base planner factory.
- *
- * Most backends use the same function for both `invokePlan` and `invokeEscalate`.
- * The separate `invokeEscalate` slot exists for backends that need different invocation
- * modes — e.g., Claude Code uses session-chaining for plan phases but one-shot for escalations.
- */
+// invokeEscalate exists separately: Claude Code uses session-chaining for plan phases but one-shot for escalations.
 interface PlannerBaseConfig {
   invokePlan: InternalInvokeFn;
   invokeEscalate: InternalInvokeFn;
@@ -41,6 +35,12 @@ interface PlannerBaseConfig {
    * Default: 'text'
    */
   hintSuccessMode?: 'text' | 'files';
+  /**
+   * Optional hook to resolve the phase output text. Backends that write files to disk
+   * (e.g., agent planner) can override the default stdout-based result by reading
+   * the generated file. Falls back to `resultText` when not provided.
+   */
+  readPhaseOutput?: (filename: string, resultText: string, projectDir: string) => string;
   // One consumer (claude-code) — justified for the pluggable backend architecture.
   escalateFullPostProcess?: (task: Task, result: InvokeResult, extracted: { code: string }, projectDir: string) => EscalationResult;
 }
@@ -66,7 +66,9 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
         });
         if (result.usage) usage = accumulateUsage(usage, result.usage);
         phases.push({ text: result.text, filename });
-        return result.text;
+        return config.readPhaseOutput
+          ? config.readPhaseOutput(filename, result.text, projectDir)
+          : result.text;
       }
 
       const research = await runPhase('researching', buildResearchPrompt(feature, projectContext, skillsContext), RESEARCH_FILE);
@@ -90,7 +92,10 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       callbacks.onPhase?.('quick-planning');
       const result = await config.invokePlan({ prompt, projectDir, callbacks: { onOutput: callbacks.onOutput, onQuestion: callbacks.onQuestion } });
 
-      const tasks = parseTasks(result.text);
+      const tasksContent = config.readPhaseOutput
+        ? config.readPhaseOutput(TASKS_FILE, result.text, projectDir)
+        : result.text;
+      const tasks = parseTasks(tasksContent);
       return { spec: '', plan: '', tasks, usage: result.usage, phases: [{ text: result.text, filename: TASKS_FILE }] };
     },
 

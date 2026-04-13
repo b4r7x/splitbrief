@@ -1,10 +1,10 @@
-import { Text } from 'ink';
-import type { Theme } from '../../../ui/theme.js';
-import { formatModelName } from '../../../core/providers.js';
-import { formatContextLength, formatPrice } from '../../../engine/providers/metadata.js';
-import { truncate } from '../../../utils/format.js';
-import type { PickerOption, ModelOption } from './picker-catalog.js';
-import { isCustomModel } from './picker-catalog.js';
+import { Text } from "ink";
+import type { Theme } from "../../../ui/theme.js";
+import { isProviderLocal } from "../../../core/providers.js";
+import { formatModelName } from "../../../core/model-display.js";
+import { formatContextLength, truncate } from "../../../utils/format.js";
+import type { PickerOption, ModelOption } from "./picker-catalog.js";
+import { isCustomModel } from "./picker-catalog.js";
 
 const CHECKMARK_WIDTH = 2;
 
@@ -21,27 +21,34 @@ function formatPickerLine(
   if (version) suffixParts.push(` v${version}`);
   if (status) suffixParts.push(` ${status}`);
 
-  const checkmarkWidth = checkmark ? CHECKMARK_WIDTH : 0;
-  const fullSuffix = suffixParts.join('');
-  const availableForLabel = maxWidth - fullSuffix.length - checkmarkWidth;
+  const fullSuffix = suffixParts.join("");
+  const availableForLabel = maxWidth - fullSuffix.length - CHECKMARK_WIDTH;
 
   if (label.length <= availableForLabel) {
     return { label, suffix: fullSuffix, checkmark };
   }
 
-  const suffixNoVersion = suffixParts.filter(p => !p.startsWith(' v')).join('');
-  const availableNoVersion = maxWidth - suffixNoVersion.length - checkmarkWidth;
+  const suffixNoVersion = suffixParts
+    .filter((p) => !p.startsWith(" v"))
+    .join("");
+  const availableNoVersion = maxWidth - suffixNoVersion.length - CHECKMARK_WIDTH;
   if (label.length <= availableNoVersion) {
     return { label, suffix: suffixNoVersion, checkmark };
   }
 
-  const essentialSuffix = status ? ` ${status}` : '';
-  const availableForTruncatedLabel = maxWidth - essentialSuffix.length - checkmarkWidth;
+  const essentialSuffix = status ? ` ${status}` : "";
+  const availableForTruncatedLabel =
+    maxWidth - essentialSuffix.length - CHECKMARK_WIDTH;
   return {
     label: truncate(label, availableForTruncatedLabel),
     suffix: essentialSuffix,
     checkmark,
   };
+}
+
+function padBetween(left: string, right: string, totalWidth: number): string {
+  const gap = totalWidth - left.length - right.length;
+  return gap > 0 ? ' '.repeat(gap) : ' ';
 }
 
 interface ToolRowParams {
@@ -63,26 +70,38 @@ export function renderToolRow({
   currentCommand,
   theme: t,
 }: ToolRowParams) {
-  const isCommandBased = item.kind === 'shell' || item.kind === 'agent';
-  const dimmed = !item.available && !isCommandBased && item.kind !== 'agent-sdk';
+  const isCommandBased = item.kind === "shell" || item.kind === "agent";
+  const dimmed =
+    !item.available && !isCommandBased && item.kind !== "agent-sdk";
+  const isLocal = isProviderLocal(item.id);
   const rawLabel = isCommandBased
-    ? (currentCommand ? `${item.kind}: ${currentCommand}` : '+ Add custom...')
+    ? currentCommand
+      ? `${item.kind}: ${currentCommand}`
+      : "+ Add custom..."
     : item.displayName;
   const labelColor = dimmed ? t.textDim : isCursor ? t.accent : t.text;
-  const showCheck = (isSelected || item.isCurrent === true) && !dimmed;
+  const showCheck = isSelected && !dimmed;
+  const statusLabel = dimmed
+    ? isLocal
+      ? "(no models)"
+      : "(unavailable)"
+    : null;
   const { label, suffix, checkmark } = formatPickerLine(
     rawLabel,
     isCommandBased ? null : item.badge,
-    isCommandBased ? null : (isPlanner ? item.version ?? null : null),
-    dimmed ? '(unavailable)' : null,
+    isCommandBased ? null : isPlanner ? (item.version ?? null) : null,
+    statusLabel,
     showCheck,
     maxWidth,
   );
+  const gap = padBetween(label, suffix, maxWidth - CHECKMARK_WIDTH);
   return (
     <Text>
-      <Text color={labelColor} bold={isCursor && !dimmed}>{label}</Text>
-      <Text color={t.textDim}>{suffix}</Text>
-      {checkmark && <Text color={t.success}> {'\u2713'}</Text>}
+      <Text color={labelColor} bold={isCursor && !dimmed}>
+        {label}
+      </Text>
+      <Text color={t.textDim}>{gap}{suffix.trimStart()}</Text>
+      {checkmark ? <Text color={t.success}> {"\u2713"}</Text> : <Text>{"  "}</Text>}
     </Text>
   );
 }
@@ -95,34 +114,43 @@ interface ModelRowParams {
   theme: Theme;
 }
 
-export function renderModelRow({ item, isCursor, maxWidth, currentModel, theme: t }: ModelRowParams) {
+export function renderModelRow({
+  item,
+  isCursor,
+  maxWidth,
+  currentModel,
+  theme: t,
+}: ModelRowParams) {
   const isCfgMatch = item.id === currentModel;
   const modelName = formatModelName(item.id);
 
-  const metaParts: string[] = [];
-  if (item.contextLength) {
-    metaParts.push(formatContextLength(item.contextLength));
-  }
-  if (item.pricingInput !== undefined && !item.isFree) {
-    metaParts.push(formatPrice(item.pricingInput));
-  }
-  const metaSuffix = metaParts.length > 0 ? ` ${metaParts.join(' | ')}` : '';
+  const contextStr = !item.isDefault && item.contextLength ? formatContextLength(item.contextLength) : '';
+  const metaSuffix = contextStr ? ` ${contextStr}` : '';
 
-  const badge = isCustomModel(item) ? '(custom)' : null;
-  const status = item.isDefault ? '(default)' : null;
+  const badge = isCustomModel(item) ? "(custom)" : null;
+  const status = item.isDefault ? "(default)" : null;
 
-  const freeWidth = item.isFree ? 6 : 0;
-  const effectiveMaxWidth = maxWidth - freeWidth - metaSuffix.length;
+  const { label, suffix, checkmark } = formatPickerLine(
+    modelName,
+    badge,
+    null,
+    status,
+    isCfgMatch,
+    maxWidth - metaSuffix.length,
+  );
 
-  const { label, suffix, checkmark } = formatPickerLine(modelName, badge, null, status, isCfgMatch, effectiveMaxWidth);
+  const rightPart = (suffix + metaSuffix).trimStart();
+  const gap = padBetween(label, rightPart, maxWidth - CHECKMARK_WIDTH);
 
   return (
     <Text>
-      {item.isFree && <Text color={t.success} bold> FREE </Text>}
-      <Text color={isCursor ? t.accent : t.text} bold={isCursor}>{label}</Text>
-      <Text color={t.textDim}>{suffix}</Text>
-      <Text color={t.textDim} dimColor>{metaSuffix}</Text>
-      {checkmark && <Text color={t.success}> {'\u2713'}</Text>}
+      <Text color={isCursor ? t.accent : t.text} bold={isCursor}>
+        {label}
+      </Text>
+      <Text color={t.textDim}>
+        {gap}{rightPart}
+      </Text>
+      {checkmark ? <Text color={t.success}> {"\u2713"}</Text> : <Text>{"  "}</Text>}
     </Text>
   );
 }

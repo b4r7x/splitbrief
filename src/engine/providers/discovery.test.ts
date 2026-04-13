@@ -127,12 +127,14 @@ describe('discoverKiloModels', () => {
         contextLength: 200000,
         pricingInput: 3,
         pricingOutput: 15,
+        isFree: false,
       },
       {
         id: 'openai/gpt-4o',
         contextLength: 128000,
         pricingInput: 5,
         pricingOutput: 15,
+        isFree: false,
       },
     ]);
   });

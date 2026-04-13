@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { includes } from '../../../utils/type-guards.js';
 
 // Semantic provider groups — CLI tools, API providers, local servers, meta
 export const CLI_TOOL_IDS = ['claude-code', 'codex', 'opencode', 'aider', 'copilot', 'kilo-code'] as const;
@@ -54,11 +55,11 @@ export type ProviderId = (typeof PROVIDER_IDS)[number];
 export type PlannerToolId = (typeof PLANNER_TOOL_IDS)[number];
 
 export function isProviderId(id: string): id is ProviderId {
-  return (PROVIDER_IDS as readonly string[]).includes(id);
+  return includes(PROVIDER_IDS, id);
 }
 
 export function isPlannerToolId(id: string): id is PlannerToolId {
-  return (PLANNER_TOOL_IDS as readonly string[]).includes(id);
+  return includes(PLANNER_TOOL_IDS, id);
 }
 
 export const PHASES = ['idle', 'researching', 'specifying', 'reviewing-spec', 'planning', 'reviewing-plan', 'implementing', 'validating-task', 'escalating', 'final-review', 'complete'] as const;
@@ -93,7 +94,6 @@ export const OUTPUT_FORMATS = ['stream-json', 'jsonl', 'text', 'opencode'] as co
 export const OutputFormatSchema = z.enum(OUTPUT_FORMATS);
 export type OutputFormat = z.infer<typeof OutputFormatSchema>;
 
-export const CLI_TOOL_NAMES = CLI_TOOL_IDS;
 export const CliToolIdSchema = z.enum(CLI_TOOL_IDS);
 export const CliPlannerToolSchema = CliToolIdSchema;
 export type CliPlannerTool = z.infer<typeof CliPlannerToolSchema>;

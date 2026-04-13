@@ -1,18 +1,17 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, appendFileSync } from 'node:fs';
+import { readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkflowState, OrchestratorEvent } from '../types/index.js';
+import type { OrchestratorEventType } from '../types/events.js';
 import { WorkflowStateSchema } from '../types/schemas/index.js';
 import { CURRENT_STATE_VERSION } from './machine.js';
 import { STATE_FILE, EVENTS_FILE } from '../paths.js';
 import { currentDir } from '../paths-io.js';
 import { narrowRecord } from '../../utils/type-guards.js';
-import { SECURE_DIR_MODE, SECURE_FILE_MODE } from '../../utils/fs.js';
+import { ensureSecureDir, writeSecureFile, SECURE_FILE_MODE } from '../../utils/fs.js';
 import { warnStderr } from '../../utils/format.js';
 
 export function saveState(projectDir: string, state: WorkflowState): void {
-  const dir = currentDir(projectDir);
-  mkdirSync(dir, { recursive: true, mode: SECURE_DIR_MODE });
-  writeFileSync(join(dir, STATE_FILE), JSON.stringify(state, null, 2) + '\n', { mode: SECURE_FILE_MODE });
+  writeSecureFile(join(currentDir(projectDir), STATE_FILE), JSON.stringify(state, null, 2) + '\n');
 }
 
 export function loadState(projectDir: string): WorkflowState | null {
@@ -33,8 +32,8 @@ export function loadState(projectDir: string): WorkflowState | null {
   return result.data;
 }
 
-export function appendEvent(projectDir: string, event: OrchestratorEvent): void {
+export function appendEvent<T extends OrchestratorEventType>(projectDir: string, event: OrchestratorEvent<T>): void {
   const dir = currentDir(projectDir);
-  mkdirSync(dir, { recursive: true, mode: SECURE_DIR_MODE });
+  ensureSecureDir(dir);
   appendFileSync(join(dir, EVENTS_FILE), JSON.stringify(event) + '\n', { mode: SECURE_FILE_MODE });
 }

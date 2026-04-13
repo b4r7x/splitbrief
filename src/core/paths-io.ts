@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, resolve, isAbsolute, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TINY_SPEC_DIR, CURRENT_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE } from './paths.js';
-import { SECURE_DIR_MODE, SECURE_FILE_MODE } from '../utils/fs.js';
+import { ensureSecureDir, validateSafeIdentifier, SECURE_FILE_MODE } from '../utils/fs.js';
 
 const TINY_SPEC_VERSION: string = (() => {
   try {
@@ -62,16 +62,11 @@ export function currentDir(projectDir: string): string {
 }
 
 export function ensureTinySpecDir(projectDir: string): void {
-  mkdirSync(currentDir(projectDir), { recursive: true, mode: SECURE_DIR_MODE });
+  ensureSecureDir(currentDir(projectDir));
 }
 
 export function validateFilename(filename: string): void {
-  if (!filename?.trim()) {
-    throw new Error(`Invalid filename '${filename}'`);
-  }
-  if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
-    throw new Error(`Invalid filename '${filename}': must not contain '..', '/' or '\\'`);
-  }
+  validateSafeIdentifier(filename, 'filename');
 }
 
 export function writeSpecFile(projectDir: string, filename: string, content: string): void {

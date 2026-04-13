@@ -1,10 +1,6 @@
 import type { PlannerToolId, ProviderId } from './schemas/enums.js';
 import type { z } from 'zod';
 import type { PlannerConfigSchema, ImplementerConfigSchema, ConfigSchema } from './schemas/config.js';
-import {
-  CLI_TOOL_NAMES,
-  type CliPlannerTool,
-} from './schemas/enums.js';
 
 export interface DetectedModel {
   id: string;
@@ -13,6 +9,7 @@ export interface DetectedModel {
   pricingOutput?: number;
   isFree?: boolean;
   capabilities?: string[];
+  releaseDate?: string;
 }
 
 export type {
@@ -21,7 +18,7 @@ export type {
 } from './schemas/enums.js';
 export {
   WORKFLOW_MODES, COMMIT_STRATEGIES, THEME_MODES, SHIKI_THEMES,
-  OUTPUT_FORMATS, CLI_TOOL_NAMES, RUNNER_KINDS, RunnerKindSchema,
+  OUTPUT_FORMATS, RUNNER_KINDS, RunnerKindSchema,
 } from './schemas/enums.js';
 
 export type {
@@ -40,10 +37,6 @@ export type {
 } from './schemas/planner-config.js';
 
 export type PlannerTool = PlannerToolId;
-
-export function isCliTool(tool: string): tool is CliPlannerTool {
-  return (CLI_TOOL_NAMES as readonly string[]).includes(tool);
-}
 
 export type PlannerConfig = z.infer<typeof PlannerConfigSchema>;
 

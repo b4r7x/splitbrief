@@ -1,11 +1,9 @@
 import type { TuiEvent } from '../../types.js';
 import type { TaskCompletionMethod } from '../../types.js';
-import {
-  type Section,
-  groupEventsIntoSections,
-} from '../../core/event-sections.js';
+import type { Section } from '../../core/event-sections.js';
 import { trimSectionsToViewport, type DynamicSection } from './viewport-trimming.js';
 import { conversationScrollStore } from '../../stores/conversation-scroll.js';
+import { workflowStore } from '../../stores/workflow.js';
 
 export interface TaskCompletedSummary {
   index: number;
@@ -30,7 +28,7 @@ export function useScrollableFlow(events: TuiEvent[], rawHeight: number): UseScr
   const expandedDiffs = conversationScrollStore.use(s => s.expandedDiffs);
   const eventCountAtScroll = conversationScrollStore.use(s => s.eventCountAtScroll);
 
-  const sections = groupEventsIntoSections(events);
+  const sections = workflowStore.use(s => s.sections);
 
   const newEventCount = scrollOffset > 0 ? Math.max(0, events.length - eventCountAtScroll) : 0;
 

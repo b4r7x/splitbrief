@@ -20,8 +20,9 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ stat
   let { state } = opts;
   let regenerated = false;
   const rejectType = type === 'spec' ? 'REJECT_SPEC' : 'REJECT_PLAN';
-  const rejectedEvent = (type === 'spec' ? 'spec_rejected' : 'plan_rejected') as 'spec_rejected' | 'plan_rejected';
-  const regeneratedEvent = (type === 'spec' ? 'spec_regenerated' : 'plan_regenerated') as 'spec_regenerated' | 'plan_regenerated';
+  const [rejectedEvent, regeneratedEvent] = type === 'spec'
+    ? ['spec_rejected', 'spec_regenerated'] as const
+    : ['plan_rejected', 'plan_regenerated'] as const;
   const filename = type === 'spec' ? SPEC_FILE : PLAN_FILE;
 
   while (true) {

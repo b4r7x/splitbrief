@@ -6,29 +6,23 @@ import { withTimeout } from '../../utils/with-timeout.js';
 import { toErrorMessage } from '../../utils/format.js';
 import { CLI_TOOLS } from '../cli-tools.js';
 import { hasApiKey, PROVIDER_CATALOG, type ProviderId, isPlannerToolId } from '../../core/providers.js';
+import { typedEntries } from '../../utils/type-guards.js';
 
 function providerDescription(id: ProviderId): string {
   const info = PROVIDER_CATALOG[id];
   return info.isLocal ? `${info.displayName} (local)` : `${info.displayName} API`;
 }
 
-const CLI_PLANNERS: Array<{ tool: PlannerTool; description: string }> = [
-  ...Object.entries(CLI_TOOLS).map(([tool, meta]) => ({
-    tool: tool as PlannerTool,
-    description: meta.description,
-  })),
-  // agent-sdk is not a CLI_TOOL but is detected via the planner factory
-  { tool: 'agent-sdk', description: PROVIDER_CATALOG['agent-sdk'].displayName },
-];
+const CLI_PLANNERS: Array<{ tool: PlannerTool; description: string }> =
+  typedEntries(CLI_TOOLS).map(([tool, meta]) => ({ tool, description: meta.description }));
 
 const API_PLANNERS: { tool: PlannerTool; description: string }[] = [
   { tool: 'anthropic', description: providerDescription('anthropic') },
 ];
 
 // Filter KNOWN_PROVIDERS to only include valid planner tools (excludes local providers like ollama, lm-studio)
-const PROVIDER_PLANNERS: { tool: PlannerTool; description: string }[] = (
-  Object.keys(KNOWN_PROVIDERS) as ProviderId[]
-).filter(isPlannerToolId).map(id => ({ tool: id, description: providerDescription(id) }));
+const PROVIDER_PLANNERS: { tool: PlannerTool; description: string }[] =
+  Object.keys(KNOWN_PROVIDERS).filter(isPlannerToolId).map(id => ({ tool: id, description: providerDescription(id) }));
 
 function minimalConfig(tool: PlannerTool): Config {
   return {

@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import type { PlannerDetection, ProviderDetection } from '../../types.js';
+import { narrowRecord } from '../../utils/type-guards.js';
 
 const CACHE_FILENAME = 'detection-cache.json';
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
@@ -18,12 +19,13 @@ function cachePath(projectDir: string): string {
 }
 
 function isValidCache(value: unknown): value is DetectionCache {
+  const rec = narrowRecord(value);
+  if (!rec) return false;
   return (
-    typeof value === 'object' && value !== null &&
-    'version' in value && (value as DetectionCache).version === CACHE_VERSION &&
-    'timestamp' in value && typeof (value as DetectionCache).timestamp === 'number' &&
-    'planners' in value && Array.isArray((value as DetectionCache).planners) &&
-    'implementers' in value && Array.isArray((value as DetectionCache).implementers)
+    rec['version'] === CACHE_VERSION &&
+    typeof rec['timestamp'] === 'number' &&
+    Array.isArray(rec['planners']) &&
+    Array.isArray(rec['implementers'])
   );
 }
 

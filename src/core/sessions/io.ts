@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import type { Session } from '../types/index.js';
 import { SessionSchema } from '../types/schemas/index.js';
 import { TINY_SPEC_DIR, SESSIONS_DIR } from '../paths.js';
+import { validateSafeIdentifier } from '../../utils/fs.js';
 import { warnError, warnStderr } from '../../utils/format.js';
 import { isENOENT } from '../../utils/process-errors.js';
 
@@ -33,12 +34,7 @@ function readSession(filePath: string): Session | null {
 }
 
 function validateSessionId(id: string): void {
-  if (!id?.trim()) {
-    throw new Error(`Invalid session id '${id}'`);
-  }
-  if (id.includes('/') || id.includes('\\') || id.includes('..')) {
-    throw new Error(`Invalid session id '${id}': must not contain '/', '\\' or '..'`);
-  }
+  validateSafeIdentifier(id, 'session id');
 }
 
 export function saveSession(dir: string, session: Session): void {

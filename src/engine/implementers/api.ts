@@ -30,7 +30,7 @@ export function createApiImplementer(initialConfig: Config): Implementer {
       const promptTokens = estimateTokens(SYSTEM_PREAMBLE) + estimateTokens(prompt);
       const maxTokens = Math.max(contextLength - promptTokens, 1024);
 
-      const model = resolveAutoModel(impl.model);
+      const model = resolveAutoModel(impl.model, impl.provider);
       if (!model) throw new Error(`API implementer requires an explicit model name — 'auto' is not supported for API backends. Set implementer.model in your config.`);
 
       const completion = await streamCompletion(

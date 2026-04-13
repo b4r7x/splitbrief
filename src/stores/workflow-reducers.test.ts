@@ -15,6 +15,7 @@ import type { WorkflowViewState } from './workflow.js';
 
 const emptyState: WorkflowViewState = {
   events: [],
+  sections: [],
   phase: 'idle',
   currentTask: 0,
   totalTasks: 0,
@@ -22,6 +23,7 @@ const emptyState: WorkflowViewState = {
   escalatedCount: 0,
   taskCompletionTimes: [],
   taskMap: new Map(),
+  tasks: [],
   tokenUsage: null,
   cancelled: false,
   sidebarVisible: false,

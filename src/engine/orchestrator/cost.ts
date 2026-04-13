@@ -68,6 +68,8 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     escalatedCount: escalatedToPlanner,
     plannerTool,
     implementerTool,
+    plannerModel,
+    implementerModel,
   });
   const estimatedCostSavings = formatCost(costBreakdown.savingsAmount);
 

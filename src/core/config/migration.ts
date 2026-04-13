@@ -1,16 +1,15 @@
 import { CLI_TOOL_IDS } from '../types/schemas/enums.js';
 import { resolveDefaultApiBase } from '../providers.js';
+import { narrowRecord, includes } from '../../utils/type-guards.js';
 
-/**
- * Migrate config from any version to current (v2).
- */
 export function migrateConfig(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object') {
     throw new Error('Config must be an object');
   }
 
-  const obj = raw as Record<string, unknown>;
-  const version = obj.version as number | undefined;
+  const obj = narrowRecord(raw);
+  if (!obj) throw new Error('Config must be an object');
+  const version = typeof obj.version === 'number' ? obj.version : undefined;
 
   if (version === 2) {
     return raw;
@@ -39,9 +38,9 @@ function migrateV1ToV2(obj: Record<string, unknown>): unknown {
 }
 
 function migrateWorkflowV1ToV2(raw: unknown): unknown {
-  if (!raw || typeof raw !== 'object') return undefined;
+  const workflow = narrowRecord(raw);
+  if (!workflow) return undefined;
 
-  const workflow = raw as Record<string, unknown>;
   const result = { ...workflow };
 
   // Migrate commitPerTask → commitStrategy
@@ -57,15 +56,15 @@ function migrateWorkflowV1ToV2(raw: unknown): unknown {
 }
 
 function migrateRunnerV1ToV2(role: 'planner' | 'implementer', raw: unknown): unknown {
-  if (!raw || typeof raw !== 'object') {
+  const runner = narrowRecord(raw);
+  if (!runner) {
     throw new Error(`${role} config must be an object`);
   }
 
-  const runner = raw as Record<string, unknown>;
-  const legacyKind = runner.kind as string | undefined;
-  const tool = runner.tool as string | undefined;
-  const command = runner.command as string | undefined;
-  const apiBase = runner.apiBase as string | undefined;
+  const legacyKind = typeof runner.kind === 'string' ? runner.kind : undefined;
+  const tool = typeof runner.tool === 'string' ? runner.tool : undefined;
+  const command = typeof runner.command === 'string' ? runner.command : undefined;
+  const apiBase = typeof runner.apiBase === 'string' ? runner.apiBase : undefined;
 
   // Infer the new kind
   const kind = inferLegacyKind(legacyKind, tool, command, apiBase);
@@ -81,8 +80,8 @@ function migrateRunnerV1ToV2(role: 'planner' | 'implementer', raw: unknown): unk
 
     case 'api': {
       // provider comes from new 'provider' field, or legacy 'tool', or default
-      const provider =
-        (runner.provider as string) || tool || (role === 'implementer' ? 'ollama' : 'anthropic');
+      const providerField = typeof runner.provider === 'string' ? runner.provider : undefined;
+      const provider = providerField || tool || (role === 'implementer' ? 'ollama' : 'anthropic');
 
       const resolvedApiBase = apiBase || resolveDefaultApiBase(provider);
       if (!resolvedApiBase) {
@@ -92,7 +91,7 @@ function migrateRunnerV1ToV2(role: 'planner' | 'implementer', raw: unknown): unk
         );
       }
 
-      const apiKeyValue = runner.apiKey as string | undefined;
+      const apiKeyValue = typeof runner.apiKey === 'string' ? runner.apiKey : undefined;
       return {
         kind: 'api',
         provider,
@@ -125,7 +124,7 @@ function migrateRunnerV1ToV2(role: 'planner' | 'implementer', raw: unknown): unk
       };
 
     case 'agent-sdk': {
-      const sdkApiKey = runner.apiKey as string | undefined;
+      const sdkApiKey = typeof runner.apiKey === 'string' ? runner.apiKey : undefined;
       return {
         kind: 'agent-sdk',
         ...(sdkApiKey && { apiKey: sdkApiKey }),
@@ -150,12 +149,12 @@ function inferLegacyKind(
   }
 
   // Legacy CLI-tool-as-kind (e.g., kind: 'claude-code')
-  if (legacyKind && CLI_TOOL_IDS.includes(legacyKind as (typeof CLI_TOOL_IDS)[number])) {
+  if (legacyKind && includes(CLI_TOOL_IDS, legacyKind)) {
     return 'cli';
   }
 
   // Infer from shape
-  if (tool && CLI_TOOL_IDS.includes(tool as (typeof CLI_TOOL_IDS)[number])) return 'cli';
+  if (tool && includes(CLI_TOOL_IDS, tool)) return 'cli';
   if (apiBase) return 'api';
   if (command) return 'shell';
 

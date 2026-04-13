@@ -46,7 +46,7 @@ export interface InvokeOpts {
 }
 
 function hasOutput(err: unknown): err is { output: string } {
-  return typeof err === 'object' && err !== null && 'output' in err && typeof (err as { output: unknown }).output === 'string';
+  return typeof err === 'object' && err !== null && 'output' in err && typeof err.output === 'string';
 }
 
 export function extractOutput(err: unknown): string {

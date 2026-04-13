@@ -3,6 +3,7 @@ import { configStore } from '../../../stores/config.js';
 import { overlayStore } from '../../../stores/overlay.js';
 import { detectionStore } from '../../../stores/detection.js';
 import { getRunnerCommand } from '../../../core/config/runner-config.js';
+import { normalizeConfiguredModel } from '../../../core/providers.js';
 import {
   buildPlannerPickerOptions,
   buildImplementerPickerOptions,
@@ -65,7 +66,13 @@ export function usePickerCatalog(
   });
 
   const roleLabel = isPlanner ? 'Planner' : 'Implementer';
-  const currentModel = isPlanner ? config.planner.model : config.implementer.model;
+  const isCurrentTool = currentItem?.isCurrent ?? false;
+  const currentModel = isCurrentTool
+    ? normalizeConfiguredModel(
+        isPlanner ? config.planner.model : config.implementer.model,
+        currentItem?.id,
+      )
+    : undefined;
   const currentCommand = isPlanner ? getRunnerCommand(config.planner) : getRunnerCommand(config.implementer);
 
   return {

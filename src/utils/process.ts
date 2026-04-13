@@ -23,7 +23,6 @@ export function createLineBuffer(onLine: (line: string) => void): { push(chunk: 
   };
 }
 
-/** `stdio: 'pipe'` guarantees `stdin/stdout/stderr` are non-null; the non-null assertions below reflect that invariant. */
 interface SpawnPipeOptions<T> {
   command: string;
   args: string[];
@@ -54,8 +53,14 @@ function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     registerProcess(proc);
     opts.onSpawned?.(proc);
 
-    proc.stdout!.on('data', (chunk: Buffer) => opts.onStdout(chunk.toString()));
-    proc.stderr!.on('data', (chunk: Buffer) => opts.onStderr(chunk.toString()));
+    const { stdout, stderr, stdin } = proc;
+    if (!stdout || !stderr || !stdin) {
+      reject(new Error('Process streams not available'));
+      return;
+    }
+
+    stdout.on('data', (chunk: Buffer) => opts.onStdout(chunk.toString()));
+    stderr.on('data', (chunk: Buffer) => opts.onStderr(chunk.toString()));
 
     proc.on('error', (err: NodeJS.ErrnoException) => {
       unregisterProcess(proc);
@@ -73,9 +78,9 @@ function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     });
 
     if (opts.stdin !== undefined) {
-      proc.stdin!.write(opts.stdin);
+      stdin.write(opts.stdin);
     }
-    proc.stdin!.end();
+    stdin.end();
   });
 }
 

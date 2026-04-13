@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { DetectedModel, ProviderDefWithMetadata, ProviderOverrides } from './types.js';
 import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers.js';
 import { createMetadataProvider } from './client.js';
-import { perTokenToPerMillion } from './metadata.js';
+import { perTokenToPerMillion, isModelFree } from './metadata.js';
 
 const TogetherModelSchema = z.object({
   id: z.string(),
@@ -20,6 +20,12 @@ function toDetectedModel(m: TogetherModel): DetectedModel {
   if (m.context_length !== undefined) result.contextLength = m.context_length;
   if (m.pricing?.input !== undefined) result.pricingInput = perTokenToPerMillion(m.pricing.input);
   if (m.pricing?.output !== undefined) result.pricingOutput = perTokenToPerMillion(m.pricing.output);
+
+  const hasPricing = result.pricingInput !== undefined || result.pricingOutput !== undefined;
+  if (hasPricing) {
+    result.isFree = isModelFree(result.pricingInput, result.pricingOutput);
+  }
+
   return result;
 }
 

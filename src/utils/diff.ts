@@ -25,10 +25,10 @@ function diffLinesSimple(oldLines: string[], newLines: string[]): { diff: string
   const changes: Change[] = [];
   const maxLen = Math.max(oldLines.length, newLines.length);
   for (let i = 0; i < maxLen; i++) {
-    const oldLine = i < oldLines.length ? oldLines[i]! : undefined;
-    const newLine = i < newLines.length ? newLines[i]! : undefined;
-    if (oldLine === newLine) {
-      changes.push({ type: ' ', line: oldLine! });
+    const oldLine = i < oldLines.length ? oldLines[i] : undefined;
+    const newLine = i < newLines.length ? newLines[i] : undefined;
+    if (oldLine !== undefined && oldLine === newLine) {
+      changes.push({ type: ' ', line: oldLine });
     } else {
       if (oldLine !== undefined) changes.push({ type: '-', line: oldLine });
       if (newLine !== undefined) changes.push({ type: '+', line: newLine });
