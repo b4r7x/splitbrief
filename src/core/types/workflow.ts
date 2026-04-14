@@ -36,7 +36,7 @@ export type StateAction =
   | { type: 'ALL_DONE' }
   | { type: 'REVIEW_DONE' }
   | { type: 'CANCEL' }
-  | { type: 'SET_SESSION_ID'; sessionId: string };
+  | { type: 'SET_PLANNER_SESSION_ID'; sessionId: string };
 
 export interface TokenBudget {
   system: number;

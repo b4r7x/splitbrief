@@ -11,11 +11,12 @@ import { buildTasksPrompt } from '../spec/prompts/tasks.js';
 import { buildSkillsSection } from '../skills/index.js';
 import type { Planner, PlanResult } from '../planners/types.js';
 import { buildProjectContextMarkdown } from '../planners/context.js';
-import { emit, createTextHandler, emitError, emitPlannerStatus } from './events.js';
+import { emit, createTextHandler, emitError, emitWarning, emitPlannerStatus } from './events.js';
 import { addUsageAndSave, transitionAndSave, runPlannerReview } from './helpers.js';
 import { labelError } from '../../utils/format.js';
 import { collectAndPersistClarifications } from './clarifications.js';
 import { runApprovalLoop } from './approval.js';
+import { buildResumeContext } from './transcript-rebuild.js';
 
 const MAX_CLARIFICATION_QUESTIONS = 5;
 
@@ -106,7 +107,7 @@ async function regeneratePlanAndTasks(
 
 async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<{ state: WorkflowState; tasks: Task[]; cancelled: boolean }> {
   const { wctx, feature, planner } = opts;
-  const { projectDir, sessionId, config, callbacks, metadata } = wctx;
+  const { projectDir, sessionId, config, callbacks, metadata, resumeHolder } = wctx;
   let { state } = opts;
 
   let planResult: Awaited<ReturnType<Planner['plan']>>;
@@ -114,8 +115,19 @@ async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<{ state: Wo
     const quickPlanFn = planner.quickPlan ?? planner.plan;
     planResult = await quickPlanFn.call(planner, feature, projectDir, {
       onOutput: createTextHandler(callbacks),
+      onSessionId: (id) => { state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PLANNER_SESSION_ID', sessionId: id }); },
+      onSessionExpired: async () => {
+        emitWarning(callbacks, 'Previous planner conversation expired — rebuilding context from transcript.');
+        const rebuilt = await buildResumeContext(projectDir, sessionId, config.workflow.persistTranscript !== false);
+        if (rebuilt.warning === 'transcript-unavailable') {
+          emitWarning(callbacks, 'Previous planner conversation expired and no transcript was persisted. Continuing with spec.md/plan.md/tasks.md only — the planner may regenerate differently.');
+        } else if (resumeHolder) {
+          resumeHolder.messages = rebuilt.messages;
+        }
+      },
       sessionId,
       persistTranscript: config.workflow.persistTranscript,
+      ...(resumeHolder && resumeHolder.messages.length > 0 ? { priorMessages: resumeHolder.messages } : {}),
     });
   } catch (err) {
     return handlePlanningFailure(err, projectDir, sessionId, state, callbacks);
@@ -133,7 +145,7 @@ async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<{ state: Wo
 
 async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boolean): Promise<{ state: WorkflowState; tasks: Task[]; cancelled: boolean }> {
   const { wctx, feature, planner, selectedSkills } = opts;
-  const { projectDir, sessionId, config, callbacks, metadata } = wctx;
+  const { projectDir, sessionId, config, callbacks, metadata, resumeHolder } = wctx;
   const signal = wctx.signal;
   let { state } = opts;
   const collectedQuestions: ClarificationQuestion[] = [];
@@ -144,6 +156,16 @@ async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boo
   try {
     planResult = await planner.plan(feature, projectDir, {
       onOutput: createTextHandler(callbacks),
+      onSessionId: (id) => { state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PLANNER_SESSION_ID', sessionId: id }); },
+      onSessionExpired: async () => {
+        emitWarning(callbacks, 'Previous planner conversation expired — rebuilding context from transcript.');
+        const rebuilt = await buildResumeContext(projectDir, sessionId, config.workflow.persistTranscript !== false);
+        if (rebuilt.warning === 'transcript-unavailable') {
+          emitWarning(callbacks, 'Previous planner conversation expired and no transcript was persisted. Continuing with spec.md/plan.md/tasks.md only — the planner may regenerate differently.');
+        } else if (resumeHolder) {
+          resumeHolder.messages = rebuilt.messages;
+        }
+      },
       onQuestion: conversational ? (questions) => {
         for (const q of questions) {
           if (collectedQuestions.length < MAX_CLARIFICATION_QUESTIONS) {
@@ -153,6 +175,7 @@ async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boo
       } : undefined,
       sessionId,
       persistTranscript: config.workflow.persistTranscript,
+      ...(resumeHolder && resumeHolder.messages.length > 0 ? { priorMessages: resumeHolder.messages } : {}),
     }, skillsContext);
   } catch (err) {
     return handlePlanningFailure(err, projectDir, sessionId, state, callbacks);

@@ -18,7 +18,7 @@ interface AnthropicStreamOptions {
   apiKey: string;
   apiBase: string;
   model: string;
-  messages: Array<{ role: 'system' | 'user'; content: string }>;
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
   temperature: number;
   onProgress: (text: string) => void;
   maxTokens?: number | undefined;
@@ -29,7 +29,7 @@ interface SseEvent {
 }
 
 function splitSystemMessages(
-  messages: Array<{ role: 'system' | 'user'; content: string }>,
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
 ): { system: string | undefined; conversation: AnthropicMessage[] } {
   const systemParts: string[] = [];
   const conversation: AnthropicMessage[] = [];
@@ -39,7 +39,7 @@ function splitSystemMessages(
       systemParts.push(message.content);
       continue;
     }
-    conversation.push({ role: 'user', content: message.content });
+    conversation.push({ role: message.role, content: message.content });
   }
 
   return {

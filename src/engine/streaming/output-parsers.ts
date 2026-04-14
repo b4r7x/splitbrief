@@ -117,11 +117,21 @@ const TurnCompletedEvent = z.object({
   usage: z.record(z.string(), z.unknown()),
 });
 
+const ThreadStartedEvent = z.object({
+  type: z.literal('thread.started'),
+  thread_id: z.string(),
+});
+
 export function parseJsonlLine(line: string): ParsedLine {
   if (!line.trim()) return {};
 
   try {
     const event: unknown = JSON.parse(line);
+
+    const thread = ThreadStartedEvent.safeParse(event);
+    if (thread.success) {
+      return { sessionId: thread.data.thread_id };
+    }
 
     const item = ItemCompletedEvent.safeParse(event);
     if (item.success) {

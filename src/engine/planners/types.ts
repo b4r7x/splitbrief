@@ -11,14 +11,30 @@ export type PlannerCapabilities = {
   supportsMidStreamInjection: boolean;
 };
 
+export interface PriorMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface PlannerCallbacks {
   onOutput: (text: string) => void;
   onPhase?: ((phase: string) => void) | undefined;
   onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
+  /** Emitted when the backend reports its native session handle (e.g. Claude Code --session-id). */
+  onSessionId?: ((sessionId: string) => void) | undefined;
+  /** Emitted when a previously-valid session handle is rejected by the backend. */
+  onSessionExpired?: ((previousId: string) => void) | undefined;
   /** Session ID for agent planners that write files to the session directory. */
   sessionId?: string | undefined;
   /** Whether to persist planner output as transcript messages (mirrors config.workflow.persistTranscript). */
   persistTranscript?: boolean | undefined;
+  /**
+   * Prior conversation messages to inject into the first planner phase on resume.
+   * Set by the orchestrator when the backend has no native session resume OR after a
+   * session-expired fallback. Consumed by backends in their own shape (prompt prefix vs
+   * OpenAI messages array).
+   */
+  priorMessages?: PriorMessage[] | undefined;
 }
 
 /** Result from a single planning phase. */

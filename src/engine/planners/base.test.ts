@@ -202,3 +202,57 @@ describe('createPlannerBase — hintSuccessMode', () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe('createPlannerBase — priorMessages injection (FR-007)', () => {
+  it('prepends a <!-- prior conversation --> block to the first phase prompt for CLI-style backends', async () => {
+    const captured: string[] = [];
+    const planner = createPlannerBase({
+      invokePlan: async ({ prompt }) => { captured.push(prompt); return { text: 'ok', usage: null }; },
+      invokeEscalate: async () => ({ text: '', usage: null }),
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+    });
+
+    await planner.plan('feature', projectDir, {
+      onOutput: () => {},
+      priorMessages: [
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'first answer' },
+      ],
+    });
+
+    // First phase (research) gets the prefix
+    expect(captured[0]).toContain('<!-- prior conversation -->');
+    expect(captured[0]).toContain('[user] first turn');
+    expect(captured[0]).toContain('[assistant] first answer');
+    expect(captured[0]).toContain('<!-- /prior conversation -->');
+    // Subsequent phases do NOT repeat the prefix
+    expect(captured[1]).not.toContain('<!-- prior conversation -->');
+    expect(captured[2]).not.toContain('<!-- prior conversation -->');
+    expect(captured[3]).not.toContain('<!-- prior conversation -->');
+  });
+
+  it('does NOT prepend CLI prefix when consumesPriorMessages is true', async () => {
+    let seenPriorMessages: ReadonlyArray<{ role: string; content: string }> | undefined;
+    const captured: string[] = [];
+    const planner = createPlannerBase({
+      invokePlan: async ({ prompt, priorMessages }) => {
+        captured.push(prompt);
+        if (priorMessages) seenPriorMessages = priorMessages;
+        return { text: 'ok', usage: null };
+      },
+      invokeEscalate: async () => ({ text: '', usage: null }),
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+      consumesPriorMessages: true,
+    });
+
+    await planner.plan('feature', projectDir, {
+      onOutput: () => {},
+      priorMessages: [{ role: 'user', content: 'raw turn' }],
+    });
+
+    expect(captured[0]).not.toContain('<!-- prior conversation -->');
+    expect(seenPriorMessages).toEqual([{ role: 'user', content: 'raw turn' }]);
+  });
+});

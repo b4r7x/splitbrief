@@ -9,7 +9,7 @@ export interface ApiStreamOptions {
   apiBase?: string | undefined;
   apiKey: string;
   model: string;
-  messages: Array<{ role: 'system' | 'user'; content: string }>;
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
   temperature: number;
   onProgress: (text: string) => void;
   maxTokens?: number | undefined;

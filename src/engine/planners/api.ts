@@ -1,5 +1,5 @@
 import type { Config, InvokeResult } from '../../types.js';
-import type { Planner } from './types.js';
+import type { Planner, PriorMessage } from './types.js';
 import { createPlannerBase } from './base.js';
 import { getProvider } from '../providers/registry.js';
 import { createClientFromProvider } from '../providers/client.js';
@@ -8,12 +8,21 @@ import { streamApiCompletion, throwAutoModelError } from '../api-shared.js';
 import { assertPlannerKind } from './utils.js';
 import type OpenAI from 'openai';
 
+type ChatMessage = { role: 'user' | 'assistant'; content: string };
+
+function buildMessages(prompt: string, priorMessages?: PriorMessage[] | undefined): ChatMessage[] {
+  const history: ChatMessage[] = (priorMessages ?? []).map(m => ({ role: m.role, content: m.content }));
+  history.push({ role: 'user', content: prompt });
+  return history;
+}
+
 async function invokeApi(
   client: OpenAI | null,
   model: string,
   planner: { provider: string; apiBase?: string | undefined; apiKey: string },
   prompt: string,
   onOutput: (text: string) => void,
+  priorMessages?: PriorMessage[] | undefined,
 ): Promise<InvokeResult> {
   return streamApiCompletion({
     client,
@@ -21,7 +30,7 @@ async function invokeApi(
     apiBase: planner.apiBase,
     apiKey: planner.apiKey,
     model,
-    messages: [{ role: 'user', content: prompt }],
+    messages: buildMessages(prompt, priorMessages),
     temperature: 0.3,
     onProgress: onOutput,
   });
@@ -39,18 +48,25 @@ export function createApiPlanner(config: Config): Planner {
 
   const client = provider === 'anthropic' ? null : createClientFromProvider(resolved);
 
-  const invoke = ({ prompt, callbacks }: { prompt: string; projectDir: string; callbacks: { onOutput: (text: string) => void } }) =>
+  const invoke = ({ prompt, callbacks, priorMessages }: {
+    prompt: string;
+    projectDir: string;
+    callbacks: { onOutput: (text: string) => void };
+    priorMessages?: PriorMessage[] | undefined;
+  }) =>
     invokeApi(
       client,
       model,
       { provider, apiBase: resolved.baseURL, apiKey: resolved.apiKey() },
       prompt,
       callbacks.onOutput,
+      priorMessages,
     );
 
   return createPlannerBase({
     invokePlan: invoke,
     invokeEscalate: invoke,
+    consumesPriorMessages: true,
 
     async isAvailable() {
       try {

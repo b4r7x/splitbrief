@@ -12,13 +12,15 @@ interface SpawnAndCollectOptions {
   notFoundMessage?: string | undefined;
   onText?: ((text: string) => void) | undefined;
   onStderr?: ((chunk: string) => void) | undefined;
+  onSessionId?: ((id: string) => void) | undefined;
 }
 
-export async function spawnAndCollect(opts: SpawnAndCollectOptions): Promise<InvokeResult> {
+export async function spawnAndCollect(opts: SpawnAndCollectOptions): Promise<InvokeResult & { sessionId?: string | null }> {
   const parseLine = opts.parseLine ?? getLineParser(opts.format ?? 'text');
 
   let collectedText = '';
   let usage: TokenDelta | null = null;
+  let sessionId: string | null = null;
 
   await spawnWithStdin({
     command: opts.command,
@@ -36,8 +38,12 @@ export async function spawnAndCollect(opts: SpawnAndCollectOptions): Promise<Inv
       if (parsed.usage) {
         usage = accumulateUsage(usage, parsed.usage);
       }
+      if (parsed.sessionId && parsed.sessionId !== sessionId) {
+        sessionId = parsed.sessionId;
+        opts.onSessionId?.(parsed.sessionId);
+      }
     },
   });
 
-  return { text: collectedText, usage };
+  return { text: collectedText, usage, sessionId };
 }

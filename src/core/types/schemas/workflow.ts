@@ -10,7 +10,7 @@ export const WorkflowStateSchema = z.object({
   currentTaskIndex: z.number(),
   attempt: z.number(),
   tasks: z.array(TaskSchema),
-  sessionId: z.string().nullable(),
+  plannerSessionId: z.string().nullable(),
   startedAt: z.string(),
   tokenUsage: TokenUsageSchema,
   plannerTool: z.string().optional(),

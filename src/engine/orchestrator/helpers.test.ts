@@ -28,7 +28,7 @@ function makeState(overrides?: Partial<WorkflowState>): WorkflowState {
     currentTaskIndex: 0,
     attempt: 0,
     tasks: [],
-    sessionId: null,
+    plannerSessionId: null,
     startedAt: new Date().toISOString(),
     tokenUsage: makeUsage(),
     ...overrides,

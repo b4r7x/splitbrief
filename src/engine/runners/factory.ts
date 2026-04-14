@@ -18,19 +18,19 @@ import { createAgentSdkImplementer } from '../implementers/agent-sdk.js';
 
 import { dispatchRunner } from '../../utils/runner-dispatch.js';
 
-const PLANNER_FACTORIES: Record<RunnerKind, (config: Config) => Planner> = {
-  cli: (c) => {
+const PLANNER_FACTORIES: Record<RunnerKind, (config: Config, initialSessionId?: string | null) => Planner> = {
+  cli: (c, initialSessionId) => {
     if (c.planner.kind !== 'cli') throw new Error(`PLANNER_FACTORIES['cli']: expected planner.kind='cli', got '${c.planner.kind}'`);
     return c.planner.tool === 'claude-code'
-      ? createClaudeCodePlanner(c.planner.model)
-      : createCliPlanner(c);
+      ? createClaudeCodePlanner(c.planner.model, initialSessionId)
+      : createCliPlanner(c, initialSessionId);
   },
   api: createApiPlanner,
   shell: createShellPlanner,
   agent: createAgentPlanner,
-  'agent-sdk': (c) => {
+  'agent-sdk': (c, initialSessionId) => {
     if (c.planner.kind !== 'agent-sdk') throw new Error(`PLANNER_FACTORIES['agent-sdk']: expected planner.kind='agent-sdk', got '${c.planner.kind}'`);
-    return createAgentSdkPlanner(c.planner.model, c.planner.apiKey);
+    return createAgentSdkPlanner(c.planner.model, c.planner.apiKey, initialSessionId);
   },
 };
 
@@ -45,8 +45,10 @@ const IMPLEMENTER_FACTORIES: Record<RunnerKind, (config: Config) => Implementer>
   'agent-sdk': createAgentSdkImplementer,
 };
 
-export function createPlanner(config: Config): Planner {
-  return dispatchRunner(config.planner.kind, PLANNER_FACTORIES, 'planner', config);
+export function createPlanner(config: Config, initialSessionId?: string | null): Planner {
+  const factory = PLANNER_FACTORIES[config.planner.kind];
+  if (!factory) throw new Error(`No planner factory for kind '${config.planner.kind}'`);
+  return factory(config, initialSessionId);
 }
 
 export function createImplementer(config: Config): Implementer {

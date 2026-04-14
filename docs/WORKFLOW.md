@@ -130,7 +130,7 @@ The `/mode` slash command and `--mode` CLI flag both write into `config.workflow
 
 **Planner conversational context on resume** uses the capability matrix:
 
-1. If the backend has `supportsSessionResume: true` **and** `state.plannerSessionId` is set, attempt to reuse the native session. For Claude Code this means `claude --session-id <id>`.
+1. If the backend has `supportsSessionResume: true` **and** `state.plannerSessionId` is set, attempt to reuse the native session. For Claude Code this means `claude --session-id <id>`. For Codex this means `codex exec resume --json <id> <prompt>` (`thread_id` captured from the `thread.started` JSONL event). For Agent SDK this means the `options.resume` argument to `query()`.
 2. If the backend rejects the session id (expired, unknown, 4xx), emit `session_expired` to `session.jsonl`, notify the user with a short toast ("Previous planner conversation expired — rebuilding context from transcript"), and proceed to step 3.
 3. **Rebuild context from `session.jsonl`**: read all `kind: "message"` lines, assemble a messages array of alternating user / assistant turns, and pass that as the initial context to the fresh planner call. For stateless `api` backends this is the *native* way to resume. For `cli` backends without `supportsSessionResume`, we prepend the rebuilt transcript as a `<!-- prior conversation -->` block in the prompt.
 4. If `persistTranscript: false` and step 1 failed, there is no transcript to rebuild from. Emit `transcript_unavailable`, ask the user to confirm, and continue with `spec.md` / `plan.md` / `tasks.md` as the only handoff.

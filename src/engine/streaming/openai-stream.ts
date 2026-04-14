@@ -23,7 +23,7 @@ export interface StreamClient {
     completions: {
       create: (body: {
         model: string;
-        messages: Array<{ role: 'system' | 'user'; content: string }>;
+        messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
         temperature: number;
         stream: true;
         stream_options: { include_usage: true };
@@ -50,7 +50,7 @@ export function asStreamClient(client: unknown): StreamClient {
 export async function streamCompletion(
   client: StreamClient,
   model: string,
-  messages: Array<{ role: 'system' | 'user'; content: string }>,
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   opts: StreamCompletionOptions,
 ): Promise<InvokeResult> {
   const { temperature, onProgress, endpoint, maxTokens } = opts;

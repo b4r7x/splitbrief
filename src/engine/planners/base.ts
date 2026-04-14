@@ -1,5 +1,6 @@
 import type { Task, InvokeResult, TokenDelta } from '../../types.js';
-import type { Planner, PlannerCallbacks, PlanResult, EscalationResult, RegenerateResult, PhaseResult, PlannerCapabilities } from './types.js';
+import type { Planner, PlannerCallbacks, PlanResult, EscalationResult, RegenerateResult, PhaseResult, PlannerCapabilities, PriorMessage } from './types.js';
+import { formatMessagesForCli } from '../orchestrator/transcript-rebuild.js';
 import { buildResearchPrompt } from '../spec/prompts/research.js';
 import { buildSpecPrompt } from '../spec/prompts/spec.js';
 import { buildPlanPromptFromSpec } from '../spec/prompts/plan.js';
@@ -28,7 +29,8 @@ const PHASE_MAP: Partial<Record<string, Phase>> = {
 type InternalInvokeFn = (opts: {
   prompt: string;
   projectDir: string;
-  callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion'>;
+  callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired'>;
+  priorMessages?: PriorMessage[] | undefined;
 }) => Promise<InvokeResult>;
 
 // invokeEscalate exists separately: Claude Code uses session-chaining for plan phases but one-shot for escalations.
@@ -52,6 +54,12 @@ export interface PlannerBaseConfig {
    */
   readPhaseOutput?: (filename: string, resultText: string, projectDir: string, sessionId?: string) => string;
   escalateFullPostProcess?: (task: Task, result: InvokeResult, extracted: { code: string }, projectDir: string) => EscalationResult;
+  /**
+   * When true, the backend handles `priorMessages` natively (e.g. API backends using an OpenAI
+   * messages array). When false (default), the base layer prepends a CLI-format transcript
+   * block to the prompt for the first planning phase.
+   */
+  consumesPriorMessages?: boolean;
 }
 
 export function createPlannerBase(config: PlannerBaseConfig): Planner {
@@ -66,19 +74,34 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       let usage: TokenDelta | null = null;
       const phases: PhaseResult[] = [];
 
+      let priorInjected = false;
       async function runPhase(phase: string, prompt: string, filename: string): Promise<string> {
         callbacks.onPhase?.(phase);
         const plannerPhase = PHASE_MAP[phase];
         const buffer = createTranscriptBuffer(
           projectDir, callbacks.sessionId ?? '', plannerPhase, callbacks.persistTranscript ?? true,
         );
+
+        // On the first phase of a resume, inject prior conversation. Backends that set
+        // `consumesPriorMessages` receive the raw array via invokePlan; the rest get a
+        // prompt-level prefix.
+        const priorMessages = !priorInjected ? callbacks.priorMessages : undefined;
+        let effectivePrompt = prompt;
+        if (priorMessages && priorMessages.length > 0 && !config.consumesPriorMessages) {
+          effectivePrompt = formatMessagesForCli(priorMessages) + prompt;
+        }
+        priorInjected = true;
+
         const result = await config.invokePlan({
-          prompt,
+          prompt: effectivePrompt,
           projectDir,
           callbacks: {
             onOutput: (text) => { callbacks.onOutput(text); buffer.append(text); },
             onQuestion: callbacks.onQuestion,
+            onSessionId: callbacks.onSessionId,
+            onSessionExpired: callbacks.onSessionExpired,
           },
+          ...(config.consumesPriorMessages && priorMessages ? { priorMessages } : {}),
         });
         buffer.flush();
         if (result.usage) usage = accumulateUsage(usage, result.usage);
@@ -112,11 +135,19 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       const buffer = createTranscriptBuffer(
         projectDir, callbacks.sessionId ?? '', 'planning', callbacks.persistTranscript ?? true,
       );
+      const priorMessages = callbacks.priorMessages;
+      let effectivePrompt = prompt;
+      if (priorMessages && priorMessages.length > 0 && !config.consumesPriorMessages) {
+        effectivePrompt = formatMessagesForCli(priorMessages) + prompt;
+      }
       const result = await config.invokePlan({
-        prompt, projectDir, callbacks: {
+        prompt: effectivePrompt, projectDir, callbacks: {
           onOutput: (text) => { callbacks.onOutput(text); buffer.append(text); },
           onQuestion: callbacks.onQuestion,
+          onSessionId: callbacks.onSessionId,
+          onSessionExpired: callbacks.onSessionExpired,
         },
+        ...(config.consumesPriorMessages && priorMessages ? { priorMessages } : {}),
       });
       buffer.flush();
 
