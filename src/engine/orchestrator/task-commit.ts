@@ -9,6 +9,7 @@ type ValidateCommitOptions = {
   task: Task;
   results: ValidationResult[];
   projectDir: string;
+  sessionId: string;
   config: Config;
   state: WorkflowState;
   callbacks: OrchestratorCallbacks;
@@ -16,12 +17,11 @@ type ValidateCommitOptions = {
   transitionType: 'VALIDATION_PASS' | 'HINT_SUCCESS' | 'FULL_SUCCESS';
   commitSuffix?: string | undefined;
   taskStartTime?: number | undefined;
-  /** Explicit total retry count; falls back to state.attempt when omitted. */
   retryCount?: number | undefined;
 };
 
 export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Promise<{ state: WorkflowState; completed: boolean }> {
-  const { task, results, projectDir, config, callbacks, method, transitionType, commitSuffix, taskStartTime, state, retryCount } = opts;
+  const { task, results, projectDir, sessionId, config, callbacks, method, transitionType, commitSuffix, taskStartTime, state, retryCount } = opts;
   if (!allValidationsPassed(results)) {
     return { state, completed: false };
   }
@@ -47,7 +47,7 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
     }
   }
 
-  const nextState = transitionAndSave(projectDir, state, { type: transitionType });
+  const nextState = transitionAndSave(projectDir, sessionId, state, { type: transitionType });
   emitTaskComplete(callbacks, {
     taskId: task.id, title: task.title,
     method, retries: retryCount ?? state.attempt,
@@ -55,7 +55,7 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
     ...(state.implementerTool !== undefined && { tool: state.implementerTool }),
     ...(state.implementerModel !== undefined && { model: state.implementerModel }),
   });
-  emit(projectDir, nextState, 'task_completed', task.id, { method });
+  emit(projectDir, sessionId, nextState, 'task_completed', task.id, { method });
 
   return { state: nextState, completed: true };
 }

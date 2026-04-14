@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, resolve, relative, isAbsolute, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DIPTYCH_DIR, CURRENT_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE } from './paths.js';
+import { DIPTYCH_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE, sessionDir } from './paths.js';
 import { ensureSecureDir, validateSafeIdentifier, SECURE_FILE_MODE } from '../utils/fs.js';
 
 const DIPTYCH_VERSION: string = (() => {
@@ -43,37 +43,37 @@ export function buildSpecFrontmatter(opts: SpecMetadata): string {
   return lines.join('\n');
 }
 
-export function currentDir(projectDir: string): string {
-  return join(projectDir, DIPTYCH_DIR, CURRENT_DIR);
+export function ensureSessionDir(projectDir: string, sessionId: string): void {
+  ensureSecureDir(sessionDir(projectDir, sessionId));
 }
 
 export function ensureDiptychDir(projectDir: string): void {
-  ensureSecureDir(currentDir(projectDir));
+  ensureSecureDir(join(projectDir, DIPTYCH_DIR));
 }
 
 export function validateFilename(filename: string): void {
   validateSafeIdentifier(filename, 'filename');
 }
 
-export function writeSpecFile(projectDir: string, filename: string, content: string, metadata?: SpecMetadata | null): void {
+export function writeSpecFile(projectDir: string, sessionId: string, filename: string, content: string, metadata?: SpecMetadata | null): void {
   validateFilename(filename);
-  ensureDiptychDir(projectDir);
+  ensureSessionDir(projectDir, sessionId);
   let finalContent = content;
   if (metadata && FRONTMATTER_FILES.has(filename) && !content.startsWith('---\n')) {
     finalContent = buildSpecFrontmatter(metadata) + content;
   }
-  writeFileSync(join(currentDir(projectDir), filename), finalContent, { encoding: 'utf-8', mode: SECURE_FILE_MODE });
+  writeFileSync(join(sessionDir(projectDir, sessionId), filename), finalContent, { encoding: 'utf-8', mode: SECURE_FILE_MODE });
 }
 
-export function readSpecFile(projectDir: string, filename: string): string | null {
+export function readSpecFile(projectDir: string, sessionId: string, filename: string): string | null {
   validateFilename(filename);
-  const filePath = join(currentDir(projectDir), filename);
+  const filePath = join(sessionDir(projectDir, sessionId), filename);
   if (!existsSync(filePath)) return null;
   return readFileSync(filePath, 'utf-8');
 }
 
-export function readSpecFileOrEmpty(projectDir: string, filename: string): string {
-  return readSpecFile(projectDir, filename) ?? '';
+export function readSpecFileOrEmpty(projectDir: string, sessionId: string, filename: string): string {
+  return readSpecFile(projectDir, sessionId, filename) ?? '';
 }
 
 export function validateTaskPath(projectDir: string, filePath: string): string {

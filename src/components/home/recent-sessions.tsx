@@ -12,11 +12,10 @@ export function RecentSessions() {
   const theme = useTheme();
   const isSmall = terminalSizeStore.use(s => s.isSmall);
   const projectDir = configStore.use(s => s.projectDir);
-  const sessionScope = configStore.use(s => s.config?.sessions?.scope ?? 'project');
 
   useEffect(() => {
-    sessionsStore.load(sessionScope, projectDir);
-  }, [projectDir, sessionScope]);
+    sessionsStore.load(projectDir);
+  }, [projectDir]);
 
   if (sessions.length === 0) {
     return (

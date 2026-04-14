@@ -38,6 +38,7 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
   const hasOverlay = overlayStore.use(s => s.active !== 'none');
   const feature = routerStore.use(s => s.screen === 'workflow' ? s.feature : '');
   const resumeState = routerStore.use(s => s.screen === 'workflow' ? s.resumeState : undefined);
+  const sessionId = routerStore.use(s => s.screen === 'workflow' ? s.sessionId : undefined);
   const { cols, rows, isSmall } = terminalSizeStore.use(s => s);
 
   const onComplete = (summary: Summary) =>
@@ -50,6 +51,7 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
     onComplete,
     initialResumeState: resumeState,
     selectedSkills: selectedSkillMetas,
+    sessionId,
   });
 
   const events = workflowStore.use(s => s.events);

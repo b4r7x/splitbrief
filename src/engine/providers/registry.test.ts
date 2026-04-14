@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { KNOWN_PROVIDERS, getProvider, detectAvailableProviders } from './registry.js';
+import { KNOWN_PROVIDERS, getProvider, detectAvailableProviders, detectCapabilities } from './registry.js';
 import { setupFetchMock } from './testing.js';
+import type { Config } from '../../types.js';
 
 describe('getProvider', () => {
   setupFetchMock();
@@ -50,6 +51,28 @@ describe('getProvider', () => {
   });
 });
 
+
+describe('detectCapabilities', () => {
+  it('returns config contextLength for non-api implementer without throwing', async () => {
+    const config = {
+      implementer: { kind: 'cli' as const, tool: 'codex' as const, model: 'gpt-5.4-mini', contextLength: 32768 },
+      planner: { kind: 'cli' as const, tool: 'claude-code' as const },
+    } as Config;
+
+    const result = await detectCapabilities(config);
+    expect(result.contextLength).toBe(32768);
+  });
+
+  it('returns default 8192 for non-api implementer without contextLength', async () => {
+    const config = {
+      implementer: { kind: 'cli' as const, tool: 'codex' as const, model: 'gpt-5.4-mini' },
+      planner: { kind: 'cli' as const, tool: 'claude-code' as const },
+    } as Config;
+
+    const result = await detectCapabilities(config);
+    expect(result.contextLength).toBe(8192);
+  });
+});
 
 describe('detectAvailableProviders', () => {
   setupFetchMock();

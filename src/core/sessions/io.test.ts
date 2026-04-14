@@ -2,9 +2,10 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, statSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { listSessions, getSessionDir, saveSession } from './io.js';
-import { DIPTYCH_DIR } from '../paths.js';
+import { listSessions, listAllSessions, getSessionDir, saveSummary } from './io.js';
+import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { makeSession } from '#testing/helpers/fixtures.js';
 
 let tmp: string;
 
@@ -14,109 +15,116 @@ afterEach(() => {
 
 import type { Session } from '../types/index.js';
 
-function makeSession(overrides: Partial<Omit<Session, 'status' | 'summary'>> = {}): Session {
-  return {
-    id: 'sess-1',
-    feature: 'test feature',
-    startedAt: 1000,
-    completedAt: null,
-    status: 'interrupted',
-    summary: null,
-    stateVersion: 1,
-    stateFile: null,
-    ...overrides,
-  };
+function writeSessionSubdir(projectDir: string, sessionId: string, session: Session): void {
+  const subdir = join(projectDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+  mkdirSync(subdir, { recursive: true });
+  writeFileSync(join(subdir, 'summary.json'), JSON.stringify(session));
 }
 
 describe('listSessions', () => {
-  it('returns empty array for nonexistent directory', () => {
+  it('returns empty array when sessions directory does not exist', () => {
     tmp = createTempDir('sessions-io-test');
     expect(listSessions(join(tmp, 'does-not-exist'))).toEqual([]);
   });
 
-  it('returns empty array for empty directory', () => {
+  it('returns empty array when sessions directory is empty', () => {
     tmp = createTempDir('sessions-io-test');
-    const dir = join(tmp, 'empty');
-    mkdirSync(dir, { recursive: true });
-    expect(listSessions(dir)).toEqual([]);
+    const sessionsRoot = join(tmp, DIPTYCH_DIR, SESSIONS_DIR);
+    mkdirSync(sessionsRoot, { recursive: true });
+    expect(listSessions(tmp)).toEqual([]);
   });
 
-  it('parses session JSON files', () => {
+  it('parses summary.json files from subdirectories', () => {
     tmp = createTempDir('sessions-io-test');
-    const dir = join(tmp, 'parse');
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'sess-1.json'), JSON.stringify(makeSession({ id: 'sess-1', feature: 'auth' })));
+    writeSessionSubdir(tmp, '2024-01-01-auth', makeSession({ id: '2024-01-01-auth', feature: 'auth' }));
 
-    const sessions = listSessions(dir);
+    const sessions = listSessions(tmp);
     expect(sessions).toHaveLength(1);
-    expect(sessions[0]?.id).toBe('sess-1');
+    expect(sessions[0]?.id).toBe('2024-01-01-auth');
     expect(sessions[0]?.feature).toBe('auth');
   });
 
   it('sorts sessions by startedAt descending', () => {
     tmp = createTempDir('sessions-io-test');
-    const dir = join(tmp, 'sorted');
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'old.json'), JSON.stringify(makeSession({ id: 'old', startedAt: 1000 })));
-    writeFileSync(join(dir, 'mid.json'), JSON.stringify(makeSession({ id: 'mid', startedAt: 2000 })));
-    writeFileSync(join(dir, 'new.json'), JSON.stringify(makeSession({ id: 'new', startedAt: 3000 })));
+    writeSessionSubdir(tmp, '2024-01-01-old', makeSession({ id: '2024-01-01-old', startedAt: 1000 }));
+    writeSessionSubdir(tmp, '2024-01-02-mid', makeSession({ id: '2024-01-02-mid', startedAt: 2000 }));
+    writeSessionSubdir(tmp, '2024-01-03-new', makeSession({ id: '2024-01-03-new', startedAt: 3000 }));
 
-    const sessions = listSessions(dir);
-    expect(sessions.map(s => s.id)).toEqual(['new', 'mid', 'old']);
+    const sessions = listSessions(tmp);
+    expect(sessions.map(s => s.id)).toEqual(['2024-01-03-new', '2024-01-02-mid', '2024-01-01-old']);
   });
 
   it('limits to MAX_RECENT_SESSIONS (10)', () => {
     tmp = createTempDir('sessions-io-test');
-    const dir = join(tmp, 'limited');
-    mkdirSync(dir, { recursive: true });
     for (let i = 0; i < 15; i++) {
-      writeFileSync(
-        join(dir, `sess-${i}.json`),
-        JSON.stringify(makeSession({ id: `sess-${i}`, startedAt: i * 1000 })),
-      );
+      const id = `2024-01-01-sess-${i}`;
+      writeSessionSubdir(tmp, id, makeSession({ id, startedAt: i * 1000 }));
     }
 
-    const sessions = listSessions(dir);
+    const sessions = listSessions(tmp);
     expect(sessions).toHaveLength(10);
     expect(sessions[0]?.startedAt).toBe(14000);
     expect(sessions[9]?.startedAt).toBe(5000);
   });
 
+  it('skips subdirectories missing summary.json', () => {
+    tmp = createTempDir('sessions-io-test');
+    const emptySubdir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-empty');
+    mkdirSync(emptySubdir, { recursive: true });
+    writeSessionSubdir(tmp, '2024-01-02-good', makeSession({ id: '2024-01-02-good' }));
+
+    const sessions = listSessions(tmp);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.id).toBe('2024-01-02-good');
+  });
+
   it('skips malformed JSON files gracefully', () => {
     tmp = createTempDir('sessions-io-test');
-    const dir = join(tmp, 'malformed');
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'bad.json'), '{not valid json!!!');
-    writeFileSync(join(dir, 'good.json'), JSON.stringify(makeSession({ id: 'good' })));
+    const badDir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-bad');
+    mkdirSync(badDir, { recursive: true });
+    writeFileSync(join(badDir, 'summary.json'), '{not valid json!!!');
+    writeSessionSubdir(tmp, '2024-01-02-good', makeSession({ id: '2024-01-02-good' }));
 
-    const sessions = listSessions(dir);
+    const sessions = listSessions(tmp);
     expect(sessions).toHaveLength(1);
-    expect(sessions[0]?.id).toBe('good');
+    expect(sessions[0]?.id).toBe('2024-01-02-good');
   });
 
   it('skips valid JSON with invalid schema', () => {
     tmp = createTempDir('sessions-io-test');
-    const dir = join(tmp, 'invalid-schema');
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'bad.json'), JSON.stringify({ id: 'x' }));
-    writeFileSync(join(dir, 'good.json'), JSON.stringify(makeSession({ id: 'good' })));
+    const badDir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-bad');
+    mkdirSync(badDir, { recursive: true });
+    writeFileSync(join(badDir, 'summary.json'), JSON.stringify({ id: 'x' }));
+    writeSessionSubdir(tmp, '2024-01-02-good', makeSession({ id: '2024-01-02-good' }));
 
-    const sessions = listSessions(dir);
+    const sessions = listSessions(tmp);
     expect(sessions).toHaveLength(1);
-    expect(sessions[0]?.id).toBe('good');
+    expect(sessions[0]?.id).toBe('2024-01-02-good');
   });
 
-  it('ignores non-JSON files', () => {
+  it('ignores non-directory entries', () => {
     tmp = createTempDir('sessions-io-test');
-    const dir = join(tmp, 'non-json');
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'notes.txt'), 'not a session');
-    writeFileSync(join(dir, 'readme.md'), '# sessions');
-    writeFileSync(join(dir, 'valid.json'), JSON.stringify(makeSession({ id: 'valid' })));
+    const sessionsRoot = join(tmp, DIPTYCH_DIR, SESSIONS_DIR);
+    mkdirSync(sessionsRoot, { recursive: true });
+    writeFileSync(join(sessionsRoot, 'notes.txt'), 'not a session');
+    writeSessionSubdir(tmp, '2024-01-01-valid', makeSession({ id: '2024-01-01-valid' }));
 
-    const sessions = listSessions(dir);
+    const sessions = listSessions(tmp);
     expect(sessions).toHaveLength(1);
-    expect(sessions[0]?.id).toBe('valid');
+    expect(sessions[0]?.id).toBe('2024-01-01-valid');
+  });
+});
+
+describe('listAllSessions', () => {
+  it('returns all sessions without limit', () => {
+    tmp = createTempDir('sessions-io-test');
+    for (let i = 0; i < 15; i++) {
+      const id = `2024-01-01-sess-${i}`;
+      writeSessionSubdir(tmp, id, makeSession({ id, startedAt: i * 1000 }));
+    }
+
+    const sessions = listAllSessions(tmp);
+    expect(sessions).toHaveLength(15);
   });
 });
 
@@ -132,77 +140,44 @@ describe('getSessionDir', () => {
   });
 });
 
-describe('saveSession', () => {
-  it('writes session JSON to disk', () => {
+describe('saveSummary', () => {
+  it('writes session summary.json to per-session subdirectory', () => {
     tmp = createTempDir('sessions-io-test');
-    const dir = join(tmp, 'save-basic');
-    const session = makeSession({ id: 'save-1' });
-    saveSession(dir, session);
-    const raw = readFileSync(join(dir, 'save-1.json'), 'utf-8');
+    const session = makeSession({ id: '2024-01-01-save-1' });
+    saveSummary(tmp, '2024-01-01-save-1', session);
+    const raw = readFileSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-save-1', 'summary.json'), 'utf-8');
     expect(JSON.parse(raw)).toEqual(session);
   });
 
   it('creates directory if it does not exist', () => {
     tmp = createTempDir('sessions-io-test');
-    const dir = join(tmp, 'save-nested', 'deep');
-    const session = makeSession({ id: 'save-2' });
-    saveSession(dir, session);
-    const raw = readFileSync(join(dir, 'save-2.json'), 'utf-8');
+    const session = makeSession({ id: '2024-01-01-save-2' });
+    saveSummary(tmp, '2024-01-01-save-2', session);
+    const raw = readFileSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-save-2', 'summary.json'), 'utf-8');
     expect(JSON.parse(raw)).toEqual(session);
   });
 
   it('sets 0o600 file permissions', () => {
     tmp = createTempDir('sessions-io-test');
-    const dir = join(tmp, 'save-perms');
-    const session = makeSession({ id: 'save-3' });
-    saveSession(dir, session);
-    const stats = statSync(join(dir, 'save-3.json'));
+    const session = makeSession({ id: '2024-01-01-save-3' });
+    saveSummary(tmp, '2024-01-01-save-3', session);
+    const stats = statSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-save-3', 'summary.json'));
     expect(stats.mode & 0o777).toBe(0o600);
   });
 
   it('validates session data and throws on invalid', () => {
     tmp = createTempDir('sessions-io-test');
-    const dir = join(tmp, 'save-invalid');
     const invalid = { id: 'bad', feature: 123 };
-    expect(() => saveSession(dir, invalid as never)).toThrow('Invalid session data');
-  });
-
-  it('rejects empty session id', () => {
-    tmp = createTempDir('sessions-io-test');
-    const dir = join(tmp, 'save-empty-id');
-    const session = makeSession({ id: '' });
-    expect(() => saveSession(dir, session)).toThrow("Invalid session id ''");
-  });
-
-  it('rejects session id with path traversal', () => {
-    tmp = createTempDir('sessions-io-test');
-    const dir = join(tmp, 'save-traversal');
-    const session = makeSession({ id: '../evil' });
-    expect(() => saveSession(dir, session)).toThrow("Invalid session id '../evil'");
-  });
-
-  it('rejects session id with forward slash', () => {
-    tmp = createTempDir('sessions-io-test');
-    const dir = join(tmp, 'save-slash');
-    const session = makeSession({ id: 'foo/bar' });
-    expect(() => saveSession(dir, session)).toThrow("Invalid session id 'foo/bar'");
-  });
-
-  it('rejects session id with backslash', () => {
-    tmp = createTempDir('sessions-io-test');
-    const dir = join(tmp, 'save-backslash');
-    const session = makeSession({ id: 'foo\\bar' });
-    expect(() => saveSession(dir, session)).toThrow("Invalid session id 'foo\\bar'");
+    expect(() => saveSummary(tmp, 'bad', invalid as never)).toThrow('Invalid session data');
   });
 
   it('round-trips through listSessions', () => {
     tmp = createTempDir('sessions-io-test');
-    const dir = join(tmp, 'save-roundtrip');
-    const session = makeSession({ id: 'rt-1', feature: 'roundtrip', startedAt: 5000 });
-    saveSession(dir, session);
-    const sessions = listSessions(dir);
+    const session = makeSession({ id: '2024-01-01-rt-1', feature: 'roundtrip', startedAt: 5000 });
+    saveSummary(tmp, '2024-01-01-rt-1', session);
+    const sessions = listSessions(tmp);
     expect(sessions).toHaveLength(1);
-    expect(sessions[0]?.id).toBe('rt-1');
+    expect(sessions[0]?.id).toBe('2024-01-01-rt-1');
     expect(sessions[0]?.feature).toBe('roundtrip');
   });
 });

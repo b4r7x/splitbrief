@@ -37,6 +37,7 @@ export function createDefaultConfig(): Config {
       autoApprovePlan: false,
       maxRetries: 3,
       commitStrategy: 'none',
+      persistTranscript: true,
       mode: 'standard',
     },
     theme: 'terminal',
@@ -45,15 +46,28 @@ export function createDefaultConfig(): Config {
   };
 }
 
+function mergeRunner(
+  migrated: Record<string, unknown> | null,
+  defaults: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!migrated) return defaults;
+  // When kinds differ, the migrated config is already self-contained (from
+  // v1→v2 migration or explicitly set in v2). Merging would leak kind-specific
+  // fields (e.g. provider/apiBase from an api default into a cli config).
+  if (migrated.kind !== undefined && migrated.kind !== defaults.kind) return migrated;
+  return { ...defaults, ...migrated };
+}
+
 function mergeWithDefaults(migrated: Record<string, unknown>): Record<string, unknown> {
   const defaults = createDefaultConfig();
 
   return {
     version: 2,
     planner: migrated['planner'] ?? defaults.planner,
-    implementer: narrowRecord(migrated['implementer'])
-      ? { ...defaults.implementer, ...narrowRecord(migrated['implementer']) }
-      : defaults.implementer,
+    implementer: mergeRunner(
+      narrowRecord(migrated['implementer']),
+      defaults.implementer as unknown as Record<string, unknown>,
+    ),
     validation: narrowRecord(migrated['validation'])
       ? { ...defaults.validation, ...narrowRecord(migrated['validation']) }
       : defaults.validation,

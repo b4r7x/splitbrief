@@ -79,7 +79,7 @@ describe('runTaskLoop', () => {
     const { callbacks, events } = makeCallbacks();
 
     const result = await runTaskLoop({
-      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer: makeImplementer(), metadata: TEST_METADATA },
+      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer: makeImplementer(), metadata: TEST_METADATA, sessionId: 'test-session' },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
@@ -102,7 +102,7 @@ describe('runTaskLoop', () => {
     const { callbacks, events } = makeCallbacks();
 
     await runTaskLoop({
-      wctx: { projectDir: '/tmp/proj', config: makeConfig({ workflow: { commitStrategy: 'per-task' } }), callbacks, context: defaultContext, planner: makePlanner(), implementer, metadata: TEST_METADATA },
+      wctx: { projectDir: '/tmp/proj', config: makeConfig({ workflow: { commitStrategy: 'per-task' } }), callbacks, context: defaultContext, planner: makePlanner(), implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
@@ -129,7 +129,7 @@ describe('runTaskLoop', () => {
     const { callbacks } = makeCallbacks();
 
     const result = await runTaskLoop({
-      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer, metadata: TEST_METADATA },
+      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
@@ -152,7 +152,7 @@ describe('runTaskLoop', () => {
     callbacks.onExternalChanges = onExternalChanges;
 
     const result = await runTaskLoop({
-      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer: makeImplementer(), metadata: TEST_METADATA },
+      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer: makeImplementer(), metadata: TEST_METADATA, sessionId: 'test-session' },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),

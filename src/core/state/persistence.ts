@@ -1,21 +1,22 @@
 import { readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { WorkflowState, OrchestratorEvent } from '../types/index.js';
+import type { WorkflowState, OrchestratorEvent, SessionLogEntry, SessionLogMessageEntry, SessionLogEventEntry } from '../types/index.js';
 import type { OrchestratorEventType } from '../types/events.js';
 import { WorkflowStateSchema } from '../types/schemas/index.js';
 import { CURRENT_STATE_VERSION } from './machine.js';
-import { STATE_FILE, EVENTS_FILE } from '../paths.js';
-import { currentDir } from '../paths-io.js';
+import { STATE_FILE, SESSION_LOG_FILE, sessionDir } from '../paths.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import { ensureSecureDir, writeSecureFile, SECURE_FILE_MODE } from '../../utils/fs.js';
 import { warnStderr } from '../../utils/warn.js';
+import { toErrorMessage } from '../../utils/format.js';
 
-export function saveState(projectDir: string, state: WorkflowState): void {
-  writeSecureFile(join(currentDir(projectDir), STATE_FILE), JSON.stringify(state, null, 2) + '\n');
+export function saveState(projectDir: string, sessionId: string, state: WorkflowState): void {
+  const dir = sessionDir(projectDir, sessionId);
+  writeSecureFile(join(dir, STATE_FILE), JSON.stringify(state, null, 2) + '\n');
 }
 
-export function loadState(projectDir: string): WorkflowState | null {
-  const filePath = join(currentDir(projectDir), STATE_FILE);
+export function loadState(projectDir: string, sessionId: string): WorkflowState | null {
+  const filePath = join(sessionDir(projectDir, sessionId), STATE_FILE);
   if (!existsSync(filePath)) return null;
   let raw: unknown;
   try {
@@ -32,12 +33,29 @@ export function loadState(projectDir: string): WorkflowState | null {
   return result.data;
 }
 
-export function appendEvent<T extends OrchestratorEventType>(projectDir: string, event: OrchestratorEvent<T>): void {
-  const dir = currentDir(projectDir);
+function appendLine(projectDir: string, sessionId: string, entry: SessionLogEntry): void {
+  const dir = sessionDir(projectDir, sessionId);
   try {
     ensureSecureDir(dir);
-    appendFileSync(join(dir, EVENTS_FILE), JSON.stringify(event) + '\n', { mode: SECURE_FILE_MODE });
+    appendFileSync(join(dir, SESSION_LOG_FILE), JSON.stringify(entry) + '\n', { mode: SECURE_FILE_MODE });
   } catch (err) {
-    warnStderr(`Warning: failed to persist event ${event.type}: ${err instanceof Error ? err.message : String(err)}`);
+    warnStderr(`Warning: failed to persist log entry: ${toErrorMessage(err)}`);
   }
+}
+
+export function appendEvent<T extends OrchestratorEventType>(projectDir: string, sessionId: string, event: OrchestratorEvent<T>): void {
+  const { ts: numericTs, ...rest } = event;
+  const entry: SessionLogEventEntry = { kind: 'event', ts: new Date(numericTs).toISOString(), ...rest };
+  appendLine(projectDir, sessionId, entry);
+}
+
+export function appendMessage(
+  projectDir: string,
+  sessionId: string,
+  message: Omit<SessionLogMessageEntry, 'ts' | 'kind'>,
+  persistTranscript: boolean,
+): void {
+  if (!persistTranscript) return;
+  const entry: SessionLogMessageEntry = { kind: 'message', ts: new Date().toISOString(), ...message };
+  appendLine(projectDir, sessionId, entry);
 }

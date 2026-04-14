@@ -7,6 +7,7 @@ export interface ImplementerOptions {
   context: ProjectContext;
   onOutput: (text: string) => void;
   onEvent?: (event: TuiEvent) => void;
+  sessionId?: string | undefined;
 }
 
 export interface RetryOptions extends ImplementerOptions {

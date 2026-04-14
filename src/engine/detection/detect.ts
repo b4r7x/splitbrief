@@ -22,7 +22,6 @@ const API_PLANNERS: { tool: PlannerTool; description: string }[] = [
 
 const API_PLANNER_TOOLS = new Set(API_PLANNERS.map(({ tool }) => tool));
 
-// Filter KNOWN_PROVIDERS to only include valid planner tools (excludes local providers like ollama, lm-studio)
 const PROVIDER_PLANNERS: { tool: PlannerTool; description: string }[] =
   Object.keys(KNOWN_PROVIDERS)
     .filter(isPlannerToolId)
@@ -40,7 +39,7 @@ function minimalConfig(tool: PlannerTool): Config {
       model: 'qwen2.5:7b',
     },
     validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'per-task' },
+    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'per-task', persistTranscript: true },
   };
 }
 
@@ -67,7 +66,7 @@ async function probeProviders(): Promise<PlannerDetection[]> {
   );
 }
 
-export interface DetectPlannersOptions {
+interface DetectPlannersOptions {
   providerResults?: ProviderDetection[];
 }
 
@@ -113,7 +112,7 @@ export async function detectAvailablePlanners(opts: DetectPlannersOptions = {}):
 
 const API_IMPLEMENTER_PROVIDERS = ['anthropic'] as const satisfies readonly ProviderId[];
 
-export interface DetectImplementersOptions {
+interface DetectImplementersOptions {
   providerResults?: ProviderDetection[];
 }
 
@@ -141,11 +140,6 @@ export interface DetectAllResult {
   implementers: ProviderDetection[];
 }
 
-/**
- * Detect all available planners and implementers in a single pass.
- * Calls detectAvailableProviders() once and shares results with both detection functions,
- * avoiding redundant network calls (~40s saved).
- */
 export async function detectAll(): Promise<DetectAllResult> {
   const providerResults = await detectAvailableProviders();
   const [planners, implementers] = await Promise.all([

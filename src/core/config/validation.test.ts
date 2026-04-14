@@ -7,7 +7,7 @@ const validConfig = {
   planner: { kind: 'cli', tool: 'claude-code', model: 'default' },
   implementer: { kind: 'api', provider: 'ollama', model: 'qwen2.5-coder:7b', apiBase: 'http://localhost:11434/v1', contextLength: 8192, temperature: 0.3 },
   validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-  workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none' },
+  workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', persistTranscript: true },
 };
 
 const baseApiImplementer: ApiImplementerConfig = {
@@ -19,7 +19,7 @@ const baseConfig: Config = {
   planner: { kind: 'cli', tool: 'claude-code', model: 'default' },
   implementer: baseApiImplementer,
   validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-  workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none' },
+  workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', persistTranscript: true },
 };
 
 describe('validateConfig', () => {
@@ -177,7 +177,7 @@ describe('validateConfig', () => {
       planner: { tool: 'claude-code' },
       implementer: { kind: 'api', tool: 'ollama', model: '', apiBase: 'http://localhost:11434/v1', contextLength: -1, temperature: 0.3 },
       validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-      workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none' },
+      workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', persistTranscript: true },
     };
     const { errors } = validateConfig(config);
     const paths = errors.map(e => e.path);

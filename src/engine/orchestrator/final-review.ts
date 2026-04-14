@@ -15,26 +15,27 @@ import { emit, emitError, emitPlannerStatus } from './events.js';
 import { transitionAndSave, runPlannerReview } from './helpers.js';
 
 export async function runFinalReviewPhase(
-  opts: { projectDir: string; callbacks: OrchestratorCallbacks; state: WorkflowState; planner: Planner; metadata?: SpecMetadata | null },
+  opts: { projectDir: string; sessionId: string; callbacks: OrchestratorCallbacks; state: WorkflowState; planner: Planner; metadata?: SpecMetadata | null },
   summaryBase: SummaryBase,
   taskBreakdowns: TaskTokenUsage[],
   phaseTimings?: Record<string, number>,
 ): Promise<Summary> {
   let { state } = opts;
-  const { projectDir, callbacks, planner, metadata } = opts;
+  const { projectDir, sessionId, callbacks, planner, metadata } = opts;
 
-  state = transitionAndSave(projectDir, state, { type: 'ALL_DONE' });
+  state = transitionAndSave(projectDir, sessionId, state, { type: 'ALL_DONE' });
   const finalReviewStart = Date.now();
   emitPlannerStatus(callbacks, state, 'running');
-  emit(projectDir, state, 'all_tasks_done', undefined, {});
+  emit(projectDir, sessionId, state, 'all_tasks_done', undefined, {});
 
   try {
     const diff = await getCurrentDiff(projectDir);
-    const spec = readSpecFileOrEmpty(projectDir, SPEC_FILE);
+    const spec = readSpecFileOrEmpty(projectDir, sessionId, SPEC_FILE);
     const review = await runPlannerReview({
       planner,
       prompt: buildFinalReviewPrompt(spec, diff),
       projectDir,
+      sessionId,
       callbacks,
       state,
       metadata,
@@ -45,9 +46,9 @@ export async function runFinalReviewPhase(
     emitError(callbacks, labelError('Final review failed', err));
   }
 
-  state = transitionAndSave(projectDir, state, { type: 'REVIEW_DONE' });
+  state = transitionAndSave(projectDir, sessionId, state, { type: 'REVIEW_DONE' });
   emitPlannerStatus(callbacks, state, 'done', { duration: Date.now() - finalReviewStart });
-  emit(projectDir, state, 'workflow_complete', undefined, {});
+  emit(projectDir, sessionId, state, 'workflow_complete', undefined, {});
 
   if (phaseTimings) {
     phaseTimings.review = Date.now() - finalReviewStart;
@@ -60,13 +61,14 @@ export async function runFinalReviewPhase(
 
 export function shutdownWorkflow(
   projectDir: string,
+  sessionId: string,
   getTrackedState: () => WorkflowState | undefined,
   getCurrentTask: () => Pick<Task, 'file' | 'action'> | undefined,
 ): void {
   killAllProcesses();
   const trackedState = getTrackedState();
   if (trackedState) {
-    try { saveState(projectDir, trackedState); } catch (err) {
+    try { saveState(projectDir, sessionId, trackedState); } catch (err) {
       warnError('Failed to save state during shutdown', err);
     }
   }

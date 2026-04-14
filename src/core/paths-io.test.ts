@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { readFileOrEmpty } from '../utils/fs.js';
 import {
   ensureDiptychDir,
+  ensureSessionDir,
   writeSpecFile,
   readSpecFile,
   readSpecFileOrEmpty,
@@ -14,9 +15,10 @@ import {
   type SpecMetadata,
 } from './paths-io.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { DIPTYCH_DIR } from './paths.js';
+import { DIPTYCH_DIR, SESSIONS_DIR } from './paths.js';
 
 let tmp: string;
+const SESSION_ID = '2024-01-01-test-feature';
 
 function makeTmp(): string {
   tmp = createTempDir('paths-io-test');
@@ -28,71 +30,86 @@ afterEach(() => {
 });
 
 describe('ensureDiptychDir', () => {
-  it('creates .diptych/current directory if it does not exist', () => {
+  it('creates .diptych directory if it does not exist', () => {
     const dir = makeTmp();
     ensureDiptychDir(dir);
-    expect(existsSync(join(dir, DIPTYCH_DIR, 'current'))).toBe(true);
+    expect(existsSync(join(dir, DIPTYCH_DIR))).toBe(true);
   });
 
   it('is idempotent', () => {
     const dir = makeTmp();
     ensureDiptychDir(dir);
     ensureDiptychDir(dir);
-    expect(existsSync(join(dir, DIPTYCH_DIR, 'current'))).toBe(true);
+    expect(existsSync(join(dir, DIPTYCH_DIR))).toBe(true);
+  });
+});
+
+describe('ensureSessionDir', () => {
+  it('creates .diptych/sessions/<id> directory', () => {
+    const dir = makeTmp();
+    ensureSessionDir(dir, SESSION_ID);
+    expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID))).toBe(true);
+  });
+
+  it('is idempotent', () => {
+    const dir = makeTmp();
+    ensureSessionDir(dir, SESSION_ID);
+    ensureSessionDir(dir, SESSION_ID);
+    expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID))).toBe(true);
   });
 });
 
 describe('writeSpecFile', () => {
-  it('writes content to .diptych/current/<filename>', async () => {
+  it('writes content to .diptych/sessions/<id>/<filename>', async () => {
     const dir = makeTmp();
-    writeSpecFile(dir, 'spec.md', '# Spec');
-    const written = join(dir, DIPTYCH_DIR, 'current', 'spec.md');
+    writeSpecFile(dir, SESSION_ID, 'spec.md', '# Spec');
+    const written = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'spec.md');
     expect(existsSync(written)).toBe(true);
     expect(await readFileOrEmpty(written)).toBe('# Spec');
   });
 
   it('creates dir if needed', () => {
     const dir = makeTmp();
-    writeSpecFile(dir, 'plan.md', '# Plan');
-    expect(existsSync(join(dir, DIPTYCH_DIR, 'current', 'plan.md'))).toBe(true);
+    writeSpecFile(dir, SESSION_ID, 'plan.md', '# Plan');
+    expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'plan.md'))).toBe(true);
   });
 
   it('rejects filenames with path traversal', () => {
     const dir = makeTmp();
-    expect(() => writeSpecFile(dir, '../outside.md', 'x')).toThrow('Invalid filename');
+    expect(() => writeSpecFile(dir, SESSION_ID, '../outside.md', 'x')).toThrow('Invalid filename');
   });
 });
 
 describe('readSpecFile', () => {
-  it('reads content from .diptych/current/<filename>', () => {
+  it('reads content from .diptych/sessions/<id>/<filename>', () => {
     const dir = makeTmp();
-    writeSpecFile(dir, 'tasks.md', '- task 1');
-    expect(readSpecFile(dir, 'tasks.md')).toBe('- task 1');
+    writeSpecFile(dir, SESSION_ID, 'tasks.md', '- task 1');
+    expect(readSpecFile(dir, SESSION_ID, 'tasks.md')).toBe('- task 1');
   });
 
   it('returns null when file does not exist', () => {
     const dir = makeTmp();
-    ensureDiptychDir(dir);
-    expect(readSpecFile(dir, 'missing.md')).toBeNull();
+    ensureSessionDir(dir, SESSION_ID);
+    expect(readSpecFile(dir, SESSION_ID, 'missing.md')).toBeNull();
   });
 
   it('rejects filenames with path traversal', () => {
     const dir = makeTmp();
-    expect(() => readSpecFile(dir, '../outside.md')).toThrow('Invalid filename');
+    expect(() => readSpecFile(dir, SESSION_ID, '../outside.md')).toThrow('Invalid filename');
   });
 });
 
 describe('readSpecFileOrEmpty', () => {
   it('returns content for an existing file', () => {
     const dir = makeTmp();
-    writeSpecFile(dir, 'spec.md', '# My Spec');
-    expect(readSpecFileOrEmpty(dir, 'spec.md')).toBe('# My Spec');
+    writeSpecFile(dir, SESSION_ID, 'spec.md', '# My Spec');
+    expect(readSpecFileOrEmpty(dir, SESSION_ID, 'spec.md')).toBe('# My Spec');
   });
 
   it('returns empty string for a non-existent file', () => {
     const dir = makeTmp();
-    ensureDiptychDir(dir);
-    expect(readSpecFileOrEmpty(dir, 'missing.md')).toBe('');
+    ensureSessionDir(dir, SESSION_ID);
+    expect(readSpecFileOrEmpty(dir, SESSION_ID, 'missing.md')).toBe('');
   });
 });
 
@@ -205,8 +222,8 @@ describe('writeSpecFile with metadata', () => {
 
   it('prepends frontmatter to spec files when metadata is passed', () => {
     const dir = makeTmp();
-    writeSpecFile(dir, 'spec.md', '# My Spec', meta);
-    const content = readSpecFile(dir, 'spec.md')!;
+    writeSpecFile(dir, SESSION_ID, 'spec.md', '# My Spec', meta);
+    const content = readSpecFile(dir, SESSION_ID, 'spec.md')!;
     expect(content).toMatch(/^---\n/);
     expect(content).toContain('generated_by: diptych v');
     expect(content).toContain('# My Spec');
@@ -214,22 +231,22 @@ describe('writeSpecFile with metadata', () => {
 
   it('does not prepend frontmatter to non-spec files', () => {
     const dir = makeTmp();
-    writeSpecFile(dir, 'research.md', '# Research', meta);
-    expect(readSpecFile(dir, 'research.md')).toBe('# Research');
+    writeSpecFile(dir, SESSION_ID, 'research.md', '# Research', meta);
+    expect(readSpecFile(dir, SESSION_ID, 'research.md')).toBe('# Research');
   });
 
   it('does not double-prepend when content already has frontmatter', () => {
     const dir = makeTmp();
     const existing = '---\ngenerated_by: diptych v0.1.0\n---\n# Spec with clarifications';
-    writeSpecFile(dir, 'spec.md', existing, meta);
-    const content = readSpecFile(dir, 'spec.md')!;
+    writeSpecFile(dir, SESSION_ID, 'spec.md', existing, meta);
+    const content = readSpecFile(dir, SESSION_ID, 'spec.md')!;
     const fmCount = (content.match(/generated_by:/g) ?? []).length;
     expect(fmCount).toBe(1);
   });
 
   it('does not prepend when metadata is not passed', () => {
     const dir = makeTmp();
-    writeSpecFile(dir, 'spec.md', '# Plain Spec');
-    expect(readSpecFile(dir, 'spec.md')).toBe('# Plain Spec');
+    writeSpecFile(dir, SESSION_ID, 'spec.md', '# Plain Spec');
+    expect(readSpecFile(dir, SESSION_ID, 'spec.md')).toBe('# Plain Spec');
   });
 });

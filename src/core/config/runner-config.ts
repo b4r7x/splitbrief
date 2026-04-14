@@ -1,5 +1,6 @@
 import type { Config } from '../types/config.js';
-import { resolveAutoModel } from '../providers.js';
+import type { PlannerTool } from '../types/config.js';
+import { resolveAutoModel, isPlannerToolId } from '../providers.js';
 
 export type RunnerConfig = Config['planner'] | Config['implementer'];
 
@@ -40,4 +41,21 @@ export function getRunnerModelName(runner: RunnerConfig): string | undefined {
 
 export function hasApiBase(runner: RunnerConfig): runner is Extract<RunnerConfig, { apiBase: string }> {
   return 'apiBase' in runner && typeof runner.apiBase === 'string' && runner.apiBase.length > 0;
+}
+
+export function getPlannerToolId(config: Config['planner']): PlannerTool {
+  switch (config.kind) {
+    case 'cli':
+      return config.tool;
+    case 'api': {
+      const provider = config.provider;
+      return isPlannerToolId(provider) ? provider : 'anthropic';
+    }
+    case 'shell':
+      return 'shell';
+    case 'agent-sdk':
+      return 'agent-sdk';
+    case 'agent':
+      return 'agent';
+  }
 }

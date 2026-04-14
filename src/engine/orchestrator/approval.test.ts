@@ -34,8 +34,9 @@ describe('runApprovalLoop', () => {
       filePath: '/mock/spec.md',
       planner: makePlanner(),
       projectDir: '/mock',
+      sessionId: 'test-session',
       callbacks,
-      state: prepareState(),
+      state: prepareState(), persistTranscript: false,
     });
     expect(result.rejected).toBe(false);
     expect(result.regenerated).toBe(false);
@@ -48,8 +49,9 @@ describe('runApprovalLoop', () => {
       filePath: '/mock/spec.md',
       planner: makePlanner(),
       projectDir: '/mock',
+      sessionId: 'test-session',
       callbacks,
-      state: prepareState(),
+      state: prepareState(), persistTranscript: false,
     });
     expect(result.rejected).toBe(true);
   });
@@ -64,8 +66,9 @@ describe('runApprovalLoop', () => {
       filePath: '/mock/spec.md',
       planner: makePlanner(),
       projectDir: '/mock',
+      sessionId: 'test-session',
       callbacks,
-      state: prepareState(),
+      state: prepareState(), persistTranscript: false,
       signal: controller.signal,
     });
     expect(result.rejected).toBe(false);
@@ -84,8 +87,9 @@ describe('runApprovalLoop', () => {
       filePath: '/mock/spec.md',
       planner: makePlanner(),
       projectDir: '/mock',
+      sessionId: 'test-session',
       callbacks,
-      state: prepareState(),
+      state: prepareState(), persistTranscript: false,
       signal: controller.signal,
     });
     expect(result.rejected).toBe(false);
@@ -107,8 +111,9 @@ describe('runApprovalLoop', () => {
       filePath: '/mock/spec.md',
       planner,
       projectDir: '/mock',
+      sessionId: 'test-session',
       callbacks,
-      state: prepareState(),
+      state: prepareState(), persistTranscript: false,
       signal: controller.signal,
     });
 

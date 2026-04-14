@@ -17,6 +17,7 @@ export type {
   RunnerKind,
 } from './config.js';
 export {
+  DEFAULT_WORKFLOW_MODE,
   WORKFLOW_MODES,
   RUNNER_KINDS, RunnerKindSchema,
 } from './config.js';
@@ -51,6 +52,9 @@ export type {
   OrchestratorEventPayloadMap,
   OrchestratorCallbacks,
   ClarificationQuestion,
+  SessionLogEntry,
+  SessionLogEventEntry,
+  SessionLogMessageEntry,
 } from './events.js';
 export type {
   Screen,

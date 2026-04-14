@@ -158,6 +158,40 @@ describe('config loading', () => {
       expect(config).toEqual(createDefaultConfig());
     });
 
+    it('does not leak api-specific defaults into cli implementer (kind mismatch)', () => {
+      const dir = join(TMP, 'kind-mismatch');
+      writeConfigYaml(dir, {
+        version: 2,
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: {
+          kind: 'cli',
+          tool: 'codex',
+          model: 'gpt-5.4-mini',
+          context_length: 32768,
+          temperature: 0.3,
+        },
+      });
+
+      const config = loadConfig(dir);
+      expect(config.implementer.kind).toBe('cli');
+      expect((config.implementer as Record<string, unknown>).provider).toBeUndefined();
+      expect((config.implementer as Record<string, unknown>).apiBase).toBeUndefined();
+    });
+
+    it('still merges defaults when implementer kind matches default (api)', () => {
+      const dir = join(TMP, 'kind-match');
+      writeConfigYaml(dir, {
+        implementer: { model: 'llama3' },
+      });
+
+      const config = loadConfig(dir);
+      expect(config.implementer.kind).toBe('api');
+      expect(config.implementer.model).toBe('llama3');
+      // contextLength and temperature filled from defaults
+      expect((config.implementer as Record<string, unknown>).contextLength).toBe(32768);
+      expect((config.implementer as Record<string, unknown>).temperature).toBe(0.3);
+    });
+
     it('migrates commitPerTask true to commitStrategy per-task', () => {
       const dir = join(TMP, 'commit-per-task-true');
       writeConfigYaml(dir, {

@@ -23,7 +23,7 @@ function makeBaseConfig(): Config {
       temperature: 0.3,
     },
     validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none' },
+    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', persistTranscript: true },
   };
 }
 

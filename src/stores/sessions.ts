@@ -1,5 +1,5 @@
 import { createStore, storeBase } from './create-store.js';
-import { getSessionDir, listSessions, listAllSessions } from '../core/sessions/io.js';
+import { listSessions, listAllSessions } from '../core/sessions/io.js';
 import type { Session } from '../types.js';
 
 interface SessionsState {
@@ -9,12 +9,12 @@ interface SessionsState {
 
 const store = createStore<SessionsState>({ sessions: [], allSessions: [] });
 
-function load(scope: 'project' | 'global', projectDir: string) {
-  store.set(s => ({ ...s, sessions: listSessions(getSessionDir(scope, projectDir)) }));
+function load(projectDir: string) {
+  store.set(s => ({ ...s, sessions: listSessions(projectDir) }));
 }
 
-function loadAll(scope: 'project' | 'global', projectDir: string) {
-  store.set(s => ({ ...s, allSessions: listAllSessions(getSessionDir(scope, projectDir)) }));
+function loadAll(projectDir: string) {
+  store.set(s => ({ ...s, allSessions: listAllSessions(projectDir) }));
 }
 
 export const sessionsStore = { ...storeBase(store), load, loadAll };

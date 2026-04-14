@@ -1,5 +1,6 @@
 import type { PlannerToolId, ProviderId } from './schemas/enums.js';
 export type { PlannerConfig, ImplementerConfig, Config } from './schemas/config.js';
+export { DEFAULT_WORKFLOW_MODE } from './schemas/config.js';
 
 export interface DetectedModel {
   id: string;

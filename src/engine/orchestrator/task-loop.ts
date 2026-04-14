@@ -3,7 +3,7 @@ import { hasExternalChanges } from '../../utils/git.js';
 import { labelError } from '../../utils/format.js';
 import { getFailedTaskIds, getSkippedTaskIds, getEscalatedTaskIds } from '../../core/state/selectors.js';
 
-import type { WorkflowContext } from './run.js';
+import type { WorkflowContext } from './types.js';
 import { emit, emitWarning, emitTaskSkipped } from './events.js';
 import { runSingleTask } from './task-step.js';
 import { emitTaskTokens } from './tokens.js';
@@ -17,15 +17,15 @@ export function hasDependencyFailed(task: Task, failedTasks: TaskId[], skippedTa
 }
 
 async function checkExternalChanges(
-  projectDir: string, callbacks: OrchestratorCallbacks, state: WorkflowState, taskId: TaskId,
+  projectDir: string, sessionId: string, callbacks: OrchestratorCallbacks, state: WorkflowState, taskId: TaskId,
 ): Promise<WorkflowState | null> {
   try {
     const externalChanges = await hasExternalChanges(projectDir);
     if (externalChanges) {
       const proceed = await callbacks.onExternalChanges();
       if (!proceed) {
-        emit(projectDir, state, 'paused_external_changes', taskId, {});
-        const cancelled = transitionAndSave(projectDir, state, { type: 'CANCEL' });
+        emit(projectDir, sessionId, state, 'paused_external_changes', taskId, {});
+        const cancelled = transitionAndSave(projectDir, sessionId, state, { type: 'CANCEL' });
         return cancelled;
       }
     }
@@ -39,23 +39,24 @@ type HandleSkippedTaskOptions = {
   task: Task;
   state: WorkflowState;
   projectDir: string;
+  sessionId: string;
   callbacks: OrchestratorCallbacks;
   taskBreakdowns: TaskTokenUsage[];
 };
 
 function handleSkippedTask(opts: HandleSkippedTaskOptions): WorkflowState {
-  const { task, projectDir, callbacks, taskBreakdowns } = opts;
+  const { task, projectDir, sessionId, callbacks, taskBreakdowns } = opts;
   const blockedBy = new Set<string>([
     ...getFailedTaskIds(opts.state),
     ...getSkippedTaskIds(opts.state),
   ]);
   const skipReason = `dependency failed: ${task.dependsOn.filter((d) => blockedBy.has(d)).join(', ')}`;
-  const state = transitionAndSave(projectDir, opts.state, { type: 'SKIP_TASK', taskId: task.id });
+  const state = transitionAndSave(projectDir, sessionId, opts.state, { type: 'SKIP_TASK', taskId: task.id });
   emitTaskSkipped(callbacks, { taskId: task.id, title: task.title, reason: skipReason });
-  emit(projectDir, state, 'task_skipped', task.id, {});
+  emit(projectDir, sessionId, state, 'task_skipped', task.id, {});
   const usage: TaskTokenUsage = { taskId: task.id, taskTitle: task.title, method: 'skipped', implementerTokens: 0, escalationTokens: 0, retryCount: 0 };
   taskBreakdowns.push(usage);
-  emitTaskTokens(projectDir, state, task.id, usage);
+  emitTaskTokens(projectDir, sessionId, state, task.id, usage);
   return state;
 }
 
@@ -68,7 +69,7 @@ type RunTaskLoopOptions = {
 
 export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: WorkflowState; taskBreakdowns: TaskTokenUsage[] }> {
   const { wctx, setTrackedState, setCurrentTask } = opts;
-  const { projectDir, config, callbacks } = wctx;
+  const { projectDir, sessionId, config, callbacks } = wctx;
   let state = opts.initialState;
   const totalTasks = state.tasks.length;
   const taskBreakdowns: TaskTokenUsage[] = [];
@@ -80,11 +81,11 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: Wo
     const task = state.tasks[i];
     if (!task) continue;
 
-    const cancelledState = await checkExternalChanges(projectDir, callbacks, state, task.id);
+    const cancelledState = await checkExternalChanges(projectDir, sessionId, callbacks, state, task.id);
     if (cancelledState) return { state: cancelledState, taskBreakdowns };
 
     if (hasDependencyFailed(task, getFailedTaskIds(state), getSkippedTaskIds(state))) {
-      state = handleSkippedTask({ task, state, projectDir, callbacks, taskBreakdowns });
+      state = handleSkippedTask({ task, state, projectDir, sessionId, callbacks, taskBreakdowns });
       continue;
     }
 
@@ -104,7 +105,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: Wo
       budgetWarningEmitted = budgetResult.warningEmitted;
       if (budgetResult.stop) {
         setCurrentTask(undefined);
-        const cancelled = transitionAndSave(projectDir, state, { type: 'CANCEL' });
+        const cancelled = transitionAndSave(projectDir, sessionId, state, { type: 'CANCEL' });
         return { state: cancelled, taskBreakdowns };
       }
     }

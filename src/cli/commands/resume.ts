@@ -9,6 +9,7 @@ import { addWorkflowOptions, setupWorkflow, resolveProjectDir } from '../workflo
 import { cliError } from '../errors.js';
 import { routerStore } from '../../stores/router.js';
 import { initStores } from '../init-stores.js';
+import { readActive } from '../../core/sessions/active.js';
 import type { WorkflowOpts } from '../../types.js';
 
 export function registerResumeCommand(program: Command): void {
@@ -18,10 +19,16 @@ export function registerResumeCommand(program: Command): void {
       .description('Resume an interrupted workflow'),
   ).action(async (opts: WorkflowOpts) => {
     const projectDir = resolveProjectDir(opts.project);
-    const state = loadState(projectDir);
+
+    const sessionId = readActive(projectDir);
+    if (!sessionId) {
+      throw cliError('Error: no active session to resume.');
+    }
+
+    const state = loadState(projectDir, sessionId);
 
     if (!state) {
-      throw cliError('Error: no saved workflow to resume.');
+      throw cliError(`Error: session '${sessionId}' has no state.json — cannot resume.`);
     }
 
     if (!('stateVersion' in state) || state.stateVersion < CURRENT_STATE_VERSION) {
@@ -37,7 +44,7 @@ export function registerResumeCommand(program: Command): void {
     const { useFullscreen } = await setupWorkflow(opts);
 
     await initStores(projectDir, opts);
-    routerStore.init({ screen: 'workflow', feature: state.feature, resumeState: state });
+    routerStore.init({ screen: 'workflow', feature: state.feature, resumeState: state, sessionId });
 
     await renderApp(createElement(App), useFullscreen);
   });

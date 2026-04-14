@@ -7,6 +7,7 @@ import { conversationScrollStore } from '../stores/conversation-scroll.js';
 import { runWorkflow } from '../engine/orchestrator/index.js';
 import { killAllProcesses } from '../utils/process-lifecycle.js';
 import { loadState } from '../core/state/persistence.js';
+import { readActive } from '../core/sessions/active.js';
 import { REVIEW_HINT } from '../core/commands/review-commands.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 
@@ -18,6 +19,7 @@ interface UseWorkflowRunnerOptions {
   initialResumeState?: WorkflowState | undefined;
   selectedSkills?: SkillMeta[] | undefined;
   inputMode: UseInputModeResult;
+  sessionId?: string | undefined;
 }
 
 interface UseWorkflowRunnerResult {
@@ -33,6 +35,7 @@ export function useWorkflowRunner({
   initialResumeState,
   selectedSkills,
   inputMode,
+  sessionId: initialSessionId,
 }: UseWorkflowRunnerOptions): UseWorkflowRunnerResult {
   const abortedRef = useRef(false);
   const [startedAt] = useState(() => new Date().toISOString());
@@ -83,6 +86,7 @@ export function useWorkflowRunner({
       },
       savedState: resumeState,
       selectedSkills,
+      sessionId: initialSessionId,
     }).catch((err) => {
       if (!abortedRef.current && !workflowStore.get().cancelled) {
         workflowStore.addEvent({ type: 'error', ts: Date.now(), message: String(err) });
@@ -107,7 +111,8 @@ export function useWorkflowRunner({
   }, [feature, projectDir, runId]);
 
   const handleResume = () => {
-    const saved = loadState(projectDir);
+    const sessionId = readActive(projectDir);
+    const saved = sessionId ? loadState(projectDir, sessionId) : null;
     if (!saved) {
       feedbackStore.setError('No saved state to resume. Press ESC to return home.');
       return;

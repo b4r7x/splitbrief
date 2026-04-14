@@ -12,6 +12,7 @@ import { CommandNotFoundError } from '../../utils/process-errors.js';
 import { extractOutput, retryTemperature, type InvokeOpts } from './utils.js';
 import { DEFAULT_AVAILABILITY } from '../../utils/availability.js';
 import { getChangedFiles } from '../../utils/git.js';
+import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
 
 type GenEventEmitter = (status: 'running' | 'done' | 'failed', extra?: Record<string, unknown>) => void;
 
@@ -104,7 +105,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     temperature?: number,
   ): Promise<ImplementerResult> {
     const prompt = prependSystemPreamble ? SYSTEM_PREAMBLE + '\n\n' + rawPrompt : rawPrompt;
-    const { task, projectDir, config, onOutput, onEvent } = opts;
+    const { task, projectDir, config, onOutput, onEvent, sessionId } = opts;
     const emitGenEvent = createGenEventEmitter(onEvent, config.implementer.model, task.file);
 
     emitGenEvent('running');
@@ -119,10 +120,21 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       filesBefore = await getChangedFiles(projectDir);
     }
 
+    const persistTranscript = config.workflow.persistTranscript;
+    const implBuffer = sessionId
+      ? createTranscriptBuffer(projectDir, sessionId, 'implementing', persistTranscript)
+      : null;
+    const wrappedOnOutput = baseConfig.extractsCode
+      ? (text: string) => {
+          onOutput(text);
+          implBuffer?.append(text);
+        }
+      : onOutput;
+
     let invokeResult: InvokeResult;
     try {
       invokeResult = await baseConfig.invoke({
-        prompt, task, projectDir, config, onOutput,
+        prompt, task, projectDir, config, onOutput: wrappedOnOutput,
         ...(temperature !== undefined && { temperature }),
       });
     } catch (err) {
@@ -130,6 +142,8 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       if (shouldThrow(err)) throw err;
       return { success: false, output: extractOutput(err), error: formatErrorWithHint(toErrorMessage(err)) };
     }
+
+    implBuffer?.flush();
 
     const usageField = invokeResult.usage ? { usage: invokeResult.usage } : {};
 

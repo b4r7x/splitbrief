@@ -8,12 +8,12 @@ import { join } from 'node:path';
 
 let projectDir: string;
 
-function setupMockFiles(projectDir: string, files: Record<string, string>) {
-  const tinySpecDir = join(projectDir, '.diptych', 'current');
-  mkdirSync(tinySpecDir, { recursive: true });
+function setupMockFiles(projectDir: string, sessionId: string, files: Record<string, string>) {
+  const sessionDir = join(projectDir, '.diptych', 'sessions', sessionId);
+  mkdirSync(sessionDir, { recursive: true });
 
   for (const [filename, content] of Object.entries(files)) {
-    writeFileSync(join(tinySpecDir, filename), content);
+    writeFileSync(join(sessionDir, filename), content);
   }
 }
 
@@ -99,7 +99,8 @@ describe('createAgentPlanner', () => {
   it('supports quickPlan and reads generated tasks file', async () => {
     const config = defaultAgentConfig();
     const planner = createAgentPlanner(config);
-    const callbacks = { onOutput: vi.fn(), onPhase: vi.fn() };
+    const SESSION_ID = 'test-session-2024';
+    const callbacks = { onOutput: vi.fn(), onPhase: vi.fn(), sessionId: SESSION_ID };
     
     // Setup mock tasks.md file with correct format
     const tasksContent = `---
@@ -118,7 +119,7 @@ Create a test file.
 ### Constraints
 - Use TypeScript
 `;
-    setupMockFiles(projectDir, { 'tasks.md': tasksContent });
+    setupMockFiles(projectDir, SESSION_ID, { 'tasks.md': tasksContent });
     
     const result = await planner.quickPlan('test feature', projectDir, callbacks);
     expect(result.spec).toBe('');
@@ -132,7 +133,8 @@ Create a test file.
   it('supports full plan and reads generated files', async () => {
     const config = defaultAgentConfig();
     const planner = createAgentPlanner(config);
-    const callbacks = { onOutput: vi.fn(), onPhase: vi.fn() };
+    const SESSION_ID = 'test-session-2024';
+    const callbacks = { onOutput: vi.fn(), onPhase: vi.fn(), sessionId: SESSION_ID };
     
     // Setup mock generated files
     const mockFiles = {
@@ -156,7 +158,7 @@ Create the main feature.
 - Use TypeScript
 `,
     };
-    setupMockFiles(projectDir, mockFiles);
+    setupMockFiles(projectDir, SESSION_ID, mockFiles);
     
     const result = await planner.plan('test feature', projectDir, callbacks);
     expect(result.spec).toContain('Feature requirements');

@@ -47,7 +47,7 @@ The implementer is *stateless per task*. No conversation is maintained between t
 The middle layer. Zero React, zero Ink — pure logic in `src/engine/orchestrator/`. Owns:
 
 - The state machine (see `docs/WORKFLOW.md`).
-- Disk writes (`spec.md`, `plan.md`, `tasks.md`, `.diptych/current/state.json`, `.diptych/current/events.jsonl`).
+- Disk writes (`spec.md`, `plan.md`, `tasks.md`, `sessions/<id>/state.json`, `sessions/<id>/session.jsonl`).
 - Validation pipeline (`tsc → lint → tests`).
 - Git commits (one per task).
 - Event emission to the TUI.
@@ -291,7 +291,7 @@ Entries come in two **kinds**, distinguished by the `kind` field:
 
 Filtering happens at read time: `lines.filter(l => l.kind === 'message')`. There is no separate file for events vs. messages — this is deliberate. A log is a chronological stream, and splitting it would force consumers to merge-sort at every read while opening new crash-atomicity problems. This is the same design Claude Code uses (`~/.claude/projects/<cwd>/<id>.jsonl`), and the same pattern event-sourcing frameworks settle on.
 
-Typed event schema: `src/core/types/events.ts`. Renderer registry for the TUI: `src/components/event-cards/index.tsx`.
+Typed event schema: `src/core/types/events.ts`. Reader API (async iterables for log, messages, events): `src/core/sessions/log-reader.ts`. Renderer registry for the TUI: `src/components/event-cards/index.tsx`.
 
 ---
 

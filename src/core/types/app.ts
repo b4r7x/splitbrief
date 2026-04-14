@@ -12,7 +12,7 @@ export type InputMode = 'normal' | 'review' | 'question';
 
 export type RouteData =
   | { screen: 'home' }
-  | { screen: 'workflow'; feature: string; resumeState?: WorkflowState | undefined }
+  | { screen: 'workflow'; feature: string; resumeState?: WorkflowState | undefined; sessionId?: string | undefined }
   | { screen: 'summary'; summary: Summary }
   | { screen: 'setup'; onComplete?: 'home' | 'workflow' | undefined; feature?: string | undefined };
 

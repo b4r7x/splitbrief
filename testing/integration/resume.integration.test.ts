@@ -36,8 +36,8 @@ describe('Resume with token preservation integration', () => {
         },
       };
 
-      saveState(tmpDir, state);
-      const loaded = loadState(tmpDir);
+      saveState(tmpDir, 'test-session', state);
+      const loaded = loadState(tmpDir, 'test-session');
 
       expect(loaded).toBeTruthy();
       if (!loaded) throw new Error('expected loaded state');

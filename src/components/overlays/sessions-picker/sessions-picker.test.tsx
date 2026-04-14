@@ -2,7 +2,7 @@ import React from 'react';
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink';
-import type { Session } from '../../../types.js';
+import { makeSession, makeSummary } from '#testing/helpers/fixtures.js';
 
 const loadAll = vi.fn();
 const overlayClose = vi.fn();
@@ -61,18 +61,6 @@ vi.mock('../../pickers/filterable-list.js', () => ({
   FilterableList: () => null,
 }));
 
-const makeSession = (overrides?: Partial<Session>): Session => ({
-  id: 'sess-1',
-  feature: 'add auth',
-  startedAt: 1_700_000_000,
-  completedAt: null,
-  stateVersion: 1,
-  stateFile: null,
-  status: 'interrupted',
-  summary: null,
-  ...overrides,
-} as Session);
-
 describe('SessionsPicker', () => {
   afterEach(() => {
     loadAll.mockClear();
@@ -93,14 +81,14 @@ describe('SessionsPicker', () => {
 
     await new Promise<void>((resolve) => setTimeout(resolve, 10));
 
-    expect(loadAll).toHaveBeenCalledWith('global', '/tmp/project');
+    expect(loadAll).toHaveBeenCalledWith('/tmp/project');
     instance.unmount();
   });
 
   describe('handleSelect', () => {
     it('navigates to workflow for interrupted sessions', async () => {
       const { handleSelectForTest } = await import('./sessions-picker.js');
-      const session = makeSession({ status: 'interrupted', summary: null });
+      const session = makeSession({ feature: 'add auth', status: 'interrupted', summary: null });
 
       handleSelectForTest(session);
 
@@ -111,8 +99,8 @@ describe('SessionsPicker', () => {
 
     it('navigates to summary when session has a summary', async () => {
       const { handleSelectForTest } = await import('./sessions-picker.js');
-      const summary = { totalCost: 0.5, totalSavings: 0.3, localCompletionRate: 60, durationMs: 10000, taskCount: 2, escalatedCount: 0, plannerTokens: { input: 100, output: 200 }, implementerTokens: { input: 50, output: 100 } };
-      const session = makeSession({ status: 'complete', summary } as unknown as Session);
+      const summary = makeSummary();
+      const session = makeSession({ status: 'complete', summary });
 
       handleSelectForTest(session);
 
@@ -123,7 +111,7 @@ describe('SessionsPicker', () => {
 
     it('shows feedback and keeps overlay open for failed sessions without a summary', async () => {
       const { handleSelectForTest } = await import('./sessions-picker.js');
-      const session = makeSession({ status: 'failed', summary: null });
+      const session = makeSession({ feature: 'add auth', status: 'failed', summary: null });
 
       handleSelectForTest(session);
 

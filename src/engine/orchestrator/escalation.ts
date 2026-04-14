@@ -2,19 +2,15 @@ import type { Task, WorkflowState, TaskCompletionMethod, ApiImplementerConfig, C
 import { hasApiBase } from '../../core/config/runner-config.js';
 import { formatValidationError } from './validator.js';
 import { discardTaskChanges } from './git-ops.js';
-import type { WorkflowContext } from './run.js';
+import type { WorkflowContext } from './types.js';
 import { emit, createTextHandler, emitWarning, emitPlannerStatus, emitRetry, emitEscalate } from './events.js';
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave, warnOnFailure, validateAndCommitTask } from './helpers.js';
 import { createImplementer } from '../runners/factory.js';
 import type { Implementer } from '../implementers/types.js';
 import { getProviderBaseURL } from '../../core/providers.js';
+import { toErrorMessage } from '../../utils/format.js';
 
 const MAX_HINT_ERROR_LENGTH = 4000;
-
-function getApiBase(config: Config): string | undefined {
-  if (hasApiBase(config.implementer)) return config.implementer.apiBase;
-  return undefined;
-}
 
 type RetryResult =
   | { completed: true; method: Exclude<TaskCompletionMethod, 'failed' | 'skipped'>; attempts: number }
@@ -30,7 +26,7 @@ async function validateAndCommit(
   commitSuffix?: string,
 ) {
   return validateAndCommitTask({
-    task, projectDir: ctx.projectDir, config: ctx.config, callbacks: ctx.callbacks,
+    task, projectDir: ctx.projectDir, sessionId: ctx.sessionId, config: ctx.config, callbacks: ctx.callbacks,
     state, method, transitionType, commitSuffix, taskStartTime: ctx.taskStartTime, retryCount,
   });
 }
@@ -48,18 +44,18 @@ async function runLocalRetries(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     attempts = attempt;
-    state = transitionAndSave(ctx.projectDir, state, { type: 'VALIDATION_FAIL' }, maxRetries);
+    state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'VALIDATION_FAIL' }, maxRetries);
     emitRetry(ctx.callbacks, task.id, attempt, maxRetries);
-    emit(ctx.projectDir, state, 'task_retry', task.id, { attempt, error: lastError });
+    emit(ctx.projectDir, ctx.sessionId, state, 'task_retry', task.id, { attempt, error: lastError });
 
-    ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, state));
+    ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, ctx.sessionId, state));
 
     const retryResult = await ctx.implementer.retry({
       task, projectDir: ctx.projectDir, config: ctx.config, context: ctx.context,
       error: lastError, attempt, kind: 'local',
       onOutput: textHandler, onEvent: ctx.callbacks.onEvent,
     });
-    state = addUsageAndSave(ctx.projectDir, state, 'implementer', retryResult.usage, ctx.callbacks);
+    state = addUsageAndSave(ctx.projectDir, ctx.sessionId, state, 'implementer', retryResult.usage, ctx.callbacks);
 
     if (!retryResult.success) {
       lastError = retryResult.error ?? 'Retry failed to produce valid code';
@@ -95,7 +91,7 @@ async function runTier0Intermediate(
     emitWarning(ctx.callbacks, `Unknown intermediate provider "${escalation.intermediateProvider}" — falling back to current implementer endpoint`);
   }
 
-  const currentApiBase = getApiBase(ctx.config);
+  const currentApiBase = hasApiBase(ctx.config.implementer) ? ctx.config.implementer.apiBase : undefined;
   const effectiveApiBase = resolvedApiBase || currentApiBase;
   if (!effectiveApiBase) {
     emitWarning(ctx.callbacks, `Cannot escalate: no API base URL available for intermediate provider "${escalation.intermediateProvider}"`);
@@ -122,11 +118,11 @@ async function runTier0Intermediate(
   try {
     intermediateImplementer = createImplementer(intermediateConfig);
   } catch (err) {
-    emitWarning(ctx.callbacks, `Intermediate provider failed to initialize: ${err instanceof Error ? err.message : String(err)}`);
+    emitWarning(ctx.callbacks, `Intermediate provider failed to initialize: ${toErrorMessage(err)}`);
     return { state, task, lastError, attempts: priorAttempts };
   }
 
-  ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, state));
+  ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, ctx.sessionId, state));
 
   const retryResult = await intermediateImplementer.retry({
     task, projectDir: ctx.projectDir, config: intermediateConfig, context: ctx.context,
@@ -136,7 +132,7 @@ async function runTier0Intermediate(
   // Intermediate provider is implementer-class (cheap API), not planner-class.
   // Recording as 'implementer' avoids ~35x cost overstatement that occurs when
   // escalation tokens are priced at planner rates (e.g., DeepSeek $0.28 vs Claude $5).
-  state = addUsageAndSave(ctx.projectDir, state, 'implementer', retryResult.usage, ctx.callbacks);
+  state = addUsageAndSave(ctx.projectDir, ctx.sessionId, state, 'implementer', retryResult.usage, ctx.callbacks);
 
   if (!retryResult.success) {
     return { state, task, lastError: retryResult.error ?? 'Intermediate escalation failed', attempts };
@@ -156,15 +152,15 @@ async function runTier1Hint(
   const attempts = priorAttempts + 1;
   let task = initialTask;
   const textHandler = createTextHandler(ctx.callbacks);
-  state = transitionAndSave(ctx.projectDir, state, { type: 'ESCALATE' });
+  state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'ESCALATE' });
   emitPlannerStatus(ctx.callbacks, state, 'running');
-  emit(ctx.projectDir, state, 'task_escalating', task.id, {});
+  emit(ctx.projectDir, ctx.sessionId, state, 'task_escalating', task.id, {});
 
   emitEscalate(ctx.callbacks, 1);
   const tier1Result = await ctx.planner.escalateHint(task, lastError, ctx.projectDir, {
     onOutput: textHandler,
   });
-  state = addUsageAndSave(ctx.projectDir, state, 'escalation', tier1Result.usage, ctx.callbacks);
+  state = addUsageAndSave(ctx.projectDir, ctx.sessionId, state, 'escalation', tier1Result.usage, ctx.callbacks);
 
   if (tier1Result.output) {
     textHandler(tier1Result.output);
@@ -174,14 +170,14 @@ async function runTier1Hint(
   if (hintError.length > MAX_HINT_ERROR_LENGTH) {
     hintError = hintError.slice(0, MAX_HINT_ERROR_LENGTH) + '...[truncated]';
   }
-  ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, state));
+  ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, ctx.sessionId, state));
 
   const hintRetryResult = await ctx.implementer.retry({
     task, projectDir: ctx.projectDir, config: ctx.config, context: ctx.context,
     error: hintError, attempt: attempts, kind: 'hint',
     onOutput: textHandler, onEvent: ctx.callbacks.onEvent,
   });
-  state = addUsageAndSave(ctx.projectDir, state, 'implementer', hintRetryResult.usage, ctx.callbacks);
+  state = addUsageAndSave(ctx.projectDir, ctx.sessionId, state, 'implementer', hintRetryResult.usage, ctx.callbacks);
 
   if (hintRetryResult.success) {
     const commitResult = await validateAndCommit(ctx, task, state, 'escalated-hint', 'HINT_SUCCESS', attempts, 'with hints');
@@ -199,16 +195,16 @@ async function runTier2Full(
 ): Promise<{ state: WorkflowState; result: RetryResult }> {
   const attempts = priorAttempts + 1;
   const textHandler = createTextHandler(ctx.callbacks);
-  state = transitionAndSave(ctx.projectDir, state, { type: 'HINT_FAIL' });
-  emit(ctx.projectDir, state, 'hint_failed', task.id, {});
+  state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'HINT_FAIL' });
+  emit(ctx.projectDir, ctx.sessionId, state, 'hint_failed', task.id, {});
 
-  ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, state));
+  ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, ctx.sessionId, state));
 
   emitEscalate(ctx.callbacks, 2);
   const tier2Result = await ctx.planner.escalateFull(task, lastError, ctx.projectDir, {
     onOutput: textHandler,
   });
-  state = addUsageAndSave(ctx.projectDir, state, 'escalation', tier2Result.usage, ctx.callbacks);
+  state = addUsageAndSave(ctx.projectDir, ctx.sessionId, state, 'escalation', tier2Result.usage, ctx.callbacks);
 
   if (tier2Result.success) {
     const commitResult = await validateAndCommit(ctx, task, state, 'escalated-full', 'FULL_SUCCESS', attempts, 'escalated');
@@ -218,8 +214,8 @@ async function runTier2Full(
     emitWarning(ctx.callbacks, `Tier-2 escalation produced code but validation failed: ${formatValidationError(commitResult.validationResults)}`);
   }
 
-  state = transitionAndSave(ctx.projectDir, state, { type: 'FULL_FAIL' });
-  emit(ctx.projectDir, state, 'task_full_fail', task.id, {});
+  state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'FULL_FAIL' });
+  emit(ctx.projectDir, ctx.sessionId, state, 'task_full_fail', task.id, {});
   await warnOnFailure(ctx.callbacks, `discard changes for ${task.file}`, () =>
     discardTaskChanges(ctx.projectDir, task.file, task.action),
   );

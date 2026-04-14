@@ -1,6 +1,6 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Config, PlannerConfig, Task, TokenUsage, ProjectContext, ApiImplementerConfig, ImplementerConfig } from '../../src/types.js';
+import type { Config, PlannerConfig, Task, TokenUsage, ProjectContext, ApiImplementerConfig, ImplementerConfig, Session, Summary } from '../../src/types.js';
 import { taskId as brand } from '../../src/core/types/workflow.js';
 
 const defaultApiImplementer: ApiImplementerConfig = {
@@ -31,6 +31,7 @@ export function makeConfig(overrides?: Omit<Partial<Config>, 'implementer' | 'pl
       autoApprovePlan: false,
       maxRetries: 3,
       commitStrategy: 'none',
+      persistTranscript: true,
       mode: 'standard',
       ...overrides?.workflow,
     },
@@ -75,6 +76,39 @@ export function makeUsage(overrides?: Partial<TokenUsage>): TokenUsage {
     escalationOutput: 0,
     ...overrides,
   };
+}
+
+export function makeSummary(overrides?: Partial<Summary>): Summary {
+  return {
+    feature: 'test feature',
+    totalTasks: 2,
+    completedByLocal: 1,
+    escalatedToPlanner: 0,
+    skipped: 0,
+    failed: 0,
+    totalTime: 10000,
+    tokenUsage: makeUsage(),
+    estimatedCostSavings: '~$0.00',
+    escalationRate: 0,
+    ...overrides,
+  };
+}
+
+export function makeSession(overrides?: Partial<Omit<Session, 'status' | 'summary'>> & { status?: Session['status']; summary?: Session['summary'] }): Session {
+  const status = overrides?.status ?? 'interrupted' as const;
+  const base = {
+    id: 'sess-1',
+    feature: 'test feature',
+    startedAt: 1_700_000_000,
+    completedAt: null,
+    stateVersion: 1,
+    stateFile: null,
+    ...overrides,
+  };
+  if (status === 'complete') {
+    return { ...base, status, summary: overrides?.summary ?? makeSummary() };
+  }
+  return { ...base, status, summary: overrides?.summary ?? null };
 }
 
 export const defaultContext: ProjectContext = {

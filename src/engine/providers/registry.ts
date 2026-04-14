@@ -75,6 +75,8 @@ export async function detectCapabilities(config: Config): Promise<{ contextLengt
   const configCtx = config.implementer.contextLength ?? 8192;
   const fallback = { contextLength: Number.isNaN(parsed) ? configCtx : parsed };
 
+  if (config.implementer.kind !== 'api') return fallback;
+
   const provider = getImplementerProvider(config);
 
   if (provider.detectContextLength) {

@@ -1,20 +1,20 @@
 import type { Config, WorkflowState, Summary, OrchestratorCallbacks, SkillMeta, ProjectContext, Task, Session } from '../../types.js';
-import { randomUUID } from 'node:crypto';
+import { DEFAULT_WORKFLOW_MODE } from '../../types.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../../core/config/runner-config.js';
-import { createInitialState } from '../../core/state/machine.js';
-import { saveState } from '../../core/state/persistence.js';
-import { saveSession, getSessionDir } from '../../core/sessions/io.js';
-import { ensureDiptychDir, type SpecMetadata } from '../../core/paths-io.js';
+import { createInitialState, CURRENT_STATE_VERSION } from '../../core/state/machine.js';
+import { saveState, appendMessage } from '../../core/state/persistence.js';
+import { saveSummary } from '../../core/sessions/io.js';
+import { generateSessionId } from '../../core/sessions/id.js';
+import { clearActive } from '../../core/sessions/active.js';
+import { ensureSessionDir, ensureDiptychDir, type SpecMetadata } from '../../core/paths-io.js';
 import { readPackageJson } from '../../utils/fs.js';
 import { resolveAutoModel } from '../../core/providers.js';
 import { killAllProcesses } from '../../utils/process-lifecycle.js';
 import { toErrorMessage, labelError } from '../../utils/format.js';
 import { warnError } from '../../utils/warn.js';
-import { createPlanner } from '../runners/factory.js';
-import { createImplementer } from '../runners/factory.js';
+import { createPlanner, createImplementer } from '../runners/factory.js';
 
-import type { Planner } from '../planners/types.js';
-import type { Implementer } from '../implementers/types.js';
+import type { WorkflowContext } from './types.js';
 import { buildSummary, type SummaryBase } from './summary.js';
 import { emit, emitError, emitWarning, emitPlannerStatus, emitCostPrediction, emitWorkflowConfig } from './events.js';
 import { predictCost } from './cost-prediction.js';
@@ -23,18 +23,7 @@ import { runPlanningPhase } from './planning.js';
 import { runTaskLoop } from './task-loop.js';
 import { runFinalReviewPhase, shutdownWorkflow } from './final-review.js';
 
-export interface WorkflowContext {
-  projectDir: string;
-  config: Config;
-  callbacks: OrchestratorCallbacks;
-  planner: Planner;
-  context: ProjectContext;
-  implementer: Implementer;
-  signal?: AbortSignal | undefined;
-  metadata: SpecMetadata;
-}
-
-export type PlannerCallbacksContext = Pick<WorkflowContext, 'projectDir' | 'config' | 'callbacks' | 'signal' | 'metadata'>;
+export type { WorkflowContext } from './types.js';
 
 export type RunWorkflowOptions = {
   feature: string;
@@ -42,6 +31,7 @@ export type RunWorkflowOptions = {
   config: Config;
   callbacks: OrchestratorCallbacks;
   savedState?: WorkflowState | undefined;
+  sessionId?: string | undefined;
   selectedSkills?: SkillMeta[] | undefined;
   signal?: AbortSignal | undefined;
 };
@@ -52,6 +42,7 @@ type InitResult =
 
 async function initializeWorkflow(
   opts: RunWorkflowOptions,
+  sessionId: string,
   summaryBase: SummaryBase,
   metadata: SpecMetadata,
   setTrackedState: (s: WorkflowState) => void,
@@ -59,6 +50,7 @@ async function initializeWorkflow(
   const { feature, projectDir, config, callbacks, savedState } = opts;
 
   ensureDiptychDir(projectDir);
+  ensureSessionDir(projectDir, sessionId);
 
   const planner = createPlanner(config);
   const available = await planner.isAvailable();
@@ -75,7 +67,7 @@ async function initializeWorkflow(
     state = savedState;
     setTrackedState(state);
     emitPlannerStatus(callbacks, state, 'running');
-    emit(projectDir, state, 'workflow_resumed', undefined, {});
+    emit(projectDir, sessionId, state, 'workflow_resumed', undefined, {});
   } else {
     state = createInitialState(feature);
     state = {
@@ -85,14 +77,15 @@ async function initializeWorkflow(
       implementerTool: summaryBase.implementerTool,
       ...(summaryBase.implementerModel !== undefined && { implementerModel: summaryBase.implementerModel }),
     };
-    state = transitionAndSave(projectDir, state, { type: 'START', feature });
+    state = transitionAndSave(projectDir, sessionId, state, { type: 'START', feature });
     setTrackedState(state);
     emitPlannerStatus(callbacks, state, 'running');
-    emit(projectDir, state, 'workflow_started', undefined, {});
+    emit(projectDir, sessionId, state, 'workflow_started', undefined, {});
+    appendMessage(projectDir, sessionId, { role: 'user', text: feature }, config.workflow.persistTranscript);
   }
 
   emitWorkflowConfig(callbacks, {
-    mode: config.workflow.mode ?? 'standard',
+    mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
     plannerTool: summaryBase.plannerTool,
     plannerModel: summaryBase.plannerModel,
     implementerTool: summaryBase.implementerTool,
@@ -107,7 +100,7 @@ async function initializeWorkflow(
     testCommand: config.validation.testCommand,
   };
 
-  const wctx: WorkflowContext = { projectDir, config, callbacks, planner, context, implementer, signal: opts.signal, metadata };
+  const wctx: WorkflowContext = { projectDir, sessionId, config, callbacks, planner, context, implementer, signal: opts.signal, metadata };
 
   return { ok: true, state, wctx };
 }
@@ -125,11 +118,11 @@ type RunPlanningPhasesOptions = {
 async function runPlanningPhases(opts: RunPlanningPhasesOptions): Promise<{ state: WorkflowState; cancelled: boolean }> {
   const { wctx, savedState, selectedSkills, phaseTimings, startTime, setTrackedState } = opts;
   let { state } = opts;
-  const { projectDir, config, callbacks, planner } = wctx;
+  const { projectDir, sessionId, config, callbacks, planner } = wctx;
 
   if (!savedState) {
     const planning = await runPlanningPhase({
-      wctx: { projectDir, config, callbacks, signal: wctx.signal, metadata: wctx.metadata },
+      wctx: { projectDir, sessionId, config, callbacks, signal: wctx.signal, metadata: wctx.metadata },
       planner,
       state,
       feature: state.feature,
@@ -184,7 +177,7 @@ async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise<Summar
   }
 
   return runFinalReviewPhase(
-    { projectDir: wctx.projectDir, callbacks, state, planner: wctx.planner, metadata: wctx.metadata },
+    { projectDir: wctx.projectDir, sessionId: wctx.sessionId, callbacks, state, planner: wctx.planner, metadata: wctx.metadata },
     summaryBase,
     taskResult.taskBreakdowns,
     phaseTimings,
@@ -209,8 +202,11 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     plannerModel: summaryBase.plannerModel,
     implementerTool: summaryBase.implementerTool,
     implementerModel: summaryBase.implementerModel,
-    mode: config.workflow.mode ?? 'standard',
+    mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
   };
+
+  const sessionId = opts.sessionId ?? generateSessionId(projectDir, feature);
+
   let trackedState: WorkflowState | undefined;
   let currentTask: Pick<Task, 'file' | 'action'> | undefined;
   let result: Summary | undefined;
@@ -218,26 +214,28 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
 
   const saveFinalSession = (summary: Summary) => {
     try {
-      const base = {
-        id: randomUUID(),
+      const session: Session = {
+        id: sessionId,
         feature,
         startedAt: startTime,
         completedAt: Date.now(),
-        stateVersion: 1,
+        stateVersion: CURRENT_STATE_VERSION,
         stateFile: null,
+        status: sessionStatus,
+        summary,
       };
-      const session: Session = { ...base, status: sessionStatus, summary };
-      saveSession(getSessionDir('project', projectDir), session);
+      saveSummary(projectDir, sessionId, session);
+      clearActive(projectDir);
     } catch (err) {
       warnError('Failed to save final session', err);
     }
   };
 
-  const shutdown = () => shutdownWorkflow(projectDir, () => trackedState, () => currentTask);
+  const shutdown = () => shutdownWorkflow(projectDir, sessionId, () => trackedState, () => currentTask);
 
   const { cancelled } = await withSignalHandlers(shutdown, async () => {
     try {
-      const init = await initializeWorkflow(opts, summaryBase, metadata, (s) => { trackedState = s; });
+      const init = await initializeWorkflow(opts, sessionId, summaryBase, metadata, (s) => { trackedState = s; });
       if (!init.ok) { result = init.summary; return; }
 
       const { wctx } = init;
@@ -260,7 +258,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
       sessionStatus = 'complete';
     } catch (err) {
       if (trackedState) {
-        try { saveState(projectDir, trackedState); } catch (saveErr) {
+        try { saveState(projectDir, sessionId, trackedState); } catch (saveErr) {
           emitWarning(callbacks, labelError('Failed to save state', saveErr));
         }
       }
