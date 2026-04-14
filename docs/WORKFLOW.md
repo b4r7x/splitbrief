@@ -182,7 +182,6 @@ Short list of things that are *not* yet decided and do not have a clear-cut answ
 
 - **Queue prompt format.** How exactly do we fold queued messages into the next planner prompt? A `[user also says: ...]` block at the top? Interleaved in chronological order with the original prompt? Needs empirical testing.
 - **Mid-stream injection UX on Claude Code.** When the user queues a message and we inject it as a native turn, Claude's response may arrive *while* we're still streaming the prior turn. The TUI needs a clear visual separator ("user interjected →", then planner's new chunk). Not yet designed.
-- **Transcript compaction on long sessions.** If a session accumulates hundreds of clarifications and regenerations, `session.jsonl` can grow large and the transcript rebuild on resume could blow past the context window. No automatic compaction today. Likely solution: `/compact-transcript` command that summarises older turns, or auto-summary when transcript token count exceeds a threshold.
 - **Failure semantics of parallel mid-stream dispatch.** If the parallel native-session inject fails (Claude network error), do we fall back to queue-only, or retry the dispatch? Probably queue-only fallback, but needs implementation.
 - **`diptych status` for an aborted session.** Should it show `phase: specifying (awaiting continue)` or just `awaiting-continue`? Cosmetic but affects users' mental model.
 
@@ -191,7 +190,7 @@ Short list of things that are *not* yet decided and do not have a clear-cut answ
 ## Part 3 — See also
 
 - `docs/CONCEPTS.md` — terminology (sessions, queue, awaiting-continue, capability matrix)
-- `docs/ARCHITECTURE.md` — code layers, persistence tables, capability matrix matrix per backend
+- `docs/ARCHITECTURE.md` — code layers, persistence tables, capability matrix per backend
 - `docs/FUTURE.md` — deferred scope: full message-level rewind, Cursor-style snapshot undo, transcript compaction, parallel sessions
 - `docs/STORES.md` — state management details (external stores, zero React Context)
 - `docs/VISION.md` — project identity, anti-goals, strategic direction

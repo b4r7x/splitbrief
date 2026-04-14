@@ -31,7 +31,7 @@ describe('createShellPlanner', () => {
 
   it('escalateHint — success when shell command writes files', async () => {
     const outFile = join(projectDir, 'hint-out.ts');
-    const config = makeConfig({ planner: { kind: 'shell', command: 'bash', args: ['-c', `echo "// hint" > ${outFile}`] } });
+    const config = makeConfig({ planner: { kind: 'shell', command: 'bash', args: ['-c', `echo "// hint" > ${outFile}`], capabilities: { supportsHintEscalation: true } } });
     const planner = createShellPlanner(config);
     const task = makeTask();
     const callbacks = { onOutput: vi.fn() };

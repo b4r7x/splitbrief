@@ -131,7 +131,7 @@ async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boo
   const signal = wctx.signal;
   let { state } = opts;
   const collectedQuestions: ClarificationQuestion[] = [];
-  const conversational = planner.supportsConversationalPlanning === true;
+  const conversational = planner.capabilities.supportsConversationalPlanning;
   const skillsContext = selectedSkills?.length ? await buildSkillsSection(selectedSkills) : undefined;
 
   let planResult: Awaited<ReturnType<Planner['plan']>>;

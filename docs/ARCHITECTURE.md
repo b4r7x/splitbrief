@@ -210,11 +210,27 @@ type PlannerCapabilities = {
 | Backend | Conv. planning | Hint escalation | Session resume | Mid-stream inject |
 |---------|:---:|:---:|:---:|:---:|
 | `cli` claude-code | ✓ | ✗ | ✓ | ✓ |
-| `cli` codex / opencode / aider / copilot / kilo-code | varies | varies | ✗ (today) | ✗ |
-| `api` (any OAI-compat) | ✗ | ✓ | ✗ (stateless) | ✗ |
-| `shell` | ✗ | ✗ | ✗ | ✗ |
-| `agent` | ✗ | ✗ | ✗ | ✗ |
+| `cli` codex / opencode / aider / copilot / kilo-code | ✗ | ✓ | ✗ | ✗ |
+| `api` (any OAI-compat) | ✗ | ✓ | ✗ | ✗ |
+| `shell` (default) | ✗ | ✗ | ✗ | ✗ |
+| `agent` (default) | ✗ | ✗ | ✗ | ✗ |
 | `agent-sdk` | ✓ | ✗ | ✓ | ✓ |
+
+`shell` and `agent` defaults are all-false but can be overridden per-project via config:
+
+```yaml
+planner:
+  kind: shell
+  command: claude-zai
+  args: ["-p", "--output-format", "stream-json"]
+  outputFormat: stream-json
+  capabilities:
+    supportsConversationalPlanning: true
+    supportsSessionResume: true
+    supportsMidStreamInjection: true
+```
+
+`cli`, `api`, and `agent-sdk` kinds have hardcoded capabilities; the `capabilities` config key is rejected by schema validation for those kinds.
 
 When a capability is missing, the orchestrator falls back:
 

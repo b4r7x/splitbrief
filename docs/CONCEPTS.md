@@ -30,7 +30,7 @@ The "smart" side. Its responsibilities, in order:
 5. **Review** the full diff at the end against the original spec.
 6. **Escalate** — when the implementer fails a task 3× in a row, the planner either hints or takes over and fixes the task itself.
 
-The planner also supports **clarifying questions**: it can pause and ask the user questions before finalizing the spec (only for backends that support this — see `supportsConversationalPlanning` flag in `src/engine/planners/types.ts`).
+The planner also supports **clarifying questions**: it can pause and ask the user questions before finalizing the spec (only for backends that support this — see `capabilities.supportsConversationalPlanning` on `Planner` in `src/engine/planners/types.ts`).
 
 ### Implementer
 
