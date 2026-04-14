@@ -10,8 +10,8 @@ describe('resolveModelCatalog', () => {
 
   it('returns Claude Code aliases instead of stale pinned fallbacks', () => {
     const ids = resolveModelCatalog('claude-code').map((entry) => entry.id);
-    expect(ids).toEqual(expect.arrayContaining(['default', 'sonnet', 'opus', 'opusplan']));
-    expect(ids).not.toContain('auto');
+    expect(ids).toEqual(expect.arrayContaining(['auto', 'sonnet', 'opus', 'opusplan']));
+    expect(ids).not.toContain('default');
     expect(ids).not.toContain('claude-opus-4-1-20250805');
   });
 
@@ -47,7 +47,7 @@ describe('resolveModelCatalog', () => {
     });
 
     const models = resolveModelCatalog('claude-code', modelCacheStore);
-    expect(models.some((entry) => entry.id === 'default')).toBe(true);
+    expect(models.some((entry) => entry.id === 'auto')).toBe(true);
     expect(models.some((entry) => entry.id === 'claude-sonnet-4-6')).toBe(true);
     expect(models.some((entry) => entry.id === 'claude-opus-4-6')).toBe(true);
     expect(models.some((entry) => entry.id === 'claude-haiku-4-5')).toBe(false);
@@ -78,23 +78,13 @@ describe('resolveModelCatalog', () => {
     expect(models.find((entry) => entry.id === 'claude-sonnet-4-6')?.pricingInput).toBe(3);
   });
 
-  it('maps agent-sdk catalog through anthropic models.dev data', () => {
-    modelCacheStore.setModelsDevCatalog({
-      anthropic: {
-        id: 'anthropic',
-        models: {
-          'claude-sonnet-4-6': {
-            id: 'claude-sonnet-4-6',
-            cost: { input: 3, output: 15 },
-            limit: { context: 1_000_000 },
-          },
-        },
-      },
-    });
-
+  it('includes bundled agent-sdk models without pricing (agent-sdk is unpriced-meta)', () => {
+    // agent-sdk is classified as unpriced-meta — pricing is stripped from catalog entries.
+    // Bundled models from KNOWN_MODELS are still present for model selection purposes.
     const models = resolveModelCatalog('agent-sdk', modelCacheStore);
     expect(models.some((entry) => entry.id === 'claude-sonnet-4-6')).toBe(true);
-    expect(models.find((entry) => entry.id === 'claude-sonnet-4-6')?.pricingInput).toBe(3);
+    expect(models.find((entry) => entry.id === 'claude-sonnet-4-6')?.pricingInput).toBeUndefined();
+    expect(models.find((entry) => entry.id === 'claude-sonnet-4-6')?.pricingMode).toBe('unpriced-meta');
   });
 
   it('hydrates codex catalog from filtered openai models.dev entries', () => {

@@ -39,9 +39,11 @@ export function usePickerActions(
       onConfirm(updated);
       return;
     }
-    configStore.save(updated);
-    feedbackStore.setMessage(message);
-    overlayStore.close();
+    const saved = configStore.save(updated);
+    if (saved) {
+      feedbackStore.setMessage(message);
+      overlayStore.close();
+    }
   };
 
   const commandBasedIndex = catalog.items.findIndex(item => item.kind === 'shell' || item.kind === 'agent');
@@ -67,8 +69,8 @@ export function usePickerActions(
     },
     deleteRight(item: ModelOption) {
       const updated = removeCustomModel(config, role, item.id);
-      configStore.save(updated);
-      feedbackStore.setMessage(`Removed custom model: ${item.id}`);
+      const saved = configStore.save(updated);
+      if (saved) feedbackStore.setMessage(`Removed custom model: ${item.id}`);
     },
     customCommand(cmd: string) {
       if (viewState.view.kind !== 'custom-command') {

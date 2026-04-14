@@ -7,6 +7,10 @@ describe('formatModelName', () => {
       expect(formatModelName('')).toBe('');
     });
 
+    it('formats default as capitalized word (no longer special case)', () => {
+      expect(formatModelName('default')).toBe('Default');
+    });
+
     it('returns the ID unchanged for single-word unknown model', () => {
       expect(formatModelName('custom')).toBe('Custom');
     });

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { runCommand, isENOENT, spawnWithTimeout, spawnWithStdin, createProcessError } from './process.js';
+import { runCommand, spawnWithTimeout, spawnWithStdin } from './process.js';
+import { isENOENT, createProcessError } from './process-errors.js';
 import { getActiveProcessCount } from './process-lifecycle.js';
 describe('runCommand', () => {
   it('resolves with stdout, stderr, and exit code', async () => {

@@ -3,9 +3,11 @@ import { includes } from '../../../utils/type-guards.js';
 
 // Semantic provider groups — CLI tools, API providers, local servers, meta
 export const CLI_TOOL_IDS = ['claude-code', 'codex', 'opencode', 'aider', 'copilot', 'kilo-code'] as const;
-export const API_PROVIDER_IDS = ['agent-sdk', 'anthropic', 'openrouter', 'deepseek', 'openai', 'groq', 'together'] as const;
+// API_PROVIDER_IDS: cloud-priced API providers only. agent-sdk is NOT here — it is unpriced (no per-token billing).
+export const API_PROVIDER_IDS = ['anthropic', 'openrouter', 'deepseek', 'openai', 'groq', 'together'] as const;
 export const LOCAL_PROVIDER_IDS = ['ollama', 'lm-studio'] as const;
-export const META_PROVIDER_IDS = ['shell'] as const;
+// META_PROVIDER_IDS: runners that are neither CLI tools nor priced APIs — shell, agent, agent-sdk.
+export const META_PROVIDER_IDS = ['shell', 'agent', 'agent-sdk'] as const;
 
 // Complete list for backward compatibility — must enumerate all values explicitly
 // for TypeScript to infer the correct tuple type for z.enum()
@@ -29,7 +31,7 @@ export const PROVIDER_IDS = [
   'agent',
 ] as const;
 
-// Planner-only tools: CLI tools + API providers + shell. Excludes local-only providers (ollama, lm-studio).
+// Planner-only tools: CLI tools + API providers + shell + agent. Excludes local-only providers (ollama, lm-studio).
 export const PLANNER_TOOL_IDS = [
   'claude-code',
   'codex',
@@ -45,6 +47,7 @@ export const PLANNER_TOOL_IDS = [
   'groq',
   'together',
   'shell',
+  'agent',
 ] as const;
 
 export type CliToolId = (typeof CLI_TOOL_IDS)[number];
@@ -104,7 +107,5 @@ export const RunnerKindSchema = z.enum(RUNNER_KINDS);
 export type RunnerKind = z.infer<typeof RunnerKindSchema>;
 
 // API provider categories
-const CLOUD_API_PROVIDERS = ['anthropic', 'openrouter', 'deepseek', 'openai', 'groq', 'together'] as const;
-const LOCAL_API_PROVIDERS = ['ollama', 'lm-studio'] as const;
-export const KNOWN_API_PROVIDERS = [...LOCAL_API_PROVIDERS, ...CLOUD_API_PROVIDERS] as const;
+export const KNOWN_API_PROVIDERS = [...LOCAL_PROVIDER_IDS, ...API_PROVIDER_IDS] as const;
 

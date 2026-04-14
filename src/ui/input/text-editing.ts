@@ -42,7 +42,9 @@ export function findVisualLineStart(value: string, cursor: number, columns: numb
 
   let offset = 0;
   for (let i = 0; i < visualLines.length; i++) {
-    const lineLen = visualLines[i]!.length;
+    const line = visualLines[i];
+    if (line === undefined) continue;
+    const lineLen = line.length;
     const isLast = i === visualLines.length - 1;
     if (cursorInLine < offset + lineLen || (isLast && cursorInLine <= offset + lineLen)) {
       break;
@@ -162,7 +164,9 @@ export function navigateVertically(
   const newCol = Math.min(col, targetLine.length);
   let newIndex = 0;
   for (let i = 0; i < targetLineIndex; i++) {
-    newIndex += lines[i]!.length + 1;
+    const line = lines[i];
+    if (line === undefined) continue;
+    newIndex += line.length + 1;
   }
   return newIndex + newCol;
 }

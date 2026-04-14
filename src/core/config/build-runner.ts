@@ -1,4 +1,4 @@
-import { CLI_TOOL_IDS, RUNNER_KINDS } from '../types/schemas/enums.js';
+import { CLI_TOOL_IDS, KNOWN_API_PROVIDERS } from '../types/schemas/enums.js';
 import { includes } from '../../utils/type-guards.js';
 import { resolveDefaultApiBase } from '../providers.js';
 import { PlannerConfigSchema } from '../types/schemas/planner-config.js';
@@ -26,6 +26,16 @@ export interface BuildRunnerOpts {
   existing?: PlannerConfig | ImplementerConfig | undefined;
 }
 
+type Builder = (role: Role, opts: BuildRunnerOpts) => PlannerConfig | ImplementerConfig;
+
+const BUILDERS: Record<RunnerKind, Builder> = {
+  cli: buildCliConfig,
+  api: buildApiConfig,
+  shell: (role, opts) => buildCommandConfig(role, opts, 'shell'),
+  agent: (role, opts) => buildCommandConfig(role, opts, 'agent'),
+  'agent-sdk': buildAgentSdkConfig,
+};
+
 export function buildRunnerConfig(role: 'planner', opts: BuildRunnerOpts): PlannerConfig;
 export function buildRunnerConfig(role: 'implementer', opts: BuildRunnerOpts): ImplementerConfig;
 export function buildRunnerConfig(
@@ -33,21 +43,8 @@ export function buildRunnerConfig(
   opts: BuildRunnerOpts
 ): PlannerConfig | ImplementerConfig {
   const kind = inferKind(role, opts);
-
-  switch (kind) {
-    case 'cli':
-      return buildCliConfig(role, opts);
-    case 'api':
-      return buildApiConfig(role, opts);
-    case 'shell':
-      return buildCommandConfig(role, opts, 'shell');
-    case 'agent':
-      return buildCommandConfig(role, opts, 'agent');
-    case 'agent-sdk':
-      return buildAgentSdkConfig(role, opts);
-    default:
-      throw new Error(`${role}: unknown runner kind '${kind}'. Expected one of: ${RUNNER_KINDS.join(', ')}.`);
-  }
+  const builder = BUILDERS[kind];
+  return builder(role, opts);
 }
 
 interface GenerationParams {
@@ -85,16 +82,59 @@ function assertModelPresent(role: Role, model: string | undefined): void {
   }
 }
 
+export function inferKindFromTool(tool: string): RunnerKind {
+  if (tool === 'shell') return 'shell';
+  if (tool === 'agent') return 'agent';
+  if (tool === 'agent-sdk') return 'agent-sdk';
+  if (includes(CLI_TOOL_IDS, tool)) return 'cli';
+  return 'api';
+}
+
 function inferKind(role: Role, opts: BuildRunnerOpts): RunnerKind {
   if (opts.kind) return opts.kind;
-  if (opts.tool && includes(CLI_TOOL_IDS, opts.tool))
-    return 'cli';
+  if (opts.tool) return inferKindFromTool(opts.tool);
   if (opts.apiBase) return 'api';
   if (opts.command) return 'shell';
   if (opts.existing?.kind) return opts.existing.kind;
   throw new Error(
     `Cannot infer runner kind for ${role}: need one of 'kind', 'tool', 'apiBase', 'command', or 'existing' to be provided. Got: ${JSON.stringify(opts)}`
   );
+}
+
+function parseRunnerConfig(
+  role: Role,
+  config: Record<string, unknown>,
+): PlannerConfig | ImplementerConfig {
+  return role === 'planner'
+    ? PlannerConfigSchema.parse(config)
+    : ImplementerConfigSchema.parse(config);
+}
+
+function getExistingApiBase(
+  existing: PlannerConfig | ImplementerConfig | undefined,
+  provider: string,
+): string | undefined {
+  return existing?.kind === 'api' && existing.provider === provider
+    ? existing.apiBase
+    : undefined;
+}
+
+function getExistingApiKey(
+  existing: PlannerConfig | ImplementerConfig | undefined,
+  nextKind: 'api' | 'agent-sdk',
+  provider?: string,
+): string | undefined {
+  if (!existing) return undefined;
+  if (existing.kind === 'agent-sdk') {
+    return nextKind === 'agent-sdk' || provider === 'anthropic'
+      ? existing.apiKey
+      : undefined;
+  }
+  if (existing.kind !== 'api') return undefined;
+  if (nextKind === 'agent-sdk') {
+    return existing.provider === 'anthropic' ? existing.apiKey : undefined;
+  }
+  return existing.provider === provider ? existing.apiKey : undefined;
 }
 
 function buildCliConfig(
@@ -119,7 +159,7 @@ function buildCliConfig(
     ...spreadGenParams(gen),
   };
 
-  return role === 'planner' ? PlannerConfigSchema.parse(config) : ImplementerConfigSchema.parse(config);
+  return parseRunnerConfig(role, config);
 }
 
 function buildApiConfig(
@@ -127,17 +167,17 @@ function buildApiConfig(
   opts: BuildRunnerOpts
 ): PlannerConfig | ImplementerConfig {
   const provider = opts.tool || (role === 'implementer' ? 'ollama' : 'anthropic');
-  const existingApiBase = opts.existing?.kind === 'api' ? opts.existing.apiBase : undefined;
+  const existingApiBase = getExistingApiBase(opts.existing, provider);
   const apiBase = opts.apiBase || existingApiBase || resolveDefaultApiBase(provider);
 
   if (!apiBase) {
     throw new Error(
       `Unknown provider '${provider}' requires explicit apiBase. ` +
-        `Known providers: ollama, lm-studio, anthropic, openrouter, deepseek`
+        `Known providers: ${KNOWN_API_PROVIDERS.join(', ')}`
     );
   }
 
-  const existingApiKey = opts.existing?.kind === 'api' || opts.existing?.kind === 'agent-sdk' ? opts.existing.apiKey : undefined;
+  const existingApiKey = getExistingApiKey(opts.existing, 'api', provider);
   const gen = resolveGenerationParams(opts);
   assertModelPresent(role, gen.model);
 
@@ -149,7 +189,7 @@ function buildApiConfig(
     ...spreadGenParams(gen),
   };
 
-  return role === 'planner' ? PlannerConfigSchema.parse(config) : ImplementerConfigSchema.parse(config);
+  return parseRunnerConfig(role, config);
 }
 
 function buildCommandConfig(
@@ -170,14 +210,14 @@ function buildCommandConfig(
     ...spreadGenParams(gen),
   };
 
-  return role === 'planner' ? PlannerConfigSchema.parse(config) : ImplementerConfigSchema.parse(config);
+  return parseRunnerConfig(role, config);
 }
 
 function buildAgentSdkConfig(
   role: Role,
   opts: BuildRunnerOpts
 ): PlannerConfig | ImplementerConfig {
-  const existingApiKey = opts.existing?.kind === 'api' || opts.existing?.kind === 'agent-sdk' ? opts.existing.apiKey : undefined;
+  const existingApiKey = getExistingApiKey(opts.existing, 'agent-sdk');
   const gen = resolveGenerationParams(opts);
   assertModelPresent(role, gen.model);
 
@@ -187,5 +227,5 @@ function buildAgentSdkConfig(
     ...spreadGenParams(gen),
   };
 
-  return role === 'planner' ? PlannerConfigSchema.parse(config) : ImplementerConfigSchema.parse(config);
+  return parseRunnerConfig(role, config);
 }

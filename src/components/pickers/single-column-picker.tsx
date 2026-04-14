@@ -18,7 +18,6 @@ interface SingleColumnPickerProps<T> {
   placeholderWhenEmpty?: ReactNode;
   hideFilterRow?: boolean;
   customFilterPrompt?: ReactNode;
-  footer?: ReactNode;
 }
 
 export function SingleColumnPicker<T>({
@@ -35,7 +34,6 @@ export function SingleColumnPicker<T>({
   placeholderWhenEmpty,
   hideFilterRow,
   customFilterPrompt,
-  footer,
 }: SingleColumnPickerProps<T>) {
   const t = useTheme();
 
@@ -57,7 +55,7 @@ export function SingleColumnPicker<T>({
       <Text bold color={isActive ? t.accent : t.textDim}>{label}</Text>
 
       {!hideFilterRow && (
-        <Box marginBottom={1}>
+        <Box>
           <Text color={isActive ? t.accent : t.textDim}>{'> '}</Text>
           {customFilterPrompt ?? (filter
             ? <Text color={t.text}>{filter}</Text>
@@ -65,9 +63,7 @@ export function SingleColumnPicker<T>({
         </Box>
       )}
 
-      {!hideFilterRow && (showScrollUp
-        ? <ScrollIndicator show direction="up" />
-        : <Text>{' '}</Text>)}
+      {!hideFilterRow && showScrollUp && <ScrollIndicator show direction="up" />}
 
       {items.length === 0 ? (
         placeholderWhenEmpty ?? <Text color={t.textDim}>No items</Text>
@@ -85,8 +81,6 @@ export function SingleColumnPicker<T>({
           );
         })
       )}
-
-      {footer}
 
       {!hideFilterRow && (showScrollDown
         ? <ScrollIndicator show direction="down" />

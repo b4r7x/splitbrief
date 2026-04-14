@@ -1,4 +1,4 @@
-import { TASK_FORMAT_EXAMPLE, buildPrompt } from './_shared.js';
+import { TASK_FORMAT_EXAMPLE, buildPrompt } from './shared.js';
 
 export function buildTasksPrompt(spec: string, plan: string): string {
   return buildPrompt({

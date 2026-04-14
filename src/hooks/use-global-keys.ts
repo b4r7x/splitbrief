@@ -7,9 +7,9 @@ import { workflowStore } from '../stores/workflow.js';
 import { reviewStore } from '../stores/review.js';
 import { conversationScrollStore } from '../stores/conversation-scroll.js';
 import { inputModeStore } from '../stores/input-mode.js';
-import { killAllProcesses } from '../utils/process.js';
+import { killAllProcesses } from '../utils/process-lifecycle.js';
 import { CANCELLABLE_PHASES } from '../core/phases.js';
-import { findLatestDiffEventIndex } from '../core/event-sections.js';
+import { findLatestDiffEventIndex } from '../components/conversation-flow/section-heights.js';
 import { terminalSizeStore } from '../stores/terminal-size.js';
 import type { KeyAction } from './keyboard-handlers.js';
 import {
@@ -27,7 +27,7 @@ function applyAction(action: KeyAction, exit: () => void) {
   switch (action.type) {
     case 'none': return;
     case 'exit': exit(); return;
-    case 'cancel-workflow': workflowStore.requestCancel(); return;
+    case 'cancel-workflow': if (workflowStore.requestCancel()) { try { killAllProcesses(); } catch { /* best-effort */ } } return;
     case 'navigate': routerStore.navigate(action.screen); return;
     case 'open-overlay': overlayStore.open(action.overlay); return;
     case 'toggle-sidebar': workflowStore.toggleSidebar(); return;
@@ -57,8 +57,13 @@ export function useGlobalKeys({ exit }: { exit: () => void }) {
     lastCtrlCRef.current = Date.now();
     if (screen === 'workflow') {
       const { cancelled } = workflowStore.get();
-      if (!cancelled) workflowStore.requestCancel();
-      else killAllProcesses();
+      if (!cancelled) {
+        if (workflowStore.requestCancel()) {
+          try { killAllProcesses(); } catch { /* best-effort */ }
+        }
+      } else {
+        killAllProcesses();
+      }
       feedbackStore.setError('Cancelling workflow... Ctrl+C to exit');
     } else {
       feedbackStore.setError('Press Ctrl+C again to exit');

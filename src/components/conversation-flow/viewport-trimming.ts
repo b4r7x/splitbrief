@@ -1,5 +1,5 @@
 import type { Section } from '../../core/event-sections.js';
-import { estimateSectionHeight } from '../../core/event-sections.js';
+import { estimateSectionHeight } from './section-heights.js';
 
 export type DynamicSection = Extract<Section, { type: 'events' | 'active-task' }>;
 
@@ -29,7 +29,8 @@ export function trimSectionsToViewport(
   let skipLines = scrollOffset;
 
   for (let i = sections.length - 1; i >= 0 && remainingHeight > 0; i--) {
-    const section = sections[i]!;
+    const section = sections[i];
+    if (section === undefined) continue;
     const sectionHeight = estimateSectionHeight(section, expandedDiffs);
 
     if (skipLines >= sectionHeight) {

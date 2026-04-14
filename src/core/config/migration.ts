@@ -1,6 +1,8 @@
-import { CLI_TOOL_IDS } from '../types/schemas/enums.js';
+import { CLI_TOOL_IDS, RUNNER_KINDS } from '../types/schemas/enums.js';
+import { getRunnerKindMeta } from '../types/schemas/runner-fields.js';
 import { resolveDefaultApiBase } from '../providers.js';
 import { narrowRecord, includes } from '../../utils/type-guards.js';
+import type { RunnerKind } from '../types/schemas/enums.js';
 
 export function migrateConfig(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object') {
@@ -67,84 +69,69 @@ function migrateRunnerV1ToV2(role: 'planner' | 'implementer', raw: unknown): unk
   const apiBase = typeof runner.apiBase === 'string' ? runner.apiBase : undefined;
 
   // Infer the new kind
-  const kind = inferLegacyKind(legacyKind, tool, command, apiBase);
+  const kind = inferLegacyKind(legacyKind, tool, command, apiBase, role);
 
-  switch (kind) {
-    case 'cli':
-      return {
-        kind: 'cli',
-        tool: tool || legacyKind, // legacy used kind as tool name
-        ...pickCommonFields(runner),
-        ...pickArgsOutputFormat(runner),
-      };
-
-    case 'api': {
-      // provider comes from new 'provider' field, or legacy 'tool', or default
-      const providerField = typeof runner.provider === 'string' ? runner.provider : undefined;
-      const provider = providerField || tool || (role === 'implementer' ? 'ollama' : 'anthropic');
-
-      const resolvedApiBase = apiBase || resolveDefaultApiBase(provider);
-      if (!resolvedApiBase) {
-        throw new Error(
-          `${role}: Unknown provider '${provider}' requires explicit apiBase. ` +
-            `Known providers: ollama, lm-studio, anthropic, openrouter, deepseek`
-        );
-      }
-
-      const apiKeyValue = typeof runner.apiKey === 'string' ? runner.apiKey : undefined;
-      return {
-        kind: 'api',
-        provider,
-        apiBase: resolvedApiBase,
-        ...(apiKeyValue && { apiKey: apiKeyValue }),
-        ...pickCommonFields(runner),
-      };
-    }
-
-    case 'shell':
-      if (!command) {
-        throw new Error(`${role} shell kind requires 'command' field`);
-      }
-      return {
-        kind: 'shell',
-        command,
-        ...pickCommonFields(runner),
-        ...pickArgsOutputFormat(runner),
-      };
-
-    case 'agent':
-      if (!command) {
-        throw new Error(`${role} agent kind requires 'command' field`);
-      }
-      return {
-        kind: 'agent',
-        command,
-        ...pickCommonFields(runner),
-        ...pickArgsOutputFormat(runner),
-      };
-
-    case 'agent-sdk': {
-      const sdkApiKey = typeof runner.apiKey === 'string' ? runner.apiKey : undefined;
-      return {
-        kind: 'agent-sdk',
-        ...(sdkApiKey && { apiKey: sdkApiKey }),
-        ...pickCommonFields(runner),
-      };
-    }
-
-    default:
-      throw new Error(`${role}: Unknown kind '${kind}'`);
+  // cli and api have unique migration logic
+  if (kind === 'cli') {
+    // Planners with no explicit tool/kind default to claude-code
+    const resolvedTool = tool || legacyKind || (role === 'planner' ? 'claude-code' : undefined);
+    return {
+      kind: 'cli',
+      tool: resolvedTool,
+      ...pickCommonFields(runner),
+      ...pickArgsOutputFormat(runner),
+    };
   }
+
+  if (kind === 'api') {
+    const providerField = typeof runner.provider === 'string' ? runner.provider : undefined;
+    const provider = providerField || tool || (role === 'implementer' ? 'ollama' : 'anthropic');
+
+    const resolvedApiBase = apiBase || resolveDefaultApiBase(provider);
+    if (!resolvedApiBase) {
+      throw new Error(
+        `${role}: Unknown provider '${provider}' requires explicit apiBase. ` +
+          `Known providers: ollama, lm-studio, anthropic, openrouter, deepseek`
+      );
+    }
+
+    const apiKeyValue = typeof runner.apiKey === 'string' ? runner.apiKey : undefined;
+    return {
+      kind: 'api',
+      provider,
+      apiBase: resolvedApiBase,
+      ...(apiKeyValue && { apiKey: apiKeyValue }),
+      ...pickCommonFields(runner),
+    };
+  }
+
+  // All other kinds are descriptor-driven
+  const meta = getRunnerKindMeta(kind);
+
+  if (meta.requiresCommand && !command) {
+    throw new Error(`${role} ${kind} kind requires 'command' field`);
+  }
+
+  const result: Record<string, unknown> = { kind };
+  if (meta.requiresCommand) result.command = command;
+  if (meta.usesApiKey) {
+    const apiKeyValue = typeof runner.apiKey === 'string' ? runner.apiKey : undefined;
+    if (apiKeyValue) result.apiKey = apiKeyValue;
+  }
+  Object.assign(result, pickCommonFields(runner));
+  if (meta.usesArgsOutputFormat) Object.assign(result, pickArgsOutputFormat(runner));
+  return result;
 }
 
 function inferLegacyKind(
   legacyKind: string | undefined,
   tool: string | undefined,
   command: string | undefined,
-  apiBase: string | undefined
-): string {
+  apiBase: string | undefined,
+  role: 'planner' | 'implementer',
+): RunnerKind {
   // New v2 kinds pass through
-  if (legacyKind && ['cli', 'api', 'shell', 'agent', 'agent-sdk'].includes(legacyKind)) {
+  if (legacyKind && includes(RUNNER_KINDS, legacyKind)) {
     return legacyKind;
   }
 
@@ -158,8 +145,8 @@ function inferLegacyKind(
   if (apiBase) return 'api';
   if (command) return 'shell';
 
-  // Default to api
-  return 'api';
+  // Default: planners fall back to cli (claude-code); implementers fall back to api (ollama)
+  return role === 'planner' ? 'cli' : 'api';
 }
 
 function pickCommonFields(runner: Record<string, unknown>): Record<string, unknown> {

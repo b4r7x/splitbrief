@@ -8,9 +8,10 @@ import { extractCode } from '../parsers/response-extractor.js';
 import { applyCode } from './apply.js';
 import { computeDiff } from '../../utils/diff.js';
 import { SYSTEM_PREAMBLE, formatTaskPrompt, formatRetryPrompt } from '../spec/formatter.js';
-import { CommandNotFoundError } from '../../utils/process.js';
+import { CommandNotFoundError } from '../../utils/process-errors.js';
 import { extractOutput, retryTemperature, type InvokeOpts } from './utils.js';
 import { DEFAULT_AVAILABILITY } from '../../utils/availability.js';
+import { getChangedFiles } from '../../utils/git.js';
 
 type GenEventEmitter = (status: 'running' | 'done' | 'failed', extra?: Record<string, unknown>) => void;
 
@@ -52,7 +53,7 @@ async function processImplementerOutput(
     return { success: false, error: extractResult.error };
   }
 
-  const applyResult = applyCode(extractResult.code, task, projectDir);
+  const applyResult = await applyCode(extractResult.code, task, projectDir);
 
   if (!applyResult.success) {
     return { success: false, error: applyResult.error ?? 'Failed to apply code' };
@@ -77,7 +78,7 @@ export interface ImplementerBaseConfig {
   buildPrompt?(opts: ImplementerOptions): string;
   buildRetryPrompt?(opts: RetryOptions): string;
 
-  detectChanges?(projectDir: string): Promise<{ changed: boolean; output: string }>;
+  detectChanges?(projectDir: string, before: string[]): Promise<{ changed: boolean; output: string }>;
   retryTemperatureStep?: number;
   shouldThrow?(err: unknown): boolean;
 
@@ -113,6 +114,11 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       oldContent = await readFileOrEmpty(join(projectDir, task.file));
     }
 
+    let filesBefore: string[] = [];
+    if (!baseConfig.extractsCode && baseConfig.detectChanges) {
+      filesBefore = await getChangedFiles(projectDir);
+    }
+
     let invokeResult: InvokeResult;
     try {
       invokeResult = await baseConfig.invoke({
@@ -139,10 +145,10 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       }
 
       if (baseConfig.detectChanges) {
-        const changes = await baseConfig.detectChanges(projectDir);
+        const changes = await baseConfig.detectChanges(projectDir, filesBefore);
         if (!changes.changed) {
           emitGenEvent('failed');
-          return { success: false, output: invokeResult.text, error: changes.output };
+          return { success: false, output: invokeResult.text, error: changes.output, ...usageField };
         }
       }
     } catch (err) {

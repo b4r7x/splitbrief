@@ -5,11 +5,12 @@ import type { SlashCommandDef } from '../../types.js';
 interface SlashSuggestionsProps {
   filtered: SlashCommandDef[];
   selectedIndex: number;
+  fuzzyMatch?: SlashCommandDef | null;
 }
 
-export function SlashSuggestions({ filtered, selectedIndex }: SlashSuggestionsProps) {
+export function SlashSuggestions({ filtered, selectedIndex, fuzzyMatch }: SlashSuggestionsProps) {
   const t = useTheme();
-  if (filtered.length === 0) return null;
+  if (filtered.length === 0 && !fuzzyMatch) return null;
 
   return (
     <Box
@@ -44,6 +45,17 @@ export function SlashSuggestions({ filtered, selectedIndex }: SlashSuggestionsPr
           </Box>
         );
       })}
+      {fuzzyMatch && filtered.length === 0 && (
+        <Box paddingX={1}>
+          <Text color={t.textDim}>{'▸'}</Text>
+          <Text> </Text>
+          <Box width={14}>
+            <Text color={t.textDim}>{fuzzyMatch.name}</Text>
+          </Box>
+          <Text color={t.textDim}>{fuzzyMatch.description}</Text>
+          <Text color={t.textDim}> (fuzzy)</Text>
+        </Box>
+      )}
       <Box justifyContent="center" paddingTop={1}>
         <Text color={t.textDim}>↑↓ select  Enter run  Tab fill  Esc close</Text>
       </Box>

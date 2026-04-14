@@ -1,7 +1,7 @@
 import { createStore, storeBase } from './create-store.js';
-import { loadConfig, writeConfig, buildRunnerConfig, type BuildRunnerOpts } from '../core/config/index.js';
+import { loadConfig, writeConfig, buildRunnerConfig, inferKindFromTool, type BuildRunnerOpts } from '../core/config/index.js';
 import { feedbackStore } from './feedback.js';
-import { toErrorMessage } from '../utils/format.js';
+import { labelError } from '../utils/format.js';
 import { WORKFLOW_MODES } from '../types.js';
 import type { Config, PlannerConfig, ImplementerConfig } from '../types.js';
 import { includes } from '../utils/type-guards.js';
@@ -29,13 +29,7 @@ const empty: ConfigState = {
 
 const store = createStore<ConfigState>(empty);
 
-interface PlannerOverrides {
-  tool?: string | undefined;
-  model?: string | undefined;
-  command?: string | undefined;
-}
-
-interface ImplementerOverrides {
+interface RunnerOverrides {
   tool?: string | undefined;
   model?: string | undefined;
   command?: string | undefined;
@@ -59,43 +53,23 @@ function existingToOpts(existing: PlannerConfig | ImplementerConfig): BuildRunne
   return { kind: 'agent-sdk', ...('apiKey' in existing && { apiKey: existing.apiKey }) };
 }
 
-function applyPlannerOverrides(config: Config, overrides: PlannerOverrides): Config {
-  const { tool, model, command } = overrides;
-  if (tool === undefined && model === undefined && command === undefined) {
-    return config;
-  }
-
-  // tool='shell' is a special sentinel meaning "switch to shell kind with the given command"
-  // buildRunnerConfig does not treat 'shell' as a CLI tool id, so we map it to kind explicitly
-  const opts: BuildRunnerOpts = {
-    ...existingToOpts(config.planner),
-    ...(tool === 'shell' ? { kind: 'shell' } : { tool }),
-    ...(model !== undefined && { model }),
-    ...(command !== undefined && { command }),
-    existing: config.planner,
-  };
-
-  const newPlanner = buildRunnerConfig('planner', opts);
-  return { ...config, planner: newPlanner };
-}
-
-function applyImplementerOverrides(config: Config, overrides: ImplementerOverrides): Config {
+function applyOverrides(role: 'planner' | 'implementer', overrides: RunnerOverrides, config: Config): Config {
   const { tool, model, command, contextLength } = overrides;
   if (tool === undefined && model === undefined && command === undefined && contextLength === undefined) {
     return config;
   }
 
+  const existing = config[role];
   const opts: BuildRunnerOpts = {
-    ...existingToOpts(config.implementer),
-    ...(tool === 'shell' ? { kind: 'shell' } : { tool }),
+    ...(tool === undefined ? existingToOpts(existing) : { kind: inferKindFromTool(tool), tool }),
     ...(model !== undefined && { model }),
     ...(command !== undefined && { command }),
     ...(contextLength !== undefined && { contextLength }),
-    existing: config.implementer,
+    existing,
   };
 
-  const newImplementer = buildRunnerConfig('implementer', opts);
-  return { ...config, implementer: newImplementer };
+  const updated = role === 'planner' ? buildRunnerConfig('planner', opts) : buildRunnerConfig('implementer', opts);
+  return { ...config, [role]: updated };
 }
 
 // load() throws on invalid config — startup error that must be fixed before
@@ -103,19 +77,19 @@ function applyImplementerOverrides(config: Config, overrides: ImplementerOverrid
 function load(projectDir: string, overrides: CLIOverrides = {}) {
   let config = structuredClone(loadConfig(projectDir));
   if (overrides.planner) {
-    config = applyPlannerOverrides(config, {
+    config = applyOverrides('planner', {
       ...(overrides.planner.tool !== undefined && { tool: overrides.planner.tool }),
       ...(overrides.planner.model !== undefined && { model: overrides.planner.model }),
       ...(overrides.planner.command !== undefined && { command: overrides.planner.command }),
-    });
+    }, config);
   }
   if (overrides.implementer || overrides.contextLength !== undefined) {
-    config = applyImplementerOverrides(config, {
+    config = applyOverrides('implementer', {
       ...(overrides.contextLength !== undefined && { contextLength: overrides.contextLength }),
       ...(overrides.implementer?.tool !== undefined && { tool: overrides.implementer.tool }),
       ...(overrides.implementer?.model !== undefined && { model: overrides.implementer.model }),
       ...(overrides.implementer?.command !== undefined && { command: overrides.implementer.command }),
-    });
+    }, config);
   }
   if (overrides.autoApprove !== undefined) {
     config.workflow.autoApproveSpec = overrides.autoApprove;
@@ -141,16 +115,19 @@ function reload() {
   load(projectDir, overrides);
 }
 
-// save() uses feedbackStore for errors — runtime issue the user can address
-// (e.g., disk full, permissions). The TUI continues running.
-function save(updated: Config) {
+// save() returns true on success, false on failure.
+// On failure it populates feedbackStore with the error — runtime issue the user
+// can address (e.g., disk full, permissions). The TUI continues running.
+function save(updated: Config): boolean {
   const { projectDir } = store.get();
   if (!projectDir) throw new Error('configStore.load must be called before save');
   try {
     writeConfig(projectDir, updated);
     store.set(s => ({ ...s, config: updated }));
+    return true;
   } catch (err) {
-    feedbackStore.setError(`Failed to save config: ${toErrorMessage(err)}`);
+    feedbackStore.setError(labelError('Failed to save config', err));
+    return false;
   }
 }
 
@@ -166,7 +143,7 @@ function setContextLength(contextLength: number) {
     if (s.config.implementer.contextLength === contextLength) return s;
     return {
       ...s,
-      config: applyImplementerOverrides(s.config, { contextLength }),
+      config: applyOverrides('implementer', { contextLength }, s.config),
     };
   });
 }

@@ -8,8 +8,7 @@ interface LayoutProps {
 }
 
 export function Layout({ screen, overlay }: LayoutProps) {
-  const cols = terminalSizeStore.use(s => s.cols);
-  const rows = terminalSizeStore.use(s => s.rows);
+  const { cols, rows } = terminalSizeStore.use(s => s);
   const hasOverlay = overlay !== null;
 
   return (

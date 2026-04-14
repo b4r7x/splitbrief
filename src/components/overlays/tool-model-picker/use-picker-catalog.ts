@@ -7,11 +7,11 @@ import { normalizeConfiguredModel } from '../../../core/providers.js';
 import {
   buildPlannerPickerOptions,
   buildImplementerPickerOptions,
-  buildRightModels,
   isCurrentConfig,
   type PickerOption,
   type ModelOption,
 } from './picker-catalog.js';
+import { buildRightModelsForPicker } from './catalog-adapter.js';
 
 export interface PickerCatalog {
   items: PickerOption[];
@@ -22,6 +22,7 @@ export interface PickerCatalog {
   roleLabel: string;
   currentModel: string | undefined;
   currentCommand: string | undefined;
+  currentCommandKind: 'shell' | 'agent' | undefined;
   customModels: string[];
   setCurrentItem: (item: PickerOption) => void;
 }
@@ -54,14 +55,14 @@ export function usePickerCatalog(
   const customModels = isPlanner
     ? (config.planner.customModels ?? [])
     : (config.implementer.customModels ?? []);
+  const runnerConfig = isPlanner ? config.planner : config.implementer;
 
   const initialItem = items[initialLeftIdx] ?? items[0];
   const currentItem = items.find(item => item.id === currentItemId) ?? initialItem;
 
-  const rightModels = buildRightModels({
+  const rightModels = buildRightModelsForPicker({
     isPlanner,
     customModels,
-    implementerDetections,
     currentItem,
   });
 
@@ -69,11 +70,14 @@ export function usePickerCatalog(
   const isCurrentTool = currentItem?.isCurrent ?? false;
   const currentModel = isCurrentTool
     ? normalizeConfiguredModel(
-        isPlanner ? config.planner.model : config.implementer.model,
+        runnerConfig.model,
         currentItem?.id,
       )
     : undefined;
-  const currentCommand = isPlanner ? getRunnerCommand(config.planner) : getRunnerCommand(config.implementer);
+  const currentCommand = getRunnerCommand(runnerConfig);
+  const currentCommandKind = runnerConfig.kind === 'shell' || runnerConfig.kind === 'agent'
+    ? runnerConfig.kind
+    : undefined;
 
   return {
     items,
@@ -84,6 +88,7 @@ export function usePickerCatalog(
     roleLabel,
     currentModel,
     currentCommand,
+    currentCommandKind,
     customModels,
     setCurrentItem: (item) => setCurrentItemId(item.id),
   };

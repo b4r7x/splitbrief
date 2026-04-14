@@ -1,7 +1,7 @@
 import type { Task, Config, WorkflowState, OrchestratorCallbacks, ValidationResult, TaskCompletionMethod } from '../../types.js';
 import { commitChanges } from '../../utils/git.js';
 import { createCheckpoint } from './git-ops.js';
-import { toErrorMessage } from '../../utils/format.js';
+import { labelError } from '../../utils/format.js';
 import { emit, emitWarning, emitGitCommit, emitGitCheckpoint, emitTaskComplete } from './events.js';
 import { allValidationsPassed, transitionAndSave } from './helpers.js';
 
@@ -16,10 +16,12 @@ type ValidateCommitOptions = {
   transitionType: 'VALIDATION_PASS' | 'HINT_SUCCESS' | 'FULL_SUCCESS';
   commitSuffix?: string | undefined;
   taskStartTime?: number | undefined;
+  /** Explicit total retry count; falls back to state.attempt when omitted. */
+  retryCount?: number | undefined;
 };
 
 export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Promise<{ state: WorkflowState; completed: boolean }> {
-  const { task, results, projectDir, config, callbacks, method, transitionType, commitSuffix, taskStartTime, state } = opts;
+  const { task, results, projectDir, config, callbacks, method, transitionType, commitSuffix, taskStartTime, state, retryCount } = opts;
   if (!allValidationsPassed(results)) {
     return { state, completed: false };
   }
@@ -32,7 +34,7 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
       await commitChanges(projectDir, commitMsg);
       emitGitCommit(callbacks, commitMsg);
     } catch (err) {
-      emitWarning(callbacks, `Failed to commit: ${toErrorMessage(err)}`);
+      emitWarning(callbacks, labelError('Failed to commit', err));
     }
   } else if (strategy === 'checkpoint') {
     try {
@@ -41,14 +43,14 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
         emitGitCheckpoint(callbacks, tag, task.id);
       }
     } catch (err) {
-      emitWarning(callbacks, `Failed to create checkpoint: ${toErrorMessage(err)}`);
+      emitWarning(callbacks, labelError('Failed to create checkpoint', err));
     }
   }
 
   const nextState = transitionAndSave(projectDir, state, { type: transitionType });
   emitTaskComplete(callbacks, {
     taskId: task.id, title: task.title,
-    method, retries: state.attempt,
+    method, retries: retryCount ?? state.attempt,
     duration: taskStartTime ? Date.now() - taskStartTime : 0,
     ...(state.implementerTool !== undefined && { tool: state.implementerTool }),
     ...(state.implementerModel !== undefined && { model: state.implementerModel }),

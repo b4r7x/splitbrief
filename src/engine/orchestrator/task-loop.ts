@@ -1,6 +1,6 @@
 import type { Task, TaskId, WorkflowState, OrchestratorCallbacks, TaskTokenUsage } from '../../types.js';
 import { hasExternalChanges } from '../../utils/git.js';
-import { toErrorMessage } from '../../utils/format.js';
+import { labelError } from '../../utils/format.js';
 import { getFailedTaskIds, getSkippedTaskIds, getEscalatedTaskIds } from '../../core/state/selectors.js';
 
 import type { WorkflowContext } from './run.js';
@@ -30,7 +30,7 @@ async function checkExternalChanges(
       }
     }
   } catch (err) {
-    emitWarning(callbacks, `Failed to check external changes: ${toErrorMessage(err)}`);
+    emitWarning(callbacks, labelError('Failed to check external changes', err));
   }
   return null;
 }

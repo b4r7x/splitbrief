@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react';
 type Listener = () => void;
 type Updater<T> = T | ((prev: T) => T);
 
-export interface Store<T> {
+interface Store<T> {
   get: () => T;
   set: (updater: Updater<T>) => void;
   subscribe: (listener: Listener) => () => void;

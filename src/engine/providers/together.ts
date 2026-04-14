@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import type { DetectedModel, ProviderDefWithMetadata, ProviderOverrides } from './types.js';
 import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers.js';
-import { createMetadataProvider } from './client.js';
-import { perTokenToPerMillion, isModelFree } from './metadata.js';
+import { createMetadataProvider, DEFAULT_MODEL_FALLBACK } from './client.js';
+import { buildPricingFields } from './metadata.js';
 
 const TogetherModelSchema = z.object({
   id: z.string(),
@@ -18,15 +18,7 @@ type TogetherModel = z.infer<typeof TogetherModelSchema>;
 function toDetectedModel(m: TogetherModel): DetectedModel {
   const result: DetectedModel = { id: m.id };
   if (m.context_length !== undefined) result.contextLength = m.context_length;
-  if (m.pricing?.input !== undefined) result.pricingInput = perTokenToPerMillion(m.pricing.input);
-  if (m.pricing?.output !== undefined) result.pricingOutput = perTokenToPerMillion(m.pricing.output);
-
-  const hasPricing = result.pricingInput !== undefined || result.pricingOutput !== undefined;
-  if (hasPricing) {
-    result.isFree = isModelFree(result.pricingInput, result.pricingOutput);
-  }
-
-  return result;
+  return { ...result, ...buildPricingFields(m.pricing?.input, m.pricing?.output) };
 }
 
 export function createTogetherProvider(overrides?: ProviderOverrides): ProviderDefWithMetadata {
@@ -37,7 +29,7 @@ export function createTogetherProvider(overrides?: ProviderOverrides): ProviderD
       envKeyName: 'TOGETHER_API_KEY',
       isLocal: false,
       schema: TogetherModelSchema,
-      fallback: (id) => ({ id }),
+      fallback: DEFAULT_MODEL_FALLBACK,
       toDetected: toDetectedModel,
       contextLength: (m) => m.context_length ?? null,
     },

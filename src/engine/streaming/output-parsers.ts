@@ -1,12 +1,9 @@
 import { z } from 'zod';
-import type { OutputFormat, ParsedLine, TokenDelta } from '../../types.js';
+import type { OutputFormat, ParsedLine, TokenDelta, ToolUseInfo } from '../../types.js';
 import { toTokenDelta } from './token-utils.js';
-import { narrowRecord } from '../../utils/type-guards.js';
+import { assertNever, narrowRecord } from '../../utils/type-guards.js';
 
-export interface ToolUseInfo {
-  name: string;
-  input: Record<string, unknown>;
-}
+export type { ToolUseInfo };
 
 interface StreamParseResult {
   text?: string | undefined;
@@ -160,8 +157,9 @@ export function parseJsonlLine(line: string): ParsedLine {
 
 function wrapStreamParser(line: string): ParsedLine {
   const result = parseStreamLine(line);
-  if (result.text) return { text: result.text, usage: result.usage, isResult: result.isResult, sessionId: result.sessionId };
-  if (result.usage) return { usage: result.usage, isResult: result.isResult, sessionId: result.sessionId };
+  if (result.text) return { text: result.text, usage: result.usage, isResult: result.isResult, sessionId: result.sessionId, toolUse: result.toolUse };
+  if (result.usage) return { usage: result.usage, isResult: result.isResult, sessionId: result.sessionId, toolUse: result.toolUse };
+  if (result.toolUse) return { sessionId: result.sessionId, toolUse: result.toolUse };
   if (result.sessionId) return { sessionId: result.sessionId };
   return {};
 }
@@ -172,6 +170,8 @@ export function getLineParser(format: OutputFormat): (line: string) => ParsedLin
     case 'jsonl': return parseJsonlLine;
     case 'text': return parseTextLine;
     case 'opencode': return parseOpencodeLine;
+    default:
+      return assertNever(format);
   }
 }
 

@@ -20,8 +20,7 @@ const ModelsDevProviderSchema = z.looseObject({
 
 const ModelsDevCatalogSchema = z.record(z.string(), ModelsDevProviderSchema);
 
-export type ModelsDevModel = z.infer<typeof ModelsDevModelSchema>;
-export type ModelsDevProvider = z.infer<typeof ModelsDevProviderSchema>;
+type ModelsDevModel = z.infer<typeof ModelsDevModelSchema>;
 export type ModelsDevCatalog = z.infer<typeof ModelsDevCatalogSchema>;
 
 const MODELS_DEV_URL = 'https://models.dev/api.json';

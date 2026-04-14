@@ -158,8 +158,9 @@ describe('configStore.save', () => {
     writeConfigYaml();
     configStore.load(tmpDir);
     const updated = { ...configStore.get().config!, theme: 'mono' as const };
-    configStore.save(updated);
+    const result = configStore.save(updated);
 
+    expect(result).toBe(true);
     expect(configStore.get().config!.theme).toBe('mono');
     const written = YAML.parse(readFileSync(join(tmpDir, TINY_SPEC_DIR, 'config.yaml'), 'utf-8'));
     expect(written.theme).toBe('mono');
@@ -170,7 +171,8 @@ describe('configStore.save', () => {
     configStore.load(tmpDir);
     // Replace projectDir with a path containing a null byte to force mkdirSync to throw
     configStore.reset({ ...configStore.get(), projectDir: '/tmp/\0invalid' });
-    configStore.save(configStore.get().config!);
+    const result = configStore.save(configStore.get().config!);
+    expect(result).toBe(false);
     expect(feedbackStore.get().message).toMatch(/Failed to save config/);
     expect(feedbackStore.get().isError).toBe(true);
   });

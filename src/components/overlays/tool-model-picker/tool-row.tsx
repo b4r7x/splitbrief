@@ -56,8 +56,8 @@ interface ToolRowParams {
   isCursor: boolean;
   isSelected: boolean;
   maxWidth: number;
-  isPlanner: boolean;
   currentCommand: string | undefined;
+  currentCommandKind: 'shell' | 'agent' | undefined;
   theme: Theme;
 }
 
@@ -66,16 +66,19 @@ export function renderToolRow({
   isCursor,
   isSelected,
   maxWidth,
-  isPlanner,
   currentCommand,
+  currentCommandKind,
   theme: t,
 }: ToolRowParams) {
   const isCommandBased = item.kind === "shell" || item.kind === "agent";
   const dimmed =
     !item.available && !isCommandBased && item.kind !== "agent-sdk";
   const isLocal = isProviderLocal(item.id);
+  const showConfiguredCommand = isCommandBased
+    && currentCommandKind === item.kind
+    && currentCommand;
   const rawLabel = isCommandBased
-    ? currentCommand
+    ? showConfiguredCommand
       ? `${item.kind}: ${currentCommand}`
       : "+ Add custom..."
     : item.displayName;
@@ -89,7 +92,7 @@ export function renderToolRow({
   const { label, suffix, checkmark } = formatPickerLine(
     rawLabel,
     isCommandBased ? null : item.badge,
-    isCommandBased ? null : isPlanner ? (item.version ?? null) : null,
+    isCommandBased ? null : (item.version ?? null),
     statusLabel,
     showCheck,
     maxWidth,
@@ -123,18 +126,18 @@ export function renderModelRow({
 }: ModelRowParams) {
   const isCfgMatch = item.id === currentModel;
   const modelName = formatModelName(item.id);
+  const isAutoModel = item.isDefault && item.id === 'auto';
 
-  const contextStr = !item.isDefault && item.contextLength ? formatContextLength(item.contextLength) : '';
+  const contextStr = !isAutoModel && item.contextLength ? formatContextLength(item.contextLength) : '';
   const metaSuffix = contextStr ? ` ${contextStr}` : '';
 
-  const badge = isCustomModel(item) ? "(custom)" : null;
-  const status = item.isDefault ? "(default)" : null;
+  const badge = isCustomModel(item) ? "(custom)" : isAutoModel ? "(auto)" : null;
 
   const { label, suffix, checkmark } = formatPickerLine(
     modelName,
     badge,
     null,
-    status,
+    null,
     isCfgMatch,
     maxWidth - metaSuffix.length,
   );

@@ -1,7 +1,7 @@
 import { render } from 'ink';
 import { withFullScreen } from 'fullscreen-ink';
 import type { createElement } from 'react';
-import { warnError } from '../utils/format.js';
+import { warnError } from '../utils/warn.js';
 
 export async function renderApp(appElement: ReturnType<typeof createElement>, fullscreen: boolean): Promise<void> {
   const termProgram = process.env['TERM_PROGRAM'] ?? '';

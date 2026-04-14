@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { CliToolIdSchema, OutputFormatSchema } from './enums.js';
+import { CliToolIdSchema, OutputFormatSchema, RUNNER_KINDS } from './enums.js';
+import type { RunnerKind } from './enums.js';
 
 export const CliRunnerFields = {
   kind: z.literal('cli'),
@@ -41,3 +42,37 @@ export const GenerationCommonFields = {
   temperature: z.number().min(0).max(2).optional(),
   timeout: z.number().positive().max(600000).optional(),
 };
+
+export interface RunnerKindMeta {
+  usesArgsOutputFormat: boolean;
+  usesApiKey: boolean;
+  requiresCommand: boolean;
+}
+
+export const RUNNER_DESCRIPTORS = {
+  cli: { fields: CliRunnerFields, usesArgsOutputFormat: true, usesApiKey: false, requiresCommand: false },
+  api: { fields: ApiRunnerFields, usesArgsOutputFormat: false, usesApiKey: true, requiresCommand: false },
+  shell: { fields: ShellRunnerFields, usesArgsOutputFormat: true, usesApiKey: false, requiresCommand: true },
+  agent: { fields: AgentRunnerFields, usesArgsOutputFormat: true, usesApiKey: false, requiresCommand: true },
+  'agent-sdk': { fields: AgentSdkRunnerFields, usesArgsOutputFormat: false, usesApiKey: true, requiresCommand: false },
+} as const satisfies Record<RunnerKind, { fields: Record<string, z.ZodTypeAny> } & RunnerKindMeta>;
+
+export function getRunnerKindMeta(kind: RunnerKind): RunnerKindMeta {
+  return RUNNER_DESCRIPTORS[kind];
+}
+
+export function createRunnerConfigSchema<C extends z.ZodRawShape>(commonFields: C) {
+  return z.discriminatedUnion('kind', [
+    z.object({ ...RUNNER_DESCRIPTORS.cli.fields, ...commonFields }).strict(),
+    z.object({ ...RUNNER_DESCRIPTORS.api.fields, ...commonFields }).strict(),
+    z.object({ ...RUNNER_DESCRIPTORS.shell.fields, ...commonFields }).strict(),
+    z.object({ ...RUNNER_DESCRIPTORS.agent.fields, ...commonFields }).strict(),
+    z.object({ ...RUNNER_DESCRIPTORS['agent-sdk'].fields, ...commonFields }).strict(),
+  ]);
+}
+
+// Validate at startup that RUNNER_DESCRIPTORS covers all runner kinds
+if (RUNNER_KINDS.some(k => !(k in RUNNER_DESCRIPTORS))) {
+  const missing = RUNNER_KINDS.filter(k => !(k in RUNNER_DESCRIPTORS));
+  throw new Error(`RUNNER_DESCRIPTORS missing entries for: ${missing.join(', ')}`);
+}

@@ -4,17 +4,18 @@ import { getRunnerDisplayName, getRunnerModelName } from '../../core/config/runn
 import { createInitialState } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
 import { saveSession, getSessionDir } from '../../core/sessions/io.js';
-import { ensureTinySpecDir, setSpecMetadata, resetSpecMetadata } from '../../core/paths-io.js';
+import { ensureTinySpecDir, type SpecMetadata } from '../../core/paths-io.js';
 import { readPackageJson } from '../../utils/fs.js';
 import { resolveAutoModel } from '../../core/providers.js';
-import { killAllProcesses } from '../../utils/process.js';
-import { toErrorMessage, warnError } from '../../utils/format.js';
+import { killAllProcesses } from '../../utils/process-lifecycle.js';
+import { toErrorMessage, labelError } from '../../utils/format.js';
+import { warnError } from '../../utils/warn.js';
 import { createPlanner } from '../runners/factory.js';
 import { createImplementer } from '../runners/factory.js';
 
 import type { Planner } from '../planners/types.js';
 import type { Implementer } from '../implementers/types.js';
-import { buildSummary, type SummaryBase } from './cost.js';
+import { buildSummary, type SummaryBase } from './summary.js';
 import { emit, emitError, emitWarning, emitPlannerStatus, emitCostPrediction, emitWorkflowConfig } from './events.js';
 import { predictCost } from './cost-prediction.js';
 import { transitionAndSave, withSignalHandlers } from './helpers.js';
@@ -30,9 +31,10 @@ export interface WorkflowContext {
   context: ProjectContext;
   implementer: Implementer;
   signal?: AbortSignal | undefined;
+  metadata: SpecMetadata;
 }
 
-export type PlannerCallbacksContext = Pick<WorkflowContext, 'projectDir' | 'config' | 'callbacks'>;
+export type PlannerCallbacksContext = Pick<WorkflowContext, 'projectDir' | 'config' | 'callbacks' | 'signal' | 'metadata'>;
 
 export type RunWorkflowOptions = {
   feature: string;
@@ -51,6 +53,7 @@ type InitResult =
 async function initializeWorkflow(
   opts: RunWorkflowOptions,
   summaryBase: SummaryBase,
+  metadata: SpecMetadata,
   setTrackedState: (s: WorkflowState) => void,
 ): Promise<InitResult> {
   const { feature, projectDir, config, callbacks, savedState } = opts;
@@ -104,7 +107,7 @@ async function initializeWorkflow(
     testCommand: config.validation.testCommand,
   };
 
-  const wctx: WorkflowContext = { projectDir, config, callbacks, planner, context, implementer, signal: opts.signal };
+  const wctx: WorkflowContext = { projectDir, config, callbacks, planner, context, implementer, signal: opts.signal, metadata };
 
   return { ok: true, state, wctx };
 }
@@ -126,7 +129,7 @@ async function runPlanningPhases(opts: RunPlanningPhasesOptions): Promise<{ stat
 
   if (!savedState) {
     const planning = await runPlanningPhase({
-      wctx: { projectDir, config, callbacks },
+      wctx: { projectDir, config, callbacks, signal: wctx.signal, metadata: wctx.metadata },
       planner,
       state,
       feature: state.feature,
@@ -181,7 +184,7 @@ async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise<Summar
   }
 
   return runFinalReviewPhase(
-    { projectDir: wctx.projectDir, callbacks, state, planner: wctx.planner },
+    { projectDir: wctx.projectDir, callbacks, state, planner: wctx.planner, metadata: wctx.metadata },
     summaryBase,
     taskResult.taskBreakdowns,
     phaseTimings,
@@ -201,13 +204,13 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     ...(implementerModel !== undefined && { implementerModel }),
   };
 
-  setSpecMetadata({
+  const metadata: SpecMetadata = {
     plannerTool: summaryBase.plannerTool,
     plannerModel: summaryBase.plannerModel,
     implementerTool: summaryBase.implementerTool,
     implementerModel: summaryBase.implementerModel,
     mode: config.workflow.mode ?? 'standard',
-  });
+  };
   let trackedState: WorkflowState | undefined;
   let currentTask: Pick<Task, 'file' | 'action'> | undefined;
   let result: Summary | undefined;
@@ -232,54 +235,50 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
 
   const shutdown = () => shutdownWorkflow(projectDir, () => trackedState, () => currentTask);
 
-  try {
-    const { cancelled } = await withSignalHandlers(shutdown, async () => {
-      try {
-        const init = await initializeWorkflow(opts, summaryBase, (s) => { trackedState = s; });
-        if (!init.ok) { result = init.summary; return; }
+  const { cancelled } = await withSignalHandlers(shutdown, async () => {
+    try {
+      const init = await initializeWorkflow(opts, summaryBase, metadata, (s) => { trackedState = s; });
+      if (!init.ok) { result = init.summary; return; }
 
-        const { wctx } = init;
-        trackedState = init.state;
-        const phaseTimings: Record<string, number> = {};
+      const { wctx } = init;
+      trackedState = init.state;
+      const phaseTimings: Record<string, number> = {};
 
-        const planning = await runPlanningPhases({
-          wctx, state: init.state, savedState, selectedSkills, phaseTimings, startTime,
-          setTrackedState: (s) => { trackedState = s; },
-        });
-        if (planning.cancelled) { result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings }); return; }
+      const planning = await runPlanningPhases({
+        wctx, state: init.state, savedState, selectedSkills, phaseTimings, startTime,
+        setTrackedState: (s) => { trackedState = s; },
+      });
+      if (planning.cancelled) { result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings }); return; }
 
-        if (opts.signal?.aborted) { result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings }); return; }
+      if (opts.signal?.aborted) { result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings }); return; }
 
-        result = await runTasksAndReview({
-          wctx, state: planning.state, summaryBase, phaseTimings,
-          setTrackedState: (s) => { trackedState = s; },
-          setCurrentTask: (t) => { currentTask = t; },
-        });
-        sessionStatus = 'complete';
-      } catch (err) {
-        if (trackedState) {
-          try { saveState(projectDir, trackedState); } catch (saveErr) {
-            emitWarning(callbacks, `Failed to save state: ${toErrorMessage(saveErr)}`);
-          }
+      result = await runTasksAndReview({
+        wctx, state: planning.state, summaryBase, phaseTimings,
+        setTrackedState: (s) => { trackedState = s; },
+        setCurrentTask: (t) => { currentTask = t; },
+      });
+      sessionStatus = 'complete';
+    } catch (err) {
+      if (trackedState) {
+        try { saveState(projectDir, trackedState); } catch (saveErr) {
+          emitWarning(callbacks, labelError('Failed to save state', saveErr));
         }
-        killAllProcesses();
-        emitError(callbacks, toErrorMessage(err));
-        sessionStatus = 'failed';
-        result = buildSummary({ ...summaryBase, state: trackedState ?? createInitialState(feature) });
       }
-    });
-
-    if (!result) {
-      if (cancelled) {
-        const summary = buildSummary({ ...summaryBase, state: trackedState ?? createInitialState(feature) });
-        saveFinalSession(summary);
-        return summary;
-      }
-      throw new Error('Unreachable: workflow did not produce a summary');
+      killAllProcesses();
+      emitError(callbacks, toErrorMessage(err));
+      sessionStatus = 'failed';
+      result = buildSummary({ ...summaryBase, state: trackedState ?? createInitialState(feature) });
     }
-    saveFinalSession(result);
-    return result;
-  } finally {
-    resetSpecMetadata();
+  });
+
+  if (!result) {
+    if (cancelled) {
+      const summary = buildSummary({ ...summaryBase, state: trackedState ?? createInitialState(feature) });
+      saveFinalSession(summary);
+      return summary;
+    }
+    throw new Error('Unreachable: workflow did not produce a summary');
   }
+  saveFinalSession(result);
+  return result;
 }

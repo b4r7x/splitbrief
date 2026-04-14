@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFile, writeFile, access, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import type { Task } from '../../types.js';
 import { validateTaskPath } from '../../core/paths-io.js';
@@ -9,12 +9,10 @@ const SEARCH_REPLACE_LINE_THRESHOLD = 200;
 /**
  * Apply generated code to a task's target file.
  *
- * **Threshold behavior:** Files under {@link SEARCH_REPLACE_LINE_THRESHOLD} lines
- * always receive a whole-file overwrite, even if the model emits search/replace
- * markers. Search/replace markers are only parsed for larger files. This is
- * intentional — small files are more reliably updated via full replacement.
+ * Files under {@link SEARCH_REPLACE_LINE_THRESHOLD} lines always receive a
+ * whole-file overwrite; search/replace markers are only parsed for larger files.
  */
-export function applyCode(code: string, task: Task, projectDir: string): { success: boolean; error?: string } {
+export async function applyCode(code: string, task: Task, projectDir: string): Promise<{ success: boolean; error?: string }> {
   try {
     validateTaskPath(projectDir, task.file);
   } catch (err) {
@@ -24,25 +22,29 @@ export function applyCode(code: string, task: Task, projectDir: string): { succe
   const filePath = join(projectDir, task.file);
   const dir = dirname(filePath);
 
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
+  try {
+    await access(dir);
+  } catch {
+    await mkdir(dir, { recursive: true });
   }
 
   if (task.action === 'create') {
-    writeFileSync(filePath, code, 'utf-8');
+    await writeFile(filePath, code, 'utf-8');
     return { success: true };
   }
 
-  if (!existsSync(filePath)) {
-    writeFileSync(filePath, code, 'utf-8');
+  let existing: string;
+  try {
+    existing = await readFile(filePath, 'utf-8');
+  } catch {
+    await writeFile(filePath, code, 'utf-8');
     return { success: true };
   }
 
-  const existing = readFileSync(filePath, 'utf-8');
   const lineCount = existing.split('\n').length;
 
   if (lineCount < SEARCH_REPLACE_LINE_THRESHOLD) {
-    writeFileSync(filePath, code, 'utf-8');
+    await writeFile(filePath, code, 'utf-8');
     return { success: true };
   }
 
@@ -69,10 +71,10 @@ export function applyCode(code: string, task: Task, projectDir: string): { succe
   }
 
   if (hasMarkers) {
-    writeFileSync(filePath, result, 'utf-8');
+    await writeFile(filePath, result, 'utf-8');
     return { success: true };
   }
 
-  writeFileSync(filePath, code, 'utf-8');
+  await writeFile(filePath, code, 'utf-8');
   return { success: true };
 }

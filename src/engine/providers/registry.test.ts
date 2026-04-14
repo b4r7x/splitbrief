@@ -3,6 +3,8 @@ import { KNOWN_PROVIDERS, getProvider, detectAvailableProviders } from './regist
 import { setupFetchMock } from './testing.js';
 
 describe('getProvider', () => {
+  setupFetchMock();
+
   it('returns generic provider for unknown name', () => {
     const p = getProvider('custom-api', { apiBase: 'http://api.example.com/v1', apiKey: 'sk-test' });
     expect(p.name).toBe('custom-api');
@@ -19,6 +21,32 @@ describe('getProvider', () => {
 
   it('throws for unknown provider without apiBase', () => {
     expect(() => getProvider('unknown-provider')).toThrow(/apiBase/);
+  });
+
+  it('lists Anthropic models with Anthropic headers', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [{ id: 'claude-sonnet-4-6', created_at: '2025-02-19T00:00:00Z' }],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const provider = getProvider('anthropic', {
+      apiBase: 'https://api.anthropic.com/v1',
+      apiKey: 'sk-test',
+    });
+    const models = await provider.listModels();
+
+    expect(models).toEqual(['claude-sonnet-4-6']);
+    const call = vi.mocked(globalThis.fetch).mock.calls[0];
+    expect(call?.[1]).toMatchObject({
+      headers: {
+        'anthropic-version': '2023-06-01',
+        'x-api-key': 'sk-test',
+      },
+    });
   });
 });
 

@@ -2,12 +2,7 @@ import type { TokenUsage } from '../../types.js';
 import type { CostPrediction } from '../../core/types/summary.js';
 import { getProviderPricing, calculateCost } from '../providers/pricing.js';
 
-/**
- * Rough token estimates for cost prediction when no prior usage data exists.
- * These are intentional approximations — the low/expected/high range in
- * `predictCost` communicates uncertainty to the user. Actual usage varies
- * widely based on task complexity, file size, and model.
- */
+// Token estimates for cost prediction. Ranges communicate uncertainty.
 const DEFAULT_IMPLEMENTER_TOKENS_PER_TASK = 2000;
 const DEFAULT_ESCALATION_TOKENS_PER_TASK = 500;
 const DEFAULT_PLANNER_TOKENS_PER_TASK = 3000;

@@ -26,11 +26,12 @@ async function validateAndCommit(
   ctx: EscalationContext, task: Task, state: WorkflowState,
   method: TaskCompletionMethod,
   transitionType: 'VALIDATION_PASS' | 'HINT_SUCCESS' | 'FULL_SUCCESS',
+  retryCount: number,
   commitSuffix?: string,
 ) {
   return validateAndCommitTask({
     task, projectDir: ctx.projectDir, config: ctx.config, callbacks: ctx.callbacks,
-    state, method, transitionType, commitSuffix, taskStartTime: ctx.taskStartTime,
+    state, method, transitionType, commitSuffix, taskStartTime: ctx.taskStartTime, retryCount,
   });
 }
 
@@ -65,7 +66,7 @@ async function runLocalRetries(
       continue;
     }
 
-    const commitResult = await validateAndCommit(ctx, task, state, 'local', 'VALIDATION_PASS');
+    const commitResult = await validateAndCommit(ctx, task, state, 'local', 'VALIDATION_PASS', attempts);
     if (commitResult.completed) {
       return { state: commitResult.state, task, lastError, attempts, result: { completed: true, method: 'local', attempts } };
     }
@@ -141,7 +142,7 @@ async function runTier0Intermediate(
     return { state, task, lastError: retryResult.error ?? 'Intermediate escalation failed', attempts };
   }
 
-  const commitResult = await validateAndCommit(ctx, task, state, 'escalated-intermediate', 'VALIDATION_PASS', 'intermediate');
+  const commitResult = await validateAndCommit(ctx, task, state, 'escalated-intermediate', 'VALIDATION_PASS', attempts, 'intermediate');
   if (commitResult.completed) {
     return { state: commitResult.state, task, lastError, attempts, result: { completed: true, method: 'escalated-intermediate', attempts } };
   }
@@ -183,7 +184,7 @@ async function runTier1Hint(
   state = addUsageAndSave(ctx.projectDir, state, 'implementer', hintRetryResult.usage, ctx.callbacks);
 
   if (hintRetryResult.success) {
-    const commitResult = await validateAndCommit(ctx, task, state, 'escalated-hint', 'HINT_SUCCESS', 'with hints');
+    const commitResult = await validateAndCommit(ctx, task, state, 'escalated-hint', 'HINT_SUCCESS', attempts, 'with hints');
     if (commitResult.completed) {
       return { state: commitResult.state, task, lastError, attempts, result: { completed: true, method: 'escalated-hint', attempts } };
     }
@@ -201,6 +202,8 @@ async function runTier2Full(
   state = transitionAndSave(ctx.projectDir, state, { type: 'HINT_FAIL' });
   emit(ctx.projectDir, state, 'hint_failed', task.id, {});
 
+  ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, state));
+
   emitEscalate(ctx.callbacks, 2);
   const tier2Result = await ctx.planner.escalateFull(task, lastError, ctx.projectDir, {
     onOutput: textHandler,
@@ -208,7 +211,7 @@ async function runTier2Full(
   state = addUsageAndSave(ctx.projectDir, state, 'escalation', tier2Result.usage, ctx.callbacks);
 
   if (tier2Result.success) {
-    const commitResult = await validateAndCommit(ctx, task, state, 'escalated-full', 'FULL_SUCCESS', 'escalated');
+    const commitResult = await validateAndCommit(ctx, task, state, 'escalated-full', 'FULL_SUCCESS', attempts, 'escalated');
     if (commitResult.completed) {
       return { state: commitResult.state, result: { completed: true, method: 'escalated-full', attempts } };
     }

@@ -313,5 +313,17 @@ describe('migrateConfig', () => {
       expect(impl.provider).toBe('ollama');
       expect(impl.apiBase).toBe('http://localhost:11434/v1');
     });
+
+    it('defaults planner to cli kind with claude-code when no hints', () => {
+      const v1 = {
+        planner: { model: 'claude-opus-4' },
+        implementer: { kind: 'api', tool: 'ollama', apiBase: 'http://localhost:11434/v1' },
+      };
+      const result = migrateConfig(v1) as Record<string, unknown>;
+      const planner = result.planner as CliPlannerConfig;
+      expect(planner.kind).toBe('cli');
+      expect(planner.tool).toBe('claude-code');
+      expect(planner.model).toBe('claude-opus-4');
+    });
   });
 });

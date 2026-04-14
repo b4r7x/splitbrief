@@ -2,7 +2,7 @@ import { Box, Text } from 'ink';
 import { TwoColumnPicker } from '../../pickers/two-column-picker/index.js';
 import { useTheme } from '../../../ui/theme.js';
 import { overlayStore } from '../../../stores/overlay.js';
-import { detectionStore } from '../../../stores/detection.js';
+import { refreshDetectionStores } from '../../../stores/detection-adapter.js';
 import { configStore } from '../../../stores/config.js';
 import { feedbackStore } from '../../../stores/feedback.js';
 import type { PickerOption, ModelOption } from './picker-catalog.js';
@@ -63,7 +63,6 @@ function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }
 
 export function PickerView({ role, stepLabel, onCancel, catalog, actions }: PickerViewProps) {
   const t = useTheme();
-  const isPlanner = role === 'planner';
 
   const currentModelIdx = catalog.focusModels
     ? catalog.rightModels.findIndex(m => m.id === catalog.currentModel)
@@ -73,7 +72,7 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
 
   const handleRefresh = () => {
     const projectDir = configStore.get().projectDir;
-    detectionStore.refresh(projectDir);
+    refreshDetectionStores(projectDir);
     feedbackStore.setMessage('Refreshing models...');
   };
 
@@ -94,14 +93,15 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
         initialIndex: catalog.initialLeftIdx,
         specialHelp: (
           <Box flexDirection="column" marginTop={1} paddingX={1}>
-            <Text color={t.textDim}>Run a custom shell command as the {role}.</Text>
+            <Text color={t.textDim}>Run a custom command as the {role}.</Text>
             <Text color={t.textDim}>Press Enter to configure the command.</Text>
           </Box>
         ),
         renderRow: (item, { isCursor, isSelected, maxWidth }) =>
           renderToolRow({
-            item, isCursor, isSelected, maxWidth, isPlanner,
+            item, isCursor, isSelected, maxWidth,
             currentCommand: catalog.currentCommand,
+            currentCommandKind: catalog.currentCommandKind,
             theme: t,
           }),
       }}

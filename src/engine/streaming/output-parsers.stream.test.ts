@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseStreamLine } from './output-parsers.js';
+import { parseStreamLine, getLineParser } from './output-parsers.js';
 
 describe('parseStreamLine', () => {
   it('extracts text from assistant event', () => {
@@ -173,5 +173,74 @@ describe('parseStreamLine', () => {
     });
     const result = parseStreamLine(line);
     expect(result.toolUse).toEqual([{ name: 'list_files', input: {} }]);
+  });
+});
+
+describe('getLineParser("stream-json") — wrapStreamParser', () => {
+  const parse = getLineParser('stream-json');
+
+  it('passes toolUse through when only tool_use blocks present', () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      session_id: 'sess-wrap',
+      message: {
+        content: [
+          { type: 'tool_use', name: 'read_file', input: { path: 'src/foo.ts' } },
+        ],
+      },
+    });
+    const result = parse(line);
+    expect(result.toolUse).toEqual([{ name: 'read_file', input: { path: 'src/foo.ts' } }]);
+    expect(result.sessionId).toBe('sess-wrap');
+    expect(result.text).toBeUndefined();
+  });
+
+  it('passes toolUse through alongside text', () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'text', text: 'doing something' },
+          { type: 'tool_use', name: 'write_file', input: { path: 'out.ts' } },
+        ],
+      },
+    });
+    const result = parse(line);
+    expect(result.text).toBe('doing something');
+    expect(result.toolUse).toEqual([{ name: 'write_file', input: { path: 'out.ts' } }]);
+  });
+
+  it('passes toolUse through for tool-only event without usage', () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'tool_use', name: 'list_files', input: {} },
+        ],
+      },
+    });
+    const result = parse(line);
+    expect(result.toolUse).toEqual([{ name: 'list_files', input: {} }]);
+  });
+
+  it('does not add toolUse for plain text event', () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: 'hello' }] },
+    });
+    const result = parse(line);
+    expect(result.toolUse).toBeUndefined();
+    expect(result.text).toBe('hello');
+  });
+
+  it('does not add toolUse for result event', () => {
+    const line = JSON.stringify({
+      type: 'result',
+      result: 'done',
+      usage: { input_tokens: 10, output_tokens: 5 },
+    });
+    const result = parse(line);
+    expect(result.toolUse).toBeUndefined();
+    expect(result.isResult).toBe(true);
   });
 });

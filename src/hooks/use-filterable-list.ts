@@ -50,11 +50,15 @@ export function useFilterableList<T>({
         return;
       }
       if (key.upArrow) {
-        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : filtered.length - 1));
+        setSelectedIndex((prev) => (
+          filtered.length === 0 ? 0 : (prev > 0 ? prev - 1 : filtered.length - 1)
+        ));
         return;
       }
       if (key.downArrow) {
-        setSelectedIndex((prev) => (prev < filtered.length - 1 ? prev + 1 : 0));
+        setSelectedIndex((prev) => (
+          filtered.length === 0 ? 0 : (prev < filtered.length - 1 ? prev + 1 : 0)
+        ));
         return;
       }
       if (key.backspace || key.delete) {

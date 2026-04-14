@@ -34,19 +34,30 @@ interface SdkClient {
   query: (opts: SdkQueryOptions) => AsyncIterable<SdkMessage>;
 }
 
+export function isModuleNotFoundError(err: unknown): boolean {
+  if (err == null || typeof err !== 'object') return false;
+  const code = 'code' in err ? err.code : undefined;
+  if (code === 'ERR_MODULE_NOT_FOUND' || code === 'MODULE_NOT_FOUND') return true;
+  const msg = ('message' in err ? String(err.message) : '') ?? '';
+  return /Cannot find (?:package|module)|Could not resolve/.test(msg);
+}
+
 export async function loadSdk(): Promise<SdkClient> {
   try {
-    // @ts-expect-error optional dependency
+    // @ts-expect-error - optional peer dependency not in tsconfig when not installed
     return await import('@anthropic-ai/claude-agent-sdk');
-  } catch { /* optional peer dep missing — rethrow with install instructions */
-    throw new Error(
-      'Agent SDK not installed. Run: npm install @anthropic-ai/claude-agent-sdk',
-    );
+  } catch (err) {
+    if (isModuleNotFoundError(err)) {
+      throw new Error(
+        'Agent SDK not installed. Run: npm install @anthropic-ai/claude-agent-sdk',
+      );
+    }
+    throw err;
   }
 }
 
-export async function isAgentSdkAvailable(): Promise<boolean> {
-  if (!process.env.ANTHROPIC_API_KEY) return false;
+export async function isAgentSdkAvailable(apiKey?: string): Promise<boolean> {
+  if (!process.env.ANTHROPIC_API_KEY && !apiKey) return false;
   try {
     await loadSdk();
     return true;
@@ -103,6 +114,7 @@ export interface AgentSdkBackendOpts {
   allowedTools: string[];
   permissionMode?: 'acceptEdits' | undefined;
   detectChanges?: boolean | undefined;
+  apiKey?: string | undefined;
 }
 
 export interface AgentSdkInvokeOpts {
@@ -114,7 +126,7 @@ export interface AgentSdkInvokeOpts {
 
 export interface AgentSdkBackend {
   invoke(opts: AgentSdkInvokeOpts): Promise<InvokeResult>;
-  detectChanges?: (projectDir: string) => Promise<{ changed: boolean; output: string }>;
+  detectChanges?: (projectDir: string, before: string[]) => Promise<{ changed: boolean; output: string }>;
 }
 
 export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBackend {
@@ -123,10 +135,22 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
   const backend: AgentSdkBackend = {
     async invoke({ prompt, projectDir, model, onOutput }) {
       const { query } = await loadSdk();
-      return processStream(
-        query({ prompt, options: { allowedTools: opts.allowedTools, permissionMode, model, cwd: projectDir } }),
-        onOutput,
-      );
+
+      // If an explicit apiKey is configured and the env var is not yet set, apply it for this call.
+      // The Agent SDK `query()` does not accept an apiKey option directly, so env mutation is
+      // necessary. This is not safe under concurrent invocations — only one workflow runs at a time.
+      const savedKey = process.env['ANTHROPIC_API_KEY'];
+      const apiKey = opts.apiKey;
+      if (apiKey && !savedKey) process.env['ANTHROPIC_API_KEY'] = apiKey;
+
+      try {
+        return await processStream(
+          query({ prompt, options: { allowedTools: opts.allowedTools, permissionMode, model, cwd: projectDir } }),
+          onOutput,
+        );
+      } finally {
+        if (apiKey && !savedKey) delete process.env['ANTHROPIC_API_KEY'];
+      }
     },
   };
 

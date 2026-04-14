@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { DetectedModel } from './types.js';
 import type { CliToolId } from '../../core/types/schemas/enums.js';
 import { runCommand } from '../../utils/process.js';
-import { perTokenToPerMillion, isModelFree } from './metadata.js';
+import { buildPricingFields } from './metadata.js';
 
 const SUBPROCESS_TIMEOUT_MS = 10_000;
 const HTTP_TIMEOUT_MS = 5_000;
@@ -32,9 +32,9 @@ function parseSubprocessLines(stdout: string): string[] {
     .filter((line) => !line.startsWith('-') && !line.startsWith('=') && !/error/i.test(line));
 }
 
-export async function discoverAiderModels(): Promise<DetectedModel[]> {
+async function discoverSubprocessModels(command: string, args: string[]): Promise<DetectedModel[]> {
   try {
-    const { stdout } = await runCommand('aider', ['--list-models', ''], {
+    const { stdout } = await runCommand(command, args, {
       timeout: SUBPROCESS_TIMEOUT_MS,
     });
     return parseSubprocessLines(stdout).map((id) => ({ id }));
@@ -43,15 +43,12 @@ export async function discoverAiderModels(): Promise<DetectedModel[]> {
   }
 }
 
-export async function discoverOpencodeModels(): Promise<DetectedModel[]> {
-  try {
-    const { stdout } = await runCommand('opencode', ['models'], {
-      timeout: SUBPROCESS_TIMEOUT_MS,
-    });
-    return parseSubprocessLines(stdout).map((id) => ({ id }));
-  } catch {
-    return [];
-  }
+export function discoverAiderModels(): Promise<DetectedModel[]> {
+  return discoverSubprocessModels('aider', ['--list-models', '']);
+}
+
+export function discoverOpencodeModels(): Promise<DetectedModel[]> {
+  return discoverSubprocessModels('opencode', ['models']);
 }
 
 export async function discoverKiloModels(): Promise<DetectedModel[]> {
@@ -73,22 +70,8 @@ export async function discoverKiloModels(): Promise<DetectedModel[]> {
 
     return parsed.data.data.map((m) => {
       const model: DetectedModel = { id: m.id };
-      if (m.context_length !== undefined) {
-        model.contextLength = m.context_length;
-      }
-      if (m.pricing?.prompt !== undefined) {
-        model.pricingInput = perTokenToPerMillion(m.pricing.prompt);
-      }
-      if (m.pricing?.completion !== undefined) {
-        model.pricingOutput = perTokenToPerMillion(m.pricing.completion);
-      }
-
-      const hasPricing = model.pricingInput !== undefined || model.pricingOutput !== undefined;
-      if (hasPricing) {
-        model.isFree = isModelFree(model.pricingInput, model.pricingOutput);
-      }
-
-      return model;
+      if (m.context_length !== undefined) model.contextLength = m.context_length;
+      return { ...model, ...buildPricingFields(m.pricing?.prompt, m.pricing?.completion) };
     });
   } catch {
     return [];

@@ -3,8 +3,6 @@ import { isENOENT, CommandNotFoundError } from './process-errors.js';
 import { redactSecrets } from './redact.js';
 import { registerProcess, unregisterProcess, killProcess } from './process-lifecycle.js';
 
-export { isNodeError, isENOENT, CommandNotFoundError, CommandTimeoutError, ProcessOutputError, createProcessError } from './process-errors.js';
-export { killProcess, killAllProcesses } from './process-lifecycle.js';
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
 

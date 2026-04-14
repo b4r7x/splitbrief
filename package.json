@@ -48,6 +48,7 @@
     "cfonts": "^3.3.1",
     "commander": "^14.0.0",
     "fullscreen-ink": "^0.1.0",
+    "fzf": "^0.5.2",
     "ink": "^6.8.0",
     "openai": "^6.0.0",
     "react": "^19.0.0",

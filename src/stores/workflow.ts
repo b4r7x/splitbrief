@@ -1,5 +1,4 @@
 import { createStore, storeBase } from './create-store.js';
-import { killAllProcesses } from '../utils/process.js';
 import { mergeEvent, updateCounts, updateTaskMap } from './workflow-reducers.js';
 import { groupEventsIntoSections } from '../core/event-sections.js';
 import type { Section } from '../core/event-sections.js';
@@ -60,7 +59,7 @@ function setCancelHandler(handler: (() => void) | null) {
   cancelHandler = handler;
 }
 
-function requestCancel() {
+function requestCancel(): boolean {
   let shouldCallHandler = false;
   const now = Date.now();
   store.set(s => {
@@ -74,9 +73,9 @@ function requestCancel() {
     const final = [...events, { type: 'workflow-cancelled' as const, ts: now }];
     return { ...s, cancelled: true, events: final, sections: groupEventsIntoSections(final) };
   });
-  if (!shouldCallHandler) return;
+  if (!shouldCallHandler) return false;
   if (cancelHandler) cancelHandler();
-  try { killAllProcesses(); } catch { /* process cleanup is best-effort */ }
+  return true;
 }
 
 function toggleSidebar() {

@@ -73,7 +73,7 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
       return { ...state, phase: 'idle' };
 
     case 'START_TASK':
-      return setTaskStatus(state, action.taskId, 'in_progress');
+      return { ...setTaskStatus(state, action.taskId, 'in_progress'), attempt: 0 };
 
     case 'TASK_SENT':
       return { ...state, phase: 'validating-task' };

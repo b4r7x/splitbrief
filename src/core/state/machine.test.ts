@@ -159,6 +159,20 @@ describe('transition', () => {
     expect(next.sessionId).toBe('abc-123');
   });
 
+  it('START_TASK resets attempt to 0 (resume retry-budget fix)', () => {
+    const tasks = [makeTask({ id: 't1' })];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks,
+      currentTaskIndex: 0,
+      attempt: 2,
+    };
+    const next = transition(state, { type: 'START_TASK', taskId: tasks[0]!.id });
+    expect(next.attempt).toBe(0);
+    expect(next.tasks[0]?.status).toBe('in_progress');
+  });
+
   it('HINT_SUCCESS resets attempt to 0', () => {
     const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
     const state: WorkflowState = {

@@ -5,12 +5,10 @@ import { createCommandAvailability } from '../../utils/availability.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { CLI_TOOLS } from '../cli-tools.js';
 import { resolveAutoModel } from '../../core/providers.js';
+import { assertPlannerKind } from './utils.js';
 
 export function createCliPlanner(config: Config): Planner {
-  if (config.planner.kind !== 'cli') {
-    throw new Error(`createCliPlanner requires planner.kind = 'cli' (got ${config.planner.kind})`);
-  }
-  const plannerCfg = config.planner;
+  const plannerCfg = assertPlannerKind(config, 'cli');
   const resolvedModel = resolveAutoModel(plannerCfg.model, plannerCfg.tool);
   const tool = CLI_TOOLS[plannerCfg.tool];
   if (!tool.planner) {

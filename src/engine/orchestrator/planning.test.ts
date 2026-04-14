@@ -5,6 +5,7 @@ import { makeConfig, makeTask } from '#testing/helpers/fixtures.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-fixtures.js';
 
 const TEST_PROJECT_DIR = '/mock/project';
+const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' };
 
 vi.mock('../../core/state/persistence.js', () => ({
   saveState: vi.fn(),
@@ -17,6 +18,7 @@ vi.mock('../../utils/fs.js', () => ({
   SECURE_DIR_MODE: 0o700,
   SECURE_FILE_MODE: 0o600,
   checkConfigPermissions: vi.fn().mockReturnValue(true),
+  getTinySpecPath: vi.fn((...parts: string[]) => parts.join('/')),
 }));
 vi.mock('../../core/paths-io.js', () => ({
   readSpecFileOrEmpty: vi.fn().mockReturnValue(''),
@@ -31,6 +33,7 @@ vi.mock('../skills/index.js', () => ({
 }));
 
 import { runPlanningPhase } from './planning.js';
+import { writeSpecFile } from '../../core/paths-io.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -49,7 +52,7 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -66,7 +69,7 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -88,7 +91,7 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -105,7 +108,7 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -128,7 +131,7 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'quick' } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -147,7 +150,7 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'standard' } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -167,7 +170,7 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'full' } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -188,12 +191,99 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'full' } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA },
       planner,
       state: prepareState(),
       feature: 'test-feature',
     });
 
     expect(result.cancelled).toBe(true);
+  });
+
+  it('persistPhases writes artifact text from phases, not raw stdout', async () => {
+    const artifactSpec = '# Resolved Spec';
+    const artifactPlan = '# Resolved Plan';
+    const plan = vi.fn().mockResolvedValue({
+      spec: artifactSpec,
+      plan: artifactPlan,
+      tasks: [makeTask()],
+      usage: { inputTokens: 100, outputTokens: 50 },
+      phases: [
+        { text: artifactSpec, filename: 'spec.md', rawOutput: 'raw planner noise for spec' },
+        { text: artifactPlan, filename: 'plan.md', rawOutput: 'raw planner noise for plan' },
+      ],
+    });
+
+    const { callbacks } = makeCallbacks();
+    const planner = makePlanner({ plan });
+    const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
+
+    await runPlanningPhase({
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA },
+      planner,
+      state: prepareState(),
+      feature: 'test-feature',
+    });
+
+    const writeCalls = vi.mocked(writeSpecFile).mock.calls;
+    const specWrite = writeCalls.find(([, filename]) => filename === 'spec.md');
+    const planWrite = writeCalls.find(([, filename]) => filename === 'plan.md');
+
+    expect(specWrite).toBeDefined();
+    expect(specWrite![2]).toBe(artifactSpec);
+    expect(planWrite).toBeDefined();
+    expect(planWrite![2]).toBe(artifactPlan);
+  });
+
+  it('does not invoke onQuestion when planner lacks supportsConversationalPlanning', async () => {
+    const plan = vi.fn().mockImplementation(async (_feature, _dir, callbacks) => {
+      // Planner tries to emit a question — orchestrator should not wire up onQuestion for non-conversational planners.
+      callbacks.onQuestion?.([{ id: 'q1', question: 'what?' }]);
+      return {
+        spec: '',
+        plan: '',
+        tasks: [makeTask()],
+        usage: null,
+      };
+    });
+    const { callbacks } = makeCallbacks();
+    const planner = makePlanner({ plan });
+    // supportsConversationalPlanning is falsy (undefined) by default in makePlanner
+    const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
+
+    const result = await runPlanningPhase({
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, signal: undefined, metadata: TEST_METADATA },
+      planner,
+      state: prepareState(),
+      feature: 'test-feature',
+    });
+
+    expect(result.cancelled).toBe(false);
+    // onQuestion was called by the mock planner but since conversational is false,
+    // the orchestrator passed undefined — the planner received no handler.
+    const planCall = vi.mocked(plan).mock.calls[0];
+    expect(planCall?.[2].onQuestion).toBeUndefined();
+  });
+
+  it('wires up onQuestion when planner has supportsConversationalPlanning', async () => {
+    const plan = vi.fn().mockResolvedValue({
+      spec: '',
+      plan: '',
+      tasks: [makeTask()],
+      usage: null,
+    });
+    const { callbacks } = makeCallbacks();
+    const planner = makePlanner({ plan, supportsConversationalPlanning: true });
+    const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
+
+    await runPlanningPhase({
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, signal: undefined, metadata: TEST_METADATA },
+      planner,
+      state: prepareState(),
+      feature: 'test-feature',
+    });
+
+    const planCall = vi.mocked(plan).mock.calls[0];
+    expect(planCall?.[2].onQuestion).toBeTypeOf('function');
   });
 });

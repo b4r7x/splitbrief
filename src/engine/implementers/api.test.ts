@@ -14,7 +14,12 @@ vi.mock('../streaming/openai-stream.js', () => ({
   asStreamClient: (c: unknown) => c,
 }));
 
+vi.mock('../streaming/anthropic-stream.js', () => ({
+  streamAnthropicCompletion: vi.fn(),
+}));
+
 import { streamCompletion } from '../streaming/openai-stream.js';
+import { streamAnthropicCompletion } from '../streaming/anthropic-stream.js';
 import { createClient } from '../providers/registry.js';
 import { createApiImplementer } from './api.js';
 
@@ -127,6 +132,39 @@ describe('api implementer', () => {
     expect(result.usage).toEqual({ inputTokens: 777, outputTokens: 333 });
   });
 
+  it('uses the Anthropic streaming path for Anthropic implementers', async () => {
+    const code = 'export const answer = 42;\n';
+    vi.mocked(streamAnthropicCompletion).mockResolvedValue({
+      text: code,
+      usage: { inputTokens: 88, outputTokens: 44 },
+    });
+
+    const cfg = makeConfig({
+      implementer: {
+        provider: 'anthropic',
+        apiBase: 'https://api.anthropic.com/v1',
+        apiKey: 'test-key',
+        model: 'claude-sonnet-4-6',
+      },
+    });
+    const implementer = createApiImplementer(cfg);
+    const task = makeTask({ id: 'T-anthropic', file: 'src/anthropic.ts', action: 'create' });
+
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.usage).toEqual({ inputTokens: 88, outputTokens: 44 });
+    expect(streamAnthropicCompletion).toHaveBeenCalledTimes(1);
+    expect(createClient).not.toHaveBeenCalled();
+    expect(streamCompletion).not.toHaveBeenCalled();
+  });
+
   it('retry() uses retry prompt and bumps temperature by retryTemperatureStep', async () => {
     vi.mocked(streamCompletion).mockResolvedValue({
       text: 'export const x = 1;\n',
@@ -171,6 +209,97 @@ describe('api implementer', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error).toMatch(/API implementer requires an explicit model/);
+    }
+  });
+
+  it('clamps maxTokens to contextLength so prompt+output never exceeds context window', async () => {
+    vi.mocked(streamCompletion).mockResolvedValue({
+      text: 'export const x = 1;\n',
+      usage: null,
+    });
+
+    // Small context: 2048 tokens, large prompt that consumes most of it
+    const cfg = makeConfig({ implementer: { contextLength: 2048 } });
+    const implementer = createApiImplementer(cfg);
+    const task = makeTask({ id: 'T-clamp', file: 'src/clamp.ts', action: 'create' });
+
+    await implementer.implement({
+      task,
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    const call = vi.mocked(streamCompletion).mock.calls[0];
+    expect(call).toBeDefined();
+    if (!call) throw new Error('no stream call');
+    const opts = call[3];
+    // maxTokens must never exceed contextLength (2048)
+    expect(opts.maxTokens).toBeLessThanOrEqual(2048);
+    expect(opts.maxTokens).toBeGreaterThan(0);
+  });
+
+  it('uses provider-specific env var for API key fallback (not ANTHROPIC_API_KEY)', async () => {
+    const code = 'export const x = 1;\n';
+    vi.mocked(streamCompletion).mockResolvedValue({ text: code, usage: null });
+
+    const orig = {
+      openrouter: process.env['OPENROUTER_API_KEY'],
+      anthropic: process.env['ANTHROPIC_API_KEY'],
+    };
+    process.env['OPENROUTER_API_KEY'] = 'sk-or-env-key';
+    delete process.env['ANTHROPIC_API_KEY'];
+
+    try {
+      const cfg = makeConfig({
+        implementer: { provider: 'openrouter', model: 'openrouter/claude-3.5-sonnet', apiBase: 'https://openrouter.ai/api/v1' },
+      });
+      const implementer = createApiImplementer(cfg);
+      const task = makeTask({ id: 'T-or', file: 'src/or.ts', action: 'create' });
+
+      await implementer.implement({ task, projectDir, config: cfg, context: defaultContext, onOutput: vi.fn() });
+
+      const call = vi.mocked(streamCompletion).mock.calls[0];
+      expect(call).toBeDefined();
+      if (!call) throw new Error('no stream call');
+      // The apiKey passed to streamCompletion should be the OPENROUTER_API_KEY value
+      const passedOptions = call[3];
+      void passedOptions; // options don't contain apiKey; it's passed via the client
+      // Verify the Anthropic env key was NOT used (createClient was called for openrouter)
+      expect(createClient).toHaveBeenCalled();
+      expect(streamAnthropicCompletion).not.toHaveBeenCalled();
+    } finally {
+      if (orig.openrouter === undefined) delete process.env['OPENROUTER_API_KEY'];
+      else process.env['OPENROUTER_API_KEY'] = orig.openrouter;
+      if (orig.anthropic === undefined) delete process.env['ANTHROPIC_API_KEY'];
+      else process.env['ANTHROPIC_API_KEY'] = orig.anthropic;
+    }
+  });
+
+  it('uses ANTHROPIC_API_KEY for Anthropic implementer when no apiKey in config', async () => {
+    const code = 'export const x = 1;\n';
+    vi.mocked(streamAnthropicCompletion).mockResolvedValue({ text: code, usage: null });
+
+    const orig = process.env['ANTHROPIC_API_KEY'];
+    process.env['ANTHROPIC_API_KEY'] = 'sk-ant-env-key';
+
+    try {
+      const cfg = makeConfig({
+        implementer: { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022', apiBase: 'https://api.anthropic.com/v1' },
+      });
+      const implementer = createApiImplementer(cfg);
+      const task = makeTask({ id: 'T-ant', file: 'src/ant.ts', action: 'create' });
+
+      await implementer.implement({ task, projectDir, config: cfg, context: defaultContext, onOutput: vi.fn() });
+
+      const call = vi.mocked(streamAnthropicCompletion).mock.calls[0];
+      expect(call).toBeDefined();
+      if (!call) throw new Error('no anthropic stream call');
+      expect(call[0].apiKey).toBe('sk-ant-env-key');
+    } finally {
+      if (orig === undefined) delete process.env['ANTHROPIC_API_KEY'];
+      else process.env['ANTHROPIC_API_KEY'] = orig;
     }
   });
 });

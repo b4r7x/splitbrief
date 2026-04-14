@@ -18,7 +18,7 @@ export type RouteData =
 
 export type Session = z.infer<typeof SessionSchema>;
 
-export type OverlayType = 'none' | 'help' | 'command-palette' | 'skills' | 'settings' | 'mode-selector' | 'planner-picker' | 'implementer-picker';
+export type OverlayType = 'none' | 'help' | 'command-palette' | 'skills' | 'settings' | 'mode-selector' | 'planner-picker' | 'implementer-picker' | 'sessions';
 
 export interface SkillMeta {
   id: string;
@@ -45,7 +45,7 @@ export interface CommandContext {
   openOverlay: (type: OverlayType, focus?: string) => void;
   navigate: (screen: Screen) => void;
   quit: () => void;
-  setWorkflowMode: (mode: WorkflowMode) => void;
+  setWorkflowMode: (mode: WorkflowMode) => boolean;
   setFeedbackMessage: (msg: string) => void;
   setFeedbackError: (msg: string) => void;
   refreshDetection: () => Promise<void>;

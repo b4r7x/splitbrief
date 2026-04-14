@@ -5,16 +5,16 @@ import { createImplementerBase } from './base.js';
 import { createClient } from '../providers/registry.js';
 import { formatTaskPrompt, formatRetryPrompt, SYSTEM_PREAMBLE } from '../spec/formatter.js';
 import { estimateTokens } from '../spec/token-budget.js';
-import { asStreamClient, streamCompletion } from '../streaming/openai-stream.js';
-import { resolveAutoModel } from '../../core/providers.js';
+import { resolveAutoModel, PROVIDER_CATALOG, isProviderId } from '../../core/providers.js';
+import { assertImplementerKind } from './utils.js';
+import { streamApiCompletion, throwAutoModelError } from '../api-shared.js';
 
 function asApiConfig(config: Config): ApiImplementerConfig {
-  if (config.implementer.kind !== 'api') throw new Error('Expected api implementer config');
-  return config.implementer;
+  return assertImplementerKind(config, 'api');
 }
 
 export function createApiImplementer(initialConfig: Config): Implementer {
-  const client = asStreamClient(createClient(initialConfig));
+  asApiConfig(initialConfig);
 
   return createImplementerBase({
     extractsCode: true,
@@ -28,22 +28,31 @@ export function createApiImplementer(initialConfig: Config): Implementer {
       const contextLength = impl.contextLength ?? 8192;
 
       const promptTokens = estimateTokens(SYSTEM_PREAMBLE) + estimateTokens(prompt);
-      const maxTokens = Math.max(contextLength - promptTokens, 1024);
+      const available = contextLength - promptTokens;
+      const maxTokens = Math.min(Math.max(available, 1024), contextLength);
 
       const model = resolveAutoModel(impl.model, impl.provider);
-      if (!model) throw new Error(`API implementer requires an explicit model name — 'auto' is not supported for API backends. Set implementer.model in your config.`);
+      if (!model) throwAutoModelError('implementer');
 
-      const completion = await streamCompletion(
+      const client = impl.provider === 'anthropic' ? null : createClient(config);
+
+      const providerEnvKey = isProviderId(impl.provider) ? PROVIDER_CATALOG[impl.provider]?.apiKeyEnv : undefined;
+      const resolvedApiKey = impl.apiKey ?? (providerEnvKey ? process.env[providerEnvKey] : undefined) ?? '';
+
+      return streamApiCompletion({
         client,
+        provider: impl.provider,
+        apiBase: impl.apiBase,
+        apiKey: resolvedApiKey,
         model,
-        [
+        messages: [
           { role: 'system', content: SYSTEM_PREAMBLE },
           { role: 'user', content: prompt },
         ],
-        { temperature, onProgress: onOutput, endpoint: { provider: impl.provider, apiBase: impl.apiBase }, maxTokens },
-      );
-
-      return { text: completion.text, usage: completion.usage };
+        temperature,
+        onProgress: onOutput,
+        maxTokens,
+      });
     },
 
     buildPrompt(opts: ImplementerOptions) {

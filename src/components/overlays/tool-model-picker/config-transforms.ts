@@ -17,7 +17,7 @@ function commitForRole(config: Config, role: 'planner' | 'implementer', opts: Pa
 
 export function commitPlannerSelection(config: Config, selection: PickerOption, model: { id: string } | null): Config {
   const opts = {
-    ...(selection.kind === 'agent-sdk' && { kind: 'agent-sdk' as const }),
+    kind: selection.kind,
     tool: selection.id,
     model: model?.id,
     existing: config.planner,
@@ -27,7 +27,7 @@ export function commitPlannerSelection(config: Config, selection: PickerOption, 
 
 export function commitImplementerSelection(config: Config, selection: PickerOption, model: { id: string } | null): Config {
   const opts = {
-    ...(selection.kind === 'agent-sdk' && { kind: 'agent-sdk' as const }),
+    kind: selection.kind,
     tool: selection.id,
     model: model?.id ?? config.implementer.model,
     existing: config.implementer,
@@ -58,6 +58,7 @@ export function commitCustomModel(
     : [...customModels, modelName];
 
   const opts = {
+    kind: selection.kind,
     tool: selection.id,
     model: modelName,
     customModels: newCustomModels,
@@ -71,9 +72,29 @@ export function removeCustomModel(config: Config, role: 'planner' | 'implementer
   if (role === 'planner') {
     const current = config.planner.customModels ?? [];
     const filtered = current.filter(m => m !== modelId);
-    return setPlanner(config, { ...config.planner, customModels: filtered });
+    if (config.planner.model !== modelId) {
+      return setPlanner(config, { ...config.planner, customModels: filtered });
+    }
+    // Clear model — PlannerConfig.model is optional, so destructure to omit the key
+    // (exactOptionalPropertyTypes forbids { model: undefined } on optional fields)
+    return setPlanner(config, omitModel(config.planner, filtered));
   }
   const current = config.implementer.customModels ?? [];
   const filtered = current.filter(m => m !== modelId);
-  return setImplementer(config, { ...config.implementer, customModels: filtered });
+  if (config.implementer.model !== modelId) {
+    return setImplementer(config, { ...config.implementer, customModels: filtered });
+  }
+  // ImplementerConfig.model is required (string), so fall back to the first
+  // remaining custom model when the selected model is deleted.
+  const fallbackModel = filtered[0] ?? config.implementer.model;
+  return setImplementer(config, { ...config.implementer, model: fallbackModel, customModels: filtered });
+}
+
+// Returns a copy of a PlannerConfig spread with the model key absent (not undefined).
+// The cast through Record<string, unknown> avoids repeating identical destructuring
+// for every discriminated variant — TypeScript requires narrowing to destructure
+// optional keys with exactOptionalPropertyTypes, but all cases are identical here.
+function omitModel(planner: PlannerConfig, customModels: string[]): PlannerConfig {
+  const { model: _, ...rest } = planner as Record<string, unknown>;
+  return { ...rest, customModels } as PlannerConfig;
 }

@@ -6,7 +6,7 @@ import { getRunnerDisplayName, getRunnerModelName } from '../core/config/index.j
 import { formatCost } from '../utils/format.js';
 import type { CostBreakdown } from '../types.js';
 
-export interface CostStats {
+interface CostStats {
   localRate: number;
   costBreakdown: CostBreakdown | null;
   currentTask: number;
@@ -14,7 +14,7 @@ export interface CostStats {
   taskCompletionTimes: number[];
 }
 
-export interface CostDisplay {
+interface CostDisplay {
   localRatePct: string;
   showSavings: boolean;
   savingsText: string;

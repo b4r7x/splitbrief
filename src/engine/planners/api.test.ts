@@ -8,6 +8,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 let server: http.Server;
 let port: number;
 let receivedBodies: any[];
+let receivedHeaders: http.IncomingHttpHeaders[];
 let projectDir: string;
 
 function makeConfig(provider: string): Config {
@@ -56,8 +57,28 @@ function streamSseChunks(res: http.ServerResponse, chunks: string[], finalUsage?
   res.end();
 }
 
+function streamAnthropicChunks(
+  res: http.ServerResponse,
+  chunks: string[],
+  usage: { input_tokens: number; output_tokens: number },
+) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+  res.write(`event: message_start\ndata: ${JSON.stringify({ type: 'message_start', message: { usage: { input_tokens: usage.input_tokens, output_tokens: 0 } } })}\n\n`);
+  for (const text of chunks) {
+    res.write(`event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text } })}\n\n`);
+  }
+  res.write(`event: message_delta\ndata: ${JSON.stringify({ type: 'message_delta', usage: { output_tokens: usage.output_tokens } })}\n\n`);
+  res.write('event: message_stop\ndata: {"type":"message_stop"}\n\n');
+  res.end();
+}
+
 beforeEach(async () => {
   receivedBodies = [];
+  receivedHeaders = [];
   projectDir = createTempDir('api-planner-test');
 
   server = http.createServer((req, res) => {
@@ -67,12 +88,30 @@ beforeEach(async () => {
       return;
     }
 
+    if (req.method === 'GET' && req.url === '/api/tags') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ models: [{ name: 'test-model' }] }));
+      return;
+    }
+
     if (req.method === 'POST' && req.url === '/v1/chat/completions') {
       const chunks: Buffer[] = [];
       req.on('data', (c) => chunks.push(c));
       req.on('end', () => {
         receivedBodies.push(JSON.parse(Buffer.concat(chunks).toString('utf-8')));
+        receivedHeaders.push(req.headers);
         streamSseChunks(res, ['Hello ', 'world'], { prompt_tokens: 42, completion_tokens: 17 });
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/v1/messages') {
+      const chunks: Buffer[] = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => {
+        receivedBodies.push(JSON.parse(Buffer.concat(chunks).toString('utf-8')));
+        receivedHeaders.push(req.headers);
+        streamAnthropicChunks(res, ['Hello ', 'Claude'], { input_tokens: 42, output_tokens: 17 });
       });
       return;
     }
@@ -111,6 +150,30 @@ describe('createApiPlanner', () => {
     expect(receivedBodies[0].messages[0]).toMatchObject({ role: 'user', content: 'the prompt' });
   });
 
+  it('uses Anthropic messages API for Anthropic planner selections', async () => {
+    const planner = createApiPlanner(makeConfig('anthropic'));
+    const collected: string[] = [];
+
+    const result = await planner.regenerate('the prompt', 'spec', projectDir, {
+      onOutput: (text) => collected.push(text),
+    });
+
+    expect(result.text).toBe('Hello Claude');
+    expect(result.usage).toEqual({ inputTokens: 42, outputTokens: 17 });
+    expect(collected.join('')).toBe('Hello Claude');
+
+    expect(receivedBodies).toHaveLength(1);
+    expect(receivedBodies[0]).toMatchObject({
+      model: 'test-model',
+      stream: true,
+      messages: [{ role: 'user', content: 'the prompt' }],
+    });
+    expect(receivedHeaders[0]).toMatchObject({
+      'anthropic-version': '2023-06-01',
+      'x-api-key': 'test-key',
+    });
+  });
+
   it('plan() runs four phases and accumulates token usage across them', async () => {
     const planner = createApiPlanner(makeConfig('ollama'));
 
@@ -125,6 +188,11 @@ describe('createApiPlanner', () => {
 
   it('isAvailable returns true when models endpoint responds', async () => {
     const planner = createApiPlanner(makeConfig('ollama'));
+    expect(await planner.isAvailable()).toBe(true);
+  });
+
+  it('isAvailable returns true for Anthropic when models endpoint responds', async () => {
+    const planner = createApiPlanner(makeConfig('anthropic'));
     expect(await planner.isAvailable()).toBe(true);
   });
 

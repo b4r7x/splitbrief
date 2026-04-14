@@ -1,16 +1,7 @@
-import type { TokenDelta } from '../../types.js';
-import { toErrorMessage } from '../../utils/format.js';
-import { formatErrorWithHint } from '../../utils/error-hints.js';
-import { redactSecrets } from '../../utils/redact.js';
+import type { TokenDelta, InvokeResult } from '../../types.js';
 import { IdleTimeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
 import { toTokenDelta } from './token-utils.js';
-
-const STREAM_TIMEOUT_MS = 60_000;
-
-interface CompletionResult {
-  text: string;
-  usage: TokenDelta | null;
-}
+import { STREAM_TIMEOUT_MS, throwMappedError } from './stream-errors.js';
 
 interface StreamCompletionOptions {
   temperature: number;
@@ -56,31 +47,12 @@ export function asStreamClient(client: unknown): StreamClient {
   throw new TypeError('Expected an OpenAI-compatible client with chat.completions.create()');
 }
 
-function isErrorLike(val: unknown): val is Record<string, unknown> {
-  return typeof val === 'object' && val !== null;
-}
-
-function throwMappedError(err: unknown, endpoint?: { provider: string; apiBase?: string | undefined }): never {
-  if (!isErrorLike(err)) throw err;
-  const cause = isErrorLike(err.cause) ? err.cause : {};
-  if (err.code === 'ECONNREFUSED' || cause.code === 'ECONNREFUSED') {
-    const baseURL = endpoint?.apiBase || 'unknown endpoint';
-    const raw = redactSecrets(`Cannot connect to ${endpoint?.provider || 'provider'} at ${baseURL}. ECONNREFUSED ${baseURL}`);
-    throw new Error(formatErrorWithHint(raw));
-  }
-  if (typeof err.status === 'number' && err.status >= 400) {
-    const raw = redactSecrets(`API error ${err.status} from ${endpoint?.provider || 'provider'}: ${toErrorMessage(err)}`);
-    throw new Error(formatErrorWithHint(raw));
-  }
-  throw err;
-}
-
 export async function streamCompletion(
   client: StreamClient,
   model: string,
   messages: Array<{ role: 'system' | 'user'; content: string }>,
   opts: StreamCompletionOptions,
-): Promise<CompletionResult> {
+): Promise<InvokeResult> {
   const { temperature, onProgress, endpoint, maxTokens } = opts;
   let stream: AsyncIterable<StreamChunk>;
   try {

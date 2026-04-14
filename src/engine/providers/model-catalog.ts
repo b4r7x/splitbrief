@@ -1,107 +1,19 @@
 import type { DetectedModel } from '../../core/types/config.js';
 import type { ProviderId } from '../../core/types/schemas/enums.js';
 import { isProviderId, isProviderLocal } from '../../core/providers.js';
-import type { KnownModel } from './known.js';
-import { KNOWN_MODELS } from './known.js';
-import { getModelsForProvider } from './models-dev.js';
+import type { KnownModel } from '../../core/providers/known-models.js';
 import {
-  isApiPricedProvider,
-  getPricingMode,
-  mergeModelMetadata,
-  idsMatch,
-  buildComparableKeys,
+  NULL_CACHE,
+  findModelMetadata,
+  getBundledModels,
+  getModelsDevEntries,
+  getRuntimeLookupProvider,
+  lookupRuntimeModel,
   type ModelCacheAccessor,
-  type ResolvedModelCatalogEntry,
-} from './model-utils.js';
+} from './model-resolution.js';
+import { isApiPricedProvider, getPricingMode, mergeModelMetadata, buildComparableKeys, type ResolvedModelCatalogEntry } from './model-utils.js';
 
 export type { ModelCacheAccessor, ResolvedModelCatalogEntry } from './model-utils.js';
-
-interface ModelsDevCatalogSource {
-  provider: ProviderId;
-  include?: (modelId: string) => boolean;
-}
-
-const OPENAI_TOOL_MODEL_RE = /^(gpt-|o\d|codex)/i;
-const OPENAI_NON_TOOL_MODEL_RE = /^(text-embedding|gpt-image|whisper|tts-|omni-moderation|text-moderation|dall-e)/i;
-const CLAUDE_CODE_MODEL_RE = /^claude-(sonnet|opus)-/i;
-const ANTHROPIC_MODEL_RE = /^claude-/i;
-
-const TOOL_MODELS_DEV_SOURCES: Partial<Record<ProviderId, ModelsDevCatalogSource[]>> = {
-  'claude-code': [
-    { provider: 'anthropic', include: (modelId) => CLAUDE_CODE_MODEL_RE.test(modelId) },
-  ],
-  codex: [
-    {
-      provider: 'openai',
-      include: (modelId) => OPENAI_TOOL_MODEL_RE.test(modelId) && !OPENAI_NON_TOOL_MODEL_RE.test(modelId),
-    },
-  ],
-  aider: [
-    { provider: 'anthropic', include: (modelId) => ANTHROPIC_MODEL_RE.test(modelId) },
-    {
-      provider: 'openai',
-      include: (modelId) => OPENAI_TOOL_MODEL_RE.test(modelId) && !OPENAI_NON_TOOL_MODEL_RE.test(modelId),
-    },
-  ],
-  copilot: [{ provider: 'copilot' }],
-  opencode: [{ provider: 'opencode' }],
-  'kilo-code': [{ provider: 'kilo-code' }],
-  'agent-sdk': [{ provider: 'anthropic', include: (modelId) => ANTHROPIC_MODEL_RE.test(modelId) }],
-};
-
-const NULL_CACHE: ModelCacheAccessor = {
-  getModelsDevCatalog: () => null,
-  getProviderModels: () => null,
-};
-
-function getRuntimeLookupProvider(providerId: ProviderId): ProviderId {
-  return providerId === 'agent-sdk' ? 'anthropic' : providerId;
-}
-
-function getModelsDevSources(providerId: ProviderId): ModelsDevCatalogSource[] {
-  return TOOL_MODELS_DEV_SOURCES[providerId] ?? [{ provider: providerId }];
-}
-
-function getModelsDevEntries(providerId: ProviderId, cache: ModelCacheAccessor): DetectedModel[] {
-  const catalog = cache.getModelsDevCatalog();
-  if (!catalog) return [];
-
-  const merged: DetectedModel[] = [];
-  for (const source of getModelsDevSources(providerId)) {
-    for (const entry of getModelsForProvider(catalog, source.provider)) {
-      if (source.include && !source.include(entry.id)) continue;
-      const existingIndex = merged.findIndex((candidate) => idsMatch(candidate.id, entry.id));
-      if (existingIndex >= 0) {
-        merged[existingIndex] = {
-          ...merged[existingIndex],
-          ...entry,
-        };
-        continue;
-      }
-      merged.push(entry);
-    }
-  }
-
-  return merged;
-}
-
-function lookupModelsDevModel(providerId: ProviderId, modelId: string, cache: ModelCacheAccessor): DetectedModel | null {
-  return getModelsDevEntries(providerId, cache).find((entry) => idsMatch(entry.id, modelId)) ?? null;
-}
-
-function lookupRuntimeModel(providerId: ProviderId, modelId: string, cache: ModelCacheAccessor): DetectedModel | null {
-  const runtimeProvider = cache.getProviderModels(getRuntimeLookupProvider(providerId));
-  return runtimeProvider?.find((entry) => idsMatch(entry.id, modelId)) ?? null;
-}
-
-function findModelMetadata(providerId: ProviderId, modelId: string, cache: ModelCacheAccessor): DetectedModel | null {
-  const fromModelsDev = lookupModelsDevModel(providerId, modelId, cache);
-  if (fromModelsDev) return fromModelsDev;
-
-  const runtimeProvider = cache.getProviderModels(getRuntimeLookupProvider(providerId));
-  const fromRuntime = runtimeProvider?.find((entry) => idsMatch(entry.id, modelId));
-  return fromRuntime ?? null;
-}
 
 function toBundledEntry(providerId: ProviderId, entry: KnownModel, cache: ModelCacheAccessor): ResolvedModelCatalogEntry {
   const base: ResolvedModelCatalogEntry = {
@@ -223,9 +135,13 @@ function filterStaleBundled(
   freshIds: Set<string>,
 ): ResolvedModelCatalogEntry[] {
   if (freshIds.size === 0) return entries;
+  const freshKeySet = new Set<string>();
+  for (const id of freshIds) {
+    for (const key of buildComparableKeys(id)) freshKeySet.add(key);
+  }
   return entries.filter((e) => {
     if (e.isDefault) return true;
-    return freshIds.has(e.id) || [...freshIds].some((freshId) => idsMatch(freshId, e.id));
+    return buildComparableKeys(e.id).some((key) => freshKeySet.has(key));
   });
 }
 
@@ -236,24 +152,30 @@ function collectFreshIds(modelsDev: ResolvedModelCatalogEntry[], runtime: Resolv
   return ids;
 }
 
-function resolveApiCatalog(providerId: ProviderId, cache: ModelCacheAccessor): ResolvedModelCatalogEntry[] {
-  const bundled = (KNOWN_MODELS[providerId] ?? []).map((entry) => toBundledEntry(providerId, entry, cache));
-  const modelsDev = getModelsDevEntries(providerId, cache).map((entry) => toModelsDevEntry(providerId, entry, cache));
-  const runtime = (cache.getProviderModels(getRuntimeLookupProvider(providerId)) ?? []).map((entry) => toRuntimeEntry(providerId, entry, cache));
+function resolveCatalogEntries(
+  providerId: ProviderId,
+  cache: ModelCacheAccessor,
+  opts: { runtimeProvider?: ProviderId; includeModelsDev?: boolean },
+): ResolvedModelCatalogEntry[] {
+  const bundled = getBundledModels(providerId).map((entry) => toBundledEntry(providerId, entry, cache));
+  const modelsDev = opts.includeModelsDev
+    ? getModelsDevEntries(providerId, cache).map((entry) => toModelsDevEntry(providerId, entry, cache))
+    : [];
+  const runtimeSource: ProviderId = opts.runtimeProvider ?? providerId;
+  const runtime = (cache.getProviderModels(runtimeSource) ?? []).map((entry) => toRuntimeEntry(providerId, entry, cache));
   return filterStaleBundled(mergeCatalogEntries(providerId, bundled, runtime, modelsDev), collectFreshIds(modelsDev, runtime));
+}
+
+function resolveApiCatalog(providerId: ProviderId, cache: ModelCacheAccessor): ResolvedModelCatalogEntry[] {
+  return resolveCatalogEntries(providerId, cache, { runtimeProvider: getRuntimeLookupProvider(providerId), includeModelsDev: true });
 }
 
 function resolveToolCatalog(providerId: ProviderId, cache: ModelCacheAccessor): ResolvedModelCatalogEntry[] {
-  const bundled = (KNOWN_MODELS[providerId] ?? []).map((entry) => toBundledEntry(providerId, entry, cache));
-  const modelsDev = getModelsDevEntries(providerId, cache).map((entry) => toModelsDevEntry(providerId, entry, cache));
-  const runtime = (cache.getProviderModels(providerId) ?? []).map((entry) => toRuntimeEntry(providerId, entry, cache));
-  return filterStaleBundled(mergeCatalogEntries(providerId, bundled, runtime, modelsDev), collectFreshIds(modelsDev, runtime));
+  return resolveCatalogEntries(providerId, cache, { includeModelsDev: true });
 }
 
 function resolveLocalCatalog(providerId: ProviderId, cache: ModelCacheAccessor): ResolvedModelCatalogEntry[] {
-  const bundled = (KNOWN_MODELS[providerId] ?? []).map((entry) => toBundledEntry(providerId, entry, cache));
-  const runtime = (cache.getProviderModels(providerId) ?? []).map((entry) => toRuntimeEntry(providerId, entry, cache));
-  return filterStaleBundled(mergeCatalogEntries(providerId, bundled, runtime, []), collectFreshIds([], runtime));
+  return resolveCatalogEntries(providerId, cache, {});
 }
 
 export function resolveModelCatalog(providerId: string, cache: ModelCacheAccessor = NULL_CACHE): ResolvedModelCatalogEntry[] {

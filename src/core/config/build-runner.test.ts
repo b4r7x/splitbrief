@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRunnerConfig } from './build-runner.js';
+import { buildRunnerConfig, inferKindFromTool } from './build-runner.js';
 
 describe('buildRunnerConfig', () => {
   describe('kind from explicit hint', () => {
@@ -46,6 +46,15 @@ describe('buildRunnerConfig', () => {
       });
       expect(result.kind).toBe('shell');
     });
+
+    it('infers agent from tool name', () => {
+      const result = buildRunnerConfig('implementer', {
+        tool: 'agent',
+        command: 'custom-agent',
+        model: 'claude-sonnet-4-6',
+      });
+      expect(result.kind).toBe('agent');
+    });
   });
 
   describe('apiBase auto-fill for known providers', () => {
@@ -65,6 +74,25 @@ describe('buildRunnerConfig', () => {
         model: 'test',
       });
       expect((result as any).apiBase).toBe('http://localhost:1234/v1');
+    });
+
+    it('does not reuse the previous provider apiBase when switching providers', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'api',
+        tool: 'anthropic',
+        model: 'claude-sonnet-4-6',
+        existing: {
+          kind: 'api',
+          provider: 'openrouter',
+          apiBase: 'https://openrouter.ai/api/v1',
+          apiKey: 'openrouter-key',
+          model: 'anthropic/claude-sonnet-4.6',
+          contextLength: 8192,
+        },
+      });
+
+      expect((result as any).apiBase).toBe('https://api.anthropic.com/v1');
+      expect((result as any).apiKey).toBeUndefined();
     });
   });
 
@@ -161,5 +189,35 @@ describe('buildRunnerConfig', () => {
         })
       ).toThrow(/model/);
     });
+  });
+});
+
+describe('inferKindFromTool', () => {
+  it('returns cli for known CLI tools', () => {
+    expect(inferKindFromTool('claude-code')).toBe('cli');
+    expect(inferKindFromTool('codex')).toBe('cli');
+    expect(inferKindFromTool('aider')).toBe('cli');
+  });
+
+  it('returns shell for shell meta-id', () => {
+    expect(inferKindFromTool('shell')).toBe('shell');
+  });
+
+  it('returns agent for agent meta-id', () => {
+    expect(inferKindFromTool('agent')).toBe('agent');
+  });
+
+  it('returns agent-sdk for agent-sdk', () => {
+    expect(inferKindFromTool('agent-sdk')).toBe('agent-sdk');
+  });
+
+  it('returns api for known API providers', () => {
+    expect(inferKindFromTool('anthropic')).toBe('api');
+    expect(inferKindFromTool('ollama')).toBe('api');
+    expect(inferKindFromTool('openrouter')).toBe('api');
+  });
+
+  it('returns api for unknown providers (custom endpoints)', () => {
+    expect(inferKindFromTool('my-custom-provider')).toBe('api');
   });
 });

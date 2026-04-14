@@ -1,17 +1,12 @@
-// Intentional class — Error subclass for CLI exit-code propagation
-export class CliError extends Error {
-  readonly exitCode: number;
-
-  constructor(message: string, exitCode = 1) {
-    super(message);
-    this.exitCode = exitCode;
-  }
-}
+export type CliError = Error & { readonly exitCode: number };
 
 export function cliError(message: string, exitCode = 1): CliError {
-  return new CliError(message, exitCode);
+  const err = new Error(message) as CliError;
+  (err as { exitCode: number }).exitCode = exitCode;
+  return err;
 }
 
 export function isCliError(err: unknown): err is CliError {
-  return err instanceof CliError;
+  return err instanceof Error
+    && typeof (err as unknown as Record<string, unknown>)['exitCode'] === 'number';
 }

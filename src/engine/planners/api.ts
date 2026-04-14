@@ -3,48 +3,50 @@ import type { Planner } from './types.js';
 import { createPlannerBase } from './base.js';
 import { getProvider } from '../providers/registry.js';
 import { createClientFromProvider } from '../providers/client.js';
-import { asStreamClient, streamCompletion } from '../streaming/openai-stream.js';
 import { resolveAutoModel } from '../../core/providers.js';
+import { streamApiCompletion, throwAutoModelError } from '../api-shared.js';
+import { assertPlannerKind } from './utils.js';
 import type OpenAI from 'openai';
 
 async function invokeApi(
-  client: OpenAI,
+  client: OpenAI | null,
   model: string,
-  planner: { provider: string; apiBase?: string | undefined },
+  planner: { provider: string; apiBase?: string | undefined; apiKey: string },
   prompt: string,
   onOutput: (text: string) => void,
 ): Promise<InvokeResult> {
-  const result = await streamCompletion(asStreamClient(client), model, [
-    { role: 'user', content: prompt },
-  ], {
+  return streamApiCompletion({
+    client,
+    provider: planner.provider,
+    apiBase: planner.apiBase,
+    apiKey: planner.apiKey,
+    model,
+    messages: [{ role: 'user', content: prompt }],
     temperature: 0.3,
     onProgress: onOutput,
-    endpoint: { provider: planner.provider, apiBase: planner.apiBase },
   });
-
-  return {
-    text: result.text,
-    usage: result.usage,
-  };
 }
 
 export function createApiPlanner(config: Config): Planner {
-  if (config.planner.kind !== 'api') {
-    throw new Error(`createApiPlanner requires planner.kind = 'api' (got ${config.planner.kind})`);
-  }
-  const plannerCfg = config.planner;
+  const plannerCfg = assertPlannerKind(config, 'api');
   const provider = plannerCfg.provider;
   const model = resolveAutoModel(plannerCfg.model, provider);
-  if (!model) throw new Error(`API planner requires an explicit model name — 'auto' is not supported for API backends. Set planner.model in your config.`);
+  if (!model) throwAutoModelError('planner');
   const resolved = getProvider(provider, {
     apiBase: plannerCfg.apiBase,
     apiKey: plannerCfg.apiKey,
   });
 
-  const client = createClientFromProvider(resolved);
+  const client = provider === 'anthropic' ? null : createClientFromProvider(resolved);
 
   const invoke = ({ prompt, callbacks }: { prompt: string; projectDir: string; callbacks: { onOutput: (text: string) => void } }) =>
-    invokeApi(client, model, { provider, apiBase: plannerCfg.apiBase }, prompt, callbacks.onOutput);
+    invokeApi(
+      client,
+      model,
+      { provider, apiBase: resolved.baseURL, apiKey: resolved.apiKey() },
+      prompt,
+      callbacks.onOutput,
+    );
 
   return createPlannerBase({
     invokePlan: invoke,
@@ -52,8 +54,7 @@ export function createApiPlanner(config: Config): Planner {
 
     async isAvailable() {
       try {
-        await client.models.list();
-        return true;
+        return (await resolved.listModels()).length > 0;
       } catch { /* API unreachable — treat as unavailable */
         return false;
       }

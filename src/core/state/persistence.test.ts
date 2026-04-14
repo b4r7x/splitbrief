@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { saveState, loadState, appendEvent } from './persistence.js';
 import { createInitialState } from './machine.js';
@@ -7,6 +7,11 @@ import { taskId } from '../types/workflow.js';
 import type { OrchestratorEvent } from '../types/index.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { TINY_SPEC_DIR } from '../paths.js';
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return { ...actual, appendFileSync: vi.fn(actual.appendFileSync) };
+});
 
 let tmp: string;
 
@@ -108,5 +113,24 @@ describe('appendEvent', () => {
     const event: OrchestratorEvent = { ts: 1000, type: 'workflow_started', phase: 'idle', data: {} };
     appendEvent(dir, event);
     expect(existsSync(join(dir, TINY_SPEC_DIR, 'current', 'events.jsonl'))).toBe(true);
+  });
+
+  describe('failure handling', () => {
+    beforeEach(() => { vi.mocked(appendFileSync).mockClear(); });
+    afterEach(() => { vi.mocked(appendFileSync).mockRestore(); });
+
+    it('warns to stderr and does not throw when write fails', () => {
+      vi.mocked(appendFileSync).mockImplementationOnce(() => { throw new Error('disk full'); });
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      try {
+        const dir = makeTmp();
+        const event: OrchestratorEvent = { ts: 1000, type: 'workflow_started', phase: 'idle', data: {} };
+        expect(() => appendEvent(dir, event)).not.toThrow();
+        const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
+        expect(output).toContain('disk full');
+      } finally {
+        stderrSpy.mockRestore();
+      }
+    });
   });
 });

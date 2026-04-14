@@ -88,8 +88,16 @@ describe('calculateCostBreakdown', () => {
 
     expect(result.actualPlannerCost).toBeGreaterThan(0);
     expect(result.actualImplementerCost).toBeGreaterThan(0);
-    expect(result.savingsAmount).toBeGreaterThanOrEqual(0);
     expect(result.hasSavingsEstimate).toBe(true);
+
+    // savingsAmount = hypotheticalCost (implementer tokens @ planner rate) - actualImplementerCost.
+    // It must NOT deduct plannerCost — planner spend is fixed regardless of implementer choice.
+    expect(result.savingsAmount).toBeCloseTo(result.hypotheticalCost - result.actualImplementerCost, 10);
+    expect(result.savingsAmount).toBeGreaterThan(0);
+
+    // savingsPercentage uses hypotheticalCost as the 100% baseline.
+    expect(result.savingsPercentage).toBeCloseTo((result.savingsAmount / result.hypotheticalCost) * 100, 10);
+
     expect(result.providerCosts).toEqual({
       anthropic: {
         inputTokens: 100_000,
@@ -102,6 +110,52 @@ describe('calculateCostBreakdown', () => {
         cost: result.actualImplementerCost,
       },
     });
+  });
+
+  it('savings formula excludes planner cost from both sides', () => {
+    // Verify: changing planner token usage does not affect savingsAmount.
+    const sharedImplementer = { implementerInput: 500_000, implementerOutput: 200_000 };
+
+    const low = calculateCostBreakdown({
+      tokenUsage: makeUsage({ plannerInput: 10_000, plannerOutput: 5_000, ...sharedImplementer }),
+      totalTasks: 1, escalatedCount: 0,
+      plannerTool: 'anthropic', implementerTool: 'deepseek',
+      plannerModel: 'claude-sonnet-4-6', implementerModel: 'deepseek-chat',
+    });
+
+    const high = calculateCostBreakdown({
+      tokenUsage: makeUsage({ plannerInput: 1_000_000, plannerOutput: 500_000, ...sharedImplementer }),
+      totalTasks: 1, escalatedCount: 0,
+      plannerTool: 'anthropic', implementerTool: 'deepseek',
+      plannerModel: 'claude-sonnet-4-6', implementerModel: 'deepseek-chat',
+    });
+
+    // hypotheticalCost (implementer tokens @ planner rate) is identical — same implementer tokens.
+    expect(low.hypotheticalCost).toBeCloseTo(high.hypotheticalCost, 10);
+    // savingsAmount must be identical regardless of how much the planner consumed.
+    expect(low.savingsAmount).toBeCloseTo(high.savingsAmount, 10);
+  });
+
+  it('treats agent-sdk planner as unpriced-meta with no savings estimate', () => {
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 500_000,
+      implementerOutput: 200_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 3,
+      escalatedCount: 0,
+      plannerTool: 'agent-sdk',
+      implementerTool: 'ollama',
+    });
+
+    expect(result.hasSavingsEstimate).toBe(false);
+    expect(result.savingsAmount).toBe(0);
+    expect(result.hypotheticalCost).toBe(0);
+    expect(result.totalActualCost).toBe(0);
   });
 
   it('merges priced planner and implementer usage when they share a provider', () => {

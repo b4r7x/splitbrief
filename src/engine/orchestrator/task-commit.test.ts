@@ -199,4 +199,44 @@ describe('validateCommitAndAdvance', () => {
       method: 'local',
     });
   });
+
+  it('uses explicit retryCount over state.attempt when provided', async () => {
+    const state = makeState({ attempt: 1 });
+    const { callbacks, events } = makeCallbacks();
+
+    await validateCommitAndAdvance({
+      task: firstTask(state),
+      results: passingResults,
+      projectDir: '/tmp/proj',
+      config: makeConfig(),
+      state,
+      callbacks,
+      method: 'escalated-hint',
+      transitionType: 'HINT_SUCCESS',
+      retryCount: 3,
+    });
+
+    const taskEvent = events.find((e) => e.type === 'task-complete');
+    expect(taskEvent).toBeDefined();
+    expect(taskEvent).toMatchObject({ type: 'task-complete', retries: 3 });
+  });
+
+  it('falls back to state.attempt when retryCount is not provided', async () => {
+    const state = makeState({ attempt: 2 });
+    const { callbacks, events } = makeCallbacks();
+
+    await validateCommitAndAdvance({
+      task: firstTask(state),
+      results: passingResults,
+      projectDir: '/tmp/proj',
+      config: makeConfig(),
+      state,
+      callbacks,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+    });
+
+    const taskEvent = events.find((e) => e.type === 'task-complete');
+    expect(taskEvent).toMatchObject({ type: 'task-complete', retries: 2 });
+  });
 });

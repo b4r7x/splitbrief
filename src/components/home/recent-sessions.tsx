@@ -1,7 +1,9 @@
+import { useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../ui/theme.js';
 import { terminalSizeStore } from '../../stores/terminal-size.js';
 import { sessionsStore } from '../../stores/sessions.js';
+import { configStore } from '../../stores/config.js';
 import { formatRelativeTime } from '../../utils/format.js';
 import { getSessionStatusDisplay } from '../../core/sessions/status.js';
 
@@ -9,6 +11,12 @@ export function RecentSessions() {
   const sessions = sessionsStore.use(s => s.sessions);
   const theme = useTheme();
   const isSmall = terminalSizeStore.use(s => s.isSmall);
+  const projectDir = configStore.use(s => s.projectDir);
+  const sessionScope = configStore.use(s => s.config?.sessions?.scope ?? 'project');
+
+  useEffect(() => {
+    sessionsStore.load(sessionScope, projectDir);
+  }, [projectDir, sessionScope]);
 
   if (sessions.length === 0) {
     return (

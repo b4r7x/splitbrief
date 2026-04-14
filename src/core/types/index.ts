@@ -6,9 +6,6 @@ export type {
   CliPlannerTool,
   OutputFormat,
   WorkflowMode,
-  CommitStrategy,
-  ThemeMode,
-  ShikiTheme,
   WorkflowOpts,
   PlannerDetection,
   ProviderDetection,
@@ -20,8 +17,7 @@ export type {
   RunnerKind,
 } from './config.js';
 export {
-  WORKFLOW_MODES, COMMIT_STRATEGIES, THEME_MODES, SHIKI_THEMES,
-  OUTPUT_FORMATS,
+  WORKFLOW_MODES,
   RUNNER_KINDS, RunnerKindSchema,
 } from './config.js';
 export type {
@@ -35,7 +31,7 @@ export type {
   CodeContext,
   ProjectContext,
 } from './workflow.js';
-export { taskId, PHASES, TASK_STATUSES } from './workflow.js';
+export { taskId } from './workflow.js';
 export type {
   TokenDelta,
   TokenUsage,
@@ -47,8 +43,7 @@ export type {
   ValidationResult,
   Summary,
 } from './summary.js';
-export { TASK_COMPLETION_METHODS } from './summary.js';
-export type { ParsedLine, InvokeResult, RunnerRuntime } from './runner.js';
+export type { ParsedLine, InvokeResult, RunnerRuntime, ToolUseInfo } from './runner.js';
 export type {
   TuiEvent,
   ValidationStages,

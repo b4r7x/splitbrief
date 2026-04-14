@@ -8,7 +8,7 @@ import { STATE_FILE, EVENTS_FILE } from '../paths.js';
 import { currentDir } from '../paths-io.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import { ensureSecureDir, writeSecureFile, SECURE_FILE_MODE } from '../../utils/fs.js';
-import { warnStderr } from '../../utils/format.js';
+import { warnStderr } from '../../utils/warn.js';
 
 export function saveState(projectDir: string, state: WorkflowState): void {
   writeSecureFile(join(currentDir(projectDir), STATE_FILE), JSON.stringify(state, null, 2) + '\n');
@@ -34,6 +34,10 @@ export function loadState(projectDir: string): WorkflowState | null {
 
 export function appendEvent<T extends OrchestratorEventType>(projectDir: string, event: OrchestratorEvent<T>): void {
   const dir = currentDir(projectDir);
-  ensureSecureDir(dir);
-  appendFileSync(join(dir, EVENTS_FILE), JSON.stringify(event) + '\n', { mode: SECURE_FILE_MODE });
+  try {
+    ensureSecureDir(dir);
+    appendFileSync(join(dir, EVENTS_FILE), JSON.stringify(event) + '\n', { mode: SECURE_FILE_MODE });
+  } catch (err) {
+    warnStderr(`Warning: failed to persist event ${event.type}: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }

@@ -9,7 +9,7 @@ import {
 import { resolveProjectDir } from '../workflow.js';
 import { listSessions, getSessionDir } from '../../core/sessions/io.js';
 import { aggregateSessionCosts } from '../../core/sessions/analytics.js';
-import { formatCost, toErrorMessage } from '../../utils/format.js';
+import { formatCost, labelError } from '../../utils/format.js';
 import { getProviderDisplayName } from '../../core/providers.js';
 import { formatModelName } from '../../core/model-display.js';
 
@@ -54,7 +54,7 @@ function printCostHistory(projectDir: string): void {
       }
     }
   } catch (err) {
-    console.error(`Cannot load session history: ${toErrorMessage(err)}`);
+    console.error(labelError('Cannot load session history', err));
   }
 }
 
@@ -67,43 +67,44 @@ export function registerStatusCommand(program: Command): void {
     .action((opts: { project?: string; history?: boolean }) => {
       const projectDir = resolveProjectDir(opts.project);
 
-      if (opts.history) {
-        printCostHistory(projectDir);
-        return;
-      }
-
       const state = loadState(projectDir);
 
       if (!state) {
         console.log('No active workflow.');
-        return;
+        if (!opts.history) {
+          console.log(ansis.dim('  Run `tiny-spec status --history` to see past sessions.'));
+        }
+      } else {
+        console.log(`${ansis.dim('Feature:')}  ${ansis.bold(state.feature)}`);
+        console.log(`${ansis.dim('Phase:')}    ${ansis.bold(state.phase)}`);
+        console.log(`${ansis.dim('Task:')}     ${state.currentTaskIndex + 1}/${state.tasks.length}`);
+        console.log(`${ansis.dim('Started:')}  ${state.startedAt}`);
+
+        if (state.plannerTool) {
+          const model = state.plannerModel ? ` (${formatModelName(state.plannerModel)})` : '';
+          console.log(`${ansis.dim('Planner:')}  ${getProviderDisplayName(state.plannerTool)}${model}`);
+        }
+        if (state.implementerTool) {
+          const model = state.implementerModel ? ` (${formatModelName(state.implementerModel)})` : '';
+          console.log(`${ansis.dim('Impl:')}     ${getProviderDisplayName(state.implementerTool)}${model}`);
+        }
+
+        const completed = getCompletedTaskIds(state);
+        const escalated = getEscalatedTaskIds(state);
+        const failed = getFailedTaskIds(state);
+        if (completed.length > 0) {
+          console.log(`${ansis.dim('Done:')}     ${ansis.green(String(completed.length))}`);
+        }
+        if (escalated.length > 0) {
+          console.log(`${ansis.dim('Escalated:')} ${ansis.yellow(String(escalated.length))}`);
+        }
+        if (failed.length > 0) {
+          console.log(`${ansis.dim('Failed:')}   ${ansis.red(String(failed.length))}`);
+        }
       }
 
-      console.log(`${ansis.dim('Feature:')}  ${ansis.bold(state.feature)}`);
-      console.log(`${ansis.dim('Phase:')}    ${ansis.bold(state.phase)}`);
-      console.log(`${ansis.dim('Task:')}     ${state.currentTaskIndex + 1}/${state.tasks.length}`);
-      console.log(`${ansis.dim('Started:')}  ${state.startedAt}`);
-
-      if (state.plannerTool) {
-        const model = state.plannerModel ? ` (${formatModelName(state.plannerModel)})` : '';
-        console.log(`${ansis.dim('Planner:')}  ${getProviderDisplayName(state.plannerTool)}${model}`);
-      }
-      if (state.implementerTool) {
-        const model = state.implementerModel ? ` (${formatModelName(state.implementerModel)})` : '';
-        console.log(`${ansis.dim('Impl:')}     ${getProviderDisplayName(state.implementerTool)}${model}`);
-      }
-
-      const completed = getCompletedTaskIds(state);
-      const escalated = getEscalatedTaskIds(state);
-      const failed = getFailedTaskIds(state);
-      if (completed.length > 0) {
-        console.log(`${ansis.dim('Done:')}     ${ansis.green(String(completed.length))}`);
-      }
-      if (escalated.length > 0) {
-        console.log(`${ansis.dim('Escalated:')} ${ansis.yellow(String(escalated.length))}`);
-      }
-      if (failed.length > 0) {
-        console.log(`${ansis.dim('Failed:')}   ${ansis.red(String(failed.length))}`);
+      if (opts.history) {
+        printCostHistory(projectDir);
       }
     });
 }

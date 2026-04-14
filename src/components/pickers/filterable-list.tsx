@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Box } from 'ink';
+import { Box, type Key } from 'ink';
 import { OverlayPanel } from '../overlays/overlay-panel.js';
 import { FilterInput } from '../../ui/filter-input.js';
 import { ScrollIndicator } from '../../ui/scroll-indicator.js';
@@ -23,6 +23,7 @@ interface FilterableListProps<T> {
   bordered?: boolean;
   width?: number;
   shouldAppendChar?: (ch: string) => boolean;
+  customKeys?: (input: string, key: Key, ctx: { filtered: T[]; selectedIndex: number }) => boolean | undefined;
   isActive?: boolean;
   sectionBy?: (item: T) => string;
   renderSectionHeader?: (section: string, index: number) => ReactNode;
@@ -42,6 +43,7 @@ export function FilterableList<T>({
   bordered,
   width,
   shouldAppendChar,
+  customKeys,
   isActive,
   sectionBy,
   renderSectionHeader,
@@ -53,8 +55,9 @@ export function FilterableList<T>({
     filterFn,
     onSelect: (item) => onConfirm?.(item),
     onClose: () => overlayStore.close(),
-    shouldAppendChar,
-    isActive,
+    ...(shouldAppendChar && { shouldAppendChar }),
+    ...(customKeys && { customKeys }),
+    ...(isActive !== undefined && { isActive }),
   });
 
   const { filter, filtered, selectedIndex } = list;

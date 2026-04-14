@@ -1,4 +1,4 @@
-export interface SectionedItem<T> {
+interface SectionedItem<T> {
   item: T;
   sectionHeader: string | null;
 }

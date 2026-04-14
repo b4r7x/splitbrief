@@ -1,17 +1,13 @@
 import { useState } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme, type Theme } from '../../../ui/theme.js';
-import { OverlayPanel } from '../overlay-panel.js';
 import type { SkillMeta } from '../../../types.js';
-import { terminalSizeStore } from '../../../stores/terminal-size.js';
-import { CURSOR, NO_CURSOR, filterByFields, computeScrollWindow } from '../../pickers/picker-utils.js';
+import { getResponsivePanelWidth, terminalSizeStore } from '../../../stores/terminal-size.js';
+import { CURSOR, NO_CURSOR, filterByFields } from '../../pickers/picker-utils.js';
 import { skillsStore } from '../../../stores/skills.js';
 import { overlayStore } from '../../../stores/overlay.js';
-import { useFilterableList } from '../../../hooks/use-filterable-list.js';
-import { FilterInput } from '../../../ui/filter-input.js';
-import { ScrollIndicator } from '../../../ui/scroll-indicator.js';
-import { toSectionedList } from '../../../utils/sectioned-list.js';
 import { truncate } from '../../../utils/format.js';
+import { FilterableList } from '../../pickers/filterable-list.js';
 
 const filterSkill = (s: SkillMeta, query: string): boolean =>
   filterByFields(s, query, ['name', 'description']);
@@ -40,9 +36,7 @@ function SkillRow({ skill, isCursor, isChecked, nameColWidth, descMaxWidth, them
 
 export function SkillsPicker() {
   const t = useTheme();
-  const cols = terminalSizeStore.use(s => s.cols);
-  const rows = terminalSizeStore.use(s => s.rows);
-  const isSmall = terminalSizeStore.use(s => s.isSmall);
+  const { cols, isSmall } = terminalSizeStore.use(s => s);
   const skills = skillsStore.use(s => s.available);
   const initial = skillsStore.use(s => s.selected);
   const [checked, setChecked] = useState<Set<string>>(new Set(initial));
@@ -69,103 +63,84 @@ export function SkillsPicker() {
 
   const shouldAppendChar = (ch: string) => ch !== ' ' || !navigating;
 
-  const list = useFilterableList<SkillMeta>({
-    items: sortedSkills,
-    filterFn: filterSkill,
-    onSelect: handleConfirm,
-    onClose: () => overlayStore.close(),
-    shouldAppendChar,
-    customKeys: (input, key, { filtered: current, selectedIndex: currentIndex }) => {
-      if (key.upArrow || key.downArrow) {
-        setNavigating(true);
-        return false;
-      }
-      if (key.backspace || key.delete) {
-        setNavigating(false);
-        return false;
-      }
-      if (key.ctrl && input === 'a') {
-        const ids = current.map(s => s.id);
-        setChecked(prev => {
-          const allChecked = ids.length > 0 && ids.every(id => prev.has(id));
-          const next = new Set(prev);
-          if (allChecked) {
-            for (const id of ids) next.delete(id);
-          } else {
-            for (const id of ids) next.add(id);
-          }
-          return next;
-        });
-        return true;
-      }
-      if (input === ' ' && navigating) {
-        const item = current[currentIndex];
-        if (item) toggle(item.id);
-        return true;
-      }
-      if (input && !key.ctrl && !key.meta && input !== ' ') {
-        setNavigating(false);
-      }
-      return false;
-    },
-  });
-
-  const { filter, filtered, selectedIndex } = list;
-
   const hintText = navigating
     ? 'Space toggle  Ctrl+A all  Enter confirm  Esc cancel'
     : '\u2191\u2193 to navigate  Ctrl+A all  Enter confirm  Esc cancel';
 
-  const contentWidth = Math.min(cols - 4, isSmall ? 76 : 110);
-  const nameColWidth = isSmall ? 20 : 26;
-  const descMaxWidth = Math.max(10, contentWidth - 6 - nameColWidth - 2);
-
-  if (skills.length === 0) {
-    return (
-      <OverlayPanel title="Planner Skills" hint="Esc close">
-        <Text color={t.textDim}>  No skills found.</Text>
-        <Text color={t.textDim}>  Add skills to .claude/skills/ or .tiny-spec/skills/ to get started.</Text>
-      </OverlayPanel>
-    );
-  }
-
-  const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } =
-    computeScrollWindow(filtered, selectedIndex, rows, 12, 5);
-
-  const sectioned = toSectionedList(visibleSlice, (s) => s.scope);
+  const panelWidth = getResponsivePanelWidth(cols, isSmall);
+  const nameColWidth = Math.max(8, Math.min(isSmall ? 20 : 26, Math.max(1, panelWidth - 10)));
+  const descMaxWidth = Math.max(1, panelWidth - 8 - nameColWidth);
 
   return (
-    <OverlayPanel
+    <FilterableList
+      items={sortedSkills}
+      filterFn={filterSkill}
+      getKey={(skill) => skill.id}
+      onConfirm={handleConfirm}
       title={`Planner Skills (${checked.size} selected)`}
       hint={hintText}
       bordered={false}
-    >
-      <FilterInput filter={filter} />
-      <ScrollIndicator show={showScrollUp} direction="up" />
-      <Box flexDirection="column">
-        {filtered.length === 0 && <Text color={t.textDim}>{'  No matching skills'}</Text>}
-        {sectioned.map(({ item: skill, sectionHeader }, i) => {
-          const globalIndex = scrollOffset + i;
-          return (
-            <Box key={skill.id} flexDirection="column">
-              {sectionHeader && (
-                <Box marginTop={i > 0 ? 1 : 0}>
-                  <Text bold color={t.text}>{'  '}{sectionHeader === 'project' ? 'Project' : 'Global'}</Text>
-                </Box>
-              )}
-              <SkillRow
-                skill={skill}
-                isCursor={globalIndex === selectedIndex}
-                isChecked={checked.has(skill.id)}
-                nameColWidth={nameColWidth}
-                descMaxWidth={descMaxWidth}
-                theme={t}
-              />
-            </Box>
-          );
-        })}
-      </Box>
-      <ScrollIndicator show={showScrollDown} direction="down" />
-    </OverlayPanel>
+      chromeRows={12}
+      maxVisible={5}
+      width={panelWidth}
+      shouldAppendChar={shouldAppendChar}
+      customKeys={(input, key, { filtered: current, selectedIndex: currentIndex }) => {
+        if (key.upArrow || key.downArrow) {
+          setNavigating(true);
+          return false;
+        }
+        if (key.backspace || key.delete) {
+          setNavigating(false);
+          return false;
+        }
+        if (key.ctrl && input === 'a') {
+          const ids = current.map((skill) => skill.id);
+          setChecked((prev) => {
+            const allChecked = ids.length > 0 && ids.every((id) => prev.has(id));
+            const next = new Set(prev);
+            if (allChecked) {
+              for (const id of ids) next.delete(id);
+            } else {
+              for (const id of ids) next.add(id);
+            }
+            return next;
+          });
+          return true;
+        }
+        if (input === ' ' && navigating) {
+          const item = current[currentIndex];
+          if (item) toggle(item.id);
+          return true;
+        }
+        if (input && !key.ctrl && !key.meta && input !== ' ') {
+          setNavigating(false);
+        }
+        return false;
+      }}
+      placeholder={skills.length === 0 ? (
+        <Box flexDirection="column">
+          <Text color={t.textDim}>  No skills found.</Text>
+          <Text color={t.textDim}>  Add skills to .claude/skills/ or .tiny-spec/skills/ to get started.</Text>
+        </Box>
+      ) : (
+        <Text color={t.textDim}>{'  No matching skills'}</Text>
+      )}
+      sectionBy={(skill) => skill.scope}
+      renderSectionHeader={(section, index) => (
+        <Box marginTop={index > 0 ? 1 : 0}>
+          <Text bold color={t.text}>{'  '}{section === 'project' ? 'Project' : 'Global'}</Text>
+        </Box>
+      )}
+      renderItem={(skill, { isCursor }) => (
+        <SkillRow
+          skill={skill}
+          isCursor={isCursor}
+          isChecked={checked.has(skill.id)}
+          nameColWidth={nameColWidth}
+          descMaxWidth={descMaxWidth}
+          theme={t}
+        />
+      )}
+    />
   );
 }

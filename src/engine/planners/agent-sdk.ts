@@ -2,11 +2,11 @@ import type { Planner } from './types.js';
 import { createPlannerBase } from './base.js';
 import { createAgentSdkBackend, isAgentSdkAvailable, PLANNER_ALLOWED_TOOLS } from '../agent-sdk.js';
 import { resolveAutoModel } from '../../core/providers.js';
-import { DEFAULT_AGENT_SDK_MODEL } from '../providers/known.js';
+import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
 
-export function createAgentSdkPlanner(model?: string): Planner {
+export function createAgentSdkPlanner(model?: string, apiKey?: string): Planner {
   const effectiveModel = resolveAutoModel(model, 'agent-sdk') ?? DEFAULT_AGENT_SDK_MODEL;
-  const backend = createAgentSdkBackend({ allowedTools: [...PLANNER_ALLOWED_TOOLS] });
+  const backend = createAgentSdkBackend({ allowedTools: [...PLANNER_ALLOWED_TOOLS], apiKey });
 
   const invoke = ({ prompt, projectDir, callbacks }: { prompt: string; projectDir: string; callbacks: { onOutput: (text: string) => void } }) =>
     backend.invoke({ prompt, projectDir, model: effectiveModel, onOutput: callbacks.onOutput });
@@ -14,6 +14,6 @@ export function createAgentSdkPlanner(model?: string): Planner {
   return createPlannerBase({
     invokePlan: invoke,
     invokeEscalate: invoke,
-    isAvailable: isAgentSdkAvailable,
+    isAvailable: () => isAgentSdkAvailable(apiKey),
   });
 }

@@ -8,8 +8,11 @@ export interface PlannerCallbacks {
 
 /** Result from a single planning phase. */
 export interface PhaseResult {
+  /** Resolved artifact content (what should be persisted to disk). */
   text: string;
   filename: string;
+  /** Raw planner stdout, retained when it differs from the resolved artifact. */
+  rawOutput?: string | undefined;
 }
 
 export interface PlanResult {
@@ -73,4 +76,7 @@ export interface Planner extends RunnerRuntime {
     projectDir: string,
     callbacks: { onOutput: (text: string) => void },
   ): Promise<{ text: string; usage: TokenDelta | null }>;
+
+  /** True when the planner can emit inline clarification questions during planning. */
+  readonly supportsConversationalPlanning?: boolean | undefined;
 }

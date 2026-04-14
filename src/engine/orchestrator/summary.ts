@@ -26,9 +26,8 @@ type BuildSummaryOptions = {
 
 /**
  * Estimates per-task cost using global average cost-per-token.
- * This is an intentional approximation — tasks that used different models
- * during escalation share the same average rate. Acceptable for display
- * purposes; exact per-task cost would require tracking provider per attempt.
+ * Tasks that escalated share the same average rate as non-escalated tasks;
+ * exact per-task cost would require tracking provider per attempt.
  */
 export function calculateTaskCost(
   task: TaskTokenUsage,

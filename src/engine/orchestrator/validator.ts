@@ -1,15 +1,50 @@
 import { existsSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
 import type { Task, Config, ValidationResult, ValidationStages, OrchestratorCallbacks } from '../../types.js';
-import { runCommand, isENOENT } from '../../utils/process.js';
+import { runCommand } from '../../utils/process.js';
+import { isENOENT } from '../../utils/process-errors.js';
 import { emitValidationStart, emitValidationProgress, emitValidationResult } from './events.js';
 
 const MAX_ERROR_LINES = 20;
 
-let cachedLinter: { dir: string; linter: 'eslint' | 'biome' | null } | null = null;
+/** Split a shell-like command string into tokens, respecting quoted substrings. */
+export function parseCommand(input: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+  let quote: string | null = null;
+  let escaped = false;
+
+  for (const ch of input) {
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\' && quote !== "'") {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (ch === quote) { quote = null; continue; }
+      current += ch;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (/\s/.test(ch)) {
+      if (current) { tokens.push(current); current = ''; }
+      continue;
+    }
+    current += ch;
+  }
+  if (current) tokens.push(current);
+  return tokens;
+}
+
+const linterCache = new Map<string, 'eslint' | 'biome' | null>();
+const testFileCache = new Map<string, string | null>();
 
 export function detectLinter(projectDir: string): 'eslint' | 'biome' | null {
-  if (cachedLinter?.dir === projectDir) return cachedLinter.linter;
+  if (linterCache.has(projectDir)) return linterCache.get(projectDir) as 'eslint' | 'biome' | null;
 
   const eslintPatterns = [
     'eslint.config.js',
@@ -31,12 +66,15 @@ export function detectLinter(projectDir: string): 'eslint' | 'biome' | null {
 
   if (!detectedLinter && existsSync(join(projectDir, 'biome.json'))) detectedLinter = 'biome';
 
-  cachedLinter = { dir: projectDir, linter: detectedLinter };
+  linterCache.set(projectDir, detectedLinter);
   return detectedLinter;
 }
 
 
 export function findAffectedTestFile(taskFile: string, projectDir: string): string | null {
+  const cacheKey = `${projectDir}::${taskFile}`;
+  if (testFileCache.has(cacheKey)) return testFileCache.get(cacheKey) ?? null;
+
   const dir = dirname(taskFile);
   const name = basename(taskFile).replace(/\.(ts|tsx|js|jsx)$/, '');
 
@@ -50,9 +88,13 @@ export function findAffectedTestFile(taskFile: string, projectDir: string): stri
   ];
 
   for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
+    if (existsSync(candidate)) {
+      testFileCache.set(cacheKey, candidate);
+      return candidate;
+    }
   }
 
+  testFileCache.set(cacheKey, null);
   return null;
 }
 
@@ -122,7 +164,7 @@ async function validateTask(
     const testFile = findAffectedTestFile(task.file, projectDir);
     if (testFile) {
       const testCommand = config.validation.testCommand || 'npm test';
-      const parts = testCommand.split(/\s+/);
+      const parts = parseCommand(testCommand);
       const cmd = parts[0] ?? 'npm';
       const result = await runValidationStep({ stage: 'test', cmd, args: [...parts.slice(1), '--', testFile], cwd: projectDir, errorSource: 'stderr' });
       results.push(result);

@@ -1,10 +1,21 @@
 import { useState } from 'react';
 import { useInput } from 'ink';
+import { Fzf } from 'fzf';
 import type { Screen, SlashCommandDef } from '../../types.js';
+import { inputHistoryStore } from '../../stores/input-history.js';
 
 function matchesSlashQuery(cmd: SlashCommandDef, query: string): boolean {
   if (cmd.name.toLowerCase().startsWith(query)) return true;
   return cmd.aliases?.some(a => a.toLowerCase().startsWith(query)) ?? false;
+}
+
+function fuzzyMatchCommand(commands: SlashCommandDef[], query: string): SlashCommandDef | null {
+  const bare = query.startsWith('/') ? query.slice(1) : query;
+  if (!bare) return null;
+  const fzf = new Fzf(commands, { selector: (c: SlashCommandDef) => c.name.slice(1) });
+  const results = fzf.find(bare);
+  const top = results[0];
+  return top !== undefined && top.score > 0 ? top.item : null;
 }
 
 interface UseSlashAutocompleteOptions {
@@ -18,6 +29,7 @@ interface UseSlashAutocompleteOptions {
 
 interface UseSlashAutocompleteResult {
   filtered: SlashCommandDef[];
+  fuzzyMatch: SlashCommandDef | null;
   selectedIndex: number;
   showSuggestions: boolean;
   inputKey: number;
@@ -36,33 +48,33 @@ export function useSlashAutocomplete({
 
   const slashMode = value.startsWith('/');
   const query = '/' + value.slice(1).toLowerCase();
+  const validCommands = commands.filter((cmd) => cmd.validScreens.includes(currentScreen));
   const filtered = slashMode
-    ? commands.filter((cmd) => cmd.validScreens.includes(currentScreen) && matchesSlashQuery(cmd, query))
+    ? validCommands.filter((cmd) => matchesSlashQuery(cmd, query))
     : [];
 
-  const showSuggestions = slashMode && filtered.length > 0;
+  const fuzzyMatch = slashMode && filtered.length === 0
+    ? fuzzyMatchCommand(validCommands, query)
+    : null;
+
+  const showSuggestions = slashMode && (filtered.length > 0 || fuzzyMatch !== null);
   const effectiveSelectedIndex = Math.min(selectedIndex, Math.max(0, filtered.length - 1));
 
   useInput(
     (_input, key) => {
-      if (key.upArrow) {
-        setSelectedIndex((i) => {
-          const clamped = Math.min(i, Math.max(0, filtered.length - 1));
-          return (clamped - 1 + filtered.length) % filtered.length;
-        });
-        return;
-      }
-      if (key.downArrow) {
-        setSelectedIndex((i) => {
-          const clamped = Math.min(i, Math.max(0, filtered.length - 1));
-          return (clamped + 1) % filtered.length;
-        });
-        return;
-      }
       if (key.return) {
         const selected = filtered[effectiveSelectedIndex];
         if (selected) {
+          if (currentScreen === 'home') {
+            inputHistoryStore.push('home', selected.name);
+          }
           onSlashCommand(selected.name);
+          setValue('');
+        } else if (fuzzyMatch) {
+          if (currentScreen === 'home') {
+            inputHistoryStore.push('home', fuzzyMatch.name);
+          }
+          onSlashCommand(fuzzyMatch.name);
           setValue('');
         }
         return;
@@ -71,16 +83,30 @@ export function useSlashAutocomplete({
         setValue('');
         return;
       }
-      if (key.tab) {
-        const selected = filtered[effectiveSelectedIndex];
-        if (selected) {
-          setValue(selected.name);
+      if (key.tab && !key.shift) {
+        if (filtered.length > 0) {
+          setSelectedIndex((i) => {
+            const clamped = Math.min(i, Math.max(0, filtered.length - 1));
+            return (clamped + 1) % filtered.length;
+          });
+        } else if (fuzzyMatch) {
+          setValue(fuzzyMatch.name);
           setInputKey((k) => k + 1);
         }
+        return;
+      }
+      if (key.tab && key.shift) {
+        if (filtered.length > 0) {
+          setSelectedIndex((i) => {
+            const clamped = Math.min(i, Math.max(0, filtered.length - 1));
+            return (clamped - 1 + filtered.length) % filtered.length;
+          });
+        }
+        return;
       }
     },
     { isActive: showSuggestions && !disabled },
   );
 
-  return { filtered, selectedIndex: effectiveSelectedIndex, showSuggestions, inputKey };
+  return { filtered, fuzzyMatch, selectedIndex: effectiveSelectedIndex, showSuggestions, inputKey };
 }

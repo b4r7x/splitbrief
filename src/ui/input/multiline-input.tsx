@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react';
-import { Box, Spacer, Text, useInput, measureElement, type DOMElement, type Key } from 'ink';
+import { useState, useRef } from 'react';
+import { Box, Spacer, Text, useInput, type Key } from 'ink';
 import { buildSegments, normalizeLineEndings, type SegmentType } from './segments.js';
 import { resolveEditAction, applyEditAction, navigateVertically } from './text-editing.js';
 import { computeViewportScroll } from './viewport-scroll.js';
 import { useTheme } from '../theme.js';
+import { MeasureBox } from './measure-box.js';
 
 const MULTI_BYTE_SUPPRESS_MS = 50;
 
@@ -16,21 +17,6 @@ interface TextStyle {
   color?: string;
   backgroundColor?: string;
   inverse?: boolean;
-}
-
-function MeasureBox({ children, onHeightChange }: { children: ReactNode; onHeightChange?: (height: number) => void }) {
-  const ref = useRef<DOMElement>(null);
-  const lastHeightRef = useRef<number | undefined>(undefined);
-  useEffect(() => {
-    if (ref.current) {
-      const { height } = measureElement(ref.current);
-      if (lastHeightRef.current !== height) {
-        lastHeightRef.current = height;
-        onHeightChange?.(height);
-      }
-    }
-  });
-  return <Box ref={ref} flexShrink={0} flexGrow={0} width="100%">{children}</Box>;
 }
 
 interface ControlledMultilineInputProps {
@@ -156,6 +142,7 @@ interface MultilineInputProps extends ControlledMultilineInputProps {
   };
   highlightPastedText?: boolean;
   focus?: boolean;
+  onBoundaryNavigate?: ((direction: 'up' | 'down') => boolean | undefined) | undefined;
 }
 
 export function MultilineInput({
@@ -167,6 +154,7 @@ export function MultilineInput({
   showCursor = true,
   highlightPastedText = false,
   focus = true,
+  onBoundaryNavigate,
   ...controlledProps
 }: MultilineInputProps) {
   const [rawCursorIndex, setCursorIndex] = useState(value.length);
@@ -223,6 +211,10 @@ export function MultilineInput({
         if (newIndex !== undefined) {
           setCursorIndex(newIndex);
           setPasteLength(0);
+          return;
+        }
+        if (onBoundaryNavigate?.('up')) {
+          setPasteLength(0);
         }
       }
     } else if (key.downArrow) {
@@ -230,6 +222,10 @@ export function MultilineInput({
         const newIndex = navigateVertically('down', value, cursorIndex);
         if (newIndex !== undefined) {
           setCursorIndex(newIndex);
+          setPasteLength(0);
+          return;
+        }
+        if (onBoundaryNavigate?.('down')) {
           setPasteLength(0);
         }
       }
