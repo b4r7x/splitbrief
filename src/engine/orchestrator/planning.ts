@@ -373,7 +373,7 @@ async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boo
   state = transitionAndEmit({ state, projectDir, sessionId, callbacks, action: { type: 'RESEARCH_DONE' }, eventName: 'research_done', emitData: {} });
 
   if (conversational && collectedQuestions.length > 0 && callbacks.onQuestionAsked) {
-    await collectAndPersistClarifications(collectedQuestions, projectDir, sessionId, state, callbacks.onQuestionAsked, config.workflow.persistTranscript, metadata);
+    state = await collectAndPersistClarifications(collectedQuestions, projectDir, sessionId, state, callbacks.onQuestionAsked, config.workflow.persistTranscript, metadata, planner, callbacks);
     ({ state, tasks } = await regeneratePlanAndTasks(projectDir, sessionId, planner, callbacks, state, metadata, skillsContext));
   }
 

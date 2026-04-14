@@ -10,6 +10,9 @@ export const QueuedMessageSchema = z.object({
   phase: PhaseSchema,
   deliveredViaNative: z.boolean(),
   drainedAt: z.string().optional(),
+  origin: z.enum(['user-input', 'clarification']).optional(),
+  question: z.string().optional(),
+  questionId: z.string().optional(),
 });
 
 export const WorkflowStateSchema = z.object({

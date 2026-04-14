@@ -171,7 +171,7 @@ Four user actions during a live phase, each with a distinct effect:
 3. Independently, on the next safe-point (end of current planner call), the orchestrator reads `messageQueue`, folds its contents into the next prompt as a dedicated `[user also says: ...]` block, dispatches `DRAIN_QUEUE`, and proceeds.
 4. Entries drained from the queue are logged to `session.jsonl` as `kind: "message", role: "user"` with `queuedAt` and `drainedAt` timestamps for audit.
 
-**Clarification answers go through the same queue.** When the planner asks a question via `<!-- Q:{...} -->` and the user answers, the answer is (a) stored in the `## Clarifications` section of `spec.md` exactly as today, and (b) pushed through the same queue so it reaches the planner's live session immediately on capable backends. This closes the pre-existing gap where clarification answers only affected the *next* planner call.
+**Clarification answers go through the same queue.** When the planner asks a question via `<!-- Q:{...} -->` and the user answers, the answer is (a) stored in the `## Clarifications` section of `spec.md` exactly as today, and (b) pushed through the same queue so it reaches the planner's live session immediately on capable backends. This closes the pre-existing gap where clarification answers only affected the *next* planner call. Clarification answers are also routed through the queue (see Queue & Interjection in CONCEPTS.md); on Claude Code, the answer arrives mid-stream; on stateless backends, at the next phase boundary.
 
 ### 1.8 Escalation flow
 
