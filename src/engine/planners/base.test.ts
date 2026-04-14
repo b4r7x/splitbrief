@@ -5,10 +5,18 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeTask } from '#testing/helpers/fixtures.js';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { PlannerCapabilities } from './types.js';
 
 let projectDir: string;
 
 const minimalTask = makeTask();
+
+const defaultCapabilities: PlannerCapabilities = {
+  supportsConversationalPlanning: false,
+  supportsHintEscalation: true,
+  supportsSessionResume: false,
+  supportsMidStreamInjection: false,
+};
 
 beforeEach(() => {
   projectDir = createTempDir('planner-base-test');
@@ -25,6 +33,7 @@ describe('createPlannerBase — phase artifact content', () => {
       invokePlan: async () => ({ text: 'raw stdout noise', usage: null }),
       invokeEscalate: async () => ({ text: '', usage: null }),
       isAvailable: async () => true,
+      capabilities: defaultCapabilities,
       readPhaseOutput: (_filename, _resultText, _projectDir) => '# Resolved artifact content',
     });
 
@@ -40,6 +49,7 @@ describe('createPlannerBase — phase artifact content', () => {
       invokePlan: async () => ({ text: '# Direct stdout content', usage: null }),
       invokeEscalate: async () => ({ text: '', usage: null }),
       isAvailable: async () => true,
+      capabilities: defaultCapabilities,
     });
 
     const result = await planner.plan('feature', projectDir, { onOutput: () => {} });
@@ -54,6 +64,7 @@ describe('createPlannerBase — phase artifact content', () => {
       invokePlan: async () => ({ text: 'raw quick output', usage: null }),
       invokeEscalate: async () => ({ text: '', usage: null }),
       isAvailable: async () => true,
+      capabilities: defaultCapabilities,
       readPhaseOutput: (_filename, _resultText, _projectDir) => `---
 id: t1
 title: Test task
@@ -89,6 +100,7 @@ describe('createPlannerBase — hintSuccessMode', () => {
         return { text: '', usage: null };
       },
       isAvailable: async () => true,
+      capabilities: defaultCapabilities,
       hintSuccessMode: 'files',
     });
 
@@ -101,6 +113,7 @@ describe('createPlannerBase — hintSuccessMode', () => {
       invokePlan: async () => ({ text: '', usage: null }),
       invokeEscalate: async () => ({ text: '', usage: null }),
       isAvailable: async () => true,
+      capabilities: defaultCapabilities,
       hintSuccessMode: 'files',
     });
 
@@ -113,6 +126,7 @@ describe('createPlannerBase — hintSuccessMode', () => {
       invokePlan: async () => ({ text: '', usage: null }),
       invokeEscalate: async () => ({ text: 'some hint output', usage: null }),
       isAvailable: async () => true,
+      capabilities: defaultCapabilities,
     });
 
     const result = await planner.escalateHint(minimalTask, 'error', projectDir, { onOutput: () => {} });
@@ -124,18 +138,24 @@ describe('createPlannerBase — hintSuccessMode', () => {
       invokePlan: async () => ({ text: '', usage: null }),
       invokeEscalate: async () => ({ text: '', usage: null }),
       isAvailable: async () => true,
+      capabilities: defaultCapabilities,
     });
 
     const result = await planner.escalateHint(minimalTask, 'error', projectDir, { onOutput: () => {} });
     expect(result.success).toBe(false);
   });
 
-  it('supportsHintEscalation: false — always returns success: false', async () => {
+  it('capabilities.supportsHintEscalation: false — always returns success: false', async () => {
     const planner = createPlannerBase({
       invokePlan: async () => ({ text: '', usage: null }),
       invokeEscalate: async () => ({ text: 'lots of output', usage: null }),
       isAvailable: async () => true,
-      supportsHintEscalation: false,
+      capabilities: {
+        supportsConversationalPlanning: false,
+        supportsHintEscalation: false,
+        supportsSessionResume: false,
+        supportsMidStreamInjection: false,
+      },
     });
 
     const result = await planner.escalateHint(minimalTask, 'error', projectDir, { onOutput: () => {} });
@@ -156,6 +176,7 @@ describe('createPlannerBase — hintSuccessMode', () => {
         return { text: '', usage: null };
       },
       isAvailable: async () => true,
+      capabilities: defaultCapabilities,
       hintSuccessMode: 'files',
     });
 
@@ -173,6 +194,7 @@ describe('createPlannerBase — hintSuccessMode', () => {
       invokePlan: async () => ({ text: '', usage: null }),
       invokeEscalate: async () => ({ text: '', usage: null }),
       isAvailable: async () => true,
+      capabilities: defaultCapabilities,
       hintSuccessMode: 'files',
     });
 

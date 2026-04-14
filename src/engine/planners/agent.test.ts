@@ -53,7 +53,7 @@ describe('createAgentPlanner', () => {
 
   it('supports escalateHint — success when agent writes files', async () => {
     const outFile = join(projectDir, 'hint-out.ts');
-    const config = makeConfig({ planner: { kind: 'agent', command: 'bash', args: ['-c', `echo "// hint" > ${outFile}`] } });
+    const config = makeConfig({ planner: { kind: 'agent', command: 'bash', args: ['-c', `echo "// hint" > ${outFile}`], capabilities: { supportsHintEscalation: true } } });
     const planner = createAgentPlanner(config);
     const task = makeTask();
     const callbacks = { onOutput: vi.fn() };

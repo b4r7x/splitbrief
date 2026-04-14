@@ -38,6 +38,12 @@ export function makePlanner(overrides?: Partial<Planner>): Planner {
     isAvailable: vi.fn().mockResolvedValue(true),
     getVersion: vi.fn().mockResolvedValue('1.0'),
     review: vi.fn().mockResolvedValue({ text: '', usage: null }),
+    capabilities: {
+      supportsConversationalPlanning: false,
+      supportsHintEscalation: true,
+      supportsSessionResume: false,
+      supportsMidStreamInjection: false,
+    },
     ...overrides,
   };
 }

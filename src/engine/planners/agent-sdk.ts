@@ -15,5 +15,12 @@ export function createAgentSdkPlanner(model?: string, apiKey?: string): Planner 
     invokePlan: invoke,
     invokeEscalate: invoke,
     isAvailable: () => isAgentSdkAvailable(apiKey),
+
+    capabilities: {
+      supportsConversationalPlanning: true,
+      supportsHintEscalation: false,
+      supportsSessionResume: true,
+      supportsMidStreamInjection: true,
+    },
   });
 }

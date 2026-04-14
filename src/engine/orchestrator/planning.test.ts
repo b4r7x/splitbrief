@@ -273,7 +273,7 @@ describe('runPlanningPhase', () => {
       usage: null,
     });
     const { callbacks } = makeCallbacks();
-    const planner = makePlanner({ plan, supportsConversationalPlanning: true });
+    const planner = makePlanner({ plan, capabilities: { supportsConversationalPlanning: true, supportsHintEscalation: true, supportsSessionResume: false, supportsMidStreamInjection: false } });
     const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
 
     await runPlanningPhase({

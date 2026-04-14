@@ -1,5 +1,5 @@
 import type { Task, InvokeResult, TokenDelta } from '../../types.js';
-import type { Planner, PlannerCallbacks, PlanResult, EscalationResult, RegenerateResult, PhaseResult } from './types.js';
+import type { Planner, PlannerCallbacks, PlanResult, EscalationResult, RegenerateResult, PhaseResult, PlannerCapabilities } from './types.js';
 import { buildResearchPrompt } from '../spec/prompts/research.js';
 import { buildSpecPrompt } from '../spec/prompts/spec.js';
 import { buildPlanPromptFromSpec } from '../spec/prompts/plan.js';
@@ -27,10 +27,7 @@ export interface PlannerBaseConfig {
   invokeEscalate: InternalInvokeFn;
   isAvailable: () => Promise<boolean>;
   getVersion?: () => Promise<string | null>;
-  /** When true, the planner emits inline clarification questions during `plan()`. Default: false. */
-  supportsConversationalPlanning?: boolean;
-  /** When false, hint escalation is skipped entirely (e.g., Claude Code). Default: true. */
-  supportsHintEscalation?: boolean;
+  capabilities: PlannerCapabilities;
   /**
    * How to determine whether escalateHint succeeded.
    * - 'text': non-empty stdout (API/streaming planners)
@@ -120,7 +117,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       projectDir: string,
       callbacks: { onOutput: (text: string) => void },
     ): Promise<EscalationResult> {
-      if (config.supportsHintEscalation === false) {
+      if (config.capabilities.supportsHintEscalation === false) {
         return { success: false, output: '', code: null, usage: null };
       }
       const hintPrompt = buildHintPrompt(task, error);
@@ -166,6 +163,6 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
     ...DEFAULT_AVAILABILITY,
     isAvailable: config.isAvailable,
     ...(config.getVersion && { getVersion: config.getVersion }),
-    ...(config.supportsConversationalPlanning && { supportsConversationalPlanning: true as const }),
+    capabilities: config.capabilities,
   };
 }

@@ -2,6 +2,13 @@ import { z } from 'zod';
 import { CliToolIdSchema, OutputFormatSchema, RUNNER_KINDS } from './enums.js';
 import type { RunnerKind } from './enums.js';
 
+export const PlannerCapabilitiesSchema = z.object({
+  supportsConversationalPlanning: z.boolean(),
+  supportsHintEscalation: z.boolean(),
+  supportsSessionResume: z.boolean(),
+  supportsMidStreamInjection: z.boolean(),
+}).strict();
+
 export const CliRunnerFields = {
   kind: z.literal('cli'),
   tool: CliToolIdSchema,
@@ -21,6 +28,7 @@ export const ShellRunnerFields = {
   command: z.string().min(1),
   args: z.array(z.string()).optional(),
   outputFormat: OutputFormatSchema.optional(),
+  capabilities: PlannerCapabilitiesSchema.partial().optional(),
 };
 
 export const AgentRunnerFields = {
@@ -28,6 +36,7 @@ export const AgentRunnerFields = {
   command: z.string().min(1),
   args: z.array(z.string()).optional(),
   outputFormat: OutputFormatSchema.optional(),
+  capabilities: PlannerCapabilitiesSchema.partial().optional(),
 };
 
 export const AgentSdkRunnerFields = {

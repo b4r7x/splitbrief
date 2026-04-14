@@ -29,8 +29,12 @@ export function createClaudeCodePlanner(model?: string): Planner {
 
     ...createCommandAvailability('claude'),
 
-    supportsConversationalPlanning: true,
-    supportsHintEscalation: false,
+    capabilities: {
+      supportsConversationalPlanning: true,
+      supportsHintEscalation: false,
+      supportsSessionResume: true,
+      supportsMidStreamInjection: true,
+    },
 
     escalateFullPostProcess(task, result, extracted, projectDir): EscalationResult {
       writeProjectFile(projectDir, task.file, extracted.code);

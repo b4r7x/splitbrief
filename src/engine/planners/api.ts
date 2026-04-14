@@ -63,5 +63,12 @@ export function createApiPlanner(config: Config): Planner {
     async getVersion() {
       return model;
     },
+
+    capabilities: {
+      supportsConversationalPlanning: false,
+      supportsHintEscalation: true,
+      supportsSessionResume: false,
+      supportsMidStreamInjection: false,
+    },
   });
 }

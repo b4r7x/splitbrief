@@ -1,5 +1,16 @@
 import type { Task, TokenDelta, ClarificationQuestion, RunnerRuntime } from '../../types.js';
 
+export type PlannerCapabilities = {
+  /** Planner can emit inline clarification questions during planning. */
+  supportsConversationalPlanning: boolean;
+  /** Planner can produce a short hint before escalating to full fix. */
+  supportsHintEscalation: boolean;
+  /** Backend exposes a session handle that can be reused on resume (e.g. Claude Code --session-id). */
+  supportsSessionResume: boolean;
+  /** A queued user message can be injected into the live session in parallel with the current turn. */
+  supportsMidStreamInjection: boolean;
+};
+
 export interface PlannerCallbacks {
   onOutput: (text: string) => void;
   onPhase?: ((phase: string) => void) | undefined;
@@ -77,6 +88,5 @@ export interface Planner extends RunnerRuntime {
     callbacks: { onOutput: (text: string) => void },
   ): Promise<{ text: string; usage: TokenDelta | null }>;
 
-  /** True when the planner can emit inline clarification questions during planning. */
-  readonly supportsConversationalPlanning?: boolean | undefined;
+  readonly capabilities: PlannerCapabilities;
 }

@@ -43,5 +43,12 @@ export function createCliPlanner(config: Config): Planner {
     hintSuccessMode: 'files',
 
     ...createCommandAvailability(tool.command, planner.isAvailableOpts),
+
+    capabilities: {
+      supportsConversationalPlanning: false,
+      supportsHintEscalation: true,
+      supportsSessionResume: false,
+      supportsMidStreamInjection: false,
+    },
   });
 }

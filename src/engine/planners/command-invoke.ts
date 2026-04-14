@@ -1,5 +1,5 @@
 import type { InvokeResult } from '../../types.js';
-import type { PlannerCallbacks } from './types.js';
+import type { PlannerCallbacks, PlannerCapabilities } from './types.js';
 import type { PlannerBaseConfig } from './base.js';
 import type { Planner } from './types.js';
 import { createPlannerBase } from './base.js';
@@ -65,6 +65,7 @@ export function createCommandBasedPlanner(
     extractsCode?: boolean | undefined;
     detectChanges?: ((projectDir: string) => Promise<boolean>) | undefined;
     readPhaseOutput?: PlannerBaseConfig['readPhaseOutput'] | undefined;
+    capabilities?: PlannerCapabilities | undefined;
   },
 ): Planner {
   const invoke = createCommandPlannerInvoke({
@@ -76,10 +77,18 @@ export function createCommandBasedPlanner(
     detectChanges: overrides?.detectChanges,
   });
 
+  const defaultCapabilities: PlannerCapabilities = {
+    supportsConversationalPlanning: false,
+    supportsHintEscalation: false,
+    supportsSessionResume: false,
+    supportsMidStreamInjection: false,
+  };
+
   return createPlannerBase({
     invokePlan: invoke,
     invokeEscalate: invoke,
     hintSuccessMode: 'files',
+    capabilities: overrides?.capabilities ?? defaultCapabilities,
     ...(overrides?.readPhaseOutput && { readPhaseOutput: overrides.readPhaseOutput }),
     ...createCommandAvailability(config.command),
   });
