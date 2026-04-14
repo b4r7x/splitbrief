@@ -63,7 +63,7 @@ describe('handleRetryAndEscalation', () => {
     vi.mocked(runValidationWithEvents).mockResolvedValue(passingResults);
 
     const { result } = await handleRetryAndEscalation({
-      wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA },
+      wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
       task, initialError: 'type error', currentState: state,
     });
 
@@ -85,7 +85,7 @@ describe('handleRetryAndEscalation', () => {
     vi.mocked(runValidationWithEvents).mockResolvedValue(failingResults);
 
     const { result } = await handleRetryAndEscalation({
-      wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA },
+      wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
       task, initialError: 'error', currentState: state,
     });
 
@@ -114,7 +114,7 @@ describe('handleRetryAndEscalation', () => {
     });
 
     const { result } = await handleRetryAndEscalation({
-      wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA },
+      wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
       task, initialError: 'error', currentState: state,
     });
 
@@ -141,7 +141,7 @@ describe('handleRetryAndEscalation', () => {
     });
 
     const { result } = await handleRetryAndEscalation({
-      wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA },
+      wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
       task, initialError: 'error', currentState: state,
     });
 
@@ -166,7 +166,7 @@ describe('handleRetryAndEscalation', () => {
     });
 
     const { result } = await handleRetryAndEscalation({
-      wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA },
+      wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
       task, initialError: 'error', currentState: state,
     });
 
@@ -199,7 +199,7 @@ describe('handleRetryAndEscalation', () => {
       const planner = makePlanner();
 
       const { result } = await handleRetryAndEscalation({
-        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA },
+        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
         task, initialError: 'error', currentState: state,
       });
 
@@ -235,7 +235,7 @@ describe('handleRetryAndEscalation', () => {
       });
 
       const { result } = await handleRetryAndEscalation({
-        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA },
+        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
         task, initialError: 'error', currentState: state,
       });
 
@@ -260,7 +260,7 @@ describe('handleRetryAndEscalation', () => {
       });
 
       const { result } = await handleRetryAndEscalation({
-        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA },
+        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
         task, initialError: 'error', currentState: state,
       });
 
@@ -289,7 +289,7 @@ describe('handleRetryAndEscalation', () => {
       });
 
       const { result } = await handleRetryAndEscalation({
-        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA },
+        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
         task, initialError: 'error', currentState: state,
       });
 
@@ -320,7 +320,7 @@ describe('handleRetryAndEscalation', () => {
       });
 
       const { result } = await handleRetryAndEscalation({
-        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA },
+        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
         task, initialError: 'error', currentState: state,
       });
 
@@ -354,7 +354,7 @@ describe('handleRetryAndEscalation', () => {
       });
 
       const { result } = await handleRetryAndEscalation({
-        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA },
+        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
         task, initialError: 'error', currentState: state,
       });
 
@@ -397,7 +397,7 @@ describe('handleRetryAndEscalation', () => {
       });
 
       const { state: finalState } = await handleRetryAndEscalation({
-        wctx: { projectDir: '/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA },
+        wctx: { projectDir: '/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
         task, initialError: 'error', currentState: state,
       });
 
@@ -429,7 +429,7 @@ describe('handleRetryAndEscalation', () => {
       const planner = makePlanner();
 
       await handleRetryAndEscalation({
-        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA },
+        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
         task, initialError: 'error', currentState: state,
       });
 
@@ -460,7 +460,7 @@ describe('handleRetryAndEscalation', () => {
       const planner = makePlanner();
 
       const { state: finalState } = await handleRetryAndEscalation({
-        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA },
+        wctx: { projectDir: '/tmp/proj', config, context: defaultContext, planner, callbacks, implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
         task, initialError: 'error', currentState: state,
       });
 

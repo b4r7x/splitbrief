@@ -15,12 +15,13 @@ import { validateCommitAndAdvance } from './task-commit.js';
 
 export function transitionAndSave(
   projectDir: string,
+  sessionId: string,
   state: WorkflowState,
   action: StateAction,
   maxRetries?: number,
 ): WorkflowState {
   const next = transition(state, action, maxRetries);
-  saveState(projectDir, next);
+  saveState(projectDir, sessionId, next);
   return next;
 }
 
@@ -36,11 +37,11 @@ export async function refreshCurrentCode(task: Task, projectDir: string): Promis
 }
 
 export async function refreshAndPersistCode(
-  task: Task, projectDir: string, state: WorkflowState,
+  task: Task, projectDir: string, sessionId: string, state: WorkflowState,
 ): Promise<{ task: Task; state: WorkflowState }> {
   const refreshed = await refreshCurrentCode(task, projectDir);
   if (refreshed.currentCode !== undefined) {
-    state = transitionAndSave(projectDir, state, { type: 'UPDATE_TASK_CODE', taskId: refreshed.id, code: refreshed.currentCode });
+    state = transitionAndSave(projectDir, sessionId, state, { type: 'UPDATE_TASK_CODE', taskId: refreshed.id, code: refreshed.currentCode });
   }
   return { task: refreshed, state };
 }
@@ -50,11 +51,11 @@ export function allValidationsPassed(results: ValidationResult[]): boolean {
 }
 
 export function addUsageAndSave(
-  projectDir: string, state: WorkflowState, category: UsageCategory, usage: TokenDelta | null | undefined,
+  projectDir: string, sessionId: string, state: WorkflowState, category: UsageCategory, usage: TokenDelta | null | undefined,
   callbacks: OrchestratorCallbacks,
 ): WorkflowState {
   const next = addUsage(state, category, usage);
-  saveState(projectDir, next);
+  saveState(projectDir, sessionId, next);
   if (usage) {
     emitCostUpdate(callbacks, next.tokenUsage);
   }
@@ -65,6 +66,7 @@ type RunPlannerReviewOptions = {
   planner: Planner;
   prompt: string;
   projectDir: string;
+  sessionId: string;
   callbacks: OrchestratorCallbacks;
   state: WorkflowState;
   metadata?: SpecMetadata | null | undefined;
@@ -74,12 +76,12 @@ type RunPlannerReviewOptions = {
 export async function runPlannerReview(
   opts: RunPlannerReviewOptions,
 ): Promise<{ state: WorkflowState; text: string }> {
-  const { planner, prompt, projectDir, callbacks, writeTo, metadata } = opts;
+  const { planner, prompt, projectDir, sessionId, callbacks, writeTo, metadata } = opts;
   const result = await planner.review(prompt, projectDir, {
     onOutput: createTextHandler(callbacks),
   });
-  const state = addUsageAndSave(projectDir, opts.state, 'planner', result.usage, callbacks);
-  if (writeTo) writeSpecFile(projectDir, writeTo, result.text, metadata);
+  const state = addUsageAndSave(projectDir, sessionId, opts.state, 'planner', result.usage, callbacks);
+  if (writeTo) writeSpecFile(projectDir, sessionId, writeTo, result.text, metadata);
   return { state, text: result.text };
 }
 
@@ -120,6 +122,7 @@ export async function warnOnFailure(
 type ValidateAndCommitTaskOpts = {
   task: Task;
   projectDir: string;
+  sessionId: string;
   config: Config;
   callbacks: OrchestratorCallbacks;
   state: WorkflowState;

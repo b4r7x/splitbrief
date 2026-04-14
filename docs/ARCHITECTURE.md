@@ -124,8 +124,8 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 5. `runWorkflow` creates planner + implementer via factories, runs the planning phases, then the task loop, then the final review.
 6. During each phase, the engine emits:
    - `TuiEvent`s to `workflowStore` (for the UI).
-   - `appendEvent()` to `.diptych/current/events.jsonl` (for persistence).
-   - `saveState()` to `.diptych/current/state.json` on every phase transition.
+   - `appendEvent()` to `.diptych/sessions/<id>/session.jsonl` (for persistence).
+   - `saveState()` to `.diptych/sessions/<id>/state.json` on every phase transition.
 7. TUI components subscribe to slices of `workflowStore` via `store.use(selector)` and re-render only when their slice changes.
 8. For user-gated moments (approval, clarification, escalation choice), the engine `await`s a callback: `callbacks.onApprovalNeeded(…)`, `callbacks.onQuestionAsked(…)`. The UI fulfils these by switching input mode and capturing the response.
 9. **Queue**: during live planner phases, the user may type and press Enter without aborting. The message is appended to `workflowStore.messageQueue`. The orchestrator drains the queue at safe-points (end of current call) and appends queued messages to the next planner prompt. For Claude Code specifically (`supportsMidStreamInjection: true`), each queued message is also dispatched in parallel as a native user turn into the live session.

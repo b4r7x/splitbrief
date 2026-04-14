@@ -5,7 +5,11 @@ import { getRunnerDisplayName } from '../../core/config/index.js';
 import { ensureGitAndConfig, resolveProjectDir, loadConfigOrExit } from '../workflow.js';
 import { cliError } from '../errors.js';
 import { toErrorMessage } from '../../utils/format.js';
-import { DIPTYCH_DIR, CURRENT_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
+import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
+import { writeSpecFile, ensureSessionDir } from '../../core/paths-io.js';
+import { generateSessionId } from '../../core/sessions/id.js';
+import { writeActive } from '../../core/sessions/active.js';
+import { guardNoActiveSession } from './guards.js';
 
 export function registerSpecCommand(program: Command): void {
   program
@@ -17,11 +21,18 @@ export function registerSpecCommand(program: Command): void {
       const projectDir = resolveProjectDir(opts.project);
       await ensureGitAndConfig(projectDir);
 
+      guardNoActiveSession(projectDir);
+
       const config = loadConfigOrExit(projectDir);
       if (opts.auto) {
         config.workflow.autoApproveSpec = true;
         config.workflow.autoApprovePlan = true;
       }
+
+      const sessionId = generateSessionId(projectDir, feature);
+      ensureSessionDir(projectDir, sessionId);
+      writeActive(projectDir, sessionId);
+
       const planner = createPlanner(config);
 
       console.log(`Planning feature: ${feature} (planner: ${getRunnerDisplayName(config.planner)})\n`);
@@ -35,15 +46,21 @@ export function registerSpecCommand(program: Command): void {
           onPhase(phase: string) {
             console.log(`\n${ansis.bold(`--- ${phase} ---`)}\n`);
           },
+          sessionId,
         });
       } catch (err) {
         throw cliError(toErrorMessage(err));
       }
 
-      const currentPath = `${DIPTYCH_DIR}/${CURRENT_DIR}`;
+      for (const phase of result.phases ?? []) {
+        writeSpecFile(projectDir, sessionId, phase.filename, phase.text);
+      }
+
+      const sessionPath = sessionDir(projectDir, sessionId);
       console.log('\nSpec generation complete.');
-      console.log(`  Spec:  ${ansis.dim(`${currentPath}/${SPEC_FILE}`)}`);
-      console.log(`  Plan:  ${ansis.dim(`${currentPath}/${PLAN_FILE}`)}`);
-      console.log(`  Tasks: ${ansis.dim(`${currentPath}/${TASKS_FILE}`)} (${result.tasks.length} tasks)`);
+      console.log(`  Session: ${ansis.dim(sessionId)}`);
+      console.log(`  Spec:  ${ansis.dim(`${sessionPath}/${SPEC_FILE}`)}`);
+      console.log(`  Plan:  ${ansis.dim(`${sessionPath}/${PLAN_FILE}`)}`);
+      console.log(`  Tasks: ${ansis.dim(`${sessionPath}/${TASKS_FILE}`)} (${result.tasks.length} tasks)`);
     });
 }

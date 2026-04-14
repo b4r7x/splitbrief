@@ -2,12 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
 
 const loadStateMock = vi.fn();
+const readActiveMock = vi.fn<(dir: string) => string | null>();
 const listSessionsMock = vi.fn();
 const getSessionDirMock = vi.fn<(scope: 'project' | 'global', projectDir: string) => string>();
 const aggregateSessionCostsMock = vi.fn();
 const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-vi.mock('../../core/state/persistence.js', () => ({ loadState: (dir: string) => loadStateMock(dir) }));
+vi.mock('../../core/state/persistence.js', () => ({ loadState: (dir: string, sessionId: string) => loadStateMock(dir, sessionId) }));
+vi.mock('../../core/sessions/active.js', () => ({ readActive: (dir: string) => readActiveMock(dir) }));
 vi.mock('../../core/sessions/io.js', () => ({
   listSessions: (dir: string) => listSessionsMock(dir),
   getSessionDir: (scope: 'project' | 'global', projectDir: string) => getSessionDirMock(scope, projectDir),
@@ -37,9 +39,11 @@ describe('status command', () => {
   beforeEach(() => {
     consoleSpy.mockClear();
     loadStateMock.mockReset();
+    readActiveMock.mockReset();
     listSessionsMock.mockReset();
     getSessionDirMock.mockReset();
     aggregateSessionCostsMock.mockReset();
+    readActiveMock.mockReturnValue(null);
     getSessionDirMock.mockReturnValue('/some/dir');
     listSessionsMock.mockReturnValue([]);
     aggregateSessionCostsMock.mockReturnValue({
@@ -95,6 +99,7 @@ describe('status command', () => {
 
   describe('active workflow', () => {
     beforeEach(() => {
+      readActiveMock.mockReturnValue('2024-01-01-add-auth');
       loadStateMock.mockReturnValue({
         feature: 'add auth',
         phase: 'implementing',

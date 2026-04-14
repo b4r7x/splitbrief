@@ -37,7 +37,7 @@ function SessionRow({ session, isCursor, featureColWidth, theme: t }: SessionRow
   );
 }
 
-function handleSelect(session: Session): void {
+function handleSelect(session: Session) {
   if (session.status === 'interrupted') {
     overlayStore.close();
     routerStore.navigate('workflow', { feature: session.feature });
@@ -58,13 +58,12 @@ export function SessionsPicker() {
   const cols = terminalSizeStore.use(s => s.cols);
   const isSmall = terminalSizeStore.use(s => s.isSmall);
   const projectDir = configStore.use(s => s.projectDir);
-  const sessionScope = configStore.use(s => s.config?.sessions?.scope ?? 'project');
+  const sessions = sessionsStore.use(s => s.allSessions);
 
   useEffect(() => {
-    sessionsStore.loadAll(sessionScope, projectDir);
-  }, [projectDir, sessionScope]);
+    sessionsStore.loadAll(projectDir);
+  }, [projectDir]);
 
-  const sessions = sessionsStore.use(s => s.allSessions);
   const panelWidth = getResponsivePanelWidth(cols, isSmall);
   const featureColWidth = Math.max(8, Math.min(isSmall ? 28 : 40, Math.max(1, panelWidth - 8)));
 

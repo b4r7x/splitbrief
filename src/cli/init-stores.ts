@@ -10,26 +10,9 @@ import { detectAll } from '../engine/detection/index.js';
 import { loadDetectionIntoStores } from '../stores/detection-adapter.js';
 import { fetchModelsDevCatalog } from '../engine/providers/models-dev.js';
 import { discoverAllCliTools } from '../engine/providers/discovery.js';
-import type { WorkflowOpts, Config, PlannerTool } from '../types.js';
-import { isPlannerToolId } from '../core/providers.js';
+import type { WorkflowOpts } from '../types.js';
 import { cliError } from './errors.js';
-
-export function getPlannerToolId(config: Config['planner']): PlannerTool {
-  switch (config.kind) {
-    case 'cli':
-      return config.tool;
-    case 'api': {
-      const provider = config.provider;
-      return isPlannerToolId(provider) ? provider : 'anthropic';
-    }
-    case 'shell':
-      return 'shell';
-    case 'agent-sdk':
-      return 'agent-sdk';
-    case 'agent':
-      return 'agent';
-  }
-}
+import { getPlannerToolId } from '../core/config/runner-config.js';
 
 export async function initStores(projectDir: string, opts: WorkflowOpts = {}): Promise<void> {
   configStore.load(projectDir, {
@@ -50,7 +33,7 @@ export async function initStores(projectDir: string, opts: WorkflowOpts = {}): P
   const storeConfig = configStore.get().config;
   if (!storeConfig) throw cliError('configStore.load did not populate config');
   if (storeConfig.shikiTheme) setHighlightTheme(storeConfig.shikiTheme);
-  sessionsStore.load(storeConfig.sessions?.scope ?? 'project', projectDir);
+  sessionsStore.load(projectDir);
   inputHistoryStore.load();
 
   let contextLength: number | undefined;

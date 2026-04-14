@@ -14,6 +14,16 @@ import { accumulateUsage } from '../streaming/output-parsers.js';
 import { DEFAULT_AVAILABILITY } from '../../utils/availability.js';
 import { getChangedFiles } from '../../utils/git.js';
 import { createChangeDetector } from '../change-detection.js';
+import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
+import type { Phase } from '../../types.js';
+
+const PHASE_MAP: Partial<Record<string, Phase>> = {
+  researching: 'researching',
+  specifying: 'specifying',
+  planning: 'planning',
+  'generating-tasks': 'planning',
+  'quick-planning': 'planning',
+};
 
 type InternalInvokeFn = (opts: {
   prompt: string;
@@ -40,7 +50,7 @@ export interface PlannerBaseConfig {
    * (e.g., agent planner) can override the default stdout-based result by reading
    * the generated file. Falls back to `resultText` when not provided.
    */
-  readPhaseOutput?: (filename: string, resultText: string, projectDir: string) => string;
+  readPhaseOutput?: (filename: string, resultText: string, projectDir: string, sessionId?: string) => string;
   escalateFullPostProcess?: (task: Task, result: InvokeResult, extracted: { code: string }, projectDir: string) => EscalationResult;
 }
 
@@ -58,14 +68,22 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
 
       async function runPhase(phase: string, prompt: string, filename: string): Promise<string> {
         callbacks.onPhase?.(phase);
+        const plannerPhase = PHASE_MAP[phase];
+        const buffer = createTranscriptBuffer(
+          projectDir, callbacks.sessionId ?? '', plannerPhase, callbacks.persistTranscript ?? true,
+        );
         const result = await config.invokePlan({
           prompt,
           projectDir,
-          callbacks: { onOutput: callbacks.onOutput, onQuestion: callbacks.onQuestion },
+          callbacks: {
+            onOutput: (text) => { callbacks.onOutput(text); buffer.append(text); },
+            onQuestion: callbacks.onQuestion,
+          },
         });
+        buffer.flush();
         if (result.usage) usage = accumulateUsage(usage, result.usage);
         const artifactText = config.readPhaseOutput
-          ? config.readPhaseOutput(filename, result.text, projectDir)
+          ? config.readPhaseOutput(filename, result.text, projectDir, callbacks.sessionId)
           : result.text;
         const rawOutput = artifactText !== result.text ? result.text : undefined;
         phases.push({ text: artifactText, filename, rawOutput });
@@ -91,10 +109,19 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       const prompt = buildQuickPlanPrompt(feature, projectContext);
 
       callbacks.onPhase?.('quick-planning');
-      const result = await config.invokePlan({ prompt, projectDir, callbacks: { onOutput: callbacks.onOutput, onQuestion: callbacks.onQuestion } });
+      const buffer = createTranscriptBuffer(
+        projectDir, callbacks.sessionId ?? '', 'planning', callbacks.persistTranscript ?? true,
+      );
+      const result = await config.invokePlan({
+        prompt, projectDir, callbacks: {
+          onOutput: (text) => { callbacks.onOutput(text); buffer.append(text); },
+          onQuestion: callbacks.onQuestion,
+        },
+      });
+      buffer.flush();
 
       const tasksContent = config.readPhaseOutput
-        ? config.readPhaseOutput(TASKS_FILE, result.text, projectDir)
+        ? config.readPhaseOutput(TASKS_FILE, result.text, projectDir, callbacks.sessionId)
         : result.text;
       const tasks = parseTasks(tasksContent);
       const rawOutput = tasksContent !== result.text ? result.text : undefined;

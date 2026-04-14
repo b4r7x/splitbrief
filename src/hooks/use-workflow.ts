@@ -10,6 +10,7 @@ interface UseWorkflowOptions {
   onComplete: (summary: Summary) => void;
   initialResumeState?: WorkflowState | undefined;
   selectedSkills?: SkillMeta[] | undefined;
+  sessionId?: string | undefined;
 }
 
 export function useWorkflow(opts: UseWorkflowOptions) {

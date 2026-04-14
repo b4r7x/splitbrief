@@ -11,7 +11,7 @@ let receivedBodies: any[];
 let receivedHeaders: http.IncomingHttpHeaders[];
 let projectDir: string;
 
-function makeConfig(provider: string): Config {
+function makeApiPlannerConfig(provider: string): Config {
   return {
     version: 2,
     planner: {
@@ -30,7 +30,7 @@ function makeConfig(provider: string): Config {
       temperature: 0.3,
     },
     validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none' },
+    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', persistTranscript: true },
   };
 }
 
@@ -133,7 +133,7 @@ afterEach(async () => {
 
 describe('createApiPlanner', () => {
   it('regenerate sends prompt to chat endpoint and returns parsed text + usage', async () => {
-    const planner = createApiPlanner(makeConfig('ollama'));
+    const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
     const collected: string[] = [];
 
     const result = await planner.regenerate('the prompt', 'spec', projectDir, {
@@ -151,7 +151,7 @@ describe('createApiPlanner', () => {
   });
 
   it('uses Anthropic messages API for Anthropic planner selections', async () => {
-    const planner = createApiPlanner(makeConfig('anthropic'));
+    const planner = createApiPlanner(makeApiPlannerConfig('anthropic'));
     const collected: string[] = [];
 
     const result = await planner.regenerate('the prompt', 'spec', projectDir, {
@@ -175,7 +175,7 @@ describe('createApiPlanner', () => {
   });
 
   it('plan() runs four phases and accumulates token usage across them', async () => {
-    const planner = createApiPlanner(makeConfig('ollama'));
+    const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
 
     const result = await planner.plan('test feature', projectDir, {
       onOutput: vi.fn(),
@@ -187,23 +187,23 @@ describe('createApiPlanner', () => {
   });
 
   it('isAvailable returns true when models endpoint responds', async () => {
-    const planner = createApiPlanner(makeConfig('ollama'));
+    const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
     expect(await planner.isAvailable()).toBe(true);
   });
 
   it('isAvailable returns true for Anthropic when models endpoint responds', async () => {
-    const planner = createApiPlanner(makeConfig('anthropic'));
+    const planner = createApiPlanner(makeApiPlannerConfig('anthropic'));
     expect(await planner.isAvailable()).toBe(true);
   });
 
   it('isAvailable returns false when endpoint is unreachable', async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    const planner = createApiPlanner(makeConfig('ollama'));
+    const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
     expect(await planner.isAvailable()).toBe(false);
   });
 
   it('throws if model is "auto" for unknown provider', () => {
-    const cfg = makeConfig('custom-unknown-provider');
+    const cfg = makeApiPlannerConfig('custom-unknown-provider');
     cfg.planner.model = 'auto';
     expect(() => createApiPlanner(cfg)).toThrow(/API planner requires an explicit model/);
   });

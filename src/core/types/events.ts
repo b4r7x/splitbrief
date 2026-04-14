@@ -199,6 +199,28 @@ export type OrchestratorEvent<T extends OrchestratorEventType = OrchestratorEven
   };
 }[T];
 
+export type SessionLogEventEntry = {
+  ts: string;
+  kind: 'event';
+  type: OrchestratorEventType;
+  taskId?: TaskId | undefined;
+  phase: Phase;
+  data: OrchestratorEventPayloadMap[OrchestratorEventType];
+};
+
+export type SessionLogMessageEntry = {
+  ts: string;
+  kind: 'message';
+  role: 'user' | 'assistant';
+  phase?: Phase | undefined;
+  text: string;
+  interrupted?: boolean | undefined;
+  queuedAt?: string | undefined;
+  drainedAt?: string | undefined;
+};
+
+export type SessionLogEntry = SessionLogEventEntry | SessionLogMessageEntry;
+
 export interface OrchestratorCallbacks {
   onEvent: (event: TuiEvent) => void;
   onApprovalNeeded: (type: 'spec' | 'plan', filePath: string) => Promise<{ approved: boolean; comment?: string | undefined }>;

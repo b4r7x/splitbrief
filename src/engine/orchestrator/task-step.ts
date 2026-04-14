@@ -1,7 +1,7 @@
 import type { Task, WorkflowState, TaskTokenUsage, TokenUsage } from '../../types.js';
 import { formatValidationError } from './validator.js';
 
-import type { WorkflowContext } from './run.js';
+import type { WorkflowContext } from './types.js';
 import { buildAndRecordUsage } from './tokens.js';
 import { toErrorMessage, labelError } from '../../utils/format.js';
 import { emit, createTextHandler, emitError, emitTaskStart } from './events.js';
@@ -22,13 +22,13 @@ type RetryAndRecordOptions = {
 
 export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ state: WorkflowState; completed: boolean }> {
   const { wctx, task, initialError, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState } = opts;
-  const { projectDir } = wctx;
+  const { projectDir, sessionId } = wctx;
   const { state, result } = await handleRetryAndEscalation({
     wctx, task, initialError, currentState: opts.state, taskStartTime,
   });
   setTrackedState(state);
-  buildAndRecordUsage({ task, method: result.method, tokensBefore, currentUsage: state.tokenUsage, projectDir, state, taskBreakdowns, retryCount: result.attempts, tool: getRunnerDisplayName(wctx.config.implementer), model: wctx.config.implementer.model });
-  if (!result.completed) emit(projectDir, state, 'task_failed', task.id, {});
+  buildAndRecordUsage({ task, method: result.method, tokensBefore, currentUsage: state.tokenUsage, projectDir, sessionId, state, taskBreakdowns, retryCount: result.attempts, tool: getRunnerDisplayName(wctx.config.implementer), model: wctx.config.implementer.model });
+  if (!result.completed) emit(projectDir, sessionId, state, 'task_failed', task.id, {});
   return { state, completed: result.completed };
 }
 
@@ -45,16 +45,16 @@ type RunSingleTaskOptions = {
 
 export async function runSingleTask(opts: RunSingleTaskOptions): Promise<WorkflowState> {
   const { wctx, index, totalTasks, taskBreakdowns, setTrackedState, setCurrentTask } = opts;
-  const { projectDir, config, callbacks, context } = wctx;
+  const { projectDir, sessionId, config, callbacks, context } = wctx;
   let state = opts.state;
 
   if (wctx.signal?.aborted) return state;
 
-  state = transitionAndSave(projectDir, state, { type: 'START_TASK', taskId: opts.task.id });
+  state = transitionAndSave(projectDir, sessionId, state, { type: 'START_TASK', taskId: opts.task.id });
   setTrackedState(state);
 
   let task: Task;
-  ({ task, state } = await refreshAndPersistCode(opts.task, projectDir, state));
+  ({ task, state } = await refreshAndPersistCode(opts.task, projectDir, sessionId, state));
   setTrackedState(state);
 
   setCurrentTask(task);
@@ -63,7 +63,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     taskId: task.id, title: task.title, index, total: totalTasks, file: task.file, action: task.action,
     tool: getRunnerDisplayName(config.implementer), model: config.implementer.model,
   });
-  emit(projectDir, state, 'task_started', task.id, {});
+  emit(projectDir, sessionId, state, 'task_started', task.id, {});
 
   const tokensBefore = { ...state.tokenUsage };
 
@@ -75,6 +75,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       task, projectDir, config, context,
       onOutput: createTextHandler(callbacks),
       onEvent: callbacks.onEvent,
+      sessionId,
     });
   } catch (err) {
     emitError(callbacks, labelError('Implementation failed', err));
@@ -85,7 +86,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     return retry.state;
   }
 
-  state = addUsageAndSave(projectDir, state, 'implementer', implResult.usage, callbacks);
+  state = addUsageAndSave(projectDir, sessionId, state, 'implementer', implResult.usage, callbacks);
   setTrackedState(state);
 
   if (!implResult.success) {
@@ -96,19 +97,19 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     return retry.state;
   }
 
-  state = transitionAndSave(projectDir, state, { type: 'TASK_SENT' });
+  state = transitionAndSave(projectDir, sessionId, state, { type: 'TASK_SENT' });
   setTrackedState(state);
 
   if (wctx.signal?.aborted) return state;
 
   const commitResult = await validateAndCommitTask({
-    task, projectDir, config, callbacks, state,
+    task, projectDir, sessionId, config, callbacks, state,
     method: 'local', transitionType: 'VALIDATION_PASS', taskStartTime,
   });
   if (commitResult.completed) {
     state = commitResult.state;
     setTrackedState(state);
-    buildAndRecordUsage({ task, method: 'local', tokensBefore, currentUsage: state.tokenUsage, projectDir, state, taskBreakdowns, tool: getRunnerDisplayName(config.implementer), model: config.implementer.model });
+    buildAndRecordUsage({ task, method: 'local', tokensBefore, currentUsage: state.tokenUsage, projectDir, sessionId, state, taskBreakdowns, tool: getRunnerDisplayName(config.implementer), model: config.implementer.model });
     return state;
   }
 

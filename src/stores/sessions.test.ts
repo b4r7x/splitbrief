@@ -1,32 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Session } from '../types.js';
+import { makeSession } from '#testing/helpers/fixtures.js';
 
-const listSessionsMock = vi.fn<(dir: string) => Session[]>();
-const getSessionDirMock = vi.fn<(scope: 'project' | 'global', projectDir: string) => string>();
+const listSessionsMock = vi.fn<(projectDir: string) => Session[]>();
+const listAllSessionsMock = vi.fn<(projectDir: string) => Session[]>();
 
 vi.mock('../core/sessions/io.js', () => ({
-  listSessions: (dir: string) => listSessionsMock(dir),
-  getSessionDir: (scope: 'project' | 'global', projectDir: string) => getSessionDirMock(scope, projectDir),
+  listSessions: (projectDir: string) => listSessionsMock(projectDir),
+  listAllSessions: (projectDir: string) => listAllSessionsMock(projectDir),
 }));
 
 const { sessionsStore } = await import('./sessions.js');
 
-const makeSession = (overrides?: Partial<Session>): Session => ({
-  id: 'sess-1',
-  feature: 'example',
-  startedAt: 1_700_000_000,
-  completedAt: null,
-  stateVersion: 1,
-  stateFile: null,
-  status: 'interrupted',
-  summary: null,
-  ...overrides,
-} as Session);
-
 describe('sessionsStore', () => {
   beforeEach(() => {
     listSessionsMock.mockReset();
-    getSessionDirMock.mockReset();
+    listAllSessionsMock.mockReset();
     sessionsStore.reset();
   });
 
@@ -34,35 +23,46 @@ describe('sessionsStore', () => {
     expect(sessionsStore.get().sessions).toEqual([]);
   });
 
-  it('load() populates sessions from the resolved directory', () => {
+  it('load() populates sessions from the project directory', () => {
     const sessions = [makeSession({ id: 'a' }), makeSession({ id: 'b' })];
-    getSessionDirMock.mockReturnValue('/tmp/project/.diptych/sessions');
     listSessionsMock.mockReturnValue(sessions);
 
-    sessionsStore.load('project', '/tmp/project');
+    sessionsStore.load('/tmp/project');
 
-    expect(getSessionDirMock).toHaveBeenCalledWith('project', '/tmp/project');
-    expect(listSessionsMock).toHaveBeenCalledWith('/tmp/project/.diptych/sessions');
+    expect(listSessionsMock).toHaveBeenCalledWith('/tmp/project');
     expect(sessionsStore.get().sessions).toBe(sessions);
   });
 
-  it('load() with scope=global resolves the global directory', () => {
-    getSessionDirMock.mockReturnValue('/home/u/.diptych/sessions');
+  it('load() with empty result sets empty sessions', () => {
     listSessionsMock.mockReturnValue([]);
 
-    sessionsStore.load('global', '/unused');
+    sessionsStore.load('/tmp/project');
 
-    expect(getSessionDirMock).toHaveBeenCalledWith('global', '/unused');
     expect(sessionsStore.get().sessions).toEqual([]);
   });
 
   it('reset() returns the store to the empty initial state', () => {
-    getSessionDirMock.mockReturnValue('/tmp');
     listSessionsMock.mockReturnValue([makeSession()]);
-    sessionsStore.load('project', '/tmp');
+    sessionsStore.load('/tmp/project');
     expect(sessionsStore.get().sessions).toHaveLength(1);
 
     sessionsStore.reset();
     expect(sessionsStore.get().sessions).toEqual([]);
+  });
+
+  describe('loadAll', () => {
+    it('populates allSessions from the project directory', () => {
+      const sessions = [makeSession({ id: 'x' }), makeSession({ id: 'y' }), makeSession({ id: 'z' })];
+      listAllSessionsMock.mockReturnValue(sessions);
+
+      sessionsStore.loadAll('/tmp/project');
+
+      expect(listAllSessionsMock).toHaveBeenCalledWith('/tmp/project');
+      expect(sessionsStore.get().allSessions).toBe(sessions);
+    });
+
+    it('starts with empty allSessions', () => {
+      expect(sessionsStore.get().allSessions).toEqual([]);
+    });
   });
 });

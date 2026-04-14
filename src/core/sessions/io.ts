@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { Session } from '../types/index.js';
 import { SessionSchema } from '../types/schemas/index.js';
-import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
-import { validateSafeIdentifier, getDiptychPath } from '../../utils/fs.js';
+import { DIPTYCH_DIR, SESSIONS_DIR, sessionDir, sessionsRoot } from '../paths.js';
+import { getDiptychPath } from '../../utils/fs.js';
 import { warnError, warnStderr } from '../../utils/warn.js';
 import { isENOENT } from '../../utils/process-errors.js';
 
@@ -15,7 +15,7 @@ export function getSessionDir(scope: 'project' | 'global', projectDir: string): 
   return getDiptychPath(projectDir, SESSIONS_DIR);
 }
 
-function readSession(filePath: string): Session | null {
+function readSummaryFile(filePath: string): Session | null {
   try {
     const raw = readFileSync(filePath, 'utf-8');
     const parsed: unknown = JSON.parse(raw);
@@ -33,42 +33,41 @@ function readSession(filePath: string): Session | null {
   }
 }
 
-function validateSessionId(id: string): void {
-  validateSafeIdentifier(id, 'session id');
-}
-
-export function saveSession(dir: string, session: Session): void {
-  validateSessionId(session.id);
+export function saveSummary(projectDir: string, id: string, session: Session): void {
   const result = SessionSchema.safeParse(session);
   if (!result.success) {
     throw new Error(`Invalid session data: ${result.error.message}`);
   }
+  const dir = sessionDir(projectDir, id);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const filePath = join(dir, `${session.id}.json`);
+  const filePath = join(dir, 'summary.json');
   writeFileSync(filePath, JSON.stringify(session, null, 2) + '\n');
   chmodSync(filePath, 0o600);
 }
 
 const MAX_RECENT_SESSIONS = 10;
 
-function readSessions(dir: string): Session[] {
-  if (!existsSync(dir)) return [];
+function readSessions(projectDir: string): Session[] {
+  const root = sessionsRoot(projectDir);
+  if (!existsSync(root)) return [];
 
-  const files = readdirSync(dir).filter(f => f.endsWith('.json'));
+  const entries = readdirSync(root, { withFileTypes: true });
   const sessions: Session[] = [];
 
-  for (const file of files) {
-    const session = readSession(join(dir, file));
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const summaryPath = join(root, entry.name, 'summary.json');
+    const session = readSummaryFile(summaryPath);
     if (session) sessions.push(session);
   }
 
   return sessions.sort((a, b) => b.startedAt - a.startedAt);
 }
 
-export function listSessions(dir: string): Session[] {
-  return readSessions(dir).slice(0, MAX_RECENT_SESSIONS);
+export function listSessions(projectDir: string): Session[] {
+  return readSessions(projectDir).slice(0, MAX_RECENT_SESSIONS);
 }
 
-export function listAllSessions(dir: string): Session[] {
-  return readSessions(dir);
+export function listAllSessions(projectDir: string): Session[] {
+  return readSessions(projectDir);
 }

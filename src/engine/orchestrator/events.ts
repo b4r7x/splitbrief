@@ -5,12 +5,13 @@ import { appendEvent } from '../../core/state/persistence.js';
 
 export function emit<T extends keyof OrchestratorEventPayloadMap>(
   projectDir: string,
+  sessionId: string,
   state: WorkflowState,
   type: T,
   taskId: TaskId | undefined,
   data: OrchestratorEventPayloadMap[T],
 ): void {
-  appendEvent(projectDir, {
+  appendEvent(projectDir, sessionId, {
     ts: Date.now(),
     type,
     taskId,

@@ -7,7 +7,8 @@ import {
   getFailedTaskIds,
 } from '../../core/state/selectors.js';
 import { resolveProjectDir } from '../workflow.js';
-import { listSessions, getSessionDir } from '../../core/sessions/io.js';
+import { readActive } from '../../core/sessions/active.js';
+import { listSessions } from '../../core/sessions/io.js';
 import { aggregateSessionCosts } from '../../core/sessions/analytics.js';
 import { formatCost, labelError } from '../../utils/format.js';
 import { getProviderDisplayName } from '../../core/providers.js';
@@ -15,16 +16,9 @@ import { formatModelName } from '../../core/model-display.js';
 
 function printCostHistory(projectDir: string): void {
   try {
-    const projectSessions = listSessions(getSessionDir('project', projectDir));
-    const globalSessions = listSessions(getSessionDir('global', projectDir));
+    const sessions = listSessions(projectDir);
 
-    const seen = new Set(projectSessions.map(s => s.id));
-    const merged = [...projectSessions];
-    for (const s of globalSessions) {
-      if (!seen.has(s.id)) merged.push(s);
-    }
-
-    const analytics = aggregateSessionCosts(merged);
+    const analytics = aggregateSessionCosts(sessions);
 
     if (analytics.completedSessions === 0) {
       console.log(ansis.dim('No completed sessions with cost data.'));
@@ -67,7 +61,8 @@ export function registerStatusCommand(program: Command): void {
     .action((opts: { project?: string; history?: boolean }) => {
       const projectDir = resolveProjectDir(opts.project);
 
-      const state = loadState(projectDir);
+      const sessionId = readActive(projectDir);
+      const state = sessionId ? loadState(projectDir, sessionId) : null;
 
       if (!state) {
         console.log('No active workflow.');
@@ -79,6 +74,7 @@ export function registerStatusCommand(program: Command): void {
         console.log(`${ansis.dim('Phase:')}    ${ansis.bold(state.phase)}`);
         console.log(`${ansis.dim('Task:')}     ${state.currentTaskIndex + 1}/${state.tasks.length}`);
         console.log(`${ansis.dim('Started:')}  ${state.startedAt}`);
+        console.log(`${ansis.dim('Session:')}  ${sessionId}`);
 
         if (state.plannerTool) {
           const model = state.plannerModel ? ` (${formatModelName(state.plannerModel)})` : '';

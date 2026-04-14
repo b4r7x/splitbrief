@@ -15,6 +15,10 @@ export interface PlannerCallbacks {
   onOutput: (text: string) => void;
   onPhase?: ((phase: string) => void) | undefined;
   onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
+  /** Session ID for agent planners that write files to the session directory. */
+  sessionId?: string | undefined;
+  /** Whether to persist planner output as transcript messages (mirrors config.workflow.persistTranscript). */
+  persistTranscript?: boolean | undefined;
 }
 
 /** Result from a single planning phase. */

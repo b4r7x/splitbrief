@@ -23,8 +23,8 @@ export function createAgentPlanner(config: Config): Planner {
       const changed = await getChangedFiles(projectDir);
       return changed.length > 0;
     },
-    readPhaseOutput: (filename, resultText, projectDir) =>
-      readSpecFile(projectDir, filename) || resultText,
+    readPhaseOutput: (filename, resultText, projectDir, sessionId) =>
+      (sessionId ? readSpecFile(projectDir, sessionId, filename) : null) ?? resultText,
     capabilities,
   });
 

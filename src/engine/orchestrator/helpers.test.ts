@@ -84,7 +84,7 @@ describe('addUsageAndSave', () => {
     const events: TuiEvent[] = [];
     const callbacks = { onEvent: (e: TuiEvent) => events.push(e) } as Partial<OrchestratorCallbacks> as OrchestratorCallbacks;
 
-    const result = addUsageAndSave('/tmp/proj', state, 'planner', {
+    const result = addUsageAndSave('/tmp/proj', 'test-session', state, 'planner', {
       inputTokens: 200,
       outputTokens: 100,
     }, callbacks);
@@ -99,7 +99,7 @@ describe('addUsageAndSave', () => {
     const state = makeState();
     const events: TuiEvent[] = [];
     const callbacks = { onEvent: (e: TuiEvent) => events.push(e) } as Partial<OrchestratorCallbacks> as OrchestratorCallbacks;
-    const result = addUsageAndSave('/tmp/proj', state, 'implementer', null, callbacks);
+    const result = addUsageAndSave('/tmp/proj', 'test-session', state, 'implementer', null, callbacks);
 
     expect(result).toBe(state);
     expect(events).toHaveLength(0);

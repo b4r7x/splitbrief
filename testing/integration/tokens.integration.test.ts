@@ -21,8 +21,8 @@ describe('Token accumulation integration', () => {
       state.tokenUsage.escalationInput += 500;
       state.tokenUsage.escalationOutput += 200;
 
-      saveState(tmpDir, state);
-      const loaded = loadState(tmpDir);
+      saveState(tmpDir, 'test-session', state);
+      const loaded = loadState(tmpDir, 'test-session');
 
       expect(loaded).toBeTruthy();
       if (!loaded) throw new Error('expected loaded state');
@@ -56,6 +56,6 @@ describe('Token accumulation integration', () => {
     const savings = formatCost(Math.max(0, breakdown.savingsAmount));
 
     expect(savings).not.toBe('$0.00');
-    expect(savings.startsWith('$')).toBeTruthy();
+    expect(savings).toMatch(/^\$/);
   });
 });

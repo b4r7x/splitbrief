@@ -19,6 +19,7 @@ const mockConfig = {
     autoApprovePlan: false,
     maxRetries: 3,
     commitStrategy: 'none' as const,
+    persistTranscript: true,
     mode: 'standard' as const,
   },
   theme: 'terminal' as const,
