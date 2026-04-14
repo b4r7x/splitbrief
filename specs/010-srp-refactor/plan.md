@@ -11,7 +11,7 @@ Split 3 oversized files (types.ts 236 LOC / 6 domains, orchestrator.ts 1072 LOC 
 
 **Language/Version**: TypeScript 6.0.2, ESM only (`"type": "module"`)
 **Primary Dependencies**: Ink 5.x (React for CLI), @inkjs/ui, openai SDK, simple-git, commander, yaml
-**Storage**: JSON files (.tiny-spec/state.json, events.jsonl), Markdown files (spec.md, plan.md, tasks.md)
+**Storage**: JSON files (.diptych/state.json, events.jsonl), Markdown files (spec.md, plan.md, tasks.md)
 **Testing**: Node.js built-in test runner via `tsx --test`
 **Target Platform**: macOS (primary), Linux (secondary)
 **Project Type**: CLI tool

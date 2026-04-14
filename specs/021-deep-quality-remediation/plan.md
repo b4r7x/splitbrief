@@ -11,7 +11,7 @@ Comprehensive code quality remediation based on a 20-agent audit. Fixes 3 critic
 
 **Language/Version**: TypeScript 5.9+, ESM only (`"type": "module"`)  
 **Primary Dependencies**: Ink 6.x (React 19), openai ^6.0, commander ^14.0, simple-git, yaml, Shiki 4.x, ansis  
-**Storage**: JSON files (`.tiny-spec/state.json`, `events.jsonl`), Markdown files (spec, plan, tasks)  
+**Storage**: JSON files (`.diptych/state.json`, `events.jsonl`), Markdown files (spec, plan, tasks)  
 **Testing**: Node.js built-in test runner (`node:test` + `node:assert/strict`)  
 **Target Platform**: macOS (primary), Linux (secondary)  
 **Project Type**: CLI tool with TUI (Ink/React)  

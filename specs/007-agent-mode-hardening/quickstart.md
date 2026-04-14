@@ -4,7 +4,7 @@
 
 ### 1. Configure agent mode
 
-Edit `.tiny-spec/config.yaml`:
+Edit `.diptych/config.yaml`:
 
 ```yaml
 planner:
@@ -29,7 +29,7 @@ The workflow is identical to API mode:
 1. Planner (Claude Code) researches the codebase and generates spec/plan/tasks
 2. You approve the spec and plan (or edit/comment/quit)
 3. For each task, the agent implementer runs your command with the task description
-4. After the agent finishes, tiny-spec validates (tsc → lint → test)
+4. After the agent finishes, diptych validates (tsc → lint → test)
 5. Pass → commit and move to next task
 6. Fail → retry (up to 3x with error context), then escalate to planner
 
@@ -37,7 +37,7 @@ The workflow is identical to API mode:
 
 | Aspect | API mode | Agent mode |
 |--------|----------|------------|
-| File writes | tiny-spec extracts code from model output and writes files | The agent writes files directly |
+| File writes | diptych extracts code from model output and writes files | The agent writes files directly |
 | Output parsing | Code extraction from markdown fences | Output is for display only (progress) |
 | Validation | Same | Same (tsc → lint → test) |
 | Retry | Same | Same (re-invoke with error context) |
@@ -46,12 +46,12 @@ The workflow is identical to API mode:
 
 ### 4. Shell functions as commands
 
-If your command is a shell function (not on PATH), tiny-spec will automatically resolve it through your login shell. No special configuration needed.
+If your command is a shell function (not on PATH), diptych will automatically resolve it through your login shell. No special configuration needed.
 
 If resolution fails, you'll see:
 ```
 Error: Agent implementer command not found: claude-zai
-Check implementer.command in .tiny-spec/config.yaml
+Check implementer.command in .diptych/config.yaml
 ```
 
 Fix: ensure the function is defined in your shell profile (`~/.zshrc`, `~/.bash_profile`).
@@ -84,7 +84,7 @@ Commenting requires session continuity (supported by claude-code and agent-sdk p
 
 ## Version Detection
 
-tiny-spec automatically detects your planner CLI version at startup. If the version is unrecognized, you'll see a warning but the workflow will continue with the latest known flags.
+diptych automatically detects your planner CLI version at startup. If the version is unrecognized, you'll see a warning but the workflow will continue with the latest known flags.
 
 If the planner CLI is not installed:
 ```

@@ -1,4 +1,4 @@
-# Feature Specification: tiny-spec v0.1 -- Cost-Optimized AI Coding Orchestrator
+# Feature Specification: diptych v0.1 -- Cost-Optimized AI Coding Orchestrator
 
 **Feature Branch**: `002-cost-optimized-orchestrator`
 **Created**: 2026-03-25
@@ -9,17 +9,17 @@
 
 ### User Story 1 - Full Workflow: Spec-to-Implementation Pipeline (Priority: P1)
 
-A developer on the Claude Max 5x plan ($100/mo) has a feature to build. Instead of burning all their Opus tokens on implementation (55-60% of typical usage), they run `tiny-spec start "add user authentication"`. The tool uses Opus to research the codebase, write a detailed specification, break it into atomic tasks with test expectations, and generate self-contained implementation prompts. Then it feeds each task one-by-one to a cheap/local model (e.g., Qwen 2.5 Coder 7B via Ollama). After each task, automated validation runs (typecheck, lint, test). If it passes, changes are committed and the next task starts. If it fails, the local model gets the error feedback and retries (max 3). If still failing, Opus receives a hint request first; if that doesn't help, Opus implements the fix directly. After all tasks, Opus reviews the full diff against the original spec.
+A developer on the Claude Max 5x plan ($100/mo) has a feature to build. Instead of burning all their Opus tokens on implementation (55-60% of typical usage), they run `diptych start "add user authentication"`. The tool uses Opus to research the codebase, write a detailed specification, break it into atomic tasks with test expectations, and generate self-contained implementation prompts. Then it feeds each task one-by-one to a cheap/local model (e.g., Qwen 2.5 Coder 7B via Ollama). After each task, automated validation runs (typecheck, lint, test). If it passes, changes are committed and the next task starts. If it fails, the local model gets the error feedback and retries (max 3). If still failing, Opus receives a hint request first; if that doesn't help, Opus implements the fix directly. After all tasks, Opus reviews the full diff against the original spec.
 
 **Why this priority**: This is the entire product. Without the end-to-end pipeline, there is no value proposition. Every other user story is a subset of this one.
 
-**Independent Test**: Can be fully tested by running `tiny-spec start "add a hello world endpoint"` on a minimal project and verifying that tasks are planned by Opus, implemented by the local model, validated, committed, and reviewed.
+**Independent Test**: Can be fully tested by running `diptych start "add a hello world endpoint"` on a minimal project and verifying that tasks are planned by Opus, implemented by the local model, validated, committed, and reviewed.
 
 **Acceptance Scenarios**:
 
-1. **Given** a project directory with a running Ollama instance, **When** the user runs `tiny-spec start "add user authentication"`, **Then** the tool opens a split-pane TUI with Claude Code output on the left and implementer activity on the right, starts the planning phase, and streams Claude Code's output in real-time in the left pane.
+1. **Given** a project directory with a running Ollama instance, **When** the user runs `diptych start "add user authentication"`, **Then** the tool opens a split-pane TUI with Claude Code output on the left and implementer activity on the right, starts the planning phase, and streams Claude Code's output in real-time in the left pane.
 
-2. **Given** a running planning phase, **When** Opus finishes generating the specification, **Then** the spec is saved to `.tiny-spec/current/spec.md` and the user is prompted to review it (via `$EDITOR` or approval prompt).
+2. **Given** a running planning phase, **When** Opus finishes generating the specification, **Then** the spec is saved to `.diptych/current/spec.md` and the user is prompted to review it (via `$EDITOR` or approval prompt).
 
 3. **Given** an approved spec, **When** the planning phase continues, **Then** Opus generates a plan and atomic task list, each task containing: the function to implement, exact types, current code context (inlined), test expectations with concrete values, and constraints.
 
@@ -41,17 +41,17 @@ A developer on the Claude Max 5x plan ($100/mo) has a feature to build. Instead 
 
 ### User Story 2 - Standalone Spec Generation (Priority: P2)
 
-A developer wants Opus-quality specifications without running the full implementation pipeline. They run `tiny-spec spec "add rate limiting"` and get a complete spec, plan, and task list that they can use manually with any AI tool (Claude Code, Cursor, Aider, etc.).
+A developer wants Opus-quality specifications without running the full implementation pipeline. They run `diptych spec "add rate limiting"` and get a complete spec, plan, and task list that they can use manually with any AI tool (Claude Code, Cursor, Aider, etc.).
 
-**Why this priority**: Many users will start here to evaluate tiny-spec's planning quality before trusting the automated implementation. Also useful for teams where one person specs and another implements.
+**Why this priority**: Many users will start here to evaluate diptych's planning quality before trusting the automated implementation. Also useful for teams where one person specs and another implements.
 
-**Independent Test**: Can be tested by running `tiny-spec spec "add a REST endpoint"` and verifying that spec.md, plan.md, and tasks.md are generated with proper structure, testable requirements, and atomic task definitions.
+**Independent Test**: Can be tested by running `diptych spec "add a REST endpoint"` and verifying that spec.md, plan.md, and tasks.md are generated with proper structure, testable requirements, and atomic task definitions.
 
 **Acceptance Scenarios**:
 
-1. **Given** a project directory, **When** the user runs `tiny-spec spec "add rate limiting"`, **Then** Opus researches the codebase and generates `.tiny-spec/current/spec.md` with user scenarios, functional requirements, and success criteria.
+1. **Given** a project directory, **When** the user runs `diptych spec "add rate limiting"`, **Then** Opus researches the codebase and generates `.diptych/current/spec.md` with user scenarios, functional requirements, and success criteria.
 
-2. **Given** a generated spec, **When** the user approves it (or uses `--auto`), **Then** Opus generates `.tiny-spec/current/plan.md` with architecture decisions and `.tiny-spec/current/tasks.md` with atomic implementation tasks.
+2. **Given** a generated spec, **When** the user approves it (or uses `--auto`), **Then** Opus generates `.diptych/current/plan.md` with architecture decisions and `.diptych/current/tasks.md` with atomic implementation tasks.
 
 3. **Given** generated spec artifacts, **When** the user inspects tasks.md, **Then** each task is self-contained with inlined code context, function signatures, test expectations, and constraints -- usable independently with any AI coding tool.
 
@@ -63,13 +63,13 @@ A developer configures which local model to use and where it runs. The tool auto
 
 **Why this priority**: First-run experience. Without proper configuration, the tool cannot connect to the local model. But this is lower priority because sensible defaults should handle most cases.
 
-**Independent Test**: Can be tested by running `tiny-spec init` with Ollama running and verifying that the config file is created with the correct model and provider auto-detected.
+**Independent Test**: Can be tested by running `diptych init` with Ollama running and verifying that the config file is created with the correct model and provider auto-detected.
 
 **Acceptance Scenarios**:
 
-1. **Given** first run with no config, **When** the user runs `tiny-spec init`, **Then** the tool checks for running Ollama and LM Studio instances, lists available models, and lets the user select one (or auto-selects the best coding model).
+1. **Given** first run with no config, **When** the user runs `diptych init`, **Then** the tool checks for running Ollama and LM Studio instances, lists available models, and lets the user select one (or auto-selects the best coding model).
 
-2. **Given** a config file exists, **When** the user wants to change the implementer model, **Then** they can edit the config file or use `tiny-spec init --reconfigure`.
+2. **Given** a config file exists, **When** the user wants to change the implementer model, **Then** they can edit the config file or use `diptych init --reconfigure`.
 
 3. **Given** a config file specifying Ollama as provider, **When** the tool starts, **Then** it verifies the model is available and the context window is properly configured (not the 2048-token default).
 
@@ -83,15 +83,15 @@ A developer's session is interrupted (Ctrl+C, crash, laptop sleep). They want to
 
 **Why this priority**: Workflows can take 10-30 minutes. Losing progress is frustrating. But this is P3 because it's an edge case that can be worked around by restarting.
 
-**Independent Test**: Can be tested by starting a workflow, interrupting it mid-task, then running `tiny-spec resume` and verifying it continues from the correct task.
+**Independent Test**: Can be tested by starting a workflow, interrupting it mid-task, then running `diptych resume` and verifying it continues from the correct task.
 
 **Acceptance Scenarios**:
 
-1. **Given** a workflow interrupted during task 5 of 12, **When** the user runs `tiny-spec resume`, **Then** the tool loads saved state and continues from task 5.
+1. **Given** a workflow interrupted during task 5 of 12, **When** the user runs `diptych resume`, **Then** the tool loads saved state and continues from task 5.
 
-2. **Given** a workflow interrupted during the planning phase, **When** the user runs `tiny-spec resume`, **Then** the tool restarts the planning phase from scratch (planning is not resumable mid-stream).
+2. **Given** a workflow interrupted during the planning phase, **When** the user runs `diptych resume`, **Then** the tool restarts the planning phase from scratch (planning is not resumable mid-stream).
 
-3. **Given** no interrupted workflow exists, **When** the user runs `tiny-spec resume`, **Then** the tool displays a clear message that there is nothing to resume.
+3. **Given** no interrupted workflow exists, **When** the user runs `diptych resume`, **Then** the tool displays a clear message that there is nothing to resume.
 
 ---
 
@@ -105,14 +105,14 @@ A developer's session is interrupted (Ctrl+C, crash, laptop sleep). They want to
 - What happens when the user presses Ctrl+C during implementation? The system saves current state, discards uncommitted changes from the current task, and exits cleanly.
 - What happens when a task depends on a failed task? The system skips dependent tasks and reports them as "skipped due to dependency failure" in the summary.
 - What happens when the generated spec/plan is rejected by the user? The system returns to idle state. The user can re-run with a revised description.
-- What happens when the user manually edits project files during implementation? The system checks for external changes (via git status) before starting each task. If uncommitted changes are detected that were not made by tiny-spec, the user is warned and asked whether to continue (incorporating changes) or pause the pipeline.
+- What happens when the user manually edits project files during implementation? The system checks for external changes (via git status) before starting each task. If uncommitted changes are detected that were not made by diptych, the user is warned and asked whether to continue (incorporating changes) or pause the pipeline.
 
 ## Clarifications
 
 ### Session 2026-03-25
 
-- Q: Should tiny-spec v0.1 support any language or only TypeScript/JavaScript projects? → A: TypeScript/JavaScript projects only in v0.1, multi-language support deferred to v0.2.
-- Q: How should tiny-spec communicate with the planner? → A: Claude Code CLI (`claude -p`) as a subprocess, using the user's existing subscription ($0 extra). Output streamed to the left TUI pane so users see Opus working in real-time. Split-pane TUI showing both planner (Claude Code) and implementer (local model streaming + file changes + validation) side by side.
+- Q: Should diptych v0.1 support any language or only TypeScript/JavaScript projects? → A: TypeScript/JavaScript projects only in v0.1, multi-language support deferred to v0.2.
+- Q: How should diptych communicate with the planner? → A: Claude Code CLI (`claude -p`) as a subprocess, using the user's existing subscription ($0 extra). Output streamed to the left TUI pane so users see Opus working in real-time. Split-pane TUI showing both planner (Claude Code) and implementer (local model streaming + file changes + validation) side by side.
 - Q: What happens when the user manually edits files while implementation is running? → A: Detect external changes via git status before each task. Warn the user and ask whether to continue or pause.
 
 ## Requirements *(mandatory)*
@@ -142,7 +142,7 @@ A developer's session is interrupted (Ctrl+C, crash, laptop sleep). They want to
 - **FR-021**: System MUST track and display token usage and estimated cost savings in the workflow summary.
 - **FR-022**: System MUST skip tasks whose dependencies have failed, reporting them as "skipped" in the summary.
 - **FR-023**: System MUST handle graceful shutdown on SIGINT/SIGTERM by saving state and cleaning up uncommitted changes.
-- **FR-024**: System MUST check for external file modifications (via git status) before starting each task. If uncommitted changes not made by tiny-spec are detected, the system warns the user and asks whether to continue or pause.
+- **FR-024**: System MUST check for external file modifications (via git status) before starting each task. If uncommitted changes not made by diptych are detected, the system warns the user and asks whether to continue or pause.
 
 ### Key Entities
 

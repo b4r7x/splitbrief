@@ -55,4 +55,4 @@ The command palette aggregates all slash commands plus keyboard-only actions:
 | Command Palette | Search commands | Ctrl+K | all |
 | Toggle Sidebar | Show/hide task sidebar | Ctrl+\\ | workflow |
 | Toggle Diff | Expand/collapse latest diff | d | workflow |
-| Quit | Exit tiny-spec | q | all |
+| Quit | Exit diptych | q | all |

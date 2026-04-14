@@ -5,7 +5,7 @@
 
 ## Summary
 
-Clean slate restructure of tiny-spec's codebase and TUI visual design. Moves from Ink 5/React 18 to Ink 6.8/React 19 with incremental rendering, adds Shiki-powered syntax highlighting, replaces box-drawing borders with opencode-style background color stepping and left accent lines, and reorganizes the project from `orchestrator/`+`tui/` to `engine/`+`ui/` (flat) architecture.
+Clean slate restructure of diptych's codebase and TUI visual design. Moves from Ink 5/React 18 to Ink 6.8/React 19 with incremental rendering, adds Shiki-powered syntax highlighting, replaces box-drawing borders with opencode-style background color stepping and left accent lines, and reorganizes the project from `orchestrator/`+`tui/` to `engine/`+`ui/` (flat) architecture.
 
 ## Technical Context
 
@@ -115,7 +115,7 @@ src/
 │
 └── utils/                          # Pure helpers (no React, no engine logic)
     ├── git.ts                      # Git operations
-    ├── fs.ts                       # .tiny-spec/ directory management
+    ├── fs.ts                       # .diptych/ directory management
     ├── format.ts                   # Formatting (tokens, cost, time)
     ├── process.ts                  # Subprocess spawn/lifecycle
     ├── diff.ts                     # computeDiff (moved from orchestrator/)
@@ -128,7 +128,7 @@ tests/
 └── integration/                     # 6 integration tests
 ```
 
-**Structure Decision**: `engine/` + `ui/` (flat) + `hooks/` + `utils/`. Rejected Bulletproof React features pattern — tiny-spec's TUI is one cohesive view with ~14 components, not independent feature domains. Flat `ui/` is simpler and more appropriate at this scale.
+**Structure Decision**: `engine/` + `ui/` (flat) + `hooks/` + `utils/`. Rejected Bulletproof React features pattern — diptych's TUI is one cohesive view with ~14 components, not independent feature domains. Flat `ui/` is simpler and more appropriate at this scale.
 
 ## Implementation Phases
 

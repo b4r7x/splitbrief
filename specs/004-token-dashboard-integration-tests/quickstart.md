@@ -16,15 +16,15 @@
 ## Setup
 
 ```bash
-# Install tiny-spec
-npm install -g tiny-spec
+# Install diptych
+npm install -g diptych
 
 # Initialize config (auto-detects available backends)
 cd your-project
-tiny-spec init
+diptych init
 
-# Or manually create .tiny-spec/config.yaml:
-cat > .tiny-spec/config.yaml << 'EOF'
+# Or manually create .diptych/config.yaml:
+cat > .diptych/config.yaml << 'EOF'
 planner:
   tool: claude-code
 implementer:
@@ -37,25 +37,25 @@ EOF
 
 ### Claude Code (default — uses existing subscription)
 ```bash
-tiny-spec start "add user authentication"
+diptych start "add user authentication"
 # Uses claude -p subprocess, $0 extra cost
 ```
 
 ### Codex CLI
 ```bash
-tiny-spec start "add user auth" --planner codex --planner-model o3
+diptych start "add user auth" --planner codex --planner-model o3
 # Or set in config.yaml: planner.tool: codex
 ```
 
 ### OpenCode
 ```bash
-tiny-spec start "add rate limiting" --planner opencode
+diptych start "add rate limiting" --planner opencode
 # Uses opencode run --agent plan for planning
 ```
 
 ### Aider (architect mode)
 ```bash
-tiny-spec start "refactor auth module" --planner aider
+diptych start "refactor auth module" --planner aider
 # Uses aider --architect for planning
 ```
 
@@ -64,7 +64,7 @@ tiny-spec start "refactor auth module" --planner aider
 After workflow completes, the TUI shows a full-screen summary:
 
 ```
-                     tiny-spec  Complete
+                     diptych  Complete
 
   Overview
     Feature              add user authentication
@@ -114,7 +114,7 @@ TEST_CLAUDE=true npm run test:integration  # costs subscription tokens!
 ## Switching Backends
 
 ```yaml
-# .tiny-spec/config.yaml
+# .diptych/config.yaml
 
 # Option 1: Claude Code (subscription, $0 extra)
 planner:

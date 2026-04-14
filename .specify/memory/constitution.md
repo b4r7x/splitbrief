@@ -11,7 +11,7 @@ Sync Impact Report
 - Follow-up TODOs: none
 -->
 
-# tiny-spec Constitution
+# diptych Constitution
 
 ## Core Principles
 
@@ -92,7 +92,7 @@ is marked complete.
 
 ### VI. Identity & Anti-Goals
 
-tiny-spec is a **cost-optimized AI coding orchestrator** with a **two-role
+diptych is a **cost-optimized AI coding orchestrator** with a **two-role
 architecture** (planner + implementer). Its core identity is splitting work
 between expensive planners and cheap implementers to save costs while
 maintaining planning quality.
@@ -103,13 +103,13 @@ orchestration is part of the product identity — not scope creep. The TUI
 MUST expose the planner/implementer dialog, cost savings, validation
 results, and escalation flow so users see and feel the value.
 
-tiny-spec is NOT:
+diptych is NOT:
 - A universal AI connector that "connects any AI to any AI"
 - A multi-agent coordinator (Claude Squad, Overstory, Agent Orchestrator)
 - A generic orchestration framework with N dynamic agents
 
 Features and proposals MUST be evaluated against this identity. Additions
-that push tiny-spec toward generic multi-agent orchestration MUST be
+that push diptych toward generic multi-agent orchestration MUST be
 rejected unless they directly serve cost optimization.
 
 Explicit anti-goals that MUST NOT be implemented:
@@ -118,7 +118,7 @@ Explicit anti-goals that MUST NOT be implemented:
 - Features that blur the planner/implementer boundary
 
 **Permitted exceptions**:
-1. File write delegation to the implementer is allowed when tiny-spec
+1. File write delegation to the implementer is allowed when diptych
    retains ownership of validation (tsc/lint/test), retry, escalation,
    git commits, and the overall workflow. This enables agent-mode
    implementers while preserving the two-role architecture.
@@ -154,7 +154,7 @@ Explicit anti-goals that MUST NOT be implemented:
 ## Governance
 
 This constitution supersedes all other development practices for
-the tiny-spec project. All implementation decisions, code reviews,
+the diptych project. All implementation decisions, code reviews,
 and architectural choices MUST be evaluated against these principles.
 
 **Amendment procedure**:

@@ -1,4 +1,4 @@
-# Data Model: tiny-spec v0.2
+# Data Model: diptych v0.2
 
 **Source**: [spec.md](spec.md) Key Entities section
 **Extends**: [v0.1 data-model](../002-cost-optimized-orchestrator/data-model.md)

@@ -20,7 +20,7 @@ description: "Task list for Symmetric Runner Config refactor (024)"
 
 ## Path Conventions
 
-tiny-spec is a single project with colocated tests:
+diptych is a single project with colocated tests:
 
 - Source: `src/` with `core/`, `engine/`, `cli/`, `components/`, `screens/`, `stores/`, `hooks/`, `ui/`, `utils/` subdirs
 - Tests: `foo.test.ts` / `foo.test.tsx` colocated next to `foo.ts`
@@ -98,7 +98,7 @@ tiny-spec is a single project with colocated tests:
 
 **Goal**: Guarantee structural symmetry between planner and implementer. Add the new `createAgentPlanner` so the planner exposes the same 5 kinds as the implementer. Replace the two separate factory files with one symmetric `runners/factory.ts`. Ensure the TUI picker shows identical options for both roles.
 
-**Independent Test**: (1) Set both `planner` and `implementer` in config.yml to the same Ollama API endpoint; run `tiny-spec start "test"`; verify the planner successfully calls Ollama. (2) Configure a planner with `kind: 'agent'` pointing at a command that writes spec.md/plan.md/tasks.md; run `tiny-spec start "test"`; verify the generated files are loaded as the planning output. (3) Open the TUI tool/model picker twice (once for planner, once for implementer) and confirm identical option lists.
+**Independent Test**: (1) Set both `planner` and `implementer` in config.yml to the same Ollama API endpoint; run `diptych start "test"`; verify the planner successfully calls Ollama. (2) Configure a planner with `kind: 'agent'` pointing at a command that writes spec.md/plan.md/tasks.md; run `diptych start "test"`; verify the generated files are loaded as the planning output. (3) Open the TUI tool/model picker twice (once for planner, once for implementer) and confirm identical option lists.
 
 ### Tests for User Story 2
 
@@ -129,7 +129,7 @@ tiny-spec is a single project with colocated tests:
 
 **Goal**: Comprehensive migration coverage. The migration logic was written in T021; this phase adds the edge-case tests and the integration tests that verify end-to-end round-tripping.
 
-**Independent Test**: Drop a pre-refactor `config.yml` (with `kind: 'claude-code'` or `kind: 'api', tool: 'ollama'`) into a test project, run `tiny-spec start "test"`, confirm it loads successfully. Trigger a save, inspect the file on disk, confirm it has been rewritten to v2 shape.
+**Independent Test**: Drop a pre-refactor `config.yml` (with `kind: 'claude-code'` or `kind: 'api', tool: 'ollama'`) into a test project, run `diptych start "test"`, confirm it loads successfully. Trigger a save, inspect the file on disk, confirm it has been rewritten to v2 shape.
 
 ### Tests for User Story 3
 
@@ -149,7 +149,7 @@ tiny-spec is a single project with colocated tests:
 
 **Goal**: Verify that arbitrary (non-catalog) provider strings still work as long as `apiBase` is supplied. This capability already exists structurally in the new schema (since `provider` is `z.string().min(1)` not a closed enum), but we need explicit test coverage to prevent regression.
 
-**Independent Test**: Configure an API implementer with a nonsense provider name and a real apiBase, run `tiny-spec start "test"`, confirm the request reaches the endpoint. Configure the same minus `apiBase`, confirm a clear error.
+**Independent Test**: Configure an API implementer with a nonsense provider name and a real apiBase, run `diptych start "test"`, confirm the request reaches the endpoint. Configure the same minus `apiBase`, confirm a clear error.
 
 ### Tests for User Story 4
 
@@ -193,7 +193,7 @@ tiny-spec is a single project with colocated tests:
 - [ ] T059 Update `CLAUDE.md` "Active Technologies" and "Project Structure" sections if the agent context script didn't fully capture the new file layout (schema files split, `runners/` subdir, `runner-config.ts`, `build-runner.ts`).
 - [ ] T060 Update `docs/STORES.md` and any other in-repo docs that reference the old `planner-config.ts` / `backend-factory.ts` / `Backend` interface. Update to the new names.
 - [ ] T061 Run the full verification checklist from `plan.md`: `npm run typecheck`, `npm run lint`, `npm test`, `npm run dev -- init`, `npm run dev -- start "test feature"`, `npm run dev -- resume`, migration smoke test with a legacy config.
-- [ ] T062 Final end-to-end symmetry check: set `planner.kind: 'api', provider: 'ollama', apiBase: 'http://localhost:11434/v1'` in config.yml (previously impossible because the planner API was restricted to cloud providers). Run `tiny-spec start "smoke test"` and confirm the planner successfully calls Ollama.
+- [ ] T062 Final end-to-end symmetry check: set `planner.kind: 'api', provider: 'ollama', apiBase: 'http://localhost:11434/v1'` in config.yml (previously impossible because the planner API was restricted to cloud providers). Run `diptych start "smoke test"` and confirm the planner successfully calls Ollama.
 - [ ] T063 [P] Verify FR-005 (all validation at load time). Grep `src/` for any remaining post-zod functions that take a parsed `Config` and return a list of errors. The only acceptable survivors are policy checks in `src/core/config/validation.ts` — `apiKeyErrors` (env-var presence) and `securityWarnings` (non-blocking hints). Confirm `implementerCrossFieldErrors`, `plannerCrossFieldErrors`, and any similarly-named helpers do not exist. Fix if any slipped through.
 
 **Checkpoint**: All verification checks pass. Grep-zero for all flagged patterns. Refactor is complete.

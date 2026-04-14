@@ -9,13 +9,13 @@
 
 ### User Story 1 - Agent-Mode Implementer (Priority: P1)
 
-A developer wants to use a full coding agent (e.g., Claude Code with alternative models, Aider, Codex CLI) as the implementer instead of a simple chat API. They set their implementer type to "agent" in the project config and specify the command to run. When tiny-spec reaches the implementation phase, it sends the task description to the agent tool, the agent writes files directly to the project, and tiny-spec validates (typecheck, lint, test), retries if validation fails, escalates to the planner if retries are exhausted, and commits on success.
+A developer wants to use a full coding agent (e.g., Claude Code with alternative models, Aider, Codex CLI) as the implementer instead of a simple chat API. They set their implementer type to "agent" in the project config and specify the command to run. When diptych reaches the implementation phase, it sends the task description to the agent tool, the agent writes files directly to the project, and diptych validates (typecheck, lint, test), retries if validation fails, escalates to the planner if retries are exhausted, and commits on success.
 
-The key value: tiny-spec's validation/retry/escalation/commit pipeline still applies, providing quality assurance that running the agent standalone wouldn't have. The planner/implementer cost split is preserved — planning uses expensive AI, implementation uses whatever the user configures.
+The key value: diptych's validation/retry/escalation/commit pipeline still applies, providing quality assurance that running the agent standalone wouldn't have. The planner/implementer cost split is preserved — planning uses expensive AI, implementation uses whatever the user configures.
 
-**Why this priority**: This is an architectural decision that blocks other work. The current shell implementer assumes tiny-spec controls file writes, which conflicts with agent-style tools that manage their own files. Resolving this determines the project's direction.
+**Why this priority**: This is an architectural decision that blocks other work. The current shell implementer assumes diptych controls file writes, which conflicts with agent-style tools that manage their own files. Resolving this determines the project's direction.
 
-**Independent Test**: Can be fully tested by configuring an agent-style tool as implementer and running a multi-task workflow. Delivers value by enabling users to plug in any coding agent while retaining tiny-spec's quality pipeline.
+**Independent Test**: Can be fully tested by configuring an agent-style tool as implementer and running a multi-task workflow. Delivers value by enabling users to plug in any coding agent while retaining diptych's quality pipeline.
 
 **Acceptance Scenarios**:
 
@@ -48,7 +48,7 @@ A developer starts a feature workflow. During the research and specification pha
 
 ### User Story 3 - Planner Version Detection (Priority: P3)
 
-When tiny-spec starts a workflow, it detects the version of the configured planner tool (e.g., by running the tool's version command). Based on the detected version, it adjusts command-line flags and output parsing behavior to match what that version expects. If the version is unrecognized or the tool's behavior has changed, the user sees a clear, actionable error message explaining what happened and suggesting a resolution.
+When diptych starts a workflow, it detects the version of the configured planner tool (e.g., by running the tool's version command). Based on the detected version, it adjusts command-line flags and output parsing behavior to match what that version expects. If the version is unrecognized or the tool's behavior has changed, the user sees a clear, actionable error message explaining what happened and suggesting a resolution.
 
 **Why this priority**: The planner CLI API is a moving target (e.g., Claude Code changed flag requirements between versions). Without version detection, users hit cryptic errors when their CLI version doesn't match the expected flags.
 
@@ -127,9 +127,9 @@ When tiny-spec starts a workflow, it detects the version of the configured plann
 ## Assumptions
 
 - Agent-mode implementers are standalone coding tools that accept a task description (via stdin, argument, or prompt file) and write files to the working directory
-- In agent mode, tiny-spec cannot inspect the implementer's intermediate reasoning — it only observes the resulting file changes after the process exits
+- In agent mode, diptych cannot inspect the implementer's intermediate reasoning — it only observes the resulting file changes after the process exits
 - The default implementer mode remains "api" (OpenAI-compatible chat) — agent mode is opt-in via configuration
 - Claude Code is the primary planner needing version detection; other planner tools are lower priority and can be added incrementally
 - Session continuity for comment-on-approval is only available with planner backends that support it (currently claude-code and agent-sdk); for others, "comment" gracefully degrades
 - The existing conversational planning code is functionally designed correctly but may have edge-case bugs that surface during real-world use — the goal is to find and fix these, not redesign the architecture
-- Constitution Principle VI will be amended (v1.1.0 → v1.2.0) to add a carve-out: file write delegation to the implementer is permitted when tiny-spec retains ownership of validation, retry, escalation, git, and the overall workflow. The anti-goal remains for generic agent-wrapping-agent patterns.
+- Constitution Principle VI will be amended (v1.1.0 → v1.2.0) to add a carve-out: file write delegation to the implementer is permitted when diptych retains ownership of validation, retry, escalation, git, and the overall workflow. The anti-goal remains for generic agent-wrapping-agent patterns.

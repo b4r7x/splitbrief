@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import { z } from 'zod';
 import type { PlannerDetection, ProviderDetection } from '../types/index.js';
 import { PLANNER_TOOL_IDS, PROVIDER_IDS } from '../types/schemas/enums.js';
-import { getTinySpecPath } from '../../utils/fs.js';
+import { getDiptychPath } from '../../utils/fs.js';
 
 const CACHE_FILENAME = 'detection-cache.json';
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
@@ -46,7 +46,7 @@ const DetectionCacheSchema = z.object({
 type DetectionCache = z.infer<typeof DetectionCacheSchema>;
 
 function cachePath(projectDir: string): string {
-  return getTinySpecPath(projectDir, CACHE_FILENAME);
+  return getDiptychPath(projectDir, CACHE_FILENAME);
 }
 
 function parseCache(value: unknown): DetectionCache | null {

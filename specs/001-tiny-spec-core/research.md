@@ -1,4 +1,4 @@
-# Research Summary: tiny-spec
+# Research Summary: diptych
 
 ## The Problem
 

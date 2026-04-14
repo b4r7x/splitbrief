@@ -11,7 +11,7 @@ describe('Token accumulation integration', () => {
     const g = await guardIntegration();
     if (g.skip) { t.skip(); return; }
 
-    await withTempDir('tiny-spec-tokens', async (tmpDir) => {
+    await withTempDir('diptych-tokens', async (tmpDir) => {
       const state = createInitialState('test-feature');
 
       state.tokenUsage.plannerInput += 1000;

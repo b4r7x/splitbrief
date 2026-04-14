@@ -1,6 +1,6 @@
-# Tasks: tiny-spec v0.1
+# Tasks: diptych v0.1
 
-**Input**: Design documents from `/specs/001-tiny-spec-core/`
+**Input**: Design documents from `/specs/001-diptych-core/`
 **Prerequisites**: plan.md (required), spec.md (required), research.md (reference)
 
 ---
@@ -10,11 +10,11 @@
 **Purpose**: Initialize project structure and dependencies
 
 - [ ] T001 Create project directory structure per plan.md (`src/`, `src/tui/`, `src/orchestrator/`, `src/spec/`, `src/utils/`, `tests/`)
-- [ ] T002 Initialize package.json with `"type": "module"`, `"engines": {"node": ">=22"}`, bin entry `tiny-spec`, scripts (dev, build, test)
+- [ ] T002 Initialize package.json with `"type": "module"`, `"engines": {"node": ">=22"}`, bin entry `diptych`, scripts (dev, build, test)
 - [ ] T003 [P] Configure tsconfig.json with strict mode, ESM target, JSX react-jsx (for Ink), `dist/` outDir
 - [ ] T004 [P] Add runtime dependencies: ink, @inkjs/ui, react, @anthropic-ai/sdk, openai, yaml, simple-git, commander
 - [ ] T005 [P] Add dev dependencies: @types/node, @types/react, typescript
-- [ ] T006 Create `.gitignore` with node_modules, dist, .tiny-spec/current/state.json
+- [ ] T006 Create `.gitignore` with node_modules, dist, .diptych/current/state.json
 
 **Checkpoint**: Project scaffolding ready, `npm install` succeeds
 
@@ -104,14 +104,14 @@
   ```
 
 - [ ] T008 Implement config loader in `src/config.ts`:
-  - `loadConfig(projectDir: string): Config`  -  reads `.tiny-spec/config.yaml`, merges with defaults
+  - `loadConfig(projectDir: string): Config`  -  reads `.diptych/config.yaml`, merges with defaults
   - `createDefaultConfig(): Config`  -  returns sensible defaults (ollama, qwen2.5-coder:7b)
-  - `initConfig(projectDir: string): void`  -  creates `.tiny-spec/config.yaml` with defaults if not exists
+  - `initConfig(projectDir: string): void`  -  creates `.diptych/config.yaml` with defaults if not exists
   - `detectLocalModels(): Promise<{provider: string, models: string[]}[]>`  -  checks Ollama (`http://localhost:11434/api/tags`) and LM Studio (`http://localhost:1234/v1/models`) for available models
 
 - [ ] T009 Implement state manager in `src/state.ts`:
   - `createInitialState(feature: string): WorkflowState`
-  - `saveState(projectDir: string, state: WorkflowState): void`  -  writes `.tiny-spec/current/state.json`
+  - `saveState(projectDir: string, state: WorkflowState): void`  -  writes `.diptych/current/state.json`
   - `loadState(projectDir: string): WorkflowState | null`  -  reads state, returns null if not exists
   - `transition(state: WorkflowState, action: StateAction): WorkflowState`  -  pure state transitions
   - StateAction union type for all valid transitions
@@ -131,7 +131,7 @@
   - `getFileContent(dir: string, filePath: string): Promise<string | null>`  -  read file, null if not exists
 
 - [ ] T011 Implement file system helpers in `src/utils/fs.ts`:
-  - `ensureTinySpecDir(projectDir: string): void`  -  creates `.tiny-spec/current/` if needed
+  - `ensureDiptychDir(projectDir: string): void`  -  creates `.diptych/current/` if needed
   - `writeSpecFile(projectDir: string, filename: string, content: string): void`
   - `readSpecFile(projectDir: string, filename: string): string | null`
   - `archiveCurrentFeature(projectDir: string, featureName: string): void`  -  moves current/ to history/
@@ -175,7 +175,7 @@
   - `planFeature(feature: string, projectDir: string, config: Config, onProgress: (msg: string) => void): Promise<{spec: string, plan: string, tasks: Task[]}>`
   - Uses `@anthropic-ai/sdk` to call Claude API
   - Calls research prompt → spec prompt → plan prompt → tasks prompt sequentially
-  - Saves each artifact to `.tiny-spec/current/`
+  - Saves each artifact to `.diptych/current/`
   - Reports progress via callback (for TUI updates)
   - Handles API errors with retries (exponential backoff, max 3)
 
@@ -267,7 +267,7 @@
 **Purpose**: Build the split-pane terminal interface
 
 - [ ] T021 Implement header component in `src/tui/header.tsx`:
-  - Shows: `tiny-spec | {feature_name} | {elapsed_time}`
+  - Shows: `diptych | {feature_name} | {elapsed_time}`
   - Fixed at top, full width
   - Uses Ink `<Box>` and `<Text>` with colors
 
@@ -284,7 +284,7 @@
   - Color-coded by phase (green=implementing, yellow=validating, red=escalating)
 
 - [ ] T024 Implement prompt component in `src/tui/prompt.tsx`:
-  - Shows approval prompts: "Spec generated. Review at .tiny-spec/current/spec.md [Enter to approve, e to edit, q to quit]"
+  - Shows approval prompts: "Spec generated. Review at .diptych/current/spec.md [Enter to approve, e to edit, q to quit]"
   - Handles keyboard input for approval/rejection
   - Blocks workflow until user responds (unless --auto)
 
@@ -310,11 +310,11 @@
 
 - [ ] T027 Implement CLI in `src/cli.ts`:
   - Commands:
-    - `tiny-spec start <feature>`  -  full workflow (TUI + orchestrator)
-    - `tiny-spec spec <feature>`  -  spec-only mode (generate spec/plan/tasks, no implementation)
-    - `tiny-spec init`  -  create .tiny-spec/config.yaml with detected models
-    - `tiny-spec status`  -  show current workflow state
-    - `tiny-spec resume`  -  resume interrupted workflow from saved state
+    - `diptych start <feature>`  -  full workflow (TUI + orchestrator)
+    - `diptych spec <feature>`  -  spec-only mode (generate spec/plan/tasks, no implementation)
+    - `diptych init`  -  create .diptych/config.yaml with detected models
+    - `diptych status`  -  show current workflow state
+    - `diptych resume`  -  resume interrupted workflow from saved state
   - Global options:
     - `--auto`  -  auto-approve spec and plan
     - `--model <model>`  -  override implementer model
@@ -324,7 +324,7 @@
   - Uses commander for argument parsing
   - Renders Ink app for `start` command, plain console for others
 
-**Checkpoint**: `tiny-spec init` creates config, `tiny-spec start "feature"` launches full workflow
+**Checkpoint**: `diptych init` creates config, `diptych start "feature"` launches full workflow
 
 ---
 

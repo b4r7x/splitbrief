@@ -6,7 +6,7 @@ vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
   return { ...actual, readFileSync: vi.fn() };
 });
-vi.mock('../utils/fs.js', () => ({ TINY_SPEC_DIR: '.tiny-spec', writeSecureFile: vi.fn(), ensureSecureDir: vi.fn() }));
+vi.mock('../utils/fs.js', () => ({ DIPTYCH_DIR: '.diptych', writeSecureFile: vi.fn(), ensureSecureDir: vi.fn() }));
 
 describe('inputHistoryStore', () => {
   beforeEach(async () => {
@@ -132,14 +132,14 @@ describe('inputHistoryStore', () => {
       );
     });
 
-    it('save writes to ~/.tiny-spec/history', async () => {
+    it('save writes to ~/.diptych/history', async () => {
       const { writeSecureFile } = await import('../utils/fs.js');
 
       inputHistoryStore.push('home', 'test entry');
       vi.advanceTimersByTime(300);
 
       expect(vi.mocked(writeSecureFile)).toHaveBeenCalledWith(
-        '/home/testuser/.tiny-spec/history',
+        '/home/testuser/.diptych/history',
         'test entry',
       );
     });

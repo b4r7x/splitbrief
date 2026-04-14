@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileOrEmpty } from '../utils/fs.js';
 import {
-  ensureTinySpecDir,
+  ensureDiptychDir,
   writeSpecFile,
   readSpecFile,
   readSpecFileOrEmpty,
@@ -14,7 +14,7 @@ import {
   type SpecMetadata,
 } from './paths-io.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { TINY_SPEC_DIR } from './paths.js';
+import { DIPTYCH_DIR } from './paths.js';
 
 let tmp: string;
 
@@ -27,26 +27,26 @@ afterEach(() => {
   if (tmp) cleanupTempDir(tmp);
 });
 
-describe('ensureTinySpecDir', () => {
-  it('creates .tiny-spec/current directory if it does not exist', () => {
+describe('ensureDiptychDir', () => {
+  it('creates .diptych/current directory if it does not exist', () => {
     const dir = makeTmp();
-    ensureTinySpecDir(dir);
-    expect(existsSync(join(dir, TINY_SPEC_DIR, 'current'))).toBe(true);
+    ensureDiptychDir(dir);
+    expect(existsSync(join(dir, DIPTYCH_DIR, 'current'))).toBe(true);
   });
 
   it('is idempotent', () => {
     const dir = makeTmp();
-    ensureTinySpecDir(dir);
-    ensureTinySpecDir(dir);
-    expect(existsSync(join(dir, TINY_SPEC_DIR, 'current'))).toBe(true);
+    ensureDiptychDir(dir);
+    ensureDiptychDir(dir);
+    expect(existsSync(join(dir, DIPTYCH_DIR, 'current'))).toBe(true);
   });
 });
 
 describe('writeSpecFile', () => {
-  it('writes content to .tiny-spec/current/<filename>', async () => {
+  it('writes content to .diptych/current/<filename>', async () => {
     const dir = makeTmp();
     writeSpecFile(dir, 'spec.md', '# Spec');
-    const written = join(dir, TINY_SPEC_DIR, 'current', 'spec.md');
+    const written = join(dir, DIPTYCH_DIR, 'current', 'spec.md');
     expect(existsSync(written)).toBe(true);
     expect(await readFileOrEmpty(written)).toBe('# Spec');
   });
@@ -54,7 +54,7 @@ describe('writeSpecFile', () => {
   it('creates dir if needed', () => {
     const dir = makeTmp();
     writeSpecFile(dir, 'plan.md', '# Plan');
-    expect(existsSync(join(dir, TINY_SPEC_DIR, 'current', 'plan.md'))).toBe(true);
+    expect(existsSync(join(dir, DIPTYCH_DIR, 'current', 'plan.md'))).toBe(true);
   });
 
   it('rejects filenames with path traversal', () => {
@@ -64,7 +64,7 @@ describe('writeSpecFile', () => {
 });
 
 describe('readSpecFile', () => {
-  it('reads content from .tiny-spec/current/<filename>', () => {
+  it('reads content from .diptych/current/<filename>', () => {
     const dir = makeTmp();
     writeSpecFile(dir, 'tasks.md', '- task 1');
     expect(readSpecFile(dir, 'tasks.md')).toBe('- task 1');
@@ -72,7 +72,7 @@ describe('readSpecFile', () => {
 
   it('returns null when file does not exist', () => {
     const dir = makeTmp();
-    ensureTinySpecDir(dir);
+    ensureDiptychDir(dir);
     expect(readSpecFile(dir, 'missing.md')).toBeNull();
   });
 
@@ -91,7 +91,7 @@ describe('readSpecFileOrEmpty', () => {
 
   it('returns empty string for a non-existent file', () => {
     const dir = makeTmp();
-    ensureTinySpecDir(dir);
+    ensureDiptychDir(dir);
     expect(readSpecFileOrEmpty(dir, 'missing.md')).toBe('');
   });
 });
@@ -173,7 +173,7 @@ describe('buildSpecFrontmatter', () => {
 
   it('includes all fields when provided', () => {
     const fm = buildSpecFrontmatter(fullMeta);
-    expect(fm).toContain('generated_by: tiny-spec v');
+    expect(fm).toContain('generated_by: diptych v');
     expect(fm).toContain('planner: claude-code (opus-4)');
     expect(fm).toContain('implementer: ollama (qwen3:32b)');
     expect(fm).toContain('mode: standard');
@@ -208,7 +208,7 @@ describe('writeSpecFile with metadata', () => {
     writeSpecFile(dir, 'spec.md', '# My Spec', meta);
     const content = readSpecFile(dir, 'spec.md')!;
     expect(content).toMatch(/^---\n/);
-    expect(content).toContain('generated_by: tiny-spec v');
+    expect(content).toContain('generated_by: diptych v');
     expect(content).toContain('# My Spec');
   });
 
@@ -220,7 +220,7 @@ describe('writeSpecFile with metadata', () => {
 
   it('does not double-prepend when content already has frontmatter', () => {
     const dir = makeTmp();
-    const existing = '---\ngenerated_by: tiny-spec v0.1.0\n---\n# Spec with clarifications';
+    const existing = '---\ngenerated_by: diptych v0.1.0\n---\n# Spec with clarifications';
     writeSpecFile(dir, 'spec.md', existing, meta);
     const content = readSpecFile(dir, 'spec.md')!;
     const fmCount = (content.match(/generated_by:/g) ?? []).length;

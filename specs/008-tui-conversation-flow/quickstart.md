@@ -17,7 +17,7 @@ npm run dev -- resume                   # Resume with new TUI
 ## What You See
 
 ```
-tiny-spec │ add user auth │ ● res ● spec ● plan ◉ impl ○ rev │ 04:12
+diptych │ add user auth │ ● res ● spec ● plan ◉ impl ○ rev │ 04:12
 ────────────────────────────────────────────────────────────────────
 
   ● Planner researching codebase...

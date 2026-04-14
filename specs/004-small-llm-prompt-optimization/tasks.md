@@ -1,4 +1,4 @@
-# Tasks: tiny-spec v0.2 -- Small LLM Prompt Optimization
+# Tasks: diptych v0.2 -- Small LLM Prompt Optimization
 
 **Input**: Design documents from `/specs/004-small-llm-prompt-optimization/`
 **Prerequisites**: plan.md (required), spec.md (required), research.md, data-model.md, contracts/
@@ -49,7 +49,7 @@
 
 **Goal**: Opus generates typeDefs and implSteps per task. Parser extracts them. System preamble includes few-shot example.
 
-**Independent Test**: Run `tiny-spec spec "add a config validator"`. Verify each task in tasks.md has non-empty `### Type Definitions` and `### Implementation Steps` sections. Verify system preamble contains few-shot example.
+**Independent Test**: Run `diptych spec "add a config validator"`. Verify each task in tasks.md has non-empty `### Type Definitions` and `### Implementation Steps` sections. Verify system preamble contains few-shot example.
 
 ### Implementation
 
@@ -102,7 +102,7 @@
 
 **Independent Test**: Read the skill file. Verify it contains: project purpose, architecture, module map, key types, coding conventions, task prompt format spec, testing patterns.
 
-- [x] T017 [US5] Create `.claude/skills/tiny-spec-dev.md` — project skill containing: purpose (cost-optimized AI orchestrator), architecture overview (CLI → orchestrator → planner/implementer/validator), module map with one-line responsibilities, key types (Task, Config, WorkflowState, TokenBudget, CodeContext), coding conventions (zero classes, ESM .js extensions, pure functions, error at boundaries), task prompt format specification (from contracts/task-prompt-format.md condensed), testing patterns (tsx --test, file naming convention). Organized as quick-reference sections, not a wall of text.
+- [x] T017 [US5] Create `.claude/skills/diptych-dev.md` — project skill containing: purpose (cost-optimized AI orchestrator), architecture overview (CLI → orchestrator → planner/implementer/validator), module map with one-line responsibilities, key types (Task, Config, WorkflowState, TokenBudget, CodeContext), coding conventions (zero classes, ESM .js extensions, pure functions, error at boundaries), task prompt format specification (from contracts/task-prompt-format.md condensed), testing patterns (tsx --test, file naming convention). Organized as quick-reference sections, not a wall of text.
 
 **Checkpoint**: Skill loads in Claude Code and provides actionable project context.
 

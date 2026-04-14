@@ -1,26 +1,26 @@
-# Feature Specification: tiny-spec v0.1  -  Cost-Optimized AI Coding Orchestrator
+# Feature Specification: diptych v0.1  -  Cost-Optimized AI Coding Orchestrator
 
-**Feature Branch**: `001-tiny-spec-core`
+**Feature Branch**: `001-diptych-core`
 **Created**: 2026-03-24
 **Status**: Draft
 
 ## Vision
 
-tiny-spec is an open-source CLI tool that orchestrates two AI coding sessions side by side  -  one running an expensive model (Claude Code with Opus) for planning/validation, and one running a cheap/local model (OpenCode with Ollama/LM Studio) for implementation. The expensive model writes detailed specs; the cheap model implements them. The result: $100/mo feels like $300+.
+diptych is an open-source CLI tool that orchestrates two AI coding sessions side by side  -  one running an expensive model (Claude Code with Opus) for planning/validation, and one running a cheap/local model (OpenCode with Ollama/LM Studio) for implementation. The expensive model writes detailed specs; the cheap model implements them. The result: $100/mo feels like $300+.
 
 ## User Scenarios & Testing
 
 ### US1  -  Spec-Driven Feature Development (P1)
 
-A developer has a feature to build. Instead of spending all their Opus tokens on implementation, they run `tiny-spec` which opens a split-pane terminal. The left pane runs Claude Code (Opus) which researches the codebase, writes a detailed specification, breaks it into atomic tasks with tests, and generates implementation prompts. The right pane runs OpenCode with a local model, receiving tasks one-by-one and implementing them. After each task, automated validation runs. If it passes, the next task starts. If it fails, the local model retries (max 3). If still failing, the task escalates to Opus.
+A developer has a feature to build. Instead of spending all their Opus tokens on implementation, they run `diptych` which opens a split-pane terminal. The left pane runs Claude Code (Opus) which researches the codebase, writes a detailed specification, breaks it into atomic tasks with tests, and generates implementation prompts. The right pane runs OpenCode with a local model, receiving tasks one-by-one and implementing them. After each task, automated validation runs. If it passes, the next task starts. If it fails, the local model retries (max 3). If still failing, the task escalates to Opus.
 
 **Acceptance Scenarios**:
 
-1. **Given** a project directory and a feature description, **When** the user runs `tiny-spec start "add user authentication"`, **Then** the tool opens a split-pane TUI with Claude Code on the left and OpenCode on the right.
+1. **Given** a project directory and a feature description, **When** the user runs `diptych start "add user authentication"`, **Then** the tool opens a split-pane TUI with Claude Code on the left and OpenCode on the right.
 
-2. **Given** a running session, **When** Opus finishes writing the spec, **Then** the spec is saved as `.tiny-spec/current/spec.md` and the user can review it before proceeding.
+2. **Given** a running session, **When** Opus finishes writing the spec, **Then** the spec is saved as `.diptych/current/spec.md` and the user can review it before proceeding.
 
-3. **Given** an approved spec, **When** the plan phase runs, **Then** Opus generates `.tiny-spec/current/plan.md` and `.tiny-spec/current/tasks.md` with atomic, self-contained tasks.
+3. **Given** an approved spec, **When** the plan phase runs, **Then** Opus generates `.diptych/current/plan.md` and `.diptych/current/tasks.md` with atomic, self-contained tasks.
 
 4. **Given** tasks ready for implementation, **When** implementation starts, **Then** each task is fed to OpenCode one-by-one with full context (current code, spec, test expectations) inlined in the prompt.
 
@@ -32,13 +32,13 @@ A developer has a feature to build. Instead of spending all their Opus tokens on
 
 ### US2  -  Standalone Spec Generation (P2)
 
-A developer wants to generate a detailed spec without running the full pipeline. They run `tiny-spec spec "feature description"` and get a complete spec file they can use manually with any AI tool.
+A developer wants to generate a detailed spec without running the full pipeline. They run `diptych spec "feature description"` and get a complete spec file they can use manually with any AI tool.
 
 **Acceptance Scenarios**:
 
-1. **Given** a feature description, **When** the user runs `tiny-spec spec "add rate limiting"`, **Then** Opus generates a spec.md with requirements, acceptance scenarios, and test expectations.
+1. **Given** a feature description, **When** the user runs `diptych spec "add rate limiting"`, **Then** Opus generates a spec.md with requirements, acceptance scenarios, and test expectations.
 
-2. **Given** a generated spec, **When** the user runs `tiny-spec plan`, **Then** Opus generates plan.md with architecture decisions and tasks.md with atomic implementation tasks.
+2. **Given** a generated spec, **When** the user runs `diptych plan`, **Then** Opus generates plan.md with architecture decisions and tasks.md with atomic implementation tasks.
 
 ### US3  -  Configuration & Model Selection (P2)
 
@@ -46,7 +46,7 @@ A developer configures which models to use for implementation and where they run
 
 **Acceptance Scenarios**:
 
-1. **Given** first run, **When** no config exists, **Then** the tool runs `tiny-spec init` which detects available local models (Ollama/LM Studio) and creates `.tiny-spec/config.yaml`.
+1. **Given** first run, **When** no config exists, **Then** the tool runs `diptych init` which detects available local models (Ollama/LM Studio) and creates `.diptych/config.yaml`.
 
 2. **Given** a config file, **When** the user specifies `implementer.provider: ollama` and `implementer.model: qwen2.5-coder:7b`, **Then** OpenCode uses that model for implementation.
 
@@ -77,7 +77,7 @@ Transitions:
 
 ### FR3: Spec Generation (Opus Phase)
 - Opus reads the codebase (via Claude Code's built-in tools)
-- Generates spec.md following the tiny-spec template
+- Generates spec.md following the diptych template
 - Includes: user scenarios, acceptance criteria, functional requirements
 - Generates plan.md with architecture decisions, file structure, dependencies
 - Generates tasks.md with atomic tasks, each containing:
@@ -115,7 +115,7 @@ When a task fails 3 times with the local model:
 - Result is committed and pipeline continues
 
 ### FR7: Configuration
-`.tiny-spec/config.yaml`:
+`.diptych/config.yaml`:
 ```yaml
 planner:
   tool: claude-code          # or: claude-api
@@ -144,7 +144,7 @@ workflow:
 
 ### FR8: File Structure
 ```
-.tiny-spec/
+.diptych/
 ├── config.yaml              # Project configuration
 ├── current/                 # Current active feature
 │   ├── spec.md              # Generated specification

@@ -1,4 +1,4 @@
-# Feature Specification: tiny-spec v0.2  -  Critical Fixes, Robustness & Core Value Delivery
+# Feature Specification: diptych v0.2  -  Critical Fixes, Robustness & Core Value Delivery
 
 **Feature Branch**: `003-v02-fixes-robustness`
 **Created**: 2026-03-25
@@ -9,25 +9,25 @@
 
 ### User Story 1  -  Resume Interrupted Workflow (Priority: P1)
 
-A developer's workflow was interrupted mid-implementation (e.g., laptop closed, network drop, Ctrl+C). They run `tiny-spec resume` and the tool picks up exactly where it left off  -  at the correct task, with all previously completed tasks preserved, without re-running planning or re-implementing already-done tasks.
+A developer's workflow was interrupted mid-implementation (e.g., laptop closed, network drop, Ctrl+C). They run `diptych resume` and the tool picks up exactly where it left off  -  at the correct task, with all previously completed tasks preserved, without re-running planning or re-implementing already-done tasks.
 
 **Why this priority**: Resume is a core workflow promise (US4 from v0.1 spec). Currently completely broken  -  the command loads saved state but discards it, restarting from scratch. This is the most visible user-facing bug.
 
-**Independent Test**: Run `tiny-spec start "feature"`, interrupt after task 3 of 10 completes, run `tiny-spec resume`, verify it continues from task 4 with tasks 1-3 marked complete.
+**Independent Test**: Run `diptych start "feature"`, interrupt after task 3 of 10 completes, run `diptych resume`, verify it continues from task 4 with tasks 1-3 marked complete.
 
 **Acceptance Scenarios**:
 
-1. **Given** a workflow interrupted during task 5 of 12, **When** user runs `tiny-spec resume`, **Then** the tool loads saved state, displays tasks 1-4 as complete, and begins executing task 5.
-2. **Given** a workflow interrupted during validation of task 3, **When** user runs `tiny-spec resume`, **Then** the tool resumes from the `validating-task` phase for task 3 with retry counter preserved.
-3. **Given** a workflow interrupted during escalation, **When** user runs `tiny-spec resume`, **Then** the tool resumes from the `escalating` phase and continues the appropriate escalation tier.
-4. **Given** no saved workflow state exists, **When** user runs `tiny-spec resume`, **Then** the tool displays "Nothing to resume" and exits cleanly.
-5. **Given** a workflow interrupted during planning phases (research/specifying/planning), **When** user runs `tiny-spec resume`, **Then** the tool reports that planning phases are not resumable and suggests re-running `tiny-spec start`.
+1. **Given** a workflow interrupted during task 5 of 12, **When** user runs `diptych resume`, **Then** the tool loads saved state, displays tasks 1-4 as complete, and begins executing task 5.
+2. **Given** a workflow interrupted during validation of task 3, **When** user runs `diptych resume`, **Then** the tool resumes from the `validating-task` phase for task 3 with retry counter preserved.
+3. **Given** a workflow interrupted during escalation, **When** user runs `diptych resume`, **Then** the tool resumes from the `escalating` phase and continues the appropriate escalation tier.
+4. **Given** no saved workflow state exists, **When** user runs `diptych resume`, **Then** the tool displays "Nothing to resume" and exits cleanly.
+5. **Given** a workflow interrupted during planning phases (research/specifying/planning), **When** user runs `diptych resume`, **Then** the tool reports that planning phases are not resumable and suggests re-running `diptych start`.
 
 ---
 
 ### User Story 2  -  Reliable Retry and Escalation (Priority: P1)
 
-A developer runs `tiny-spec start "feature"`. When a local model fails a task, the tool retries up to the configured number of times (not a hardcoded value), varying its approach each time. If all retries fail, it escalates correctly  -  first with hints, then with full Opus implementation. After escalation, the next task starts fresh with a reset retry counter. The escalation subprocess runs in the correct project directory and parses Claude's output correctly.
+A developer runs `diptych start "feature"`. When a local model fails a task, the tool retries up to the configured number of times (not a hardcoded value), varying its approach each time. If all retries fail, it escalates correctly  -  first with hints, then with full Opus implementation. After escalation, the next task starts fresh with a reset retry counter. The escalation subprocess runs in the correct project directory and parses Claude's output correctly.
 
 **Why this priority**: The retry/escalation pipeline is the core differentiator. Three interrelated bugs (hardcoded MAX_RETRIES, stale attempt counter, wrong escalator stream parser + missing cwd) undermine its reliability.
 
@@ -63,7 +63,7 @@ A developer completes a workflow and sees an accurate summary of token usage and
 
 ### User Story 4  -  Safe File Operations (Priority: P1)
 
-A developer runs `tiny-spec start` on their project. The tool writes code only within the project directory  -  never to paths outside it. When tasks fail and changes are discarded, only files created or modified by tiny-spec are affected, preserving the developer's other untracked work. When the developer presses Ctrl+C, all subprocesses are properly terminated and the working directory is left in a clean state.
+A developer runs `diptych start` on their project. The tool writes code only within the project directory  -  never to paths outside it. When tasks fail and changes are discarded, only files created or modified by diptych are affected, preserving the developer's other untracked work. When the developer presses Ctrl+C, all subprocesses are properly terminated and the working directory is left in a clean state.
 
 **Why this priority**: Security and data integrity are non-negotiable. Path traversal allows writing to arbitrary files. `git clean -f -d` destroys all untracked files. Orphaned subprocesses and incomplete cleanup on SIGINT leave the system in an inconsistent state.
 
@@ -98,18 +98,18 @@ A developer works on a project with large source files (500+ lines). When the to
 
 ### User Story 6  -  Validated Configuration (Priority: P2)
 
-A developer creates or edits `.tiny-spec/config.yaml`. Invalid values (wrong types, unknown providers, out-of-range numbers) are caught at load time with clear error messages, not at runtime deep in the workflow. The `init --reconfigure` command produces correctly formatted YAML.
+A developer creates or edits `.diptych/config.yaml`. Invalid values (wrong types, unknown providers, out-of-range numbers) are caught at load time with clear error messages, not at runtime deep in the workflow. The `init --reconfigure` command produces correctly formatted YAML.
 
 **Why this priority**: Currently zero config validation exists  -  malformed YAML silently propagates until it causes cryptic runtime errors.
 
-**Independent Test**: Create a config with `max_retries: "banana"` and `provider: "fakeprovider"`, run `tiny-spec start`, verify clear error messages listing all invalid fields.
+**Independent Test**: Create a config with `max_retries: "banana"` and `provider: "fakeprovider"`, run `diptych start`, verify clear error messages listing all invalid fields.
 
 **Acceptance Scenarios**:
 
 1. **Given** a config with `provider: "nonexistent"`, **When** the config is loaded, **Then** the tool reports "Invalid provider" with valid options listed and exits with code 2.
 2. **Given** a config with `temperature: "warm"`, **When** the config is loaded, **Then** the tool reports a type error for the temperature field.
 3. **Given** a config with `maxRetries: -1`, **When** the config is loaded, **Then** the tool reports that maxRetries must be a positive integer.
-4. **Given** the user runs `tiny-spec init --reconfigure`, **When** the config file is written, **Then** it uses snake_case keys (e.g., `api_base`, `context_length`) consistent with the standard format.
+4. **Given** the user runs `diptych init --reconfigure`, **When** the config file is written, **Then** it uses snake_case keys (e.g., `api_base`, `context_length`) consistent with the standard format.
 5. **Given** a cloud provider (deepseek/openrouter) is configured, **When** the required API key environment variable is not set, **Then** the tool warns at startup (not after planning completes).
 
 ---
@@ -157,11 +157,11 @@ The project uses current versions of its key dependencies, has no dead code, no 
 - What happens when the saved state file (`state.json`) is corrupted or from an incompatible version? → The tool detects corruption via schema validation, reports the error, and suggests starting a new workflow.
 - What happens when Ollama is not running and the workflow starts? → The tool detects the connection failure at startup and reports a clear error with setup instructions.
 - What happens when the Claude CLI is not installed or not authenticated? → The tool checks for the `claude` binary at startup and reports the error before entering the planning phase.
-- What happens when two `tiny-spec` processes run simultaneously in the same project directory? → The tool uses a lock file in `.tiny-spec/` to prevent concurrent execution, reporting "Another tiny-spec instance is running" if the lock exists.
+- What happens when two `diptych` processes run simultaneously in the same project directory? → The tool uses a lock file in `.diptych/` to prevent concurrent execution, reporting "Another diptych instance is running" if the lock exists.
 - What happens when a task's `depends_on` references a bare value without brackets (e.g., `depends_on: T001`)? → The parser handles bare values as single-element dependency lists rather than silently dropping them.
 - What happens when the model's streaming response exceeds reasonable memory limits? → The streaming buffer is capped, and excessively long responses are truncated with a warning.
 - What happens when `tsc --noEmit` takes longer than the configured timeout on a large project? → The timeout is configurable and defaults to a value appropriate for medium-sized projects, with a clear error when exceeded.
-- What happens when `commitPerTask` is set to `false` and external change detection runs? → External change detection is aware of tiny-spec's own uncommitted changes and does not flag them as external.
+- What happens when `commitPerTask` is set to `false` and external change detection runs? → External change detection is aware of diptych's own uncommitted changes and does not flag them as external.
 
 ## Requirements *(mandatory)*
 
@@ -246,7 +246,7 @@ The project uses current versions of its key dependencies, has no dead code, no 
 
 ### Measurable Outcomes
 
-- **SC-001**: `tiny-spec resume` correctly continues from the interrupted task in 100% of tested interruption points (mid-task, mid-validation, mid-escalation).
+- **SC-001**: `diptych resume` correctly continues from the interrupted task in 100% of tested interruption points (mid-task, mid-validation, mid-escalation).
 - **SC-002**: Cost savings displayed in the workflow summary reflects actual token consumption with less than 10% deviation from true API usage.
 - **SC-003**: No file writes occur outside the project directory boundary under any task input, including adversarial paths.
 - **SC-004**: All subprocesses are terminated within 5 seconds of Ctrl+C, with no orphaned processes remaining.

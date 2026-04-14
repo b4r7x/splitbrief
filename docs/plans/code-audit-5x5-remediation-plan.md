@@ -1,4 +1,4 @@
-# tiny-spec Code Audit Remediation Plan (5/5 Target)
+# diptych Code Audit Remediation Plan (5/5 Target)
 
 ## Purpose
 Execute all fixes needed to move the codebase from the latest audit score (~3.7/5 overall) to 5/5 across all categories.
@@ -6,7 +6,7 @@ Execute all fixes needed to move the codebase from the latest audit score (~3.7/
 This plan is written for an AI coding agent with **empty context**.
 
 ## Repository + Rules (must read first)
-- Project root: `/Users/voitz/Projects/tiny-spec`
+- Project root: `/Users/voitz/Projects/diptych`
 - Read first: `AGENTS.md`, `CLAUDE.md`
 - Hard rule: **do not run `git add`, `git stage`, `git commit`**.
 - Tech constraints:

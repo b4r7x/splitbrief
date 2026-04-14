@@ -1,6 +1,6 @@
 # Models.dev Migration Notes
 
-tiny-spec now treats `models.dev` as the primary model catalog and pricing source.
+diptych now treats `models.dev` as the primary model catalog and pricing source.
 
 ## Precedence
 

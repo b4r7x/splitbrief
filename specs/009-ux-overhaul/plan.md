@@ -5,13 +5,13 @@
 
 ## Summary
 
-Transform tiny-spec from a command-line-argument-first tool into an interactive TUI application with a home screen, 4 permission modes (supervised/normal/auto/plan-only), cascading spec/plan regeneration with back navigation, TLDR changeset cards, dialog-style box-drawing event cards, task-level control in supervised mode, and comprehensive keyboard shortcuts. All changes are additive — existing CLI commands remain backwards compatible.
+Transform diptych from a command-line-argument-first tool into an interactive TUI application with a home screen, 4 permission modes (supervised/normal/auto/plan-only), cascading spec/plan regeneration with back navigation, TLDR changeset cards, dialog-style box-drawing event cards, task-level control in supervised mode, and comprehensive keyboard shortcuts. All changes are additive — existing CLI commands remain backwards compatible.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 5.9+, ESM only (`"type": "module"`)
 **Primary Dependencies**: Ink 5.x (React for CLI), @inkjs/ui, commander ^14, openai ^6, simple-git, yaml
-**Storage**: JSON files (.tiny-spec/state.json, events.jsonl), Markdown files (spec.md, plan.md, tasks.md), YAML config (.tiny-spec/config.yaml)
+**Storage**: JSON files (.diptych/state.json, events.jsonl), Markdown files (spec.md, plan.md, tasks.md), YAML config (.diptych/config.yaml)
 **Testing**: Node.js built-in test runner (`node:test` + `node:assert/strict`), executed via `tsx --test`
 **Target Platform**: macOS (primary), Linux (secondary)
 **Project Type**: CLI tool (npm package)

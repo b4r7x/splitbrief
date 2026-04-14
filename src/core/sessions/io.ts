@@ -3,16 +3,16 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { Session } from '../types/index.js';
 import { SessionSchema } from '../types/schemas/index.js';
-import { TINY_SPEC_DIR, SESSIONS_DIR } from '../paths.js';
-import { validateSafeIdentifier, getTinySpecPath } from '../../utils/fs.js';
+import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
+import { validateSafeIdentifier, getDiptychPath } from '../../utils/fs.js';
 import { warnError, warnStderr } from '../../utils/warn.js';
 import { isENOENT } from '../../utils/process-errors.js';
 
 export function getSessionDir(scope: 'project' | 'global', projectDir: string): string {
   if (scope === 'global') {
-    return join(homedir(), TINY_SPEC_DIR, SESSIONS_DIR);
+    return join(homedir(), DIPTYCH_DIR, SESSIONS_DIR);
   }
-  return getTinySpecPath(projectDir, SESSIONS_DIR);
+  return getDiptychPath(projectDir, SESSIONS_DIR);
 }
 
 function readSession(filePath: string): Session | null {

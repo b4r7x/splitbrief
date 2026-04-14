@@ -36,18 +36,18 @@ describe('sessionsStore', () => {
 
   it('load() populates sessions from the resolved directory', () => {
     const sessions = [makeSession({ id: 'a' }), makeSession({ id: 'b' })];
-    getSessionDirMock.mockReturnValue('/tmp/project/.tiny-spec/sessions');
+    getSessionDirMock.mockReturnValue('/tmp/project/.diptych/sessions');
     listSessionsMock.mockReturnValue(sessions);
 
     sessionsStore.load('project', '/tmp/project');
 
     expect(getSessionDirMock).toHaveBeenCalledWith('project', '/tmp/project');
-    expect(listSessionsMock).toHaveBeenCalledWith('/tmp/project/.tiny-spec/sessions');
+    expect(listSessionsMock).toHaveBeenCalledWith('/tmp/project/.diptych/sessions');
     expect(sessionsStore.get().sessions).toBe(sessions);
   });
 
   it('load() with scope=global resolves the global directory', () => {
-    getSessionDirMock.mockReturnValue('/home/u/.tiny-spec/sessions');
+    getSessionDirMock.mockReturnValue('/home/u/.diptych/sessions');
     listSessionsMock.mockReturnValue([]);
 
     sessionsStore.load('global', '/unused');

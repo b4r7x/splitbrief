@@ -1,6 +1,6 @@
-# tiny-spec — Vision & Strategic Direction
+# diptych — Vision & Strategic Direction
 
-## What tiny-spec IS
+## What diptych IS
 
 Cost-optimized AI coding orchestrator. Splits coding work between:
 
@@ -9,7 +9,7 @@ Cost-optimized AI coding orchestrator. Splits coding work between:
 
 Core value: **same planning quality, 50%+ cost savings** by offloading mechanical coding to cheap models.
 
-## What tiny-spec is NOT
+## What diptych is NOT
 
 - **NOT a universal AI connector** — we don't "connect any AI to any AI"
 - **NOT Claude Squad / Overstory** — we don't manage multiple parallel agent sessions
@@ -18,7 +18,7 @@ Core value: **same planning quality, 50%+ cost savings** by offloading mechanica
 
 ## USP — Why This Exists
 
-| Tool | What it does | Why tiny-spec is different |
+| Tool | What it does | Why diptych is different |
 |------|-------------|--------------------------|
 | Claude Squad | Manages multiple Claude Code/Codex/Aider instances in parallel | Doesn't split planning from implementation. Same expensive model for everything. |
 | Agent Orchestrator (Composio) | Parallel coding agents with git worktrees | Multi-agent coordination, not cost optimization. |
@@ -47,7 +47,7 @@ Small models (7B-27B) can't reliably produce tool call format. Current pipeline 
 
 ### 5. Don't wrap agents in agents
 
-If the implementer IS a full coding agent, there's a conflict of control. tiny-spec owns file writing, validation, and git. The implementer returns code, nothing more.
+If the implementer IS a full coding agent, there's a conflict of control. diptych owns file writing, validation, and git. The implementer returns code, nothing more.
 
 ### 6. OpenCode-inspired TUI (v0.5 — 2026-03-31)
 

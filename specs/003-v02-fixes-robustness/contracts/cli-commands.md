@@ -1,4 +1,4 @@
-# CLI Contract: tiny-spec v0.2
+# CLI Contract: diptych v0.2
 
 **Extends**: [v0.1 CLI contract](../../002-cost-optimized-orchestrator/contracts/cli-commands.md)
 
@@ -8,7 +8,7 @@
 
 All commands that load config (`start`, `spec`, `resume`) now validate config at load time. Invalid config produces clear error messages listing all invalid fields and exits with code 2.
 
-### `tiny-spec start`  -  Token Tracking & Cost Display
+### `diptych start`  -  Token Tracking & Cost Display
 
 The summary at workflow completion now displays:
 - Planner tokens (input/output)
@@ -17,13 +17,13 @@ The summary at workflow completion now displays:
 - Estimated cost savings (dollar amount + percentage)
 - Correctly formatted elapsed time (e.g., "3m 12s", not "192000s")
 
-### `tiny-spec resume`  -  Actually Resumes
+### `diptych resume`  -  Actually Resumes
 
 The resume command now passes the loaded `WorkflowState` to the orchestrator, which skips completed tasks and continues from `currentTaskIndex`. Previously, resume always restarted from scratch.
 
 State versioning: v0.2 state files include a `stateVersion: 2` field. Unversioned files (v0.1) trigger a clear "incompatible state format" message suggesting the user re-run the workflow.
 
-### `tiny-spec init --reconfigure`  -  Fix
+### `diptych init --reconfigure`  -  Fix
 
 Now correctly writes snake_case YAML keys (e.g., `api_base` instead of `apiBase`), consistent with the standard config format.
 

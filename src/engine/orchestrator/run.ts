@@ -4,7 +4,7 @@ import { getRunnerDisplayName, getRunnerModelName } from '../../core/config/runn
 import { createInitialState } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
 import { saveSession, getSessionDir } from '../../core/sessions/io.js';
-import { ensureTinySpecDir, type SpecMetadata } from '../../core/paths-io.js';
+import { ensureDiptychDir, type SpecMetadata } from '../../core/paths-io.js';
 import { readPackageJson } from '../../utils/fs.js';
 import { resolveAutoModel } from '../../core/providers.js';
 import { killAllProcesses } from '../../utils/process-lifecycle.js';
@@ -58,7 +58,7 @@ async function initializeWorkflow(
 ): Promise<InitResult> {
   const { feature, projectDir, config, callbacks, savedState } = opts;
 
-  ensureTinySpecDir(projectDir);
+  ensureDiptychDir(projectDir);
 
   const planner = createPlanner(config);
   const available = await planner.isAvailable();

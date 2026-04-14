@@ -1,6 +1,6 @@
-# Implementation Plan: tiny-spec v0.1
+# Implementation Plan: diptych v0.1
 
-**Branch**: `001-tiny-spec-core` | **Date**: 2026-03-24 | **Spec**: [spec.md](spec.md)
+**Branch**: `001-diptych-core` | **Date**: 2026-03-24 | **Spec**: [spec.md](spec.md)
 
 ## Summary
 
@@ -27,7 +27,7 @@ src/
 ├── cli.ts                    # CLI entry point (commander or custom arg parsing)
 ├── app.tsx                   # Root Ink component
 ├── types.ts                  # All shared types
-├── config.ts                 # Load/validate .tiny-spec/config.yaml
+├── config.ts                 # Load/validate .diptych/config.yaml
 ├── state.ts                  # Workflow state machine
 ├── tui/
 │   ├── layout.tsx            # Split-pane layout (left/right/status bar)
@@ -48,7 +48,7 @@ src/
 └── utils/
     ├── process.ts            # Spawn and manage subprocesses (Claude Code, OpenCode)
     ├── git.ts                # Git operations (commit, diff, status)
-    └── fs.ts                 # File system helpers (.tiny-spec/ management)
+    └── fs.ts                 # File system helpers (.diptych/ management)
 ```
 
 ### Data Flow

@@ -51,7 +51,7 @@ All architectural decisions for this feature were resolved during an interactive
 
 **Rationale**:
 - Required by Decision 5 (5-kind symmetry). Without this, the planner side would have only 4 kinds and the claim "same 5 runner kinds" would be a lie.
-- User explicitly called this out: "tiny-spec will be writing with the planner files of the spec. We should make it DRY and mostly reusable." The file-writing pattern IS how tiny-spec planners already behave (they produce spec.md/plan.md/tasks.md) — adding an agent kind just gives users a way to substitute their own command.
+- User explicitly called this out: "diptych will be writing with the planner files of the spec. We should make it DRY and mostly reusable." The file-writing pattern IS how diptych planners already behave (they produce spec.md/plan.md/tasks.md) — adding an agent kind just gives users a way to substitute their own command.
 - DRY requirement satisfied by the shared `invokeCommandBasedRunner` primitive consumed by shell-planner, agent-planner, shell-implementer, and agent-implementer.
 
 **Alternatives considered**:
@@ -65,7 +65,7 @@ All architectural decisions for this feature were resolved during an interactive
 **Rationale**:
 - User explicitly rejected "backend" as the name ("it's really wrong naming imo"). The word is generic and doesn't describe what the thing does.
 - `Runner` is descriptive ("the thing that runs an AI call"), casual, reads naturally in sentences ("the planner runner", "each runner has a kind"), and doesn't collide with anything in the current codebase.
-- Existing `src/engine/` directory name is preserved (it refers to tiny-spec's core workflow engine, which is a different level of abstraction than the Runner concept).
+- Existing `src/engine/` directory name is preserved (it refers to diptych's core workflow engine, which is a different level of abstraction than the Runner concept).
 
 **Alternatives considered**: `Driver`, `Adapter`, or no umbrella term at all. `Driver` is more formal but has hardware connotations. `Adapter` matches the GoF pattern name but implies wrapping an external interface (only literally true for some variants). "No umbrella term" (just `CliFields`, `ApiFields`, etc.) was considered minimal but loses the ability to talk about "a runner" as a concept.
 
@@ -74,7 +74,7 @@ All architectural decisions for this feature were resolved during an interactive
 **Decision**: Add `version: z.literal(2)` to the root `ConfigSchema`. Configs without a `version` field are treated as v1 and migrated on load via `migrateV1ToV2`. The migration runs lazily inside `loadConfig()`; users see no prompt and take no action.
 
 **Rationale**:
-- tiny-spec is pre-deployment (user confirmed), so we can break cleanly. A version marker makes future migrations unambiguous.
+- diptych is pre-deployment (user confirmed), so we can break cleanly. A version marker makes future migrations unambiguous.
 - Lazy in-place migration: after a successful load, the next save operation writes the v2 shape to disk. Subsequent loads short-circuit the migration path.
 - No separate migration command or user prompt needed.
 

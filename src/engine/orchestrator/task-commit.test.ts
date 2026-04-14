@@ -151,7 +151,7 @@ describe('validateCommitAndAdvance', () => {
   it('creates checkpoint when commitStrategy is checkpoint', async () => {
     const state = makeState();
     const { callbacks, events } = makeCallbacks();
-    vi.mocked(createCheckpoint).mockResolvedValue('tiny-spec/T001');
+    vi.mocked(createCheckpoint).mockResolvedValue('diptych/T001');
 
     await validateCommitAndAdvance({
       task: firstTask(state),
@@ -170,7 +170,7 @@ describe('validateCommitAndAdvance', () => {
     expect(cpEvent).toBeDefined();
     expect(cpEvent).toMatchObject({
       type: 'git-checkpoint',
-      tag: 'tiny-spec/T001',
+      tag: 'diptych/T001',
       taskId: 'T001',
     });
   });

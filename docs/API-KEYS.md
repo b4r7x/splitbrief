@@ -1,6 +1,6 @@
 # API Key Security
 
-tiny-spec connects to AI providers (planner + implementer) that may require API keys. This guide covers how keys are handled and best practices for keeping them secure.
+diptych connects to AI providers (planner + implementer) that may require API keys. This guide covers how keys are handled and best practices for keeping them secure.
 
 ## Recommended: Environment Variables
 
@@ -27,7 +27,7 @@ Add the export to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) so it persi
 
 ## Alternative: Config File
 
-You can set `apiKey` directly in `.tiny-spec/config.yaml` under `planner` or `implementer`:
+You can set `apiKey` directly in `.diptych/config.yaml` under `planner` or `implementer`:
 
 ```yaml
 planner:
@@ -40,13 +40,13 @@ implementer:
   apiKey: sk-...
 ```
 
-⚠️ **tiny-spec warns when API keys are detected in config files** — it will recommend switching to the corresponding environment variable. Config file storage is a convenience tradeoff, not the recommended approach.
+⚠️ **diptych warns when API keys are detected in config files** — it will recommend switching to the corresponding environment variable. Config file storage is a convenience tradeoff, not the recommended approach.
 
 ## Security Measures
 
-tiny-spec takes several steps to protect your API keys:
+diptych takes several steps to protect your API keys:
 
-- **Restrictive file permissions** — `.tiny-spec/` directories are created with `0700` (owner-only access) and config files with `0600` (owner-only read/write). **Note (Windows):** File permission modes (0600/0700) are Unix-specific. On Windows, file access is managed through OS-level ACLs. Ensure your config directory is in a user-private location.
+- **Restrictive file permissions** — `.diptych/` directories are created with `0700` (owner-only access) and config files with `0600` (owner-only read/write). **Note (Windows):** File permission modes (0600/0700) are Unix-specific. On Windows, file access is managed through OS-level ACLs. Ensure your config directory is in a user-private location.
 - **Automatic redaction** — error messages and logs are passed through `redactSecrets()`, which strips patterns matching API keys (`sk-ant-...`, `sk-...`, Bearer tokens, and generic key/token assignments)
 - **No key logging** — API keys are never written to console output, state files, or session files
 - **Header-only transport** — keys are only used in HTTP `Authorization` headers, never embedded in URLs or query parameters
@@ -56,8 +56,8 @@ tiny-spec takes several steps to protect your API keys:
 ## Best Practices
 
 1. ✅ **Use environment variables** over config file storage
-2. ✅ **Add `.tiny-spec/` to `.gitignore`** — prevents accidental commits of config files that may contain keys
-3. ✅ **Never commit** `.tiny-spec/config.yaml` with API keys to version control
+2. ✅ **Add `.diptych/` to `.gitignore`** — prevents accidental commits of config files that may contain keys
+3. ✅ **Never commit** `.diptych/config.yaml` with API keys to version control
 4. ✅ **Rotate keys periodically** — especially if you suspect exposure
 5. ✅ **Use minimum-privilege scopes** — if your provider offers restricted API key scopes, use the narrowest one that works
 6. ✅ **One key per developer** — in team environments, each developer should use their own API keys via their own environment

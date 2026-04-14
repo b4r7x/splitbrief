@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync, statSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { listSessions, getSessionDir, saveSession } from './io.js';
-import { TINY_SPEC_DIR } from '../paths.js';
+import { DIPTYCH_DIR } from '../paths.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let tmp: string;
@@ -123,12 +123,12 @@ describe('listSessions', () => {
 describe('getSessionDir', () => {
   it('returns project-scope path', () => {
     const dir = getSessionDir('project', '/my/project');
-    expect(dir).toBe(join('/my/project', TINY_SPEC_DIR, 'sessions'));
+    expect(dir).toBe(join('/my/project', DIPTYCH_DIR, 'sessions'));
   });
 
   it('returns global-scope path', () => {
     const dir = getSessionDir('global', '/my/project');
-    expect(dir).toBe(join(homedir(), TINY_SPEC_DIR, 'sessions'));
+    expect(dir).toBe(join(homedir(), DIPTYCH_DIR, 'sessions'));
   });
 });
 

@@ -25,7 +25,7 @@ export function registerResumeCommand(program: Command): void {
     }
 
     if (!('stateVersion' in state) || state.stateVersion < CURRENT_STATE_VERSION) {
-      throw cliError('Error: saved state is from an older version and cannot be resumed.\nPlease start a new workflow with `tiny-spec start`.');
+      throw cliError('Error: saved state is from an older version and cannot be resumed.\nPlease start a new workflow with `diptych start`.');
     }
 
     if (!RESUMABLE_PHASES.has(state.phase)) {

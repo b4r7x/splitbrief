@@ -15,7 +15,7 @@ let cachedBanner: string | undefined;
 function getBanner(): string {
   if (cachedBanner !== undefined) return cachedBanner;
   try {
-    const result = cfonts.render('tiny-spec', { font: 'tiny', colors: ['cyan'] });
+    const result = cfonts.render('diptych', { font: 'tiny', colors: ['cyan'] });
     cachedBanner = result ? result.string : '';
   } catch {
     cachedBanner = '';
@@ -44,7 +44,7 @@ export function HomeScreen({ commands, onSlashCommand }: HomeScreenProps) {
           {banner ? (
             <Text>{banner.trimEnd()}</Text>
           ) : (
-            <Text bold color={theme.accent}>tiny-spec</Text>
+            <Text bold color={theme.accent}>diptych</Text>
           )}
         </Box>
 

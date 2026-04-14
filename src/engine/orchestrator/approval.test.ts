@@ -10,7 +10,7 @@ vi.mock('../../core/state/persistence.js', () => ({
 vi.mock('../../core/paths-io.js', () => ({
   readSpecFileOrEmpty: vi.fn().mockReturnValue(''),
   writeSpecFile: vi.fn(),
-  ensureTinySpecDir: vi.fn(),
+  ensureDiptychDir: vi.fn(),
 }));
 vi.mock('../spec/prompts/plan.js', () => ({
   buildRegeneratePrompt: vi.fn().mockReturnValue('regen prompt'),

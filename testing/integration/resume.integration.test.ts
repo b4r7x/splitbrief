@@ -12,7 +12,7 @@ describe('Resume with token preservation integration', () => {
     const g = await guardIntegration();
     if (g.skip) { t.skip(); return; }
 
-    await withTempDir('tiny-spec-resume', async (tmpDir) => {
+    await withTempDir('diptych-resume', async (tmpDir) => {
       const tasks = [
         makeTask({ id: 't1', title: 'Task t1', file: 'src/t1.ts', description: 'Description for t1', status: 'done' }),
         makeTask({ id: 't2', title: 'Task t2', file: 'src/t2.ts', description: 'Description for t2', status: 'done' }),

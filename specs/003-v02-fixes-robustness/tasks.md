@@ -1,4 +1,4 @@
-# Tasks: tiny-spec v0.2  -  Critical Fixes, Robustness & Core Value Delivery
+# Tasks: diptych v0.2  -  Critical Fixes, Robustness & Core Value Delivery
 
 **Input**: Design documents from `/specs/003-v02-fixes-robustness/`
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/cli-commands.md
@@ -35,7 +35,7 @@
 - [x] T005 Reset `attempt` to 0 in HINT_SUCCESS, FULL_SUCCESS, and FULL_FAIL transitions in src/state.ts (FR-003)
 - [x] T006 Make `VALIDATION_FAIL` at max retries transition to `escalating` phase instead of returning state unchanged in src/state.ts
 - [x] T007 Add `error` event handler to spawned processes in src/utils/process.ts  -  both `spawnWithStreaming` and `runCommand` must reject on spawn errors (FR-010)
-- [x] T008 [P] Add lock file mechanism in src/utils/fs.ts  -  create `.tiny-spec/lock` on workflow start, remove on exit/SIGINT; check at startup and report "Another tiny-spec instance is running" if lock exists (with stale lock detection via PID check)
+- [x] T008 [P] Add lock file mechanism in src/utils/fs.ts  -  create `.diptych/lock` on workflow start, remove on exit/SIGINT; check at startup and report "Another diptych instance is running" if lock exists (with stale lock detection via PID check)
 - [x] T009 Add startup preflight checks in src/cli.ts `start` command  -  verify `claude` binary exists (`which claude`), verify Ollama/LM Studio is reachable (quick fetch to provider's health endpoint), report clear errors before entering planning phase
 - [x] T010 Update existing state machine tests in tests/state.test.ts  -  add tests for REJECT_PLAN, HINT_FAIL, FULL_SUCCESS, SET_SESSION_ID transitions, attempt reset after escalation, configurable maxRetries
 
@@ -45,9 +45,9 @@
 
 ## Phase 3: User Story 1  -  Resume Interrupted Workflow (Priority: P1)
 
-**Goal**: `tiny-spec resume` picks up exactly where interrupted, preserving all completed tasks
+**Goal**: `diptych resume` picks up exactly where interrupted, preserving all completed tasks
 
-**Independent Test**: Interrupt a workflow after task 3 of 10, run `tiny-spec resume`, verify it continues from task 4
+**Independent Test**: Interrupt a workflow after task 3 of 10, run `diptych resume`, verify it continues from task 4
 
 ### Implementation for User Story 1
 

@@ -1,4 +1,4 @@
-# Feature Specification: tiny-spec v0.2 -- Small LLM Prompt Optimization
+# Feature Specification: diptych v0.2 -- Small LLM Prompt Optimization
 
 **Feature Branch**: `004-small-llm-prompt-optimization`
 **Created**: 2026-03-25
@@ -9,11 +9,11 @@
 
 ### User Story 1 - Tasks Fit in 8K Context Window (Priority: P1)
 
-A developer on a machine with 12GB VRAM runs tiny-spec with Qwen 2.5 Coder 7B (Q4, ~5GB, 8K effective context). Every task prompt -- including system preamble, task description, type definitions, implementation steps, code context, and constraints -- fits within 8K tokens with 25% reserved for model output. For MODIFY tasks on large files (300+ LOC), the tool automatically switches from whole-file to function-level context, sending only the target function, its imports, and surrounding context instead of the entire file.
+A developer on a machine with 12GB VRAM runs diptych with Qwen 2.5 Coder 7B (Q4, ~5GB, 8K effective context). Every task prompt -- including system preamble, task description, type definitions, implementation steps, code context, and constraints -- fits within 8K tokens with 25% reserved for model output. For MODIFY tasks on large files (300+ LOC), the tool automatically switches from whole-file to function-level context, sending only the target function, its imports, and surrounding context instead of the entire file.
 
 **Why this priority**: This is the core accessibility constraint. Users with 12-16GB VRAM are the primary audience. If tasks overflow their context window, the model produces garbage or truncated output, and the entire pipeline fails.
 
-**Independent Test**: Configure `contextLength: 8192` in config, run `tiny-spec start` on a project with files ranging from 50 to 600 LOC. Verify that every generated task prompt (logged to events.jsonl) is under 6144 tokens (8192 minus 25% output reserve). Verify that MODIFY tasks on files >200 LOC use function-level context.
+**Independent Test**: Configure `contextLength: 8192` in config, run `diptych start` on a project with files ranging from 50 to 600 LOC. Verify that every generated task prompt (logged to events.jsonl) is under 6144 tokens (8192 minus 25% output reserve). Verify that MODIFY tasks on files >200 LOC use function-level context.
 
 **Acceptance Scenarios**:
 
@@ -35,7 +35,7 @@ A developer runs the full pipeline. Claude Code (Opus) generates tasks where eac
 
 **Why this priority**: Small models (7B-9B) cannot infer type definitions from context clues. Without inlined types, they hallucinate field names and signatures. Without implementation steps, they take wrong approaches. Without output examples, they wrap code in markdown fences or add explanations. These are the top 3 causes of task failure.
 
-**Independent Test**: Run `tiny-spec spec "add a config validator"`. Open the generated tasks.md. Verify that each task contains a `### Type Definitions` section with all referenced types, a `### Implementation Steps` section with 3-5 numbered steps, and that the system preamble includes a few-shot output example.
+**Independent Test**: Run `diptych spec "add a config validator"`. Open the generated tasks.md. Verify that each task contains a `### Type Definitions` section with all referenced types, a `### Implementation Steps` section with 3-5 numbered steps, and that the system preamble includes a few-shot output example.
 
 **Acceptance Scenarios**:
 
@@ -85,21 +85,21 @@ A new contributor clones the repo and reads CLAUDE.md and README.md. The documen
 
 2. **Given** README.md, **When** read by a new user, **Then** it documents the supported context window range (8K-32K+) and the auto-degradation behavior.
 
-3. **Given** the quickstart guide, **When** read by a first-time user, **Then** it mentions setting TINY_SPEC_CONTEXT_LENGTH and explains why (default 2048 is too small).
+3. **Given** the quickstart guide, **When** read by a first-time user, **Then** it mentions setting DIPTYCH_CONTEXT_LENGTH and explains why (default 2048 is too small).
 
 ---
 
 ### User Story 5 - LLM Project Skill (Priority: P2)
 
-A developer using Claude Code on this project can invoke a skill that provides complete context about tiny-spec's architecture, conventions, task prompt format, and implementation patterns. This skill is loaded automatically when relevant and gives the LLM everything it needs to work effectively on the codebase.
+A developer using Claude Code on this project can invoke a skill that provides complete context about diptych's architecture, conventions, task prompt format, and implementation patterns. This skill is loaded automatically when relevant and gives the LLM everything it needs to work effectively on the codebase.
 
 **Why this priority**: Without a skill, every new Claude Code session starts with incomplete context about the project. The skill eliminates repeated context-gathering and ensures consistent understanding across sessions.
 
-**Independent Test**: Invoke the tiny-spec skill in a new Claude Code session. Verify it provides: project architecture, module responsibilities, task prompt format specification, type definitions, coding conventions, and testing patterns.
+**Independent Test**: Invoke the diptych skill in a new Claude Code session. Verify it provides: project architecture, module responsibilities, task prompt format specification, type definitions, coding conventions, and testing patterns.
 
 **Acceptance Scenarios**:
 
-1. **Given** a new Claude Code session in the tiny-spec project, **When** the skill is invoked, **Then** it provides: project purpose, architecture overview, module map with responsibilities, key types, coding conventions (zero classes, ESM .js extensions, pure functions), and testing patterns.
+1. **Given** a new Claude Code session in the diptych project, **When** the skill is invoked, **Then** it provides: project purpose, architecture overview, module map with responsibilities, key types, coding conventions (zero classes, ESM .js extensions, pure functions), and testing patterns.
 
 2. **Given** the skill content, **When** used by Claude Code to implement a new feature, **Then** it includes the task prompt format specification so Claude knows how to generate tasks that small models can understand.
 
@@ -142,7 +142,7 @@ A developer using Claude Code on this project can invoke a skill that provides c
 - **FR-011**: The task parser MUST parse the new `### Type Definitions` and `### Implementation Steps` sections from generated tasks.md into the corresponding Task fields.
 - **FR-012**: CLAUDE.md MUST be updated to document: token budget strategy, 8K minimum context, function-level edit, task prompt structure, and new Task fields.
 - **FR-013**: README.md MUST be updated to document: supported context window range (8K-32K+), auto-degradation behavior, recommended models per VRAM tier.
-- **FR-014**: A project skill file MUST be created that provides complete context about tiny-spec's architecture, conventions, task prompt format, and implementation patterns for use by LLM coding assistants.
+- **FR-014**: A project skill file MUST be created that provides complete context about diptych's architecture, conventions, task prompt format, and implementation patterns for use by LLM coding assistants.
 - **FR-015**: The `estimateTokens` function MUST use a more accurate heuristic: `Math.ceil(text.length / 4)` for TypeScript code (closer to real tokenization than current `/3.5`).
 
 ### Key Entities

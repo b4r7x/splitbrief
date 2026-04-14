@@ -5,8 +5,8 @@ node_modules/
 dist/
 *.tsbuildinfo
 
-# Runtime state (tiny-spec working directory)
-.tiny-spec/
+# Runtime state (diptych working directory)
+.diptych/
 
 # SpecKit — only constitution and specs are tracked
 .specify/scripts/

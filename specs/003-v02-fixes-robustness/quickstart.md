@@ -1,4 +1,4 @@
-# Quickstart: tiny-spec v0.2
+# Quickstart: diptych v0.2
 
 No changes to the user-facing workflow from v0.1. See [v0.1 quickstart](../002-cost-optimized-orchestrator/quickstart.md) for the full guide.
 
@@ -8,12 +8,12 @@ No changes to the user-facing workflow from v0.1. See [v0.1 quickstart](../002-c
 
 ```bash
 # Start a workflow
-tiny-spec start "add user authentication"
+diptych start "add user authentication"
 
 # Interrupt at any point (Ctrl+C, close terminal, etc.)
 
 # Resume from where you left off
-tiny-spec resume
+diptych resume
 # → Continues from the exact task where you were interrupted
 ```
 
@@ -38,11 +38,11 @@ Invalid config is now caught at startup:
 
 ```bash
 # If config has errors:
-tiny-spec start "feature"
+diptych start "feature"
 # → Error: Invalid configuration:
 # →   implementer.provider: Must be one of: ollama, lm-studio, deepseek, openrouter (got "olama")
 # →   implementer.temperature: Must be between 0 and 2 (got 5)
-# → Fix .tiny-spec/config.yaml and try again.
+# → Fix .diptych/config.yaml and try again.
 ```
 
 ### Safer Operations

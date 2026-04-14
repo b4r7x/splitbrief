@@ -43,9 +43,9 @@
 - [x] T010 [P] [US8] Update `.specify/memory/constitution.md` — add new Principle VI: "Identity & Anti-Goals" codifying cost-optimization as core identity, explicitly rejecting universal-connector scope, multi-agent orchestration, tool calls for small models, and agent-wrapping-agent patterns
 - [x] T011 [US8] Update `.specify/memory/constitution.md` — revise Technical Constraints section: replace "Planner: Claude Code CLI as subprocess" with "Planner: Pluggable backends (6 built-in + shell)", replace "Implementer: OpenAI-compatible API (no subprocess tools)" with "Implementer: OpenAI-compatible API or shell subprocess"
 - [x] T012 [US8] Update `.specify/memory/constitution.md` — bump version from 1.0.0 to 1.1.0, update Last Amended date
-- [x] T013 [US8] Update `.claude/skills/tiny-spec-dev.md` skill — add reference to new constitutional principle VI and updated technical constraints
+- [x] T013 [US8] Update `.claude/skills/diptych-dev.md` skill — add reference to new constitutional principle VI and updated technical constraints
 
-**Checkpoint**: All existing tests pass. `tiny-spec spec` uses pluggable factory. Constitution reflects strategic decisions. No dead code remains.
+**Checkpoint**: All existing tests pass. `diptych spec` uses pluggable factory. Constitution reflects strategic decisions. No dead code remains.
 
 ---
 
@@ -55,15 +55,15 @@
 
 **Goal**: A new user with Ollama running can start a workflow in under 60 seconds without editing YAML
 
-**Independent Test**: Run `tiny-spec start "test"` with no config.yaml → picker appears → select → config saved → workflow starts
+**Independent Test**: Run `diptych start "test"` with no config.yaml → picker appears → select → config saved → workflow starts
 
 - [x] T014 [US3] Create `src/orchestrator/planner-detection.ts` — implement `detectAvailablePlanners(): Promise<PlannerDetection[]>` that iterates all known planner tools via factory, calls `isAvailable()` on each, returns results array. Also implement `detectAvailableImplementers(): Promise<ImplementerDetection[]>` that probes Ollama (localhost:11434) and LM Studio (localhost:1234) for running models (refactor from existing `detectLocalModels()` in providers.ts)
 - [x] T015 [P] [US3] Create `src/tui/picker.tsx` — Ink component using `@inkjs/ui` Select for planner selection and implementer selection. Props: `planners: PlannerDetection[]`, `implementers: ImplementerDetection[]`, `onComplete: (planner, implementer) => void`. Show detected tools with availability status. Handle zero-planners edge case with error message.
-- [x] T016 [US3] Update `src/cli.ts` start command — before workflow starts: if no config.yaml exists AND no CLI overrides (--model, --provider, --planner), render picker component, wait for selection, create config from selection, save to `.tiny-spec/config.yaml`, then proceed with workflow
+- [x] T016 [US3] Update `src/cli.ts` start command — before workflow starts: if no config.yaml exists AND no CLI overrides (--model, --provider, --planner), render picker component, wait for selection, create config from selection, save to `.diptych/config.yaml`, then proceed with workflow
 - [x] T017 [US3] Update `src/cli.ts` init command — add planner detection alongside existing model detection. Show combined picker for both planner and implementer selection. Use same picker component as start command.
 - [x] T018 [P] [US3] Create `tests/planner-detection.test.ts` — test `detectAvailablePlanners()` with mocked `createPlanner`/`isAvailable()` calls: all available, none available, partial availability, timeout handling. Test `detectAvailableImplementers()` with mocked fetch responses.
 
-**Checkpoint**: `tiny-spec start` and `tiny-spec init` show interactive picker when no config exists. Selection saved to config.yaml. Existing config-based flow unchanged.
+**Checkpoint**: `diptych start` and `diptych init` show interactive picker when no config exists. Selection saved to config.yaml. Existing config-based flow unchanged.
 
 ---
 
@@ -110,14 +110,14 @@
 
 **Goal**: User answers questions directly in TUI, answers appear in spec.md under Clarifications
 
-**Independent Test**: Run `tiny-spec start "feature"` → planner asks question → user answers → answer in spec.md
+**Independent Test**: Run `diptych start "feature"` → planner asks question → user answers → answer in spec.md
 
 - [x] T030 [US1] Create `src/tui/user-input.tsx` — Ink component wrapping `@inkjs/ui` TextInput. Props: `prompt: string`, `placeholder?: string`, `onSubmit: (value: string) => void`. Renders bordered box with prompt text and text input field.
 - [x] T031 [P] [US1] Create `src/tui/question-prompt.tsx` — Ink component for displaying a ClarificationQuestion. Shows question text, options (numbered list for choice type), default highlight. Has TextInput for answer. Shows [Enter] answer, [s] skip, [d] done controls. Calls `onAnswer(questionId, answer)` or `onSkip(questionId)` or `onDone()`.
 - [x] T032 [US1] Update `src/spec/templates.ts` — modify `buildResearchPrompt()` to add instructions telling the planner to embed `<!-- Q:{JSON} -->` markers for ambiguities found during research. Include format spec and examples. Instruct: max 5 questions, targeted to codebase findings, not generic.
 - [x] T033 [US1] Update `src/app.tsx` — add state for input mode: `inputMode: { type: 'question', question: ClarificationQuestion, onResolve: (answer: string) => void } | { type: 'comment', artifact: string, onResolve: (text: string) => void } | null`. Render `QuestionPrompt` or `UserInput` based on inputMode. Add `onQuestionAsked` callback that sets inputMode and returns a Promise.
 - [x] T034 [US1] Update `src/orchestrator/orchestrator.ts` — add conversational flow in research/spec phase: after planner research output, check if questions were emitted via `onQuestion`. For each question, pause and call `callbacks.onQuestionAsked(question)` → wait for answer → record answer. After all questions answered (or user says "done"), feed answers to spec prompt.
-- [x] T035 [US1] Implement clarification file persistence — after each question is answered, immediately append `- Q: <question> → A: <answer>` to `.tiny-spec/current/spec.md` under `## Clarifications` section (create section if not exists, add `### Session YYYY-MM-DD` header).
+- [x] T035 [US1] Implement clarification file persistence — after each question is answered, immediately append `- Q: <question> → A: <answer>` to `.diptych/current/spec.md` under `## Clarifications` section (create section if not exists, add `### Session YYYY-MM-DD` header).
 - [x] T036 [US1] Update `src/spec/templates.ts` — modify `buildSpecPrompt()` to accept clarification answers and include them in the prompt context so the planner integrates answers into the generated spec.
 - [x] T037 [US1] Handle batch fallback — in `src/orchestrator/orchestrator.ts`, check if planner supports multi-turn (claude-code, agent-sdk = yes; others = no). For non-multi-turn planners, skip question loop entirely and proceed to spec generation directly (batch mode). Add `supportsMultiTurn(): boolean` method to PlannerBackend interface or detect from backend name.
 
@@ -150,7 +150,7 @@
 - [x] T043 Update `CLAUDE.md` — update project structure section with new files (question-parser.ts, planner-detection.ts, implementers/shell.ts, picker.tsx, user-input.tsx, question-prompt.tsx). Update commands section. Update tech stack with @inkjs/ui. Update test count.
 - [x] T044 [P] Update `README.md` — add interactive picker section, conversational planning description, shell implementer config example, updated architecture diagram with new modules.
 - [x] T045 [P] Update `docs/VISION.md` — update current state to reflect completed features. Move near-term priorities to "completed" or "in progress" as appropriate.
-- [x] T046 [P] Update `.claude/skills/tiny-spec-dev.md` — add new architectural decisions (question protocol, shell implementer, interactive picker). Update "What TO Build Next" section.
+- [x] T046 [P] Update `.claude/skills/diptych-dev.md` — add new architectural decisions (question protocol, shell implementer, interactive picker). Update "What TO Build Next" section.
 - [x] T047 Run all tests and verify no regressions — `npm test` must pass with all existing + new tests.
 
 **Checkpoint**: All documentation consistent. All tests pass. Feature complete.
@@ -234,7 +234,7 @@ T029: Update claude-code.ts
 1. Complete Phase 1: Setup (install @inkjs/ui)
 2. Complete Phase 2: Cleanup & Constitution
 3. Complete Phase 3: Interactive Picker
-4. **STOP and VALIDATE**: `tiny-spec start` with no config → picker → workflow starts
+4. **STOP and VALIDATE**: `diptych start` with no config → picker → workflow starts
 5. This alone delivers SC-001 (60-second onboarding) and SC-008 (spec command uses factory)
 
 ### Incremental Delivery

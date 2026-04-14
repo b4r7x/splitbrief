@@ -1,5 +1,5 @@
 {
-  "name": "tiny-spec",
+  "name": "diptych",
   "version": "0.1.0",
   "description": "Cost-optimized AI coding orchestrator - uses expensive AI for planning, cheap/local AI for implementation",
   "type": "module",
@@ -7,7 +7,7 @@
     "node": ">=22"
   },
   "bin": {
-    "tiny-spec": "./dist/cli.js"
+    "diptych": "./dist/cli.js"
   },
   "scripts": {
     "dev": "tsx src/cli.ts",

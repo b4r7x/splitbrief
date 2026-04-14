@@ -1,4 +1,4 @@
-# Quickstart: tiny-spec v0.2 -- Prompt Optimization
+# Quickstart: diptych v0.2 -- Prompt Optimization
 
 ## What Changed in v0.2
 
@@ -22,7 +22,7 @@ Task prompts are now optimized for small models with limited context windows (8K
 
 ## Configuration
 
-Set your context length in `.tiny-spec/config.yaml`:
+Set your context length in `.diptych/config.yaml`:
 
 ```yaml
 implementer:
@@ -34,7 +34,7 @@ implementer:
 
 **IMPORTANT**: Also set Ollama's context length:
 ```bash
-export TINY_SPEC_CONTEXT_LENGTH=8192
+export DIPTYCH_CONTEXT_LENGTH=8192
 ```
 
 ## What Happens Under the Hood
@@ -56,8 +56,8 @@ After running a workflow, check the events log:
 
 ```bash
 # See token counts per task
-grep '"type":"task_started"' .tiny-spec/current/events.jsonl
+grep '"type":"task_started"' .diptych/current/events.jsonl
 
 # Check for any degradation warnings
-grep '"type":"context_degraded"' .tiny-spec/current/events.jsonl
+grep '"type":"context_degraded"' .diptych/current/events.jsonl
 ```

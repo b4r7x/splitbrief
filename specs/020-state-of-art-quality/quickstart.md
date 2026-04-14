@@ -5,7 +5,7 @@
 ## Prerequisites
 
 - Node.js 22+
-- Git repository with tiny-spec source
+- Git repository with diptych source
 - Branch `020-state-of-art-quality` checked out
 
 ## Verification Steps
@@ -104,7 +104,7 @@ Expected: Clean tsc build with zero errors.
 
 ## Theme Bug Verification (Manual)
 
-1. Edit `.tiny-spec/config.yaml` and set `theme: mono`
+1. Edit `.diptych/config.yaml` and set `theme: mono`
 2. Run `npm run dev -- start "test feature"`
 3. Verify all UI components (event cards, headers, sidebar, picker) render in mono palette
 4. No components should appear in terminal-theme colors when mono is configured

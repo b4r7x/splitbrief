@@ -1,4 +1,4 @@
-# Quickstart: tiny-spec
+# Quickstart: diptych
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@
      ```bash
      brew install ollama
      ollama pull qwen2.5-coder:7b
-     export TINY_SPEC_CONTEXT_LENGTH=32768  # default 2048 is too small
+     export DIPTYCH_CONTEXT_LENGTH=32768  # default 2048 is too small
      ```
    - **LM Studio**: download a coding model via the UI
    - **Any OpenAI-compatible API**: set `api_base` in config
@@ -25,14 +25,14 @@
 ## Setup
 
 ```bash
-# Install tiny-spec globally
-npm install -g tiny-spec
+# Install diptych globally
+npm install -g diptych
 
 # Navigate to your project
 cd your-typescript-project
 
 # Initialize configuration (auto-detects models)
-tiny-spec init
+diptych init
 ```
 
 ## Usage
@@ -41,7 +41,7 @@ tiny-spec init
 
 ```bash
 # Start the full pipeline
-tiny-spec start "add user authentication with JWT"
+diptych start "add user authentication with JWT"
 
 # What happens:
 # 1. Planner researches your codebase                       [LEFT PANE]
@@ -59,7 +59,7 @@ tiny-spec start "add user authentication with JWT"
 
 ```bash
 # Generate spec/plan/tasks for manual use
-tiny-spec spec "add rate limiting"
+diptych spec "add rate limiting"
 
 # Use the generated tasks with any AI tool:
 # - Claude Code: paste task prompts
@@ -71,19 +71,19 @@ tiny-spec spec "add rate limiting"
 
 ```bash
 # Skip spec/plan approval prompts
-tiny-spec start "add caching layer" --auto
+diptych start "add caching layer" --auto
 ```
 
 ### Resume After Interruption
 
 ```bash
 # If you Ctrl+C or your session crashes:
-tiny-spec resume
+diptych resume
 ```
 
 ## Configuration
 
-Running `tiny-spec init` creates `.tiny-spec/config.yaml`:
+Running `diptych init` creates `.diptych/config.yaml`:
 
 ```yaml
 planner:
@@ -153,14 +153,14 @@ For a medium-complexity feature (10-15 tasks):
 
 ## Troubleshooting
 
-**"Model not found"**: Run `ollama list` to see available models, then update `.tiny-spec/config.yaml`.
+**"Model not found"**: Run `ollama list` to see available models, then update `.diptych/config.yaml`.
 
 **Tasks keep failing**: Your model may be too small. Try `qwen3.5:27b` (Mac) or `qwen2.5-coder:14b`.
 
-**"Context length exceeded"**: Set `TINY_SPEC_CONTEXT_LENGTH=32768` in your shell profile.
+**"Context length exceeded"**: Set `DIPTYCH_CONTEXT_LENGTH=32768` in your shell profile.
 
 **Validation skipped**: Ensure `tsc` is available (`npx tsc --version`) and your project has a test command in `package.json`.
 
 **"Shell planner command not found"**: Make sure the command is on your PATH. Test with `which <command>`.
 
-**"Unknown provider requires apiBase"**: Custom providers need `api_base` set in config — tiny-spec doesn't know the default URL for your endpoint.
+**"Unknown provider requires apiBase"**: Custom providers need `api_base` set in config — diptych doesn't know the default URL for your endpoint.

@@ -1,6 +1,6 @@
 # CLI Commands Contract (Updated for 006)
 
-## `tiny-spec start <feature>`
+## `diptych start <feature>`
 
 Full pipeline: plan with planner, implement with implementer.
 
@@ -19,7 +19,7 @@ Full pipeline: plan with planner, implement with implementer.
 
 **Exit codes** (unchanged): 0 success, 1 failure, 2 config error
 
-## `tiny-spec spec <feature>`
+## `diptych spec <feature>`
 
 Generate spec/plan/tasks only (no implementation).
 
@@ -32,7 +32,7 @@ Generate spec/plan/tasks only (no implementation).
 - `--auto` — Auto-approve
 - `--project <dir>` — Project directory
 
-## `tiny-spec init`
+## `diptych init`
 
 Create config with auto-detected models.
 
@@ -43,7 +43,7 @@ Create config with auto-detected models.
 **Options** (unchanged):
 - `--reconfigure` — Overwrite existing config
 
-## `tiny-spec status` / `tiny-spec resume`
+## `diptych status` / `diptych resume`
 
 No changes to these commands.
 
@@ -53,7 +53,7 @@ Triggered when no config exists and no CLI overrides provided.
 
 ```
 ┌──────────────────────────────────────┐
-│ tiny-spec setup                      │
+│ diptych setup                      │
 │                                      │
 │ Detected planners:                   │
 │ ❯ Claude Code (installed)            │
@@ -69,7 +69,7 @@ Triggered when no config exists and no CLI overrides provided.
 │                                      │
 │ Select implementer: [↑↓ Enter]       │
 ├──────────────────────────────────────┤
-│ Saved to .tiny-spec/config.yaml      │
+│ Saved to .diptych/config.yaml      │
 │ Starting workflow...                 │
 └──────────────────────────────────────┘
 ```
@@ -79,7 +79,7 @@ Triggered when no config exists and no CLI overrides provided.
 ```
 ┌──────────────────────────────────────┐
 │ spec generated. Review at            │
-│ .tiny-spec/current/spec.md           │
+│ .diptych/current/spec.md           │
 │                                      │
 │ [Enter] approve  [e] edit  [c] comment  [q] quit │
 └──────────────────────────────────────┘

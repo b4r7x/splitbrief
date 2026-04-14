@@ -4,7 +4,7 @@
 
 ## Modified Commands
 
-### `tiny-spec start [feature]`
+### `diptych start [feature]`
 
 Feature argument becomes **optional** (was required).
 
@@ -16,16 +16,16 @@ New flag:
 
 Existing flags unchanged: `--auto`, `--model`, `--provider`, `--planner`, `--planner-model`
 
-### `tiny-spec` (no subcommand)
+### `diptych` (no subcommand)
 
-Same as `tiny-spec start` without argument → home screen.
+Same as `diptych start` without argument → home screen.
 
 ## Unchanged Commands
 
-- `tiny-spec spec <feature>` — spec-only mode (no TUI changes)
-- `tiny-spec init` — config setup (uses existing picker)
-- `tiny-spec status` — show workflow state
-- `tiny-spec resume` — resume workflow (can also be triggered from home screen)
+- `diptych spec <feature>` — spec-only mode (no TUI changes)
+- `diptych init` — config setup (uses existing picker)
+- `diptych status` — show workflow state
+- `diptych resume` — resume workflow (can also be triggered from home screen)
 
 ## Input Bar Commands (TUI-internal, not CLI)
 

@@ -1,4 +1,4 @@
-# Implementation Plan: tiny-spec v0.1
+# Implementation Plan: diptych v0.1
 
 **Branch**: `002-cost-optimized-orchestrator` | **Date**: 2026-03-25 | **Spec**: [spec.md](spec.md)
 **Input**: Feature specification from `/specs/002-cost-optimized-orchestrator/spec.md`
@@ -11,7 +11,7 @@ Build an open-source CLI tool (TypeScript + Ink) that orchestrates Claude Code C
 
 **Language/Version**: TypeScript 5.9+, Node.js 22+ (native TypeScript stripping via `--experimental-strip-types`)
 **Primary Dependencies**: ink 5.x, react 18.x, openai SDK, yaml, simple-git, commander
-**Storage**: JSON files (`.tiny-spec/current/state.json`, `events.jsonl`), Markdown files (spec.md, plan.md, tasks.md)
+**Storage**: JSON files (`.diptych/current/state.json`, `events.jsonl`), Markdown files (spec.md, plan.md, tasks.md)
 **Testing**: `tsx --test tests/**/*.test.ts` (tsx handles TypeScript + JSX/TSX + ESM)
 **Target Platform**: macOS (primary), Linux (secondary)
 **Project Type**: CLI tool with TUI (terminal user interface)
@@ -43,7 +43,7 @@ User: "add user auth"
        │
        ▼
 ┌─────────────────────────────────────────────┐
-│           tiny-spec orchestrator             │
+│           diptych orchestrator             │
 │                                              │
 │  ┌──────────────┐    ┌───────────────────┐  │
 │  │ Planner      │    │ Implementer       │  │
@@ -59,7 +59,7 @@ User: "add user auth"
 │         │            │  5. Validate      │  │
 │         │ files      │  6. Commit/Retry  │  │
 │         ▼            └────────┬──────────┘  │
-│  .tiny-spec/current/         │              │
+│  .diptych/current/         │              │
 │  ├── spec.md                 │ escalate     │
 │  ├── plan.md                 ▼              │
 │  ├── tasks.md         ┌──────────────┐      │
@@ -81,7 +81,7 @@ User: "add user auth"
 
 ```
 idle
-  │ user runs "tiny-spec start <feature>"
+  │ user runs "diptych start <feature>"
   ▼
 researching ──────────────────────┐
   │ claude -p researches codebase │ LEFT PANE
@@ -130,7 +130,7 @@ idle
 - Parse `stream-json` events: `{type: 'assistant', content: [{type: 'text', text: '...'}]}` etc.
 - Pipe parsed text to left TUI pane
 - Session management via `--session-id` for multi-turn planning
-- On completion: read generated files from `.tiny-spec/current/`
+- On completion: read generated files from `.diptych/current/`
 
 **Local model API**:
 - Use `openai` npm package with provider-specific `baseURL`
@@ -251,7 +251,7 @@ src/
 └── utils/
     ├── process.ts            # Subprocess spawn, streaming, lifecycle
     ├── git.ts                # Git operations (commit, diff, status, external change detection)
-    └── fs.ts                 # .tiny-spec/ directory management
+    └── fs.ts                 # .diptych/ directory management
 
 tests/
 ├── parser.test.ts

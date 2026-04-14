@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'no
 import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 
-export const TINY_SPEC_DIR = '.tiny-spec';
+export const DIPTYCH_DIR = '.diptych';
 
 // Node.js ignores file mode on Windows — these are effective on Unix/macOS only.
 export const SECURE_DIR_MODE = 0o700;
@@ -44,8 +44,8 @@ export async function readFileOrEmpty(filePath: string): Promise<string> {
   }
 }
 
-export const getTinySpecPath = (projectDir: string, ...parts: string[]): string =>
-  join(projectDir, TINY_SPEC_DIR, ...parts);
+export const getDiptychPath = (projectDir: string, ...parts: string[]): string =>
+  join(projectDir, DIPTYCH_DIR, ...parts);
 
 // Sync: called once at workflow start, not in per-task hot path.
 export function readPackageJson(projectDir: string): Record<string, unknown> | null {

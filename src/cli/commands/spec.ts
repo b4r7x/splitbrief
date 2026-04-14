@@ -5,7 +5,7 @@ import { getRunnerDisplayName } from '../../core/config/index.js';
 import { ensureGitAndConfig, resolveProjectDir, loadConfigOrExit } from '../workflow.js';
 import { cliError } from '../errors.js';
 import { toErrorMessage } from '../../utils/format.js';
-import { TINY_SPEC_DIR, CURRENT_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
+import { DIPTYCH_DIR, CURRENT_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 
 export function registerSpecCommand(program: Command): void {
   program
@@ -40,7 +40,7 @@ export function registerSpecCommand(program: Command): void {
         throw cliError(toErrorMessage(err));
       }
 
-      const currentPath = `${TINY_SPEC_DIR}/${CURRENT_DIR}`;
+      const currentPath = `${DIPTYCH_DIR}/${CURRENT_DIR}`;
       console.log('\nSpec generation complete.');
       console.log(`  Spec:  ${ansis.dim(`${currentPath}/${SPEC_FILE}`)}`);
       console.log(`  Plan:  ${ansis.dim(`${currentPath}/${PLAN_FILE}`)}`);

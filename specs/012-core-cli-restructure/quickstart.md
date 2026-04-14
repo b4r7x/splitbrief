@@ -2,11 +2,11 @@
 
 **Feature**: 012-core-cli-restructure
 **Date**: 2026-03-30
-**Audience**: Developers contributing to tiny-spec
+**Audience**: Developers contributing to diptych
 
 ## Overview
 
-tiny-spec has a feature-based architecture with clear separation:
+diptych has a feature-based architecture with clear separation:
 - **`src/core/`** — Pure TypeScript business logic (NO React/Ink dependencies)
 - **`src/cli/`** — TUI application using React + Ink
 

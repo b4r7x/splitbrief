@@ -4,9 +4,9 @@
 
 ## Modified Commands
 
-### `tiny-spec start <feature>` (modified)
+### `diptych start <feature>` (modified)
 
-No new flags. Agent mode is configured via `.tiny-spec/config.yaml`, not CLI flags.
+No new flags. Agent mode is configured via `.diptych/config.yaml`, not CLI flags.
 
 **New behavior at startup**:
 1. Detects planner CLI version (e.g., `claude --version` → `2.1.84`)
@@ -23,7 +23,7 @@ No new flags. Agent mode is configured via `.tiny-spec/config.yaml`, not CLI fla
 6. If files changed: runs validation pipeline (tsc → lint → test)
 7. Retry/escalation/commit flow unchanged from API mode
 
-### `tiny-spec init` (modified)
+### `diptych init` (modified)
 
 **New behavior during auto-detection**:
 - Detects planner CLI version and displays it (e.g., "Claude Code v2.1.84 detected")
@@ -34,7 +34,7 @@ No new flags. Agent mode is configured via `.tiny-spec/config.yaml`, not CLI fla
 ### Agent-mode implementer config
 
 ```yaml
-# .tiny-spec/config.yaml
+# .diptych/config.yaml
 implementer:
   type: agent                    # NEW: 'api' (default) | 'shell' | 'agent'
   command: claude-zai            # Required for agent/shell types

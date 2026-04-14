@@ -7,7 +7,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 
 function setupGitRepo(): string {
-  const dir = createTempDir('tiny-spec-git-test');
+  const dir = createTempDir('diptych-git-test');
   createTestGitRepo(dir);
   return dir;
 }
@@ -34,7 +34,7 @@ describe('git utils', () => {
     });
 
     it('returns false outside a git repo', async () => {
-      const dir = tracked(createTempDir('tiny-spec-nogit'));
+      const dir = tracked(createTempDir('diptych-nogit'));
       expect(await isGitRepo(dir)).toBe(false);
     });
   });
@@ -122,37 +122,37 @@ describe('git utils', () => {
 
   describe('ensureGitignore', () => {
     it('creates .gitignore with entry when file does not exist', () => {
-      const dir = tracked(createTempDir('tiny-spec-gitignore'));
-      ensureGitignore(dir, '.tiny-spec/');
+      const dir = tracked(createTempDir('diptych-gitignore'));
+      ensureGitignore(dir, '.diptych/');
       const content = readFileSync(join(dir, '.gitignore'), 'utf-8');
-      expect(content).toBe('.tiny-spec/\n');
+      expect(content).toBe('.diptych/\n');
     });
 
     it('appends entry to existing .gitignore', () => {
-      const dir = tracked(createTempDir('tiny-spec-gitignore'));
+      const dir = tracked(createTempDir('diptych-gitignore'));
       writeFileSync(join(dir, '.gitignore'), 'node_modules/\n');
-      ensureGitignore(dir, '.tiny-spec/');
+      ensureGitignore(dir, '.diptych/');
       const content = readFileSync(join(dir, '.gitignore'), 'utf-8');
       expect(content).toContain('node_modules/');
-      expect(content).toContain('.tiny-spec/');
+      expect(content).toContain('.diptych/');
     });
 
     it('does not duplicate entry if already present', () => {
-      const dir = tracked(createTempDir('tiny-spec-gitignore'));
-      writeFileSync(join(dir, '.gitignore'), '.tiny-spec/\n');
-      ensureGitignore(dir, '.tiny-spec/');
+      const dir = tracked(createTempDir('diptych-gitignore'));
+      writeFileSync(join(dir, '.gitignore'), '.diptych/\n');
+      ensureGitignore(dir, '.diptych/');
       const content = readFileSync(join(dir, '.gitignore'), 'utf-8');
-      const matches = content.split('\n').filter(l => l.trim() === '.tiny-spec/');
+      const matches = content.split('\n').filter(l => l.trim() === '.diptych/');
       expect(matches).toHaveLength(1);
     });
 
     it('does not produce double blank lines when file lacks trailing newline', () => {
-      const dir = tracked(createTempDir('tiny-spec-gitignore'));
+      const dir = tracked(createTempDir('diptych-gitignore'));
       writeFileSync(join(dir, '.gitignore'), 'node_modules/');
-      ensureGitignore(dir, '.tiny-spec/');
+      ensureGitignore(dir, '.diptych/');
       const content = readFileSync(join(dir, '.gitignore'), 'utf-8');
       expect(content).not.toContain('\n\n');
-      expect(content).toContain('.tiny-spec/');
+      expect(content).toContain('.diptych/');
     });
   });
 

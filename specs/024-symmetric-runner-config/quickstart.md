@@ -151,7 +151,7 @@ Both `implementers/shell.ts` and `implementers/agent.ts` call this. The planner 
 You don't. The migration is automatic:
 
 ```bash
-$ tiny-spec start "my feature"
+$ diptych start "my feature"
 # If config.yml is v1, it's silently rewritten to v2 shape on first save.
 ```
 

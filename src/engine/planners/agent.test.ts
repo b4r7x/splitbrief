@@ -9,7 +9,7 @@ import { join } from 'node:path';
 let projectDir: string;
 
 function setupMockFiles(projectDir: string, files: Record<string, string>) {
-  const tinySpecDir = join(projectDir, '.tiny-spec', 'current');
+  const tinySpecDir = join(projectDir, '.diptych', 'current');
   mkdirSync(tinySpecDir, { recursive: true });
 
   for (const [filename, content] of Object.entries(files)) {

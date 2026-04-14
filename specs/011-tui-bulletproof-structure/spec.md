@@ -9,7 +9,7 @@
 
 ### User Story 1 - Developer can locate TUI components by feature domain (Priority: P1)
 
-As a developer working on the tiny-spec codebase, I want to find TUI components organized by their feature domain rather than flat file structure, so that I can quickly locate and modify components related to specific functionality without searching through unrelated files.
+As a developer working on the diptych codebase, I want to find TUI components organized by their feature domain rather than flat file structure, so that I can quickly locate and modify components related to specific functionality without searching through unrelated files.
 
 **Why this priority**: This is the core value proposition of the refactor - improving developer productivity and code navigation. Without this, the codebase remains hard to navigate as it grows.
 

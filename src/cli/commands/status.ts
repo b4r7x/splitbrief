@@ -72,7 +72,7 @@ export function registerStatusCommand(program: Command): void {
       if (!state) {
         console.log('No active workflow.');
         if (!opts.history) {
-          console.log(ansis.dim('  Run `tiny-spec status --history` to see past sessions.'));
+          console.log(ansis.dim('  Run `diptych status --history` to see past sessions.'));
         }
       } else {
         console.log(`${ansis.dim('Feature:')}  ${ansis.bold(state.feature)}`);

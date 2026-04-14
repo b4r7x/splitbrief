@@ -40,7 +40,7 @@ export function SetupScreen() {
         <Text color={t.textDim}>Install one of:</Text>
         <Text color={t.text}>  npm i -g @anthropic-ai/claude-code</Text>
         <Text color={t.text}>  npm i -g @openai/codex</Text>
-        <Text color={t.textDim}>Then run <Text bold>tiny-spec init</Text> again.</Text>
+        <Text color={t.textDim}>Then run <Text bold>diptych init</Text> again.</Text>
       </OverlayPanel>
     );
   }

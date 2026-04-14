@@ -5,7 +5,7 @@
 ## Prerequisites
 
 - Node.js 22+
-- Git repo with tiny-spec checked out on `019-deep-quality-fixes` branch
+- Git repo with diptych checked out on `019-deep-quality-fixes` branch
 
 ## Verification Steps
 

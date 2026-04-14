@@ -9,7 +9,7 @@
 
 ### User Story 1 - Type-Safe Configuration Validation (Priority: P1)
 
-As a developer extending tiny-spec's configuration, when I add a new config field, the validation logic catches type mismatches at compile time rather than relying on runtime `as any` casts that silently pass invalid data.
+As a developer extending diptych's configuration, when I add a new config field, the validation logic catches type mismatches at compile time rather than relying on runtime `as any` casts that silently pass invalid data.
 
 **Why this priority**: The config validation function currently uses 19 `as any` type assertions, completely bypassing TypeScript's type system. Invalid configurations pass silently at compile time and only fail unpredictably at runtime. This is the most concentrated type-safety violation in the codebase.
 

@@ -13,7 +13,7 @@ The approach is mechanical refactoring organized by risk: critical bugs first (s
 
 **Language/Version**: TypeScript 5.9+, ESM only (`"type": "module"`)
 **Primary Dependencies**: Ink 6.x (React 19), openai ^6.0.0, simple-git, yaml, commander ^14.0.0, Shiki 4.x, ansis
-**Storage**: JSON files (`.tiny-spec/state.json`, `events.jsonl`), Markdown files (spec, plan, tasks)
+**Storage**: JSON files (`.diptych/state.json`, `events.jsonl`), Markdown files (spec, plan, tasks)
 **Testing**: Node.js built-in test runner (`node --test`), tsx for execution
 **Target Platform**: macOS (primary), Linux (secondary)
 **Project Type**: CLI tool (cost-optimized AI coding orchestrator)

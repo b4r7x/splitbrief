@@ -62,7 +62,7 @@
 ### Implementation for User Story 2
 
 - [x] T015 [US2] Modify `src/ui/screens/home.tsx` — wrap all content in outer Box with `flexDirection="column" alignItems="center" justifyContent="center" width="100%" height="100%"`. Add inner Box with `width={Math.min(columns, 80)}` using `useStdout().stdout.columns`. Add `gap={1}` between sections (banner, config, sessions, input).
-- [x] T016 [US2] Verify cfonts banner centering in `src/ui/screens/home.tsx` — ensure banner text aligns within the centered container. If cfonts output is wider than container, use fallback text "tiny-spec" in accent color.
+- [x] T016 [US2] Verify cfonts banner centering in `src/ui/screens/home.tsx` — ensure banner text aligns within the centered container. If cfonts output is wider than container, use fallback text "diptych" in accent color.
 - [x] T017 [US2] Polish session list spacing in `src/ui/screens/home.tsx` — ensure status icons, feature names, and timestamps are aligned in columns. Add padding between items. Show "no recent sessions" in dim text if list is empty.
 
 **Checkpoint**: User Story 2 complete. Home screen looks professional and centered at all terminal widths.

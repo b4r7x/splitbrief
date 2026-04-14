@@ -11,7 +11,7 @@ Fix 40+ code quality issues identified in a deep 20-agent audit: 11 correctness 
 
 **Language/Version**: TypeScript 5.9+, ESM only (`"type": "module"`)
 **Primary Dependencies**: Ink 6.x (React 19), openai ^6.0.0, simple-git, commander ^14.0.0, yaml, Shiki 4.x, ansis
-**Storage**: JSON files (`.tiny-spec/state.json`, `events.jsonl`), Markdown files (spec, plan, tasks)
+**Storage**: JSON files (`.diptych/state.json`, `events.jsonl`), Markdown files (spec, plan, tasks)
 **Testing**: Node.js built-in test runner (`node:test`), `tsx` for execution
 **Target Platform**: macOS (primary), Linux (secondary)
 **Project Type**: CLI tool with TUI (Ink/React)

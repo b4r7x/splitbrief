@@ -2,7 +2,7 @@
 
 **Feature**: 012-core-cli-restructure
 **Date**: 2026-03-30
-**Purpose**: Defines the public API exported from `@tiny-spec/core` (internal path: `src/core/index.ts`)
+**Purpose**: Defines the public API exported from `@diptych/core` (internal path: `src/core/index.ts`)
 
 ## Public API
 

@@ -1,4 +1,4 @@
-# Data Model: tiny-spec v0.2 -- Small LLM Prompt Optimization
+# Data Model: diptych v0.2 -- Small LLM Prompt Optimization
 
 **Source**: [spec.md](spec.md) Key Entities section
 

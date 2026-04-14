@@ -11,7 +11,7 @@ Refactor all `src/engine/` modules to eliminate ~300 lines of duplication, decom
 
 **Language/Version**: TypeScript 5.9+, ESM only (`"type": "module"`)
 **Primary Dependencies**: openai ^6.0.0, yaml, simple-git, commander ^14.0.0, Ink 6.x (React 19)
-**Storage**: JSON files (`.tiny-spec/state.json`, `events.jsonl`), Markdown files (spec, plan, tasks)
+**Storage**: JSON files (`.diptych/state.json`, `events.jsonl`), Markdown files (spec, plan, tasks)
 **Testing**: Node.js built-in test runner via `npx tsx --test tests/*.test.ts` (unit), `INTEGRATION=true` for integration
 **Target Platform**: macOS (primary), Linux (secondary)
 **Project Type**: CLI tool

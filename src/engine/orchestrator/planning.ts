@@ -3,7 +3,7 @@ import type { OrchestratorEventPayloadMap } from '../../core/types/events.js';
 import type { PlannerCallbacksContext } from './run.js';
 import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
-import { getTinySpecPath } from '../../utils/fs.js';
+import { getDiptychPath } from '../../utils/fs.js';
 import { parseTasks } from '../spec/parser.js';
 import { buildPlanPromptFromSpec } from '../spec/prompts/plan.js';
 import { buildTasksPrompt } from '../spec/prompts/tasks.js';
@@ -164,7 +164,7 @@ async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boo
 
   state = transitionAndEmit({ state, projectDir, callbacks, action: { type: 'SPEC_DONE' }, eventName: 'spec_done', status: 'running', emitData: {} });
 
-  const specPath = getTinySpecPath(projectDir, 'current', SPEC_FILE);
+  const specPath = getDiptychPath(projectDir, 'current', SPEC_FILE);
 
   if (!config.workflow.autoApproveSpec) {
     const specLoop = await runApprovalLoop({ type: 'spec', filePath: specPath, planner, projectDir, callbacks, state, signal });
@@ -179,7 +179,7 @@ async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boo
 
   state = transitionAndEmit({ state, projectDir, callbacks, action: { type: 'PLAN_DONE', tasks }, eventName: 'plan_done', status: 'running', emitData: { taskCount: tasks.length } });
 
-  const planPath = getTinySpecPath(projectDir, 'current', PLAN_FILE);
+  const planPath = getDiptychPath(projectDir, 'current', PLAN_FILE);
 
   if (!skipPlanApproval && !config.workflow.autoApprovePlan) {
     const planLoop = await runApprovalLoop({ type: 'plan', filePath: planPath, planner, projectDir, callbacks, state, signal });

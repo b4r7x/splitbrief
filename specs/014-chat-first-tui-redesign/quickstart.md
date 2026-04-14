@@ -4,13 +4,13 @@
 
 ```bash
 # Interactive mode (home screen)
-tiny-spec
+diptych
 
 # Direct workflow (backward compatible)
-tiny-spec start "add user authentication"
+diptych start "add user authentication"
 
 # Inline mode (no fullscreen)
-tiny-spec --no-fullscreen
+diptych --no-fullscreen
 ```
 
 ## Home Screen
@@ -57,7 +57,7 @@ Default: uses your terminal's color scheme (ANSI colors).
 
 To use fixed colors:
 ```yaml
-# .tiny-spec/config.yaml
+# .diptych/config.yaml
 theme: mono
 ```
 
@@ -68,10 +68,10 @@ shikiTheme: github-light  # default: github-dark
 
 ## Sessions
 
-Sessions are stored per-project in `.tiny-spec/sessions/`.
+Sessions are stored per-project in `.diptych/sessions/`.
 
 For global sessions:
 ```yaml
 sessions:
-  scope: global  # stores in ~/.tiny-spec/sessions/
+  scope: global  # stores in ~/.diptych/sessions/
 ```

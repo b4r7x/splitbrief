@@ -1,4 +1,4 @@
-# Tasks: tiny-spec v0.1 -- Cost-Optimized AI Coding Orchestrator
+# Tasks: diptych v0.1 -- Cost-Optimized AI Coding Orchestrator
 
 **Input**: Design documents from `/specs/002-cost-optimized-orchestrator/`
 **Prerequisites**: plan.md (required), spec.md (required), research.md, data-model.md, contracts/
@@ -15,12 +15,12 @@
 **Purpose**: Project scaffolding, dependencies, configuration files
 
 - [x] T001 Create project directory structure per plan.md (`src/`, `src/tui/`, `src/orchestrator/`, `src/spec/`, `src/utils/`, `tests/`)
-- [x] T002 Initialize package.json with `"type": "module"`, `"engines": {"node": ">=22"}`, bin entry `tiny-spec`, scripts (dev, build, test)
+- [x] T002 Initialize package.json with `"type": "module"`, `"engines": {"node": ">=22"}`, bin entry `diptych`, scripts (dev, build, test)
 - [x] T003 [P] Configure tsconfig.json: strict mode, ESM target (`"module": "NodeNext"`), JSX react-jsx (for Ink), `dist/` outDir, `"rewriteRelativeImportExtensions": true`
 - [x] T004 [P] Add runtime dependencies: ink@5, @inkjs/ui@2, react@18, openai@4, yaml@2, simple-git@3, commander@12
 - [x] T005 [P] Add dev dependencies: @types/node@22, @types/react@18, typescript@5.9
 - [x] T006 [P] Create ts-loader.mjs for `.js` → `.ts` ESM resolution (copy Prain pattern)
-- [x] T007 [P] Create .gitignore with node_modules, dist, .tiny-spec/current/state.json, .tiny-spec/current/events.jsonl
+- [x] T007 [P] Create .gitignore with node_modules, dist, .diptych/current/state.json, .diptych/current/events.jsonl
 
 **Checkpoint**: `npm install` succeeds, `node --experimental-strip-types --loader ./ts-loader.mjs src/cli.ts --help` runs
 
@@ -33,10 +33,10 @@
 **CRITICAL**: No user story work can begin until this phase is complete
 
 - [x] T008 Define shared types in `src/types.ts`: Phase enum, WorkflowState, Task, TaskStatus, Config, ValidationResult, TokenUsage, Summary, Event (per data-model.md)
-- [x] T009 Implement config loader in `src/config.ts`: `loadConfig(dir)` reads `.tiny-spec/config.yaml` and merges with defaults, `createDefaultConfig()` returns sensible defaults (ollama, qwen2.5-coder:7b), `initConfig(dir)` creates config.yaml
+- [x] T009 Implement config loader in `src/config.ts`: `loadConfig(dir)` reads `.diptych/config.yaml` and merges with defaults, `createDefaultConfig()` returns sensible defaults (ollama, qwen2.5-coder:7b), `initConfig(dir)` creates config.yaml
 - [x] T010 Implement state machine in `src/state.ts`: `createInitialState(feature)`, `transition(state, action)` pure function with all transitions from data-model.md, `saveState(dir, state)` writes state.json, `loadState(dir)` reads state, `appendEvent(dir, event)` appends to events.jsonl
-- [x] T011 [P] Implement git utilities in `src/utils/git.ts`: `isGitRepo(dir)`, `commitChanges(dir, message)`, `getCurrentDiff(dir)`, `getFileContent(dir, path)`, `hasExternalChanges(dir)` checks for uncommitted changes not made by tiny-spec
-- [x] T012 [P] Implement file system helpers in `src/utils/fs.ts`: `ensureTinySpecDir(dir)` creates `.tiny-spec/current/`, `writeSpecFile(dir, filename, content)`, `readSpecFile(dir, filename)`, `archiveCurrentFeature(dir, featureName)` moves current/ to history/
+- [x] T011 [P] Implement git utilities in `src/utils/git.ts`: `isGitRepo(dir)`, `commitChanges(dir, message)`, `getCurrentDiff(dir)`, `getFileContent(dir, path)`, `hasExternalChanges(dir)` checks for uncommitted changes not made by diptych
+- [x] T012 [P] Implement file system helpers in `src/utils/fs.ts`: `ensureDiptychDir(dir)` creates `.diptych/current/`, `writeSpecFile(dir, filename, content)`, `readSpecFile(dir, filename)`, `archiveCurrentFeature(dir, featureName)` moves current/ to history/
 - [x] T013 [P] Implement process utilities in `src/utils/process.ts`: `spawnWithStreaming(command, args, onStdout, onStderr)` spawns a process and streams output line by line, `runCommand(command, args)` runs a command and returns `{stdout, stderr, code}`
 - [x] T014 [P] Implement provider abstraction in `src/orchestrator/providers.ts`: `createClient(provider, config)` returns OpenAI instance with correct baseURL, `detectLocalModels()` checks Ollama (`/api/tags`) and LM Studio (`/v1/models`) for available models, `detectCapabilities(provider, model)` returns `{contextLength}`
 
@@ -48,12 +48,12 @@
 
 **Goal**: End-to-end pipeline: Claude Code plans, local model implements, validation runs, escalation works, summary displayed
 
-**Independent Test**: Run `tiny-spec start "add a hello world endpoint"` on a minimal TypeScript project. Verify: Opus plans → tasks generated → local model implements → validation passes → commits created → summary shown.
+**Independent Test**: Run `diptych start "add a hello world endpoint"` on a minimal TypeScript project. Verify: Opus plans → tasks generated → local model implements → validation passes → commits created → summary shown.
 
 ### Planner (Claude Code subprocess)
 
 - [x] T015 [US1] Implement prompt templates in `src/spec/templates.ts`: `buildResearchPrompt(feature, projectContext)`, `buildSpecPrompt(feature, research)`, `buildPlanPrompt(spec, context)`, `buildTasksPrompt(spec, plan)`, `buildFinalReviewPrompt(spec, diff)`, `buildHintPrompt(task, error)`, `buildEscalationPrompt(task, lastAttempt, error)` -- each returns a structured string for Claude Code
-- [x] T016 [US1] Implement planner in `src/orchestrator/planner.ts`: `planFeature(feature, projectDir, config, callbacks)` spawns `claude -p` subprocess with `--output-format stream-json`, pipes research→spec→plan→tasks prompts sequentially using `--session-id`, parses stream-json events, reports progress via callbacks, saves artifacts to `.tiny-spec/current/`
+- [x] T016 [US1] Implement planner in `src/orchestrator/planner.ts`: `planFeature(feature, projectDir, config, callbacks)` spawns `claude -p` subprocess with `--output-format stream-json`, pipes research→spec→plan→tasks prompts sequentially using `--session-id`, parses stream-json events, reports progress via callbacks, saves artifacts to `.diptych/current/`
 - [x] T017 [US1] Implement task parser in `src/spec/parser.ts`: `parseTasks(tasksMarkdown)` parses the generated tasks.md into `Task[]` array, handles YAML frontmatter per task (id, title, action, file, depends_on), extracts sections (Description, Signature, Tests, Constraints, Pattern), returns ordered array respecting dependencies
 
 ### Implementer (local model via API)
@@ -78,7 +78,7 @@
 
 ### TUI (Split-Pane)
 
-- [x] T026 [P] [US1] Implement header component in `src/tui/header.tsx`: displays `tiny-spec | {feature_name} | {elapsed_time}`, fixed top, full width
+- [x] T026 [P] [US1] Implement header component in `src/tui/header.tsx`: displays `diptych | {feature_name} | {elapsed_time}`, fixed top, full width
 - [x] T027 [P] [US1] Implement scrollable pane component in `src/tui/pane.tsx`: props `title, lines[], focused`, windowed rendering (last N lines visible based on terminal height), border with title, highlight on focus, auto-scroll to bottom
 - [x] T028 [P] [US1] Implement status bar in `src/tui/status-bar.tsx`: shows `Phase: {phase} | Task: {current}/{total} | Model: {model} | Retries: {n}`, color-coded by phase
 - [x] T029 [US1] Implement prompt component in `src/tui/prompt.tsx`: approval prompts for spec/plan review, `[Enter] approve [e] open in $EDITOR [q] quit`, spawns `$EDITOR`/`$VISUAL` for spec review, blocks workflow until response
@@ -87,9 +87,9 @@
 
 ### CLI Entry Point (start command)
 
-- [x] T032 [US1] Implement CLI `start` command in `src/cli.ts`: `tiny-spec start <feature>` with flags `--auto`, `--model`, `--provider`, `--project`, validates config + git + model availability, checks Ollama context window (FR-019), renders Ink app with orchestrator
+- [x] T032 [US1] Implement CLI `start` command in `src/cli.ts`: `diptych start <feature>` with flags `--auto`, `--model`, `--provider`, `--project`, validates config + git + model availability, checks Ollama context window (FR-019), renders Ink app with orchestrator
 
-**Checkpoint**: Full pipeline works end-to-end. `tiny-spec start "add hello world"` plans with Opus, implements with local model, validates, commits, reviews, shows summary.
+**Checkpoint**: Full pipeline works end-to-end. `diptych start "add hello world"` plans with Opus, implements with local model, validates, commits, reviews, shows summary.
 
 ---
 
@@ -97,12 +97,12 @@
 
 **Goal**: Generate spec/plan/tasks without running implementation. Outputs usable with any AI tool.
 
-**Independent Test**: Run `tiny-spec spec "add a REST endpoint"` and verify spec.md, plan.md, tasks.md are generated with proper structure.
+**Independent Test**: Run `diptych spec "add a REST endpoint"` and verify spec.md, plan.md, tasks.md are generated with proper structure.
 
-- [x] T033 [US2] Implement CLI `spec` command in `src/cli.ts`: `tiny-spec spec <feature>` with flags `--auto`, `--project`, runs planner only (research → spec → plan → tasks), no TUI (plain console output with progress), saves artifacts to `.tiny-spec/current/`, no implementation phase
+- [x] T033 [US2] Implement CLI `spec` command in `src/cli.ts`: `diptych spec <feature>` with flags `--auto`, `--project`, runs planner only (research → spec → plan → tasks), no TUI (plain console output with progress), saves artifacts to `.diptych/current/`, no implementation phase
 - [x] T034 [US2] Add console-mode output to planner in `src/orchestrator/planner.ts`: when running in spec-only mode, output progress to stdout instead of TUI callbacks (spinner + phase messages)
 
-**Checkpoint**: `tiny-spec spec "feature"` generates spec/plan/tasks files. Each task is self-contained and usable independently.
+**Checkpoint**: `diptych spec "feature"` generates spec/plan/tasks files. Each task is self-contained and usable independently.
 
 ---
 
@@ -110,12 +110,12 @@
 
 **Goal**: Auto-detect local models, create config, verify connectivity.
 
-**Independent Test**: Run `tiny-spec init` with Ollama running. Verify config.yaml created with correct model and provider.
+**Independent Test**: Run `diptych init` with Ollama running. Verify config.yaml created with correct model and provider.
 
-- [x] T035 [US3] Implement CLI `init` command in `src/cli.ts`: `tiny-spec init` with flag `--reconfigure`, calls `detectLocalModels()` from providers.ts, presents interactive model selection (using @inkjs/ui Select), creates `.tiny-spec/config.yaml` via `initConfig()`, verifies context window configuration
-- [x] T036 [US3] Implement CLI `status` command in `src/cli.ts`: `tiny-spec status` loads state.json, displays current phase/task/model info, or "No active workflow" if idle
+- [x] T035 [US3] Implement CLI `init` command in `src/cli.ts`: `diptych init` with flag `--reconfigure`, calls `detectLocalModels()` from providers.ts, presents interactive model selection (using @inkjs/ui Select), creates `.diptych/config.yaml` via `initConfig()`, verifies context window configuration
+- [x] T036 [US3] Implement CLI `status` command in `src/cli.ts`: `diptych status` loads state.json, displays current phase/task/model info, or "No active workflow" if idle
 
-**Checkpoint**: `tiny-spec init` creates correct config. `tiny-spec status` shows workflow state.
+**Checkpoint**: `diptych init` creates correct config. `diptych status` shows workflow state.
 
 ---
 
@@ -123,12 +123,12 @@
 
 **Goal**: Resume from saved state after interruption.
 
-**Independent Test**: Start workflow, interrupt with Ctrl+C during task 3, run `tiny-spec resume`, verify it continues from task 3.
+**Independent Test**: Start workflow, interrupt with Ctrl+C during task 3, run `diptych resume`, verify it continues from task 3.
 
 - [x] T037 [US4] Implement graceful shutdown in `src/orchestrator/orchestrator.ts`: register `process.on('SIGINT')` and `process.on('SIGTERM')`, save current state, discard uncommitted changes (`git checkout -- .`), kill Claude Code subprocess if running, exit cleanly
-- [x] T038 [US4] Implement CLI `resume` command in `src/cli.ts`: `tiny-spec resume` loads saved state from `.tiny-spec/current/state.json`, validates state is resumable (not in planning phase), restarts orchestrator from current task index, renders TUI
+- [x] T038 [US4] Implement CLI `resume` command in `src/cli.ts`: `diptych resume` loads saved state from `.diptych/current/state.json`, validates state is resumable (not in planning phase), restarts orchestrator from current task index, renders TUI
 
-**Checkpoint**: Ctrl+C during implementation saves state. `tiny-spec resume` continues from correct task.
+**Checkpoint**: Ctrl+C during implementation saves state. `diptych resume` continues from correct task.
 
 ---
 
@@ -238,7 +238,7 @@ Task T032: "CLI start command"  (needs T031)
 1. Complete Phase 1: Setup
 2. Complete Phase 2: Foundational
 3. Complete Phase 3: User Story 1 (Full Pipeline)
-4. **STOP and VALIDATE**: Run `tiny-spec start "add hello world"` end-to-end
+4. **STOP and VALIDATE**: Run `diptych start "add hello world"` end-to-end
 5. Ship v0.1-alpha
 
 ### Incremental Delivery

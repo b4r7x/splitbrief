@@ -6,7 +6,7 @@ import { configStore } from './config.js';
 import { feedbackStore } from './feedback.js';
 import type { PlannerConfig } from '../types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { TINY_SPEC_DIR } from '../core/paths.js';
+import { DIPTYCH_DIR } from '../core/paths.js';
 import { createDefaultConfig } from '../core/config/index.js';
 
 function expectCli(p: PlannerConfig): Extract<PlannerConfig, { kind: 'cli' }> {
@@ -22,7 +22,7 @@ function expectShell(p: PlannerConfig): Extract<PlannerConfig, { kind: 'shell' }
 let tmpDir: string;
 
 function writeConfigYaml(extras: Record<string, unknown> = {}) {
-  mkdirSync(join(tmpDir, TINY_SPEC_DIR), { recursive: true });
+  mkdirSync(join(tmpDir, DIPTYCH_DIR), { recursive: true });
   const base = {
     planner: { tool: 'claude-code' },
     implementer: { tool: 'ollama', model: 'qwen2.5-coder:7b', context_length: 8192, temperature: 0.3 },
@@ -32,7 +32,7 @@ function writeConfigYaml(extras: Record<string, unknown> = {}) {
     sessions: { scope: 'project' },
     ...extras,
   };
-  writeFileSync(join(tmpDir, TINY_SPEC_DIR, 'config.yaml'), YAML.stringify(base), 'utf-8');
+  writeFileSync(join(tmpDir, DIPTYCH_DIR, 'config.yaml'), YAML.stringify(base), 'utf-8');
 }
 
 describe('configStore.load', () => {
@@ -162,7 +162,7 @@ describe('configStore.save', () => {
 
     expect(result).toBe(true);
     expect(configStore.get().config!.theme).toBe('mono');
-    const written = YAML.parse(readFileSync(join(tmpDir, TINY_SPEC_DIR, 'config.yaml'), 'utf-8'));
+    const written = YAML.parse(readFileSync(join(tmpDir, DIPTYCH_DIR, 'config.yaml'), 'utf-8'));
     expect(written.theme).toBe('mono');
   });
 

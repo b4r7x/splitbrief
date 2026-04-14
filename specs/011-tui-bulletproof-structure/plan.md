@@ -47,7 +47,7 @@ Restructure `src/tui/` directory from flat file organization to bulletproof-reac
 
 ### Principle VI: Identity & Anti-Goals
 **Status**: ✅ PASS  
-**Rationale**: This is internal code organization improvement for tiny-spec itself. Does not add multi-agent orchestration or blur planner/implementer boundaries. TUI improvement aligns with "beautiful orchestration is product identity" clause.
+**Rationale**: This is internal code organization improvement for diptych itself. Does not add multi-agent orchestration or blur planner/implementer boundaries. TUI improvement aligns with "beautiful orchestration is product identity" clause.
 
 ### Technical Constraints Compliance
 **Status**: ✅ PASS  

@@ -7,18 +7,18 @@ import { renderApp } from '../render.js';
 import { resolveProjectDir } from '../workflow.js';
 import { initStores } from '../init-stores.js';
 import { routerStore } from '../../stores/router.js';
-import { TINY_SPEC_DIR, CONFIG_FILE } from '../../core/paths.js';
+import { DIPTYCH_DIR, CONFIG_FILE } from '../../core/paths.js';
 
 export function registerInitCommand(program: Command): void {
   program
     .command('init')
-    .description(`Create ${TINY_SPEC_DIR}/${CONFIG_FILE} with detected models`)
+    .description(`Create ${DIPTYCH_DIR}/${CONFIG_FILE} with detected models`)
     .option('--reconfigure', 'Overwrite existing config', false)
     .action(async (opts: { reconfigure: boolean }) => {
       const projectDir = resolveProjectDir();
 
       if (existsSync(configPath(projectDir)) && !opts.reconfigure) {
-        console.log(`Config already exists at ${TINY_SPEC_DIR}/${CONFIG_FILE}`);
+        console.log(`Config already exists at ${DIPTYCH_DIR}/${CONFIG_FILE}`);
         console.log('Use --reconfigure to overwrite.');
         return;
       }

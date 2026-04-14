@@ -13,7 +13,7 @@ export interface FixtureProject {
 }
 
 export async function createFixtureProject(): Promise<FixtureProject> {
-  const dir = await mkdtemp(join(tmpdir(), 'tiny-spec-test-'));
+  const dir = await mkdtemp(join(tmpdir(), 'diptych-test-'));
   await mkdir(join(dir, 'src'), { recursive: true });
   await mkdir(join(dir, 'tests'), { recursive: true });
   await writeFile(join(dir, 'package.json'), FIXTURE_PACKAGE_JSON);
