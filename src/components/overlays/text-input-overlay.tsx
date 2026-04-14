@@ -4,7 +4,7 @@ import { Box, Text, useInput } from 'ink';
 import { OverlayPanel } from './overlay-panel.js';
 import { MultilineInput } from '../../ui/input/multiline-input.js';
 import { useTheme } from '../../ui/theme.js';
-import { terminalSizeStore } from '../../stores/terminal-size.js';
+import { getClampedTerminalWidth, terminalSizeStore } from '../../stores/terminal-size.js';
 import { overlayStore } from '../../stores/overlay.js';
 
 interface TextInputOverlayProps {
@@ -61,7 +61,7 @@ export function TextInputOverlay({
           borderStyle="round"
           borderColor={t.accent}
           paddingX={1}
-          width={Math.min(cols - 12, 60)}
+          width={getClampedTerminalWidth(cols, 60, 12)}
         >
           <Box flexGrow={1}>
             <MultilineInput

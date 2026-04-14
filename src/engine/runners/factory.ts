@@ -30,7 +30,7 @@ const PLANNER_FACTORIES: Record<RunnerKind, (config: Config) => Planner> = {
   agent: createAgentPlanner,
   'agent-sdk': (c) => {
     if (c.planner.kind !== 'agent-sdk') throw new Error(`PLANNER_FACTORIES['agent-sdk']: expected planner.kind='agent-sdk', got '${c.planner.kind}'`);
-    return createAgentSdkPlanner(c.planner.model);
+    return createAgentSdkPlanner(c.planner.model, c.planner.apiKey);
   },
 };
 

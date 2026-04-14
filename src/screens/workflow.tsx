@@ -38,9 +38,7 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
   const hasOverlay = overlayStore.use(s => s.active !== 'none');
   const feature = routerStore.use(s => s.screen === 'workflow' ? s.feature : '');
   const resumeState = routerStore.use(s => s.screen === 'workflow' ? s.resumeState : undefined);
-  const cols = terminalSizeStore.use(s => s.cols);
-  const rows = terminalSizeStore.use(s => s.rows);
-  const isSmall = terminalSizeStore.use(s => s.isSmall);
+  const { cols, rows, isSmall } = terminalSizeStore.use(s => s);
 
   const onComplete = (summary: Summary) =>
     routerStore.navigate('summary', { summary });

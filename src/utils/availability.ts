@@ -6,7 +6,7 @@ export const DEFAULT_AVAILABILITY = {
   getVersion: async (): Promise<string | null> => null,
 };
 
-export function createGetVersion(command: string, versionArgs?: string[]): () => Promise<string | null> {
+function createGetVersion(command: string, versionArgs?: string[]): () => Promise<string | null> {
   return async () => {
     try {
       const { stdout, code } = await runCommand(command, versionArgs ?? ['--version']);
@@ -17,7 +17,7 @@ export function createGetVersion(command: string, versionArgs?: string[]): () =>
   };
 }
 
-export function createIsAvailable(command: string, opts?: { timeout?: number | undefined }): () => Promise<boolean> {
+function createIsAvailable(command: string, opts?: { timeout?: number | undefined }): () => Promise<boolean> {
   return async () => {
     try {
       const { code } = await runCommand(command, ['--version'], opts);

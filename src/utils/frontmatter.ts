@@ -1,5 +1,5 @@
-export type FrontmatterValue = string | string[];
-export type FrontmatterRecord = Record<string, FrontmatterValue>;
+type FrontmatterValue = string | string[];
+type FrontmatterRecord = Record<string, FrontmatterValue>;
 
 function stripQuotes(value: string): string {
   if ((value.startsWith('"') && value.endsWith('"')) ||
@@ -29,7 +29,11 @@ export function parseSimpleYamlFrontmatter(raw: string): FrontmatterRecord | nul
 
   let i = 0;
   while (i < lines.length) {
-    const line = lines[i]!;
+    const line = lines[i];
+    if (line === undefined) {
+      i++;
+      continue;
+    }
     const colonIdx = line.indexOf(':');
     if (colonIdx === -1) { i++; continue; }
 
@@ -41,7 +45,8 @@ export function parseSimpleYamlFrontmatter(raw: string): FrontmatterRecord | nul
       const items: string[] = [];
       let j = i + 1;
       while (j < lines.length) {
-        const next = lines[j]!;
+        const next = lines[j];
+        if (next === undefined) break;
         const trimmed = next.trimStart();
         if (trimmed.startsWith('- ')) {
           items.push(stripQuotes(trimmed.slice(2).trim()));

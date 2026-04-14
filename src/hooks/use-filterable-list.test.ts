@@ -85,4 +85,18 @@ describe('useFilterableList', () => {
     expect(onSelect).not.toHaveBeenCalled();
     unmount();
   });
+
+  it('keeps selectedIndex at 0 when navigating an empty filtered list', async () => {
+    const { result, act, unmount } = renderHook(() =>
+      useFilterableList({ items, filterFn, onSelect: vi.fn() }),
+    );
+
+    await act(() => result.current.setFilter('xyz'));
+    await act(() => press({ upArrow: true }));
+    expect(result.current.selectedIndex).toBe(0);
+
+    await act(() => press({ downArrow: true }));
+    expect(result.current.selectedIndex).toBe(0);
+    unmount();
+  });
 });

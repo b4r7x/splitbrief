@@ -24,7 +24,8 @@ export function SetupScreen() {
 
   const finalize = (finalConfig: Config) => {
     if (!projectDir) return;
-    configStore.save(finalConfig);
+    const saved = configStore.save(finalConfig);
+    if (!saved) return;
     if (onComplete === 'workflow' && pendingFeature) {
       routerStore.navigate('workflow', { feature: pendingFeature });
     } else {
@@ -50,8 +51,8 @@ export function SetupScreen() {
         role="planner"
         stepLabel="Choose Planner (1/2)"
         onConfirm={(updated) => {
-          configStore.save(updated);
-          setStep('implementer');
+          const saved = configStore.save(updated);
+          if (saved) setStep('implementer');
         }}
         onCancel={exit}
       />

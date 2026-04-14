@@ -1,7 +1,15 @@
-import { CommandNotFoundError, CommandTimeoutError, createProcessError, type SpawnResult } from '../../utils/process.js';
-import { getChangedFiles } from '../../utils/git.js';
+import { CommandNotFoundError, CommandTimeoutError, createProcessError } from '../../utils/process-errors.js';
+import type { SpawnResult } from '../../utils/process.js';
+import type {
+  AgentImplementerConfig,
+  AgentSdkImplementerConfig,
+  ApiImplementerConfig,
+  Config,
+  ShellImplementerConfig,
+} from '../../types.js';
 import type { ImplementerOptions } from './types.js';
 
+export { createChangeDetector } from '../change-detection.js';
 export const DEFAULT_TIMEOUT = 300_000;
 
 export function assertSpawnSuccess(
@@ -26,14 +34,19 @@ export function assertSpawnSuccess(
   }
 }
 
-export function createChangeDetector(label: string) {
-  return async (projectDir: string) => {
-    const changedFiles = await getChangedFiles(projectDir);
-    if (changedFiles.length === 0) {
-      return { changed: false, output: `${label} exited without changing any files` };
-    }
-    return { changed: true, output: '' };
-  };
+
+export function assertImplementerKind(config: Config, kind: 'api'): ApiImplementerConfig;
+export function assertImplementerKind(config: Config, kind: 'shell'): ShellImplementerConfig;
+export function assertImplementerKind(config: Config, kind: 'agent'): AgentImplementerConfig;
+export function assertImplementerKind(config: Config, kind: 'agent-sdk'): AgentSdkImplementerConfig;
+export function assertImplementerKind(
+  config: Config,
+  kind: Config['implementer']['kind'],
+): Config['implementer'] {
+  if (config.implementer.kind !== kind) {
+    throw new Error(`Expected ${kind} implementer config`);
+  }
+  return config.implementer;
 }
 
 export interface InvokeOpts {

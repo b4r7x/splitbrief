@@ -60,7 +60,7 @@ export interface SetupResult {
   needsSetup?: boolean | undefined;
 }
 
-function hasWorkflowOverrides(opts: WorkflowOpts): boolean {
+function hasRunnerOverrides(opts: WorkflowOpts): boolean {
   return opts.model !== undefined
     || opts.provider !== undefined
     || opts.planner !== undefined
@@ -68,10 +68,7 @@ function hasWorkflowOverrides(opts: WorkflowOpts): boolean {
     || opts.plannerCommand !== undefined
     || opts.implementer !== undefined
     || opts.implementerModel !== undefined
-    || opts.implementerCommand !== undefined
-    || opts.mode !== undefined
-    || opts.auto === true
-    || opts.budget !== undefined;
+    || opts.implementerCommand !== undefined;
 }
 
 export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
@@ -82,7 +79,7 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
   const isInteractive = process.stdout.isTTY && !process.env['CI'];
   const useFullscreen = opts.fullscreen !== false && isInteractive;
 
-  const hasOverrides = hasWorkflowOverrides(opts);
+  const hasOverrides = hasRunnerOverrides(opts);
   if (!existsSync(configPath(projectDir))) {
     if (hasOverrides) {
       console.log(NO_CONFIG_MSG);

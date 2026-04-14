@@ -1,10 +1,8 @@
-import { createStore } from './create-store.js';
+import { createStore, storeBase } from './create-store.js';
 import { isProviderId, type ProviderId } from '../core/providers.js';
 import type { DetectedModel } from '../core/types/config.js';
 import type { ModelsDevCatalog } from '../engine/providers/models-dev.js';
-import { resolveModelCatalog as resolveModelCatalogEngine, type ResolvedModelCatalogEntry } from '../engine/providers/model-catalog.js';
 export type { DetectedModel } from '../core/types/config.js';
-export type { ResolvedModelCatalogEntry } from '../engine/providers/model-catalog.js';
 
 interface ProviderModelCache {
   models: DetectedModel[];
@@ -36,7 +34,7 @@ function isStale(fetchedAt: number): boolean {
 }
 
 export const modelCacheStore = {
-  ...store,
+  ...storeBase(store),
 
   setProviderModels(provider: ProviderId, models: DetectedModel[]): void {
     store.set(prev => ({
@@ -110,10 +108,6 @@ export const modelCacheStore = {
     const { modelsDevFetchedAt } = store.get();
     if (modelsDevFetchedAt === null) return true;
     return Date.now() - modelsDevFetchedAt >= MODELS_DEV_TTL_MS;
-  },
-
-  resolveModelCatalog(providerId: string): ResolvedModelCatalogEntry[] {
-    return resolveModelCatalogEngine(providerId, modelCacheStore);
   },
 
   TTL_MS,

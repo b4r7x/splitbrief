@@ -34,8 +34,12 @@ describe('resolveAutoModel', () => {
     expect(resolveAutoModel('aUtO')).toBeUndefined();
   });
 
-  it('normalizes legacy Claude Code auto to default for picker/config consumers', () => {
-    expect(normalizeConfiguredModel('auto', 'claude-code')).toBe('default');
+  it('canonicalizes auto to lower-case for picker/config consumers', () => {
+    expect(normalizeConfiguredModel('AUTO', 'claude-code')).toBe('auto');
+  });
+
+  it('normalizes legacy Claude Code default to auto for picker/config consumers', () => {
+    expect(normalizeConfiguredModel('default', 'claude-code')).toBe('auto');
   });
 
   it('treats Claude Code default as no override at runtime', () => {
@@ -46,4 +50,3 @@ describe('resolveAutoModel', () => {
     expect(resolveAutoModel('auto', 'openai')).toBe('gpt-5.4');
   });
 });
-

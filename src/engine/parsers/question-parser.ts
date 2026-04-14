@@ -41,7 +41,10 @@ export function extractQuestionsFromStream(text: string): ClarificationQuestion[
     }
 
     const jsonEnd = findBalancedBrace(text, jsonStart);
-    if (jsonEnd === -1) break;
+    if (jsonEnd === -1) {
+      searchFrom = jsonStart + 1;
+      continue;
+    }
 
     const afterJson = jsonEnd + 1;
     if (text.substring(afterJson, afterJson + MARKER_SUFFIX.length) !== MARKER_SUFFIX) {

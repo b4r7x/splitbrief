@@ -29,6 +29,7 @@ export function createClaudeCodePlanner(model?: string): Planner {
 
     ...createCommandAvailability('claude'),
 
+    supportsConversationalPlanning: true,
     supportsHintEscalation: false,
 
     escalateFullPostProcess(task, result, extracted, projectDir): EscalationResult {

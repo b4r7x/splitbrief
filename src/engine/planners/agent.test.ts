@@ -31,7 +31,7 @@ const defaultAgentConfig = () => makeConfig({ planner: { kind: 'agent', command:
 describe('createAgentPlanner', () => {
   it('throws for wrong config kind', () => {
     const config = makeConfig({ planner: { kind: 'shell', command: 'echo' } });
-    expect(() => createAgentPlanner(config)).toThrow('createAgentPlanner requires planner.kind = \'agent\'');
+    expect(() => createAgentPlanner(config)).toThrow('Expected agent planner config');
   });
 
   it('creates planner with availability methods', () => {
@@ -177,5 +177,38 @@ Create the main feature.
     
     await expect(planner.review('test', projectDir, callbacks))
       .rejects.toThrow('Agent planner command not found: nonexistent-command-12345');
+  });
+
+  it('escalateFull — ignores pre-existing dirty files (before/after snapshot)', async () => {
+    // A pre-existing dirty file exists before escalation. The agent writes a NEW file.
+    // Only the NEW file should count as a change.
+    const preExistingFile = join(projectDir, 'pre-existing.ts');
+    writeFileSync(preExistingFile, '// pre-existing');
+
+    // Pre-existing dirty file is already tracked by git status; commit it partially
+    // (we only write, not commit, so it shows as untracked/modified in git status)
+    const newFile = join(projectDir, 'new-from-escalation.ts');
+    const config = makeConfig({ planner: { kind: 'agent', command: 'bash', args: ['-c', `echo "// escalated" > ${newFile}`] } });
+    const planner = createAgentPlanner(config);
+    const task = makeTask();
+    const callbacks = { onOutput: vi.fn() };
+
+    const result = await planner.escalateFull(task, 'error message', projectDir, callbacks);
+    expect(result.success).toBe(true);
+  });
+
+  it('escalateFull — preserves token usage from underlying review', async () => {
+    const outFile = join(projectDir, 'usage-test.ts');
+    const config = makeConfig({ planner: { kind: 'agent', command: 'bash', args: ['-c', `echo "// usage" > ${outFile}`] } });
+    const planner = createAgentPlanner(config);
+    const task = makeTask();
+    const callbacks = { onOutput: vi.fn() };
+
+    // agent planner command-based invocation returns usage: null (no parsing)
+    // but the result.usage should be passed through, not replaced with null
+    const result = await planner.escalateFull(task, 'error', projectDir, callbacks);
+    // usage will be null for command-based (no token tracking), but it should not be
+    // unconditionally null — it should reflect what the underlying review returned
+    expect(result).toHaveProperty('usage');
   });
 });

@@ -37,7 +37,7 @@ export const ConfigSchema = z.object({
 
 export type Config = z.infer<typeof ConfigSchema>;
 
-export type { PlannerConfig, PlannerRunnerKind } from './planner-config.js';
-export type { ImplementerConfig, ImplementerRunnerKind } from './implementer-config.js';
+export type { PlannerConfig } from './planner-config.js';
+export type { ImplementerConfig } from './implementer-config.js';
 
 export { PlannerConfigSchema, ImplementerConfigSchema };

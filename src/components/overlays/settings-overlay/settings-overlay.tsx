@@ -3,12 +3,12 @@ import { useTheme } from '../../../ui/theme.js';
 import { OverlayPanel } from '../overlay-panel.js';
 import { configStore } from '../../../stores/config.js';
 import { overlayStore } from '../../../stores/overlay.js';
-import { computeScrollOffset, CURSOR, NO_CURSOR } from '../../pickers/picker-utils.js';
+import { computeScrollWindow, CURSOR, NO_CURSOR } from '../../pickers/picker-utils.js';
 import { type SettingDef } from '../../../core/settings/catalog.js';
 import { displayValue, valueColor } from '../../../core/settings/presentation.js';
 
 import { useSettingsEditor } from './use-settings-editor.js';
-import { terminalSizeStore } from '../../../stores/terminal-size.js';
+import { getClampedTerminalWidth, terminalSizeStore } from '../../../stores/terminal-size.js';
 import { ScrollIndicator } from '../../../ui/scroll-indicator.js';
 import { FilterInput } from '../../../ui/filter-input.js';
 import { toSectionedList } from '../../../utils/sectioned-list.js';
@@ -26,8 +26,7 @@ export function SettingsOverlay() {
   const rows = terminalSizeStore.use(s => s.rows);
   const showDescription = rows >= DESCRIPTION_MIN_TERMINAL_ROWS;
   const chrome = 9 + (showDescription ? 3 : 0);
-  const panelWidth = Math.min(cols - 4, MAX_PANEL_WIDTH);
-  const maxVisible = Math.max(rows - chrome, MIN_VISIBLE_ROWS);
+  const panelWidth = getClampedTerminalWidth(cols, MAX_PANEL_WIDTH);
 
   const openSubPicker = (def: SettingDef) => {
     overlayStore.open('settings', def.id);
@@ -51,12 +50,10 @@ export function SettingsOverlay() {
     onOpenSubPicker: openSubPicker,
   });
 
-  const scrollOffset = computeScrollOffset(effectiveIndex, maxVisible, filtered.length);
-  const visible = filtered.slice(scrollOffset, scrollOffset + maxVisible);
-  const showScrollUp = scrollOffset > 0;
-  const showScrollDown = scrollOffset + maxVisible < filtered.length;
+  const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } =
+    computeScrollWindow(filtered, effectiveIndex, rows, chrome, MIN_VISIBLE_ROWS);
 
-  const sectionedVisible = toSectionedList(visible, (def) => def.section);
+  const sectionedVisible = toSectionedList(visibleSlice, (def) => def.section);
 
   const hintText = editingId
     ? 'Enter confirm  Esc cancel'

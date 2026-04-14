@@ -1,4 +1,1 @@
-export {
-  TwoColumnPicker,
-  type TwoColumnPickerProps,
-} from './picker.js';
+export { TwoColumnPicker } from './picker.js';

@@ -1,32 +1,58 @@
 import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
-import type { PlannerDetection, ProviderDetection } from '../../types.js';
-import { narrowRecord } from '../../utils/type-guards.js';
+import { dirname } from 'node:path';
+import { z } from 'zod';
+import type { PlannerDetection, ProviderDetection } from '../types/index.js';
+import { PLANNER_TOOL_IDS, PROVIDER_IDS } from '../types/schemas/enums.js';
+import { getTinySpecPath } from '../../utils/fs.js';
 
 const CACHE_FILENAME = 'detection-cache.json';
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
 const CACHE_VERSION = 1;
 
-interface DetectionCache {
-  version: number;
-  timestamp: number;
-  planners: PlannerDetection[];
-  implementers: ProviderDetection[];
-}
+const DetectedModelSchema = z.object({
+  id: z.string(),
+  contextLength: z.number().optional(),
+  pricingInput: z.number().optional(),
+  pricingOutput: z.number().optional(),
+  isFree: z.boolean().optional(),
+  capabilities: z.array(z.string()).optional(),
+  releaseDate: z.string().optional(),
+});
+
+const PlannerDetectionSchema = z.object({
+  tool: z.enum(PLANNER_TOOL_IDS),
+  type: z.enum(['cli', 'api', 'shell']),
+  available: z.boolean(),
+  version: z.string().optional(),
+  description: z.string().optional(),
+  error: z.string().optional(),
+});
+
+const ProviderDetectionSchema = z.object({
+  provider: z.enum(PROVIDER_IDS),
+  available: z.boolean(),
+  models: z.array(DetectedModelSchema).optional(),
+  isLocal: z.boolean(),
+  hasKey: z.boolean().optional(),
+});
+
+const DetectionCacheSchema = z.object({
+  version: z.literal(CACHE_VERSION),
+  timestamp: z.number(),
+  planners: z.array(PlannerDetectionSchema),
+  implementers: z.array(ProviderDetectionSchema),
+});
+
+type DetectionCache = z.infer<typeof DetectionCacheSchema>;
 
 function cachePath(projectDir: string): string {
-  return join(projectDir, '.tiny-spec', CACHE_FILENAME);
+  return getTinySpecPath(projectDir, CACHE_FILENAME);
 }
 
-function isValidCache(value: unknown): value is DetectionCache {
-  const rec = narrowRecord(value);
-  if (!rec) return false;
-  return (
-    rec['version'] === CACHE_VERSION &&
-    typeof rec['timestamp'] === 'number' &&
-    Array.isArray(rec['planners']) &&
-    Array.isArray(rec['implementers'])
-  );
+function parseCache(value: unknown): DetectionCache | null {
+  const result = DetectionCacheSchema.safeParse(value);
+  if (!result.success) return null;
+  return result.data;
 }
 
 export async function loadDetectionCache(
@@ -35,10 +61,10 @@ export async function loadDetectionCache(
 ): Promise<{ planners: PlannerDetection[]; implementers: ProviderDetection[] } | null> {
   try {
     const raw = await readFile(cachePath(projectDir), 'utf-8');
-    const parsed: unknown = JSON.parse(raw);
-    if (!isValidCache(parsed)) return null;
+    const parsed = parseCache(JSON.parse(raw));
+    if (!parsed) return null;
     if (Date.now() - parsed.timestamp >= ttlMs) return null;
-    return { planners: parsed.planners, implementers: parsed.implementers };
+    return { planners: parsed.planners as PlannerDetection[], implementers: parsed.implementers as ProviderDetection[] };
   } catch {
     return null;
   }

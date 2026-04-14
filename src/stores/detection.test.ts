@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os';
 import type { PlannerDetection, ProviderDetection } from '../types.js';
 import { modelCacheStore } from './model-cache.js';
 import { detectionStore } from './detection.js';
-import type { DetectionDeps } from './detection.js';
+import { loadDetectionIntoStores } from './detection-adapter.js';
+import { invalidateDetection, getPendingSave, resetServiceState } from '../engine/detection/index.js';
+import type { DetectionDeps } from '../engine/detection/index.js';
 import type { fetchModelsDevCatalog } from '../engine/providers/models-dev.js';
 
 const makePlanner = (overrides?: Partial<PlannerDetection>): PlannerDetection => ({
@@ -35,6 +37,7 @@ describe('detectionStore', () => {
   beforeEach(() => {
     detectionStore.reset();
     modelCacheStore.reset();
+    resetServiceState();
   });
 
   it('starts with empty planners and implementers', () => {
@@ -48,7 +51,7 @@ describe('detectionStore', () => {
     const implementers = [makeImplementer({ provider: 'ollama' }), makeImplementer({ provider: 'lm-studio', available: false })];
     const deps = makeDeps({ detectAll: vi.fn().mockResolvedValue({ planners, implementers }) });
 
-    await detectionStore.load(deps);
+    await loadDetectionIntoStores(deps);
 
     expect(deps.detectAll).toHaveBeenCalledOnce();
     const state = detectionStore.get();
@@ -58,7 +61,7 @@ describe('detectionStore', () => {
 
   it('reset() clears populated detection state', async () => {
     const deps = makeDeps({ detectAll: vi.fn().mockResolvedValue({ planners: [makePlanner()], implementers: [makeImplementer()] }) });
-    await detectionStore.load(deps);
+    await loadDetectionIntoStores(deps);
     expect(detectionStore.get().planners).toHaveLength(1);
 
     detectionStore.reset();
@@ -74,24 +77,25 @@ describe('detectionStore', () => {
     beforeEach(async () => {
       tempDir = await mkdtemp(join(tmpdir(), 'tiny-spec-detection-store-test-'));
       detectionStore.reset();
+      resetServiceState();
     });
 
     afterEach(async () => {
-      await detectionStore._pendingSave;
+      await getPendingSave();
       await rm(tempDir, { recursive: true, force: true });
     });
 
     it('load() with projectDir uses cache on second call', async () => {
       const deps = makeDeps({ detectAll: vi.fn().mockResolvedValue({ planners: [makePlanner()], implementers: [makeImplementer()] }) });
 
-      await detectionStore.load(deps, tempDir);
+      await loadDetectionIntoStores(deps, tempDir);
       expect(deps.detectAll).toHaveBeenCalledOnce();
       expect(deps.fetchModelsDevCatalog).toHaveBeenCalledOnce();
       expect(deps.discoverAllCliTools).toHaveBeenCalledOnce();
 
-      await detectionStore._pendingSave;
+      await getPendingSave();
 
-      await detectionStore.load(deps, tempDir);
+      await loadDetectionIntoStores(deps, tempDir);
       expect(deps.detectAll).toHaveBeenCalledTimes(1);
       expect(deps.fetchModelsDevCatalog).toHaveBeenCalledTimes(2);
       expect(deps.discoverAllCliTools).toHaveBeenCalledTimes(2);
@@ -121,13 +125,13 @@ describe('detectionStore', () => {
         discoverAllCliTools: vi.fn().mockResolvedValue({ opencode: [{ id: 'anthropic/claude-sonnet-4.6' }] }),
       });
 
-      await detectionStore.load(deps, tempDir);
-      await detectionStore._pendingSave;
+      await loadDetectionIntoStores(deps, tempDir);
+      await getPendingSave();
 
       detectionStore.reset();
       modelCacheStore.reset();
 
-      await detectionStore.load(deps, tempDir);
+      await loadDetectionIntoStores(deps, tempDir);
 
       expect(deps.detectAll).toHaveBeenCalledTimes(1);
       expect(deps.fetchModelsDevCatalog).toHaveBeenCalledTimes(2);
@@ -138,8 +142,8 @@ describe('detectionStore', () => {
 
     it('load() without projectDir always runs detection', async () => {
       const deps = makeDeps();
-      await detectionStore.load(deps);
-      await detectionStore.load(deps);
+      await loadDetectionIntoStores(deps);
+      await loadDetectionIntoStores(deps);
 
       expect(deps.detectAll).toHaveBeenCalledTimes(2);
     });
@@ -147,12 +151,12 @@ describe('detectionStore', () => {
     it('invalidate() forces re-detection on next load', async () => {
       const deps = makeDeps({ detectAll: vi.fn().mockResolvedValue({ planners: [makePlanner()], implementers: [makeImplementer()] }) });
 
-      await detectionStore.load(deps, tempDir);
+      await loadDetectionIntoStores(deps, tempDir);
       expect(deps.detectAll).toHaveBeenCalledOnce();
 
-      await detectionStore.invalidate(tempDir);
+      await invalidateDetection(tempDir);
 
-      await detectionStore.load(deps, tempDir);
+      await loadDetectionIntoStores(deps, tempDir);
       expect(deps.detectAll).toHaveBeenCalledTimes(2);
     });
   });

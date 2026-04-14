@@ -79,6 +79,58 @@ describe('detection cache', () => {
     expect(result).toBeNull();
   });
 
+  it('returns null when a planner entry is missing required fields', async () => {
+    const dir = join(tempDir, '.tiny-spec');
+    await mkdir(dir, { recursive: true });
+    const badPlanners = [{ description: 'no tool or type field' }];
+    const cache = { version: 1, timestamp: Date.now(), planners: badPlanners, implementers };
+    await writeFile(join(dir, 'detection-cache.json'), JSON.stringify(cache), 'utf-8');
+    const result = await loadDetectionCache(tempDir, 60_000);
+    expect(result).toBeNull();
+  });
+
+  it('returns null when a planner entry has an invalid tool value', async () => {
+    const dir = join(tempDir, '.tiny-spec');
+    await mkdir(dir, { recursive: true });
+    const badPlanners = [{ tool: 'unknown-tool', type: 'cli', available: true }];
+    const cache = { version: 1, timestamp: Date.now(), planners: badPlanners, implementers };
+    await writeFile(join(dir, 'detection-cache.json'), JSON.stringify(cache), 'utf-8');
+    const result = await loadDetectionCache(tempDir, 60_000);
+    expect(result).toBeNull();
+  });
+
+  it('returns null when an implementer entry is missing required fields', async () => {
+    const dir = join(tempDir, '.tiny-spec');
+    await mkdir(dir, { recursive: true });
+    const badImplementers = [{ available: true }];
+    const cache = { version: 1, timestamp: Date.now(), planners, implementers: badImplementers };
+    await writeFile(join(dir, 'detection-cache.json'), JSON.stringify(cache), 'utf-8');
+    const result = await loadDetectionCache(tempDir, 60_000);
+    expect(result).toBeNull();
+  });
+
+  it('returns null when an implementer has a malformed model entry', async () => {
+    const dir = join(tempDir, '.tiny-spec');
+    await mkdir(dir, { recursive: true });
+    const badImplementers = [
+      { provider: 'ollama', available: true, isLocal: true, models: [{ notId: 123 }] },
+    ];
+    const cache = { version: 1, timestamp: Date.now(), planners, implementers: badImplementers };
+    await writeFile(join(dir, 'detection-cache.json'), JSON.stringify(cache), 'utf-8');
+    const result = await loadDetectionCache(tempDir, 60_000);
+    expect(result).toBeNull();
+  });
+
+  it('returns null when available field has wrong type', async () => {
+    const dir = join(tempDir, '.tiny-spec');
+    await mkdir(dir, { recursive: true });
+    const badPlanners = [{ tool: 'claude-code', type: 'cli', available: 'yes' }];
+    const cache = { version: 1, timestamp: Date.now(), planners: badPlanners, implementers };
+    await writeFile(join(dir, 'detection-cache.json'), JSON.stringify(cache), 'utf-8');
+    const result = await loadDetectionCache(tempDir, 60_000);
+    expect(result).toBeNull();
+  });
+
   it('roundtrips empty arrays', async () => {
     await saveDetectionCache(tempDir, [], []);
     const result = await loadDetectionCache(tempDir, 60_000);

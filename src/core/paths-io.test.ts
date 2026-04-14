@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileOrEmpty } from '../utils/fs.js';
@@ -11,8 +11,6 @@ import {
   validateTaskPath,
   validateFilename,
   buildSpecFrontmatter,
-  setSpecMetadata,
-  resetSpecMetadata,
   type SpecMetadata,
 } from './paths-io.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -150,6 +148,18 @@ describe('validateTaskPath', () => {
     const dir = makeTmp();
     expect(() => validateTaskPath(dir, '/etc/passwd')).toThrow('escapes project directory');
   });
+
+  it('rejects sibling directory with similar prefix', () => {
+    const dir = makeTmp();
+    const siblingRelative = '../' + dir.split('/').pop() + '-evil/malicious.ts';
+    expect(() => validateTaskPath(dir, siblingRelative)).toThrow('escapes project directory');
+  });
+
+  it('allows root-level file path', () => {
+    const dir = makeTmp();
+    const resolved = validateTaskPath(dir, 'file.ts');
+    expect(resolved).toBe(join(dir, 'file.ts'));
+  });
 });
 
 describe('buildSpecFrontmatter', () => {
@@ -191,18 +201,11 @@ describe('buildSpecFrontmatter', () => {
 });
 
 describe('writeSpecFile with metadata', () => {
-  beforeEach(() => {
-    resetSpecMetadata();
-  });
+  const meta: SpecMetadata = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' };
 
-  afterEach(() => {
-    resetSpecMetadata();
-  });
-
-  it('prepends frontmatter to spec files when metadata is set', () => {
+  it('prepends frontmatter to spec files when metadata is passed', () => {
     const dir = makeTmp();
-    setSpecMetadata({ plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' });
-    writeSpecFile(dir, 'spec.md', '# My Spec');
+    writeSpecFile(dir, 'spec.md', '# My Spec', meta);
     const content = readSpecFile(dir, 'spec.md')!;
     expect(content).toMatch(/^---\n/);
     expect(content).toContain('generated_by: tiny-spec v');
@@ -211,22 +214,20 @@ describe('writeSpecFile with metadata', () => {
 
   it('does not prepend frontmatter to non-spec files', () => {
     const dir = makeTmp();
-    setSpecMetadata({ plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' });
-    writeSpecFile(dir, 'research.md', '# Research');
+    writeSpecFile(dir, 'research.md', '# Research', meta);
     expect(readSpecFile(dir, 'research.md')).toBe('# Research');
   });
 
   it('does not double-prepend when content already has frontmatter', () => {
     const dir = makeTmp();
-    setSpecMetadata({ plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' });
     const existing = '---\ngenerated_by: tiny-spec v0.1.0\n---\n# Spec with clarifications';
-    writeSpecFile(dir, 'spec.md', existing);
+    writeSpecFile(dir, 'spec.md', existing, meta);
     const content = readSpecFile(dir, 'spec.md')!;
     const fmCount = (content.match(/generated_by:/g) ?? []).length;
     expect(fmCount).toBe(1);
   });
 
-  it('does not prepend when metadata is not set', () => {
+  it('does not prepend when metadata is not passed', () => {
     const dir = makeTmp();
     writeSpecFile(dir, 'spec.md', '# Plain Spec');
     expect(readSpecFile(dir, 'spec.md')).toBe('# Plain Spec');

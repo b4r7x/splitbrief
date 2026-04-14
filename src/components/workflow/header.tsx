@@ -16,8 +16,7 @@ function formatElapsed(startedAt: string): string {
 }
 
 export function Header({ startedAt }: HeaderProps) {
-  const cols = terminalSizeStore.use(s => s.cols);
-  const isSmall = terminalSizeStore.use(s => s.isSmall);
+  const { cols, isSmall } = terminalSizeStore.use(s => s);
   const t = useTheme();
   const feature = routerStore.use(s => s.screen === 'workflow' ? s.feature : '');
   const phase = workflowStore.use(s => s.phase);

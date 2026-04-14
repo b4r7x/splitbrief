@@ -1,5 +1,5 @@
 import type { WorkflowState, OrchestratorCallbacks, ClarificationQuestion } from '../../types.js';
-import { readSpecFileOrEmpty, writeSpecFile } from '../../core/paths-io.js';
+import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE } from '../../core/paths.js';
 import { emit } from './events.js';
 
@@ -8,6 +8,7 @@ export async function collectAndPersistClarifications(
   projectDir: string,
   state: WorkflowState,
   onQuestionAsked: NonNullable<OrchestratorCallbacks['onQuestionAsked']>,
+  metadata?: SpecMetadata | null,
 ): Promise<void> {
   const clarifications: Array<{ question: string; answer: string }> = [];
   const total = questions.length;
@@ -35,7 +36,7 @@ export async function collectAndPersistClarifications(
     content += `\n${entries}\n`;
   }
 
-  writeSpecFile(projectDir, SPEC_FILE, content);
+  writeSpecFile(projectDir, SPEC_FILE, content, metadata);
   emit(projectDir, state, 'clarifications_collected', undefined, {
     count: clarifications.length,
     clarifications,

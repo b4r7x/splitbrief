@@ -1,6 +1,5 @@
 import type { PlannerToolId, ProviderId } from './schemas/enums.js';
-import type { z } from 'zod';
-import type { PlannerConfigSchema, ImplementerConfigSchema, ConfigSchema } from './schemas/config.js';
+export type { PlannerConfig, ImplementerConfig, Config } from './schemas/config.js';
 
 export interface DetectedModel {
   id: string;
@@ -37,12 +36,6 @@ export type {
 } from './schemas/planner-config.js';
 
 export type PlannerTool = PlannerToolId;
-
-export type PlannerConfig = z.infer<typeof PlannerConfigSchema>;
-
-export type ImplementerConfig = z.infer<typeof ImplementerConfigSchema>;
-
-export type Config = z.infer<typeof ConfigSchema>;
 
 export interface WorkflowOpts {
   auto?: boolean | undefined;

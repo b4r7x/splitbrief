@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import {
-  formatContextLength,
-  formatPrice,
-} from './metadata.js';
+import { formatContextLength } from '../../utils/format.js';
+import { formatPrice } from './metadata.js';
 
 describe('formatContextLength', () => {
   it('returns empty string for undefined', () => {

@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import YAML from 'yaml';
 import type { Config } from '../types/index.js';
 import { resolveDefaultApiBase, KNOWN_PROVIDER_BASE_URLS } from '../providers.js';
@@ -7,12 +6,12 @@ import { validateConfig } from './validation.js';
 import { fromYaml, toYaml } from './transforms.js';
 import { TINY_SPEC_DIR, CONFIG_FILE } from '../paths.js';
 import { migrateConfig } from './migration.js';
-import { writeSecureFile, checkConfigPermissions } from '../../utils/fs.js';
+import { writeSecureFile, checkConfigPermissions, getTinySpecPath } from '../../utils/fs.js';
 import { ensureGitignore } from '../../utils/git.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 
 export function configPath(projectDir: string): string {
-  return path.join(projectDir, TINY_SPEC_DIR, CONFIG_FILE);
+  return getTinySpecPath(projectDir, CONFIG_FILE);
 }
 
 export function createDefaultConfig(): Config {
@@ -114,12 +113,12 @@ export function loadConfig(projectDir: string): Config {
 }
 
 export function writeConfig(projectDir: string, config: Config): void {
-  const configFilePath = path.join(projectDir, TINY_SPEC_DIR, CONFIG_FILE);
+  const configFilePath = getTinySpecPath(projectDir, CONFIG_FILE);
   writeSecureFile(configFilePath, YAML.stringify(toYaml(config)));
 }
 
 export function initConfig(projectDir: string, opts: { force?: boolean } = {}): void {
-  const configFilePath = path.join(projectDir, TINY_SPEC_DIR, CONFIG_FILE);
+  const configFilePath = getTinySpecPath(projectDir, CONFIG_FILE);
 
   if (!opts.force && fs.existsSync(configFilePath)) return;
 

@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join, resolve, isAbsolute, dirname } from 'node:path';
+import { join, resolve, relative, isAbsolute, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TINY_SPEC_DIR, CURRENT_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE } from './paths.js';
 import { ensureSecureDir, validateSafeIdentifier, SECURE_FILE_MODE } from '../utils/fs.js';
@@ -20,20 +20,6 @@ export type SpecMetadata = {
   implementerModel?: string | undefined;
   mode: string;
 };
-
-let activeMetadata: SpecMetadata | null = null;
-
-export function setSpecMetadata(meta: SpecMetadata | null): void {
-  activeMetadata = meta;
-}
-
-export function getSpecMetadata(): SpecMetadata | null {
-  return activeMetadata;
-}
-
-export function resetSpecMetadata(): void {
-  activeMetadata = null;
-}
 
 const FRONTMATTER_FILES = new Set([SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE]);
 
@@ -69,12 +55,12 @@ export function validateFilename(filename: string): void {
   validateSafeIdentifier(filename, 'filename');
 }
 
-export function writeSpecFile(projectDir: string, filename: string, content: string): void {
+export function writeSpecFile(projectDir: string, filename: string, content: string, metadata?: SpecMetadata | null): void {
   validateFilename(filename);
   ensureTinySpecDir(projectDir);
   let finalContent = content;
-  if (activeMetadata && FRONTMATTER_FILES.has(filename) && !content.startsWith('---\n')) {
-    finalContent = buildSpecFrontmatter(activeMetadata) + content;
+  if (metadata && FRONTMATTER_FILES.has(filename) && !content.startsWith('---\n')) {
+    finalContent = buildSpecFrontmatter(metadata) + content;
   }
   writeFileSync(join(currentDir(projectDir), filename), finalContent, { encoding: 'utf-8', mode: SECURE_FILE_MODE });
 }
@@ -94,8 +80,10 @@ export function validateTaskPath(projectDir: string, filePath: string): string {
   if (isAbsolute(filePath)) {
     throw new Error(`Path '${filePath}' escapes project directory`);
   }
-  const resolved = resolve(join(projectDir, filePath));
-  if (!resolved.startsWith(resolve(projectDir))) {
+  const root = resolve(projectDir);
+  const resolved = resolve(root, filePath);
+  const rel = relative(root, resolved);
+  if (rel.startsWith('..') || isAbsolute(rel)) {
     throw new Error(`Path '${filePath}' escapes project directory`);
   }
   return resolved;

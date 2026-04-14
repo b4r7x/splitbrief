@@ -1,4 +1,4 @@
-import { getProviderDisplayName } from './providers.js';
+import { getProviderDisplayName } from './providers/catalog.js';
 
 export function formatToolModel(tool?: string, model?: string): string {
   if (!tool && !model) return '';
@@ -8,8 +8,7 @@ export function formatToolModel(tool?: string, model?: string): string {
 }
 
 const MODEL_DISPLAY_NAMES: Record<string, string> = {
-  'auto': 'Auto (tool default)',
-  'default': 'Default (tool default)',
+  'auto': 'Auto',
   'sonnet': 'Sonnet',
   'opus': 'Opus',
   'opusplan': 'OpusPlan',
@@ -133,12 +132,12 @@ function parseModelName(rawId: string): string {
 export function formatModelName(modelId: string): string {
   if (!modelId) return '';
 
-  const direct = MODEL_DISPLAY_NAMES[modelId];
+  const direct = MODEL_DISPLAY_NAMES[modelId] ?? MODEL_DISPLAY_NAMES[modelId.toLowerCase()];
   if (direct) return direct;
 
   const stripped = stripVendorPrefix(modelId);
   if (stripped !== modelId) {
-    const lookup = MODEL_DISPLAY_NAMES[stripped];
+    const lookup = MODEL_DISPLAY_NAMES[stripped] ?? MODEL_DISPLAY_NAMES[stripped.toLowerCase()];
     if (lookup) return lookup;
   }
 

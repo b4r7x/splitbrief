@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { guardIntegration } from './guard.js';
+import { withTempDir } from '../helpers/temp-dir.js';
 import { createInitialState } from '../../src/core/state/machine.js';
 import { saveState, loadState } from '../../src/core/state/persistence.js';
 import { getCompletedTaskIds, getEscalatedTaskIds } from '../../src/core/state/selectors.js';
@@ -14,8 +12,7 @@ describe('Resume with token preservation integration', () => {
     const g = await guardIntegration();
     if (g.skip) { t.skip(); return; }
 
-    const tmpDir = await mkdtemp(join(tmpdir(), 'tiny-spec-resume-'));
-    try {
+    await withTempDir('tiny-spec-resume', async (tmpDir) => {
       const tasks = [
         makeTask({ id: 't1', title: 'Task t1', file: 'src/t1.ts', description: 'Description for t1', status: 'done' }),
         makeTask({ id: 't2', title: 'Task t2', file: 'src/t2.ts', description: 'Description for t2', status: 'done' }),
@@ -56,8 +53,6 @@ describe('Resume with token preservation integration', () => {
       expect(loaded.tokenUsage.implementerOutput).toBe(6000);
       expect(loaded.tokenUsage.escalationInput).toBe(800);
       expect(loaded.tokenUsage.escalationOutput).toBe(400);
-    } finally {
-      await rm(tmpDir, { recursive: true, force: true });
-    }
+    });
   });
 });

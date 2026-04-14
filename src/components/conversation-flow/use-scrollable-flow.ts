@@ -5,7 +5,7 @@ import { trimSectionsToViewport, type DynamicSection } from './viewport-trimming
 import { conversationScrollStore } from '../../stores/conversation-scroll.js';
 import { workflowStore } from '../../stores/workflow.js';
 
-export interface TaskCompletedSummary {
+interface TaskCompletedSummary {
   index: number;
   title: string;
   method: TaskCompletionMethod;

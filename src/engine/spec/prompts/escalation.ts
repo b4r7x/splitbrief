@@ -1,5 +1,5 @@
 import type { Task } from '../../../types.js';
-import { buildPrompt, ESM_CONVENTION, type PromptSection } from './_shared.js';
+import { buildPrompt, ESM_CONVENTION, type PromptSection } from './shared.js';
 
 function taskMetaSection(task: Task): PromptSection {
   return {

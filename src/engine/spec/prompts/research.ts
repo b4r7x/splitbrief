@@ -1,4 +1,4 @@
-import { buildPrompt } from './_shared.js';
+import { buildPrompt } from './shared.js';
 
 export function buildResearchPrompt(feature: string, projectContext: string, skillsContext?: string): string {
   return buildPrompt({

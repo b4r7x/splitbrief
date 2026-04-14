@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../ui/theme.js';
 import { type FilterableItem } from '../picker-utils.js';
-import { terminalSizeStore } from '../../../stores/terminal-size.js';
+import { getResponsivePanelWidth, terminalSizeStore } from '../../../stores/terminal-size.js';
 import { SingleColumnPicker } from '../single-column-picker.js';
 import {
   useTwoColumnState,
@@ -52,18 +52,18 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
   onRefresh,
 }: TwoColumnPickerProps<L, R>) {
   const t = useTheme();
-  const cols = terminalSizeStore.use(s => s.cols);
-  const rows = terminalSizeStore.use(s => s.rows);
-  const isSmall = terminalSizeStore.use(s => s.isSmall);
+  const { cols, rows, isSmall } = terminalSizeStore.use(s => s);
 
   const contentMaxWidth = isSmall ? 76 : 110;
   const outerChrome = 6; // title(1) + marginBottom(2) + hint(1) + marginTop(2)
-  const innerChrome = 7; // border(2) + label(1) + filter(1) + filterMargin(1) + scrollUp(1) + scrollDown(1)
+  const innerChrome = 6; // border(2) + label(1) + filter(1) + scrollUp(1) + scrollDown(1)
   const maxVisible = Math.min(Math.max(rows - outerChrome - innerChrome, 3), 20);
   const columnHeight = maxVisible + innerChrome;
-  const totalBoxWidth = Math.min(cols - 4, contentMaxWidth);
-  const columnContentWidth =
-    Math.floor((totalBoxWidth - COLUMN_GAP) / 2) - BORDER_WIDTH - INNER_PADDING - CURSOR_WIDTH;
+  const totalBoxWidth = getResponsivePanelWidth(cols, isSmall, { small: contentMaxWidth, large: contentMaxWidth });
+  const columnContentWidth = Math.max(
+    1,
+    Math.floor((totalBoxWidth - COLUMN_GAP) / 2) - BORDER_WIDTH - INNER_PADDING - CURSOR_WIDTH,
+  );
 
   const nav = useTwoColumnState<L, R>({
     leftProps,
@@ -117,7 +117,6 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
           contentMaxWidth={columnContentWidth}
           hideFilterRow={hideRightFilter}
           placeholderWhenEmpty={placeholderNode}
-          footer={null}
           renderRow={(item, isCursor, maxWidth) => {
             if (isVirtualCustomItem(item)) {
               return <Text color={isCursor ? t.accent : t.textDim} italic>+ Custom model...</Text>;

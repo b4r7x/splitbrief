@@ -8,7 +8,7 @@ import { routerStore } from './stores/router.js';
 import { configStore } from './stores/config.js';
 import { overlayStore } from './stores/overlay.js';
 import { feedbackStore } from './stores/feedback.js';
-import { detectionStore } from './stores/detection.js';
+import { refreshDetection } from './engine/detection/index.js';
 import { HomeScreen } from './screens/home.js';
 import { WorkflowScreen } from './screens/workflow.js';
 import { SummaryScreen } from './screens/summary.js';
@@ -16,6 +16,7 @@ import { SetupScreen } from './screens/setup.js';
 import { HelpOverlay } from './components/overlays/help-overlay.js';
 import { CommandPalette } from './components/overlays/command-palette.js';
 import { SkillsPicker } from './components/overlays/skills-picker/index.js';
+import { SessionsPicker } from './components/overlays/sessions-picker/index.js';
 import { SettingsOverlay } from './components/overlays/settings-overlay/index.js';
 import { ModeSelector } from './components/overlays/mode-selector.js';
 import { ToolModelPicker } from './components/overlays/tool-model-picker/index.js';
@@ -34,14 +35,14 @@ export function App() {
     quit: exit,
     setWorkflowMode: (mode) => {
       const current = configStore.get().config;
-      if (!current) return;
-      configStore.save({ ...current, workflow: { ...current.workflow, mode } });
+      if (!current) return false;
+      return configStore.save({ ...current, workflow: { ...current.workflow, mode } });
     },
     setFeedbackMessage: feedbackStore.setMessage,
     setFeedbackError: feedbackStore.setError,
     refreshDetection: async () => {
       const projectDir = configStore.get().projectDir;
-      await detectionStore.refresh(projectDir);
+      await refreshDetection(projectDir);
     },
   };
   const commands = createCommands(ctx);
@@ -120,6 +121,8 @@ function renderOverlay({ active, screen, commands, paletteItems }: {
       return <ToolModelPicker role="planner" />;
     case 'implementer-picker':
       return <ToolModelPicker role="implementer" />;
+    case 'sessions':
+      return <SessionsPicker />;
     default: {
       active satisfies never;
       return null;

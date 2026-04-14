@@ -1,12 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '#testing/helpers/render-hook.js';
 import { makeConfig, makeTask } from '#testing/helpers/fixtures.js';
+import type { RunWorkflowOptions } from '../engine/orchestrator/run.js';
 
-vi.mock('../engine/orchestrator/index.js', () => ({
-  runWorkflow: () => new Promise(() => {}), // never resolves — simulates a running workflow
+const { runWorkflowMock } = vi.hoisted(() => ({
+  runWorkflowMock: vi.fn<(opts: RunWorkflowOptions) => Promise<never>>(() => new Promise<never>(() => {})),
 }));
 
-vi.mock('../utils/process.js', () => ({
+vi.mock('../engine/orchestrator/index.js', () => ({
+  runWorkflow: runWorkflowMock, // never resolves — simulates a running workflow
+}));
+
+vi.mock('../utils/process-lifecycle.js', () => ({
   killAllProcesses: vi.fn(),
 }));
 
@@ -14,7 +19,10 @@ import { useWorkflow } from './use-workflow.js';
 import { workflowStore } from '../stores/workflow.js';
 
 describe('useWorkflow', () => {
-  beforeEach(() => workflowStore.reset());
+  beforeEach(() => {
+    workflowStore.reset();
+    runWorkflowMock.mockClear();
+  });
   it('does not call onComplete on mount', () => {
     const config = makeConfig();
     const onComplete = vi.fn();
@@ -69,5 +77,35 @@ describe('useWorkflow', () => {
     expect(state.totalTasks).toBe(4);
     unmount();
   });
-});
 
+  it('requestCancel resolves an in-flight approval prompt and resets input mode', async () => {
+    const config = makeConfig();
+    const onComplete = vi.fn();
+
+    const { result, act, unmount } = renderHook(() =>
+      useWorkflow({
+        feature: 'test',
+        projectDir: '/tmp/proj',
+        config,
+        onComplete,
+      }),
+    );
+
+    await act(() => {});
+    const workflowCall = runWorkflowMock.mock.calls.at(0)?.[0];
+    expect(workflowCall).toBeDefined();
+    if (!workflowCall) throw new Error('expected runWorkflow call');
+
+    const approvalPromise = workflowCall.callbacks.onApprovalNeeded('spec', '/tmp/spec.md');
+    await act(() => {});
+    expect(result.current.inputMode).toBe('review');
+
+    await act(() => {
+      workflowStore.requestCancel();
+    });
+
+    await expect(approvalPromise).resolves.toEqual({ approved: false });
+    expect(result.current.inputMode).toBe('normal');
+    unmount();
+  });
+});

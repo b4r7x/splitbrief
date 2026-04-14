@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import { z } from 'zod';
 import type { DetectedModel, ProviderDef, ProviderDefWithMetadata, ProviderOverrides } from './types.js';
-import { warnError } from '../../utils/format.js';
+import { warnError } from '../../utils/warn.js';
 
 const OpenAIModelListSchema = z.looseObject({
   data: z.array(z.looseObject({ id: z.string() })),
@@ -44,6 +44,8 @@ export async function fetchModelList<T = string>(
     return [];
   }
 }
+
+export const DEFAULT_MODEL_FALLBACK = (id: string): { id: string } => ({ id });
 
 export interface MetadataProviderOpts<TRaw extends { id: string }> {
   name: string;

@@ -33,7 +33,7 @@ export function calculateCost(inputTokens: number, outputTokens: number, pricing
          (outputTokens / 1_000_000) * pricing.outputPer1M;
 }
 
-export type CostBreakdownOptions = {
+type CostBreakdownOptions = {
   tokenUsage: TokenUsage;
   totalTasks: number;
   escalatedCount: number;
@@ -48,7 +48,9 @@ export function calculateCostBreakdown(opts: CostBreakdownOptions, cache?: Model
   const plannerPricing = resolvePricing(plannerTool, cache, plannerModel);
   const implementerPricing = resolvePricing(implementerTool, cache, implementerModel);
 
-  const hypotheticalCost = plannerPricing.isPriced
+  // hypotheticalImplementerCost: what the implementer tokens would have cost at planner rates.
+  // Used to compute savings = how much cheaper the implementer was vs using the planner for the same work.
+  const hypotheticalImplementerCost = plannerPricing.isPriced
     ? calculateCost(tokenUsage.implementerInput, tokenUsage.implementerOutput, plannerPricing)
     : 0;
 
@@ -63,8 +65,10 @@ export function calculateCostBreakdown(opts: CostBreakdownOptions, cache?: Model
 
   const totalActualCost = actualPlannerCost + actualImplementerCost;
   const hasSavingsEstimate = plannerPricing.isPriced;
-  const savingsAmount = hasSavingsEstimate ? hypotheticalCost - totalActualCost : 0;
-  const savingsPercentage = hasSavingsEstimate && hypotheticalCost > 0 ? (savingsAmount / hypotheticalCost) * 100 : 0;
+  // Savings = what it would have cost to use the planner for implementation vs what the implementer actually cost.
+  // Note: planner cost is excluded from both sides — it is fixed regardless of implementer choice.
+  const savingsAmount = hasSavingsEstimate ? hypotheticalImplementerCost - actualImplementerCost : 0;
+  const savingsPercentage = hasSavingsEstimate && hypotheticalImplementerCost > 0 ? (savingsAmount / hypotheticalImplementerCost) * 100 : 0;
   const localCompletionRate = totalTasks > 0 ? (totalTasks - escalatedCount) / totalTasks : 0;
   const hasPricedUsage = plannerPricing.isPriced || implementerPricing.isPriced;
   const hasUnpricedUsage = !plannerPricing.isPriced || !implementerPricing.isPriced;
@@ -95,7 +99,7 @@ export function calculateCostBreakdown(opts: CostBreakdownOptions, cache?: Model
   }
 
   return {
-    hypotheticalCost,
+    hypotheticalCost: hypotheticalImplementerCost,
     actualPlannerCost,
     actualImplementerCost,
     totalActualCost,

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { buildSummary, calculateTaskCost } from './cost.js';
+import { buildSummary, calculateTaskCost } from './summary.js';
 import { calculateCostBreakdown } from '../providers/pricing.js';
-import type { BuildSummaryState } from './cost.js';
+import type { BuildSummaryState } from './summary.js';
 import { taskId } from '../../core/types/workflow.js';
 import { makeUsage, makeTask } from '#testing/helpers/fixtures.js';
 
@@ -260,7 +260,7 @@ describe('calculateCostBreakdown', () => {
     expect(Number.isFinite(result.savingsPercentage)).toBe(true);
   });
 
-  it('negative savings clamped to 0', () => {
+  it('planner spend does not reduce implementer savings', () => {
     const usage = makeUsage({
       plannerInput: 10_000_000,
       plannerOutput: 5_000_000,
@@ -275,8 +275,8 @@ describe('calculateCostBreakdown', () => {
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'ollama',
     });
-    expect(result.savingsAmount).toBe(0);
-    expect(result.savingsPercentage).toBe(0);
+    expect(result.savingsAmount).toBeCloseTo(0.00105, 10);
+    expect(result.savingsPercentage).toBeGreaterThan(0);
   });
 });
 
@@ -307,7 +307,7 @@ describe('buildSummary estimatedCostSavings', () => {
     expect(summary.estimatedCostSavings).toBe('$18.00');
   });
 
-  it('subtracts actual planner cost from hypothetical', () => {
+  it('excludes planner spend from estimated savings', () => {
     const usage = makeUsage({
       plannerInput: 1_000_000,
       plannerOutput: 100_000,
@@ -322,7 +322,7 @@ describe('buildSummary estimatedCostSavings', () => {
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'ollama',
     });
-    expect(summary.estimatedCostSavings).toBe('$9.00');
+    expect(summary.estimatedCostSavings).toBe('$13.50');
   });
 
   it('returns $0.00 when savings would be negative', () => {

@@ -5,7 +5,7 @@ import { App } from '../../app.js';
 import { configPath, initConfig } from '../../core/config/index.js';
 import { renderApp } from '../render.js';
 import { resolveProjectDir } from '../workflow.js';
-import { configStore } from '../../stores/config.js';
+import { initStores } from '../init-stores.js';
 import { routerStore } from '../../stores/router.js';
 import { TINY_SPEC_DIR, CONFIG_FILE } from '../../core/paths.js';
 
@@ -24,7 +24,7 @@ export function registerInitCommand(program: Command): void {
       }
 
       initConfig(projectDir, { force: opts.reconfigure });
-      configStore.load(projectDir);
+      await initStores(projectDir);
       routerStore.init({ screen: 'setup', onComplete: 'home' });
       await renderApp(createElement(App), true);
     });

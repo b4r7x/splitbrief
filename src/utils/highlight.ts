@@ -2,7 +2,7 @@ import { createHighlighterCore } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 import type { HighlighterCore } from 'shiki/core';
 import ansis from 'ansis';
-import { warnError } from './format.js';
+import { warnError } from './warn.js';
 
 const CACHE_MAX = 500;
 const CACHE_EVICT = 100;

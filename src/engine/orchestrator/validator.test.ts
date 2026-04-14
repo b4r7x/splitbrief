@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { detectLinter, findAffectedTestFile, formatValidationError } from './validator.js';
+import { detectLinter, findAffectedTestFile, formatValidationError, parseCommand } from './validator.js';
 import type { ValidationResult } from '../../types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
@@ -40,6 +40,25 @@ describe('detectLinter', () => {
     writeFileSync(join(tempDir, 'eslint.config.mjs'), 'export default [];');
     writeFileSync(join(tempDir, 'biome.json'), '{}');
     expect(detectLinter(tempDir)).toBe('eslint');
+  });
+
+  it('caches two different project dirs independently without cross-project bleed', () => {
+    const dirA = createTempDir('validator-test-a');
+    const dirB = createTempDir('validator-test-b');
+    try {
+      writeFileSync(join(dirA, 'biome.json'), '{}');
+      writeFileSync(join(dirB, 'eslint.config.js'), 'module.exports = {};');
+
+      expect(detectLinter(dirA)).toBe('biome');
+      expect(detectLinter(dirB)).toBe('eslint');
+
+      // Second call uses cache — results must remain distinct.
+      expect(detectLinter(dirA)).toBe('biome');
+      expect(detectLinter(dirB)).toBe('eslint');
+    } finally {
+      cleanupTempDir(dirA);
+      cleanupTempDir(dirB);
+    }
   });
 });
 
@@ -102,5 +121,44 @@ describe('formatValidationError', () => {
     const error = formatValidationError(results);
     expect(error).not.toContain('Error line 21');
     expect(error).toContain('Error line 20');
+  });
+});
+
+describe('parseCommand', () => {
+  it('splits simple commands', () => {
+    expect(parseCommand('npm test')).toEqual(['npm', 'test']);
+  });
+
+  it('handles extra whitespace', () => {
+    expect(parseCommand('  npm   run   test  ')).toEqual(['npm', 'run', 'test']);
+  });
+
+  it('preserves double-quoted arguments', () => {
+    expect(parseCommand('npm run test -- --grep "foo bar"')).toEqual([
+      'npm', 'run', 'test', '--', '--grep', 'foo bar',
+    ]);
+  });
+
+  it('preserves single-quoted arguments', () => {
+    expect(parseCommand("npm test -- --grep 'foo bar'")).toEqual([
+      'npm', 'test', '--', '--grep', 'foo bar',
+    ]);
+  });
+
+  it('handles escaped quotes in double-quoted strings', () => {
+    expect(parseCommand('echo "say \\"hello\\""')).toEqual(['echo', 'say "hello"']);
+  });
+
+  it('handles backslash in single-quoted strings literally', () => {
+    expect(parseCommand("echo 'a\\b'")).toEqual(['echo', 'a\\b']);
+  });
+
+  it('handles adjacent quoted and unquoted text', () => {
+    expect(parseCommand('echo "hello"world')).toEqual(['echo', 'helloworld']);
+  });
+
+  it('returns empty array for empty input', () => {
+    expect(parseCommand('')).toEqual([]);
+    expect(parseCommand('   ')).toEqual([]);
   });
 });

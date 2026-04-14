@@ -1,3 +1,4 @@
+import { Fzf } from 'fzf';
 import { ALL_SCREENS, WORKFLOW_MODES } from '../types/index.js';
 import type { Screen, SlashCommandDef, CommandContext, CommandPaletteItem } from '../types/index.js';
 import { getShortcutKey } from './shortcuts.js';
@@ -33,6 +34,14 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
     },
     {
       kind: 'noarg',
+      name: '/sessions',
+      label: 'Sessions',
+      description: 'Browse past sessions',
+      validScreens: ALL_SCREENS,
+      handler: () => ctx.openOverlay('sessions'),
+    },
+    {
+      kind: 'noarg',
       name: '/settings',
       aliases: ['/config'],
       label: 'Settings',
@@ -57,8 +66,9 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
           ctx.setFeedbackError(`Invalid mode: ${mode}. Valid modes: ${WORKFLOW_MODES.join(', ')}`);
           return;
         }
-        ctx.setWorkflowMode(mode);
-        ctx.setFeedbackMessage(`Workflow mode set to: ${mode}`);
+        if (ctx.setWorkflowMode(mode)) {
+          ctx.setFeedbackMessage(`Workflow mode set to: ${mode}`);
+        }
       },
     },
     {
@@ -129,6 +139,15 @@ export function toPaletteItems(commands: SlashCommandDef[]): CommandPaletteItem[
     }));
 }
 
+function fuzzyFindCommand(commands: SlashCommandDef[], name: string): SlashCommandDef | undefined {
+  const bare = name.startsWith('/') ? name.slice(1) : name;
+  if (!bare) return undefined;
+  const fzf = new Fzf(commands, { selector: (c: SlashCommandDef) => c.name.slice(1) });
+  const results = fzf.find(bare);
+  const top = results[0];
+  return top !== undefined && top.score > 0 ? top.item : undefined;
+}
+
 export function executeSlashCommand(
   commands: SlashCommandDef[],
   raw: string,
@@ -138,7 +157,7 @@ export function executeSlashCommand(
   const parts = raw.split(' ');
   const name = (parts[0] ?? '').toLowerCase();
   const args = parts.slice(1).join(' ').trim() || undefined;
-  const cmd = findCommand(commands, name);
+  const cmd = findCommand(commands, name) ?? fuzzyFindCommand(commands, name);
   if (!cmd) {
     onError(`Unknown command: ${name}. Type /help for available commands.`);
     return;

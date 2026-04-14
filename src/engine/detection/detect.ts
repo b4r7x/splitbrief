@@ -20,9 +20,14 @@ const API_PLANNERS: { tool: PlannerTool; description: string }[] = [
   { tool: 'anthropic', description: providerDescription('anthropic') },
 ];
 
+const API_PLANNER_TOOLS = new Set(API_PLANNERS.map(({ tool }) => tool));
+
 // Filter KNOWN_PROVIDERS to only include valid planner tools (excludes local providers like ollama, lm-studio)
 const PROVIDER_PLANNERS: { tool: PlannerTool; description: string }[] =
-  Object.keys(KNOWN_PROVIDERS).filter(isPlannerToolId).map(id => ({ tool: id, description: providerDescription(id) }));
+  Object.keys(KNOWN_PROVIDERS)
+    .filter(isPlannerToolId)
+    .filter(id => !API_PLANNER_TOOLS.has(id))
+    .map(id => ({ tool: id, description: providerDescription(id) }));
 
 function minimalConfig(tool: PlannerTool): Config {
   return {

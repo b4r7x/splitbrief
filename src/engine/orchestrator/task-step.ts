@@ -3,7 +3,7 @@ import { formatValidationError } from './validator.js';
 
 import type { WorkflowContext } from './run.js';
 import { buildAndRecordUsage } from './tokens.js';
-import { toErrorMessage } from '../../utils/format.js';
+import { toErrorMessage, labelError } from '../../utils/format.js';
 import { emit, createTextHandler, emitError, emitTaskStart } from './events.js';
 import { handleRetryAndEscalation } from './escalation.js';
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave, validateAndCommitTask } from './helpers.js';
@@ -77,7 +77,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       onEvent: callbacks.onEvent,
     });
   } catch (err) {
-    emitError(callbacks, `Implementation failed: ${toErrorMessage(err)}`);
+    emitError(callbacks, labelError('Implementation failed', err));
     const retry = await retryAndRecord({
       wctx, task, initialError: toErrorMessage(err),
       state, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState,

@@ -62,4 +62,12 @@ describe('terminalSizeStore', () => {
     expect(typeof terminalSizeStore.get).toBe('function');
     expect(typeof terminalSizeStore.reset).toBe('function');
   });
+
+  it('clamps computed panel widths to a positive value on narrow terminals', async () => {
+    const { getClampedTerminalWidth, getResponsivePanelWidth } = await import('./terminal-size.js');
+
+    expect(getClampedTerminalWidth(3, 80)).toBe(1);
+    expect(getResponsivePanelWidth(3, true)).toBe(1);
+    expect(getResponsivePanelWidth(90, true)).toBe(76);
+  });
 });

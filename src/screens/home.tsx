@@ -6,7 +6,7 @@ import { InputBar } from '../components/input-bar/index.js';
 import { ScreenShell } from '../components/screen-shell.js';
 import { HomeConfigSummary } from '../components/home/config-summary.js';
 import { RecentSessions } from '../components/home/recent-sessions.js';
-import { terminalSizeStore } from '../stores/terminal-size.js';
+import { getResponsivePanelWidth, terminalSizeStore } from '../stores/terminal-size.js';
 import { overlayStore } from '../stores/overlay.js';
 import { routerStore } from '../stores/router.js';
 
@@ -31,11 +31,10 @@ interface HomeScreenProps {
 export function HomeScreen({ commands, onSlashCommand }: HomeScreenProps) {
   const theme = useTheme();
   const hasOverlay = overlayStore.use(s => s.active !== 'none');
-  const cols = terminalSizeStore.use(s => s.cols);
-  const isSmall = terminalSizeStore.use(s => s.isSmall);
+  const { cols, isSmall } = terminalSizeStore.use(s => s);
 
   const banner = getBanner();
-  const contentWidth = Math.min(cols - 8, isSmall ? 70 : 100);
+  const contentWidth = getResponsivePanelWidth(cols, isSmall, { small: 70, large: 100 }, 8);
   const onStartWorkflow = (feat: string) => routerStore.navigate('workflow', { feature: feat });
 
   return (

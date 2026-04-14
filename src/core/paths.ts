@@ -1,4 +1,4 @@
-export const TINY_SPEC_DIR = '.tiny-spec';
+export { TINY_SPEC_DIR } from '../utils/fs.js';
 export const CODEX_DIR = '.codex';
 export const CURRENT_DIR = 'current';
 export const SKILLS_DIR = 'skills';

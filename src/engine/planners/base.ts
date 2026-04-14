@@ -13,6 +13,7 @@ import { buildProjectContextMarkdown } from './context.js';
 import { accumulateUsage } from '../streaming/output-parsers.js';
 import { DEFAULT_AVAILABILITY } from '../../utils/availability.js';
 import { getChangedFiles } from '../../utils/git.js';
+import { createChangeDetector } from '../change-detection.js';
 
 type InternalInvokeFn = (opts: {
   prompt: string;
@@ -21,11 +22,13 @@ type InternalInvokeFn = (opts: {
 }) => Promise<InvokeResult>;
 
 // invokeEscalate exists separately: Claude Code uses session-chaining for plan phases but one-shot for escalations.
-interface PlannerBaseConfig {
+export interface PlannerBaseConfig {
   invokePlan: InternalInvokeFn;
   invokeEscalate: InternalInvokeFn;
   isAvailable: () => Promise<boolean>;
   getVersion?: () => Promise<string | null>;
+  /** When true, the planner emits inline clarification questions during `plan()`. Default: false. */
+  supportsConversationalPlanning?: boolean;
   /** When false, hint escalation is skipped entirely (e.g., Claude Code). Default: true. */
   supportsHintEscalation?: boolean;
   /**
@@ -41,7 +44,6 @@ interface PlannerBaseConfig {
    * the generated file. Falls back to `resultText` when not provided.
    */
   readPhaseOutput?: (filename: string, resultText: string, projectDir: string) => string;
-  // One consumer (claude-code) — justified for the pluggable backend architecture.
   escalateFullPostProcess?: (task: Task, result: InvokeResult, extracted: { code: string }, projectDir: string) => EscalationResult;
 }
 
@@ -65,10 +67,12 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
           callbacks: { onOutput: callbacks.onOutput, onQuestion: callbacks.onQuestion },
         });
         if (result.usage) usage = accumulateUsage(usage, result.usage);
-        phases.push({ text: result.text, filename });
-        return config.readPhaseOutput
+        const artifactText = config.readPhaseOutput
           ? config.readPhaseOutput(filename, result.text, projectDir)
           : result.text;
+        const rawOutput = artifactText !== result.text ? result.text : undefined;
+        phases.push({ text: artifactText, filename, rawOutput });
+        return artifactText;
       }
 
       const research = await runPhase('researching', buildResearchPrompt(feature, projectContext, skillsContext), RESEARCH_FILE);
@@ -96,7 +100,8 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
         ? config.readPhaseOutput(TASKS_FILE, result.text, projectDir)
         : result.text;
       const tasks = parseTasks(tasksContent);
-      return { spec: '', plan: '', tasks, usage: result.usage, phases: [{ text: result.text, filename: TASKS_FILE }] };
+      const rawOutput = tasksContent !== result.text ? result.text : undefined;
+      return { spec: '', plan: '', tasks, usage: result.usage, phases: [{ text: tasksContent, filename: TASKS_FILE, rawOutput }] };
     },
 
     async regenerate(
@@ -119,9 +124,12 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
         return { success: false, output: '', code: null, usage: null };
       }
       const hintPrompt = buildHintPrompt(task, error);
+      const useFiles = config.hintSuccessMode === 'files';
+      const detect = useFiles ? createChangeDetector('Hint escalation') : null;
+      const filesBefore = useFiles ? await getChangedFiles(projectDir) : [];
       const result = await config.invokeEscalate({ prompt: hintPrompt, projectDir, callbacks });
-      const success = config.hintSuccessMode === 'files'
-        ? (await getChangedFiles(projectDir)).length > 0
+      const success = detect
+        ? (await detect(projectDir, filesBefore)).changed
         : result.text.length > 0;
       return { success, output: result.text, code: null, usage: result.usage };
     },
@@ -158,5 +166,6 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
     ...DEFAULT_AVAILABILITY,
     isAvailable: config.isAvailable,
     ...(config.getVersion && { getVersion: config.getVersion }),
+    ...(config.supportsConversationalPlanning && { supportsConversationalPlanning: true as const }),
   };
 }

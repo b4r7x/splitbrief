@@ -1,11 +1,11 @@
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import type { Task, WorkflowState, TokenDelta, ValidationResult, OrchestratorCallbacks, StateAction, Config, TaskCompletionMethod } from '../../types.js';
-import { toErrorMessage } from '../../utils/format.js';
+import { labelError } from '../../utils/format.js';
 import { isENOENT } from '../../utils/process-errors.js';
 import { transition } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
-import { writeSpecFile } from '../../core/paths-io.js';
+import { writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE } from '../../core/paths.js';
 import { addUsage, type UsageCategory } from './tokens.js';
 import { createTextHandler, emitWarning, emitCostUpdate } from './events.js';
@@ -67,18 +67,19 @@ type RunPlannerReviewOptions = {
   projectDir: string;
   callbacks: OrchestratorCallbacks;
   state: WorkflowState;
+  metadata?: SpecMetadata | null | undefined;
   writeTo?: typeof SPEC_FILE | typeof PLAN_FILE | typeof TASKS_FILE | typeof REVIEW_FILE;
 };
 
 export async function runPlannerReview(
   opts: RunPlannerReviewOptions,
 ): Promise<{ state: WorkflowState; text: string }> {
-  const { planner, prompt, projectDir, callbacks, writeTo } = opts;
+  const { planner, prompt, projectDir, callbacks, writeTo, metadata } = opts;
   const result = await planner.review(prompt, projectDir, {
     onOutput: createTextHandler(callbacks),
   });
   const state = addUsageAndSave(projectDir, opts.state, 'planner', result.usage, callbacks);
-  if (writeTo) writeSpecFile(projectDir, writeTo, result.text);
+  if (writeTo) writeSpecFile(projectDir, writeTo, result.text, metadata);
   return { state, text: result.text };
 }
 
@@ -93,17 +94,14 @@ export async function withSignalHandlers(
     handler();
   };
 
-  const onSigint = () => onSignal();
-  const onSigterm = () => onSignal();
-
-  process.on('SIGINT', onSigint);
-  process.on('SIGTERM', onSigterm);
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
   try {
     await fn();
     return { cancelled: receivedSignal };
   } finally {
-    process.removeListener('SIGINT', onSigint);
-    process.removeListener('SIGTERM', onSigterm);
+    process.removeListener('SIGINT', onSignal);
+    process.removeListener('SIGTERM', onSignal);
   }
 }
 
@@ -115,7 +113,7 @@ export async function warnOnFailure(
   try {
     await fn();
   } catch (err) {
-    emitWarning(callbacks, `Failed to ${action}: ${toErrorMessage(err)}`);
+    emitWarning(callbacks, labelError(`Failed to ${action}`, err));
   }
 }
 
@@ -129,6 +127,7 @@ type ValidateAndCommitTaskOpts = {
   transitionType: 'VALIDATION_PASS' | 'HINT_SUCCESS' | 'FULL_SUCCESS';
   commitSuffix?: string | undefined;
   taskStartTime?: number | undefined;
+  retryCount?: number | undefined;
 };
 
 export async function validateAndCommitTask(

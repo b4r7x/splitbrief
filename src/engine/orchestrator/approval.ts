@@ -13,10 +13,11 @@ export type ApprovalLoopOptions = {
   projectDir: string;
   callbacks: OrchestratorCallbacks;
   state: WorkflowState;
+  signal?: AbortSignal | undefined;
 };
 
 export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ state: WorkflowState; rejected: boolean; regenerated: boolean }> {
-  const { type, filePath, planner, projectDir, callbacks } = opts;
+  const { type, filePath, planner, projectDir, callbacks, signal } = opts;
   let { state } = opts;
   let regenerated = false;
   const rejectType = type === 'spec' ? 'REJECT_SPEC' : 'REJECT_PLAN';
@@ -26,7 +27,9 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ stat
   const filename = type === 'spec' ? SPEC_FILE : PLAN_FILE;
 
   while (true) {
+    if (signal?.aborted) return { state, rejected: false, regenerated };
     const result = await callbacks.onApprovalNeeded(type, filePath);
+    if (signal?.aborted) return { state, rejected: false, regenerated };
     if (!result.approved && !result.comment) {
       state = transitionAndSave(projectDir, state, { type: rejectType });
       emitPlannerStatus(callbacks, state, 'done');

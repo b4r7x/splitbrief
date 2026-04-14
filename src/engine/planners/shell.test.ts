@@ -19,7 +19,7 @@ afterEach(() => {
 describe('createShellPlanner', () => {
   it('throws for wrong config kind', () => {
     const config = makeConfig({ planner: { kind: 'agent', command: 'echo' } });
-    expect(() => createShellPlanner(config)).toThrow("createShellPlanner requires planner.kind = 'shell'");
+    expect(() => createShellPlanner(config)).toThrow("Expected shell planner config");
   });
 
   it('creates planner with availability methods', () => {

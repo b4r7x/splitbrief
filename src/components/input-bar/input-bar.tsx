@@ -6,7 +6,12 @@ import { useSlashAutocomplete } from './use-slash-autocomplete.js';
 import { useTheme } from '../../ui/theme.js';
 import { terminalSizeStore } from '../../stores/terminal-size.js';
 import { feedbackStore } from '../../stores/feedback.js';
+import { inputHistoryStore } from '../../stores/input-history.js';
 import type { InputMode, Screen, SlashCommandDef } from '../../types.js';
+import {
+  INITIAL_INPUT_HISTORY_NAVIGATION_STATE,
+  stepInputHistory,
+} from './history-navigation.js';
 
 function borderColorForMode(mode: InputMode, theme: { planner: string; warning: string; border: string }): string {
   if (mode === 'review') return theme.planner;
@@ -40,13 +45,23 @@ export function InputBar({
   const theme = useTheme();
   const cols = terminalSizeStore.use(s => s.cols);
   const inputColumns = (width ?? cols) - 6;
+  const homeHistory = inputHistoryStore.use(s => s.entriesByScope.home);
   const [value, setValue] = useState('');
+  const [historyState, setHistoryState] = useState(INITIAL_INPUT_HISTORY_NAVIGATION_STATE);
+  const [inputEpoch, setInputEpoch] = useState(0);
 
-  const { filtered, selectedIndex, showSuggestions, inputKey } = useSlashAutocomplete({
+  const handleChange = (nextValue: string) => {
+    setValue(nextValue);
+    if (historyState.historyIndex !== null) {
+      setHistoryState(INITIAL_INPUT_HISTORY_NAVIGATION_STATE);
+    }
+  };
+
+  const { filtered, fuzzyMatch, selectedIndex, showSuggestions, inputKey } = useSlashAutocomplete({
     commands,
     currentScreen,
     value,
-    setValue,
+    setValue: handleChange,
     onSlashCommand,
     disabled,
   });
@@ -56,12 +71,32 @@ export function InputBar({
     const trimmed = text.trim();
     if (!trimmed) return;
 
+    if (currentScreen === 'home') {
+      inputHistoryStore.push('home', trimmed);
+    }
+
     if (trimmed.startsWith('/')) {
       onSlashCommand(trimmed);
     } else {
       onSubmit(trimmed);
     }
     setValue('');
+    setHistoryState(INITIAL_INPUT_HISTORY_NAVIGATION_STATE);
+    setInputEpoch((epoch) => epoch + 1);
+  };
+
+  const handleBoundaryNavigate = (direction: 'up' | 'down') => {
+    if (currentScreen !== 'home' || disabled) {
+      return false;
+    }
+
+    const result = stepInputHistory(homeHistory, historyState, direction, value);
+    if (!result.changed) return false;
+
+    setValue(result.nextValue);
+    setHistoryState(result.nextState);
+    setInputEpoch((epoch) => epoch + 1);
+    return true;
   };
 
   return (
@@ -75,6 +110,7 @@ export function InputBar({
         <SlashSuggestions
           filtered={filtered}
           selectedIndex={selectedIndex}
+          fuzzyMatch={fuzzyMatch}
         />
       )}
       <Box
@@ -86,9 +122,9 @@ export function InputBar({
         <Text color={theme.accent}>&gt; </Text>
         <Box flexGrow={1}>
           <MultilineInput
-            key={inputKey}
+            key={`${inputKey}:${inputEpoch}`}
             value={value}
-            onChange={setValue}
+            onChange={handleChange}
             onSubmit={handleSubmit}
             columns={inputColumns}
             focus={!disabled}
@@ -107,6 +143,7 @@ export function InputBar({
               newline: (key: { return: boolean; shift: boolean }) =>
                 key.return && key.shift,
             }}
+            onBoundaryNavigate={handleBoundaryNavigate}
           />
         </Box>
       </Box>

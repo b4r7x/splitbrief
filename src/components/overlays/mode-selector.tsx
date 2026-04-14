@@ -32,9 +32,11 @@ export function ModeSelector() {
     initialIndex: currentIdx,
     onSelect: (item) => {
       const updated = { ...config, workflow: { ...config.workflow, mode: item.mode } };
-      configStore.save(updated);
-      feedbackStore.setMessage(`Mode set to: ${item.mode}`);
-      overlayStore.close();
+      const saved = configStore.save(updated);
+      if (saved) {
+        feedbackStore.setMessage(`Mode set to: ${item.mode}`);
+        overlayStore.close();
+      }
     },
     onCancel: () => overlayStore.close(),
   });

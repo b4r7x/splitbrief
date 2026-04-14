@@ -162,6 +162,16 @@ describe('extractQuestionsFromStream — edge cases', () => {
     expect(questions.length).toBe(0);
   });
 
+  it('extracts valid marker after malformed marker with unbalanced braces', () => {
+    const text = [
+      '<!-- Q:{"id":"q1","type":"confirm","text":"broken',
+      '<!-- Q:{"id":"q2","type":"input","text":"Valid?"} -->',
+    ].join('\n');
+    const questions = extractQuestionsFromStream(text);
+    expect(questions.length).toBe(1);
+    expect(questions[0]?.id).toBe('q2');
+  });
+
   it('handles empty question text', () => {
     const text = '<!-- Q:{"id":"q1","type":"input","text":""} -->';
     const questions = extractQuestionsFromStream(text);

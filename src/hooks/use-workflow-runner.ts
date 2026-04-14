@@ -5,7 +5,7 @@ import { reviewStore } from '../stores/review.js';
 import { feedbackStore } from '../stores/feedback.js';
 import { conversationScrollStore } from '../stores/conversation-scroll.js';
 import { runWorkflow } from '../engine/orchestrator/index.js';
-import { killAllProcesses } from '../utils/process.js';
+import { killAllProcesses } from '../utils/process-lifecycle.js';
 import { loadState } from '../core/state/persistence.js';
 import { REVIEW_HINT } from '../core/commands/review-commands.js';
 import type { UseInputModeResult } from './use-input-mode.js';
@@ -48,7 +48,10 @@ export function useWorkflowRunner({
       totalTasks: resumeState?.tasks?.length ?? 0,
     });
     conversationScrollStore.reset();
-    workflowStore.setCancelHandler(() => controller.abort());
+    workflowStore.setCancelHandler(() => {
+      inputMode.resetMode();
+      controller.abort();
+    });
 
     const addEvent = (event: TuiEvent) => {
       if (abortedRef.current) return;
@@ -93,9 +96,9 @@ export function useWorkflowRunner({
     startWorkflow(controller);
     return () => {
       abortedRef.current = true;
+      inputMode.resetMode();
       controller.abort();
       workflowStore.setCancelHandler(null);
-      inputMode.resetMode();
       killAllProcesses();
     };
   // config is intentionally excluded from the dep array: config changes mid-workflow

@@ -1,6 +1,8 @@
 import type { OutputFormat } from '../../core/types/schemas/enums.js';
+import type { TokenDelta } from '../../core/types/summary.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
-import { spawnWithShellFallback, CommandTimeoutError, CommandNotFoundError } from '../../utils/process.js';
+import { spawnWithShellFallback } from '../../utils/process.js';
+import { CommandTimeoutError, CommandNotFoundError } from '../../utils/process-errors.js';
 import { extractCode } from '../parsers/response-extractor.js';
 
 export interface CommandBasedOptions {
@@ -25,6 +27,8 @@ export interface CommandBasedResult {
   hasChanges?: boolean;
   stdout: string;
   stderr: string;
+  /** Token usage forwarded from the parser (when available) */
+  usage?: TokenDelta | null;
 }
 
 function substitutePromptPlaceholder(
@@ -69,6 +73,7 @@ export async function invokeCommandBasedRunner(
   const notFoundMessage = opts.notFoundMessage ?? `Command not found: ${opts.command}`;
   let stdout: string;
   let stderr = '';
+  let usage: TokenDelta | null = null;
 
   if (opts.timeout !== undefined) {
     const result = await spawnWithShellFallback({
@@ -109,20 +114,21 @@ export async function invokeCommandBasedRunner(
     });
 
     stdout = result.text;
+    usage = result.usage;
   }
 
   if (opts.extractsCode) {
     const extracted = extractCode(stdout);
     if ('code' in extracted) {
-      return { code: extracted.code, stdout, stderr };
+      return { code: extracted.code, stdout, stderr, usage };
     }
-    return { stdout, stderr };
+    return { stdout, stderr, usage };
   }
 
   if (opts.detectChanges) {
     const hasChanges = await opts.detectChanges();
-    return { hasChanges, stdout, stderr };
+    return { hasChanges, stdout, stderr, usage };
   }
 
-  return { stdout, stderr };
+  return { stdout, stderr, usage };
 }

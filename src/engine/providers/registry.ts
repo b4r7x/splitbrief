@@ -7,6 +7,7 @@ import { createLmStudioProvider } from './lm-studio.js';
 import { createOpenRouterProvider } from './openrouter.js';
 import { createGroqProvider } from './groq.js';
 import { createTogetherProvider } from './together.js';
+import { createAnthropicProvider } from './anthropic.js';
 import { createOpenAICompatProvider } from './compat.js';
 import { PROVIDER_CATALOG, isProviderId, type ProviderId } from '../../core/providers.js';
 import { withTimeout } from '../../utils/with-timeout.js';
@@ -16,6 +17,7 @@ export const DETECTION_TIMEOUT_MS = 5000;
 type ProviderFactory = (overrides?: ProviderOverrides) => ProviderDef;
 
 const BESPOKE_PROVIDERS: Partial<Record<ProviderId, ProviderFactory>> = {
+  anthropic: createAnthropicProvider,
   ollama: createOllamaProvider,
   'lm-studio': createLmStudioProvider,
   openrouter: createOpenRouterProvider,
@@ -60,7 +62,11 @@ function getImplementerProvider(config: Config): ProviderDef {
 }
 
 export function createClient(config: Config): OpenAI {
-  return createClientFromProvider(getImplementerProvider(config));
+  const provider = getImplementerProvider(config);
+  if (provider.name === 'anthropic') {
+    throw new Error('Anthropic API is not OpenAI-compatible; use the Anthropic streaming path');
+  }
+  return createClientFromProvider(provider);
 }
 
 export async function detectCapabilities(config: Config): Promise<{ contextLength: number }> {

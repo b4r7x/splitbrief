@@ -111,6 +111,67 @@ describe('validateConfig', () => {
     }
   });
 
+  it.each([
+    { provider: 'anthropic', envKey: 'ANTHROPIC_API_KEY' },
+    { provider: 'openrouter', envKey: 'OPENROUTER_API_KEY' },
+  ])('rejects $provider api implementer without $envKey and no implementer.apiKey', ({ provider, envKey }) => {
+    const orig = process.env[envKey];
+    delete process.env[envKey];
+    try {
+      const config = { ...validConfig, implementer: { kind: 'api', provider, model: 'm', apiBase: 'https://api.example.com' } };
+      const { errors } = validateConfig(config);
+      expect(errors.find(e => e.path === 'implementer.apiKey')).toBeTruthy();
+    } finally {
+      if (orig === undefined) delete process.env[envKey];
+      else process.env[envKey] = orig;
+    }
+  });
+
+  it('accepts ollama api implementer without API key (local provider)', () => {
+    const config = { ...validConfig, implementer: { kind: 'api', provider: 'ollama', model: 'm', apiBase: 'http://localhost:11434/v1' } };
+    expect(validateConfig(config).errors.filter(e => e.path === 'implementer.apiKey')).toEqual([]);
+  });
+
+  it.each([
+    { provider: 'anthropic', envKey: 'ANTHROPIC_API_KEY', apiKey: 'sk-ant-key' },
+    { provider: 'openrouter', envKey: 'OPENROUTER_API_KEY', apiKey: 'sk-or-key' },
+  ])('accepts $provider api implementer with implementer.apiKey', ({ provider, envKey, apiKey }) => {
+    const orig = process.env[envKey];
+    delete process.env[envKey];
+    try {
+      const config = { ...validConfig, implementer: { kind: 'api', provider, model: 'm', apiKey, apiBase: 'https://api.example.com' } };
+      expect(validateConfig(config).errors.filter(e => e.path === 'implementer.apiKey')).toEqual([]);
+    } finally {
+      if (orig === undefined) delete process.env[envKey];
+      else process.env[envKey] = orig;
+    }
+  });
+
+  it("rejects 'agent-sdk' implementer without 'ANTHROPIC_API_KEY' and no implementer.apiKey", () => {
+    const orig = process.env['ANTHROPIC_API_KEY'];
+    delete process.env['ANTHROPIC_API_KEY'];
+    try {
+      const config = { ...validConfig, implementer: { kind: 'agent-sdk', model: 'claude-3-5-sonnet-20241022' } };
+      const { errors } = validateConfig(config);
+      expect(errors.find(e => e.path === 'implementer.apiKey')).toBeTruthy();
+    } finally {
+      if (orig === undefined) delete process.env['ANTHROPIC_API_KEY'];
+      else process.env['ANTHROPIC_API_KEY'] = orig;
+    }
+  });
+
+  it("accepts 'agent-sdk' implementer with implementer.apiKey", () => {
+    const orig = process.env['ANTHROPIC_API_KEY'];
+    delete process.env['ANTHROPIC_API_KEY'];
+    try {
+      const config = { ...validConfig, implementer: { kind: 'agent-sdk', model: 'claude-3-5-sonnet-20241022', apiKey: 'sk-ant-key' } };
+      expect(validateConfig(config).errors.filter(e => e.path === 'implementer.apiKey')).toEqual([]);
+    } finally {
+      if (orig === undefined) delete process.env['ANTHROPIC_API_KEY'];
+      else process.env['ANTHROPIC_API_KEY'] = orig;
+    }
+  });
+
   it('returns errors for multiple invalid fields at once', () => {
     const config = {
       planner: { tool: 'claude-code' },

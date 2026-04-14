@@ -3,13 +3,14 @@ import { createCommands, toPaletteItems, executeSlashCommand } from './definitio
 import type { SlashCommandDef, CommandContext } from '../types/index.js';
 
 const noop = () => {};
+const noopTrue = () => true;
 
 function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
   return {
     openOverlay: noop,
     navigate: noop,
     quit: noop,
-    setWorkflowMode: noop,
+    setWorkflowMode: noopTrue,
     setFeedbackMessage: noop,
     setFeedbackError: noop,
     refreshDetection: async () => {},
@@ -96,7 +97,7 @@ describe('/mode command', () => {
 
   it('sets mode to quick without opening overlay', () => {
     const openOverlay = vi.fn();
-    const setWorkflowMode = vi.fn();
+    const setWorkflowMode = vi.fn(() => true);
     const setFeedbackMessage = vi.fn();
     const commands = createCommands(makeCtx({ openOverlay, setWorkflowMode, setFeedbackMessage }));
     executeSlashCommand(commands, '/mode quick', 'home', noop);
@@ -106,10 +107,19 @@ describe('/mode command', () => {
   });
 
   it('sets mode to full', () => {
-    const setWorkflowMode = vi.fn();
+    const setWorkflowMode = vi.fn(() => true);
     const commands = createCommands(makeCtx({ setWorkflowMode }));
     executeSlashCommand(commands, '/mode full', 'home', noop);
     expect(setWorkflowMode).toHaveBeenCalledWith('full');
+  });
+
+  it('does not show success feedback when mode save fails', () => {
+    const setWorkflowMode = vi.fn(() => false);
+    const setFeedbackMessage = vi.fn();
+    const commands = createCommands(makeCtx({ setWorkflowMode, setFeedbackMessage }));
+    executeSlashCommand(commands, '/mode quick', 'home', noop);
+    expect(setWorkflowMode).toHaveBeenCalledWith('quick');
+    expect(setFeedbackMessage).not.toHaveBeenCalled();
   });
 
   it('rejects invalid mode', () => {
@@ -141,4 +151,3 @@ describe('/planner command', () => {
     expect(openOverlay).toHaveBeenCalledWith('planner-picker');
   });
 });
-

@@ -5,7 +5,7 @@ import { useTheme } from '../../ui/theme.js';
 import { renderMarkdownLine } from '../../ui/markdown.js';
 import { feedbackStore } from '../../stores/feedback.js';
 import { reviewStore } from '../../stores/review.js';
-import { toErrorMessage } from '../../utils/format.js';
+import { labelError } from '../../utils/format.js';
 
 interface ReviewViewProps {
   height?: number;
@@ -30,16 +30,15 @@ export function ReviewView({ height, width }: ReviewViewProps) {
       if (cancelled) return;
       setContent('');
       reviewStore.setLineCount(0);
-      feedbackStore.setError(`Failed to read ${filePath}: ${toErrorMessage(err)}`);
+      feedbackStore.setError(labelError(`Failed to read ${filePath}`, err));
     });
     return () => { cancelled = true; };
   }, [filePath]);
 
-  const lines = content.split('\n');
-  const visibleHeight = height ?? 20;
-
   if (!filePath) return null;
 
+  const lines = content.split('\n');
+  const visibleHeight = height ?? 20;
   const visibleLines = lines.slice(offset, offset + visibleHeight);
 
   return (

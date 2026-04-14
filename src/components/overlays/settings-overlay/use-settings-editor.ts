@@ -40,8 +40,8 @@ export function useSettingsEditor({
 
   const saveValue = (dotPath: string, value: unknown) => {
     const updated = applyEdits(config, { [dotPath]: value });
-    configStore.save(updated);
-    feedbackStore.setMessage('Saved');
+    const saved = configStore.save(updated);
+    if (saved) feedbackStore.setMessage('Saved');
   };
 
   const [editingId, setEditingId] = useState<string | null>(null);

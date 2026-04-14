@@ -42,7 +42,7 @@ export function isVirtualCustomItem<R extends { id: string }>(item: RightItemOrV
   return 'isVirtual' in item;
 }
 
-export function isRealItem<R extends { id: string }>(item: RightItemOrVirtual<R>): item is R {
+function isRealItem<R extends { id: string }>(item: RightItemOrVirtual<R>): item is R {
   return !isVirtualCustomItem(item);
 }
 
@@ -140,8 +140,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const currentRightIsCustom = rightActive && !!rightCurrentItem && !isOnVirtual
     && isRealItem(rightCurrentItem) && (isRightItemCustom?.(rightCurrentItem) ?? false);
 
-  // Track selected left by key: firing the effect only when the selection
-  // key actually changes, not on every render/reference change.
+  // Fire only when the selected left key changes, not on every render.
   const currentLeftKey = leftCurrentItem ? leftGetKey(leftCurrentItem) : null;
   const syncLeftItem = useEffectEvent(() => {
     if (!leftCurrentItem) return;

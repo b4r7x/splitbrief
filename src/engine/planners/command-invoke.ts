@@ -1,7 +1,11 @@
 import type { InvokeResult } from '../../types.js';
 import type { PlannerCallbacks } from './types.js';
+import type { PlannerBaseConfig } from './base.js';
+import type { Planner } from './types.js';
+import { createPlannerBase } from './base.js';
 import { invokeCommandBasedRunner } from '../runners/command-based.js';
 import { extractQuestionsFromStream } from '../parsers/question-parser.js';
+import { createCommandAvailability } from '../../utils/availability.js';
 import type { OutputFormat } from '../../core/types/schemas/enums.js';
 
 interface CommandPlannerInvokeOpts {
@@ -46,6 +50,37 @@ export function createCommandPlannerInvoke(opts: CommandPlannerInvokeOpts) {
       }
     }
 
-    return { text: result.stdout, usage: null };
+    return { text: result.stdout, usage: result.usage ?? null };
   };
+}
+
+/**
+ * Creates a command-based planner (shared setup for shell + agent kinds).
+ * Handles: config extraction, invoke wiring, availability, and base planner construction.
+ */
+export function createCommandBasedPlanner(
+  config: { command: string; args?: string[] | undefined; outputFormat?: OutputFormat | undefined },
+  label: string,
+  overrides?: {
+    extractsCode?: boolean | undefined;
+    detectChanges?: ((projectDir: string) => Promise<boolean>) | undefined;
+    readPhaseOutput?: PlannerBaseConfig['readPhaseOutput'] | undefined;
+  },
+): Planner {
+  const invoke = createCommandPlannerInvoke({
+    command: config.command,
+    args: config.args ?? [],
+    outputFormat: config.outputFormat ?? 'text',
+    extractsCode: overrides?.extractsCode,
+    notFoundMessage: `${label} command not found: ${config.command}`,
+    detectChanges: overrides?.detectChanges,
+  });
+
+  return createPlannerBase({
+    invokePlan: invoke,
+    invokeEscalate: invoke,
+    hintSuccessMode: 'files',
+    ...(overrides?.readPhaseOutput && { readPhaseOutput: overrides.readPhaseOutput }),
+    ...createCommandAvailability(config.command),
+  });
 }

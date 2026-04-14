@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { DetectedModel, ProviderDefWithMetadata, ProviderOverrides } from './types.js';
 import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers.js';
-import { createMetadataProvider } from './client.js';
+import { createMetadataProvider, DEFAULT_MODEL_FALLBACK } from './client.js';
 
 const GroqModelSchema = z.object({
   id: z.string(),
@@ -26,7 +26,7 @@ export function createGroqProvider(overrides?: ProviderOverrides): ProviderDefWi
       envKeyName: 'GROQ_API_KEY',
       isLocal: false,
       schema: GroqModelSchema,
-      fallback: (id) => ({ id }),
+      fallback: DEFAULT_MODEL_FALLBACK,
       toDetected: toDetectedModel,
       contextLength: (m) => m.context_window ?? null,
     },

@@ -1,26 +1,27 @@
 import type { OrchestratorCallbacks, WorkflowState, TaskTokenUsage, Summary, Task } from '../../types.js';
 import { saveState } from '../../core/state/persistence.js';
-import { readSpecFileOrEmpty } from '../../core/paths-io.js';
+import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, REVIEW_FILE } from '../../core/paths.js';
-import { killAllProcesses } from '../../utils/process.js';
+import { killAllProcesses } from '../../utils/process-lifecycle.js';
 import { getCurrentDiff } from '../../utils/git.js';
 import { discardTaskChanges } from './git-ops.js';
-import { toErrorMessage, warnError } from '../../utils/format.js';
+import { labelError } from '../../utils/format.js';
+import { warnError } from '../../utils/warn.js';
 import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
 
 import type { Planner } from '../planners/types.js';
-import { buildSummary, type SummaryBase } from './cost.js';
+import { buildSummary, type SummaryBase } from './summary.js';
 import { emit, emitError, emitPlannerStatus } from './events.js';
 import { transitionAndSave, runPlannerReview } from './helpers.js';
 
 export async function runFinalReviewPhase(
-  opts: { projectDir: string; callbacks: OrchestratorCallbacks; state: WorkflowState; planner: Planner },
+  opts: { projectDir: string; callbacks: OrchestratorCallbacks; state: WorkflowState; planner: Planner; metadata?: SpecMetadata | null },
   summaryBase: SummaryBase,
   taskBreakdowns: TaskTokenUsage[],
   phaseTimings?: Record<string, number>,
 ): Promise<Summary> {
   let { state } = opts;
-  const { projectDir, callbacks, planner } = opts;
+  const { projectDir, callbacks, planner, metadata } = opts;
 
   state = transitionAndSave(projectDir, state, { type: 'ALL_DONE' });
   const finalReviewStart = Date.now();
@@ -36,11 +37,12 @@ export async function runFinalReviewPhase(
       projectDir,
       callbacks,
       state,
+      metadata,
       writeTo: REVIEW_FILE,
     });
     state = review.state;
   } catch (err) {
-    emitError(callbacks, `Final review failed: ${toErrorMessage(err)}`);
+    emitError(callbacks, labelError('Final review failed', err));
   }
 
   state = transitionAndSave(projectDir, state, { type: 'REVIEW_DONE' });

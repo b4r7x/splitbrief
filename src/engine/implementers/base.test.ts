@@ -21,10 +21,15 @@ vi.mock('../../utils/fs.js', () => ({
   SECURE_FILE_MODE: 0o600,
 }));
 
+vi.mock('../../utils/git.js', () => ({
+  getChangedFiles: vi.fn().mockResolvedValue([]),
+}));
+
 import { extractCode } from '../parsers/response-extractor.js';
 import { applyCode } from './apply.js';
 import { computeDiff } from '../../utils/diff.js';
 import { readFileOrEmpty } from '../../utils/fs.js';
+import { getChangedFiles } from '../../utils/git.js';
 
 function makeBaseConfig(overrides?: Partial<ImplementerBaseConfig>): ImplementerBaseConfig {
   return {
@@ -85,7 +90,7 @@ describe('createImplementerBase', () => {
   it('returns failure when applyCode fails', async () => {
     vi.mocked(readFileOrEmpty).mockResolvedValue('');
     vi.mocked(extractCode).mockReturnValue({ code: 'const x = 1;', confidence: 'high' });
-    vi.mocked(applyCode).mockReturnValue({ success: false, error: 'Write failed' });
+    vi.mocked(applyCode).mockResolvedValue({ success: false, error: 'Write failed' });
 
     const implementer = createImplementerBase(makeBaseConfig());
     const config = makeConfig();
@@ -103,7 +108,7 @@ describe('createImplementerBase', () => {
       .mockResolvedValueOnce('old content')
       .mockResolvedValueOnce('new content');
     vi.mocked(extractCode).mockReturnValue({ code: 'const x = 1;', confidence: 'high' });
-    vi.mocked(applyCode).mockReturnValue({ success: true });
+    vi.mocked(applyCode).mockResolvedValue({ success: true });
     vi.mocked(computeDiff).mockReturnValue({ diff: '+ const x = 1;', linesAdded: 1, linesRemoved: 0 });
 
     const implementer = createImplementerBase(makeBaseConfig());
@@ -133,8 +138,25 @@ describe('createImplementerBase', () => {
       task: makeTask(), projectDir: '/proj', config, context: defaultContext, onOutput: vi.fn(),
     });
 
-    expect(detectChanges).toHaveBeenCalled();
+    expect(detectChanges).toHaveBeenCalledWith('/proj', expect.any(Array));
     expect(result.success).toBe(true);
+  });
+
+  it('passes before-snapshot to detectChanges so pre-existing dirty files are excluded', async () => {
+    vi.mocked(getChangedFiles).mockResolvedValue(['src/pre-existing.ts']);
+    const detectChanges = vi.fn().mockResolvedValue({ changed: true, output: '' });
+    const implementer = createImplementerBase(makeBaseConfig({
+      extractsCode: false,
+      detectChanges,
+    }));
+    const config = makeConfig();
+
+    await implementer.implement({
+      task: makeTask(), projectDir: '/proj', config, context: defaultContext, onOutput: vi.fn(),
+    });
+
+    const [, beforeArg] = detectChanges.mock.calls[0] ?? [];
+    expect(beforeArg).toEqual(['src/pre-existing.ts']);
   });
 
   it('returns success when extractsCode is false and no detectChanges provided', async () => {
@@ -165,13 +187,14 @@ describe('createImplementerBase', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toBe('No files changed');
+    expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 20 });
   });
 
   describe('retry', () => {
     it('retries with temperature escalation for kind "local"', async () => {
       vi.mocked(readFileOrEmpty).mockResolvedValue('old');
       vi.mocked(extractCode).mockReturnValue({ code: 'const x = 1;', confidence: 'high' });
-      vi.mocked(applyCode).mockReturnValue({ success: true });
+      vi.mocked(applyCode).mockResolvedValue({ success: true });
       vi.mocked(computeDiff).mockReturnValue({ diff: '+ line', linesAdded: 1, linesRemoved: 0 });
 
       const invoke = vi.fn().mockResolvedValue({ text: 'retry output', usage: null });
@@ -191,7 +214,7 @@ describe('createImplementerBase', () => {
     it('retries with base temperature for kind "hint"', async () => {
       vi.mocked(readFileOrEmpty).mockResolvedValue('old');
       vi.mocked(extractCode).mockReturnValue({ code: 'fixed code', confidence: 'high' });
-      vi.mocked(applyCode).mockReturnValue({ success: true });
+      vi.mocked(applyCode).mockResolvedValue({ success: true });
       vi.mocked(computeDiff).mockReturnValue({ diff: '+ fixed', linesAdded: 1, linesRemoved: 0 });
 
       const invoke = vi.fn().mockResolvedValue({ text: 'hint output', usage: null });
@@ -230,7 +253,7 @@ describe('createImplementerBase', () => {
     it('fires "done" event on success with diff data', async () => {
       vi.mocked(readFileOrEmpty).mockResolvedValue('old');
       vi.mocked(extractCode).mockReturnValue({ code: 'x', confidence: 'high' });
-      vi.mocked(applyCode).mockReturnValue({ success: true });
+      vi.mocked(applyCode).mockResolvedValue({ success: true });
       vi.mocked(computeDiff).mockReturnValue({ diff: '+ x', linesAdded: 3, linesRemoved: 1 });
 
       const events: TuiEvent[] = [];
@@ -269,4 +292,3 @@ describe('createImplementerBase', () => {
     });
   });
 });
-

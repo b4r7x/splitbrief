@@ -21,26 +21,26 @@ const KEY_FORMAT_HINTS: Record<string, { pattern: RegExp; example: string }> = {
   deepseek: { pattern: /^sk-/, example: 'sk-...' },
 };
 
-function apiKeyErrors(config: Config): ConfigError[] {
-  const { planner } = config;
-  const errors: ConfigError[] = [];
-
-  if (planner.kind === 'agent-sdk') {
+function checkApiKey(role: 'planner' | 'implementer', config: PlannerConfig | ImplementerConfig, errors: ConfigError[]): void {
+  if (config.kind === 'agent-sdk') {
     const envVar = PROVIDER_CATALOG['agent-sdk']?.apiKeyEnv ?? 'ANTHROPIC_API_KEY';
-    if (!planner.apiKey && !process.env[envVar]) {
-      errors.push({ path: 'planner.apiKey', message: `Agent SDK requires planner.apiKey or ${envVar} env var` });
+    if (!config.apiKey && !process.env[envVar]) {
+      errors.push({ path: `${role}.apiKey`, message: `Agent SDK requires ${role}.apiKey or ${envVar} env var` });
     }
   }
 
-  if (planner.kind === 'api' && isProviderId(planner.provider)) {
-    const info = PROVIDER_CATALOG[planner.provider];
-    if (info.apiKeyEnv) {
-      if (!planner.apiKey && !process.env[info.apiKeyEnv]) {
-        errors.push({ path: 'planner.apiKey', message: `${info.displayName} planner requires planner.apiKey or ${info.apiKeyEnv} env var` });
-      }
+  if (config.kind === 'api' && isProviderId(config.provider)) {
+    const info = PROVIDER_CATALOG[config.provider];
+    if (info.apiKeyEnv && !config.apiKey && !process.env[info.apiKeyEnv]) {
+      errors.push({ path: `${role}.apiKey`, message: `${info.displayName} ${role} requires ${role}.apiKey or ${info.apiKeyEnv} env var` });
     }
   }
+}
 
+function apiKeyErrors(config: Config): ConfigError[] {
+  const errors: ConfigError[] = [];
+  checkApiKey('planner', config.planner, errors);
+  checkApiKey('implementer', config.implementer, errors);
   return errors;
 }
 

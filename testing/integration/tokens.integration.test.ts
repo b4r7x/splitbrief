@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { guardIntegration } from './guard.js';
+import { withTempDir } from '../helpers/temp-dir.js';
 import { createInitialState } from '../../src/core/state/machine.js';
 import { saveState, loadState } from '../../src/core/state/persistence.js';
 import { calculateCostBreakdown } from '../../src/engine/providers/pricing.js';
@@ -13,8 +11,7 @@ describe('Token accumulation integration', () => {
     const g = await guardIntegration();
     if (g.skip) { t.skip(); return; }
 
-    const tmpDir = await mkdtemp(join(tmpdir(), 'tiny-spec-tokens-'));
-    try {
+    await withTempDir('tiny-spec-tokens', async (tmpDir) => {
       const state = createInitialState('test-feature');
 
       state.tokenUsage.plannerInput += 1000;
@@ -35,9 +32,7 @@ describe('Token accumulation integration', () => {
       expect(loaded.tokenUsage.implementerOutput).toBe(1000);
       expect(loaded.tokenUsage.escalationInput).toBe(500);
       expect(loaded.tokenUsage.escalationOutput).toBe(200);
-    } finally {
-      await rm(tmpDir, { recursive: true, force: true });
-    }
+    });
   });
 
   it('cost breakdown returns non-zero savings for combined usage', { timeout: 10_000 }, async (t) => {
