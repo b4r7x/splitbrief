@@ -431,7 +431,7 @@ Has implementation steps but no type definitions.
 describe('stripFileFrontmatter', () => {
   it('strips frontmatter containing generated_by', () => {
     const input = `---
-generated_by: tiny-spec v0.1.0
+generated_by: diptych v0.1.0
 planner: claude-code
 mode: standard
 created_at: 2025-01-01T00:00:00.000Z
@@ -466,7 +466,7 @@ Do stuff.`;
   });
 
   it('strips frontmatter with Windows line endings', () => {
-    const content = '---\r\ngenerated_by: tiny-spec v0.1.0\r\n---\r\nactual content';
+    const content = '---\r\ngenerated_by: diptych v0.1.0\r\n---\r\nactual content';
     expect(stripFileFrontmatter(content)).toBe('actual content');
   });
 });
@@ -474,7 +474,7 @@ Do stuff.`;
 describe('parseTasks with file-level frontmatter', () => {
   it('strips file-level frontmatter before parsing task blocks', () => {
     const input = `---
-generated_by: tiny-spec v0.1.0
+generated_by: diptych v0.1.0
 planner: claude-code
 implementer: ollama
 mode: standard

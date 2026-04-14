@@ -1,17 +1,17 @@
-# Quickstart: tiny-spec with Interactive Planning
+# Quickstart: diptych with Interactive Planning
 
 ## First Run (No Config)
 
 ```bash
 cd your-project
-tiny-spec start "add user authentication with JWT"
+diptych start "add user authentication with JWT"
 ```
 
-If no `.tiny-spec/config.yaml` exists, the interactive picker appears:
+If no `.diptych/config.yaml` exists, the interactive picker appears:
 
 1. **Select planner** — auto-detected from your system (Claude Code, Codex, etc.)
 2. **Select implementer** — auto-detected running models (Ollama, LM Studio)
-3. Config saved to `.tiny-spec/config.yaml` for future runs
+3. Config saved to `.diptych/config.yaml` for future runs
 
 ## Conversational Planning
 
@@ -29,7 +29,7 @@ Should I reuse it or switch to JWT?
 > 2
 ```
 
-Your answers are saved to `.tiny-spec/current/spec.md` under a `## Clarifications` section. You can also edit spec.md directly in your editor at any time.
+Your answers are saved to `.diptych/current/spec.md` under a `## Clarifications` section. You can also edit spec.md directly in your editor at any time.
 
 **Commands during questions**:
 - Type answer + Enter → answer recorded
@@ -52,7 +52,7 @@ The comment option is the fastest way to refine: type "make the tasks smaller" a
 Use any command as the implementer:
 
 ```yaml
-# .tiny-spec/config.yaml
+# .diptych/config.yaml
 implementer:
   type: shell
   command: my-custom-script
@@ -67,14 +67,14 @@ The command receives the task prompt on stdin and returns code on stdout. Same r
 Skip all interactions:
 
 ```bash
-tiny-spec start "add auth" --auto
+diptych start "add auth" --auto
 ```
 
 Questions are answered with planner's best guesses. Specs and plans auto-approved.
 
 ## Files Produced
 
-All artifacts are markdown files in `.tiny-spec/current/`:
+All artifacts are markdown files in `.diptych/current/`:
 
 | File | Content |
 |------|---------|

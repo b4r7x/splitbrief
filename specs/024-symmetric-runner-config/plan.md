@@ -9,13 +9,13 @@ Finish the work that `specs/023-config-schema-refactor` started. Today the plann
 
 This refactor collapses both roles to exactly **5 symmetric Runner kinds** (`cli | api | shell | agent | agent-sdk`), defined once via shared field blocks (`CliRunnerFields`, `ApiRunnerFields`, etc.) and composed into role-specific variants with shared `GenerationCommonFields` for model/contextLength/temperature/timeout. Illegal states become unrepresentable at the zod parse boundary; every constraint previously enforced by runtime checks moves into the schema. A new `version: 2` root marker gates auto-migration from v1. A new `createAgentPlanner` + shared `invokeCommandBasedRunner` primitive completes the cli/shell/agent symmetry on both roles. The umbrella type name becomes **Runner** (not "Backend") everywhere.
 
-tiny-spec is pre-deployment, so the refactor can be a clean break — lazy in-place migration at `loadConfig()` handles the one remaining class of legacy configs (contributor laptops with v1 files on disk).
+diptych is pre-deployment, so the refactor can be a clean break — lazy in-place migration at `loadConfig()` handles the one remaining class of legacy configs (contributor laptops with v1 files on disk).
 
 ## Technical Context
 
 **Language/Version**: TypeScript 6.x, ESM only (`"type": "module"`), Node.js 22+
 **Primary Dependencies**: `zod` 3.x (schema validation), `yaml` (YAML parsing), `vitest` 4.x (testing), `ink` 6.x (TUI / React 19), `commander` (CLI), `@anthropic-ai/claude-agent-sdk` (optional peer dep — isolated in `src/engine/agent-sdk.ts:loadSdk`)
-**Storage**: `.tiny-spec/config.yml` (user config, YAML), `.tiny-spec/current/state.json` (workflow state, display strings only — no migration needed)
+**Storage**: `.diptych/config.yml` (user config, YAML), `.diptych/current/state.json` (workflow state, display strings only — no migration needed)
 **Testing**: Vitest 4.x with colocated `*.test.ts` / `*.test.tsx` files next to implementations
 **Target Platform**: macOS (primary), Linux (secondary); Node.js 22+
 **Project Type**: Single project — CLI tool with TUI, rendered with Ink 6.x
@@ -52,11 +52,11 @@ The execution sequence below is ordered so every commit leaves `npm run typechec
 
 ### VI. Identity & Anti-Goals — ✅ PASS
 
-- tiny-spec's two-role identity (planner + implementer) is unchanged. The `Runner` concept is a config-layer abstraction over how a role is run — it does not blur the boundary between roles at the runtime interface level. The `Planner` interface (6 methods) and `Implementer` interface (2 methods) stay separate and are explicitly out of scope.
+- diptych's two-role identity (planner + implementer) is unchanged. The `Runner` concept is a config-layer abstraction over how a role is run — it does not blur the boundary between roles at the runtime interface level. The `Planner` interface (6 methods) and `Implementer` interface (2 methods) stay separate and are explicitly out of scope.
 - No generic multi-agent coordination introduced. The 5 runner kinds are concrete transports, not a "dynamic agent count".
 - No tool-call support for implementer models added.
 - No features that blur planner/implementer boundary added.
-- File write delegation is already permitted (the existing `agent` implementer kind uses filesystem detection). Adding the symmetric `createAgentPlanner` extends the same permitted exception to the planner side — tiny-spec still owns validation, retry, escalation, commits, and workflow.
+- File write delegation is already permitted (the existing `agent` implementer kind uses filesystem detection). Adding the symmetric `createAgentPlanner` extends the same permitted exception to the planner side — diptych still owns validation, retry, escalation, commits, and workflow.
 - The refactor strengthens the "visible, understandable, satisfying" goal by eliminating cryptic runtime errors in favor of clear config-load errors.
 
 **Gate result**: All six principles pass. No complexity tracking entries required.
@@ -159,7 +159,7 @@ src/
     └── runner-dispatch.ts               # RENAMED from backend-factory.ts — dispatchRunner helper (generic, sync, domain-agnostic)
 ```
 
-**Structure Decision**: Single project — tiny-spec is a CLI with TUI, all source under `src/`. No separate backend/frontend split. Tests are colocated with implementations (`foo.test.ts` next to `foo.ts`). This refactor fits the existing structure; no new top-level directories introduced. The one new directory (`src/engine/runners/`) groups the symmetric factory + shared command-based primitive.
+**Structure Decision**: Single project — diptych is a CLI with TUI, all source under `src/`. No separate backend/frontend split. Tests are colocated with implementations (`foo.test.ts` next to `foo.ts`). This refactor fits the existing structure; no new top-level directories introduced. The one new directory (`src/engine/runners/`) groups the symmetric factory + shared command-based primitive.
 
 ## Complexity Tracking
 

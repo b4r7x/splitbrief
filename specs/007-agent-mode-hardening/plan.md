@@ -5,7 +5,7 @@
 
 ## Summary
 
-Add a new "agent" implementer mode where the implementer subprocess writes files directly (no extractCode/applyCode), while tiny-spec retains validation/retry/escalation/git. Harden the conversational planning TUI (question parsing, comment-on-approval, graceful degradation). Add planner CLI version detection to prevent flag-mismatch errors. Amend Constitution Principle VI to v1.2.0.
+Add a new "agent" implementer mode where the implementer subprocess writes files directly (no extractCode/applyCode), while diptych retains validation/retry/escalation/git. Harden the conversational planning TUI (question parsing, comment-on-approval, graceful degradation). Add planner CLI version detection to prevent flag-mismatch errors. Amend Constitution Principle VI to v1.2.0.
 
 ## Technical Context
 
@@ -30,7 +30,7 @@ Add a new "agent" implementer mode where the implementer subprocess writes files
 | III. Local-First Implementation | PASS | Default remains Ollama API. Agent mode is opt-in. |
 | IV. Functional Purity | PASS | New code uses pure functions. No classes. |
 | V. Validate Before Commit | PASS | Agent mode still runs tsc→lint→test after each task. Retry and escalation unchanged. |
-| VI. Identity & Anti-Goals | REQUIRES AMENDMENT | Agent mode delegates file writes to implementer. Owner approved amending Principle VI to v1.2.0: file write delegation permitted when tiny-spec retains validation/git/escalation ownership. Anti-goal remains for generic agent-wrapping patterns. |
+| VI. Identity & Anti-Goals | REQUIRES AMENDMENT | Agent mode delegates file writes to implementer. Owner approved amending Principle VI to v1.2.0: file write delegation permitted when diptych retains validation/git/escalation ownership. Anti-goal remains for generic agent-wrapping patterns. |
 
 **Gate result**: PASS (with approved amendment to Principle VI)
 
@@ -105,6 +105,6 @@ tests/
 | III. Local-First Implementation | PASS | Default implementer unchanged. Agent mode requires explicit config. |
 | IV. Functional Purity | PASS | All new code is pure functions: `implementers/agent.ts`, `utils/version.ts`. No classes. |
 | V. Validate Before Commit | PASS | Agent mode runs identical validation pipeline (tsc→lint→test). Retry/escalation unchanged. |
-| VI. Identity & Anti-Goals | PASS | Amendment to v1.2.0 approved. Carve-out: file write delegation permitted when tiny-spec retains validation/git/escalation. Design confirms tiny-spec still owns the full quality pipeline. |
+| VI. Identity & Anti-Goals | PASS | Amendment to v1.2.0 approved. Carve-out: file write delegation permitted when diptych retains validation/git/escalation. Design confirms diptych still owns the full quality pipeline. |
 
 **Post-design gate result**: ALL PASS

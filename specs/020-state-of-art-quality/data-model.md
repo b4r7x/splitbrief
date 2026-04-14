@@ -62,7 +62,7 @@ Replaces 7 separate `useState` calls in `useWorkflow`.
 
 ### Unchanged Entities
 
-- All persistent state (`.tiny-spec/state.json`, `events.jsonl`, session files)
-- Config file format (`.tiny-spec/config.yaml`)
+- All persistent state (`.diptych/state.json`, `events.jsonl`, session files)
+- Config file format (`.diptych/config.yaml`)
 - All engine interfaces (`PlannerBackend`, `OrchestratorCallbacks`, `TuiEvent`)
 - CLI command interface

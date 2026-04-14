@@ -9,7 +9,7 @@
 
 ### User Story 1 - Working Input & Commands (Priority: P1)
 
-A developer launches tiny-spec and types a feature description into the home screen chatbox. The text is accepted, and the app transitions to the workflow screen where the feature is being processed. The developer can also type slash commands like `/help` or `/status` at any time and get meaningful responses.
+A developer launches diptych and types a feature description into the home screen chatbox. The text is accepted, and the app transitions to the workflow screen where the feature is being processed. The developer can also type slash commands like `/help` or `/status` at any time and get meaningful responses.
 
 **Why this priority**: The app is currently non-functional — no input produces any result. Without working input, nothing else matters.
 
@@ -27,7 +27,7 @@ A developer launches tiny-spec and types a feature description into the home scr
 
 ### User Story 2 - Professional Home Screen (Priority: P2)
 
-A developer launches tiny-spec with `npm run start` (no arguments). The home screen loads with a vertically centered layout: ASCII banner at the top, configuration summary, recent sessions list, and an input bar at the bottom. The layout feels polished, balanced, and professional — similar to OpenCode's welcome screen.
+A developer launches diptych with `npm run start` (no arguments). The home screen loads with a vertically centered layout: ASCII banner at the top, configuration summary, recent sessions list, and an input bar at the bottom. The layout feels polished, balanced, and professional — similar to OpenCode's welcome screen.
 
 **Why this priority**: First impressions define perceived quality. A centered, well-spaced home screen makes the tool feel production-ready.
 
@@ -44,7 +44,7 @@ A developer launches tiny-spec with `npm run start` (no arguments). The home scr
 
 ### User Story 3 - Command Palette (Priority: P3)
 
-While using tiny-spec on any screen, the developer presses Ctrl+K to open a command palette overlay. The palette lists all available commands and keyboard shortcuts. The developer can type to filter commands and press Enter to execute one, or Escape to dismiss.
+While using diptych on any screen, the developer presses Ctrl+K to open a command palette overlay. The palette lists all available commands and keyboard shortcuts. The developer can type to filter commands and press Enter to execute one, or Escape to dismiss.
 
 **Why this priority**: Command palette is the standard discoverability pattern for keyboard-driven tools. It replaces the need to memorize slash commands.
 

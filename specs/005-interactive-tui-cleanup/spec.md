@@ -9,21 +9,21 @@
 
 ### User Story 1 — Interactive Setup on Start (Priority: P1)
 
-A user runs `tiny-spec start "add auth"` without any config file. Instead of silently creating defaults and proceeding, the tool shows an interactive picker. It auto-detects which planners are available on the system (e.g., Claude Code installed, Codex installed) and which implementer endpoints are running (e.g., Ollama on localhost:11434 with qwen2.5-coder:7b, LM Studio on localhost:1234 with deepseek-coder). The user selects one planner and one implementer from the list, and the workflow starts.
+A user runs `diptych start "add auth"` without any config file. Instead of silently creating defaults and proceeding, the tool shows an interactive picker. It auto-detects which planners are available on the system (e.g., Claude Code installed, Codex installed) and which implementer endpoints are running (e.g., Ollama on localhost:11434 with qwen2.5-coder:7b, LM Studio on localhost:1234 with deepseek-coder). The user selects one planner and one implementer from the list, and the workflow starts.
 
 If config already exists, the tool uses it without prompting (existing behavior preserved). If the user passes `--model` or `--provider` flags, those override without prompting.
 
 **Why this priority**: Eliminates the #1 friction point — new users currently have to understand YAML config before they can do anything. This makes the tool usable in under 30 seconds.
 
-**Independent Test**: Can be tested by running `tiny-spec start "test"` in a project with no `.tiny-spec/config.yaml`, verifying the interactive picker appears, and confirming the selected configuration is used for the workflow.
+**Independent Test**: Can be tested by running `diptych start "test"` in a project with no `.diptych/config.yaml`, verifying the interactive picker appears, and confirming the selected configuration is used for the workflow.
 
 **Acceptance Scenarios**:
 
-1. **Given** no config exists and Ollama is running with 2 models, **When** user runs `tiny-spec start "feature"`, **Then** an interactive picker shows detected planners and implementer models, user selects, and workflow starts with those choices.
-2. **Given** no config exists and no local models are running, **When** user runs `tiny-spec start "feature"`, **Then** the picker shows planners only and prompts for implementer details (provider, model, API base) or offers to create config with defaults.
-3. **Given** config exists, **When** user runs `tiny-spec start "feature"`, **Then** workflow starts immediately using config values (no interactive prompt).
-4. **Given** no config exists, **When** user runs `tiny-spec start "feature" --model qwen3:8b --provider ollama`, **Then** workflow starts with the specified overrides (no interactive prompt).
-5. **Given** the interactive picker is shown, **When** user selects a planner and implementer, **Then** the selection is saved to `.tiny-spec/config.yaml` for future runs.
+1. **Given** no config exists and Ollama is running with 2 models, **When** user runs `diptych start "feature"`, **Then** an interactive picker shows detected planners and implementer models, user selects, and workflow starts with those choices.
+2. **Given** no config exists and no local models are running, **When** user runs `diptych start "feature"`, **Then** the picker shows planners only and prompts for implementer details (provider, model, API base) or offers to create config with defaults.
+3. **Given** config exists, **When** user runs `diptych start "feature"`, **Then** workflow starts immediately using config values (no interactive prompt).
+4. **Given** no config exists, **When** user runs `diptych start "feature" --model qwen3:8b --provider ollama`, **Then** workflow starts with the specified overrides (no interactive prompt).
+5. **Given** the interactive picker is shown, **When** user selects a planner and implementer, **Then** the selection is saved to `.diptych/config.yaml` for future runs.
 
 ---
 
@@ -50,18 +50,18 @@ This enables use cases like: custom bash functions that wrap other AI tools, loc
 
 The codebase has accumulated inconsistencies from rapid v0.1/v0.2 development. This story addresses concrete issues:
 
-- The `spec` command hardcodes Claude Code planner via a backward-compat wrapper (`planner.ts`) instead of using the pluggable factory. Users who configure a different planner (e.g., Codex, Aider) find that `tiny-spec spec` ignores their choice.
+- The `spec` command hardcodes Claude Code planner via a backward-compat wrapper (`planner.ts`) instead of using the pluggable factory. Users who configure a different planner (e.g., Codex, Aider) find that `diptych spec` ignores their choice.
 - The backward-compat `planner.ts` wrapper should be removed; the `spec` command should use the planner factory directly.
 - Dead or unused code paths should be identified and removed.
 - Documentation references should be consistent across CLAUDE.md, README.md, and docs/VISION.md.
 
 **Why this priority**: Technical debt cleanup. No user-facing value on its own but prevents confusion and bugs as the codebase grows.
 
-**Independent Test**: Can be tested by configuring a non-Claude-Code planner and running `tiny-spec spec "test"`, verifying it uses the configured planner. Dead code removal verified by test suite passing after removal.
+**Independent Test**: Can be tested by configuring a non-Claude-Code planner and running `diptych spec "test"`, verifying it uses the configured planner. Dead code removal verified by test suite passing after removal.
 
 **Acceptance Scenarios**:
 
-1. **Given** config has `planner.tool: codex`, **When** user runs `tiny-spec spec "feature"`, **Then** the Codex planner is used (not Claude Code).
+1. **Given** config has `planner.tool: codex`, **When** user runs `diptych spec "feature"`, **Then** the Codex planner is used (not Claude Code).
 2. **Given** the backward-compat `planner.ts` wrapper exists, **When** cleanup is complete, **Then** the wrapper is removed and all callers use the planner factory.
 3. **Given** dead code exists in the codebase, **When** cleanup is complete, **Then** unused functions, imports, and files are removed, and all tests pass.
 4. **Given** documentation exists across multiple files, **When** cleanup is complete, **Then** CLAUDE.md, README.md, and docs/VISION.md have consistent, non-contradictory information.
@@ -72,7 +72,7 @@ The codebase has accumulated inconsistencies from rapid v0.1/v0.2 development. T
 
 The project constitution (`.specify/memory/constitution.md`, v1.0.0) was written during initial v0.1 development and doesn't reflect the strategic decisions made since. Based on `docs/VISION.md` and project direction discussions, the constitution needs to be updated to capture:
 
-- **What tiny-spec is NOT**: not a universal AI connector, not a multi-agent coordinator, not Claude Squad. The cost-optimization focus is the core identity and must be codified as a principle.
+- **What diptych is NOT**: not a universal AI connector, not a multi-agent coordinator, not Claude Squad. The cost-optimization focus is the core identity and must be codified as a principle.
 - **Pluggable architecture**: Both planner and implementer are pluggable (planner: 6 backends + shell; implementer: OpenAI API + shell). This supersedes the v1.0.0 constraint that hardcoded "Claude Code CLI as subprocess" and "OpenAI-compatible API (no subprocess tools)".
 - **Anti-goals as guardrails**: Tool calls for small models, agent-wrapping-agent patterns, and generic orchestration are explicitly rejected. These should be constitutional constraints to prevent future scope creep.
 
@@ -115,7 +115,7 @@ The constitution update uses `/speckit.constitution` to ensure proper versioning
 - **FR-001**: System MUST auto-detect available planner tools on the system (check if `claude`, `codex`, `opencode`, `aider` commands exist on PATH).
 - **FR-002**: System MUST auto-detect running implementer endpoints (probe Ollama and LM Studio default ports, list available models).
 - **FR-003**: System MUST show an interactive selection menu when no config file exists and no CLI overrides are provided.
-- **FR-004**: System MUST save the user's selection to `.tiny-spec/config.yaml` after interactive setup.
+- **FR-004**: System MUST save the user's selection to `.diptych/config.yaml` after interactive setup.
 - **FR-005**: System MUST skip the interactive picker when config already exists OR when CLI flags provide overrides.
 - **FR-006**: The `init` command MUST also use the interactive picker with planner detection (currently it only detects implementer models).
 
@@ -152,9 +152,9 @@ The constitution update uses `/speckit.constitution` to ensure proper versioning
 
 ### Measurable Outcomes
 
-- **SC-001**: A new user with Ollama running can go from `npm install -g tiny-spec` to a running workflow in under 60 seconds without editing any config file.
+- **SC-001**: A new user with Ollama running can go from `npm install -g diptych` to a running workflow in under 60 seconds without editing any config file.
 - **SC-002**: Users can configure any shell command as the implementer and have it receive task prompts and return code.
-- **SC-003**: The `tiny-spec spec` command respects the configured planner tool (not hardcoded to Claude Code).
+- **SC-003**: The `diptych spec` command respects the configured planner tool (not hardcoded to Claude Code).
 - **SC-004**: All existing tests pass after cleanup, with no reduction in test count.
 - **SC-005**: No backward-compat wrappers or dead code remain in the codebase after cleanup.
 

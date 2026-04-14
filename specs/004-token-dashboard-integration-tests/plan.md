@@ -5,7 +5,7 @@
 
 ## Summary
 
-Transform tiny-spec from a hardcoded Claude Code + Ollama tool into a pluggable orchestrator supporting multiple planner backends (Claude Code, Codex, OpenCode, Aider, Agent SDK) and multiple implementers. Add a rich token usage dashboard with cost savings display, live token counter in the status bar, and a comprehensive integration test suite validating the full workflow end-to-end.
+Transform diptych from a hardcoded Claude Code + Ollama tool into a pluggable orchestrator supporting multiple planner backends (Claude Code, Codex, OpenCode, Aider, Agent SDK) and multiple implementers. Add a rich token usage dashboard with cost savings display, live token counter in the status bar, and a comprehensive integration test suite validating the full workflow end-to-end.
 
 ## Technical Context
 

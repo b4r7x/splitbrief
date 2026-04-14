@@ -1,4 +1,4 @@
-# tiny-spec Development Guidelines
+# diptych Development Guidelines
 
 ## CRITICAL — NEVER COMMIT, NEVER STAGE
 
@@ -102,7 +102,7 @@ src/
 │   │   └── catalog.ts
 │   ├── state/                # Workflow state machine
 │   │   ├── machine.ts        # Phases + transitions
-│   │   └── persistence.ts    # State persistence to .tiny-spec/state.json
+│   │   └── persistence.ts    # State persistence to .diptych/state.json
 │   └── types/                # All shared types (split by domain)
 │       ├── index.ts          # Re-exports all type modules
 │       ├── app.ts            # App-level types
@@ -127,11 +127,11 @@ src/
 │           └── workflow.ts   # Workflow schema types
 ├── cli/                      # CLI-specific logic (non-React)
 │   ├── commands/             # commander subcommand handlers
-│   │   ├── init.ts           # `tiny-spec init`
-│   │   ├── resume.ts         # `tiny-spec resume`
-│   │   ├── spec.ts           # `tiny-spec spec`
-│   │   ├── start.ts          # `tiny-spec start`
-│   │   └── status.ts         # `tiny-spec status`
+│   │   ├── init.ts           # `diptych init`
+│   │   ├── resume.ts         # `diptych resume`
+│   │   ├── spec.ts           # `diptych spec`
+│   │   ├── start.ts          # `diptych start`
+│   │   └── status.ts         # `diptych status`
 │   ├── init-stores.ts        # Eager store bootstrap before React renders
 │   ├── render.ts             # Ink/fullscreen rendering setup
 │   └── workflow.ts           # Shared CLI workflow helpers
@@ -320,7 +320,7 @@ src/
     ├── error-hints.ts        # Human-readable hints for common error messages
     ├── format.ts             # Formatting helpers (tokens, cost, time, version parsing)
     ├── frontmatter.ts        # YAML-style frontmatter parser for skill/config files
-    ├── fs.ts                 # .tiny-spec/ directory management, archiving
+    ├── fs.ts                 # .diptych/ directory management, archiving
     ├── git.ts                # Git operations (commit, diff, status, discard changes)
     ├── highlight.ts          # Shiki-based syntax highlighting (async, WASM)
     ├── process-errors.ts     # Process error type guards and factory helpers
@@ -541,4 +541,4 @@ See `specs/002-cost-optimized-orchestrator/research.md` for all architectural de
 
 ## Active Technologies
 - TypeScript 6.x, ESM only (`"type": "module"`), Node.js 22+ + `zod` 3.x (schema validation), `yaml` (YAML parsing), `vitest` 4.x (testing), `ink` 6.x (TUI / React 19), `commander` (CLI), `@anthropic-ai/claude-agent-sdk` (optional peer dep — isolated in `src/engine/agent-sdk.ts:loadSdk`)
-- `.tiny-spec/config.yml` (user config, YAML, version: 2), `.tiny-spec/current/state.json` (workflow state, display strings only)
+- `.diptych/config.yml` (user config, YAML, version: 2), `.diptych/current/state.json` (workflow state, display strings only)

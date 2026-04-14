@@ -1,0 +1,27 @@
+version: 2
+planner:
+  kind: cli
+  tool: codex
+  model: gpt-5.4-mini
+implementer:
+  kind: api
+  provider: ollama
+  api_base: http://localhost:11434/v1
+  model: gemma4:31b-cloud
+  context_length: 32768
+  temperature: 0.3
+validation:
+  typecheck: true
+  lint: true
+  test: false
+  test_command: npm testfafaf
+workflow:
+  auto_approve_spec: false
+  auto_approve_plan: false
+  max_retries: 3
+  commit_strategy: none
+  mode: quick
+theme: terminal
+shiki_theme: github-dark
+sessions:
+  scope: project

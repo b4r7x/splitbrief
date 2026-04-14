@@ -29,7 +29,7 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
   const strategy = config.workflow.commitStrategy;
   if (strategy === 'per-task') {
     const suffix = commitSuffix ? ` (${commitSuffix})` : '';
-    const commitMsg = `feat(tiny-spec): ${task.id} - ${task.title}${suffix}`;
+    const commitMsg = `feat(diptych): ${task.id} - ${task.title}${suffix}`;
     try {
       await commitChanges(projectDir, commitMsg);
       emitGitCommit(callbacks, commitMsg);

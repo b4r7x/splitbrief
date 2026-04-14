@@ -9,24 +9,24 @@
 
 ### User Story 1 — Conversational Spec Creation (Priority: P1)
 
-A user runs `tiny-spec start "add user auth with JWT"`. The planner researches the codebase, then instead of silently generating a complete spec, it engages the user in a conversation. The TUI shows the planner's findings and asks targeted questions:
+A user runs `diptych start "add user auth with JWT"`. The planner researches the codebase, then instead of silently generating a complete spec, it engages the user in a conversation. The TUI shows the planner's findings and asks targeted questions:
 
 - "I found Express + Passport in your codebase. Do you want JWT or session-based auth?"
 - "Should refresh tokens have automatic rotation?"
 - "I see you have a `users` table. Should I reuse it or create a separate auth table?"
 
-The user answers directly in the TUI. Each answer is immediately recorded in `.tiny-spec/current/spec.md` under a Clarifications section. After the questions are resolved, the planner generates the final spec.md incorporating all answers.
+The user answers directly in the TUI. Each answer is immediately recorded in `.diptych/current/spec.md` under a Clarifications section. After the questions are resolved, the planner generates the final spec.md incorporating all answers.
 
 The user can also open spec.md in their editor at any point during this process to make manual edits. The planner picks up file changes at phase boundaries.
 
-**Why this priority**: This is the core differentiator from every other tool. No one else does conversational spec creation with file-based persistence. It's the #1 thing that makes tiny-spec better than running Claude Code directly.
+**Why this priority**: This is the core differentiator from every other tool. No one else does conversational spec creation with file-based persistence. It's the #1 thing that makes diptych better than running Claude Code directly.
 
-**Independent Test**: Can be tested by running `tiny-spec start "test feature"` and verifying: (a) planner asks at least one clarifying question in the TUI, (b) the answer appears in spec.md under Clarifications, (c) the final spec reflects the answer.
+**Independent Test**: Can be tested by running `diptych start "test feature"` and verifying: (a) planner asks at least one clarifying question in the TUI, (b) the answer appears in spec.md under Clarifications, (c) the final spec reflects the answer.
 
 **Acceptance Scenarios**:
 
 1. **Given** the planner has researched the codebase, **When** there are ambiguities in the feature request, **Then** the planner asks up to 5 targeted questions in the TUI before generating the spec.
-2. **Given** a question is displayed in the TUI, **When** the user types an answer and presses Enter, **Then** the answer is recorded in `.tiny-spec/current/spec.md` under `## Clarifications` immediately.
+2. **Given** a question is displayed in the TUI, **When** the user types an answer and presses Enter, **Then** the answer is recorded in `.diptych/current/spec.md` under `## Clarifications` immediately.
 3. **Given** the user is in the clarification phase, **When** the user opens spec.md in $EDITOR and modifies content, **Then** the planner detects the change at the next phase boundary and incorporates it.
 4. **Given** the planner has no ambiguities (feature request is clear), **When** research is complete, **Then** the planner skips questions and generates the spec directly.
 5. **Given** clarifications are complete, **When** the planner generates the spec, **Then** spec.md contains all clarification answers integrated into the relevant sections (not just appended).
@@ -59,21 +59,21 @@ This replaces the current binary approve/reject with a richer interaction where 
 
 ### User Story 3 — Interactive Setup on Start (Priority: P1)
 
-A user runs `tiny-spec start "add auth"` without any config file. Instead of silently creating defaults, the tool shows an interactive picker. It auto-detects which planners are available on the system (e.g., Claude Code installed, Codex installed) and which implementer endpoints are running (e.g., Ollama with qwen2.5-coder:7b, LM Studio with deepseek-coder). The user selects one planner and one implementer from the list, and the workflow starts.
+A user runs `diptych start "add auth"` without any config file. Instead of silently creating defaults, the tool shows an interactive picker. It auto-detects which planners are available on the system (e.g., Claude Code installed, Codex installed) and which implementer endpoints are running (e.g., Ollama with qwen2.5-coder:7b, LM Studio with deepseek-coder). The user selects one planner and one implementer from the list, and the workflow starts.
 
 If config already exists, the tool uses it without prompting. If the user passes `--model` or `--provider` flags, those override without prompting.
 
 **Why this priority**: Eliminates the #1 friction point — new users currently have to understand YAML config before they can do anything.
 
-**Independent Test**: Can be tested by running `tiny-spec start "test"` in a project with no `.tiny-spec/config.yaml`, verifying the interactive picker appears, and confirming the selected configuration is used.
+**Independent Test**: Can be tested by running `diptych start "test"` in a project with no `.diptych/config.yaml`, verifying the interactive picker appears, and confirming the selected configuration is used.
 
 **Acceptance Scenarios**:
 
-1. **Given** no config exists and Ollama is running with 2 models, **When** user runs `tiny-spec start "feature"`, **Then** an interactive picker shows detected planners and implementer models, user selects, and workflow starts with those choices.
-2. **Given** no config exists and no local models are running, **When** user runs `tiny-spec start "feature"`, **Then** the picker shows planners only and prompts for implementer details or offers defaults.
-3. **Given** config exists, **When** user runs `tiny-spec start "feature"`, **Then** workflow starts immediately using config values (no interactive prompt).
-4. **Given** no config exists, **When** user runs `tiny-spec start "feature" --model qwen3:8b --provider ollama`, **Then** workflow starts with the specified overrides (no interactive prompt).
-5. **Given** the interactive picker is shown, **When** user selects a planner and implementer, **Then** the selection is saved to `.tiny-spec/config.yaml` for future runs.
+1. **Given** no config exists and Ollama is running with 2 models, **When** user runs `diptych start "feature"`, **Then** an interactive picker shows detected planners and implementer models, user selects, and workflow starts with those choices.
+2. **Given** no config exists and no local models are running, **When** user runs `diptych start "feature"`, **Then** the picker shows planners only and prompts for implementer details or offers defaults.
+3. **Given** config exists, **When** user runs `diptych start "feature"`, **Then** workflow starts immediately using config values (no interactive prompt).
+4. **Given** no config exists, **When** user runs `diptych start "feature" --model qwen3:8b --provider ollama`, **Then** workflow starts with the specified overrides (no interactive prompt).
+5. **Given** the interactive picker is shown, **When** user selects a planner and implementer, **Then** the selection is saved to `.diptych/config.yaml` for future runs.
 
 ---
 
@@ -103,7 +103,7 @@ Questions are:
 
 ### User Story 5 — File-Based Source of Truth (Priority: P2)
 
-All planning artifacts are persisted as markdown files in `.tiny-spec/current/`. The user can inspect, edit, or version-control these files independently. The files are the source of truth — what's in the file is what the planner uses, regardless of what was said in the TUI conversation.
+All planning artifacts are persisted as markdown files in `.diptych/current/`. The user can inspect, edit, or version-control these files independently. The files are the source of truth — what's in the file is what the planner uses, regardless of what was said in the TUI conversation.
 
 Files produced during planning:
 - `spec.md` — Feature specification with clarifications section
@@ -120,7 +120,7 @@ Each file is written immediately when generated (not buffered until approval).
 
 1. **Given** the planner is generating spec.md, **When** the file is written, **Then** it follows a consistent markdown structure with standard sections (Overview, Scenarios, Requirements, Clarifications, Assumptions).
 2. **Given** spec.md was manually edited by the user between spec and plan phases, **When** the planner generates plan.md, **Then** the plan reflects the edited spec (not the original).
-3. **Given** the process is interrupted, **When** the user runs `tiny-spec resume`, **Then** the workflow picks up from the last completed phase using existing files.
+3. **Given** the process is interrupted, **When** the user runs `diptych resume`, **Then** the workflow picks up from the last completed phase using existing files.
 4. **Given** clarifications are answered in the TUI, **When** the spec is written, **Then** each Q&A appears as a bullet under `## Clarifications` with date-stamped session header.
 
 ---
@@ -155,11 +155,11 @@ The codebase has accumulated inconsistencies from rapid v0.1/v0.2 development:
 
 **Why this priority**: Technical debt cleanup. Prevents confusion and bugs as the codebase grows. Also provides a clean foundation for the new conversational features.
 
-**Independent Test**: Can be tested by configuring a non-Claude-Code planner and running `tiny-spec spec "test"`, verifying it uses the configured planner. Dead code removal verified by test suite passing after removal.
+**Independent Test**: Can be tested by configuring a non-Claude-Code planner and running `diptych spec "test"`, verifying it uses the configured planner. Dead code removal verified by test suite passing after removal.
 
 **Acceptance Scenarios**:
 
-1. **Given** config has `planner.tool: codex`, **When** user runs `tiny-spec spec "feature"`, **Then** the Codex planner is used (not Claude Code).
+1. **Given** config has `planner.tool: codex`, **When** user runs `diptych spec "feature"`, **Then** the Codex planner is used (not Claude Code).
 2. **Given** the backward-compat `planner.ts` wrapper exists, **When** cleanup is complete, **Then** the wrapper is removed and all callers use the planner factory.
 3. **Given** dead code exists in the codebase, **When** cleanup is complete, **Then** unused functions, imports, and files are removed, and all tests pass.
 4. **Given** documentation exists across multiple files, **When** cleanup is complete, **Then** CLAUDE.md, README.md, and docs/VISION.md have consistent, non-contradictory information.
@@ -170,7 +170,7 @@ The codebase has accumulated inconsistencies from rapid v0.1/v0.2 development:
 
 The project constitution (`.specify/memory/constitution.md`, v1.0.0) was written during initial v0.1 development and doesn't reflect the strategic decisions made since. Based on `docs/VISION.md` and project direction discussions, the constitution needs to be updated to capture:
 
-- **What tiny-spec is NOT**: not a universal AI connector, not a multi-agent coordinator, not Claude Squad. The cost-optimization focus is the core identity.
+- **What diptych is NOT**: not a universal AI connector, not a multi-agent coordinator, not Claude Squad. The cost-optimization focus is the core identity.
 - **Pluggable architecture**: Both planner and implementer are pluggable. This supersedes the v1.0.0 constraint that hardcoded "Claude Code CLI as subprocess" and "OpenAI-compatible API (no subprocess tools)".
 - **Anti-goals as guardrails**: Tool calls for small models, agent-wrapping-agent patterns, and generic orchestration are explicitly rejected.
 
@@ -208,10 +208,10 @@ The project constitution (`.specify/memory/constitution.md`, v1.0.0) was written
 
 ### Post-Implementation Discoveries (2026-03-26)
 
-- **Shell implementer (US6) is too simple for agent-style tools**: The stdin/stdout model works for "dumb" code generators (scripts that take prompt, return code) but NOT for full coding agents like claude-zai (Claude Code wrapper). Problems: bash functions aren't visible to `spawn()`, agents manage their own files (conflicts with tiny-spec's `applyCode()`), the stdin/stdout contract doesn't support stream-json/sessions. This fundamentally challenges Decision #5 ("Don't wrap agents in agents") — if users WANT to use an agent as implementer, we need a different abstraction.
+- **Shell implementer (US6) is too simple for agent-style tools**: The stdin/stdout model works for "dumb" code generators (scripts that take prompt, return code) but NOT for full coding agents like claude-zai (Claude Code wrapper). Problems: bash functions aren't visible to `spawn()`, agents manage their own files (conflicts with diptych's `applyCode()`), the stdin/stdout contract doesn't support stream-json/sessions. This fundamentally challenges Decision #5 ("Don't wrap agents in agents") — if users WANT to use an agent as implementer, we need a different abstraction.
 - **Interactive TUI not battle-tested**: All conversational flow code (question asking, comment-on-approval, regeneration loop) was implemented by AI agents but never tested end-to-end with real Claude Code + real Ollama. The happy path likely works but edge cases and UX may have issues.
 - **Claude Code CLI compatibility**: v2.1.84 requires `--verbose` flag for `stream-json` + `-p`. Fixed, but shows the CLI API is unstable — version detection or graceful fallback needed.
-- **Open decision**: Should implementer support an "agent mode" where it manages its own file writes and tiny-spec only validates + commits? Or keep the current "implementer returns code text only" model? This needs a design discussion before more implementation.
+- **Open decision**: Should implementer support an "agent mode" where it manages its own file writes and diptych only validates + commits? Or keep the current "implementer returns code text only" model? This needs a design discussion before more implementation.
 
 ## Requirements
 
@@ -236,7 +236,7 @@ The project constitution (`.specify/memory/constitution.md`, v1.0.0) was written
 
 **File Persistence**:
 
-- **FR-012**: All planning artifacts (spec.md, plan.md, tasks.md) MUST be written to `.tiny-spec/current/` immediately upon generation.
+- **FR-012**: All planning artifacts (spec.md, plan.md, tasks.md) MUST be written to `.diptych/current/` immediately upon generation.
 - **FR-013**: Clarifications MUST be persisted in spec.md as structured bullets: `- Q: <question> → A: <answer>`.
 - **FR-014**: Interrupted workflows MUST be resumable from the last completed phase using existing files.
 - **FR-015**: The file content is the source of truth — TUI is a display/input layer only.
@@ -259,7 +259,7 @@ The project constitution (`.specify/memory/constitution.md`, v1.0.0) was written
 - **FR-023**: System MUST auto-detect available planner tools on the system (check if `claude`, `codex`, `opencode`, `aider` commands exist on PATH).
 - **FR-024**: System MUST auto-detect running implementer endpoints (probe Ollama and LM Studio default ports, list available models).
 - **FR-025**: System MUST show an interactive selection menu when no config file exists and no CLI overrides are provided.
-- **FR-026**: System MUST save the user's selection to `.tiny-spec/config.yaml` after interactive setup.
+- **FR-026**: System MUST save the user's selection to `.diptych/config.yaml` after interactive setup.
 - **FR-027**: System MUST skip the interactive picker when config already exists OR when CLI flags provide overrides.
 - **FR-028**: The `init` command MUST also use the interactive picker with planner detection (currently it only detects implementer models).
 
@@ -304,10 +304,10 @@ The project constitution (`.specify/memory/constitution.md`, v1.0.0) was written
 - **SC-002**: Every clarification answer is persisted in spec.md — no information is lost if the session crashes.
 - **SC-003**: Users can refine the plan by commenting in the TUI, and the planner regenerates the artifact within the same session.
 - **SC-004**: Planners that don't support multi-turn still work in batch mode with no errors.
-- **SC-005**: The full planning flow (research → clarify → spec → review → plan → review → tasks) completes in a single `tiny-spec start` invocation.
-- **SC-006**: A new user with Ollama running can go from `npm install -g tiny-spec` to a running workflow in under 60 seconds without editing any config file.
+- **SC-005**: The full planning flow (research → clarify → spec → review → plan → review → tasks) completes in a single `diptych start` invocation.
+- **SC-006**: A new user with Ollama running can go from `npm install -g diptych` to a running workflow in under 60 seconds without editing any config file.
 - **SC-007**: Users can configure any shell command as the implementer and have it receive task prompts and return code.
-- **SC-008**: The `tiny-spec spec` command respects the configured planner tool (not hardcoded to Claude Code).
+- **SC-008**: The `diptych spec` command respects the configured planner tool (not hardcoded to Claude Code).
 - **SC-009**: All existing tests pass after cleanup, with no reduction in test count.
 - **SC-010**: No backward-compat wrappers or dead code remain in the codebase after cleanup.
 

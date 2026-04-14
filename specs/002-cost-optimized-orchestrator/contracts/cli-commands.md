@@ -1,15 +1,15 @@
-# CLI Command Interface: tiny-spec v0.1
+# CLI Command Interface: diptych v0.1
 
 ## Commands
 
-### `tiny-spec start <feature>`
+### `diptych start <feature>`
 
 Start the full workflow: plan with Opus, implement with local model.
 
 ```
-tiny-spec start "add user authentication"
-tiny-spec start "implement rate limiting" --auto
-tiny-spec start "add search" --model qwen3.5:27b --provider lm-studio
+diptych start "add user authentication"
+diptych start "implement rate limiting" --auto
+diptych start "add search" --model qwen3.5:27b --provider lm-studio
 ```
 
 | Argument/Flag | Required | Default | Description |
@@ -22,13 +22,13 @@ tiny-spec start "add search" --model qwen3.5:27b --provider lm-studio
 
 **Output**: Split-pane TUI. Exit code 0 on success, 1 on failure.
 
-### `tiny-spec spec <feature>`
+### `diptych spec <feature>`
 
 Generate spec/plan/tasks only, no implementation.
 
 ```
-tiny-spec spec "add rate limiting"
-tiny-spec spec "refactor auth" --auto
+diptych spec "add rate limiting"
+diptych spec "refactor auth" --auto
 ```
 
 | Argument/Flag | Required | Default | Description |
@@ -37,39 +37,39 @@ tiny-spec spec "refactor auth" --auto
 | `--auto` | No | false | Auto-approve spec |
 | `--project <dir>` | No | cwd | Project directory |
 
-**Output**: Generates `.tiny-spec/current/spec.md`, `plan.md`, `tasks.md`. Plain console output (no TUI).
+**Output**: Generates `.diptych/current/spec.md`, `plan.md`, `tasks.md`. Plain console output (no TUI).
 
-### `tiny-spec init`
+### `diptych init`
 
 Initialize configuration with auto-detected models.
 
 ```
-tiny-spec init
-tiny-spec init --reconfigure
+diptych init
+diptych init --reconfigure
 ```
 
 | Argument/Flag | Required | Default | Description |
 |---------------|----------|---------|-------------|
 | `--reconfigure` | No | false | Overwrite existing config |
 
-**Output**: Creates `.tiny-spec/config.yaml`. Interactive model selection.
+**Output**: Creates `.diptych/config.yaml`. Interactive model selection.
 
-### `tiny-spec status`
+### `diptych status`
 
 Show current workflow state.
 
 ```
-tiny-spec status
+diptych status
 ```
 
 **Output**: Current phase, task progress, model info, or "No active workflow" if idle.
 
-### `tiny-spec resume`
+### `diptych resume`
 
 Resume an interrupted workflow.
 
 ```
-tiny-spec resume
+diptych resume
 ```
 
 **Output**: Split-pane TUI, continuing from saved state. Error if no state exists.
@@ -84,7 +84,7 @@ tiny-spec resume
 
 ## Configuration File
 
-Location: `.tiny-spec/config.yaml`
+Location: `.diptych/config.yaml`
 
 ```yaml
 planner:
@@ -116,7 +116,7 @@ workflow:
 | `DEEPSEEK_API_KEY` | DeepSeek provider | API key for DeepSeek |
 | `OPENROUTER_API_KEY` | OpenRouter provider | API key for OpenRouter |
 | `EDITOR` / `VISUAL` | Spec review | Editor to open spec for review |
-| `TINY_SPEC_CONTEXT_LENGTH` | Any provider | Override the default context length |
+| `DIPTYCH_CONTEXT_LENGTH` | Any provider | Override the default context length |
 
 ## Keyboard Shortcuts (TUI)
 

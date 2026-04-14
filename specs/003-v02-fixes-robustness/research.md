@@ -1,4 +1,4 @@
-# Research: tiny-spec v0.2  -  Critical Fixes, Robustness & Core Value Delivery
+# Research: diptych v0.2  -  Critical Fixes, Robustness & Core Value Delivery
 
 **Date**: 2026-03-25
 **Agents**: 4 parallel research agents + 21 analysis agents from prior session

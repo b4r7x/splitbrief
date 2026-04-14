@@ -11,7 +11,7 @@ Replace the dual-pane raw text TUI with a single-column conversation flow driven
 
 **Language/Version**: TypeScript 5.9+, ESM only
 **Primary Dependencies**: Ink 5.2.1 (React for CLI), @inkjs/ui, openai SDK, simple-git, commander
-**Storage**: JSON files (.tiny-spec/state.json, events.jsonl), Markdown files
+**Storage**: JSON files (.diptych/state.json, events.jsonl), Markdown files
 **Testing**: Node.js built-in test runner via tsx (227+ tests)
 **Target Platform**: macOS (primary), Linux (secondary)
 **Project Type**: CLI tool

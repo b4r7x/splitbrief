@@ -9,27 +9,27 @@
 
 ### User Story 1 - Home Screen and Interactive Mode (Priority: P1)
 
-When a user runs `tiny-spec` with no arguments, the CLI launches an interactive home screen instead of printing help text. The screen displays centered branding using box-drawing characters ("t i n y - s p e c" with tagline "plan smart, build cheap"), contextual information about the current environment (active planner, implementer model, project directory, git branch and clean/dirty status), a centered text input field prompting "What do you want to build?", and a row of available slash commands at the bottom (/models, /config, /status, /resume, /help). Typing "/" in the input field activates a slash command mode that filters the command list as the user types. Pressing Enter with non-slash text starts the full workflow identically to `tiny-spec start "text"`. The existing `tiny-spec start "feature"` CLI entry point continues to work unchanged for scripting and muscle-memory compatibility.
+When a user runs `diptych` with no arguments, the CLI launches an interactive home screen instead of printing help text. The screen displays centered branding using box-drawing characters ("t i n y - s p e c" with tagline "plan smart, build cheap"), contextual information about the current environment (active planner, implementer model, project directory, git branch and clean/dirty status), a centered text input field prompting "What do you want to build?", and a row of available slash commands at the bottom (/models, /config, /status, /resume, /help). Typing "/" in the input field activates a slash command mode that filters the command list as the user types. Pressing Enter with non-slash text starts the full workflow identically to `diptych start "text"`. The existing `diptych start "feature"` CLI entry point continues to work unchanged for scripting and muscle-memory compatibility.
 
 **Why this priority**: The current CLI requires users to already know the command syntax. A home screen with context and input makes the tool immediately approachable, reduces onboarding friction to zero keystrokes, and establishes visual identity. Every subsequent feature (permission modes, slash commands, model switching) depends on this interactive shell existing.
 
-**Independent Test**: Run `tiny-spec` with no arguments in a configured project directory and verify the home screen renders with branding, context info, input field, and slash command hints. Type a feature description and confirm the workflow starts.
+**Independent Test**: Run `diptych` with no arguments in a configured project directory and verify the home screen renders with branding, context info, input field, and slash command hints. Type a feature description and confirm the workflow starts.
 
 **Acceptance Scenarios**:
 
-1. **Given** the user has a configured project (`.tiny-spec/config.yaml` exists, git initialized), **When** they run `tiny-spec` with no arguments, **Then** the home screen renders showing the branding header, the configured planner name, the implementer model name, the current working directory, the current git branch with clean/dirty indicator, the text input field with placeholder "What do you want to build?", and the slash command hints at the bottom.
+1. **Given** the user has a configured project (`.diptych/config.yaml` exists, git initialized), **When** they run `diptych` with no arguments, **Then** the home screen renders showing the branding header, the configured planner name, the implementer model name, the current working directory, the current git branch with clean/dirty indicator, the text input field with placeholder "What do you want to build?", and the slash command hints at the bottom.
 
-2. **Given** the home screen is displayed, **When** the user types "add user authentication" and presses Enter, **Then** the workflow starts with that feature description identically to running `tiny-spec start "add user authentication"`, transitioning from the home screen to the conversation flow layout.
+2. **Given** the home screen is displayed, **When** the user types "add user authentication" and presses Enter, **Then** the workflow starts with that feature description identically to running `diptych start "add user authentication"`, transitioning from the home screen to the conversation flow layout.
 
 3. **Given** the home screen is displayed, **When** the user types "/" in the input field, **Then** the input switches to slash command mode, displaying a filtered list of available commands (/models, /config, /status, /resume, /help) that narrows as the user continues typing (e.g., "/m" shows only /models and /mode).
 
-4. **Given** the slash command list is visible, **When** the user selects /status and presses Enter, **Then** the status output renders inline (same content as `tiny-spec status`) and the user returns to the home screen input afterward.
+4. **Given** the slash command list is visible, **When** the user selects /status and presses Enter, **Then** the status output renders inline (same content as `diptych status`) and the user returns to the home screen input afterward.
 
-5. **Given** no `.tiny-spec/config.yaml` exists in the project, **When** the user runs `tiny-spec` with no arguments, **Then** the home screen still renders but the context section shows "No config found — run /init" in place of planner/implementer details, and entering a feature description triggers the init picker automatically before starting the workflow.
+5. **Given** no `.diptych/config.yaml` exists in the project, **When** the user runs `diptych` with no arguments, **Then** the home screen still renders but the context section shows "No config found — run /init" in place of planner/implementer details, and entering a feature description triggers the init picker automatically before starting the workflow.
 
-6. **Given** a `.tiny-spec/state.json` exists with an interrupted workflow, **When** the home screen renders, **Then** a notice appears above the input field: "Resumable workflow: [feature name] — /resume to continue", and the /resume slash command is visually highlighted.
+6. **Given** a `.diptych/state.json` exists with an interrupted workflow, **When** the home screen renders, **Then** a notice appears above the input field: "Resumable workflow: [feature name] — /resume to continue", and the /resume slash command is visually highlighted.
 
-7. **Given** the user runs `tiny-spec start "add caching"` directly from their shell, **When** the command executes, **Then** the workflow starts immediately with the conversation flow layout (no home screen), preserving full backwards compatibility.
+7. **Given** the user runs `diptych start "add caching"` directly from their shell, **When** the command executes, **Then** the workflow starts immediately with the conversation flow layout (no home screen), preserving full backwards compatibility.
 
 8. **Given** the home screen is displayed and the user has typed partial text, **When** the user presses Escape, **Then** the input field clears and returns to the placeholder state without exiting the application.
 
@@ -37,7 +37,7 @@ When a user runs `tiny-spec` with no arguments, the CLI launches an interactive 
 
 ### User Story 2 - Permission Modes with Runtime Switching (Priority: P1)
 
-Four permission modes control the level of user approval required during workflow execution: **supervised** (approve spec, plan, and each task before implementation and after validation), **normal** (approve spec and plan only; tasks run automatically — this is the default), **auto** (everything runs without any user interaction), and **plan-only** (generates spec, plan, and tasks, then stops before implementation). The active mode is displayed in the footer as a bracketed indicator: [S], [N], [A], or [P]. Pressing Tab at any point during the workflow opens a mode picker overlay (a list navigable with up/down arrows, confirmed with Enter, dismissed with Escape). Mode changes take effect starting from the next action — if the user switches from supervised to auto mid-workflow, any pending approval prompt resolves automatically as "approve". The mode can also be set via CLI flag (`--mode supervised`), config file (`mode: supervised` in `.tiny-spec/config.yaml`), or the `/mode` slash command from the home screen. Precedence is: CLI flag > runtime switch > config file > default (normal).
+Four permission modes control the level of user approval required during workflow execution: **supervised** (approve spec, plan, and each task before implementation and after validation), **normal** (approve spec and plan only; tasks run automatically — this is the default), **auto** (everything runs without any user interaction), and **plan-only** (generates spec, plan, and tasks, then stops before implementation). The active mode is displayed in the footer as a bracketed indicator: [S], [N], [A], or [P]. Pressing Tab at any point during the workflow opens a mode picker overlay (a list navigable with up/down arrows, confirmed with Enter, dismissed with Escape). Mode changes take effect starting from the next action — if the user switches from supervised to auto mid-workflow, any pending approval prompt resolves automatically as "approve". The mode can also be set via CLI flag (`--mode supervised`), config file (`mode: supervised` in `.diptych/config.yaml`), or the `/mode` slash command from the home screen. Precedence is: CLI flag > runtime switch > config file > default (normal).
 
 **Why this priority**: Permission modes directly determine how the user interacts with every phase of the workflow. The supervised mode is essential for cautious first-time users, auto mode enables CI/scripting use cases, and plan-only mode supports teams that want AI planning without AI implementation. Runtime switching means users don't have to restart a workflow to adjust their comfort level. This must ship alongside the home screen because the mode indicator is part of the core footer.
 
@@ -53,13 +53,13 @@ Four permission modes control the level of user approval required during workflo
 
 4. **Given** the workflow is in auto mode, **When** the user presses Tab and switches to supervised mode, **Then** the mode indicator changes to [S], and the next task pauses for approval before implementation begins (the currently running task, if any, completes normally).
 
-5. **Given** the user runs `tiny-spec start "feature" --mode supervised`, **When** the workflow starts, **Then** the mode is set to supervised regardless of the config file value, the footer shows [S], and every phase (spec, plan, each task) requires explicit approval.
+5. **Given** the user runs `diptych start "feature" --mode supervised`, **When** the workflow starts, **Then** the mode is set to supervised regardless of the config file value, the footer shows [S], and every phase (spec, plan, each task) requires explicit approval.
 
 6. **Given** the mode is set to plan-only (via CLI, config, or runtime switch), **When** the planner finishes generating spec, plan, and tasks, **Then** the workflow stops with a summary showing the generated artifacts, does not begin implementation, and exits cleanly with a message indicating plan-only mode completed.
 
 7. **Given** the mode is set to auto, **When** the workflow runs end-to-end, **Then** no approval prompts appear at any phase, the spec is auto-approved, the plan is auto-approved, all tasks run sequentially without pauses, and the final summary renders automatically.
 
-8. **Given** the config file contains `mode: supervised` and the user runs `tiny-spec start "feature" --mode auto`, **When** the workflow starts, **Then** auto mode is used (CLI flag takes precedence over config), and the footer shows [A].
+8. **Given** the config file contains `mode: supervised` and the user runs `diptych start "feature" --mode auto`, **When** the workflow starts, **Then** auto mode is used (CLI flag takes precedence over config), and the footer shows [A].
 
 9. **Given** the home screen is displayed, **When** the user types `/mode` and selects a mode from the slash command interface, **Then** the mode is set for the next workflow started from the home screen, and the footer indicator updates immediately to reflect the new mode.
 
@@ -145,7 +145,7 @@ Replace the current flat event log with dialog-style cards using box-drawing cha
 
 In supervised mode, the user has granular control over each task before and after implementation. Before implementation, a task preview card displays the task number, title, action (create/modify), target file path, dependency list, and description. The user can press Enter to implement, `s` to skip the task, or `e` to edit the task description before proceeding. After implementation and before commit, the TUI shows the implementer output card with the diff and validation results. The user can press Enter to commit, `d` to view the full diff, `r` to retry (discard changes and re-implement), `s` to skip (discard changes and move on), or `e` to open the file in $EDITOR then re-validate. When validation fails, the error is displayed and the user is offered `r` to retry or `s` to skip; escalation to the planner happens automatically after the configured max retries. In normal and auto modes, task-level control is skipped entirely — tasks run, validate, and commit without user intervention.
 
-**Why this priority**: Supervised mode is a core differentiator for users who want oversight over AI-generated code without dropping to fully manual workflows. Task-level control gives users confidence to run tiny-spec on production codebases. However, it depends on the dialog-style cards (US5) for the task preview and post-implementation review UI, and the core orchestration loop already functions without it.
+**Why this priority**: Supervised mode is a core differentiator for users who want oversight over AI-generated code without dropping to fully manual workflows. Task-level control gives users confidence to run diptych on production codebases. However, it depends on the dialog-style cards (US5) for the task preview and post-implementation review UI, and the core orchestration loop already functions without it.
 
 **Independent Test**: Run a workflow in supervised mode with at least three tasks. Verify the pre-task preview card appears with correct metadata, test each key binding (Enter, s, e), then after implementation verify the post-implementation review card with each key binding (Enter, d, r, s, e). Run the same workflow in normal mode and confirm no approval prompts appear at task boundaries.
 
@@ -201,7 +201,7 @@ A comprehensive keyboard shortcut system provides context-sensitive key bindings
 
 - **EC-006: Rapid mode switching.** If the user opens the mode picker and rapidly toggles through modes, only the mode confirmed with Enter MUST be applied. Arrow key navigation without Enter MUST NOT change the active mode.
 
-- **EC-007: Config file missing during home screen render.** If `.tiny-spec/config.yaml` is deleted or unreadable after the home screen has already rendered, the system MUST handle the error gracefully when the user attempts to start a workflow, displaying an actionable error message rather than crashing.
+- **EC-007: Config file missing during home screen render.** If `.diptych/config.yaml` is deleted or unreadable after the home screen has already rendered, the system MUST handle the error gracefully when the user attempts to start a workflow, displaying an actionable error message rather than crashing.
 
 - **EC-008: Very long feature description.** If the user types a feature description longer than the terminal width in the home screen input, the input MUST visually wrap or scroll horizontally. The full text MUST be preserved and passed to the workflow without truncation.
 
@@ -219,19 +219,19 @@ A comprehensive keyboard shortcut system provides context-sensitive key bindings
 
 #### Home Screen
 
-- **FR-001**: Running `tiny-spec` with no arguments MUST display the home screen inside the TUI.
+- **FR-001**: Running `diptych` with no arguments MUST display the home screen inside the TUI.
 - **FR-002**: The home screen MUST display branding, context block (configured planner, configured implementer model name, project directory basename, current git branch), and a text input prompt.
-- **FR-003**: Typing a feature description and pressing Enter on the home screen MUST start the full workflow, identical in behavior to running `tiny-spec start "<text>"`.
+- **FR-003**: Typing a feature description and pressing Enter on the home screen MUST start the full workflow, identical in behavior to running `diptych start "<text>"`.
 - **FR-004**: Typing `/` as the first character in the home screen input MUST activate slash command mode, displaying a filtered list of available commands below the input.
 - **FR-005**: The following slash commands MUST be recognized and execute their respective actions: `/models` (list detected planners and implementers), `/config` (open or display configuration), `/status` (show workflow state), `/resume` (resume interrupted workflow), `/help` (display available commands and shortcuts), `/init` (create default configuration).
-- **FR-006**: The existing `tiny-spec start "feature"` CLI invocation MUST continue to work and MUST bypass the home screen, entering the workflow directly.
-- **FR-007**: When no `.tiny-spec/config.yaml` exists, the home screen MUST display a notice indicating missing configuration and MUST suggest running `/init`.
-- **FR-008**: When a resumable workflow exists (`.tiny-spec/state.json` with a non-terminal phase), the home screen MUST display a notice indicating the interrupted workflow and MUST suggest running `/resume`.
+- **FR-006**: The existing `diptych start "feature"` CLI invocation MUST continue to work and MUST bypass the home screen, entering the workflow directly.
+- **FR-007**: When no `.diptych/config.yaml` exists, the home screen MUST display a notice indicating missing configuration and MUST suggest running `/init`.
+- **FR-008**: When a resumable workflow exists (`.diptych/state.json` with a non-terminal phase), the home screen MUST display a notice indicating the interrupted workflow and MUST suggest running `/resume`.
 
 #### Permission Modes
 
 - **FR-009**: The system MUST support exactly four permission modes: `supervised` (pause before and after every task), `normal` (pause at spec, plan, and review gate only), `auto` (no pauses), `plan-only` (generate spec/plan/tasks then stop).
-- **FR-010**: The default permission mode MUST be `normal`. The mode MAY be overridden by `mode` in `.tiny-spec/config.yaml` or by the `--mode` CLI flag. CLI flag MUST take precedence over config file.
+- **FR-010**: The default permission mode MUST be `normal`. The mode MAY be overridden by `mode` in `.diptych/config.yaml` or by the `--mode` CLI flag. CLI flag MUST take precedence over config file.
 - **FR-011**: Pressing the Tab key at any idle prompt MUST open a mode picker overlay. The overlay MUST support arrow key navigation and Enter to confirm selection. Pressing Escape MUST dismiss the overlay without changing the mode.
 - **FR-012**: The footer MUST display the current mode as a bracketed indicator: [S], [N], [A], or [P].
 - **FR-013**: Mode changes MUST take effect starting from the next pending action. A mode change MUST NOT retroactively alter the behavior of an action already in progress.
@@ -286,7 +286,7 @@ A comprehensive keyboard shortcut system provides context-sensitive key bindings
 
 - **PermissionMode** — Represents the current approval level governing user confirmation. Four levels: supervised, normal, auto, plan-only. A workflow has exactly one active PermissionMode at any time, but the user may change it mid-workflow.
 
-- **HomeScreen** — The initial interactive view presented when `tiny-spec` is launched without arguments. Provides access to starting a new workflow, resuming an interrupted one, viewing status, and changing configuration.
+- **HomeScreen** — The initial interactive view presented when `diptych` is launched without arguments. Provides access to starting a new workflow, resuming an interrupted one, viewing status, and changing configuration.
 
 - **ReviewGate** — A checkpoint between planning and implementation phases where the user can approve, navigate backward, or quit. Displays a full summary of tasks, mode, and configuration.
 
@@ -302,7 +302,7 @@ A comprehensive keyboard shortcut system provides context-sensitive key bindings
 
 ### Measurable Outcomes
 
-- **SC-001**: Users can start a workflow without memorizing CLI syntax — launching `tiny-spec` with no arguments presents an interactive home screen with discoverable options.
+- **SC-001**: Users can start a workflow without memorizing CLI syntax — launching `diptych` with no arguments presents an interactive home screen with discoverable options.
 - **SC-002**: Users can discover all available actions through the interface itself — every keyboard shortcut and slash command is visible or accessible via a help overlay at any point in the workflow.
 - **SC-003**: Users can change permission level at any point during a workflow without restarting — mode switching is available from any phase.
 - **SC-004**: Spec and plan feedback loops complete without losing user edits or context — commenting on, editing, or requesting regeneration of an artifact preserves all prior conversation history and user inputs.
@@ -335,4 +335,4 @@ A comprehensive keyboard shortcut system provides context-sensitive key bindings
 
 9. **Regeneration replaces artifacts wholesale** — When the user navigates back and triggers regeneration, the planner produces a complete new artifact rather than a patch.
 
-10. **Single-user, single-session model** — Only one TUI session interacts with a given `.tiny-spec/` directory at a time. Concurrent access is not supported.
+10. **Single-user, single-session model** — Only one TUI session interacts with a given `.diptych/` directory at a time. Concurrent access is not supported.

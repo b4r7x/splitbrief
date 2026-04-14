@@ -3,13 +3,13 @@
 **Feature Branch**: `012-core-cli-restructure`  
 **Created**: 2026-03-30  
 **Status**: Draft  
-**Input**: User description: "Restructure tiny-spec from flat src/ to feature-based architecture with src/core/ for pure TypeScript logic and src/cli/ for TUI application"
+**Input**: User description: "Restructure diptych from flat src/ to feature-based architecture with src/core/ for pure TypeScript logic and src/cli/ for TUI application"
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Core API Consumer (Priority: P1)
 
-A developer wants to use tiny-spec programmatically without the terminal UI. They install tiny-spec as a dependency, import the core orchestration logic, and integrate it into their own application (CI/CD pipeline, IDE extension, headless runner). The core module provides all workflow capabilities through a clean API without requiring Ink, React, or any terminal dependencies.
+A developer wants to use diptych programmatically without the terminal UI. They install diptych as a dependency, import the core orchestration logic, and integrate it into their own application (CI/CD pipeline, IDE extension, headless runner). The core module provides all workflow capabilities through a clean API without requiring Ink, React, or any terminal dependencies.
 
 **Why this priority**: Enabling programmatic access is the primary architectural goal. This story can be delivered independently and immediately provides value for CI/CD integrations, scripting, and alternative frontends.
 
@@ -25,7 +25,7 @@ A developer wants to use tiny-spec programmatically without the terminal UI. The
 
 ### User Story 2 - CLI Developer (Priority: P2)
 
-A developer contributing to tiny-spec needs to understand the codebase structure. They clone the repository and see a clear feature-based organization where `src/core/` contains pure business logic (orchestration, planning, implementation, validation) and `src/cli/` contains all TUI concerns. They can navigate to the relevant domain quickly, understand the boundaries, and make targeted changes without affecting unrelated systems.
+A developer contributing to diptych needs to understand the codebase structure. They clone the repository and see a clear feature-based organization where `src/core/` contains pure business logic (orchestration, planning, implementation, validation) and `src/cli/` contains all TUI concerns. They can navigate to the relevant domain quickly, understand the boundaries, and make targeted changes without affecting unrelated systems.
 
 **Why this priority**: Developer experience is critical for long-term maintainability. This story improves onboarding and contribution quality, but requires the core restructure to be complete first.
 
@@ -134,4 +134,4 @@ A DevOps engineer configures the build pipeline. They need TypeScript compilatio
 - **Assumption**: TypeScript 6.x strict mode validation must pass
 - **Assumption**: Developer can use any IDE (VS Code assumptions are examples only)
 - **Assumption**: Tests use Node.js built-in test runner (`tsx --test`)
-- **Assumption**: No changes to `.tiny-spec/` directory structure (only source code is restructured)
+- **Assumption**: No changes to `.diptych/` directory structure (only source code is restructured)

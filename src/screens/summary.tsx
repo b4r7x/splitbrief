@@ -37,7 +37,7 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
   return (
     <ScreenShell padding={1}>
       <Box justifyContent="center" width="100%">
-        <Text bold color={theme.success}>tiny-spec complete</Text>
+        <Text bold color={theme.success}>diptych complete</Text>
       </Box>
 
       <Box flexDirection="column" marginTop={1} gap={isSmall ? 0 : 1}>

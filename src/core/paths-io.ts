@@ -1,10 +1,10 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, resolve, relative, isAbsolute, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TINY_SPEC_DIR, CURRENT_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE } from './paths.js';
+import { DIPTYCH_DIR, CURRENT_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE } from './paths.js';
 import { ensureSecureDir, validateSafeIdentifier, SECURE_FILE_MODE } from '../utils/fs.js';
 
-const TINY_SPEC_VERSION: string = (() => {
+const DIPTYCH_VERSION: string = (() => {
   try {
     const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
     return JSON.parse(readFileSync(join(root, 'package.json'), 'utf-8')).version;
@@ -32,7 +32,7 @@ export function buildSpecFrontmatter(opts: SpecMetadata): string {
     : `implementer: ${opts.implementerTool}`;
   const lines = [
     '---',
-    `generated_by: tiny-spec v${TINY_SPEC_VERSION}`,
+    `generated_by: diptych v${DIPTYCH_VERSION}`,
     plannerLine,
     implementerLine,
     `mode: ${opts.mode}`,
@@ -44,10 +44,10 @@ export function buildSpecFrontmatter(opts: SpecMetadata): string {
 }
 
 export function currentDir(projectDir: string): string {
-  return join(projectDir, TINY_SPEC_DIR, CURRENT_DIR);
+  return join(projectDir, DIPTYCH_DIR, CURRENT_DIR);
 }
 
-export function ensureTinySpecDir(projectDir: string): void {
+export function ensureDiptychDir(projectDir: string): void {
   ensureSecureDir(currentDir(projectDir));
 }
 
@@ -57,7 +57,7 @@ export function validateFilename(filename: string): void {
 
 export function writeSpecFile(projectDir: string, filename: string, content: string, metadata?: SpecMetadata | null): void {
   validateFilename(filename);
-  ensureTinySpecDir(projectDir);
+  ensureDiptychDir(projectDir);
   let finalContent = content;
   if (metadata && FRONTMATTER_FILES.has(filename) && !content.startsWith('---\n')) {
     finalContent = buildSpecFrontmatter(metadata) + content;

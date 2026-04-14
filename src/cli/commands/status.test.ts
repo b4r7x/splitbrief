@@ -30,7 +30,7 @@ function runStatus(args: string[]): void {
   const program = new Command();
   program.exitOverride();
   registerStatusCommand(program);
-  program.parse(['node', 'tiny-spec', 'status', ...args]);
+  program.parse(['node', 'diptych', 'status', ...args]);
 }
 
 describe('status command', () => {

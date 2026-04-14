@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createStore, storeBase } from './create-store.js';
 import { writeSecureFile } from '../utils/fs.js';
-import { TINY_SPEC_DIR } from '../core/paths.js';
+import { DIPTYCH_DIR } from '../core/paths.js';
 
 export type InputHistoryScope = 'home';
 
@@ -12,7 +12,7 @@ interface InputHistoryState {
 }
 
 const MAX_INPUT_HISTORY = 10;
-const HISTORY_FILE = join(homedir(), TINY_SPEC_DIR, 'history');
+const HISTORY_FILE = join(homedir(), DIPTYCH_DIR, 'history');
 
 function initialState(): InputHistoryState {
   return {

@@ -1,17 +1,17 @@
-# Implementation Plan: tiny-spec v0.2 -- Small LLM Prompt Optimization
+# Implementation Plan: diptych v0.2 -- Small LLM Prompt Optimization
 
 **Branch**: `004-small-llm-prompt-optimization` | **Date**: 2026-03-25 | **Spec**: [spec.md](spec.md)
 **Input**: Feature specification from `/specs/004-small-llm-prompt-optimization/spec.md`
 
 ## Summary
 
-Optimize tiny-spec's task prompt generation so every task fits within an 8K token context window while maximizing small model comprehension. Extend the Task type with inlined type definitions and implementation steps. Add a few-shot example to the system preamble. Rewrite retry prompts to preserve full context. Add function-level code extraction for large files. Update documentation and create an LLM project skill.
+Optimize diptych's task prompt generation so every task fits within an 8K token context window while maximizing small model comprehension. Extend the Task type with inlined type definitions and implementation steps. Add a few-shot example to the system preamble. Rewrite retry prompts to preserve full context. Add function-level code extraction for large files. Update documentation and create an LLM project skill.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 6.0, Node.js 22+ (native TypeScript stripping)
 **Primary Dependencies**: ink 5.x, react 18.x, openai ^6.0.0, yaml, simple-git, commander ^14.0.0
-**Storage**: JSON files (`.tiny-spec/current/state.json`, `events.jsonl`), Markdown files
+**Storage**: JSON files (`.diptych/current/state.json`, `events.jsonl`), Markdown files
 **Testing**: `tsx --test tests/**/*.test.ts`
 **Target Platform**: macOS (primary), Linux (secondary)
 **Constraints**: Task prompts MUST fit in 8K tokens. 25% output reserve. No new runtime dependencies.
@@ -144,7 +144,7 @@ src/
     context-extractor.ts      # Function-level code extraction (export boundary detection)
 
 .claude/skills/
-  tiny-spec-dev.md            # LLM project skill
+  diptych-dev.md            # LLM project skill
 
 specs/004-small-llm-prompt-optimization/
   quickstart.md               # Updated quickstart for v0.2

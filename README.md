@@ -1,10 +1,10 @@
-# tiny-spec
+# diptych
 
 Split AI coding costs in half. Expensive model plans, cheap model implements.
 
 ## The idea
 
-Most AI coding tokens go to writing code — not thinking about what to write. A 7B model running locally can handle the mechanical parts just fine. So tiny-spec uses Claude Code (or any CLI tool) for the hard stuff — codebase research, spec writing, task decomposition — and routes implementation to a local model via Ollama, LM Studio, or any OpenAI-compatible endpoint.
+Most AI coding tokens go to writing code — not thinking about what to write. A 7B model running locally can handle the mechanical parts just fine. So diptych uses Claude Code (or any CLI tool) for the hard stuff — codebase research, spec writing, task decomposition — and routes implementation to a local model via Ollama, LM Studio, or any OpenAI-compatible endpoint.
 
 You keep frontier-level planning. The grunt work costs nothing.
 
@@ -59,7 +59,7 @@ The TUI shows planner and implementer working together as a conversation flow �
 ## Quick start
 
 ```bash
-npm install -g tiny-spec
+npm install -g diptych
 
 # Have a planner ready (pick one):
 #   Claude Code (default) — uses existing subscription, $0 extra
@@ -74,8 +74,8 @@ npm install -g tiny-spec
 #   Any OpenAI-compatible API: set apiBase in config
 
 cd your-project
-tiny-spec init        # auto-detects running models
-tiny-spec start "add user authentication with JWT"
+diptych init        # auto-detects running models
+diptych start "add user authentication with JWT"
 ```
 
 Needs **Node.js 22+** and **git** in the project.
@@ -83,24 +83,24 @@ Needs **Node.js 22+** and **git** in the project.
 If using Ollama, bump the context window — the default 2048 tokens is too small:
 
 ```bash
-export TINY_SPEC_CONTEXT_LENGTH=32768
+export DIPTYCH_CONTEXT_LENGTH=32768
 ```
 
 ## Commands
 
 | Command | What it does |
 |---------|-------------|
-| `tiny-spec start "feature"` | Full pipeline: plan → implement → validate → commit |
-| `tiny-spec spec "feature"` | Generate spec/plan/tasks only, no implementation |
-| `tiny-spec init` | Create config, auto-detect available models |
-| `tiny-spec resume` | Resume an interrupted workflow |
-| `tiny-spec status` | Show current workflow state |
+| `diptych start "feature"` | Full pipeline: plan → implement → validate → commit |
+| `diptych spec "feature"` | Generate spec/plan/tasks only, no implementation |
+| `diptych init` | Create config, auto-detect available models |
+| `diptych resume` | Resume an interrupted workflow |
+| `diptych status` | Show current workflow state |
 
 `--auto` skips approval prompts.
 
 ## Configuration
 
-`tiny-spec init` creates `.tiny-spec/config.yaml`:
+`diptych init` creates `.diptych/config.yaml`:
 
 ```yaml
 planner:
@@ -203,12 +203,12 @@ implementer:
 
 ## Models
 
-tiny-spec now loads model metadata from [models.dev](https://models.dev) first. Runtime provider detection and CLI discovery are overlays. The bundled model list is only the last-resort offline fallback.
+diptych now loads model metadata from [models.dev](https://models.dev) first. Runtime provider detection and CLI discovery are overlays. The bundled model list is only the last-resort offline fallback.
 
 ### Catalog notes
 
 - Claude Code uses `default`, `sonnet`, `opus`, and `opusplan` in the picker. Legacy stored `auto` still resolves safely to `default`.
-- For `opencode` and `kilo-code`, prefer `auto` and configure the real default model in the tool itself before launching tiny-spec.
+- For `opencode` and `kilo-code`, prefer `auto` and configure the real default model in the tool itself before launching diptych.
 - Dollar pricing is shown only for real API providers. CLI tools, subscriptions, and local backends are intentionally unpriced.
 
 ### By VRAM
@@ -220,7 +220,7 @@ tiny-spec now loads model metadata from [models.dev](https://models.dev) first. 
 | 16 GB | Qwen 2.5 Coder 14B Q4 | 16-32K | `context_length: 16384` |
 | 32 GB+ | Qwen 3.5 27B Q4 | 32K+ | `context_length: 32768` |
 
-For large files (300+ LOC), tiny-spec switches from whole-file to function-level context — sends only the target function, imports, and surrounding lines. 8K models can still modify large files this way.
+For large files (300+ LOC), diptych switches from whole-file to function-level context — sends only the target function, imports, and surrounding lines. 8K models can still modify large files this way.
 
 ### Local (free)
 
@@ -244,7 +244,7 @@ With Claude Code Max 5x ($100/month):
 | Setup | Monthly Cost | Features/month |
 |-------|-------------|----------------|
 | Opus only | $100 | 5-6 |
-| **Opus + tiny-spec** | **$100** | **12-15** |
+| **Opus + diptych** | **$100** | **12-15** |
 
 The planner handles research, spec, plan, and escalation (~350K tokens/feature). Implementation is $0 with local models. In practice, 70-85% of tasks complete locally without escalation.
 

@@ -3,7 +3,7 @@
 ## New: Default Command (no subcommand)
 
 ```
-tiny-spec [--project <dir>]
+diptych [--project <dir>]
 ```
 
 Launches the interactive home screen TUI. No feature argument required.
@@ -13,7 +13,7 @@ Launches the interactive home screen TUI. No feature argument required.
 ## Modified: start
 
 ```
-tiny-spec start <feature> [options]
+diptych start <feature> [options]
 ```
 
 New option:
@@ -27,7 +27,7 @@ Changed:
 ## Modified: resume
 
 ```
-tiny-spec resume [options]
+diptych resume [options]
 ```
 
 New option:
@@ -41,12 +41,12 @@ No changes to these commands.
 
 | Command | Action | Equivalent CLI |
 |---------|--------|---------------|
-| `/models` | List detected planners and implementers | `tiny-spec init --reconfigure` (partial) |
+| `/models` | List detected planners and implementers | `diptych init --reconfigure` (partial) |
 | `/config` | Display current configuration | (new) |
-| `/status` | Show workflow state | `tiny-spec status` |
-| `/resume` | Resume interrupted workflow | `tiny-spec resume` |
-| `/help` | Show available commands and shortcuts | `tiny-spec --help` (enhanced) |
-| `/init` | Create default configuration | `tiny-spec init` |
+| `/status` | Show workflow state | `diptych status` |
+| `/resume` | Resume interrupted workflow | `diptych resume` |
+| `/help` | Show available commands and shortcuts | `diptych --help` (enhanced) |
+| `/init` | Create default configuration | `diptych init` |
 | `/mode <mode>` | Set permission mode for next workflow | (new) |
 
 ## Keyboard Shortcut Contract

@@ -1,4 +1,4 @@
-# Research: tiny-spec v0.2 -- Small LLM Prompt Optimization
+# Research: diptych v0.2 -- Small LLM Prompt Optimization
 
 **Date**: 2026-03-25 | **Method**: Token budget analysis + brainstorming session
 
@@ -6,7 +6,7 @@
 
 **Decision**: Enforce strict per-task token budgets with auto-degradation cascade.
 
-**Findings** (measured against actual tiny-spec source files):
+**Findings** (measured against actual diptych source files):
 
 | Scenario | Code tokens | Total (with additions) | 8K fit? | 16K fit? |
 |----------|-------------|----------------------|---------|----------|
@@ -134,4 +134,4 @@ All attempts include: description, signature, type defs, impl steps, tests, cons
 - Constitution principle II: "Total prompt size MUST stay under 8K tokens for 7B models"
 - LLM Self-Correction (TACL 2024): external feedback essential for self-correction
 - Aider benchmarks: few-shot examples improve format compliance
-- tiny-spec v0.1 retry analysis: attempts 2-3 lose critical context
+- diptych v0.1 retry analysis: attempts 2-3 lose critical context

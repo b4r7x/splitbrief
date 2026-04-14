@@ -226,7 +226,7 @@ All import paths need updating: `orchestrator/` → `engine/`, `tui/` → `ui/`,
 
 ### Decision: engine/ + ui/ (flat) + hooks/ + utils/ — not Bulletproof React
 
-**Rationale**: Bulletproof React features pattern assumes independent domains. tiny-spec's TUI is one cohesive view (~12 components), not 4 independent features. Feature folders add overhead (barrel exports, cross-feature imports) without benefit at this scale.
+**Rationale**: Bulletproof React features pattern assumes independent domains. diptych's TUI is one cohesive view (~12 components), not 4 independent features. Feature folders add overhead (barrel exports, cross-feature imports) without benefit at this scale.
 
 **Alternatives considered**:
 - Bulletproof React (`features/conversation/`, `features/input/`, etc.) — rejected: forced artificial boundaries, 4 folders with 3 files each

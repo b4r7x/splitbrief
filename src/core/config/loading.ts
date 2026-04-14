@@ -4,14 +4,14 @@ import type { Config } from '../types/index.js';
 import { resolveDefaultApiBase, KNOWN_PROVIDER_BASE_URLS } from '../providers.js';
 import { validateConfig } from './validation.js';
 import { fromYaml, toYaml } from './transforms.js';
-import { TINY_SPEC_DIR, CONFIG_FILE } from '../paths.js';
+import { DIPTYCH_DIR, CONFIG_FILE } from '../paths.js';
 import { migrateConfig } from './migration.js';
-import { writeSecureFile, checkConfigPermissions, getTinySpecPath } from '../../utils/fs.js';
+import { writeSecureFile, checkConfigPermissions, getDiptychPath } from '../../utils/fs.js';
 import { ensureGitignore } from '../../utils/git.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 
 export function configPath(projectDir: string): string {
-  return getTinySpecPath(projectDir, CONFIG_FILE);
+  return getDiptychPath(projectDir, CONFIG_FILE);
 }
 
 export function createDefaultConfig(): Config {
@@ -97,7 +97,7 @@ export function loadConfig(projectDir: string): Config {
 
   const { errors, warnings, data } = validateConfig(merged);
   if (errors.length > 0) {
-    const lines = [`Configuration errors in ${TINY_SPEC_DIR}/${CONFIG_FILE}:`];
+    const lines = [`Configuration errors in ${DIPTYCH_DIR}/${CONFIG_FILE}:`];
     for (const err of errors) {
       lines.push(`  ${err.path}: ${err.message}`);
     }
@@ -113,16 +113,16 @@ export function loadConfig(projectDir: string): Config {
 }
 
 export function writeConfig(projectDir: string, config: Config): void {
-  const configFilePath = getTinySpecPath(projectDir, CONFIG_FILE);
+  const configFilePath = getDiptychPath(projectDir, CONFIG_FILE);
   writeSecureFile(configFilePath, YAML.stringify(toYaml(config)));
 }
 
 export function initConfig(projectDir: string, opts: { force?: boolean } = {}): void {
-  const configFilePath = getTinySpecPath(projectDir, CONFIG_FILE);
+  const configFilePath = getDiptychPath(projectDir, CONFIG_FILE);
 
   if (!opts.force && fs.existsSync(configFilePath)) return;
 
-  ensureGitignore(projectDir, '.tiny-spec/');
+  ensureGitignore(projectDir, '.diptych/');
 
   const yamlObj = toYaml(createDefaultConfig());
   writeSecureFile(configFilePath, YAML.stringify(yamlObj));

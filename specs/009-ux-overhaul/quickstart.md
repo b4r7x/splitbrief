@@ -4,12 +4,12 @@
 
 The UX overhaul replaces the command-line-first workflow with an interactive home screen, adds 4 permission modes, enables back navigation during planning, shows changeset summaries on regeneration, and redesigns event cards with box-drawing visual style.
 
-## Starting tiny-spec
+## Starting diptych
 
 ### New way (interactive)
 
 ```
-tiny-spec
+diptych
 ```
 
 Opens the home screen:
@@ -37,8 +37,8 @@ Type a feature description and press Enter to start. Type `/` for slash commands
 ### Old way (still works)
 
 ```
-tiny-spec start "add user auth"
-tiny-spec start "add user auth" --mode supervised
+diptych start "add user auth"
+diptych start "add user auth" --mode supervised
 ```
 
 ## Permission Modes

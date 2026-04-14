@@ -5,13 +5,13 @@
 
 ## Summary
 
-Complete visual overhaul of tiny-spec's terminal interface: replace workflow-only CLI with an interactive, fullscreen, chat-first experience. Three-screen architecture (home → workflow → summary) with ANSI terminal-adaptive theme, toggleable sidebar, persistent multiline input bar replacing modal prompts, review-mode for specs/plans with $EDITOR integration, and session management.
+Complete visual overhaul of diptych's terminal interface: replace workflow-only CLI with an interactive, fullscreen, chat-first experience. Three-screen architecture (home → workflow → summary) with ANSI terminal-adaptive theme, toggleable sidebar, persistent multiline input bar replacing modal prompts, review-mode for specs/plans with $EDITOR integration, and session management.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 5.9+, ESM only
 **Primary Dependencies**: Ink 6.8, React 19, @inkjs/ui 2.x, Shiki 4.x, ansis, cfonts (new), fullscreen-ink (new), ink-multiline-input (new)
-**Storage**: JSON files (`.tiny-spec/sessions/`, `.tiny-spec/state.json`)
+**Storage**: JSON files (`.diptych/sessions/`, `.diptych/state.json`)
 **Testing**: Vitest, Ink test utilities
 **Target Platform**: macOS (primary), Linux (secondary)
 **Project Type**: CLI tool with TUI

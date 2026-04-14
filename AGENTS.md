@@ -1,4 +1,4 @@
-# tiny-spec — Agent Guide
+# diptych — Agent Guide
 
 ## CRITICAL — NEVER COMMIT, NEVER STAGE
 
@@ -6,7 +6,7 @@ Do **NOT** run `git commit`, `git add`, `git stage`, or any command that creates
 
 ---
 
-tiny-spec is an open-source CLI that orchestrates expensive AI (planner) and cheap/local AI (implementer) to cut AI coding costs by 50%+.
+diptych is an open-source CLI that orchestrates expensive AI (planner) and cheap/local AI (implementer) to cut AI coding costs by 50%+.
 
 ## Tech Stack
 

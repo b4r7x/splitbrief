@@ -11,7 +11,7 @@ The TUI is non-functional: no input produces results, slash commands go to void,
 
 **Language/Version**: TypeScript 5.9+, ESM only
 **Primary Dependencies**: Ink 6.8, React 19, @inkjs/ui 2.x, ink-multiline-input, cfonts, ansis
-**Storage**: JSON files (`.tiny-spec/state.json`, `sessions/`)
+**Storage**: JSON files (`.diptych/state.json`, `sessions/`)
 **Testing**: Node test runner (node --test), tsx for TypeScript execution
 **Target Platform**: macOS (primary), Linux (secondary)
 **Project Type**: CLI tool with fullscreen TUI

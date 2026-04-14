@@ -2,12 +2,12 @@
 
 ## Modified Commands
 
-### `tiny-spec init`
+### `diptych init`
 
 New interactive prompts for planner selection:
 
 ```
-$ tiny-spec init
+$ diptych init
 
 Planner configuration:
   Select planner: (Use arrow keys)
@@ -27,12 +27,12 @@ Implementer configuration:
   (unchanged from current)
 ```
 
-### `tiny-spec start <feature>`
+### `diptych start <feature>`
 
 New `--planner` flag:
 
 ```
-$ tiny-spec start "add user auth" --planner codex --model o3
+$ diptych start "add user auth" --planner codex --model o3
 ```
 
 **New flags**:
@@ -44,12 +44,12 @@ $ tiny-spec start "add user auth" --planner codex --model o3
 Phase: implementing | Task: 3/10 | Planner: claude-code | Impl: qwen2.5-coder:7b | Tokens: 45.2K | ~$2.15 | Retries: 0
 ```
 
-### `tiny-spec status`
+### `diptych status`
 
 Now shows planner info:
 
 ```
-$ tiny-spec status
+$ diptych status
 
 Feature: add user authentication
 Phase: implementing (task 5/12)
@@ -135,7 +135,7 @@ Output: Typed `SDKMessage` stream with `assistant`, `result`, `system` types.
 ## Config Schema Update
 
 ```yaml
-# .tiny-spec/config.yaml
+# .diptych/config.yaml
 planner:
   tool: claude-code        # claude-code | codex | opencode | aider | agent-sdk
   model: ""                # optional model override (backend-specific)

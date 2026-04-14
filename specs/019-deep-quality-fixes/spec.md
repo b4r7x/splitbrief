@@ -61,7 +61,7 @@ When a user passes the `--auto` flag to any command (start, spec, resume), the s
 
 **Why this priority**: Users who pass CLI flags expect them to work. A silently ignored flag wastes time and breaks CI/automation workflows.
 
-**Independent Test**: Run `tiny-spec start "feature" --auto` and verify no approval prompts appear. Run `tiny-spec resume --no-fullscreen` and verify no alternate screen buffer is used.
+**Independent Test**: Run `diptych start "feature" --auto` and verify no approval prompts appear. Run `diptych resume --no-fullscreen` and verify no alternate screen buffer is used.
 
 **Acceptance Scenarios**:
 

@@ -65,7 +65,7 @@
 
 **Decision**: Add default `.action()` on root commander program for home screen. Add `--mode` flag, keep `--auto` as alias for `--mode auto`. Add `mode` to Config.workflow.
 
-**Rationale**: Commander supports a default action when no subcommand is given — this is the standard way to handle `tiny-spec` with no arguments. The `--mode` flag replaces the boolean `--auto` with a richer set of options while maintaining backwards compatibility.
+**Rationale**: Commander supports a default action when no subcommand is given — this is the standard way to handle `diptych` with no arguments. The `--mode` flag replaces the boolean `--auto` with a richer set of options while maintaining backwards compatibility.
 
 **Key findings**:
 - Commander's root `.action()` fires when no subcommand matches. Subcommands still work normally. `--help` and `--version` still work.

@@ -43,7 +43,7 @@
 
 **Goal**: Users can configure which AI coding tool serves as the planner via config.yaml
 
-**Independent Test**: Change `planner.tool` in config, run `tiny-spec start "hello world"` — planning phase works with the selected backend
+**Independent Test**: Change `planner.tool` in config, run `diptych start "hello world"` — planning phase works with the selected backend
 
 ### Implementation for User Story 1
 
@@ -221,7 +221,7 @@ T048 (orchestrator) | T049 (pricing) | T050 (planners) | T051 (summary) | T052 (
 1. Complete Phase 1: Setup (T001-T003)
 2. Complete Phase 2: Foundational (T004-T009)
 3. Complete Phase 3: US1 Pluggable Planner (T010-T021)
-4. **STOP and VALIDATE**: Test with `tiny-spec start "hello" --planner claude-code` and verify planning works
+4. **STOP and VALIDATE**: Test with `diptych start "hello" --planner claude-code` and verify planning works
 5. Verify with `--planner codex` if Codex is installed
 
 ### Incremental Delivery

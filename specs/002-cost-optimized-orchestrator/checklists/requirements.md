@@ -1,4 +1,4 @@
-# Specification Quality Checklist: tiny-spec v0.1
+# Specification Quality Checklist: diptych v0.1
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-03-25

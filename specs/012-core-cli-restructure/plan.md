@@ -5,7 +5,7 @@
 
 ## Summary
 
-Restructure tiny-spec from flat `src/` structure to feature-based architecture with clear separation:
+Restructure diptych from flat `src/` structure to feature-based architecture with clear separation:
 - **`src/core/`** — Pure TypeScript business logic (orchestration, planning, implementation, validation, escalation) with NO React/Ink dependencies
 - **`src/cli/`** — TUI application with bulletproof-react feature organization (workflow, conversation, input, layout, onboarding)
 
@@ -15,7 +15,7 @@ This enables programmatic API access for CI/CD integrations, improves developer 
 
 **Language/Version**: TypeScript 5.9+, ESM only (`"type": "module"`)
 **Primary Dependencies**: Ink 5.x, React 18.x, @inkjs/ui, commander 14.x, openai 6.x, simple-git, yaml
-**Storage**: JSON files (`.tiny-spec/state.json`, `events.jsonl`), Markdown files (spec.md, plan.md, tasks.md)
+**Storage**: JSON files (`.diptych/state.json`, `events.jsonl`), Markdown files (spec.md, plan.md, tasks.md)
 **Testing**: `tsx --test tests/**/*.test.ts` (Node.js built-in test runner via tsx)
 **Target Platform**: macOS (primary), Linux (secondary)
 **Project Type**: CLI tool with TUI
@@ -192,7 +192,7 @@ src/
 │   ├── app.tsx                 # Ink root component
 │   ├── index.ts                # CLI entry (Commander)
 │   └── bin/
-│       └── tiny-spec.js        # Binary entry point
+│       └── diptych.js        # Binary entry point
 │
 └── index.ts                    # Package entry (re-exports core)
 

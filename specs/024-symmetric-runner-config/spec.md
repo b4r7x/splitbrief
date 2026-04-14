@@ -9,29 +9,29 @@
 
 ### User Story 1 - Invalid configs rejected at load time (Priority: P1)
 
-A tiny-spec user edits `.tiny-spec/config.yml` to change which backend the implementer uses. They accidentally mix two incompatible fields — for example, they declare the backend kind as an API endpoint but leave in a field that only makes sense for a CLI tool. Today this config passes loading and then fails at the first workflow step with a confusing runtime error (`Unknown provider: claude-code`). After this change, the config loader MUST catch the contradiction immediately, name the specific field that is wrong, and refuse to start the workflow.
+A diptych user edits `.diptych/config.yml` to change which backend the implementer uses. They accidentally mix two incompatible fields — for example, they declare the backend kind as an API endpoint but leave in a field that only makes sense for a CLI tool. Today this config passes loading and then fails at the first workflow step with a confusing runtime error (`Unknown provider: claude-code`). After this change, the config loader MUST catch the contradiction immediately, name the specific field that is wrong, and refuse to start the workflow.
 
 **Why this priority**: This is the core user-facing pain the refactor addresses. Today the config system has hidden invariants users discover only when something breaks mid-workflow. Fixing this alone delivers most of the value: every failure moves from "cryptic runtime error after 30 seconds" to "clear error at config load, before anything runs".
 
-**Independent Test**: Create a `config.yml` with an illegal field combination (e.g., implementer kind set to API plus a field that only makes sense for a CLI tool). Run `tiny-spec start "test"`. The tool MUST abort at the config loading step with an error that names the incompatible field and explains the expected shape. Do this for at least 5 categories of illegal combinations (wrong field per kind, empty required field, missing discriminant, unknown CLI tool name, missing required API base URL).
+**Independent Test**: Create a `config.yml` with an illegal field combination (e.g., implementer kind set to API plus a field that only makes sense for a CLI tool). Run `diptych start "test"`. The tool MUST abort at the config loading step with an error that names the incompatible field and explains the expected shape. Do this for at least 5 categories of illegal combinations (wrong field per kind, empty required field, missing discriminant, unknown CLI tool name, missing required API base URL).
 
 **Acceptance Scenarios**:
 
-1. **Given** a config with `implementer.kind = api` and a `tool: claude-code` field, **When** the user runs any `tiny-spec` command, **Then** the tool exits immediately with a message naming the field `tool` as invalid for the API kind and referring the user to the correct field (`provider`).
-2. **Given** a config with `implementer.kind = api` but no `apiBase` field and no provider name in the known-provider catalog, **When** the user runs any `tiny-spec` command, **Then** the tool exits with a message stating that `apiBase` is required for API runners and listing the known providers whose base URL would have been auto-filled.
-3. **Given** a config with `planner.kind = shell` and an empty `command`, **When** the user runs any `tiny-spec` command, **Then** the tool exits with a message saying the shell command is empty.
-4. **Given** a config with `implementer.kind = cli` and `tool: made-up-tool`, **When** the user runs any `tiny-spec` command, **Then** the tool exits with a message listing the valid CLI tool names.
-5. **Given** a config missing the `kind` field entirely on either planner or implementer, **When** the user runs any `tiny-spec` command, **Then** the tool exits with a message explaining that `kind` is required and listing the 5 valid values.
+1. **Given** a config with `implementer.kind = api` and a `tool: claude-code` field, **When** the user runs any `diptych` command, **Then** the tool exits immediately with a message naming the field `tool` as invalid for the API kind and referring the user to the correct field (`provider`).
+2. **Given** a config with `implementer.kind = api` but no `apiBase` field and no provider name in the known-provider catalog, **When** the user runs any `diptych` command, **Then** the tool exits with a message stating that `apiBase` is required for API runners and listing the known providers whose base URL would have been auto-filled.
+3. **Given** a config with `planner.kind = shell` and an empty `command`, **When** the user runs any `diptych` command, **Then** the tool exits with a message saying the shell command is empty.
+4. **Given** a config with `implementer.kind = cli` and `tool: made-up-tool`, **When** the user runs any `diptych` command, **Then** the tool exits with a message listing the valid CLI tool names.
+5. **Given** a config missing the `kind` field entirely on either planner or implementer, **When** the user runs any `diptych` command, **Then** the tool exits with a message explaining that `kind` is required and listing the 5 valid values.
 
 ---
 
 ### User Story 2 - Same backend options for planner and implementer (Priority: P1)
 
-A tiny-spec user wants to run both the planner and the implementer against the same local Ollama instance to minimize cost entirely. Today they cannot — the planner rejects local-only providers because its API is restricted to cloud vendors, and the file-writing agent kind doesn't exist on the planner side at all. After this change, any backend choice valid on one role MUST also be valid on the other, with the same field shape.
+A diptych user wants to run both the planner and the implementer against the same local Ollama instance to minimize cost entirely. Today they cannot — the planner rejects local-only providers because its API is restricted to cloud vendors, and the file-writing agent kind doesn't exist on the planner side at all. After this change, any backend choice valid on one role MUST also be valid on the other, with the same field shape.
 
 **Why this priority**: This is the second user-visible pain. Users have told us they want to mix and match backends freely, not discover "this option only works for implementer". It also follows structurally from the previous story — once the config types are tight, symmetry becomes a natural consequence.
 
-**Independent Test**: Configure both `planner` and `implementer` to point at the same Ollama instance (same kind, same provider, same apiBase, same model). Run `tiny-spec start "test feature"`. The planner MUST successfully call Ollama to generate spec/plan/tasks. Additionally, configure the planner to use a file-writing custom command and confirm it runs and produces spec files.
+**Independent Test**: Configure both `planner` and `implementer` to point at the same Ollama instance (same kind, same provider, same apiBase, same model). Run `diptych start "test feature"`. The planner MUST successfully call Ollama to generate spec/plan/tasks. Additionally, configure the planner to use a file-writing custom command and confirm it runs and produces spec files.
 
 **Acceptance Scenarios**:
 
@@ -44,11 +44,11 @@ A tiny-spec user wants to run both the planner and the implementer against the s
 
 ### User Story 3 - Existing configs keep working via auto-migration (Priority: P2)
 
-A tiny-spec user has a working `.tiny-spec/config.yml` from before this refactor. They pull the latest code and run a command. The tool MUST detect the old shape, upgrade it in place to the new shape, and continue without asking the user to do anything. Known providers (Ollama, LM Studio, Anthropic, OpenRouter, DeepSeek) MUST have their API base URL auto-filled from an internal catalog during the upgrade. Unknown providers MUST produce a clear error naming the missing field.
+A diptych user has a working `.diptych/config.yml` from before this refactor. They pull the latest code and run a command. The tool MUST detect the old shape, upgrade it in place to the new shape, and continue without asking the user to do anything. Known providers (Ollama, LM Studio, Anthropic, OpenRouter, DeepSeek) MUST have their API base URL auto-filled from an internal catalog during the upgrade. Unknown providers MUST produce a clear error naming the missing field.
 
-**Why this priority**: tiny-spec is pre-deployment so nobody is production-dependent on the old shape, but contributors and early users still have local configs. Auto-migration eliminates friction. It is P2 because it is not a user-blocking concern for everyone — only for people with pre-existing configs.
+**Why this priority**: diptych is pre-deployment so nobody is production-dependent on the old shape, but contributors and early users still have local configs. Auto-migration eliminates friction. It is P2 because it is not a user-blocking concern for everyone — only for people with pre-existing configs.
 
-**Independent Test**: Drop a pre-refactor `config.yml` (with `kind: 'claude-code'` or `kind: 'api', tool: 'ollama'`) into a test project, run `tiny-spec start "test"`, confirm it loads successfully. Then trigger a save (via the settings overlay or a picker commit), inspect the file on disk, and confirm it has been rewritten to the new shape with `version: 2`.
+**Independent Test**: Drop a pre-refactor `config.yml` (with `kind: 'claude-code'` or `kind: 'api', tool: 'ollama'`) into a test project, run `diptych start "test"`, confirm it loads successfully. Then trigger a save (via the settings overlay or a picker commit), inspect the file on disk, and confirm it has been rewritten to the new shape with `version: 2`.
 
 **Acceptance Scenarios**:
 
@@ -61,11 +61,11 @@ A tiny-spec user has a working `.tiny-spec/config.yml` from before this refactor
 
 ### User Story 4 - Custom self-hosted providers still work (Priority: P2)
 
-A tiny-spec user runs their own internal OpenAI-compatible LLM server. Their config references a provider name (`my-internal-llm`) that is not in the known-providers catalog. They supply the `apiBase` explicitly. The tool MUST accept this config without treating the unknown provider as an error — the only requirement is that `apiBase` is present.
+A diptych user runs their own internal OpenAI-compatible LLM server. Their config references a provider name (`my-internal-llm`) that is not in the known-providers catalog. They supply the `apiBase` explicitly. The tool MUST accept this config without treating the unknown provider as an error — the only requirement is that `apiBase` is present.
 
 **Why this priority**: This preserves a specific existing capability that the refactor could accidentally break if the implementation were to lock the provider field to a closed list. Calling it out as a user story prevents that regression.
 
-**Independent Test**: Configure an API implementer with a nonsense provider name and a real apiBase (e.g., a local mock server or a public test endpoint). Run `tiny-spec start "test"` and confirm the request reaches the endpoint — no schema error about "unknown provider".
+**Independent Test**: Configure an API implementer with a nonsense provider name and a real apiBase (e.g., a local mock server or a public test endpoint). Run `diptych start "test"` and confirm the request reaches the endpoint — no schema error about "unknown provider".
 
 **Acceptance Scenarios**:
 
@@ -76,9 +76,9 @@ A tiny-spec user runs their own internal OpenAI-compatible LLM server. Their con
 
 ### User Story 5 - Contributors can add a new CLI tool by editing one list (Priority: P3)
 
-A tiny-spec contributor wants to add support for a new CLI tool (e.g., a new AI coding CLI that ships next month). Today this requires adding a schema variant, updating multiple enum lists, updating the picker, updating dispatch logic, and writing duplicated spawn/parse plumbing. After this change, adding a new CLI tool MUST require editing one list (the known CLI tool names); all downstream code MUST pick it up automatically.
+A diptych contributor wants to add support for a new CLI tool (e.g., a new AI coding CLI that ships next month). Today this requires adding a schema variant, updating multiple enum lists, updating the picker, updating dispatch logic, and writing duplicated spawn/parse plumbing. After this change, adding a new CLI tool MUST require editing one list (the known CLI tool names); all downstream code MUST pick it up automatically.
 
-**Why this priority**: This is a maintainability concern visible to contributors. It is P3 because it does not affect end users and tiny-spec's CLI tool set changes infrequently. Still worth encoding so we do not regress.
+**Why this priority**: This is a maintainability concern visible to contributors. It is P3 because it does not affect end users and diptych's CLI tool set changes infrequently. Still worth encoding so we do not regress.
 
 **Independent Test**: A contributor adds a hypothetical entry `test-tool` to the CLI tools list, runs typecheck and tests. The type system MUST surface exactly the places that need follow-up work (e.g., display labels), and no schema duplication MUST be required. The TUI picker MUST show the new tool without any other code changes.
 
@@ -96,7 +96,7 @@ A tiny-spec contributor wants to add support for a new CLI tool (e.g., a new AI 
 - **User's config mixes new-shape and legacy-shape fields** (e.g., has both `provider` and legacy `tool` in an API section): Migration MUST prefer the new-shape field (`provider`) and discard the legacy field.
 - **User's legacy config has `kind: 'api'` with no `tool` and no `provider`**: Migration MUST fall back to a documented per-role default (implementer → `ollama`, planner → `anthropic`).
 - **A user switches backend kind mid-session via the picker overlay** (e.g., from API to shell): The commit MUST produce a valid config; it MUST NOT persist an intermediate state with empty required fields. If the user has not supplied enough information to construct a valid new config, the commit MUST be rejected with a clear message.
-- **Resume on a workflow where the config was rewritten**: `tiny-spec resume` reloads the config from disk on every run. The persisted workflow state file stores only display strings and does not need migration.
+- **Resume on a workflow where the config was rewritten**: `diptych resume` reloads the config from disk on every run. The persisted workflow state file stores only display strings and does not need migration.
 - **Contributor removes a CLI tool from the catalog while a user still has it in their config**: The loader MUST abort with an error naming the removed tool and listing the remaining valid options. (Not auto-migrated because no correct fallback exists.)
 - **Two users running the same repo, one with v1 config, one already migrated**: Both MUST see the same behavior — lazy migration is idempotent and transparent.
 
@@ -177,7 +177,7 @@ A tiny-spec contributor wants to add support for a new CLI tool (e.g., a new AI 
 - **SC-002**: Adding a new CLI tool to the supported set requires editing exactly one list in one file. The number of files a contributor must touch to add one CLI tool drops from the current count (6+) to 1.
 - **SC-003**: The number of runtime cleanup / workaround functions in the config-handling code drops to zero. Specifically, the 4 named functions (`implementerCrossFieldErrors`, `toImplementerKind`, `implementerApiPatch`, and the silent fallback in `createImplementer`) are all removed.
 - **SC-004**: The config schema module splits from one monolithic file (~285 lines) into at most 4 focused files, each below 100 lines, with no loss of coverage.
-- **SC-005**: A tiny-spec user with any legacy config shape can upgrade to the new version by pulling the code and running any command — no manual YAML editing required. Success is measured by: zero user reports of "how do I migrate my config".
+- **SC-005**: A diptych user with any legacy config shape can upgrade to the new version by pulling the code and running any command — no manual YAML editing required. Success is measured by: zero user reports of "how do I migrate my config".
 - **SC-006**: Planner and implementer configs accept 100% identical field shapes. If a block of config validates under the `planner:` key, the identical block also validates under the `implementer:` key, and vice versa. Verifiable by automated schema round-trip tests.
 - **SC-007**: The TUI tool/model picker shows identical backend options for the planner and implementer roles. Verifiable by a UI smoke test enumerating both pickers.
 - **SC-008**: Net lines of code across all config-related source files drop by at least 15% despite adding migration logic, a new planner backend, and file splitting (i.e., net simplification after all additions).
@@ -186,12 +186,12 @@ A tiny-spec contributor wants to add support for a new CLI tool (e.g., a new AI 
 
 ## Assumptions
 
-- tiny-spec is pre-deployment. No external users are locked into the old config shape. A clean break with lazy in-place migration is acceptable — no separate migration command or compatibility mode is needed.
-- The workflow state file on disk (`.tiny-spec/current/state.json`) stores only display strings and a small amount of workflow progress; it does NOT store full config shapes. Resume does not need state migration because the config is reloaded from the YAML file on every resume.
+- diptych is pre-deployment. No external users are locked into the old config shape. A clean break with lazy in-place migration is acceptable — no separate migration command or compatibility mode is needed.
+- The workflow state file on disk (`.diptych/current/state.json`) stores only display strings and a small amount of workflow progress; it does NOT store full config shapes. Resume does not need state migration because the config is reloaded from the YAML file on every resume.
 - The TUI event stream (how the engine passes data to the UI) is already cleanly structured. No changes to event types or event flow are needed by this refactor.
 - The `Planner` and `Implementer` runtime interfaces stay as they are. The planner retains its 6 methods (plan / regenerate / escalateHint / escalateFull / quickPlan / review) and the implementer retains its 2 methods (implement / retry). Simplifying these interfaces is explicitly out of scope.
 - The existing distinction between shell-kind runners (parse stdout for code blocks) and file-writing-agent-kind runners (watch the filesystem for file writes) is semantically real. Both kinds remain; they are not merge candidates.
 - The generation parameter `model` is required on implementer runners (local models need an explicit model to load) but optional on planner runners (some CLI planners pick their own default, e.g., Claude Code auto-selects based on the user's subscription).
 - Adding a new CLI tool may still require incidental updates for display labels or optional integration details. The claim "edit one list" refers to the schema/validation surface, not every possible presentation concern.
 - The Anthropic Agent SDK remains an optional peer dependency. Its loader is the single place where a deferred import is used; the rest of the codebase uses direct imports.
-- tiny-spec's existing test suite (700+ tests) stays green throughout the refactor. Every commit in the implementation plan leaves type checking and tests green.
+- diptych's existing test suite (700+ tests) stays green throughout the refactor. Every commit in the implementation plan leaves type checking and tests green.

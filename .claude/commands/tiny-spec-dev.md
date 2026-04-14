@@ -1,13 +1,13 @@
 ---
-name: tiny-spec-dev
-description: Use at the start of any tiny-spec development session to understand the project, its architecture, strategic decisions, and what NOT to build. Load this before doing any work on the codebase.
+name: diptych-dev
+description: Use at the start of any diptych development session to understand the project, its architecture, strategic decisions, and what NOT to build. Load this before doing any work on the codebase.
 ---
 
-# tiny-spec Development Context
+# diptych Development Context
 
 ## What Is This Project
 
-tiny-spec is a **cost-optimized AI coding orchestrator** with a **two-role architecture**. It splits work between an expensive planner (Claude Code / Opus) and a cheap implementer (Ollama / local models), saving 50%+ on AI coding costs. The collaboration between roles is made **visible and satisfying** through a conversation-flow TUI.
+diptych is a **cost-optimized AI coding orchestrator** with a **two-role architecture**. It splits work between an expensive planner (Claude Code / Opus) and a cheap implementer (Ollama / local models), saving 50%+ on AI coding costs. The collaboration between roles is made **visible and satisfying** through a conversation-flow TUI.
 
 **Flow**: Feature description → Planner researches codebase & may ask clarifying questions → Creates spec/plan/tasks → User approves (approve, edit, comment, quit) → Implementer codes each task → Validation (tsc → lint → test) → Retry up to 3x → Escalate to planner if stuck → Commit per task → Final planner review.
 

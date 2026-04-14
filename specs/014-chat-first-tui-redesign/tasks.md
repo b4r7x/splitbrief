@@ -46,12 +46,12 @@
 
 ## Phase 3: User Story 1 — Interactive Home Screen (Priority: P1) — MVP
 
-**Goal**: User launches tiny-spec without arguments, sees welcome screen with banner, config, sessions, and input bar. Types feature description to start workflow.
+**Goal**: User launches diptych without arguments, sees welcome screen with banner, config, sessions, and input bar. Types feature description to start workflow.
 
 **Independent Test**: Run `npm run start` with no arguments. Home screen renders with banner, config display, sessions list, and functional input bar. Typing a feature and pressing Ctrl+Enter transitions to workflow.
 
 - [x] T012 [US1] Create src/ui/screens/home.tsx: home screen component with vertical layout — cfonts banner at top, config section, sessions list, input bar at bottom. Import getTheme() for all colors.
-- [x] T013 [P] [US1] Implement cfonts ASCII banner in home.tsx: use cfonts.render('tiny-spec', { font: 'tiny', colors: ['cyan'] }).string. Wrap in <Text>. Fall back to plain "tiny-spec" text if cfonts throws.
+- [x] T013 [P] [US1] Implement cfonts ASCII banner in home.tsx: use cfonts.render('diptych', { font: 'tiny', colors: ['cyan'] }).string. Wrap in <Text>. Fall back to plain "diptych" text if cfonts throws.
 - [x] T014 [P] [US1] Create src/utils/sessions.ts: pure functions for session file I/O — listSessions(dir), readSession(path), writeSession(path, data), getSessionDir(scope, projectDir). File name format: {timestamp}-{slug}.json
 - [x] T015 [US1] Create src/hooks/use-sessions.ts: useSessions(config, projectDir) hook — loads session list on mount, provides sessions array and saveSession(data) function. Reads from getSessionDir based on config.sessions.scope.
 - [x] T016 [US1] Implement config display section in home.tsx: show current planner tool name + implementer model name from loaded config. Add "change" action that opens existing picker.tsx inline for re-selection.
@@ -149,7 +149,7 @@
 - [x] T046 Terminal resize handling: listen to stdout resize events in layout.tsx, re-read dimensions, trigger sidebar auto-hide check in useSidebar
 - [x] T047 [P] Handle unknown slash commands in input-bar.tsx: if input starts with / but doesn't match known commands, show "unknown command" hint text briefly, don't submit
 - [x] T048 Update test imports across all test files: change imports from deleted files (prompt.tsx, question-prompt.tsx, user-input.tsx) and updated files (theme.ts, app.tsx, event-card.tsx, layout.tsx). Update render helpers in tests/helpers/render.tsx for new theme.
-- [x] T049 Verify backward compatibility: test that `tiny-spec start "feature"` still works identically — skips home screen, goes directly to workflow, all event rendering works.
+- [x] T049 Verify backward compatibility: test that `diptych start "feature"` still works identically — skips home screen, goes directly to workflow, all event rendering works.
 - [x] T050 Run full test suite, fix any broken tests from component changes. Verify all existing 402 tests pass or are updated for new component signatures.
 
 ---

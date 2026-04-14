@@ -1,4 +1,4 @@
-# Task Prompt Format Contract: tiny-spec v0.2
+# Task Prompt Format Contract: diptych v0.2
 
 ## System Message
 

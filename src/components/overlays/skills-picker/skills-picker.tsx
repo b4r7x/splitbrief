@@ -120,7 +120,7 @@ export function SkillsPicker() {
       placeholder={skills.length === 0 ? (
         <Box flexDirection="column">
           <Text color={t.textDim}>  No skills found.</Text>
-          <Text color={t.textDim}>  Add skills to .claude/skills/ or .tiny-spec/skills/ to get started.</Text>
+          <Text color={t.textDim}>  Add skills to .claude/skills/ or .diptych/skills/ to get started.</Text>
         </Box>
       ) : (
         <Text color={t.textDim}>{'  No matching skills'}</Text>

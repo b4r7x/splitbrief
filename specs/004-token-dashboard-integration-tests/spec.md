@@ -10,18 +10,18 @@
 ### Session 2026-03-26
 
 - Q: Should the completion summary be a full-screen TUI view or inline text? → A: Full-screen TUI view replacing split-pane layout after completion (Option A), with plain text fallback for piped/--json output.
-- Q: Should tiny-spec support only Claude Code as planner? → A: No — pluggable architecture supporting Claude Code, Codex CLI, OpenCode, Aider, and Agent SDK as planner backends. Config-driven provider selection.
-- Q: Should tiny-spec support only Ollama as implementer? → A: No — already supports Ollama/LM Studio/DeepSeek/OpenRouter. Extend with Codex --oss and any OpenAI-compatible endpoint.
+- Q: Should diptych support only Claude Code as planner? → A: No — pluggable architecture supporting Claude Code, Codex CLI, OpenCode, Aider, and Agent SDK as planner backends. Config-driven provider selection.
+- Q: Should diptych support only Ollama as implementer? → A: No — already supports Ollama/LM Studio/DeepSeek/OpenRouter. Extend with Codex --oss and any OpenAI-compatible endpoint.
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Pluggable Planner Backend (Priority: P1)
 
-Users can configure which AI coding tool serves as the "planner" (the expensive/smart AI that researches the codebase, writes specs, plans, and breaks work into tasks). Instead of hardcoded Claude Code, users choose from multiple backends: Claude Code CLI, Codex CLI, OpenCode, Aider, or the Anthropic Agent SDK. Each backend is invoked through a unified interface, and tiny-spec handles the differences in subprocess management, output parsing, and session continuity.
+Users can configure which AI coding tool serves as the "planner" (the expensive/smart AI that researches the codebase, writes specs, plans, and breaks work into tasks). Instead of hardcoded Claude Code, users choose from multiple backends: Claude Code CLI, Codex CLI, OpenCode, Aider, or the Anthropic Agent SDK. Each backend is invoked through a unified interface, and diptych handles the differences in subprocess management, output parsing, and session continuity.
 
-**Why this priority**: This is the architectural foundation for everything else. Without a planner abstraction, tiny-spec is locked to Claude Code subscribers only. Opening to Codex/OpenCode/Aider users expands the audience from "Claude Max users" to "anyone with access to any AI coding tool."
+**Why this priority**: This is the architectural foundation for everything else. Without a planner abstraction, diptych is locked to Claude Code subscribers only. Opening to Codex/OpenCode/Aider users expands the audience from "Claude Max users" to "anyone with access to any AI coding tool."
 
-**Independent Test**: Can be tested by configuring a different planner backend in config.yaml and running `tiny-spec start "add hello world"` — the planning phase should work regardless of which backend is selected.
+**Independent Test**: Can be tested by configuring a different planner backend in config.yaml and running `diptych start "add hello world"` — the planning phase should work regardless of which backend is selected.
 
 **Acceptance Scenarios**:
 
@@ -35,9 +35,9 @@ Users can configure which AI coding tool serves as the "planner" (the expensive/
 
 ### User Story 2 - Completion Summary Dashboard (Priority: P1)
 
-After a full workflow completes (`tiny-spec start "feature"`), the user sees a rich full-screen summary in the TUI showing exactly how many tokens were consumed across all phases, what each phase cost, and how much money they saved by using local models instead of doing everything with the expensive planner.
+After a full workflow completes (`diptych start "feature"`), the user sees a rich full-screen summary in the TUI showing exactly how many tokens were consumed across all phases, what each phase cost, and how much money they saved by using local models instead of doing everything with the expensive planner.
 
-**Why this priority**: This is the core value proposition of tiny-spec — users need to *see* their savings to trust the tool. The current summary shows minimal info with incomplete cost data.
+**Why this priority**: This is the core value proposition of diptych — users need to *see* their savings to trust the tool. The current summary shows minimal info with incomplete cost data.
 
 **Independent Test**: Can be fully tested by running a complete workflow and verifying the summary screen displays accurate token counts and cost calculations.
 

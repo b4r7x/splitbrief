@@ -1,4 +1,4 @@
-# Specification Quality Checklist: tiny-spec v0.2  -  Critical Fixes, Robustness & Core Value Delivery
+# Specification Quality Checklist: diptych v0.2  -  Critical Fixes, Robustness & Core Value Delivery
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-03-25

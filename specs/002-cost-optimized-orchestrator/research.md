@@ -1,4 +1,4 @@
-# Research: tiny-spec v0.1
+# Research: diptych v0.1
 
 **Date**: 2026-03-25 | **Method**: 9 parallel Opus research agents with WebSearch
 
@@ -48,7 +48,7 @@ claude -p "prompt" --output-format json --bare
 
 **Critical trap -- Ollama context window**: Default is 2048 tokens. The `/v1/` endpoint does NOT support `num_ctx` parameter. Must use either:
 1. Custom Modelfile with `PARAMETER num_ctx 32768`
-2. `TINY_SPEC_CONTEXT_LENGTH` environment variable
+2. `DIPTYCH_CONTEXT_LENGTH` environment variable
 3. Ollama native API (`/api/chat`) with `num_ctx` in options (not OpenAI-compat)
 
 **Model capability detection**:
@@ -174,7 +174,7 @@ Fix the error and output the complete corrected file.
 **Layout**:
 ```
 ┌─────────── Header (1 line) ──────────────┐
-│ tiny-spec | feature-name | 00:03:42      │
+│ diptych | feature-name | 00:03:42      │
 ├──────────────────┬───────────────────────┤
 │ PLANNER          │ IMPLEMENTER           │
 │ (Claude Code)    │ (Local Model)         │
@@ -202,7 +202,7 @@ Fix the error and output the complete corrected file.
 
 **Rationale**: Atomic rollback, bisect-friendly history, clear audit trail.
 
-- Each commit references task ID: `[tiny-spec] T003: implement config loader`
+- Each commit references task ID: `[diptych] T003: implement config loader`
 - Failed tasks: discard uncommitted changes, skip dependents
 - External change detection: `git status` before each task, warn user if unexpected changes
 - Git worktrees for parallel execution: deferred to v0.2
@@ -212,7 +212,7 @@ Fix the error and output the complete corrected file.
 | Setup | Monthly Cost | Features/mo | Effective Value |
 |-------|-------------|-------------|-----------------|
 | Max 5x (Opus only) | $100 | 5-6 | $100 |
-| **Max 5x + tiny-spec** | **$100** | **12-15** | **$200-250** |
+| **Max 5x + diptych** | **$100** | **12-15** | **$200-250** |
 | Max 20x (Opus only) | $200 | 15-20 | $200 |
 
 - Planning phase: ~348K Opus tokens/feature (uses existing subscription)
@@ -224,7 +224,7 @@ Fix the error and output the complete corrected file.
 
 **Decision**: Optional MCP client integration in v0.2.
 
-**Rationale**: Prain's `brain_context` tool solves tiny-spec's hardest problem -- building the right context for a 7B model with a 32K context window. Without Prain, context is naive file-reading. With Prain, it's ranked, symbol-level, token-budgeted.
+**Rationale**: Prain's `brain_context` tool solves diptych's hardest problem -- building the right context for a 7B model with a 32K context window. Without Prain, context is naive file-reading. With Prain, it's ranked, symbol-level, token-budgeted.
 
 **Integration points**: `brain_context` for task prompts, `brain_conventions` for style matching, `brain_impact` for blast radius checks.
 

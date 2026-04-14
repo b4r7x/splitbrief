@@ -4,9 +4,9 @@ import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import type { PlannerTool, SkillMeta } from '../../types.js';
 import { parseSimpleYamlFrontmatter, extractFrontmatter } from '../../utils/frontmatter.js';
-import { TINY_SPEC_DIR, CODEX_DIR, SKILLS_DIR } from '../../core/paths.js';
+import { DIPTYCH_DIR, CODEX_DIR, SKILLS_DIR } from '../../core/paths.js';
 import { isENOENT } from '../../utils/process-errors.js';
-import { getTinySpecPath } from '../../utils/fs.js';
+import { getDiptychPath } from '../../utils/fs.js';
 import { warnError } from '../../utils/warn.js';
 
 const MAX_SKILL_CHARS = 16_000;
@@ -122,7 +122,7 @@ function getGlobalDir(tool: PlannerTool): string | null {
     case 'claude-code': return join(homedir(), '.claude', 'skills');
     case 'codex': return null;
     case 'aider': return null;
-    default: return join(homedir(), TINY_SPEC_DIR, SKILLS_DIR);
+    default: return join(homedir(), DIPTYCH_DIR, SKILLS_DIR);
   }
 }
 
@@ -131,7 +131,7 @@ function getProjectDir(tool: PlannerTool, projectDir: string): string | null {
     case 'claude-code': return join(projectDir, '.claude', 'skills');
     case 'codex': return null;
     case 'aider': return null;
-    default: return getTinySpecPath(projectDir, SKILLS_DIR);
+    default: return getDiptychPath(projectDir, SKILLS_DIR);
   }
 }
 

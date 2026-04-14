@@ -5,7 +5,7 @@ import YAML from 'yaml';
 import { createDefaultConfig, loadConfig } from './loading.js';
 import { toYaml } from './transforms.js';
 import type { PlannerConfig } from '../types/index.js';
-import { TINY_SPEC_DIR } from '../paths.js';
+import { DIPTYCH_DIR } from '../paths.js';
 
 function expectCli(p: PlannerConfig): Extract<PlannerConfig, { kind: 'cli' }> {
   if (p.kind !== 'cli') throw new Error(`Expected cli planner, got ${p.kind}`);
@@ -25,7 +25,7 @@ afterAll(() => {
 });
 
 function writeConfigYaml(projectDir: string, obj: Record<string, unknown>) {
-  const dir = join(projectDir, TINY_SPEC_DIR);
+  const dir = join(projectDir, DIPTYCH_DIR);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'config.yaml'), YAML.stringify(obj), 'utf-8');
 }
@@ -140,7 +140,7 @@ describe('config loading', () => {
 
     it('returns defaults when YAML parses to a primitive', () => {
       const dir = join(TMP, 'yaml-primitive');
-      const configDir = join(dir, TINY_SPEC_DIR);
+      const configDir = join(dir, DIPTYCH_DIR);
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, 'config.yaml'), '42', 'utf-8');
 
@@ -150,7 +150,7 @@ describe('config loading', () => {
 
     it('returns defaults when YAML parses to an array', () => {
       const dir = join(TMP, 'yaml-array');
-      const configDir = join(dir, TINY_SPEC_DIR);
+      const configDir = join(dir, DIPTYCH_DIR);
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, 'config.yaml'), '- item1\n- item2', 'utf-8');
 
@@ -170,7 +170,7 @@ describe('config loading', () => {
 
     it('returns defaults for an empty YAML file', () => {
       const dir = join(TMP, 'empty-yaml');
-      const configDir = join(dir, TINY_SPEC_DIR);
+      const configDir = join(dir, DIPTYCH_DIR);
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, 'config.yaml'), '', 'utf-8');
 
@@ -180,7 +180,7 @@ describe('config loading', () => {
 
     it('throws a helpful error for malformed YAML', () => {
       const dir = join(TMP, 'malformed-yaml');
-      const configDir = join(dir, TINY_SPEC_DIR);
+      const configDir = join(dir, DIPTYCH_DIR);
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, 'config.yaml'), 'implementer:\n  model: "unmatched quote\n  tool: broken:', 'utf-8');
 

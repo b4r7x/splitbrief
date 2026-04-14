@@ -14,7 +14,7 @@
       "!**/.claude",
       "!**/.specify",
       "!**/specs",
-      "!**/.tiny-spec",
+      "!**/.diptych",
       "!**/.opencode"
     ]
   },

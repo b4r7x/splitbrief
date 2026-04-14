@@ -9,7 +9,7 @@
 
 ### User Story 1 - Interactive Home Screen (Priority: P1)
 
-A developer launches tiny-spec without any arguments. They see a welcoming home screen with an ASCII art banner, their current planner and implementer configuration, and a list of recent sessions. They type a feature description into the input bar at the bottom and press Ctrl+Enter to begin the workflow.
+A developer launches diptych without any arguments. They see a welcoming home screen with an ASCII art banner, their current planner and implementer configuration, and a list of recent sessions. They type a feature description into the input bar at the bottom and press Ctrl+Enter to begin the workflow.
 
 **Why this priority**: Without a home screen, the tool requires CLI arguments to function. This is the gateway to the entire chat-first experience and the most fundamental change from the current design.
 
@@ -17,7 +17,7 @@ A developer launches tiny-spec without any arguments. They see a welcoming home 
 
 **Acceptance Scenarios**:
 
-1. **Given** the user has a configured project, **When** they run `tiny-spec` with no arguments, **Then** they see a home screen with ASCII banner, current planner/model config, recent sessions, and an input bar
+1. **Given** the user has a configured project, **When** they run `diptych` with no arguments, **Then** they see a home screen with ASCII banner, current planner/model config, recent sessions, and an input bar
 2. **Given** the user is on the home screen, **When** they type a feature description and press Ctrl+Enter, **Then** the app transitions to the workflow screen with that feature
 3. **Given** the user has no config file, **When** they launch the app, **Then** the home screen shows an inline picker for planner/model selection before accepting input
 4. **Given** the user is on the home screen, **When** they select "change" next to planner or model, **Then** an inline picker opens allowing them to switch configuration
@@ -43,7 +43,7 @@ During a workflow, the developer sees planner output, implementer progress, vali
 
 ### User Story 3 - Terminal-Adaptive Theme (Priority: P3)
 
-A developer using Catppuccin, Dracula, Solarized, or any other terminal theme launches tiny-spec. The interface automatically uses colors from their terminal palette, looking native and cohesive. Alternatively, a developer who prefers a specific look can switch to the built-in "mono" theme with hand-picked colors.
+A developer using Catppuccin, Dracula, Solarized, or any other terminal theme launches diptych. The interface automatically uses colors from their terminal palette, looking native and cohesive. Alternatively, a developer who prefers a specific look can switch to the built-in "mono" theme with hand-picked colors.
 
 **Why this priority**: Consistent color integration with the user's environment is what separates a polished tool from a kitschy one. This addresses the core visual quality complaint.
 
@@ -51,8 +51,8 @@ A developer using Catppuccin, Dracula, Solarized, or any other terminal theme la
 
 **Acceptance Scenarios**:
 
-1. **Given** the user has a dark terminal theme (e.g., Dracula), **When** they launch tiny-spec with default settings, **Then** all UI colors match their terminal palette via ANSI 0-15 color codes
-2. **Given** the user has a light terminal theme (e.g., Solarized Light), **When** they launch tiny-spec, **Then** the interface remains readable and visually cohesive
+1. **Given** the user has a dark terminal theme (e.g., Dracula), **When** they launch diptych with default settings, **Then** all UI colors match their terminal palette via ANSI 0-15 color codes
+2. **Given** the user has a light terminal theme (e.g., Solarized Light), **When** they launch diptych, **Then** the interface remains readable and visually cohesive
 3. **Given** the user sets `theme: mono` in config, **When** they launch the app, **Then** the interface uses the built-in hand-picked hex color palette regardless of terminal theme
 4. **Given** any theme mode, **When** rendering UI components, **Then** zero hardcoded color values exist outside of theme.ts
 
@@ -77,7 +77,7 @@ During a workflow, the developer presses Ctrl+B to reveal a sidebar showing the 
 
 ### User Story 5 - Fullscreen Mode (Priority: P5)
 
-The developer launches tiny-spec and it opens in a fullscreen alternate screen buffer, similar to vim or less. Their previous terminal output is preserved and restored when they exit. In CI environments, fullscreen mode is automatically disabled.
+The developer launches diptych and it opens in a fullscreen alternate screen buffer, similar to vim or less. Their previous terminal output is preserved and restored when they exit. In CI environments, fullscreen mode is automatically disabled.
 
 **Why this priority**: Fullscreen mode provides a professional, immersive experience. It's important for polish but the app works without it.
 
@@ -85,7 +85,7 @@ The developer launches tiny-spec and it opens in a fullscreen alternate screen b
 
 **Acceptance Scenarios**:
 
-1. **Given** the user launches tiny-spec in an interactive terminal, **When** the app starts, **Then** it switches to the alternate screen buffer
+1. **Given** the user launches diptych in an interactive terminal, **When** the app starts, **Then** it switches to the alternate screen buffer
 2. **Given** the app is running in fullscreen, **When** the user exits (q or Ctrl+C), **Then** the terminal restores previous content
 3. **Given** the user passes `--no-fullscreen`, **When** the app starts, **Then** it renders inline without alternate screen buffer
 4. **Given** the app detects a non-interactive environment (CI, piped output), **When** starting, **Then** fullscreen mode is automatically disabled
@@ -146,7 +146,7 @@ The developer flows naturally between three screens: home, workflow, and summary
 ### Edge Cases
 
 - What happens when the terminal is resized during a workflow? The layout must reflow, and the sidebar must auto-hide if width drops below 100 columns.
-- What happens when cfonts is unavailable or the terminal doesn't support the font rendering? Fall back to plain text "tiny-spec" header.
+- What happens when cfonts is unavailable or the terminal doesn't support the font rendering? Fall back to plain text "diptych" header.
 - What happens when ink-multiline-input fails or is incompatible? Fall back to single-line input with $EDITOR support for long text.
 - What happens when a user types a slash command that doesn't exist? Show "unknown command" inline, don't crash.
 - What happens when session storage directory doesn't exist? Create it automatically on first session save.
@@ -225,8 +225,8 @@ The developer flows naturally between three screens: home, workflow, and summary
 **Session Management**
 
 - **FR-029**: System MUST persist session metadata after each workflow run
-- **FR-030**: Default session storage MUST be project-local (`.tiny-spec/sessions/`)
-- **FR-031**: Global session storage (`~/.tiny-spec/sessions/`) MUST be available via `sessions.scope: global` in config
+- **FR-030**: Default session storage MUST be project-local (`.diptych/sessions/`)
+- **FR-031**: Global session storage (`~/.diptych/sessions/`) MUST be available via `sessions.scope: global` in config
 - **FR-032**: Each session record MUST contain: feature name, timestamp, completion status, and summary
 
 ### Key Entities
@@ -248,7 +248,7 @@ The developer flows naturally between three screens: home, workflow, and summary
 - **SC-005**: Sidebar toggle responds within one render frame and does not cause layout reflow artifacts
 - **SC-006**: The tool remains responsive (no perceptible input lag) during workflows with 30+ tasks and 200+ events
 - **SC-007**: Fullscreen mode correctly restores terminal state on both clean exit and Ctrl+C interruption
-- **SC-008**: Existing CLI usage (`tiny-spec start "feature"`) continues to work identically — zero breaking changes to the public interface
+- **SC-008**: Existing CLI usage (`diptych start "feature"`) continues to work identically — zero breaking changes to the public interface
 
 ## Clarifications
 

@@ -3,12 +3,12 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadConfig, initConfig, configPath } from '../core/config/index.js';
 import { isGitRepo } from '../utils/git.js';
-import { TINY_SPEC_DIR, CONFIG_FILE } from '../core/paths.js';
+import { DIPTYCH_DIR, CONFIG_FILE } from '../core/paths.js';
 import { cliError } from './errors.js';
 import { toErrorMessage } from '../utils/format.js';
 import type { WorkflowOpts } from '../types.js';
 
-const NO_CONFIG_MSG = `No config found. Creating default ${TINY_SPEC_DIR}/${CONFIG_FILE}`;
+const NO_CONFIG_MSG = `No config found. Creating default ${DIPTYCH_DIR}/${CONFIG_FILE}`;
 
 export function addWorkflowOptions(cmd: Command): Command {
   return cmd

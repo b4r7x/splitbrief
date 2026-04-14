@@ -15,7 +15,7 @@
 
 ### User Story 1 - Eliminate Cross-File Output Parser Duplication (Priority: P1)
 
-As a developer working on tiny-spec, I want output format parsers (text, JSONL, stream-json) to exist in a single shared module so that adding or fixing a parser only requires changes in one place.
+As a developer working on diptych, I want output format parsers (text, JSONL, stream-json) to exist in a single shared module so that adding or fixing a parser only requires changes in one place.
 
 **Why this priority**: ~150 lines of duplicated parser code across 5 files is the largest single source of duplication in the engine. Every bug fix or format change must currently be applied in 3-5 places. This is the highest-impact DRY win.
 

@@ -49,7 +49,7 @@ Current tests are flat in `tests/`. After restructure:
 
 ### Pattern Analysis: Single Package with Domain Separation
 
-**Recommended for tiny-spec**:
+**Recommended for diptych**:
 
 | Project | Core | CLI | Structure |
 |---------|------|-----|-----------|

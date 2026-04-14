@@ -75,7 +75,7 @@ describe('detectionStore', () => {
     let tempDir: string;
 
     beforeEach(async () => {
-      tempDir = await mkdtemp(join(tmpdir(), 'tiny-spec-detection-store-test-'));
+      tempDir = await mkdtemp(join(tmpdir(), 'diptych-detection-store-test-'));
       detectionStore.reset();
       resetServiceState();
     });

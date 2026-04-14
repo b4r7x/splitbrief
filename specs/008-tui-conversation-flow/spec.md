@@ -9,7 +9,7 @@
 
 ### User Story 1 - Structured Event Display (Priority: P1)
 
-A developer starts a workflow with `tiny-spec start "add user auth"`. Instead of seeing two panes of raw scrolling text, they see a single-column conversation flow where each significant action appears as a distinct, labeled card. Planner actions (researching, spec writing, planning) appear as conversational text blocks with the planner's name. Implementer actions (code generation, retry) appear as structured tool-call cards showing the operation, target file, and result. Validation results appear as compact pass/fail cards. Git commits appear as one-line confirmations. The developer can immediately see who is doing what, what succeeded, and what failed — the planner/implementer collaboration is visible.
+A developer starts a workflow with `diptych start "add user auth"`. Instead of seeing two panes of raw scrolling text, they see a single-column conversation flow where each significant action appears as a distinct, labeled card. Planner actions (researching, spec writing, planning) appear as conversational text blocks with the planner's name. Implementer actions (code generation, retry) appear as structured tool-call cards showing the operation, target file, and result. Validation results appear as compact pass/fail cards. Git commits appear as one-line confirmations. The developer can immediately see who is doing what, what succeeded, and what failed — the planner/implementer collaboration is visible.
 
 **Why this priority**: This is the core of the redesign. Without structured event rendering, the rest of the features (collapsing, diff, pipeline bar) have nothing to render. The current raw text display is the primary UX problem.
 
@@ -101,9 +101,9 @@ The developer always knows where they are in the workflow. A sticky header at th
 
 ### User Story 6 - Cost Savings Footer (Priority: P2)
 
-The developer always sees the cost impact of using tiny-spec. A sticky footer at the bottom of the terminal shows: current task progress (e.g., "4/8"), percentage of tasks completed locally (the core value proposition), estimated cost so far, estimated savings compared to using the planner for everything, and the implementer model name. This footer updates in real-time as tasks complete and cost data accumulates.
+The developer always sees the cost impact of using diptych. A sticky footer at the bottom of the terminal shows: current task progress (e.g., "4/8"), percentage of tasks completed locally (the core value proposition), estimated cost so far, estimated savings compared to using the planner for everything, and the implementer model name. This footer updates in real-time as tasks complete and cost data accumulates.
 
-**Why this priority**: Cost savings is the entire USP of tiny-spec, but the current UI makes it invisible. Showing savings in real-time reinforces the product's value and helps developers understand the cost/quality tradeoff.
+**Why this priority**: Cost savings is the entire USP of diptych, but the current UI makes it invisible. Showing savings in real-time reinforces the product's value and helps developers understand the cost/quality tradeoff.
 
 **Independent Test**: Can be tested by running a workflow and verifying the footer displays accurate, updating cost metrics that remain visible at all times.
 

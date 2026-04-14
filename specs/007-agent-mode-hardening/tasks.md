@@ -15,7 +15,7 @@
 
 **Purpose**: Constitutional amendment and type foundation
 
-- [x] T001 Amend Constitution Principle VI to v1.2.0 in .specify/memory/constitution.md — add carve-out: file write delegation to implementer is permitted when tiny-spec retains validation, git, and escalation ownership; update version to 1.2.0 and Last Amended date
+- [x] T001 Amend Constitution Principle VI to v1.2.0 in .specify/memory/constitution.md — add carve-out: file write delegation to implementer is permitted when diptych retains validation, git, and escalation ownership; update version to 1.2.0 and Last Amended date
 
 ---
 
@@ -33,7 +33,7 @@
 
 ## Phase 3: User Story 1 — Agent-Mode Implementer (Priority: P1) MVP
 
-**Goal**: Users can configure an agent-style coding tool as the implementer. The agent writes files directly, and tiny-spec validates, retries, escalates, and commits.
+**Goal**: Users can configure an agent-style coding tool as the implementer. The agent writes files directly, and diptych validates, retries, escalates, and commits.
 
 **Independent Test**: Configure `implementer.type: agent` with a mock script that writes a file, run a single-task workflow, verify validation and commit occur.
 

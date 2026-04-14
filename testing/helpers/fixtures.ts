@@ -79,7 +79,7 @@ export function makeUsage(overrides?: Partial<TokenUsage>): TokenUsage {
 
 export const defaultContext: ProjectContext = {
   name: 'test-project',
-  dir: join(tmpdir(), `tiny-spec-test-${process.pid}`),
+  dir: join(tmpdir(), `diptych-test-${process.pid}`),
   runtime: 'Node.js 22',
   testCommand: 'npm test',
 };

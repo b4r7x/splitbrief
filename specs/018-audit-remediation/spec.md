@@ -9,7 +9,7 @@
 
 ### User Story 1 - Critical Bug Fixes (Priority: P1)
 
-As a developer running tiny-spec workflows, I need the 5 critical bugs fixed so that workflow state is not corrupted, streaming does not terminate prematurely, Ollama context detection works, and subprocess cleanup is reliable.
+As a developer running diptych workflows, I need the 5 critical bugs fixed so that workflow state is not corrupted, streaming does not terminate prematurely, Ollama context detection works, and subprocess cleanup is reliable.
 
 **Why this priority**: These are correctness bugs that affect real users in production workflows. A corrupted workflow state or a prematurely killed stream means lost work and wasted money.
 
@@ -27,7 +27,7 @@ As a developer running tiny-spec workflows, I need the 5 critical bugs fixed so 
 
 ### User Story 2 - Architecture Remediation (Priority: P2)
 
-As a maintainer of tiny-spec, I need the circular import broken, oversized files split, and CLAUDE.md updated so that the codebase is navigable and the project documentation matches reality.
+As a maintainer of diptych, I need the circular import broken, oversized files split, and CLAUDE.md updated so that the codebase is navigable and the project documentation matches reality.
 
 **Why this priority**: Architecture issues cause confusion for all future contributors and AI assistants. Stale documentation actively misleads AI-assisted development.
 

@@ -1,4 +1,4 @@
-# Data Model: tiny-spec v0.1
+# Data Model: diptych v0.1
 
 **Source**: [spec.md](spec.md) Key Entities section
 
@@ -6,7 +6,7 @@
 
 ### Config
 
-User's preferences. Loaded from `.tiny-spec/config.yaml`, merged with defaults.
+User's preferences. Loaded from `.diptych/config.yaml`, merged with defaults.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -27,7 +27,7 @@ User's preferences. Loaded from `.tiny-spec/config.yaml`, merged with defaults.
 
 ### WorkflowState
 
-Current progress through the pipeline. Persisted to `.tiny-spec/current/state.json`.
+Current progress through the pipeline. Persisted to `.diptych/current/state.json`.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -162,8 +162,8 @@ End-of-workflow report.
 ## File Structure
 
 ```
-.tiny-spec/
-├── config.yaml              # User configuration (created by `tiny-spec init`)
+.diptych/
+├── config.yaml              # User configuration (created by `diptych init`)
 ├── current/                 # Active feature workspace
 │   ├── spec.md              # Generated specification
 │   ├── plan.md              # Generated implementation plan

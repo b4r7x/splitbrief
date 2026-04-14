@@ -9,7 +9,7 @@
 
 ### User Story 1 - Runtime Bug Elimination (Priority: P1)
 
-As a developer running tiny-spec, I need the CLI to be free of runtime crashes and logic errors so that workflows execute reliably without data corruption or silent failures.
+As a developer running diptych, I need the CLI to be free of runtime crashes and logic errors so that workflows execute reliably without data corruption or silent failures.
 
 **Why this priority**: Runtime bugs directly impact users -- a `process.exit()` in a render path hard-crashes with no cleanup, a race condition silently drops user input, wrong pricing shows misleading cost data. These erode trust and cause data loss.
 
@@ -27,7 +27,7 @@ As a developer running tiny-spec, I need the CLI to be free of runtime crashes a
 
 ### User Story 2 - Code Maintainability Improvement (Priority: P2)
 
-As a contributor to tiny-spec, I need the codebase to follow clean code principles (SRP, DRY, KISS) so that I can understand, modify, and extend the code without struggling with oversized functions, duplicated patterns, or tangled dependencies.
+As a contributor to diptych, I need the codebase to follow clean code principles (SRP, DRY, KISS) so that I can understand, modify, and extend the code without struggling with oversized functions, duplicated patterns, or tangled dependencies.
 
 **Why this priority**: 7 files exceed 150 lines with functions over 100 lines, 7 major DRY violation patterns span 30+ occurrences, and 1 circular dependency exists. This slows development velocity and increases the risk of introducing regressions when making changes.
 
@@ -118,7 +118,7 @@ As a developer relying on the test suite for confidence, I need tests to verify 
 ### Edge Cases
 
 - What happens when a function extraction creates a new file that needs to be imported by multiple modules -- do all existing import paths remain valid?
-- How does renaming `Event` to `OrchestratorEvent` affect persisted state files (`.tiny-spec/state.json`) that serialize events?
+- How does renaming `Event` to `OrchestratorEvent` affect persisted state files (`.diptych/state.json`) that serialize events?
 - What happens when removing `DEFAULT_BASES` from `types.ts` -- do all 4 consumer import paths update correctly?
 - How does unifying token field names affect existing persisted `TokenUsage` data in state files?
 - What happens to test snapshot expectations when component structure changes (e.g., extracting Spinner)?
@@ -208,10 +208,10 @@ As a developer relying on the test suite for confidence, I need tests to verify 
 ## Assumptions
 
 - The existing test suite (470 tests) is the primary regression safety net -- all tests must pass after every change.
-- Renaming `Event` to `OrchestratorEvent` does not affect persisted `.tiny-spec/state.json` files because the type name is not serialized (only field values are).
+- Renaming `Event` to `OrchestratorEvent` does not affect persisted `.diptych/state.json` files because the type name is not serialized (only field values are).
 - Unifying token field names (`promptTokens` to `inputTokens`, `completionTokens` to `outputTokens`) requires updating the response mapping but does not affect persisted state (token counts are stored under the unified `TokenUsage` structure).
 - The `ui/picker.tsx` file has truly zero consumers (confirmed by the 20-agent review finding zero imports).
 - Template files (`templates.ts`) are split by workflow phase grouping: planning templates (research/spec/plan/tasks) and execution templates (hint/escalation/review/regenerate).
 - The `review-view.tsx` scroll implementation will use keyboard-driven state (up/down arrow keys) consistent with the existing input handling patterns in the TUI.
 - OpenRouter pricing will use a reasonable estimate or the generic cloud pricing tier, since OpenRouter supports hundreds of models with varying prices.
-- Changes maintain backward compatibility with existing `.tiny-spec/` project data and configuration files.
+- Changes maintain backward compatibility with existing `.diptych/` project data and configuration files.

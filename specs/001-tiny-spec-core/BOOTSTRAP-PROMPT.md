@@ -1,14 +1,14 @@
-# Bootstrap Prompt for Implementing tiny-spec
+# Bootstrap Prompt for Implementing diptych
 
 > **Copy everything below this line and paste it as the first message in a new AI context (Claude Code, OpenCode, or any AI coding tool). The AI will have everything it needs to implement the project.**
 
 ---
 
-# TASK: Implement tiny-spec v0.1
+# TASK: Implement diptych v0.1
 
-You are implementing an open-source CLI tool called **tiny-spec**. The project has a complete specification, plan, and task list. Your job is to implement everything following the tasks exactly.
+You are implementing an open-source CLI tool called **diptych**. The project has a complete specification, plan, and task list. Your job is to implement everything following the tasks exactly.
 
-## What is tiny-spec?
+## What is diptych?
 
 A TypeScript CLI tool that orchestrates two AI coding sessions:
 - **Planner**: Claude API (Opus)  -  researches codebase, writes specs, plans, tasks, validates
@@ -32,9 +32,9 @@ Then follow the tasks below.
 ## Implementation Documents
 
 Read these files in order before starting:
-1. `specs/001-tiny-spec-core/spec.md`  -  Requirements and acceptance criteria
-2. `specs/001-tiny-spec-core/plan.md`  -  Architecture, dependencies, file structure
-3. `specs/001-tiny-spec-core/tasks.md`  -  33 tasks across 9 phases (implement in order)
+1. `specs/001-diptych-core/spec.md`  -  Requirements and acceptance criteria
+2. `specs/001-diptych-core/plan.md`  -  Architecture, dependencies, file structure
+3. `specs/001-diptych-core/tasks.md`  -  33 tasks across 9 phases (implement in order)
 4. `CLAUDE.md`  -  Code conventions and quick reference
 
 ## Key Architecture Decisions
@@ -43,7 +43,7 @@ Read these files in order before starting:
 
 2. **Ink for TUI**: Use Ink (React for CLI) with `<Box flexDirection="row">` for the split-pane layout. Not actual tmux  -  it's a React-based terminal app.
 
-3. **State machine**: The workflow progresses through phases. State is persisted to `.tiny-spec/current/state.json` so interrupted workflows can resume.
+3. **State machine**: The workflow progresses through phases. State is persisted to `.diptych/current/state.json` so interrupted workflows can resume.
 
 4. **Self-contained task prompts**: When sending a task to the local model, the prompt must contain ALL context inline. Never tell the model to "go read a file"  -  paste the relevant code into the prompt.
 
@@ -73,7 +73,7 @@ Read these files in order before starting:
 
 ## How to Start
 
-1. Read `specs/001-tiny-spec-core/tasks.md`
+1. Read `specs/001-diptych-core/tasks.md`
 2. Start with Phase 1 (T001-T006): project setup
 3. Continue phase by phase, task by task
 4. Tasks marked `[P]` within a phase can be done in parallel
@@ -106,15 +106,15 @@ After implementation, the user should be able to:
 
 ```bash
 # Install
-npm install -g tiny-spec
+npm install -g diptych
 
 # Initialize in a project
 cd my-project
-tiny-spec init
-# → Creates .tiny-spec/config.yaml with detected local models
+diptych init
+# → Creates .diptych/config.yaml with detected local models
 
 # Run full workflow
-tiny-spec start "add user authentication with JWT"
+diptych start "add user authentication with JWT"
 # → Opens split-pane TUI
 # → Left pane: Claude (Opus) researches codebase, writes spec, plan, tasks
 # → User reviews and approves spec
@@ -125,8 +125,8 @@ tiny-spec start "add user authentication with JWT"
 # → Summary: "12 tasks complete, 2 escalated, 0 failed"
 
 # Or just generate specs
-tiny-spec spec "add rate limiting to API endpoints"
-# → Generates .tiny-spec/current/spec.md, plan.md, tasks.md
+diptych spec "add rate limiting to API endpoints"
+# → Generates .diptych/current/spec.md, plan.md, tasks.md
 ```
 
 ## GO

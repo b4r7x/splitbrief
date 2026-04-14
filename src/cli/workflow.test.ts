@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const existsSyncMock = vi.fn<(p: string) => boolean>();
 const isGitRepoMock = vi.fn<(p: string) => Promise<boolean>>();
 const initConfigMock = vi.fn();
-const configPathMock = vi.fn<(p: string) => string>((p) => `${p}/.tiny-spec/config.yml`);
+const configPathMock = vi.fn<(p: string) => string>((p) => `${p}/.diptych/config.yml`);
 
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();

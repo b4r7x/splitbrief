@@ -21,7 +21,7 @@ A record of a completed or interrupted workflow, persisted as JSON.
 
 **Identity**: `id` field (timestamp + slug). Unique per project or globally depending on scope.
 
-**Storage**: One JSON file per session. Path: `.tiny-spec/sessions/{id}.json` (project) or `~/.tiny-spec/sessions/{id}.json` (global).
+**Storage**: One JSON file per session. Path: `.diptych/sessions/{id}.json` (project) or `~/.diptych/sessions/{id}.json` (global).
 
 ### Screen
 

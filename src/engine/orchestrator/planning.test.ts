@@ -18,12 +18,12 @@ vi.mock('../../utils/fs.js', () => ({
   SECURE_DIR_MODE: 0o700,
   SECURE_FILE_MODE: 0o600,
   checkConfigPermissions: vi.fn().mockReturnValue(true),
-  getTinySpecPath: vi.fn((...parts: string[]) => parts.join('/')),
+  getDiptychPath: vi.fn((...parts: string[]) => parts.join('/')),
 }));
 vi.mock('../../core/paths-io.js', () => ({
   readSpecFileOrEmpty: vi.fn().mockReturnValue(''),
   writeSpecFile: vi.fn(),
-  ensureTinySpecDir: vi.fn(),
+  ensureDiptychDir: vi.fn(),
 }));
 vi.mock('../spec/parser.js', () => ({
   parseTasks: vi.fn().mockReturnValue([makeTask()]),

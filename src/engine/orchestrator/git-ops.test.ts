@@ -6,7 +6,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 
 function setupGitRepo(): string {
-  const dir = createTempDir('tiny-spec-git-ops-test');
+  const dir = createTempDir('diptych-git-ops-test');
   createTestGitRepo(dir);
   return dir;
 }

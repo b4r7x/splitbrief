@@ -41,8 +41,8 @@
 **Content Quality**
 
 - *No implementation details*: The spec avoids framework/library names in the body. References to specific file paths and function names (`implementerCrossFieldErrors`, `toImplementerKind`, `implementerApiPatch`) appear only in the "Runtime cleanup elimination" section of Functional Requirements where they name concrete things-to-be-deleted in the current codebase. These are not prescriptive implementation instructions for the new code; they name existing code that MUST be removed. Borderline acceptable — this is a refactor spec, and naming the specific existing functions is clearer than vague "delete the cleanup code" language. Pass.
-- *Focused on user value*: Each user story opens with the user perspective (tiny-spec user or contributor) and the concrete outcome. Pass.
-- *Written for non-technical stakeholders*: Readable for a non-specialist, though the audience is "developers using tiny-spec" by definition. Pass in context.
+- *Focused on user value*: Each user story opens with the user perspective (diptych user or contributor) and the concrete outcome. Pass.
+- *Written for non-technical stakeholders*: Readable for a non-specialist, though the audience is "developers using diptych" by definition. Pass in context.
 - *All mandatory sections completed*: User Scenarios & Testing, Requirements, Success Criteria, Assumptions are all present and filled. Pass.
 
 **Requirement Completeness**

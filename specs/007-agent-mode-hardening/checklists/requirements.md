@@ -31,5 +31,5 @@
 
 ## Notes
 
-- Clarification resolved: Owner chose to amend Constitution Principle VI (v1.2.0) to permit file write delegation when tiny-spec retains validation/git/escalation ownership.
+- Clarification resolved: Owner chose to amend Constitution Principle VI (v1.2.0) to permit file write delegation when diptych retains validation/git/escalation ownership.
 - All checklist items now pass.

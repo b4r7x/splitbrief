@@ -42,11 +42,11 @@
 
 ## Phase 3: US1 — Home Screen and Interactive Mode (P1)
 
-**Goal**: User runs bare `tiny-spec` and sees interactive home screen with branding, context, and input.
+**Goal**: User runs bare `diptych` and sees interactive home screen with branding, context, and input.
 
-**Independent Test**: Run `tiny-spec` with no args, verify home screen renders, type feature, verify workflow starts.
+**Independent Test**: Run `diptych` with no args, verify home screen renders, type feature, verify workflow starts.
 
-- [x] T010 [US1] Create src/tui/home-screen.tsx — branding block (tiny-spec name + tagline), project context (planner name, implementer model, dir basename, git branch with clean/dirty). When no config: show "No config found — run /init". When resumable workflow exists (state.json with non-terminal phase): show "Resumable: [feature] — /resume to continue". TextInput for feature, slash command hints at bottom. On Enter with no config: auto-trigger init picker before starting workflow. On Enter: if starts with "/" call onSlashCommand, else call onStart(text). Escape clears input.
+- [x] T010 [US1] Create src/tui/home-screen.tsx — branding block (diptych name + tagline), project context (planner name, implementer model, dir basename, git branch with clean/dirty). When no config: show "No config found — run /init". When resumable workflow exists (state.json with non-terminal phase): show "Resumable: [feature] — /resume to continue". TextInput for feature, slash command hints at bottom. On Enter with no config: auto-trigger init picker before starting workflow. On Enter: if starts with "/" call onSlashCommand, else call onStart(text). Escape clears input.
 - [x] T011 [US1] Create src/tui/slash-input.tsx — activated by "/" prefix, shows filtered list of known commands (/models, /config, /status, /resume, /help, /init, /mode). Arrow keys navigate, Enter selects, Escape cancels. On unrecognized command show "Unknown command" with valid command list.
 - [x] T011b [US1] Implement slash command handlers in src/app.tsx — /status: render workflow state inline then return to home input. /models: show detected planners and implementers inline. /config: display current config values. /resume: transition to workflow screen with saved state. /init: run init picker. /help: show help overlay. /mode: open mode picker overlay. Each handler renders output inline and returns to home screen input afterward.
 - [x] T012 [US1] Modify src/cli.ts — add default .action() on root program for home screen, add --mode flag to start and resume commands, keep --auto as alias for --mode auto, validate mode value
@@ -54,7 +54,7 @@
 - [x] T014 [P] [US1] Create tests/home-screen.test.ts — renders branding, renders planner/implementer context, shows "No config" notice when config missing, shows resumable workflow notice when state exists, calls onStart on Enter, calls onSlashCommand for "/" prefix, renders hints, ignores empty Enter
 - [x] T015 [US1] Update src/tui/pipeline-bar.tsx — add 'review-gate' phase between plan and implement, render as phase dot with appropriate label
 
-**Checkpoint**: Running bare `tiny-spec` shows home screen. Typing feature starts workflow. Pipeline bar shows review-gate.
+**Checkpoint**: Running bare `diptych` shows home screen. Typing feature starts workflow. Pipeline bar shows review-gate.
 
 ---
 
@@ -122,7 +122,7 @@
 - [x] T037 [US5] Modify src/tui/event-card.tsx — wrap all card variants in DialogCard with label ([PLAN], [IMPL], [GIT]). Replace ⚡→[IMPL], ●→[PLAN], ✓→*, ✗→x, ⊘→[skip]. Embed validation results inside implementer card body (not separate event). Apply color: planner=blue/cyan, implementer=green, escalation=yellow, error=red, git=gray.
 - [x] T038 [US5] Modify src/tui/task-summary.tsx — replace ✓→*, ✗→x, ⊘→[skip]. Apply colors: completed=green, failed=red, skipped=dim. Format: * T01 task title — local, 12s
 - [x] T039 [US5] Modify src/tui/conversation-flow.tsx — insert FlowArrow between sections: ▼ "task >> implementer" for planner→implementer, ▲ "escalate << planner" for escalation→planner. No arrows between same-actor consecutive cards.
-- [x] T040 [US5] Apply color scheme to remaining components — in src/tui/header.tsx: change "tiny-spec" label from cyan to match branding color. In src/tui/pipeline-bar.tsx: color phase dots by actor (research/spec/plan phases in cyan, implement in green, review in yellow). In src/tui/cost-footer.tsx: ensure Saved amount uses green, cost uses white. In src/tui/diff-view.tsx: read-only audit, verify + lines green and - lines red (no changes expected). Do NOT modify diff-view.tsx if colors already correct.
+- [x] T040 [US5] Apply color scheme to remaining components — in src/tui/header.tsx: change "diptych" label from cyan to match branding color. In src/tui/pipeline-bar.tsx: color phase dots by actor (research/spec/plan phases in cyan, implement in green, review in yellow). In src/tui/cost-footer.tsx: ensure Saved amount uses green, cost uses white. In src/tui/diff-view.tsx: read-only audit, verify + lines green and - lines red (no changes expected). Do NOT modify diff-view.tsx if colors already correct.
 - [x] T041 [P] [US5] Update tests/event-card.test.ts — verify no emoji (⚡●✓✗⊘), ASCII labels present, box-drawing borders, validation embedded in implementer card
 - [x] T042 [P] [US5] Update tests/task-summary.test.ts — verify * not ✓, x not ✗, [skip] not ⊘, correct colors
 - [x] T043 [P] [US5] Update tests/conversation-flow.test.ts — verify FlowArrow between planner→implementer, ▲ for escalation, no arrow between same-actor
@@ -168,7 +168,7 @@
 
 **Purpose**: Backwards compatibility, regression testing, edge case verification
 
-- [x] T055 Verify backwards compatibility — run tiny-spec start "feature", tiny-spec spec "feature", tiny-spec init, tiny-spec status, tiny-spec resume via npm run dev and confirm all work unchanged
+- [x] T055 Verify backwards compatibility — run diptych start "feature", diptych spec "feature", diptych init, diptych status, diptych resume via npm run dev and confirm all work unchanged
 - [x] T056 [P] Verify --auto flag works as alias for --mode auto — confirm auto mode activates, all approvals skipped
 - [x] T057 Run full test suite (npm test) and fix any regressions across all phases
 - [x] T058 [P] Validate terminal rendering at minimum 80x24 — verify no overflow, no broken borders, proper truncation across all new components

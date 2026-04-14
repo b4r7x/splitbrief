@@ -17,7 +17,7 @@
 **Integration pattern**:
 ```typescript
 import cfonts from 'cfonts';
-const banner = cfonts.render('tiny-spec', { font: 'tiny', colors: ['cyan'] }).string;
+const banner = cfonts.render('diptych', { font: 'tiny', colors: ['cyan'] }).string;
 // Use in Ink: <Text>{banner}</Text>
 ```
 
@@ -131,7 +131,7 @@ summary ──[resume]──> workflow
 
 ## 8. Session Storage
 
-**Decision**: JSON files in `.tiny-spec/sessions/`, one file per session. File name: `{timestamp}-{slugified-feature}.json`.
+**Decision**: JSON files in `.diptych/sessions/`, one file per session. File name: `{timestamp}-{slugified-feature}.json`.
 
 **Rationale**: Lightweight, human-readable, no database dependency. Timestamp prefix enables natural sort order. Slugified feature name enables easy identification.
 

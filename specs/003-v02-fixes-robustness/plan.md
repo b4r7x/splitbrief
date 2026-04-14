@@ -1,4 +1,4 @@
-# Implementation Plan: tiny-spec v0.2  -  Critical Fixes, Robustness & Core Value Delivery
+# Implementation Plan: diptych v0.2  -  Critical Fixes, Robustness & Core Value Delivery
 
 **Branch**: `003-v02-fixes-robustness` | **Date**: 2026-03-25 | **Spec**: [spec.md](spec.md)
 **Input**: Feature specification from `/specs/003-v02-fixes-robustness/spec.md`
@@ -11,7 +11,7 @@ Fix 3 critical bugs (broken resume, MAX_RETRIES desync, stale attempt counter), 
 
 **Language/Version**: TypeScript 6.0 (upgrading from 5.9.3), Node.js 22+
 **Primary Dependencies**: ink 5.x, react 18.x, openai ^6.0.0 (upgrading from ^4.0.0), yaml, simple-git, commander ^14.0.0 (upgrading from ^12.0.0)
-**Storage**: JSON files (`.tiny-spec/current/state.json`, `events.jsonl`), Markdown files
+**Storage**: JSON files (`.diptych/current/state.json`, `events.jsonl`), Markdown files
 **Testing**: `tsx --test tests/**/*.test.ts` (Node.js built-in test runner via tsx)
 **Target Platform**: macOS (primary), Linux (secondary)
 **Project Type**: CLI tool with TUI (terminal user interface)

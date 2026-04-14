@@ -9,15 +9,15 @@
 
 ### User Story 1 - Visually polished TUI experience (Priority: P1)
 
-A developer runs `tiny-spec start "add user auth"` and sees a polished terminal interface that feels comparable to opencode: near-black background with layered depth through background color stepping, left-colored accent lines on messages, compact inline tool call displays, syntax-highlighted code in diffs, and braille spinners during processing. The planner/implementer collaboration is visible as a natural conversation flow with clear visual hierarchy — no box-drawing borders on content cards, just spacing and color contrast.
+A developer runs `diptych start "add user auth"` and sees a polished terminal interface that feels comparable to opencode: near-black background with layered depth through background color stepping, left-colored accent lines on messages, compact inline tool call displays, syntax-highlighted code in diffs, and braille spinners during processing. The planner/implementer collaboration is visible as a natural conversation flow with clear visual hierarchy — no box-drawing borders on content cards, just spacing and color contrast.
 
-**Why this priority**: The TUI is the product's face. Users judge quality by what they see. A polished visual directly communicates that tiny-spec is a serious tool, not a weekend project.
+**Why this priority**: The TUI is the product's face. Users judge quality by what they see. A polished visual directly communicates that diptych is a serious tool, not a weekend project.
 
-**Independent Test**: Run `tiny-spec start` with a mock workflow, visually compare output against opencode screenshots — background stepping, accent lines, tool call formatting, diff rendering, and spinner animations should all be present and visually cohesive.
+**Independent Test**: Run `diptych start` with a mock workflow, visually compare output against opencode screenshots — background stepping, accent lines, tool call formatting, diff rendering, and spinner animations should all be present and visually cohesive.
 
 **Acceptance Scenarios**:
 
-1. **Given** a terminal with truecolor support, **When** the user launches tiny-spec, **Then** the interface shows layered backgrounds (3 depth levels: main, panel, element) with no box-drawing borders on content cards.
+1. **Given** a terminal with truecolor support, **When** the user launches diptych, **Then** the interface shows layered backgrounds (3 depth levels: main, panel, element) with no box-drawing borders on content cards.
 2. **Given** a planner message arrives, **When** it renders in the conversation flow, **Then** planner text appears as conversational markdown with headings in accent color and code blocks with syntax highlighting.
 3. **Given** an implementer generates code, **When** the tool call renders, **Then** it shows as a compact single-line format (icon + description + stats) in muted color, expandable to show full diff with syntax-highlighted additions/removals.
 4. **Given** a user message is displayed, **When** it renders, **Then** it has a left accent line in the primary color and a slightly lighter background than the main area.
@@ -186,7 +186,7 @@ The project runs on Ink 6.x with React 19, enabling incremental rendering, synch
 - Target terminals support truecolor (24-bit color). Degradation to 256-color is handled but not optimized for.
 - The existing TuiEvent data model is sufficient — this spec changes visual rendering and project structure, not the event schema.
 - Shiki's ANSI output is compatible with Ink's text rendering (ANSI escape codes pass through correctly).
-- React 18 to 19 migration is straightforward for Ink apps — no breaking changes in the React API subset used by tiny-spec.
+- React 18 to 19 migration is straightforward for Ink apps — no breaking changes in the React API subset used by diptych.
 - Ink 6's static component works as documented for permanent/non-re-rendered content.
 - opencode's visual design principles (background stepping, left accents, no borders) translate well to Ink's layout primitives.
 - No runtime theme switching is needed for v1 — a single default dark theme is sufficient.

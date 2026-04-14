@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SkillMeta } from '../../types.js';
-import { TINY_SPEC_DIR } from '../../core/paths.js';
+import { DIPTYCH_DIR } from '../../core/paths.js';
 
 const TMP = join(import.meta.dirname, '.tmp-skills-test');
 const FAKE_HOME = join(TMP, '__home__');
@@ -145,8 +145,8 @@ describe('discoverSkills', () => {
     rmSync(join(TMP, 'CONVENTIONS.md'), { force: true });
   });
 
-  it('falls back to .tiny-spec/skills for shell planner', async () => {
-    const skillsDir = join(TMP, TINY_SPEC_DIR, 'skills');
+  it('falls back to .diptych/skills for shell planner', async () => {
+    const skillsDir = join(TMP, DIPTYCH_DIR, 'skills');
     mkdirSync(skillsDir, { recursive: true });
     writeFileSync(join(skillsDir, 'custom.md'), '---\nname: Custom\ndescription: Custom skill\n---\nContent');
 
@@ -155,7 +155,7 @@ describe('discoverSkills', () => {
     expect(proj.length).toBe(1);
     expect(proj[0]?.id).toBe('custom');
 
-    rmSync(join(TMP, TINY_SPEC_DIR), { recursive: true, force: true });
+    rmSync(join(TMP, DIPTYCH_DIR), { recursive: true, force: true });
   });
 
   it('discovers skills from symlinked directories', async () => {

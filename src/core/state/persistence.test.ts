@@ -6,7 +6,7 @@ import { createInitialState } from './machine.js';
 import { taskId } from '../types/workflow.js';
 import type { OrchestratorEvent } from '../types/index.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { TINY_SPEC_DIR } from '../paths.js';
+import { DIPTYCH_DIR } from '../paths.js';
 
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
@@ -51,13 +51,13 @@ describe('saveState / loadState roundtrip', () => {
     expect(loaded!.implementerModel).toBe('qwen2.5-coder:14b');
   });
 
-  it('creates .tiny-spec/current/ directory when it does not exist', () => {
+  it('creates .diptych/current/ directory when it does not exist', () => {
     const dir = makeTmp();
     const nested = join(dir, 'deep', 'nested');
     // nested doesn't exist yet
     expect(existsSync(nested)).toBe(false);
     saveState(nested, createInitialState('feat'));
-    expect(existsSync(join(nested, TINY_SPEC_DIR, 'current', 'state.json'))).toBe(true);
+    expect(existsSync(join(nested, DIPTYCH_DIR, 'current', 'state.json'))).toBe(true);
   });
 });
 
@@ -69,7 +69,7 @@ describe('loadState', () => {
 
   it('returns null when state is malformed (missing phase)', () => {
     const dir = makeTmp();
-    const stateDir = join(dir, TINY_SPEC_DIR, 'current');
+    const stateDir = join(dir, DIPTYCH_DIR, 'current');
     mkdirSync(stateDir, { recursive: true });
     writeFileSync(join(stateDir, 'state.json'), JSON.stringify({ stateVersion: 2, tasks: [] }));
     expect(loadState(dir)).toBeNull();
@@ -77,7 +77,7 @@ describe('loadState', () => {
 
   it('returns null when state is malformed (tasks not an array)', () => {
     const dir = makeTmp();
-    const stateDir = join(dir, TINY_SPEC_DIR, 'current');
+    const stateDir = join(dir, DIPTYCH_DIR, 'current');
     mkdirSync(stateDir, { recursive: true });
     writeFileSync(join(stateDir, 'state.json'), JSON.stringify({ stateVersion: 2, phase: 'idle', tasks: 'not-array' }));
     expect(loadState(dir)).toBeNull();
@@ -85,7 +85,7 @@ describe('loadState', () => {
 
   it('returns null when state file contains invalid JSON', () => {
     const dir = makeTmp();
-    const stateDir = join(dir, TINY_SPEC_DIR, 'current');
+    const stateDir = join(dir, DIPTYCH_DIR, 'current');
     mkdirSync(stateDir, { recursive: true });
     writeFileSync(join(stateDir, 'state.json'), '{not valid json!!!');
     expect(loadState(dir)).toBeNull();
@@ -101,7 +101,7 @@ describe('appendEvent', () => {
     appendEvent(dir, event1);
     appendEvent(dir, event2);
 
-    const raw = readFileSync(join(dir, TINY_SPEC_DIR, 'current', 'events.jsonl'), 'utf-8');
+    const raw = readFileSync(join(dir, DIPTYCH_DIR, 'current', 'events.jsonl'), 'utf-8');
     const lines = raw.trim().split('\n');
     expect(lines).toHaveLength(2);
     expect(JSON.parse(lines[0] ?? '')).toEqual(event1);
@@ -112,7 +112,7 @@ describe('appendEvent', () => {
     const dir = makeTmp();
     const event: OrchestratorEvent = { ts: 1000, type: 'workflow_started', phase: 'idle', data: {} };
     appendEvent(dir, event);
-    expect(existsSync(join(dir, TINY_SPEC_DIR, 'current', 'events.jsonl'))).toBe(true);
+    expect(existsSync(join(dir, DIPTYCH_DIR, 'current', 'events.jsonl'))).toBe(true);
   });
 
   describe('failure handling', () => {

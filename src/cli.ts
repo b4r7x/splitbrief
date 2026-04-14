@@ -13,7 +13,7 @@ import { toErrorMessage } from './utils/format.js';
 const program = new Command();
 
 program
-  .name('tiny-spec')
+  .name('diptych')
   .version('0.1.0')
   .description('Cost-optimized AI coding orchestrator');
 

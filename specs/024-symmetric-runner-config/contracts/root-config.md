@@ -4,7 +4,7 @@
 
 ## Purpose
 
-The top-level shape of `.tiny-spec/config.yml`. Minimal wrapper around `PlannerConfigSchema` and `ImplementerConfigSchema` plus the non-runner sections (validation, workflow, theme, sessions, escalation).
+The top-level shape of `.diptych/config.yml`. Minimal wrapper around `PlannerConfigSchema` and `ImplementerConfigSchema` plus the non-runner sections (validation, workflow, theme, sessions, escalation).
 
 ## Exports
 

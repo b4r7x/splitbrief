@@ -17,7 +17,7 @@ const context = { ...defaultContext, runtime: 'node' };
 let testDir: string;
 
 function setupGitRepo(): string {
-  const dir = createTempDir('tiny-spec-agent-test');
+  const dir = createTempDir('diptych-agent-test');
   createTestGitRepo(dir);
   return dir;
 }

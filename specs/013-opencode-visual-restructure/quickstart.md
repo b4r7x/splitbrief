@@ -12,7 +12,7 @@
 - All 5 CLI commands (start, spec, init, status, resume)
 - TuiEvent data model
 - Orchestrator logic, planner backends, implementer backends
-- Config format (.tiny-spec/config.yaml)
+- Config format (.diptych/config.yaml)
 - State persistence (state.json, events.jsonl)
 - All existing functionality
 
@@ -47,7 +47,7 @@ src/
 
 Before (Ink 5, box borders):
 ```
-┌─ tiny-spec │ feature │ ● res ● spec ◉ impl ○ rev │ 04:12 ─┐
+┌─ diptych │ feature │ ● res ● spec ◉ impl ○ rev │ 04:12 ─┐
 │ ● Planner researching...                                     │
 │ ⚡ implementer.generate(qwen2.5-coder:7b)  12s               │
 │   → src/routes/auth.ts (+47 lines)                           │
@@ -57,7 +57,7 @@ Before (Ink 5, box borders):
 
 After (Ink 6, opencode style):
 ```
- tiny-spec │ feature │ ● res ● spec ◉ impl ○ rev │ 04:12
+ diptych │ feature │ ● res ● spec ◉ impl ○ rev │ 04:12
 
  ┃ Planner researching codebase...
  ┃ Found 12 relevant files, analyzing patterns...

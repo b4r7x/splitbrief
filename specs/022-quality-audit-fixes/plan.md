@@ -11,7 +11,7 @@ Systematic remediation of 18 BLOCKERs, 7 DRY violation patterns, 7 type design i
 
 **Language/Version**: TypeScript 5.9+, ESM only (`"type": "module"`)  
 **Primary Dependencies**: Ink 6.x (React 19), openai ^6.0, simple-git, commander ^14.0, yaml, Shiki 4.x, ansis  
-**Storage**: JSON files (`.tiny-spec/state.json`, `events.jsonl`), Markdown files  
+**Storage**: JSON files (`.diptych/state.json`, `events.jsonl`), Markdown files  
 **Testing**: Node.js test runner (`node --test`) with `tsx` loader  
 **Target Platform**: macOS (primary), Linux (secondary)  
 **Project Type**: CLI tool (TUI via Ink)  

@@ -70,7 +70,7 @@ export function createClient(config: Config): OpenAI {
 }
 
 export async function detectCapabilities(config: Config): Promise<{ contextLength: number }> {
-  const envCtx = process.env.TINY_SPEC_CONTEXT_LENGTH;
+  const envCtx = process.env.DIPTYCH_CONTEXT_LENGTH;
   const parsed = envCtx ? parseInt(envCtx, 10) : NaN;
   const configCtx = config.implementer.contextLength ?? 8192;
   const fallback = { contextLength: Number.isNaN(parsed) ? configCtx : parsed };

@@ -11,7 +11,7 @@ Internal refactoring to address 200+ findings from a 20-agent code quality audit
 
 **Language/Version**: TypeScript 5.9+, ESM only (`"type": "module"`)  
 **Primary Dependencies**: Ink 6.x (React 19), openai ^6.0.0, simple-git, commander ^14.0.0, yaml, Shiki 4.x, ansis  
-**Storage**: JSON files (`.tiny-spec/state.json`, `events.jsonl`), Markdown files (spec, plan, tasks)  
+**Storage**: JSON files (`.diptych/state.json`, `events.jsonl`), Markdown files (spec, plan, tasks)  
 **Testing**: node:test (built-in test runner) with node:assert/strict  
 **Target Platform**: macOS (primary), Linux (secondary), Node.js 22+  
 **Project Type**: CLI tool with TUI (Ink/React)  

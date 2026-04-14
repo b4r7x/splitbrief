@@ -138,7 +138,7 @@ const RENDERERS: { [K in TuiEvent["type"]]: EventRenderer<K> } = {
         Workflow cancelled
       </Text>
       <Text color={t.textDim}>
-        Resume with: <Text color={t.text}>tiny-spec resume</Text>
+        Resume with: <Text color={t.text}>diptych resume</Text>
       </Text>
     </Box>
   ),

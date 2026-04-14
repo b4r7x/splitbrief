@@ -3,9 +3,9 @@ import { simpleGit } from 'simple-git';
 export async function createCheckpoint(dir: string, label: string): Promise<string> {
   const git = simpleGit(dir);
   await git.add('.');
-  const stashSha = (await git.raw(['stash', 'create', `tiny-spec checkpoint: ${label}`])).trim();
+  const stashSha = (await git.raw(['stash', 'create', `diptych checkpoint: ${label}`])).trim();
   if (!stashSha) return '';
-  const tagName = `tiny-spec/${label}`;
+  const tagName = `diptych/${label}`;
   await git.tag([tagName, stashSha]);
   await git.reset();
   return tagName;
