@@ -402,3 +402,92 @@ describe('runPlanningPhase — abort + continuation', () => {
     expect(secondCallFeature).toContain(continuationUserText);
   });
 });
+
+describe('runPlanningPhase — rewindPending', () => {
+  function prepareRewindState(phase: 'specifying' | 'planning'): WorkflowState {
+    let state = createInitialState('test-feature');
+    // Simulate that we rewound — phase is already set by the reducer.
+    state = { ...state, phase, rewindPending: undefined };
+    return state;
+  }
+
+  it('rewindPending target=spec with comment triggers planner.regenerate with that comment', async () => {
+    const { callbacks } = makeCallbacks();
+    const planner = makePlanner();
+    const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
+
+    const result = await runPlanningPhase({
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      planner,
+      state: prepareRewindState('specifying'),
+      feature: 'test-feature',
+      rewindPending: { target: 'spec', comment: 'add httpOnly cookie flag' },
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(planner.regenerate).toHaveBeenCalledOnce();
+    const regenCall = vi.mocked(planner.regenerate).mock.calls[0];
+    expect(regenCall?.[0]).toContain('add httpOnly cookie flag');
+    expect(regenCall?.[1]).toBe('spec');
+    // Normal planner.plan() should NOT have been called (rewind fast-path)
+    expect(planner.plan).not.toHaveBeenCalled();
+  });
+
+  it('rewindPending target=plan with comment triggers regenerate on plan artifact', async () => {
+    const { callbacks } = makeCallbacks();
+    const planner = makePlanner();
+    const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
+
+    const result = await runPlanningPhase({
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      planner,
+      state: prepareRewindState('planning'),
+      feature: 'test-feature',
+      rewindPending: { target: 'plan', comment: 'add caching layer' },
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(planner.regenerate).toHaveBeenCalledOnce();
+    const regenCall = vi.mocked(planner.regenerate).mock.calls[0];
+    expect(regenCall?.[0]).toContain('add caching layer');
+    expect(regenCall?.[1]).toBe('plan');
+    expect(planner.plan).not.toHaveBeenCalled();
+  });
+
+  it('rewindPending without comment skips regen and runs from rewound phase', async () => {
+    const { callbacks } = makeCallbacks();
+    const planner = makePlanner();
+    const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
+
+    const result = await runPlanningPhase({
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      planner,
+      state: prepareRewindState('specifying'),
+      feature: 'test-feature',
+      rewindPending: { target: 'spec' },
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(planner.regenerate).not.toHaveBeenCalled();
+    expect(planner.plan).not.toHaveBeenCalled();
+    expect(result.tasks).toHaveLength(1);
+  });
+
+  it('rewindPending cleared after regeneration completes', async () => {
+    const { callbacks } = makeCallbacks();
+    const planner = makePlanner();
+    const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
+
+    const result = await runPlanningPhase({
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      planner,
+      state: { ...prepareRewindState('specifying'), rewindPending: { target: 'spec', comment: 'use JWT' } },
+      feature: 'test-feature',
+      rewindPending: { target: 'spec', comment: 'use JWT' },
+    });
+
+    expect(result.cancelled).toBe(false);
+    // rewindPending must be cleared on the resulting state
+    expect(result.state.rewindPending).toBeUndefined();
+  });
+});

@@ -134,13 +134,14 @@ async function runPlanningPhases(opts: RunPlanningPhasesOptions): Promise<{ stat
   let { state } = opts;
   const { projectDir, sessionId, config, callbacks, planner } = wctx;
 
-  if (!savedState) {
+  if (!savedState || savedState.rewindPending) {
     const planning = await runPlanningPhase({
       wctx: { projectDir, sessionId, config, callbacks, signal: wctx.signal, metadata: wctx.metadata },
       planner,
       state,
       feature: state.feature,
       selectedSkills,
+      rewindPending: savedState?.rewindPending,
     });
     state = planning.state;
     setTrackedState(state);

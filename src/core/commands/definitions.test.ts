@@ -14,6 +14,9 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
     setFeedbackMessage: noop,
     setFeedbackError: noop,
     refreshDetection: async () => {},
+    getCurrentPhase: () => 'idle',
+    requestRewind: noopTrue,
+    requestTaskRedo: noopTrue,
     ...overrides,
   };
 }
@@ -149,5 +152,100 @@ describe('/planner command', () => {
     const commands = createCommands(makeCtx({ openOverlay }));
     executeSlashCommand(commands, '/planner', 'home', noop);
     expect(openOverlay).toHaveBeenCalledWith('planner-picker');
+  });
+});
+
+describe('/revise-spec command', () => {
+  it('calls requestRewind with spec target and comment', () => {
+    const requestRewind = vi.fn(() => true);
+    const commands = createCommands(makeCtx({ requestRewind, getCurrentPhase: () => 'implementing' }));
+    executeSlashCommand(commands, '/revise-spec needs more detail', 'workflow', noop);
+    expect(requestRewind).toHaveBeenCalledWith('spec', 'needs more detail');
+  });
+
+  it('calls requestRewind with spec target when no comment', () => {
+    const requestRewind = vi.fn(() => true);
+    const commands = createCommands(makeCtx({ requestRewind, getCurrentPhase: () => 'implementing' }));
+    executeSlashCommand(commands, '/revise-spec', 'workflow', noop);
+    expect(requestRewind).toHaveBeenCalledWith('spec', undefined);
+  });
+
+  it('shows error when phase is too early', () => {
+    const setFeedbackError = vi.fn();
+    const requestRewind = vi.fn(() => true);
+    const commands = createCommands(makeCtx({ setFeedbackError, requestRewind, getCurrentPhase: () => 'researching' }));
+    executeSlashCommand(commands, '/revise-spec', 'workflow', noop);
+    expect(setFeedbackError).toHaveBeenCalledWith(expect.stringContaining('only available'));
+    expect(requestRewind).not.toHaveBeenCalled();
+  });
+
+  it('shows error when requestRewind returns false', () => {
+    const setFeedbackError = vi.fn();
+    const commands = createCommands(makeCtx({ setFeedbackError, requestRewind: () => false, getCurrentPhase: () => 'implementing' }));
+    executeSlashCommand(commands, '/revise-spec', 'workflow', noop);
+    expect(setFeedbackError).toHaveBeenCalledWith(expect.stringContaining('Cannot rewind'));
+  });
+
+  it('has phaseGuard set', () => {
+    const commands = createCommands(makeCtx());
+    const cmd = commands.find(c => c.name === '/revise-spec');
+    expect(cmd?.phaseGuard).toBeDefined();
+  });
+});
+
+describe('/revise-plan command', () => {
+  it('calls requestRewind with plan target and comment', () => {
+    const requestRewind = vi.fn(() => true);
+    const commands = createCommands(makeCtx({ requestRewind, getCurrentPhase: () => 'implementing' }));
+    executeSlashCommand(commands, '/revise-plan too many tasks', 'workflow', noop);
+    expect(requestRewind).toHaveBeenCalledWith('plan', 'too many tasks');
+  });
+
+  it('shows error when phase is too early', () => {
+    const setFeedbackError = vi.fn();
+    const requestRewind = vi.fn(() => true);
+    const commands = createCommands(makeCtx({ setFeedbackError, requestRewind, getCurrentPhase: () => 'specifying' }));
+    executeSlashCommand(commands, '/revise-plan', 'workflow', noop);
+    expect(setFeedbackError).toHaveBeenCalledWith(expect.stringContaining('only available'));
+    expect(requestRewind).not.toHaveBeenCalled();
+  });
+
+  it('has phaseGuard set', () => {
+    const commands = createCommands(makeCtx());
+    const cmd = commands.find(c => c.name === '/revise-plan');
+    expect(cmd?.phaseGuard).toBeDefined();
+  });
+});
+
+describe('/redo-task command', () => {
+  it('calls requestTaskRedo with task ID', () => {
+    const requestTaskRedo = vi.fn(() => true);
+    const commands = createCommands(makeCtx({ requestTaskRedo, getCurrentPhase: () => 'implementing' }));
+    executeSlashCommand(commands, '/redo-task T001', 'workflow', noop);
+    expect(requestTaskRedo).toHaveBeenCalledWith('T001');
+  });
+
+  it('shows error when no task ID given', () => {
+    const setFeedbackError = vi.fn();
+    const requestTaskRedo = vi.fn(() => true);
+    const commands = createCommands(makeCtx({ setFeedbackError, requestTaskRedo, getCurrentPhase: () => 'implementing' }));
+    executeSlashCommand(commands, '/redo-task', 'workflow', noop);
+    expect(setFeedbackError).toHaveBeenCalledWith(expect.stringContaining('requires a task ID'));
+    expect(requestTaskRedo).not.toHaveBeenCalled();
+  });
+
+  it('shows error when phase does not allow redo', () => {
+    const setFeedbackError = vi.fn();
+    const requestTaskRedo = vi.fn(() => true);
+    const commands = createCommands(makeCtx({ setFeedbackError, requestTaskRedo, getCurrentPhase: () => 'planning' }));
+    executeSlashCommand(commands, '/redo-task T001', 'workflow', noop);
+    expect(setFeedbackError).toHaveBeenCalledWith(expect.stringContaining('only available'));
+    expect(requestTaskRedo).not.toHaveBeenCalled();
+  });
+
+  it('has phaseGuard set', () => {
+    const commands = createCommands(makeCtx());
+    const cmd = commands.find(c => c.name === '/redo-task');
+    expect(cmd?.phaseGuard).toBeDefined();
   });
 });

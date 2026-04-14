@@ -135,6 +135,43 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
     case 'SET_PLANNER_SESSION_ID':
       return { ...state, plannerSessionId: action.sessionId };
 
+    case 'REWIND_TO_SPEC':
+      return {
+        ...state,
+        phase: 'specifying',
+        tasks: [],
+        currentTaskIndex: 0,
+        attempt: 0,
+        awaitingContinue: false,
+        rewindPending: { target: 'spec' as const, ...(action.comment ? { comment: action.comment } : {}) },
+      };
+
+    case 'REWIND_TO_PLAN':
+      return {
+        ...state,
+        phase: 'planning',
+        tasks: [],
+        currentTaskIndex: 0,
+        attempt: 0,
+        awaitingContinue: false,
+        rewindPending: { target: 'plan' as const, ...(action.comment ? { comment: action.comment } : {}) },
+      };
+
+    case 'CLEAR_REWIND_PENDING':
+      return { ...state, rewindPending: undefined };
+
+    case 'RESET_TASK': {
+      const idx = state.tasks.findIndex(t => t.id === action.taskId);
+      if (idx < 0) return state;
+      return {
+        ...state,
+        tasks: state.tasks.map((t, i) => i === idx ? { ...t, status: 'pending' as const } : t),
+        currentTaskIndex: idx,
+        attempt: 0,
+        phase: 'implementing',
+      };
+    }
+
     default:
       action satisfies never;
       return state;

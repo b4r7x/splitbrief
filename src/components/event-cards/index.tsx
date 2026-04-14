@@ -143,6 +143,22 @@ const RENDERERS: { [K in TuiEvent["type"]]: EventRenderer<K> } = {
     </Box>
   ),
   "workflow-config": (e) => <WorkflowConfigCard event={e} />,
+  rewind: (e, { t }) => (
+    <Card
+      label={`rewind → ${e.target}`}
+      labelColor={t.warning}
+      value={e.comment || undefined}
+      valueColor={t.textDim}
+    />
+  ),
+  "task-reset": (e, { t }) => (
+    <Card
+      label="task reset"
+      labelColor={t.warning}
+      value={`Task ${e.taskId} set to pending`}
+      valueColor={t.textDim}
+    />
+  ),
 };
 
 function getGutterRole(event: TuiEvent): "planner" | "implementer" | null {
@@ -154,7 +170,8 @@ function getGutterRole(event: TuiEvent): "planner" | "implementer" | null {
     case "git-commit": case "git-checkpoint": case "retry": return "implementer";
     case "warning": case "error": case "task-complete": case "task-skipped":
     case "cost-update": case "cost-prediction": case "budget-warning":
-    case "budget-exceeded": case "workflow-cancelled": case "workflow-config": return null;
+    case "budget-exceeded": case "workflow-cancelled": case "workflow-config":
+    case "rewind": case "task-reset": return null;
     default: return assertNever(event);
   }
 }

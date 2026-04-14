@@ -338,4 +338,118 @@ describe('transition', () => {
     expect(getSkippedTaskIds(s)).toEqual([]);
     expect(s.currentTaskIndex).toBe(2);
   });
+
+  it('REWIND_TO_SPEC -> specifying with tasks cleared and counters reset', () => {
+    const tasks = [makeTask({ id: 't1', status: 'done' }), makeTask({ id: 't2' })];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks,
+      currentTaskIndex: 1,
+      attempt: 2,
+      awaitingContinue: true,
+    };
+    const next = transition(state, { type: 'REWIND_TO_SPEC' });
+    expect(next.phase).toBe('specifying');
+    expect(next.tasks).toEqual([]);
+    expect(next.currentTaskIndex).toBe(0);
+    expect(next.attempt).toBe(0);
+    expect(next.awaitingContinue).toBe(false);
+  });
+
+  it('REWIND_TO_PLAN -> planning with tasks cleared and counters reset', () => {
+    const tasks = [makeTask({ id: 't1', status: 'done' }), makeTask({ id: 't2' })];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks,
+      currentTaskIndex: 1,
+      attempt: 2,
+      awaitingContinue: true,
+    };
+    const next = transition(state, { type: 'REWIND_TO_PLAN' });
+    expect(next.phase).toBe('planning');
+    expect(next.tasks).toEqual([]);
+    expect(next.currentTaskIndex).toBe(0);
+    expect(next.attempt).toBe(0);
+    expect(next.awaitingContinue).toBe(false);
+  });
+
+  it('RESET_TASK -> implementing with task set to pending and index rewound', () => {
+    const tasks = [
+      makeTask({ id: 't1', status: 'done' }),
+      makeTask({ id: 't2', status: 'done' }),
+      makeTask({ id: 't3' }),
+    ];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks,
+      currentTaskIndex: 2,
+      attempt: 1,
+    };
+    const next = transition(state, { type: 'RESET_TASK', taskId: tasks[1]!.id });
+    expect(next.phase).toBe('implementing');
+    expect(next.currentTaskIndex).toBe(1);
+    expect(next.attempt).toBe(0);
+    expect(next.tasks[1]?.status).toBe('pending');
+    expect(next.tasks[0]?.status).toBe('done');
+  });
+
+  it('RESET_TASK with unknown taskId returns state unchanged', () => {
+    const tasks = [makeTask({ id: 't1' })];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks,
+      currentTaskIndex: 0,
+    };
+    const next = transition(state, { type: 'RESET_TASK', taskId: 'nonexistent' as any });
+    expect(next).toBe(state);
+  });
+
+  it('REWIND_TO_SPEC with comment sets rewindPending', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'implementing' };
+    const next = transition(state, { type: 'REWIND_TO_SPEC', comment: 'use refresh tokens' });
+    expect(next.phase).toBe('specifying');
+    expect(next.rewindPending).toEqual({ target: 'spec', comment: 'use refresh tokens' });
+  });
+
+  it('REWIND_TO_SPEC without comment sets rewindPending with no comment field', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'implementing' };
+    const next = transition(state, { type: 'REWIND_TO_SPEC' });
+    expect(next.phase).toBe('specifying');
+    expect(next.rewindPending).toEqual({ target: 'spec' });
+    expect(next.rewindPending?.comment).toBeUndefined();
+  });
+
+  it('REWIND_TO_PLAN with comment sets rewindPending', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'implementing' };
+    const next = transition(state, { type: 'REWIND_TO_PLAN', comment: 'add caching layer' });
+    expect(next.phase).toBe('planning');
+    expect(next.rewindPending).toEqual({ target: 'plan', comment: 'add caching layer' });
+  });
+
+  it('RESET_TASK does NOT set rewindPending', () => {
+    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks,
+      currentTaskIndex: 1,
+    };
+    const next = transition(state, { type: 'RESET_TASK', taskId: tasks[0]!.id });
+    expect(next.rewindPending).toBeUndefined();
+  });
+
+  it('CLEAR_REWIND_PENDING clears the field', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'specifying',
+      rewindPending: { target: 'spec', comment: 'foo' },
+    };
+    const next = transition(state, { type: 'CLEAR_REWIND_PENDING' });
+    expect(next.rewindPending).toBeUndefined();
+    expect(next.phase).toBe('specifying');
+  });
 });

@@ -38,7 +38,11 @@ export type StateAction =
   | { type: 'CANCEL' }
   | { type: 'ABORT_TURN' }
   | { type: 'CONTINUE_TURN' }
-  | { type: 'SET_PLANNER_SESSION_ID'; sessionId: string };
+  | { type: 'SET_PLANNER_SESSION_ID'; sessionId: string }
+  | { type: 'REWIND_TO_SPEC'; comment?: string }
+  | { type: 'REWIND_TO_PLAN'; comment?: string }
+  | { type: 'RESET_TASK'; taskId: TaskId }
+  | { type: 'CLEAR_REWIND_PENDING' };
 
 export interface TokenBudget {
   system: number;

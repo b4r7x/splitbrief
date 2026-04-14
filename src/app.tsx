@@ -8,6 +8,7 @@ import { routerStore } from './stores/router.js';
 import { configStore } from './stores/config.js';
 import { overlayStore } from './stores/overlay.js';
 import { feedbackStore } from './stores/feedback.js';
+import { workflowStore } from './stores/workflow.js';
 import { refreshDetection } from './engine/detection/index.js';
 import { HomeScreen } from './screens/home.js';
 import { WorkflowScreen } from './screens/workflow.js';
@@ -44,6 +45,13 @@ export function App() {
       const projectDir = configStore.get().projectDir;
       await refreshDetection(projectDir);
     },
+    getCurrentPhase: () => workflowStore.get().phase,
+    requestRewind: (target, comment) => {
+      const base = { target } as const;
+      return workflowStore.requestRewind(comment ? { ...base, comment } : base);
+    },
+    requestTaskRedo: (taskId) =>
+      workflowStore.requestRewind({ target: 'task', taskId }),
   };
   const commands = createCommands(ctx);
   const paletteItems = toPaletteItems(commands);
