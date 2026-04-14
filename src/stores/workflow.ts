@@ -37,6 +37,7 @@ const initial: WorkflowViewState = {
 };
 
 let cancelHandler: (() => void) | null = null;
+let abortHandler: (() => void) | null = null;
 
 const store = createStore<WorkflowViewState>(initial);
 
@@ -57,6 +58,16 @@ function addEvent(event: TuiEvent) {
 
 function setCancelHandler(handler: (() => void) | null) {
   cancelHandler = handler;
+}
+
+function setAbortHandler(handler: (() => void) | null) {
+  abortHandler = handler;
+}
+
+function abortTurn(): boolean {
+  if (!abortHandler) return false;
+  abortHandler();
+  return true;
 }
 
 function requestCancel(): boolean {
@@ -86,10 +97,13 @@ export const workflowStore = {
   ...storeBase(store),
   reset: (init?: Partial<WorkflowViewState>) => {
     cancelHandler = null;
+    abortHandler = null;
     store.reset(init ? { ...initial, ...init } : undefined);
   },
   addEvent,
   setCancelHandler,
+  setAbortHandler,
+  abortTurn,
   requestCancel,
   toggleSidebar,
 };

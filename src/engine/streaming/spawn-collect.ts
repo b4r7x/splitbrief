@@ -13,6 +13,7 @@ interface SpawnAndCollectOptions {
   onText?: ((text: string) => void) | undefined;
   onStderr?: ((chunk: string) => void) | undefined;
   onSessionId?: ((id: string) => void) | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 export async function spawnAndCollect(opts: SpawnAndCollectOptions): Promise<InvokeResult & { sessionId?: string | null }> {
@@ -29,6 +30,7 @@ export async function spawnAndCollect(opts: SpawnAndCollectOptions): Promise<Inv
     stdin: opts.stdin,
     notFoundMessage: opts.notFoundMessage ?? `Command not found: ${opts.command}`,
     onStderr: opts.onStderr,
+    signal: opts.signal,
     onLine(line) {
       const parsed = parseLine(line);
       if (parsed.text) {

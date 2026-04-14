@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { App } from '../../app.js';
 import { loadState } from '../../core/state/persistence.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
-import { RESUMABLE_PHASES } from '../../core/phases.js';
+import { isResumable } from '../../core/phases.js';
 import { renderApp } from '../render.js';
 import { addWorkflowOptions, setupWorkflow, resolveProjectDir } from '../workflow.js';
 import { cliError } from '../errors.js';
@@ -35,7 +35,7 @@ export function registerResumeCommand(program: Command): void {
       throw cliError('Error: saved state is from an older version and cannot be resumed.\nPlease start a new workflow with `diptych start`.');
     }
 
-    if (!RESUMABLE_PHASES.has(state.phase)) {
+    if (!isResumable(state)) {
       throw cliError(`Cannot resume from phase "${state.phase}".`);
     }
 

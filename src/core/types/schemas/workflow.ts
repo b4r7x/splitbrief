@@ -17,4 +17,5 @@ export const WorkflowStateSchema = z.object({
   plannerModel: z.string().optional(),
   implementerTool: z.string().optional(),
   implementerModel: z.string().optional(),
+  awaitingContinue: z.boolean().default(false),
 });

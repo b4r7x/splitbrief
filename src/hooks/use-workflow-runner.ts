@@ -78,6 +78,8 @@ export function useWorkflowRunner({
           (await inputMode.setReviewMode('External changes detected. continue / quit')).approved,
         onBudgetExceeded: async (currentCost, maxBudget) =>
           (await inputMode.setReviewMode(`Budget exceeded: $${currentCost.toFixed(2)} of $${maxBudget.toFixed(2)}. continue / quit`)).approved,
+        onContinuationNeeded: async (_partial) =>
+          inputMode.setQuestionMode('Task interrupted. Enter instructions to continue (or press Enter to retry):'),
         onQuestionAsked: (question, num, total) =>
           inputMode.setQuestionMode(`Question ${num}/${total}: ${question.text}`),
         onComplete: (summary) => {

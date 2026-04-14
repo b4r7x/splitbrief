@@ -104,7 +104,7 @@ idle
 
 **Cancellable phases** (Ctrl-C quits gracefully): everything except `idle` and `complete`.
 
-**Resumable phases** (`diptych resume` picks up from here): `reviewing-spec`, `reviewing-plan`, `implementing`, `validating-task`, `escalating`, `final-review`. The planner-generation phases (`researching`, `specifying`, `planning`) are **not resumable** — if you Ctrl-C during generation, you lose the in-flight planner output and have to restart that phase.
+**Resumable phases** (`diptych resume` picks up from here): `reviewing-spec`, `reviewing-plan`, `implementing`, `validating-task`, `escalating`, `final-review`, plus any phase with `awaitingContinue: true`. The planner-generation phases (`researching`, `specifying`, `planning`) are **not resumable** without `awaitingContinue` — if a cold crash wiped the process mid-generation, the stream is lost and the only safe behaviour is to restart the feature.
 
 ---
 

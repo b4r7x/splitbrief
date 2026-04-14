@@ -27,6 +27,7 @@ describe('createInitialState', () => {
     expect(state.tokenUsage.implementerOutput).toBe(0);
     expect(state.tokenUsage.escalationInput).toBe(0);
     expect(state.tokenUsage.escalationOutput).toBe(0);
+    expect(state.awaitingContinue).toBe(false);
   });
 });
 
@@ -117,6 +118,37 @@ describe('transition', () => {
     expect(next.tasks).toEqual(tasks);
     expect(getCompletedTaskIds(next)).toEqual(['t0']);
     expect(next.feature).toBe('feat');
+  });
+
+  it('CANCEL clears awaitingContinue', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      awaitingContinue: true,
+    };
+    const next = transition(state, { type: 'CANCEL' });
+    expect(next.awaitingContinue).toBe(false);
+  });
+
+  it('ABORT_TURN sets awaitingContinue to true', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+    };
+    const next = transition(state, { type: 'ABORT_TURN' });
+    expect(next.awaitingContinue).toBe(true);
+    expect(next.phase).toBe('implementing');
+  });
+
+  it('CONTINUE_TURN clears awaitingContinue', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      awaitingContinue: true,
+    };
+    const next = transition(state, { type: 'CONTINUE_TURN' });
+    expect(next.awaitingContinue).toBe(false);
+    expect(next.phase).toBe('implementing');
   });
 
   it('REJECT_PLAN -> idle', () => {

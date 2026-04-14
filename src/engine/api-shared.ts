@@ -13,6 +13,7 @@ export interface ApiStreamOptions {
   temperature: number;
   onProgress: (text: string) => void;
   maxTokens?: number | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 export function throwAutoModelError(role: 'planner' | 'implementer'): never {
@@ -20,7 +21,7 @@ export function throwAutoModelError(role: 'planner' | 'implementer'): never {
 }
 
 export async function streamApiCompletion(opts: ApiStreamOptions): Promise<InvokeResult> {
-  const { client, provider, apiBase, apiKey, model, messages, temperature, onProgress, maxTokens } = opts;
+  const { client, provider, apiBase, apiKey, model, messages, temperature, onProgress, maxTokens, signal } = opts;
 
   if (provider === 'anthropic') {
     return streamAnthropicCompletion({
@@ -43,5 +44,6 @@ export async function streamApiCompletion(opts: ApiStreamOptions): Promise<Invok
     onProgress,
     endpoint: { provider, apiBase },
     maxTokens,
+    signal,
   });
 }

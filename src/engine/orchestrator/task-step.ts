@@ -8,6 +8,8 @@ import { emit, createTextHandler, emitError, emitTaskStart } from './events.js';
 import { handleRetryAndEscalation } from './escalation.js';
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave, validateAndCommitTask } from './helpers.js';
 import { getRunnerDisplayName } from '../../core/config/runner-config.js';
+import { buildContinuationPrompt } from './continuation.js';
+import { workflowStore } from '../../stores/workflow.js';
 
 type RetryAndRecordOptions = {
   wctx: WorkflowContext;
@@ -69,21 +71,62 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   if (wctx.signal?.aborted) return state;
 
-  let implResult: Awaited<ReturnType<typeof wctx.implementer.implement>>;
-  try {
-    implResult = await wctx.implementer.implement({
-      task, projectDir, config, context,
-      onOutput: createTextHandler(callbacks),
-      onEvent: callbacks.onEvent,
-      sessionId,
-    });
-  } catch (err) {
-    emitError(callbacks, labelError('Implementation failed', err));
-    const retry = await retryAndRecord({
-      wctx, task, initialError: toErrorMessage(err),
-      state, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState,
-    });
-    return retry.state;
+  let partialOutput = '';
+  let continuationPrompt: string | undefined;
+  const textHandler = createTextHandler(callbacks);
+
+  // Per-call abort + continuation loop
+  let implResult: Awaited<ReturnType<typeof wctx.implementer.implement>> | undefined;
+  while (true) {
+    const callController = new AbortController();
+    workflowStore.setAbortHandler(() => callController.abort());
+    partialOutput = '';
+
+    try {
+      implResult = await wctx.implementer.implement({
+        task, projectDir, config, context,
+        onOutput: (text) => { partialOutput += text; textHandler(text); },
+        onEvent: callbacks.onEvent,
+        sessionId,
+        signal: callController.signal,
+        continuationPrompt,
+      });
+    } catch (err) {
+      workflowStore.setAbortHandler(null);
+
+      // Per-call abort (not workflow cancel): enter continuation mode
+      if (callController.signal.aborted && !wctx.signal?.aborted && callbacks.onContinuationNeeded) {
+        state = transitionAndSave(projectDir, sessionId, state, { type: 'ABORT_TURN' });
+        setTrackedState(state);
+        const userText = await callbacks.onContinuationNeeded(partialOutput);
+        state = transitionAndSave(projectDir, sessionId, state, { type: 'CONTINUE_TURN' });
+        setTrackedState(state);
+        continuationPrompt = buildContinuationPrompt(partialOutput, userText);
+        continue;
+      }
+
+      emitError(callbacks, labelError('Implementation failed', err));
+      const retry = await retryAndRecord({
+        wctx, task, initialError: toErrorMessage(err),
+        state, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState,
+      });
+      return retry.state;
+    }
+
+    workflowStore.setAbortHandler(null);
+
+    // Abort returned as a result (not thrown) — handle continuation
+    if (callController.signal.aborted && !implResult.success && !wctx.signal?.aborted && callbacks.onContinuationNeeded) {
+      state = transitionAndSave(projectDir, sessionId, state, { type: 'ABORT_TURN' });
+      setTrackedState(state);
+      const userText = await callbacks.onContinuationNeeded(partialOutput);
+      state = transitionAndSave(projectDir, sessionId, state, { type: 'CONTINUE_TURN' });
+      setTrackedState(state);
+      continuationPrompt = buildContinuationPrompt(partialOutput, userText);
+      continue;
+    }
+
+    break;
   }
 
   state = addUsageAndSave(projectDir, sessionId, state, 'implementer', implResult.usage, callbacks);

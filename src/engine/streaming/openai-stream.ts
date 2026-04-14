@@ -8,6 +8,7 @@ interface StreamCompletionOptions {
   onProgress: (text: string) => void;
   endpoint?: { provider: string; apiBase?: string | undefined } | undefined;
   maxTokens?: number | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 interface StreamChunk {
@@ -73,6 +74,7 @@ export async function streamCompletion(
 
   try {
     for await (const chunk of withIdleTimeout(stream, STREAM_TIMEOUT_MS, 'Model response timed out')) {
+      if (opts.signal?.aborted) break;
       const content = chunk.choices?.[0]?.delta?.content;
       if (content) {
         fullResponse += content;
@@ -83,6 +85,9 @@ export async function streamCompletion(
       }
     }
   } catch (err: unknown) {
+    if (opts.signal?.aborted) {
+      return { text: fullResponse, usage };
+    }
     if (err instanceof IdleTimeoutError) throw err;
     throwMappedError(err, endpoint);
   }

@@ -22,6 +22,7 @@ export function createInitialState(feature: string): WorkflowState {
     plannerSessionId: null,
     startedAt: new Date().toISOString(),
     tokenUsage: { ...zeroTokenUsage },
+    awaitingContinue: false,
   };
 }
 
@@ -123,7 +124,13 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
       return { ...state, phase: 'complete' };
 
     case 'CANCEL':
-      return { ...state, phase: 'idle' };
+      return { ...state, phase: 'idle', awaitingContinue: false };
+
+    case 'ABORT_TURN':
+      return { ...state, awaitingContinue: true };
+
+    case 'CONTINUE_TURN':
+      return { ...state, awaitingContinue: false };
 
     case 'SET_PLANNER_SESSION_ID':
       return { ...state, plannerSessionId: action.sessionId };

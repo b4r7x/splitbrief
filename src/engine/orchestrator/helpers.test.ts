@@ -31,6 +31,7 @@ function makeState(overrides?: Partial<WorkflowState>): WorkflowState {
     plannerSessionId: null,
     startedAt: new Date().toISOString(),
     tokenUsage: makeUsage(),
+    awaitingContinue: false,
     ...overrides,
   };
 }

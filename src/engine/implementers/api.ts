@@ -22,7 +22,7 @@ export function createApiImplementer(initialConfig: Config): Implementer {
     prependSystemPreamble: false,
 
     async invoke(opts: InvokeOpts) {
-      const { prompt, config, onOutput } = opts;
+      const { prompt, config, onOutput, signal } = opts;
       const impl = asApiConfig(config);
       const temperature = opts.temperature ?? impl.temperature ?? 0.7;
       const contextLength = impl.contextLength ?? 8192;
@@ -52,6 +52,7 @@ export function createApiImplementer(initialConfig: Config): Implementer {
         temperature,
         onProgress: onOutput,
         maxTokens,
+        signal,
       });
     },
 

@@ -8,7 +8,7 @@ export function createTranscriptBuffer(
   sessionId: string,
   phase: Phase | undefined,
   persistTranscript: boolean,
-): { append(chunk: string): void; flush(): void } {
+): { append(chunk: string): void; flush(): void; flushInterrupted(): void } {
   let buffer = '';
   return {
     append(text: string): void {
@@ -22,6 +22,11 @@ export function createTranscriptBuffer(
     flush(): void {
       if (!persistTranscript || buffer.length === 0) return;
       appendMessage(projectDir, sessionId, { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer }, persistTranscript);
+      buffer = '';
+    },
+    flushInterrupted(): void {
+      if (!persistTranscript || buffer.length === 0) return;
+      appendMessage(projectDir, sessionId, { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer, interrupted: true }, persistTranscript);
       buffer = '';
     },
   };

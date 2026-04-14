@@ -36,9 +36,11 @@ vi.mock('../skills/index.js', () => ({
 
 import { runPlanningPhase } from './planning.js';
 import { writeSpecFile } from '../../core/paths-io.js';
+import { workflowStore } from '../../stores/workflow.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  workflowStore.reset();
 });
 
 function prepareState(): WorkflowState {
@@ -287,5 +289,116 @@ describe('runPlanningPhase', () => {
 
     const planCall = vi.mocked(plan).mock.calls[0];
     expect(planCall?.[2].onQuestion).toBeTypeOf('function');
+  });
+});
+
+describe('runPlanningPhase — abort + continuation', () => {
+  it('abort during planner call fires ABORT_TURN → CONTINUE_TURN and re-invokes planner with continuation prompt', async () => {
+    const partialText = 'partially generated spec...';
+    const continuationUserText = 'also use PostgreSQL 15';
+
+    let callCount = 0;
+    const plan = vi.fn().mockImplementation(async (_feature: string, _dir: string, plannerCbs: { onOutput: (t: string) => void }) => {
+      callCount++;
+      if (callCount === 1) {
+        // Emit partial output, then simulate abort
+        plannerCbs.onOutput(partialText);
+        // Trigger the abort handler registered by the orchestrator
+        workflowStore.abortTurn();
+        const err = new DOMException('The user aborted a request.', 'AbortError');
+        throw err;
+      }
+      // Second call: succeed normally
+      return {
+        spec: '# Full Spec',
+        plan: '# Full Plan',
+        tasks: [makeTask()],
+        usage: { inputTokens: 100, outputTokens: 50 },
+      };
+    });
+
+    const onContinuationNeeded = vi.fn().mockResolvedValue(continuationUserText);
+    const { callbacks } = makeCallbacks({ onContinuationNeeded });
+    const planner = makePlanner({ plan });
+    const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
+
+    const result = await runPlanningPhase({
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      planner,
+      state: prepareState(),
+      feature: 'test-feature',
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(onContinuationNeeded).toHaveBeenCalledOnce();
+    expect(onContinuationNeeded).toHaveBeenCalledWith(partialText);
+
+    // Second planner call should receive a continuation prompt containing the partial text and user text
+    expect(callCount).toBe(2);
+    const secondCallFeature = vi.mocked(plan).mock.calls[1]?.[0] as string;
+    expect(secondCallFeature).toContain(partialText);
+    expect(secondCallFeature).toContain(continuationUserText);
+  });
+
+  it('abort without onContinuationNeeded falls through to planning failure', async () => {
+    const plan = vi.fn().mockImplementation(async () => {
+      workflowStore.abortTurn();
+      throw new DOMException('The user aborted a request.', 'AbortError');
+    });
+
+    const { callbacks } = makeCallbacks({ onContinuationNeeded: undefined });
+    const planner = makePlanner({ plan });
+    const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
+
+    const result = await runPlanningPhase({
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      planner,
+      state: prepareState(),
+      feature: 'test-feature',
+    });
+
+    // Without onContinuationNeeded, abort escalates to planning failure
+    expect(result.cancelled).toBe(true);
+    expect(plan).toHaveBeenCalledOnce();
+  });
+
+  it('quick mode: abort during quickPlan fires continuation and re-invokes', async () => {
+    const partialText = 'quick plan partial output';
+    const continuationUserText = 'add more detail';
+
+    let callCount = 0;
+    const quickPlan = vi.fn().mockImplementation(async (_feature: string, _dir: string, plannerCbs: { onOutput: (t: string) => void }) => {
+      callCount++;
+      if (callCount === 1) {
+        plannerCbs.onOutput(partialText);
+        workflowStore.abortTurn();
+        throw new DOMException('The user aborted a request.', 'AbortError');
+      }
+      return {
+        spec: '',
+        plan: '',
+        tasks: [makeTask()],
+        usage: { inputTokens: 50, outputTokens: 25 },
+      };
+    });
+
+    const onContinuationNeeded = vi.fn().mockResolvedValue(continuationUserText);
+    const { callbacks } = makeCallbacks({ onContinuationNeeded });
+    const planner = makePlanner({ quickPlan });
+    const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'quick' } });
+
+    const result = await runPlanningPhase({
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      planner,
+      state: prepareState(),
+      feature: 'test-feature',
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(onContinuationNeeded).toHaveBeenCalledWith(partialText);
+    expect(callCount).toBe(2);
+    const secondCallFeature = vi.mocked(quickPlan).mock.calls[1]?.[0] as string;
+    expect(secondCallFeature).toContain(partialText);
+    expect(secondCallFeature).toContain(continuationUserText);
   });
 });

@@ -56,6 +56,7 @@ export interface InvokeOpts {
   config: ImplementerOptions['config'];
   onOutput: (text: string) => void;
   temperature?: number;
+  signal?: AbortSignal | undefined;
 }
 
 function hasOutput(err: unknown): err is { output: string } {

@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { isENOENT, CommandNotFoundError } from './process-errors.js';
 import { redactSecrets } from './redact.js';
-import { registerProcess, unregisterProcess, killProcess } from './process-lifecycle.js';
+import { registerProcess, unregisterProcess, killProcess, abortProcess } from './process-lifecycle.js';
 
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
@@ -27,6 +27,7 @@ interface SpawnPipeOptions<T> {
   cwd?: string | undefined;
   detached?: boolean | undefined;
   stdin?: string | undefined;
+  signal?: AbortSignal | undefined;
   onStdout: (chunk: string) => void;
   onStderr: (chunk: string) => void;
   onClose: (code: number | null, signal: string | null) => T | Promise<T>;
@@ -36,6 +37,11 @@ interface SpawnPipeOptions<T> {
 
 function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
   return new Promise((resolve, reject) => {
+    if (opts.signal?.aborted) {
+      reject(new DOMException('The operation was aborted.', 'AbortError'));
+      return;
+    }
+
     let proc: ChildProcess;
     try {
       proc = spawn(opts.command, opts.args, {
@@ -50,6 +56,10 @@ function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
 
     registerProcess(proc);
     opts.onSpawned?.(proc);
+
+    if (opts.signal) {
+      abortProcess(proc, opts.signal);
+    }
 
     const { stdout, stderr, stdin } = proc;
     if (!stdout || !stderr || !stdin) {
@@ -127,6 +137,7 @@ export interface SpawnOptions {
   onProgress: (text: string) => void;
   stdinInput?: string | undefined;
   notFoundMessage?: string | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
@@ -141,6 +152,7 @@ export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
     cwd: opts.cwd,
     detached: true,
     stdin: opts.stdinInput,
+    signal: opts.signal,
     onSpawned: (proc) => {
       timer = setTimeout(() => {
         timedOut = true;
@@ -189,6 +201,7 @@ export async function spawnWithStdin(opts: {
   onLine: (line: string) => void;
   onStderr?: ((chunk: string) => void) | undefined;
   notFoundMessage: string;
+  signal?: AbortSignal | undefined;
 }): Promise<{ text: string; stderrOutput: string; code: number }> {
   let rawText = '';
   let stderrOutput = '';
@@ -199,6 +212,7 @@ export async function spawnWithStdin(opts: {
     args: opts.args,
     cwd: opts.cwd,
     stdin: opts.stdin,
+    signal: opts.signal,
     onStdout: (chunk) => {
       rawText += chunk;
       stdoutBuf.push(chunk);

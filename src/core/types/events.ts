@@ -227,5 +227,6 @@ export interface OrchestratorCallbacks {
   onExternalChanges: () => Promise<boolean>;
   onQuestionAsked?: ((question: ClarificationQuestion, num: number, total: number) => Promise<string>) | undefined;
   onBudgetExceeded?: ((currentCost: number, maxBudget: number) => Promise<boolean>) | undefined;
+  onContinuationNeeded?: ((partialResponse: string) => Promise<string>) | undefined;
   onComplete: (summary: Summary) => void;
 }
