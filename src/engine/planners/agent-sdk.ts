@@ -35,6 +35,15 @@ export function createAgentSdkPlanner(model?: string, apiKey?: string, initialSe
     invokeEscalate: invoke,
     isAvailable: () => isAgentSdkAvailable(apiKey),
 
+    async injectUserTurn(text: string, projectDir: string): Promise<void> {
+      await backend.invoke({
+        prompt: text,
+        projectDir,
+        model: effectiveModel,
+        onOutput: () => {},
+      });
+    },
+
     capabilities: {
       supportsConversationalPlanning: true,
       supportsHintEscalation: false,

@@ -27,6 +27,7 @@ const emptyState: WorkflowViewState = {
   tokenUsage: null,
   cancelled: false,
   sidebarVisible: false,
+  queueDepth: 0,
 };
 
 describe('mergeEvent', () => {

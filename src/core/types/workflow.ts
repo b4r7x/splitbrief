@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import type { WorkflowStateSchema } from './schemas/workflow.js';
+import type { WorkflowStateSchema, QueuedMessageSchema } from './schemas/workflow.js';
 import type { TaskSchema } from './schemas/task.js';
 
 export type { Phase, TaskStatus } from './schemas/enums.js';
@@ -11,6 +11,8 @@ export const taskId = (s: string): TaskId => s as TaskId;
 export type Task = z.infer<typeof TaskSchema>;
 
 export type WorkflowState = z.infer<typeof WorkflowStateSchema>;
+
+export type QueuedMessage = z.infer<typeof QueuedMessageSchema>;
 
 export type StateAction =
   | { type: 'START'; feature: string }
@@ -42,7 +44,11 @@ export type StateAction =
   | { type: 'REWIND_TO_SPEC'; comment?: string }
   | { type: 'REWIND_TO_PLAN'; comment?: string }
   | { type: 'RESET_TASK'; taskId: TaskId }
-  | { type: 'CLEAR_REWIND_PENDING' };
+  | { type: 'CLEAR_REWIND_PENDING' }
+  | { type: 'ENQUEUE_USER_MSG'; message: QueuedMessage }
+  | { type: 'MARK_DELIVERED_NATIVE'; id: string }
+  | { type: 'DRAIN_QUEUE' }
+  | { type: 'CLEAR_QUEUE' };
 
 export interface TokenBudget {
   system: number;

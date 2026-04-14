@@ -23,6 +23,7 @@ export function createInitialState(feature: string): WorkflowState {
     startedAt: new Date().toISOString(),
     tokenUsage: { ...zeroTokenUsage },
     awaitingContinue: false,
+    messageQueue: [],
   };
 }
 
@@ -171,6 +172,28 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
         phase: 'implementing',
       };
     }
+
+    case 'ENQUEUE_USER_MSG':
+      return { ...state, messageQueue: [...state.messageQueue, action.message] };
+
+    case 'MARK_DELIVERED_NATIVE':
+      return {
+        ...state,
+        messageQueue: state.messageQueue.map(m =>
+          m.id === action.id ? { ...m, deliveredViaNative: true } : m
+        ),
+      };
+
+    case 'DRAIN_QUEUE': {
+      const now = new Date().toISOString();
+      return {
+        ...state,
+        messageQueue: state.messageQueue.map(m => m.drainedAt ? m : { ...m, drainedAt: now }),
+      };
+    }
+
+    case 'CLEAR_QUEUE':
+      return { ...state, messageQueue: state.messageQueue.filter(m => m.drainedAt) };
 
     default:
       action satisfies never;

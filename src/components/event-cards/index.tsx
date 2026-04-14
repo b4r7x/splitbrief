@@ -159,6 +159,38 @@ const RENDERERS: { [K in TuiEvent["type"]]: EventRenderer<K> } = {
       valueColor={t.textDim}
     />
   ),
+  "message-queued": (e, { t }) => (
+    <Card
+      label="queued"
+      labelColor={t.info}
+      value={`Message queued during ${e.phase}`}
+      valueColor={t.textDim}
+    />
+  ),
+  "message-injected-native": (_, { t }) => (
+    <Card
+      label="injected"
+      labelColor={t.success}
+      value="Message delivered to live session"
+      valueColor={t.textDim}
+    />
+  ),
+  "queue-drained": (e, { t }) => (
+    <Card
+      label="drained"
+      labelColor={t.info}
+      value={`${e.count} queued message${e.count === 1 ? '' : 's'} folded into next prompt`}
+      valueColor={t.textDim}
+    />
+  ),
+  "queue-cleared": (e, { t }) => (
+    <Card
+      label="queue cleared"
+      labelColor={t.warning}
+      value={`${e.count} pending message${e.count === 1 ? '' : 's'} removed`}
+      valueColor={t.textDim}
+    />
+  ),
 };
 
 function getGutterRole(event: TuiEvent): "planner" | "implementer" | null {
@@ -171,7 +203,9 @@ function getGutterRole(event: TuiEvent): "planner" | "implementer" | null {
     case "warning": case "error": case "task-complete": case "task-skipped":
     case "cost-update": case "cost-prediction": case "budget-warning":
     case "budget-exceeded": case "workflow-cancelled": case "workflow-config":
-    case "rewind": case "task-reset": return null;
+    case "rewind": case "task-reset":
+    case "message-queued": case "message-injected-native":
+    case "queue-drained": case "queue-cleared": return null;
     default: return assertNever(event);
   }
 }

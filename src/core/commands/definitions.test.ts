@@ -17,6 +17,8 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
     getCurrentPhase: () => 'idle',
     requestRewind: noopTrue,
     requestTaskRedo: noopTrue,
+    getQueueDepth: () => 0,
+    clearQueue: () => 0,
     ...overrides,
   };
 }

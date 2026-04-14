@@ -20,8 +20,21 @@ import { runApprovalLoop } from './approval.js';
 import { buildResumeContext } from './transcript-rebuild.js';
 import { buildContinuationPrompt } from './continuation.js';
 import { workflowStore } from '../../stores/workflow.js';
+import { drainQueue, formatDrainedMessages } from './queue-drain.js';
 
 const MAX_CLARIFICATION_QUESTIONS = 5;
+
+/** Drain pending queue messages and format them as a prompt prefix. Returns updated state and prefix string. */
+function drainAndFormat(
+  projectDir: string,
+  sessionId: string,
+  state: WorkflowState,
+  callbacks: OrchestratorCallbacks,
+): { state: WorkflowState; prefix: string } {
+  const drain = drainQueue(projectDir, sessionId, state, callbacks);
+  if (drain.messages.length === 0) return { state, prefix: '' };
+  return { state: drain.state, prefix: formatDrainedMessages(drain.messages) };
+}
 
 /** Persist phases to disk (orchestrator owns file-writing, not the planner). */
 function persistPhases(projectDir: string, sessionId: string, phases: PlanResult['phases'], metadata: SpecMetadata): void {
@@ -71,11 +84,14 @@ function transitionAndEmit<T extends keyof OrchestratorEventPayloadMap>(
 }
 
 async function regeneratePlan(projectDir: string, sessionId: string, planner: Planner, callbacks: OrchestratorCallbacks, state: WorkflowState, metadata: SpecMetadata, skillsContext?: string): Promise<{ state: WorkflowState; plan: string }> {
+  const { state: drainedState, prefix } = drainAndFormat(projectDir, sessionId, state, callbacks);
+  state = drainedState;
   const spec = readSpecFileOrEmpty(projectDir, sessionId, SPEC_FILE);
   const projectContext = await buildProjectContextMarkdown(projectDir);
+  const basePrompt = buildPlanPromptFromSpec(spec, projectContext, skillsContext);
   const result = await runPlannerReview({
     planner,
-    prompt: buildPlanPromptFromSpec(spec, projectContext, skillsContext),
+    prompt: prefix ? prefix + basePrompt : basePrompt,
     projectDir,
     sessionId,
     callbacks,
@@ -87,11 +103,14 @@ async function regeneratePlan(projectDir: string, sessionId: string, planner: Pl
 }
 
 async function regenerateTasks(projectDir: string, sessionId: string, planner: Planner, callbacks: OrchestratorCallbacks, state: WorkflowState, metadata: SpecMetadata, planOverride?: string): Promise<{ state: WorkflowState; tasks: Task[] }> {
+  const { state: drainedState, prefix } = drainAndFormat(projectDir, sessionId, state, callbacks);
+  state = drainedState;
   const spec = readSpecFileOrEmpty(projectDir, sessionId, SPEC_FILE);
   const plan = planOverride ?? readSpecFileOrEmpty(projectDir, sessionId, PLAN_FILE);
+  const basePrompt = buildTasksPrompt(spec, plan);
   const result = await runPlannerReview({
     planner,
-    prompt: buildTasksPrompt(spec, plan),
+    prompt: prefix ? prefix + basePrompt : basePrompt,
     projectDir,
     sessionId,
     callbacks,
@@ -117,6 +136,13 @@ async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<{ state: Wo
   let { state } = opts;
   let feature = opts.feature;
   let partialOutput = '';
+
+  // Drain any queued messages before the planner call so the planner sees them.
+  {
+    const { state: drainedState, prefix } = drainAndFormat(projectDir, sessionId, state, callbacks);
+    state = drainedState;
+    if (prefix) feature = prefix + feature;
+  }
 
   let planResult: Awaited<ReturnType<Planner['plan']>>;
 
@@ -194,7 +220,10 @@ async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boo
       if (rewindPending.comment) {
         appendMessage(projectDir, sessionId, { role: 'user', phase: 'specifying', text: rewindPending.comment }, config.workflow.persistTranscript);
         const current = readSpecFileOrEmpty(projectDir, sessionId, SPEC_FILE);
-        const regenPrompt = buildRegeneratePrompt('spec', current, rewindPending.comment);
+        const { state: drainedState, prefix: drainPrefix } = drainAndFormat(projectDir, sessionId, state, callbacks);
+        state = drainedState;
+        const regenPromptBase = buildRegeneratePrompt('spec', current, rewindPending.comment);
+        const regenPrompt = drainPrefix ? drainPrefix + regenPromptBase : regenPromptBase;
         createTextHandler(callbacks)(`\n[Regenerating spec with feedback: ${rewindPending.comment}]\n`);
         const regenResult = await planner.regenerate(regenPrompt, 'spec', projectDir, {
           onOutput: createTextHandler(callbacks),
@@ -240,7 +269,10 @@ async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boo
     if (rewindPending.comment) {
       appendMessage(projectDir, sessionId, { role: 'user', phase: 'planning', text: rewindPending.comment }, config.workflow.persistTranscript);
       const current = readSpecFileOrEmpty(projectDir, sessionId, PLAN_FILE);
-      const regenPrompt = buildRegeneratePrompt('plan', current, rewindPending.comment);
+      const { state: drainedState, prefix: drainPrefix } = drainAndFormat(projectDir, sessionId, state, callbacks);
+      state = drainedState;
+      const regenPromptBase = buildRegeneratePrompt('plan', current, rewindPending.comment);
+      const regenPrompt = drainPrefix ? drainPrefix + regenPromptBase : regenPromptBase;
       createTextHandler(callbacks)(`\n[Regenerating plan with feedback: ${rewindPending.comment}]\n`);
       const regenResult = await planner.regenerate(regenPrompt, 'plan', projectDir, {
         onOutput: createTextHandler(callbacks),
@@ -273,6 +305,13 @@ async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boo
   }
 
   const collectedQuestions: ClarificationQuestion[] = [];
+
+  // Drain any queued messages before the primary planner.plan() call so the planner sees them.
+  {
+    const { state: drainedState, prefix } = drainAndFormat(projectDir, sessionId, state, callbacks);
+    state = drainedState;
+    if (prefix) feature = prefix + feature;
+  }
 
   let planResult: Awaited<ReturnType<Planner['plan']>>;
 

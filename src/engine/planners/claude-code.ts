@@ -60,6 +60,17 @@ export function createClaudeCodePlanner(model?: string, initialSessionId?: strin
 
     ...createCommandAvailability('claude'),
 
+    async injectUserTurn(text: string, projectDir: string): Promise<void> {
+      if (!currentSessionId) return;
+      await runClaudePlannerStream({
+        prompt: text,
+        projectDir,
+        sessionId: currentSessionId,
+        onOutput: () => {},
+        model: resolvedModel,
+      });
+    },
+
     capabilities: {
       supportsConversationalPlanning: true,
       supportsHintEscalation: false,

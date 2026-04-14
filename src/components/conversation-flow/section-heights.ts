@@ -45,6 +45,10 @@ function estimateEventHeight(event: TuiEvent, diffExpanded?: boolean): number {
       return 3;
     case 'rewind':
     case 'task-reset':
+    case 'message-queued':
+    case 'message-injected-native':
+    case 'queue-drained':
+    case 'queue-cleared':
       return 3;
     default:
       return assertNever(event);

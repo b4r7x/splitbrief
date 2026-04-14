@@ -32,6 +32,7 @@ function makeState(overrides?: Partial<WorkflowState>): WorkflowState {
     startedAt: new Date().toISOString(),
     tokenUsage: makeUsage(),
     awaitingContinue: false,
+    messageQueue: [],
     ...overrides,
   };
 }

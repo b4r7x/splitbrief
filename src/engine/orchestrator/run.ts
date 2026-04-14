@@ -23,6 +23,9 @@ import { runPlanningPhase } from './planning.js';
 import { runTaskLoop } from './task-loop.js';
 import { runFinalReviewPhase, shutdownWorkflow } from './final-review.js';
 import { buildResumeContext } from './transcript-rebuild.js';
+import { drainQueue } from './queue-drain.js';
+import { createQueueHandler } from './queue.js';
+import { workflowStore } from '../../stores/workflow.js';
 
 export type { WorkflowContext } from './types.js';
 
@@ -258,6 +261,15 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
       trackedState = init.state;
       const phaseTimings: Record<string, number> = {};
 
+      workflowStore.setQueueHandler(createQueueHandler(
+        projectDir, sessionId,
+        () => trackedState,
+        (s) => { trackedState = s; },
+        callbacks,
+        config.workflow.persistTranscript,
+        wctx.planner,
+      ));
+
       const planning = await runPlanningPhases({
         wctx, state: init.state, savedState, selectedSkills, phaseTimings, startTime,
         setTrackedState: (s) => { trackedState = s; },
@@ -266,8 +278,17 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
 
       if (opts.signal?.aborted) { result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings }); return; }
 
+      let postPlanState = planning.state;
+      {
+        const drain = drainQueue(projectDir, sessionId, postPlanState, callbacks);
+        if (drain.messages.length > 0) {
+          postPlanState = drain.state;
+          trackedState = postPlanState;
+        }
+      }
+
       result = await runTasksAndReview({
-        wctx, state: planning.state, summaryBase, phaseTimings,
+        wctx, state: postPlanState, summaryBase, phaseTimings,
         setTrackedState: (s) => { trackedState = s; },
         setCurrentTask: (t) => { currentTask = t; },
       });

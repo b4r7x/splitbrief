@@ -41,6 +41,10 @@ export function isLivePhase(phase: Phase): boolean {
   return LIVE_PHASES.has(phase);
 }
 
+export function isImplementerPhase(phase: Phase): boolean {
+  return IMPLEMENTER_PHASES.has(phase);
+}
+
 /**
  * A workflow is resumable when in a resumable phase OR when awaiting continue
  * (awaitingContinue overrides the phase check — the workflow paused mid-turn).

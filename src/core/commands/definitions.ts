@@ -171,6 +171,35 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
       },
     },
     {
+      kind: 'arg',
+      name: '/queue',
+      label: 'Queue',
+      description: 'Show or clear the message queue',
+      validScreens: ['workflow'],
+      handler: (args) => {
+        const sub = args?.trim().toLowerCase();
+        if (!sub || sub === 'show') {
+          const depth = ctx.getQueueDepth();
+          if (depth === 0) {
+            ctx.setFeedbackMessage('Queue is empty');
+          } else {
+            ctx.setFeedbackMessage(`Queue: ${depth} message${depth === 1 ? '' : 's'} pending`);
+          }
+          return;
+        }
+        if (sub === 'clear') {
+          const cleared = ctx.clearQueue();
+          if (cleared > 0) {
+            ctx.setFeedbackMessage(`Cleared ${cleared} queued message${cleared === 1 ? '' : 's'}`);
+          } else {
+            ctx.setFeedbackMessage('Queue is already empty');
+          }
+          return;
+        }
+        ctx.setFeedbackError(`Unknown queue command: ${sub}. Use: /queue show or /queue clear`);
+      },
+    },
+    {
       kind: 'noarg',
       name: '/quit',
       label: 'Quit',

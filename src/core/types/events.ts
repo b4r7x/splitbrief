@@ -161,6 +161,27 @@ export type TuiEvent =
       type: 'task-reset';
       ts: number;
       taskId: TaskId;
+    }
+  | {
+      type: 'message-queued';
+      ts: number;
+      id: string;
+      phase: Phase;
+    }
+  | {
+      type: 'message-injected-native';
+      ts: number;
+      id: string;
+    }
+  | {
+      type: 'queue-drained';
+      ts: number;
+      count: number;
+    }
+  | {
+      type: 'queue-cleared';
+      ts: number;
+      count: number;
     };
 
 export type OrchestratorEventPayloadMap = {
@@ -199,6 +220,10 @@ export type OrchestratorEventPayloadMap = {
   rewind_to_spec: { comment?: string };
   rewind_to_plan: { comment?: string };
   task_reset: { taskId: string };
+  message_queued: { id: string; phase: Phase };
+  message_injected_native: { id: string };
+  queue_drained: { count: number };
+  queue_cleared: { count: number };
 };
 
 export type OrchestratorEventType = keyof OrchestratorEventPayloadMap;
