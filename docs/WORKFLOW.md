@@ -186,12 +186,7 @@ No change from today. See `src/engine/orchestrator/escalation.ts`.
 
 ## Part 2 — Still open
 
-Short list of things that are *not* yet decided and do not have a clear-cut answer yet. When any of these is resolved, move it into Part 1 and update `docs/CONCEPTS.md` if new terms arise.
-
-- **Queue prompt format.** How exactly do we fold queued messages into the next planner prompt? A `[user also says: ...]` block at the top? Interleaved in chronological order with the original prompt? Needs empirical testing.
-- **Mid-stream injection UX on Claude Code.** When the user queues a message and we inject it as a native turn, Claude's response may arrive *while* we're still streaming the prior turn. The TUI needs a clear visual separator ("user interjected →", then planner's new chunk). Not yet designed.
-- **Failure semantics of parallel mid-stream dispatch.** If the parallel native-session inject fails (Claude network error), do we fall back to queue-only, or retry the dispatch? Probably queue-only fallback, but needs implementation.
-- **`diptych status` for an aborted session.** Should it show `phase: specifying (awaiting continue)` or just `awaiting-continue`? Cosmetic but affects users' mental model.
+No open questions remain after specs 001–009. See `docs/FUTURE.md` for deferred work.
 
 ---
 

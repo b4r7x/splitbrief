@@ -10,6 +10,7 @@ import { cliError } from '../errors.js';
 import { routerStore } from '../../stores/router.js';
 import { initStores } from '../init-stores.js';
 import { readActive } from '../../core/sessions/active.js';
+import { maybeMigrate } from './migrate.js';
 import type { WorkflowOpts } from '../../types.js';
 
 export function registerResumeCommand(program: Command): void {
@@ -19,6 +20,7 @@ export function registerResumeCommand(program: Command): void {
       .description('Resume an interrupted workflow'),
   ).action(async (opts: WorkflowOpts) => {
     const projectDir = resolveProjectDir(opts.project);
+    await maybeMigrate(projectDir);
 
     const sessionId = readActive(projectDir);
     if (!sessionId) {
