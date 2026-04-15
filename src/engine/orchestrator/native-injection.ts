@@ -16,7 +16,10 @@ export async function dispatchNativeInjection(
   if (!planner.injectUserTurn) return;
 
   try {
-    await planner.injectUserTurn(message.text, projectDir);
+    const injectionText = message.origin === 'clarification' && message.question
+      ? `[clarification answer]\nQ: ${message.question}\nA: ${message.text}\n[/clarification answer]`
+      : message.text;
+    await planner.injectUserTurn(injectionText, projectDir);
     const next = transitionAndSave(projectDir, sessionId, state, {
       type: 'MARK_DELIVERED_NATIVE',
       id: message.id,

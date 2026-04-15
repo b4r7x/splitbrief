@@ -180,7 +180,7 @@ Up to 5 questions per run. User can answer each, type `skip` to skip one, or typ
 
 Answered questions are appended to `spec.md` under a `## Clarifications` section. On the next planner call (regenerate or plan phase), the planner sees them as part of the spec context.
 
-*Note:* answers do **not** go back into the planner's current streaming session. They influence the next call. See `docs/WORKFLOW.md` — "Open design questions" for why this matters.
+Since spec 008, clarification answers also route through the same queue as user-initiated interjections (see §Queue & Interjection). On backends with `supportsMidStreamInjection`, the answer reaches the live session immediately; on stateless backends it is drained at the next phase boundary. The `spec.md` Clarifications section is still written as before.
 
 ---
 
@@ -212,6 +212,8 @@ Flow:
 4. Queue drains at safe-points only, never mid-model-output.
 
 **Scope:** the queue is **planner-only**. Implementers (small local models) do not receive queued messages. Mid-task interjection is explicitly disallowed because small models lose coherence when their single-shot task prompt is perturbed. If the user needs to change something during implementation, they abort the current task (Ctrl-C) and use `/redo-task <id>` after updating the spec.
+
+**Message origin.** Each `QueuedMessage` carries an `origin` discriminator: `'user'` for text the user typed directly, and `'clarification'` for answers routed from the clarification Q&A flow. The drain block formats them differently: clarification answers use `[clarification answer during <phase>]\nQ: ...\nA: ...\n[/clarification answer]` while user-initiated interjections use the generic `[user also says during <phase>]` wrapper.
 
 ## Awaiting-continue
 

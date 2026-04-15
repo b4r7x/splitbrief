@@ -1,8 +1,12 @@
-import type { WorkflowState, OrchestratorCallbacks, ClarificationQuestion } from '../../types.js';
+import { randomUUID } from 'node:crypto';
+import type { WorkflowState, OrchestratorCallbacks, ClarificationQuestion, QueuedMessage } from '../../types.js';
 import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE } from '../../core/paths.js';
 import { emit } from './events.js';
 import { appendMessage } from '../../core/state/persistence.js';
+import { transitionAndSave } from './helpers.js';
+import { dispatchNativeInjection } from './native-injection.js';
+import type { Planner } from '../planners/types.js';
 
 export async function collectAndPersistClarifications(
   questions: ClarificationQuestion[],
@@ -12,7 +16,14 @@ export async function collectAndPersistClarifications(
   onQuestionAsked: NonNullable<OrchestratorCallbacks['onQuestionAsked']>,
   persistTranscript: boolean,
   metadata?: SpecMetadata | null,
-): Promise<void> {
+  planner?: Planner,
+  callbacks?: OrchestratorCallbacks,
+): Promise<WorkflowState> {
+  if (state.phase !== 'researching' && state.phase !== 'specifying') {
+    process.stderr.write(`[clarifications] skipping: unexpected phase "${state.phase}"\n`);
+    return state;
+  }
+
   const clarifications: Array<{ question: string; answer: string }> = [];
   const total = questions.length;
 
@@ -22,11 +33,30 @@ export async function collectAndPersistClarifications(
     if (answer === 'done') break;
     if (answer === 'skip' || answer === '') continue;
 
-    appendMessage(projectDir, sessionId, { role: 'user', phase: 'specifying', text: answer }, persistTranscript);
+    appendMessage(projectDir, sessionId, { role: 'user', phase: state.phase, text: answer }, persistTranscript);
     clarifications.push({ question: question.text, answer });
+
+    const message: QueuedMessage = {
+      id: randomUUID(),
+      text: answer,
+      queuedAt: new Date().toISOString(),
+      phase: state.phase,
+      deliveredViaNative: false,
+      origin: 'clarification',
+      question: question.text,
+      questionId: question.id ?? undefined,
+    };
+
+    state = transitionAndSave(projectDir, sessionId, state, { type: 'ENQUEUE_USER_MSG', message });
+    emit(projectDir, sessionId, state, 'clarification_answered', undefined, { questionId: question.id, answer });
+
+    if (planner && callbacks) {
+      void dispatchNativeInjection(message, planner, projectDir, sessionId, state, (s) => { state = s; }, callbacks);
+      callbacks.onEvent({ type: 'message-queued', ts: Date.now(), id: message.id, phase: state.phase });
+    }
   }
 
-  if (clarifications.length === 0) return;
+  if (clarifications.length === 0) return state;
 
   let content = readSpecFileOrEmpty(projectDir, sessionId, SPEC_FILE);
   const sessionHeader = `### Session ${new Date().toISOString().slice(0, 10)}`;
@@ -45,4 +75,6 @@ export async function collectAndPersistClarifications(
     count: clarifications.length,
     clarifications,
   });
+
+  return state;
 }

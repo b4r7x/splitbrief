@@ -122,4 +122,35 @@ describe('dispatchNativeInjection', () => {
 
     expect(setState).not.toHaveBeenCalled();
   });
+
+  it('formats clarification message with [clarification answer] block when injecting', async () => {
+    const state = makeResearchingState();
+    const setState = vi.fn();
+    const { callbacks } = makeCallbacks();
+    const injectUserTurn = vi.fn().mockResolvedValue(undefined);
+    const planner = makePlanner({
+      capabilities: {
+        supportsConversationalPlanning: true,
+        supportsHintEscalation: false,
+        supportsSessionResume: true,
+        supportsMidStreamInjection: true,
+      },
+      injectUserTurn,
+    });
+    const message: QueuedMessage = {
+      id: 'msg-clar',
+      text: 'Yes use JWT',
+      queuedAt: new Date().toISOString(),
+      phase: 'specifying',
+      deliveredViaNative: false,
+      origin: 'clarification',
+      question: 'Use JWT?',
+      questionId: 'q1',
+    };
+
+    await dispatchNativeInjection(message, planner, TEST_PROJECT_DIR, TEST_SESSION_ID, state, setState, callbacks);
+
+    const expectedText = '[clarification answer]\nQ: Use JWT?\nA: Yes use JWT\n[/clarification answer]';
+    expect(injectUserTurn).toHaveBeenCalledWith(expectedText, TEST_PROJECT_DIR);
+  });
 });

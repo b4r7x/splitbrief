@@ -212,6 +212,7 @@ export type OrchestratorEventPayloadMap = {
     count: number;
     clarifications: Array<{ question: string; answer: string }>;
   };
+  clarification_answered: { questionId?: string | undefined; answer: string };
   research_done: Record<string, never>;
   spec_done: Record<string, never>;
   spec_approved: Record<string, never>;
