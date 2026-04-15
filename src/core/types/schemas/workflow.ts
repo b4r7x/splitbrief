@@ -18,4 +18,8 @@ export const WorkflowStateSchema = z.object({
   implementerTool: z.string().optional(),
   implementerModel: z.string().optional(),
   awaitingContinue: z.boolean().default(false),
+  rewindPending: z.object({
+    target: z.enum(['spec', 'plan']),
+    comment: z.string().optional(),
+  }).optional(),
 });

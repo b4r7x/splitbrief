@@ -1,13 +1,15 @@
 import { useRef, useEffect, useEffectEvent, useState } from 'react';
-import type { Config, Summary, WorkflowState, SkillMeta, TuiEvent } from '../types.js';
+import type { Config, Summary, WorkflowState, SkillMeta, TuiEvent, StateAction } from '../types.js';
+import { taskId } from '../types.js';
 import { workflowStore } from '../stores/workflow.js';
 import { reviewStore } from '../stores/review.js';
 import { feedbackStore } from '../stores/feedback.js';
 import { conversationScrollStore } from '../stores/conversation-scroll.js';
 import { runWorkflow } from '../engine/orchestrator/index.js';
 import { killAllProcesses } from '../utils/process-lifecycle.js';
-import { loadState } from '../core/state/persistence.js';
+import { loadState, saveState, appendEvent } from '../core/state/persistence.js';
 import { readActive } from '../core/sessions/active.js';
+import { transition } from '../core/state/machine.js';
 import { REVIEW_HINT } from '../core/commands/review-commands.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 
@@ -38,6 +40,7 @@ export function useWorkflowRunner({
   sessionId: initialSessionId,
 }: UseWorkflowRunnerOptions): UseWorkflowRunnerResult {
   const abortedRef = useRef(false);
+  const pendingRewindEventRef = useRef<TuiEvent | null>(null);
   const [startedAt] = useState(() => new Date().toISOString());
   const [runId, setRunId] = useState(0);
   const [inlineResume, setInlineResume] = useState<WorkflowState | undefined>(undefined);
@@ -50,10 +53,56 @@ export function useWorkflowRunner({
       currentTask: resumeState?.currentTaskIndex ?? 0,
       totalTasks: resumeState?.tasks?.length ?? 0,
     });
+    if (pendingRewindEventRef.current) {
+      workflowStore.addEvent(pendingRewindEventRef.current);
+      pendingRewindEventRef.current = null;
+    }
     conversationScrollStore.reset();
     workflowStore.setCancelHandler(() => {
       inputMode.resetMode();
       controller.abort();
+    });
+    workflowStore.setRewindHandler((request) => {
+      inputMode.resetMode();
+      const activeSessionId = readActive(projectDir);
+      if (!activeSessionId) return;
+      const current = loadState(projectDir, activeSessionId);
+      if (!current) return;
+
+      let action: StateAction;
+      let event: TuiEvent;
+      if (request.target === 'spec') {
+        action = { type: 'REWIND_TO_SPEC', ...(request.comment ? { comment: request.comment } : {}) };
+        event = { type: 'rewind', ts: Date.now(), target: 'spec', comment: request.comment };
+        const data = request.comment ? { comment: request.comment } : {};
+        appendEvent(projectDir, activeSessionId, {
+          ts: Date.now(), type: 'rewind_to_spec', taskId: undefined,
+          phase: current.phase, data,
+        });
+      } else if (request.target === 'plan') {
+        action = { type: 'REWIND_TO_PLAN', ...(request.comment ? { comment: request.comment } : {}) };
+        event = { type: 'rewind', ts: Date.now(), target: 'plan', comment: request.comment };
+        const data = request.comment ? { comment: request.comment } : {};
+        appendEvent(projectDir, activeSessionId, {
+          ts: Date.now(), type: 'rewind_to_plan', taskId: undefined,
+          phase: current.phase, data,
+        });
+      } else {
+        const tid = taskId(request.taskId);
+        action = { type: 'RESET_TASK', taskId: tid };
+        event = { type: 'task-reset', ts: Date.now(), taskId: tid };
+        appendEvent(projectDir, activeSessionId, {
+          ts: Date.now(), type: 'task_reset', taskId: tid,
+          phase: current.phase, data: { taskId: request.taskId },
+        });
+      }
+
+      const next = transition(current, action);
+      saveState(projectDir, activeSessionId, next);
+      pendingRewindEventRef.current = event;
+      controller.abort();
+      setInlineResume(next);
+      setRunId(id => id + 1);
     });
 
     const addEvent = (event: TuiEvent) => {
@@ -105,6 +154,7 @@ export function useWorkflowRunner({
       inputMode.resetMode();
       controller.abort();
       workflowStore.setCancelHandler(null);
+      workflowStore.setRewindHandler(null);
       killAllProcesses();
     };
   // config is intentionally excluded from the dep array: config changes mid-workflow

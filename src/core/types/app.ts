@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import type { TaskStatus, WorkflowState } from './workflow.js';
+import type { Phase, TaskStatus, WorkflowState } from './workflow.js';
 import type { Summary } from './summary.js';
 import type { WorkflowMode } from './config.js';
 import type { SessionSchema } from './schemas/session.js';
@@ -35,6 +35,7 @@ interface SlashCommandBase {
   description: string;
   shortcut?: string | null;
   validScreens: readonly Screen[];
+  phaseGuard?: ((phase: Phase) => boolean) | undefined;
 }
 
 export type SlashCommandDef =
@@ -49,6 +50,9 @@ export interface CommandContext {
   setFeedbackMessage: (msg: string) => void;
   setFeedbackError: (msg: string) => void;
   refreshDetection: () => Promise<void>;
+  getCurrentPhase: () => Phase;
+  requestRewind: (target: 'spec' | 'plan', comment?: string) => boolean;
+  requestTaskRedo: (taskId: string) => boolean;
 }
 
 export interface CommandPaletteItem {

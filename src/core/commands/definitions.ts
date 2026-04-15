@@ -3,6 +3,7 @@ import { ALL_SCREENS, WORKFLOW_MODES } from '../types/index.js';
 import type { Screen, SlashCommandDef, CommandContext, CommandPaletteItem } from '../types/index.js';
 import { getShortcutKey } from './shortcuts.js';
 import { includes } from '../../utils/type-guards.js';
+import { canReviseSpec, canRevisePlan, canRedoTask } from './phase-guards.js';
 
 export function createCommands(ctx: CommandContext): SlashCommandDef[] {
   return [
@@ -106,6 +107,67 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
         ctx.refreshDetection()
           .then(() => ctx.setFeedbackMessage('Tool detection refreshed'))
           .catch(() => ctx.setFeedbackError('Tool detection failed'));
+      },
+    },
+    {
+      kind: 'arg',
+      name: '/revise-spec',
+      label: 'Revise Spec',
+      description: 'Rewind to spec phase with optional feedback',
+      validScreens: ['workflow'],
+      phaseGuard: canReviseSpec,
+      handler: (args) => {
+        const phase = ctx.getCurrentPhase();
+        if (!canReviseSpec(phase)) {
+          ctx.setFeedbackError('/revise-spec is only available after the spec is written.');
+          return;
+        }
+        const comment = args?.trim() || undefined;
+        if (!ctx.requestRewind('spec', comment)) {
+          ctx.setFeedbackError('Cannot rewind: no active workflow.');
+        }
+      },
+    },
+    {
+      kind: 'arg',
+      name: '/revise-plan',
+      label: 'Revise Plan',
+      description: 'Rewind to plan phase with optional feedback',
+      validScreens: ['workflow'],
+      phaseGuard: canRevisePlan,
+      handler: (args) => {
+        const phase = ctx.getCurrentPhase();
+        if (!canRevisePlan(phase)) {
+          ctx.setFeedbackError('/revise-plan is only available after the plan is written.');
+          return;
+        }
+        const comment = args?.trim() || undefined;
+        if (!ctx.requestRewind('plan', comment)) {
+          ctx.setFeedbackError('Cannot rewind: no active workflow.');
+        }
+      },
+    },
+    {
+      kind: 'arg',
+      name: '/redo-task',
+      label: 'Redo Task',
+      description: 'Reset a task to pending and re-run it',
+      validScreens: ['workflow'],
+      phaseGuard: canRedoTask,
+      handler: (args) => {
+        const phase = ctx.getCurrentPhase();
+        if (!canRedoTask(phase)) {
+          ctx.setFeedbackError('/redo-task is only available during implementation.');
+          return;
+        }
+        const id = args?.trim();
+        if (!id) {
+          ctx.setFeedbackError('/redo-task requires a task ID. Usage: /redo-task T001');
+          return;
+        }
+        if (!ctx.requestTaskRedo(id)) {
+          ctx.setFeedbackError('Cannot redo task: no active workflow.');
+        }
       },
     },
     {

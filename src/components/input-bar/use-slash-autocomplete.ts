@@ -3,6 +3,7 @@ import { useInput } from 'ink';
 import { Fzf } from 'fzf';
 import type { Screen, SlashCommandDef } from '../../types.js';
 import { inputHistoryStore } from '../../stores/input-history.js';
+import { workflowStore } from '../../stores/workflow.js';
 
 function matchesSlashQuery(cmd: SlashCommandDef, query: string): boolean {
   if (cmd.name.toLowerCase().startsWith(query)) return true;
@@ -45,10 +46,15 @@ export function useSlashAutocomplete({
 }: UseSlashAutocompleteOptions): UseSlashAutocompleteResult {
   const [inputKey, setInputKey] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const phase = workflowStore.use(s => s.phase);
 
   const slashMode = value.startsWith('/');
   const query = '/' + value.slice(1).toLowerCase();
-  const validCommands = commands.filter((cmd) => cmd.validScreens.includes(currentScreen));
+  const validCommands = commands.filter((cmd) => {
+    if (!cmd.validScreens.includes(currentScreen)) return false;
+    if (cmd.phaseGuard && !cmd.phaseGuard(phase)) return false;
+    return true;
+  });
   const filtered = slashMode
     ? validCommands.filter((cmd) => matchesSlashQuery(cmd, query))
     : [];

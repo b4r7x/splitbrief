@@ -43,6 +43,9 @@ function estimateEventHeight(event: TuiEvent, diffExpanded?: boolean): number {
       return 3;
     case 'workflow-config':
       return 3;
+    case 'rewind':
+    case 'task-reset':
+      return 3;
     default:
       return assertNever(event);
   }

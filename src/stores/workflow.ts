@@ -39,6 +39,13 @@ const initial: WorkflowViewState = {
 let cancelHandler: (() => void) | null = null;
 let abortHandler: (() => void) | null = null;
 
+type RewindTarget =
+  | { target: 'spec'; comment?: string }
+  | { target: 'plan'; comment?: string }
+  | { target: 'task'; taskId: string };
+
+let rewindHandler: ((request: RewindTarget) => void) | null = null;
+
 const store = createStore<WorkflowViewState>(initial);
 
 function addEvent(event: TuiEvent) {
@@ -62,6 +69,16 @@ function setCancelHandler(handler: (() => void) | null) {
 
 function setAbortHandler(handler: (() => void) | null) {
   abortHandler = handler;
+}
+
+function setRewindHandler(handler: ((request: RewindTarget) => void) | null) {
+  rewindHandler = handler;
+}
+
+function requestRewind(request: RewindTarget): boolean {
+  if (!rewindHandler) return false;
+  rewindHandler(request);
+  return true;
 }
 
 function abortTurn(): boolean {
@@ -98,12 +115,15 @@ export const workflowStore = {
   reset: (init?: Partial<WorkflowViewState>) => {
     cancelHandler = null;
     abortHandler = null;
+    rewindHandler = null;
     store.reset(init ? { ...initial, ...init } : undefined);
   },
   addEvent,
   setCancelHandler,
   setAbortHandler,
+  setRewindHandler,
   abortTurn,
   requestCancel,
+  requestRewind,
   toggleSidebar,
 };

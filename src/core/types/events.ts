@@ -150,6 +150,17 @@ export type TuiEvent =
       plannerModel?: string | undefined;
       implementerTool: string;
       implementerModel?: string | undefined;
+    }
+  | {
+      type: 'rewind';
+      ts: number;
+      target: 'spec' | 'plan';
+      comment?: string | undefined;
+    }
+  | {
+      type: 'task-reset';
+      ts: number;
+      taskId: TaskId;
     };
 
 export type OrchestratorEventPayloadMap = {
@@ -185,6 +196,9 @@ export type OrchestratorEventPayloadMap = {
   spec_approved: Record<string, never>;
   plan_done: { taskCount: number };
   plan_approved: Record<string, never>;
+  rewind_to_spec: { comment?: string };
+  rewind_to_plan: { comment?: string };
+  task_reset: { taskId: string };
 };
 
 export type OrchestratorEventType = keyof OrchestratorEventPayloadMap;
