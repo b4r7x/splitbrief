@@ -66,6 +66,7 @@ describe('useWorkflow', () => {
           startedAt: new Date().toISOString(),
           tokenUsage: { plannerInput: 0, plannerOutput: 0, implementerInput: 0, implementerOutput: 0, escalationInput: 0, escalationOutput: 0 },
           awaitingContinue: false,
+          messageQueue: [],
         },
       }),
     );

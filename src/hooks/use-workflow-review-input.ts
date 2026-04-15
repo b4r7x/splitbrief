@@ -1,5 +1,7 @@
 import { reviewStore } from '../stores/review.js';
 import { feedbackStore } from '../stores/feedback.js';
+import { workflowStore } from '../stores/workflow.js';
+import { isLivePhase, isImplementerPhase } from '../core/phases.js';
 import { parseReviewCommand } from '../core/commands/review-commands.js';
 import { openInEditor } from '../utils/editor.js';
 import type { UseInputModeResult } from './use-input-mode.js';
@@ -16,7 +18,22 @@ export function useWorkflowReviewInput({
   inputMode,
 }: UseWorkflowReviewInputOptions): UseWorkflowReviewInputResult {
   const handleInput = async (text: string) => {
-    if (inputMode.mode === 'normal') return;
+    if (inputMode.mode === 'normal') {
+      const phase = workflowStore.get().phase;
+      if (isImplementerPhase(phase)) {
+        feedbackStore.setError('Input disabled during task implementation. Press Ctrl-C to abort, or /redo-task <id> after the task finishes.');
+        return;
+      }
+      if (isLivePhase(phase)) {
+        const trimmed = text.trim();
+        if (trimmed) {
+          if (!workflowStore.requestEnqueue(trimmed, phase)) {
+            feedbackStore.setError('Cannot queue message: no active workflow.');
+          }
+        }
+      }
+      return;
+    }
 
     if (inputMode.mode === 'review') {
       const parsed = parseReviewCommand(text);

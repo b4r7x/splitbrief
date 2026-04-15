@@ -108,5 +108,7 @@ export interface Planner extends RunnerRuntime {
     callbacks: { onOutput: (text: string) => void },
   ): Promise<{ text: string; usage: TokenDelta | null }>;
 
+  injectUserTurn?: (text: string, projectDir: string) => Promise<void>;
+
   readonly capabilities: PlannerCapabilities;
 }

@@ -60,6 +60,7 @@ export interface PlannerBaseConfig {
    * block to the prompt for the first planning phase.
    */
   consumesPriorMessages?: boolean;
+  injectUserTurn?: (text: string, projectDir: string) => Promise<void>;
 }
 
 export function createPlannerBase(config: PlannerBaseConfig): Planner {
@@ -221,6 +222,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
     ...DEFAULT_AVAILABILITY,
     isAvailable: config.isAvailable,
     ...(config.getVersion && { getVersion: config.getVersion }),
+    ...(config.injectUserTurn && { injectUserTurn: config.injectUserTurn }),
     capabilities: config.capabilities,
   };
 }

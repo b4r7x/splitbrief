@@ -52,6 +52,8 @@ export function App() {
     },
     requestTaskRedo: (taskId) =>
       workflowStore.requestRewind({ target: 'task', taskId }),
+    getQueueDepth: () => workflowStore.get().queueDepth,
+    clearQueue: () => workflowStore.requestClearQueue(),
   };
   const commands = createCommands(ctx);
   const paletteItems = toPaletteItems(commands);

@@ -18,6 +18,7 @@ export interface WorkflowViewState {
   tokenUsage: TokenUsage | null;
   cancelled: boolean;
   sidebarVisible: boolean;
+  queueDepth: number;
 }
 
 const initial: WorkflowViewState = {
@@ -34,6 +35,7 @@ const initial: WorkflowViewState = {
   tokenUsage: null,
   cancelled: false,
   sidebarVisible: false,
+  queueDepth: 0,
 };
 
 let cancelHandler: (() => void) | null = null;
@@ -45,6 +47,8 @@ type RewindTarget =
   | { target: 'task'; taskId: string };
 
 let rewindHandler: ((request: RewindTarget) => void) | null = null;
+let queueHandler: ((text: string, phase: Phase) => void) | null = null;
+let clearQueueHandler: (() => number) | null = null;
 
 const store = createStore<WorkflowViewState>(initial);
 
@@ -59,7 +63,11 @@ function addEvent(event: TuiEvent) {
     const taskMap = updateTaskMap(state.taskMap, event);
     const tasks = taskMap !== state.taskMap ? Array.from(taskMap.values()) : state.tasks;
     const sections = events !== state.events ? groupEventsIntoSections(events) : state.sections;
-    return { ...state, events, sections, ...counts, taskMap, tasks };
+    let { queueDepth } = state;
+    if (event.type === 'message-queued') queueDepth++;
+    if (event.type === 'queue-drained') queueDepth = 0;
+    if (event.type === 'queue-cleared') queueDepth = Math.max(0, queueDepth - event.count);
+    return { ...state, events, sections, ...counts, taskMap, tasks, queueDepth };
   });
 }
 
@@ -79,6 +87,29 @@ function requestRewind(request: RewindTarget): boolean {
   if (!rewindHandler) return false;
   rewindHandler(request);
   return true;
+}
+
+function setQueueHandler(handler: ((text: string, phase: Phase) => void) | null) {
+  queueHandler = handler;
+}
+
+function requestEnqueue(text: string, phase: Phase): boolean {
+  if (!queueHandler) return false;
+  queueHandler(text, phase);
+  return true;
+}
+
+function setClearQueueHandler(handler: (() => number) | null) {
+  clearQueueHandler = handler;
+}
+
+function requestClearQueue(): number {
+  if (clearQueueHandler) return clearQueueHandler();
+  const depth = store.get().queueDepth;
+  if (depth > 0) {
+    addEvent({ type: 'queue-cleared', ts: Date.now(), count: depth });
+  }
+  return depth;
 }
 
 function abortTurn(): boolean {
@@ -116,6 +147,8 @@ export const workflowStore = {
     cancelHandler = null;
     abortHandler = null;
     rewindHandler = null;
+    queueHandler = null;
+    clearQueueHandler = null;
     store.reset(init ? { ...initial, ...init } : undefined);
   },
   addEvent,
@@ -125,5 +158,9 @@ export const workflowStore = {
   abortTurn,
   requestCancel,
   requestRewind,
+  setQueueHandler,
+  requestEnqueue,
+  setClearQueueHandler,
+  requestClearQueue,
   toggleSidebar,
 };

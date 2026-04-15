@@ -27,6 +27,7 @@ export type {
   TaskId,
   TaskStatus,
   WorkflowState,
+  QueuedMessage,
   StateAction,
   TokenBudget,
   CodeContext,

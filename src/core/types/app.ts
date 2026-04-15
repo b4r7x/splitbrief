@@ -53,6 +53,8 @@ export interface CommandContext {
   getCurrentPhase: () => Phase;
   requestRewind: (target: 'spec' | 'plan', comment?: string) => boolean;
   requestTaskRedo: (taskId: string) => boolean;
+  getQueueDepth: () => number;
+  clearQueue: () => number;
 }
 
 export interface CommandPaletteItem {
