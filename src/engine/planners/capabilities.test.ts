@@ -29,8 +29,18 @@ describe('capability matrix — per-backend declared values (FR-003)', () => {
     });
   });
 
+  it('cli codex: conv=false, hint=true, resume=true, inject=false (codex exec resume <id>)', () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
+    const planner = createCliPlanner(config);
+    expect(planner.capabilities).toEqual({
+      supportsConversationalPlanning: false,
+      supportsHintEscalation: true,
+      supportsSessionResume: true,
+      supportsMidStreamInjection: false,
+    });
+  });
+
   it.each([
-    'codex',
     'opencode',
     'aider',
     'copilot',

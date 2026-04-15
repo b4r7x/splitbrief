@@ -210,11 +210,14 @@ type PlannerCapabilities = {
 | Backend | Conv. planning | Hint escalation | Session resume | Mid-stream inject |
 |---------|:---:|:---:|:---:|:---:|
 | `cli` claude-code | ✓ | ✗ | ✓ | ✓ |
-| `cli` codex / opencode / aider / copilot / kilo-code | ✗ | ✓ | ✗ | ✗ |
+| `cli` codex | ✗ | ✓ | ✓ | ✗ |
+| `cli` opencode / aider / copilot / kilo-code | ✗ | ✓ | ✗ | ✗ |
 | `api` (any OAI-compat) | ✗ | ✓ | ✗ | ✗ |
 | `shell` (default) | ✗ | ✗ | ✗ | ✗ |
 | `agent` (default) | ✗ | ✗ | ✗ | ✗ |
 | `agent-sdk` | ✓ | ✗ | ✓ | ✓ |
+
+Claude Code resumes via `claude --session-id <id>`. Codex resumes via `codex exec resume --json <id> <prompt>` (captured from the `thread.started` JSONL event). Agent SDK resumes via the `options.resume` argument to `query()`; see `src/engine/agent-sdk.ts`. All other backends fall back to transcript rebuild on resume (spec 004; `src/engine/orchestrator/transcript-rebuild.ts`).
 
 `shell` and `agent` defaults are all-false but can be overridden per-project via config:
 
@@ -234,7 +237,7 @@ planner:
 
 When a capability is missing, the orchestrator falls back:
 
-- **No session resume?** → Rebuild context from `session.jsonl` messages on resume.
+- **No session resume?** → Rebuild context from `session.jsonl` messages on resume. See `src/engine/orchestrator/transcript-rebuild.ts` — for api-kind backends the messages are injected as a `messages[]` array; for CLI backends without native resume, as a `<!-- prior conversation -->` prompt prefix. Spec 004 details the fallback.
 - **No mid-stream inject?** → Queue user messages, drain at next phase boundary.
 - **No conversational planning?** → User answers only at approval gates; no inline Q&A.
 - **No hint escalation?** → Jump straight from retries to full-escalation on failure.

@@ -13,7 +13,9 @@ interface SdkBlock {
 
 interface SdkMessage {
   type: string;
-  content: SdkBlock[];
+  subtype?: string;
+  session_id?: string;
+  content?: SdkBlock[];
   usage?: {
     input_tokens: number;
     output_tokens: number;
@@ -27,6 +29,7 @@ interface SdkQueryOptions {
     permissionMode: string;
     model: string;
     cwd: string;
+    resume?: string | undefined;
   };
 }
 
@@ -77,16 +80,24 @@ function extractTextFromMessage(message: SdkMessage): string {
 interface StreamResult {
   text: string;
   usage: { inputTokens: number; outputTokens: number } | null;
+  sessionId: string | null;
 }
 
 export async function processStream(
   stream: AsyncIterable<SdkMessage>,
   onOutput: (text: string) => void,
+  onSessionId?: (id: string) => void,
 ): Promise<StreamResult> {
   let collectedText = '';
   let usage: { inputTokens: number; outputTokens: number } | null = null;
+  let sessionId: string | null = null;
 
   for await (const message of stream) {
+    if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
+      sessionId = message.session_id;
+      onSessionId?.(message.session_id);
+    }
+
     if (message.type === 'assistant') {
       const text = extractTextFromMessage(message);
       if (text) {
@@ -96,6 +107,10 @@ export async function processStream(
     }
 
     if (message.type === 'result') {
+      if (message.session_id) {
+        sessionId = message.session_id;
+        onSessionId?.(message.session_id);
+      }
       const delta = toTokenDelta(message.usage);
       if (delta) {
         usage = accumulateUsage(usage, delta);
@@ -107,7 +122,7 @@ export async function processStream(
     }
   }
 
-  return { text: collectedText, usage };
+  return { text: collectedText, usage, sessionId };
 }
 
 export interface AgentSdkBackendOpts {
@@ -115,6 +130,7 @@ export interface AgentSdkBackendOpts {
   permissionMode?: 'acceptEdits' | undefined;
   detectChanges?: boolean | undefined;
   apiKey?: string | undefined;
+  initialSessionId?: string | null | undefined;
 }
 
 export interface AgentSdkInvokeOpts {
@@ -122,6 +138,8 @@ export interface AgentSdkInvokeOpts {
   projectDir: string;
   model: string;
   onOutput: (text: string) => void;
+  onSessionId?: ((id: string) => void) | undefined;
+  onSessionExpired?: ((previousId: string) => void) | undefined;
 }
 
 export interface AgentSdkBackend {
@@ -129,11 +147,29 @@ export interface AgentSdkBackend {
   detectChanges?: (projectDir: string, before: string[]) => Promise<{ changed: boolean; output: string }>;
 }
 
+const SESSION_RESUME_FAILED_PATTERNS = [
+  'session not found',
+  'session_not_found',
+  'invalid session',
+  'expired session',
+  'no such session',
+  'could not resume',
+];
+
+function isSessionResumeError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+  return SESSION_RESUME_FAILED_PATTERNS.some(p => msg.includes(p));
+}
+
 export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBackend {
   const permissionMode = opts.permissionMode ?? 'acceptEdits';
+  // The SDK records session files at ~/.claude/projects/<encoded-cwd>/<id>.jsonl. If the SDK is
+  // called with a different cwd than the run that produced the id, resume silently yields a
+  // fresh session. Pin cwd to the projectDir passed into invoke() to keep this consistent.
+  let currentSessionId: string | null = opts.initialSessionId ?? null;
 
   const backend: AgentSdkBackend = {
-    async invoke({ prompt, projectDir, model, onOutput }) {
+    async invoke({ prompt, projectDir, model, onOutput, onSessionId, onSessionExpired }) {
       const { query } = await loadSdk();
 
       // If an explicit apiKey is configured and the env var is not yet set, apply it for this call.
@@ -143,11 +179,30 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
       const apiKey = opts.apiKey;
       if (apiKey && !savedKey) process.env['ANTHROPIC_API_KEY'] = apiKey;
 
+      const captureSession = (id: string) => { currentSessionId = id; onSessionId?.(id); };
+
+      const runQuery = async (resumeId: string | null) => {
+        const options: SdkQueryOptions['options'] = {
+          allowedTools: opts.allowedTools, permissionMode, model, cwd: projectDir,
+        };
+        if (resumeId) options.resume = resumeId;
+        return processStream(query({ prompt, options }), onOutput, captureSession);
+      };
+
       try {
-        return await processStream(
-          query({ prompt, options: { allowedTools: opts.allowedTools, permissionMode, model, cwd: projectDir } }),
-          onOutput,
-        );
+        try {
+          const result = await runQuery(currentSessionId);
+          return { text: result.text, usage: result.usage };
+        } catch (err) {
+          if (currentSessionId && isSessionResumeError(err)) {
+            const expiredId = currentSessionId;
+            currentSessionId = null;
+            onSessionExpired?.(expiredId);
+            const retry = await runQuery(null);
+            return { text: retry.text, usage: retry.usage };
+          }
+          throw err;
+        }
       } finally {
         if (apiKey && !savedKey) delete process.env['ANTHROPIC_API_KEY'];
       }

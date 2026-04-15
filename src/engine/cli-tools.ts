@@ -3,10 +3,12 @@ import { parseJsonlLine, parseOpencodeLine, parseTextLine } from './streaming/ou
 import type { CliPlannerTool, InvokeResult, TokenDelta } from '../types.js';
 
 export interface CliToolPlanner {
-  buildArgs(opts: { prompt: string; model?: string | undefined; projectDir: string; mode: 'plan' | 'escalate' }): string[];
+  buildArgs(opts: { prompt: string; model?: string | undefined; projectDir: string; mode: 'plan' | 'escalate'; sessionId?: string | null | undefined }): string[];
   parseLine: (line: string) => ParsedLine;
   postProcess?: (text: string, stderrOutput: string, usage: TokenDelta | null) => InvokeResult;
   isAvailableOpts?: { timeout?: number | undefined };
+  /** Whether this tool supports resuming a previous session via a backend-specific flag. */
+  supportsSessionResume?: boolean;
 }
 
 export interface CliToolImplementer {
@@ -35,7 +37,15 @@ export const CLI_TOOLS: Record<CliPlannerTool, CliToolEntry> = {
     description: 'OpenAI Codex CLI',
     notFoundMessage: 'Codex CLI not found. Install it with: npm install -g @openai/codex',
     planner: {
-      buildArgs: ({ prompt, model, projectDir }) => {
+      supportsSessionResume: true,
+      buildArgs: ({ prompt, model, projectDir, mode, sessionId }) => {
+        // Resume path: `codex exec resume --json <SESSION_ID> <PROMPT>`. Only valid for live
+        // planning turns; escalate uses one-shot `exec` to avoid polluting the resumed session.
+        if (sessionId && mode === 'plan') {
+          const args = ['exec', 'resume', '--json', sessionId, prompt];
+          if (model) args.splice(2, 0, '--model', model);
+          return args;
+        }
         const args = ['exec', '--json', '--full-auto', '--cd', projectDir, prompt];
         if (model) args.unshift('--model', model);
         return args;

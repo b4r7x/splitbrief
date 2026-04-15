@@ -153,10 +153,22 @@ describe('transition', () => {
     expect(next.attempt).toBe(0);
   });
 
-  it('SET_SESSION_ID updates sessionId', () => {
+  it('SET_PLANNER_SESSION_ID updates plannerSessionId', () => {
     const state = createInitialState('feat');
-    const next = transition(state, { type: 'SET_SESSION_ID', sessionId: 'abc-123' });
-    expect(next.sessionId).toBe('abc-123');
+    const next = transition(state, { type: 'SET_PLANNER_SESSION_ID', sessionId: 'abc-123' });
+    expect(next.plannerSessionId).toBe('abc-123');
+  });
+
+  it('plannerSessionId defaults to null in initial state', () => {
+    const state = createInitialState('feat');
+    expect(state.plannerSessionId).toBeNull();
+  });
+
+  it('SET_PLANNER_SESSION_ID overwrites existing plannerSessionId', () => {
+    let state = createInitialState('feat');
+    state = transition(state, { type: 'SET_PLANNER_SESSION_ID', sessionId: 'first' });
+    state = transition(state, { type: 'SET_PLANNER_SESSION_ID', sessionId: 'second' });
+    expect(state.plannerSessionId).toBe('second');
   });
 
   it('START_TASK resets attempt to 0 (resume retry-budget fix)', () => {

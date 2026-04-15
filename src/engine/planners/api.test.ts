@@ -186,6 +186,33 @@ describe('createApiPlanner', () => {
     expect(result.usage).toEqual({ inputTokens: 42 * 4, outputTokens: 17 * 4 });
   });
 
+  it('plan() injects priorMessages into the first phase chat history (FR-007 api-kind)', async () => {
+    const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
+
+    await planner.plan('add auth', projectDir, {
+      onOutput: vi.fn(),
+      onPhase: vi.fn(),
+      priorMessages: [
+        { role: 'user', content: 'start: add auth' },
+        { role: 'assistant', content: 'we should use JWT' },
+      ],
+    });
+
+    expect(receivedBodies.length).toBeGreaterThan(0);
+    const firstCall = receivedBodies[0];
+    // First two messages = prior history; the current prompt is appended last.
+    expect(firstCall.messages[0]).toEqual({ role: 'user', content: 'start: add auth' });
+    expect(firstCall.messages[1]).toEqual({ role: 'assistant', content: 'we should use JWT' });
+    expect(firstCall.messages[firstCall.messages.length - 1].role).toBe('user');
+
+    // Subsequent phases do NOT repeat priorMessages.
+    const secondCall = receivedBodies[1];
+    expect(secondCall.messages[0].role).toBe('user');
+    // Prior assistant turn should not be present in phase 2+
+    const hasAssistantPrior = secondCall.messages.some((m: { role: string; content: string }) => m.role === 'assistant' && m.content === 'we should use JWT');
+    expect(hasAssistantPrior).toBe(false);
+  });
+
   it('isAvailable returns true when models endpoint responds', async () => {
     const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
     expect(await planner.isAvailable()).toBe(true);

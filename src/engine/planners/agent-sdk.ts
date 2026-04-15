@@ -4,12 +4,31 @@ import { createAgentSdkBackend, isAgentSdkAvailable, PLANNER_ALLOWED_TOOLS } fro
 import { resolveAutoModel } from '../../core/providers.js';
 import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
 
-export function createAgentSdkPlanner(model?: string, apiKey?: string): Planner {
+export function createAgentSdkPlanner(model?: string, apiKey?: string, initialSessionId?: string | null): Planner {
   const effectiveModel = resolveAutoModel(model, 'agent-sdk') ?? DEFAULT_AGENT_SDK_MODEL;
-  const backend = createAgentSdkBackend({ allowedTools: [...PLANNER_ALLOWED_TOOLS], apiKey });
+  const backend = createAgentSdkBackend({
+    allowedTools: [...PLANNER_ALLOWED_TOOLS],
+    apiKey,
+    initialSessionId: initialSessionId ?? null,
+  });
 
-  const invoke = ({ prompt, projectDir, callbacks }: { prompt: string; projectDir: string; callbacks: { onOutput: (text: string) => void } }) =>
-    backend.invoke({ prompt, projectDir, model: effectiveModel, onOutput: callbacks.onOutput });
+  const invoke = ({ prompt, projectDir, callbacks }: {
+    prompt: string;
+    projectDir: string;
+    callbacks: {
+      onOutput: (text: string) => void;
+      onSessionId?: ((id: string) => void) | undefined;
+      onSessionExpired?: ((id: string) => void) | undefined;
+    };
+  }) =>
+    backend.invoke({
+      prompt,
+      projectDir,
+      model: effectiveModel,
+      onOutput: callbacks.onOutput,
+      onSessionId: callbacks.onSessionId,
+      onSessionExpired: callbacks.onSessionExpired,
+    });
 
   return createPlannerBase({
     invokePlan: invoke,

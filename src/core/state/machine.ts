@@ -1,6 +1,6 @@
 import type { WorkflowState, StateAction, TaskStatus, TokenUsage, TaskId } from '../types/index.js';
 
-export const CURRENT_STATE_VERSION = 2;
+export const CURRENT_STATE_VERSION = 3;
 
 const zeroTokenUsage: TokenUsage = {
   plannerInput: 0,
@@ -19,7 +19,7 @@ export function createInitialState(feature: string): WorkflowState {
     currentTaskIndex: 0,
     attempt: 0,
     tasks: [],
-    sessionId: null,
+    plannerSessionId: null,
     startedAt: new Date().toISOString(),
     tokenUsage: { ...zeroTokenUsage },
   };
@@ -125,8 +125,8 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
     case 'CANCEL':
       return { ...state, phase: 'idle' };
 
-    case 'SET_SESSION_ID':
-      return { ...state, sessionId: action.sessionId };
+    case 'SET_PLANNER_SESSION_ID':
+      return { ...state, plannerSessionId: action.sessionId };
 
     default:
       action satisfies never;

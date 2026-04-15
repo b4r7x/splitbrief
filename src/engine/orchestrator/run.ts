@@ -14,7 +14,7 @@ import { toErrorMessage, labelError } from '../../utils/format.js';
 import { warnError } from '../../utils/warn.js';
 import { createPlanner, createImplementer } from '../runners/factory.js';
 
-import type { WorkflowContext } from './types.js';
+import type { WorkflowContext, ResumeContextHolder } from './types.js';
 import { buildSummary, type SummaryBase } from './summary.js';
 import { emit, emitError, emitWarning, emitPlannerStatus, emitCostPrediction, emitWorkflowConfig } from './events.js';
 import { predictCost } from './cost-prediction.js';
@@ -22,6 +22,7 @@ import { transitionAndSave, withSignalHandlers } from './helpers.js';
 import { runPlanningPhase } from './planning.js';
 import { runTaskLoop } from './task-loop.js';
 import { runFinalReviewPhase, shutdownWorkflow } from './final-review.js';
+import { buildResumeContext } from './transcript-rebuild.js';
 
 export type { WorkflowContext } from './types.js';
 
@@ -46,13 +47,26 @@ async function initializeWorkflow(
   summaryBase: SummaryBase,
   metadata: SpecMetadata,
   setTrackedState: (s: WorkflowState) => void,
+  resumeHolder: ResumeContextHolder,
 ): Promise<InitResult> {
   const { feature, projectDir, config, callbacks, savedState } = opts;
 
   ensureDiptychDir(projectDir);
   ensureSessionDir(projectDir, sessionId);
 
-  const planner = createPlanner(config);
+  // On resume: only thread the persisted planner session id into the factory when the backend
+  // declares `supportsSessionResume: true`. For stateless backends we pre-build the transcript
+  // instead and inject it as `priorMessages` on the first phase.
+  const initialSessionId = savedState?.plannerSessionId ?? null;
+  const planner = createPlanner(config, initialSessionId);
+  if (savedState && !planner.capabilities.supportsSessionResume) {
+    const rebuilt = await buildResumeContext(projectDir, sessionId, config.workflow.persistTranscript !== false);
+    if (rebuilt.warning === 'transcript-unavailable') {
+      emitWarning(callbacks, 'Previous planner conversation expired and no transcript was persisted. Continuing with spec.md/plan.md/tasks.md only — the planner may regenerate differently.');
+    } else if (rebuilt.messages.length > 0) {
+      resumeHolder.messages = rebuilt.messages;
+    }
+  }
   const available = await planner.isAvailable();
   if (!available) {
     emitError(callbacks, `Planner '${getRunnerDisplayName(config.planner)}' is not available. Make sure it's installed.`);
@@ -100,7 +114,7 @@ async function initializeWorkflow(
     testCommand: config.validation.testCommand,
   };
 
-  const wctx: WorkflowContext = { projectDir, sessionId, config, callbacks, planner, context, implementer, signal: opts.signal, metadata };
+  const wctx: WorkflowContext = { projectDir, sessionId, config, callbacks, planner, context, implementer, signal: opts.signal, metadata, resumeHolder };
 
   return { ok: true, state, wctx };
 }
@@ -235,7 +249,8 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
 
   const { cancelled } = await withSignalHandlers(shutdown, async () => {
     try {
-      const init = await initializeWorkflow(opts, sessionId, summaryBase, metadata, (s) => { trackedState = s; });
+      const resumeHolder: ResumeContextHolder = { messages: [] };
+      const init = await initializeWorkflow(opts, sessionId, summaryBase, metadata, (s) => { trackedState = s; }, resumeHolder);
       if (!init.ok) { result = init.summary; return; }
 
       const { wctx } = init;
