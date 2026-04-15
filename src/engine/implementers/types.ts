@@ -8,6 +8,8 @@ export interface ImplementerOptions {
   onOutput: (text: string) => void;
   onEvent?: (event: TuiEvent) => void;
   sessionId?: string | undefined;
+  signal?: AbortSignal | undefined;
+  continuationPrompt?: string | undefined;
 }
 
 export interface RetryOptions extends ImplementerOptions {

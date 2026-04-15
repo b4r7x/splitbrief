@@ -8,7 +8,7 @@ import { reviewStore } from '../stores/review.js';
 import { conversationScrollStore } from '../stores/conversation-scroll.js';
 import { inputModeStore } from '../stores/input-mode.js';
 import { killAllProcesses } from '../utils/process-lifecycle.js';
-import { CANCELLABLE_PHASES } from '../core/phases.js';
+import { isLivePhase } from '../core/phases.js';
 import { findLatestDiffEventIndex } from '../components/conversation-flow/section-heights.js';
 import { terminalSizeStore } from '../stores/terminal-size.js';
 import type { KeyAction } from './keyboard-handlers.js';
@@ -20,7 +20,7 @@ import {
   handleConversationScroll,
 } from './keyboard-handlers.js';
 
-const DOUBLE_PRESS_WINDOW_MS = 3000;
+const DOUBLE_PRESS_WINDOW_MS = 2000;
 const CHROME_HEIGHT = 10;
 
 function applyAction(action: KeyAction, exit: () => void) {
@@ -54,19 +54,20 @@ export function useGlobalKeys({ exit }: { exit: () => void }) {
       exit();
       return;
     }
-    lastCtrlCRef.current = Date.now();
     if (screen === 'workflow') {
-      const { cancelled } = workflowStore.get();
-      if (!cancelled) {
-        if (workflowStore.requestCancel()) {
-          try { killAllProcesses(); } catch { /* best-effort */ }
-        }
+      const { phase, cancelled } = workflowStore.get();
+      if (!cancelled && isLivePhase(phase)) {
+        // First Ctrl-C during live phase: abort current turn, record for double-press
+        lastCtrlCRef.current = Date.now();
+        workflowStore.abortTurn();
+        feedbackStore.setError('Aborting current step… Ctrl+C again to exit');
       } else {
-        killAllProcesses();
+        // Not in a live phase (approval gate, cancelled, etc.): exit immediately on first press
+        exit();
       }
-      feedbackStore.setError('Cancelling workflow... Ctrl+C to exit');
     } else {
-      feedbackStore.setError('Press Ctrl+C again to exit');
+      // Outside workflow screens: exit immediately on first press
+      exit();
     }
   });
 
@@ -80,8 +81,8 @@ export function useGlobalKeys({ exit }: { exit: () => void }) {
   useInput(
     (input, key) => {
       if (key.escape && screen === 'workflow') {
-        const { phase, cancelled } = workflowStore.get();
-        const action = handleWorkflowEscape(key, cancelled, phase, CANCELLABLE_PHASES);
+        const { cancelled } = workflowStore.get();
+        const action = handleWorkflowEscape(key, cancelled);
         if (action.type !== 'none') { applyAction(action, exit); return; }
       }
 

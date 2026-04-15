@@ -34,12 +34,9 @@ export function handleShortcutKeys(
 export function handleWorkflowEscape(
   key: Key,
   cancelled: boolean,
-  phase: string,
-  cancellablePhases: ReadonlySet<string>,
 ): KeyAction {
   if (!key.escape) return NONE;
   if (cancelled) return { type: 'navigate', screen: 'home' };
-  if (cancellablePhases.has(phase)) return { type: 'cancel-workflow' };
   return NONE;
 }
 

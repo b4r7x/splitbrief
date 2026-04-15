@@ -1,7 +1,7 @@
 import type { ChildProcess } from 'node:child_process';
 import { isNodeError } from './process-errors.js';
 
-const SIGKILL_DELAY = 5000;
+const SIGKILL_DELAY = 2000;
 
 const activeProcesses = new Set<ChildProcess>();
 
@@ -17,10 +17,11 @@ export function getActiveProcessCount(): number {
   return activeProcesses.size;
 }
 
-export function killProcess(proc: ChildProcess, options?: { group?: boolean }): void {
+export function killProcess(proc: ChildProcess, options?: { group?: boolean; killDelay?: number }): void {
   if (proc.exitCode !== null || proc.killed) return;
   const pid = proc.pid;
   const useGroup = options?.group && pid !== undefined;
+  const delay = options?.killDelay ?? SIGKILL_DELAY;
   try {
     if (useGroup && pid !== undefined) {
       process.kill(-pid, 'SIGTERM');
@@ -47,7 +48,23 @@ export function killProcess(proc: ChildProcess, options?: { group?: boolean }): 
         throw err;
       }
     }
-  }, SIGKILL_DELAY);
+  }, delay);
+}
+
+const ABORT_KILL_DELAY = 2000;
+
+export function abortProcess(proc: ChildProcess, signal: AbortSignal): void {
+  if (proc.exitCode !== null || proc.killed) return;
+
+  const onAbort = () => killProcess(proc, { group: true, killDelay: ABORT_KILL_DELAY });
+
+  if (signal.aborted) {
+    onAbort();
+    return;
+  }
+
+  signal.addEventListener('abort', onAbort, { once: true });
+  proc.on('close', () => signal.removeEventListener('abort', onAbort));
 }
 
 export function killAllProcesses(): void {

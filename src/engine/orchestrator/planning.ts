@@ -17,6 +17,8 @@ import { labelError } from '../../utils/format.js';
 import { collectAndPersistClarifications } from './clarifications.js';
 import { runApprovalLoop } from './approval.js';
 import { buildResumeContext } from './transcript-rebuild.js';
+import { buildContinuationPrompt } from './continuation.js';
+import { workflowStore } from '../../stores/workflow.js';
 
 const MAX_CLARIFICATION_QUESTIONS = 5;
 
@@ -33,6 +35,7 @@ function handlePlanningFailure(
   emitError(callbacks, labelError('Planning failed', err));
   return { state: transitionAndSave(projectDir, sessionId, state, { type: 'CANCEL' }), tasks: [], cancelled: true };
 }
+
 
 export type PlanningPhaseOptions = {
   wctx: PlannerCallbacksContext;
@@ -106,31 +109,57 @@ async function regeneratePlanAndTasks(
 }
 
 async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<{ state: WorkflowState; tasks: Task[]; cancelled: boolean }> {
-  const { wctx, feature, planner } = opts;
+  const { wctx, planner } = opts;
   const { projectDir, sessionId, config, callbacks, metadata, resumeHolder } = wctx;
+  const signal = wctx.signal;
   let { state } = opts;
+  let feature = opts.feature;
+  let partialOutput = '';
 
   let planResult: Awaited<ReturnType<Planner['plan']>>;
-  try {
-    const quickPlanFn = planner.quickPlan ?? planner.plan;
-    planResult = await quickPlanFn.call(planner, feature, projectDir, {
-      onOutput: createTextHandler(callbacks),
-      onSessionId: (id) => { state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PLANNER_SESSION_ID', sessionId: id }); },
-      onSessionExpired: async () => {
-        emitWarning(callbacks, 'Previous planner conversation expired — rebuilding context from transcript.');
-        const rebuilt = await buildResumeContext(projectDir, sessionId, config.workflow.persistTranscript !== false);
-        if (rebuilt.warning === 'transcript-unavailable') {
-          emitWarning(callbacks, 'Previous planner conversation expired and no transcript was persisted. Continuing with spec.md/plan.md/tasks.md only — the planner may regenerate differently.');
-        } else if (resumeHolder) {
-          resumeHolder.messages = rebuilt.messages;
-        }
-      },
-      sessionId,
-      persistTranscript: config.workflow.persistTranscript,
-      ...(resumeHolder && resumeHolder.messages.length > 0 ? { priorMessages: resumeHolder.messages } : {}),
-    });
-  } catch (err) {
-    return handlePlanningFailure(err, projectDir, sessionId, state, callbacks);
+
+  // Per-call abort + continuation loop (mirrors task-step.ts)
+  while (true) {
+    const callController = new AbortController();
+    workflowStore.setAbortHandler(() => callController.abort());
+    partialOutput = '';
+    const textHandler = createTextHandler(callbacks);
+
+    try {
+      const quickPlanFn = planner.quickPlan ?? planner.plan;
+      planResult = await quickPlanFn.call(planner, feature, projectDir, {
+        onOutput: (text) => { partialOutput += text; textHandler(text); },
+        onSessionId: (id) => { state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PLANNER_SESSION_ID', sessionId: id }); },
+        onSessionExpired: async () => {
+          emitWarning(callbacks, 'Previous planner conversation expired — rebuilding context from transcript.');
+          const rebuilt = await buildResumeContext(projectDir, sessionId, config.workflow.persistTranscript !== false);
+          if (rebuilt.warning === 'transcript-unavailable') {
+            emitWarning(callbacks, 'Previous planner conversation expired and no transcript was persisted. Continuing with spec.md/plan.md/tasks.md only — the planner may regenerate differently.');
+          } else if (resumeHolder) {
+            resumeHolder.messages = rebuilt.messages;
+          }
+        },
+        sessionId,
+        persistTranscript: config.workflow.persistTranscript,
+        ...(resumeHolder && resumeHolder.messages.length > 0 ? { priorMessages: resumeHolder.messages } : {}),
+      });
+    } catch (err) {
+      workflowStore.setAbortHandler(null);
+
+      // Per-call abort (not workflow cancel): enter continuation mode
+      if (callController.signal.aborted && !signal?.aborted && callbacks.onContinuationNeeded) {
+        state = transitionAndSave(projectDir, sessionId, state, { type: 'ABORT_TURN' });
+        const userText = await callbacks.onContinuationNeeded(partialOutput);
+        state = transitionAndSave(projectDir, sessionId, state, { type: 'CONTINUE_TURN' });
+        feature = buildContinuationPrompt(partialOutput, userText);
+        continue;
+      }
+
+      return handlePlanningFailure(err, projectDir, sessionId, state, callbacks);
+    }
+
+    workflowStore.setAbortHandler(null);
+    break;
   }
 
   persistPhases(projectDir, sessionId, planResult.phases, metadata);
@@ -144,41 +173,67 @@ async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<{ state: Wo
 }
 
 async function runFullPlanning(opts: PlanningPhaseOptions, skipPlanApproval: boolean): Promise<{ state: WorkflowState; tasks: Task[]; cancelled: boolean }> {
-  const { wctx, feature, planner, selectedSkills } = opts;
+  const { wctx, planner, selectedSkills } = opts;
   const { projectDir, sessionId, config, callbacks, metadata, resumeHolder } = wctx;
   const signal = wctx.signal;
   let { state } = opts;
-  const collectedQuestions: ClarificationQuestion[] = [];
   const conversational = planner.capabilities.supportsConversationalPlanning;
   const skillsContext = selectedSkills?.length ? await buildSkillsSection(selectedSkills) : undefined;
+  let feature = opts.feature;
+  let partialOutput = '';
+
+  const collectedQuestions: ClarificationQuestion[] = [];
 
   let planResult: Awaited<ReturnType<Planner['plan']>>;
-  try {
-    planResult = await planner.plan(feature, projectDir, {
-      onOutput: createTextHandler(callbacks),
-      onSessionId: (id) => { state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PLANNER_SESSION_ID', sessionId: id }); },
-      onSessionExpired: async () => {
-        emitWarning(callbacks, 'Previous planner conversation expired — rebuilding context from transcript.');
-        const rebuilt = await buildResumeContext(projectDir, sessionId, config.workflow.persistTranscript !== false);
-        if (rebuilt.warning === 'transcript-unavailable') {
-          emitWarning(callbacks, 'Previous planner conversation expired and no transcript was persisted. Continuing with spec.md/plan.md/tasks.md only — the planner may regenerate differently.');
-        } else if (resumeHolder) {
-          resumeHolder.messages = rebuilt.messages;
-        }
-      },
-      onQuestion: conversational ? (questions) => {
-        for (const q of questions) {
-          if (collectedQuestions.length < MAX_CLARIFICATION_QUESTIONS) {
-            collectedQuestions.push(q);
+
+  // Per-call abort + continuation loop (mirrors task-step.ts)
+  while (true) {
+    const callController = new AbortController();
+    workflowStore.setAbortHandler(() => callController.abort());
+    partialOutput = '';
+    const textHandler = createTextHandler(callbacks);
+
+    try {
+      planResult = await planner.plan(feature, projectDir, {
+        onOutput: (text) => { partialOutput += text; textHandler(text); },
+        onSessionId: (id) => { state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PLANNER_SESSION_ID', sessionId: id }); },
+        onSessionExpired: async () => {
+          emitWarning(callbacks, 'Previous planner conversation expired — rebuilding context from transcript.');
+          const rebuilt = await buildResumeContext(projectDir, sessionId, config.workflow.persistTranscript !== false);
+          if (rebuilt.warning === 'transcript-unavailable') {
+            emitWarning(callbacks, 'Previous planner conversation expired and no transcript was persisted. Continuing with spec.md/plan.md/tasks.md only — the planner may regenerate differently.');
+          } else if (resumeHolder) {
+            resumeHolder.messages = rebuilt.messages;
           }
-        }
-      } : undefined,
-      sessionId,
-      persistTranscript: config.workflow.persistTranscript,
-      ...(resumeHolder && resumeHolder.messages.length > 0 ? { priorMessages: resumeHolder.messages } : {}),
-    }, skillsContext);
-  } catch (err) {
-    return handlePlanningFailure(err, projectDir, sessionId, state, callbacks);
+        },
+        onQuestion: conversational ? (questions) => {
+          for (const q of questions) {
+            if (collectedQuestions.length < MAX_CLARIFICATION_QUESTIONS) {
+              collectedQuestions.push(q);
+            }
+          }
+        } : undefined,
+        sessionId,
+        persistTranscript: config.workflow.persistTranscript,
+        ...(resumeHolder && resumeHolder.messages.length > 0 ? { priorMessages: resumeHolder.messages } : {}),
+      }, skillsContext);
+    } catch (err) {
+      workflowStore.setAbortHandler(null);
+
+      // Per-call abort (not workflow cancel): enter continuation mode
+      if (callController.signal.aborted && !signal?.aborted && callbacks.onContinuationNeeded) {
+        state = transitionAndSave(projectDir, sessionId, state, { type: 'ABORT_TURN' });
+        const userText = await callbacks.onContinuationNeeded(partialOutput);
+        state = transitionAndSave(projectDir, sessionId, state, { type: 'CONTINUE_TURN' });
+        feature = buildContinuationPrompt(partialOutput, userText);
+        continue;
+      }
+
+      return handlePlanningFailure(err, projectDir, sessionId, state, callbacks);
+    }
+
+    workflowStore.setAbortHandler(null);
+    break;
   }
 
   persistPhases(projectDir, sessionId, planResult.phases, metadata);

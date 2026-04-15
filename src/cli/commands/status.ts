@@ -71,7 +71,8 @@ export function registerStatusCommand(program: Command): void {
         }
       } else {
         console.log(`${ansis.dim('Feature:')}  ${ansis.bold(state.feature)}`);
-        console.log(`${ansis.dim('Phase:')}    ${ansis.bold(state.phase)}`);
+        const phaseSuffix = state.awaitingContinue ? ` ${ansis.yellow('(awaiting continue)')}` : '';
+        console.log(`${ansis.dim('Phase:')}    ${ansis.bold(state.phase)}${phaseSuffix}`);
         console.log(`${ansis.dim('Task:')}     ${state.currentTaskIndex + 1}/${state.tasks.length}`);
         console.log(`${ansis.dim('Started:')}  ${state.startedAt}`);
         console.log(`${ansis.dim('Session:')}  ${sessionId}`);

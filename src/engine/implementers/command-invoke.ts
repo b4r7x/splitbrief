@@ -32,7 +32,7 @@ export function createCommandBasedImplementer(opts: CommandBasedImplementerOpts)
     extractsCode: opts.extractsCode,
 
     async invoke(invokeOpts: InvokeOpts) {
-      const { prompt, projectDir, config, onOutput } = invokeOpts;
+      const { prompt, projectDir, config, onOutput, signal } = invokeOpts;
       const cfg = opts.getRunnerConfig(config);
 
       const result = await invokeCommandBasedRunner(
@@ -48,6 +48,7 @@ export function createCommandBasedImplementer(opts: CommandBasedImplementerOpts)
         prompt,
         projectDir,
         onOutput,
+        signal,
       );
 
       return { text: result.stdout, usage: result.usage ?? null };

@@ -136,9 +136,14 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       invokeResult = await baseConfig.invoke({
         prompt, task, projectDir, config, onOutput: wrappedOnOutput,
         ...(temperature !== undefined && { temperature }),
+        signal: opts.signal,
       });
     } catch (err) {
       emitGenEvent('failed');
+      if (opts.signal?.aborted) {
+        implBuffer?.flushInterrupted();
+        return { success: false, output: '', error: 'Aborted' };
+      }
       if (shouldThrow(err)) throw err;
       return { success: false, output: extractOutput(err), error: formatErrorWithHint(toErrorMessage(err)) };
     }
@@ -176,7 +181,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
 
   return {
     async implement(opts: ImplementerOptions): Promise<ImplementerResult> {
-      const prompt = buildPrompt(opts);
+      const prompt = opts.continuationPrompt ?? buildPrompt(opts);
       return runPipeline(opts, prompt);
     },
 

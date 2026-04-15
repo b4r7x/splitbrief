@@ -20,7 +20,7 @@ export function createCliImplementer(config: CliImplementerConfig): Implementer 
     extractsCode: false,
 
     async invoke(opts: InvokeOpts) {
-      const { prompt, projectDir, onOutput } = opts;
+      const { prompt, projectDir, onOutput, signal } = opts;
       const effectiveModel = resolveAutoModel(config.model, toolName);
 
       if (toolName === 'claude-code') {
@@ -32,7 +32,7 @@ export function createCliImplementer(config: CliImplementerConfig): Implementer 
       }
       const args = tool.implementer.buildArgs({ prompt, model: effectiveModel });
 
-      const result: SpawnResult = await spawnWithTimeout({ command: tool.command, args, cwd: projectDir, timeout, onProgress: onOutput, notFoundMessage: tool.notFoundMessage });
+      const result: SpawnResult = await spawnWithTimeout({ command: tool.command, args, cwd: projectDir, timeout, onProgress: onOutput, notFoundMessage: tool.notFoundMessage, signal });
 
       assertSpawnSuccess(result, {
         label: `Tool implementer (${toolName})`,

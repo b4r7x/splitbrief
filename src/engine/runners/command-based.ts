@@ -55,6 +55,7 @@ export async function invokeCommandBasedRunner(
   prompt: string,
   projectDir: string,
   onOutput?: (chunk: string) => void,
+  signal?: AbortSignal,
 ): Promise<CommandBasedResult> {
   const rawArgs = opts.args ?? [];
   const format: OutputFormat = opts.outputFormat ?? 'text';
@@ -84,6 +85,7 @@ export async function invokeCommandBasedRunner(
       onProgress: onOutput ?? (() => {}),
       stdinInput: useStdin ? prompt : undefined,
       notFoundMessage,
+      signal,
     });
 
     if (result.timedOut) {
@@ -108,6 +110,7 @@ export async function invokeCommandBasedRunner(
       format,
       notFoundMessage,
       onText: onOutput,
+      signal,
       onStderr: chunk => {
         stderr += chunk;
       },
