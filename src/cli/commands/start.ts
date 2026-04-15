@@ -3,11 +3,12 @@ import { mkdirSync } from 'node:fs';
 import { createElement } from 'react';
 import { App } from '../../app.js';
 import { renderApp } from '../render.js';
-import { addWorkflowOptions, setupWorkflow } from '../workflow.js';
+import { addWorkflowOptions, setupWorkflow, resolveProjectDir } from '../workflow.js';
 import { routerStore } from '../../stores/router.js';
 import { initStores } from '../init-stores.js';
 import { guardNoActiveSession } from './guards.js';
 import { writeActive } from '../../core/sessions/active.js';
+import { maybeMigrate } from './migrate.js';
 import { generateSessionId } from '../../core/sessions/id.js';
 import { sessionDir } from '../../core/paths.js';
 import type { WorkflowOpts } from '../../types.js';
@@ -18,7 +19,10 @@ export function registerStartCommand(program: Command): void {
       .command('start [feature]')
       .description('Full workflow: plan with Claude, implement with local model'),
   ).action(async (feature: string | undefined, opts: WorkflowOpts) => {
-    const { projectDir, useFullscreen, needsSetup } = await setupWorkflow(opts);
+    const projectDir = resolveProjectDir(opts.project);
+    await maybeMigrate(projectDir);
+
+    const { useFullscreen, needsSetup } = await setupWorkflow(opts);
 
     guardNoActiveSession(projectDir);
 

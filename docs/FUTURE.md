@@ -157,3 +157,23 @@ No work yet. Will be a separate design effort when demand appears.
 - `.diptych/active` as a text file vs. a file lock differs in concurrency guarantees across platforms.
 
 Testing + CI on Windows would come first, before any behavioural fixes.
+
+---
+
+## Mid-stream injection UX on Claude Code
+
+**Why we want it.** When the user queues a message and it is injected as a native turn into the live planner session, Claude's response may arrive *while* we are still streaming the prior turn. The TUI needs a clear visual separator to make this readable.
+
+**What it would look like.**
+
+A distinct "user interjected →" marker in the conversation flow, followed by the planner's new response chunk, clearly delineated from the prior partial stream — a hairline divider with a label ("you said:") before the injected message and another ("planner continued:") before the resumed output.
+
+**Why deferred.**
+
+Not yet designed. The interaction semantics are clear (see `docs/WORKFLOW.md` §1.7), but the visual treatment requires iteration with real usage data — the exact timing of Claude's response arrival vs. the TUI render cycle is non-deterministic and backend-dependent.
+
+**Where to start when we do it.**
+
+- Extend the `TuiEvent` union with an `injection_separator` event type.
+- Emit it from the mid-stream dispatch path in `src/engine/orchestrator/index.ts` when a queued message is folded into a live session.
+- Add a renderer in `src/components/event-cards/index.tsx`.

@@ -78,6 +78,21 @@ diptych init        # auto-detects running models
 diptych start "add user authentication with JWT"
 ```
 
+After `diptych init`, diptych creates a `.diptych/` folder in your project:
+
+```
+.diptych/
+├── config.yaml
+├── active              ← current session-id
+└── sessions/
+    └── 2026-04-14-add-user-auth/
+        ├── state.json
+        ├── session.jsonl
+        ├── spec.md
+        ├── plan.md
+        └── tasks.md
+```
+
 Needs **Node.js 22+** and **git** in the project.
 
 If using Ollama, bump the context window — the default 2048 tokens is too small:
@@ -85,6 +100,15 @@ If using Ollama, bump the context window — the default 2048 tokens is too smal
 ```bash
 export DIPTYCH_CONTEXT_LENGTH=32768
 ```
+
+## Interaction during a run
+
+| Action | Key | Effect |
+|--------|-----|--------|
+| Queue a message | Type + Enter | Message delivered at next safe point; current call continues uninterrupted |
+| Abort current turn | Ctrl-C (single press) | Preserves partial work, enters awaiting-continue |
+| Exit workflow | Ctrl-C twice within 2s | Saves state; resume later with `diptych resume` |
+| Continue | Enter (empty) or type + Enter | Exit awaiting-continue; queued messages folded into next call |
 
 ## Commands
 
@@ -95,8 +119,19 @@ export DIPTYCH_CONTEXT_LENGTH=32768
 | `diptych init` | Create config, auto-detect available models |
 | `diptych resume` | Resume an interrupted workflow |
 | `diptych status` | Show current workflow state |
+| `diptych migrate` | Migrate pre-v3 `.diptych/current/` state to new layout |
 
 `--auto` skips approval prompts.
+
+## Slash commands
+
+| Command | What it does |
+|---------|-------------|
+| `/revise-spec [comment]` | Rewind to spec phase with optional comment for planner |
+| `/revise-plan [comment]` | Rewind to plan phase with optional comment for planner |
+| `/redo-task <id>` | Reset a specific task and re-run it |
+| `/queue show` | Show queued messages |
+| `/queue clear` | Clear the message queue |
 
 ## Configuration
 
@@ -124,6 +159,7 @@ workflow:
   commit_per_task: true
   auto_approve_spec: false
   auto_approve_plan: false
+  persist_transcript: true  # Save planner/user messages to session.jsonl for resume context
 ```
 
 `context_length` should match your model's effective window. 25% is reserved for output. Minimum 8192.
@@ -154,6 +190,8 @@ planner:
   args: ["-p", "--output-format", "stream-json"]
   output_format: stream-json  # stream-json | jsonl | text
 ```
+
+Planner backends vary in supported features. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full capability matrix.
 
 ### Implementer providers
 

@@ -23,7 +23,9 @@ vi.mock('../../core/paths.js', () => ({
 vi.mock('../workflow.js', () => ({
   addWorkflowOptions: (cmd: Command) => cmd,
   setupWorkflow: (opts: unknown) => setupWorkflowMock(opts),
+  resolveProjectDir: () => '/cwd',
 }));
+vi.mock('./migrate.js', () => ({ maybeMigrate: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../init-stores.js', () => ({ initStores: (dir: string, opts: unknown) => initStoresMock(dir, opts) }));
 vi.mock('../../app.js', () => ({ App: vi.fn() }));
 vi.mock('../render.js', () => ({ renderApp: (el: unknown, fs: unknown) => renderAppMock(el, fs) }));

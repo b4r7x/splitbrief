@@ -102,7 +102,7 @@ src/
 │   │   └── catalog.ts
 │   ├── state/                # Workflow state machine
 │   │   ├── machine.ts        # Phases + transitions
-│   │   └── persistence.ts    # State persistence to .diptych/state.json
+│   │   └── persistence.ts    # State persistence to .diptych/sessions/<id>/state.json
 │   └── types/                # All shared types (split by domain)
 │       ├── index.ts          # Re-exports all type modules
 │       ├── app.ts            # App-level types
@@ -128,6 +128,7 @@ src/
 ├── cli/                      # CLI-specific logic (non-React)
 │   ├── commands/             # commander subcommand handlers
 │   │   ├── init.ts           # `diptych init`
+│   │   ├── migrate.ts        # `diptych migrate`
 │   │   ├── resume.ts         # `diptych resume`
 │   │   ├── spec.ts           # `diptych spec`
 │   │   ├── start.ts          # `diptych start`
@@ -344,6 +345,7 @@ npm run dev -- spec "feature"    # Spec-only mode (no implementation)
 npm run dev -- init              # Create config (Ink-based picker with model discovery)
 npm run dev -- status            # Show workflow state
 npm run dev -- resume            # Resume interrupted workflow
+npm run dev -- migrate           # Migrate pre-v3 .diptych/current/ state
 npm test                         # Run unit tests (vitest)
 npm run test:watch               # Vitest in watch mode
 npm run test:coverage            # Vitest with v8 coverage
@@ -541,4 +543,4 @@ See `specs/002-cost-optimized-orchestrator/research.md` for all architectural de
 
 ## Active Technologies
 - TypeScript 6.x, ESM only (`"type": "module"`), Node.js 22+ + `zod` 3.x (schema validation), `yaml` (YAML parsing), `vitest` 4.x (testing), `ink` 6.x (TUI / React 19), `commander` (CLI), `@anthropic-ai/claude-agent-sdk` (optional peer dep — isolated in `src/engine/agent-sdk.ts:loadSdk`)
-- `.diptych/config.yml` (user config, YAML, version: 2), `.diptych/current/state.json` (workflow state, display strings only)
+- `.diptych/config.yaml` (user config, YAML, version: 2), `.diptych/sessions/<id>/state.json` (workflow state, display strings only)
