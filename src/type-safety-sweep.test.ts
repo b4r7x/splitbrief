@@ -43,6 +43,7 @@ function walkTestFiles(dir: string, results: string[] = []): string[] {
 const SANCTIONED: readonly string[] = [
   'src/utils/type-guards.ts',
   'src/stores/create-store.ts',
+  'src/stores/use-stores.ts',
   'src/core/types/workflow.ts',
   'src/core/types/schemas/task.ts',
   'src/type-safety-sweep.test.ts',
@@ -150,6 +151,11 @@ const TEST_AS_CAST_ALLOWLIST: readonly Allowance[] = [
   { file: 'src/components/overlays/sessions-picker/sessions-picker.test.tsx', lineSubstring: 'stdout: new PassThrough() as unknown as NodeJS.WriteStream,' },
   { file: 'src/components/overlays/sessions-picker/sessions-picker.test.tsx', lineSubstring: 'stdin: new PassThrough() as unknown as NodeJS.ReadStream,' },
   { file: 'src/components/overlays/sessions-picker/sessions-picker.test.tsx', lineSubstring: 'stderr: new PassThrough() as unknown as NodeJS.WriteStream,' },
+
+  // use-stores.test.tsx — same Ink test harness pattern; PassThrough cast to NodeJS stream types.
+  { file: 'src/stores/use-stores.test.tsx', lineSubstring: 'stdout: new PassThrough() as unknown as NodeJS.WriteStream,' },
+  { file: 'src/stores/use-stores.test.tsx', lineSubstring: 'stdin: new PassThrough() as unknown as NodeJS.ReadStream,' },
+  { file: 'src/stores/use-stores.test.tsx', lineSubstring: 'stderr: new PassThrough() as unknown as NodeJS.WriteStream,' },
 
   // access.test.ts — discriminated union inspection via Record for fields not
   // statically exposed on the common type.

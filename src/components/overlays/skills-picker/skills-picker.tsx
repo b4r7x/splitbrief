@@ -6,6 +6,7 @@ import { getResponsivePanelWidth, terminalSizeStore } from '../../../stores/term
 import { CURSOR, NO_CURSOR, filterByFields } from '../../pickers/picker-utils.js';
 import { skillsStore } from '../../../stores/skills.js';
 import { overlayStore } from '../../../stores/overlay.js';
+import { useStores } from '../../../stores/use-stores.js';
 import { truncate } from '../../../utils/format.js';
 import { FilterableList } from '../../pickers/filterable-list.js';
 
@@ -36,9 +37,10 @@ function SkillRow({ skill, isCursor, isChecked, nameColWidth, descMaxWidth, them
 
 export function SkillsPicker() {
   const t = useTheme();
-  const { cols, isSmall } = terminalSizeStore.use(s => s);
-  const skills = skillsStore.use(s => s.available);
-  const initial = skillsStore.use(s => s.selected);
+  const [{ cols, isSmall }, { available: skills, selected: initial }] = useStores(
+    terminalSizeStore,
+    skillsStore,
+  );
   const [checked, setChecked] = useState<Set<string>>(new Set(initial));
   const [navigating, setNavigating] = useState(false);
 

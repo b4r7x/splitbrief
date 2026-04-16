@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react';
 type Listener = () => void;
 type Updater<T> = T | ((prev: T) => T);
 
-interface Store<T> {
+export interface Store<T> {
   get: () => T;
   set: (updater: Updater<T>) => void;
   subscribe: (listener: Listener) => () => void;
@@ -62,4 +62,4 @@ export function createStore<T>(initialOrFactory: T | (() => T)): Store<T> {
   return { get, set, subscribe, use, reset };
 }
 
-export const storeBase = <T>(s: Store<T>) => ({ use: s.use, get: s.get, reset: s.reset });
+export const storeBase = <T>(s: Store<T>) => ({ use: s.use, get: s.get, subscribe: s.subscribe, reset: s.reset });

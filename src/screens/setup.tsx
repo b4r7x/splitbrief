@@ -6,6 +6,7 @@ import { ToolModelPicker } from '../components/overlays/tool-model-picker/picker
 import { routerStore } from '../stores/router.js';
 import { configStore } from '../stores/config.js';
 import { detectionStore } from '../stores/detection.js';
+import { useStores } from '../stores/use-stores.js';
 import type { Config } from '../types.js';
 
 type Step = 'no-planners' | 'planner' | 'implementer';
@@ -13,8 +14,7 @@ type Step = 'no-planners' | 'planner' | 'implementer';
 export function SetupScreen() {
   const t = useTheme();
   const { exit } = useApp();
-  const planners = detectionStore.use(s => s.planners);
-  const projectDir = configStore.use(s => s.projectDir);
+  const [{ planners }, { projectDir }] = useStores(detectionStore, configStore);
   const onComplete = routerStore.use(s => s.screen === 'setup' ? s.onComplete : undefined);
   const pendingFeature = routerStore.use(s => s.screen === 'setup' ? s.feature : undefined);
 

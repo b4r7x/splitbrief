@@ -9,6 +9,7 @@ import { configStore } from '../../../stores/config.js';
 import { overlayStore } from '../../../stores/overlay.js';
 import { routerStore } from '../../../stores/router.js';
 import { feedbackStore } from '../../../stores/feedback.js';
+import { useStores } from '../../../stores/use-stores.js';
 import { getSessionStatusDisplay } from '../../../core/sessions/status.js';
 import { formatRelativeTime, truncate } from '../../../utils/format.js';
 import { FilterableList } from '../../pickers/filterable-list.js';
@@ -55,10 +56,11 @@ export { handleSelect as handleSelectForTest };
 
 export function SessionsPicker() {
   const t = useTheme();
-  const cols = terminalSizeStore.use(s => s.cols);
-  const isSmall = terminalSizeStore.use(s => s.isSmall);
-  const projectDir = configStore.use(s => s.projectDir);
-  const sessions = sessionsStore.use(s => s.allSessions);
+  const [{ cols, isSmall }, { projectDir }, { allSessions: sessions }] = useStores(
+    terminalSizeStore,
+    configStore,
+    sessionsStore,
+  );
 
   useEffect(() => {
     sessionsStore.loadAll(projectDir);

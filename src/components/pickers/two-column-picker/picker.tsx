@@ -2,6 +2,7 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../../ui/theme.js';
 import { type FilterableItem } from '../picker-utils.js';
 import { getResponsivePanelWidth, terminalSizeStore } from '../../../stores/terminal-size.js';
+import { useStores } from '../../../stores/use-stores.js';
 import { SingleColumnPicker } from '../single-column-picker.js';
 import {
   useTwoColumnState,
@@ -52,7 +53,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
   onRefresh,
 }: TwoColumnPickerProps<L, R>) {
   const t = useTheme();
-  const { cols, rows, isSmall } = terminalSizeStore.use(s => s);
+  const [{ cols, rows, isSmall }] = useStores(terminalSizeStore);
 
   const contentMaxWidth = isSmall ? 76 : 110;
   const outerChrome = 6; // title(1) + marginBottom(2) + hint(1) + marginTop(2)

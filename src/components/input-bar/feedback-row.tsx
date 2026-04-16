@@ -2,11 +2,10 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../ui/theme.js';
 import { feedbackStore } from '../../stores/feedback.js';
 import { abortStore } from '../../stores/abort.js';
+import { useStores } from '../../stores/use-stores.js';
 
 export function FeedbackRow() {
-  const message = feedbackStore.use(s => s.message);
-  const isError = feedbackStore.use(s => s.isError);
-  const abortPending = abortStore.use(s => s.pending);
+  const [{ message, isError }, { pending: abortPending }] = useStores(feedbackStore, abortStore);
   const t = useTheme();
 
   const displayMessage = abortPending ? 'Ctrl+C again within 2s to exit' : message;

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import { terminalSizeStore } from '../stores/terminal-size.js';
+import { useStores } from '../stores/use-stores.js';
 
 interface ScreenShellProps {
   header?: ReactNode;
@@ -19,8 +20,7 @@ export function ScreenShell({
   alignItems,
   padding,
 }: ScreenShellProps) {
-  const cols = terminalSizeStore.use(s => s.cols);
-  const rows = terminalSizeStore.use(s => s.rows);
+  const [{ cols, rows }] = useStores(terminalSizeStore);
   return (
     <Box
       flexDirection="column"

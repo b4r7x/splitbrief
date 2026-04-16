@@ -4,14 +4,17 @@ import { useTheme } from '../../ui/theme.js';
 import { terminalSizeStore } from '../../stores/terminal-size.js';
 import { sessionsStore } from '../../stores/sessions.js';
 import { configStore } from '../../stores/config.js';
+import { useStores } from '../../stores/use-stores.js';
 import { formatRelativeTime } from '../../utils/format.js';
 import { getSessionStatusDisplay } from '../../core/sessions/status.js';
 
 export function RecentSessions() {
-  const sessions = sessionsStore.use(s => s.sessions);
+  const [{ sessions }, { isSmall }, { projectDir }] = useStores(
+    sessionsStore,
+    terminalSizeStore,
+    configStore,
+  );
   const theme = useTheme();
-  const isSmall = terminalSizeStore.use(s => s.isSmall);
-  const projectDir = configStore.use(s => s.projectDir);
 
   useEffect(() => {
     sessionsStore.load(projectDir);

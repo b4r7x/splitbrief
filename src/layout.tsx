@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import { terminalSizeStore } from './stores/terminal-size.js';
+import { useStores } from './stores/use-stores.js';
 
 interface LayoutProps {
   screen: ReactNode;
@@ -8,7 +9,7 @@ interface LayoutProps {
 }
 
 export function Layout({ screen, overlay }: LayoutProps) {
-  const { cols, rows } = terminalSizeStore.use(s => s);
+  const [{ cols, rows }] = useStores(terminalSizeStore);
   const hasOverlay = overlay !== null;
 
   return (

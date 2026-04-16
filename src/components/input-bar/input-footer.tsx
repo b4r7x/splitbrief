@@ -5,12 +5,12 @@ import { conversationScrollStore } from '../../stores/conversation-scroll.js';
 import { CostDisplay } from '../workflow/cost-display.js';
 import { computeEta } from '../workflow/cost-footer.js';
 import { workflowStore } from '../../stores/workflow.js';
+import { useStores } from '../../stores/use-stores.js';
 
 export function InputFooter() {
   const t = useTheme();
-  const scrollOffset = conversationScrollStore.use(s => s.scrollOffset);
+  const [{ scrollOffset }, { queueDepth }] = useStores(conversationScrollStore, workflowStore);
   const { currentTask, totalTasks, taskCompletionTimes } = useCostStats();
-  const queueDepth = workflowStore.use(s => s.queueDepth);
   const etaText = computeEta(taskCompletionTimes, currentTask, totalTasks);
 
   return (

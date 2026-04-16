@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../ui/theme.js';
 import { getClampedTerminalWidth, getResponsivePanelWidth, terminalSizeStore } from '../../stores/terminal-size.js';
+import { useStores } from '../../stores/use-stores.js';
 
 interface OverlayPanelProps {
   title?: string | undefined;
@@ -25,9 +26,7 @@ export function OverlayPanel({
   paddingY = 1,
 }: OverlayPanelProps) {
   const t = useTheme();
-  const cols = terminalSizeStore.use(s => s.cols);
-  const rows = terminalSizeStore.use(s => s.rows);
-  const isSmall = terminalSizeStore.use(s => s.isSmall);
+  const [{ cols, rows, isSmall }] = useStores(terminalSizeStore);
 
   const resolvedMaxWidth = maxWidth ?? getResponsivePanelWidth(cols, isSmall);
   const resolvedWidth = widthProp === 'auto'
