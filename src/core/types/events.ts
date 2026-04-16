@@ -182,6 +182,11 @@ export type TuiEvent =
       type: 'queue-cleared';
       ts: number;
       count: number;
+    }
+  | {
+      type: 'user-message';
+      ts: number;
+      text: string;
     };
 
 export type OrchestratorEventPayloadMap = {

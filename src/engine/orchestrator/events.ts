@@ -138,6 +138,10 @@ export function emitBudgetExceeded(callbacks: OrchestratorCallbacks, currentCost
   callbacks.onEvent({ type: 'budget-exceeded', ts: Date.now(), currentCost, maxBudget });
 }
 
+export function emitUserMessage(callbacks: OrchestratorCallbacks, text: string): void {
+  callbacks.onEvent({ type: 'user-message', ts: Date.now(), text });
+}
+
 export function emitWorkflowConfig(callbacks: OrchestratorCallbacks, opts: {
   mode: WorkflowMode;
   plannerTool: string;

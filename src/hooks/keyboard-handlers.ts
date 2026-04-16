@@ -11,8 +11,8 @@ export type KeyAction =
   | { type: 'toggle-sidebar' }
   | { type: 'toggle-diff'; index: number }
   | { type: 'review-scroll'; offset: number }
-  | { type: 'conversation-scroll-up'; maxOffset: number; eventCount: number }
-  | { type: 'conversation-scroll-down' }
+  | { type: 'conversation-scroll-up'; maxOffset: number; eventCount: number; step: number; totalHeight: number }
+  | { type: 'conversation-scroll-down'; step: number }
   | { type: 'conversation-scroll-bottom'; eventCount: number };
 
 const NONE: KeyAction = { type: 'none' };
@@ -78,12 +78,35 @@ export function handleConversationScroll(
   input: string,
   key: Key,
   eventCount: number,
+  maxOffset: number,
+  viewportHeight: number,
+  totalHeight: number,
 ): KeyAction {
-  if (key.upArrow) {
-    const maxOffset = Math.max(0, eventCount - 1);
-    return { type: 'conversation-scroll-up', maxOffset, eventCount };
+  const pageStep = Math.max(1, viewportHeight - 2);
+
+  // Shift+Up/Down: scroll 1 line
+  if (key.shift && key.upArrow) {
+    return { type: 'conversation-scroll-up', maxOffset, eventCount, step: 1, totalHeight };
   }
-  if (key.downArrow) return { type: 'conversation-scroll-down' };
-  if (input === 'G') return { type: 'conversation-scroll-bottom', eventCount };
+  if (key.shift && key.downArrow) {
+    return { type: 'conversation-scroll-down', step: 1 };
+  }
+
+  // PageUp/PageDown: scroll by page
+  if (key.pageUp) {
+    return { type: 'conversation-scroll-up', maxOffset, eventCount, step: pageStep, totalHeight };
+  }
+  if (key.pageDown) {
+    return { type: 'conversation-scroll-down', step: pageStep };
+  }
+
+  // g = top, G = bottom
+  if (input === 'g') {
+    return { type: 'conversation-scroll-up', maxOffset, eventCount, step: maxOffset, totalHeight };
+  }
+  if (input === 'G') {
+    return { type: 'conversation-scroll-bottom', eventCount };
+  }
+
   return NONE;
 }

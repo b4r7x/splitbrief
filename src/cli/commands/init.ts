@@ -26,6 +26,6 @@ export function registerInitCommand(program: Command): void {
       initConfig(projectDir, { force: opts.reconfigure });
       await initStores(projectDir);
       routerStore.init({ screen: 'setup', onComplete: 'home' });
-      await renderApp(createElement(App), true);
+      await renderApp(createElement(App), { fullscreen: true });
     });
 }

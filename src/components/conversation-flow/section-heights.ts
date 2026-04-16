@@ -2,12 +2,26 @@ import type { TuiEvent } from '../../types.js';
 import type { Section } from '../../core/event-sections.js';
 import { assertNever } from '../../utils/type-guards.js';
 
-function estimateEventHeight(event: TuiEvent, diffExpanded?: boolean): number {
+const GUTTER_PADDING = 14;
+
+export function visualLineCount(text: string, width: number): number {
+  const effective = Math.max(20, width - GUTTER_PADDING);
+  let lines = 0;
+  const rawLines = text.split('\n');
+  for (const raw of rawLines) {
+    const len = raw.length;
+    lines += len === 0 ? 1 : Math.ceil(len / effective);
+  }
+  return lines;
+}
+
+function estimateEventHeight(event: TuiEvent, diffExpanded?: boolean, cols?: number): number {
+  const w = cols ?? 80;
   switch (event.type) {
     case 'planner-status':
-      return 3;
+      return 0; // rendered in L1 chrome, not scroll region
     case 'planner-text':
-      return Math.max(3, event.text.split('\n').length + 2);
+      return Math.max(1, visualLineCount(event.text, w));
     case 'task-start':
       return 4;
     case 'task-complete':
@@ -42,7 +56,7 @@ function estimateEventHeight(event: TuiEvent, diffExpanded?: boolean): number {
     case 'workflow-cancelled':
       return 3;
     case 'workflow-config':
-      return 3;
+      return 0; // rendered in L2 chrome, not scroll region
     case 'rewind':
     case 'task-reset':
     case 'message-queued':
@@ -50,17 +64,28 @@ function estimateEventHeight(event: TuiEvent, diffExpanded?: boolean): number {
     case 'queue-drained':
     case 'queue-cleared':
       return 3;
+    case 'user-message':
+      return Math.max(1, visualLineCount(event.text, w));
     default:
       return assertNever(event);
   }
 }
 
-export function estimateSectionHeight(section: Section, expandedDiffs: Set<number>): number {
+/** Events rendered in chrome (L1/L2), not in the scroll region — no spacer Box */
+const SPACER_EXCLUDED = new Set<TuiEvent['type']>(['planner-status', 'workflow-config']);
+
+export function estimateSectionHeight(section: Section, expandedDiffs: Set<number>, cols?: number): number {
   if (section.type === 'completed-task') return 1;
-  return section.items.reduce(
-    (sum, ev, i) => sum + estimateEventHeight(ev, expandedDiffs.has(section.startIndex + i)),
-    0,
-  );
+  let total = 0;
+  let spacerCount = 0;
+  for (const [i, ev] of section.items.entries()) {
+    const h = estimateEventHeight(ev, expandedDiffs.has(section.startIndex + i), cols);
+    const spacer = SPACER_EXCLUDED.has(ev.type) ? 0 : 1;
+    total += h + spacer;
+    if (spacer) spacerCount++;
+  }
+  // Convert from N trailers to N-1 separators (no spacer after last event)
+  return total - (spacerCount > 0 ? 1 : 0);
 }
 
 export function findLatestDiffEventIndex(events: TuiEvent[]): number | null {

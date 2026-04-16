@@ -1,6 +1,7 @@
 import { createStore, storeBase } from './create-store.js';
 import { mergeEvent, updateCounts, updateTaskMap } from './workflow-reducers.js';
 import { groupEventsIntoSections } from '../core/event-sections.js';
+import { abortStore } from './abort.js';
 import type { Section } from '../core/event-sections.js';
 import type { Phase, SidebarTask, TuiEvent, TokenUsage } from '../types.js';
 
@@ -149,6 +150,7 @@ export const workflowStore = {
     rewindHandler = null;
     queueHandler = null;
     clearQueueHandler = null;
+    abortStore.clear();
     store.reset(init ? { ...initial, ...init } : undefined);
   },
   addEvent,

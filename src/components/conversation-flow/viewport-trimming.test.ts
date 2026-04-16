@@ -50,9 +50,9 @@ describe('trimSectionsToViewport', () => {
       makeEventsSection(3, 3),
       makeEventsSection(3, 6),
     ];
-    // Each section is ~9 lines (3 events × 3 lines each).
-    // scrollOffset of 9 should skip the last section entirely.
-    const result = trimSectionsToViewport(sections, 9, 20, new Set());
+    // Each section is ~12 lines (3 events × (3 + 1 spacer) lines each).
+    // scrollOffset of 12 should skip the last section entirely.
+    const result = trimSectionsToViewport(sections, 12, 20, new Set());
     expect(result.visibleSections.length).toBeLessThanOrEqual(2);
     // The last section should be skipped
     const lastOriginal = sections[2];

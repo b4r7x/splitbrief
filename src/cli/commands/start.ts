@@ -22,7 +22,7 @@ export function registerStartCommand(program: Command): void {
     const projectDir = resolveProjectDir(opts.project);
     await maybeMigrate(projectDir);
 
-    const { useFullscreen, needsSetup } = await setupWorkflow(opts);
+    const { useFullscreen, useMouse, needsSetup } = await setupWorkflow(opts);
 
     guardNoActiveSession(projectDir);
 
@@ -40,6 +40,6 @@ export function registerStartCommand(program: Command): void {
       routerStore.init({ screen: 'workflow', feature, sessionId });
     }
 
-    await renderApp(createElement(App), useFullscreen);
+    await renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useMouse });
   });
 }

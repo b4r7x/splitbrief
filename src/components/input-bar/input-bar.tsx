@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { MultilineInput } from '../../ui/input/multiline-input.js';
 import { SlashSuggestions } from './slash-suggestions.js';
 import { useSlashAutocomplete } from './use-slash-autocomplete.js';
 import { useTheme } from '../../ui/theme.js';
 import { terminalSizeStore } from '../../stores/terminal-size.js';
-import { feedbackStore } from '../../stores/feedback.js';
 import { inputHistoryStore } from '../../stores/input-history.js';
+import { inputHeightStore } from '../../stores/input-height.js';
 import type { InputMode, Screen, SlashCommandDef } from '../../types.js';
 import {
   INITIAL_INPUT_HISTORY_NAVIGATION_STATE,
@@ -40,8 +40,6 @@ export function InputBar({
   width,
   disabled,
 }: InputBarProps) {
-  const feedbackMessage = feedbackStore.use(s => s.message);
-  const feedbackIsError = feedbackStore.use(s => s.isError);
   const theme = useTheme();
   const cols = terminalSizeStore.use(s => s.cols);
   const inputColumns = (width ?? cols) - 6;
@@ -99,8 +97,15 @@ export function InputBar({
     return true;
   };
 
+  // Publish input height to store for layout calculations
+  const lineCount = value.split('\n').length;
+  const inputBoxHeight = Math.max(1, Math.min(6, lineCount)) + 2; // +2 for border
+  useEffect(() => {
+    inputHeightStore.setRows(inputBoxHeight);
+  }, [inputBoxHeight]);
+
   return (
-    <Box flexDirection="column" width="100%">
+    <Box flexDirection="column" width="100%" flexShrink={0}>
       {!showSuggestions && currentScreen === 'home' && (
         <Box justifyContent="center">
           <Text color={theme.textDim}>/help /config /skills Ctrl+K</Text>
@@ -118,6 +123,7 @@ export function InputBar({
         borderColor={borderColorForMode(mode, theme)}
         paddingX={1}
         width="100%"
+        minHeight={3}
       >
         <Text color={theme.accent}>&gt; </Text>
         <Box flexGrow={1}>
@@ -147,11 +153,6 @@ export function InputBar({
           />
         </Box>
       </Box>
-      {feedbackMessage && (
-        <Box paddingX={2}>
-          <Text color={feedbackIsError ? theme.error : theme.info}>{feedbackMessage}</Text>
-        </Box>
-      )}
     </Box>
   );
 }

@@ -94,7 +94,7 @@ export function MarkdownBlock({ text }: { text: string }) {
   const blocks = parseBlocks(text);
 
   return (
-    <Box marginLeft={2} flexDirection="column">
+    <Box flexDirection="column">
       {blocks.map((block, i) => {
         if (block.type === 'code') {
           return <HighlightedCode key={i} code={block.code} lang={block.lang} theme={t} />;

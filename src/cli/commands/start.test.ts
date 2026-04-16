@@ -9,10 +9,12 @@ const setupWorkflowMock = vi.fn();
 const initStoresMock = vi.fn();
 const renderAppMock = vi.fn();
 
+const clearActiveMock = vi.fn<(dir: string) => void>();
 vi.mock('../../core/sessions/active.js', () => ({
   readActive: (dir: string) => readActiveMock(dir),
   writeActive: (dir: string, id: string) => writeActiveMock(dir, id),
   isSessionLive: (dir: string, id: string) => isSessionLiveMock(dir, id),
+  clearActive: (dir: string) => clearActiveMock(dir),
 }));
 vi.mock('../../core/sessions/id.js', () => ({
   generateSessionId: (dir: string, feature: string) => generateSessionIdMock(dir, feature),
@@ -46,6 +48,7 @@ describe('start command — concurrency lock', () => {
     readActiveMock.mockReset();
     writeActiveMock.mockReset();
     isSessionLiveMock.mockReset();
+    clearActiveMock.mockReset();
     generateSessionIdMock.mockReset();
     setupWorkflowMock.mockReset();
     initStoresMock.mockReset();
@@ -54,23 +57,26 @@ describe('start command — concurrency lock', () => {
     readActiveMock.mockReturnValue(null);
     isSessionLiveMock.mockReturnValue(false);
     generateSessionIdMock.mockReturnValue('2024-01-01-add-auth');
-    setupWorkflowMock.mockResolvedValue({ projectDir: '/cwd', useFullscreen: false, needsSetup: false });
+    setupWorkflowMock.mockResolvedValue({ projectDir: '/cwd', useFullscreen: false, useMouse: false, needsSetup: false });
     initStoresMock.mockResolvedValue(undefined);
     renderAppMock.mockResolvedValue(undefined);
   });
 
-  it('throws when a live session is already active', async () => {
+  it('clears stale active session and proceeds', async () => {
     readActiveMock.mockReturnValue('2024-01-01-add-auth');
     isSessionLiveMock.mockReturnValue(true);
 
-    await expect(runStart(['add auth'])).rejects.toThrow('Workflow already running');
+    await runStart(['add auth']);
+    expect(clearActiveMock).toHaveBeenCalled();
+    expect(renderAppMock).toHaveBeenCalled();
   });
 
-  it('includes the active session id in the error message', async () => {
+  it('clears the correct session id when stale', async () => {
     readActiveMock.mockReturnValue('2024-01-01-my-feature');
     isSessionLiveMock.mockReturnValue(true);
 
-    await expect(runStart(['some feature'])).rejects.toThrow('2024-01-01-my-feature');
+    await runStart(['some feature']);
+    expect(clearActiveMock).toHaveBeenCalledWith('/cwd');
   });
 
   it('proceeds when active file exists but session is not live (crashed / stale)', async () => {

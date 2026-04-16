@@ -23,7 +23,8 @@ describe('estimateSectionHeight', () => {
       startIndex: 0,
     };
     const height = estimateSectionHeight(section, new Set());
-    expect(height).toBe(6);
+    // 2 events × (1 line each) + 1 spacer between = 3 rows
+    expect(height).toBe(3);
   });
 
   it('accounts for diff expanded state', () => {

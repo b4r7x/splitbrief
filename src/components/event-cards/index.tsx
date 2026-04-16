@@ -18,6 +18,7 @@ import { PlannerStatusCard } from "./planner-status-card.js";
 import { CostPredictionCard } from "./cost-prediction-card.js";
 import { WorkflowConfigCard } from "./workflow-config-card.js";
 import { EscalateCard } from "./escalate-card.js";
+import { UserMessageCard } from "./user-message-card.js";
 
 interface EventCardProps {
   event: TuiEvent;
@@ -191,6 +192,7 @@ const RENDERERS: { [K in TuiEvent["type"]]: EventRenderer<K> } = {
       valueColor={t.textDim}
     />
   ),
+  "user-message": (e) => <UserMessageCard event={e} />,
 };
 
 function getGutterRole(event: TuiEvent): "planner" | "implementer" | null {
@@ -205,7 +207,8 @@ function getGutterRole(event: TuiEvent): "planner" | "implementer" | null {
     case "budget-exceeded": case "workflow-cancelled": case "workflow-config":
     case "rewind": case "task-reset":
     case "message-queued": case "message-injected-native":
-    case "queue-drained": case "queue-cleared": return null;
+    case "queue-drained": case "queue-cleared":
+    case "user-message": return null;
     default: return assertNever(event);
   }
 }

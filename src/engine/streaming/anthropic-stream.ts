@@ -22,6 +22,7 @@ interface AnthropicStreamOptions {
   temperature: number;
   onProgress: (text: string) => void;
   maxTokens?: number | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 interface SseEvent {
@@ -86,13 +87,14 @@ function parseSseEvent(rawEvent: string): SseEvent | null {
   return { data: dataLines.join('\n') };
 }
 
-async function* readSseEvents(stream: ReadableStream<Uint8Array>): AsyncGenerator<SseEvent> {
+async function* readSseEvents(stream: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<SseEvent> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
 
   try {
     while (true) {
+      if (signal?.aborted) break;
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
@@ -161,6 +163,7 @@ export async function streamAnthropicCompletion(
         max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
         ...(system && { system }),
       }),
+      signal: opts.signal ?? null,
     });
   } catch (err: unknown) {
     throwMappedError(err, endpoint);
@@ -181,7 +184,7 @@ export async function streamAnthropicCompletion(
 
   try {
     for await (const event of withIdleTimeout(
-      readSseEvents(response.body),
+      readSseEvents(response.body, opts.signal),
       STREAM_TIMEOUT_MS,
       'Model response timed out',
     )) {
@@ -218,6 +221,9 @@ export async function streamAnthropicCompletion(
       }
     }
   } catch (err: unknown) {
+    if (opts.signal?.aborted) {
+      return { text: fullResponse, usage };
+    }
     if (err instanceof IdleTimeoutError) throw err;
     if (err instanceof SyntaxError) {
       throw new Error(formatErrorWithHint(`Invalid Anthropic stream payload: ${err.message}`));

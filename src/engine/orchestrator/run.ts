@@ -16,7 +16,7 @@ import { createPlanner, createImplementer } from '../runners/factory.js';
 
 import type { WorkflowContext, ResumeContextHolder } from './types.js';
 import { buildSummary, type SummaryBase } from './summary.js';
-import { emit, emitError, emitWarning, emitPlannerStatus, emitCostPrediction, emitWorkflowConfig } from './events.js';
+import { emit, emitError, emitWarning, emitPlannerStatus, emitCostPrediction, emitWorkflowConfig, emitUserMessage } from './events.js';
 import { predictCost } from './cost-prediction.js';
 import { transitionAndSave, withSignalHandlers } from './helpers.js';
 import { runPlanningPhase } from './planning.js';
@@ -99,6 +99,7 @@ async function initializeWorkflow(
     emitPlannerStatus(callbacks, state, 'running');
     emit(projectDir, sessionId, state, 'workflow_started', undefined, {});
     appendMessage(projectDir, sessionId, { role: 'user', text: feature }, config.workflow.persistTranscript);
+    emitUserMessage(callbacks, feature);
   }
 
   emitWorkflowConfig(callbacks, {

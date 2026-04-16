@@ -4,6 +4,7 @@ import { overlayStore } from '../stores/overlay.js';
 import { routerStore } from '../stores/router.js';
 import { feedbackStore } from '../stores/feedback.js';
 import { workflowStore } from '../stores/workflow.js';
+import { abortStore } from '../stores/abort.js';
 import { reviewStore } from '../stores/review.js';
 import { conversationScrollStore } from '../stores/conversation-scroll.js';
 import { inputModeStore } from '../stores/input-mode.js';
@@ -11,6 +12,9 @@ import { killAllProcesses } from '../utils/process-lifecycle.js';
 import { isLivePhase } from '../core/phases.js';
 import { findLatestDiffEventIndex } from '../components/conversation-flow/section-heights.js';
 import { terminalSizeStore } from '../stores/terminal-size.js';
+import { getChromeHeight } from '../core/layout-constants.js';
+import { estimateSectionHeight } from '../components/conversation-flow/section-heights.js';
+import type { DynamicSection } from '../components/conversation-flow/viewport-trimming.js';
 import type { KeyAction } from './keyboard-handlers.js';
 import {
   handleShortcutKeys,
@@ -21,7 +25,6 @@ import {
 } from './keyboard-handlers.js';
 
 const DOUBLE_PRESS_WINDOW_MS = 2000;
-const CHROME_HEIGHT = 10;
 
 function applyAction(action: KeyAction, exit: () => void) {
   switch (action.type) {
@@ -33,10 +36,23 @@ function applyAction(action: KeyAction, exit: () => void) {
     case 'toggle-sidebar': workflowStore.toggleSidebar(); return;
     case 'toggle-diff': conversationScrollStore.toggleDiff(action.index); return;
     case 'review-scroll': reviewStore.setScrollOffset(action.offset); return;
-    case 'conversation-scroll-up': conversationScrollStore.scrollUp(action.maxOffset, action.eventCount); return;
-    case 'conversation-scroll-down': conversationScrollStore.scrollDown(); return;
+    case 'conversation-scroll-up': conversationScrollStore.scrollUp(action.maxOffset, action.eventCount, action.step, action.totalHeight); return;
+    case 'conversation-scroll-down': conversationScrollStore.scrollDown(action.step); return;
     case 'conversation-scroll-bottom': conversationScrollStore.scrollToBottom(action.eventCount); return;
   }
+}
+
+function computeScrollDimensions(): { maxOffset: number; viewportHeight: number; totalHeight: number } {
+  const { rows, cols } = terminalSizeStore.get();
+  const viewportHeight = Math.max(0, rows - getChromeHeight());
+  const sections = workflowStore.get().sections;
+  const expandedDiffs = conversationScrollStore.get().expandedDiffs;
+  const dynamicSections = sections.filter((s): s is DynamicSection => s.type !== 'completed-task');
+  const totalHeight = dynamicSections.reduce(
+    (sum, s) => sum + estimateSectionHeight(s, expandedDiffs, cols), 0,
+  );
+  const maxOffset = Math.max(0, totalHeight - viewportHeight);
+  return { maxOffset, viewportHeight, totalHeight };
 }
 
 export function useGlobalKeys({ exit }: { exit: () => void }) {
@@ -57,16 +73,15 @@ export function useGlobalKeys({ exit }: { exit: () => void }) {
     if (screen === 'workflow') {
       const { phase, cancelled } = workflowStore.get();
       if (!cancelled && isLivePhase(phase)) {
-        // First Ctrl-C during live phase: abort current turn, record for double-press
         lastCtrlCRef.current = Date.now();
+        abortStore.markPending();
         workflowStore.abortTurn();
-        feedbackStore.setError('Aborting current step… Ctrl+C again to exit');
+        try { killAllProcesses(); } catch { /* best-effort */ }
+        feedbackStore.setError('Aborting… Ctrl+C again to exit');
       } else {
-        // Not in a live phase (approval gate, cancelled, etc.): exit immediately on first press
         exit();
       }
     } else {
-      // Outside workflow screens: exit immediately on first press
       exit();
     }
   });
@@ -99,12 +114,13 @@ export function useGlobalKeys({ exit }: { exit: () => void }) {
 
         const review = reviewStore.get();
         if (review.filePath) {
-          const visibleHeight = terminalSizeStore.get().rows - CHROME_HEIGHT;
+          const visibleHeight = terminalSizeStore.get().rows - getChromeHeight();
           const reviewAction = handleReviewScroll(input, key, review.scrollOffset, review.lineCount, visibleHeight);
           if (reviewAction.type !== 'none') { applyAction(reviewAction, exit); return; }
         }
 
-        const scroll = handleConversationScroll(input, key, events.length);
+        const { maxOffset, viewportHeight, totalHeight } = computeScrollDimensions();
+        const scroll = handleConversationScroll(input, key, events.length, maxOffset, viewportHeight, totalHeight);
         if (scroll.type !== 'none') { applyAction(scroll, exit); return; }
       }
     },

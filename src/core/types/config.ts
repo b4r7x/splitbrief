@@ -50,6 +50,7 @@ export interface WorkflowOpts {
   implementerCommand?: string | undefined;
   project?: string | undefined;
   fullscreen?: boolean | undefined;
+  mouse?: boolean | undefined;
   mode?: string | undefined;
   budget?: number | undefined;
 }

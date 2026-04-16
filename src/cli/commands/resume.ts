@@ -43,11 +43,11 @@ export function registerResumeCommand(program: Command): void {
 
     console.log(`Resuming: ${state.feature} (phase: ${state.phase}, task ${state.currentTaskIndex + 1}/${state.tasks.length})`);
 
-    const { useFullscreen } = await setupWorkflow(opts);
+    const { useFullscreen, useMouse } = await setupWorkflow(opts);
 
     await initStores(projectDir, opts);
     routerStore.init({ screen: 'workflow', feature: state.feature, resumeState: state, sessionId });
 
-    await renderApp(createElement(App), useFullscreen);
+    await renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useMouse });
   });
 }
