@@ -1,9 +1,13 @@
 import { Box } from 'ink';
+import { appendFileSync } from 'fs';
 import type { InputMode, SlashCommandDef, Summary } from '../types.js';
 import { Header } from '../components/workflow/header.js';
+import { AgentStatusRow } from '../components/workflow/agent-status-row.js';
+import { ConfigLine } from '../components/workflow/config-line.js';
 import { ConversationFlow } from '../components/conversation-flow/index.js';
-import { CostFooter } from '../components/workflow/cost-footer.js';
+import { FeedbackRow } from '../components/input-bar/feedback-row.js';
 import { InputBar } from '../components/input-bar/index.js';
+import { InputFooter } from '../components/input-bar/input-footer.js';
 import { ScreenShell } from '../components/screen-shell.js';
 import { ReviewView } from '../components/workflow/review-view.js';
 import { Sidebar } from '../components/workflow/sidebar.js';
@@ -16,6 +20,7 @@ import { overlayStore } from '../stores/overlay.js';
 import { routerStore } from '../stores/router.js';
 import { workflowStore } from '../stores/workflow.js';
 import { reviewStore } from '../stores/review.js';
+import { inputHeightStore } from '../stores/input-height.js';
 
 interface WorkflowScreenProps {
   commands: SlashCommandDef[];
@@ -40,6 +45,7 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
   const resumeState = routerStore.use(s => s.screen === 'workflow' ? s.resumeState : undefined);
   const sessionId = routerStore.use(s => s.screen === 'workflow' ? s.sessionId : undefined);
   const { cols, rows, isSmall } = terminalSizeStore.use(s => s);
+  const inputRows = inputHeightStore.use(s => s.rows);
 
   const onComplete = (summary: Summary) =>
     routerStore.navigate('summary', { summary });
@@ -60,16 +66,34 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
   const sidebarVisible = workflowStore.use(s => s.sidebarVisible);
   const showSidebar = sidebarVisible && !isSmall;
 
+  const hasWorkflowConfig = workflowStore.use(s =>
+    s.events.some(ev => ev.type === 'workflow-config'),
+  );
+
   const sidebarWidth = Math.floor(cols * 0.25);
-  const contentHeight = Math.max(0, rows - 4);
+  // L1=3 (header+agent-status+spacer), L2=0|2 (config-line, dynamic), feedback=1, input=dynamic, footer=1
+  const l2 = hasWorkflowConfig ? 2 : 0;
+  const contentHeight = Math.max(0, rows - 3 - l2 - 1 - inputRows - 1);
   const contentWidth = showSidebar ? cols - sidebarWidth : cols;
+
+  // DEBUG
+  const stdoutRows = process.stdout.rows;
+  const stdoutCols = process.stdout.columns;
+  appendFileSync('/tmp/scroll-debug.log', `WORKFLOW: storeRows=${rows} stdoutRows=${stdoutRows} cols=${cols} l2=${l2} inputRows=${inputRows} contentHeight=${contentHeight}\n`);
 
   return (
     <ScreenShell
-      header={<Header startedAt={workflow.startedAt} />}
+      header={
+        <>
+          <Header startedAt={workflow.startedAt} />
+          <ConfigLine />
+          <AgentStatusRow />
+          <Box height={1} flexShrink={0} />
+        </>
+      }
       footer={
         <>
-          <CostFooter />
+          <FeedbackRow />
           <InputBar
             onSubmit={cancelled ? workflow.handleResume : workflow.handleInput}
             onSlashCommand={onSlashCommand}
@@ -79,6 +103,7 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
             currentScreen="workflow"
             disabled={hasOverlay}
           />
+          <InputFooter />
         </>
       }
     >

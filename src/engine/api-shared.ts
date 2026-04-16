@@ -32,6 +32,7 @@ export async function streamApiCompletion(opts: ApiStreamOptions): Promise<Invok
       temperature,
       onProgress,
       maxTokens,
+      signal,
     });
   }
 

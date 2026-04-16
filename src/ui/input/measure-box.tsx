@@ -13,5 +13,5 @@ export function MeasureBox({ children, onHeightChange }: { children: ReactNode; 
       }
     }
   });
-  return <Box ref={ref} flexShrink={0} flexGrow={0} width="100%">{children}</Box>;
+  return <Box ref={ref} flexDirection="column" flexShrink={0} flexGrow={0} width="100%">{children}</Box>;
 }

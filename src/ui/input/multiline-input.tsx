@@ -170,6 +170,10 @@ export function MultilineInput({
   useInput((input, key) => {
     if (Date.now() < suppressUntilRef.current) return;
 
+    // Let scroll keys pass through to global handler
+    if (key.shift && (key.upArrow || key.downArrow)) return;
+    if (key.pageUp || key.pageDown) return;
+
     const submitKey = keyBindings?.submit ?? ((k: Key) => k.return && k.ctrl);
     const newlineKey = keyBindings?.newline ?? ((k: Key) => k.return);
 

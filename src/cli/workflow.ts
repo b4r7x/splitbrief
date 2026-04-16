@@ -23,6 +23,7 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--implementer-command <cmd>', 'Custom implementer command (when --implementer=shell)')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--no-fullscreen', 'Disable fullscreen alternate screen buffer')
+    .option('--no-mouse', 'Disable mouse tracking')
     .option('--mode <mode>', 'Workflow mode: quick, standard, or full')
     .option('--budget <amount>', 'Maximum budget in dollars (e.g., 2.00)', parseFloat);
 }
@@ -57,6 +58,7 @@ export async function ensureGitAndConfig(projectDir: string): Promise<void> {
 export interface SetupResult {
   projectDir: string;
   useFullscreen: boolean;
+  useMouse: boolean;
   needsSetup?: boolean | undefined;
 }
 
@@ -78,6 +80,7 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
 
   const isInteractive = process.stdout.isTTY && !process.env['CI'];
   const useFullscreen = opts.fullscreen !== false && isInteractive;
+  const useMouse = opts.mouse !== false && useFullscreen;
 
   const hasOverrides = hasRunnerOverrides(opts);
   if (!existsSync(configPath(projectDir))) {
@@ -86,9 +89,9 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
       initConfig(projectDir);
     } else {
       initConfig(projectDir);
-      return { projectDir, useFullscreen, needsSetup: true };
+      return { projectDir, useFullscreen, useMouse, needsSetup: true };
     }
   }
 
-  return { projectDir, useFullscreen };
+  return { projectDir, useFullscreen, useMouse };
 }
