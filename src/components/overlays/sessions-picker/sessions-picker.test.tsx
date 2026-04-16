@@ -9,20 +9,25 @@ const overlayClose = vi.fn();
 const routerNavigate = vi.fn();
 const feedbackSetMessage = vi.fn();
 
+const sessionsState = { allSessions: [] as unknown[] };
 vi.mock('../../../stores/sessions.js', () => ({
   sessionsStore: {
     loadAll,
-    use: <T,>(selector: (state: { allSessions: [] }) => T) => selector({ allSessions: [] }),
+    use: <T,>(selector: (state: typeof sessionsState) => T) => selector(sessionsState),
+    get: () => sessionsState,
+    subscribe: () => () => {},
   },
 }));
 
+const configState = {
+  projectDir: '/tmp/project',
+  config: { sessions: { scope: 'global' } },
+};
 vi.mock('../../../stores/config.js', () => ({
   configStore: {
-    use: <T,>(selector: (state: { projectDir: string; config: { sessions: { scope: 'global' } } }) => T) =>
-      selector({
-        projectDir: '/tmp/project',
-        config: { sessions: { scope: 'global' } },
-      }),
+    use: <T,>(selector: (state: typeof configState) => T) => selector(configState),
+    get: () => configState,
+    subscribe: () => () => {},
   },
 }));
 
@@ -52,8 +57,13 @@ vi.mock('../../../ui/theme.js', () => ({
   }),
 }));
 
+const terminalState = { cols: 120, rows: 40, isSmall: false };
 vi.mock('../../../stores/terminal-size.js', () => ({
-  terminalSizeStore: { use: <T,>(selector: (state: { cols: number; rows: number; isSmall: boolean }) => T) => selector({ cols: 120, rows: 40, isSmall: false }) },
+  terminalSizeStore: {
+    use: <T,>(selector: (state: typeof terminalState) => T) => selector(terminalState),
+    get: () => terminalState,
+    subscribe: () => () => {},
+  },
   getResponsivePanelWidth: () => 110,
 }));
 

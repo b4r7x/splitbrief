@@ -7,6 +7,7 @@ import { useTheme } from '../../ui/theme.js';
 import { terminalSizeStore } from '../../stores/terminal-size.js';
 import { inputHistoryStore } from '../../stores/input-history.js';
 import { inputHeightStore } from '../../stores/input-height.js';
+import { useStores } from '../../stores/use-stores.js';
 import type { InputMode, Screen, SlashCommandDef } from '../../types.js';
 import {
   INITIAL_INPUT_HISTORY_NAVIGATION_STATE,
@@ -48,9 +49,9 @@ export function InputBar({
   disabled,
 }: InputBarProps) {
   const theme = useTheme();
-  const cols = terminalSizeStore.use(s => s.cols);
+  const [{ cols }, { entriesByScope }] = useStores(terminalSizeStore, inputHistoryStore);
   const inputColumns = Math.max(1, (width ?? cols) - 6);
-  const homeHistory = inputHistoryStore.use(s => s.entriesByScope.home);
+  const homeHistory = entriesByScope.home;
   const [value, setValue] = useState('');
   const [historyState, setHistoryState] = useState(INITIAL_INPUT_HISTORY_NAVIGATION_STATE);
   const [inputEpoch, setInputEpoch] = useState(0);

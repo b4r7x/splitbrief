@@ -99,6 +99,27 @@ const config = configStore.useConfig(); // typed non-null Config
 
 Selectors should return primitives or stable references. Avoid selectors that create new objects/arrays on every call (e.g., `.filter()`) unless the data changes infrequently.
 
+### Multi-store flat reads: `useStores(...stores)`
+
+When a component reads several fields from one or more stores, `useStores` (`src/stores/use-stores.ts`) collapses the boilerplate while preserving per-key re-render precision via Proxy tracking:
+
+```typescript
+import { useStores } from '../stores/use-stores.js';
+
+const [{ projectDir }, { allSessions }, { cols, isSmall }] = useStores(
+  configStore,
+  sessionsStore,
+  terminalSizeStore,
+);
+```
+
+Each store snapshot is wrapped in a tracking `Proxy` — only the keys you actually read trigger re-renders. Reading `cols` but not `rows` means a change to `rows` alone will not re-render the component.
+
+**Limitations** (Proxy `get` trap only). Fall back to `store.use(selector)` when:
+- You use a computed / conditional selector: `workflowStore.use(s => hasWorkflowConfig(s.events))`.
+- You need `Object.keys(x)`, `for...in`, spread (`{...x}`) or rest destructure (`{a, ...r}`) — none are intercepted.
+- You read a field in an event handler or async callback (outside the render phase) — those reads don't register.
+
 ### In non-React code: `store.get()`
 
 ```typescript

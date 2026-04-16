@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { configStore } from '../../../stores/config.js';
 import { overlayStore } from '../../../stores/overlay.js';
 import { detectionStore } from '../../../stores/detection.js';
+import { useStores } from '../../../stores/use-stores.js';
 import { getRunnerCommand } from '../../../core/config/runner-config.js';
 import { normalizeConfiguredModel } from '../../../core/providers.js';
 import {
@@ -35,8 +36,7 @@ export function usePickerCatalog(
   const config = configStore.useConfig();
   const focusModels = overlayStore.use(s => s.focus) === 'models';
 
-  const plannerDetections = detectionStore.use(s => s.planners);
-  const implementerDetections = detectionStore.use(s => s.implementers);
+  const [{ planners: plannerDetections, implementers: implementerDetections }] = useStores(detectionStore);
 
   const [currentItemId, setCurrentItemId] = useState<string | null>(null);
 

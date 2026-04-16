@@ -20,6 +20,7 @@ import { routerStore } from '../stores/router.js';
 import { workflowStore } from '../stores/workflow.js';
 import { reviewStore } from '../stores/review.js';
 import { inputHeightStore } from '../stores/input-height.js';
+import { useStores } from '../stores/use-stores.js';
 import {
   getWorkflowContentWidth,
   getWorkflowSidebarWidth,
@@ -41,16 +42,19 @@ function resolveInputHint(cancelled: boolean, inputHint: string, inputMode: Inpu
 
 export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps) {
   const config = configStore.useConfig();
-  const projectDir = configStore.use(s => s.projectDir);
-  const available = skillsStore.use(s => s.available);
-  const selected = skillsStore.use(s => s.selected);
-  const selectedSkillMetas = available.filter(m => selected.has(m.id));
+  const [{ projectDir }, skills, input, terminal] = useStores(
+    configStore,
+    skillsStore,
+    inputHeightStore,
+    terminalSizeStore,
+  );
+  const selectedSkillMetas = skills.available.filter(m => skills.selected.has(m.id));
   const hasOverlay = overlayStore.use(s => s.active !== 'none');
   const feature = routerStore.use(s => s.screen === 'workflow' ? s.feature : '');
   const resumeState = routerStore.use(s => s.screen === 'workflow' ? s.resumeState : undefined);
   const sessionId = routerStore.use(s => s.screen === 'workflow' ? s.sessionId : undefined);
-  const { cols, rows, isSmall } = terminalSizeStore.use(s => s);
-  const inputRows = inputHeightStore.use(s => s.rows);
+  const { cols, rows, isSmall } = terminal;
+  const inputRows = input.rows;
 
   const onComplete = (summary: Summary) =>
     routerStore.navigate('summary', { summary });
@@ -65,10 +69,8 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
     sessionId,
   });
 
-  const sections = workflowStore.use(s => s.sections);
-  const cancelled = workflowStore.use(s => s.cancelled);
-  const reviewFilePath = reviewStore.use(s => s.filePath);
-  const sidebarVisible = workflowStore.use(s => s.sidebarVisible);
+  const [wf, { filePath: reviewFilePath }] = useStores(workflowStore, reviewStore);
+  const { sections, cancelled, sidebarVisible } = wf;
 
   const hasConfig = workflowStore.use(s => hasWorkflowConfig(s.events));
 

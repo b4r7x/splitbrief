@@ -6,6 +6,7 @@ import { getScrollWindowState } from '../../core/scroll-window.js';
 import { computeConversationScroll } from '../../core/conversation-scroll.js';
 import { trimRenderableItemsToViewport } from '../../core/viewport-trimming.js';
 import { conversationScrollStore } from '../../stores/conversation-scroll.js';
+import { useStores } from '../../stores/use-stores.js';
 import { computeScrollBannerText } from '../../core/scroll-banner.js';
 import type { Section } from '../../core/event-sections.js';
 
@@ -17,10 +18,12 @@ interface ConversationFlowProps {
 
 export function ConversationFlow({ sections, height, width }: ConversationFlowProps) {
   const t = useTheme();
-  const rawScrollOffset = conversationScrollStore.use(s => s.scrollOffset);
-  const expandedDiffs = conversationScrollStore.use(s => s.expandedDiffs);
-  const renderableCountAtScroll = conversationScrollStore.use(s => s.renderableCountAtScroll);
-  const heightAtScroll = conversationScrollStore.use(s => s.heightAtScroll);
+  const [{
+    scrollOffset: rawScrollOffset,
+    expandedDiffs,
+    renderableCountAtScroll,
+    heightAtScroll,
+  }] = useStores(conversationScrollStore);
   const viewportHeight = Math.max(0, height);
   const cols = width;
   const completedItems = sections

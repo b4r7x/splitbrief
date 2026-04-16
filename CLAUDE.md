@@ -49,7 +49,7 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 - **Colocated tests**  -  `foo.test.ts` lives next to `foo.ts` (no separate `tests/` directory)
 - **kebab-case file naming**  -  Use kebab-case for multi-word file and folder names (`models-dev.ts`, `lm-studio.ts`). Prefer single-word names where natural (`pricing.ts`, `known.ts`, `registry.ts`). File names should match their primary concept.
 - **No unsafe type assertions**  -  Do not use incidental `!` (non-null assertion) or broad `as` casts in production code. Use optional chaining (`?.`), type narrowing, or proper null checks instead.
-- **Sanctioned assertion boundaries only**  -  The allowed exceptions are the internal assertion helpers in `src/utils/type-guards.ts`, the store internals in `src/stores/create-store.ts`, and the branded ID constructors in `src/core/types/workflow.ts` / `src/core/types/schemas/task.ts`. Keep assertions contained to those boundaries instead of spreading them through feature code.
+- **Sanctioned assertion boundaries only**  -  The allowed exceptions are the internal assertion helpers in `src/utils/type-guards.ts`, the store internals in `src/stores/create-store.ts` and `src/stores/use-stores.ts`, and the branded ID constructors in `src/core/types/workflow.ts` / `src/core/types/schemas/task.ts`. Keep assertions contained to those boundaries instead of spreading them through feature code.
 - **Zero memoization**  -  No `useMemo`, `useCallback`, or `React.memo` anywhere in `src/`. Store selectors make them unnecessary.
 - **No imperative handles**  -  No `forwardRef` / `useImperativeHandle`. React 19 + stores eliminate the need.
 
@@ -488,6 +488,12 @@ See `docs/STORES.md` for full architecture documentation.
 - Domain stores: config, conversation-scroll, detection, feedback, input-mode, overlay, review, router, sessions, skills, terminal-size, workflow, workflow-reducers
 - `conversationScrollStore` (`src/stores/conversation-scroll.ts`) — replaces the old `forwardRef`/`useImperativeHandle` pattern in conversation-flow; any code can call `conversationScrollStore.scrollToBottom()` without holding a ref
 - Components subscribe to specific slices via `store.use(selector)` — only re-render when that slice changes
+- `useStores(...stores)` (`src/stores/use-stores.ts`) — multi-store hook with Proxy per-key tracking. Pass N stores, destructure a tuple, re-render only when an accessed key changes. Use for flat property reads across 1+ stores:
+  ```tsx
+  const [{ projectDir }, { allSessions }, { cols, isSmall }] = useStores(configStore, sessionsStore, terminalSizeStore);
+  ```
+  Keep `store.use(selector)` for computed/conditional selectors (`s => hasWorkflowConfig(s.events)`, `s => s.active !== 'none'`) — Proxy tracking only sees flat property reads.
+- **`useStores` limitations** (Proxy `get` trap only): `Object.keys(x)`, `for...in`, spread (`{...x}`), rest (`{a, ...r}`), reads inside handlers/async callbacks (outside render phase) are **not tracked**. Use `store.use(selector)` for those cases.
 - Stores are module-scoped singletons, accessible from both React components and engine code
 - Tests use `beforeEach(() => store.reset())` for isolation
 - `configStore.useConfig()` returns typed `Config` (non-null) with a guard — use this in components instead of `store.use(s => s.config)!`
@@ -524,7 +530,7 @@ Global keyboard handling lives in `src/hooks/use-global-keys.ts`. Local input pr
 - Don't call `store.set()` or `store.load()` during React render — causes infinite loops
 - Don't add `loaded: boolean` flags to store state — init belongs in the CLI entry point, not in hooks
 - Don't create React Context for shared state — use stores instead
-- Don't create thin wrapper hooks around `store.use()` — call stores directly in components
+- Don't create thin wrapper hooks around `store.use()` — call stores directly in components (`useStores` is the sanctioned exception for multi-store flat reads)
 - Don't put `commands` in a store — it closes over Ink's `exit()` function
 - Don't use `configStore.get()` in components — use `configStore.use(selector)` or `configStore.useConfig()` for reactive reads (`.get()` is for non-React code)
 - Use `feedbackStore.setMessage()` for informational messages (e.g., slash command feedback), `setError()` for actual errors

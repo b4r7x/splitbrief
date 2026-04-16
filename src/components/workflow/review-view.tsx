@@ -4,6 +4,7 @@ import { renderMarkdownLine } from '../../ui/markdown.js';
 import { getReviewContentHeight } from '../../core/workflow-rect.js';
 import { useReviewContent } from '../../hooks/use-review-content.js';
 import { reviewStore } from '../../stores/review.js';
+import { useStores } from '../../stores/use-stores.js';
 
 interface ReviewViewProps {
   height?: number;
@@ -12,8 +13,7 @@ interface ReviewViewProps {
 
 export function ReviewView({ height, width }: ReviewViewProps) {
   const t = useTheme();
-  const filePath = reviewStore.use(s => s.filePath);
-  const offset = reviewStore.use(s => s.scrollOffset);
+  const [{ filePath, scrollOffset: offset }] = useStores(reviewStore);
   const content = useReviewContent(filePath);
 
   if (!filePath) return null;

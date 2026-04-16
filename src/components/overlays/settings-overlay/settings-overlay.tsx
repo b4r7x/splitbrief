@@ -9,6 +9,7 @@ import { displayValue, valueColor } from '../../../core/settings/presentation.js
 
 import { useSettingsEditor } from './use-settings-editor.js';
 import { getClampedTerminalWidth, terminalSizeStore } from '../../../stores/terminal-size.js';
+import { useStores } from '../../../stores/use-stores.js';
 import { ScrollIndicator } from '../../../ui/scroll-indicator.js';
 import { FilterInput } from '../../../ui/filter-input.js';
 import { toSectionedList } from '../../../utils/sectioned-list.js';
@@ -21,9 +22,7 @@ export function SettingsOverlay() {
   const t = useTheme();
   const config = configStore.useConfig();
   const onClose = overlayStore.close;
-  const focusSetting = overlayStore.use(s => s.focus);
-  const cols = terminalSizeStore.use(s => s.cols);
-  const rows = terminalSizeStore.use(s => s.rows);
+  const [{ focus: focusSetting }, { cols, rows }] = useStores(overlayStore, terminalSizeStore);
   const showDescription = rows >= DESCRIPTION_MIN_TERMINAL_ROWS;
   const chrome = 9 + (showDescription ? 3 : 0);
   const panelWidth = getClampedTerminalWidth(cols, MAX_PANEL_WIDTH);

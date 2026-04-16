@@ -9,6 +9,7 @@ import { RecentSessions } from '../components/home/recent-sessions.js';
 import { getResponsivePanelWidth, terminalSizeStore } from '../stores/terminal-size.js';
 import { overlayStore } from '../stores/overlay.js';
 import { routerStore } from '../stores/router.js';
+import { useStores } from '../stores/use-stores.js';
 
 let cachedBanner: string | undefined;
 
@@ -31,7 +32,7 @@ interface HomeScreenProps {
 export function HomeScreen({ commands, onSlashCommand }: HomeScreenProps) {
   const theme = useTheme();
   const hasOverlay = overlayStore.use(s => s.active !== 'none');
-  const { cols, isSmall } = terminalSizeStore.use(s => s);
+  const [{ cols, isSmall }] = useStores(terminalSizeStore);
 
   const banner = getBanner();
   const contentWidth = getResponsivePanelWidth(cols, isSmall, { small: 70, large: 100 }, 8);

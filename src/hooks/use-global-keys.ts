@@ -16,6 +16,7 @@ import { killAllProcesses } from '../utils/process-lifecycle.js';
 import { isLivePhase } from '../core/phases.js';
 import { findLatestRenderableDiffEventIndex } from '../core/event-sections.js';
 import { terminalSizeStore } from '../stores/terminal-size.js';
+import { useStores } from '../stores/use-stores.js';
 import { assertNever } from '../utils/type-guards.js';
 import type { KeyAction } from './keyboard-handlers.js';
 import {
@@ -64,13 +65,11 @@ function getWorkflowScrollAction(input: string, key: Key): KeyAction {
 }
 
 export function useGlobalKeys({ exit }: { exit: () => void }) {
-  const screen = routerStore.use(s => s.screen);
-  const overlayActive = overlayStore.use(s => s.active);
+  const [{ screen }, overlay, { isSmall }] = useStores(routerStore, overlayStore, terminalSizeStore);
+  const { active: overlayActive, exclusive: overlayExclusive } = overlay;
   const isOpen = overlayActive !== 'none';
-  const overlayExclusive = overlayStore.use(s => s.exclusive);
-  const overlayHasStack = overlayStore.use(s => s.stack.length > 0);
+  const overlayHasStack = overlay.stack.length > 0;
   const lastCtrlCRef = useRef(0);
-  const isSmall = terminalSizeStore.use(s => s.isSmall);
 
   useInput((input, key) => {
     if (!(key.ctrl && input === 'c')) return;

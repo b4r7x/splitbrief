@@ -9,6 +9,7 @@ import { configStore } from './stores/config.js';
 import { overlayStore } from './stores/overlay.js';
 import { feedbackStore } from './stores/feedback.js';
 import { workflowStore } from './stores/workflow.js';
+import { useStores } from './stores/use-stores.js';
 import { refreshDetection } from './engine/detection/index.js';
 import { HomeScreen } from './screens/home.js';
 import { WorkflowScreen } from './screens/workflow.js';
@@ -24,9 +25,8 @@ import { ToolModelPicker } from './components/overlays/tool-model-picker/picker.
 import type { Screen, OverlayType, SlashCommandDef, CommandContext, CommandPaletteItem } from './types.js';
 
 export function App() {
-  const screen = routerStore.use(s => s.screen);
+  const [{ screen }, { active: overlayActive }] = useStores(routerStore, overlayStore);
   const { exit } = useApp();
-  const overlayActive = overlayStore.use(s => s.active);
   const config = configStore.useConfig();
   const theme = getTheme(config.theme);
 
