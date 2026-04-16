@@ -1,11 +1,10 @@
-import { workflowStore } from '../stores/workflow.js';
-import { configStore } from '../stores/config.js';
-import { modelCacheStore } from '../stores/model-cache.js';
-import { useStores } from '../stores/use-stores.js';
-import { calculateCostBreakdown } from '../engine/providers/pricing.js';
-import { getRunnerDisplayName, getRunnerModelName } from '../core/config/index.js';
-import { formatCost } from '../utils/format.js';
-import type { CostBreakdown } from '../types.js';
+import { workflowStore } from '../../stores/workflow.js';
+import { configStore } from '../../stores/config.js';
+import { modelCacheStore } from '../../stores/model-cache.js';
+import { calculateCostBreakdown } from '../../core/pricing.js';
+import { getRunnerDisplayName, getRunnerModelName } from '../../core/config/index.js';
+import { formatCost } from '../../utils/format.js';
+import type { CostBreakdown } from '../../types.js';
 
 interface CostStats {
   localRate: number;
@@ -37,8 +36,12 @@ export function formatCostDisplay(localRate: number, costBreakdown: CostBreakdow
 
 export function useCostStats(): CostStats {
   const config = configStore.useConfig();
-  const [{ tokenUsage, currentTask, totalTasks, localCount, escalatedCount, taskCompletionTimes }] =
-    useStores(workflowStore);
+  const tokenUsage = workflowStore.use(s => s.tokenUsage);
+  const currentTask = workflowStore.use(s => s.currentTask);
+  const totalTasks = workflowStore.use(s => s.totalTasks);
+  const localCount = workflowStore.use(s => s.localCount);
+  const escalatedCount = workflowStore.use(s => s.escalatedCount);
+  const taskCompletionTimes = workflowStore.use(s => s.taskCompletionTimes);
 
   const localRate = (localCount + escalatedCount) > 0
     ? (localCount / (localCount + escalatedCount)) * 100

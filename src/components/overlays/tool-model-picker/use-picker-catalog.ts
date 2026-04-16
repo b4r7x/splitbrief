@@ -11,7 +11,7 @@ import {
   isCurrentConfig,
   type PickerOption,
   type ModelOption,
-} from './picker-catalog.js';
+} from './picker-model-catalog.js';
 import { buildRightModelsForPicker } from './catalog-adapter.js';
 
 export interface PickerCatalog {

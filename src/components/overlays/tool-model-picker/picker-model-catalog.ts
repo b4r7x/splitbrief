@@ -2,8 +2,8 @@ import type { Config } from '../../../types.js';
 import { getRunnerDisplayName } from '../../../core/config/runner-config.js';
 import { type ModelOption, sortModelsByRecency } from './model-sorting.js';
 import { type PickerOption } from './picker-options.js';
-import type { ModelCacheAccessor } from '../../../engine/index.js';
-import { resolveModelCatalog, NULL_CACHE } from '../../../engine/index.js';
+import type { ModelCacheAccessor } from '../../../core/model-catalog.js';
+import { resolveModelCatalog, NULL_CACHE } from '../../../core/model-catalog.js';
 
 export type { ModelOption } from './model-sorting.js';
 export { isCustomModel, sortModelsByRecency } from './model-sorting.js';

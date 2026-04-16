@@ -18,6 +18,7 @@ import { skillsStore } from '../stores/skills.js';
 import { overlayStore } from '../stores/overlay.js';
 import { routerStore } from '../stores/router.js';
 import { workflowStore } from '../stores/workflow.js';
+import { workflowUIStore } from '../stores/workflow-ui.js';
 import { reviewStore } from '../stores/review.js';
 import { inputHeightStore } from '../stores/input-height.js';
 import { useStores } from '../stores/use-stores.js';
@@ -70,7 +71,8 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
   });
 
   const [wf, { filePath: reviewFilePath }] = useStores(workflowStore, reviewStore);
-  const { sections, cancelled, sidebarVisible } = wf;
+  const { sections, cancelled } = wf;
+  const sidebarVisible = workflowUIStore.use(s => s.sidebarVisible);
 
   const hasConfig = workflowStore.use(s => hasWorkflowConfig(s.events));
 

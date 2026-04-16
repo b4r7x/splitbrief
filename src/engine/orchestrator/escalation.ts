@@ -3,12 +3,15 @@ import { hasApiBase } from '../../core/config/runner-config.js';
 import { formatValidationError } from './validator.js';
 import { discardTaskChanges } from './git-ops.js';
 import type { WorkflowContext } from './types.js';
-import { emit, createTextHandler, emitWarning, emitPlannerStatus, emitRetry, emitEscalate } from './events.js';
-import { refreshAndPersistCode, addUsageAndSave, transitionAndSave, warnOnFailure, validateAndCommitTask } from './helpers.js';
+import { createEventEmitter, createTextHandler, emitWarning, emitPlannerStatus, emitRetry, emitEscalate } from './events.js';
+import { refreshAndPersistCode, addUsageAndSave, transitionAndSave, warnOnFailure } from './helpers.js';
+import { runValidationWithEvents } from './validator.js';
+import { validateCommitAndAdvance } from './task-commit.js';
 import { createImplementer } from '../runners/factory.js';
 import type { Implementer } from '../implementers/types.js';
 import { getProviderBaseURL } from '../../core/providers.js';
 import { toErrorMessage } from '../../utils/format.js';
+import { truncateByChars } from '../../utils/truncate-for-model.js';
 
 const MAX_HINT_ERROR_LENGTH = 4000;
 
@@ -25,10 +28,15 @@ async function validateAndCommit(
   retryCount: number,
   commitSuffix?: string,
 ) {
-  return validateAndCommitTask({
-    task, projectDir: ctx.projectDir, sessionId: ctx.sessionId, config: ctx.config, callbacks: ctx.callbacks,
-    state, method, transitionType, commitSuffix, taskStartTime: ctx.taskStartTime, retryCount,
+  const validationResults = await runValidationWithEvents(task, ctx.projectDir, ctx.config, ctx.callbacks);
+  const result = await validateCommitAndAdvance({
+    task, projectDir: ctx.projectDir, sessionId: ctx.sessionId,
+    config: ctx.config, callbacks: ctx.callbacks,
+    state, method, transitionType, commitSuffix,
+    taskStartTime: ctx.taskStartTime, retryCount,
+    results: validationResults,
   });
+  return { ...result, validationResults };
 }
 
 async function runLocalRetries(
@@ -41,12 +49,13 @@ async function runLocalRetries(
   const maxRetries = ctx.config.workflow.maxRetries;
 
   const textHandler = createTextHandler(ctx.callbacks);
+  const emitEv = createEventEmitter(ctx.projectDir, ctx.sessionId);
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     attempts = attempt;
     state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'VALIDATION_FAIL' }, maxRetries);
     emitRetry(ctx.callbacks, task.id, attempt, maxRetries);
-    emit(ctx.projectDir, ctx.sessionId, state, 'task_retry', task.id, { attempt, error: lastError });
+    emitEv(state, 'task_retry', task.id, { attempt, error: lastError });
 
     ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, ctx.sessionId, state));
 
@@ -152,9 +161,10 @@ async function runTier1Hint(
   const attempts = priorAttempts + 1;
   let task = initialTask;
   const textHandler = createTextHandler(ctx.callbacks);
+  const emitEv = createEventEmitter(ctx.projectDir, ctx.sessionId);
   state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'ESCALATE' });
   emitPlannerStatus(ctx.callbacks, state, 'running');
-  emit(ctx.projectDir, ctx.sessionId, state, 'task_escalating', task.id, {});
+  emitEv(state, 'task_escalating', task.id, {});
 
   emitEscalate(ctx.callbacks, 1);
   const tier1Result = await ctx.planner.escalateHint(task, lastError, ctx.projectDir, {
@@ -166,10 +176,7 @@ async function runTier1Hint(
     textHandler(tier1Result.output);
   }
 
-  let hintError = `${lastError}\n\n## Hints from senior reviewer:\n${tier1Result.output}`;
-  if (hintError.length > MAX_HINT_ERROR_LENGTH) {
-    hintError = hintError.slice(0, MAX_HINT_ERROR_LENGTH) + '...[truncated]';
-  }
+  const hintError = truncateByChars(`${lastError}\n\n## Hints from senior reviewer:\n${tier1Result.output}`, MAX_HINT_ERROR_LENGTH);
   ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, ctx.sessionId, state));
 
   const hintRetryResult = await ctx.implementer.retry({
@@ -195,8 +202,9 @@ async function runTier2Full(
 ): Promise<{ state: WorkflowState; result: RetryResult }> {
   const attempts = priorAttempts + 1;
   const textHandler = createTextHandler(ctx.callbacks);
+  const emitEv = createEventEmitter(ctx.projectDir, ctx.sessionId);
   state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'HINT_FAIL' });
-  emit(ctx.projectDir, ctx.sessionId, state, 'hint_failed', task.id, {});
+  emitEv(state, 'hint_failed', task.id, {});
 
   ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, ctx.sessionId, state));
 
@@ -215,7 +223,7 @@ async function runTier2Full(
   }
 
   state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'FULL_FAIL' });
-  emit(ctx.projectDir, ctx.sessionId, state, 'task_full_fail', task.id, {});
+  emitEv(state, 'task_full_fail', task.id, {});
   await warnOnFailure(ctx.callbacks, `discard changes for ${task.file}`, () =>
     discardTaskChanges(ctx.projectDir, task.file, task.action),
   );

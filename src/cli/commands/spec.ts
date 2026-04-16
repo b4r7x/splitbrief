@@ -10,23 +10,27 @@ import { writeSpecFile } from '../../core/paths-io.js';
 import { beginSession } from '../../core/sessions/begin.js';
 import { clearStaleActiveSessionOrThrow } from './guards.js';
 
+type SpecOpts = { auto: boolean; project?: string };
+
 export function registerSpecCommand(program: Command): void {
   program
     .command('spec <feature>')
     .description('Generate spec, plan, and tasks only (no implementation)')
     .option('--auto', 'Auto-approve spec and plan', false)
     .option('--project <dir>', 'Project directory (default: cwd)')
-    .action(async (feature: string, opts: { auto: boolean; project?: string }) => {
+    .action(async (feature: string, opts: SpecOpts) => {
       const projectDir = resolveProjectDir(opts.project);
       await ensureGitAndConfig(projectDir);
 
       clearStaleActiveSessionOrThrow(projectDir);
 
-      const config = loadConfigOrExit(projectDir);
-      if (opts.auto) {
-        config.workflow.autoApproveSpec = true;
-        config.workflow.autoApprovePlan = true;
-      }
+      const baseConfig = loadConfigOrExit(projectDir);
+      const config = opts.auto
+        ? {
+            ...baseConfig,
+            workflow: { ...baseConfig.workflow, autoApproveSpec: true, autoApprovePlan: true },
+          }
+        : baseConfig;
 
       const sessionId = beginSession(projectDir, feature);
 

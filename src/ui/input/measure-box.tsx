@@ -10,15 +10,18 @@ interface MeasureBoxProps {
 export function MeasureBox({ children, onHeightChange, measureKey }: MeasureBoxProps) {
   const ref = useRef<DOMElement>(null);
   const lastHeightRef = useRef<number | undefined>(undefined);
-  const effectDeps = measureKey === undefined ? undefined : [onHeightChange, measureKey];
+  const onHeightChangeRef = useRef(onHeightChange);
+  onHeightChangeRef.current = onHeightChange;
+
   useLayoutEffect(() => {
     if (ref.current) {
       const { height } = measureElement(ref.current);
       if (lastHeightRef.current !== height) {
         lastHeightRef.current = height;
-        onHeightChange?.(height);
+        onHeightChangeRef.current?.(height);
       }
     }
-  }, effectDeps);
+  }, [measureKey ?? null]);
+
   return <Box ref={ref} flexDirection="column" flexShrink={0} flexGrow={0} width="100%">{children}</Box>;
 }

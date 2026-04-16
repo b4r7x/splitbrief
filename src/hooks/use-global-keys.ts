@@ -4,6 +4,7 @@ import { overlayStore } from '../stores/overlay.js';
 import { routerStore } from '../stores/router.js';
 import { feedbackStore } from '../stores/feedback.js';
 import { workflowStore } from '../stores/workflow.js';
+import { workflowUIStore } from '../stores/workflow-ui.js';
 import { abortStore } from '../stores/abort.js';
 import { reviewStore } from '../stores/review.js';
 import { conversationScrollStore } from '../stores/conversation-scroll.js';
@@ -12,7 +13,7 @@ import {
   readConversationScrollSnapshot,
   readReviewContentHeight,
 } from '../core/conversation-layout-snapshot.js';
-import { killAllProcesses } from '../utils/process-lifecycle.js';
+import { killAllProcesses } from '../utils/process.js';
 import { isLivePhase } from '../core/phases.js';
 import { findLatestRenderableDiffEventIndex } from '../core/event-sections.js';
 import { terminalSizeStore } from '../stores/terminal-size.js';
@@ -35,7 +36,7 @@ function applyAction(action: KeyAction, exit: () => void) {
     case 'exit': exit(); return;
     case 'navigate': routerStore.navigate(action.screen); return;
     case 'open-overlay': overlayStore.open(action.overlay); return;
-    case 'toggle-sidebar': workflowStore.toggleSidebar(); return;
+    case 'toggle-sidebar': workflowUIStore.toggleSidebar(); return;
     case 'toggle-diff': conversationScrollStore.toggleDiff(action.index); return;
     case 'review-scroll': reviewStore.setScrollOffset(action.offset); return;
     case 'conversation-scroll-up': conversationScrollStore.scrollUp({ renderableCount: action.renderableCount, totalHeight: action.totalHeight, step: action.step }); return;

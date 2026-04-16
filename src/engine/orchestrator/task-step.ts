@@ -1,12 +1,13 @@
 import type { Task, WorkflowState, TaskTokenUsage, TokenUsage } from '../../types.js';
-import { formatValidationError } from './validator.js';
+import { formatValidationError, runValidationWithEvents } from './validator.js';
 
 import type { WorkflowContext } from './types.js';
 import { buildAndRecordUsage } from './tokens.js';
 import { toErrorMessage, labelError } from '../../utils/format.js';
 import { emit, createTextHandler, emitError, emitTaskStart } from './events.js';
 import { handleRetryAndEscalation } from './escalation.js';
-import { refreshAndPersistCode, addUsageAndSave, transitionAndSave, validateAndCommitTask } from './helpers.js';
+import { refreshAndPersistCode, addUsageAndSave, transitionAndSave } from './helpers.js';
+import { validateCommitAndAdvance } from './task-commit.js';
 import { getRunnerDisplayName } from '../../core/config/runner-config.js';
 import { buildContinuationPrompt } from './continuation.js';
 import { workflowStore } from '../../stores/workflow.js';
@@ -145,9 +146,11 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   if (wctx.signal?.aborted) return state;
 
-  const commitResult = await validateAndCommitTask({
+  const validationResults = await runValidationWithEvents(task, projectDir, config, callbacks);
+  const commitResult = await validateCommitAndAdvance({
     task, projectDir, sessionId, config, callbacks, state,
     method: 'local', transitionType: 'VALIDATION_PASS', taskStartTime,
+    results: validationResults,
   });
   if (commitResult.completed) {
     state = commitResult.state;
@@ -156,7 +159,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     return state;
   }
 
-  const errorText = formatValidationError(commitResult.validationResults);
+  const errorText = formatValidationError(validationResults);
   const retry = await retryAndRecord({
     wctx, task, initialError: errorText,
     state, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState,

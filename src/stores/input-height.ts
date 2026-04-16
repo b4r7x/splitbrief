@@ -17,7 +17,6 @@ function normalizeRows(rows: number): number {
 
 export const inputHeightStore = {
   ...storeBase(store),
-  subscribe: store.subscribe,
   setRows: (rows: number) => {
     const nextRows = normalizeRows(rows);
     if (store.get().rows === nextRows) return;

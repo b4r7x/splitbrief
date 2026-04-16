@@ -3,8 +3,8 @@ import type { Theme } from "../../../ui/theme.js";
 import { isProviderLocal } from "../../../core/providers.js";
 import { formatModelName } from "../../../core/model-display.js";
 import { formatContextLength, truncate } from "../../../utils/format.js";
-import type { PickerOption, ModelOption } from "./picker-catalog.js";
-import { isCustomModel } from "./picker-catalog.js";
+import type { PickerOption, ModelOption } from "./picker-model-catalog.js";
+import { isCustomModel } from "./picker-model-catalog.js";
 
 const CHECKMARK_WIDTH = 2;
 

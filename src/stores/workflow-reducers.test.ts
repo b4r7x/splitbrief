@@ -26,7 +26,6 @@ const emptyState: WorkflowViewState = {
   tasks: [],
   tokenUsage: null,
   cancelled: false,
-  sidebarVisible: false,
   queueDepth: 0,
 };
 
@@ -129,6 +128,14 @@ describe('updateTaskMap', () => {
   it('returns the same map when a task-complete references an unknown taskId', () => {
     const existing = new Map<string, SidebarTask>();
     const next = updateTaskMap(existing, makeTaskComplete({ taskId: taskId('UNKNOWN') }));
+    expect(next).toBe(existing);
+  });
+
+  it('status unchanged returns original map', () => {
+    const existing = new Map<string, SidebarTask>([
+      ['T003', { id: 'T003', title: 'Already done', status: 'done' }],
+    ]);
+    const next = updateTaskMap(existing, makeTaskComplete({ taskId: taskId('T003') }));
     expect(next).toBe(existing);
   });
 });

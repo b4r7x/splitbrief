@@ -3,7 +3,7 @@ import { overlayStore } from '../../../stores/overlay.js';
 import { feedbackStore } from '../../../stores/feedback.js';
 import { formatModelName } from '../../../core/model-display.js';
 import type { Config } from '../../../types.js';
-import type { PickerOption, ModelOption } from './picker-catalog.js';
+import type { PickerOption, ModelOption } from './picker-model-catalog.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import {
   commitPlannerSelection,

@@ -13,8 +13,9 @@ import { PROVIDER_CATALOG, isProviderId, type ProviderId } from '../../core/prov
 import { toErrorMessage } from '../../utils/format.js';
 import { warnError } from '../../utils/warn.js';
 import { withTimeout } from '../../utils/with-timeout.js';
+import { DETECTION_TIMEOUT_MS } from '../constants.js';
 
-export const DETECTION_TIMEOUT_MS = 5000;
+export { DETECTION_TIMEOUT_MS };
 
 type ProviderFactory = (overrides?: ProviderOverrides) => ProviderDef;
 

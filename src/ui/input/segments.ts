@@ -24,45 +24,23 @@ export interface BuildSegmentsParams {
   highlight?: { start: number; end: number } | undefined;
 }
 
-export function buildSegments(params: BuildSegmentsParams): { preCursor: Segment[]; postCursor: Segment[] } {
-  const { value, cursorIndex, placeholder, focus, showCursor, mask, tabSize, highlight } = params;
+type FormatText = (text: string, isPlaceholder?: boolean) => string;
+type SegmentResult = { preCursor: Segment[]; postCursor: Segment[] };
 
-  const formatText = (text: string, isPlaceholder = false) => {
-    const normalized = normalizeLineEndings(text);
-    if (!isPlaceholder && mask) {
-      return normalized.replace(/[^\n]/g, mask);
-    }
-    return expandTabs(normalized, tabSize);
-  };
-
-  if (!value) {
-    if (placeholder && !focus) {
-      return {
-        preCursor: [{ value: formatText(placeholder, true), type: 'placeholder' }],
-        postCursor: [],
-      };
-    }
-    return {
-      preCursor: [{ value: ' ', type: 'cursor' }],
-      postCursor: [],
-    };
-  }
-
-  const textBefore = value.slice(0, cursorIndex);
-  const textAfter = value.slice(cursorIndex);
-
-  if (!focus) {
-    return {
-      preCursor: [{ value: formatText(value) }],
-      postCursor: [],
-    };
-  }
-
+function buildSegmentsWithHighlight(
+  highlight: { start: number; end: number },
+  textBefore: string,
+  textAfter: string,
+  cursorIndex: number,
+  showCursor: boolean,
+  focus: boolean,
+  valueLength: number,
+  formatText: FormatText,
+): SegmentResult {
   const hasValidHighlight =
-    highlight &&
     highlight.end > highlight.start &&
     highlight.start >= 0 &&
-    highlight.end <= value.length;
+    highlight.end <= valueLength;
 
   if (!hasValidHighlight) {
     const formattedBefore = formatText(textBefore);
@@ -107,4 +85,50 @@ export function buildSegments(params: BuildSegmentsParams): { preCursor: Segment
       { value: formatText(textAfter.slice(hlEndAfter)) },
     ],
   };
+}
+
+export function buildSegments(params: BuildSegmentsParams): SegmentResult {
+  const { value, cursorIndex, placeholder, focus, showCursor, mask, tabSize, highlight } = params;
+
+  const formatText: FormatText = (text, isPlaceholder = false) => {
+    const normalized = normalizeLineEndings(text);
+    if (!isPlaceholder && mask) {
+      return normalized.replace(/[^\n]/g, mask);
+    }
+    return expandTabs(normalized, tabSize);
+  };
+
+  if (!value) {
+    if (placeholder && !focus) {
+      return {
+        preCursor: [{ value: formatText(placeholder, true), type: 'placeholder' }],
+        postCursor: [],
+      };
+    }
+    return {
+      preCursor: [{ value: ' ', type: 'cursor' }],
+      postCursor: [],
+    };
+  }
+
+  const textBefore = value.slice(0, cursorIndex);
+  const textAfter = value.slice(cursorIndex);
+
+  if (!focus) {
+    return {
+      preCursor: [{ value: formatText(value) }],
+      postCursor: [],
+    };
+  }
+
+  return buildSegmentsWithHighlight(
+    highlight ?? { start: 0, end: 0 },
+    textBefore,
+    textAfter,
+    cursorIndex,
+    showCursor,
+    focus,
+    value.length,
+    formatText,
+  );
 }

@@ -1,7 +1,7 @@
 import { modelCacheStore } from '../../../stores/model-cache.js';
-import { buildRightModels } from './picker-catalog.js';
-export type { ModelOption, PickerOption } from './picker-catalog.js';
-import type { ModelOption, PickerOption } from './picker-catalog.js';
+import { buildRightModels } from './picker-model-catalog.js';
+export type { ModelOption, PickerOption } from './picker-model-catalog.js';
+import type { ModelOption, PickerOption } from './picker-model-catalog.js';
 
 export function buildRightModelsForPicker(params: {
   isPlanner: boolean;

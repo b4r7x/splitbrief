@@ -11,7 +11,7 @@ vi.mock('../engine/orchestrator/index.js', () => ({
   runWorkflow: runWorkflowMock, // never resolves — simulates a running workflow
 }));
 
-vi.mock('../utils/process-lifecycle.js', () => ({
+vi.mock('../utils/process.js', () => ({
   killAllProcesses: vi.fn(),
 }));
 

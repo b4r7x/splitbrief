@@ -18,7 +18,6 @@ export interface WorkflowViewState {
   tasks: SidebarTask[];
   tokenUsage: TokenUsage | null;
   cancelled: boolean;
-  sidebarVisible: boolean;
   queueDepth: number;
 }
 
@@ -35,7 +34,6 @@ const initial: WorkflowViewState = {
   tasks: [],
   tokenUsage: null,
   cancelled: false,
-  sidebarVisible: false,
   queueDepth: 0,
 };
 
@@ -138,10 +136,6 @@ function requestCancel(): boolean {
   return true;
 }
 
-function toggleSidebar() {
-  store.set(s => ({ ...s, sidebarVisible: !s.sidebarVisible }));
-}
-
 export const workflowStore = {
   ...storeBase(store),
   reset: (init?: Partial<WorkflowViewState>) => {
@@ -164,5 +158,4 @@ export const workflowStore = {
   requestEnqueue,
   setClearQueueHandler,
   requestClearQueue,
-  toggleSidebar,
 };

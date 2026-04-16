@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { OutputFormat, ParsedLine, TokenDelta, ToolUseInfo } from '../../types.js';
 import { toTokenDelta } from './token-utils.js';
 import { assertNever, narrowRecord } from '../../utils/type-guards.js';
+export { accumulateUsage } from './token-utils.js';
 
 export type { ToolUseInfo };
 
@@ -222,15 +223,3 @@ export function parseOpencodeLine(line: string): ParsedLine {
   return {};
 }
 
-export function accumulateUsage(
-  current: TokenDelta | null,
-  delta: TokenDelta,
-): TokenDelta {
-  if (current) {
-    return {
-      inputTokens: current.inputTokens + delta.inputTokens,
-      outputTokens: current.outputTokens + delta.outputTokens,
-    };
-  }
-  return { ...delta };
-}

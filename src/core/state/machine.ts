@@ -144,7 +144,7 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
         currentTaskIndex: 0,
         attempt: 0,
         awaitingContinue: false,
-        rewindPending: { target: 'spec' as const, ...(action.comment ? { comment: action.comment } : {}) },
+        rewindPending: { target: 'spec', ...(action.comment ? { comment: action.comment } : {}) },
       };
 
     case 'REWIND_TO_PLAN':
@@ -155,7 +155,7 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
         currentTaskIndex: 0,
         attempt: 0,
         awaitingContinue: false,
-        rewindPending: { target: 'plan' as const, ...(action.comment ? { comment: action.comment } : {}) },
+        rewindPending: { target: 'plan', ...(action.comment ? { comment: action.comment } : {}) },
       };
 
     case 'CLEAR_REWIND_PENDING':
@@ -166,7 +166,7 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
       if (idx < 0) return state;
       return {
         ...state,
-        tasks: state.tasks.map((t, i) => i === idx ? { ...t, status: 'pending' as const } : t),
+        tasks: state.tasks.map((t, i) => i === idx ? { ...t, status: 'pending' } : t),
         currentTaskIndex: idx,
         attempt: 0,
         phase: 'implementing',

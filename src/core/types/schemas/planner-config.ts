@@ -1,12 +1,7 @@
 import { z } from 'zod';
 import { GenerationCommonFields, createRunnerConfigSchema } from './runner-fields.js';
 
-const PlannerCommonFields = {
-  ...GenerationCommonFields,
-  model: z.string().min(1).optional(),
-};
-
-export const PlannerConfigSchema = createRunnerConfigSchema(PlannerCommonFields);
+export const PlannerConfigSchema = createRunnerConfigSchema({ ...GenerationCommonFields, model: z.string().min(1).optional() });
 
 export type PlannerConfig = z.infer<typeof PlannerConfigSchema>;
 

@@ -82,6 +82,7 @@ export const modelCacheStore = {
     });
   },
 
+  // Object.entries is safe here: runs inside store.set(), not inside useStores() Proxy tracking.
   invalidateAll(): void {
     store.set(prev => {
       const providers: Partial<Record<ProviderId, ProviderModelCache>> = {};

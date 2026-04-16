@@ -490,4 +490,62 @@ describe('runPlanningPhase — rewindPending', () => {
     // rewindPending must be cleared on the resulting state
     expect(result.state.rewindPending).toBeUndefined();
   });
+
+  it('rewindPending target=spec — spec rejected during approval loop → cancelled', async () => {
+    const onApprovalNeeded = vi.fn().mockResolvedValue({ approved: false });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const planner = makePlanner();
+    const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false } });
+
+    const result = await runPlanningPhase({
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      planner,
+      state: prepareRewindState('specifying'),
+      feature: 'test-feature',
+      rewindPending: { target: 'spec', comment: 'reject me' },
+    });
+
+    expect(result.cancelled).toBe(true);
+    expect(result.tasks).toHaveLength(0);
+    // plan should not have been called (rewind fast-path)
+    expect(planner.plan).not.toHaveBeenCalled();
+  });
+
+  it('rewindPending target=plan — plan rejected during approval loop → cancelled', async () => {
+    const onApprovalNeeded = vi.fn().mockResolvedValue({ approved: false });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const planner = makePlanner();
+    const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'full' } });
+
+    const result = await runPlanningPhase({
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      planner,
+      state: prepareRewindState('planning'),
+      feature: 'test-feature',
+      rewindPending: { target: 'plan', comment: 'reject me' },
+    });
+
+    expect(result.cancelled).toBe(true);
+    expect(result.tasks).toHaveLength(0);
+    expect(planner.plan).not.toHaveBeenCalled();
+  });
+
+  it('full new-planning (no rewind) — auto-approve both → implements', async () => {
+    const { callbacks } = makeCallbacks();
+    const planner = makePlanner();
+    const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true, mode: 'full' } });
+
+    const result = await runPlanningPhase({
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      planner,
+      state: prepareState(),
+      feature: 'test-feature',
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(result.tasks).toHaveLength(1);
+    expect(result.state.phase).toBe('implementing');
+    expect(planner.plan).toHaveBeenCalledOnce();
+    expect(planner.regenerate).not.toHaveBeenCalled();
+  });
 });

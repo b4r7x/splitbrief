@@ -10,6 +10,7 @@ import { computeConversationScroll } from '../core/conversation-scroll.js';
 import { inputHeightStore } from '../stores/input-height.js';
 import { terminalSizeStore } from '../stores/terminal-size.js';
 import { workflowStore } from '../stores/workflow.js';
+import { workflowUIStore } from '../stores/workflow-ui.js';
 import { conversationScrollStore } from '../stores/conversation-scroll.js';
 import { reviewStore } from '../stores/review.js';
 
@@ -44,13 +45,14 @@ export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
     inputHeightStore.get().rows,
     hasConfig,
   );
-  const contentWidth = getWorkflowContentWidth(cols, workflow.sidebarVisible, isSmall);
+  const { sidebarVisible } = workflowUIStore.get();
+  const contentWidth = getWorkflowContentWidth(cols, sidebarVisible, isSmall);
   const contentRect = getWorkflowContentRect(
     cols,
     rows,
     inputHeightStore.get().rows,
     hasConfig,
-    workflow.sidebarVisible,
+    sidebarVisible,
     isSmall,
   );
   const {

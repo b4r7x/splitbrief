@@ -1,4 +1,4 @@
-import type { PickerOption } from './picker-catalog.js';
+import type { PickerOption } from './picker-model-catalog.js';
 
 export type View =
   | { kind: 'picker' }

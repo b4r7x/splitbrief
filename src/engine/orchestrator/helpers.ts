@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import type { Task, WorkflowState, TokenDelta, ValidationResult, OrchestratorCallbacks, StateAction, Config, TaskCompletionMethod } from '../../types.js';
+import type { Task, WorkflowState, TokenDelta, ValidationResult, OrchestratorCallbacks, StateAction } from '../../types.js';
+import type { OrchestratorEventPayloadMap } from '../../core/types/events.js';
 import { labelError } from '../../utils/format.js';
 import { isENOENT } from '../../utils/process-errors.js';
 import { transition } from '../../core/state/machine.js';
@@ -8,10 +9,8 @@ import { saveState } from '../../core/state/persistence.js';
 import { writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE } from '../../core/paths.js';
 import { addUsage, type UsageCategory } from './tokens.js';
-import { createTextHandler, emitWarning, emitCostUpdate } from './events.js';
+import { createTextHandler, emitWarning, emitCostUpdate, emit, emitPlannerStatus } from './events.js';
 import type { Planner } from '../planners/types.js';
-import { runValidationWithEvents } from './validator.js';
-import { validateCommitAndAdvance } from './task-commit.js';
 
 export function transitionAndSave(
   projectDir: string,
@@ -119,26 +118,22 @@ export async function warnOnFailure(
   }
 }
 
-type ValidateAndCommitTaskOpts = {
-  task: Task;
+export type TransitionAndEmitOptions = {
+  state: WorkflowState;
   projectDir: string;
   sessionId: string;
-  config: Config;
   callbacks: OrchestratorCallbacks;
-  state: WorkflowState;
-  method: TaskCompletionMethod;
-  transitionType: 'VALIDATION_PASS' | 'HINT_SUCCESS' | 'FULL_SUCCESS';
-  commitSuffix?: string | undefined;
-  taskStartTime?: number | undefined;
-  retryCount?: number | undefined;
+  action: StateAction;
+  eventName: keyof OrchestratorEventPayloadMap;
+  status?: 'running' | 'done' | undefined;
+  emitData: OrchestratorEventPayloadMap[keyof OrchestratorEventPayloadMap];
 };
 
-export async function validateAndCommitTask(
-  opts: ValidateAndCommitTaskOpts,
-): Promise<{ state: WorkflowState; completed: boolean; validationResults: ValidationResult[] }> {
-  const validationResults = await runValidationWithEvents(opts.task, opts.projectDir, opts.config, opts.callbacks);
-  const result = await validateCommitAndAdvance({
-    ...opts, results: validationResults,
-  });
-  return { ...result, validationResults };
+export function transitionAndEmit(opts: TransitionAndEmitOptions): WorkflowState {
+  const { state, projectDir, sessionId, callbacks, action, eventName, status, emitData } = opts;
+  const next = transitionAndSave(projectDir, sessionId, state, action);
+  if (status) emitPlannerStatus(callbacks, next, status);
+  emit(projectDir, sessionId, next, eventName, undefined, emitData);
+  return next;
 }
+

@@ -2,7 +2,7 @@ import type { OrchestratorCallbacks, WorkflowState, TaskTokenUsage, Summary, Tas
 import { saveState } from '../../core/state/persistence.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, REVIEW_FILE } from '../../core/paths.js';
-import { killAllProcesses } from '../../utils/process-lifecycle.js';
+import { killAllProcesses } from '../../utils/process.js';
 import { getCurrentDiff } from '../../utils/git.js';
 import { discardTaskChanges } from './git-ops.js';
 import { labelError } from '../../utils/format.js';

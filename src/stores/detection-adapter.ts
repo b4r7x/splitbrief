@@ -5,7 +5,7 @@ import { isProviderId } from '../core/providers.js';
 import type { DetectionDeps, DetectionServiceResult, DetectionService } from '../engine/detection/service.js';
 
 function applyToStores(result: DetectionServiceResult): void {
-  detectionStore.set(result.detection);
+  detectionStore.setDetection(result.detection);
   if (result.catalog) modelCacheStore.setModelsDevCatalog(result.catalog);
   for (const [toolId, models] of Object.entries(result.cliModels)) {
     if (models && models.length > 0 && isProviderId(toolId)) {

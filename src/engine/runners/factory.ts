@@ -47,7 +47,10 @@ const IMPLEMENTER_FACTORIES: Record<RunnerKind, (config: Config) => Implementer>
 
 export function createPlanner(config: Config, initialSessionId?: string | null): Planner {
   const factory = PLANNER_FACTORIES[config.planner.kind];
-  if (!factory) throw new Error(`No planner factory for kind '${config.planner.kind}'`);
+  if (!factory) {
+    const supported = Object.keys(PLANNER_FACTORIES).join(', ');
+    throw new Error(`Unknown planner kind: ${config.planner.kind}. Supported: ${supported}`);
+  }
   return factory(config, initialSessionId);
 }
 
