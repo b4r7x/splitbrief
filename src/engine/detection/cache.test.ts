@@ -131,6 +131,15 @@ describe('detection cache', () => {
     expect(result).toBeNull();
   });
 
+  it('roundtrips implementer error field', async () => {
+    const withError = [
+      { provider: 'ollama' as const, available: false, isLocal: true, error: 'connection refused' },
+    ];
+    await saveDetectionCache(tempDir, planners, withError);
+    const result = await loadDetectionCache(tempDir, 60_000);
+    expect(result?.implementers[0]).toMatchObject({ error: 'connection refused' });
+  });
+
   it('roundtrips empty arrays', async () => {
     await saveDetectionCache(tempDir, [], []);
     const result = await loadDetectionCache(tempDir, 60_000);

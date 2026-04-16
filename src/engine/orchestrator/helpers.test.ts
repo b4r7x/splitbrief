@@ -5,6 +5,15 @@ import type { WorkflowState, OrchestratorCallbacks, TuiEvent } from '../../types
 import { makeTask, makeUsage } from '#testing/helpers/fixtures.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
+function stubCallbacks(onEvent: (e: TuiEvent) => void): OrchestratorCallbacks {
+  return {
+    onEvent,
+    onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
+    onExternalChanges: vi.fn().mockResolvedValue(false),
+    onComplete: vi.fn(),
+  };
+}
+
 vi.mock('../../core/state/persistence.js', () => ({
   saveState: vi.fn(),
 }));
@@ -84,7 +93,7 @@ describe('addUsageAndSave', () => {
       tokenUsage: makeUsage({ plannerInput: 100, plannerOutput: 50 }),
     });
     const events: TuiEvent[] = [];
-    const callbacks = { onEvent: (e: TuiEvent) => events.push(e) } as Partial<OrchestratorCallbacks> as OrchestratorCallbacks;
+    const callbacks = stubCallbacks((e) => events.push(e));
 
     const result = addUsageAndSave('/tmp/proj', 'test-session', state, 'planner', {
       inputTokens: 200,
@@ -100,7 +109,7 @@ describe('addUsageAndSave', () => {
   it('returns unchanged state and emits no event when usage is null', () => {
     const state = makeState();
     const events: TuiEvent[] = [];
-    const callbacks = { onEvent: (e: TuiEvent) => events.push(e) } as Partial<OrchestratorCallbacks> as OrchestratorCallbacks;
+    const callbacks = stubCallbacks((e) => events.push(e));
     const result = addUsageAndSave('/tmp/proj', 'test-session', state, 'implementer', null, callbacks);
 
     expect(result).toBe(state);

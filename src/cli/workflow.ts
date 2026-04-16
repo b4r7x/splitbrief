@@ -62,15 +62,13 @@ export interface SetupResult {
   needsSetup?: boolean | undefined;
 }
 
+const OVERRIDE_KEYS = [
+  'model', 'provider', 'planner', 'plannerModel', 'plannerCommand',
+  'implementer', 'implementerModel', 'implementerCommand',
+] as const satisfies readonly (keyof WorkflowOpts)[];
+
 function hasRunnerOverrides(opts: WorkflowOpts): boolean {
-  return opts.model !== undefined
-    || opts.provider !== undefined
-    || opts.planner !== undefined
-    || opts.plannerModel !== undefined
-    || opts.plannerCommand !== undefined
-    || opts.implementer !== undefined
-    || opts.implementerModel !== undefined
-    || opts.implementerCommand !== undefined;
+  return OVERRIDE_KEYS.some((k) => opts[k] !== undefined);
 }
 
 export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {

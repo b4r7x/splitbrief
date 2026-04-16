@@ -1,11 +1,9 @@
-import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
-import fs from 'node:fs/promises';
 import { useTheme } from '../../ui/theme.js';
 import { renderMarkdownLine } from '../../ui/markdown.js';
-import { feedbackStore } from '../../stores/feedback.js';
+import { getReviewContentHeight } from '../../core/workflow-rect.js';
+import { useReviewContent } from '../../hooks/use-review-content.js';
 import { reviewStore } from '../../stores/review.js';
-import { labelError } from '../../utils/format.js';
 
 interface ReviewViewProps {
   height?: number;
@@ -16,41 +14,26 @@ export function ReviewView({ height, width }: ReviewViewProps) {
   const t = useTheme();
   const filePath = reviewStore.use(s => s.filePath);
   const offset = reviewStore.use(s => s.scrollOffset);
-  const [content, setContent] = useState('');
-
-  useEffect(() => {
-    if (!filePath) return;
-    let cancelled = false;
-    fs.readFile(filePath, 'utf-8').then(data => {
-      if (!cancelled) {
-        setContent(data);
-        reviewStore.setLineCount(data.split('\n').length);
-      }
-    }).catch((err: unknown) => {
-      if (cancelled) return;
-      setContent('');
-      reviewStore.setLineCount(0);
-      feedbackStore.setError(labelError(`Failed to read ${filePath}`, err));
-    });
-    return () => { cancelled = true; };
-  }, [filePath]);
+  const content = useReviewContent(filePath);
 
   if (!filePath) return null;
 
   const lines = content.split('\n');
-  const visibleHeight = height ?? 20;
-  const visibleLines = lines.slice(offset, offset + visibleHeight);
+  const containerHeight = height ?? 20;
+  const contentHeight = getReviewContentHeight(containerHeight, lines.length);
+  const visibleLines = lines.slice(offset, offset + contentHeight);
+  const showFooter = lines.length > Math.max(0, containerHeight - 1);
 
   return (
-    <Box flexDirection="column" height={visibleHeight} width={width} overflow="hidden">
+    <Box flexDirection="column" height={containerHeight} width={width} overflow="hidden">
       <Text color={t.review.file}>{filePath}</Text>
       <Box flexDirection="column">
         {visibleLines.map((line, i) => renderMarkdownLine(line, i, t))}
       </Box>
-      {lines.length > visibleHeight && (
+      {showFooter && (
         <Text color={t.textDim}>
-          {offset + visibleHeight < lines.length
-            ? `${lines.length - offset - visibleHeight} more lines below`
+          {offset + contentHeight < lines.length
+            ? `${lines.length - offset - contentHeight} more lines below`
             : 'end of file'}
         </Text>
       )}

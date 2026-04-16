@@ -10,6 +10,10 @@ function matchesSlashQuery(cmd: SlashCommandDef, query: string): boolean {
   return cmd.aliases?.some(a => a.toLowerCase().startsWith(query)) ?? false;
 }
 
+function rotateIndex(current: number, length: number, delta: 1 | -1): number {
+  return (current + delta + length) % length;
+}
+
 function fuzzyMatchCommand(commands: SlashCommandDef[], query: string): SlashCommandDef | null {
   const bare = query.startsWith('/') ? query.slice(1) : query;
   if (!bare) return null;
@@ -91,10 +95,7 @@ export function useSlashAutocomplete({
       }
       if (key.tab && !key.shift) {
         if (filtered.length > 0) {
-          setSelectedIndex((i) => {
-            const clamped = Math.min(i, Math.max(0, filtered.length - 1));
-            return (clamped + 1) % filtered.length;
-          });
+          setSelectedIndex((i) => rotateIndex(Math.min(i, Math.max(0, filtered.length - 1)), filtered.length, 1));
         } else if (fuzzyMatch) {
           setValue(fuzzyMatch.name);
           setInputKey((k) => k + 1);
@@ -103,10 +104,7 @@ export function useSlashAutocomplete({
       }
       if (key.tab && key.shift) {
         if (filtered.length > 0) {
-          setSelectedIndex((i) => {
-            const clamped = Math.min(i, Math.max(0, filtered.length - 1));
-            return (clamped - 1 + filtered.length) % filtered.length;
-          });
+          setSelectedIndex((i) => rotateIndex(Math.min(i, Math.max(0, filtered.length - 1)), filtered.length, -1));
         }
         return;
       }

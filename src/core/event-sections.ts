@@ -1,9 +1,40 @@
 import type { TuiEvent, TaskCompletionMethod } from './types/index.js';
 
+// Generic reverse-scan helper: returns the last event of a given type.
+// Sanctioned boundary pattern — TypeScript cannot narrow the return type from
+// a generic type parameter check without the cast on line below.
+export function findLatestEventByType<T extends TuiEvent['type']>(
+  events: readonly TuiEvent[],
+  type: T,
+): Extract<TuiEvent, { type: T }> | undefined {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (e && e.type === type) return e as Extract<TuiEvent, { type: T }>;
+  }
+  return undefined;
+}
+
+export function findLatestRenderableDiffEventIndex(sections: Section[]): number | null {
+  for (let sectionIndex = sections.length - 1; sectionIndex >= 0; sectionIndex--) {
+    const section = sections[sectionIndex];
+    if (!section || section.type === 'completed-task') continue;
+    for (let index = section.items.length - 1; index >= 0; index--) {
+      const event = section.items[index];
+      if (!event) continue;
+      if (event.type === 'implementer-generate-done' && event.diff) {
+        return section.startIndex + index;
+      }
+    }
+  }
+  return null;
+}
+
 export type Section =
   | { type: 'events'; items: TuiEvent[]; startIndex: number }
   | { type: 'completed-task'; summary: { index: number; title: string; method: TaskCompletionMethod; retries: number; duration: number; file?: string; reason?: string } }
   | { type: 'active-task'; items: TuiEvent[]; startIndex: number };
+
+export type DynamicSection = Extract<Section, { type: 'events' | 'active-task' }>;
 
 export function groupEventsIntoSections(events: TuiEvent[]): Section[] {
   const taskRanges: { taskId: string; startIdx: number; endIdx: number; startEvent: TuiEvent & { type: 'task-start' }; endEvent?: TuiEvent }[] = [];

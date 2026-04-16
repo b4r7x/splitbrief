@@ -16,11 +16,11 @@ import { SummaryScreen } from './screens/summary.js';
 import { SetupScreen } from './screens/setup.js';
 import { HelpOverlay } from './components/overlays/help-overlay.js';
 import { CommandPalette } from './components/overlays/command-palette.js';
-import { SkillsPicker } from './components/overlays/skills-picker/index.js';
-import { SessionsPicker } from './components/overlays/sessions-picker/index.js';
-import { SettingsOverlay } from './components/overlays/settings-overlay/index.js';
+import { SkillsPicker } from './components/overlays/skills-picker/skills-picker.js';
+import { SessionsPicker } from './components/overlays/sessions-picker/sessions-picker.js';
+import { SettingsOverlay } from './components/overlays/settings-overlay/settings-overlay.js';
 import { ModeSelector } from './components/overlays/mode-selector.js';
-import { ToolModelPicker } from './components/overlays/tool-model-picker/index.js';
+import { ToolModelPicker } from './components/overlays/tool-model-picker/picker.js';
 import type { Screen, OverlayType, SlashCommandDef, CommandContext, CommandPaletteItem } from './types.js';
 
 export function App() {

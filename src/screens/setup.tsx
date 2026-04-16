@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Text, useApp } from 'ink';
 import { useTheme } from '../ui/theme.js';
 import { OverlayPanel } from '../components/overlays/overlay-panel.js';
-import { ToolModelPicker } from '../components/overlays/tool-model-picker/index.js';
+import { ToolModelPicker } from '../components/overlays/tool-model-picker/picker.js';
 import { routerStore } from '../stores/router.js';
 import { configStore } from '../stores/config.js';
 import { detectionStore } from '../stores/detection.js';

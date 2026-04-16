@@ -1,9 +1,10 @@
 import type { Config, PlannerTool, PlannerDetection, ProviderDetection } from '../../types.js';
-import { buildRunnerConfig } from '../../core/config/index.js';
+import { buildRunnerConfig, createDefaultConfig } from '../../core/config/index.js';
 import { createPlanner } from '../runners/factory.js';
 import { detectAvailableProviders, DETECTION_TIMEOUT_MS, KNOWN_PROVIDERS } from '../providers/registry.js';
 import { withTimeout } from '../../utils/with-timeout.js';
 import { toErrorMessage } from '../../utils/format.js';
+import { warnError } from '../../utils/warn.js';
 import { CLI_TOOLS } from '../cli-tools.js';
 import { hasApiKey, PROVIDER_CATALOG, type ProviderId, isPlannerToolId } from '../../core/providers.js';
 import { typedEntries } from '../../utils/type-guards.js';
@@ -29,41 +30,33 @@ const PROVIDER_PLANNERS: { tool: PlannerTool; description: string }[] =
     .map(id => ({ tool: id, description: providerDescription(id) }));
 
 function minimalConfig(tool: PlannerTool): Config {
+  const defaults = createDefaultConfig();
   return {
-    version: 2,
+    ...defaults,
     planner: buildRunnerConfig('planner', { tool }),
-    implementer: {
-      kind: 'api',
-      provider: 'ollama',
-      apiBase: 'http://localhost:11434/v1',
-      model: 'qwen2.5:7b',
-    },
-    validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'per-task', persistTranscript: true },
   };
 }
 
-function mapFromCachedResults(cached: ProviderDetection[]): PlannerDetection[] {
+function mapProviderDetectionsToPlannerDetections(cached: ProviderDetection[]): PlannerDetection[] {
   return PROVIDER_PLANNERS.map(({ tool, description }) => {
     const detected = cached.find(d => d.provider === tool);
-    return { tool, type: 'api' as const, available: detected?.available ?? false, description };
+    return {
+      tool,
+      type: 'api' as const,
+      available: detected?.available ?? false,
+      description,
+      ...(detected?.error ? { error: detected.error } : {}),
+    };
   });
 }
 
 async function probeProviders(): Promise<PlannerDetection[]> {
-  return Promise.all(
-    PROVIDER_PLANNERS.map(async ({ tool, description }): Promise<PlannerDetection> => {
-      const factory = KNOWN_PROVIDERS[tool];
-      if (!factory) return { tool, type: 'api', available: false, description };
-      try {
-        const provider = factory();
-        const models = await withTimeout(provider.listModels(), DETECTION_TIMEOUT_MS);
-        return { tool, type: 'api', available: models.length > 0, description };
-      } catch {
-        return { tool, type: 'api', available: false, description };
-      }
-    }),
-  );
+  try {
+    return mapProviderDetectionsToPlannerDetections(await detectAvailableProviders());
+  } catch (error) {
+    warnError('detectAvailableProviders', error);
+    return mapProviderDetectionsToPlannerDetections([]);
+  }
 }
 
 interface DetectPlannersOptions {
@@ -77,12 +70,23 @@ export async function detectAvailablePlanners(opts: DetectPlannersOptions = {}):
         const planner = createPlanner(minimalConfig(tool));
         const available = await withTimeout(planner.isAvailable(), DETECTION_TIMEOUT_MS);
         let version: string | undefined;
+        let error: string | undefined;
         if (available) {
           try {
             version = await withTimeout(planner.getVersion(), DETECTION_TIMEOUT_MS) ?? undefined;
-          } catch { /* version detection failed — non-critical */ }
+          } catch (err) {
+            error = `Version probe failed: ${toErrorMessage(err)}`;
+            warnError(`planner.getVersion(${tool})`, err);
+          }
         }
-        return { tool, type: 'cli', available, version, description };
+        return {
+          tool,
+          type: 'cli',
+          available,
+          description,
+          ...(version ? { version } : {}),
+          ...(error ? { error } : {}),
+        };
       } catch (err) {
         return { tool, type: 'cli', available: false, description, error: toErrorMessage(err) };
       }
@@ -97,7 +101,7 @@ export async function detectAvailablePlanners(opts: DetectPlannersOptions = {}):
   }));
 
   const providerResults = opts.providerResults
-    ? mapFromCachedResults(opts.providerResults)
+    ? mapProviderDetectionsToPlannerDetections(opts.providerResults)
     : await probeProviders();
 
   const shellResult: PlannerDetection = {
@@ -110,29 +114,12 @@ export async function detectAvailablePlanners(opts: DetectPlannersOptions = {}):
   return [...cliResults, ...apiResults, ...providerResults, shellResult];
 }
 
-const API_IMPLEMENTER_PROVIDERS = ['anthropic'] as const satisfies readonly ProviderId[];
-
 interface DetectImplementersOptions {
   providerResults?: ProviderDetection[];
 }
 
 export async function detectAvailableImplementers(opts: DetectImplementersOptions = {}): Promise<ProviderDetection[]> {
-  const detected = opts.providerResults ?? await detectAvailableProviders();
-  const detectedNames = new Set<ProviderId>(detected.map(d => d.provider));
-
-  const apiKeyProviders: ProviderDetection[] = API_IMPLEMENTER_PROVIDERS
-    .filter(provider => !detectedNames.has(provider))
-    .map(provider => {
-      const key = hasApiKey(provider);
-      return {
-        provider,
-        available: key,
-        isLocal: false,
-        hasKey: key,
-      };
-    });
-
-  return [...detected, ...apiKeyProviders];
+  return opts.providerResults ?? detectAvailableProviders();
 }
 
 export interface DetectAllResult {

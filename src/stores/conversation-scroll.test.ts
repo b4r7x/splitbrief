@@ -8,33 +8,33 @@ describe('conversationScrollStore', () => {
 
   describe('scrollUp', () => {
     it('increments scrollOffset', () => {
-      conversationScrollStore.scrollUp(10, 10);
+      conversationScrollStore.scrollUp({ renderableCount: 10, totalHeight: 10 });
       expect(conversationScrollStore.get().scrollOffset).toBe(1);
     });
 
-    it('clamps to maxScrollOffset', () => {
-      conversationScrollStore.scrollUp(2, 3);
-      conversationScrollStore.scrollUp(2, 3);
-      conversationScrollStore.scrollUp(2, 3);
+    it('clamps to totalHeight', () => {
+      conversationScrollStore.scrollUp({ renderableCount: 3, totalHeight: 2 });
+      conversationScrollStore.scrollUp({ renderableCount: 3, totalHeight: 2 });
+      conversationScrollStore.scrollUp({ renderableCount: 3, totalHeight: 2 });
       expect(conversationScrollStore.get().scrollOffset).toBe(2);
     });
 
-    it('captures eventCount when scrolling from 0 for the first time', () => {
-      conversationScrollStore.scrollUp(10, 7);
-      expect(conversationScrollStore.get().eventCountAtScroll).toBe(7);
+    it('captures renderableCount when scrolling from 0 for the first time', () => {
+      conversationScrollStore.scrollUp({ renderableCount: 7, totalHeight: 10 });
+      expect(conversationScrollStore.get().renderableCountAtScroll).toBe(7);
     });
 
-    it('does not update eventCountAtScroll on subsequent scrollUp calls', () => {
-      conversationScrollStore.scrollUp(10, 7);
-      conversationScrollStore.scrollUp(10, 15);
-      expect(conversationScrollStore.get().eventCountAtScroll).toBe(7);
+    it('does not update renderableCountAtScroll on subsequent scrollUp calls', () => {
+      conversationScrollStore.scrollUp({ renderableCount: 7, totalHeight: 10 });
+      conversationScrollStore.scrollUp({ renderableCount: 15, totalHeight: 10 });
+      expect(conversationScrollStore.get().renderableCountAtScroll).toBe(7);
     });
   });
 
   describe('scrollDown', () => {
     it('decrements scrollOffset', () => {
-      conversationScrollStore.scrollUp(10, 10);
-      conversationScrollStore.scrollUp(10, 10);
+      conversationScrollStore.scrollUp({ renderableCount: 10, totalHeight: 10 });
+      conversationScrollStore.scrollUp({ renderableCount: 10, totalHeight: 10 });
       conversationScrollStore.scrollDown();
       expect(conversationScrollStore.get().scrollOffset).toBe(1);
     });
@@ -44,24 +44,24 @@ describe('conversationScrollStore', () => {
       expect(conversationScrollStore.get().scrollOffset).toBe(0);
     });
 
-    it('resets eventCountAtScroll to 0 when reaching bottom', () => {
-      conversationScrollStore.scrollUp(10, 5);
+    it('resets renderableCountAtScroll to 0 when reaching bottom', () => {
+      conversationScrollStore.scrollUp({ renderableCount: 5, totalHeight: 10 });
       conversationScrollStore.scrollDown();
       expect(conversationScrollStore.get().scrollOffset).toBe(0);
-      expect(conversationScrollStore.get().eventCountAtScroll).toBe(0);
+      expect(conversationScrollStore.get().renderableCountAtScroll).toBe(0);
     });
   });
 
   describe('scrollToBottom', () => {
     it('sets scrollOffset to 0', () => {
-      conversationScrollStore.scrollUp(10, 10);
+      conversationScrollStore.scrollUp({ renderableCount: 10, totalHeight: 10 });
       conversationScrollStore.scrollToBottom(10);
       expect(conversationScrollStore.get().scrollOffset).toBe(0);
     });
 
-    it('sets eventCountAtScroll to provided count', () => {
+    it('sets renderableCountAtScroll to provided count', () => {
       conversationScrollStore.scrollToBottom(42);
-      expect(conversationScrollStore.get().eventCountAtScroll).toBe(42);
+      expect(conversationScrollStore.get().renderableCountAtScroll).toBe(42);
     });
   });
 
@@ -88,13 +88,13 @@ describe('conversationScrollStore', () => {
 
   describe('reset', () => {
     it('restores initial state', () => {
-      conversationScrollStore.scrollUp(10, 5);
+      conversationScrollStore.scrollUp({ renderableCount: 5, totalHeight: 10 });
       conversationScrollStore.toggleDiff(2);
       conversationScrollStore.reset();
       const s = conversationScrollStore.get();
       expect(s.scrollOffset).toBe(0);
       expect(s.expandedDiffs.size).toBe(0);
-      expect(s.eventCountAtScroll).toBe(0);
+      expect(s.renderableCountAtScroll).toBe(0);
     });
   });
 });

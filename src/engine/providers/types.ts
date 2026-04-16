@@ -1,5 +1,5 @@
-export type { DetectedModel } from '../../core/types/config.js';
 import type { DetectedModel } from '../../core/types/config.js';
+export type { DetectedModel } from '../../core/types/config.js';
 
 export interface ProviderDef {
   readonly name: string;
@@ -9,6 +9,7 @@ export interface ProviderDef {
   listModels(): Promise<string[]>;
   listModelsWithMetadata?(): Promise<DetectedModel[]>;
   detectContextLength?(model: string): Promise<number | null>;
+  getLastError?(): string | undefined;
 }
 
 export interface ProviderDefWithMetadata extends ProviderDef {
@@ -19,4 +20,5 @@ export interface ProviderDefWithMetadata extends ProviderDef {
 export interface ProviderOverrides {
   apiBase?: string | undefined;
   apiKey?: string | undefined;
+  apiKeyEnv?: string | undefined;
 }

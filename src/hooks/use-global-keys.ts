@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { useInput } from 'ink';
+import { useInput, type Key } from 'ink';
 import { overlayStore } from '../stores/overlay.js';
 import { routerStore } from '../stores/router.js';
 import { feedbackStore } from '../stores/feedback.js';
@@ -8,13 +8,15 @@ import { abortStore } from '../stores/abort.js';
 import { reviewStore } from '../stores/review.js';
 import { conversationScrollStore } from '../stores/conversation-scroll.js';
 import { inputModeStore } from '../stores/input-mode.js';
+import {
+  readConversationScrollSnapshot,
+  readReviewContentHeight,
+} from '../core/conversation-layout-snapshot.js';
 import { killAllProcesses } from '../utils/process-lifecycle.js';
 import { isLivePhase } from '../core/phases.js';
-import { findLatestDiffEventIndex } from '../components/conversation-flow/section-heights.js';
+import { findLatestRenderableDiffEventIndex } from '../core/event-sections.js';
 import { terminalSizeStore } from '../stores/terminal-size.js';
-import { getChromeHeight } from '../core/layout-constants.js';
-import { estimateSectionHeight } from '../components/conversation-flow/section-heights.js';
-import type { DynamicSection } from '../components/conversation-flow/viewport-trimming.js';
+import { assertNever } from '../utils/type-guards.js';
 import type { KeyAction } from './keyboard-handlers.js';
 import {
   handleShortcutKeys,
@@ -30,29 +32,35 @@ function applyAction(action: KeyAction, exit: () => void) {
   switch (action.type) {
     case 'none': return;
     case 'exit': exit(); return;
-    case 'cancel-workflow': if (workflowStore.requestCancel()) { try { killAllProcesses(); } catch { /* best-effort */ } } return;
     case 'navigate': routerStore.navigate(action.screen); return;
     case 'open-overlay': overlayStore.open(action.overlay); return;
     case 'toggle-sidebar': workflowStore.toggleSidebar(); return;
     case 'toggle-diff': conversationScrollStore.toggleDiff(action.index); return;
     case 'review-scroll': reviewStore.setScrollOffset(action.offset); return;
-    case 'conversation-scroll-up': conversationScrollStore.scrollUp(action.maxOffset, action.eventCount, action.step, action.totalHeight); return;
+    case 'conversation-scroll-up': conversationScrollStore.scrollUp({ renderableCount: action.renderableCount, totalHeight: action.totalHeight, step: action.step }); return;
     case 'conversation-scroll-down': conversationScrollStore.scrollDown(action.step); return;
-    case 'conversation-scroll-bottom': conversationScrollStore.scrollToBottom(action.eventCount); return;
+    case 'conversation-scroll-bottom': conversationScrollStore.scrollToBottom(action.renderableCount); return;
+    default: return assertNever(action);
   }
 }
 
-function computeScrollDimensions(): { maxOffset: number; viewportHeight: number; totalHeight: number } {
-  const { rows, cols } = terminalSizeStore.get();
-  const viewportHeight = Math.max(0, rows - getChromeHeight());
-  const sections = workflowStore.get().sections;
-  const expandedDiffs = conversationScrollStore.get().expandedDiffs;
-  const dynamicSections = sections.filter((s): s is DynamicSection => s.type !== 'completed-task');
-  const totalHeight = dynamicSections.reduce(
-    (sum, s) => sum + estimateSectionHeight(s, expandedDiffs, cols), 0,
+function getWorkflowScrollAction(input: string, key: Key): KeyAction {
+  const review = reviewStore.get();
+
+  if (review.filePath) {
+    const visibleHeight = readReviewContentHeight();
+    return handleReviewScroll(input, key, review.scrollOffset, review.lineCount, visibleHeight);
+  }
+
+  const { maxOffset, renderableCount, totalHeight, viewportHeight } = readConversationScrollSnapshot();
+  return handleConversationScroll(
+    input,
+    key,
+    renderableCount,
+    maxOffset,
+    viewportHeight,
+    totalHeight,
   );
-  const maxOffset = Math.max(0, totalHeight - viewportHeight);
-  return { maxOffset, viewportHeight, totalHeight };
 }
 
 export function useGlobalKeys({ exit }: { exit: () => void }) {
@@ -76,8 +84,8 @@ export function useGlobalKeys({ exit }: { exit: () => void }) {
         lastCtrlCRef.current = Date.now();
         abortStore.markPending();
         workflowStore.abortTurn();
-        try { killAllProcesses(); } catch { /* best-effort */ }
-        feedbackStore.setError('Aborting… Ctrl+C again to exit');
+        killAllProcesses();
+        feedbackStore.setMessage('Aborting… Ctrl+C again to exit');
       } else {
         exit();
       }
@@ -105,22 +113,14 @@ export function useGlobalKeys({ exit }: { exit: () => void }) {
       if (shortcut.type !== 'none') { applyAction(shortcut, exit); return; }
 
       if (screen === 'workflow') {
-        const events = workflowStore.get().events;
+        const workflow = workflowStore.get();
 
-        const chord = handleWorkflowCtrlChords(input, key, isSmall, events, findLatestDiffEventIndex);
+        const chord = handleWorkflowCtrlChords(input, key, isSmall, workflow.sections, findLatestRenderableDiffEventIndex);
         if (chord.type !== 'none') { applyAction(chord, exit); return; }
 
         if (inputModeStore.get().interactive) return;
 
-        const review = reviewStore.get();
-        if (review.filePath) {
-          const visibleHeight = terminalSizeStore.get().rows - getChromeHeight();
-          const reviewAction = handleReviewScroll(input, key, review.scrollOffset, review.lineCount, visibleHeight);
-          if (reviewAction.type !== 'none') { applyAction(reviewAction, exit); return; }
-        }
-
-        const { maxOffset, viewportHeight, totalHeight } = computeScrollDimensions();
-        const scroll = handleConversationScroll(input, key, events.length, maxOffset, viewportHeight, totalHeight);
+        const scroll = getWorkflowScrollAction(input, key);
         if (scroll.type !== 'none') { applyAction(scroll, exit); return; }
       }
     },

@@ -19,6 +19,13 @@ function borderColorForMode(mode: InputMode, theme: { planner: string; warning: 
   return theme.border;
 }
 
+function placeholderForMode(mode: InputMode, hint?: string): string {
+  if (hint) return hint;
+  if (mode === 'review') return 'approve / edit / comment ... / quit';
+  if (mode === 'question') return 'type your answer...';
+  return 'describe your feature...';
+}
+
 interface InputBarProps {
   onSubmit: (text: string) => void;
   onSlashCommand: (command: string) => void;
@@ -42,11 +49,12 @@ export function InputBar({
 }: InputBarProps) {
   const theme = useTheme();
   const cols = terminalSizeStore.use(s => s.cols);
-  const inputColumns = (width ?? cols) - 6;
+  const inputColumns = Math.max(1, (width ?? cols) - 6);
   const homeHistory = inputHistoryStore.use(s => s.entriesByScope.home);
   const [value, setValue] = useState('');
   const [historyState, setHistoryState] = useState(INITIAL_INPUT_HISTORY_NAVIGATION_STATE);
   const [inputEpoch, setInputEpoch] = useState(0);
+  const [visibleRows, setVisibleRows] = useState(1);
 
   const handleChange = (nextValue: string) => {
     setValue(nextValue);
@@ -97,12 +105,10 @@ export function InputBar({
     return true;
   };
 
-  // Publish input height to store for layout calculations
-  const lineCount = value.split('\n').length;
-  const inputBoxHeight = Math.max(1, Math.min(6, lineCount)) + 2; // +2 for border
   useEffect(() => {
-    inputHeightStore.setRows(inputBoxHeight);
-  }, [inputBoxHeight]);
+    const suggestionRows = showSuggestions ? Math.min(filtered.length, 8) : 0;
+    inputHeightStore.setRows(visibleRows + 2 + suggestionRows);
+  }, [filtered.length, showSuggestions, visibleRows]);
 
   return (
     <Box flexDirection="column" width="100%" flexShrink={0}>
@@ -134,16 +140,10 @@ export function InputBar({
             onSubmit={handleSubmit}
             columns={inputColumns}
             focus={!disabled}
-            placeholder={
-              hint ||
-              (mode === 'review'
-                ? 'approve / edit / comment ... / quit'
-                : mode === 'question'
-                  ? 'type your answer...'
-                  : 'describe your feature...')
-            }
+            placeholder={placeholderForMode(mode, hint)}
             rows={1}
             maxRows={6}
+            onVisibleRowsChange={setVisibleRows}
             keyBindings={{
               submit: (key: { return: boolean }) => key.return,
               newline: (key: { return: boolean; shift: boolean }) =>

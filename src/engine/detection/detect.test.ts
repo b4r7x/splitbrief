@@ -2,13 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 describe('detectAvailablePlanners', () => {
   let plannerDetection: typeof import('./detect.js');
+  const providerResults = [
+    { provider: 'openrouter', available: false, isLocal: false, hasKey: false },
+  ] as const;
 
   beforeEach(async () => {
     plannerDetection = await import('./detect.js');
   });
 
   it('shell planner is always available', async () => {
-    const results = await plannerDetection.detectAvailablePlanners();
+    const results = await plannerDetection.detectAvailablePlanners({ providerResults: [...providerResults] });
     const shell = results.find((r) => r.tool === 'shell');
     expect(shell).toMatchObject({ type: 'shell', available: true, description: 'Custom command' });
   });
@@ -17,7 +20,7 @@ describe('detectAvailablePlanners', () => {
     const orig = process.env.ANTHROPIC_API_KEY;
     process.env.ANTHROPIC_API_KEY = 'test-key';
     try {
-      const results = await plannerDetection.detectAvailablePlanners();
+      const results = await plannerDetection.detectAvailablePlanners({ providerResults: [...providerResults] });
       const anthropic = results.find((r) => r.tool === 'anthropic');
       expect(anthropic).toMatchObject({ available: true, type: 'api', description: 'Anthropic API' });
     } finally {
@@ -36,7 +39,7 @@ describe('detectAvailablePlanners', () => {
       return new Response('', { status: 404 });
     }) as typeof fetch;
     try {
-      const results = await plannerDetection.detectAvailablePlanners();
+      const results = await plannerDetection.detectAvailablePlanners({ providerResults: [...providerResults] });
       const openrouter = results.find((r) => r.tool === 'openrouter');
       expect(openrouter).toMatchObject({ available: false, type: 'api', description: 'OpenRouter API' });
     } finally {
@@ -95,8 +98,8 @@ describe('detectAvailableImplementers', () => {
     const lmStudio = results.find((r) => r.provider === 'lm-studio');
 
     expect(ollama).toMatchObject({ available: true, models: [{ id: 'codellama:7b' }] });
-    expect(lmStudio).toMatchObject({ available: false });
-    expect(lmStudio).toHaveProperty('models', undefined);
+    expect(lmStudio).toMatchObject({ available: false, error: 'Connection refused' });
+    expect(lmStudio).not.toHaveProperty('models');
   });
 
   it.each([
