@@ -10,6 +10,8 @@ import { createTogetherProvider } from './together.js';
 import { createAnthropicProvider } from './anthropic.js';
 import { createOpenAICompatProvider } from './compat.js';
 import { PROVIDER_CATALOG, isProviderId, type ProviderId } from '../../core/providers.js';
+import { toErrorMessage } from '../../utils/format.js';
+import { warnError } from '../../utils/warn.js';
 import { withTimeout } from '../../utils/with-timeout.js';
 
 export const DETECTION_TIMEOUT_MS = 5000;
@@ -48,13 +50,20 @@ export function getProvider(name: string, overrides?: ProviderOverrides): Provid
   if (!overrides?.apiBase) {
     throw new Error(`Unknown provider '${name}' requires an apiBase override`);
   }
-  const envKey = `${name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`;
+  if (!overrides.apiKey && !overrides.apiKeyEnv) {
+    throw new Error(
+      `Unknown provider '${name}': provide either overrides.apiKey (inline key) or overrides.apiKeyEnv (env-var name)`,
+    );
+  }
+  const envKey = overrides.apiKeyEnv ?? '';
   return createOpenAICompatProvider(name, overrides.apiBase, envKey, false, overrides);
 }
 
 function getImplementerProvider(config: Config): ProviderDef {
-  if (config.implementer.kind !== 'api') throw new Error('Expected api implementer config');
   const impl = config.implementer;
+  if (impl.kind !== 'api') {
+    throw new Error(`getImplementerProvider requires kind=api, got kind=${impl.kind}`);
+  }
   return getProvider(impl.provider, {
     apiBase: impl.apiBase,
     apiKey: impl.apiKey,
@@ -83,7 +92,9 @@ export async function detectCapabilities(config: Config): Promise<{ contextLengt
     try {
       const ctx = await provider.detectContextLength(config.implementer.model);
       if (ctx) return { contextLength: ctx };
-    } catch { /* empty */ }
+    } catch (error) {
+      warnError(`detectCapabilities(${provider.name})`, error);
+    }
   }
 
   return fallback;
@@ -91,6 +102,9 @@ export async function detectCapabilities(config: Config): Promise<{ contextLengt
 
 async function detectOne(name: ProviderId, factory: ProviderFactory): Promise<ProviderDetection> {
   const provider = factory();
+  if (!provider.isLocal && !provider.apiKey()) {
+    return { provider: name, available: false, isLocal: false, hasKey: false };
+  }
   try {
     let models: DetectedModel[];
     if (provider.listModelsWithMetadata) {
@@ -99,15 +113,23 @@ async function detectOne(name: ProviderId, factory: ProviderFactory): Promise<Pr
       const ids = await withTimeout(provider.listModels(), DETECTION_TIMEOUT_MS);
       models = ids.map((id) => ({ id }));
     }
+    const lastError = provider.getLastError?.();
     return {
       provider: name,
       available: models.length > 0,
-      models: models.length > 0 ? models : undefined,
       isLocal: provider.isLocal,
-      hasKey: !provider.isLocal ? !!provider.apiKey() : undefined,
+      ...(models.length > 0 ? { models } : {}),
+      ...(!provider.isLocal ? { hasKey: !!provider.apiKey() } : {}),
+      ...(lastError ? { error: lastError } : {}),
     };
-  } catch {
-    return { provider: name, available: false, isLocal: provider.isLocal };
+  } catch (error) {
+    return {
+      provider: name,
+      available: false,
+      isLocal: provider.isLocal,
+      ...(!provider.isLocal ? { hasKey: !!provider.apiKey() } : {}),
+      error: toErrorMessage(error),
+    };
   }
 }
 

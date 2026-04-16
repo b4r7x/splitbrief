@@ -1,19 +1,18 @@
 import type { Key } from 'ink';
 import type { OverlayType, Screen } from '../core/types/app.js';
-import type { TuiEvent } from '../types.js';
+import type { Section } from '../core/event-sections.js';
 
 export type KeyAction =
   | { type: 'none' }
   | { type: 'exit' }
-  | { type: 'cancel-workflow' }
   | { type: 'navigate'; screen: Screen }
   | { type: 'open-overlay'; overlay: OverlayType }
   | { type: 'toggle-sidebar' }
   | { type: 'toggle-diff'; index: number }
   | { type: 'review-scroll'; offset: number }
-  | { type: 'conversation-scroll-up'; maxOffset: number; eventCount: number; step: number; totalHeight: number }
+  | { type: 'conversation-scroll-up'; renderableCount: number; step: number; totalHeight: number }
   | { type: 'conversation-scroll-down'; step: number }
-  | { type: 'conversation-scroll-bottom'; eventCount: number };
+  | { type: 'conversation-scroll-bottom'; renderableCount: number };
 
 const NONE: KeyAction = { type: 'none' };
 
@@ -44,8 +43,8 @@ export function handleWorkflowCtrlChords(
   input: string,
   key: Key,
   isSmall: boolean,
-  events: TuiEvent[],
-  findLatestDiff: (events: TuiEvent[]) => number | null,
+  sections: Section[],
+  findLatestDiff: (sections: Section[]) => number | null,
 ): KeyAction {
   if (!key.ctrl) return NONE;
   if (input === 'e') {
@@ -53,7 +52,7 @@ export function handleWorkflowCtrlChords(
     return NONE;
   }
   if (input === 'd') {
-    const idx = findLatestDiff(events);
+    const idx = findLatestDiff(sections);
     if (idx != null) return { type: 'toggle-diff', index: idx };
     return NONE;
   }
@@ -77,35 +76,32 @@ export function handleReviewScroll(
 export function handleConversationScroll(
   input: string,
   key: Key,
-  eventCount: number,
+  renderableCount: number,
   maxOffset: number,
   viewportHeight: number,
   totalHeight: number,
 ): KeyAction {
   const pageStep = Math.max(1, viewportHeight - 2);
 
-  // Shift+Up/Down: scroll 1 line
   if (key.shift && key.upArrow) {
-    return { type: 'conversation-scroll-up', maxOffset, eventCount, step: 1, totalHeight };
+    return { type: 'conversation-scroll-up', renderableCount, step: 1, totalHeight };
   }
   if (key.shift && key.downArrow) {
     return { type: 'conversation-scroll-down', step: 1 };
   }
 
-  // PageUp/PageDown: scroll by page
   if (key.pageUp) {
-    return { type: 'conversation-scroll-up', maxOffset, eventCount, step: pageStep, totalHeight };
+    return { type: 'conversation-scroll-up', renderableCount, step: pageStep, totalHeight };
   }
   if (key.pageDown) {
     return { type: 'conversation-scroll-down', step: pageStep };
   }
 
-  // g = top, G = bottom
   if (input === 'g') {
-    return { type: 'conversation-scroll-up', maxOffset, eventCount, step: maxOffset, totalHeight };
+    return { type: 'conversation-scroll-up', renderableCount, step: maxOffset, totalHeight };
   }
   if (input === 'G') {
-    return { type: 'conversation-scroll-bottom', eventCount };
+    return { type: 'conversation-scroll-bottom', renderableCount };
   }
 
   return NONE;

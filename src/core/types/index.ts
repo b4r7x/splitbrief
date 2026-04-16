@@ -54,6 +54,7 @@ export type {
   OrchestratorCallbacks,
   ClarificationQuestion,
   SessionLogEntry,
+  SessionLogEventEntryFor,
   SessionLogEventEntry,
   SessionLogMessageEntry,
 } from './events.js';

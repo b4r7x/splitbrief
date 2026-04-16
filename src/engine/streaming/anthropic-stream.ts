@@ -4,8 +4,18 @@ import { redactSecrets } from '../../utils/redact.js';
 import { IdleTimeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
 import { stripV1Suffix } from '../providers/client.js';
 import { ANTHROPIC_API_VERSION } from '../providers/anthropic.js';
-import { narrowRecord } from '../../utils/type-guards.js';
+import { narrowRecord, assertNever } from '../../utils/type-guards.js';
 import { STREAM_TIMEOUT_MS, throwMappedError } from './stream-errors.js';
+
+type AnthropicEventType =
+  | 'message_start'
+  | 'content_block_start'
+  | 'content_block_delta'
+  | 'content_block_stop'
+  | 'message_delta'
+  | 'message_stop'
+  | 'ping'
+  | 'error';
 
 const DEFAULT_MAX_TOKENS = 4096;
 
@@ -117,8 +127,15 @@ async function* readSseEvents(stream: ReadableStream<Uint8Array>, signal?: Abort
   }
 }
 
-function getEventType(payload: Record<string, unknown>): string | null {
-  return typeof payload.type === 'string' ? payload.type : null;
+const ANTHROPIC_EVENT_TYPES: readonly AnthropicEventType[] = [
+  'message_start', 'content_block_start', 'content_block_delta',
+  'content_block_stop', 'message_delta', 'message_stop', 'ping', 'error',
+];
+
+function getEventType(payload: Record<string, unknown>): AnthropicEventType | null {
+  const t = payload.type;
+  if (typeof t !== 'string') return null;
+  return (ANTHROPIC_EVENT_TYPES as readonly string[]).includes(t) ? (t as AnthropicEventType) : null;
 }
 
 function getMessageUsage(payload: Record<string, unknown>): Partial<TokenDelta> {
@@ -193,7 +210,9 @@ export async function streamAnthropicCompletion(
       const payload = narrowRecord(JSON.parse(event.data));
       if (payload === null) continue;
 
-      switch (getEventType(payload)) {
+      const eventType = getEventType(payload);
+      if (eventType === null) continue;
+      switch (eventType) {
         case 'message_start':
           usage = mergeUsage(usage, getMessageUsage(payload));
           break;
@@ -217,7 +236,7 @@ export async function streamAnthropicCompletion(
         case 'ping':
           break;
         default:
-          break;
+          assertNever(eventType);
       }
     }
   } catch (err: unknown) {

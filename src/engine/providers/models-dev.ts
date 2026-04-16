@@ -1,9 +1,10 @@
 import { z } from 'zod';
-import type { DetectedModel } from './types.js';
+import type { DetectedModel } from '../../core/types/config.js';
 import type { ProviderId } from '../../core/providers.js';
+import { fetchJsonWithTimeout } from './client.js';
 import { isModelFree } from './metadata.js';
 
-const ModelsDevModelSchema = z.looseObject({
+const ModelsDevModelSchema = z.object({
   id: z.string(),
   name: z.string().optional(),
   cost: z.object({ input: z.number().optional(), output: z.number().optional() }).optional(),
@@ -12,7 +13,7 @@ const ModelsDevModelSchema = z.looseObject({
   last_updated: z.string().optional(),
 });
 
-const ModelsDevProviderSchema = z.looseObject({
+const ModelsDevProviderSchema = z.object({
   id: z.string(),
   name: z.string().optional(),
   models: z.record(z.string(), ModelsDevModelSchema),
@@ -68,19 +69,34 @@ function modelToDetected(model: ModelsDevModel): DetectedModel {
   return result;
 }
 
+function mergeDetectedModel(
+  current: DetectedModel | undefined,
+  incoming: DetectedModel,
+): DetectedModel {
+  if (!current) return incoming;
+  const contextLength = incoming.contextLength ?? current.contextLength;
+  const pricingInput = incoming.pricingInput ?? current.pricingInput;
+  const pricingOutput = incoming.pricingOutput ?? current.pricingOutput;
+  const isFree = incoming.isFree ?? current.isFree;
+  const releaseDate = incoming.releaseDate ?? current.releaseDate;
+  const capabilities = incoming.capabilities ?? current.capabilities;
+  return {
+    ...current,
+    ...incoming,
+    ...(contextLength !== undefined ? { contextLength } : {}),
+    ...(pricingInput !== undefined ? { pricingInput } : {}),
+    ...(pricingOutput !== undefined ? { pricingOutput } : {}),
+    ...(isFree !== undefined ? { isFree } : {}),
+    ...(releaseDate !== undefined ? { releaseDate } : {}),
+    ...(capabilities !== undefined ? { capabilities } : {}),
+  };
+}
+
 export async function fetchModelsDevCatalog(): Promise<ModelsDevCatalog> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const res = await fetch(MODELS_DEV_URL, { signal: controller.signal });
-    if (!res.ok) throw new Error(`models.dev responded with ${res.status}`);
-    const json: unknown = await res.json();
-    const parsed = ModelsDevCatalogSchema.safeParse(json);
-    if (!parsed.success) return {};
-    return parsed.data;
-  } finally {
-    clearTimeout(timer);
-  }
+  const json = await fetchJsonWithTimeout(MODELS_DEV_URL, 10_000);
+  const parsed = ModelsDevCatalogSchema.safeParse(json);
+  if (!parsed.success) return {};
+  return parsed.data;
 }
 
 export function getModelsForProvider(catalog: ModelsDevCatalog, providerId: ProviderId): DetectedModel[] {
@@ -91,7 +107,7 @@ export function getModelsForProvider(catalog: ModelsDevCatalog, providerId: Prov
     if (!provider?.models) continue;
 
     for (const model of Object.values(provider.models).map(modelToDetected)) {
-      merged.set(model.id, model);
+      merged.set(model.id, mergeDetectedModel(merged.get(model.id), model));
     }
   }
 

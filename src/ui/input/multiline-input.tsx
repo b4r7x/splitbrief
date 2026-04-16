@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Box, Spacer, Text, useInput, type Key } from 'ink';
 import { buildSegments, normalizeLineEndings, type SegmentType } from './segments.js';
 import { resolveEditAction, applyEditAction, navigateVertically } from './text-editing.js';
@@ -32,6 +32,8 @@ interface ControlledMultilineInputProps {
   tabSize?: number | undefined;
   cursorIndex?: number | undefined;
   highlight?: { start: number; end: number } | undefined;
+  measureColumns?: number | undefined;
+  onVisibleRowsChange?: ((rows: number) => void) | undefined;
 }
 
 function ControlledMultilineInput({
@@ -47,6 +49,8 @@ function ControlledMultilineInput({
   tabSize = 4,
   cursorIndex = 0,
   highlight,
+  measureColumns,
+  onVisibleRowsChange,
 }: ControlledMultilineInputProps) {
   const t = useTheme();
   const scrollOffsetRef = useRef(0);
@@ -67,10 +71,24 @@ function ControlledMultilineInput({
   const minRows = rows ?? maxRows ?? 1;
   const capRows = maxRows ?? rows ?? 1;
   const effectiveVisibleRows = Math.max(minRows, Math.min(capRows, contentHeight));
+  const contentMeasureKey = [
+    value,
+    cursorIndex,
+    focus ? 1 : 0,
+    showCursor ? 1 : 0,
+    placeholder,
+    mask ?? '',
+    highlight?.start ?? -1,
+    highlight?.end ?? -1,
+    measureColumns ?? 0,
+  ].join('|');
+  const markerMeasureKey = `${cursorIndex}|${focus ? 1 : 0}|${showCursor ? 1 : 0}|${measureColumns ?? 0}`;
 
-  // Derived during render: scrollOffset is a pure function of measurement
-  // inputs plus the previous value (for relative clamping). Using a ref
-  // avoids a derived-state useEffect.
+  useEffect(() => {
+    onVisibleRowsChange?.(effectiveVisibleRows);
+  }, [effectiveVisibleRows, onVisibleRowsChange]);
+
+  // Derived during render via ref to avoid a derived-state useEffect.
   const scrollOffset = computeViewportScroll({
     previous: scrollOffsetRef.current,
     markerHeight,
@@ -101,15 +119,15 @@ function ControlledMultilineInput({
       <Box flexDirection="column">
         <Box height={effectiveVisibleRows} overflowY="hidden" flexShrink={0} flexDirection="column">
           <Box marginTop={-scrollOffset} flexDirection="column">
-            <MeasureBox onHeightChange={setContentHeight}>
+            <MeasureBox onHeightChange={setContentHeight} measureKey={contentMeasureKey}>
               <Text>
                 {preCursor?.map((segment, idx) => (
-                  <Text key={idx} {...getStyle(segment.type)}>
+                  <Text key={`pre-${idx}`} {...getStyle(segment.type)}>
                     {segment.value}
                   </Text>
                 ))}
                 {postCursor?.map((segment, idx) => (
-                  <Text key={idx} {...getStyle(segment.type)}>
+                  <Text key={`post-${idx}`} {...getStyle(segment.type)}>
                     {segment.value}
                   </Text>
                 ))}
@@ -118,10 +136,10 @@ function ControlledMultilineInput({
           </Box>
           <Spacer />
         </Box>
-        <MeasureBox onHeightChange={setMarkerHeight}>
+        <MeasureBox onHeightChange={setMarkerHeight} measureKey={markerMeasureKey}>
           <Text>
             {preCursor?.map((segment, idx) => (
-              <Text key={idx} {...getStyle(segment.type)}>
+              <Text key={`marker-${idx}`} {...getStyle(segment.type)}>
                 {segment.value}
               </Text>
             ))}
@@ -163,8 +181,7 @@ export function MultilineInput({
   // in non-Kitty terminals sends multiple raw bytes parsed as separate events)
   const suppressUntilRef = useRef(0);
 
-  // Clamp during render so stale cursor state from a shrinking `value` prop
-  // is corrected before any consumer reads it.
+  // Clamp during render so stale cursor from a shrinking `value` prop is corrected.
   const cursorIndex = Math.min(rawCursorIndex, value.length);
 
   useInput((input, key) => {
@@ -209,40 +226,36 @@ export function MultilineInput({
       nextPasteLength = input.length;
     }
 
+    if (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
+      if (!showCursor) return;
+    }
+
     if (key.upArrow) {
-      if (showCursor) {
-        const newIndex = navigateVertically('up', value, cursorIndex);
-        if (newIndex !== undefined) {
-          setCursorIndex(newIndex);
-          setPasteLength(0);
-          return;
-        }
-        if (onBoundaryNavigate?.('up')) {
-          setPasteLength(0);
-        }
+      const newIndex = navigateVertically('up', value, cursorIndex);
+      if (newIndex !== undefined) {
+        setCursorIndex(newIndex);
+        setPasteLength(0);
+        return;
+      }
+      if (onBoundaryNavigate?.('up')) {
+        setPasteLength(0);
       }
     } else if (key.downArrow) {
-      if (showCursor) {
-        const newIndex = navigateVertically('down', value, cursorIndex);
-        if (newIndex !== undefined) {
-          setCursorIndex(newIndex);
-          setPasteLength(0);
-          return;
-        }
-        if (onBoundaryNavigate?.('down')) {
-          setPasteLength(0);
-        }
+      const newIndex = navigateVertically('down', value, cursorIndex);
+      if (newIndex !== undefined) {
+        setCursorIndex(newIndex);
+        setPasteLength(0);
+        return;
+      }
+      if (onBoundaryNavigate?.('down')) {
+        setPasteLength(0);
       }
     } else if (key.leftArrow) {
-      if (showCursor) {
-        setCursorIndex(Math.max(0, cursorIndex - 1));
-        setPasteLength(0);
-      }
+      setCursorIndex(Math.max(0, cursorIndex - 1));
+      setPasteLength(0);
     } else if (key.rightArrow) {
-      if (showCursor) {
-        setCursorIndex(Math.min(value.length, cursorIndex + 1));
-        setPasteLength(0);
-      }
+      setCursorIndex(Math.min(value.length, cursorIndex + 1));
+      setPasteLength(0);
     } else if (key.backspace || key.delete) {
       if (cursorIndex > 0) {
         onChange(value.slice(0, cursorIndex - 1) + value.slice(cursorIndex));
@@ -270,6 +283,7 @@ export function MultilineInput({
       value={value}
       cursorIndex={cursorIndex}
       highlight={highlight}
+      measureColumns={columns}
       showCursor={showCursor}
       focus={focus}
     />

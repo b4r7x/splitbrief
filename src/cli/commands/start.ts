@@ -1,16 +1,13 @@
 import { Command } from 'commander';
-import { mkdirSync } from 'node:fs';
 import { createElement } from 'react';
 import { App } from '../../app.js';
 import { renderApp } from '../render.js';
 import { addWorkflowOptions, setupWorkflow, resolveProjectDir } from '../workflow.js';
 import { routerStore } from '../../stores/router.js';
 import { initStores } from '../init-stores.js';
-import { guardNoActiveSession } from './guards.js';
-import { writeActive } from '../../core/sessions/active.js';
+import { clearStaleActiveSessionOrThrow } from './guards.js';
+import { beginSession } from '../../core/sessions/begin.js';
 import { maybeMigrate } from './migrate.js';
-import { generateSessionId } from '../../core/sessions/id.js';
-import { sessionDir } from '../../core/paths.js';
 import type { WorkflowOpts } from '../../types.js';
 
 export function registerStartCommand(program: Command): void {
@@ -24,14 +21,9 @@ export function registerStartCommand(program: Command): void {
 
     const { useFullscreen, useMouse, needsSetup } = await setupWorkflow(opts);
 
-    guardNoActiveSession(projectDir);
+    clearStaleActiveSessionOrThrow(projectDir);
 
-    let sessionId: string | undefined;
-    if (feature) {
-      sessionId = generateSessionId(projectDir, feature);
-      mkdirSync(sessionDir(projectDir, sessionId), { recursive: true, mode: 0o700 });
-      writeActive(projectDir, sessionId);
-    }
+    const sessionId = feature ? beginSession(projectDir, feature) : undefined;
 
     await initStores(projectDir, opts);
     if (needsSetup) {

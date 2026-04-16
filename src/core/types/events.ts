@@ -1,8 +1,8 @@
 import type { Phase, TaskId } from './workflow.js';
 import type { Summary, TaskCompletionMethod, TokenUsage, CostPrediction } from './summary.js';
 import type { WorkflowMode } from './config.js';
-export type { ClarificationQuestion } from './schemas/question.js';
 import type { ClarificationQuestion } from './schemas/question.js';
+export type { ClarificationQuestion } from './schemas/question.js';
 
 export type ValidationStages = { tsc: boolean; lint: boolean; test: boolean };
 
@@ -244,14 +244,18 @@ export type OrchestratorEvent<T extends OrchestratorEventType = OrchestratorEven
   };
 }[T];
 
-export type SessionLogEventEntry = {
+export type SessionLogEventEntryFor<T extends OrchestratorEventType> = {
   ts: string;
   kind: 'event';
-  type: OrchestratorEventType;
+  type: T;
   taskId?: TaskId | undefined;
   phase: Phase;
-  data: OrchestratorEventPayloadMap[OrchestratorEventType];
+  data: OrchestratorEventPayloadMap[T];
 };
+
+export type SessionLogEventEntry = {
+  [K in OrchestratorEventType]: SessionLogEventEntryFor<K>;
+}[OrchestratorEventType];
 
 export type SessionLogMessageEntry = {
   ts: string;

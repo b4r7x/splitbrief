@@ -1,6 +1,7 @@
 import { Box, Text } from 'ink';
 import { useAsyncHighlight } from './use-async-highlight.js';
 import { useTheme, type Theme } from './theme.js';
+import { getMaxVisibleDiffLines } from '../core/diff-height.js';
 
 export interface DiffViewProps {
   file: string;
@@ -10,9 +11,6 @@ export interface DiffViewProps {
   expanded: boolean;
   rows: number;
 }
-
-const MAX_LINES_RATIO = 0.5;
-const MIN_MAX_LINES = 10;
 
 const EXT_TO_LANG: Record<string, string> = {
   ts: 'typescript',
@@ -74,7 +72,7 @@ function DiffLine({ line, lineNum, highlightedContent, theme: t }: DiffLineProps
 export function DiffView({ file, linesAdded, linesRemoved, diff, expanded, rows }: DiffViewProps) {
   const t = useTheme();
 
-  const maxLines = Math.max(MIN_MAX_LINES, Math.floor(rows * MAX_LINES_RATIO));
+  const maxLines = getMaxVisibleDiffLines(rows);
   const lines = diff ? diff.split('\n').filter(l => l.length > 0) : [];
   const visible = lines.slice(0, maxLines);
   const lang = langFromFile(file);

@@ -1,7 +1,8 @@
 import { z } from 'zod';
-import type { DetectedModel } from './types.js';
+import type { DetectedModel } from '../../core/types/config.js';
 import type { CliToolId } from '../../core/types/schemas/enums.js';
 import { runCommand } from '../../utils/process.js';
+import { fetchJsonWithTimeout } from './client.js';
 import { buildPricingFields } from './metadata.js';
 
 const SUBPROCESS_TIMEOUT_MS = 10_000;
@@ -29,7 +30,8 @@ function parseSubprocessLines(stdout: string): string[] {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .filter((line) => !line.startsWith('-') && !line.startsWith('=') && !/error/i.test(line));
+    .filter((line) => !line.startsWith('-') && !line.startsWith('='))
+    .filter((line) => !/^error(?::|\s)/i.test(line));
 }
 
 async function discoverSubprocessModels(command: string, args: string[]): Promise<DetectedModel[]> {
@@ -53,18 +55,7 @@ export function discoverOpencodeModels(): Promise<DetectedModel[]> {
 
 export async function discoverKiloModels(): Promise<DetectedModel[]> {
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
-
-    let json: unknown;
-    try {
-      const res = await fetch(KILO_MODELS_URL, { signal: controller.signal });
-      if (!res.ok) return [];
-      json = await res.json();
-    } finally {
-      clearTimeout(timer);
-    }
-
+    const json = await fetchJsonWithTimeout(KILO_MODELS_URL, HTTP_TIMEOUT_MS);
     const parsed = KiloModelsResponseSchema.safeParse(json);
     if (!parsed.success) return [];
 

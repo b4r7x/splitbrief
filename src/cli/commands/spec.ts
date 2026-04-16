@@ -6,10 +6,9 @@ import { ensureGitAndConfig, resolveProjectDir, loadConfigOrExit } from '../work
 import { cliError } from '../errors.js';
 import { toErrorMessage } from '../../utils/format.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
-import { writeSpecFile, ensureSessionDir } from '../../core/paths-io.js';
-import { generateSessionId } from '../../core/sessions/id.js';
-import { writeActive } from '../../core/sessions/active.js';
-import { guardNoActiveSession } from './guards.js';
+import { writeSpecFile } from '../../core/paths-io.js';
+import { beginSession } from '../../core/sessions/begin.js';
+import { clearStaleActiveSessionOrThrow } from './guards.js';
 
 export function registerSpecCommand(program: Command): void {
   program
@@ -21,7 +20,7 @@ export function registerSpecCommand(program: Command): void {
       const projectDir = resolveProjectDir(opts.project);
       await ensureGitAndConfig(projectDir);
 
-      guardNoActiveSession(projectDir);
+      clearStaleActiveSessionOrThrow(projectDir);
 
       const config = loadConfigOrExit(projectDir);
       if (opts.auto) {
@@ -29,9 +28,7 @@ export function registerSpecCommand(program: Command): void {
         config.workflow.autoApprovePlan = true;
       }
 
-      const sessionId = generateSessionId(projectDir, feature);
-      ensureSessionDir(projectDir, sessionId);
-      writeActive(projectDir, sessionId);
+      const sessionId = beginSession(projectDir, feature);
 
       const planner = createPlanner(config);
 

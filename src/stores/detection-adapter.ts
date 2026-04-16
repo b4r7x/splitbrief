@@ -2,7 +2,7 @@ import { loadDetection, refreshDetection } from '../engine/detection/service.js'
 import { detectionStore } from './detection.js';
 import { modelCacheStore } from './model-cache.js';
 import { isProviderId } from '../core/providers.js';
-import type { DetectionDeps, DetectionServiceResult } from '../engine/detection/service.js';
+import type { DetectionDeps, DetectionServiceResult, DetectionService } from '../engine/detection/service.js';
 
 function applyToStores(result: DetectionServiceResult): void {
   detectionStore.set(result.detection);
@@ -14,8 +14,9 @@ function applyToStores(result: DetectionServiceResult): void {
   }
 }
 
-export async function loadDetectionIntoStores(deps: DetectionDeps, projectDir?: string): Promise<void> {
-  const result = await loadDetection(deps, projectDir);
+export async function loadDetectionIntoStores(deps: DetectionDeps, projectDir?: string, service?: DetectionService): Promise<void> {
+  const fn = service?.loadDetection ?? loadDetection;
+  const result = await fn(deps, projectDir);
   applyToStores(result);
 }
 

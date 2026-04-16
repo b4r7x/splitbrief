@@ -33,8 +33,7 @@ export function findVisualLineStart(value: string, cursor: number, columns: numb
   const logicalLine = value.slice(logicalStart, logicalEnd);
   const cursorInLine = cursor - logicalStart;
 
-  // Insert cursor space to match Ink rendering (ControlledMultilineInput injects
-  // ' ' at cursor position; Ink squashes all segments then wraps the combined text)
+  // Insert cursor space to match Ink rendering (segments are squashed then wrapped).
   const lineWithCursor = logicalLine.slice(0, cursorInLine) + ' ' + logicalLine.slice(cursorInLine);
 
   const wrapped = wrapAnsi(lineWithCursor, columns, { trim: false, hard: true });

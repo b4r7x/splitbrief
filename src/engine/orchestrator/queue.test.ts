@@ -103,9 +103,15 @@ describe('createQueueHandler', () => {
     handler('inject me', 'researching');
 
     expect(dispatchNativeInjection).toHaveBeenCalledOnce();
-    const [msg, receivedPlanner] = (dispatchNativeInjection as ReturnType<typeof vi.fn>).mock.calls[0] as [QueuedMessage, typeof planner];
-    expect(msg.text).toBe('inject me');
-    expect(receivedPlanner).toBe(planner);
+    expect(dispatchNativeInjection).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'inject me' }),
+      planner,
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
   });
 
   it('does not call dispatchNativeInjection when state is undefined', () => {

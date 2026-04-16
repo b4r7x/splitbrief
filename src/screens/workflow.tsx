@@ -1,12 +1,11 @@
 import { Box } from 'ink';
-import { appendFileSync } from 'fs';
 import type { InputMode, SlashCommandDef, Summary } from '../types.js';
 import { Header } from '../components/workflow/header.js';
 import { AgentStatusRow } from '../components/workflow/agent-status-row.js';
 import { ConfigLine } from '../components/workflow/config-line.js';
-import { ConversationFlow } from '../components/conversation-flow/index.js';
+import { ConversationFlow } from '../components/conversation-flow/flow.js';
 import { FeedbackRow } from '../components/input-bar/feedback-row.js';
-import { InputBar } from '../components/input-bar/index.js';
+import { InputBar } from '../components/input-bar/input-bar.js';
 import { InputFooter } from '../components/input-bar/input-footer.js';
 import { ScreenShell } from '../components/screen-shell.js';
 import { ReviewView } from '../components/workflow/review-view.js';
@@ -21,6 +20,12 @@ import { routerStore } from '../stores/router.js';
 import { workflowStore } from '../stores/workflow.js';
 import { reviewStore } from '../stores/review.js';
 import { inputHeightStore } from '../stores/input-height.js';
+import {
+  getWorkflowContentWidth,
+  getWorkflowSidebarWidth,
+  getWorkflowViewportHeight,
+  hasWorkflowConfig,
+} from '../core/workflow-rect.js';
 
 interface WorkflowScreenProps {
   commands: SlashCommandDef[];
@@ -60,26 +65,17 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
     sessionId,
   });
 
-  const events = workflowStore.use(s => s.events);
+  const sections = workflowStore.use(s => s.sections);
   const cancelled = workflowStore.use(s => s.cancelled);
   const reviewFilePath = reviewStore.use(s => s.filePath);
   const sidebarVisible = workflowStore.use(s => s.sidebarVisible);
-  const showSidebar = sidebarVisible && !isSmall;
 
-  const hasWorkflowConfig = workflowStore.use(s =>
-    s.events.some(ev => ev.type === 'workflow-config'),
-  );
+  const hasConfig = workflowStore.use(s => hasWorkflowConfig(s.events));
 
-  const sidebarWidth = Math.floor(cols * 0.25);
-  // L1=3 (header+agent-status+spacer), L2=0|2 (config-line, dynamic), feedback=1, input=dynamic, footer=1
-  const l2 = hasWorkflowConfig ? 2 : 0;
-  const contentHeight = Math.max(0, rows - 3 - l2 - 1 - inputRows - 1);
-  const contentWidth = showSidebar ? cols - sidebarWidth : cols;
-
-  // DEBUG
-  const stdoutRows = process.stdout.rows;
-  const stdoutCols = process.stdout.columns;
-  appendFileSync('/tmp/scroll-debug.log', `WORKFLOW: storeRows=${rows} stdoutRows=${stdoutRows} cols=${cols} l2=${l2} inputRows=${inputRows} contentHeight=${contentHeight}\n`);
+  const sidebarWidth = getWorkflowSidebarWidth(cols, sidebarVisible, isSmall);
+  const showSidebar = sidebarWidth > 0;
+  const contentHeight = getWorkflowViewportHeight(rows, inputRows, hasConfig);
+  const contentWidth = getWorkflowContentWidth(cols, sidebarVisible, isSmall);
 
   return (
     <ScreenShell
@@ -114,7 +110,7 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
         {workflow.inputMode === 'review' && reviewFilePath ? (
           <ReviewView height={contentHeight} width={contentWidth} />
         ) : (
-          <ConversationFlow events={events} height={contentHeight} width={contentWidth} />
+          <ConversationFlow sections={sections} height={contentHeight} width={contentWidth} />
         )}
       </Box>
     </ScreenShell>

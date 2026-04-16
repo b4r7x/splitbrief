@@ -1,4 +1,4 @@
-import type { PlannerToolId, ProviderId } from './schemas/enums.js';
+import type { PlannerToolId, ProviderId, WorkflowMode } from './schemas/enums.js';
 export type { PlannerConfig, ImplementerConfig, Config } from './schemas/config.js';
 export { DEFAULT_WORKFLOW_MODE } from './schemas/config.js';
 
@@ -39,20 +39,20 @@ export type {
 export type PlannerTool = PlannerToolId;
 
 export interface WorkflowOpts {
-  auto?: boolean | undefined;
-  model?: string | undefined;
-  provider?: string | undefined;
-  planner?: string | undefined;
-  plannerModel?: string | undefined;
-  plannerCommand?: string | undefined;
-  implementer?: string | undefined;
-  implementerModel?: string | undefined;
-  implementerCommand?: string | undefined;
-  project?: string | undefined;
-  fullscreen?: boolean | undefined;
-  mouse?: boolean | undefined;
-  mode?: string | undefined;
-  budget?: number | undefined;
+  auto?: boolean;
+  model?: string;
+  provider?: ProviderId;
+  planner?: PlannerToolId;
+  plannerModel?: string;
+  plannerCommand?: string;
+  implementer?: ProviderId;
+  implementerModel?: string;
+  implementerCommand?: string;
+  project?: string;
+  fullscreen?: boolean;
+  mouse?: boolean;
+  mode?: WorkflowMode;
+  budget?: number;
 }
 
 export interface PlannerDetection {
@@ -60,15 +60,16 @@ export interface PlannerDetection {
   // agent-sdk excluded: it's programmatic (not detectable via CLI probe).
   type: 'cli' | 'api' | 'shell';
   available: boolean;
-  version?: string | undefined;
-  description?: string | undefined;
-  error?: string | undefined;
+  version?: string;
+  description?: string;
+  error?: string;
 }
 
 export interface ProviderDetection {
   provider: ProviderId;
   available: boolean;
-  models?: DetectedModel[] | undefined;
+  models?: DetectedModel[];
   isLocal: boolean;
-  hasKey?: boolean | undefined;
+  hasKey?: boolean;
+  error?: string;
 }

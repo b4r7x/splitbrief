@@ -1,6 +1,6 @@
 import { readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { WorkflowState, OrchestratorEvent, SessionLogEntry, SessionLogMessageEntry, SessionLogEventEntry } from '../types/index.js';
+import type { WorkflowState, OrchestratorEvent, SessionLogEventEntry, SessionLogEventEntryFor, SessionLogMessageEntry } from '../types/index.js';
 import type { OrchestratorEventType } from '../types/events.js';
 import { WorkflowStateSchema } from '../types/schemas/index.js';
 import { CURRENT_STATE_VERSION } from './machine.js';
@@ -33,7 +33,13 @@ export function loadState(projectDir: string, sessionId: string): WorkflowState 
   return result.data;
 }
 
-function appendLine(projectDir: string, sessionId: string, entry: SessionLogEntry): void {
+function appendLine(projectDir: string, sessionId: string, entry: SessionLogMessageEntry): void;
+function appendLine<T extends OrchestratorEventType>(projectDir: string, sessionId: string, entry: SessionLogEventEntryFor<T>): void;
+function appendLine(
+  projectDir: string,
+  sessionId: string,
+  entry: SessionLogMessageEntry | SessionLogEventEntry,
+): void {
   const dir = sessionDir(projectDir, sessionId);
   try {
     ensureSecureDir(dir);
@@ -43,10 +49,21 @@ function appendLine(projectDir: string, sessionId: string, entry: SessionLogEntr
   }
 }
 
+function toSessionLogEventEntry<T extends OrchestratorEventType>(
+  event: OrchestratorEvent<T>,
+): SessionLogEventEntryFor<T> {
+  return {
+    kind: 'event',
+    ts: new Date(event.ts).toISOString(),
+    type: event.type,
+    phase: event.phase,
+    data: event.data,
+    ...(event.taskId ? { taskId: event.taskId } : {}),
+  };
+}
+
 export function appendEvent<T extends OrchestratorEventType>(projectDir: string, sessionId: string, event: OrchestratorEvent<T>): void {
-  const { ts: numericTs, ...rest } = event;
-  const entry: SessionLogEventEntry = { kind: 'event', ts: new Date(numericTs).toISOString(), ...rest };
-  appendLine(projectDir, sessionId, entry);
+  appendLine(projectDir, sessionId, toSessionLogEventEntry(event));
 }
 
 export function appendMessage(

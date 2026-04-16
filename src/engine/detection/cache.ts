@@ -1,13 +1,20 @@
 import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
-import type { PlannerDetection, ProviderDetection } from '../types/index.js';
-import { PLANNER_TOOL_IDS, PROVIDER_IDS } from '../types/schemas/enums.js';
+import type { PlannerDetection, ProviderDetection } from '../../core/types/index.js';
+import type { DetectedModel } from '../../core/types/config.js';
+import { PLANNER_TOOL_IDS, PROVIDER_IDS } from '../../core/types/schemas/enums.js';
 import { getDiptychPath } from '../../utils/fs.js';
 
 const CACHE_FILENAME = 'detection-cache.json';
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
 const CACHE_VERSION = 1;
+
+function stripUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  const out: Partial<T> = {};
+  for (const [k, v] of Object.entries(obj)) if (v !== undefined) out[k as keyof T] = v as T[keyof T];
+  return out;
+}
 
 const DetectedModelSchema = z.object({
   id: z.string(),
@@ -17,7 +24,7 @@ const DetectedModelSchema = z.object({
   isFree: z.boolean().optional(),
   capabilities: z.array(z.string()).optional(),
   releaseDate: z.string().optional(),
-});
+}).transform((m): DetectedModel => stripUndefined(m) as DetectedModel);
 
 const PlannerDetectionSchema = z.object({
   tool: z.enum(PLANNER_TOOL_IDS),
@@ -26,7 +33,7 @@ const PlannerDetectionSchema = z.object({
   version: z.string().optional(),
   description: z.string().optional(),
   error: z.string().optional(),
-});
+}).transform((p): PlannerDetection => stripUndefined(p) as PlannerDetection);
 
 const ProviderDetectionSchema = z.object({
   provider: z.enum(PROVIDER_IDS),
@@ -34,7 +41,8 @@ const ProviderDetectionSchema = z.object({
   models: z.array(DetectedModelSchema).optional(),
   isLocal: z.boolean(),
   hasKey: z.boolean().optional(),
-});
+  error: z.string().optional(),
+}).transform((p): ProviderDetection => stripUndefined(p) as ProviderDetection);
 
 const DetectionCacheSchema = z.object({
   version: z.literal(CACHE_VERSION),
@@ -64,7 +72,7 @@ export async function loadDetectionCache(
     const parsed = parseCache(JSON.parse(raw));
     if (!parsed) return null;
     if (Date.now() - parsed.timestamp >= ttlMs) return null;
-    return { planners: parsed.planners as PlannerDetection[], implementers: parsed.implementers as ProviderDetection[] };
+    return { planners: parsed.planners, implementers: parsed.implementers };
   } catch {
     return null;
   }

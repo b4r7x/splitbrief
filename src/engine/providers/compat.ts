@@ -1,5 +1,5 @@
 import type { ProviderDef, ProviderOverrides } from './types.js';
-import { extractOpenAIModelList, fetchModelList, stripV1Suffix } from './client.js';
+import { createProviderShell, extractOpenAIModelList, fetchModelList, isOpenAIModelList, stripV1Suffix } from './client.js';
 
 export function createOpenAICompatProvider(
   name: string,
@@ -9,6 +9,7 @@ export function createOpenAICompatProvider(
   overrides?: ProviderOverrides,
 ): ProviderDef {
   const baseURL = overrides?.apiBase ?? defaultBaseURL;
+  const shell = createProviderShell({ name, baseURL, isLocal });
   const apiKey = () => overrides?.apiKey ?? process.env[envKeyName] ?? '';
 
   return {
@@ -16,12 +17,18 @@ export function createOpenAICompatProvider(
     baseURL,
     apiKey,
     isLocal,
+    getLastError: shell.getLastError,
 
     listModels(): Promise<string[]> {
-      const headers: Record<string, string> = {};
       const key = apiKey();
+      const headers: Record<string, string> = {};
       if (key) headers['Authorization'] = `Bearer ${key}`;
-      return fetchModelList(`${stripV1Suffix(baseURL)}/v1/models`, (data) => extractOpenAIModelList(data, (m) => m.id), headers);
+      return fetchModelList({
+        endpoint: `${stripV1Suffix(baseURL)}/v1/models`,
+        headers,
+        onError: shell.trackError,
+        extractModels: (data) => isOpenAIModelList(data) ? extractOpenAIModelList(data, (m) => m.id) : null,
+      });
     },
   };
 }

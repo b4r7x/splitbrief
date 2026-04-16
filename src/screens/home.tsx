@@ -2,7 +2,7 @@ import { Box, Text } from 'ink';
 import cfonts from 'cfonts';
 import type { SlashCommandDef } from '../types.js';
 import { useTheme } from '../ui/theme.js';
-import { InputBar } from '../components/input-bar/index.js';
+import { InputBar } from '../components/input-bar/input-bar.js';
 import { ScreenShell } from '../components/screen-shell.js';
 import { HomeConfigSummary } from '../components/home/config-summary.js';
 import { RecentSessions } from '../components/home/recent-sessions.js';

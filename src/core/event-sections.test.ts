@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { groupEventsIntoSections } from './event-sections.js';
+import { groupEventsIntoSections, findLatestRenderableDiffEventIndex, findLatestEventByType } from './event-sections.js';
 import type { Section } from './event-sections.js';
 import { taskId } from './types/workflow.js';
 import {
@@ -106,5 +106,46 @@ describe('groupEventsIntoSections', () => {
     expect(sections[1]!.type).toBe('completed-task');
     expect(sections[2]!.type).toBe('events');
     expect(sections[3]!.type).toBe('completed-task');
+  });
+});
+
+describe('findLatestRenderableDiffEventIndex', () => {
+  it('skips completed-task sections and returns the latest live diff', () => {
+    const sections: Section[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [makeImplementerGenerate({ status: 'done', diff: '+ old' })],
+      },
+      {
+        type: 'completed-task',
+        summary: { index: 1, title: 'done', method: 'local', retries: 0, duration: 0 },
+      },
+      {
+        type: 'active-task',
+        startIndex: 2,
+        items: [makeImplementerGenerate({ status: 'done', diff: '+ live' })],
+      },
+    ];
+
+    expect(findLatestRenderableDiffEventIndex(sections)).toBe(2);
+  });
+});
+
+describe('findLatestEventByType', () => {
+  it('returns undefined for empty array', () => {
+    expect(findLatestEventByType([], 'planner-text')).toBeUndefined();
+  });
+
+  it('returns the last matching event', () => {
+    const e1 = makePlannerText({ text: 'first' });
+    const e2 = makePlannerText({ text: 'second' });
+    const result = findLatestEventByType([e1, e2], 'planner-text');
+    expect(result).toBe(e2);
+  });
+
+  it('returns undefined when no event of that type exists', () => {
+    const e = makePlannerText({ text: 'hello' });
+    expect(findLatestEventByType([e], 'workflow-config')).toBeUndefined();
   });
 });

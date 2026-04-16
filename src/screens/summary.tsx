@@ -3,7 +3,7 @@ import type { SlashCommandDef } from '../types.js';
 import { useTheme } from '../ui/theme.js';
 import { formatTime } from '../utils/format.js';
 import { formatToolModel } from '../core/model-display.js';
-import { InputBar } from '../components/input-bar/index.js';
+import { InputBar } from '../components/input-bar/input-bar.js';
 import { LabeledRow } from '../components/labeled-row.js';
 import { ScreenShell } from '../components/screen-shell.js';
 import {
