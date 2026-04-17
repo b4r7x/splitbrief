@@ -5,7 +5,7 @@ import { createPlannerBase } from './base.js';
 import { createCommandAvailability } from '../../lib/availability.js';
 import { writeProjectFile } from '../../core/paths-io.js';
 import { runClaudePlannerStream, runClaudeOneShot } from '../claude-runner.js';
-import { resolveAutoModel } from '../../core/providers/index.js';
+import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { createSessionResumeState } from '../session-expiry.js';
 
 export function createClaudeCodePlanner(model?: string, initialSessionId?: string | null): Planner {

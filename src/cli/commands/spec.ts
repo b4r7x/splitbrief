@@ -1,7 +1,8 @@
 import { Command } from 'commander';
 import ansis from 'ansis';
-import { createPlanner, type PlanResult } from '../../engine/index.js';
-import { getRunnerDisplayName } from '../../core/config/index.js';
+import { createPlanner } from '../../engine/runners/factory.js';
+import type { PlanResult } from '../../engine/planners/types.js';
+import { getRunnerDisplayName } from '../../core/config/runner-config.js';
 import { ensureGitAndConfig, resolveProjectDir, loadConfigOrExit } from '../workflow.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';

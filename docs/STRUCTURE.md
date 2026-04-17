@@ -228,7 +228,6 @@ Each feature's entry file is what `src/app.tsx` (or `src/layout.tsx` for overlay
 - [`HOOKS.md`](./HOOKS.md) — hook placement rules; companion to this doc.
 - [`STORES.md`](./STORES.md) — state architecture; same colocation principle.
 - [`NO-BARRELS.md`](./NO-BARRELS.md) — project-wide barrel policy.
-- [`FEATURES-RESTRUCTURE.md`](./FEATURES-RESTRUCTURE.md) — RFC that produced this layout.
 - [bulletproof-react — project structure](https://github.com/alan2207/bulletproof-react/blob/master/docs/project-structure.md) — source pattern.
 - [Feature-Sliced Design — Overview](https://feature-sliced.design/docs/get-started/overview) — adjacent methodology considered and declined for this project's size.
 - [React docs — Thinking in React](https://react.dev/learn/thinking-in-react) — component decomposition.

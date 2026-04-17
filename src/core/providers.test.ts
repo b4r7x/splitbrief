@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeConfiguredModel, resolveAutoModel } from './providers/index.js';
+import { normalizeConfiguredModel, resolveAutoModel } from './providers/model-selection.js';
 
 describe('resolveAutoModel', () => {
   it('returns undefined for "auto"', () => {

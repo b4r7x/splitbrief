@@ -1,50 +1,14 @@
-import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { createStore, storeBase } from '../create-store.js';
-import { writeSecureFile } from '../../lib/fs.js';
-import { DIPTYCH_DIR } from '../../core/paths.js';
-import { warnError } from '../../lib/warn.js';
 
-interface InputHistoryState {
+export interface InputHistoryState {
   entries: string[];
 }
 
-const MAX_INPUT_HISTORY = 10;
-const HISTORY_FILE = join(homedir(), DIPTYCH_DIR, 'history');
+export const MAX_INPUT_HISTORY = 10;
 
 const initial: InputHistoryState = { entries: [] };
 
 const store = createStore<InputHistoryState>(initial);
-
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
-
-function save(): void {
-  if (saveTimer !== null) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    try {
-      const { entries } = store.get();
-      writeSecureFile(HISTORY_FILE, entries.join('\n'));
-    } catch (err) {
-      warnError('input-history: failed to save', err);
-    }
-  }, 300);
-}
-
-function load(): void {
-  try {
-    const content = readFileSync(HISTORY_FILE, 'utf-8');
-    const entries = content
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
-      .slice(0, MAX_INPUT_HISTORY);
-    store.set({ entries });
-  } catch {
-    // Missing file is fine — start with empty history
-  }
-}
 
 function push(value: string): void {
   const trimmed = value.trim();
@@ -56,12 +20,22 @@ function push(value: string): void {
       entries: [trimmed, ...state.entries.filter(entry => entry !== trimmed)].slice(0, MAX_INPUT_HISTORY),
     };
   });
+}
 
-  save();
+function hydrate(entries: string[]): void {
+  const deduped: string[] = [];
+  for (const entry of entries) {
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    if (deduped.includes(trimmed)) continue;
+    deduped.push(trimmed);
+    if (deduped.length >= MAX_INPUT_HISTORY) break;
+  }
+  store.set({ entries: deduped });
 }
 
 export const inputHistoryStore = {
   ...storeBase(store),
   push,
-  load,
+  hydrate,
 };

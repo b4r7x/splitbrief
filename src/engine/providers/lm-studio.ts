@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ProviderDef, ProviderOverrides } from './types.js';
-import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers/index.js';
+import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers/catalog.js';
 import { createMetadataProvider } from './client.js';
 
 const LmStudioModelSchema = z.object({

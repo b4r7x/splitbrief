@@ -3,7 +3,7 @@ import type { Implementer } from './types.js';
 import type { InvokeOpts } from './utils.js';
 import { createImplementerBase } from './base.js';
 import { createAgentSdkBackend, isAgentSdkAvailable, IMPLEMENTER_ALLOWED_TOOLS } from '../agent-sdk.js';
-import { resolveAutoModel } from '../../core/providers/index.js';
+import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
 
 export function createAgentSdkImplementer(config: Config): Implementer {

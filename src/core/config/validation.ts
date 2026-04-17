@@ -1,5 +1,6 @@
 import { ConfigSchema } from '../types/schemas/config.js';
-import { PROVIDER_CATALOG, isProviderId } from '../providers/index.js';
+import { PROVIDER_CATALOG } from '../providers/catalog.js';
+import { isProviderId } from '../types/schemas/enums.js';
 import type { Config, PlannerConfig, ImplementerConfig } from '../types/config-options.js';
 import { getRunnerDisplayName, getRunnerApiKey } from './runner-config.js';
 

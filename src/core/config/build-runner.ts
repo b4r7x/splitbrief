@@ -1,6 +1,6 @@
 import { CLI_TOOL_IDS, KNOWN_API_PROVIDERS } from '../types/schemas/enums.js';
 import { includes, assertNever } from '../../utils/type-guards.js';
-import { resolveDefaultApiBase } from '../providers/index.js';
+import { resolveDefaultApiBase } from '../providers/catalog.js';
 import { PlannerConfigSchema } from '../types/schemas/planner-config.js';
 import { ImplementerConfigSchema } from '../types/schemas/implementer-config.js';
 import type { PlannerConfig } from '../types/schemas/planner-config.js';

@@ -46,7 +46,7 @@ src/stores/
 │   ├── terminal-size.ts      # Terminal dimensions + responsive layout
 │   ├── overlay.ts            # Active overlay panel + stack
 │   ├── feedback.ts           # Info/error feedback messages
-│   ├── input-history.ts      # Command history (persisted to disk)
+│   ├── input-history.ts      # Command history — pure in-memory state; persistence lives in cli/input-history-persistence.ts
 │   └── input-height.ts       # Input bar rendered height
 ├── workflow/                 # State that only exists during a workflow run
 │   ├── workflow.ts           # Event log, phase, task counters
@@ -168,7 +168,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `overlayStore` | `ui/overlay.ts` | `{ active, exclusive, focus?, stack[] }` | `open()`, `close()`, `setExclusive()` |
 | `feedbackStore` | `ui/feedback.ts` | `{ message: string \| null, isError: boolean }` | `setMessage()`, `setError()`, `reset()` |
 | `terminalSizeStore` | `ui/terminal-size.ts` | `{ cols, rows, isSmall }` | `set()`, `subscribeToResize()` |
-| `inputHistoryStore` | `ui/input-history.ts` | `{ entries: string[] }` | `push()`, `load()` |
+| `inputHistoryStore` | `ui/input-history.ts` | `{ entries: string[] }` | `push()`, `hydrate()` — disk I/O lives in `cli/input-history-persistence.ts` wired from `init-stores.ts` |
 | `inputHeightStore` | `ui/input-height.ts` | `{ rows: number }` | `setRows()` |
 | `eventsStore` | `workflow/events.ts` | `{ events: TuiEvent[] }` | internal writes via `actions.addEvent` |
 | `tasksStore` | `workflow/tasks.ts` | `{ currentTask, totalTasks, taskCompletionTimes, taskMap, tasks }` | internal writes via `actions.addEvent` |

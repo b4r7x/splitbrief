@@ -2,9 +2,9 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { configStore } from '../../../stores/project/config.js';
 import { skillsStore } from '../../../stores/project/skills.js';
-import { getProviderDisplayName, isProviderLocal } from '../../../core/providers/index.js';
+import { getProviderDisplayName, isProviderLocal } from '../../../core/providers/catalog.js';
 import { formatModelName } from '../../../core/model-display.js';
-import { getRunnerDisplayName } from '../../../core/config/index.js';
+import { getRunnerDisplayName } from '../../../core/config/runner-config.js';
 import { LabeledRow } from '../../../components/labeled-row.js';
 
 export function HomeConfigSummary() {

@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { loadConfig, initConfig, configPath } from '../core/config/index.js';
+import { loadConfig, initConfig, configPath } from '../core/config/loading.js';
 import { isGitRepo } from '../lib/git.js';
 import { DIPTYCH_DIR, CONFIG_FILE } from '../core/paths.js';
 import { cliError } from './errors.js';

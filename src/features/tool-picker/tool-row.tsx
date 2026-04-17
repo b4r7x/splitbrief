@@ -1,6 +1,6 @@
 import { Text } from "ink";
 import type { Theme } from "../../components/theme.js";
-import { isProviderLocal } from "../../core/providers/index.js";
+import { isProviderLocal } from "../../core/providers/catalog.js";
 import { formatModelName } from "../../core/model-display.js";
 import { formatContextLength } from "../../core/formatting.js";
 import { truncateWithEllipsis } from "../../utils/truncate.js";

@@ -10,12 +10,12 @@ vi.mock('../agent-sdk.js', () => ({
   IMPLEMENTER_ALLOWED_TOOLS: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
 }));
 
-vi.mock('../../core/providers/index.js', () => ({
+vi.mock('../../core/providers/model-selection.js', () => ({
   resolveAutoModel: vi.fn(),
 }));
 
 import { createAgentSdkBackend, isAgentSdkAvailable } from '../agent-sdk.js';
-import { resolveAutoModel } from '../../core/providers/index.js';
+import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { createAgentSdkImplementer } from './agent-sdk.js';
 
 function makeAgentSdkConfig(overrides?: Record<string, unknown>) {

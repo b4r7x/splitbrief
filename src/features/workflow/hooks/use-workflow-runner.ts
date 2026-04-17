@@ -10,7 +10,7 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
-import { runWorkflow } from '../../../engine/orchestrator/index.js';
+import { runWorkflow } from '../../../engine/orchestrator/run.js';
 import type { WorkflowSinks } from '../../../engine/orchestrator/types.js';
 import {
   setAbortHandler,

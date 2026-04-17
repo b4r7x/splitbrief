@@ -12,7 +12,7 @@ import { validateCommitAndAdvance } from './task-commit.js';
 import type { UsageCategory } from './tokens.js';
 import { createImplementer } from '../runners/factory.js';
 import type { Implementer } from '../implementers/types.js';
-import { getProviderBaseURL } from '../../core/providers/index.js';
+import { getProviderBaseURL } from '../../core/providers/catalog.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { truncateByChars } from '../../utils/truncate.js';
 

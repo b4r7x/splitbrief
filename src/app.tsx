@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useApp } from 'ink';
-import { createCommands, toPaletteItems, executeSlashCommand } from './core/slash-commands/index.js';
+import { createCommands } from './core/slash-commands/definitions.js';
+import { toPaletteItems, executeSlashCommand } from './core/slash-commands/executor.js';
 import { useAppKeys } from './hooks/use-app-keys.js';
 import { useMouseScroll } from './features/workflow/hooks/use-mouse-scroll.js';
 import { Layout } from './layout.js';
@@ -12,7 +13,7 @@ import { feedbackStore } from './stores/ui/feedback.js';
 import { lifecycleStore } from './stores/workflow/lifecycle.js';
 import { requestRewind, requestClearQueue } from './features/workflow/handlers.js';
 import { useStores } from './stores/use-stores.js';
-import { refreshDetection } from './engine/detection/index.js';
+import { refreshDetection } from './engine/detection/service.js';
 import { HomeScreen } from './features/home/screen.js';
 import { WorkflowScreen } from './features/workflow/screen.js';
 import { SummaryScreen } from './features/summary/screen.js';

@@ -1,6 +1,7 @@
 import type { Config } from '../types/config-options.js';
 import type { PlannerTool } from '../types/config-options.js';
-import { resolveAutoModel, isPlannerToolId } from '../providers/index.js';
+import { resolveAutoModel } from '../providers/model-selection.js';
+import { isPlannerToolId } from '../types/schemas/enums.js';
 import { assertNever } from '../../utils/type-guards.js';
 
 export type RunnerConfig = Config['planner'] | Config['implementer'];

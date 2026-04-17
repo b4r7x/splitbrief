@@ -6,8 +6,8 @@ import type { PlannerDetection, ProviderDetection } from '../../core/types/confi
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { loadDetectionIntoStores } from './adapter.js';
-import { createDetectionService } from './index.js';
-import type { DetectionDeps, DetectionService } from './index.js';
+import { createDetectionService } from './service.js';
+import type { DetectionDeps, DetectionService } from './service.js';
 import type { fetchModelsDevCatalog } from '../providers/models-dev.js';
 
 const makePlanner = (overrides?: Partial<PlannerDetection>): PlannerDetection => ({

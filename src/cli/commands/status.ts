@@ -12,7 +12,7 @@ import { listSessions } from '../../core/sessions/io.js';
 import { aggregateSessionCosts } from '../../core/sessions/analytics.js';
 import { formatCost } from '../../core/formatting.js';
 import { labelError } from '../../utils/format-errors.js';
-import { getProviderDisplayName } from '../../core/providers/index.js';
+import { getProviderDisplayName } from '../../core/providers/catalog.js';
 import { formatModelName } from '../../core/model-display.js';
 
 function printCostHistory(projectDir: string): void {
