@@ -1,7 +1,7 @@
 import { createStore, storeBase } from '../create-store.js';
 import { loadConfig, writeConfig, applyCLIOverrides, applyRunnerOverrides } from '../../core/config/index.js';
 import type { CLIOverrides } from '../../core/config/index.js';
-import type { Config } from '../../types.js';
+import type { Config } from '../../core/types/config-options.js';
 
 interface ConfigState {
   config: Config | null;

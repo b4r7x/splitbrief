@@ -1,4 +1,4 @@
-import type { TuiEvent } from '../../types.js';
+import type { TuiEvent } from '../types/events.js';
 import { getChromeHeight, getContentTopRow } from './chrome-rows.js';
 
 export function hasWorkflowConfig(events: TuiEvent[]): boolean {

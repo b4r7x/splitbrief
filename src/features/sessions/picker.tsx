@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Text } from 'ink';
 import { useTheme } from '../../components/theme.js';
-import type { Session } from '../../types.js';
+import type { Session } from '../../core/types/app.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getResponsivePanelWidth } from '../../core/layout/terminal-width.js';
 import { filterByFields } from '../../components/pickers/picker-utils.js';

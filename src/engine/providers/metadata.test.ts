@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatContextLength } from '../../utils/format-numbers.js';
+import { formatContextLength } from '../../core/formatting.js';
 
 describe('formatContextLength', () => {
   it('returns empty string for undefined', () => {

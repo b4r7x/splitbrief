@@ -4,14 +4,14 @@ import { skillsStore } from '../stores/project/skills.js';
 import { inputHistoryStore } from '../stores/ui/input-history.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
-import { setHighlightTheme } from '../utils/highlight.js';
-import { warnError } from '../utils/warn.js';
+import { setHighlightTheme } from '../lib/highlight.js';
+import { warnError } from '../lib/warn.js';
 import { detectCapabilities } from '../engine/index.js';
 import { detectAll } from '../engine/detection/index.js';
 import { loadDetectionIntoStores } from '../engine/detection/adapter.js';
 import { fetchModelsDevCatalog } from '../engine/providers/models-dev.js';
 import { discoverAllCliTools } from '../engine/providers/discovery.js';
-import type { WorkflowOpts } from '../types.js';
+import type { WorkflowOpts } from '../core/types/config-options.js';
 import { cliError } from './errors.js';
 import { getPlannerToolId } from '../core/config/runner-config.js';
 

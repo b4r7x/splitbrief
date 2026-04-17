@@ -8,7 +8,7 @@ vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
   return { ...actual, readFileSync: vi.fn() };
 });
-vi.mock('../../utils/fs.js', () => ({ writeSecureFile: vi.fn(), ensureSecureDir: vi.fn() }));
+vi.mock('../../lib/fs.js', () => ({ writeSecureFile: vi.fn(), ensureSecureDir: vi.fn() }));
 
 describe('inputHistoryStore', () => {
   beforeEach(async () => {
@@ -16,7 +16,7 @@ describe('inputHistoryStore', () => {
     inputHistoryStore.reset();
     const { readFileSync } = await import('node:fs');
     vi.mocked(readFileSync).mockReset();
-    const { writeSecureFile } = await import('../../utils/fs.js');
+    const { writeSecureFile } = await import('../../lib/fs.js');
     vi.mocked(writeSecureFile).mockReset();
   });
 
@@ -104,7 +104,7 @@ describe('inputHistoryStore', () => {
     });
 
     it('push() triggers a debounced save after 300ms', async () => {
-      const { writeSecureFile } = await import('../../utils/fs.js');
+      const { writeSecureFile } = await import('../../lib/fs.js');
 
       inputHistoryStore.push('hello');
       expect(vi.mocked(writeSecureFile)).not.toHaveBeenCalled();
@@ -118,7 +118,7 @@ describe('inputHistoryStore', () => {
     });
 
     it('push() debounces: multiple pushes within 300ms produce a single save', async () => {
-      const { writeSecureFile } = await import('../../utils/fs.js');
+      const { writeSecureFile } = await import('../../lib/fs.js');
 
       inputHistoryStore.push('first');
       vi.advanceTimersByTime(100);
@@ -135,7 +135,7 @@ describe('inputHistoryStore', () => {
     });
 
     it('save writes to ~/.diptych/history', async () => {
-      const { writeSecureFile } = await import('../../utils/fs.js');
+      const { writeSecureFile } = await import('../../lib/fs.js');
 
       inputHistoryStore.push('test entry');
       vi.advanceTimersByTime(300);
@@ -147,7 +147,7 @@ describe('inputHistoryStore', () => {
     });
 
     it('write failures in the timer callback do not throw unhandled errors', async () => {
-      const { writeSecureFile } = await import('../../utils/fs.js');
+      const { writeSecureFile } = await import('../../lib/fs.js');
       vi.mocked(writeSecureFile).mockImplementation(() => { throw new Error('EACCES: permission denied'); });
 
       inputHistoryStore.push('hello');

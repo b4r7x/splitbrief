@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { wireMouseScroll } from './use-mouse-scroll.js';
-import type { FilteredStdin, MouseEvent } from '../../../utils/mouse.js';
+import type { FilteredStdin, MouseEvent } from '../../../lib/terminal/mouse.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';

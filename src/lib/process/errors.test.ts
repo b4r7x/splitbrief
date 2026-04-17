@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatCommandError } from './process-errors.js';
+import { formatCommandError } from './errors.js';
 
 describe('formatCommandError', () => {
   it('not-found: uses bare message when label is absent', () => {

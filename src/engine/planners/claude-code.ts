@@ -2,7 +2,7 @@ import type { Planner, EscalationResult } from './types.js';
 import type { ClarificationQuestion } from '../../core/types/events.js';
 import { CONVERSATIONAL_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
-import { createCommandAvailability } from '../../utils/availability.js';
+import { createCommandAvailability } from '../../lib/availability.js';
 import { writeProjectFile } from '../../core/paths-io.js';
 import { runClaudePlannerStream, runClaudeOneShot } from '../claude-runner.js';
 import { resolveAutoModel } from '../../core/providers/index.js';

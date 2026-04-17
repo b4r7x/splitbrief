@@ -1,4 +1,4 @@
-import { redactSecrets } from './redact.js';
+import { redactSecrets } from '../../utils/redact.js';
 
 export function isNodeError(err: unknown): err is NodeJS.ErrnoException {
   return err instanceof Error && 'code' in err;

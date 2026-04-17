@@ -9,7 +9,7 @@ diptych organizes UI code by **business domain**, not by technical layer. A feat
 This is **feature-based organization, bulletproof-react-inspired**, adapted for an Ink CLI:
 
 - `src/features/{feature}/` holds the full vertical slice for one business concept.
-- Shared code sits flat at `src/` root in `components/`, `hooks/`, `utils/` — no `shared/` wrapper.
+- Shared code sits flat at `src/` root in `components/`, `hooks/`, `utils/`, `lib/` — no `shared/` wrapper.
 - Features **do not import from other features**. Composition happens at the top level (`src/app.tsx`).
 - No barrels anywhere, per [`NO-BARRELS.md`](./NO-BARRELS.md).
 - Tests are colocated next to source.
@@ -18,14 +18,15 @@ This is **feature-based organization, bulletproof-react-inspired**, adapted for 
 
 ```
 src/
-├── app.tsx, layout.tsx, cli.ts, types.ts   # app entry + shell
+├── app.tsx, layout.tsx, cli.ts              # app entry + shell
 ├── cli/                                     # CLI subcommand handlers
-├── core/                                    # domain logic (config, types, commands, state)
+├── core/                                    # domain logic (config, types, state, formatting)
 ├── engine/                                  # workflow orchestrator (zero React)
 ├── stores/                                  # external stores — see STORES.md
 ├── components/                              # shared UI (cross-feature)
 ├── hooks/                                   # shared hooks (cross-feature) — see HOOKS.md
-├── utils/                                   # pure helpers (no React)
+├── lib/                                     # infrastructure wrappers (git, fs, process, terminal, highlight) — see LAYERS.md
+├── utils/                                   # generic primitives (zero domain, zero infra) — see LAYERS.md
 └── features/                                # business features
     ├── workflow/
     ├── home/
@@ -36,6 +37,8 @@ src/
     ├── tool-picker/
     └── skills/
 ```
+
+The distinction between `lib/` (infrastructure wrappers around external systems) and `utils/` (pure primitives with zero domain and zero infra dependency) is the layering spine of the codebase. See [`LAYERS.md`](./LAYERS.md) for the full decision tree and anti-patterns.
 
 There is no `src/screens/` directory. Each feature exports its own `screen.tsx` (or `picker.tsx` / `overlay.tsx` for overlay-style features), and `src/app.tsx` dispatches based on `routerStore.use(s => s.screen)`.
 
@@ -92,7 +95,9 @@ When adding new UI code, ask: **does this belong to a single business feature, o
 | Code used by one feature only | `src/features/{feature}/` |
 | Component reused by ≥2 features | `src/components/` (flat or in an existing subfolder like `overlays/` / `pickers/`) |
 | Hook reused by ≥2 features or a UI primitive | `src/hooks/` — see [`HOOKS.md`](./HOOKS.md) |
-| Pure helper (no React) reused by ≥2 features | `src/utils/` |
+| Pure primitive (no React, no domain, no infra) | `src/utils/` |
+| Infrastructure wrapper (wraps an external system — git, filesystem, subprocess, terminal) | `src/lib/` |
+| Domain logic (knows tiny-spec concepts — config, cost, tokens, sessions) | `src/core/` |
 | New business concept that does not fit any existing feature | New `src/features/{new-name}/` |
 
 If you are not sure whether code is shared, **start in the feature**. Promote to shared only when the second consumer appears. The reverse (moving shared code back into a feature) is a worse refactor.

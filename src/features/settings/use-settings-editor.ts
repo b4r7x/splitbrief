@@ -9,7 +9,7 @@ import { matchesFilter } from '../../core/settings/presentation.js';
 import { getConfigValue, applyEdits } from '../../core/config/index.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
 import { useEditBuffer } from './use-edit-buffer.js';
-import type { Config } from '../../types.js';
+import type { Config } from '../../core/types/config-options.js';
 
 interface UseSettingsEditorParams {
   config: Config;

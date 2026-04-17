@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { tasksStore, updateTaskMap } from './tasks.js';
 import { addEvent, resetWorkflow } from './actions.js';
 import { taskId } from '../../core/types/state-actions.js';
-import type { SidebarTask } from '../../types.js';
+import type { SidebarTask } from '../../core/types/app.js';
 import {
   makeTaskStart,
   makeTaskComplete,

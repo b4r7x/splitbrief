@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import YAML from 'yaml';
 import { configStore } from './config.js';
 import { feedbackStore } from '../ui/feedback.js';
-import type { PlannerConfig } from '../../types.js';
+import type { PlannerConfig } from '../../core/types/config-options.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { DIPTYCH_DIR } from '../../core/paths.js';
 import { createDefaultConfig } from '../../core/config/index.js';

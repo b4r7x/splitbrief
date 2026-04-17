@@ -11,7 +11,7 @@ import { createAnthropicProvider } from './anthropic.js';
 import { createOpenAICompatProvider } from './compat.js';
 import { PROVIDER_CATALOG, isProviderId, type ProviderId } from '../../core/providers/index.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { warnError } from '../../utils/warn.js';
+import { warnError } from '../../lib/warn.js';
 import { withTimeout } from '../../utils/with-timeout.js';
 import { DETECTION_TIMEOUT_MS } from '../constants.js';
 

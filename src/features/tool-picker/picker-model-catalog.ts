@@ -1,4 +1,4 @@
-import type { Config } from '../../types.js';
+import type { Config } from '../../core/types/config-options.js';
 import { getRunnerDisplayName } from '../../core/config/runner-config.js';
 import { type ModelOption, sortModelsByRecency } from './model-sorting.js';
 import { type PickerOption } from './picker-options.js';

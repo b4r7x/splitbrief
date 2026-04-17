@@ -4,7 +4,7 @@ import type { Task, WorkflowState, StateAction } from '../../core/types/state-ac
 import type { TokenDelta } from '../../core/types/summary.js';
 import type { OrchestratorCallbacks, OrchestratorEventPayloadMap } from '../../core/types/events.js';
 import { labelError } from '../../utils/format-errors.js';
-import { isENOENT } from '../../utils/process-errors.js';
+import { isENOENT } from '../../lib/process/errors.js';
 import { transition } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
 import { writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';

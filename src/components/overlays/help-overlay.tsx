@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../theme.js';
 import { OverlayPanel } from './overlay-panel.js';
-import type { Screen, SlashCommandDef } from '../../types.js';
+import type { Screen, SlashCommandDef } from '../../core/types/app.js';
 import { getShortcutsForScreen } from '../../core/slash-commands/shortcuts.js';
 
 const PADDING_BORDER = 6;

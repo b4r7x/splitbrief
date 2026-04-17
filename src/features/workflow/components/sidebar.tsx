@@ -1,8 +1,8 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import type { Theme } from '../../../components/theme.js';
-import type { SidebarTask } from '../../../types.js';
-import { truncate } from '../../../utils/format-numbers.js';
+import type { SidebarTask } from '../../../core/types/app.js';
+import { truncateWithEllipsis } from '../../../utils/truncate.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { CostDisplay } from './cost-display.js';
@@ -56,7 +56,7 @@ export function Sidebar({ width }: SidebarProps) {
           <Box key={task.id}>
             <Text color={statusColor(task.status, t)}>{statusIcon[task.status]} </Text>
             <Text color={task.status === 'pending' || task.status === 'skipped' ? t.textDim : t.text}>
-              {truncate(task.title, Math.max(labelWidth - 2, 10))}
+              {truncateWithEllipsis(task.title, Math.max(labelWidth - 2, 10))}
             </Text>
           </Box>
         ))}

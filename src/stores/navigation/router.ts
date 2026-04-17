@@ -1,6 +1,8 @@
 import { createStore, storeBase } from '../create-store.js';
 import { feedbackStore } from '../ui/feedback.js';
-import type { Screen, RouteData, Summary, WorkflowState } from '../../types.js';
+import type { WorkflowState } from '../../core/types/state-actions.js';
+import type { Summary } from '../../core/types/summary.js';
+import type { RouteData, Screen } from '../../core/types/app.js';
 import { assertNever } from '../../utils/type-guards.js';
 
 const transitions: Record<Screen, Screen[]> = {

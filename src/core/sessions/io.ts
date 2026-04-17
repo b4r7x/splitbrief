@@ -4,8 +4,8 @@ import { homedir } from 'node:os';
 import type { Session } from '../types/app.js';
 import { SessionSchema } from '../types/schemas/session.js';
 import { DIPTYCH_DIR, SESSIONS_DIR, sessionDir, sessionsRoot, getDiptychPath } from '../paths.js';
-import { warnError, warnStderr } from '../../utils/warn.js';
-import { isENOENT } from '../../utils/process-errors.js';
+import { warnError, warnStderr } from '../../lib/warn.js';
+import { isENOENT } from '../../lib/process/errors.js';
 
 export function getSessionDir(scope: 'project' | 'global', projectDir: string): string {
   if (scope === 'global') {

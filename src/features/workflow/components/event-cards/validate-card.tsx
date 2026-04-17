@@ -1,9 +1,9 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import type { TuiEvent, ValidationStages } from '../../../../types.js';
+import type { TuiEvent, ValidationStages } from '../../../../core/types/events.js';
 import { useTheme } from '../../../../components/theme.js';
 import { Spinner } from '../../../../components/spinner.js';
-import { formatDuration } from '../../../../utils/format-numbers.js';
+import { formatDuration } from '../../../../utils/format-time.js';
 import { Card } from './card.js';
 
 const VALIDATION_STAGES = ['tsc', 'lint', 'test'] as const;

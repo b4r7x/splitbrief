@@ -1,4 +1,4 @@
-import { type Config, type PlannerConfig, type ImplementerConfig } from '../../types.js';
+import type { Config, ImplementerConfig, PlannerConfig } from '../../core/types/config-options.js';
 import { buildRunnerConfig } from '../../core/config/build-runner.js';
 import type { PickerOption } from './picker-model-catalog.js';
 

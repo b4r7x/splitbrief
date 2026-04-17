@@ -3,7 +3,8 @@ import { Box, Text } from 'ink';
 import { PipelineBar } from './pipeline-bar.js';
 import { useTheme } from '../../../components/theme.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { truncate, formatTimeHHMMSS } from '../../../utils/format-numbers.js';
+import { truncateWithEllipsis } from '../../../utils/truncate.js';
+import { formatTimeHHMMSS } from '../../../utils/format-time.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { useStores } from '../../../stores/use-stores.js';
@@ -34,7 +35,7 @@ export function Header({ startedAt }: HeaderProps) {
   return (
     <Box width="100%" paddingX={1} justifyContent="space-between">
       <Box width={featureWidth}>
-        <Text color={t.text}>{truncate(feature, featureWidth)}</Text>
+        <Text color={t.text}>{truncateWithEllipsis(feature, featureWidth)}</Text>
       </Box>
       <PipelineBar phase={phase} />
       <Box width={timerWidth} justifyContent="flex-end">

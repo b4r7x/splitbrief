@@ -2,7 +2,7 @@ import type { Task, WorkflowState } from '../../core/types/state-actions.js';
 import type { Config } from '../../core/types/config-options.js';
 import type { OrchestratorCallbacks } from '../../core/types/events.js';
 import type { ValidationResult, TaskCompletionMethod } from '../../core/types/summary.js';
-import { commitChanges } from '../../utils/git.js';
+import { commitChanges } from '../../lib/git.js';
 import { createCheckpoint } from './git-ops.js';
 import { labelError } from '../../utils/format-errors.js';
 import { emit, emitWarning, emitGitCommit, emitGitCheckpoint, emitTaskComplete } from './events.js';

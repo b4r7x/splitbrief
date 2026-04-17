@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { trimRenderableItemsToViewport } from './viewport-trimming.js';
 import { getRenderableConversationItems } from './renderable-conversation.js';
 import type { DynamicSection } from './event-sections.js';
-import type { TuiEvent } from '../../types.js';
+import type { TuiEvent } from '../types/events.js';
 import { makeImplementerGenerate } from '#testing/helpers/events.js';
 
 function makeEventsSection(count: number, startIndex = 0): DynamicSection {

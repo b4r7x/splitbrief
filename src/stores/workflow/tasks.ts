@@ -1,5 +1,6 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { SidebarTask, TuiEvent } from '../../types.js';
+import type { TuiEvent } from '../../core/types/events.js';
+import type { SidebarTask } from '../../core/types/app.js';
 
 export interface TasksState {
   currentTask: number;

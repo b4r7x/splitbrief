@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme, type Theme } from '../../components/theme.js';
-import type { SkillMeta } from '../../types.js';
+import type { SkillMeta } from '../../core/types/app.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getResponsivePanelWidth } from '../../core/layout/terminal-width.js';
 import { filterByFields } from '../../components/pickers/picker-utils.js';
@@ -9,7 +9,7 @@ import { CursorCell } from '../../components/pickers/cursor-cell.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { useStores } from '../../stores/use-stores.js';
-import { truncate } from '../../utils/format-numbers.js';
+import { truncateWithEllipsis } from '../../utils/truncate.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
 
 const filterSkill = (s: SkillMeta, query: string): boolean =>
@@ -25,8 +25,8 @@ interface SkillRowProps {
 }
 
 function SkillRow({ skill, isCursor, isChecked, nameColWidth, descMaxWidth, theme: t }: SkillRowProps) {
-  const name = truncate(skill.name, nameColWidth).padEnd(nameColWidth);
-  const desc = truncate(skill.description, descMaxWidth);
+  const name = truncateWithEllipsis(skill.name, nameColWidth).padEnd(nameColWidth);
+  const desc = truncateWithEllipsis(skill.description, descMaxWidth);
   return (
     <Box>
       <CursorCell isCursor={isCursor} />

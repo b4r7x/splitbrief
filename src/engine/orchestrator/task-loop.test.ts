@@ -10,7 +10,7 @@ vi.mock('./validator.js', () => ({
   runValidationWithEvents: vi.fn(),
   formatValidationError: vi.fn().mockReturnValue('validation error'),
 }));
-vi.mock('../../utils/git.js', () => ({
+vi.mock('../../lib/git.js', () => ({
   hasExternalChanges: vi.fn().mockResolvedValue(false),
   commitChanges: vi.fn(),
 }));
@@ -22,7 +22,7 @@ vi.mock('../../core/state/persistence.js', () => ({
 
 import { runTaskLoop } from './task-loop.js';
 import { runValidationWithEvents } from './validator.js';
-import { commitChanges } from '../../utils/git.js';
+import { commitChanges } from '../../lib/git.js';
 import type { WorkflowSinks } from './types.js';
 
 const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' };
@@ -127,7 +127,7 @@ describe('runTaskLoop', () => {
     const task = makeTask({ id: 'T001' });
     const state = makeImplState([task]);
 
-    const { hasExternalChanges } = await import('../../utils/git.js');
+    const { hasExternalChanges } = await import('../../lib/git.js');
     vi.mocked(hasExternalChanges).mockResolvedValue(true);
 
     const onExternalChanges = vi.fn().mockResolvedValue(false);

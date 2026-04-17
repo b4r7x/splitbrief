@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import type { DetectedModel } from '../../core/types/config-options.js';
 import type { CliToolId } from '../../core/types/schemas/enums.js';
-import { runCommand } from '../../utils/process.js';
+import { runCommand } from '../../lib/process/spawn.js';
 import { fetchJsonWithTimeout } from './client.js';
 import { buildPricingFields } from './metadata.js';
-import { warnError } from '../../utils/warn.js';
+import { warnError } from '../../lib/warn.js';
 import { DISCOVERY_SUBPROCESS_TIMEOUT_MS, DISCOVERY_HTTP_TIMEOUT_MS } from '../constants.js';
 
 const KILO_MODELS_URL = 'https://api.kilo.ai/api/gateway/models';

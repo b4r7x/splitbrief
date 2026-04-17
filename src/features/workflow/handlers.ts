@@ -1,4 +1,4 @@
-import type { Phase } from '../../types.js';
+import type { Phase } from '../../core/types/state-actions.js';
 import { addEvent, markCancelled } from '../../stores/workflow/actions.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 

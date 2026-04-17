@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setupFetchMock } from './test-helpers.js';
 import { discoverAllCliTools } from './discovery.js';
 
-vi.mock('../../utils/process.js', () => ({
+vi.mock('../../lib/process/spawn.js', () => ({
   runCommand: vi.fn(),
 }));
 
-import { runCommand } from '../../utils/process.js';
+import { runCommand } from '../../lib/process/spawn.js';
 
 const mockRunCommand = vi.mocked(runCommand);
 

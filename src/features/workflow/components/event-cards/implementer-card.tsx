@@ -1,11 +1,11 @@
 import { Box, Text } from 'ink';
-import type { TuiEvent } from '../../../../types.js';
+import type { TuiEvent } from '../../../../core/types/events.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { useTheme } from '../../../../components/theme.js';
 import { DiffView } from '../../../../components/diff-view.js';
 import { Spinner } from '../../../../components/spinner.js';
 import { getMaxVisibleDiffLines } from '../../../../core/layout/diff-height.js';
-import { formatDuration } from '../../../../utils/format-numbers.js';
+import { formatDuration } from '../../../../utils/format-time.js';
 import { formatModelName } from '../../../../core/model-display.js';
 import { Card } from './card.js';
 

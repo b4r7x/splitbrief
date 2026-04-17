@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { routerStore } from './router.js';
 import { feedbackStore } from '../ui/feedback.js';
-import type { Summary } from '../../types.js';
+import type { Summary } from '../../core/types/summary.js';
 
 const dummySummary: Summary = {
   feature: 'test',

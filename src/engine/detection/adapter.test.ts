@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import type { PlannerDetection, ProviderDetection } from '../../types.js';
+import type { PlannerDetection, ProviderDetection } from '../../core/types/config-options.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { loadDetectionIntoStores } from './adapter.js';

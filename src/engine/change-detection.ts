@@ -1,4 +1,4 @@
-import { getChangedFiles } from '../utils/git.js';
+import { getChangedFiles } from '../lib/git.js';
 
 export function createChangeDetector(label: string) {
   return async (projectDir: string, before: string[]) => {

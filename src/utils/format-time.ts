@@ -1,18 +1,6 @@
-export function formatContextLength(tokens: number | undefined): string {
-  if (tokens == null || tokens === 0) return '';
-  if (tokens >= 1_000_000)
-    return `${(tokens / 1_000_000).toFixed(tokens % 1_000_000 === 0 ? 0 : 1)}M`;
-  return `${Math.round(tokens / 1000)}K`;
-}
-
 export function formatDuration(ms: number): string {
   if (!Number.isFinite(ms)) return '0.0s';
   return `${(Math.max(0, ms) / 1000).toFixed(1)}s`;
-}
-
-export function formatCost(dollars: number): string {
-  if (!Number.isFinite(dollars)) return '$0.00';
-  return `$${Math.max(0, dollars).toFixed(2)}`;
 }
 
 export function formatTime(ms: number): string {
@@ -24,12 +12,6 @@ export function formatTime(ms: number): string {
   if (hours > 0) return `${hours}h ${mins}m ${secs}s`;
   if (mins > 0) return `${mins}m ${secs}s`;
   return `${secs}s`;
-}
-
-export function truncate(str: string, max: number): string {
-  if (max <= 0) return '';
-  if (str.length <= max) return str;
-  return str.slice(0, max - 1) + '\u2026';
 }
 
 export function formatTimeHHMMSS(ms: number): string {

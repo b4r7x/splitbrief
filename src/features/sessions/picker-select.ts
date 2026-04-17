@@ -1,4 +1,4 @@
-import type { Session } from '../../types.js';
+import type { Session } from '../../core/types/app.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';

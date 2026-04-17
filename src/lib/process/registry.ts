@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import { isNodeError } from './process-errors.js';
+import { isNodeError } from './errors.js';
 
 const SIGKILL_DELAY = 2000;
 const ABORT_KILL_DELAY = 2000;

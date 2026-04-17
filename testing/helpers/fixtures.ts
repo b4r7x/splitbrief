@@ -1,7 +1,10 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Config, PlannerConfig, Task, TokenUsage, ProjectContext, ApiImplementerConfig, ImplementerConfig, Session, Summary } from '../../src/types.js';
+import type { ApiImplementerConfig, Config, ImplementerConfig, PlannerConfig } from '../../src/core/types/config-options.js';
+import type { ProjectContext, Task } from '../../src/core/types/state-actions.js';
 import { taskId as brand } from '../../src/core/types/state-actions.js';
+import type { Summary, TokenUsage } from '../../src/core/types/summary.js';
+import type { Session } from '../../src/core/types/app.js';
 
 const defaultApiImplementer: ApiImplementerConfig = {
   kind: 'api',

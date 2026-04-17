@@ -1,7 +1,7 @@
 import { existsSync, renameSync, readFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Command } from 'commander';
-import { writeSecureFile } from '../../utils/fs.js';
+import { writeSecureFile } from '../../lib/fs.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import {
   DIPTYCH_DIR,

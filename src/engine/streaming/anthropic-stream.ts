@@ -1,6 +1,6 @@
 import type { TokenDelta } from '../../core/types/summary.js';
 import type { InvokeResult } from '../../core/types/runner.js';
-import { formatErrorWithHint } from '../../utils/error-hints.js';
+import { formatErrorWithHint } from '../errors/hints.js';
 import { redactSecrets } from '../../utils/redact.js';
 import { IdleTimeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
 import { stripV1Suffix, ANTHROPIC_API_VERSION } from '../http.js';

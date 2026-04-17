@@ -22,6 +22,8 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 - `.specify/memory/constitution.md`  -  6 project principles (v1.3.1)
 - `docs/VISION.md`  -  Strategic direction, competitive analysis, design decisions
 - `docs/STORES.md`  -  External store architecture (factory, patterns, inventory). **Read when touching anything under `src/stores/`.**
+- `docs/LAYERS.md`  -  Decision tree for `utils/` vs `lib/` vs `core/` vs `engine/` vs `features/`. **Read before adding any new file to these folders.**
+- `docs/STRUCTURE.md`  -  File-tree layout and feature anatomy. Companion to `LAYERS.md` (what vs where).
 - `docs/STORES-RESTRUCTURE.md`  -  Historical RFC for the 2026-04 stores restructure (Phases 1–3). Captures rationale + decisions; read if curious why the directory looks the way it does.
 - `docs/NO-BARRELS.md`  -  Codebase-wide principle: no re-export-only `index.ts` files. **Read before creating any new `index.ts`.** Applies to stores today, engine/core next.
 - `docs/FUTURE-WORK.md`  -  Three deferred RFCs ready to execute (unbarrel `src/core/`, unbarrel `src/engine/`, refactor `inputHistoryStore` persistence boundary). Self-contained — do not re-audit, read the plans.
@@ -31,7 +33,7 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 - **Runtime**: Node.js 22+
 - **Language**: TypeScript 6.x, ESM only (`"type": "module"`)
 - **Dev runner**: `tsx` (handles TypeScript + JSX/TSX + ESM, no custom loaders needed)
-- **Testing**: Vitest 4.x (57 colocated test files / 700 tests)
+- **Testing**: Vitest 4.x (145 colocated test files / 1650 tests)
 - **Linter/formatter**: Biome 2.x (`npm run lint`, `npm run format`)
 - **TUI**: Ink 6.8 (React 19 for CLI) + fullscreen-ink (custom multiline-input primitive under `src/components/input/`)
 - **Syntax highlighting**: Shiki 4.x (WASM-based, async)
@@ -53,7 +55,7 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 - **Colocated tests**  -  `foo.test.ts` lives next to `foo.ts` (no separate `tests/` directory)
 - **kebab-case file naming**  -  Use kebab-case for multi-word file and folder names (`models-dev.ts`, `lm-studio.ts`). Prefer single-word names where natural (`pricing.ts`, `known.ts`, `registry.ts`). File names should match their primary concept.
 - **No unsafe type assertions**  -  Do not use incidental `!` (non-null assertion) or broad `as` casts in production code. Use optional chaining (`?.`), type narrowing, or proper null checks instead.
-- **Sanctioned assertion boundaries only**  -  The allowed exceptions are the internal assertion helpers in `src/utils/type-guards.ts`, the store internals in `src/stores/create-store.ts` and `src/stores/use-stores.ts`, and the branded ID constructors in `src/core/types/state-actions.ts` / `src/core/types/schemas/task.ts`. Keep assertions contained to those boundaries instead of spreading them through feature code.
+- **Sanctioned assertion boundaries only**  -  The allowed exceptions are the internal assertion helpers in `src/utils/type-guards.ts`, the store internals in `src/stores/create-store.ts` and `src/stores/use-stores.ts`, and the branded ID constructors in `src/core/types/state-actions.ts` / `src/core/types/schemas/task.ts`. Keep assertions contained to those boundaries instead of spreading them through feature code. Enforced by review and `tsc --strict`, not by automated tree-walking.
 - **Zero memoization**  -  No `useMemo`, `useCallback`, or `React.memo` anywhere in `src/`. Store selectors make them unnecessary.
 - **No imperative handles**  -  No `forwardRef` / `useImperativeHandle`. React 19 + stores eliminate the need.
 
@@ -66,7 +68,6 @@ src/
 ├── cli.ts                    # CLI entry point (commander registration)
 ├── app.tsx                   # Root Ink component — dispatches screen + overlay
 ├── layout.tsx                # Structural shell (2 props: screen + overlay as ReactNode)
-├── types.ts                  # Re-exports from core/types/
 ├── stores/                   # External stores (useSyncExternalStore, zero deps, ZERO barrels — see docs/NO-BARRELS.md)
 │   ├── create-store.ts       # Generic store factory
 │   ├── use-stores.ts         # Multi-store Proxy-tracked hook
@@ -434,29 +435,33 @@ src/
 │   ├── use-async-highlight.ts # Shiki async highlight wrapper with cancellation
 │   ├── use-filterable-list.ts # Filterable, searchable picker state (arrow-nav, filter, selection)
 │   └── use-static-selector.ts # Fixed-list keyboard selector (no filter) — peer of use-filterable-list
-└── utils/                    # Helpers (no React/Ink dependencies)
-    ├── availability.ts       # Tool availability checks (version parsing + isAvailable)
-    ├── diff.ts               # Line-level diff computation
-    ├── error-hints.ts        # Human-readable hints for common error messages
-    ├── format-errors.ts
-    ├── format-numbers.ts     # Formatting helpers (tokens, cost, time)
-    ├── frontmatter.ts        # YAML-style frontmatter parser for skill/config files
-    ├── fs.ts                 # .diptych/ directory management, archiving
-    ├── git.ts                # Git operations (commit, diff, status, discard changes)
-    ├── highlight.ts          # Shiki-based syntax highlighting (async, WASM)
-    ├── kitty-keyboard.ts     # Kitty keyboard protocol helpers
-    ├── line-buffer.ts
-    ├── mouse.ts              # Mouse event parsing
-    ├── process.ts            # Subprocess spawn, streaming, lifecycle, cleanup
-    ├── process-errors.ts     # Process error type guards and factory helpers
-    ├── process-registry.ts   # Subprocess lifecycle management
-    ├── redact.ts             # Secret/API-key redaction for safe logging
-    ├── sectioned-list.ts     # Sectioned list helpers (grouping, flattening)
-    ├── truncate.ts
-    ├── type-guards.ts        # Generic type guard helpers (includes, assertNever)
-    ├── warn.ts
+├── lib/                      # Infrastructure wrappers — see docs/LAYERS.md
+│   ├── availability.ts       # Tool availability probing (version parsing + isAvailable)
+│   ├── fs.ts                 # Security-aware filesystem helpers (ensureSecureDir, writeSecureFile)
+│   ├── git.ts                # simple-git wrapper (commit, diff, status, discard)
+│   ├── highlight.ts          # Shiki syntax highlighting wrapper (async, WASM)
+│   ├── warn.ts               # stderr formatter
+│   ├── process/              # Subprocess subsystem
+│   │   ├── spawn.ts          # spawn + streaming + lifecycle
+│   │   ├── errors.ts         # Process error type guards + factory
+│   │   ├── registry.ts       # Active-subprocess tracking + signal handling
+│   │   └── line-buffer.ts    # stdout line buffering primitive
+│   └── terminal/             # Terminal protocol helpers
+│       ├── mouse.ts          # Mouse event parsing + Ink stdin interop
+│       └── kitty-keyboard.ts # Kitty keyboard protocol detection
+└── utils/                    # Generic primitives (zero domain, zero infra) — see docs/LAYERS.md
+    ├── diff.ts               # LCS diff algorithm
+    ├── format-errors.ts      # Error → string with redaction
+    ├── format-time.ts        # Generic time formatters (formatDuration, formatTime, formatTimeHHMMSS, formatEta)
+    ├── frontmatter.ts        # Generic YAML frontmatter parser
+    ├── redact.ts             # Secret/API-key redaction
+    ├── sectioned-list.ts     # List grouping helper
+    ├── truncate.ts           # Text truncation (truncateByChars, truncateByLines, truncateWithEllipsis)
+    ├── type-guards.ts        # assertNever, isRecord, typedEntries, etc.
     └── with-timeout.ts       # Promise timeout wrapper
 ```
+
+Domain-aware formatters moved to `src/core/formatting.ts` (`formatCost`, `formatContextLength`). Provider-specific error hints moved to `src/engine/errors/hints.ts`.
 
 ## Commands
 
@@ -587,7 +592,7 @@ Provider catalog (`src/core/providers.ts`): static list of known providers with 
 ## Implementation Status
 
 All 45 tasks from `specs/002-cost-optimized-orchestrator/tasks.md` are complete (45 checked, 0 pending).
-Current package version: `0.1.0` (see `package.json`). Test suite: 57 colocated test files / 700 tests.
+Current package version: `0.1.0` (see `package.json`). Test suite: 145 colocated test files / 1650 tests.
 
 ### TUI Architecture
 

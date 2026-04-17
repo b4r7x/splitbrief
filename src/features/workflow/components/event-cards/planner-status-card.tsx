@@ -1,8 +1,8 @@
 import { Text } from 'ink';
-import type { TuiEvent } from '../../../../types.js';
+import type { TuiEvent } from '../../../../core/types/events.js';
 import { useTheme } from '../../../../components/theme.js';
 import { Spinner } from '../../../../components/spinner.js';
-import { formatDuration } from '../../../../utils/format-numbers.js';
+import { formatDuration } from '../../../../utils/format-time.js';
 import { formatToolModel } from '../../../../core/model-display.js';
 import { phaseRole } from '../../../../core/phases.js';
 

@@ -6,8 +6,8 @@ import type { PlannerTool } from '../../core/types/config-options.js';
 import type { SkillMeta } from '../../core/types/app.js';
 import { parseSimpleYamlFrontmatter, extractFrontmatter } from '../../utils/frontmatter.js';
 import { DIPTYCH_DIR, CODEX_DIR, SKILLS_DIR, getDiptychPath } from '../../core/paths.js';
-import { isENOENT } from '../../utils/process-errors.js';
-import { warnError } from '../../utils/warn.js';
+import { isENOENT } from '../../lib/process/errors.js';
+import { warnError } from '../../lib/warn.js';
 
 const MAX_SKILL_CHARS = 16_000;
 const MIN_TRUNCATED_CHARS = 200;

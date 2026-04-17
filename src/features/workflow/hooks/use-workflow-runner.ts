@@ -1,6 +1,10 @@
 import { useRef, useEffect, useEffectEvent, useState } from 'react';
-import type { Config, Summary, WorkflowState, SkillMeta, TuiEvent, StateAction } from '../../../types.js';
-import { taskId } from '../../../types.js';
+import type { Config } from '../../../core/types/config-options.js';
+import type { StateAction, WorkflowState } from '../../../core/types/state-actions.js';
+import { taskId } from '../../../core/types/state-actions.js';
+import type { Summary } from '../../../core/types/summary.js';
+import type { TuiEvent } from '../../../core/types/events.js';
+import type { SkillMeta } from '../../../core/types/app.js';
 import { addEvent, resetWorkflow } from '../../../stores/workflow/actions.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
@@ -15,7 +19,7 @@ import {
   setRewindHandler,
   clearAllHandlers,
 } from '../handlers.js';
-import { killAllProcesses } from '../../../utils/process-registry.js';
+import { killAllProcesses } from '../../../lib/process/registry.js';
 import { loadState, saveState, appendEvent } from '../../../core/state/persistence.js';
 import { readActive } from '../../../core/sessions/active.js';
 import { transition } from '../../../core/state/machine.js';

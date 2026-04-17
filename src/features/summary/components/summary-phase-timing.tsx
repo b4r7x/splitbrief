@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
-import { formatTime } from '../../../utils/format-numbers.js';
+import { formatTime } from '../../../utils/format-time.js';
 import { LabeledRow } from '../../../components/labeled-row.js';
 
 interface SummaryPhaseTimingProps {

@@ -4,7 +4,7 @@ import { withTempDir } from '../helpers/temp-dir.js';
 import { createInitialState } from '../../src/core/state/machine.js';
 import { saveState, loadState } from '../../src/core/state/persistence.js';
 import { getCompletedTaskIds, getEscalatedTaskIds } from '../../src/core/state/selectors.js';
-import type { WorkflowState } from '../../src/types.js';
+import type { WorkflowState } from '../../src/core/types/state-actions.js';
 import { makeTask } from '../helpers/fixtures.js';
 
 describe('Resume with token preservation integration', () => {

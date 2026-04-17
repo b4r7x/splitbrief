@@ -11,7 +11,7 @@ vi.mock('./validator.js', () => ({
 vi.mock('./git-ops.js', () => ({
   discardTaskChanges: vi.fn(),
 }));
-vi.mock('../../utils/git.js', () => ({
+vi.mock('../../lib/git.js', () => ({
   commitChanges: vi.fn(),
 }));
 vi.mock('../../core/state/persistence.js', () => ({

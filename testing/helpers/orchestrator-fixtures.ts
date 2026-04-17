@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
-import type { OrchestratorCallbacks, TuiEvent, ValidationResult } from '../../src/types.js';
+import type { ValidationResult } from '../../src/core/types/summary.js';
+import type { OrchestratorCallbacks, TuiEvent } from '../../src/core/types/events.js';
 import type { Planner } from '../../src/engine/planners/types.js';
 import type { Implementer } from '../../src/engine/implementers/types.js';
 import { makeTask } from './fixtures.js';

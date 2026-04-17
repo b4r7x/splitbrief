@@ -198,7 +198,7 @@ This is the kind of subtle coupling that improve-codebase-architecture calls out
 - Public API: `load()`, `push(entry)`, plus `storeBase` (`get`, `use`, `subscribe`, `reset`).
 - Consumers (4): `cli/init-stores.ts` (calls `.load()`), `components/input-bar/index.tsx` (`.get()` + `.push()`), `components/input-bar/use-input-bar-history.ts` (`.get()`), `components/input-bar/use-slash-autocomplete.ts` (`.get()`).
 
-**Tests:** `src/stores/ui/input-history.test.ts` — mocks `node:fs`, `node:os`, and `../../utils/fs.js`. Covers: dedup, cap-to-max, newline parsing, 300ms debounce, debounce collapse, blank-line handling, ENOENT ignore, write-error isolation, disk path contract.
+**Tests:** `src/stores/ui/input-history.test.ts` — mocks `node:fs`, `node:os`, and `../../lib/fs.js`. Covers: dedup, cap-to-max, newline parsing, 300ms debounce, debounce collapse, blank-line handling, ENOENT ignore, write-error isolation, disk path contract.
 
 ### Target state
 

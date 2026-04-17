@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { Box, Text } from "ink";
-import type { TuiEvent } from "../../../../types.js";
+import type { TuiEvent } from '../../../../core/types/events.js';
 import { useTheme } from "../../../../components/theme.js";
 import { MarkdownBlock } from "../../../../components/markdown.js";
-import { formatCost } from "../../../../utils/format-numbers.js";
+import { formatCost } from "../../../../core/formatting.js";
 import { formatToolModel } from "../../../../core/model-display.js";
 import { phaseRole } from "../../../../core/phases.js";
 import { assertNever } from "../../../../utils/type-guards.js";

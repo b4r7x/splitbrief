@@ -4,7 +4,7 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { setQueueHandler, clearAllHandlers } from '../handlers.js';
 import { useWorkflowReviewInput } from './use-workflow-review-input.js';
 import type { UseInputModeResult } from './use-input-mode.js';
-import type { Phase } from '../../../types.js';
+import type { Phase } from '../../../core/types/state-actions.js';
 
 function makeInputMode(mode: 'normal' | 'review' | 'question', resolve = vi.fn()): UseInputModeResult {
   if (mode === 'review') return { mode, resolve } as unknown as UseInputModeResult;

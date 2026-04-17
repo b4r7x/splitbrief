@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getErrorHint, formatErrorWithHint } from './error-hints.js';
+import { getErrorHint, formatErrorWithHint } from './hints.js';
 
 describe('getErrorHint', () => {
   it('matches ECONNREFUSED on Ollama port 11434', () => {

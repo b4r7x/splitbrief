@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { eventsStore, MAX_EVENTS, mergeEvent } from './events.js';
 import { addEvent, resetWorkflow } from './actions.js';
 import { taskId } from '../../core/types/state-actions.js';
-import type { TuiEvent } from '../../types.js';
+import type { TuiEvent } from '../../core/types/events.js';
 import {
   makePlannerText,
   makePlannerStatus,
