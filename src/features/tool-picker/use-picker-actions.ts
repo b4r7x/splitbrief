@@ -2,7 +2,7 @@ import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { formatModelName } from '../../core/model-display.js';
-import type { Config } from '../../types.js';
+import type { Config } from '../../core/types/config-options.js';
 import type { PickerOption, ModelOption } from './picker-model-catalog.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import {

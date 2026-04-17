@@ -6,7 +6,7 @@ import type { Task, WorkflowState } from '../../core/types/state-actions.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
 import { clearActive } from '../../core/sessions/active.js';
 import { saveSummary } from '../../core/sessions/io.js';
-import { warnError } from '../../utils/warn.js';
+import { warnError } from '../../lib/warn.js';
 import { withSignalHandlers } from './helpers.js';
 import { shutdownWorkflow } from './final-review.js';
 import { createQueueHandler } from './queue.js';

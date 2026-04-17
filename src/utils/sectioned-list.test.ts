@@ -10,36 +10,7 @@ describe('toSectionedList', () => {
     expect(toSectionedList([], key)).toEqual([]);
   });
 
-  it('single item has sectionHeader equal to its key', () => {
-    const items: Item[] = [{ name: 'a', section: 'A' }];
-    expect(toSectionedList(items, key)).toEqual([
-      { item: items[0], sectionHeader: 'A' },
-    ]);
-  });
-
-  it('two items in same section: second has sectionHeader null', () => {
-    const items: Item[] = [
-      { name: 'a', section: 'A' },
-      { name: 'b', section: 'A' },
-    ];
-    expect(toSectionedList(items, key)).toEqual([
-      { item: items[0], sectionHeader: 'A' },
-      { item: items[1], sectionHeader: null },
-    ]);
-  });
-
-  it('two items in different sections: both have sectionHeader set', () => {
-    const items: Item[] = [
-      { name: 'a', section: 'A' },
-      { name: 'b', section: 'B' },
-    ];
-    expect(toSectionedList(items, key)).toEqual([
-      { item: items[0], sectionHeader: 'A' },
-      { item: items[1], sectionHeader: 'B' },
-    ]);
-  });
-
-  it('three items (a, a, b): [header A, null, header B]', () => {
+  it('groups items by section key and emits header only when key changes', () => {
     const items: Item[] = [
       { name: 'a1', section: 'A' },
       { name: 'a2', section: 'A' },

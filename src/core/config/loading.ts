@@ -6,8 +6,8 @@ import { validateConfig } from './validation.js';
 import { fromYaml, toYaml } from './transforms.js';
 import { DIPTYCH_DIR, CONFIG_FILE, getDiptychPath } from '../paths.js';
 import { migrateConfig } from './migration.js';
-import { writeSecureFile, checkConfigPermissions } from '../../utils/fs.js';
-import { ensureGitignore } from '../../utils/git.js';
+import { writeSecureFile, checkConfigPermissions } from '../../lib/fs.js';
+import { ensureGitignore } from '../../lib/git.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 
 export function configPath(projectDir: string): string {

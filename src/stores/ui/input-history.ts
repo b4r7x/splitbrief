@@ -2,9 +2,9 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createStore, storeBase } from '../create-store.js';
-import { writeSecureFile } from '../../utils/fs.js';
+import { writeSecureFile } from '../../lib/fs.js';
 import { DIPTYCH_DIR } from '../../core/paths.js';
-import { warnError } from '../../utils/warn.js';
+import { warnError } from '../../lib/warn.js';
 
 interface InputHistoryState {
   entries: string[];

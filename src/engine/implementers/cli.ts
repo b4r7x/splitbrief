@@ -4,10 +4,10 @@ import type { InvokeOpts } from './utils.js';
 import { DEFAULT_TIMEOUT, assertSpawnSuccess } from './utils.js';
 import { createChangeDetector } from '../change-detection.js';
 import { createImplementerBase } from './base.js';
-import { spawnWithTimeout } from '../../utils/process.js';
-import type { SpawnResult } from '../../utils/process.js';
+import { spawnWithTimeout } from '../../lib/process/spawn.js';
+import type { SpawnResult } from '../../lib/process/spawn.js';
 import { CLI_TOOLS } from '../cli-tools.js';
-import { createCommandAvailability } from '../../utils/availability.js';
+import { createCommandAvailability } from '../../lib/availability.js';
 import { runClaudeOneShot } from '../claude-runner.js';
 import { resolveAutoModel } from '../../core/providers/index.js';
 

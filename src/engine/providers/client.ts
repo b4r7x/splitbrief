@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { z } from 'zod';
 import type { DetectedModel, ProviderDef, ProviderDefWithMetadata, ProviderOverrides } from './types.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { warnError } from '../../utils/warn.js';
+import { warnError } from '../../lib/warn.js';
 
 interface ProviderShell {
   base: { name: string; baseURL: string; isLocal: boolean };

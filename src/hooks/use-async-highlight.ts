@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { highlight } from '../utils/highlight.js';
+import { highlight } from '../lib/highlight.js';
 
 export function useAsyncHighlight(code: string, lang?: string): string | null {
   const [result, setResult] = useState<string | null>(null);

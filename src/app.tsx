@@ -24,7 +24,7 @@ import { SessionsPicker } from './features/sessions/picker.js';
 import { SettingsOverlay } from './features/settings/overlay.js';
 import { ModeSelector } from './components/overlays/mode-selector.js';
 import { ToolModelPicker } from './features/tool-picker/picker.js';
-import type { Screen, OverlayType, SlashCommandDef, CommandContext, CommandPaletteItem } from './types.js';
+import type { CommandContext, CommandPaletteItem, OverlayType, Screen, SlashCommandDef } from './core/types/app.js';
 import { assertNever } from './utils/type-guards.js';
 
 export function App() {

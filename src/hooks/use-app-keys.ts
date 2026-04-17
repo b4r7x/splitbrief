@@ -7,7 +7,7 @@ import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 // engine bridge: abortTurn fires through the handler registry, not a feature-internal function
 import { abortTurn } from '../features/workflow/handlers.js';
 import { abortStore } from '../stores/workflow/abort.js';
-import { killAllProcesses } from '../utils/process-registry.js';
+import { killAllProcesses } from '../lib/process/registry.js';
 import { isLivePhase } from '../core/phases.js';
 import { useStores } from '../stores/use-stores.js';
 import type { OverlayType, Screen } from '../core/types/app.js';

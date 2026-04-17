@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getPlannerToolId } from '../core/config/runner-config.js';
-import type { PlannerConfig } from '../types.js';
+import type { PlannerConfig } from '../core/types/config-options.js';
 
 describe('getPlannerToolId', () => {
   it('returns the tool for cli kind', () => {

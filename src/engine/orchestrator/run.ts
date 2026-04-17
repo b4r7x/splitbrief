@@ -11,7 +11,7 @@ import { generateSessionId } from '../../core/sessions/id.js';
 import { ensureSessionDir, ensureDiptychDir, type SpecMetadata } from '../../core/paths-io.js';
 import { readPackageJson } from '../../core/project-meta.js';
 import { resolveAutoModel } from '../../core/providers/index.js';
-import { killAllProcesses } from '../../utils/process-registry.js';
+import { killAllProcesses } from '../../lib/process/registry.js';
 import { toErrorMessage, labelError } from '../../utils/format-errors.js';
 import { createPlanner, createImplementer } from '../runners/factory.js';
 

@@ -9,7 +9,7 @@ vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
   return { ...actual, existsSync: (p: string) => existsSyncMock(p) };
 });
-vi.mock('../utils/git.js', () => ({ isGitRepo: (p: string) => isGitRepoMock(p) }));
+vi.mock('../lib/git.js', () => ({ isGitRepo: (p: string) => isGitRepoMock(p) }));
 vi.mock('../core/config/index.js', () => ({
   loadConfig: vi.fn(),
   initConfig: () => initConfigMock(),

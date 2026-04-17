@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, resolve, relative, isAbsolute, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DIPTYCH_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE, sessionDir } from './paths.js';
-import { ensureSecureDir, validateSafeIdentifier, SECURE_FILE_MODE } from '../utils/fs.js';
+import { ensureSecureDir, validateSafeIdentifier, SECURE_FILE_MODE } from '../lib/fs.js';
 
 let cachedVersion: string | null = null;
 

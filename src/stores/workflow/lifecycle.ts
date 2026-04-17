@@ -1,5 +1,6 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { Phase, TuiEvent } from '../../types.js';
+import type { Phase } from '../../core/types/state-actions.js';
+import type { TuiEvent } from '../../core/types/events.js';
 
 export interface LifecycleState {
   phase: Phase;

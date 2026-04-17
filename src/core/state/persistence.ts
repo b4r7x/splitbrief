@@ -6,8 +6,8 @@ import { WorkflowStateSchema } from '../types/schemas/workflow.js';
 import { CURRENT_STATE_VERSION } from './machine.js';
 import { STATE_FILE, SESSION_LOG_FILE, sessionDir } from '../paths.js';
 import { narrowRecord } from '../../utils/type-guards.js';
-import { ensureSecureDir, writeSecureFile, SECURE_FILE_MODE } from '../../utils/fs.js';
-import { warnStderr } from '../../utils/warn.js';
+import { ensureSecureDir, writeSecureFile, SECURE_FILE_MODE } from '../../lib/fs.js';
+import { warnStderr } from '../../lib/warn.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 
 export function saveState(projectDir: string, sessionId: string, state: WorkflowState): void {

@@ -8,7 +8,7 @@ import { initStores } from '../init-stores.js';
 import { clearStaleSession } from './guards.js';
 import { beginSession } from '../../core/sessions/begin.js';
 import { maybeMigrate } from './migrate.js';
-import type { WorkflowOpts } from '../../types.js';
+import type { WorkflowOpts } from '../../core/types/config-options.js';
 
 export function registerStartCommand(program: Command): void {
   addWorkflowOptions(

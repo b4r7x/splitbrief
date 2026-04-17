@@ -8,7 +8,7 @@ import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { useStores } from '../../stores/use-stores.js';
-import type { Config } from '../../types.js';
+import type { Config } from '../../core/types/config-options.js';
 
 type Step = 'no-planners' | 'planner' | 'implementer';
 

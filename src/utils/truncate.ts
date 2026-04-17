@@ -8,3 +8,9 @@ export function truncateByLines(text: string, maxLines: number): string {
   if (lines.length <= maxLines) return text;
   return lines.slice(0, maxLines).join('\n');
 }
+
+export function truncateWithEllipsis(str: string, max: number): string {
+  if (max <= 0) return '';
+  if (str.length <= max) return str;
+  return str.slice(0, max - 1) + '\u2026';
+}

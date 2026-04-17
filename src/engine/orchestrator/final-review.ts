@@ -4,11 +4,11 @@ import type { TaskTokenUsage, Summary } from '../../core/types/summary.js';
 import { saveState } from '../../core/state/persistence.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, REVIEW_FILE } from '../../core/paths.js';
-import { killAllProcesses } from '../../utils/process-registry.js';
-import { getCurrentDiff } from '../../utils/git.js';
+import { killAllProcesses } from '../../lib/process/registry.js';
+import { getCurrentDiff } from '../../lib/git.js';
 import { discardTaskChanges } from './git-ops.js';
 import { labelError } from '../../utils/format-errors.js';
-import { warnError } from '../../utils/warn.js';
+import { warnError } from '../../lib/warn.js';
 import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
 
 import type { Planner } from '../planners/types.js';

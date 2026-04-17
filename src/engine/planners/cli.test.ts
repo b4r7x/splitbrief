@@ -3,13 +3,13 @@ import { createCliPlanner } from './cli.js';
 import { makeConfig } from '#testing/helpers/fixtures.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { CommandNotFoundError } from '../../utils/process-errors.js';
+import { CommandNotFoundError } from '../../lib/process/errors.js';
 
 vi.mock('../streaming/spawn-collect.js', () => ({
   spawnAndCollect: vi.fn(),
 }));
 
-vi.mock('../../utils/process.js', () => ({
+vi.mock('../../lib/process/spawn.js', () => ({
   runCommand: vi.fn(),
 }));
 
@@ -19,7 +19,7 @@ vi.mock('../../core/providers/index.js', async (importOriginal) => {
 });
 
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
-import { runCommand } from '../../utils/process.js';
+import { runCommand } from '../../lib/process/spawn.js';
 import { resolveAutoModel } from '../../core/providers/index.js';
 
 let projectDir: string;

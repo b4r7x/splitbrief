@@ -1,5 +1,5 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { PlannerDetection, ProviderDetection } from '../../types.js';
+import type { PlannerDetection, ProviderDetection } from '../../core/types/config-options.js';
 
 interface DetectionState {
   planners: PlannerDetection[];

@@ -1,8 +1,8 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../components/theme.js';
-import type { Session } from '../../types.js';
+import type { Session } from '../../core/types/app.js';
 import { getSessionStatusDisplay } from '../../core/sessions/status.js';
-import { truncate } from '../../utils/format-numbers.js';
+import { truncateWithEllipsis } from '../../utils/truncate.js';
 import { CursorCell } from '../../components/pickers/cursor-cell.js';
 
 function formatRelativeTime(timestamp: number): string {
@@ -34,7 +34,7 @@ export function SessionRow({ session, showCursor = false, isCursor = false, feat
   const t = useTheme();
   const display = getSessionStatusDisplay(session.status, t);
   const feature = featureColWidth !== undefined
-    ? truncate(session.feature, featureColWidth).padEnd(featureColWidth)
+    ? truncateWithEllipsis(session.feature, featureColWidth).padEnd(featureColWidth)
     : session.feature;
   const time = formatRelativeTime(session.startedAt);
   const featureColor = showCursor

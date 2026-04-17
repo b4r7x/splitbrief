@@ -2,11 +2,11 @@ import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadConfig, initConfig, configPath } from '../core/config/index.js';
-import { isGitRepo } from '../utils/git.js';
+import { isGitRepo } from '../lib/git.js';
 import { DIPTYCH_DIR, CONFIG_FILE } from '../core/paths.js';
 import { cliError } from './errors.js';
 import { toErrorMessage } from '../utils/format-errors.js';
-import type { WorkflowOpts } from '../types.js';
+import type { WorkflowOpts } from '../core/types/config-options.js';
 
 const NO_CONFIG_MSG = `No config found. Creating default ${DIPTYCH_DIR}/${CONFIG_FILE}`;
 

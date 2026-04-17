@@ -1,7 +1,7 @@
 import type { Task, TaskId, WorkflowState } from '../../core/types/state-actions.js';
 import type { OrchestratorCallbacks } from '../../core/types/events.js';
 import type { TaskTokenUsage } from '../../core/types/summary.js';
-import { hasExternalChanges } from '../../utils/git.js';
+import { hasExternalChanges } from '../../lib/git.js';
 import { labelError } from '../../utils/format-errors.js';
 import { getFailedTaskIds, getSkippedTaskIds, getEscalatedTaskIds } from '../../core/state/selectors.js';
 

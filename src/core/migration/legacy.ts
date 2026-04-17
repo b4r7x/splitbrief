@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { writeSecureFile } from '../../utils/fs.js';
+import { writeSecureFile } from '../../lib/fs.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import { sessionsRoot } from '../paths.js';
 import { CURRENT_STATE_VERSION } from '../state/machine.js';

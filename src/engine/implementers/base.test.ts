@@ -15,21 +15,21 @@ vi.mock('../../utils/diff.js', () => ({
   computeDiff: vi.fn(),
 }));
 
-vi.mock('../../utils/fs.js', () => ({
+vi.mock('../../lib/fs.js', () => ({
   readFileOrEmpty: vi.fn().mockResolvedValue(''),
   SECURE_DIR_MODE: 0o700,
   SECURE_FILE_MODE: 0o600,
 }));
 
-vi.mock('../../utils/git.js', () => ({
+vi.mock('../../lib/git.js', () => ({
   getChangedFiles: vi.fn().mockResolvedValue([]),
 }));
 
 import { extractCode } from '../parsers/response-extractor.js';
 import { applyCode } from './apply.js';
 import { computeDiff } from '../../utils/diff.js';
-import { readFileOrEmpty } from '../../utils/fs.js';
-import { getChangedFiles } from '../../utils/git.js';
+import { readFileOrEmpty } from '../../lib/fs.js';
+import { getChangedFiles } from '../../lib/git.js';
 
 function makeBaseConfig(overrides?: Partial<ImplementerBaseConfig>): ImplementerBaseConfig {
   return {

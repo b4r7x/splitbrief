@@ -3,8 +3,8 @@ import {
   CommandTimeoutError,
   createProcessError,
   formatCommandError,
-} from '../../utils/process-errors.js';
-import type { SpawnResult } from '../../utils/process.js';
+} from '../../lib/process/errors.js';
+import type { SpawnResult } from '../../lib/process/spawn.js';
 import type { ImplementerOptions } from './types.js';
 
 export { IMPLEMENTER_TIMEOUT_MS as DEFAULT_TIMEOUT } from '../constants.js';

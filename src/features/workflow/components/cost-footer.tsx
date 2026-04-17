@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import { formatEta } from '../../../utils/format-numbers.js';
+import { formatEta } from '../../../utils/format-time.js';
 import { useTheme } from '../../../components/theme.js';
 import { useCostStats } from '../hooks/use-cost-stats.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';

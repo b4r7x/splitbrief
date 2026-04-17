@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { Config } from '../../types.js';
+import type { Config } from '../../core/types/config-options.js';
 import {
   commitCustomCommand,
   commitImplementerSelection,

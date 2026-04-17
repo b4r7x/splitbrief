@@ -1,5 +1,6 @@
 import { Box } from 'ink';
-import type { InputMode, SlashCommandDef, Summary } from '../../types.js';
+import type { Summary } from '../../core/types/summary.js';
+import type { InputMode, SlashCommandDef } from '../../core/types/app.js';
 import { Header } from './components/header.js';
 import { AgentStatusRow } from './components/agent-status-row.js';
 import { ConfigLine } from './components/config-line.js';

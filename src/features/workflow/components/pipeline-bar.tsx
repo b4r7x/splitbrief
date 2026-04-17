@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import type { Phase } from '../../../types.js';
+import type { Phase } from '../../../core/types/state-actions.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { useTheme } from '../../../components/theme.js';
 

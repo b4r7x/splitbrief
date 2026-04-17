@@ -1,7 +1,7 @@
 import { groupEventsIntoSections } from '../../core/layout/event-sections.js';
 import type { Section } from '../../core/layout/event-sections.js';
-import type { TuiEvent } from '../../types.js';
-import type { WorkflowState } from '../../types.js';
+import type { WorkflowState } from '../../core/types/state-actions.js';
+import type { TuiEvent } from '../../core/types/events.js';
 import { abortStore } from './abort.js';
 import { eventsStore, mergeEvent, type EventsState } from './events.js';
 import { tasksStore, updateTaskCounts, updateTaskMap, type TasksState } from './tasks.js';

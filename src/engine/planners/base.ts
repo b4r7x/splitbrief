@@ -14,8 +14,8 @@ import { RESEARCH_FILE, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/path
 import { extractCode } from '../parsers/response-extractor.js';
 import { buildProjectContextMarkdown } from './context.js';
 import { accumulateUsage } from '../streaming/output-parsers.js';
-import { DEFAULT_AVAILABILITY } from '../../utils/availability.js';
-import { getChangedFiles } from '../../utils/git.js';
+import { DEFAULT_AVAILABILITY } from '../../lib/availability.js';
+import { getChangedFiles } from '../../lib/git.js';
 import { createChangeDetector } from '../change-detection.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
 import type { Phase } from '../../core/types/state-actions.js';

@@ -6,7 +6,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { CursorCell } from '../pickers/cursor-cell.js';
 import { useStaticSelector } from '../../hooks/use-static-selector.js';
-import type { WorkflowMode } from '../../types.js';
+import type { WorkflowMode } from '../../core/types/config-options.js';
 
 interface ModeDef {
   mode: WorkflowMode;

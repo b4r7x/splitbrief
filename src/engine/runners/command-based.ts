@@ -1,12 +1,12 @@
 import type { OutputFormat } from '../../core/types/schemas/enums.js';
 import type { TokenDelta } from '../../core/types/summary.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
-import { spawnWithShellFallback } from '../../utils/process.js';
+import { spawnWithShellFallback } from '../../lib/process/spawn.js';
 import {
   CommandTimeoutError,
   CommandNotFoundError,
   formatCommandError,
-} from '../../utils/process-errors.js';
+} from '../../lib/process/errors.js';
 import { extractCode } from '../parsers/response-extractor.js';
 
 export interface CommandBasedOptions {

@@ -1,4 +1,4 @@
-import type { TuiEvent } from '../../types.js';
+import type { TuiEvent } from '../types/events.js';
 import type { DynamicSection } from './event-sections.js';
 import { getMaxVisibleDiffLines } from './diff-height.js';
 

@@ -2,7 +2,8 @@ import { Text } from "ink";
 import type { Theme } from "../../components/theme.js";
 import { isProviderLocal } from "../../core/providers/index.js";
 import { formatModelName } from "../../core/model-display.js";
-import { formatContextLength, truncate } from "../../utils/format-numbers.js";
+import { formatContextLength } from "../../core/formatting.js";
+import { truncateWithEllipsis } from "../../utils/truncate.js";
 import type { PickerOption, ModelOption } from "./picker-model-catalog.js";
 import { isCustomModel } from "./picker-model-catalog.js";
 
@@ -40,7 +41,7 @@ function formatPickerLine(
   const availableForTruncatedLabel =
     maxWidth - essentialSuffix.length - CHECKMARK_WIDTH;
   return {
-    label: truncate(label, availableForTruncatedLabel),
+    label: truncateWithEllipsis(label, availableForTruncatedLabel),
     suffix: essentialSuffix,
     checkmark,
   };

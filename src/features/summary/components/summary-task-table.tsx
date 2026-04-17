@@ -1,8 +1,9 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
-import { formatCost, truncate } from '../../../utils/format-numbers.js';
+import { formatCost } from '../../../core/formatting.js';
+import { truncateWithEllipsis } from '../../../utils/truncate.js';
 import { getMethodDisplay } from '../../../core/sessions/status.js';
-import type { TaskTokenUsage } from '../../../types.js';
+import type { TaskTokenUsage } from '../../../core/types/summary.js';
 
 interface SummaryTaskTableProps {
   tasks: TaskTokenUsage[];
@@ -29,7 +30,7 @@ export function SummaryTaskTable({
               <Text color={t.textDim}>{task.taskId}</Text>
             </Box>
             <Box width={taskTitleWidth}>
-              <Text>{truncate(task.taskTitle, truncateLength)}</Text>
+              <Text>{truncateWithEllipsis(task.taskTitle, truncateLength)}</Text>
             </Box>
             <Box width={10}>
               <Text color={m.color}>{m.text}</Text>

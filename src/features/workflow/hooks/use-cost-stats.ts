@@ -5,8 +5,8 @@ import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { calculateCostBreakdown } from '../../../engine/providers/pricing.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../../../core/config/index.js';
-import { formatCost } from '../../../utils/format-numbers.js';
-import type { CostBreakdown } from '../../../types.js';
+import { formatCost } from '../../../core/formatting.js';
+import type { CostBreakdown } from '../../../core/types/summary.js';
 
 interface CostStats {
   localRate: number;

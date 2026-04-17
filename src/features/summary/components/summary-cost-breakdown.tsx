@@ -1,9 +1,9 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
-import { formatCost } from '../../../utils/format-numbers.js';
+import { formatCost } from '../../../core/formatting.js';
 import { getProviderDisplayName } from '../../../core/providers/index.js';
 import { LabeledRow } from '../../../components/labeled-row.js';
-import type { CostBreakdown } from '../../../types.js';
+import type { CostBreakdown } from '../../../core/types/summary.js';
 
 interface SummaryCostBreakdownProps {
   costBreakdown: CostBreakdown;

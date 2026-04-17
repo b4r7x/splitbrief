@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import type { TuiEvent } from '../../../../types.js';
+import type { TuiEvent } from '../../../../core/types/events.js';
 import { useTheme } from '../../../../components/theme.js';
 import { getProviderDisplayName } from '../../../../core/providers/index.js';
 

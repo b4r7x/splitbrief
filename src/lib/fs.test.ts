@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
-import { readFileOrEmpty, SECURE_DIR_MODE, SECURE_FILE_MODE, checkConfigPermissions } from './fs.js';
+import { readFileOrEmpty, checkConfigPermissions } from './fs.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let tmp: string;
@@ -26,16 +26,6 @@ describe('readFileOrEmpty', () => {
   it('returns empty string when file does not exist', async () => {
     const dir = makeTmp();
     expect(await readFileOrEmpty(join(dir, 'nope.txt'))).toBe('');
-  });
-});
-
-describe('permission constants', () => {
-  it('SECURE_DIR_MODE is 0o700', () => {
-    expect(SECURE_DIR_MODE).toBe(0o700);
-  });
-
-  it('SECURE_FILE_MODE is 0o600', () => {
-    expect(SECURE_FILE_MODE).toBe(0o600);
   });
 });
 

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import type { InputMode } from '../../../types.js';
+import type { InputMode } from '../../../core/types/app.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 
 type ReviewResult = { approved: boolean; comment?: string | undefined };

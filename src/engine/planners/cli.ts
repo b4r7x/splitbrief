@@ -3,7 +3,7 @@ import type { InvokeResult } from '../../core/types/runner.js';
 import type { Planner, PlannerCallbacks } from './types.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
-import { createCommandAvailability } from '../../utils/availability.js';
+import { createCommandAvailability } from '../../lib/availability.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { CLI_TOOLS } from '../cli-tools.js';
 import { resolveAutoModel } from '../../core/providers/index.js';

@@ -11,7 +11,7 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { initStores } from '../init-stores.js';
 import { readActive } from '../../core/sessions/active.js';
 import { maybeMigrate } from './migrate.js';
-import type { WorkflowOpts } from '../../types.js';
+import type { WorkflowOpts } from '../../core/types/config-options.js';
 
 export function registerResumeCommand(program: Command): void {
   addWorkflowOptions(

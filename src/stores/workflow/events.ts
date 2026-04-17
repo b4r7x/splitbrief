@@ -1,5 +1,5 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { TuiEvent } from '../../types.js';
+import type { TuiEvent } from '../../core/types/events.js';
 
 export interface EventsState {
   events: TuiEvent[];

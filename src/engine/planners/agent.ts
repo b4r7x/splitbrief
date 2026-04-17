@@ -4,7 +4,7 @@ import type { Planner } from './types.js';
 import { createCommandBasedPlanner, resolveCapabilities } from './command-invoke.js';
 import { buildEscalationPrompt } from '../spec/prompts/escalation.js';
 import { readSpecFile } from '../../core/paths-io.js';
-import { getChangedFiles } from '../../utils/git.js';
+import { getChangedFiles } from '../../lib/git.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import { createChangeDetector } from '../change-detection.js';
 

@@ -1,8 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { isENOENT, CommandNotFoundError, formatCommandError } from './process-errors.js';
-import { redactSecrets } from './redact.js';
+import { isENOENT, CommandNotFoundError, formatCommandError } from './errors.js';
+import { redactSecrets } from '../../utils/redact.js';
 import { createLineBuffer } from './line-buffer.js';
-import { registerProcess, unregisterProcess, killProcess, abortProcess } from './process-registry.js';
+import { registerProcess, unregisterProcess, killProcess, abortProcess } from './registry.js';
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
 

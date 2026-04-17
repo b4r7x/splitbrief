@@ -12,7 +12,7 @@ vi.mock('../../core/state/persistence.js', () => ({
   appendEvent: vi.fn(),
   appendMessage: vi.fn(),
 }));
-vi.mock('../../utils/fs.js', () => ({
+vi.mock('../../lib/fs.js', () => ({
   readSpecFile: vi.fn().mockReturnValue('# Spec content'),
   writeSpecFile: vi.fn(),
   SECURE_DIR_MODE: 0o700,
@@ -48,7 +48,7 @@ import type { WorkflowSinks } from './types.js';
 
 function createTestSinks(): WorkflowSinks & { abortTurn: () => boolean } {
   let abortHandler: (() => void) | null = null;
-  let queueHandler: ((text: string, phase: import('../../types.js').Phase) => void) | null = null;
+  let queueHandler: ((text: string, phase: import('../../core/types/state-actions.js').Phase) => void) | null = null;
   return {
     setAbortHandler: (h) => { abortHandler = h; },
     setQueueHandler: (h) => { queueHandler = h; },

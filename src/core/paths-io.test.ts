@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { readFileOrEmpty } from '../utils/fs.js';
+import { readFileOrEmpty } from '../lib/fs.js';
 import {
   ensureDiptychDir,
   ensureSessionDir,

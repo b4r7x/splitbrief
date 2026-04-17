@@ -1,7 +1,7 @@
 import type { WorkflowState } from '../../core/types/state-actions.js';
 import type { Summary, TaskTokenUsage } from '../../core/types/summary.js';
 import { calculateCostBreakdown, getProviderPricing, calculateCost } from '../providers/pricing.js';
-import { formatCost } from '../../utils/format-numbers.js';
+import { formatCost } from '../../core/formatting.js';
 import {
   getCompletedTaskIds,
   getEscalatedTaskIds,

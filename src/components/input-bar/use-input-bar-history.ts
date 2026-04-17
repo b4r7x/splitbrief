@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { useStores } from '../../stores/use-stores.js';
-import type { Screen } from '../../types.js';
+import type { Screen } from '../../core/types/app.js';
 import {
   INITIAL_INPUT_HISTORY_NAVIGATION_STATE,
   stepInputHistory,

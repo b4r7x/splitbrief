@@ -1,5 +1,6 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { TokenUsage, TuiEvent } from '../../types.js';
+import type { TokenUsage } from '../../core/types/summary.js';
+import type { TuiEvent } from '../../core/types/events.js';
 
 export interface TokensState {
   localCount: number;

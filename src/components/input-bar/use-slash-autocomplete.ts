@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useInput } from 'ink';
 import { Fzf } from 'fzf';
-import type { Screen, SlashCommandDef } from '../../types.js';
+import type { Screen, SlashCommandDef } from '../../core/types/app.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 

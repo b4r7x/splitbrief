@@ -4,7 +4,7 @@ import type { ParsedLine, ToolUseInfo } from '../../core/types/runner.js';
 import type { TokenDelta } from '../../core/types/summary.js';
 import { toTokenDelta } from './token-utils.js';
 import { assertNever, narrowRecord } from '../../utils/type-guards.js';
-import { warnError } from '../../utils/warn.js';
+import { warnError } from '../../lib/warn.js';
 export { accumulateUsage } from './token-utils.js';
 
 export type { ToolUseInfo };

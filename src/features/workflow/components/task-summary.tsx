@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
-import type { TaskCompletionMethod } from '../../../types.js';
+import type { TaskCompletionMethod } from '../../../core/types/summary.js';
 import { getMethodDisplay } from '../../../core/sessions/status.js';
 
 interface TaskSummaryProps {

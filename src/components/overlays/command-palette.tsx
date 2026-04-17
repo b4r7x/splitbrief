@@ -1,8 +1,8 @@
 import { Text } from 'ink';
 import { useTheme } from '../theme.js';
-import type { CommandPaletteItem, Screen } from '../../types.js';
+import type { CommandPaletteItem, Screen } from '../../core/types/app.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { truncate } from '../../utils/format-numbers.js';
+import { truncateWithEllipsis } from '../../utils/truncate.js';
 import { filterByFields } from '../pickers/picker-utils.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { FilterableList } from '../pickers/filterable-list.js';
@@ -40,9 +40,9 @@ export function CommandPalette({ items, currentScreen }: CommandPaletteProps) {
       maxVisible={5}
       placeholder={<Text color={t.textDim}>  No matching commands</Text>}
       renderItem={(item, { isCursor }) => {
-        const name = truncate(item.label, nameColWidth).padEnd(nameColWidth);
-        const desc = truncate(item.description, descMaxWidth);
-        const shortcut = item.shortcut ? truncate(`[${item.shortcut}]`, shortcutMaxWidth) : '';
+        const name = truncateWithEllipsis(item.label, nameColWidth).padEnd(nameColWidth);
+        const desc = truncateWithEllipsis(item.description, descMaxWidth);
+        const shortcut = item.shortcut ? truncateWithEllipsis(`[${item.shortcut}]`, shortcutMaxWidth) : '';
 
         return (
           <>

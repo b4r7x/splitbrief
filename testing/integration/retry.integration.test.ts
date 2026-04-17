@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { guardIntegration } from './guard.js';
 import { createInitialState, transition } from '../../src/core/state/machine.js';
 import { getCompletedTaskIds, getEscalatedTaskIds } from '../../src/core/state/selectors.js';
-import type { WorkflowState } from '../../src/types.js';
+import type { WorkflowState } from '../../src/core/types/state-actions.js';
 import { makeTask } from '../helpers/fixtures.js';
 
 describe('Retry flow integration', () => {

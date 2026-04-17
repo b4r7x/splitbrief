@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
-import type { SlashCommandDef } from '../../types.js';
+import type { SlashCommandDef } from '../../core/types/app.js';
 import { useTheme } from '../../components/theme.js';
-import { formatTime } from '../../utils/format-numbers.js';
+import { formatTime } from '../../utils/format-time.js';
 import { formatToolModel } from '../../core/model-display.js';
 import { InputBar } from '../../components/input-bar/index.js';
 import { LabeledRow } from '../../components/labeled-row.js';
