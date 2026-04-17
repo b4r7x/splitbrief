@@ -1,21 +1,15 @@
 import type { Config, Task } from '../../types.js';
-import type { Planner, PlannerCapabilities } from './types.js';
-import { createCommandBasedPlanner } from './command-invoke.js';
+import type { Planner } from './types.js';
+import { createCommandBasedPlanner, resolveCapabilities } from './command-invoke.js';
 import { buildEscalationPrompt } from '../spec/prompts/escalation.js';
 import { readSpecFile } from '../../core/paths-io.js';
 import { getChangedFiles } from '../../utils/git.js';
-import { assertPlannerKind } from './utils.js';
+import { assertPlannerKind } from '../config-assertions.js';
 import { createChangeDetector } from '../change-detection.js';
 
 export function createAgentPlanner(config: Config): Planner {
   const plannerCfg = assertPlannerKind(config, 'agent');
-  const override = plannerCfg.capabilities ?? {};
-  const capabilities: PlannerCapabilities = {
-    supportsConversationalPlanning: override.supportsConversationalPlanning ?? false,
-    supportsHintEscalation: override.supportsHintEscalation ?? false,
-    supportsSessionResume: override.supportsSessionResume ?? false,
-    supportsMidStreamInjection: override.supportsMidStreamInjection ?? false,
-  };
+  const capabilities = resolveCapabilities(plannerCfg.capabilities);
 
   const base = createCommandBasedPlanner(plannerCfg, 'Agent planner', {
     extractsCode: false,

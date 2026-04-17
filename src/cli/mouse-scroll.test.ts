@@ -76,7 +76,6 @@ describe('wireWorkflowMouseScroll', () => {
     routerStore.init({ screen: 'workflow', feature: 'feat' });
     workflowStore.reset({
       ...workflowStore.get(),
-      sidebarVisible: false,
       sections: [{
         type: 'events',
         startIndex: 0,

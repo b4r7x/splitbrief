@@ -53,11 +53,10 @@ export function updateTaskMap(
   if (event.type === 'task-complete' || event.type === 'task-skipped') {
     const status = event.type === 'task-complete' ? 'done' : 'skipped';
     const existing = taskMap.get(event.taskId);
-    if (existing) {
-      const next = new Map(taskMap);
-      next.set(event.taskId, { ...existing, status });
-      return next;
-    }
+    if (!existing || existing.status === status) return taskMap;
+    const next = new Map(taskMap);
+    next.set(event.taskId, { ...existing, status });
+    return next;
   }
   return taskMap;
 }

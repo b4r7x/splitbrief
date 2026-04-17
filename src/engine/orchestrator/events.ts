@@ -158,3 +158,12 @@ export function emitWorkflowConfig(callbacks: OrchestratorCallbacks, opts: {
     ...(opts.implementerModel !== undefined && { implementerModel: opts.implementerModel }),
   });
 }
+
+export function createEventEmitter(projectDir: string, sessionId: string) {
+  return <T extends keyof OrchestratorEventPayloadMap>(
+    state: WorkflowState,
+    type: T,
+    taskId: TaskId | undefined,
+    data: OrchestratorEventPayloadMap[T],
+  ): void => emit(projectDir, sessionId, state, type, taskId, data);
+}

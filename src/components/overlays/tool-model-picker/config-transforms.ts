@@ -1,6 +1,6 @@
 import { type Config, type PlannerConfig, type ImplementerConfig } from '../../../types.js';
 import { buildRunnerConfig } from '../../../core/config/build-runner.js';
-import type { PickerOption } from './picker-catalog.js';
+import type { PickerOption } from './picker-model-catalog.js';
 
 function setPlanner(config: Config, planner: PlannerConfig): Config {
   return { ...config, planner };

@@ -15,5 +15,5 @@ const store = createStore<DetectionState>(initial);
 
 export const detectionStore = {
   ...storeBase(store),
-  set: store.set,
+  setDetection: (detection: DetectionState) => store.set(detection),
 };

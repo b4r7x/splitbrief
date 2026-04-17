@@ -4,6 +4,7 @@ import type { Task, Config, ValidationResult, ValidationStages, OrchestratorCall
 import { runCommand } from '../../utils/process.js';
 import { isENOENT } from '../../utils/process-errors.js';
 import { emitValidationStart, emitValidationProgress, emitValidationResult } from './events.js';
+import { truncateByLines } from '../../utils/truncate-for-model.js';
 
 const MAX_ERROR_LINES = 20;
 
@@ -44,7 +45,7 @@ const linterCache = new Map<string, 'eslint' | 'biome' | null>();
 const testFileCache = new Map<string, string | null>();
 
 export function detectLinter(projectDir: string): 'eslint' | 'biome' | null {
-  if (linterCache.has(projectDir)) return linterCache.get(projectDir) as 'eslint' | 'biome' | null;
+  if (linterCache.has(projectDir)) return linterCache.get(projectDir) ?? null;
 
   const eslintPatterns = [
     'eslint.config.js',
@@ -196,7 +197,7 @@ export function formatValidationError(results: ValidationResult[]): string {
   const failed = results.find((r) => !r.passed);
   if (!failed) return '';
 
-  const errorLines = (failed.error || '').split('\n').slice(0, MAX_ERROR_LINES).join('\n');
+  const errorLines = truncateByLines(failed.error || '', MAX_ERROR_LINES);
 
   return [
     'Your previous code had an error. Fix it.',

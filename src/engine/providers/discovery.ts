@@ -4,9 +4,7 @@ import type { CliToolId } from '../../core/types/schemas/enums.js';
 import { runCommand } from '../../utils/process.js';
 import { fetchJsonWithTimeout } from './client.js';
 import { buildPricingFields } from './metadata.js';
-
-const SUBPROCESS_TIMEOUT_MS = 10_000;
-const HTTP_TIMEOUT_MS = 5_000;
+import { DISCOVERY_SUBPROCESS_TIMEOUT_MS, DISCOVERY_HTTP_TIMEOUT_MS } from '../constants.js';
 
 const KILO_MODELS_URL = 'https://api.kilo.ai/api/gateway/models';
 
@@ -37,7 +35,7 @@ function parseSubprocessLines(stdout: string): string[] {
 async function discoverSubprocessModels(command: string, args: string[]): Promise<DetectedModel[]> {
   try {
     const { stdout } = await runCommand(command, args, {
-      timeout: SUBPROCESS_TIMEOUT_MS,
+      timeout: DISCOVERY_SUBPROCESS_TIMEOUT_MS,
     });
     return parseSubprocessLines(stdout).map((id) => ({ id }));
   } catch {
@@ -55,7 +53,7 @@ export function discoverOpencodeModels(): Promise<DetectedModel[]> {
 
 export async function discoverKiloModels(): Promise<DetectedModel[]> {
   try {
-    const json = await fetchJsonWithTimeout(KILO_MODELS_URL, HTTP_TIMEOUT_MS);
+    const json = await fetchJsonWithTimeout(KILO_MODELS_URL, DISCOVERY_HTTP_TIMEOUT_MS);
     const parsed = KiloModelsResponseSchema.safeParse(json);
     if (!parsed.success) return [];
 

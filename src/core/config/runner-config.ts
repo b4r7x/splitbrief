@@ -1,6 +1,7 @@
 import type { Config } from '../types/config.js';
 import type { PlannerTool } from '../types/config.js';
 import { resolveAutoModel, isPlannerToolId } from '../providers.js';
+import { assertNever } from '../../utils/type-guards.js';
 
 export type RunnerConfig = Config['planner'] | Config['implementer'];
 
@@ -57,5 +58,7 @@ export function getPlannerToolId(config: Config['planner']): PlannerTool {
       return 'agent-sdk';
     case 'agent':
       return 'agent';
+    default:
+      return assertNever(config);
   }
 }

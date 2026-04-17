@@ -174,3 +174,13 @@ Store selectors make them unnecessary. Components subscribe to specific slices a
 | Export raw `store.set()` | Breaks encapsulation — use named actions |
 | Use `configStore.get()` in components | Use `configStore.use(selector)` for reactive reads |
 | Add `useMemo` / `useCallback` / `React.memo` | Store selectors make them unnecessary |
+
+## Engine Write Pattern
+
+`src/engine/orchestrator/planning.ts`, `run.ts`, and `task-step.ts` deliberately import `workflowStore` (and `abortStore` where needed) to write events and register abort/queue handlers. This is the intended **engine → store → UI** data flow direction, not a layer violation:
+
+- The engine writes events via `workflowStore.addEvent()` — UI components subscribe reactively and re-render only when their selected slice changes.
+- `abortStore` (or equivalent) is written by the engine to signal cancellation; the UI reads it to show abort state.
+- Engine modules live in `src/engine/` and have zero React/Ink imports — they only touch store singletons, which are plain module-scoped objects with no UI dependencies.
+
+The distinction is one-directional: engine code **writes** to stores; React components **read** from stores. Nothing in `src/engine/` calls `store.use()` (a React hook) — it only calls `store.get()` and `store.set()` / named actions.

@@ -213,9 +213,16 @@ function getGutterRole(event: TuiEvent): "planner" | "implementer" | null {
   }
 }
 
+function callRenderer<K extends TuiEvent["type"]>(
+  type: K,
+  event: Extract<TuiEvent, { type: K }>,
+  ctx: RenderCtx,
+): ReactNode {
+  return RENDERERS[type](event, ctx);
+}
+
 function renderEvent(event: TuiEvent, ctx: RenderCtx): ReactNode {
-  const renderer = RENDERERS[event.type] as EventRenderer<typeof event.type>;
-  return renderer(event, ctx);
+  return callRenderer(event.type, event as Extract<TuiEvent, { type: typeof event.type }>, ctx);
 }
 
 export function EventCard({ event, diffExpanded }: EventCardProps) {

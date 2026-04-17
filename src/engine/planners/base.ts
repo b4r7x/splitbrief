@@ -47,11 +47,7 @@ export interface PlannerBaseConfig {
    * Default: 'text'
    */
   hintSuccessMode?: 'text' | 'files';
-  /**
-   * Optional hook to resolve the phase output text. Backends that write files to disk
-   * (e.g., agent planner) can override the default stdout-based result by reading
-   * the generated file. Falls back to `resultText` when not provided.
-   */
+  /** Override to read the artifact from disk when the backend writes files directly (e.g., agent planner). Falls back to stdout text when not provided. */
   readPhaseOutput?: (filename: string, resultText: string, projectDir: string, sessionId?: string) => string;
   escalateFullPostProcess?: (task: Task, result: InvokeResult, extracted: { code: string }, projectDir: string) => EscalationResult;
   /**

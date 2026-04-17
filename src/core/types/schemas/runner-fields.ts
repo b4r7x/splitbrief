@@ -52,7 +52,7 @@ export const GenerationCommonFields = {
   timeout: z.number().positive().max(600000).optional(),
 };
 
-export interface RunnerKindMeta {
+export interface RunnerKindCapabilities {
   usesArgsOutputFormat: boolean;
   usesApiKey: boolean;
   requiresCommand: boolean;
@@ -64,9 +64,9 @@ export const RUNNER_DESCRIPTORS = {
   shell: { fields: ShellRunnerFields, usesArgsOutputFormat: true, usesApiKey: false, requiresCommand: true },
   agent: { fields: AgentRunnerFields, usesArgsOutputFormat: true, usesApiKey: false, requiresCommand: true },
   'agent-sdk': { fields: AgentSdkRunnerFields, usesArgsOutputFormat: false, usesApiKey: true, requiresCommand: false },
-} as const satisfies Record<RunnerKind, { fields: Record<string, z.ZodTypeAny> } & RunnerKindMeta>;
+} as const satisfies Record<RunnerKind, { fields: Record<string, z.ZodTypeAny> } & RunnerKindCapabilities>;
 
-export function getRunnerKindMeta(kind: RunnerKind): RunnerKindMeta {
+export function getRunnerKindMeta(kind: RunnerKind): RunnerKindCapabilities {
   return RUNNER_DESCRIPTORS[kind];
 }
 

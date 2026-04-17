@@ -48,14 +48,15 @@ export function createDefaultConfig(): Config {
 
 function mergeRunner(
   migrated: Record<string, unknown> | null,
-  defaults: Record<string, unknown>,
+  defaults: Config['implementer'],
 ): Record<string, unknown> {
-  if (!migrated) return defaults;
+  const d = defaults as unknown as Record<string, unknown>;
+  if (!migrated) return d;
   // When kinds differ, the migrated config is already self-contained (from
   // v1→v2 migration or explicitly set in v2). Merging would leak kind-specific
   // fields (e.g. provider/apiBase from an api default into a cli config).
-  if (migrated.kind !== undefined && migrated.kind !== defaults.kind) return migrated;
-  return { ...defaults, ...migrated };
+  if (migrated.kind !== undefined && migrated.kind !== d.kind) return migrated;
+  return { ...d, ...migrated };
 }
 
 function mergeWithDefaults(migrated: Record<string, unknown>): Record<string, unknown> {
@@ -66,7 +67,7 @@ function mergeWithDefaults(migrated: Record<string, unknown>): Record<string, un
     planner: migrated['planner'] ?? defaults.planner,
     implementer: mergeRunner(
       narrowRecord(migrated['implementer']),
-      defaults.implementer as unknown as Record<string, unknown>,
+      defaults.implementer,
     ),
     validation: narrowRecord(migrated['validation'])
       ? { ...defaults.validation, ...narrowRecord(migrated['validation']) }

@@ -225,18 +225,4 @@ describe('workflowStore', () => {
     });
   });
 
-  describe('toggleSidebar', () => {
-    it('flips sidebarVisible from false to true', () => {
-      expect(workflowStore.get().sidebarVisible).toBe(false);
-      workflowStore.toggleSidebar();
-      expect(workflowStore.get().sidebarVisible).toBe(true);
-    });
-
-    it('flips sidebarVisible from true to false', () => {
-      workflowStore.reset({ sidebarVisible: true });
-      workflowStore.toggleSidebar();
-      expect(workflowStore.get().sidebarVisible).toBe(false);
-    });
-  });
-
 });

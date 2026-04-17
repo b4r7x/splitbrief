@@ -13,6 +13,7 @@ export function computeDiff(oldContent: string, newContent: string): { diff: str
     return { diff: oldLines.map(l => `- ${l}`).join('\n'), linesAdded: 0, linesRemoved: oldLines.length };
   }
 
+  // Files > 5000 lines: Myers diff is O(m×n), use faster positional fallback
   if (oldLines.length > LARGE_FILE_THRESHOLD || newLines.length > LARGE_FILE_THRESHOLD) {
     return diffLinesSimple(oldLines, newLines);
   }

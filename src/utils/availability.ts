@@ -6,29 +6,27 @@ export const DEFAULT_AVAILABILITY = {
   getVersion: async (): Promise<string | null> => null,
 };
 
-function createGetVersion(command: string, versionArgs?: string[]): () => Promise<string | null> {
-  return async () => {
+function createCommandCheck(command: string, opts?: { timeout?: number | undefined }) {
+  return async (): Promise<{ available: boolean; version: string | null }> => {
     try {
-      const { stdout, code } = await runCommand(command, versionArgs ?? ['--version']);
-      if (code !== 0) return null;
+      const { stdout, code } = await runCommand(command, ['--version'], opts);
+      if (code !== 0) return { available: false, version: null };
       const ver = parseVersion(stdout);
-      return ver ? ver.join('.') : null;
-    } catch { return null; }
-  };
-}
-
-function createIsAvailable(command: string, opts?: { timeout?: number | undefined }): () => Promise<boolean> {
-  return async () => {
-    try {
-      const { code } = await runCommand(command, ['--version'], opts);
-      return code === 0;
-    } catch { return false; }
+      return { available: true, version: ver ? ver.join('.') : null };
+    } catch { return { available: false, version: null }; }
   };
 }
 
 export function createCommandAvailability(command: string | undefined, opts?: { timeout?: number | undefined }) {
+  if (!command) {
+    return {
+      isAvailable: async (): Promise<boolean> => false,
+      getVersion: async (): Promise<string | null> => null,
+    };
+  }
+  const check = createCommandCheck(command, opts);
   return {
-    isAvailable: command ? createIsAvailable(command, opts) : async (): Promise<boolean> => false,
-    getVersion: command ? createGetVersion(command) : async (): Promise<null> => null,
+    isAvailable: async () => (await check()).available,
+    getVersion: async () => (await check()).version,
   };
 }

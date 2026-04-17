@@ -1,6 +1,6 @@
 import { Text } from 'ink';
 import { useTheme } from '../../ui/theme.js';
-import { useCostStats, formatCostDisplay } from '../../hooks/use-cost-stats.js';
+import { useCostStats, formatCostDisplay } from './use-cost-stats.js';
 
 function rateColor(rate: number, t: { success: string; warning: string; error: string }): string {
   if (rate >= 50) return t.success;

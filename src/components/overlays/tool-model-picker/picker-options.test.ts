@@ -4,7 +4,7 @@ import {
   buildImplementerPickerOptions,
   buildPlannerPickerOptions,
 } from './picker-options.js';
-import { buildRightModels } from './picker-catalog.js';
+import { buildRightModels } from './picker-model-catalog.js';
 
 function makePlannerDetection(
   tool: PlannerDetection['tool'],

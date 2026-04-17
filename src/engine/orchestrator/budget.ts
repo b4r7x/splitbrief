@@ -63,6 +63,10 @@ export type EnforceBudgetOptions = {
   warningEmitted: boolean;
 };
 
+function fmtBudgetRange(currentCost: number, maxBudget: number): string {
+  return `${formatCost(currentCost)} of ${formatCost(maxBudget)}`;
+}
+
 export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{ stop: boolean; warningEmitted: boolean }> {
   const { maxBudget, callbacks, warningEmitted } = opts;
   const currentCost = getCurrentCost(opts);
@@ -70,7 +74,7 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{ stop:
 
   if (result.action === 'warning' && !warningEmitted) {
     emitBudgetWarning(callbacks, currentCost, maxBudget);
-    emitWarning(callbacks, `Budget 80% reached: ${formatCost(currentCost)} of ${formatCost(maxBudget)} limit`);
+    emitWarning(callbacks, `Budget 80% reached: ${fmtBudgetRange(currentCost, maxBudget)} limit`);
     return { stop: false, warningEmitted: true };
   }
 
@@ -82,7 +86,7 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{ stop:
       return { stop: !shouldContinue, warningEmitted: true };
     }
 
-    emitWarning(callbacks, `Budget exceeded: ${formatCost(currentCost)} of ${formatCost(maxBudget)} limit — stopping workflow`);
+    emitWarning(callbacks, `Budget exceeded: ${fmtBudgetRange(currentCost, maxBudget)} limit — stopping workflow`);
     return { stop: true, warningEmitted: true };
   }
 

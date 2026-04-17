@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../ui/theme.js';
-import { useCostStats } from '../../hooks/use-cost-stats.js';
+import { useCostStats } from '../workflow/use-cost-stats.js';
 import { conversationScrollStore } from '../../stores/conversation-scroll.js';
 import { CostDisplay } from '../workflow/cost-display.js';
 import { computeEta } from '../workflow/cost-footer.js';

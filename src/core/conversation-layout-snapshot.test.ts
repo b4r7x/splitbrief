@@ -4,6 +4,7 @@ import { terminalSizeStore } from '../stores/terminal-size.js';
 import { inputHeightStore } from '../stores/input-height.js';
 import { conversationScrollStore } from '../stores/conversation-scroll.js';
 import { workflowStore } from '../stores/workflow.js';
+import { workflowUIStore } from '../stores/workflow-ui.js';
 import { reviewStore } from '../stores/review.js';
 
 beforeEach(() => {
@@ -11,6 +12,7 @@ beforeEach(() => {
   inputHeightStore.reset();
   conversationScrollStore.reset();
   workflowStore.reset();
+  workflowUIStore.reset();
   reviewStore.reset();
 });
 
@@ -68,7 +70,7 @@ describe('readConversationScrollSnapshot', () => {
 
     const snapNoSidebar = readConversationScrollSnapshot();
 
-    workflowStore.reset({ ...workflowStore.get(), sidebarVisible: true });
+    workflowUIStore.reset({ sidebarVisible: true });
 
     const snapWithSidebar = readConversationScrollSnapshot();
 

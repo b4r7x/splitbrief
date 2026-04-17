@@ -30,3 +30,16 @@ export function toTokenDelta(raw: unknown): TokenDelta | null {
     outputTokens: output ?? 0,
   };
 }
+
+export function accumulateUsage(
+  current: TokenDelta | null,
+  delta: TokenDelta,
+): TokenDelta {
+  if (current) {
+    return {
+      inputTokens: current.inputTokens + delta.inputTokens,
+      outputTokens: current.outputTokens + delta.outputTokens,
+    };
+  }
+  return { ...delta };
+}

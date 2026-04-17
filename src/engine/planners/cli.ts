@@ -5,7 +5,7 @@ import { createCommandAvailability } from '../../utils/availability.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { CLI_TOOLS } from '../cli-tools.js';
 import { resolveAutoModel } from '../../core/providers.js';
-import { assertPlannerKind } from './utils.js';
+import { assertPlannerKind } from '../config-assertions.js';
 
 export function createCliPlanner(config: Config, initialSessionId?: string | null): Planner {
   const plannerCfg = assertPlannerKind(config, 'cli');

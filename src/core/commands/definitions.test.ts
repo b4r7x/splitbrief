@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createCommands, toPaletteItems, executeSlashCommand } from './definitions.js';
+import { createCommands } from './definitions.js';
+import { toPaletteItems, executeSlashCommand } from './executor.js';
 import type { SlashCommandDef, CommandContext } from '../types/index.js';
 
 const noop = () => {};

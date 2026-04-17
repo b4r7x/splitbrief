@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { formatEta } from '../../utils/format.js';
 import { useTheme } from '../../ui/theme.js';
-import { useCostStats } from '../../hooks/use-cost-stats.js';
+import { useCostStats } from './use-cost-stats.js';
 import { workflowStore } from '../../stores/workflow.js';
 import { CostDisplay } from './cost-display.js';
 

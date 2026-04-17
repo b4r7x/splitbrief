@@ -65,7 +65,7 @@ type Allowance = { file: string; lineSubstring: string };
 const AS_CAST_ALLOWLIST: readonly Allowance[] = [
   // Config defaults merging — double-cast through unknown is the only way to
   // convert a typed Config into Record<string,unknown> for the merge helper.
-  { file: 'src/core/config/loading.ts', lineSubstring: 'defaults.implementer as unknown as Record<string, unknown>' },
+  { file: 'src/core/config/loading.ts', lineSubstring: 'const d = defaults as unknown as Record<string, unknown>' },
 
   // JSON.parse boundaries — result is unknown, narrowing via narrowRecord
   // happens immediately after; no stronger static type is available.
@@ -86,10 +86,10 @@ const AS_CAST_ALLOWLIST: readonly Allowance[] = [
   // NodeJS.ReadStream at the render boundary.
   { file: 'src/cli/render.ts', lineSubstring: 'filteredStdin?.stdin as NodeJS.ReadStream | undefined' },
 
-  // RENDERERS lookup — TypeScript cannot narrow RENDERERS[event.type] to the
-  // per-key EventRenderer<K> without a cast because the map type is
-  // { [K in TuiEvent["type"]]: EventRenderer<K> } and event.type is a union.
-  { file: 'src/components/event-cards/index.tsx', lineSubstring: 'RENDERERS[event.type] as EventRenderer<typeof event.type>' },
+  // RENDERERS lookup — TypeScript cannot narrow the union event through a
+  // correlated-generics dispatch (callRenderer<K>) without one narrowing cast;
+  // Extract is a narrowing (not a widening) and scoped to the renderer boundary.
+  { file: 'src/components/event-cards/index.tsx', lineSubstring: 'event as Extract<TuiEvent, { type: typeof event.type }>' },
 
   // PlannerConfig omitModel — discriminated union spread; cast is documented
   // inline in the function comment.
@@ -351,6 +351,8 @@ function collectOffenders(
       const line = lines[i] ?? '';
       if (pattern.test(line)) {
         const trimmed = line.trim();
+        // Skip ESM import/export alias lines — `as` there is rename syntax, not a type cast.
+        if (/^(import|export)\b/.test(trimmed) && /\{[^}]*\bas\b/.test(trimmed)) continue;
         if (!isAllowlisted(rel, trimmed, allowlist)) {
           offenders.push(`${rel}:${i + 1}: ${trimmed}`);
         }

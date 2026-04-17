@@ -9,7 +9,7 @@ import { clearActive } from '../../core/sessions/active.js';
 import { ensureSessionDir, ensureDiptychDir, type SpecMetadata } from '../../core/paths-io.js';
 import { readPackageJson } from '../../utils/fs.js';
 import { resolveAutoModel } from '../../core/providers.js';
-import { killAllProcesses } from '../../utils/process-lifecycle.js';
+import { killAllProcesses } from '../../utils/process.js';
 import { toErrorMessage, labelError } from '../../utils/format.js';
 import { warnError } from '../../utils/warn.js';
 import { createPlanner, createImplementer } from '../runners/factory.js';

@@ -2,7 +2,7 @@ import { toErrorMessage } from '../../utils/format.js';
 import { formatErrorWithHint } from '../../utils/error-hints.js';
 import { redactSecrets } from '../../utils/redact.js';
 
-export const STREAM_TIMEOUT_MS = 60_000;
+export { STREAM_IDLE_TIMEOUT_MS as STREAM_TIMEOUT_MS } from '../constants.js';
 
 export function isErrorLike(val: unknown): val is Record<string, unknown> {
   return typeof val === 'object' && val !== null;

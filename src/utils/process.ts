@@ -1,8 +1,78 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { isENOENT, CommandNotFoundError } from './process-errors.js';
+import { isENOENT, isNodeError, CommandNotFoundError } from './process-errors.js';
 import { redactSecrets } from './redact.js';
-import { registerProcess, unregisterProcess, killProcess, abortProcess } from './process-lifecycle.js';
 
+
+const SIGKILL_DELAY = 2000;
+const ABORT_KILL_DELAY = 2000;
+
+const activeProcesses = new Set<ChildProcess>();
+
+export function registerProcess(proc: ChildProcess): void {
+  activeProcesses.add(proc);
+}
+
+export function unregisterProcess(proc: ChildProcess): void {
+  activeProcesses.delete(proc);
+}
+
+export function getActiveProcessCount(): number {
+  return activeProcesses.size;
+}
+
+export function killProcess(proc: ChildProcess, options?: { group?: boolean; killDelay?: number }): void {
+  if (proc.exitCode !== null || proc.killed) return;
+  const pid = proc.pid;
+  const useGroup = options?.group && pid !== undefined;
+  const delay = options?.killDelay ?? SIGKILL_DELAY;
+  try {
+    if (useGroup && pid !== undefined) {
+      process.kill(-pid, 'SIGTERM');
+    } else {
+      proc.kill('SIGTERM');
+    }
+  } catch (err) {
+    if (!(isNodeError(err) && err.code === 'ESRCH')) {
+      throw err;
+    }
+  }
+  setTimeout(() => {
+    const currentPid = proc.pid;
+    if (currentPid === undefined) return;
+    try {
+      process.kill(useGroup ? -currentPid : currentPid, 0);
+      if (useGroup) {
+        process.kill(-currentPid, 'SIGKILL');
+      } else {
+        proc.kill('SIGKILL');
+      }
+    } catch (err) {
+      if (!(isNodeError(err) && err.code === 'ESRCH')) {
+        throw err;
+      }
+    }
+  }, delay);
+}
+
+export function abortProcess(proc: ChildProcess, signal: AbortSignal): void {
+  if (proc.exitCode !== null || proc.killed) return;
+
+  const onAbort = () => killProcess(proc, { group: true, killDelay: ABORT_KILL_DELAY });
+
+  if (signal.aborted) {
+    onAbort();
+    return;
+  }
+
+  signal.addEventListener('abort', onAbort, { once: true });
+  proc.on('close', () => signal.removeEventListener('abort', onAbort));
+}
+
+export function killAllProcesses(): void {
+  for (const proc of activeProcesses) {
+    killProcess(proc);
+  }
+}
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
 
