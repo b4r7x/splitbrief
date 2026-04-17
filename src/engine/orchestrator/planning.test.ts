@@ -38,11 +38,11 @@ vi.mock('../../core/paths-io.js', () => ({
 vi.mock('../spec/parser.js', () => ({
   parseTasks: vi.fn().mockReturnValue([makeTask()]),
 }));
-vi.mock('../skills/index.js', () => ({
+vi.mock('../skills/discovery.js', () => ({
   buildSkillsSection: vi.fn().mockResolvedValue(''),
 }));
 
-import { runPlanningPhase } from './planning/index.js';
+import { runPlanningPhase } from './planning/run.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import type { WorkflowSinks } from './types.js';
 

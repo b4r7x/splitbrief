@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import YAML from 'yaml';
 import type { Config } from '../types/config-options.js';
-import { resolveDefaultApiBase, KNOWN_PROVIDER_BASE_URLS } from '../providers/index.js';
+import { resolveDefaultApiBase, KNOWN_PROVIDER_BASE_URLS } from '../providers/catalog.js';
 import { validateConfig } from './validation.js';
 import { fromYaml, toYaml } from './transforms.js';
 import { DIPTYCH_DIR, CONFIG_FILE, getDiptychPath } from '../paths.js';

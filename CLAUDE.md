@@ -24,16 +24,15 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 - `docs/STORES.md`  -  External store architecture (factory, patterns, inventory). **Read when touching anything under `src/stores/`.**
 - `docs/LAYERS.md`  -  Decision tree for `utils/` vs `lib/` vs `core/` vs `engine/` vs `features/`. **Read before adding any new file to these folders.**
 - `docs/STRUCTURE.md`  -  File-tree layout and feature anatomy. Companion to `LAYERS.md` (what vs where).
-- `docs/STORES-RESTRUCTURE.md`  -  Historical RFC for the 2026-04 stores restructure (Phases 1–3). Captures rationale + decisions; read if curious why the directory looks the way it does.
-- `docs/NO-BARRELS.md`  -  Codebase-wide principle: no re-export-only `index.ts` files. **Read before creating any new `index.ts`.** Applies to stores today, engine/core next.
-- `docs/FUTURE-WORK.md`  -  Three deferred RFCs ready to execute (unbarrel `src/core/`, unbarrel `src/engine/`, refactor `inputHistoryStore` persistence boundary). Self-contained — do not re-audit, read the plans.
+- `docs/NO-BARRELS.md`  -  Codebase-wide principle: no re-export-only `index.ts` files. **Read before creating any new `index.ts`.** Enforced — zero barrels anywhere in `src/`.
+- `docs/FUTURE.md`  -  Deliberately deferred features (not yet built). Current roadmap for ideas that have shape but await priority.
 
 ## Tech Stack
 
 - **Runtime**: Node.js 22+
 - **Language**: TypeScript 6.x, ESM only (`"type": "module"`)
 - **Dev runner**: `tsx` (handles TypeScript + JSX/TSX + ESM, no custom loaders needed)
-- **Testing**: Vitest 4.x (145 colocated test files / 1650 tests)
+- **Testing**: Vitest 4.x (146 colocated test files / 1657 tests)
 - **Linter/formatter**: Biome 2.x (`npm run lint`, `npm run format`)
 - **TUI**: Ink 6.8 (React 19 for CLI) + fullscreen-ink (custom multiline-input primitive under `src/components/input/`)
 - **Syntax highlighting**: Shiki 4.x (WASM-based, async)
@@ -99,7 +98,6 @@ src/
 ├── core/                     # Shared domain logic (config, types, commands, state, layout)
 │   ├── phases.ts             # Phase role mapping + cancellable/implementer phase sets
 │   ├── config/               # YAML config loading, defaults, validation
-│   │   ├── index.ts          # Public re-exports
 │   │   ├── access.ts
 │   │   ├── loading.ts
 │   │   ├── overrides.ts
@@ -108,6 +106,7 @@ src/
 │   │   ├── migration.ts
 │   │   ├── runner-config.ts
 │   │   └── build-runner.ts
+│   ├── formatting.ts         # LLM-domain formatters (formatCost, formatContextLength)
 │   ├── layout/               # Pure layout / geometry helpers (no React)
 │   │   ├── chrome-rows.ts
 │   │   ├── conversation-scroll.ts
@@ -127,7 +126,6 @@ src/
 │   ├── paths-io.ts
 │   ├── project-meta.ts
 │   ├── providers/            # Provider catalog + known models + model selection
-│   │   ├── index.ts
 │   │   ├── catalog.ts
 │   │   ├── known-models.ts
 │   │   └── model-selection.ts
@@ -143,7 +141,6 @@ src/
 │   │   ├── catalog.ts
 │   │   └── presentation.ts
 │   ├── slash-commands/       # Slash command definitions and handlers
-│   │   ├── index.ts
 │   │   ├── definitions.ts
 │   │   ├── executor.ts
 │   │   ├── phase-guards.ts
@@ -189,10 +186,10 @@ src/
 │   │   └── status.ts
 │   ├── errors.ts
 │   ├── init-stores.ts        # Eager store bootstrap before React renders
+│   ├── input-history-persistence.ts  # Disk I/O + debounced save for inputHistoryStore (hydrates at startup, subscribes for writes)
 │   ├── render.ts             # Ink/fullscreen rendering setup
 │   └── workflow.ts           # Shared CLI workflow helpers
-├── engine/                   # Workflow logic (zero React/Ink imports)
-│   ├── index.ts              # Public re-exports
+├── engine/                   # Workflow logic (zero React/Ink imports) — zero barrels
 │   ├── agent-sdk.ts          # Shared Anthropic Agent SDK loader (optional peer dep)
 │   ├── api-shared.ts
 │   ├── change-detection.ts
@@ -202,8 +199,9 @@ src/
 │   ├── constants.ts
 │   ├── http.ts
 │   ├── session-expiry.ts
+│   ├── errors/               # Engine-scoped error diagnosis
+│   │   └── hints.ts          # Provider error hints (Ollama, LM Studio, etc.)
 │   ├── orchestrator/         # Main workflow loop (decomposed into focused modules)
-│   │   ├── index.ts          # runWorkflow main loop + re-exports
 │   │   ├── approval.ts
 │   │   ├── budget.ts
 │   │   ├── clarifications.ts
@@ -231,7 +229,7 @@ src/
 │   │   ├── validator.ts
 │   │   ├── validator-internal.ts
 │   │   └── planning/
-│   │       ├── index.ts
+│   │       ├── run.ts        # runPlanningPhase dispatcher (was planning/index.ts)
 │   │       ├── new.ts
 │   │       ├── quick.ts
 │   │       ├── rewind.ts
@@ -295,7 +293,6 @@ src/
 │   │       ├── spec.ts
 │   │       └── tasks.ts
 │   ├── detection/            # Auto-detect planners (CLI) and implementers
-│   │   ├── index.ts          # Public re-exports
 │   │   ├── adapter.ts        # UI-facing refresh entry point (ex src/hooks/detection-adapter.ts)
 │   │   ├── cache.ts
 │   │   ├── detect.ts
@@ -315,7 +312,6 @@ src/
 │   │   ├── token-utils.ts
 │   │   └── transcript-buffer.ts
 │   └── skills/               # Skill discovery (frontmatter parsing, .claude/skills scanning)
-│       ├── index.ts
 │       └── discovery.ts
 ├── features/                 # Business features — vertical slices, one folder per feature
 │   ├── workflow/             # Running workflow: conversation, events, keyboard, runner
@@ -592,7 +588,7 @@ Provider catalog (`src/core/providers.ts`): static list of known providers with 
 ## Implementation Status
 
 All 45 tasks from `specs/002-cost-optimized-orchestrator/tasks.md` are complete (45 checked, 0 pending).
-Current package version: `0.1.0` (see `package.json`). Test suite: 145 colocated test files / 1650 tests.
+Current package version: `0.1.0` (see `package.json`). Test suite: 146 colocated test files / 1657 tests.
 
 ### TUI Architecture
 
@@ -666,7 +662,7 @@ App-wide keyboard handling lives in `src/hooks/use-app-keys.ts` (mounted at the 
 - Don't use `configStore.get()` in components — use `configStore.use(selector)` or `configStore.useConfig()` for reactive reads (`.get()` is for non-React code)
 - Use `feedbackStore.setMessage()` for informational messages (e.g., slash command feedback), `setError()` for actual errors
 - When updating config via store, create new objects (immutable): `configStore.set({ ...configStore.get(), config: { ...config, workflow: { ...config.workflow, mode } } })`
-- Don't create re-export-only `index.ts` barrels in `src/stores/`, `src/hooks/`, `src/features/`, or `src/components/` — zero tolerance, see `docs/NO-BARRELS.md`. Remaining `index.ts` barrels under `src/core/` and `src/engine/` are tracked in `docs/FUTURE-WORK.md`.
+- Don't create re-export-only `index.ts` barrels anywhere in `src/` — zero tolerance, see `docs/NO-BARRELS.md`. All application barrels have been removed; `find src -name 'index.ts'` must stay at zero.
 - Don't reintroduce `workflowStore` as a single object — the split into `eventsStore`/`tasksStore`/`tokensStore`/`lifecycleStore` + `actions.ts` is deliberate. Read the sub-store or call an action from `workflow/actions.js`.
 
 ### Testing Policy

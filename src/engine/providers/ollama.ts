@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ProviderDefWithMetadata, ProviderOverrides } from './types.js';
-import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers/index.js';
+import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers/catalog.js';
 import { warnError } from '../../lib/warn.js';
 import { createMetadataProvider } from './client.js';
 import { stripV1Suffix } from '../http.js';

@@ -6,7 +6,7 @@ import { createPlannerBase } from './base.js';
 import { createCommandAvailability } from '../../lib/availability.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { CLI_TOOLS } from '../cli-tools.js';
-import { resolveAutoModel } from '../../core/providers/index.js';
+import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import { createSessionResumeState } from '../session-expiry.js';
 

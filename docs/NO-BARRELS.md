@@ -66,25 +66,25 @@ The principle allows one exception: **public API surfaces of published libraries
 
 Shared type re-exports are not an exception. If `src/types/index.ts` re-exports from 10 sibling type files, those type-only re-exports still inflate the build graph and still slow down tsc/tsserver; inline imports are preferred.
 
-## Current inventory (2026-04-17)
+## Current inventory (updated 2026-04-17 after restructure)
 
-Audit of `src/` produced 12 files matching `index.{ts,tsx}`. Discriminated by role:
+**All application barrels have been removed.** `find src -name 'index.ts'` returns zero results. The three `index.tsx` files left are component implementations (not barrels).
 
-### Barrels to remove (future RFCs)
+### Previously removed (historical record)
 
-| Path | Re-exports from |
-|---|---|
-| `src/core/config/index.ts` | `access.ts`, `build-runner.ts`, `loading.ts`, `migration.ts`, `overrides.ts`, `runner-config.ts`, `transforms.ts`, `validation.ts` |
-| `src/core/providers/index.ts` | multiple provider modules |
-| `src/core/slash-commands/index.ts` | multiple command modules |
-| `src/engine/detection/index.ts` | `detect.ts` + siblings |
-| `src/engine/index.ts` | top-level engine barrel |
-| `src/engine/orchestrator/index.ts` | orchestrator submodules |
-| `src/engine/orchestrator/planning/index.ts` | planning submodules |
-| `src/engine/skills/index.ts` | discovery + siblings |
-| `src/components/summary/index.ts` | summary sub-components |
-
-Each requires a dedicated mini-RFC or can be bundled into one "unbarreling" RFC. Agent strategy mirrors Phase 2 of the stores restructure: grep consumers, direct-import rewrite, delete the barrel, run gates.
+| Path | Removed by | Notes |
+|---|---|---|
+| `src/stores/**/index.ts` (all) | Stores restructure (2026-04, Phases 1–3) | Stores folder was first to be unbarreled. |
+| `src/types.ts` | RFC-02 | Top-level type re-export barrel. |
+| `src/core/config/index.ts` | FW-1 | Consumers import directly from `loading.ts`, `validation.ts`, etc. |
+| `src/core/providers/index.ts` | FW-1 | Catalog + enum modules imported directly. |
+| `src/core/slash-commands/index.ts` | FW-1 | Imported directly from command modules. |
+| `src/engine/index.ts` | FW-2 | Top-level engine barrel. |
+| `src/engine/detection/index.ts` | FW-2 | Imported directly from `detect.ts`, `cache.ts`, etc. |
+| `src/engine/orchestrator/index.ts` | FW-2 | Imported directly from orchestrator submodules. |
+| `src/engine/orchestrator/planning/index.ts` | FW-2 | Renamed to `planning/run.ts` — contained real dispatch code, not just re-exports. |
+| `src/engine/skills/index.ts` | FW-2 | Imported directly from `discovery.ts`. |
+| `src/components/summary/index.ts` | Features restructure | Summary components moved to `src/features/summary/components/`. |
 
 ### Not barrels (keep as-is)
 

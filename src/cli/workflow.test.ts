@@ -10,7 +10,7 @@ vi.mock('node:fs', async (importOriginal) => {
   return { ...actual, existsSync: (p: string) => existsSyncMock(p) };
 });
 vi.mock('../lib/git.js', () => ({ isGitRepo: (p: string) => isGitRepoMock(p) }));
-vi.mock('../core/config/index.js', () => ({
+vi.mock('../core/config/loading.js', () => ({
   loadConfig: vi.fn(),
   initConfig: () => initConfigMock(),
   configPath: (p: string) => configPathMock(p),

@@ -5,7 +5,7 @@ import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { getProvider } from '../providers/registry.js';
 import { createClientFromProvider } from '../providers/client.js';
-import { resolveAutoModel } from '../../core/providers/index.js';
+import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { streamApiCompletion, throwAutoModelError } from '../api-shared.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import type OpenAI from 'openai';

@@ -218,5 +218,4 @@ A: Validation against a tiny-spec-defined format → `src/core/sessions/id.ts`.
 - [`STRUCTURE.md`](./STRUCTURE.md) — file tree, feature anatomy, placement rules
 - [`STORES.md`](./STORES.md) — state architecture
 - [`NO-BARRELS.md`](./NO-BARRELS.md) — why `index.ts` re-exports are banned
-- [`FUTURE-WORK.md`](./FUTURE-WORK.md) — pending unbarrel work in `core/` and `engine/`
-- [`plans/RFC-00-restructure-overview.md`](./plans/RFC-00-restructure-overview.md) — the restructure that produced this layering
+- [`FUTURE.md`](./FUTURE.md) — deferred features (not yet built)

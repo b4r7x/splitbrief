@@ -129,6 +129,5 @@ It is a pure function, not a hook. Hooks imply React lifecycle. Keeping pure hel
 - [`STRUCTURE.md`](./STRUCTURE.md) — companion doc on folder organization; defines the feature layout this hook doc lives inside.
 - [`STORES.md`](./STORES.md) — companion doc on state architecture; the same colocation principle motivates both.
 - [`NO-BARRELS.md`](./NO-BARRELS.md) — no `index.ts` re-exporters anywhere in `src/` except where the file is the real implementation.
-- [`FEATURES-RESTRUCTURE.md`](./FEATURES-RESTRUCTURE.md) — RFC that produced the feature layout this doc describes.
 - [bulletproof-react — project structure](https://github.com/alan2207/bulletproof-react/blob/master/docs/project-structure.md) — source of the "shared vs feature-scoped" rule.
 - [React docs — Reusing Logic with Custom Hooks](https://react.dev/learn/reusing-logic-with-custom-hooks) — official guidance on when to extract.

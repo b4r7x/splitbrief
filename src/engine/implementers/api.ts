@@ -5,7 +5,9 @@ import { createImplementerBase } from './base.js';
 import { createClient } from '../providers/registry.js';
 import { formatTaskPrompt, formatRetryPrompt, SYSTEM_PREAMBLE } from '../spec/formatter.js';
 import { estimateTokens } from '../spec/token-budget.js';
-import { resolveAutoModel, PROVIDER_CATALOG, isProviderId } from '../../core/providers/index.js';
+import { resolveAutoModel } from '../../core/providers/model-selection.js';
+import { PROVIDER_CATALOG } from '../../core/providers/catalog.js';
+import { isProviderId } from '../../core/types/schemas/enums.js';
 import { assertImplementerKind } from './utils.js';
 import { streamApiCompletion, throwAutoModelError } from '../api-shared.js';
 

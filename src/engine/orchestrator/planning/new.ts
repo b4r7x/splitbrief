@@ -4,7 +4,7 @@ import type { ClarificationQuestion } from '../../../core/types/events.js';
 import type { Planner } from '../../planners/types.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../../core/paths.js';
-import { buildSkillsSection } from '../../skills/index.js';
+import { buildSkillsSection } from '../../skills/discovery.js';
 import { createTextHandler, emitPlanApproved } from '../events.js';
 import { addUsageAndSave, transitionAndSave, transitionAndEmit, createSessionExpiredHandler } from '../helpers.js';
 import { collectAndPersistClarifications } from '../clarifications.js';

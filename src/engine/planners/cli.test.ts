@@ -13,14 +13,14 @@ vi.mock('../../lib/process/spawn.js', () => ({
   runCommand: vi.fn(),
 }));
 
-vi.mock('../../core/providers/index.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../core/providers/index.js')>();
+vi.mock('../../core/providers/model-selection.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../core/providers/model-selection.js')>();
   return { ...actual, resolveAutoModel: vi.fn(actual.resolveAutoModel) };
 });
 
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { runCommand } from '../../lib/process/spawn.js';
-import { resolveAutoModel } from '../../core/providers/index.js';
+import { resolveAutoModel } from '../../core/providers/model-selection.js';
 
 let projectDir: string;
 

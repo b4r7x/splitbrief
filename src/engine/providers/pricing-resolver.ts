@@ -1,5 +1,5 @@
-import { API_PROVIDER_IDS, CLI_TOOL_IDS, META_PROVIDER_IDS, type ProviderId } from '../../core/types/schemas/enums.js';
-import { isProviderId, isProviderLocal, isProviderSubscription } from '../../core/providers/index.js';
+import { API_PROVIDER_IDS, CLI_TOOL_IDS, META_PROVIDER_IDS, isProviderId, type ProviderId } from '../../core/types/schemas/enums.js';
+import { isProviderLocal, isProviderSubscription } from '../../core/providers/catalog.js';
 import {
   NULL_CACHE,
   findKnownModel,

@@ -1,13 +1,13 @@
 import { configStore } from '../stores/project/config.js';
 import { sessionsStore } from '../stores/project/sessions.js';
 import { skillsStore } from '../stores/project/skills.js';
-import { inputHistoryStore } from '../stores/ui/input-history.js';
+import { installHistoryPersistence } from './input-history-persistence.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { setHighlightTheme } from '../lib/highlight.js';
 import { warnError } from '../lib/warn.js';
-import { detectCapabilities } from '../engine/index.js';
-import { detectAll } from '../engine/detection/index.js';
+import { detectCapabilities } from '../engine/providers/registry.js';
+import { detectAll } from '../engine/detection/detect.js';
 import { loadDetectionIntoStores } from '../engine/detection/adapter.js';
 import { fetchModelsDevCatalog } from '../engine/providers/models-dev.js';
 import { discoverAllCliTools } from '../engine/providers/discovery.js';
@@ -36,7 +36,7 @@ export async function initStores(projectDir: string, opts: WorkflowOpts = {}): P
   if (!storeConfig) throw cliError('configStore.load did not populate config');
   if (storeConfig.shikiTheme) setHighlightTheme(storeConfig.shikiTheme);
   sessionsStore.load(projectDir);
-  inputHistoryStore.load();
+  installHistoryPersistence();
 
   let contextLength: number | undefined;
   try {

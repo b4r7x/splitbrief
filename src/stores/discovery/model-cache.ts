@@ -1,5 +1,5 @@
 import { createStore, storeBase } from '../create-store.js';
-import { isProviderId, type ProviderId } from '../../core/providers/index.js';
+import { isProviderId, type ProviderId } from '../../core/types/schemas/enums.js';
 import type { DetectedModel } from '../../core/types/config-options.js';
 import type { ModelsDevCatalog } from '../../core/types/model-catalog.js';
 export type { DetectedModel } from '../../core/types/config-options.js';

@@ -9,7 +9,7 @@ import type { SpawnResult } from '../../lib/process/spawn.js';
 import { CLI_TOOLS } from '../cli-tools.js';
 import { createCommandAvailability } from '../../lib/availability.js';
 import { runClaudeOneShot } from '../claude-runner.js';
-import { resolveAutoModel } from '../../core/providers/index.js';
+import { resolveAutoModel } from '../../core/providers/model-selection.js';
 
 export function createCliImplementer(config: CliImplementerConfig): Implementer {
   const toolName = config.tool;

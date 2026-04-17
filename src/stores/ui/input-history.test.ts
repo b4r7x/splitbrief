@@ -1,27 +1,9 @@
-import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-import { inputHistoryStore } from './input-history.js';
-
-const MAX_INPUT_HISTORY = 10;
-
-vi.mock('node:os', () => ({ homedir: () => '/home/testuser' }));
-vi.mock('node:fs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs')>();
-  return { ...actual, readFileSync: vi.fn() };
-});
-vi.mock('../../lib/fs.js', () => ({ writeSecureFile: vi.fn(), ensureSecureDir: vi.fn() }));
+import { beforeEach, describe, expect, it } from 'vitest';
+import { inputHistoryStore, MAX_INPUT_HISTORY } from './input-history.js';
 
 describe('inputHistoryStore', () => {
-  beforeEach(async () => {
-    vi.useFakeTimers();
+  beforeEach(() => {
     inputHistoryStore.reset();
-    const { readFileSync } = await import('node:fs');
-    vi.mocked(readFileSync).mockReset();
-    const { writeSecureFile } = await import('../../lib/fs.js');
-    vi.mocked(writeSecureFile).mockReset();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   it('ignores empty values', () => {
@@ -61,97 +43,38 @@ describe('inputHistoryStore', () => {
     expect(inputHistoryStore.get().entries[0]).toBe('item-11');
   });
 
-  describe('persistence', () => {
-    it('load() reads entries from disk newest-first', async () => {
-      const { readFileSync } = await import('node:fs');
-      vi.mocked(readFileSync).mockReturnValue('add user authentication\n/skills\nfix login bug');
+  describe('hydrate', () => {
+    it('replaces state with provided entries', () => {
+      inputHistoryStore.push('stale');
+      inputHistoryStore.hydrate(['fresh-a', 'fresh-b']);
 
-      inputHistoryStore.load();
-
-      expect(inputHistoryStore.get().entries).toEqual([
-        'add user authentication',
-        '/skills',
-        'fix login bug',
-      ]);
+      expect(inputHistoryStore.get().entries).toEqual(['fresh-a', 'fresh-b']);
     });
 
-    it('load() starts with empty history when file is missing', async () => {
-      const { readFileSync } = await import('node:fs');
-      vi.mocked(readFileSync).mockImplementation(() => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); });
+    it('deduplicates on hydrate', () => {
+      inputHistoryStore.hydrate(['a', 'b', 'a', 'c']);
 
-      inputHistoryStore.load();
-
-      expect(inputHistoryStore.get().entries).toEqual([]);
+      expect(inputHistoryStore.get().entries).toEqual(['a', 'b', 'c']);
     });
 
-    it('load() ignores blank lines', async () => {
-      const { readFileSync } = await import('node:fs');
-      vi.mocked(readFileSync).mockReturnValue('first\n\nsecond\n');
-
-      inputHistoryStore.load();
-
-      expect(inputHistoryStore.get().entries).toEqual(['first', 'second']);
-    });
-
-    it('load() caps entries at MAX_INPUT_HISTORY', async () => {
-      const { readFileSync } = await import('node:fs');
+    it('caps hydrated entries at MAX_INPUT_HISTORY', () => {
       const lines = Array.from({ length: MAX_INPUT_HISTORY + 3 }, (_, i) => `item-${i}`);
-      vi.mocked(readFileSync).mockReturnValue(lines.join('\n'));
-
-      inputHistoryStore.load();
+      inputHistoryStore.hydrate(lines);
 
       expect(inputHistoryStore.get().entries).toHaveLength(MAX_INPUT_HISTORY);
     });
 
-    it('push() triggers a debounced save after 300ms', async () => {
-      const { writeSecureFile } = await import('../../lib/fs.js');
+    it('ignores blank entries on hydrate', () => {
+      inputHistoryStore.hydrate(['first', '', '   ', 'second']);
 
-      inputHistoryStore.push('hello');
-      expect(vi.mocked(writeSecureFile)).not.toHaveBeenCalled();
-
-      vi.advanceTimersByTime(300);
-      expect(vi.mocked(writeSecureFile)).toHaveBeenCalledOnce();
-      expect(vi.mocked(writeSecureFile)).toHaveBeenCalledWith(
-        expect.stringContaining('history'),
-        'hello',
-      );
+      expect(inputHistoryStore.get().entries).toEqual(['first', 'second']);
     });
 
-    it('push() debounces: multiple pushes within 300ms produce a single save', async () => {
-      const { writeSecureFile } = await import('../../lib/fs.js');
+    it('resets to empty on hydrate with empty array', () => {
+      inputHistoryStore.push('something');
+      inputHistoryStore.hydrate([]);
 
-      inputHistoryStore.push('first');
-      vi.advanceTimersByTime(100);
-      inputHistoryStore.push('second');
-      vi.advanceTimersByTime(100);
-      inputHistoryStore.push('third');
-      vi.advanceTimersByTime(300);
-
-      expect(vi.mocked(writeSecureFile)).toHaveBeenCalledOnce();
-      expect(vi.mocked(writeSecureFile)).toHaveBeenCalledWith(
-        expect.stringContaining('history'),
-        'third\nsecond\nfirst',
-      );
-    });
-
-    it('save writes to ~/.diptych/history', async () => {
-      const { writeSecureFile } = await import('../../lib/fs.js');
-
-      inputHistoryStore.push('test entry');
-      vi.advanceTimersByTime(300);
-
-      expect(vi.mocked(writeSecureFile)).toHaveBeenCalledWith(
-        '/home/testuser/.diptych/history',
-        'test entry',
-      );
-    });
-
-    it('write failures in the timer callback do not throw unhandled errors', async () => {
-      const { writeSecureFile } = await import('../../lib/fs.js');
-      vi.mocked(writeSecureFile).mockImplementation(() => { throw new Error('EACCES: permission denied'); });
-
-      inputHistoryStore.push('hello');
-      expect(() => vi.advanceTimersByTime(300)).not.toThrow();
+      expect(inputHistoryStore.get().entries).toEqual([]);
     });
   });
 });

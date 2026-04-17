@@ -2,7 +2,7 @@ import { Box, Text } from 'ink';
 import type { TuiEvent } from '../../../../core/types/events.js';
 import { useTheme } from '../../../../components/theme.js';
 import { formatCost } from '../../../../core/formatting.js';
-import { getProviderDisplayName } from '../../../../core/providers/index.js';
+import { getProviderDisplayName } from '../../../../core/providers/catalog.js';
 
 type CostPredictionEvent = Extract<TuiEvent, { type: 'cost-prediction' }>;
 

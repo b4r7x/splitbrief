@@ -10,7 +10,8 @@ import { isCustomModel } from './picker-model-catalog.js';
 import { renderToolRow, renderModelRow } from './tool-row.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
-import { PROVIDER_CATALOG, isProviderId } from '../../core/providers/index.js';
+import { PROVIDER_CATALOG } from '../../core/providers/catalog.js';
+import { isProviderId } from '../../core/types/schemas/enums.js';
 
 interface PickerViewProps {
   role: 'planner' | 'implementer';

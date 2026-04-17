@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { DetectedModel } from '../../core/types/config-options.js';
-import type { ProviderId } from '../../core/providers/index.js';
+import type { ProviderId } from '../../core/types/schemas/enums.js';
 import type { ModelsDevCatalog, ModelsDevModel } from '../../core/types/model-catalog.js';
 import { fetchJsonWithTimeout } from './client.js';
 import { isModelFree } from './metadata.js';
