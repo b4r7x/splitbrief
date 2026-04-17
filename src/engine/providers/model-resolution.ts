@@ -1,5 +1,5 @@
 import type { DetectedModel } from '../../core/types/config-options.js';
-import type { ProviderId } from '../../core/types/schemas/enums.js';
+import type { ProviderId } from '../../core/schemas/enums.js';
 import type { KnownModel } from '../../core/providers/known-models.js';
 import { KNOWN_MODELS } from '../../core/providers/known-models.js';
 import { getModelsForProvider, type ModelsDevCatalog } from './models-dev.js';

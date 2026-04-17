@@ -1,4 +1,4 @@
-import { isProviderId, type ProviderId } from '../../core/types/schemas/enums.js';
+import { isProviderId, type ProviderId } from '../../core/schemas/enums.js';
 import { stripVendorPrefix } from '../../core/model-display.js';
 
 export interface ParsedModelId {

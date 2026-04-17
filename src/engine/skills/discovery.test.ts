@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import type { SkillMeta } from '../../core/types/app.js';
+import type { SkillMeta } from './discovery.js';
 import { DIPTYCH_DIR } from '../../core/paths.js';
 
 const TMP = join(import.meta.dirname, '.tmp-skills-test');

@@ -1,5 +1,5 @@
 import type { DetectedModel } from '../../core/types/config-options.js';
-import { isProviderId, type ProviderId } from '../../core/types/schemas/enums.js';
+import { isProviderId, type ProviderId } from '../../core/schemas/enums.js';
 import { isProviderLocal } from '../../core/providers/catalog.js';
 import type { KnownModel } from '../../core/providers/known-models.js';
 import {

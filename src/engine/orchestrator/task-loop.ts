@@ -1,5 +1,5 @@
 import type { Task, TaskId, WorkflowState } from '../../core/types/state-actions.js';
-import type { OrchestratorCallbacks } from '../../core/types/events.js';
+import type { OrchestratorCallbacks } from './types.js';
 import type { TaskTokenUsage } from '../../core/types/summary.js';
 import { hasExternalChanges } from '../../lib/git.js';
 import { labelError } from '../../utils/format-errors.js';
@@ -9,9 +9,9 @@ import type { WorkflowContext } from './types.js';
 import { emit, emitWarning, emitTaskSkipped } from './events.js';
 import { runSingleTask } from './task-step.js';
 import { emitTaskTokens } from './tokens.js';
-import { transitionAndSave } from './helpers.js';
+import { transitionAndSave } from './state-ops.js';
 import { enforceBudget } from './budget.js';
-import { getRunnerDisplayName } from '../../core/config/runner-config.js';
+import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
 
 function hasDependencyFailed(task: Task, failedTasks: TaskId[], skippedTasks: TaskId[]): boolean {
   const blocked = new Set<string>([...failedTasks, ...skippedTasks]);

@@ -1,15 +1,15 @@
 import type { WorkflowState, Task } from '../../../core/types/state-actions.js';
-import type { OrchestratorCallbacks } from '../../../core/types/events.js';
+import type { OrchestratorCallbacks } from '../types.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
 import { emitError } from '../events.js';
-import { transitionAndSave } from '../helpers.js';
+import { transitionAndSave } from '../state-ops.js';
 import { labelError } from '../../../utils/format-errors.js';
 import type { Planner, PlanResult } from '../../planners/types.js';
-import type { SkillMeta } from '../../../core/types/app.js';
-import { drainQueue, formatDrainedMessages } from '../queue-drain.js';
-import { regenerateFromFeedback } from '../regenerate.js';
+import type { SkillMeta } from '../../skills/discovery.js';
+import { drainQueue, formatDrainedMessages } from '../queue.js';
+import { regenerateFromFeedback } from '../continuation.js';
 
 export const MAX_CLARIFICATION_QUESTIONS = 5;
 

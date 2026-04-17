@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useApp } from 'ink';
-import { createCommands } from './core/slash-commands/definitions.js';
-import { toPaletteItems, executeSlashCommand } from './core/slash-commands/executor.js';
+import { createCommands } from './core/slash-commands/catalog.js';
+import { toPaletteItems, executeSlashCommand } from './core/slash-commands/dispatch.js';
 import { useAppKeys } from './hooks/use-app-keys.js';
 import { useMouseScroll } from './features/workflow/hooks/use-mouse-scroll.js';
 import { Layout } from './layout.js';
@@ -25,7 +25,8 @@ import { SessionsPicker } from './features/sessions/picker.js';
 import { SettingsOverlay } from './features/settings/overlay.js';
 import { ModeSelector } from './components/overlays/mode-selector.js';
 import { ToolModelPicker } from './features/tool-picker/picker.js';
-import type { CommandContext, CommandPaletteItem, OverlayType, Screen, SlashCommandDef } from './core/types/app.js';
+import type { CommandContext, CommandPaletteItem, SlashCommandDef } from './core/slash-commands/types.js';
+import type { OverlayType, Screen } from './stores/navigation/router.js';
 import { assertNever } from './utils/type-guards.js';
 
 export function App() {

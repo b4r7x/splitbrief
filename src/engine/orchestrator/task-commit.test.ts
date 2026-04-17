@@ -14,7 +14,7 @@ function firstTask(state: WorkflowState): Task {
 vi.mock('../../lib/git.js', () => ({
   commitChanges: vi.fn(),
 }));
-vi.mock('./git-ops.js', () => ({
+vi.mock('./git.js', () => ({
   createCheckpoint: vi.fn(),
 }));
 vi.mock('../../core/state/persistence.js', () => ({
@@ -24,7 +24,7 @@ vi.mock('../../core/state/persistence.js', () => ({
 
 import { validateCommitAndAdvance } from './task-commit.js';
 import { commitChanges } from '../../lib/git.js';
-import { createCheckpoint } from './git-ops.js';
+import { createCheckpoint } from './git.js';
 import { saveState } from '../../core/state/persistence.js';
 
 beforeEach(() => {

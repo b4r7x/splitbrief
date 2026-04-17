@@ -1,5 +1,5 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { OverlayType } from '../../core/types/app.js';
+import type { OverlayType } from '../navigation/router.js';
 
 interface OverlayState {
   active: OverlayType;

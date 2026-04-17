@@ -1,4 +1,4 @@
-import type { InputMode } from '../../core/types/app.js';
+import type { InputMode } from '../navigation/router.js';
 import { createStore, storeBase } from '../create-store.js';
 
 export interface ControlsState {

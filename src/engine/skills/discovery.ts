@@ -3,8 +3,15 @@ import { readFile, readdir, stat, access } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import type { PlannerTool } from '../../core/types/config-options.js';
-import type { SkillMeta } from '../../core/types/app.js';
 import { parseSimpleYamlFrontmatter, extractFrontmatter } from '../../utils/frontmatter.js';
+
+export interface SkillMeta {
+  id: string;
+  name: string;
+  description: string;
+  path: string;
+  scope: 'global' | 'project';
+}
 import { DIPTYCH_DIR, CODEX_DIR, SKILLS_DIR, getDiptychPath } from '../../core/paths.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { warnError } from '../../lib/warn.js';

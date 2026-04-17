@@ -1,9 +1,9 @@
 import { existsSync, createReadStream } from 'node:fs';
 import { join } from 'node:path';
 import * as readline from 'node:readline';
-import type { SessionLogEntry, SessionLogEventEntry, SessionLogMessageEntry } from '../types/events.js';
+import type { SessionLogEntry, SessionLogEventEntry, SessionLogMessageEntry } from '../schemas/session-log.js';
 import { SESSION_LOG_FILE, sessionDir } from '../paths.js';
-import { SessionLogEntrySchema } from '../types/schemas/session-log.js';
+import { SessionLogEntrySchema } from '../schemas/session-log.js';
 
 export async function* readSessionLog(projectDir: string, sessionId: string): AsyncIterable<SessionLogEntry> {
   const file = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);

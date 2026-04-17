@@ -1,5 +1,5 @@
 import type { PlannerDetection, ProviderDetection } from '../../core/types/config-options.js';
-import { CLI_TOOL_IDS, KNOWN_API_PROVIDERS, LOCAL_PROVIDER_IDS, type ProviderId } from '../../core/types/schemas/enums.js';
+import { CLI_TOOL_IDS, KNOWN_API_PROVIDERS, LOCAL_PROVIDER_IDS, type ProviderId } from '../../core/schemas/enums.js';
 import { getProviderDisplayName, hasApiKey } from '../../core/providers/catalog.js';
 import { includes } from '../../utils/type-guards.js';
 

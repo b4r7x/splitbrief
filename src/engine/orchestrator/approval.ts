@@ -1,11 +1,11 @@
 import type { WorkflowState } from '../../core/types/state-actions.js';
-import type { OrchestratorCallbacks } from '../../core/types/events.js';
+import type { OrchestratorCallbacks } from './types.js';
 import { readSpecFileOrEmpty } from '../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE } from '../../core/paths.js';
 import { buildRegeneratePrompt } from '../spec/prompts/plan.js';
 import type { Planner } from '../planners/types.js';
 import { emit, createTextHandler, emitPlannerStatus } from './events.js';
-import { addUsageAndSave, transitionAndSave } from './helpers.js';
+import { addUsageAndSave, transitionAndSave } from './state-ops.js';
 import { appendMessage } from '../../core/state/persistence.js';
 
 type ApprovalLoopOptions = {

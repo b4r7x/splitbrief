@@ -8,7 +8,8 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { useStores } from '../../stores/use-stores.js';
-import type { InputMode, Screen, SlashCommandDef } from '../../core/types/app.js';
+import type { InputMode, Screen } from '../../stores/navigation/router.js';
+import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { useInputBarHistory } from './use-input-bar-history.js';
 
 function borderColorForMode(mode: InputMode, theme: { planner: string; warning: string; border: string }): string {

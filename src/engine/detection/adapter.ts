@@ -1,7 +1,7 @@
 import { loadDetection, refreshDetection } from './service.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
-import { isProviderId } from '../../core/types/schemas/enums.js';
+import { isProviderId } from '../../core/schemas/enums.js';
 import type { DetectionDeps, DetectionServiceResult, DetectionService } from './service.js';
 
 function applyToStores(result: DetectionServiceResult): void {

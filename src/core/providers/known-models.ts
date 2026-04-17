@@ -1,4 +1,4 @@
-import type { ProviderId } from '../types/schemas/enums.js';
+import type { ProviderId } from '../schemas/enums.js';
 
 export interface KnownModel {
   name: string;

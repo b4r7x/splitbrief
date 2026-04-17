@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Box, Text } from "ink";
-import type { TuiEvent } from '../../../../core/types/events.js';
+import type { TuiEvent } from '../../types.js';
 import { useTheme } from "../../../../components/theme.js";
 import { MarkdownBlock } from "../../../../components/markdown.js";
 import { formatCost } from "../../../../core/formatting.js";

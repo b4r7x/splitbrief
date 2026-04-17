@@ -1,6 +1,6 @@
 import { createStore, storeBase } from '../create-store.js';
 import { listSessions, listAllSessions } from '../../core/sessions/io.js';
-import type { Session } from '../../core/types/app.js';
+import type { Session } from '../../core/schemas/session.js';
 
 interface SessionsState {
   sessions: Session[];

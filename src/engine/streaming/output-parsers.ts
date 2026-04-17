@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { OutputFormat } from '../../core/types/config-options.js';
-import type { ParsedLine, ToolUseInfo } from '../../core/types/runner.js';
+import type { ParsedLine, ToolUseInfo } from '../runners/types.js';
 import type { TokenDelta } from '../../core/types/summary.js';
 import { toTokenDelta } from './token-utils.js';
 import { assertNever, narrowRecord } from '../../utils/type-guards.js';

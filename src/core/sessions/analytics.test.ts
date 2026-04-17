@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { Session } from '../types/app.js';
+import type { Session } from '../schemas/session.js';
 import type { Summary } from '../types/summary.js';
 import { aggregateSessionCosts } from './analytics.js';
 

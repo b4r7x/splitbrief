@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import type { Session } from '../types/app.js';
-import { SessionSchema } from '../types/schemas/session.js';
+import type { Session } from '../schemas/session.js';
+import { SessionSchema } from '../schemas/session.js';
 import { DIPTYCH_DIR, SESSIONS_DIR, sessionDir, sessionsRoot, getDiptychPath } from '../paths.js';
 import { warnError, warnStderr } from '../../lib/warn.js';
 import { isENOENT } from '../../lib/process/errors.js';

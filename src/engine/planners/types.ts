@@ -1,7 +1,7 @@
 import type { Task } from '../../core/types/state-actions.js';
 import type { TokenDelta } from '../../core/types/summary.js';
-import type { ClarificationQuestion } from '../../core/types/events.js';
-import type { RunnerRuntime } from '../../core/types/runner.js';
+import type { ClarificationQuestion } from '../../core/schemas/question.js';
+import type { RunnerRuntime } from '../runners/types.js';
 
 export type PlannerCapabilities = {
   /** Planner can emit inline clarification questions during planning. */

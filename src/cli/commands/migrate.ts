@@ -13,7 +13,7 @@ import {
   sessionsRoot,
   sessionDir,
 } from '../../core/paths.js';
-import { writeActive } from '../../core/sessions/active.js';
+import { writeActive } from '../../core/sessions/lifecycle.js';
 import { deriveSessionId, migrateState, migrateEvents } from '../../core/migration/legacy.js';
 
 export async function migrateCommand(projectDir: string): Promise<void> {

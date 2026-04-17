@@ -3,8 +3,8 @@ import type { WorkflowState, Task } from '../../../core/types/state-actions.js';
 import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../../core/paths.js';
 import { buildRegeneratePrompt } from '../../spec/prompts/plan.js';
-import { emit, createTextHandler, emitPlanApproved } from '../events.js';
-import { addUsageAndSave, transitionAndEmit } from '../helpers.js';
+import { emit, createTextHandler } from '../events.js';
+import { addUsageAndSave, transitionAndEmit, emitPlanApproved } from '../state-ops.js';
 import { appendMessage } from '../../../core/state/persistence.js';
 import { runApprovalLoop } from '../approval.js';
 import {

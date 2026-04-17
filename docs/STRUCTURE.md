@@ -223,10 +223,92 @@ Features are small and irregular. A template would over-prescribe (minimal featu
 
 Each feature's entry file is what `src/app.tsx` (or `src/layout.tsx` for overlays) imports. Internal structure is documented by inspection — there is no catalog per-feature.
 
+## Screaming folders
+
+Folder names describe **what** the code does in the domain, not **which** technical layer it sits in.
+
+✅ `orchestrator/planning/`, `orchestrator/escalation/`, `orchestrator/validation/`, `features/workflow/`
+❌ `services/`, `use-cases/`, `controllers/`, `repositories/`, `handlers/`
+
+A reader opening a folder should immediately know what workflow capability lives there. When you are deciding a folder name, ask: does the name reveal the domain or only the tech layer? If the latter, rename.
+
+Reference: [Milan Jovanović — Screaming Architecture](https://www.milanjovanovic.tech/blog/screaming-architecture).
+
+## Deep modules and folder colocation
+
+The codebase follows John Ousterhout's *deep module* principle: a module's public surface should be a small fraction of its internal complexity. A single file with 8 exports and no internals is shallow; a folder with 5 internal files and one entry point is deep.
+
+**When a file grows past the [length threshold](#file-length-thresholds), create a folder named after the file and move its helpers inside alongside the entry file.**
+
+The canonical pattern in this codebase is `src/engine/orchestrator/planning/`:
+
+```
+orchestrator/
+├── planning/
+│   ├── run.ts        # entry — dispatches to the right planning variant
+│   ├── new.ts        # internal — new-feature planning flow
+│   ├── quick.ts      # internal — quick-mode planning flow
+│   ├── rewind.ts     # internal — rewind-to-approval flow
+│   └── shared.ts     # internal — shared planning helpers
+```
+
+Callers import from `./planning/run.js`. Files other than `run.ts` are **considered internal to the folder** — the folder boundary is the privacy boundary. There is no `_prefix.ts` convention, no linter-enforced "private" — the convention is structural: if it's not the entry file, it's an internal helper of that folder.
+
+**No underscore prefix** (`_run-init.ts`, `_escalation-step.ts`). Google TypeScript Style Guide, Microsoft, and AWS all advise against it in 2025+. Use folder colocation instead.
+
+References:
+- [Sandor Dargo — Deep vs Shallow Modules](https://www.sandordargo.com/blog/2023/01/25/deep-vs-shallow-modules)
+- [Google TypeScript Style Guide](https://google.github.io/styleguide/tsguide.html)
+
+## File length thresholds
+
+Rough guidance — not a hard rule, but a strong signal:
+
+| File LOC | Responsibilities | Action |
+|---|---|---|
+| ≤ 200 | Any | Fine |
+| 200–300 | 1 | Fine |
+| 200–300 | >1 | Split into sibling files |
+| > 300 | 1 | Fine, but watch for creep |
+| > 300 | >1 | Create a folder with helpers (see [Deep modules and folder colocation](#deep-modules-and-folder-colocation)) |
+| > 500 | Any | Reconsider — the file is probably hiding a second concept |
+
+**Counter-rule for giant merged files.** When cleaning up a folder with small scattered files, do not collapse them into one 460-LOC file. Prefer a folder with 4 clean sub-files over one big file with 4 section banners. Section banners are banned (see [No decorative comments](#no-decorative-comments)).
+
+## Prompts folder
+
+Every LLM prompt template (system prompts, task prompts, retry prompts, review prompts) lives in a dedicated folder. Currently `src/engine/spec/prompts/`.
+
+Never inline prompt strings into orchestrator or runner code. This rule is universal across comparable projects (cline `core/prompts/`, continue `core/promptFiles/`, codex has its own `prompts/`). Keeping prompts separate makes them reviewable, testable, and swappable without touching control flow.
+
+## No decorative comments
+
+Banner comments inside files are banned:
+
+```ts
+// ❌
+// ═══ Types ═══
+type Foo = ...;
+
+// ═══ Core dispatch ═══
+export function dispatch() { ... }
+
+// ═══ Helpers ═══
+function helper() { ... }
+```
+
+Instead, organize the file so that related exports are near each other — the ordering IS the documentation. If a block needs a banner to explain why it's here, extract it into a named sibling file or into a folder (see [Deep modules and folder colocation](#deep-modules-and-folder-colocation)).
+
+**Allowed comments**: non-obvious WHY, invariants, workarounds, TSDoc on public API, required legal notices. **Banned**: section banners, "// added for X flow", "// used by Y caller", restatements of what the code does.
+
+See [CLAUDE.md](../CLAUDE.md) for the full comment policy.
+
 ## References
 
+- [`PRINCIPLES.md`](./PRINCIPLES.md) — one-page index of all architectural rules.
 - [`HOOKS.md`](./HOOKS.md) — hook placement rules; companion to this doc.
 - [`STORES.md`](./STORES.md) — state architecture; same colocation principle.
+- [`TYPES.md`](./TYPES.md) — type placement and Zod schema conventions.
 - [`NO-BARRELS.md`](./NO-BARRELS.md) — project-wide barrel policy.
 - [bulletproof-react — project structure](https://github.com/alan2207/bulletproof-react/blob/master/docs/project-structure.md) — source pattern.
 - [Feature-Sliced Design — Overview](https://feature-sliced.design/docs/get-started/overview) — adjacent methodology considered and declined for this project's size.

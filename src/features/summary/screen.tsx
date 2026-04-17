@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import type { SlashCommandDef } from '../../core/types/app.js';
+import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { useTheme } from '../../components/theme.js';
 import { formatTime } from '../../utils/format-time.js';
 import { formatToolModel } from '../../core/model-display.js';

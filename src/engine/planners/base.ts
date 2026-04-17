@@ -1,5 +1,5 @@
 import type { Task } from '../../core/types/state-actions.js';
-import type { InvokeResult } from '../../core/types/runner.js';
+import type { InvokeResult } from '../runners/types.js';
 import type { TokenDelta } from '../../core/types/summary.js';
 import type { Planner, PlannerCallbacks, PlanResult, EscalationResult, RegenerateResult, PhaseResult, PlannerCapabilities, PriorMessage } from './types.js';
 import { formatMessagesForCli } from '../orchestrator/transcript-rebuild.js';

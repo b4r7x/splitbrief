@@ -10,7 +10,7 @@ import { abortStore } from '../stores/workflow/abort.js';
 import { killAllProcesses } from '../lib/process/registry.js';
 import { isLivePhase } from '../core/phases.js';
 import { useStores } from '../stores/use-stores.js';
-import type { OverlayType, Screen } from '../core/types/app.js';
+import type { OverlayType, Screen } from '../stores/navigation/router.js';
 
 const DOUBLE_PRESS_WINDOW_MS = 2000;
 

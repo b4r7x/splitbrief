@@ -1,9 +1,9 @@
 import { join } from 'node:path';
 import type { Implementer, ImplementerOptions, RetryOptions } from './types.js';
 import type { Task } from '../../core/types/state-actions.js';
-import type { TuiEvent } from '../../core/types/events.js';
+import type { TuiEvent } from '../../features/workflow/types.js';
 import type { ImplementerResult } from '../../core/types/summary.js';
-import type { InvokeResult } from '../../core/types/runner.js';
+import type { InvokeResult } from '../runners/types.js';
 import { readFileOrEmpty } from '../../lib/fs.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { formatErrorWithHint } from '../errors/hints.js';

@@ -1,28 +1,10 @@
-import { z } from 'zod';
 import type { DetectedModel } from '../../core/types/config-options.js';
-import type { ProviderId } from '../../core/types/schemas/enums.js';
-import type { ModelsDevCatalog, ModelsDevModel } from '../../core/types/model-catalog.js';
+import type { ProviderId } from '../../core/schemas/enums.js';
+import { ModelsDevCatalogSchema, type ModelsDevCatalog, type ModelsDevModel } from '../../core/schemas/models-dev.js';
 import { fetchJsonWithTimeout } from './client.js';
 import { isModelFree } from './metadata.js';
 
-export type { ModelsDevCatalog } from '../../core/types/model-catalog.js';
-
-const ModelsDevModelSchema = z.object({
-  id: z.string(),
-  name: z.string().optional(),
-  cost: z.object({ input: z.number().optional(), output: z.number().optional() }).optional(),
-  limit: z.object({ context: z.number().optional(), output: z.number().optional() }).optional(),
-  release_date: z.string().optional(),
-  last_updated: z.string().optional(),
-});
-
-const ModelsDevProviderSchema = z.object({
-  id: z.string(),
-  name: z.string().optional(),
-  models: z.record(z.string(), ModelsDevModelSchema),
-});
-
-const ModelsDevCatalogSchema = z.record(z.string(), ModelsDevProviderSchema);
+export type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 
 const MODELS_DEV_URL = 'https://models.dev/api.json';
 

@@ -1,12 +1,12 @@
 import type { WorkflowState, Task } from '../../core/types/state-actions.js';
-import type { OrchestratorCallbacks } from '../../core/types/events.js';
+import type { OrchestratorCallbacks } from './types.js';
 import type { TaskTokenUsage, Summary } from '../../core/types/summary.js';
 import { saveState } from '../../core/state/persistence.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, REVIEW_FILE } from '../../core/paths.js';
 import { killAllProcesses } from '../../lib/process/registry.js';
 import { getCurrentDiff } from '../../lib/git.js';
-import { discardTaskChanges } from './git-ops.js';
+import { discardTaskChanges } from './git.js';
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
@@ -14,7 +14,8 @@ import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
 import type { Planner } from '../planners/types.js';
 import { buildSummary, type SummaryBase } from './summary.js';
 import { emit, emitError, emitPlannerStatus } from './events.js';
-import { transitionAndSave, runPlannerReview } from './helpers.js';
+import { transitionAndSave } from './state-ops.js';
+import { runPlannerReview } from './planner-review.js';
 
 export async function runFinalReviewPhase(
   opts: { projectDir: string; sessionId: string; callbacks: OrchestratorCallbacks; state: WorkflowState; planner: Planner; metadata?: SpecMetadata | null },

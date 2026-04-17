@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Fzf } from 'fzf';
-import type { SlashCommandDef } from '../../core/types/app.js';
+import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 
 // Extract the pure fuzzy logic for unit testing without React hooks
 function fuzzyMatchCommand(commands: SlashCommandDef[], query: string): SlashCommandDef | null {

@@ -1,0 +1,105 @@
+import type { Task, WorkflowState } from '../../../core/types/state-actions.js';
+import type { Summary } from '../../../core/types/summary.js';
+import type { OrchestratorCallbacks, WorkflowContext } from '../types.js';
+import type { SkillMeta } from '../../skills/discovery.js';
+
+import { buildSummary, type SummaryBase } from '../summary.js';
+import { emitCostPrediction } from '../events.js';
+import { predictCost } from '../cost-prediction.js';
+import { runPlanningPhase } from '../planning/run.js';
+import { runTaskLoop } from '../task-loop.js';
+import { runFinalReviewPhase } from '../final-review.js';
+import { drainQueue } from '../queue.js';
+
+export function applyPostPlanDrain(
+  projectDir: string,
+  sessionId: string,
+  state: WorkflowState,
+  callbacks: OrchestratorCallbacks,
+  setTrackedState: (s: WorkflowState) => void,
+): WorkflowState {
+  const drain = drainQueue(projectDir, sessionId, state, callbacks);
+  if (drain.messages.length === 0) return state;
+  setTrackedState(drain.state);
+  return drain.state;
+}
+
+export type RunPlanningPhasesOptions = {
+  wctx: WorkflowContext;
+  state: WorkflowState;
+  savedState: WorkflowState | undefined;
+  selectedSkills: SkillMeta[] | undefined;
+  phaseTimings: Record<string, number>;
+  startTime: number;
+  setTrackedState: (s: WorkflowState) => void;
+};
+
+export async function runPlanningPhases(opts: RunPlanningPhasesOptions): Promise<{ state: WorkflowState; cancelled: boolean }> {
+  const { wctx, savedState, selectedSkills, phaseTimings, startTime, setTrackedState } = opts;
+  let { state } = opts;
+  const { projectDir, sessionId, config, callbacks, planner } = wctx;
+
+  if (!savedState || savedState.rewindPending) {
+    const planning = await runPlanningPhase({
+      wctx: { projectDir, sessionId, config, callbacks, signal: wctx.signal, metadata: wctx.metadata, sinks: wctx.sinks },
+      planner,
+      state,
+      feature: state.feature,
+      selectedSkills,
+      rewindPending: savedState?.rewindPending,
+    });
+    state = planning.state;
+    setTrackedState(state);
+    phaseTimings.planning = Date.now() - startTime;
+    if (planning.cancelled) return { state, cancelled: true };
+  }
+
+  return { state, cancelled: false };
+}
+
+export type RunTasksAndReviewOptions = {
+  wctx: WorkflowContext;
+  state: WorkflowState;
+  summaryBase: SummaryBase;
+  phaseTimings: Record<string, number>;
+  setTrackedState: (s: WorkflowState) => void;
+  setCurrentTask: (t: Pick<Task, 'file' | 'action'> | undefined) => void;
+};
+
+export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise<Summary> {
+  const { wctx, summaryBase, phaseTimings, setTrackedState, setCurrentTask } = opts;
+  let { state } = opts;
+  const { callbacks } = wctx;
+
+  if (state.tasks.length > 0) {
+    const prediction = predictCost({
+      taskCount: state.tasks.length,
+      plannerTool: state.plannerTool ?? '',
+      implementerTool: state.implementerTool ?? '',
+      tokenUsage: state.tokenUsage,
+    });
+    emitCostPrediction(callbacks, prediction);
+  }
+
+  const phaseStart = Date.now();
+  const taskResult = await runTaskLoop({
+    wctx,
+    initialState: state,
+    setTrackedState,
+    setCurrentTask,
+  });
+  state = taskResult.state;
+
+  phaseTimings.implementing = Date.now() - phaseStart;
+
+  if (wctx.signal?.aborted) {
+    return buildSummary({ ...summaryBase, state, taskBreakdowns: taskResult.taskBreakdowns, phaseTimings });
+  }
+
+  return runFinalReviewPhase(
+    { projectDir: wctx.projectDir, sessionId: wctx.sessionId, callbacks, state, planner: wctx.planner, metadata: wctx.metadata },
+    summaryBase,
+    taskResult.taskBreakdowns,
+    phaseTimings,
+  );
+}

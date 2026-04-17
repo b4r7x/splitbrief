@@ -1,4 +1,4 @@
-import type { TuiEvent } from '../types/events.js';
+import type { TuiEvent } from '../../features/workflow/types.js';
 import type { DynamicSection } from './event-sections.js';
 import { getMaxVisibleDiffLines } from './diff-height.js';
 

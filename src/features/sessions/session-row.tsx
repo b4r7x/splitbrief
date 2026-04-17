@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../components/theme.js';
-import type { Session } from '../../core/types/app.js';
-import { getSessionStatusDisplay } from '../../core/sessions/status.js';
+import type { Session } from '../../core/schemas/session.js';
+import { getSessionStatusDisplay } from '../../core/sessions-display.js';
 import { truncateWithEllipsis } from '../../utils/truncate.js';
 import { CursorCell } from '../../components/pickers/cursor-cell.js';
 

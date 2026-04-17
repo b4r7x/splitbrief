@@ -1,6 +1,6 @@
-import type { PlannerToolId, ProviderId, WorkflowMode } from './schemas/enums.js';
-export type { PlannerConfig, ImplementerConfig, Config } from './schemas/config.js';
-export { DEFAULT_WORKFLOW_MODE } from './schemas/config.js';
+import type { PlannerToolId, ProviderId, WorkflowMode } from '../schemas/enums.js';
+export type { PlannerConfig, ImplementerConfig, Config } from '../schemas/config.js';
+export { DEFAULT_WORKFLOW_MODE } from '../schemas/config.js';
 
 export interface DetectedModel {
   id: string;
@@ -15,11 +15,11 @@ export interface DetectedModel {
 export type {
   WorkflowMode, CommitStrategy, ThemeMode, ShikiTheme,
   OutputFormat, CliToolId, RunnerKind,
-} from './schemas/enums.js';
+} from '../schemas/enums.js';
 export {
   WORKFLOW_MODES, COMMIT_STRATEGIES, THEME_MODES, SHIKI_THEMES,
   OUTPUT_FORMATS, RUNNER_KINDS, RunnerKindSchema,
-} from './schemas/enums.js';
+} from '../schemas/enums.js';
 
 export type {
   CliImplementerConfig,
@@ -27,14 +27,14 @@ export type {
   ShellImplementerConfig,
   AgentImplementerConfig,
   AgentSdkImplementerConfig,
-} from './schemas/implementer-config.js';
+} from '../schemas/implementer-config.js';
 export type {
   CliPlannerConfig,
   ApiPlannerConfig,
   ShellPlannerConfig,
   AgentPlannerConfig,
   AgentSdkPlannerConfig,
-} from './schemas/planner-config.js';
+} from '../schemas/planner-config.js';
 
 export type PlannerTool = PlannerToolId;
 

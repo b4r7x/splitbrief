@@ -1,7 +1,7 @@
 import type { Config } from '../../../core/types/config-options.js';
 import type { WorkflowState } from '../../../core/types/state-actions.js';
 import type { Summary } from '../../../core/types/summary.js';
-import type { SkillMeta } from '../../../core/types/app.js';
+import type { SkillMeta } from '../../../engine/skills/discovery.js';
 import { useInputMode } from './use-input-mode.js';
 import { useWorkflowRunner } from './use-workflow-runner.js';
 import { useWorkflowReviewInput } from './use-workflow-review-input.js';

@@ -21,9 +21,11 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 - `specs/002-cost-optimized-orchestrator/quickstart.md`  -  End-to-end usage guide
 - `.specify/memory/constitution.md`  -  6 project principles (v1.3.1)
 - `docs/VISION.md`  -  Strategic direction, competitive analysis, design decisions
+- `docs/PRINCIPLES.md`  -  One-page index of all 16 architectural rules (screaming architecture, deep modules, folder colocation, type placement, etc.) with links to canonical docs. **Read first for orientation.**
 - `docs/STORES.md`  -  External store architecture (factory, patterns, inventory). **Read when touching anything under `src/stores/`.**
 - `docs/LAYERS.md`  -  Decision tree for `utils/` vs `lib/` vs `core/` vs `engine/` vs `features/`. **Read before adding any new file to these folders.**
-- `docs/STRUCTURE.md`  -  File-tree layout and feature anatomy. Companion to `LAYERS.md` (what vs where).
+- `docs/STRUCTURE.md`  -  File-tree layout, feature anatomy, folder colocation rules, file length thresholds. Companion to `LAYERS.md` (what vs where).
+- `docs/TYPES.md`  -  Type placement rules (Zod schemas vs TS types, three-case rule, screaming types). **Read before adding or moving any type.**
 - `docs/NO-BARRELS.md`  -  Codebase-wide principle: no re-export-only `index.ts` files. **Read before creating any new `index.ts`.** Enforced — zero barrels anywhere in `src/`.
 - `docs/FUTURE.md`  -  Deliberately deferred features (not yet built). Current roadmap for ideas that have shape but await priority.
 
@@ -54,7 +56,7 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 - **Colocated tests**  -  `foo.test.ts` lives next to `foo.ts` (no separate `tests/` directory)
 - **kebab-case file naming**  -  Use kebab-case for multi-word file and folder names (`models-dev.ts`, `lm-studio.ts`). Prefer single-word names where natural (`pricing.ts`, `known.ts`, `registry.ts`). File names should match their primary concept.
 - **No unsafe type assertions**  -  Do not use incidental `!` (non-null assertion) or broad `as` casts in production code. Use optional chaining (`?.`), type narrowing, or proper null checks instead.
-- **Sanctioned assertion boundaries only**  -  The allowed exceptions are the internal assertion helpers in `src/utils/type-guards.ts`, the store internals in `src/stores/create-store.ts` and `src/stores/use-stores.ts`, and the branded ID constructors in `src/core/types/state-actions.ts` / `src/core/types/schemas/task.ts`. Keep assertions contained to those boundaries instead of spreading them through feature code. Enforced by review and `tsc --strict`, not by automated tree-walking.
+- **Sanctioned assertion boundaries only**  -  The allowed exceptions are the internal assertion helpers in `src/utils/type-guards.ts`, the store internals in `src/stores/create-store.ts` and `src/stores/use-stores.ts`, and the branded ID constructors in `src/core/types/state-actions.ts` / `src/core/schemas/task.ts`. Keep assertions contained to those boundaries instead of spreading them through feature code. Enforced by review and `tsc --strict`, not by automated tree-walking.
 - **Zero memoization**  -  No `useMemo`, `useCallback`, or `React.memo` anywhere in `src/`. Store selectors make them unnecessary.
 - **No imperative handles**  -  No `forwardRef` / `useImperativeHandle`. React 19 + stores eliminate the need.
 
@@ -95,17 +97,20 @@ src/
 │   │   └── detection.ts
 │   └── discovery/
 │       └── model-cache.ts    # Per-provider model cache + Models.dev catalog
-├── core/                     # Shared domain logic (config, types, commands, state, layout)
+├── core/                     # Shared domain logic (config, schemas, commands, state, layout)
 │   ├── phases.ts             # Phase role mapping + cancellable/implementer phase sets
-│   ├── config/               # YAML config loading, defaults, validation
-│   │   ├── access.ts
-│   │   ├── loading.ts
-│   │   ├── overrides.ts
-│   │   ├── transforms.ts
-│   │   ├── validation.ts
-│   │   ├── migration.ts
-│   │   ├── runner-config.ts
-│   │   └── build-runner.ts
+│   ├── config/               # YAML config loading, defaults, validation (grouped by lifecycle)
+│   │   ├── load/             # Disk → validated config (load, migrate, transform, validate)
+│   │   │   ├── load.ts
+│   │   │   ├── migrate.ts
+│   │   │   ├── transform.ts
+│   │   │   └── validate.ts
+│   │   ├── runtime/          # Runtime assembly (build runner configs, apply overrides)
+│   │   │   ├── build-runner.ts
+│   │   │   └── overrides.ts
+│   │   └── accessors/        # Read-side helpers (runner-config selection, state access)
+│   │       ├── runner-config.ts
+│   │       └── state.ts
 │   ├── formatting.ts         # LLM-domain formatters (formatCost, formatContextLength)
 │   ├── layout/               # Pure layout / geometry helpers (no React)
 │   │   ├── chrome-rows.ts
@@ -129,52 +134,43 @@ src/
 │   │   ├── catalog.ts
 │   │   ├── known-models.ts
 │   │   └── model-selection.ts
-│   ├── sessions/             # Session domain helpers
-│   │   ├── active.ts
+│   ├── schemas/              # Zod schemas — source of truth for config types (promoted from types/schemas)
+│   │   ├── config.ts
+│   │   ├── enums.ts
+│   │   ├── implementer-config.ts
+│   │   ├── models-dev.ts
+│   │   ├── planner-config.ts
+│   │   ├── question.ts
+│   │   ├── runner-fields.ts
+│   │   ├── session-log.ts
+│   │   ├── session.ts
+│   │   ├── summary.ts
+│   │   ├── task.ts
+│   │   ├── tokens.ts
+│   │   └── workflow.ts
+│   ├── sessions/             # Session domain helpers (consolidated to lifecycle + io + log-reader + analytics)
 │   │   ├── analytics.ts
-│   │   ├── begin.ts
-│   │   ├── id.ts
 │   │   ├── io.ts
-│   │   ├── log-reader.ts
-│   │   └── status.ts
+│   │   ├── lifecycle.ts
+│   │   └── log-reader.ts
+│   ├── sessions-display.ts   # Session display formatters (was sessions/status.ts)
 │   ├── settings/             # Setting definitions and presentation
 │   │   ├── catalog.ts
 │   │   └── presentation.ts
-│   ├── slash-commands/       # Slash command definitions and handlers
-│   │   ├── definitions.ts
-│   │   ├── executor.ts
-│   │   ├── phase-guards.ts
-│   │   ├── review-commands.ts
-│   │   └── shortcuts.ts
+│   ├── slash-commands/       # Slash command catalog + dispatch + keybindings + types
+│   │   ├── catalog.ts
+│   │   ├── dispatch.ts
+│   │   ├── keybindings.ts
+│   │   └── types.ts
 │   ├── state/                # Workflow state machine
 │   │   ├── machine.ts
 │   │   ├── persistence.ts
 │   │   ├── selectors.ts
 │   │   └── topo-sort.ts
-│   └── types/                # All shared types (split by domain)
-│       ├── app.ts
+│   └── types/                # Cross-cutting TS types (3 files — most types now colocated with producers)
 │       ├── config-options.ts
-│       ├── events.ts
-│       ├── model-catalog.ts
-│       ├── orchestrator-events.ts
-│       ├── runner.ts
 │       ├── state-actions.ts
-│       ├── summary.ts
-│       ├── theme.ts
-│       ├── tui-events.ts     # TuiEvent union type
-│       └── schemas/          # Zod schemas (source of truth for config types)
-│           ├── config.ts
-│           ├── enums.ts
-│           ├── implementer-config.ts
-│           ├── planner-config.ts
-│           ├── question.ts
-│           ├── runner-fields.ts
-│           ├── session-log.ts
-│           ├── session.ts
-│           ├── summary.ts
-│           ├── task.ts
-│           ├── tokens.ts
-│           └── workflow.ts
+│       └── summary.ts
 ├── cli/                      # CLI-specific logic (non-React)
 │   ├── commands/             # commander subcommand handlers
 │   │   ├── guards.ts
@@ -205,20 +201,18 @@ src/
 │   │   ├── approval.ts
 │   │   ├── budget.ts
 │   │   ├── clarifications.ts
-│   │   ├── continuation-loop.ts
-│   │   ├── continuation.ts
+│   │   ├── continuation.ts   # Continuation loop + regeneration (merged from continuation-loop + regenerate)
 │   │   ├── cost-prediction.ts
-│   │   ├── escalation.ts
-│   │   ├── events.ts
+│   │   ├── events.ts         # Event emission primitives (state-change events live in state-ops.ts)
 │   │   ├── final-review.ts
-│   │   ├── git-ops.ts
-│   │   ├── helpers.ts
+│   │   ├── git.ts            # Git helpers (was git-ops.ts)
 │   │   ├── native-injection.ts
-│   │   ├── queue.ts
-│   │   ├── queue-drain.ts
-│   │   ├── regenerate.ts
-│   │   ├── run.ts            # Top-level run entry point
+│   │   ├── planner-review.ts
+│   │   ├── queue.ts          # Queue management (absorbed queue-drain)
+│   │   ├── resume-context.ts
 │   │   ├── session-lifecycle.ts
+│   │   ├── signals.ts
+│   │   ├── state-ops.ts      # State-change event emitters (emitPlanApproved, etc.)
 │   │   ├── summary.ts
 │   │   ├── task-commit.ts
 │   │   ├── task-loop.ts
@@ -226,8 +220,18 @@ src/
 │   │   ├── tokens.ts
 │   │   ├── transcript-rebuild.ts
 │   │   ├── types.ts
-│   │   ├── validator.ts
-│   │   ├── validator-internal.ts
+│   │   ├── validation.ts     # Validation pipeline (merged from validator + validator-internal)
+│   │   ├── run/              # Top-level run entry point, split by phase
+│   │   │   ├── run.ts        # Entry — orchestrates init + phases
+│   │   │   ├── init.ts
+│   │   │   └── phases.ts
+│   │   ├── escalation/       # Escalation flow (local → intermediate → full → hint)
+│   │   │   ├── escalation.ts # Entry dispatcher
+│   │   │   ├── step.ts
+│   │   │   ├── local.ts
+│   │   │   ├── intermediate.ts
+│   │   │   ├── full.ts
+│   │   │   └── hint.ts
 │   │   └── planning/
 │   │       ├── run.ts        # runPlanningPhase dispatcher (was planning/index.ts)
 │   │       ├── new.ts
@@ -258,9 +262,12 @@ src/
 │   │   └── utils.ts
 │   ├── runners/              # Symmetric planner/implementer factory
 │   │   ├── factory.ts
-│   │   └── command-based.ts
+│   │   ├── command-based.ts
+│   │   └── types.ts          # Runner config types (was core/types/runner.ts)
 │   ├── providers/            # Provider registry, catalogs, pricing, HTTP clients
-│   │   ├── anthropic.ts
+│   │   ├── anthropic/        # Per-provider folder (adapter + stream)
+│   │   │   ├── adapter.ts
+│   │   │   └── stream.ts
 │   │   ├── client.ts
 │   │   ├── compat.ts
 │   │   ├── discovery.ts
@@ -272,6 +279,7 @@ src/
 │   │   ├── model-resolution.ts
 │   │   ├── models-dev.ts
 │   │   ├── ollama.ts
+│   │   ├── openai-stream.ts  # OpenAI-compatible stream parser (promoted from streaming/)
 │   │   ├── openrouter.ts
 │   │   ├── pricing.ts
 │   │   ├── pricing-resolver.ts
@@ -303,9 +311,7 @@ src/
 │   │   ├── question-parser.ts
 │   │   ├── response-extractor.ts
 │   │   └── scope-extractor.ts
-│   ├── streaming/            # Streaming transport layer
-│   │   ├── anthropic-stream.ts
-│   │   ├── openai-stream.ts
+│   ├── streaming/            # Streaming transport layer (provider-specific streams live under providers/)
 │   │   ├── output-parsers.ts
 │   │   ├── spawn-collect.ts
 │   │   ├── stream-errors.ts
@@ -319,6 +325,8 @@ src/
 │   │   ├── handlers.ts       # Engine↔UI bridge (module-scoped handler registry)
 │   │   ├── keyboard.ts       # Pure workflow-scope keyboard dispatchers
 │   │   ├── layout.ts         # Pure geometry snapshots from workflow stores
+│   │   ├── review-parser.ts  # Review/question command parsing (pure)
+│   │   ├── types.ts          # Feature-local types
 │   │   ├── components/
 │   │   │   ├── agent-status-row.tsx
 │   │   │   ├── config-line.tsx
@@ -583,7 +591,7 @@ implementer:
 Five runner kinds: `cli` (known CLI tools), `api` (OpenAI-compatible HTTP), `shell` (stdin→stdout subprocess), `agent` (subprocess that writes files), `agent-sdk` (Anthropic Agent SDK library call).
 
 Runner factory: `src/engine/runners/factory.ts` — `createPlanner(config)` and `createImplementer(config)` dispatch by `kind`.
-Provider catalog (`src/core/providers.ts`): static list of known providers with API base URLs. Known providers: `ollama`, `lm-studio`, `anthropic`, `openrouter`, `deepseek`.
+Provider catalog (`src/core/providers/catalog.ts`): static list of known providers with API base URLs. Known providers: `ollama`, `lm-studio`, `anthropic`, `openrouter`, `deepseek`.
 
 ## Implementation Status
 

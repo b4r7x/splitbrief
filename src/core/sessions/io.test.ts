@@ -13,7 +13,7 @@ afterEach(() => {
   if (tmp) cleanupTempDir(tmp);
 });
 
-import type { Session } from '../types/app.js';
+import type { Session } from '../schemas/session.js';
 
 function writeSessionSubdir(projectDir: string, sessionId: string, session: Session): void {
   const subdir = join(projectDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId);

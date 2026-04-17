@@ -1,4 +1,4 @@
-import { readActive, isSessionLive, clearActive } from '../../core/sessions/active.js';
+import { readActive, isSessionLive, clearActive } from '../../core/sessions/lifecycle.js';
 import { cliError } from '../errors.js';
 
 export function clearStaleSession(projectDir: string): void {

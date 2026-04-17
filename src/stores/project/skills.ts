@@ -1,7 +1,7 @@
 import { createStore, storeBase } from '../create-store.js';
 import { discoverSkills } from '../../engine/skills/discovery.js';
 import type { PlannerTool } from '../../core/types/config-options.js';
-import type { SkillMeta } from '../../core/types/app.js';
+import type { SkillMeta } from '../../engine/skills/discovery.js';
 
 interface SkillsState {
   available: SkillMeta[];

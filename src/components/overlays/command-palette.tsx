@@ -1,6 +1,7 @@
 import { Text } from 'ink';
 import { useTheme } from '../theme.js';
-import type { CommandPaletteItem, Screen } from '../../core/types/app.js';
+import type { CommandPaletteItem } from '../../core/slash-commands/types.js';
+import type { Screen } from '../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { truncateWithEllipsis } from '../../utils/truncate.js';
 import { filterByFields } from '../pickers/picker-utils.js';

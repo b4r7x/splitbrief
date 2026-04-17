@@ -1,11 +1,17 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import type { Theme } from '../../../components/theme.js';
-import type { SidebarTask } from '../../../core/types/app.js';
+import type { TaskStatus } from '../../../core/schemas/enums.js';
 import { truncateWithEllipsis } from '../../../utils/truncate.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { CostDisplay } from './cost-display.js';
+
+export interface SidebarTask {
+  id: string;
+  title: string;
+  status: TaskStatus;
+}
 
 interface SidebarProps {
   width: number;

@@ -4,7 +4,7 @@ import type { ApiImplementerConfig, Config, ImplementerConfig, PlannerConfig } f
 import type { ProjectContext, Task } from '../../src/core/types/state-actions.js';
 import { taskId as brand } from '../../src/core/types/state-actions.js';
 import type { Summary, TokenUsage } from '../../src/core/types/summary.js';
-import type { Session } from '../../src/core/types/app.js';
+import type { Session } from '../../src/core/schemas/session.js';
 
 const defaultApiImplementer: ApiImplementerConfig = {
   kind: 'api',

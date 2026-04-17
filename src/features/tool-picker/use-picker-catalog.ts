@@ -3,7 +3,7 @@ import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { useStores } from '../../stores/use-stores.js';
-import { getRunnerCommand } from '../../core/config/runner-config.js';
+import { getRunnerCommand } from '../../core/config/accessors/runner-config.js';
 import { normalizeConfiguredModel } from '../../core/providers/model-selection.js';
 import {
   buildPlannerPickerOptions,

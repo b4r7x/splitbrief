@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import type { TuiEvent } from '../../../../core/types/events.js';
+import type { TuiEvent } from '../../types.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { useTheme } from '../../../../components/theme.js';
 import { DiffView } from '../../../../components/diff-view.js';

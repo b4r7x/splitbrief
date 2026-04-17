@@ -4,7 +4,7 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { requestEnqueue } from '../handlers.js';
 import { isLivePhase, isImplementerPhase } from '../../../core/phases.js';
-import { parseReviewCommand } from '../../../core/slash-commands/review-commands.js';
+import { parseReviewCommand } from '../review-parser.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 
 function openInEditor(filePath: string): Promise<void> {

@@ -5,7 +5,7 @@ import { createShellPlanner } from './shell.js';
 import { createAgentPlanner } from './agent.js';
 import { createCliPlanner } from './cli.js';
 import { makeConfig } from '#testing/helpers/fixtures.js';
-import { PlannerConfigSchema } from '../../core/types/schemas/planner-config.js';
+import { PlannerConfigSchema } from '../../core/schemas/planner-config.js';
 
 describe('capability matrix — per-backend declared values (FR-003)', () => {
   it('claude-code: conv=true, hint=false, resume=true; injects via injectUserTurn', () => {

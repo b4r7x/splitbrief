@@ -1,5 +1,5 @@
 import type { Config } from '../../core/types/config-options.js';
-import { getRunnerDisplayName } from '../../core/config/runner-config.js';
+import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
 import { type ModelOption, sortModelsByRecency } from './model-sorting.js';
 import { type PickerOption } from './picker-options.js';
 import type { ModelCacheAccessor } from '../../engine/providers/model-catalog.js';

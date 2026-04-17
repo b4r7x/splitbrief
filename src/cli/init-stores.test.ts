@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getPlannerToolId } from '../core/config/runner-config.js';
+import { getPlannerToolId } from '../core/config/accessors/runner-config.js';
 import type { PlannerConfig } from '../core/types/config-options.js';
 
 describe('getPlannerToolId', () => {

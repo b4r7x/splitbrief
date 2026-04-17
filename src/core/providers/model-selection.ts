@@ -1,4 +1,4 @@
-import { isProviderId, type ProviderId } from '../types/schemas/enums.js';
+import { isProviderId, type ProviderId } from '../schemas/enums.js';
 import { KNOWN_MODELS } from './known-models.js';
 
 function getDefaultResolvedModel(providerId: ProviderId): string | undefined {

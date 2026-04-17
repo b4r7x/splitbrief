@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { TokenUsage } from '../../core/types/summary.js';
-import type { OrchestratorCallbacks } from '../../core/types/events.js';
+import type { OrchestratorCallbacks } from './types.js';
 import { checkBudget, getCurrentCost, enforceBudget } from './budget.js';
 
 const zeroUsage: TokenUsage = {

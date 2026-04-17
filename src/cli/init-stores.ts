@@ -13,7 +13,7 @@ import { fetchModelsDevCatalog } from '../engine/providers/models-dev.js';
 import { discoverAllCliTools } from '../engine/providers/discovery.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 import { cliError } from './errors.js';
-import { getPlannerToolId } from '../core/config/runner-config.js';
+import { getPlannerToolId } from '../core/config/accessors/runner-config.js';
 
 export async function initStores(projectDir: string, opts: WorkflowOpts = {}): Promise<void> {
   terminalSizeStore.subscribeToResize();

@@ -9,7 +9,7 @@ import { addWorkflowOptions, setupWorkflow, resolveProjectDir } from '../workflo
 import { cliError } from '../errors.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { initStores } from '../init-stores.js';
-import { readActive } from '../../core/sessions/active.js';
+import { readActive } from '../../core/sessions/lifecycle.js';
 import { maybeMigrate } from './migrate.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 

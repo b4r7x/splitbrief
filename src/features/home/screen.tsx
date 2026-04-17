@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import cfonts from 'cfonts';
-import type { SlashCommandDef } from '../../core/types/app.js';
+import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { useTheme } from '../../components/theme.js';
 import { InputBar } from '../../components/input-bar/index.js';
 import { ScreenShell } from '../../components/screen-shell.js';

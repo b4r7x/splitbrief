@@ -1,7 +1,8 @@
 import type { Planner } from '../../planners/types.js';
 import { emit, createTextHandler, emitPlannerStatus } from '../events.js';
-import { addUsageAndSave, transitionAndSave, createSessionExpiredHandler } from '../helpers.js';
-import { withContinuationLoop } from '../continuation-loop.js';
+import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
+import { createSessionExpiredHandler } from '../resume-context.js';
+import { withContinuationLoop } from '../continuation.js';
 import {
   drainAndFormat,
   handlePlanningFailure,

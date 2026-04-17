@@ -1,16 +1,16 @@
 import type { Task, WorkflowState } from '../../core/types/state-actions.js';
 import type { TaskTokenUsage, TokenUsage } from '../../core/types/summary.js';
-import { formatValidationError, runValidationWithEvents } from './validator.js';
+import { formatValidationError, runValidationWithEvents } from './validation.js';
 
 import type { WorkflowContext } from './types.js';
 import { recordTaskUsage } from './tokens.js';
 import { toErrorMessage, labelError } from '../../utils/format-errors.js';
 import { emit, createTextHandler, emitError, emitTaskStart } from './events.js';
-import { handleRetryAndEscalation } from './escalation.js';
-import { refreshAndPersistCode, addUsageAndSave, transitionAndSave } from './helpers.js';
+import { handleRetryAndEscalation } from './escalation/escalation.js';
+import { refreshAndPersistCode, addUsageAndSave, transitionAndSave } from './state-ops.js';
 import { validateCommitAndAdvance } from './task-commit.js';
-import { getRunnerDisplayName } from '../../core/config/runner-config.js';
-import { withContinuationLoop } from './continuation-loop.js';
+import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
+import { withContinuationLoop } from './continuation.js';
 
 type RetryAndRecordOptions = {
   wctx: WorkflowContext;
