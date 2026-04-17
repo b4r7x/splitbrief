@@ -2,7 +2,7 @@ import { loadDetectionCache, saveDetectionCache, invalidateCache } from './cache
 import type { DetectAllResult } from './detect.js';
 import type { ModelsDevCatalog } from '../providers/models-dev.js';
 import type { CliToolId } from '../../core/types/schemas/enums.js';
-import type { DetectedModel } from '../../core/types/config.js';
+import type { DetectedModel } from '../../core/types/config-options.js';
 
 export interface DetectionDeps {
   detectAll(): Promise<DetectAllResult>;
@@ -22,6 +22,8 @@ export interface DetectionService {
   refreshDetection(projectDir: string | undefined): Promise<DetectionServiceResult | null>;
   getPendingSave(): Promise<void>;
 }
+
+const EMPTY_CLI_MODELS: Partial<Record<CliToolId, DetectedModel[]>> = {};
 
 export function createDetectionService(): DetectionService {
   let pendingSave: Promise<void> = Promise.resolve();
@@ -46,7 +48,7 @@ export function createDetectionService(): DetectionService {
 
     const [catalog, cliModels] = await Promise.all([
       deps.fetchModelsDevCatalog().catch(() => null),
-      deps.discoverAllCliTools().catch(() => ({} as Partial<Record<CliToolId, DetectedModel[]>>)),
+      deps.discoverAllCliTools().catch(() => EMPTY_CLI_MODELS),
     ]);
 
     if (projectDir && shouldPersist) {
@@ -73,9 +75,7 @@ export function createDetectionService(): DetectionService {
   return { loadDetection, invalidateDetection, refreshDetection, getPendingSave };
 }
 
-const _defaultService = createDetectionService();
+const defaultService = createDetectionService();
 
-export const loadDetection = _defaultService.loadDetection.bind(_defaultService);
-export const invalidateDetection = _defaultService.invalidateDetection.bind(_defaultService);
-export const refreshDetection = _defaultService.refreshDetection.bind(_defaultService);
-export const getPendingSave = _defaultService.getPendingSave.bind(_defaultService);
+export const loadDetection = defaultService.loadDetection.bind(defaultService);
+export const refreshDetection = defaultService.refreshDetection.bind(defaultService);

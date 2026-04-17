@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createLmStudioProvider } from './lm-studio.js';
-import { setupFetchMock } from './testing.js';
+import { setupFetchMock } from './test-helpers.js';
 
 describe('createLmStudioProvider', () => {
   setupFetchMock();

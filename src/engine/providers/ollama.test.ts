@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createOllamaProvider } from './ollama.js';
-import { setupFetchMock } from './testing.js';
+import { setupFetchMock } from './test-helpers.js';
 
 describe('createOllamaProvider', () => {
   setupFetchMock();

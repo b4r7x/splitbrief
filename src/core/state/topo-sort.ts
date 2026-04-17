@@ -1,4 +1,4 @@
-import type { Task } from '../types/index.js';
+import type { Task } from '../types/state-actions.js';
 
 export function topoSort(tasks: Task[]): Task[] {
   const taskMap = new Map<string, Task>();

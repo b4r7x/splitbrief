@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import { useTheme } from '../../ui/theme.js';
+import { useTheme } from '../theme.js';
 import type { SlashCommandDef } from '../../types.js';
 
 interface SlashSuggestionsProps {

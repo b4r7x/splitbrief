@@ -1,8 +1,11 @@
 import { z } from 'zod';
-import type { DetectedModel } from '../../core/types/config.js';
-import type { ProviderId } from '../../core/providers.js';
+import type { DetectedModel } from '../../core/types/config-options.js';
+import type { ProviderId } from '../../core/providers/index.js';
+import type { ModelsDevCatalog, ModelsDevModel } from '../../core/types/model-catalog.js';
 import { fetchJsonWithTimeout } from './client.js';
 import { isModelFree } from './metadata.js';
+
+export type { ModelsDevCatalog } from '../../core/types/model-catalog.js';
 
 const ModelsDevModelSchema = z.object({
   id: z.string(),
@@ -20,9 +23,6 @@ const ModelsDevProviderSchema = z.object({
 });
 
 const ModelsDevCatalogSchema = z.record(z.string(), ModelsDevProviderSchema);
-
-type ModelsDevModel = z.infer<typeof ModelsDevModelSchema>;
-export type ModelsDevCatalog = z.infer<typeof ModelsDevCatalogSchema>;
 
 const MODELS_DEV_URL = 'https://models.dev/api.json';
 

@@ -1,8 +1,10 @@
 import { Box, Text } from 'ink';
-import { useTheme } from '../../../ui/theme.js';
+import { useTheme } from '../../theme.js';
 import { type FilterableItem } from '../picker-utils.js';
-import { getResponsivePanelWidth, terminalSizeStore } from '../../../stores/terminal-size.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { getResponsivePanelWidth } from '../../../core/layout/terminal-width.js';
 import { useStores } from '../../../stores/use-stores.js';
+import { availableRows } from '../../../core/layout/picker-chrome.js';
 import { SingleColumnPicker } from '../single-column-picker.js';
 import {
   useTwoColumnState,
@@ -56,9 +58,9 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
   const [{ cols, rows, isSmall }] = useStores(terminalSizeStore);
 
   const contentMaxWidth = isSmall ? 76 : 110;
-  const outerChrome = 6; // title(1) + marginBottom(2) + hint(1) + marginTop(2)
-  const innerChrome = 6; // border(2) + label(1) + filter(1) + scrollUp(1) + scrollDown(1)
-  const maxVisible = Math.min(Math.max(rows - outerChrome - innerChrome, 3), 20);
+  const outerChrome = 6;
+  const innerChrome = 6;
+  const maxVisible = Math.min(availableRows(rows, outerChrome + innerChrome), 20);
   const columnHeight = maxVisible + innerChrome;
   const totalBoxWidth = getResponsivePanelWidth(cols, isSmall, { small: contentMaxWidth, large: contentMaxWidth });
   const columnContentWidth = Math.max(

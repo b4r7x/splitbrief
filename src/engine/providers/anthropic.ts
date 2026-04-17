@@ -1,9 +1,8 @@
 import { z } from 'zod';
-import { resolveDefaultApiBase } from '../../core/providers.js';
-import { createProviderShell, fetchModelList, stripV1Suffix } from './client.js';
-import type { DetectedModel, ProviderDef, ProviderOverrides } from './types.js';
-
-export const ANTHROPIC_API_VERSION = '2023-06-01';
+import { resolveDefaultApiBase } from '../../core/providers/index.js';
+import { createMetadataProvider } from './client.js';
+import { ANTHROPIC_API_VERSION, v1ModelsUrl } from '../http.js';
+import type { DetectedModel, ProviderDefWithMetadata, ProviderOverrides } from './types.js';
 
 const DEFAULT_ANTHROPIC_BASE_URL =
   resolveDefaultApiBase('anthropic') ?? 'https://api.anthropic.com/v1';
@@ -17,52 +16,36 @@ const AnthropicModelListSchema = z.object({
   data: z.array(AnthropicModelSchema),
 });
 
-function buildAnthropicHeaders(apiKey: string): Record<string, string> | undefined {
-  if (!apiKey) return undefined;
+type AnthropicModel = z.infer<typeof AnthropicModelSchema>;
+
+function toDetected(m: AnthropicModel): DetectedModel {
   return {
-    'anthropic-version': ANTHROPIC_API_VERSION,
-    'x-api-key': apiKey,
+    id: m.id,
+    ...(m.created_at && { releaseDate: m.created_at }),
   };
 }
 
-function extractAnthropicModels(data: unknown): DetectedModel[] | null {
+function extractModels(data: unknown): AnthropicModel[] | null {
   const parsed = AnthropicModelListSchema.safeParse(data);
-  if (!parsed.success) return null;
-  return parsed.data.data.map((model) => ({
-    id: model.id,
-    ...(model.created_at && { releaseDate: model.created_at }),
-  }));
+  return parsed.success ? parsed.data.data : null;
 }
 
-export function createAnthropicProvider(overrides?: ProviderOverrides): ProviderDef {
-  const baseURL = overrides?.apiBase ?? DEFAULT_ANTHROPIC_BASE_URL;
-  const apiKey = () => overrides?.apiKey ?? process.env['ANTHROPIC_API_KEY'] ?? '';
-  const shell = createProviderShell({ name: 'anthropic', baseURL, isLocal: false });
-
-  async function listModelsWithMetadata(): Promise<DetectedModel[]> {
-    const key = apiKey();
-    if (!key) return [];
-
-    return fetchModelList({
-      endpoint: `${stripV1Suffix(baseURL)}/v1/models`,
-      headers: buildAnthropicHeaders(key),
-      onError: shell.trackError,
-      extractModels: extractAnthropicModels,
-    });
-  }
-
-  return {
-    name: 'anthropic',
-    baseURL,
-    apiKey,
-    isLocal: false,
-    getLastError: shell.getLastError,
-
-    async listModels(): Promise<string[]> {
-      const models = await listModelsWithMetadata();
-      return models.map((model) => model.id);
+export function createAnthropicProvider(overrides?: ProviderOverrides): ProviderDefWithMetadata {
+  return createMetadataProvider<AnthropicModel>(
+    {
+      name: 'anthropic',
+      defaultBaseURL: DEFAULT_ANTHROPIC_BASE_URL,
+      envKeyName: 'ANTHROPIC_API_KEY',
+      isLocal: false,
+      schema: AnthropicModelSchema,
+      fallback: (id) => ({ id }),
+      toDetected,
+      modelsUrl: v1ModelsUrl,
+      extractModels,
+      headers: (apiKey) => apiKey
+        ? { 'anthropic-version': ANTHROPIC_API_VERSION, 'x-api-key': apiKey }
+        : {},
     },
-
-    listModelsWithMetadata,
-  };
+    overrides,
+  );
 }

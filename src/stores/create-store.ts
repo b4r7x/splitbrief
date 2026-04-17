@@ -8,7 +8,7 @@ export interface Store<T> {
   set: (updater: Updater<T>) => void;
   subscribe: (listener: Listener) => () => void;
   use: <S>(selector: (state: T) => S) => S;
-  reset: (state?: T) => void;
+  reset: () => void;
 }
 
 const isDev = typeof process !== 'undefined' && process.env?.['NODE_ENV'] === 'development';
@@ -57,7 +57,7 @@ export function createStore<T>(initialOrFactory: T | (() => T)): Store<T> {
     return useSyncExternalStore(subscribe, () => selector(get()));
   };
 
-  const reset = (next?: T) => set(next ?? getInitial());
+  const reset = () => set(getInitial());
 
   return { get, set, subscribe, use, reset };
 }

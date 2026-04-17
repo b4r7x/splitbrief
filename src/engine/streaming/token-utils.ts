@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { TokenDelta } from '../../types.js';
+import type { TokenDelta } from '../../core/types/summary.js';
 
 export const TokenUsageLikeSchema = z.looseObject({
   input_tokens: z.number().optional(),

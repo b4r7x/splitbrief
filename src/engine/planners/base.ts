@@ -1,9 +1,11 @@
-import type { Task, InvokeResult, TokenDelta } from '../../types.js';
+import type { Task } from '../../core/types/state-actions.js';
+import type { InvokeResult } from '../../core/types/runner.js';
+import type { TokenDelta } from '../../core/types/summary.js';
 import type { Planner, PlannerCallbacks, PlanResult, EscalationResult, RegenerateResult, PhaseResult, PlannerCapabilities, PriorMessage } from './types.js';
 import { formatMessagesForCli } from '../orchestrator/transcript-rebuild.js';
 import { buildResearchPrompt } from '../spec/prompts/research.js';
 import { buildSpecPrompt } from '../spec/prompts/spec.js';
-import { buildPlanPromptFromSpec } from '../spec/prompts/plan.js';
+import { buildPlanPrompt } from '../spec/prompts/plan.js';
 import { buildTasksPrompt } from '../spec/prompts/tasks.js';
 import { buildHintPrompt, buildEscalationPrompt } from '../spec/prompts/escalation.js';
 import { buildQuickPlanPrompt } from '../spec/prompts/quick-plan.js';
@@ -16,7 +18,7 @@ import { DEFAULT_AVAILABILITY } from '../../utils/availability.js';
 import { getChangedFiles } from '../../utils/git.js';
 import { createChangeDetector } from '../change-detection.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
-import type { Phase } from '../../types.js';
+import type { Phase } from '../../core/types/state-actions.js';
 
 const PHASE_MAP: Partial<Record<string, Phase>> = {
   researching: 'researching',
@@ -112,7 +114,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
 
       const research = await runPhase('researching', buildResearchPrompt(feature, projectContext, skillsContext), RESEARCH_FILE);
       const spec = await runPhase('specifying', buildSpecPrompt(feature, research), SPEC_FILE);
-      const plan = await runPhase('planning', buildPlanPromptFromSpec(spec, projectContext, skillsContext), PLAN_FILE);
+      const plan = await runPhase('planning', buildPlanPrompt({ content: spec, hasClarifications: spec.includes('## Clarifications') }, projectContext, skillsContext), PLAN_FILE);
       const tasksMarkdown = await runPhase('generating-tasks', buildTasksPrompt(spec, plan), TASKS_FILE);
 
       const tasks = parseTasks(tasksMarkdown);

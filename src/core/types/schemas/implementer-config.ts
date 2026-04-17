@@ -5,7 +5,6 @@ export const ImplementerConfigSchema = createRunnerConfigSchema(GenerationCommon
 
 export type ImplementerConfig = z.infer<typeof ImplementerConfigSchema>;
 
-// Per-variant narrowing types for factory functions
 export type CliImplementerConfig = Extract<ImplementerConfig, { kind: 'cli' }>;
 export type ApiImplementerConfig = Extract<ImplementerConfig, { kind: 'api' }>;
 export type ShellImplementerConfig = Extract<ImplementerConfig, { kind: 'shell' }>;

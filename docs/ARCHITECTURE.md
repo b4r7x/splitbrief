@@ -23,11 +23,12 @@ How the code is organized and how data flows through the system. For *what* the 
            ▼                              ▼
 ┌────────────────────────┐   ┌───────────────────────────────┐
 │  Engine (no React)     │   │  UI (React 19 + Ink 6)        │
-│    src/engine/          │   │    src/{app,screens,          │
-│    — workflow logic,    │   │          components,ui,hooks} │
-│      planners,          │   │    — reads stores, renders   │
-│      implementers,      │   │      event cards,            │
-│      validation         │   │      captures keys           │
+│    src/engine/         │   │    src/{app,layout,           │
+│    — workflow logic,   │   │          features,            │
+│      planners,         │   │          components,hooks}    │
+│      implementers,     │   │    — reads stores, renders   │
+│      validation        │   │      event cards,             │
+│                        │   │      captures keys            │
 └───────────────────┬────┘   └───────────────────────────────┘
                     │                      ▲
                     │  emits TuiEvents     │  subscribes
@@ -38,8 +39,9 @@ How the code is organized and how data flows through the system. For *what* the 
 
 **Strict rules:**
 
-- `src/engine/**` must not import from React, Ink, or any `src/ui/`, `src/components/`, `src/screens/`, `src/hooks/` path. The engine is runnable in a headless test process.
-- `src/components/**` and `src/screens/**` must not import from `src/cli/**`. UI is driven by stores, not by command handlers.
+- `src/engine/**` must not import from React, Ink, or any `src/features/`, `src/components/`, or `src/hooks/` path. The engine is runnable in a headless test process.
+- `src/features/**` and `src/components/**` must not import from `src/cli/**`. UI is driven by stores, not by command handlers.
+- `src/features/{a}/**` must not import from `src/features/{b}/**`. Cross-feature composition happens at `src/app.tsx` and `src/layout.tsx`; shared behavior lives in `src/components/`, `src/hooks/`, `src/utils/`, `src/core/`, or `src/stores/`. See [`STRUCTURE.md`](./STRUCTURE.md) and [`HOOKS.md`](./HOOKS.md).
 - `src/stores/**` has no external dependencies — no React, no Ink, no engine imports. Just a store factory + plain data.
 
 These rules are what let us run the full workflow under Vitest without bringing up Ink.
@@ -84,14 +86,23 @@ src/
 │
 ├── stores/                   External stores (useSyncExternalStore)
 │   ├── create-store.ts       ~45 LOC factory: get/set/subscribe/use/reset
-│   └── {config,workflow,router,sessions,skills,overlay,…}.ts
+│   └── {ui,workflow,navigation,project,discovery}/*.ts
 │
-├── screens/                  Top-level screens (home, setup, workflow, summary)
-├── components/               Event cards, pickers, overlays, input bar
-├── ui/                       Low-level Ink primitives (diff-view, spinner, markdown, theme)
-├── hooks/                    React hooks that bridge stores + Ink lifecycle
+├── features/                 Business features — one folder per concept (8 features)
+│   ├── workflow/             screen + components + hooks + pure helpers
+│   ├── home/                 screen + components
+│   ├── setup/                screen
+│   ├── summary/              screen + components
+│   ├── settings/             overlay + hooks
+│   ├── sessions/             picker + row
+│   ├── tool-picker/          picker + view + catalog adapter + hooks
+│   └── skills/               picker
+├── components/               Shared UI (cross-feature): primitives + shared overlays + pickers + input
+├── hooks/                    Shared React hooks (cross-feature primitives, flat)
 └── utils/                    Pure helpers (format, diff, git, process, redact, …)
 ```
+
+UI code is organized by **business feature**, not technical layer — see [`STRUCTURE.md`](./STRUCTURE.md) for the full rationale. `src/features/{feature}/` holds the vertical slice (screen/overlay + feature-local components, hooks, pure helpers). `src/components/`, `src/hooks/`, `src/utils/` hold only code shared across two or more features. There is no `src/screens/` directory (feature entry points are `screen.tsx` / `overlay.tsx` / `picker.tsx` inside each feature) and no `src/ui/` directory (primitives merged into `src/components/`).
 
 ---
 
@@ -266,14 +277,16 @@ Rules (see `CLAUDE.md` for the full list):
 | Adding a … | Go to |
 |-----------|-------|
 | New CLI subcommand | `src/cli/commands/` + register in `src/cli.ts` |
-| New slash command | `src/core/commands/definitions.ts` |
+| New slash command | `src/core/slash-commands/definitions.ts` |
 | New planner backend | `src/engine/planners/<name>.ts` + `runners/factory.ts` switch + planner-config schema variant + declare `capabilities` struct |
 | New implementer backend | Mirror of above under `src/engine/implementers/` |
 | New provider (for `api` kind) | `src/engine/providers/<name>.ts` + register in `providers/registry.ts` |
 | New phase | `src/core/state/machine.ts` (+ update `core/phases.ts` sets) — **read `docs/WORKFLOW.md` first**, phases are load-bearing |
-| New event type | `src/core/types/events.ts` + renderer in `src/components/event-cards/index.tsx` |
-| New store | `src/stores/<name>.ts` using `createStore` from `create-store.ts`; init in `cli/init-stores.ts` if it reads disk |
-| New overlay (modal UI) | `src/components/overlays/` + register via `overlayStore` |
+| New event type | `src/core/types/tui-events.ts` + renderer in `src/features/workflow/components/event-cards/event-card.tsx` |
+| New store | `src/stores/<group>/<name>.ts` using `createStore` from `create-store.ts`; init in `cli/init-stores.ts` if it reads disk |
+| New shared overlay (used by 2+ features) | `src/components/overlays/<name>.tsx` + register via `overlayStore` |
+| New feature overlay | `src/features/<feature>/overlay.tsx` + register via `overlayStore` |
+| New feature (new screen / picker / overlay) | `src/features/<feature>/` with `screen.tsx` \| `picker.tsx` \| `overlay.tsx` as entry; wire in `src/app.tsx` |
 | New planner capability flag | Extend `PlannerCapabilities` in `src/engine/planners/types.ts`, set the default in each backend, add the fallback branch in the orchestrator |
 
 ---

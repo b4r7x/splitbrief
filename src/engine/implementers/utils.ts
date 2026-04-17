@@ -1,8 +1,12 @@
-import { CommandNotFoundError, CommandTimeoutError, createProcessError } from '../../utils/process-errors.js';
+import {
+  CommandNotFoundError,
+  CommandTimeoutError,
+  createProcessError,
+  formatCommandError,
+} from '../../utils/process-errors.js';
 import type { SpawnResult } from '../../utils/process.js';
 import type { ImplementerOptions } from './types.js';
 
-export { createChangeDetector } from '../change-detection.js';
 export { IMPLEMENTER_TIMEOUT_MS as DEFAULT_TIMEOUT } from '../constants.js';
 
 export function assertSpawnSuccess(
@@ -14,14 +18,22 @@ export function assertSpawnSuccess(
   }
   if (result.timedOut) {
     throw new CommandTimeoutError(
-      `${opts.label} timed out after ${Math.round(opts.timeoutMs / 1000)}s`,
+      formatCommandError('timeout', {
+        command: opts.label,
+        label: opts.label,
+        timeoutMs: opts.timeoutMs,
+      }),
       result.output,
     );
   }
   if (result.code !== 0) {
-    const detail = result.stderr.trim();
     throw createProcessError(
-      `${opts.label} exited with code ${result.code}${detail ? `: ${detail}` : ''}`,
+      formatCommandError('exit-code', {
+        command: opts.label,
+        label: opts.label,
+        code: result.code,
+        stderr: result.stderr,
+      }),
       result.output,
     );
   }

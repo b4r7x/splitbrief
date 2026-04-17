@@ -17,15 +17,12 @@ export const KNOWN_PROVIDER_BASE_URLS = {
   openai: 'https://api.openai.com/v1',
   groq: 'https://api.groq.com/openai/v1',
   together: 'https://api.together.xyz/v1',
+  anthropic: 'https://api.anthropic.com/v1',
 } as const;
 
-const KNOWN_API_BASE_URLS: Record<string, string> = {
-  ...KNOWN_PROVIDER_BASE_URLS,
-  anthropic: 'https://api.anthropic.com/v1',
-};
-
 export function resolveDefaultApiBase(providerId: string): string | null {
-  return KNOWN_API_BASE_URLS[providerId] ?? null;
+  const urls: Record<string, string> = KNOWN_PROVIDER_BASE_URLS;
+  return urls[providerId] ?? null;
 }
 
 export const PROVIDER_CATALOG: Record<ProviderId, ProviderInfo> = {
@@ -36,7 +33,7 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderInfo> = {
   copilot: { id: 'copilot', displayName: 'Copilot', isSubscription: true },
   'kilo-code': { id: 'kilo-code', displayName: 'Kilo Code', isSubscription: true },
   'agent-sdk': { id: 'agent-sdk', displayName: 'Agent SDK', apiKeyEnv: 'ANTHROPIC_API_KEY' },
-  anthropic: { id: 'anthropic', displayName: 'Anthropic', apiKeyEnv: 'ANTHROPIC_API_KEY' },
+  anthropic: { id: 'anthropic', displayName: 'Anthropic', baseURL: KNOWN_PROVIDER_BASE_URLS.anthropic, apiKeyEnv: 'ANTHROPIC_API_KEY' },
   openrouter: { id: 'openrouter', displayName: 'OpenRouter', baseURL: KNOWN_PROVIDER_BASE_URLS.openrouter, apiKeyEnv: 'OPENROUTER_API_KEY' },
   deepseek: { id: 'deepseek', displayName: 'DeepSeek', baseURL: KNOWN_PROVIDER_BASE_URLS.deepseek, apiKeyEnv: 'DEEPSEEK_API_KEY' },
   openai: { id: 'openai', displayName: 'OpenAI', baseURL: KNOWN_PROVIDER_BASE_URLS.openai, apiKeyEnv: 'OPENAI_API_KEY' },

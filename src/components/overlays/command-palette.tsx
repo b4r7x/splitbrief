@@ -1,10 +1,10 @@
 import { Text } from 'ink';
-import { useTheme } from '../../ui/theme.js';
+import { useTheme } from '../theme.js';
 import type { CommandPaletteItem, Screen } from '../../types.js';
-import { terminalSizeStore } from '../../stores/terminal-size.js';
-import { truncate } from '../../utils/format.js';
+import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { truncate } from '../../utils/format-numbers.js';
 import { filterByFields } from '../pickers/picker-utils.js';
-import { overlayStore } from '../../stores/overlay.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
 import { FilterableList } from '../pickers/filterable-list.js';
 
 interface CommandPaletteProps {

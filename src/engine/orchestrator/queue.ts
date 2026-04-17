@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { Phase, QueuedMessage, WorkflowState, OrchestratorCallbacks } from '../../types.js';
+import type { Phase, QueuedMessage, WorkflowState } from '../../core/types/state-actions.js';
+import type { OrchestratorCallbacks } from '../../core/types/events.js';
 import type { Planner } from '../planners/types.js';
 import { transitionAndSave } from './helpers.js';
 import { emit } from './events.js';

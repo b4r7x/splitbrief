@@ -1,4 +1,5 @@
-import type { Config, Task } from '../../types.js';
+import type { Config } from '../../core/types/config-options.js';
+import type { Task } from '../../core/types/state-actions.js';
 import type { Planner } from './types.js';
 import { createCommandBasedPlanner, resolveCapabilities } from './command-invoke.js';
 import { buildEscalationPrompt } from '../spec/prompts/escalation.js';
@@ -13,10 +14,7 @@ export function createAgentPlanner(config: Config): Planner {
 
   const base = createCommandBasedPlanner(plannerCfg, 'Agent planner', {
     extractsCode: false,
-    detectChanges: async (projectDir) => {
-      const changed = await getChangedFiles(projectDir);
-      return changed.length > 0;
-    },
+    detectChanges: createChangeDetector('Agent planner'),
     readPhaseOutput: (filename, resultText, projectDir, sessionId) =>
       (sessionId ? readSpecFile(projectDir, sessionId, filename) : null) ?? resultText,
     capabilities,

@@ -1,9 +1,12 @@
-import type { Task, Config, WorkflowState, OrchestratorCallbacks, ValidationResult, TaskCompletionMethod } from '../../types.js';
+import type { Task, WorkflowState } from '../../core/types/state-actions.js';
+import type { Config } from '../../core/types/config-options.js';
+import type { OrchestratorCallbacks } from '../../core/types/events.js';
+import type { ValidationResult, TaskCompletionMethod } from '../../core/types/summary.js';
 import { commitChanges } from '../../utils/git.js';
 import { createCheckpoint } from './git-ops.js';
-import { labelError } from '../../utils/format.js';
+import { labelError } from '../../utils/format-errors.js';
 import { emit, emitWarning, emitGitCommit, emitGitCheckpoint, emitTaskComplete } from './events.js';
-import { allValidationsPassed, transitionAndSave } from './helpers.js';
+import { transitionAndSave } from './helpers.js';
 
 type ValidateCommitOptions = {
   task: Task;
@@ -22,7 +25,7 @@ type ValidateCommitOptions = {
 
 export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Promise<{ state: WorkflowState; completed: boolean }> {
   const { task, results, projectDir, sessionId, config, callbacks, method, transitionType, commitSuffix, taskStartTime, state, retryCount } = opts;
-  if (!allValidationsPassed(results)) {
+  if (!results.every((r) => r.passed)) {
     return { state, completed: false };
   }
 

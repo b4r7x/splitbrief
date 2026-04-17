@@ -2,11 +2,11 @@ import { z } from 'zod';
 import { readFile, readdir, stat, access } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
-import type { PlannerTool, SkillMeta } from '../../types.js';
+import type { PlannerTool } from '../../core/types/config-options.js';
+import type { SkillMeta } from '../../core/types/app.js';
 import { parseSimpleYamlFrontmatter, extractFrontmatter } from '../../utils/frontmatter.js';
-import { DIPTYCH_DIR, CODEX_DIR, SKILLS_DIR } from '../../core/paths.js';
+import { DIPTYCH_DIR, CODEX_DIR, SKILLS_DIR, getDiptychPath } from '../../core/paths.js';
 import { isENOENT } from '../../utils/process-errors.js';
-import { getDiptychPath } from '../../utils/fs.js';
 import { warnError } from '../../utils/warn.js';
 
 const MAX_SKILL_CHARS = 16_000;

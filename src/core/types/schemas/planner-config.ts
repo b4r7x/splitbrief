@@ -5,7 +5,6 @@ export const PlannerConfigSchema = createRunnerConfigSchema({ ...GenerationCommo
 
 export type PlannerConfig = z.infer<typeof PlannerConfigSchema>;
 
-// Per-variant narrowing types for factory functions
 export type CliPlannerConfig = Extract<PlannerConfig, { kind: 'cli' }>;
 export type ApiPlannerConfig = Extract<PlannerConfig, { kind: 'api' }>;
 export type ShellPlannerConfig = Extract<PlannerConfig, { kind: 'shell' }>;

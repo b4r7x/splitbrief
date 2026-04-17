@@ -1,5 +1,5 @@
-import type { DetectedModel } from '../../core/types/config.js';
-export type { DetectedModel } from '../../core/types/config.js';
+import type { DetectedModel } from '../../core/types/config-options.js';
+export type { DetectedModel } from '../../core/types/config-options.js';
 
 export interface ProviderDef {
   readonly name: string;
@@ -20,5 +20,4 @@ export interface ProviderDefWithMetadata extends ProviderDef {
 export interface ProviderOverrides {
   apiBase?: string | undefined;
   apiKey?: string | undefined;
-  apiKeyEnv?: string | undefined;
 }

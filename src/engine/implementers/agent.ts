@@ -1,6 +1,7 @@
-import type { Config } from '../../types.js';
+import type { Config } from '../../core/types/config-options.js';
 import type { Implementer } from './types.js';
-import { DEFAULT_TIMEOUT, createChangeDetector, assertImplementerKind } from './utils.js';
+import { DEFAULT_TIMEOUT, assertImplementerKind } from './utils.js';
+import { createChangeDetector } from '../change-detection.js';
 import { createCommandBasedImplementer } from './command-invoke.js';
 
 export function createAgentImplementer(initialConfig: Config): Implementer {

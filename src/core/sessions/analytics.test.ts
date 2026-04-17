@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { Session, Summary } from '../types/index.js';
+import type { Session } from '../types/app.js';
+import type { Summary } from '../types/summary.js';
 import { aggregateSessionCosts } from './analytics.js';
 
 function makeSummary(overrides: Partial<Summary> = {}): Summary {

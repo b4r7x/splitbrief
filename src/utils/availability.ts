@@ -1,20 +1,24 @@
 import { runCommand } from './process.js';
-import { parseVersion } from './format.js';
 
 export const DEFAULT_AVAILABILITY = {
   isAvailable: async (): Promise<boolean> => true,
   getVersion: async (): Promise<string | null> => null,
 };
 
-function createCommandCheck(command: string, opts?: { timeout?: number | undefined }) {
-  return async (): Promise<{ available: boolean; version: string | null }> => {
-    try {
-      const { stdout, code } = await runCommand(command, ['--version'], opts);
-      if (code !== 0) return { available: false, version: null };
-      const ver = parseVersion(stdout);
-      return { available: true, version: ver ? ver.join('.') : null };
-    } catch { return { available: false, version: null }; }
-  };
+function parseVersion(raw: string): string | null {
+  const m = raw.match(/(\d+)\.(\d+)\.(\d+)/);
+  return m ? `${m[1]}.${m[2]}.${m[3]}` : null;
+}
+
+export async function probeCommand(
+  command: string,
+  opts?: { timeout?: number | undefined },
+): Promise<{ available: boolean; version: string | null }> {
+  try {
+    const { stdout, code } = await runCommand(command, ['--version'], opts);
+    if (code !== 0) return { available: false, version: null };
+    return { available: true, version: parseVersion(stdout) };
+  } catch { return { available: false, version: null }; }
 }
 
 export function createCommandAvailability(command: string | undefined, opts?: { timeout?: number | undefined }) {
@@ -24,9 +28,10 @@ export function createCommandAvailability(command: string | undefined, opts?: { 
       getVersion: async (): Promise<string | null> => null,
     };
   }
-  const check = createCommandCheck(command, opts);
+  let cached: Promise<{ available: boolean; version: string | null }> | undefined;
+  const probe = () => (cached ??= probeCommand(command, opts));
   return {
-    isAvailable: async () => (await check()).available,
-    getVersion: async () => (await check()).version,
+    isAvailable: async () => (await probe()).available,
+    getVersion: async () => (await probe()).version,
   };
 }

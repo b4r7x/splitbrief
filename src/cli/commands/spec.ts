@@ -3,12 +3,11 @@ import ansis from 'ansis';
 import { createPlanner, type PlanResult } from '../../engine/index.js';
 import { getRunnerDisplayName } from '../../core/config/index.js';
 import { ensureGitAndConfig, resolveProjectDir, loadConfigOrExit } from '../workflow.js';
-import { cliError } from '../errors.js';
-import { toErrorMessage } from '../../utils/format.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import { beginSession } from '../../core/sessions/begin.js';
-import { clearStaleActiveSessionOrThrow } from './guards.js';
+import { clearStaleSession } from './guards.js';
 
 type SpecOpts = { auto: boolean; project?: string };
 
@@ -22,7 +21,7 @@ export function registerSpecCommand(program: Command): void {
       const projectDir = resolveProjectDir(opts.project);
       await ensureGitAndConfig(projectDir);
 
-      clearStaleActiveSessionOrThrow(projectDir);
+      clearStaleSession(projectDir);
 
       const baseConfig = loadConfigOrExit(projectDir);
       const config = opts.auto
@@ -50,7 +49,8 @@ export function registerSpecCommand(program: Command): void {
           sessionId,
         });
       } catch (err) {
-        throw cliError(toErrorMessage(err));
+        const msg = toErrorMessage(err);
+        throw Object.assign(new Error(msg, { cause: err }), { exitCode: 1 });
       }
 
       for (const phase of result.phases ?? []) {

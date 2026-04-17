@@ -4,7 +4,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { migrateCommand, maybeMigrate } from './migrate.js';
-import { DIPTYCH_DIR } from '../../utils/fs.js';
+import { DIPTYCH_DIR } from '../../core/paths.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = join(__dirname, '../../../testing/fixtures/legacy-diptych-current');

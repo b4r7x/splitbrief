@@ -1,8 +1,9 @@
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import type { Task, WorkflowState, TokenDelta, ValidationResult, OrchestratorCallbacks, StateAction } from '../../types.js';
-import type { OrchestratorEventPayloadMap } from '../../core/types/events.js';
-import { labelError } from '../../utils/format.js';
+import type { Task, WorkflowState, StateAction } from '../../core/types/state-actions.js';
+import type { TokenDelta } from '../../core/types/summary.js';
+import type { OrchestratorCallbacks, OrchestratorEventPayloadMap } from '../../core/types/events.js';
+import { labelError } from '../../utils/format-errors.js';
 import { isENOENT } from '../../utils/process-errors.js';
 import { transition } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
@@ -11,6 +12,9 @@ import { SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE } from '../../core/paths.
 import { addUsage, type UsageCategory } from './tokens.js';
 import { createTextHandler, emitWarning, emitCostUpdate, emit, emitPlannerStatus } from './events.js';
 import type { Planner } from '../planners/types.js';
+import { buildResumeContext } from './transcript-rebuild.js';
+import type { ResumeContextHolder } from './types.js';
+import type { Config } from '../../core/types/config-options.js';
 
 export function transitionAndSave(
   projectDir: string,
@@ -24,7 +28,7 @@ export function transitionAndSave(
   return next;
 }
 
-export async function refreshCurrentCode(task: Task, projectDir: string): Promise<Task> {
+async function refreshCurrentCode(task: Task, projectDir: string): Promise<Task> {
   const filePath = join(projectDir, task.file);
   try {
     const currentCode = await readFile(filePath, 'utf-8');
@@ -43,10 +47,6 @@ export async function refreshAndPersistCode(
     state = transitionAndSave(projectDir, sessionId, state, { type: 'UPDATE_TASK_CODE', taskId: refreshed.id, code: refreshed.currentCode });
   }
   return { task: refreshed, state };
-}
-
-export function allValidationsPassed(results: ValidationResult[]): boolean {
-  return results.every((r) => r.passed);
 }
 
 export function addUsageAndSave(
@@ -135,5 +135,53 @@ export function transitionAndEmit(opts: TransitionAndEmitOptions): WorkflowState
   if (status) emitPlannerStatus(callbacks, next, status);
   emit(projectDir, sessionId, next, eventName, undefined, emitData);
   return next;
+}
+
+export type ApplyRebuiltContextOpts = {
+  projectDir: string;
+  sessionId: string;
+  callbacks: OrchestratorCallbacks;
+  config: Pick<Config, 'workflow'>;
+  resumeHolder: ResumeContextHolder | undefined;
+  /** Whether to only populate resumeHolder when rebuilt.messages is non-empty (initial bootstrap). */
+  requireNonEmpty?: boolean | undefined;
+};
+
+/**
+ * Rebuild transcript context from disk and either populate the shared resumeHolder with prior
+ * messages or emit a fallback warning when no transcript is persisted. Shared between the
+ * mid-run `onSessionExpired` handler and the initial-bootstrap flow in run.ts.
+ */
+export async function applyRebuiltContext(opts: ApplyRebuiltContextOpts): Promise<void> {
+  const { projectDir, sessionId, callbacks, config, resumeHolder, requireNonEmpty } = opts;
+  const rebuilt = await buildResumeContext(projectDir, sessionId, config.workflow.persistTranscript !== false);
+  if (rebuilt.warning === 'transcript-unavailable') {
+    emitWarning(callbacks, 'Previous planner conversation expired and no transcript was persisted. Continuing with spec.md/plan.md/tasks.md only — the planner may regenerate differently.');
+    return;
+  }
+  if (!resumeHolder) return;
+  if (requireNonEmpty && rebuilt.messages.length === 0) return;
+  resumeHolder.messages = rebuilt.messages;
+}
+
+export type SessionExpiredHandlerOpts = {
+  projectDir: string;
+  sessionId: string;
+  callbacks: OrchestratorCallbacks;
+  config: Pick<Config, 'workflow'>;
+  resumeHolder: ResumeContextHolder | undefined;
+};
+
+/**
+ * Returns an async handler to pass as `onSessionExpired` to a planner call. The handler emits
+ * a "rebuilding" warning, rebuilds the transcript context from disk, and populates the shared
+ * resumeHolder so the next planner invocation re-injects prior messages. When no transcript is
+ * persisted, emits a fallback warning instead.
+ */
+export function createSessionExpiredHandler(opts: SessionExpiredHandlerOpts): () => Promise<void> {
+  return async () => {
+    emitWarning(opts.callbacks, 'Previous planner conversation expired — rebuilding context from transcript.');
+    await applyRebuiltContext(opts);
+  };
 }
 

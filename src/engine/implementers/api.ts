@@ -1,11 +1,11 @@
-import type { Config, ApiImplementerConfig } from '../../types.js';
+import type { Config, ApiImplementerConfig } from '../../core/types/config-options.js';
 import type { Implementer, ImplementerOptions, RetryOptions } from './types.js';
 import type { InvokeOpts } from './utils.js';
 import { createImplementerBase } from './base.js';
 import { createClient } from '../providers/registry.js';
 import { formatTaskPrompt, formatRetryPrompt, SYSTEM_PREAMBLE } from '../spec/formatter.js';
 import { estimateTokens } from '../spec/token-budget.js';
-import { resolveAutoModel, PROVIDER_CATALOG, isProviderId } from '../../core/providers.js';
+import { resolveAutoModel, PROVIDER_CATALOG, isProviderId } from '../../core/providers/index.js';
 import { assertImplementerKind } from './utils.js';
 import { streamApiCompletion, throwAutoModelError } from '../api-shared.js';
 

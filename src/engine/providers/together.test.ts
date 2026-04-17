@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createTogetherProvider } from './together.js';
-import { setupFetchMock, setupEnvMock } from './testing.js';
+import { setupFetchMock, setupEnvMock } from './test-helpers.js';
 
 describe('createTogetherProvider', () => {
   setupFetchMock();

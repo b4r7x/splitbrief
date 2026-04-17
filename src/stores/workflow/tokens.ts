@@ -1,0 +1,41 @@
+import { createStore, storeBase } from '../create-store.js';
+import type { TokenUsage, TuiEvent } from '../../types.js';
+
+export interface TokensState {
+  localCount: number;
+  escalatedCount: number;
+  tokenUsage: TokenUsage | null;
+}
+
+const initial: TokensState = {
+  localCount: 0,
+  escalatedCount: 0,
+  tokenUsage: null,
+};
+
+const store = createStore<TokensState>(initial);
+
+export const tokensStore = {
+  ...storeBase(store),
+  set: store.set,
+};
+
+export function updateTokens(state: TokensState, event: TuiEvent): TokensState {
+  if (event.type === 'cost-update') {
+    return { ...state, tokenUsage: event.tokenUsage };
+  }
+  if (event.type === 'task-complete') {
+    let { localCount, escalatedCount } = state;
+    if (event.method === 'local') localCount += 1;
+    else if (
+      event.method === 'escalated-intermediate' ||
+      event.method === 'escalated-hint' ||
+      event.method === 'escalated-full'
+    ) {
+      escalatedCount += 1;
+    }
+    if (localCount === state.localCount && escalatedCount === state.escalatedCount) return state;
+    return { ...state, localCount, escalatedCount };
+  }
+  return state;
+}

@@ -1,4 +1,7 @@
-import type { Task, TokenDelta, ClarificationQuestion, RunnerRuntime } from '../../types.js';
+import type { Task } from '../../core/types/state-actions.js';
+import type { TokenDelta } from '../../core/types/summary.js';
+import type { ClarificationQuestion } from '../../core/types/events.js';
+import type { RunnerRuntime } from '../../core/types/runner.js';
 
 export type PlannerCapabilities = {
   /** Planner can emit inline clarification questions during planning. */
@@ -7,8 +10,20 @@ export type PlannerCapabilities = {
   supportsHintEscalation: boolean;
   /** Backend exposes a session handle that can be reused on resume (e.g. Claude Code --session-id). */
   supportsSessionResume: boolean;
-  /** A queued user message can be injected into the live session in parallel with the current turn. */
-  supportsMidStreamInjection: boolean;
+};
+
+/** Preset for session-based conversational planners (Claude Code, Agent SDK, codex). */
+export const CONVERSATIONAL_CAPS: PlannerCapabilities = {
+  supportsConversationalPlanning: true,
+  supportsHintEscalation: true,
+  supportsSessionResume: true,
+};
+
+/** Preset for one-shot API planners (OpenAI-compatible endpoints). */
+export const ONE_SHOT_API_CAPS: PlannerCapabilities = {
+  supportsConversationalPlanning: false,
+  supportsHintEscalation: true,
+  supportsSessionResume: false,
 };
 
 export interface PriorMessage {

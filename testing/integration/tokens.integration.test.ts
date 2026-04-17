@@ -4,7 +4,7 @@ import { withTempDir } from '../helpers/temp-dir.js';
 import { createInitialState } from '../../src/core/state/machine.js';
 import { saveState, loadState } from '../../src/core/state/persistence.js';
 import { calculateCostBreakdown } from '../../src/engine/providers/pricing.js';
-import { formatCost } from '../../src/utils/format.js';
+import { formatCost } from '../../src/utils/format-numbers.js';
 
 describe('Token accumulation integration', () => {
   it('token values survive save/load round-trip', { timeout: 10_000 }, async (t) => {

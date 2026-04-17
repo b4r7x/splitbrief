@@ -1,4 +1,4 @@
-import type { InvokeResult } from '../../types.js';
+import type { InvokeResult } from '../../core/types/runner.js';
 import type { PlannerCallbacks, PlannerCapabilities } from './types.js';
 import type { PlannerBaseConfig } from './base.js';
 import type { Planner } from './types.js';
@@ -6,6 +6,7 @@ import { createPlannerBase } from './base.js';
 import { invokeCommandBasedRunner } from '../runners/command-based.js';
 import { extractQuestionsFromStream } from '../parsers/question-parser.js';
 import { createCommandAvailability } from '../../utils/availability.js';
+import { getChangedFiles } from '../../utils/git.js';
 import type { OutputFormat } from '../../core/types/schemas/enums.js';
 
 export function resolveCapabilities(override: { [K in keyof PlannerCapabilities]?: boolean | undefined } | undefined): PlannerCapabilities {
@@ -13,7 +14,6 @@ export function resolveCapabilities(override: { [K in keyof PlannerCapabilities]
     supportsConversationalPlanning: override?.supportsConversationalPlanning ?? false,
     supportsHintEscalation: override?.supportsHintEscalation ?? false,
     supportsSessionResume: override?.supportsSessionResume ?? false,
-    supportsMidStreamInjection: override?.supportsMidStreamInjection ?? false,
   };
 }
 
@@ -26,7 +26,7 @@ export function createCommandBasedPlanner(
   label: string,
   overrides?: {
     extractsCode?: boolean | undefined;
-    detectChanges?: ((projectDir: string) => Promise<boolean>) | undefined;
+    detectChanges?: ((projectDir: string, before: string[]) => Promise<{ changed: boolean; output: string }>) | undefined;
     readPhaseOutput?: PlannerBaseConfig['readPhaseOutput'] | undefined;
     capabilities?: PlannerCapabilities | undefined;
   },
@@ -42,6 +42,7 @@ export function createCommandBasedPlanner(
     projectDir: string;
     callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion'>;
   }): Promise<InvokeResult> => {
+    const filesBefore = dc ? await getChangedFiles(projectDir) : [];
     const result = await invokeCommandBasedRunner(
       {
         command: config.command,
@@ -49,7 +50,7 @@ export function createCommandBasedPlanner(
         outputFormat: config.outputFormat ?? 'text',
         extractsCode: overrides?.extractsCode ?? true,
         notFoundMessage,
-        ...(dc ? { detectChanges: () => dc(projectDir) } : {}),
+        ...(dc ? { detectChanges: () => dc(projectDir, filesBefore) } : {}),
       },
       prompt,
       projectDir,

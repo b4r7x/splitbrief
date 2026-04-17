@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createImplementerBase, type ImplementerBaseConfig } from './base.js';
 import { makeTask, makeConfig, defaultContext } from '#testing/helpers/fixtures.js';
-import type { TuiEvent } from '../../types.js';
+import type { TuiEvent } from '../../core/types/events.js';
 
 vi.mock('../parsers/response-extractor.js', () => ({
   extractCode: vi.fn(),

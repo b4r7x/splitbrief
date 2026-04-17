@@ -1,4 +1,4 @@
-import type { Config } from '../../types.js';
+import type { Config } from '../../core/types/config-options.js';
 import type { Planner } from '../planners/types.js';
 import type { Implementer } from '../implementers/types.js';
 import type { RunnerKind } from '../../core/types/schemas/enums.js';
@@ -15,8 +15,6 @@ import { createApiImplementer } from '../implementers/api.js';
 import { createShellImplementer } from '../implementers/shell.js';
 import { createAgentImplementer } from '../implementers/agent.js';
 import { createAgentSdkImplementer } from '../implementers/agent-sdk.js';
-
-import { dispatchRunner } from '../../utils/runner-dispatch.js';
 
 const PLANNER_FACTORIES: Record<RunnerKind, (config: Config, initialSessionId?: string | null) => Planner> = {
   cli: (c, initialSessionId) => {
@@ -55,5 +53,10 @@ export function createPlanner(config: Config, initialSessionId?: string | null):
 }
 
 export function createImplementer(config: Config): Implementer {
-  return dispatchRunner(config.implementer.kind, IMPLEMENTER_FACTORIES, 'implementer', config);
+  const factory = IMPLEMENTER_FACTORIES[config.implementer.kind];
+  if (!factory) {
+    const supported = Object.keys(IMPLEMENTER_FACTORIES).join(', ');
+    throw new Error(`Unknown implementer kind: ${config.implementer.kind}. Supported: ${supported}`);
+  }
+  return factory(config);
 }

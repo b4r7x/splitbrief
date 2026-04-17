@@ -15,7 +15,6 @@ const defaultCapabilities: PlannerCapabilities = {
   supportsConversationalPlanning: false,
   supportsHintEscalation: true,
   supportsSessionResume: false,
-  supportsMidStreamInjection: false,
 };
 
 beforeEach(() => {
@@ -154,7 +153,6 @@ describe('createPlannerBase — hintSuccessMode', () => {
         supportsConversationalPlanning: false,
         supportsHintEscalation: false,
         supportsSessionResume: false,
-        supportsMidStreamInjection: false,
       },
     });
 

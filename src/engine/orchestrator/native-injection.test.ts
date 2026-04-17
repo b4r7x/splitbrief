@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { WorkflowState, QueuedMessage } from '../../types.js';
+import type { WorkflowState, QueuedMessage } from '../../core/types/state-actions.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-fixtures.js';
 
@@ -38,45 +38,19 @@ beforeEach(() => {
 });
 
 describe('dispatchNativeInjection', () => {
-  it('does nothing when planner does not support mid-stream injection', async () => {
-    const state = makeResearchingState();
-    const setState = vi.fn();
-    const { callbacks } = makeCallbacks();
-    const planner = makePlanner({
-      capabilities: {
-        supportsConversationalPlanning: false,
-        supportsHintEscalation: false,
-        supportsSessionResume: false,
-        supportsMidStreamInjection: false,
-      },
-    });
-
-    await dispatchNativeInjection(makeMessage(), planner, TEST_PROJECT_DIR, TEST_SESSION_ID, state, setState, callbacks);
-
-    expect(setState).not.toHaveBeenCalled();
-  });
-
   it('does nothing when planner has no injectUserTurn method', async () => {
     const state = makeResearchingState();
     const setState = vi.fn();
     const { callbacks } = makeCallbacks();
-    const planner = makePlanner({
-      capabilities: {
-        supportsConversationalPlanning: false,
-        supportsHintEscalation: false,
-        supportsSessionResume: false,
-        supportsMidStreamInjection: true,
-      },
-      // no injectUserTurn property
-    });
-    delete (planner as { injectUserTurn?: unknown }).injectUserTurn;
+    const planner = makePlanner();
+    // makePlanner() produces a planner without injectUserTurn
 
     await dispatchNativeInjection(makeMessage(), planner, TEST_PROJECT_DIR, TEST_SESSION_ID, state, setState, callbacks);
 
     expect(setState).not.toHaveBeenCalled();
   });
 
-  it('calls injectUserTurn and dispatches MARK_DELIVERED_NATIVE when supported', async () => {
+  it('calls injectUserTurn and dispatches MARK_DELIVERED_NATIVE when injectUserTurn exists', async () => {
     const state = makeResearchingState();
     const setState = vi.fn();
     const { callbacks, events } = makeCallbacks();
@@ -86,7 +60,6 @@ describe('dispatchNativeInjection', () => {
         supportsConversationalPlanning: true,
         supportsHintEscalation: false,
         supportsSessionResume: true,
-        supportsMidStreamInjection: true,
       },
       injectUserTurn,
     });
@@ -110,7 +83,6 @@ describe('dispatchNativeInjection', () => {
         supportsConversationalPlanning: true,
         supportsHintEscalation: false,
         supportsSessionResume: true,
-        supportsMidStreamInjection: true,
       },
       injectUserTurn,
     });
@@ -133,7 +105,6 @@ describe('dispatchNativeInjection', () => {
         supportsConversationalPlanning: true,
         supportsHintEscalation: false,
         supportsSessionResume: true,
-        supportsMidStreamInjection: true,
       },
       injectUserTurn,
     });

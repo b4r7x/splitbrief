@@ -1,4 +1,4 @@
-import { isProviderId } from '../../core/providers.js';
+import { isProviderId } from '../../core/providers/index.js';
 import type { ProviderId } from '../../core/types/schemas/enums.js';
 import { stripVendorPrefix } from '../../core/model-display.js';
 

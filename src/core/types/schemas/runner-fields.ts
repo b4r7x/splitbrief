@@ -1,12 +1,11 @@
 import { z } from 'zod';
-import { CliToolIdSchema, OutputFormatSchema, RUNNER_KINDS } from './enums.js';
+import { CliToolIdSchema, OutputFormatSchema } from './enums.js';
 import type { RunnerKind } from './enums.js';
 
 export const PlannerCapabilitiesSchema = z.object({
   supportsConversationalPlanning: z.boolean(),
   supportsHintEscalation: z.boolean(),
   supportsSessionResume: z.boolean(),
-  supportsMidStreamInjection: z.boolean(),
 }).strict();
 
 export const CliRunnerFields = {
@@ -78,10 +77,4 @@ export function createRunnerConfigSchema<C extends z.ZodRawShape>(commonFields: 
     z.object({ ...RUNNER_DESCRIPTORS.agent.fields, ...commonFields }).strict(),
     z.object({ ...RUNNER_DESCRIPTORS['agent-sdk'].fields, ...commonFields }).strict(),
   ]);
-}
-
-// Validate at startup that RUNNER_DESCRIPTORS covers all runner kinds
-if (RUNNER_KINDS.some(k => !(k in RUNNER_DESCRIPTORS))) {
-  const missing = RUNNER_KINDS.filter(k => !(k in RUNNER_DESCRIPTORS));
-  throw new Error(`RUNNER_DESCRIPTORS missing entries for: ${missing.join(', ')}`);
 }

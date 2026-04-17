@@ -1,5 +1,6 @@
 import type { ClarificationQuestion } from '../../core/types/events.js';
-import { ClarificationQuestionSchema } from '../../core/types/schemas/index.js';
+import { ClarificationQuestionSchema } from '../../core/types/schemas/question.js';
+import { warnError } from '../../utils/warn.js';
 
 const MARKER_PREFIX = '<!-- Q:';
 const MARKER_SUFFIX = ' -->';
@@ -56,7 +57,9 @@ export function extractQuestionsFromStream(text: string): ClarificationQuestion[
       const parsed = JSON.parse(text.substring(jsonStart, afterJson));
       const narrowed = narrowQuestion(parsed);
       if (narrowed) questions.push(narrowed);
-    } catch { /* malformed question marker JSON — skip */ }
+    } catch (err) {
+      warnError('question-parser: malformed marker', err);
+    }
 
     searchFrom = afterJson + MARKER_SUFFIX.length;
   }

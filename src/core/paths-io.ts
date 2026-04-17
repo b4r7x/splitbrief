@@ -4,14 +4,23 @@ import { fileURLToPath } from 'node:url';
 import { DIPTYCH_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE, sessionDir } from './paths.js';
 import { ensureSecureDir, validateSafeIdentifier, SECURE_FILE_MODE } from '../utils/fs.js';
 
-const DIPTYCH_VERSION: string = (() => {
+let cachedVersion: string | null = null;
+
+function readPackageVersion(): string {
   try {
     const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-    return JSON.parse(readFileSync(join(root, 'package.json'), 'utf-8')).version;
+    const parsed = JSON.parse(readFileSync(join(root, 'package.json'), 'utf-8'));
+    return typeof parsed?.version === 'string' ? parsed.version : '0.0.0';
   } catch {
     return '0.0.0';
   }
-})();
+}
+
+function getDiptychVersion(): string {
+  if (cachedVersion !== null) return cachedVersion;
+  cachedVersion = readPackageVersion();
+  return cachedVersion;
+}
 
 export type SpecMetadata = {
   plannerTool: string;
@@ -32,7 +41,7 @@ export function buildSpecFrontmatter(opts: SpecMetadata): string {
     : `implementer: ${opts.implementerTool}`;
   const lines = [
     '---',
-    `generated_by: diptych v${DIPTYCH_VERSION}`,
+    `generated_by: diptych v${getDiptychVersion()}`,
     plannerLine,
     implementerLine,
     `mode: ${opts.mode}`,

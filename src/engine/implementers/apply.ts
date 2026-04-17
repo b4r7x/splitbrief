@@ -1,8 +1,8 @@
 import { readFile, writeFile, access, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import type { Task } from '../../types.js';
+import type { Task } from '../../core/types/state-actions.js';
 import { validateTaskPath } from '../../core/paths-io.js';
-import { toErrorMessage } from '../../utils/format.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 
 const SEARCH_REPLACE_LINE_THRESHOLD = 200;
 

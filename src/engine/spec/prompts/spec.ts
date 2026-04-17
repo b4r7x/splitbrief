@@ -1,19 +1,16 @@
-import { buildPrompt } from './shared.js';
+import { buildPrompt, instructionsSection, requiredSectionsSection } from './shared.js';
 
 export function buildSpecPrompt(feature: string, researchOutput: string): string {
   return buildPrompt({
     title: 'Write Feature Specification',
     intro: 'You are writing a detailed specification for a new feature. Use the research findings below to ground your spec in the actual codebase.',
     sections: [
-      { heading: 'Feature Request', body: feature },
+      { heading: 'Specification', body: feature },
       { heading: 'Research Findings', body: researchOutput },
-      {
-        heading: 'Instructions',
-        body: 'Write a complete `spec.md` document that defines **what** to build (not how). The spec should be detailed enough that a developer unfamiliar with the feature request could implement it correctly.',
-      },
-      {
-        heading: 'Required Sections',
-        body: `### Overview
+      instructionsSection(
+        'Write a complete `spec.md` document that defines **what** to build (not how). The spec should be detailed enough that a developer unfamiliar with the feature request could implement it correctly.',
+      ),
+      requiredSectionsSection(`### Overview
 One-paragraph summary of the feature and its purpose.
 
 ### User Scenarios
@@ -38,8 +35,7 @@ Detailed requirements organized by area:
 Performance, security, compatibility, and other quality constraints relevant to this feature.
 
 ### Out of Scope
-Explicitly list what this feature does NOT include to prevent scope creep.`,
-      },
+Explicitly list what this feature does NOT include to prevent scope creep.`),
     ],
     output: 'Write the complete spec.md content. Use clear, precise language. Reference specific files and patterns from the research findings where relevant.',
   });

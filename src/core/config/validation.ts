@@ -1,6 +1,6 @@
 import { ConfigSchema } from '../types/schemas/config.js';
-import { PROVIDER_CATALOG, isProviderId } from '../providers.js';
-import type { Config, PlannerConfig, ImplementerConfig } from '../types/index.js';
+import { PROVIDER_CATALOG, isProviderId } from '../providers/index.js';
+import type { Config, PlannerConfig, ImplementerConfig } from '../types/config-options.js';
 import { getRunnerDisplayName, getRunnerApiKey } from './runner-config.js';
 
 export interface ConfigError {

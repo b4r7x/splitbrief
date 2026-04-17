@@ -1,10 +1,10 @@
 import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
-import type { PlannerDetection, ProviderDetection } from '../../core/types/index.js';
-import type { DetectedModel } from '../../core/types/config.js';
+import type { PlannerDetection, ProviderDetection } from '../../core/types/config-options.js';
+import type { DetectedModel } from '../../core/types/config-options.js';
 import { PLANNER_TOOL_IDS, PROVIDER_IDS } from '../../core/types/schemas/enums.js';
-import { getDiptychPath } from '../../utils/fs.js';
+import { getDiptychPath } from '../../core/paths.js';
 
 const CACHE_FILENAME = 'detection-cache.json';
 const DEFAULT_TTL_MS = 5 * 60 * 1000;

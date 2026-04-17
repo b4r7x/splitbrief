@@ -1,7 +1,8 @@
-import type { InvokeResult } from '../types.js';
+import type { InvokeResult } from '../core/types/runner.js';
 import { accumulateUsage } from './streaming/output-parsers.js';
 import { toTokenDelta } from './streaming/token-utils.js';
-import { createChangeDetector } from './implementers/utils.js';
+import { createChangeDetector } from './change-detection.js';
+import { createSessionResumeState } from './session-expiry.js';
 
 export const PLANNER_ALLOWED_TOOLS = ['Read', 'Glob', 'Grep', 'Write'] as const;
 export const IMPLEMENTER_ALLOWED_TOOLS = ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'] as const;
@@ -147,39 +148,25 @@ export interface AgentSdkBackend {
   detectChanges?: (projectDir: string, before: string[]) => Promise<{ changed: boolean; output: string }>;
 }
 
-const SESSION_RESUME_FAILED_PATTERNS = [
-  'session not found',
-  'session_not_found',
-  'invalid session',
-  'expired session',
-  'no such session',
-  'could not resume',
-];
-
-function isSessionResumeError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
-  return SESSION_RESUME_FAILED_PATTERNS.some(p => msg.includes(p));
-}
-
 export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBackend {
   const permissionMode = opts.permissionMode ?? 'acceptEdits';
-  // The SDK records session files at ~/.claude/projects/<encoded-cwd>/<id>.jsonl. If the SDK is
-  // called with a different cwd than the run that produced the id, resume silently yields a
-  // fresh session. Pin cwd to the projectDir passed into invoke() to keep this consistent.
-  let currentSessionId: string | null = opts.initialSessionId ?? null;
+  // SDK keys session files by cwd; passing a mismatched cwd silently starts a fresh session.
+  let pendingExpiredCallback: ((id: string) => void) | undefined;
+  const session = createSessionResumeState({
+    onExpired: (id) => pendingExpiredCallback?.(id),
+  });
+  session.capture(opts.initialSessionId ?? null);
 
   const backend: AgentSdkBackend = {
     async invoke({ prompt, projectDir, model, onOutput, onSessionId, onSessionExpired }) {
       const { query } = await loadSdk();
 
-      // If an explicit apiKey is configured and the env var is not yet set, apply it for this call.
-      // The Agent SDK `query()` does not accept an apiKey option directly, so env mutation is
-      // necessary. This is not safe under concurrent invocations — only one workflow runs at a time.
+      // SDK has no apiKey option; env mutation only safe because one workflow runs at a time.
       const savedKey = process.env['ANTHROPIC_API_KEY'];
       const apiKey = opts.apiKey;
       if (apiKey && !savedKey) process.env['ANTHROPIC_API_KEY'] = apiKey;
 
-      const captureSession = (id: string) => { currentSessionId = id; onSessionId?.(id); };
+      const captureSession = (id: string) => { session.capture(id); onSessionId?.(id); };
 
       const runQuery = async (resumeId: string | null) => {
         const options: SdkQueryOptions['options'] = {
@@ -189,21 +176,20 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
         return processStream(query({ prompt, options }), onOutput, captureSession);
       };
 
+      pendingExpiredCallback = onSessionExpired;
       try {
         try {
-          const result = await runQuery(currentSessionId);
+          const result = await runQuery(session.getResumeId());
           return { text: result.text, usage: result.usage };
         } catch (err) {
-          if (currentSessionId && isSessionResumeError(err)) {
-            const expiredId = currentSessionId;
-            currentSessionId = null;
-            onSessionExpired?.(expiredId);
+          if (session.handleResumeError(err)) {
             const retry = await runQuery(null);
             return { text: retry.text, usage: retry.usage };
           }
           throw err;
         }
       } finally {
+        pendingExpiredCallback = undefined;
         if (apiKey && !savedKey) delete process.env['ANTHROPIC_API_KEY'];
       }
     },

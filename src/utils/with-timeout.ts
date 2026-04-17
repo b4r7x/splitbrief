@@ -8,9 +8,7 @@ export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-// Intentional class — `Error` subclasses are the one allowed exception to the
-// project's zero-class rule, since `instanceof Error` is the standard pattern
-// for distinguishing error types in catch blocks.
+// Error subclasses are the one allowed exception to the project's zero-class rule.
 export class IdleTimeoutError extends Error {
   readonly isTimeout = true;
   constructor(message = 'Idle timeout') {

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { ProviderDef, ProviderOverrides } from './types.js';
-import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers.js';
-import { createMetadataProvider, DEFAULT_MODEL_FALLBACK } from './client.js';
+import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers/index.js';
+import { createMetadataProvider } from './client.js';
 
 const LmStudioModelSchema = z.object({
   id: z.string(),
@@ -19,7 +19,7 @@ export function createLmStudioProvider(overrides?: ProviderOverrides): ProviderD
       apiKeyDefault: 'lm-studio',
       isLocal: true,
       schema: LmStudioModelSchema,
-      fallback: DEFAULT_MODEL_FALLBACK,
+      fallback: (id) => ({ id }),
       contextLength: (m) => m.max_context_length ?? null,
     },
     overrides,

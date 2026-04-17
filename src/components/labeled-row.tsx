@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
-import { useTheme } from '../ui/theme.js';
+import { useTheme } from './theme.js';
 
 export interface LabeledRowProps {
   label: string;

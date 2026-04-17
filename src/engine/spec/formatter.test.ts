@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { formatTaskPrompt, formatRetryPrompt } from './formatter.js';
 import { estimateTokens, truncateMiddle, computeTokenBudget } from './token-budget.js';
 import { makeTask as makeBaseTask, defaultContext } from '#testing/helpers/fixtures.js';
-import type { Task } from '../../types.js';
+import type { Task } from '../../core/types/state-actions.js';
 
 const context = { ...defaultContext, testCommand: 'node --test' };
 

@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import type { Task, TaskId } from '../../types.js';
-import { taskId } from '../../types.js';
+import type { Task, TaskId } from '../../core/types/state-actions.js';
+import { taskId } from '../../core/types/state-actions.js';
 import { topoSort } from '../../core/state/topo-sort.js';
 import { parseSimpleYamlFrontmatter, extractFrontmatter } from '../../utils/frontmatter.js';
 import { extractFirstFencedBlock } from '../parsers/code-patterns.js';

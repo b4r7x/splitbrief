@@ -44,7 +44,6 @@ function diffLines(oldLines: string[], newLines: string[]): Change[] {
   const m = oldLines.length;
   const n = newLines.length;
 
-  // Myers-like LCS via DP to get edit script
   const stride = n + 1;
   const dp = new Int32Array((m + 1) * stride);
   const lookup = (i: number, j: number): number => dp[i * stride + j] ?? 0;

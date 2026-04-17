@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { getConfigValue, applyEdits } from './access.js';
-import type { Config } from '../types/index.js';
+import type { Config } from '../types/config-options.js';
 
 const mockConfig = {
   version: 2 as const,

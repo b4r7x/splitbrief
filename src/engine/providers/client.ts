@@ -1,10 +1,10 @@
 import OpenAI from 'openai';
 import { z } from 'zod';
 import type { DetectedModel, ProviderDef, ProviderDefWithMetadata, ProviderOverrides } from './types.js';
-import { toErrorMessage } from '../../utils/format.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import { warnError } from '../../utils/warn.js';
 
-export interface ProviderShell {
+interface ProviderShell {
   base: { name: string; baseURL: string; isLocal: boolean };
   trackError(message: string | undefined): void;
   getLastError(): string | undefined;
@@ -60,10 +60,6 @@ export function createClientFromProvider(provider: ProviderDef): OpenAI {
   return new OpenAI({ baseURL: provider.baseURL, apiKey: provider.apiKey() });
 }
 
-export function stripV1Suffix(url: string): string {
-  return url.replace(/\/v1\/?$/, '');
-}
-
 export async function fetchModelList<T>(options: {
   endpoint: string;
   apiKey?: string | undefined;
@@ -103,8 +99,6 @@ export async function fetchModelList<T>(options: {
   }
 }
 
-export const DEFAULT_MODEL_FALLBACK = (id: string): { id: string } => ({ id });
-
 export interface MetadataProviderOpts<TRaw extends { id: string }> {
   name: string;
   defaultBaseURL: string;
@@ -114,8 +108,15 @@ export interface MetadataProviderOpts<TRaw extends { id: string }> {
   schema: z.ZodType<TRaw>;
   fallback: (id: string) => TRaw;
   toDetected?: (raw: TRaw) => DetectedModel;
-  contextLength: (raw: TRaw) => number | null;
+  contextLength?: (raw: TRaw) => number | null;
   modelsUrl?: (baseURL: string) => string;
+  /**
+   * Per-request header factory. When provided, the returned headers replace the
+   * default bearer auth. Use for providers with non-bearer auth (e.g. Anthropic x-api-key).
+   */
+  headers?: (apiKey: string) => Record<string, string>;
+  /** Custom extractor for providers whose list shape is not OpenAI's `data: [...]`. */
+  extractModels?: (data: unknown) => TRaw[] | null;
 }
 
 export function createMetadataProvider<TRaw extends { id: string }>(
@@ -131,7 +132,7 @@ export function createMetadataProvider<TRaw extends { id: string }>(
     return opts.modelsUrl ? opts.modelsUrl(baseURL) : `${baseURL}/models`;
   }
 
-  function extractModels(data: unknown): TRaw[] | null {
+  function defaultExtractModels(data: unknown): TRaw[] | null {
     if (!isOpenAIModelList(data)) return null;
     return extractOpenAIModelList(data, (m) => {
       const parsed = opts.schema.safeParse(m);
@@ -139,18 +140,22 @@ export function createMetadataProvider<TRaw extends { id: string }>(
     });
   }
 
+  const extractModels = opts.extractModels ?? defaultExtractModels;
+
   async function fetchModels(): Promise<TRaw[]> {
     const key = apiKey();
     if (!opts.isLocal && !key) return [];
+    const headers = opts.headers ? opts.headers(key) : undefined;
     return fetchModelList({
       endpoint: getUrl(),
-      apiKey: !opts.isLocal && key ? key : undefined,
+      ...(headers ? { headers } : { apiKey: !opts.isLocal && key ? key : undefined }),
       onError: shell.trackError,
       extractModels,
     });
   }
 
   const toDetected = opts.toDetected ?? ((m: TRaw) => ({ id: m.id }));
+  const getContextLength = opts.contextLength ?? (() => null);
 
   return {
     name: opts.name,
@@ -173,7 +178,7 @@ export function createMetadataProvider<TRaw extends { id: string }>(
       try {
         const models = await fetchModels();
         const entry = models.find((m) => m.id === model);
-        return entry ? opts.contextLength(entry) : null;
+        return entry ? getContextLength(entry) : null;
       } catch (error) {
         warnError(`detectContextLength(${opts.name})`, error);
         return null;

@@ -1,4 +1,4 @@
-import { buildPrompt } from './shared.js';
+import { buildPrompt, instructionsSection } from './shared.js';
 
 const REVIEW_INSTRUCTIONS = `Review the implementation diff against every acceptance criterion and requirement in the spec. Be thorough but fair  -  minor style differences are acceptable; missing functionality or incorrect behavior is not.`;
 
@@ -34,7 +34,7 @@ export function buildFinalReviewPrompt(spec: string, diff: string): string {
     sections: [
       { heading: 'Specification', body: spec },
       { heading: 'Implementation Diff', body: '```diff\n' + diff + '\n```' },
-      { heading: 'Instructions', body: REVIEW_INSTRUCTIONS },
+      instructionsSection(REVIEW_INSTRUCTIONS),
       { heading: 'Review Checklist', body: REVIEW_CHECKLIST },
       { heading: 'Output Format', body: REVIEW_OUTPUT },
     ],

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createOpenRouterProvider, parsePrice, toDetectedModel } from './openrouter.js';
-import { setupFetchMock, setupEnvMock } from './testing.js';
+import { setupFetchMock, setupEnvMock } from './test-helpers.js';
 
 describe('parsePrice', () => {
   it('returns 0 for undefined', () => {

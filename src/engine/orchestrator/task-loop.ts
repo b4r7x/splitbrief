@@ -1,6 +1,8 @@
-import type { Task, TaskId, WorkflowState, OrchestratorCallbacks, TaskTokenUsage } from '../../types.js';
+import type { Task, TaskId, WorkflowState } from '../../core/types/state-actions.js';
+import type { OrchestratorCallbacks } from '../../core/types/events.js';
+import type { TaskTokenUsage } from '../../core/types/summary.js';
 import { hasExternalChanges } from '../../utils/git.js';
-import { labelError } from '../../utils/format.js';
+import { labelError } from '../../utils/format-errors.js';
 import { getFailedTaskIds, getSkippedTaskIds, getEscalatedTaskIds } from '../../core/state/selectors.js';
 
 import type { WorkflowContext } from './types.js';
@@ -11,7 +13,7 @@ import { transitionAndSave } from './helpers.js';
 import { enforceBudget } from './budget.js';
 import { getRunnerDisplayName } from '../../core/config/runner-config.js';
 
-export function hasDependencyFailed(task: Task, failedTasks: TaskId[], skippedTasks: TaskId[]): boolean {
+function hasDependencyFailed(task: Task, failedTasks: TaskId[], skippedTasks: TaskId[]): boolean {
   const blocked = new Set<string>([...failedTasks, ...skippedTasks]);
   return task.dependsOn.some((dep) => blocked.has(dep));
 }

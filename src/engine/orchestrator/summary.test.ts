@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { buildSummary, calculateTaskCost } from './summary.js';
 import { calculateCostBreakdown } from '../providers/pricing.js';
 import type { BuildSummaryState } from './summary.js';
-import { taskId } from '../../core/types/workflow.js';
+import { taskId } from '../../core/types/state-actions.js';
 import { makeUsage, makeTask } from '#testing/helpers/fixtures.js';
 
 beforeEach(() => {

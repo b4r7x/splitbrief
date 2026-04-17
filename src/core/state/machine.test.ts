@@ -6,7 +6,7 @@ import {
   getFailedTaskIds,
   getSkippedTaskIds,
 } from './selectors.js';
-import type { WorkflowState } from '../types/index.js';
+import type { WorkflowState } from '../types/state-actions.js';
 import { makeTask } from '#testing/helpers/fixtures.js';
 
 describe('createInitialState', () => {

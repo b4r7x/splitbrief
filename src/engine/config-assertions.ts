@@ -1,4 +1,4 @@
-import type { Config } from '../types.js';
+import type { Config } from '../core/types/config-options.js';
 import type {
   AgentPlannerConfig,
   AgentSdkPlannerConfig,

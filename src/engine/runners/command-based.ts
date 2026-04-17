@@ -2,32 +2,29 @@ import type { OutputFormat } from '../../core/types/schemas/enums.js';
 import type { TokenDelta } from '../../core/types/summary.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { spawnWithShellFallback } from '../../utils/process.js';
-import { CommandTimeoutError, CommandNotFoundError } from '../../utils/process-errors.js';
+import {
+  CommandTimeoutError,
+  CommandNotFoundError,
+  formatCommandError,
+} from '../../utils/process-errors.js';
 import { extractCode } from '../parsers/response-extractor.js';
 
 export interface CommandBasedOptions {
   command: string;
   args?: string[] | undefined;
   outputFormat?: OutputFormat | undefined;
-  /** If true, parse stdout for code blocks. If false, use detectChanges callback */
   extractsCode: boolean;
-  /** Callback to detect changes when extractsCode is false */
-  detectChanges?: (() => Promise<boolean>) | undefined;
-  /** If true, substitute {prompt} placeholder in command/args. If false, use stdin */
+  detectChanges?: (() => Promise<{ changed: boolean; output: string }>) | undefined;
   supportPromptPlaceholder?: boolean | undefined;
-  /** Timeout in ms. If set, uses spawnWithShellFallback instead of spawnAndCollect */
   timeout?: number | undefined;
   notFoundMessage?: string | undefined;
 }
 
 export interface CommandBasedResult {
-  /** Extracted code (when extractsCode: true) */
   code?: string;
-  /** Whether changes were detected (when extractsCode: false) */
   hasChanges?: boolean;
   stdout: string;
   stderr: string;
-  /** Token usage forwarded from the parser (when available) */
   usage?: TokenDelta | null;
 }
 
@@ -71,7 +68,7 @@ export async function invokeCommandBasedRunner(
     useStdin = substituted.useStdin;
   }
 
-  const notFoundMessage = opts.notFoundMessage ?? `Command not found: ${opts.command}`;
+  const notFoundMessage = opts.notFoundMessage ?? formatCommandError('not-found', { command: opts.command });
   let stdout: string;
   let stderr = '';
   let usage: TokenDelta | null = null;
@@ -90,7 +87,7 @@ export async function invokeCommandBasedRunner(
 
     if (result.timedOut) {
       throw new CommandTimeoutError(
-        `Command timed out after ${Math.round(opts.timeout / 1000)}s`,
+        formatCommandError('timeout', { command: 'Command', label: 'Command', timeoutMs: opts.timeout }),
         result.output,
       );
     }
@@ -129,8 +126,8 @@ export async function invokeCommandBasedRunner(
   }
 
   if (opts.detectChanges) {
-    const hasChanges = await opts.detectChanges();
-    return { hasChanges, stdout, stderr, usage };
+    const { changed } = await opts.detectChanges();
+    return { hasChanges: changed, stdout, stderr, usage };
   }
 
   return { stdout, stderr, usage };

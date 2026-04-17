@@ -1,28 +1,31 @@
 import type { ReactNode } from 'react';
 import { useApp } from 'ink';
-import { createCommands, toPaletteItems, executeSlashCommand } from './core/commands/index.js';
-import { useGlobalKeys } from './hooks/use-global-keys.js';
+import { createCommands, toPaletteItems, executeSlashCommand } from './core/slash-commands/index.js';
+import { useAppKeys } from './hooks/use-app-keys.js';
+import { useMouseScroll } from './features/workflow/hooks/use-mouse-scroll.js';
 import { Layout } from './layout.js';
-import { ThemeProvider, getTheme } from './ui/theme.js';
-import { routerStore } from './stores/router.js';
-import { configStore } from './stores/config.js';
-import { overlayStore } from './stores/overlay.js';
-import { feedbackStore } from './stores/feedback.js';
-import { workflowStore } from './stores/workflow.js';
+import { ThemeProvider, getTheme } from './components/theme.js';
+import { routerStore } from './stores/navigation/router.js';
+import { configStore } from './stores/project/config.js';
+import { overlayStore } from './stores/ui/overlay.js';
+import { feedbackStore } from './stores/ui/feedback.js';
+import { lifecycleStore } from './stores/workflow/lifecycle.js';
+import { requestRewind, requestClearQueue } from './features/workflow/handlers.js';
 import { useStores } from './stores/use-stores.js';
 import { refreshDetection } from './engine/detection/index.js';
-import { HomeScreen } from './screens/home.js';
-import { WorkflowScreen } from './screens/workflow.js';
-import { SummaryScreen } from './screens/summary.js';
-import { SetupScreen } from './screens/setup.js';
+import { HomeScreen } from './features/home/screen.js';
+import { WorkflowScreen } from './features/workflow/screen.js';
+import { SummaryScreen } from './features/summary/screen.js';
+import { SetupScreen } from './features/setup/screen.js';
 import { HelpOverlay } from './components/overlays/help-overlay.js';
 import { CommandPalette } from './components/overlays/command-palette.js';
-import { SkillsPicker } from './components/overlays/skills-picker/skills-picker.js';
-import { SessionsPicker } from './components/overlays/sessions-picker/sessions-picker.js';
-import { SettingsOverlay } from './components/overlays/settings-overlay/settings-overlay.js';
+import { SkillsPicker } from './features/skills/picker.js';
+import { SessionsPicker } from './features/sessions/picker.js';
+import { SettingsOverlay } from './features/settings/overlay.js';
 import { ModeSelector } from './components/overlays/mode-selector.js';
-import { ToolModelPicker } from './components/overlays/tool-model-picker/picker.js';
+import { ToolModelPicker } from './features/tool-picker/picker.js';
 import type { Screen, OverlayType, SlashCommandDef, CommandContext, CommandPaletteItem } from './types.js';
+import { assertNever } from './utils/type-guards.js';
 
 export function App() {
   const [{ screen }, { active: overlayActive }] = useStores(routerStore, overlayStore);
@@ -32,12 +35,16 @@ export function App() {
 
   const ctx: CommandContext = {
     openOverlay: overlayStore.open,
-    navigate: routerStore.navigate,
+    navigate: (to) => routerStore.navigate({ to }),
     quit: exit,
     setWorkflowMode: (mode) => {
       const current = configStore.get().config;
       if (!current) return false;
-      return configStore.save({ ...current, workflow: { ...current.workflow, mode } });
+      const result = configStore.save({ ...current, workflow: { ...current.workflow, mode } });
+      if (!result.ok && result.error) {
+        feedbackStore.setError(`Failed to save config: ${result.error.message}`);
+      }
+      return result.ok;
     },
     setFeedbackMessage: feedbackStore.setMessage,
     setFeedbackError: feedbackStore.setError,
@@ -45,22 +52,23 @@ export function App() {
       const projectDir = configStore.get().projectDir;
       await refreshDetection(projectDir);
     },
-    getCurrentPhase: () => workflowStore.get().phase,
+    getCurrentPhase: () => lifecycleStore.get().phase,
     requestRewind: (target, comment) => {
       const base = { target } as const;
-      return workflowStore.requestRewind(comment ? { ...base, comment } : base);
+      return requestRewind(comment ? { ...base, comment } : base);
     },
     requestTaskRedo: (taskId) =>
-      workflowStore.requestRewind({ target: 'task', taskId }),
-    getQueueDepth: () => workflowStore.get().queueDepth,
-    clearQueue: () => workflowStore.requestClearQueue(),
+      requestRewind({ target: 'task', taskId }),
+    getQueueDepth: () => lifecycleStore.get().queueDepth,
+    clearQueue: () => requestClearQueue(),
   };
   const commands = createCommands(ctx);
   const paletteItems = toPaletteItems(commands);
   const handleSlashCommand = (raw: string, from: Screen) =>
     executeSlashCommand(commands, raw, from, feedbackStore.setError);
 
-  useGlobalKeys({ exit });
+  useAppKeys({ exit });
+  useMouseScroll();
 
   return (
     <ThemeProvider theme={theme}>
@@ -101,10 +109,8 @@ function renderScreen({ screen, commands, onSlash }: {
       );
     case 'setup':
       return <SetupScreen />;
-    default: {
-      screen satisfies never;
-      return null;
-    }
+    default:
+      return assertNever(screen);
   }
 }
 
@@ -133,9 +139,7 @@ function renderOverlay({ active, screen, commands, paletteItems }: {
       return <ToolModelPicker role="implementer" />;
     case 'sessions':
       return <SessionsPicker />;
-    default: {
-      active satisfies never;
-      return null;
-    }
+    default:
+      return assertNever(active);
   }
 }

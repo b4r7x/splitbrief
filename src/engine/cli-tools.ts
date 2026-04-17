@@ -1,6 +1,8 @@
 import type { ParsedLine } from '../core/types/runner.js';
 import { parseJsonlLine, parseOpencodeLine, parseTextLine } from './streaming/output-parsers.js';
-import type { CliPlannerTool, InvokeResult, TokenDelta } from '../types.js';
+import type { CliToolId } from '../core/types/config-options.js';
+import type { InvokeResult } from '../core/types/runner.js';
+import type { TokenDelta } from '../core/types/summary.js';
 
 export interface CliToolPlanner {
   buildArgs(opts: { prompt: string; model?: string | undefined; projectDir: string; mode: 'plan' | 'escalate'; sessionId?: string | null | undefined }): string[];
@@ -23,7 +25,7 @@ export interface CliToolEntry {
   implementer?: CliToolImplementer;
 }
 
-export const CLI_TOOLS: Record<CliPlannerTool, CliToolEntry> = {
+export const CLI_TOOLS: Record<CliToolId, CliToolEntry> = {
   'claude-code': {
     command: 'claude',
     description: 'Claude Code CLI',

@@ -9,7 +9,7 @@ import { registerStatusCommand } from './cli/commands/status.js';
 import { registerResumeCommand } from './cli/commands/resume.js';
 import { registerMigrateCommand } from './cli/commands/migrate.js';
 import { isCliError } from './cli/errors.js';
-import { toErrorMessage } from './utils/format.js';
+import { toErrorMessage } from './utils/format-errors.js';
 
 const program = new Command();
 

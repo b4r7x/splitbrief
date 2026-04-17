@@ -1,4 +1,4 @@
-import type { InvokeResult } from '../types.js';
+import type { InvokeResult } from '../core/types/runner.js';
 import type OpenAI from 'openai';
 import { asStreamClient, streamCompletion } from './streaming/openai-stream.js';
 import { streamAnthropicCompletion } from './streaming/anthropic-stream.js';

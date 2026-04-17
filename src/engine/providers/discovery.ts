@@ -1,9 +1,10 @@
 import { z } from 'zod';
-import type { DetectedModel } from '../../core/types/config.js';
+import type { DetectedModel } from '../../core/types/config-options.js';
 import type { CliToolId } from '../../core/types/schemas/enums.js';
 import { runCommand } from '../../utils/process.js';
 import { fetchJsonWithTimeout } from './client.js';
 import { buildPricingFields } from './metadata.js';
+import { warnError } from '../../utils/warn.js';
 import { DISCOVERY_SUBPROCESS_TIMEOUT_MS, DISCOVERY_HTTP_TIMEOUT_MS } from '../constants.js';
 
 const KILO_MODELS_URL = 'https://api.kilo.ai/api/gateway/models';
@@ -38,20 +39,17 @@ async function discoverSubprocessModels(command: string, args: string[]): Promis
       timeout: DISCOVERY_SUBPROCESS_TIMEOUT_MS,
     });
     return parseSubprocessLines(stdout).map((id) => ({ id }));
-  } catch {
+  } catch (err) {
+    if (!isMissingBinary(err)) warnError(`discoverSubprocessModels(${command})`, err);
     return [];
   }
 }
 
-export function discoverAiderModels(): Promise<DetectedModel[]> {
-  return discoverSubprocessModels('aider', ['--list-models', '']);
+function isMissingBinary(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && 'code' in err && (err as { code: unknown }).code === 'ENOENT';
 }
 
-export function discoverOpencodeModels(): Promise<DetectedModel[]> {
-  return discoverSubprocessModels('opencode', ['models']);
-}
-
-export async function discoverKiloModels(): Promise<DetectedModel[]> {
+async function discoverKilo(): Promise<DetectedModel[]> {
   try {
     const json = await fetchJsonWithTimeout(KILO_MODELS_URL, DISCOVERY_HTTP_TIMEOUT_MS);
     const parsed = KiloModelsResponseSchema.safeParse(json);
@@ -62,25 +60,17 @@ export async function discoverKiloModels(): Promise<DetectedModel[]> {
       if (m.context_length !== undefined) model.contextLength = m.context_length;
       return { ...model, ...buildPricingFields(m.pricing?.prompt, m.pricing?.completion) };
     });
-  } catch {
+  } catch (err) {
+    warnError('discoverKilo', err);
     return [];
-  }
-}
-
-export function discoverCliToolModels(toolId: CliToolId): Promise<DetectedModel[]> {
-  switch (toolId) {
-    case 'aider': return discoverAiderModels();
-    case 'opencode': return discoverOpencodeModels();
-    case 'kilo-code': return discoverKiloModels();
-    default: return Promise.resolve([]);
   }
 }
 
 export async function discoverAllCliTools(): Promise<Partial<Record<CliToolId, DetectedModel[]>>> {
   const [aider, opencode, kilo] = await Promise.all([
-    discoverAiderModels(),
-    discoverOpencodeModels(),
-    discoverKiloModels(),
+    discoverSubprocessModels('aider', ['--list-models', '']),
+    discoverSubprocessModels('opencode', ['models']),
+    discoverKilo(),
   ]);
 
   const result: Partial<Record<CliToolId, DetectedModel[]>> = {};

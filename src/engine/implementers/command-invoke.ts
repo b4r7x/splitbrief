@@ -1,4 +1,4 @@
-import type { Config } from '../../types.js';
+import type { Config } from '../../core/types/config-options.js';
 import type { OutputFormat } from '../../core/types/schemas/enums.js';
 import type { Implementer } from './types.js';
 import type { InvokeOpts } from './utils.js';

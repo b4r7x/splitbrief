@@ -3,8 +3,8 @@ import { readFileSync, existsSync, writeFileSync, mkdirSync, appendFileSync } fr
 import { join } from 'node:path';
 import { saveState, loadState, appendEvent, appendMessage } from './persistence.js';
 import { createInitialState } from './machine.js';
-import { taskId } from '../types/workflow.js';
-import type { OrchestratorEvent } from '../types/index.js';
+import { taskId } from '../types/state-actions.js';
+import type { OrchestratorEvent } from '../types/events.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
 

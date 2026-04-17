@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 import YAML from 'yaml';
-import type { Config } from '../types/index.js';
-import { resolveDefaultApiBase, KNOWN_PROVIDER_BASE_URLS } from '../providers.js';
+import type { Config } from '../types/config-options.js';
+import { resolveDefaultApiBase, KNOWN_PROVIDER_BASE_URLS } from '../providers/index.js';
 import { validateConfig } from './validation.js';
 import { fromYaml, toYaml } from './transforms.js';
-import { DIPTYCH_DIR, CONFIG_FILE } from '../paths.js';
+import { DIPTYCH_DIR, CONFIG_FILE, getDiptychPath } from '../paths.js';
 import { migrateConfig } from './migration.js';
-import { writeSecureFile, checkConfigPermissions, getDiptychPath } from '../../utils/fs.js';
+import { writeSecureFile, checkConfigPermissions } from '../../utils/fs.js';
 import { ensureGitignore } from '../../utils/git.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 
@@ -48,26 +48,26 @@ export function createDefaultConfig(): Config {
 
 function mergeRunner(
   migrated: Record<string, unknown> | null,
-  defaults: Config['implementer'],
+  defaults: Record<string, unknown>,
 ): Record<string, unknown> {
-  const d = defaults as unknown as Record<string, unknown>;
-  if (!migrated) return d;
+  if (!migrated) return defaults;
   // When kinds differ, the migrated config is already self-contained (from
   // v1→v2 migration or explicitly set in v2). Merging would leak kind-specific
   // fields (e.g. provider/apiBase from an api default into a cli config).
-  if (migrated.kind !== undefined && migrated.kind !== d.kind) return migrated;
-  return { ...d, ...migrated };
+  if (migrated.kind !== undefined && migrated.kind !== defaults.kind) return migrated;
+  return { ...defaults, ...migrated };
 }
 
 function mergeWithDefaults(migrated: Record<string, unknown>): Record<string, unknown> {
   const defaults = createDefaultConfig();
+  const implementerDefaults: Record<string, unknown> = { ...defaults.implementer };
 
   return {
     version: 2,
     planner: migrated['planner'] ?? defaults.planner,
     implementer: mergeRunner(
       narrowRecord(migrated['implementer']),
-      defaults.implementer,
+      implementerDefaults,
     ),
     validation: narrowRecord(migrated['validation'])
       ? { ...defaults.validation, ...narrowRecord(migrated['validation']) }

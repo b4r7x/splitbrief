@@ -26,7 +26,7 @@ vi.mock('./migrate.js', () => ({ maybeMigrate: vi.fn().mockResolvedValue(undefin
 vi.mock('../init-stores.js', () => ({ initStores: (dir: string, opts: unknown) => initStoresMock(dir, opts) }));
 vi.mock('../../app.js', () => ({ App: vi.fn() }));
 vi.mock('../render.js', () => ({ renderApp: (el: unknown, fs: unknown) => renderAppMock(el, fs) }));
-vi.mock('../../stores/router.js', () => ({ routerStore: { init: vi.fn() } }));
+vi.mock('../../stores/navigation/router.js', () => ({ routerStore: { init: vi.fn() } }));
 
 const { registerStartCommand } = await import('./start.js');
 

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import YAML from 'yaml';
 import { createDefaultConfig, loadConfig } from './loading.js';
 import { toYaml } from './transforms.js';
-import type { PlannerConfig } from '../types/index.js';
+import type { PlannerConfig } from '../types/config-options.js';
 import { DIPTYCH_DIR } from '../paths.js';
 
 function expectCli(p: PlannerConfig): Extract<PlannerConfig, { kind: 'cli' }> {

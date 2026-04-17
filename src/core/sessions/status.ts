@@ -1,5 +1,7 @@
-import type { Session, TaskCompletionMethod } from '../types/index.js';
+import type { Session } from '../types/app.js';
+import type { TaskCompletionMethod } from '../types/summary.js';
 import type { ThemeColors } from '../types/theme.js';
+import { assertNever } from '../../utils/type-guards.js';
 
 export interface SessionStatusDisplay {
   icon: string;
@@ -22,7 +24,7 @@ export function getMethodDisplay(
     case 'escalated-full': return { text: 'escalated', color: theme.error };
     case 'failed': return { text: 'fail', color: theme.error };
     case 'skipped': return { text: 'skip', color: theme.textDim };
-    default: { const _exhaustive: never = method; return _exhaustive; }
+    default: return assertNever(method);
   }
 }
 
@@ -37,9 +39,7 @@ export function getSessionStatusDisplay(
       return { icon: '\u25cb', color: theme.warning };
     case 'failed':
       return { icon: '\u2717', color: theme.error };
-    default: {
-      const _exhaustive: never = status;
-      return _exhaustive;
-    }
+    default:
+      return assertNever(status);
   }
 }

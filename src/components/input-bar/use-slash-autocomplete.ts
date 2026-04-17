@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { useInput } from 'ink';
 import { Fzf } from 'fzf';
 import type { Screen, SlashCommandDef } from '../../types.js';
-import { inputHistoryStore } from '../../stores/input-history.js';
-import { workflowStore } from '../../stores/workflow.js';
+import { inputHistoryStore } from '../../stores/ui/input-history.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 
 function matchesSlashQuery(cmd: SlashCommandDef, query: string): boolean {
   if (cmd.name.toLowerCase().startsWith(query)) return true;
@@ -50,7 +50,7 @@ export function useSlashAutocomplete({
 }: UseSlashAutocompleteOptions): UseSlashAutocompleteResult {
   const [inputKey, setInputKey] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const phase = workflowStore.use(s => s.phase);
+  const phase = lifecycleStore.use(s => s.phase);
 
   const slashMode = value.startsWith('/');
   const query = '/' + value.slice(1).toLowerCase();
@@ -76,13 +76,13 @@ export function useSlashAutocomplete({
         const selected = filtered[effectiveSelectedIndex];
         if (selected) {
           if (currentScreen === 'home') {
-            inputHistoryStore.push('home', selected.name);
+            inputHistoryStore.push(selected.name);
           }
           onSlashCommand(selected.name);
           setValue('');
         } else if (fuzzyMatch) {
           if (currentScreen === 'home') {
-            inputHistoryStore.push('home', fuzzyMatch.name);
+            inputHistoryStore.push(fuzzyMatch.name);
           }
           onSlashCommand(fuzzyMatch.name);
           setValue('');

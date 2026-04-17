@@ -22,7 +22,7 @@ vi.mock('../../core/state/selectors.js', () => ({
   getEscalatedTaskIds: () => [],
   getFailedTaskIds: () => [],
 }));
-vi.mock('../../core/providers.js', () => ({ getProviderDisplayName: (id: string) => id }));
+vi.mock('../../core/providers/index.js', () => ({ getProviderDisplayName: (id: string) => id }));
 vi.mock('../../core/model-display.js', () => ({ formatModelName: (m: string) => m }));
 vi.mock('../workflow.js', () => ({ resolveProjectDir: (d?: string) => d ?? '/cwd' }));
 

@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { WorkflowState } from '../../types.js';
+import type { WorkflowState } from '../../core/types/state-actions.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { getSkippedTaskIds } from '../../core/state/selectors.js';
-import { taskId } from '../../core/types/workflow.js';
 import { makeTask, makeConfig, defaultContext } from '#testing/helpers/fixtures.js';
 import { makeCallbacks, makePlanner, makeImplementer, passingResults } from '#testing/helpers/orchestrator-fixtures.js';
 
@@ -21,11 +20,17 @@ vi.mock('../../core/state/persistence.js', () => ({
   appendEvent: vi.fn(),
 }));
 
-import { hasDependencyFailed, runTaskLoop } from './task-loop.js';
+import { runTaskLoop } from './task-loop.js';
 import { runValidationWithEvents } from './validator.js';
 import { commitChanges } from '../../utils/git.js';
+import type { WorkflowSinks } from './types.js';
 
 const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' };
+
+const TEST_SINKS: WorkflowSinks = {
+  setAbortHandler: () => {},
+  setQueueHandler: () => {},
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -42,28 +47,6 @@ function makeImplState(tasks: ReturnType<typeof makeTask>[]): WorkflowState {
   return state;
 }
 
-describe('hasDependencyFailed', () => {
-  it('returns true when a dependency is in failed list', () => {
-    const task = makeTask({ dependsOn: ['T001'] });
-    expect(hasDependencyFailed(task, [taskId('T001')], [])).toBe(true);
-  });
-
-  it('returns true when a dependency is in skipped list', () => {
-    const task = makeTask({ dependsOn: ['T001'] });
-    expect(hasDependencyFailed(task, [], [taskId('T001')])).toBe(true);
-  });
-
-  it('returns false when no dependencies are blocked', () => {
-    const task = makeTask({ dependsOn: ['T001'] });
-    expect(hasDependencyFailed(task, [], [])).toBe(false);
-  });
-
-  it('returns false when task has no dependencies', () => {
-    const task = makeTask({ dependsOn: [] });
-    expect(hasDependencyFailed(task, [taskId('T099')], [taskId('T098')])).toBe(false);
-  });
-});
-
 describe('runTaskLoop', () => {
   it('task with failed dependency is skipped and emits task-skipped event', async () => {
     const t1 = makeTask({ id: 'T001', status: 'failed' });
@@ -79,7 +62,7 @@ describe('runTaskLoop', () => {
     const { callbacks, events } = makeCallbacks();
 
     const result = await runTaskLoop({
-      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer: makeImplementer(), metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer: makeImplementer(), metadata: TEST_METADATA, sessionId: 'test-session', sinks: TEST_SINKS },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
@@ -102,7 +85,7 @@ describe('runTaskLoop', () => {
     const { callbacks, events } = makeCallbacks();
 
     await runTaskLoop({
-      wctx: { projectDir: '/tmp/proj', config: makeConfig({ workflow: { commitStrategy: 'per-task' } }), callbacks, context: defaultContext, planner: makePlanner(), implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: '/tmp/proj', config: makeConfig({ workflow: { commitStrategy: 'per-task' } }), callbacks, context: defaultContext, planner: makePlanner(), implementer, metadata: TEST_METADATA, sessionId: 'test-session', sinks: TEST_SINKS },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
@@ -129,7 +112,7 @@ describe('runTaskLoop', () => {
     const { callbacks } = makeCallbacks();
 
     const result = await runTaskLoop({
-      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer, metadata: TEST_METADATA, sessionId: 'test-session', sinks: TEST_SINKS },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
@@ -152,7 +135,7 @@ describe('runTaskLoop', () => {
     callbacks.onExternalChanges = onExternalChanges;
 
     const result = await runTaskLoop({
-      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer: makeImplementer(), metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer: makeImplementer(), metadata: TEST_METADATA, sessionId: 'test-session', sinks: TEST_SINKS },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),

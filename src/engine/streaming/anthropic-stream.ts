@@ -1,9 +1,9 @@
-import type { TokenDelta, InvokeResult } from '../../types.js';
+import type { TokenDelta } from '../../core/types/summary.js';
+import type { InvokeResult } from '../../core/types/runner.js';
 import { formatErrorWithHint } from '../../utils/error-hints.js';
 import { redactSecrets } from '../../utils/redact.js';
 import { IdleTimeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
-import { stripV1Suffix } from '../providers/client.js';
-import { ANTHROPIC_API_VERSION } from '../providers/anthropic.js';
+import { stripV1Suffix, ANTHROPIC_API_VERSION } from '../http.js';
 import { narrowRecord, assertNever } from '../../utils/type-guards.js';
 import { STREAM_TIMEOUT_MS, throwMappedError } from './stream-errors.js';
 
@@ -127,15 +127,21 @@ async function* readSseEvents(stream: ReadableStream<Uint8Array>, signal?: Abort
   }
 }
 
-const ANTHROPIC_EVENT_TYPES: readonly AnthropicEventType[] = [
+const ANTHROPIC_EVENT_TYPES = [
   'message_start', 'content_block_start', 'content_block_delta',
   'content_block_stop', 'message_delta', 'message_stop', 'ping', 'error',
-];
+] as const satisfies readonly AnthropicEventType[];
+
+const ANTHROPIC_EVENT_TYPE_SET: ReadonlySet<string> = new Set(ANTHROPIC_EVENT_TYPES);
+
+function isAnthropicEventType(t: string): t is AnthropicEventType {
+  return ANTHROPIC_EVENT_TYPE_SET.has(t);
+}
 
 function getEventType(payload: Record<string, unknown>): AnthropicEventType | null {
   const t = payload.type;
   if (typeof t !== 'string') return null;
-  return (ANTHROPIC_EVENT_TYPES as readonly string[]).includes(t) ? (t as AnthropicEventType) : null;
+  return isAnthropicEventType(t) ? t : null;
 }
 
 function getMessageUsage(payload: Record<string, unknown>): Partial<TokenDelta> {

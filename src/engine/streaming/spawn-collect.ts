@@ -1,5 +1,8 @@
-import type { InvokeResult, OutputFormat, ParsedLine, TokenDelta } from '../../types.js';
+import type { OutputFormat } from '../../core/types/config-options.js';
+import type { InvokeResult, ParsedLine } from '../../core/types/runner.js';
+import type { TokenDelta } from '../../core/types/summary.js';
 import { spawnWithStdin } from '../../utils/process.js';
+import { formatCommandError } from '../../utils/process-errors.js';
 import { accumulateUsage, getLineParser } from './output-parsers.js';
 
 interface SpawnAndCollectOptions {
@@ -28,7 +31,7 @@ export async function spawnAndCollect(opts: SpawnAndCollectOptions): Promise<Inv
     args: opts.args,
     cwd: opts.cwd,
     stdin: opts.stdin,
-    notFoundMessage: opts.notFoundMessage ?? `Command not found: ${opts.command}`,
+    notFoundMessage: opts.notFoundMessage ?? formatCommandError('not-found', { command: opts.command }),
     onStderr: opts.onStderr,
     signal: opts.signal,
     onLine(line) {

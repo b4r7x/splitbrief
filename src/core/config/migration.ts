@@ -1,6 +1,6 @@
 import { CLI_TOOL_IDS, RUNNER_KINDS } from '../types/schemas/enums.js';
 import { getRunnerKindMeta } from '../types/schemas/runner-fields.js';
-import { resolveDefaultApiBase } from '../providers.js';
+import { resolveDefaultApiBase } from '../providers/index.js';
 import { narrowRecord, includes } from '../../utils/type-guards.js';
 import type { RunnerKind } from '../types/schemas/enums.js';
 

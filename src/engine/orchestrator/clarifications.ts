@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { WorkflowState, OrchestratorCallbacks, ClarificationQuestion, QueuedMessage } from '../../types.js';
+import type { WorkflowState, QueuedMessage } from '../../core/types/state-actions.js';
+import type { OrchestratorCallbacks, ClarificationQuestion } from '../../core/types/events.js';
 import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE } from '../../core/paths.js';
 import { emit } from './events.js';

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { isLivePhase, isResumable } from './phases.js';
 import { createInitialState } from './state/machine.js';
-import type { WorkflowState } from './types/index.js';
+import type { WorkflowState } from './types/state-actions.js';
 
 describe('isLivePhase', () => {
   it('returns true for implementing', () => {

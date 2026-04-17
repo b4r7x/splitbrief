@@ -35,18 +35,42 @@ Returns a `Store<T>` with five methods:
 
 Each domain store wraps the factory with named actions. Raw `set` is never exported.
 
+Directory layout is grouped by concern. **Zero barrels** (`index.ts` files) — see [`NO-BARRELS.md`](./NO-BARRELS.md) for rationale. Consumers import directly from the store file.
+
 ```
 src/stores/
-├── create-store.ts       # Factory (42 LOC)
-├── overlay.ts            # Active overlay panel
-├── router.ts             # Screen routing + transition guards
-├── feedback.ts           # Info/error feedback messages (replaces old error store)
-├── config.ts             # Config from disk + CLI overrides
-├── detection.ts          # Provider/CLI tool detection state
-├── skills.ts             # Available + selected skills
-├── sessions.ts           # Session history
-├── conversation-scroll.ts # Scroll position + expanded diffs for conversation flow
-└── workflow.ts           # Event log, phase, task counters, sidebar map
+├── create-store.ts           # Factory
+├── use-stores.ts             # Multi-store Proxy-tracked hook
+├── ui/                       # Ephemeral screen chrome
+│   ├── controls.ts           # Sidebar visibility + input mode (cross-tree flags)
+│   ├── terminal-size.ts      # Terminal dimensions + responsive layout
+│   ├── overlay.ts            # Active overlay panel + stack
+│   ├── feedback.ts           # Info/error feedback messages
+│   ├── input-history.ts      # Command history (persisted to disk)
+│   └── input-height.ts       # Input bar rendered height
+├── workflow/                 # State that only exists during a workflow run
+│   ├── workflow.ts           # Event log, phase, task counters
+│   ├── reducers.ts           # Pure reducer functions for workflow updates
+│   ├── abort.ts              # Abort pending flag + auto-clear timer
+│   ├── conversation-scroll.ts # Scroll position + expanded diffs
+│   └── review.ts             # Review file path + scroll
+├── navigation/               # Screen routing
+│   └── router.ts             # Route state + transition guards
+├── project/                  # Loaded-from-disk state tied to projectDir
+│   ├── config.ts
+│   ├── sessions.ts
+│   ├── skills.ts
+│   └── detection.ts
+└── discovery/                # External-world reads with TTL cache
+    └── model-cache.ts
+```
+
+**Import pattern:**
+
+```typescript
+import { workflowStore } from '../stores/workflow/workflow.js';
+import { controlsStore } from '../stores/ui/controls.js';
+import { configStore } from '../stores/project/config.js';
 ```
 
 **Pattern:**
@@ -138,17 +162,41 @@ routerStore.navigate('workflow', { feature: 'auth' });
 
 ## Store Inventory
 
-| Store | State shape | Key actions |
-|-------|-------------|-------------|
-| `overlayStore` | `{ active: OverlayType, exclusive: boolean }` | `open()`, `close()`, `setExclusive()` |
-| `routerStore` | `RouteData` (discriminated union on `screen`) | `navigate()`, `init()` — with transition guards |
-| `feedbackStore` | `{ message: string \| null, kind: 'info' \| 'error' }` | `setMessage()`, `setError()`, `clear()` |
-| `configStore` | `{ config: Config \| null, projectDir, overrides }` | `load()`, `reload()`, `useConfig()` |
-| `detectionStore` | `{ planners, implementers, loading }` | `load()` |
-| `skillsStore` | `{ available: SkillMeta[], selected: Set<string> }` | `discover()`, `setSelected()` |
-| `sessionsStore` | `{ sessions: Session[] }` | `load()` |
-| `conversationScrollStore` | `{ scrollOffset, expandedDiffs }` | `scrollToBottom()`, `toggleDiff()`, `reset()` |
-| `workflowStore` | `{ events, phase, currentTask, totalTasks, taskMap, ... }` | `addEvent()`, `setReviewFile()`, `reset()` |
+| Store | Path | State shape | Key actions |
+|-------|------|-------------|-------------|
+| `controlsStore` | `ui/controls.ts` | `{ sidebarVisible: boolean, inputMode: 'normal' \| 'review' \| 'question' }` | `toggleSidebar()`, `setSidebar()`, `setInputMode()`, `clearInputMode()` |
+| `overlayStore` | `ui/overlay.ts` | `{ active, exclusive, focus?, stack[] }` | `open()`, `close()`, `setExclusive()` |
+| `feedbackStore` | `ui/feedback.ts` | `{ message: string \| null, isError: boolean }` | `setMessage()`, `setError()`, `reset()` |
+| `terminalSizeStore` | `ui/terminal-size.ts` | `{ cols, rows, isSmall }` | `set()`, `subscribeToResize()` |
+| `inputHistoryStore` | `ui/input-history.ts` | `{ entries: string[] }` | `push()`, `load()` |
+| `inputHeightStore` | `ui/input-height.ts` | `{ rows: number }` | `setRows()` |
+| `eventsStore` | `workflow/events.ts` | `{ events: TuiEvent[] }` | internal writes via `actions.addEvent` |
+| `tasksStore` | `workflow/tasks.ts` | `{ currentTask, totalTasks, taskCompletionTimes, taskMap, tasks }` | internal writes via `actions.addEvent` |
+| `tokensStore` | `workflow/tokens.ts` | `{ localCount, escalatedCount, tokenUsage }` | internal writes via `actions.addEvent` |
+| `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, cancelled, queueDepth }` | internal writes via `actions.addEvent` |
+| `abortStore` | `workflow/abort.ts` | `{ pending: boolean }` | `markPending()` (2s auto-clear), `clear()` |
+| `conversationScrollStore` | `workflow/conversation-scroll.ts` | `{ scrollOffset, expandedDiffs, ... }` | `scrollUp()`, `scrollDown()`, `scrollToBottom()`, `toggleDiff()` |
+| `reviewStore` | `workflow/review.ts` | `{ filePath, scrollOffset, lineCount }` | `setReviewFile()`, `setScrollOffset()`, `clearReview()` |
+| `routerStore` | `navigation/router.ts` | `RouteData` (discriminated union on `screen`) | `navigate()`, `init()` — with transition guards |
+| `configStore` | `project/config.ts` | `{ config: Config \| null, projectDir, overrides }` | `load()`, `save()`, `useConfig()` |
+| `sessionsStore` | `project/sessions.ts` | `{ sessions, allSessions }` | `load()`, `loadAll()` |
+| `skillsStore` | `project/skills.ts` | `{ available: SkillMeta[], selected: Set<string> }` | `discover()`, `setSelected()` |
+| `detectionStore` | `project/detection.ts` | `{ planners, implementers }` | `setDetection()` |
+| `modelCacheStore` | `discovery/model-cache.ts` | `{ providers: Map, modelsDevCatalog, ... }` | `setProviderModels()`, `invalidateAll()` |
+
+### Workflow actions module
+
+`workflow/actions.ts` is not a store — it's a namespace module holding composite operations that orchestrate writes across the four workflow sub-stores. All engine and UI code that mutates workflow state goes through this module; direct `.set()` on sub-stores is reserved for test helpers.
+
+| Export | Purpose |
+|---|---|
+| `addEvent(event: TuiEvent)` | Single ingress for engine events. Reads `lifecycleStore.cancelled` as a gate; short-circuits for `cost-update`; otherwise fans out (events → tasks → tokens → lifecycle). Strictly synchronous. |
+| `markCancelled(): boolean` | Writes terminal `workflow-cancelled` event to `eventsStore`, sets `lifecycleStore.cancelled`. Idempotent. |
+| `resetWorkflow(resume?)` | Calls `abortStore.clear()` first, then resets all 4 sub-stores; applies resume state if provided. |
+| `getSections()` / `useSections()` | Memoized derivation of conversation sections from `eventsStore.events`. Cache lives file-local. |
+| `WorkflowViewState` | Type alias `EventsState & TasksState & TokensState & LifecycleState` — exported for any consumer that needs the flattened shape. |
+
+**Reducers live with their owner sub-store** — `events.ts` exports `mergeEvent` + `MAX_EVENTS`, `tasks.ts` exports `updateTaskMap` + `updateTaskCounts`, `tokens.ts` exports `updateTokens`, `lifecycle.ts` exports `updatePhase` + `updateQueueDepth`. They are pure functions and can be tested directly.
 
 ## Design Decisions
 

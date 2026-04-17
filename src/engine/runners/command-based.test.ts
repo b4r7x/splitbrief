@@ -5,7 +5,7 @@ describe('invokeCommandBasedRunner', () => {
   it('writes prompt to stdin when no placeholder present', async () => {
     // Use 'cat' to echo stdin back
     const result = await invokeCommandBasedRunner(
-      { command: 'cat', extractsCode: false, detectChanges: async () => true },
+      { command: 'cat', extractsCode: false, detectChanges: async () => ({ changed: true, output: '' }) },
       'test prompt',
       process.cwd(),
     );
@@ -18,7 +18,7 @@ describe('invokeCommandBasedRunner', () => {
         command: 'echo',
         args: ['{prompt}'],
         extractsCode: false,
-        detectChanges: async () => true,
+        detectChanges: async () => ({ changed: true, output: '' }),
         supportPromptPlaceholder: true,
       },
       'hello world',
@@ -34,7 +34,7 @@ describe('invokeCommandBasedRunner', () => {
         command: 'sh',
         args: ['-c', 'echo "{prompt}"'],
         extractsCode: false,
-        detectChanges: async () => true,
+        detectChanges: async () => ({ changed: true, output: '' }),
         supportPromptPlaceholder: true,
       },
       'substituted text',
@@ -50,7 +50,7 @@ describe('invokeCommandBasedRunner', () => {
         command: 'cat',
         args: [], // no placeholder
         extractsCode: false,
-        detectChanges: async () => true,
+        detectChanges: async () => ({ changed: true, output: '' }),
         supportPromptPlaceholder: false,
       },
       'stdin content',
@@ -80,7 +80,7 @@ describe('invokeCommandBasedRunner', () => {
   });
 
   it('calls detectChanges when extractsCode is false', async () => {
-    const detectChanges = vi.fn().mockResolvedValue(true);
+    const detectChanges = vi.fn().mockResolvedValue({ changed: true, output: '' });
     const result = await invokeCommandBasedRunner(
       { command: 'echo', args: ['done'], extractsCode: false, detectChanges },
       '',
@@ -91,7 +91,7 @@ describe('invokeCommandBasedRunner', () => {
   });
 
   it('returns hasChanges: false when detectChanges returns false', async () => {
-    const detectChanges = vi.fn().mockResolvedValue(false);
+    const detectChanges = vi.fn().mockResolvedValue({ changed: false, output: 'no changes' });
     const result = await invokeCommandBasedRunner(
       { command: 'echo', args: ['done'], extractsCode: false, detectChanges },
       '',

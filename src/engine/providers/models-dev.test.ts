@@ -4,7 +4,7 @@ import {
   getModelsForProvider,
   type ModelsDevCatalog,
 } from './models-dev.js';
-import { setupFetchMock } from './testing.js';
+import { setupFetchMock } from './test-helpers.js';
 
 const FIXTURE: ModelsDevCatalog = {
   anthropic: {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveModelCatalog } from './model-catalog.js';
-import { modelCacheStore } from '../../stores/model-cache.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 
 describe('resolveModelCatalog', () => {
   beforeEach(() => {

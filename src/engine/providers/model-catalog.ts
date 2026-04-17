@@ -1,6 +1,6 @@
-import type { DetectedModel } from '../../core/types/config.js';
+import type { DetectedModel } from '../../core/types/config-options.js';
 import type { ProviderId } from '../../core/types/schemas/enums.js';
-import { isProviderId, isProviderLocal } from '../../core/providers.js';
+import { isProviderId, isProviderLocal } from '../../core/providers/index.js';
 import type { KnownModel } from '../../core/providers/known-models.js';
 import {
   NULL_CACHE,
@@ -11,38 +11,75 @@ import {
   lookupRuntimeModel,
   type ModelCacheAccessor,
 } from './model-resolution.js';
-import { isApiPricedProvider, getPricingMode, mergeModelMetadata, buildComparableKeys, type ResolvedModelCatalogEntry } from './model-utils.js';
+import { isApiPricedProvider, getPricingMode, type PricingMode } from './pricing-resolver.js';
+import { buildComparableKeys } from './model-parsing.js';
 
-export type { ModelCacheAccessor, ResolvedModelCatalogEntry } from './model-utils.js';
+export type { ModelCacheAccessor } from './model-resolution.js';
+
+export interface ResolvedModelCatalogEntry extends DetectedModel {
+  id: string;
+  isDefault?: boolean;
+  isDetected?: boolean;
+  source: 'models-dev' | 'runtime' | 'bundled-fallback';
+  pricingMode: PricingMode;
+}
+
+function mergeModelMetadata(
+  providerId: ProviderId,
+  base: ResolvedModelCatalogEntry,
+  runtime: DetectedModel | undefined,
+  modelsDev: DetectedModel | undefined,
+): ResolvedModelCatalogEntry {
+  const apiPriced = isApiPricedProvider(providerId);
+  const { pricingInput: seedIn, pricingOutput: seedOut, isFree: seedFree, ...seedRest } = base;
+  const contextLength = modelsDev?.contextLength ?? runtime?.contextLength ?? base.contextLength;
+  const pricingInput = modelsDev?.pricingInput ?? runtime?.pricingInput ?? seedIn;
+  const pricingOutput = modelsDev?.pricingOutput ?? runtime?.pricingOutput ?? seedOut;
+  const isFree = modelsDev?.isFree ?? runtime?.isFree ?? seedFree;
+  const isDetected = base.isDetected ?? !!runtime;
+  const releaseDate = modelsDev?.releaseDate ?? runtime?.releaseDate ?? base.releaseDate;
+
+  return {
+    ...seedRest,
+    source: modelsDev
+      ? 'models-dev'
+      : base.source === 'models-dev'
+        ? 'models-dev'
+        : runtime
+          ? 'runtime'
+          : base.source,
+    ...(contextLength !== undefined && { contextLength }),
+    ...(apiPriced && pricingInput !== undefined && { pricingInput }),
+    ...(apiPriced && pricingOutput !== undefined && { pricingOutput }),
+    ...(apiPriced && isFree !== undefined && { isFree }),
+    ...(isDetected !== undefined && { isDetected }),
+    ...(releaseDate !== undefined && { releaseDate }),
+  };
+}
 
 function toBundledEntry(providerId: ProviderId, entry: KnownModel, cache: ModelCacheAccessor): ResolvedModelCatalogEntry {
+  const apiPriced = isApiPricedProvider(providerId);
   const base: ResolvedModelCatalogEntry = {
     id: entry.name,
     source: 'bundled-fallback',
     pricingMode: getPricingMode(providerId),
     ...(entry.isDefault !== undefined && { isDefault: entry.isDefault }),
     ...(entry.contextLength !== undefined && { contextLength: entry.contextLength }),
-    ...(entry.pricingInput !== undefined && { pricingInput: entry.pricingInput }),
-    ...(entry.pricingOutput !== undefined && { pricingOutput: entry.pricingOutput }),
-    ...(entry.isFree !== undefined && { isFree: entry.isFree }),
+    ...(apiPriced && entry.pricingInput !== undefined && { pricingInput: entry.pricingInput }),
+    ...(apiPriced && entry.pricingOutput !== undefined && { pricingOutput: entry.pricingOutput }),
+    ...(apiPriced && entry.isFree !== undefined && { isFree: entry.isFree }),
   };
-
-  if (!isApiPricedProvider(providerId)) {
-    delete base.pricingInput;
-    delete base.pricingOutput;
-    delete base.isFree;
-  }
 
   return mergeModelMetadata(
     providerId,
     base,
     undefined,
     entry.catalogModelId ? findModelMetadata(entry.catalogProvider ?? providerId, entry.catalogModelId, cache) ?? undefined : undefined,
-  ) ?? base;
+  );
 }
 
 function toRuntimeEntry(providerId: ProviderId, entry: DetectedModel, cache: ModelCacheAccessor): ResolvedModelCatalogEntry {
-  const result = mergeModelMetadata(
+  return mergeModelMetadata(
     providerId,
     {
       id: entry.id,
@@ -53,13 +90,10 @@ function toRuntimeEntry(providerId: ProviderId, entry: DetectedModel, cache: Mod
     entry,
     isApiPricedProvider(providerId) ? findModelMetadata(providerId, entry.id, cache) ?? undefined : undefined,
   );
-  // mergeModelMetadata returns undefined only when base, runtime, and modelsDev are all undefined.
-  // Here base is always defined, so the result is always defined.
-  return result ?? { id: entry.id, source: 'runtime', pricingMode: getPricingMode(providerId), isDetected: true };
 }
 
 function toModelsDevEntry(providerId: ProviderId, entry: DetectedModel, cache: ModelCacheAccessor): ResolvedModelCatalogEntry {
-  const result = mergeModelMetadata(
+  return mergeModelMetadata(
     providerId,
     {
       id: entry.id,
@@ -69,13 +103,8 @@ function toModelsDevEntry(providerId: ProviderId, entry: DetectedModel, cache: M
     lookupRuntimeModel(providerId, entry.id, cache) ?? undefined,
     entry,
   );
-  return result ?? { id: entry.id, source: 'models-dev', pricingMode: getPricingMode(providerId) };
 }
 
-/**
- * Merges bundled, runtime, and models-dev catalog entries, deduplicating by model ID.
- * Uses a pre-computed normalized-key index for O(n) lookups instead of O(n²) linear scans.
- */
 function mergeCatalogEntries(
   providerId: ProviderId,
   bundled: ResolvedModelCatalogEntry[],
@@ -83,7 +112,6 @@ function mergeCatalogEntries(
   modelsDev: ResolvedModelCatalogEntry[],
 ): ResolvedModelCatalogEntry[] {
   const byId = new Map<string, ResolvedModelCatalogEntry>();
-  // Maps each normalized key → canonical entry ID stored in byId
   const keyIndex = new Map<string, string>();
 
   const setEntry = (entry: ResolvedModelCatalogEntry) => {
@@ -108,7 +136,7 @@ function mergeCatalogEntries(
       },
       entry.source === 'runtime' ? entry : undefined,
       entry.source === 'models-dev' ? entry : undefined,
-    ) ?? existing;
+    );
     const mergedIsDefault = existing.isDefault ?? entry.isDefault;
     const mergedIsDetected = existing.isDetected || entry.isDetected;
     if (mergedIsDefault !== undefined) merged.isDefault = mergedIsDefault;
@@ -116,7 +144,6 @@ function mergeCatalogEntries(
 
     byId.delete(canonicalId);
     byId.set(merged.id, merged);
-    // Remap all keys that pointed to old canonical id to the new merged id
     for (const [k, v] of keyIndex) {
       if (v === canonicalId) keyIndex.set(k, merged.id);
     }

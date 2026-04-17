@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatContextLength } from '../../utils/format.js';
-import { formatPrice } from './metadata.js';
+import { formatContextLength } from '../../utils/format-numbers.js';
 
 describe('formatContextLength', () => {
   it('returns empty string for undefined', () => {
@@ -33,39 +32,5 @@ describe('formatContextLength', () => {
 
   it('formats 1.5 million with decimal', () => {
     expect(formatContextLength(1500000)).toBe('1.5M');
-  });
-});
-
-describe('formatPrice', () => {
-  it('returns empty string for undefined', () => {
-    expect(formatPrice(undefined)).toBe('');
-  });
-
-  it('returns FREE for 0', () => {
-    expect(formatPrice(0)).toBe('FREE');
-  });
-
-  it('formats standard price with 2 decimals', () => {
-    expect(formatPrice(2.5)).toBe('$2.5/1M');
-  });
-
-  it('formats small price with 4 decimals', () => {
-    expect(formatPrice(0.001)).toBe('$0.0010/1M');
-  });
-
-  it('formats sub-dollar price with 2 decimals', () => {
-    expect(formatPrice(0.15)).toBe('$0.15/1M');
-  });
-
-  it('formats integer price without decimals', () => {
-    expect(formatPrice(5)).toBe('$5/1M');
-  });
-
-  it('formats large price with decimals', () => {
-    expect(formatPrice(15.5)).toBe('$15.5/1M');
-  });
-
-  it('formats 75 as integer', () => {
-    expect(formatPrice(75)).toBe('$75/1M');
   });
 });

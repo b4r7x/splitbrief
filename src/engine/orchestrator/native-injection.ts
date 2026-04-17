@@ -1,4 +1,5 @@
-import type { QueuedMessage, WorkflowState, OrchestratorCallbacks } from '../../types.js';
+import type { QueuedMessage, WorkflowState } from '../../core/types/state-actions.js';
+import type { OrchestratorCallbacks } from '../../core/types/events.js';
 import type { Planner } from '../planners/types.js';
 import { transitionAndSave } from './helpers.js';
 import { emit } from './events.js';
@@ -12,7 +13,6 @@ export async function dispatchNativeInjection(
   setState: (s: WorkflowState) => void,
   callbacks: OrchestratorCallbacks,
 ): Promise<void> {
-  if (!planner.capabilities.supportsMidStreamInjection) return;
   if (!planner.injectUserTurn) return;
 
   try {
