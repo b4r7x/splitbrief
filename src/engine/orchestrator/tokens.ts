@@ -1,4 +1,5 @@
-import type { Task, TaskId, WorkflowState, TokenUsage, TokenDelta, TaskTokenUsage } from '../../types.js';
+import type { Task, TaskId, WorkflowState } from '../../core/types/state-actions.js';
+import type { TokenUsage, TokenDelta, TaskTokenUsage } from '../../core/types/summary.js';
 import { emit } from './events.js';
 
 export type UsageCategory = 'planner' | 'implementer' | 'escalation';
@@ -48,7 +49,7 @@ export function emitTaskTokens(projectDir: string, sessionId: string, state: Wor
   });
 }
 
-type BuildAndRecordUsageOptions = {
+type RecordTaskUsageOptions = {
   task: Task;
   method: TaskTokenUsage['method'];
   tokensBefore: TokenUsage;
@@ -62,7 +63,7 @@ type BuildAndRecordUsageOptions = {
   model?: string;
 };
 
-export function buildAndRecordUsage(opts: BuildAndRecordUsageOptions): void {
+export function recordTaskUsage(opts: RecordTaskUsageOptions): void {
   const { task, method, tokensBefore, currentUsage, projectDir, sessionId, state, taskBreakdowns, retryCount, tool, model } = opts;
   const delta = tokenDelta(tokensBefore, currentUsage);
   const usage: TaskTokenUsage = {

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { TokenUsage, OrchestratorCallbacks } from '../../types.js';
+import type { TokenUsage } from '../../core/types/summary.js';
+import type { OrchestratorCallbacks } from '../../core/types/events.js';
 import { checkBudget, getCurrentCost, enforceBudget } from './budget.js';
 
 const zeroUsage: TokenUsage = {
@@ -98,7 +99,6 @@ describe('getCurrentCost', () => {
       totalTasks: 1,
       escalatedCount: 0,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'ollama',
     });
     expect(cost).toBeGreaterThan(0);
@@ -137,14 +137,12 @@ describe('enforceBudget', () => {
       ...baseOpts,
       tokenUsage: usage,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
     });
     const budget = cost / 0.85; // make sure we're at ~85%
 
     const result = await enforceBudget({
       ...baseOpts,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
       tokenUsage: usage,
       maxBudget: budget,
       callbacks,
@@ -168,14 +166,12 @@ describe('enforceBudget', () => {
       ...baseOpts,
       tokenUsage: usage,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
     });
     const budget = cost / 0.85;
 
     const result = await enforceBudget({
       ...baseOpts,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
       tokenUsage: usage,
       maxBudget: budget,
       callbacks,
@@ -198,14 +194,12 @@ describe('enforceBudget', () => {
       ...baseOpts,
       tokenUsage: usage,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
     });
     const budget = cost * 0.5; // budget well below actual cost
 
     const result = await enforceBudget({
       ...baseOpts,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
       tokenUsage: usage,
       maxBudget: budget,
       callbacks,
@@ -230,14 +224,12 @@ describe('enforceBudget', () => {
       ...baseOpts,
       tokenUsage: usage,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
     });
     const budget = cost * 0.5;
 
     const result = await enforceBudget({
       ...baseOpts,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
       tokenUsage: usage,
       maxBudget: budget,
       callbacks,
@@ -260,14 +252,12 @@ describe('enforceBudget', () => {
       ...baseOpts,
       tokenUsage: usage,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
     });
     const budget = cost * 0.5;
 
     const result = await enforceBudget({
       ...baseOpts,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
       tokenUsage: usage,
       maxBudget: budget,
       callbacks,

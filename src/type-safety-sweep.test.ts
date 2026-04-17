@@ -44,7 +44,7 @@ const SANCTIONED: readonly string[] = [
   'src/utils/type-guards.ts',
   'src/stores/create-store.ts',
   'src/stores/use-stores.ts',
-  'src/core/types/workflow.ts',
+  'src/core/types/state-actions.ts',
   'src/core/types/schemas/task.ts',
   'src/type-safety-sweep.test.ts',
 ];
@@ -63,64 +63,24 @@ type Allowance = { file: string; lineSubstring: string };
 
 // `as <UpperCase>` casts that are irreducible at their respective boundaries:
 const AS_CAST_ALLOWLIST: readonly Allowance[] = [
-  // Config defaults merging — double-cast through unknown is the only way to
-  // convert a typed Config into Record<string,unknown> for the merge helper.
-  { file: 'src/core/config/loading.ts', lineSubstring: 'const d = defaults as unknown as Record<string, unknown>' },
-
-  // JSON.parse boundaries — result is unknown, narrowing via narrowRecord
-  // happens immediately after; no stronger static type is available.
-  { file: 'src/core/sessions/log-reader.ts', lineSubstring: 'yield parsed as SessionLogEntry' },
-  { file: 'src/cli/commands/migrate.ts', lineSubstring: 'JSON.parse(trimmed) as Record<string, unknown>' },
-  { file: 'src/cli/commands/migrate.ts', lineSubstring: 'JSON.parse(stateRaw) as Record<string, unknown>' },
-
   // bridgeTty — PassThrough cast to NodeJS.ReadStream for Ink stdin interop;
   // no stronger static type is available from the Node.js stream types.
   { file: 'src/utils/mouse.ts', lineSubstring: 'return filtered as unknown as NodeJS.ReadStream' },
-
-  // CliError — custom error with dynamic property; cast is in the factory and
-  // the type guard, both within the same 12-line module.
-  { file: 'src/cli/errors.ts', lineSubstring: 'new Error(message) as CliError' },
-  { file: 'src/cli/errors.ts', lineSubstring: '(err as unknown as Record<string, unknown>)' },
 
   // Ink stdin interop — filteredStdin.stdin is typed as Readable; Ink expects
   // NodeJS.ReadStream at the render boundary.
   { file: 'src/cli/render.ts', lineSubstring: 'filteredStdin?.stdin as NodeJS.ReadStream | undefined' },
 
-  // RENDERERS lookup — TypeScript cannot narrow the union event through a
-  // correlated-generics dispatch (callRenderer<K>) without one narrowing cast;
-  // Extract is a narrowing (not a widening) and scoped to the renderer boundary.
-  { file: 'src/components/event-cards/index.tsx', lineSubstring: 'event as Extract<TuiEvent, { type: typeof event.type }>' },
-
-  // PlannerConfig omitModel — discriminated union spread; cast is documented
-  // inline in the function comment.
-  { file: 'src/components/overlays/tool-model-picker/config-transforms.ts', lineSubstring: 'planner as Record<string, unknown>' },
-  { file: 'src/components/overlays/tool-model-picker/config-transforms.ts', lineSubstring: '} as PlannerConfig' },
-
-  // Detection catch fallback — {} typed as Partial<Record<...>> for the
-  // Promise.all destructure; no runtime data flows through this value.
-  { file: 'src/engine/detection/service.ts', lineSubstring: '{} as Partial<Record<CliToolId, DetectedModel[]>>' },
-
-  // anthropic-stream getEventType — casting a string proven to be in the
-  // ANTHROPIC_EVENT_TYPES array back to the AnthropicEventType union after the
-  // array membership check. This is the narrowing pattern used instead of
-  // a series of if-else branches.
-  { file: 'src/engine/streaming/anthropic-stream.ts', lineSubstring: '(t as AnthropicEventType)' },
-
-  // findLatestEventByType — generic reverse-scan helper; TypeScript cannot
-  // narrow `e` to `Extract<TuiEvent, { type: T }>` from a generic type
-  // parameter check alone. Sanctioned boundary pattern.
-  { file: 'src/core/event-sections.ts', lineSubstring: 'return e as Extract<TuiEvent, { type: T }>' },
-
   // renderable-conversation HEIGHT_RULES — per-type height functions receive
   // TuiEvent (the union) and cast to the specific variant. Pattern mirrors
   // event-sections.ts; TypeScript cannot narrow through a Record<type, fn> dispatch.
-  { file: 'src/core/renderable-conversation.ts', lineSubstring: "(e as Extract<TuiEvent, { type: 'planner-text' }>)" },
-  { file: 'src/core/renderable-conversation.ts', lineSubstring: "e as Extract<TuiEvent, { type: 'implementer-generate-done' }>" },
-  { file: 'src/core/renderable-conversation.ts', lineSubstring: "e as Extract<TuiEvent, { type: 'validate' }>" },
-  { file: 'src/core/renderable-conversation.ts', lineSubstring: "e as Extract<TuiEvent, { type: 'escalate' }>" },
-  { file: 'src/core/renderable-conversation.ts', lineSubstring: "(e as Extract<TuiEvent, { type: 'warning' }>)" },
-  { file: 'src/core/renderable-conversation.ts', lineSubstring: "(e as Extract<TuiEvent, { type: 'error' }>)" },
-  { file: 'src/core/renderable-conversation.ts', lineSubstring: "(e as Extract<TuiEvent, { type: 'user-message' }>)" },
+  { file: 'src/core/layout/renderable-conversation.ts', lineSubstring: "(e as Extract<TuiEvent, { type: 'planner-text' }>)" },
+  { file: 'src/core/layout/renderable-conversation.ts', lineSubstring: "e as Extract<TuiEvent, { type: 'implementer-generate-done' }>" },
+  { file: 'src/core/layout/renderable-conversation.ts', lineSubstring: "e as Extract<TuiEvent, { type: 'validate' }>" },
+  { file: 'src/core/layout/renderable-conversation.ts', lineSubstring: "e as Extract<TuiEvent, { type: 'escalate' }>" },
+  { file: 'src/core/layout/renderable-conversation.ts', lineSubstring: "(e as Extract<TuiEvent, { type: 'warning' }>)" },
+  { file: 'src/core/layout/renderable-conversation.ts', lineSubstring: "(e as Extract<TuiEvent, { type: 'error' }>)" },
+  { file: 'src/core/layout/renderable-conversation.ts', lineSubstring: "(e as Extract<TuiEvent, { type: 'user-message' }>)" },
 
   // detection cache Zod transforms — stripUndefined returns the same object
   // with undefined keys removed; cast restores the precise type after the
@@ -131,7 +91,7 @@ const AS_CAST_ALLOWLIST: readonly Allowance[] = [
 
   // mouse-scroll test stub — process.stdin is Readable; FilteredStdin.stdin requires
   // NodeJS.ReadStream. Interop boundary in test-only code, no runtime impact.
-  { file: 'src/cli/mouse-scroll.test.ts', lineSubstring: 'process.stdin as unknown as NodeJS.ReadStream' },
+  { file: 'src/features/workflow/hooks/use-mouse-scroll.test.ts', lineSubstring: 'process.stdin as unknown as NodeJS.ReadStream' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -147,10 +107,10 @@ const TEST_AS_CAST_ALLOWLIST: readonly Allowance[] = [
   { file: 'src/cli/commands/migrate.test.ts', lineSubstring: 'const line0 = JSON.parse(lines[0]!) as Record<string, unknown>;' },
   { file: 'src/cli/commands/migrate.test.ts', lineSubstring: 'const line1 = JSON.parse(lines[1]!) as Record<string, unknown>;' },
 
-  // sessions-picker.test.tsx — PassThrough cast to NodeJS stream types for Ink test harness.
-  { file: 'src/components/overlays/sessions-picker/sessions-picker.test.tsx', lineSubstring: 'stdout: new PassThrough() as unknown as NodeJS.WriteStream,' },
-  { file: 'src/components/overlays/sessions-picker/sessions-picker.test.tsx', lineSubstring: 'stdin: new PassThrough() as unknown as NodeJS.ReadStream,' },
-  { file: 'src/components/overlays/sessions-picker/sessions-picker.test.tsx', lineSubstring: 'stderr: new PassThrough() as unknown as NodeJS.WriteStream,' },
+  // sessions/picker.test.tsx — PassThrough cast to NodeJS stream types for Ink test harness.
+  { file: 'src/features/sessions/picker.test.tsx', lineSubstring: 'stdout: new PassThrough() as unknown as NodeJS.WriteStream,' },
+  { file: 'src/features/sessions/picker.test.tsx', lineSubstring: 'stdin: new PassThrough() as unknown as NodeJS.ReadStream,' },
+  { file: 'src/features/sessions/picker.test.tsx', lineSubstring: 'stderr: new PassThrough() as unknown as NodeJS.WriteStream,' },
 
   // use-stores.test.tsx — same Ink test harness pattern; PassThrough cast to NodeJS stream types.
   { file: 'src/stores/use-stores.test.tsx', lineSubstring: 'stdout: new PassThrough() as unknown as NodeJS.WriteStream,' },
@@ -184,9 +144,9 @@ const TEST_AS_CAST_ALLOWLIST: readonly Allowance[] = [
 
   // event-sections.test.ts — Extract<Section, ...> casts for narrowing union
   // after filtering; same structural reason as production event-sections.ts.
-  { file: 'src/core/event-sections.test.ts', lineSubstring: "expect((sections[0] as Extract<Section, { type: 'events' }>).items).toHaveLength(2);" },
-  { file: 'src/core/event-sections.test.ts', lineSubstring: "const summary = (sections[0] as Extract<Section, { type: 'completed-task' }>).summary;" },
-  { file: 'src/core/event-sections.test.ts', lineSubstring: "expect((sections[0] as Extract<Section, { type: 'active-task' }>).items).toHaveLength(2);" },
+  { file: 'src/core/layout/event-sections.test.ts', lineSubstring: "expect((sections[0] as Extract<Section, { type: 'events' }>).items).toHaveLength(2);" },
+  { file: 'src/core/layout/event-sections.test.ts', lineSubstring: "const summary = (sections[0] as Extract<Section, { type: 'completed-task' }>).summary;" },
+  { file: 'src/core/layout/event-sections.test.ts', lineSubstring: "expect((sections[0] as Extract<Section, { type: 'active-task' }>).items).toHaveLength(2);" },
 
   // id.test.ts — "as YYYY-MM-DD" appears in a test description string, not a cast.
   { file: 'src/core/sessions/id.test.ts', lineSubstring: "it('formats date as YYYY-MM-DD with feature slug', () => {" },
@@ -211,17 +171,17 @@ const TEST_AS_CAST_ALLOWLIST: readonly Allowance[] = [
   // use-workflow-review-input.test.ts — mock hook return typed as unknown to
   // simulate different input modes; `as unknown as UseInputModeResult` is the
   // only pattern available when mocking a hook with multiple discriminated shapes.
-  { file: 'src/hooks/use-workflow-review-input.test.ts', lineSubstring: "if (mode === 'review') return { mode, resolve } as unknown as UseInputModeResult;" },
-  { file: 'src/hooks/use-workflow-review-input.test.ts', lineSubstring: "if (mode === 'question') return { mode, resolve } as unknown as UseInputModeResult;" },
-  { file: 'src/hooks/use-workflow-review-input.test.ts', lineSubstring: "return { mode: 'normal' } as unknown as UseInputModeResult;" },
+  { file: 'src/features/workflow/hooks/use-workflow-review-input.test.ts', lineSubstring: "if (mode === 'review') return { mode, resolve } as unknown as UseInputModeResult;" },
+  { file: 'src/features/workflow/hooks/use-workflow-review-input.test.ts', lineSubstring: "if (mode === 'question') return { mode, resolve } as unknown as UseInputModeResult;" },
+  { file: 'src/features/workflow/hooks/use-workflow-review-input.test.ts', lineSubstring: "return { mode: 'normal' } as unknown as UseInputModeResult;" },
 
   // skills.test.ts — 'claude-code' string cast to branded PlannerTool.
-  { file: 'src/stores/skills.test.ts', lineSubstring: "await skillsStore.discover(discoverSkillsMock, 'claude-code' as PlannerTool, '/tmp/proj');" },
-  { file: 'src/stores/skills.test.ts', lineSubstring: "await skillsStore.discover(discoverSkillsMock, 'claude-code' as PlannerTool, '/tmp');" },
+  { file: 'src/stores/skills.test.ts', lineSubstring: "await skillsStore.discover('claude-code' as PlannerTool, '/tmp/proj');" },
+  { file: 'src/stores/skills.test.ts', lineSubstring: "await skillsStore.discover('claude-code' as PlannerTool, '/tmp');" },
 
   // config.test.ts — `as any` for accessing dynamic implementer fields not in base type.
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect((configStore.get().config!.implementer as any).provider).toBe('ollama');" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect((configStore.get().config!.implementer as any).provider).toBe('deepseek');" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect((configStore.get().config!.implementer as any).provider).toBe('ollama');" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect((configStore.get().config!.implementer as any).provider).toBe('deepseek');" },
 
   // ollama integration test — Buffer typed as Uint8Array for TextDecoder interop.
   { file: 'testing/integration/ollama.integration.test.ts', lineSubstring: 'const text = decoder.decode(raw as Uint8Array, { stream: true });' },
@@ -230,12 +190,12 @@ const TEST_AS_CAST_ALLOWLIST: readonly Allowance[] = [
 // Pre-existing `!.` non-null assertions in test files.
 const TEST_NON_NULL_ALLOWLIST: readonly Allowance[] = [
   // event-sections.test.ts — array index access where test data guarantees presence.
-  { file: 'src/core/event-sections.test.ts', lineSubstring: "expect(sections[0]!.type).toBe('events');" },
-  { file: 'src/core/event-sections.test.ts', lineSubstring: "expect(sections[0]!.type).toBe('completed-task');" },
-  { file: 'src/core/event-sections.test.ts', lineSubstring: "expect(sections[0]!.type).toBe('active-task');" },
-  { file: 'src/core/event-sections.test.ts', lineSubstring: "expect(sections[1]!.type).toBe('completed-task');" },
-  { file: 'src/core/event-sections.test.ts', lineSubstring: "expect(sections[2]!.type).toBe('events');" },
-  { file: 'src/core/event-sections.test.ts', lineSubstring: "expect(sections[3]!.type).toBe('completed-task');" },
+  { file: 'src/core/layout/event-sections.test.ts', lineSubstring: "expect(sections[0]!.type).toBe('events');" },
+  { file: 'src/core/layout/event-sections.test.ts', lineSubstring: "expect(sections[0]!.type).toBe('completed-task');" },
+  { file: 'src/core/layout/event-sections.test.ts', lineSubstring: "expect(sections[0]!.type).toBe('active-task');" },
+  { file: 'src/core/layout/event-sections.test.ts', lineSubstring: "expect(sections[1]!.type).toBe('completed-task');" },
+  { file: 'src/core/layout/event-sections.test.ts', lineSubstring: "expect(sections[2]!.type).toBe('events');" },
+  { file: 'src/core/layout/event-sections.test.ts', lineSubstring: "expect(sections[3]!.type).toBe('completed-task');" },
 
   // analytics.test.ts — known key access on providerTotals record.
   { file: 'src/core/sessions/analytics.test.ts', lineSubstring: "expect(result.providerTotals['claude-code']!.sessions).toBe(2);" },
@@ -299,32 +259,28 @@ const TEST_NON_NULL_ALLOWLIST: readonly Allowance[] = [
   { file: 'src/engine/planners/base.test.ts', lineSubstring: "expect(result.phases![0]!.rawOutput).toBe('raw quick output');" },
 
   // config.test.ts — config! after a load that is guaranteed to succeed.
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect(expectCli(configStore.get().config!.planner).tool).toBe('claude-code');" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect(configStore.get().config!.implementer.model).toBe('qwen2.5-coder:7b');" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect((configStore.get().config!.implementer as any).provider).toBe('ollama');" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect((configStore.get().config!.implementer as any).provider).toBe('deepseek');" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect(configStore.get().config!.implementer.model).toBe('deepseek-r1');" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "const planner = expectCli(configStore.get().config!.planner);" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect(expectShell(configStore.get().config!.planner).command).toBe('my-planner');" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect(configStore.get().config!.implementer.contextLength).toBe(16384);" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect(configStore.get().config!.workflow.mode).toBe('full');" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect(configStore.get().config!.workflow.maxBudget).toBe(10.5);" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect(configStore.get().config!.workflow.autoApproveSpec).toBe(true);" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect(configStore.get().config!.workflow.autoApprovePlan).toBe(true);" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect(configStore.get().config!.implementer.model).toBe('first');" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect(configStore.get().config!.theme).toBe('mono');" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect(configStore.get().config!.implementer.model).toBe('cli-override');" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "const updated = { ...configStore.get().config!, implementer: { ...configStore.get().config!.implementer, model: 'picker-choice' } };" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect(configStore.get().config!.implementer.model).toBe('picker-choice');" },
-  { file: 'src/stores/config.test.ts', lineSubstring: "expect(configStore.get().config!.implementer.model).toBe('cli-override');" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect(expectCli(configStore.get().config!.planner).tool).toBe('claude-code');" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect(configStore.get().config!.implementer.model).toBe('qwen2.5-coder:7b');" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect((configStore.get().config!.implementer as any).provider).toBe('ollama');" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect((configStore.get().config!.implementer as any).provider).toBe('deepseek');" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect(configStore.get().config!.implementer.model).toBe('deepseek-r1');" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "const planner = expectCli(configStore.get().config!.planner);" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect(expectShell(configStore.get().config!.planner).command).toBe('my-planner');" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect(configStore.get().config!.implementer.contextLength).toBe(16384);" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect(configStore.get().config!.workflow.mode).toBe('full');" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect(configStore.get().config!.workflow.maxBudget).toBe(10.5);" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect(configStore.get().config!.workflow.autoApproveSpec).toBe(true);" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect(configStore.get().config!.workflow.autoApprovePlan).toBe(true);" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect(configStore.get().config!.implementer.model).toBe('first');" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect(configStore.get().config!.theme).toBe('mono');" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect(configStore.get().config!.implementer.model).toBe('cli-override');" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "const updated = { ...configStore.get().config!, implementer: { ...configStore.get().config!.implementer, model: 'picker-choice' } };" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect(configStore.get().config!.implementer.model).toBe('picker-choice');" },
+  { file: 'src/stores/project/config.test.ts', lineSubstring: "expect(configStore.get().config!.implementer.model).toBe('cli-override');" },
 
-  // workflow-reducers.test.ts — Map.get()! on keys the test just inserted.
-  { file: 'src/stores/workflow-reducers.test.ts', lineSubstring: "expect(next.get('T001')!.status).toBe('done');" },
-  { file: 'src/stores/workflow-reducers.test.ts', lineSubstring: "expect(next.get('T002')!.status).toBe('skipped');" },
-
-  // workflow.test.ts — same pattern as workflow-reducers.test.ts.
-  { file: 'src/stores/workflow.test.ts', lineSubstring: "expect(workflowStore.get().taskMap.get('T001')!.status).toBe('done');" },
-  { file: 'src/stores/workflow.test.ts', lineSubstring: "expect(workflowStore.get().taskMap.get('T001')!.status).toBe('skipped');" },
+  // tasks.test.ts — Map.get()! on keys the test just inserted.
+  { file: 'src/stores/workflow/tasks.test.ts', lineSubstring: "expect(tasksStore.get().taskMap.get('T001')!.status).toBe('done');" },
+  { file: 'src/stores/workflow/tasks.test.ts', lineSubstring: "expect(tasksStore.get().taskMap.get('T001')!.status).toBe('skipped');" },
 ];
 
 function isAllowlisted(rel: string, trimmedLine: string, allowlist: readonly Allowance[]): boolean {
@@ -368,21 +324,21 @@ function collectOffenders(
 
 describe('type-safety sweep', () => {
   it('removes the targeted production non-null assertions', () => {
-    expect(read('src/ui/input/text-editing.ts')).not.toMatch(/visualLines\[i\]!|lines\[i\]!/);
-    expect(read('src/core/event-sections.ts')).not.toMatch(/events\[i\]!|taskRanges\[rangeIdx\]!/);
+    expect(read('src/components/input/text-editing.ts')).not.toMatch(/visualLines\[i\]!|lines\[i\]!/);
+    expect(read('src/core/layout/event-sections.ts')).not.toMatch(/events\[i\]!|taskRanges\[rangeIdx\]!/);
     expect(read('src/utils/frontmatter.ts')).not.toMatch(/lines\[i\]!|lines\[j\]!/);
-    expect(read('src/core/viewport-trimming.ts')).not.toMatch(/sections\[i\]!/);
+    expect(read('src/core/layout/viewport-trimming.ts')).not.toMatch(/sections\[i\]!/);
   });
 
   it('uses explicit exhaustive guards for the updated dispatchers', () => {
     expect(read('src/engine/streaming/output-parsers.ts')).toContain('assertNever(format)');
-    expect(read('src/components/workflow/sidebar.tsx')).toContain('assertNever(status)');
-    expect(read('src/components/event-cards/index.tsx')).toContain('assertNever(event)');
+    expect(read('src/features/workflow/components/sidebar.tsx')).toContain('assertNever(status)');
+    expect(read('src/features/workflow/components/event-cards/event-card.tsx')).toContain('assertNever(event)');
     expect(read('src/engine/streaming/anthropic-stream.ts')).toContain('assertNever(eventType)');
   });
 
   it('removes the unsafe event renderer cast', () => {
-    expect(read('src/components/event-cards/index.tsx')).not.toContain(
+    expect(read('src/features/workflow/components/event-cards/event-card.tsx')).not.toContain(
       "const renderer = RENDERERS[event.type] as (e: TuiEvent, ctx: RenderCtx) => ReactNode;",
     );
   });
@@ -417,7 +373,7 @@ describe('type-safety sweep', () => {
     // Same pattern as production: `as UpperCaseLetter...` but NOT `as const` or `as unknown`.
     const pattern = /\bas\s+[A-Z][A-Za-z]/;
     // Merge the production allowlist (already covers some test-file paths like
-    // mouse-scroll.test.ts) with the test-specific allowlist of pre-existing patterns.
+    // use-mouse-scroll.test.ts) with the test-specific allowlist of pre-existing patterns.
     const allowlist = [...AS_CAST_ALLOWLIST, ...TEST_AS_CAST_ALLOWLIST];
     const offenders = collectOffenders(files, pattern, allowlist);
     expect(offenders, `Unapproved unsafe casts in test files:\n${offenders.join('\n')}`).toHaveLength(0);

@@ -1,13 +1,14 @@
-import { configStore } from '../stores/config.js';
-import { sessionsStore } from '../stores/sessions.js';
-import { skillsStore } from '../stores/skills.js';
-import { inputHistoryStore } from '../stores/input-history.js';
-import { feedbackStore } from '../stores/feedback.js';
+import { configStore } from '../stores/project/config.js';
+import { sessionsStore } from '../stores/project/sessions.js';
+import { skillsStore } from '../stores/project/skills.js';
+import { inputHistoryStore } from '../stores/ui/input-history.js';
+import { feedbackStore } from '../stores/ui/feedback.js';
+import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { setHighlightTheme } from '../utils/highlight.js';
 import { warnError } from '../utils/warn.js';
-import { discoverSkills, detectCapabilities } from '../engine/index.js';
+import { detectCapabilities } from '../engine/index.js';
 import { detectAll } from '../engine/detection/index.js';
-import { loadDetectionIntoStores } from '../stores/detection-adapter.js';
+import { loadDetectionIntoStores } from '../engine/detection/adapter.js';
 import { fetchModelsDevCatalog } from '../engine/providers/models-dev.js';
 import { discoverAllCliTools } from '../engine/providers/discovery.js';
 import type { WorkflowOpts } from '../types.js';
@@ -15,6 +16,7 @@ import { cliError } from './errors.js';
 import { getPlannerToolId } from '../core/config/runner-config.js';
 
 export async function initStores(projectDir: string, opts: WorkflowOpts = {}): Promise<void> {
+  terminalSizeStore.subscribeToResize();
   configStore.load(projectDir, {
     planner: {
       tool: opts.planner,
@@ -52,7 +54,7 @@ export async function initStores(projectDir: string, opts: WorkflowOpts = {}): P
   }
 
   await Promise.all([
-    skillsStore.discover(discoverSkills, getPlannerToolId(storeConfig.planner), projectDir),
+    skillsStore.discover(getPlannerToolId(storeConfig.planner), projectDir),
     loadDetectionIntoStores({ detectAll, fetchModelsDevCatalog, discoverAllCliTools }, projectDir),
   ]);
 }

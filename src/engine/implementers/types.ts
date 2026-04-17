@@ -1,4 +1,8 @@
-import type { Task, Config, ProjectContext, TuiEvent, ImplementerResult, RunnerRuntime } from '../../types.js';
+import type { Task, ProjectContext } from '../../core/types/state-actions.js';
+import type { Config } from '../../core/types/config-options.js';
+import type { TuiEvent } from '../../core/types/events.js';
+import type { ImplementerResult } from '../../core/types/summary.js';
+import type { RunnerRuntime } from '../../core/types/runner.js';
 
 export interface ImplementerOptions {
   task: Task;

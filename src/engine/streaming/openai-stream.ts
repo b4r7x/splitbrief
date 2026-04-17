@@ -1,4 +1,5 @@
-import type { TokenDelta, InvokeResult } from '../../types.js';
+import type { TokenDelta } from '../../core/types/summary.js';
+import type { InvokeResult } from '../../core/types/runner.js';
 import { IdleTimeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
 import { toTokenDelta } from './token-utils.js';
 import { STREAM_TIMEOUT_MS, throwMappedError } from './stream-errors.js';

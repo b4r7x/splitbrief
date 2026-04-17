@@ -1,4 +1,4 @@
-import type { DetectedModel } from '../../core/types/config.js';
+import type { DetectedModel } from '../../core/types/config-options.js';
 import type { ProviderId } from '../../core/types/schemas/enums.js';
 import type { KnownModel } from '../../core/providers/known-models.js';
 import { KNOWN_MODELS } from '../../core/providers/known-models.js';

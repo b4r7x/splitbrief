@@ -60,3 +60,11 @@ export function buildPrompt(spec: PromptSpec): string {
 
   return parts.join('\n');
 }
+
+export function instructionsSection(body: string): PromptSection {
+  return { heading: 'Instructions', body };
+}
+
+export function requiredSectionsSection(body: string): PromptSection {
+  return { heading: 'Required Sections', body };
+}

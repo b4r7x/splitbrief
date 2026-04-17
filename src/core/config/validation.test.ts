@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { validateConfig, securityWarnings } from './validation.js';
-import type { Config, ApiImplementerConfig } from '../types/index.js';
+import type { Config, ApiImplementerConfig } from '../types/config-options.js';
 
 const validConfig = {
   version: 2 as const,

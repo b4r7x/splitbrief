@@ -1,14 +1,17 @@
 import { join } from 'node:path';
 import type { Implementer, ImplementerOptions, RetryOptions } from './types.js';
-import type { Task, TuiEvent, ImplementerResult, InvokeResult } from '../../types.js';
+import type { Task } from '../../core/types/state-actions.js';
+import type { TuiEvent } from '../../core/types/events.js';
+import type { ImplementerResult } from '../../core/types/summary.js';
+import type { InvokeResult } from '../../core/types/runner.js';
 import { readFileOrEmpty } from '../../utils/fs.js';
-import { toErrorMessage } from '../../utils/format.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import { formatErrorWithHint } from '../../utils/error-hints.js';
 import { extractCode } from '../parsers/response-extractor.js';
 import { applyCode } from './apply.js';
 import { computeDiff } from '../../utils/diff.js';
 import { SYSTEM_PREAMBLE, formatTaskPrompt, formatRetryPrompt } from '../spec/formatter.js';
-import { CommandNotFoundError } from '../../utils/process-errors.js';
+import { CommandNotFoundError, CommandTimeoutError } from '../../utils/process-errors.js';
 import { extractOutput, retryTemperature, type InvokeOpts } from './utils.js';
 import { DEFAULT_AVAILABILITY } from '../../utils/availability.js';
 import { getChangedFiles } from '../../utils/git.js';
@@ -84,11 +87,10 @@ export interface ImplementerBaseConfig {
   shouldThrow?(err: unknown): boolean;
 
   isAvailable?: () => Promise<boolean>;
-  getVersion?: () => Promise<string | null>;
 }
 
 function defaultShouldThrow(err: unknown): boolean {
-  return err instanceof CommandNotFoundError;
+  return err instanceof CommandNotFoundError || err instanceof CommandTimeoutError;
 }
 
 export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implementer {
@@ -195,6 +197,5 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
 
     ...DEFAULT_AVAILABILITY,
     ...(baseConfig.isAvailable && { isAvailable: baseConfig.isAvailable }),
-    ...(baseConfig.getVersion && { getVersion: baseConfig.getVersion }),
   };
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { WorkflowState, ValidationResult, Task } from '../../types.js';
+import type { WorkflowState, Task } from '../../core/types/state-actions.js';
+import type { ValidationResult } from '../../core/types/summary.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { makeTask, makeConfig } from '#testing/helpers/fixtures.js';
 import { makeCallbacks, passingResults } from '#testing/helpers/orchestrator-fixtures.js';

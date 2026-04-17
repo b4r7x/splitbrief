@@ -21,6 +21,10 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 - `specs/002-cost-optimized-orchestrator/quickstart.md`  -  End-to-end usage guide
 - `.specify/memory/constitution.md`  -  6 project principles (v1.3.1)
 - `docs/VISION.md`  -  Strategic direction, competitive analysis, design decisions
+- `docs/STORES.md`  -  External store architecture (factory, patterns, inventory). **Read when touching anything under `src/stores/`.**
+- `docs/STORES-RESTRUCTURE.md`  -  Historical RFC for the 2026-04 stores restructure (Phases 1–3). Captures rationale + decisions; read if curious why the directory looks the way it does.
+- `docs/NO-BARRELS.md`  -  Codebase-wide principle: no re-export-only `index.ts` files. **Read before creating any new `index.ts`.** Applies to stores today, engine/core next.
+- `docs/FUTURE-WORK.md`  -  Three deferred RFCs ready to execute (unbarrel `src/core/`, unbarrel `src/engine/`, refactor `inputHistoryStore` persistence boundary). Self-contained — do not re-audit, read the plans.
 
 ## Tech Stack
 
@@ -29,7 +33,7 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 - **Dev runner**: `tsx` (handles TypeScript + JSX/TSX + ESM, no custom loaders needed)
 - **Testing**: Vitest 4.x (57 colocated test files / 700 tests)
 - **Linter/formatter**: Biome 2.x (`npm run lint`, `npm run format`)
-- **TUI**: Ink 6.8 (React 19 for CLI) + fullscreen-ink (custom multiline-input primitive under `src/ui/input/`)
+- **TUI**: Ink 6.8 (React 19 for CLI) + fullscreen-ink (custom multiline-input primitive under `src/components/input/`)
 - **Syntax highlighting**: Shiki 4.x (WASM-based, async)
 - **Terminal styling**: ansis (ANSI escape codes), cfonts (ASCII banners)
 - **Planner / Implementer**: Both accept 5 runner kinds — `cli` (subprocess of known tool), `api` (any OpenAI-compatible endpoint via `openai` SDK), `shell` (arbitrary command), `agent` (file-writing command), `agent-sdk` (Anthropic Agent SDK)
@@ -49,7 +53,7 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 - **Colocated tests**  -  `foo.test.ts` lives next to `foo.ts` (no separate `tests/` directory)
 - **kebab-case file naming**  -  Use kebab-case for multi-word file and folder names (`models-dev.ts`, `lm-studio.ts`). Prefer single-word names where natural (`pricing.ts`, `known.ts`, `registry.ts`). File names should match their primary concept.
 - **No unsafe type assertions**  -  Do not use incidental `!` (non-null assertion) or broad `as` casts in production code. Use optional chaining (`?.`), type narrowing, or proper null checks instead.
-- **Sanctioned assertion boundaries only**  -  The allowed exceptions are the internal assertion helpers in `src/utils/type-guards.ts`, the store internals in `src/stores/create-store.ts` and `src/stores/use-stores.ts`, and the branded ID constructors in `src/core/types/workflow.ts` / `src/core/types/schemas/task.ts`. Keep assertions contained to those boundaries instead of spreading them through feature code.
+- **Sanctioned assertion boundaries only**  -  The allowed exceptions are the internal assertion helpers in `src/utils/type-guards.ts`, the store internals in `src/stores/create-store.ts` and `src/stores/use-stores.ts`, and the branded ID constructors in `src/core/types/state-actions.ts` / `src/core/types/schemas/task.ts`. Keep assertions contained to those boundaries instead of spreading them through feature code.
 - **Zero memoization**  -  No `useMemo`, `useCallback`, or `React.memo` anywhere in `src/`. Store selectors make them unnecessary.
 - **No imperative handles**  -  No `forwardRef` / `useImperativeHandle`. React 19 + stores eliminate the need.
 
@@ -60,277 +64,397 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 ```
 src/
 ├── cli.ts                    # CLI entry point (commander registration)
-├── app.tsx                   # Root Ink component (zero props, composition, render helpers)
+├── app.tsx                   # Root Ink component — dispatches screen + overlay
 ├── layout.tsx                # Structural shell (2 props: screen + overlay as ReactNode)
 ├── types.ts                  # Re-exports from core/types/
-├── stores/                   # External stores (useSyncExternalStore, zero deps)
-│   ├── config.ts             # Config + projectDir (loaded from disk)
-│   ├── conversation-scroll.ts # Scroll position (replaces forwardRef/useImperativeHandle)
+├── stores/                   # External stores (useSyncExternalStore, zero deps, ZERO barrels — see docs/NO-BARRELS.md)
 │   ├── create-store.ts       # Generic store factory
-│   ├── detection.ts          # Provider detection state (+ Models.dev + CLI discovery triggers)
-│   ├── model-cache.ts        # Per-provider model cache (5-min TTL) + Models.dev catalog (1-hour TTL)
-│   ├── feedback.ts           # Feedback/error message state
-│   ├── input-mode.ts         # Input mode state (interactive flag)
-│   ├── overlay.ts            # Overlay active/exclusive state
-│   ├── review.ts             # Review file path + scroll offset
-│   ├── router.ts             # Screen routing + transition validation
-│   ├── sessions.ts           # Session list (loaded from disk)
-│   ├── skills.ts             # Skill discovery + selection
-│   ├── terminal-size.ts      # Terminal resize tracking + responsive layout
-│   ├── workflow-reducers.ts  # Pure reducer functions for workflow store updates
-│   └── workflow.ts           # Workflow events/phase/tasks (biggest store)
-├── core/                     # Shared domain logic (config, types, commands, state)
+│   ├── use-stores.ts         # Multi-store Proxy-tracked hook
+│   ├── ui/                   # Ephemeral UI chrome
+│   │   ├── controls.ts       # sidebarVisible + inputMode (cross-tree flags)
+│   │   ├── terminal-size.ts  # Terminal resize tracking + responsive layout
+│   │   ├── overlay.ts        # Overlay active/exclusive/stack state
+│   │   ├── feedback.ts       # Feedback/error message state
+│   │   ├── input-history.ts  # Command input history (persisted to ~/.diptych/history)
+│   │   └── input-height.ts   # Input bar rendered height (cross-tree)
+│   ├── workflow/             # State scoped to a running workflow (4 sub-stores + actions)
+│   │   ├── events.ts         # eventsStore + mergeEvent + MAX_EVENTS
+│   │   ├── tasks.ts          # tasksStore + updateTaskMap + updateTaskCounts
+│   │   ├── tokens.ts         # tokensStore + updateTokens
+│   │   ├── lifecycle.ts      # lifecycleStore + updatePhase + updateQueueDepth
+│   │   ├── actions.ts        # addEvent (dispatcher, cancelled gate), markCancelled, resetWorkflow, useSections, getSections, WorkflowViewState type
+│   │   ├── abort.ts          # abortStore — pending flag + 2s auto-clear timer
+│   │   ├── conversation-scroll.ts # Scroll position + expanded diffs
+│   │   └── review.ts         # Review file path + scroll offset
+│   ├── navigation/
+│   │   └── router.ts         # Screen routing + transition guards
+│   ├── project/              # Loaded-from-disk state tied to projectDir
+│   │   ├── config.ts
+│   │   ├── sessions.ts
+│   │   ├── skills.ts
+│   │   └── detection.ts
+│   └── discovery/
+│       └── model-cache.ts    # Per-provider model cache + Models.dev catalog
+├── core/                     # Shared domain logic (config, types, commands, state, layout)
 │   ├── phases.ts             # Phase role mapping + cancellable/implementer phase sets
-│   ├── commands/             # Slash command definitions and handlers
-│   │   ├── index.ts          # Public re-exports
-│   │   ├── definitions.ts    # Command registry
-│   │   ├── shortcuts.ts      # Keyboard shortcut bindings
-│   │   └── review-commands.ts # Review-mode slash commands
 │   ├── config/               # YAML config loading, defaults, validation
 │   │   ├── index.ts          # Public re-exports
-│   │   ├── access.ts         # Config read accessors
-│   │   ├── loading.ts        # YAML load/write + defaults
-│   │   ├── transforms.ts     # Config normalisation
-│   │   ├── validation.ts     # Schema validation
-│   │   ├── migration.ts      # migrateConfig (v1 → v2)
-│   │   ├── runner-config.ts  # getRunnerDisplayName, getRunnerCommand, getRunnerApiKey
-│   │   └── build-runner.ts   # buildRunnerConfig(role, opts) — safe runner config constructor
-│   ├── (providers/ moved to engine/providers/ — see below)
+│   │   ├── access.ts
+│   │   ├── loading.ts
+│   │   ├── overrides.ts
+│   │   ├── transforms.ts
+│   │   ├── validation.ts
+│   │   ├── migration.ts
+│   │   ├── runner-config.ts
+│   │   └── build-runner.ts
+│   ├── layout/               # Pure layout / geometry helpers (no React)
+│   │   ├── chrome-rows.ts
+│   │   ├── conversation-scroll.ts
+│   │   ├── diff-height.ts
+│   │   ├── event-sections.ts
+│   │   ├── picker-chrome.ts
+│   │   ├── renderable-conversation.ts
+│   │   ├── scroll-banner.ts
+│   │   ├── scroll-window.ts
+│   │   ├── terminal-width.ts
+│   │   ├── viewport-trimming.ts
+│   │   └── workflow-rect.ts
+│   ├── migration/
+│   │   └── legacy.ts         # Pre-v3 .diptych/current/ state migration
+│   ├── model-display.ts
+│   ├── paths.ts
+│   ├── paths-io.ts
+│   ├── project-meta.ts
+│   ├── providers/            # Provider catalog + known models + model selection
+│   │   ├── index.ts
+│   │   ├── catalog.ts
+│   │   ├── known-models.ts
+│   │   └── model-selection.ts
 │   ├── sessions/             # Session domain helpers
-│   │   └── status.ts         # Status icon + colour mapping (Session['status'] → Theme)
-│   ├── settings/             # Setting definitions and catalog
-│   │   └── catalog.ts
+│   │   ├── active.ts
+│   │   ├── analytics.ts
+│   │   ├── begin.ts
+│   │   ├── id.ts
+│   │   ├── io.ts
+│   │   ├── log-reader.ts
+│   │   └── status.ts
+│   ├── settings/             # Setting definitions and presentation
+│   │   ├── catalog.ts
+│   │   └── presentation.ts
+│   ├── slash-commands/       # Slash command definitions and handlers
+│   │   ├── index.ts
+│   │   ├── definitions.ts
+│   │   ├── executor.ts
+│   │   ├── phase-guards.ts
+│   │   ├── review-commands.ts
+│   │   └── shortcuts.ts
 │   ├── state/                # Workflow state machine
-│   │   ├── machine.ts        # Phases + transitions
-│   │   └── persistence.ts    # State persistence to .diptych/sessions/<id>/state.json
+│   │   ├── machine.ts
+│   │   ├── persistence.ts
+│   │   ├── selectors.ts
+│   │   └── topo-sort.ts
 │   └── types/                # All shared types (split by domain)
-│       ├── index.ts          # Re-exports all type modules
-│       ├── app.ts            # App-level types
-│       ├── config.ts         # Config, OutputFormat, ThemeMode
-│       ├── events.ts         # TuiEvent union type
-│       ├── runner.ts         # ParsedLine, InvokeResult, RunnerRuntime
-│       ├── summary.ts        # RunSummary, CostBreakdown
-│       ├── theme.ts          # Theme and color types
-│       ├── workflow.ts       # Phase, Task, TaskStatus, WorkflowState
+│       ├── app.ts
+│       ├── config-options.ts
+│       ├── events.ts
+│       ├── model-catalog.ts
+│       ├── orchestrator-events.ts
+│       ├── runner.ts
+│       ├── state-actions.ts
+│       ├── summary.ts
+│       ├── theme.ts
+│       ├── tui-events.ts     # TuiEvent union type
 │       └── schemas/          # Zod schemas (source of truth for config types)
-│           ├── index.ts      # Re-exports all schema modules
-│           ├── config.ts     # Root ConfigSchema (version: 2, planner, implementer)
-│           ├── enums.ts      # CliToolId, RunnerKind, OutputFormat, CLOUD_API_PROVIDERS
-│           ├── implementer-config.ts # ImplementerConfigSchema (5 discriminated variants)
-│           ├── planner-config.ts     # PlannerConfigSchema (5 discriminated variants)
-│           ├── question.ts   # Clarification question types
-│           ├── runner-fields.ts  # CliRunnerFields, ApiRunnerFields, ShellRunnerFields, AgentRunnerFields, AgentSdkRunnerFields
-│           ├── session.ts    # Session schema types
-│           ├── summary.ts    # RunSummary schema types
-│           ├── task.ts       # Task schema types
-│           ├── tokens.ts     # Token usage schema types
-│           └── workflow.ts   # Workflow schema types
+│           ├── config.ts
+│           ├── enums.ts
+│           ├── implementer-config.ts
+│           ├── planner-config.ts
+│           ├── question.ts
+│           ├── runner-fields.ts
+│           ├── session-log.ts
+│           ├── session.ts
+│           ├── summary.ts
+│           ├── task.ts
+│           ├── tokens.ts
+│           └── workflow.ts
 ├── cli/                      # CLI-specific logic (non-React)
 │   ├── commands/             # commander subcommand handlers
-│   │   ├── init.ts           # `diptych init`
-│   │   ├── migrate.ts        # `diptych migrate`
-│   │   ├── resume.ts         # `diptych resume`
-│   │   ├── spec.ts           # `diptych spec`
-│   │   ├── start.ts          # `diptych start`
-│   │   └── status.ts         # `diptych status`
+│   │   ├── guards.ts
+│   │   ├── init.ts
+│   │   ├── migrate.ts
+│   │   ├── resume.ts
+│   │   ├── spec.ts
+│   │   ├── start.ts
+│   │   └── status.ts
+│   ├── errors.ts
 │   ├── init-stores.ts        # Eager store bootstrap before React renders
 │   ├── render.ts             # Ink/fullscreen rendering setup
 │   └── workflow.ts           # Shared CLI workflow helpers
 ├── engine/                   # Workflow logic (zero React/Ink imports)
+│   ├── index.ts              # Public re-exports
 │   ├── agent-sdk.ts          # Shared Anthropic Agent SDK loader (optional peer dep)
+│   ├── api-shared.ts
+│   ├── change-detection.ts
+│   ├── claude-runner.ts
 │   ├── cli-tools.ts          # Shared CLI-tool detection / spawn helpers
+│   ├── config-assertions.ts
+│   ├── constants.ts
+│   ├── http.ts
+│   ├── session-expiry.ts
 │   ├── orchestrator/         # Main workflow loop (decomposed into focused modules)
-│   │   ├── approval.ts       # Spec/plan approval gate (waits for user approve/edit/reject)
-│   │   ├── budget.ts         # Token budget warnings and exceeded checks
-│   │   ├── clarifications.ts # Inline clarification question handling
-│   │   ├── cost-prediction.ts # Pre-task cost estimation from token counts
-│   │   ├── cost.ts           # Cost breakdown calculations + buildSummary
-│   │   ├── escalation.ts     # Escalation logic (hints → full planner fix)
-│   │   ├── events.ts         # Event emission helpers
-│   │   ├── git-ops.ts        # Git checkpoint creation and diff helpers
-│   │   ├── helpers.ts        # Shared utilities (context, validation helpers)
 │   │   ├── index.ts          # runWorkflow main loop + re-exports
-│   │   ├── planning.ts       # Mode-aware planning (quick/standard/full)
+│   │   ├── approval.ts
+│   │   ├── budget.ts
+│   │   ├── clarifications.ts
+│   │   ├── continuation-loop.ts
+│   │   ├── continuation.ts
+│   │   ├── cost-prediction.ts
+│   │   ├── escalation.ts
+│   │   ├── events.ts
+│   │   ├── final-review.ts
+│   │   ├── git-ops.ts
+│   │   ├── helpers.ts
+│   │   ├── native-injection.ts
+│   │   ├── queue.ts
+│   │   ├── queue-drain.ts
+│   │   ├── regenerate.ts
 │   │   ├── run.ts            # Top-level run entry point
-│   │   ├── task-commit.ts    # Commit validation + advance after successful task
-│   │   ├── task-loop.ts      # Per-task iteration with WorkflowContext
-│   │   ├── task-step.ts      # Single task step execution
-│   │   ├── tokens.ts         # Token usage accounting (planner/implementer/escalation)
-│   │   └── validator.ts      # tsc → lint → test pipeline (stops on first failure)
-│   ├── planners/             # Pluggable planner backends (subprocess + API)
-│   │   ├── index.ts          # Public re-exports
+│   │   ├── session-lifecycle.ts
+│   │   ├── summary.ts
+│   │   ├── task-commit.ts
+│   │   ├── task-loop.ts
+│   │   ├── task-step.ts
+│   │   ├── tokens.ts
+│   │   ├── transcript-rebuild.ts
+│   │   ├── types.ts
+│   │   ├── validator.ts
+│   │   ├── validator-internal.ts
+│   │   └── planning/
+│   │       ├── index.ts
+│   │       ├── new.ts
+│   │       ├── quick.ts
+│   │       ├── rewind.ts
+│   │       └── shared.ts
+│   ├── planners/             # Pluggable planner backends (5 runner kinds)
 │   │   ├── types.ts          # PlannerBackend interface
-│   │   ├── base.ts           # Shared planner factory (createPlannerBase, quickPlan)
-│   │   ├── api.ts            # API-based planner (any OpenAI-compatible endpoint)
-│   │   ├── claude-code.ts    # Claude Code CLI (stream-json, session chaining)
-│   │   ├── agent-sdk.ts      # Anthropic Agent SDK (programmatic, no subprocess)
-│   │   ├── agent.ts          # Agent planner (command writes spec/plan/tasks files)
-│   │   ├── cli.ts            # Generic CLI planner backend
-│   │   ├── shell.ts          # Generic shell — any command via config
-│   │   └── context.ts        # Project context builder
+│   │   ├── base.ts           # Shared planner factory
+│   │   ├── agent-sdk.ts
+│   │   ├── agent.ts
+│   │   ├── api.ts
+│   │   ├── claude-code.ts
+│   │   ├── cli.ts
+│   │   ├── command-invoke.ts
+│   │   ├── context.ts
+│   │   └── shell.ts
 │   ├── implementers/         # Pluggable implementer backends (mirrors planner pattern)
-│   │   ├── agent-sdk.ts      # Anthropic Agent SDK implementer
-│   │   ├── agent.ts          # Agent subprocess implementer
-│   │   ├── api.ts            # OpenAI-compatible API implementer
-│   │   ├── apply.ts          # Code application (whole-file write + search/replace markers)
-│   │   ├── base.ts           # createImplementerBase() factory — shared pipeline
-│   │   ├── cli.ts            # CLI implementer (known CLI tools via subprocess)
-│   │   ├── index.ts          # Public re-exports
-│   │   ├── shell.ts          # Shell subprocess implementer
-│   │   ├── types.ts          # ImplementerBackend interface
-│   │   └── utils.ts          # Shared implementer utilities (timeout, changed files)
-│   ├── runners/              # Symmetric planner/implementer factory (static imports)
-│   │   ├── factory.ts        # createPlanner, createImplementer — dispatch by kind
-│   │   └── command-based.ts  # invokeCommandBasedRunner — shared spawn for shell/agent kinds
-│   ├── providers/            # Consolidated provider registry, catalog, pricing, HTTP clients
-│   │   ├── known.ts          # KNOWN_MODELS — minimal offline fallback (2-3 per provider)
-│   │   ├── pricing.ts        # Cost calculation and model pricing
-│   │   ├── metadata.ts       # formatContextLength, formatPrice
-│   │   ├── types.ts          # ProviderDef, DetectedModel, ProviderOverrides
-│   │   ├── registry.ts       # KNOWN_PROVIDERS, getProvider(), createClient(), detectCapabilities(), detectAvailableProviders()
-│   │   ├── client.ts         # Shared HTTP client (createClientFromProvider, fetchModelList, createMetadataProvider)
-│   │   ├── compat.ts         # OpenAI-compatible provider factory
-│   │   ├── models-dev.ts     # Models.dev API client (3-layer enrichment)
-│   │   ├── discovery.ts      # CLI tool model discovery (aider, opencode, kilo)
-│   │   ├── ollama.ts         # Ollama (local, /api/tags)
-│   │   ├── lm-studio.ts      # LM Studio (local, /v1/models)
-│   │   ├── openrouter.ts     # OpenRouter (with pricing, capabilities)
-│   │   ├── groq.ts           # Groq (with context_window)
-│   │   ├── together.ts       # Together AI (with pricing)
-│   │   └── testing.ts        # Test helpers
+│   │   ├── types.ts
+│   │   ├── base.ts
+│   │   ├── agent-sdk.ts
+│   │   ├── agent.ts
+│   │   ├── api.ts
+│   │   ├── apply.ts
+│   │   ├── cli.ts
+│   │   ├── command-invoke.ts
+│   │   ├── shell.ts
+│   │   └── utils.ts
+│   ├── runners/              # Symmetric planner/implementer factory
+│   │   ├── factory.ts
+│   │   └── command-based.ts
+│   ├── providers/            # Provider registry, catalogs, pricing, HTTP clients
+│   │   ├── anthropic.ts
+│   │   ├── client.ts
+│   │   ├── compat.ts
+│   │   ├── discovery.ts
+│   │   ├── groq.ts
+│   │   ├── lm-studio.ts
+│   │   ├── metadata.ts
+│   │   ├── model-catalog.ts
+│   │   ├── model-parsing.ts
+│   │   ├── model-resolution.ts
+│   │   ├── models-dev.ts
+│   │   ├── ollama.ts
+│   │   ├── openrouter.ts
+│   │   ├── pricing.ts
+│   │   ├── pricing-resolver.ts
+│   │   ├── registry.ts
+│   │   ├── test-helpers.ts
+│   │   ├── together.ts
+│   │   └── types.ts
 │   ├── spec/                 # Spec parsing, formatting & prompt generation
 │   │   ├── parser.ts         # tasks.md → Task[] with topological sort
-│   │   ├── formatter.ts      # Task → self-contained prompt for local model
-│   │   ├── token-budget.ts   # Token budget calculation and context fitting
+│   │   ├── formatter.ts
+│   │   ├── token-budget.ts
 │   │   └── prompts/          # Individual prompt templates
+│   │       ├── escalation.ts
 │   │       ├── plan.ts
 │   │       ├── quick-plan.ts
 │   │       ├── research.ts
-│   │       ├── spec.ts
-│   │       ├── tasks.ts
 │   │       ├── review.ts
-│   │       └── escalation.ts
+│   │       ├── shared.ts
+│   │       ├── spec.ts
+│   │       └── tasks.ts
 │   ├── detection/            # Auto-detect planners (CLI) and implementers
 │   │   ├── index.ts          # Public re-exports
-│   │   └── detect.ts         # Detection entry point
+│   │   ├── adapter.ts        # UI-facing refresh entry point (ex src/hooks/detection-adapter.ts)
+│   │   ├── cache.ts
+│   │   ├── detect.ts
+│   │   └── service.ts
 │   ├── parsers/              # Response parsers (question, code extraction)
-│   │   ├── question-parser.ts    # Parse <!-- Q:{JSON} --> markers from planner stream
-│   │   ├── response-extractor.ts # Code extraction from model responses
-│   │   ├── scope-extractor.ts    # Function-level code extraction for large files
-│   │   ├── code-detection.ts     # Code-language sniffer
-│   │   └── code-patterns.ts      # Shared regex patterns
+│   │   ├── code-detection.ts
+│   │   ├── code-patterns.ts
+│   │   ├── question-parser.ts
+│   │   ├── response-extractor.ts
+│   │   └── scope-extractor.ts
 │   ├── streaming/            # Streaming transport layer
-│   │   ├── claude-stream.ts  # Claude Code stream-json parsing
-│   │   ├── openai-stream.ts  # OpenAI-compatible streaming client (timeout, error handling)
-│   │   ├── output-parsers.ts # Unified output format parsers (text, stream-json, jsonl)
-│   │   └── spawn-collect.ts  # Subprocess spawn + collect helper (stdin → parsed lines)
+│   │   ├── anthropic-stream.ts
+│   │   ├── openai-stream.ts
+│   │   ├── output-parsers.ts
+│   │   ├── spawn-collect.ts
+│   │   ├── stream-errors.ts
+│   │   ├── token-utils.ts
+│   │   └── transcript-buffer.ts
 │   └── skills/               # Skill discovery (frontmatter parsing, .claude/skills scanning)
-│       ├── index.ts          # Public re-exports
-│       └── discovery.ts      # Skill frontmatter parsing + .claude/skills scanning
-├── screens/                  # Top-level screen components
-│   ├── home.tsx              # Home screen (banner, session list, input)
-│   ├── setup.tsx             # Setup screen (planner/implementer selection)
-│   ├── workflow.tsx          # Workflow screen (header, events, footer, input)
-│   └── summary.tsx           # Post-run summary screen
-├── components/               # Feature components (business logic + rendering)
-│   ├── labeled-row.tsx       # <LabeledRow label value /> — canonical label + value row
-│   ├── screen-shell.tsx      # <ScreenShell header footer /> — outer frame for screens
-│   ├── home/                 # Home screen sub-components
-│   │   ├── config-summary.tsx
-│   │   └── recent-sessions.tsx
-│   ├── conversation-flow/    # Scrollable event card list with auto-follow + virtual scroll
-│   │   ├── index.ts
-│   │   ├── flow.tsx
-│   │   ├── use-scrollable-flow.ts
-│   │   └── viewport-trimming.ts
-│   ├── event-cards/          # TuiEvent rendering — typed renderer registry
-│   │   ├── index.tsx         # Renderer registry (switch on event type)
-│   │   ├── card.tsx          # <Card> primitive — canonical base for all event cards
-│   │   ├── implementer-card.tsx
-│   │   └── validate-card.tsx
-│   ├── input-bar/            # Multiline input with slash command suggestions
-│   │   ├── index.ts
-│   │   ├── input-bar.tsx
-│   │   ├── slash-suggestions.tsx
-│   │   └── use-slash-autocomplete.ts
-│   ├── workflow/             # Workflow screen sub-components
-│   │   ├── cost-footer.tsx   # Real-time cost savings: Task N/M | Local: X% | Saved: ~$X
-│   │   ├── header.tsx        # Top header (feature name, pipeline bar, elapsed time)
-│   │   ├── pipeline-bar.tsx  # Phase progress: res spec plan impl rev
-│   │   ├── review-view.tsx   # Spec/plan review display (markdown file viewer)
-│   │   ├── sidebar.tsx       # Task list sidebar (progress, status)
-│   │   └── task-summary.tsx  # Collapsed completed task with file path
-│   ├── pickers/              # Generic picker primitives
-│   │   ├── filterable-list.tsx  # FilterableList — canonical list-with-filter primitive (render-prop children API)
-│   │   ├── picker-utils.ts      # Shared picker helpers (scroll offset, truncation)
-│   │   ├── single-column-picker.tsx
-│   │   └── two-column-picker/   # Compound component (TwoColumnPicker.Columns, .Left, .Right, .Hint)
-│   │       ├── index.ts
-│   │       ├── two-column-picker.tsx
-│   │       └── use-two-column-state.ts
-│   └── overlays/             # Overlay components
-│       ├── command-palette.tsx   # Ctrl+K command palette overlay
-│       ├── help-overlay.tsx      # Keyboard shortcut help overlay
-│       ├── mode-selector.tsx     # Workflow mode picker (quick/standard/full)
-│       ├── overlay-panel.tsx     # Overlay panel primitive
-│       ├── text-input-overlay.tsx
-│       ├── settings-overlay/     # Unified settings overlay (all config fields + sub-pickers)
-│       │   ├── index.ts
-│       │   ├── settings-overlay.tsx
-│       │   ├── settings-presentation.ts
-│       │   └── use-settings-editor.ts
-│       ├── skills-picker/        # Skill selection overlay
-│       │   ├── index.ts
-│       │   └── skills-picker.tsx
-│       └── tool-model-picker/    # Planner/implementer backend + model selection
-│           ├── config-transforms.ts # Config read/write helpers for picker selections
-│           ├── index.ts
-│           ├── picker-catalog.ts
-│           ├── picker-view.tsx
-│           ├── picker.tsx
-│           ├── tool-row.tsx
-│           ├── use-picker-actions.ts
-│           ├── use-picker-catalog.ts
-│           └── view-state.ts     # Picker view state machine (picker / custom-command)
-├── ui/                       # Low-level UI primitives (no business logic)
+│       ├── index.ts
+│       └── discovery.ts
+├── features/                 # Business features — vertical slices, one folder per feature
+│   ├── workflow/             # Running workflow: conversation, events, keyboard, runner
+│   │   ├── screen.tsx        # Feature entry rendered by app.tsx
+│   │   ├── handlers.ts       # Engine↔UI bridge (module-scoped handler registry)
+│   │   ├── keyboard.ts       # Pure workflow-scope keyboard dispatchers
+│   │   ├── layout.ts         # Pure geometry snapshots from workflow stores
+│   │   ├── components/
+│   │   │   ├── agent-status-row.tsx
+│   │   │   ├── config-line.tsx
+│   │   │   ├── cost-display.tsx
+│   │   │   ├── cost-footer.tsx
+│   │   │   ├── header.tsx
+│   │   │   ├── pipeline-bar.tsx
+│   │   │   ├── review-view.tsx
+│   │   │   ├── sidebar.tsx
+│   │   │   ├── task-summary.tsx
+│   │   │   ├── conversation-flow/
+│   │   │   │   └── flow.tsx  # Scrollable event card list
+│   │   │   └── event-cards/  # TuiEvent renderers
+│   │   │       ├── card.tsx  # <Card> primitive — canonical base for all event cards
+│   │   │       ├── event-card.tsx  # Renderer dispatcher (switch on event type)
+│   │   │       ├── cost-prediction-card.tsx
+│   │   │       ├── escalate-card.tsx
+│   │   │       ├── implementer-card.tsx
+│   │   │       ├── planner-status-card.tsx
+│   │   │       ├── user-message-card.tsx
+│   │   │       ├── validate-card.tsx
+│   │   │       └── workflow-config-card.tsx
+│   │   └── hooks/
+│   │       ├── use-workflow.ts             # Composite facade
+│   │       ├── use-workflow-runner.ts      # Engine lifecycle, resume, rewind
+│   │       ├── use-workflow-review-input.ts # Review/question command parsing
+│   │       ├── use-workflow-keys.ts        # Workflow-only keyboard (mounted under screen==='workflow')
+│   │       ├── use-input-mode.ts           # Promise-based modal input
+│   │       ├── use-review-content.ts       # Async file read with cancellation
+│   │       ├── use-mouse-scroll.ts         # Mouse-wheel → scroll binding
+│   │       └── use-cost-stats.ts           # Formatted cost breakdown for footer
+│   ├── home/                 # Landing screen
+│   │   ├── screen.tsx
+│   │   └── components/
+│   │       ├── config-summary.tsx
+│   │       └── recent-sessions.tsx
+│   ├── setup/                # First-time setup (planner + implementer selection)
+│   │   └── screen.tsx
+│   ├── summary/              # Post-workflow report
+│   │   ├── screen.tsx
+│   │   └── components/
+│   │       ├── summary-cost-breakdown.tsx
+│   │       ├── summary-phase-timing.tsx
+│   │       ├── summary-progress.tsx
+│   │       └── summary-task-table.tsx
+│   ├── settings/             # Settings overlay — unified field editor
+│   │   ├── overlay.tsx       # Feature entry rendered when overlay active
+│   │   ├── use-edit-buffer.ts
+│   │   └── use-settings-editor.ts
+│   ├── sessions/             # Sessions picker — resume past session
+│   │   ├── picker.tsx
+│   │   ├── picker-select.ts
+│   │   └── session-row.tsx
+│   ├── tool-picker/          # Planner/implementer backend + model selection
+│   │   ├── picker.tsx
+│   │   ├── picker-view.tsx
+│   │   ├── catalog-adapter.ts
+│   │   ├── config-transforms.ts
+│   │   ├── model-sorting.ts
+│   │   ├── picker-model-catalog.ts
+│   │   ├── picker-options.ts
+│   │   ├── tool-row.tsx
+│   │   ├── view-state.ts
+│   │   ├── use-picker-actions.ts
+│   │   └── use-picker-catalog.ts
+│   └── skills/               # Skills picker — toggle available skills
+│       └── picker.tsx
+├── components/               # SHARED UI (cross-feature) — primitives + shared overlays + pickers + input
 │   ├── diff-view.tsx         # Collapsible syntax-highlighted diff
 │   ├── filter-input.tsx      # Reusable filter text input
-│   ├── input/                # Controlled multiline input primitives
-│   │   ├── multiline-input.tsx
-│   │   ├── segments.ts       # Visual segment helpers
-│   │   └── text-editing.ts   # Pure text-editing operations
+│   ├── labeled-row.tsx       # <LabeledRow label value /> — canonical label + value row
 │   ├── markdown.tsx          # Shared markdown rendering (parseBlocks, renderMarkdownLine, HighlightedCode)
+│   ├── screen-shell.tsx      # <ScreenShell header footer /> — outer frame for screens
 │   ├── scroll-indicator.tsx  # Scroll position indicator
 │   ├── spinner.tsx           # Braille spinner component with elapsed time
 │   ├── theme.tsx             # Centralized color palette — zero hardcoded colors elsewhere
-│   └── use-async-highlight.ts # Shiki async highlight hook with cancellation
-├── hooks/                    # React hooks (Ink-dependent lifecycle)
-│   ├── keyboard-handlers.ts  # KeyAction type + handler helpers for key dispatch
-│   ├── use-cost-stats.ts     # Derived cost breakdown from workflow + config stores
-│   ├── use-filterable-list.ts # Filterable list state (search, scroll, selection)
-│   ├── use-global-keys.ts    # Global keyboard shortcuts (reads stores, takes only { exit })
-│   ├── use-input-mode.ts     # Input mode state (Promise-based, workflow-scoped)
-│   ├── use-static-selector.ts # Fixed-list up/down/return/escape selector (no-filter peer)
-│   ├── use-workflow-review-input.ts # Review/question command parsing + handling
-│   ├── use-workflow-runner.ts # Engine invocation + abort lifecycle
-│   └── use-workflow.ts       # Thin composition of runner + review-input hooks
+│   ├── input/                # Controlled multiline input primitives
+│   │   ├── controlled-multiline-input.tsx
+│   │   ├── measure-box.tsx
+│   │   ├── multiline-input.tsx
+│   │   ├── segments.ts
+│   │   ├── text-editing.ts
+│   │   └── viewport-scroll.ts
+│   ├── input-bar/            # Composite input bar used on every screen
+│   │   ├── index.tsx         # InputBar (real component, not a barrel)
+│   │   ├── feedback-row.tsx
+│   │   ├── history-navigation.ts
+│   │   ├── input-footer.tsx
+│   │   ├── slash-suggestions.tsx
+│   │   ├── use-input-bar-history.ts
+│   │   └── use-slash-autocomplete.ts
+│   ├── overlays/             # SHARED overlays only — feature overlays live in features/
+│   │   ├── command-palette.tsx   # Ctrl+K command palette
+│   │   ├── help-overlay.tsx      # Keyboard shortcut help
+│   │   ├── mode-selector.tsx     # Workflow mode picker (quick/standard/full)
+│   │   ├── overlay-panel.tsx     # Overlay panel primitive
+│   │   └── text-input-overlay.tsx
+│   └── pickers/              # Generic picker primitives
+│       ├── cursor-cell.tsx
+│       ├── filterable-list.tsx  # FilterableList — canonical list-with-filter primitive
+│       ├── picker-utils.ts      # Shared picker helpers (scroll offset, truncation)
+│       ├── single-column-picker.tsx
+│       └── two-column-picker/   # Direct-props compound picker
+│           ├── picker.tsx
+│           ├── two-column-keyboard.ts
+│           ├── use-column-state.ts
+│           └── use-two-column-state.ts
+├── hooks/                    # SHARED React hooks only (cross-feature primitives) — flat, no subdirs, no barrels
+│   ├── use-app-keys.ts       # App-wide keyboard dispatch (Ctrl+C, Ctrl+K, Escape, etc.) — always mounted
+│   ├── use-async-highlight.ts # Shiki async highlight wrapper with cancellation
+│   ├── use-filterable-list.ts # Filterable, searchable picker state (arrow-nav, filter, selection)
+│   └── use-static-selector.ts # Fixed-list keyboard selector (no filter) — peer of use-filterable-list
 └── utils/                    # Helpers (no React/Ink dependencies)
     ├── availability.ts       # Tool availability checks (version parsing + isAvailable)
     ├── diff.ts               # Line-level diff computation
-    ├── editor.ts             # $EDITOR subprocess helpers
     ├── error-hints.ts        # Human-readable hints for common error messages
-    ├── format.ts             # Formatting helpers (tokens, cost, time, version parsing)
+    ├── format-errors.ts
+    ├── format-numbers.ts     # Formatting helpers (tokens, cost, time)
     ├── frontmatter.ts        # YAML-style frontmatter parser for skill/config files
     ├── fs.ts                 # .diptych/ directory management, archiving
     ├── git.ts                # Git operations (commit, diff, status, discard changes)
     ├── highlight.ts          # Shiki-based syntax highlighting (async, WASM)
-    ├── process-errors.ts     # Process error type guards and factory helpers
-    ├── process-lifecycle.ts  # Subprocess SIGTERM/SIGKILL lifecycle management
+    ├── kitty-keyboard.ts     # Kitty keyboard protocol helpers
+    ├── line-buffer.ts
+    ├── mouse.ts              # Mouse event parsing
     ├── process.ts            # Subprocess spawn, streaming, lifecycle, cleanup
+    ├── process-errors.ts     # Process error type guards and factory helpers
+    ├── process-registry.ts   # Subprocess lifecycle management
     ├── redact.ts             # Secret/API-key redaction for safe logging
-    ├── runner-dispatch.ts    # dispatchRunner — type-safe factory lookup by RunnerKind
     ├── sectioned-list.ts     # Sectioned list helpers (grouping, flattening)
+    ├── truncate.ts
     ├── type-guards.ts        # Generic type guard helpers (includes, assertNever)
+    ├── warn.ts
     └── with-timeout.ts       # Promise timeout wrapper
 ```
 
@@ -468,14 +592,14 @@ Current package version: `0.1.0` (see `package.json`). Test suite: 57 colocated 
 ### TUI Architecture
 
 Conversation flow layout with structured event cards. Key design:
-- `TuiEvent` union type drives all UI rendering via a typed renderer registry in `src/components/event-cards/index.tsx`
-- `<Card>` (`src/components/event-cards/card.tsx`) is the canonical primitive for all new event card entries
+- `TuiEvent` union type drives all UI rendering via a typed renderer registry in `src/features/workflow/components/event-cards/event-card.tsx`
+- `<Card>` (`src/features/workflow/components/event-cards/card.tsx`) is the canonical primitive for all new event card entries
 - Planner output: markdown with Shiki-highlighted code blocks. Implementer: structured tool-call cards.
 - Collapsible syntax-highlighted diffs, collapsible completed tasks, pipeline progress bar, cost savings footer.
-- All colors from `src/ui/theme.tsx` (zero hardcoded hex in components)
+- All colors from `src/components/theme.tsx` (zero hardcoded hex in components)
 - Zero React/Ink imports in `src/engine/` (clean engine/UI separation)
 - `FilterableList` (`src/components/pickers/filterable-list.tsx`) is the canonical list-with-filter primitive. For advanced cases that need access to filter state from outside, consumers call `useFilterableList` directly instead of wrapping `FilterableList`.
-- `TwoColumnPicker` (`src/components/pickers/two-column-picker/two-column-picker.tsx`) is a direct-props component: pass `leftProps` and `rightProps` objects. No React Context, no compound-component reflection.
+- `TwoColumnPicker` (`src/components/pickers/two-column-picker/picker.tsx`) is a direct-props component: pass `leftProps` and `rightProps` objects. No React Context, no compound-component reflection.
 
 ### State Management (External Stores)
 
@@ -485,8 +609,9 @@ See `docs/STORES.md` for full architecture documentation.
 
 **How it works:**
 - `src/stores/create-store.ts` — ~45 line factory: `get()`, `set()`, `subscribe()`, `use(selector)`, `reset()`
-- Domain stores: config, conversation-scroll, detection, feedback, input-mode, overlay, review, router, sessions, skills, terminal-size, workflow, workflow-reducers
-- `conversationScrollStore` (`src/stores/conversation-scroll.ts`) — replaces the old `forwardRef`/`useImperativeHandle` pattern in conversation-flow; any code can call `conversationScrollStore.scrollToBottom()` without holding a ref
+- Domain stores grouped under `src/stores/<group>/`: `ui/` (controls, terminal-size, overlay, feedback, input-history, input-height), `workflow/` (events, tasks, tokens, lifecycle, abort, conversation-scroll, review — plus `actions.ts` composite operations module), `navigation/` (router), `project/` (config, sessions, skills, detection), `discovery/` (model-cache). **Zero `index.ts` barrels inside `src/stores/`** — import directly from the source file. See [`docs/NO-BARRELS.md`](./docs/NO-BARRELS.md) and [`docs/STORES.md`](./docs/STORES.md).
+- **Workflow is split into 4 sub-stores + actions module.** Reads: `eventsStore.use(s => s.events)`, `tasksStore.use(s => s.tasks)`, etc. Writes: `import { addEvent, markCancelled, resetWorkflow, useSections } from '../stores/workflow/actions.js'`. The dispatcher (`addEvent`) owns the `cancelled` gate and fan-out order. `resetWorkflow()` calls `abortStore.clear()` first. See `docs/STORES.md` §Workflow actions module.
+- `conversationScrollStore` (`src/stores/workflow/conversation-scroll.ts`) — replaces the old `forwardRef`/`useImperativeHandle` pattern in conversation-flow; any code can call `conversationScrollStore.scrollToBottom()` without holding a ref
 - Components subscribe to specific slices via `store.use(selector)` — only re-render when that slice changes
 - `useStores(...stores)` (`src/stores/use-stores.ts`) — multi-store hook with Proxy per-key tracking. Pass N stores, destructure a tuple, re-render only when an accessed key changes. Use for flat property reads across 1+ stores:
   ```tsx
@@ -510,19 +635,20 @@ CLI (initStores → store.load) → render(<App />)
   App (store.use subscriptions) → Layout (structural shell, 2 props)
     → renderScreen(switch) → Screen reads stores directly
     → renderOverlay(switch) → Overlay reads stores directly
-  Engine code → workflowStore.addEvent() → subscribers re-render
+  Engine code → addEvent() (from workflow/actions.js) → sub-store .set() fan-out → subscribers re-render
 ```
 
 **What stays as React hooks (can't be stores):**
-- `useInputMode` — Promise-based resolver pattern (workflow-scoped lifecycle)
-- `useWorkflow` — orchestrator lifecycle (useEffect + store reads + engine bridge)
-- `useGlobalKeys` — Ink's `useInput` required for keybinding dispatch
-- `useFilterableList` — keyboard-driven list state
-- `useStaticSelector` — peer of `useFilterableList` for no-filter overlays
-- `useAsyncHighlight` — wraps the Shiki async highlight pipeline with cancellation (lives in `src/ui/` because it's consumed by UI primitives)
+- `useInputMode` (`src/features/workflow/hooks/use-input-mode.ts`) — Promise-based resolver pattern (workflow-scoped lifecycle)
+- `useWorkflow` (`src/features/workflow/hooks/use-workflow.ts`) — orchestrator lifecycle (useEffect + store reads + engine bridge)
+- `useAppKeys` (`src/hooks/use-app-keys.ts`) — app-wide keybindings (Ctrl+C, Ctrl+K, Escape, etc.); always mounted
+- `useWorkflowKeys` (`src/features/workflow/hooks/use-workflow-keys.ts`) — workflow-only keyboard (scroll, review chords, sidebar toggle); mounted only when `screen === 'workflow'`
+- `useFilterableList` (`src/hooks/use-filterable-list.ts`) — keyboard-driven list state
+- `useStaticSelector` (`src/hooks/use-static-selector.ts`) — peer of `useFilterableList` for no-filter overlays
+- `useAsyncHighlight` (`src/hooks/use-async-highlight.ts`) — wraps the Shiki async highlight pipeline with cancellation
 
 **Keyboard input convention:**
-Global keyboard handling lives in `src/hooks/use-global-keys.ts`. Local input primitives (multiline-input, filter-input, filterable-list, static-selector, etc.) may use `useInput` directly with their own focus/active gating. Avoid putting `useInput` directly in screen components — route through `useGlobalKeys` instead.
+App-wide keyboard handling lives in `src/hooks/use-app-keys.ts` (mounted at the layout level). Workflow-specific keyboard handling lives in `src/features/workflow/hooks/use-workflow-keys.ts` (mounted inside the workflow screen). Local input primitives (multiline-input, filter-input, filterable-list, static-selector, etc.) may use `useInput` directly with their own focus/active gating. Avoid putting `useInput` directly in screen components — route through `useAppKeys` / `useWorkflowKeys` instead.
 
 **What NOT to do:**
 - Don't add `useMemo`, `useCallback`, or `React.memo` — store selectors make them unnecessary
@@ -535,6 +661,8 @@ Global keyboard handling lives in `src/hooks/use-global-keys.ts`. Local input pr
 - Don't use `configStore.get()` in components — use `configStore.use(selector)` or `configStore.useConfig()` for reactive reads (`.get()` is for non-React code)
 - Use `feedbackStore.setMessage()` for informational messages (e.g., slash command feedback), `setError()` for actual errors
 - When updating config via store, create new objects (immutable): `configStore.set({ ...configStore.get(), config: { ...config, workflow: { ...config.workflow, mode } } })`
+- Don't create re-export-only `index.ts` barrels in `src/stores/`, `src/hooks/`, `src/features/`, or `src/components/` — zero tolerance, see `docs/NO-BARRELS.md`. Remaining `index.ts` barrels under `src/core/` and `src/engine/` are tracked in `docs/FUTURE-WORK.md`.
+- Don't reintroduce `workflowStore` as a single object — the split into `eventsStore`/`tasksStore`/`tokensStore`/`lifecycleStore` + `actions.ts` is deliberate. Read the sub-store or call an action from `workflow/actions.js`.
 
 ### Testing Policy
 

@@ -1,6 +1,7 @@
-import type { Summary, TaskTokenUsage, WorkflowState } from '../../types.js';
+import type { WorkflowState } from '../../core/types/state-actions.js';
+import type { Summary, TaskTokenUsage } from '../../core/types/summary.js';
 import { calculateCostBreakdown, getProviderPricing, calculateCost } from '../providers/pricing.js';
-import { formatCost } from '../../utils/format.js';
+import { formatCost } from '../../utils/format-numbers.js';
 import {
   getCompletedTaskIds,
   getEscalatedTaskIds,
@@ -24,11 +25,6 @@ type BuildSummaryOptions = {
   phaseTimings?: Record<string, number>;
 };
 
-/**
- * Estimates per-task cost using global average cost-per-token.
- * Tasks that escalated share the same average rate as non-escalated tasks;
- * exact per-task cost would require tracking provider per attempt.
- */
 export function calculateTaskCost(
   task: TaskTokenUsage,
   globalUsage: { implementerInput: number; implementerOutput: number; escalationInput: number; escalationOutput: number },

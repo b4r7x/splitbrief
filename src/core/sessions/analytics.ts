@@ -1,4 +1,4 @@
-import type { Session } from '../types/index.js';
+import type { Session } from '../types/app.js';
 
 export type SessionAnalytics = {
   totalSessions: number;

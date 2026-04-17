@@ -1,11 +1,14 @@
-import type { Config, InvokeResult } from '../../types.js';
+import type { Config } from '../../core/types/config-options.js';
+import type { InvokeResult } from '../../core/types/runner.js';
 import type { Planner, PlannerCallbacks } from './types.js';
+import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { createCommandAvailability } from '../../utils/availability.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { CLI_TOOLS } from '../cli-tools.js';
-import { resolveAutoModel } from '../../core/providers.js';
+import { resolveAutoModel } from '../../core/providers/index.js';
 import { assertPlannerKind } from '../config-assertions.js';
+import { createSessionResumeState } from '../session-expiry.js';
 
 export function createCliPlanner(config: Config, initialSessionId?: string | null): Planner {
   const plannerCfg = assertPlannerKind(config, 'cli');
@@ -16,13 +19,19 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
   }
   const planner = tool.planner;
   const supportsSessionResume = planner.supportsSessionResume === true;
-  let currentSessionId: string | null = supportsSessionResume ? (initialSessionId ?? null) : null;
 
-  async function invoke(
+  let pendingExpiredCallback: ((id: string) => void) | undefined;
+  const session = createSessionResumeState({
+    onExpired: (id) => pendingExpiredCallback?.(id),
+  });
+  if (supportsSessionResume) session.capture(initialSessionId ?? null);
+
+  async function runOnce(
     prompt: string,
     projectDir: string,
     callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onSessionId'>,
     mode: 'plan' | 'escalate',
+    resumeId: string | null,
   ): Promise<InvokeResult> {
     let stderrOutput = '';
     const buildOpts: Parameters<typeof planner.buildArgs>[0] = {
@@ -30,7 +39,7 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
       projectDir,
       mode,
       ...(resolvedModel !== undefined && { model: resolvedModel }),
-      ...(supportsSessionResume && currentSessionId ? { sessionId: currentSessionId } : {}),
+      ...(supportsSessionResume && resumeId ? { sessionId: resumeId } : {}),
     };
 
     const result = await spawnAndCollect({
@@ -43,7 +52,7 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
       onStderr: planner.postProcess ? (chunk) => { stderrOutput += chunk; } : undefined,
       ...(supportsSessionResume && {
         onSessionId: (id: string) => {
-          currentSessionId = id;
+          session.capture(id);
           callbacks.onSessionId?.(id);
         },
       }),
@@ -53,6 +62,31 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
     return { text: result.text, usage: result.usage };
   }
 
+  async function invoke(
+    prompt: string,
+    projectDir: string,
+    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onSessionId' | 'onSessionExpired'>,
+    mode: 'plan' | 'escalate',
+  ): Promise<InvokeResult> {
+    if (!supportsSessionResume) {
+      return runOnce(prompt, projectDir, callbacks, mode, null);
+    }
+
+    pendingExpiredCallback = callbacks.onSessionExpired;
+    try {
+      try {
+        return await runOnce(prompt, projectDir, callbacks, mode, session.getResumeId());
+      } catch (err) {
+        if (session.handleResumeError(err)) {
+          return await runOnce(prompt, projectDir, callbacks, mode, null);
+        }
+        throw err;
+      }
+    } finally {
+      pendingExpiredCallback = undefined;
+    }
+  }
+
   return createPlannerBase({
     invokePlan: ({ prompt, projectDir, callbacks }) => invoke(prompt, projectDir, callbacks, 'plan'),
     invokeEscalate: ({ prompt, projectDir, callbacks }) => invoke(prompt, projectDir, callbacks, 'escalate'),
@@ -60,11 +94,6 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
 
     ...createCommandAvailability(tool.command, planner.isAvailableOpts),
 
-    capabilities: {
-      supportsConversationalPlanning: false,
-      supportsHintEscalation: true,
-      supportsSessionResume,
-      supportsMidStreamInjection: false,
-    },
+    capabilities: { ...ONE_SHOT_API_CAPS, supportsSessionResume },
   });
 }

@@ -1,7 +1,7 @@
 import type { z } from 'zod';
-import type { Phase, TaskStatus, WorkflowState } from './workflow.js';
+import type { Phase, TaskStatus, WorkflowState } from './state-actions.js';
 import type { Summary } from './summary.js';
-import type { WorkflowMode } from './config.js';
+import type { WorkflowMode } from './config-options.js';
 import type { SessionSchema } from './schemas/session.js';
 
 export type Screen = 'home' | 'workflow' | 'summary' | 'setup';
@@ -44,7 +44,7 @@ export type SlashCommandDef =
 
 export interface CommandContext {
   openOverlay: (type: OverlayType, focus?: string) => void;
-  navigate: (screen: Screen) => void;
+  navigate: (to: 'home') => void;
   quit: () => void;
   setWorkflowMode: (mode: WorkflowMode) => boolean;
   setFeedbackMessage: (msg: string) => void;

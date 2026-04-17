@@ -1,6 +1,6 @@
 import { CLI_TOOL_IDS, KNOWN_API_PROVIDERS } from '../types/schemas/enums.js';
-import { includes } from '../../utils/type-guards.js';
-import { resolveDefaultApiBase } from '../providers.js';
+import { includes, assertNever } from '../../utils/type-guards.js';
+import { resolveDefaultApiBase } from '../providers/index.js';
 import { PlannerConfigSchema } from '../types/schemas/planner-config.js';
 import { ImplementerConfigSchema } from '../types/schemas/implementer-config.js';
 import type { PlannerConfig } from '../types/schemas/planner-config.js';
@@ -26,16 +26,6 @@ export interface BuildRunnerOpts {
   existing?: PlannerConfig | ImplementerConfig | undefined;
 }
 
-type Builder = (role: Role, opts: BuildRunnerOpts) => PlannerConfig | ImplementerConfig;
-
-const BUILDERS: Record<RunnerKind, Builder> = {
-  cli: buildCliConfig,
-  api: buildApiConfig,
-  shell: (role, opts) => buildCommandConfig(role, opts, 'shell'),
-  agent: (role, opts) => buildCommandConfig(role, opts, 'agent'),
-  'agent-sdk': buildAgentSdkConfig,
-};
-
 export function buildRunnerConfig(role: 'planner', opts: BuildRunnerOpts): PlannerConfig;
 export function buildRunnerConfig(role: 'implementer', opts: BuildRunnerOpts): ImplementerConfig;
 export function buildRunnerConfig(
@@ -43,8 +33,14 @@ export function buildRunnerConfig(
   opts: BuildRunnerOpts
 ): PlannerConfig | ImplementerConfig {
   const kind = inferKind(role, opts);
-  const builder = BUILDERS[kind];
-  return builder(role, opts);
+  switch (kind) {
+    case 'cli': return buildCliConfig(role, opts);
+    case 'api': return buildApiConfig(role, opts);
+    case 'shell': return buildCommandConfig(role, opts, 'shell');
+    case 'agent': return buildCommandConfig(role, opts, 'agent');
+    case 'agent-sdk': return buildAgentSdkConfig(role, opts);
+    default: return assertNever(kind);
+  }
 }
 
 interface GenerationParams {

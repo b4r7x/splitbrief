@@ -56,6 +56,19 @@ export interface FilteredStdin {
   disable: () => void;
 }
 
+let activeFilteredStdin: FilteredStdin | undefined;
+
+export function setActiveFilteredStdin(instance: FilteredStdin | undefined): void {
+  activeFilteredStdin = instance;
+}
+
+export function getActiveFilteredStdin(): FilteredStdin | undefined {
+  return activeFilteredStdin;
+}
+
+// `isTTY` and `isRaw` attach as getters delegating to real stdin; `setRawMode`,
+// `ref`, `unref` delegate via Object.assign. Final cast is the sanctioned interop
+// boundary — PassThrough cannot structurally satisfy `tty.ReadStream`.
 function bridgeTty(filtered: PassThrough, stdin: NodeJS.ReadStream): NodeJS.ReadStream {
   Object.defineProperty(filtered, 'isTTY', {
     configurable: true,
@@ -68,15 +81,15 @@ function bridgeTty(filtered: PassThrough, stdin: NodeJS.ReadStream): NodeJS.Read
     get: () => stdin.isRaw,
   });
   Object.assign(filtered, {
-    setRawMode: (mode: boolean) => {
+    setRawMode(mode: boolean): PassThrough {
       stdin.setRawMode(mode);
       return filtered;
     },
-    ref: () => {
+    ref(): PassThrough {
       stdin.ref();
       return filtered;
     },
-    unref: () => {
+    unref(): PassThrough {
       stdin.unref();
       return filtered;
     },

@@ -1,55 +1,51 @@
 import type { Planner, EscalationResult } from './types.js';
-import type { ClarificationQuestion } from '../../types.js';
+import type { ClarificationQuestion } from '../../core/types/events.js';
+import { CONVERSATIONAL_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { createCommandAvailability } from '../../utils/availability.js';
 import { writeProjectFile } from '../../core/paths-io.js';
 import { runClaudePlannerStream, runClaudeOneShot } from '../claude-runner.js';
-import { resolveAutoModel } from '../../core/providers.js';
-
-const SESSION_EXPIRED_PATTERNS = [
-  'session not found',
-  'session_not_found',
-  'invalid session',
-  'expired session',
-];
-
-function isSessionExpiredError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
-  return SESSION_EXPIRED_PATTERNS.some(p => msg.includes(p));
-}
+import { resolveAutoModel } from '../../core/providers/index.js';
+import { createSessionResumeState } from '../session-expiry.js';
 
 export function createClaudeCodePlanner(model?: string, initialSessionId?: string | null): Planner {
   const resolvedModel = resolveAutoModel(model, 'claude-code');
-  let currentSessionId: string | null = initialSessionId ?? null;
+  let pendingExpiredCallback: ((id: string) => void) | undefined;
+  const session = createSessionResumeState({
+    onExpired: (id) => pendingExpiredCallback?.(id),
+  });
+  session.capture(initialSessionId ?? null);
 
   async function invokeWithSessionFallback(
     prompt: string,
     projectDir: string,
     callbacks: { onOutput: (text: string) => void; onSessionId?: ((id: string) => void) | undefined; onSessionExpired?: ((id: string) => void) | undefined; onQuestion?: ((q: ClarificationQuestion[]) => void) | undefined },
   ) {
+    pendingExpiredCallback = callbacks.onSessionExpired;
     try {
-      return await runClaudePlannerStream({
-        prompt, projectDir, sessionId: currentSessionId,
-        onOutput: callbacks.onOutput, onQuestion: callbacks.onQuestion, model: resolvedModel,
-      });
-    } catch (err) {
-      if (currentSessionId && isSessionExpiredError(err)) {
-        const expiredId = currentSessionId;
-        currentSessionId = null;
-        callbacks.onSessionExpired?.(expiredId);
-        return runClaudePlannerStream({
-          prompt, projectDir, sessionId: null,
+      try {
+        return await runClaudePlannerStream({
+          prompt, projectDir, sessionId: session.getResumeId(),
           onOutput: callbacks.onOutput, onQuestion: callbacks.onQuestion, model: resolvedModel,
         });
+      } catch (err) {
+        if (session.handleResumeError(err)) {
+          return await runClaudePlannerStream({
+            prompt, projectDir, sessionId: null,
+            onOutput: callbacks.onOutput, onQuestion: callbacks.onQuestion, model: resolvedModel,
+          });
+        }
+        throw err;
       }
-      throw err;
+    } finally {
+      pendingExpiredCallback = undefined;
     }
   }
 
   return createPlannerBase({
     async invokePlan({ prompt, projectDir, callbacks }) {
       const result = await invokeWithSessionFallback(prompt, projectDir, callbacks);
-      currentSessionId = result.sessionId;
+      session.capture(result.sessionId);
       if (result.sessionId) callbacks.onSessionId?.(result.sessionId);
       return { text: result.text, usage: result.usage };
     },
@@ -61,22 +57,18 @@ export function createClaudeCodePlanner(model?: string, initialSessionId?: strin
     ...createCommandAvailability('claude'),
 
     async injectUserTurn(text: string, projectDir: string): Promise<void> {
-      if (!currentSessionId) return;
+      const sessionId = session.getResumeId();
+      if (!sessionId) return;
       await runClaudePlannerStream({
         prompt: text,
         projectDir,
-        sessionId: currentSessionId,
+        sessionId,
         onOutput: () => {},
         model: resolvedModel,
       });
     },
 
-    capabilities: {
-      supportsConversationalPlanning: true,
-      supportsHintEscalation: false,
-      supportsSessionResume: true,
-      supportsMidStreamInjection: true,
-    },
+    capabilities: { ...CONVERSATIONAL_CAPS, supportsHintEscalation: false },
 
     escalateFullPostProcess(task, result, extracted, projectDir): EscalationResult {
       writeProjectFile(projectDir, task.file, extracted.code);

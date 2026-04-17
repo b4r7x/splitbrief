@@ -1,6 +1,6 @@
 import { readFile, readdir, access } from 'node:fs/promises';
 import { join } from 'node:path';
-import { readPackageJson } from '../../utils/fs.js';
+import { readPackageJson } from '../../core/project-meta.js';
 import { warnError } from '../../utils/warn.js';
 
 const MAX_LISTED_ENTRIES = 500;

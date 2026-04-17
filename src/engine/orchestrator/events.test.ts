@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createInitialState } from '../../core/state/machine.js';
-import { taskId } from '../../core/types/workflow.js';
+import { taskId } from '../../core/types/state-actions.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-fixtures.js';
 
 vi.mock('../../core/state/persistence.js', () => ({
@@ -8,7 +8,7 @@ vi.mock('../../core/state/persistence.js', () => ({
 	appendEvent: vi.fn(),
 }));
 
-import { emitPlannerStatus, emitTaskStart, emitTaskComplete, emitValidationResult, emitError, emitCostPrediction, emitBudgetWarning, emitBudgetExceeded } from './events.js';
+import { emitPlannerStatus, emitTaskStart, emitTaskComplete, emitValidation, emitError, emitCostPrediction, emitBudgetWarning, emitBudgetExceeded } from './events.js';
 
 beforeEach(() => {
 	vi.clearAllMocks();
@@ -125,7 +125,7 @@ describe('emitTaskComplete', () => {
 	});
 });
 
-describe('emitValidationResult', () => {
+describe('emitValidation — result phase', () => {
 	it('emits passed with all stages true', () => {
 		const { callbacks, events } = makeCallbacks();
 		const results = [
@@ -134,7 +134,7 @@ describe('emitValidationResult', () => {
 			{ stage: 'test' as const, passed: true },
 		];
 
-		emitValidationResult(callbacks, results, Date.now() - 100);
+		emitValidation(callbacks, { phase: 'result', results, startTime: Date.now() - 100 });
 
 		expect(events).toHaveLength(1);
 		expect(events[0]).toMatchObject({
@@ -150,7 +150,7 @@ describe('emitValidationResult', () => {
 			{ stage: 'tsc' as const, passed: false, error: 'TS2322: type mismatch' },
 		];
 
-		emitValidationResult(callbacks, results, Date.now() - 50);
+		emitValidation(callbacks, { phase: 'result', results, startTime: Date.now() - 50 });
 
 		expect(events).toHaveLength(1);
 		expect(events[0]).toMatchObject({
@@ -164,7 +164,7 @@ describe('emitValidationResult', () => {
 		const { callbacks, events } = makeCallbacks();
 		const startTime = Date.now() - 500;
 
-		emitValidationResult(callbacks, [{ stage: 'tsc' as const, passed: true }], startTime);
+		emitValidation(callbacks, { phase: 'result', results: [{ stage: 'tsc' as const, passed: true }], startTime });
 
 		const e = events[0] as Record<string, unknown>;
 		expect(e['duration']).toBeGreaterThanOrEqual(400);
@@ -177,7 +177,7 @@ describe('emitValidationResult', () => {
 			{ stage: 'lint' as const, passed: false, error: 'lint error' },
 		];
 
-		emitValidationResult(callbacks, results, Date.now());
+		emitValidation(callbacks, { phase: 'result', results, startTime: Date.now() });
 
 		expect(events[0]).toMatchObject({
 			type: 'validate', passed: false,

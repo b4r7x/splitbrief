@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { WorkflowState, QueuedMessage } from '../../types.js';
+import type { WorkflowState, QueuedMessage } from '../../core/types/state-actions.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-fixtures.js';
 
@@ -77,7 +77,7 @@ describe('createQueueHandler', () => {
     expect(queued).toBeDefined();
   });
 
-  it('calls dispatchNativeInjection for planners with supportsMidStreamInjection', () => {
+  it('calls dispatchNativeInjection for planners with injectUserTurn', () => {
     let state: WorkflowState | undefined = makeResearchingState();
     const { callbacks } = makeCallbacks();
     const planner = makePlanner({
@@ -85,7 +85,6 @@ describe('createQueueHandler', () => {
         supportsConversationalPlanning: true,
         supportsHintEscalation: false,
         supportsSessionResume: true,
-        supportsMidStreamInjection: true,
       },
       injectUserTurn: vi.fn().mockResolvedValue(undefined),
     });
@@ -121,8 +120,8 @@ describe('createQueueHandler', () => {
         supportsConversationalPlanning: false,
         supportsHintEscalation: false,
         supportsSessionResume: false,
-        supportsMidStreamInjection: true,
       },
+      injectUserTurn: vi.fn().mockResolvedValue(undefined),
     });
 
     const handler = createQueueHandler(

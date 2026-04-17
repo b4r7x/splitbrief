@@ -1,4 +1,4 @@
-import type { Task, ProjectContext, CodeContext } from '../../types.js';
+import type { Task, ProjectContext, CodeContext } from '../../core/types/state-actions.js';
 import { extractFunctionContext } from '../parsers/scope-extractor.js';
 import { DECLARATION_NAME_RE } from '../parsers/code-patterns.js';
 import { estimateTokens, truncateMiddle, computeTokenBudget } from './token-budget.js';

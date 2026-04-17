@@ -1,4 +1,4 @@
-import { buildPrompt } from './shared.js';
+import { buildPrompt, instructionsSection, requiredSectionsSection } from './shared.js';
 
 interface PlanPromptSpec {
   content: string;
@@ -22,13 +22,10 @@ Note: The specification contains a Clarifications section with user decisions. R
     sections: [
       { heading: 'Specification', body: spec.content },
       { heading: 'Project Context', body: `${projectContext}${skillsContext ? `\n${skillsContext}` : ''}` },
-      {
-        heading: 'Instructions',
-        body: 'Write a complete `plan.md` document that provides a concrete implementation blueprint. Another developer (or AI) should be able to follow this plan without needing to make architectural decisions.',
-      },
-      {
-        heading: 'Required Sections',
-        body: `### Summary
+      instructionsSection(
+        'Write a complete `plan.md` document that provides a concrete implementation blueprint. Another developer (or AI) should be able to follow this plan without needing to make architectural decisions.',
+      ),
+      requiredSectionsSection(`### Summary
 One-paragraph summary of the implementation approach.
 
 ### Architecture Decisions
@@ -64,15 +61,10 @@ For each major component:
 ### Testing Strategy
 - What to test (unit, integration, edge cases)
 - Test file locations
-- Key test scenarios with expected inputs/outputs`,
-      },
+- Key test scenarios with expected inputs/outputs`),
     ],
     output,
   });
-}
-
-export function buildPlanPromptFromSpec(spec: string, projectContext: string, skillsContext?: string): string {
-  return buildPlanPrompt({ content: spec, hasClarifications: spec.includes('## Clarifications') }, projectContext, skillsContext);
 }
 
 export function buildRegeneratePrompt(artifactType: 'spec' | 'plan', currentContent: string, feedback: string): string {
@@ -83,10 +75,9 @@ export function buildRegeneratePrompt(artifactType: 'spec' | 'plan', currentCont
     sections: [
       { heading: `Current ${label}`, body: currentContent },
       { heading: 'User Feedback', body: feedback },
-      {
-        heading: 'Instructions',
-        body: `Regenerate the complete ${artifactType}.md incorporating the user's feedback. Output the full updated document, not just the changes.`,
-      },
+      instructionsSection(
+        `Regenerate the complete ${artifactType}.md incorporating the user's feedback. Output the full updated document, not just the changes.`,
+      ),
     ],
   });
 }

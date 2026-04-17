@@ -1,11 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  parseModelId,
-  formatPricing,
-  resolvePricing,
-  LOCAL_PRICING,
-} from './model-utils.js';
-import { modelCacheStore } from '../../stores/model-cache.js';
+import { parseModelId } from './model-parsing.js';
+import { formatPricing, resolvePricing, LOCAL_PRICING } from './pricing-resolver.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 
 describe('parseModelId', () => {
   it('parses provider/model format', () => {

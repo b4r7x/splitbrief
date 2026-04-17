@@ -1,9 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import type { WorkflowState, OrchestratorCallbacks, TuiEvent } from '../../types.js';
-import { makeTask, makeUsage } from '#testing/helpers/fixtures.js';
-import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import type { WorkflowState } from '../../core/types/state-actions.js';
+import type { OrchestratorCallbacks, TuiEvent } from '../../core/types/events.js';
+import { makeUsage } from '#testing/helpers/fixtures.js';
 
 function stubCallbacks(onEvent: (e: TuiEvent) => void): OrchestratorCallbacks {
   return {
@@ -18,7 +16,7 @@ vi.mock('../../core/state/persistence.js', () => ({
   saveState: vi.fn(),
 }));
 
-import { refreshCurrentCode, allValidationsPassed, addUsageAndSave, withSignalHandlers } from './helpers.js';
+import { addUsageAndSave, withSignalHandlers } from './helpers.js';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -45,45 +43,6 @@ function makeState(overrides?: Partial<WorkflowState>): WorkflowState {
     ...overrides,
   };
 }
-
-describe('refreshCurrentCode', () => {
-  let projectDir: string;
-
-  beforeEach(() => {
-    projectDir = createTempDir('helpers-refresh');
-    mkdirSync(join(projectDir, 'src'), { recursive: true });
-  });
-
-  afterEach(() => {
-    cleanupTempDir(projectDir);
-  });
-
-  it('returns a new task with currentCode populated from file contents when file exists', async () => {
-    writeFileSync(join(projectDir, 'src', 'hello.ts'), 'const x = 1;');
-
-    const task = makeTask({ file: 'src/hello.ts' });
-    const refreshed = await refreshCurrentCode(task, projectDir);
-
-    expect(refreshed.currentCode).toBe('const x = 1;');
-    expect(task.currentCode).toBeUndefined();
-  });
-
-  it('returns the original task unchanged when file does not exist', async () => {
-    const task = makeTask({ file: 'src/missing.ts' });
-    const refreshed = await refreshCurrentCode(task, projectDir);
-
-    expect(refreshed).toBe(task);
-    expect(refreshed.currentCode).toBeUndefined();
-  });
-});
-
-describe('allValidationsPassed', () => {
-  it('returns true when all pass, false when any fails', () => {
-    expect(allValidationsPassed([])).toBe(true);
-    expect(allValidationsPassed([{ stage: 'tsc', passed: true }, { stage: 'lint', passed: true }])).toBe(true);
-    expect(allValidationsPassed([{ stage: 'tsc', passed: true }, { stage: 'lint', passed: false, error: 'err' }])).toBe(false);
-  });
-});
 
 describe('addUsageAndSave', () => {
   beforeEach(() => vi.clearAllMocks());

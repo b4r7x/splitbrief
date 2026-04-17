@@ -1,4 +1,4 @@
-import { TASK_FORMAT_EXAMPLE, buildPrompt } from './shared.js';
+import { TASK_FORMAT_EXAMPLE, buildPrompt, instructionsSection } from './shared.js';
 
 export function buildTasksPrompt(spec: string, plan: string): string {
   return buildPrompt({
@@ -7,10 +7,9 @@ export function buildTasksPrompt(spec: string, plan: string): string {
     sections: [
       { heading: 'Specification', body: spec },
       { heading: 'Implementation Plan', body: plan },
-      {
-        heading: 'Instructions',
-        body: `Write a \`tasks.md\` file containing ordered, atomic tasks. Each task represents a single file operation (create or modify one file).`,
-      },
+      instructionsSection(
+        'Write a `tasks.md` file containing ordered, atomic tasks. Each task represents a single file operation (create or modify one file).',
+      ),
       {
         heading: 'Task Format',
         body: `Each task MUST use this exact format:

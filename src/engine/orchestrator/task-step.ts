@@ -1,16 +1,16 @@
-import type { Task, WorkflowState, TaskTokenUsage, TokenUsage } from '../../types.js';
+import type { Task, WorkflowState } from '../../core/types/state-actions.js';
+import type { TaskTokenUsage, TokenUsage } from '../../core/types/summary.js';
 import { formatValidationError, runValidationWithEvents } from './validator.js';
 
 import type { WorkflowContext } from './types.js';
-import { buildAndRecordUsage } from './tokens.js';
-import { toErrorMessage, labelError } from '../../utils/format.js';
+import { recordTaskUsage } from './tokens.js';
+import { toErrorMessage, labelError } from '../../utils/format-errors.js';
 import { emit, createTextHandler, emitError, emitTaskStart } from './events.js';
 import { handleRetryAndEscalation } from './escalation.js';
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave } from './helpers.js';
 import { validateCommitAndAdvance } from './task-commit.js';
 import { getRunnerDisplayName } from '../../core/config/runner-config.js';
-import { buildContinuationPrompt } from './continuation.js';
-import { workflowStore } from '../../stores/workflow.js';
+import { withContinuationLoop } from './continuation-loop.js';
 
 type RetryAndRecordOptions = {
   wctx: WorkflowContext;
@@ -30,7 +30,7 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
     wctx, task, initialError, currentState: opts.state, taskStartTime,
   });
   setTrackedState(state);
-  buildAndRecordUsage({ task, method: result.method, tokensBefore, currentUsage: state.tokenUsage, projectDir, sessionId, state, taskBreakdowns, retryCount: result.attempts, tool: getRunnerDisplayName(wctx.config.implementer), model: wctx.config.implementer.model });
+  recordTaskUsage({ task, method: result.method, tokensBefore, currentUsage: state.tokenUsage, projectDir, sessionId, state, taskBreakdowns, retryCount: result.attempts, tool: getRunnerDisplayName(wctx.config.implementer), model: wctx.config.implementer.model });
   if (!result.completed) emit(projectDir, sessionId, state, 'task_failed', task.id, {});
   return { state, completed: result.completed };
 }
@@ -72,62 +72,36 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   if (wctx.signal?.aborted) return state;
 
-  let partialOutput = '';
-  let continuationPrompt: string | undefined;
   const textHandler = createTextHandler(callbacks);
 
-  // Per-call abort + continuation loop
-  let implResult: Awaited<ReturnType<typeof wctx.implementer.implement>> | undefined;
-  while (true) {
-    const callController = new AbortController();
-    workflowStore.setAbortHandler(() => callController.abort());
-    partialOutput = '';
-
-    try {
-      implResult = await wctx.implementer.implement({
-        task, projectDir, config, context,
-        onOutput: (text) => { partialOutput += text; textHandler(text); },
-        onEvent: callbacks.onEvent,
-        sessionId,
-        signal: callController.signal,
-        continuationPrompt,
-      });
-    } catch (err) {
-      workflowStore.setAbortHandler(null);
-
-      // Per-call abort (not workflow cancel): enter continuation mode
-      if (callController.signal.aborted && !wctx.signal?.aborted && callbacks.onContinuationNeeded) {
-        state = transitionAndSave(projectDir, sessionId, state, { type: 'ABORT_TURN' });
-        setTrackedState(state);
-        const userText = await callbacks.onContinuationNeeded(partialOutput);
-        state = transitionAndSave(projectDir, sessionId, state, { type: 'CONTINUE_TURN' });
-        setTrackedState(state);
-        continuationPrompt = buildContinuationPrompt(partialOutput, userText);
-        continue;
-      }
-
-      emitError(callbacks, labelError('Implementation failed', err));
-      const retry = await retryAndRecord({
-        wctx, task, initialError: toErrorMessage(err),
-        state, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState,
-      });
-      return retry.state;
-    }
-
-    workflowStore.setAbortHandler(null);
-
-    // Abort returned as a result (not thrown) — handle continuation
-    if (callController.signal.aborted && !implResult.success && !wctx.signal?.aborted && callbacks.onContinuationNeeded) {
-      state = transitionAndSave(projectDir, sessionId, state, { type: 'ABORT_TURN' });
-      setTrackedState(state);
-      const userText = await callbacks.onContinuationNeeded(partialOutput);
-      state = transitionAndSave(projectDir, sessionId, state, { type: 'CONTINUE_TURN' });
-      setTrackedState(state);
-      continuationPrompt = buildContinuationPrompt(partialOutput, userText);
-      continue;
-    }
-
-    break;
+  type ImplResult = Awaited<ReturnType<typeof wctx.implementer.implement>>;
+  let implResult: ImplResult;
+  try {
+    const loop = await withContinuationLoop<ImplResult>({
+      ctx: { projectDir, sessionId, callbacks, signal: wctx.signal, sinks: wctx.sinks },
+      state,
+      onStateChange: setTrackedState,
+      body: async ({ signal, continuationPrompt, recordOutput }) => {
+        const result = await wctx.implementer.implement({
+          task, projectDir, config, context,
+          onOutput: (text) => { recordOutput(text); textHandler(text); },
+          onEvent: callbacks.onEvent,
+          sessionId,
+          signal,
+          continuationPrompt,
+        });
+        return { value: result, continueIfAborted: !result.success };
+      },
+    });
+    state = loop.state;
+    implResult = loop.value;
+  } catch (err) {
+    emitError(callbacks, labelError('Implementation failed', err));
+    const retry = await retryAndRecord({
+      wctx, task, initialError: toErrorMessage(err),
+      state, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState,
+    });
+    return retry.state;
   }
 
   state = addUsageAndSave(projectDir, sessionId, state, 'implementer', implResult.usage, callbacks);
@@ -155,7 +129,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   if (commitResult.completed) {
     state = commitResult.state;
     setTrackedState(state);
-    buildAndRecordUsage({ task, method: 'local', tokensBefore, currentUsage: state.tokenUsage, projectDir, sessionId, state, taskBreakdowns, tool: getRunnerDisplayName(config.implementer), model: config.implementer.model });
+    recordTaskUsage({ task, method: 'local', tokensBefore, currentUsage: state.tokenUsage, projectDir, sessionId, state, taskBreakdowns, tool: getRunnerDisplayName(config.implementer), model: config.implementer.model });
     return state;
   }
 

@@ -1,4 +1,4 @@
-import type { WorkflowState, TaskId, TaskStatus } from '../types/index.js';
+import type { WorkflowState, TaskId, TaskStatus } from '../types/state-actions.js';
 
 function getTaskIdsByStatus(state: Pick<WorkflowState, 'tasks'>, status: TaskStatus): TaskId[] {
   return state.tasks.filter(t => t.status === status).map(t => t.id);

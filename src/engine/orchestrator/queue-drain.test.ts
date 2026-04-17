@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { WorkflowState, QueuedMessage } from '../../types.js';
+import type { WorkflowState, QueuedMessage } from '../../core/types/state-actions.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-fixtures.js';
 

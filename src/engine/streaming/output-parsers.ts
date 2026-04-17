@@ -1,7 +1,10 @@
 import { z } from 'zod';
-import type { OutputFormat, ParsedLine, TokenDelta, ToolUseInfo } from '../../types.js';
+import type { OutputFormat } from '../../core/types/config-options.js';
+import type { ParsedLine, ToolUseInfo } from '../../core/types/runner.js';
+import type { TokenDelta } from '../../core/types/summary.js';
 import { toTokenDelta } from './token-utils.js';
 import { assertNever, narrowRecord } from '../../utils/type-guards.js';
+import { warnError } from '../../utils/warn.js';
 export { accumulateUsage } from './token-utils.js';
 
 export type { ToolUseInfo };
@@ -79,7 +82,8 @@ export function parseStreamLine(line: string): StreamParseResult {
     }
 
     return EMPTY_RESULT;
-  } catch { /* malformed stream-json line — skip */
+  } catch (err) {
+    warnError('output-parser: malformed stream-json line', err);
     return EMPTY_RESULT;
   }
 }
@@ -161,7 +165,8 @@ export function parseJsonlLine(line: string): ParsedLine {
     }
 
     return {};
-  } catch { /* malformed JSONL line — skip */
+  } catch (err) {
+    warnError('output-parser: malformed JSONL line', err);
     return {};
   }
 }
@@ -208,7 +213,8 @@ export function parseOpencodeLine(line: string): ParsedLine {
   let event: unknown;
   try {
     event = JSON.parse(trimmed);
-  } catch { /* malformed opencode JSON — skip */
+  } catch (err) {
+    warnError('output-parser: malformed opencode JSON', err);
     return {};
   }
 

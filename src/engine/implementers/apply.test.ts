@@ -3,7 +3,7 @@ import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { applyCode } from './apply.js';
 import { makeTask as makeBaseTask } from '#testing/helpers/fixtures.js';
-import type { Task } from '../../types.js';
+import type { Task } from '../../core/types/state-actions.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 function makeTask(overrides: Partial<Task> = {}): Task {

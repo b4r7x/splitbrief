@@ -1,3 +1,5 @@
+import { availableRows } from '../../core/layout/picker-chrome.js';
+
 export type FilterableItem = { id: string; displayName: string };
 
 export const CURSOR = '\u25B8 ';
@@ -18,10 +20,6 @@ export function filterByFields<T>(item: T, query: string, fields: (keyof T)[]): 
   return false;
 }
 
-function maxVisibleRows(terminalRows: number, chromeRows: number, max = 3): number {
-  return Math.max(terminalRows - chromeRows, max);
-}
-
 export function computeScrollWindow<T>(
   items: T[],
   selectedIndex: number,
@@ -29,7 +27,7 @@ export function computeScrollWindow<T>(
   chromeRows: number,
   maxVisible?: number,
 ) {
-  const visible = maxVisibleRows(terminalRows, chromeRows, maxVisible);
+  const visible = availableRows(terminalRows, chromeRows, maxVisible);
   const scrollOffset = computeScrollOffset(selectedIndex, visible, items.length);
   const visibleSlice = items.slice(scrollOffset, scrollOffset + visible);
   const showScrollUp = scrollOffset > 0;

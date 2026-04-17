@@ -1,8 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { detectLinter, findAffectedTestFile, formatValidationError, parseCommand } from './validator.js';
-import type { ValidationResult } from '../../types.js';
+import { formatValidationError } from './validator.js';
+import { detectLinter, findAffectedTestFile, parseCommand } from './validator-internal.js';
+import type { ValidationResult } from '../../core/types/summary.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 describe('detectLinter', () => {

@@ -1,5 +1,5 @@
-import type { Config } from '../types/index.js';
-import { getProviderDisplayName } from '../providers.js';
+import type { Config } from '../types/config-options.js';
+import { getProviderDisplayName } from '../providers/index.js';
 import { formatModelName } from '../model-display.js';
 import { getRunnerDisplayName } from '../config/index.js';
 

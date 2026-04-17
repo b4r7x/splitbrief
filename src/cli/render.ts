@@ -2,8 +2,8 @@ import { render } from 'ink';
 import { withFullScreen } from 'fullscreen-ink';
 import type { createElement } from 'react';
 import { warnError } from '../utils/warn.js';
-import { createFilteredStdin, type FilteredStdin } from '../utils/mouse.js';
-import { wireWorkflowMouseScroll } from './mouse-scroll.js';
+import { createFilteredStdin, type FilteredStdin, setActiveFilteredStdin } from '../utils/mouse.js';
+import { detectKittyKeyboardFlags } from '../utils/kitty-keyboard.js';
 
 interface RenderOptions {
   fullscreen: boolean;
@@ -15,18 +15,14 @@ export async function renderApp(
   options: RenderOptions,
 ): Promise<void> {
   const { fullscreen, mouse } = options;
-  const termProgram = process.env['TERM_PROGRAM'] ?? '';
-  const kittyMode: 'auto' | 'enabled' =
-    termProgram === 'iTerm.app' || termProgram === 'zed' ? 'enabled' : 'auto';
-  const kittyKeyboard = { mode: kittyMode, flags: ['disambiguateEscapeCodes' as const] };
+  const kittyKeyboard = detectKittyKeyboardFlags();
 
   const useMouse = mouse !== false && fullscreen;
   let filteredStdin: FilteredStdin | undefined;
-  let unsubMouse: (() => void) | undefined;
 
   if (useMouse) {
     filteredStdin = createFilteredStdin(process.stdin);
-    unsubMouse = wireWorkflowMouseScroll(filteredStdin);
+    setActiveFilteredStdin(filteredStdin);
   }
 
   const renderFallback = () => {
@@ -60,7 +56,7 @@ export async function renderApp(
       await inst.waitUntilExit();
     }
   } finally {
-    unsubMouse?.();
+    setActiveFilteredStdin(undefined);
     filteredStdin?.disable();
   }
 }

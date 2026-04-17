@@ -1,4 +1,5 @@
-import type { WorkflowState, OrchestratorCallbacks } from '../../types.js';
+import type { WorkflowState } from '../../core/types/state-actions.js';
+import type { OrchestratorCallbacks } from '../../core/types/events.js';
 import { readSpecFileOrEmpty } from '../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE } from '../../core/paths.js';
 import { buildRegeneratePrompt } from '../spec/prompts/plan.js';

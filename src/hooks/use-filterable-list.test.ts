@@ -40,12 +40,13 @@ beforeEach(() => {
 });
 
 describe('useFilterableList', () => {
-  it('setFilter narrows the filtered list', async () => {
+  it('typing narrows the filtered list', async () => {
     const { result, act, unmount } = renderHook(() =>
       useFilterableList({ items, filterFn, onSelect: vi.fn() }),
     );
 
-    await act(() => result.current.setFilter('an'));
+    await act(() => press({}, 'a'));
+    await act(() => press({}, 'n'));
     expect(result.current.filter).toBe('an');
     expect(result.current.filtered).toEqual(['banana']);
     unmount();
@@ -76,11 +77,13 @@ describe('useFilterableList', () => {
 
   it('Enter does nothing when filtered list is empty', async () => {
     const onSelect = vi.fn();
-    const { result, act, unmount } = renderHook(() =>
+    const { act, unmount } = renderHook(() =>
       useFilterableList({ items, filterFn, onSelect }),
     );
 
-    await act(() => result.current.setFilter('xyz'));
+    await act(() => press({}, 'x'));
+    await act(() => press({}, 'y'));
+    await act(() => press({}, 'z'));
     await act(() => press({ return: true }));
     expect(onSelect).not.toHaveBeenCalled();
     unmount();
@@ -91,7 +94,9 @@ describe('useFilterableList', () => {
       useFilterableList({ items, filterFn, onSelect: vi.fn() }),
     );
 
-    await act(() => result.current.setFilter('xyz'));
+    await act(() => press({}, 'x'));
+    await act(() => press({}, 'y'));
+    await act(() => press({}, 'z'));
     await act(() => press({ upArrow: true }));
     expect(result.current.selectedIndex).toBe(0);
 

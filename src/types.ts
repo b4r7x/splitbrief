@@ -1,17 +1,17 @@
 export type {
-  Config, ImplementerConfig, PlannerConfig, PlannerTool, CliPlannerTool,
+  Config, ImplementerConfig, PlannerConfig, PlannerTool, CliToolId,
   OutputFormat, WorkflowMode, WorkflowOpts, PlannerDetection, ProviderDetection,
   CliImplementerConfig, ApiImplementerConfig, ShellImplementerConfig,
   AgentImplementerConfig, AgentSdkImplementerConfig, RunnerKind,
-} from './core/types/config.js';
+} from './core/types/config-options.js';
 export {
   DEFAULT_WORKFLOW_MODE, WORKFLOW_MODES, RUNNER_KINDS, RunnerKindSchema,
-} from './core/types/config.js';
+} from './core/types/config-options.js';
 export type {
   Phase, Task, TaskId, TaskStatus, WorkflowState, QueuedMessage,
   StateAction, TokenBudget, CodeContext, ProjectContext,
-} from './core/types/workflow.js';
-export { taskId } from './core/types/workflow.js';
+} from './core/types/state-actions.js';
+export { taskId } from './core/types/state-actions.js';
 export type {
   TokenDelta, TokenUsage, TaskTokenUsage, TaskCompletionMethod,
   CostBreakdown, CostPrediction, ImplementerResult, ValidationResult, Summary,

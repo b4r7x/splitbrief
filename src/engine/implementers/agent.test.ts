@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { join } from 'node:path';
-import type { Config } from '../../types.js';
+import type { Config } from '../../core/types/config-options.js';
 import { createAgentImplementer } from './agent.js';
 import { makeConfig as makeBaseConfig, makeTask, defaultContext } from '#testing/helpers/fixtures.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -69,7 +69,7 @@ describe('agent implementer', () => {
     expect(result.error).toContain('without changing any files');
   });
 
-  it('fails with descriptive error on timeout', async () => {
+  it('throws on timeout', async () => {
     const config = makeConfig({
       command: 'sleep',
       args: ['10'],
@@ -77,16 +77,15 @@ describe('agent implementer', () => {
     });
 
     const implementer = createAgentImplementer(config);
-    const result = await implementer.implement({
-      task: makeTask(),
-      projectDir: testDir,
-      config,
-      context: { ...context, dir: testDir },
-      onOutput: () => {},
-    });
-
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('timed out');
+    await expect(
+      implementer.implement({
+        task: makeTask(),
+        projectDir: testDir,
+        config,
+        context: { ...context, dir: testDir },
+        onOutput: () => {},
+      }),
+    ).rejects.toThrow(/timed out/);
   });
 
   it('throws when command is not found', async () => {

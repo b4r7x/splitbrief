@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import type { DetectedModel, ProviderDef, ProviderOverrides } from './types.js';
-import type { Config, ProviderDetection } from '../../types.js';
+import type { Config, ProviderDetection } from '../../core/types/config-options.js';
 import { createClientFromProvider } from './client.js';
 import { createOllamaProvider } from './ollama.js';
 import { createLmStudioProvider } from './lm-studio.js';
@@ -9,8 +9,8 @@ import { createGroqProvider } from './groq.js';
 import { createTogetherProvider } from './together.js';
 import { createAnthropicProvider } from './anthropic.js';
 import { createOpenAICompatProvider } from './compat.js';
-import { PROVIDER_CATALOG, isProviderId, type ProviderId } from '../../core/providers.js';
-import { toErrorMessage } from '../../utils/format.js';
+import { PROVIDER_CATALOG, isProviderId, type ProviderId } from '../../core/providers/index.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import { warnError } from '../../utils/warn.js';
 import { withTimeout } from '../../utils/with-timeout.js';
 import { DETECTION_TIMEOUT_MS } from '../constants.js';
@@ -51,13 +51,10 @@ export function getProvider(name: string, overrides?: ProviderOverrides): Provid
   if (!overrides?.apiBase) {
     throw new Error(`Unknown provider '${name}' requires an apiBase override`);
   }
-  if (!overrides.apiKey && !overrides.apiKeyEnv) {
-    throw new Error(
-      `Unknown provider '${name}': provide either overrides.apiKey (inline key) or overrides.apiKeyEnv (env-var name)`,
-    );
+  if (!overrides.apiKey) {
+    throw new Error(`Unknown provider '${name}' requires an overrides.apiKey`);
   }
-  const envKey = overrides.apiKeyEnv ?? '';
-  return createOpenAICompatProvider(name, overrides.apiBase, envKey, false, overrides);
+  return createOpenAICompatProvider(name, overrides.apiBase, '', false, overrides);
 }
 
 function getImplementerProvider(config: Config): ProviderDef {

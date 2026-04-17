@@ -1,9 +1,11 @@
-import type { Config, InvokeResult } from '../../types.js';
+import type { Config } from '../../core/types/config-options.js';
+import type { InvokeResult } from '../../core/types/runner.js';
 import type { Planner, PriorMessage } from './types.js';
+import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { getProvider } from '../providers/registry.js';
 import { createClientFromProvider } from '../providers/client.js';
-import { resolveAutoModel } from '../../core/providers.js';
+import { resolveAutoModel } from '../../core/providers/index.js';
 import { streamApiCompletion, throwAutoModelError } from '../api-shared.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import type OpenAI from 'openai';
@@ -80,11 +82,6 @@ export function createApiPlanner(config: Config): Planner {
       return model;
     },
 
-    capabilities: {
-      supportsConversationalPlanning: false,
-      supportsHintEscalation: true,
-      supportsSessionResume: false,
-      supportsMidStreamInjection: false,
-    },
+    capabilities: ONE_SHOT_API_CAPS,
   });
 }

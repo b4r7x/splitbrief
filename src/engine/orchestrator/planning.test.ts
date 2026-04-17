@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { WorkflowState } from '../../types.js';
+import type { WorkflowState } from '../../core/types/state-actions.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { makeConfig, makeTask } from '#testing/helpers/fixtures.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-fixtures.js';
@@ -13,14 +13,22 @@ vi.mock('../../core/state/persistence.js', () => ({
   appendMessage: vi.fn(),
 }));
 vi.mock('../../utils/fs.js', () => ({
-  DIPTYCH_DIR: '.diptych',
   readSpecFile: vi.fn().mockReturnValue('# Spec content'),
   writeSpecFile: vi.fn(),
-  readPackageJson: vi.fn().mockReturnValue(null),
   SECURE_DIR_MODE: 0o700,
   SECURE_FILE_MODE: 0o600,
   checkConfigPermissions: vi.fn().mockReturnValue(true),
-  getDiptychPath: vi.fn((...parts: string[]) => parts.join('/')),
+}));
+vi.mock('../../core/paths.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../core/paths.js')>();
+  return {
+    ...actual,
+    DIPTYCH_DIR: '.diptych',
+    getDiptychPath: vi.fn((...parts: string[]) => parts.join('/')),
+  };
+});
+vi.mock('../../core/project-meta.js', () => ({
+  readPackageJson: vi.fn().mockReturnValue(null),
 }));
 vi.mock('../../core/paths-io.js', () => ({
   readSpecFileOrEmpty: vi.fn().mockReturnValue(''),
@@ -34,13 +42,27 @@ vi.mock('../skills/index.js', () => ({
   buildSkillsSection: vi.fn().mockResolvedValue(''),
 }));
 
-import { runPlanningPhase } from './planning.js';
+import { runPlanningPhase } from './planning/index.js';
 import { writeSpecFile } from '../../core/paths-io.js';
-import { workflowStore } from '../../stores/workflow.js';
+import type { WorkflowSinks } from './types.js';
+
+function createTestSinks(): WorkflowSinks & { abortTurn: () => boolean } {
+  let abortHandler: (() => void) | null = null;
+  let queueHandler: ((text: string, phase: import('../../types.js').Phase) => void) | null = null;
+  return {
+    setAbortHandler: (h) => { abortHandler = h; },
+    setQueueHandler: (h) => { queueHandler = h; },
+    abortTurn: () => {
+      void queueHandler;
+      if (!abortHandler) return false;
+      abortHandler();
+      return true;
+    },
+  };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
-  workflowStore.reset();
 });
 
 function prepareState(): WorkflowState {
@@ -56,7 +78,7 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -73,7 +95,7 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -95,7 +117,7 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -112,7 +134,7 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -135,7 +157,7 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'quick' } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -154,7 +176,7 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'standard' } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -174,7 +196,7 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'full' } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -195,7 +217,7 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'full' } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -223,7 +245,7 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
 
     await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -256,7 +278,7 @@ describe('runPlanningPhase', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, signal: undefined, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, signal: undefined, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -277,11 +299,11 @@ describe('runPlanningPhase', () => {
       usage: null,
     });
     const { callbacks } = makeCallbacks();
-    const planner = makePlanner({ plan, capabilities: { supportsConversationalPlanning: true, supportsHintEscalation: true, supportsSessionResume: false, supportsMidStreamInjection: false } });
+    const planner = makePlanner({ plan, capabilities: { supportsConversationalPlanning: true, supportsHintEscalation: true, supportsSessionResume: false } });
     const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
 
     await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, signal: undefined, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, signal: undefined, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -296,6 +318,7 @@ describe('runPlanningPhase — abort + continuation', () => {
   it('abort during planner call fires ABORT_TURN → CONTINUE_TURN and re-invokes planner with continuation prompt', async () => {
     const partialText = 'partially generated spec...';
     const continuationUserText = 'also use PostgreSQL 15';
+    const sinks = createTestSinks();
 
     let callCount = 0;
     const plan = vi.fn().mockImplementation(async (_feature: string, _dir: string, plannerCbs: { onOutput: (t: string) => void }) => {
@@ -303,8 +326,8 @@ describe('runPlanningPhase — abort + continuation', () => {
       if (callCount === 1) {
         // Emit partial output, then simulate abort
         plannerCbs.onOutput(partialText);
-        // Trigger the abort handler registered by the orchestrator
-        workflowStore.abortTurn();
+        // Trigger the abort handler registered by the orchestrator via sinks
+        sinks.abortTurn();
         const err = new DOMException('The user aborted a request.', 'AbortError');
         throw err;
       }
@@ -323,7 +346,7 @@ describe('runPlanningPhase — abort + continuation', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -341,8 +364,9 @@ describe('runPlanningPhase — abort + continuation', () => {
   });
 
   it('abort without onContinuationNeeded falls through to planning failure', async () => {
+    const sinks = createTestSinks();
     const plan = vi.fn().mockImplementation(async () => {
-      workflowStore.abortTurn();
+      sinks.abortTurn();
       throw new DOMException('The user aborted a request.', 'AbortError');
     });
 
@@ -351,7 +375,7 @@ describe('runPlanningPhase — abort + continuation', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -365,13 +389,14 @@ describe('runPlanningPhase — abort + continuation', () => {
   it('quick mode: abort during quickPlan fires continuation and re-invokes', async () => {
     const partialText = 'quick plan partial output';
     const continuationUserText = 'add more detail';
+    const sinks = createTestSinks();
 
     let callCount = 0;
     const quickPlan = vi.fn().mockImplementation(async (_feature: string, _dir: string, plannerCbs: { onOutput: (t: string) => void }) => {
       callCount++;
       if (callCount === 1) {
         plannerCbs.onOutput(partialText);
-        workflowStore.abortTurn();
+        sinks.abortTurn();
         throw new DOMException('The user aborted a request.', 'AbortError');
       }
       return {
@@ -388,7 +413,7 @@ describe('runPlanningPhase — abort + continuation', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'quick' } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks },
       planner,
       state: prepareState(),
       feature: 'test-feature',
@@ -417,7 +442,7 @@ describe('runPlanningPhase — rewindPending', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: prepareRewindState('specifying'),
       feature: 'test-feature',
@@ -439,7 +464,7 @@ describe('runPlanningPhase — rewindPending', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: prepareRewindState('planning'),
       feature: 'test-feature',
@@ -460,7 +485,7 @@ describe('runPlanningPhase — rewindPending', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: prepareRewindState('specifying'),
       feature: 'test-feature',
@@ -479,7 +504,7 @@ describe('runPlanningPhase — rewindPending', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: { ...prepareRewindState('specifying'), rewindPending: { target: 'spec', comment: 'use JWT' } },
       feature: 'test-feature',
@@ -498,7 +523,7 @@ describe('runPlanningPhase — rewindPending', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: prepareRewindState('specifying'),
       feature: 'test-feature',
@@ -518,7 +543,7 @@ describe('runPlanningPhase — rewindPending', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: false, autoApprovePlan: false, mode: 'full' } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: prepareRewindState('planning'),
       feature: 'test-feature',
@@ -536,7 +561,7 @@ describe('runPlanningPhase — rewindPending', () => {
     const config = makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true, mode: 'full' } });
 
     const result = await runPlanningPhase({
-      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session' },
+      wctx: { projectDir: TEST_PROJECT_DIR, config, callbacks, metadata: TEST_METADATA, sessionId: 'test-session', sinks: createTestSinks() },
       planner,
       state: prepareState(),
       feature: 'test-feature',

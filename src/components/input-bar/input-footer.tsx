@@ -1,15 +1,15 @@
 import { Box, Text } from 'ink';
-import { useTheme } from '../../ui/theme.js';
-import { useCostStats } from '../workflow/use-cost-stats.js';
-import { conversationScrollStore } from '../../stores/conversation-scroll.js';
-import { CostDisplay } from '../workflow/cost-display.js';
-import { computeEta } from '../workflow/cost-footer.js';
-import { workflowStore } from '../../stores/workflow.js';
+import { useTheme } from '../theme.js';
+import { useCostStats } from '../../features/workflow/hooks/use-cost-stats.js';
+import { conversationScrollStore } from '../../stores/workflow/conversation-scroll.js';
+import { CostDisplay } from '../../features/workflow/components/cost-display.js';
+import { computeEta } from '../../features/workflow/components/cost-footer.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { useStores } from '../../stores/use-stores.js';
 
 export function InputFooter() {
   const t = useTheme();
-  const [{ scrollOffset }, { queueDepth }] = useStores(conversationScrollStore, workflowStore);
+  const [{ scrollOffset }, { queueDepth }] = useStores(conversationScrollStore, lifecycleStore);
   const { currentTask, totalTasks, taskCompletionTimes } = useCostStats();
   const etaText = computeEta(taskCompletionTimes, currentTask, totalTasks);
 

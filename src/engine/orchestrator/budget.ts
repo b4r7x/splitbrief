@@ -1,7 +1,8 @@
-import type { TokenUsage, OrchestratorCallbacks } from '../../types.js';
+import type { TokenUsage } from '../../core/types/summary.js';
+import type { OrchestratorCallbacks } from '../../core/types/events.js';
 import { calculateCostBreakdown } from '../providers/pricing.js';
 import { emitBudgetWarning, emitBudgetExceeded, emitWarning } from './events.js';
-import { formatCost } from '../../utils/format.js';
+import { formatCost } from '../../utils/format-numbers.js';
 
 export type BudgetCheckResult =
   | { action: 'ok' }
@@ -15,8 +16,6 @@ export type BudgetCheckOptions = {
   escalatedCount: number;
   plannerTool: string;
   implementerTool: string;
-  plannerModel?: string | undefined;
-  implementerModel?: string | undefined;
 };
 
 const BUDGET_WARNING_THRESHOLD = 0.8;
@@ -28,8 +27,6 @@ export function getCurrentCost(opts: Omit<BudgetCheckOptions, 'maxBudget'>): num
     escalatedCount: opts.escalatedCount,
     plannerTool: opts.plannerTool,
     implementerTool: opts.implementerTool,
-    plannerModel: opts.plannerModel,
-    implementerModel: opts.implementerModel,
   });
   return breakdown.totalActualCost;
 }
@@ -38,9 +35,8 @@ export function checkBudget(currentCost: number, maxBudget: number): BudgetCheck
   if (!Number.isFinite(maxBudget) || maxBudget <= 0) {
     return { action: 'exceeded', shouldStop: true };
   }
-  if (!Number.isFinite(currentCost)) {
-    return Number.isNaN(currentCost) ? { action: 'ok' } : { action: 'exceeded', shouldStop: true };
-  }
+  if (Number.isNaN(currentCost)) return { action: 'ok' };
+  if (!Number.isFinite(currentCost)) return { action: 'exceeded', shouldStop: true };
   if (currentCost >= maxBudget) {
     return { action: 'exceeded', shouldStop: true };
   }
@@ -57,8 +53,6 @@ export type EnforceBudgetOptions = {
   escalatedCount: number;
   plannerTool: string;
   implementerTool: string;
-  plannerModel?: string | undefined;
-  implementerModel?: string | undefined;
   callbacks: OrchestratorCallbacks;
   warningEmitted: boolean;
 };

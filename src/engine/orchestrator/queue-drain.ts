@@ -1,4 +1,5 @@
-import type { WorkflowState, OrchestratorCallbacks, QueuedMessage } from '../../types.js';
+import type { WorkflowState, QueuedMessage } from '../../core/types/state-actions.js';
+import type { OrchestratorCallbacks } from '../../core/types/events.js';
 import { transitionAndSave } from './helpers.js';
 import { emit } from './events.js';
 

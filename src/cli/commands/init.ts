@@ -6,7 +6,7 @@ import { configPath, initConfig } from '../../core/config/index.js';
 import { renderApp } from '../render.js';
 import { resolveProjectDir } from '../workflow.js';
 import { initStores } from '../init-stores.js';
-import { routerStore } from '../../stores/router.js';
+import { routerStore } from '../../stores/navigation/router.js';
 import { DIPTYCH_DIR, CONFIG_FILE } from '../../core/paths.js';
 
 export function registerInitCommand(program: Command): void {

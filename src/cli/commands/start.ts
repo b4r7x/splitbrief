@@ -3,9 +3,9 @@ import { createElement } from 'react';
 import { App } from '../../app.js';
 import { renderApp } from '../render.js';
 import { addWorkflowOptions, setupWorkflow, resolveProjectDir } from '../workflow.js';
-import { routerStore } from '../../stores/router.js';
+import { routerStore } from '../../stores/navigation/router.js';
 import { initStores } from '../init-stores.js';
-import { clearStaleActiveSessionOrThrow } from './guards.js';
+import { clearStaleSession } from './guards.js';
 import { beginSession } from '../../core/sessions/begin.js';
 import { maybeMigrate } from './migrate.js';
 import type { WorkflowOpts } from '../../types.js';
@@ -21,7 +21,7 @@ export function registerStartCommand(program: Command): void {
 
     const { useFullscreen, useMouse, needsSetup } = await setupWorkflow(opts);
 
-    clearStaleActiveSessionOrThrow(projectDir);
+    clearStaleSession(projectDir);
 
     const sessionId = feature ? beginSession(projectDir, feature) : undefined;
 

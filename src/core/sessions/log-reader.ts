@@ -1,9 +1,9 @@
 import { existsSync, createReadStream } from 'node:fs';
 import { join } from 'node:path';
 import * as readline from 'node:readline';
-import type { SessionLogEntry, SessionLogEventEntry, SessionLogMessageEntry } from '../types/index.js';
+import type { SessionLogEntry, SessionLogEventEntry, SessionLogMessageEntry } from '../types/events.js';
 import { SESSION_LOG_FILE, sessionDir } from '../paths.js';
-import { narrowRecord } from '../../utils/type-guards.js';
+import { SessionLogEntrySchema } from '../types/schemas/session-log.js';
 
 export async function* readSessionLog(projectDir: string, sessionId: string): AsyncIterable<SessionLogEntry> {
   const file = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);
@@ -12,14 +12,14 @@ export async function* readSessionLog(projectDir: string, sessionId: string): As
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
   for await (const line of rl) {
     if (!line.trim()) continue;
+    let raw: unknown;
     try {
-      const parsed = narrowRecord(JSON.parse(line));
-      if (parsed && (parsed.kind === 'event' || parsed.kind === 'message')) {
-        yield parsed as SessionLogEntry;
-      }
+      raw = JSON.parse(line);
     } catch {
-      // skip corrupt lines
+      continue;
     }
+    const parsed = SessionLogEntrySchema.safeParse(raw);
+    if (parsed.success) yield parsed.data;
   }
 }
 

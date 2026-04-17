@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Config, PlannerConfig, Task, TokenUsage, ProjectContext, ApiImplementerConfig, ImplementerConfig, Session, Summary } from '../../src/types.js';
-import { taskId as brand } from '../../src/core/types/workflow.js';
+import { taskId as brand } from '../../src/core/types/state-actions.js';
 
 const defaultApiImplementer: ApiImplementerConfig = {
   kind: 'api',

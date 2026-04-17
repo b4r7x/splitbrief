@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
 import { Box, type Key } from 'ink';
 import { OverlayPanel } from '../overlays/overlay-panel.js';
-import { FilterInput } from '../../ui/filter-input.js';
-import { ScrollIndicator } from '../../ui/scroll-indicator.js';
+import { FilterInput } from '../filter-input.js';
+import { ScrollIndicator } from '../scroll-indicator.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
-import { terminalSizeStore } from '../../stores/terminal-size.js';
-import { overlayStore } from '../../stores/overlay.js';
+import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
 import { computeScrollWindow } from './picker-utils.js';
 import { toSectionedList } from '../../utils/sectioned-list.js';
 
@@ -24,7 +24,6 @@ interface FilterableListProps<T> {
   width?: number;
   shouldAppendChar?: (ch: string) => boolean;
   customKeys?: (input: string, key: Key, ctx: { filtered: T[]; selectedIndex: number }) => boolean | undefined;
-  isActive?: boolean;
   sectionBy?: (item: T) => string;
   renderSectionHeader?: (section: string, index: number) => ReactNode;
 }
@@ -44,7 +43,6 @@ export function FilterableList<T>({
   width,
   shouldAppendChar,
   customKeys,
-  isActive,
   sectionBy,
   renderSectionHeader,
 }: FilterableListProps<T>) {
@@ -57,7 +55,6 @@ export function FilterableList<T>({
     onClose: () => overlayStore.close(),
     ...(shouldAppendChar && { shouldAppendChar }),
     ...(customKeys && { customKeys }),
-    ...(isActive !== undefined && { isActive }),
   });
 
   const { filter, filtered, selectedIndex } = list;

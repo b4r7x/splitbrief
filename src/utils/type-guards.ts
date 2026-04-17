@@ -8,12 +8,12 @@ export function assertNever(value: never): never {
   throw new Error(`Unexpected value: ${String(value)}`);
 }
 
-export function narrowRecord(val: unknown): Record<string, unknown> | null {
-  return typeof val === 'object' && val !== null ? (val as Record<string, unknown>) : null;
-}
-
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object';
+}
+
+export function narrowRecord(val: unknown): Record<string, unknown> | null {
+  return isRecord(val) ? val : null;
 }
 
 export function typedEntries<K extends string, V>(obj: Record<K, V>): [K, V][] {

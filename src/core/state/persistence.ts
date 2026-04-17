@@ -1,14 +1,14 @@
 import { readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { WorkflowState, OrchestratorEvent, SessionLogEventEntry, SessionLogEventEntryFor, SessionLogMessageEntry } from '../types/index.js';
-import type { OrchestratorEventType } from '../types/events.js';
-import { WorkflowStateSchema } from '../types/schemas/index.js';
+import type { WorkflowState } from '../types/state-actions.js';
+import type { OrchestratorEvent, OrchestratorEventType, SessionLogEventEntry, SessionLogEventEntryFor, SessionLogMessageEntry } from '../types/orchestrator-events.js';
+import { WorkflowStateSchema } from '../types/schemas/workflow.js';
 import { CURRENT_STATE_VERSION } from './machine.js';
 import { STATE_FILE, SESSION_LOG_FILE, sessionDir } from '../paths.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import { ensureSecureDir, writeSecureFile, SECURE_FILE_MODE } from '../../utils/fs.js';
 import { warnStderr } from '../../utils/warn.js';
-import { toErrorMessage } from '../../utils/format.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 
 export function saveState(projectDir: string, sessionId: string, state: WorkflowState): void {
   const dir = sessionDir(projectDir, sessionId);

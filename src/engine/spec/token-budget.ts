@@ -1,4 +1,4 @@
-import type { TokenBudget } from '../../types.js';
+import type { TokenBudget } from '../../core/types/state-actions.js';
 
 const CHARS_PER_TOKEN = 4;
 const OUTPUT_RESERVE_RATIO = 0.25;

@@ -8,36 +8,36 @@ import { makeConfig } from '#testing/helpers/fixtures.js';
 import { PlannerConfigSchema } from '../../core/types/schemas/planner-config.js';
 
 describe('capability matrix — per-backend declared values (FR-003)', () => {
-  it('claude-code: conv=true, hint=false, resume=true, inject=true', () => {
+  it('claude-code: conv=true, hint=false, resume=true; injects via injectUserTurn', () => {
     const planner = createClaudeCodePlanner();
     expect(planner.capabilities).toEqual({
       supportsConversationalPlanning: true,
       supportsHintEscalation: false,
       supportsSessionResume: true,
-      supportsMidStreamInjection: true,
     });
+    expect(typeof planner.injectUserTurn).toBe('function');
   });
 
-  it('api: conv=false, hint=true, resume=false, inject=false', () => {
+  it('api: conv=false, hint=true, resume=false; no injectUserTurn', () => {
     const config = makeConfig({ planner: { kind: 'api', provider: 'ollama', apiBase: 'http://localhost:11434/v1', model: 'qwen:7b' } });
     const planner = createApiPlanner(config);
     expect(planner.capabilities).toEqual({
       supportsConversationalPlanning: false,
       supportsHintEscalation: true,
       supportsSessionResume: false,
-      supportsMidStreamInjection: false,
     });
+    expect(planner.injectUserTurn).toBeUndefined();
   });
 
-  it('cli codex: conv=false, hint=true, resume=true, inject=false (codex exec resume <id>)', () => {
+  it('cli codex: conv=false, hint=true, resume=true (codex exec resume <id>); no injectUserTurn', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
     const planner = createCliPlanner(config);
     expect(planner.capabilities).toEqual({
       supportsConversationalPlanning: false,
       supportsHintEscalation: true,
       supportsSessionResume: true,
-      supportsMidStreamInjection: false,
     });
+    expect(planner.injectUserTurn).toBeUndefined();
   });
 
   it.each([
@@ -45,15 +45,15 @@ describe('capability matrix — per-backend declared values (FR-003)', () => {
     'aider',
     'copilot',
     'kilo-code',
-  ] as const)('cli %s: conv=false, hint=true, resume=false, inject=false', (tool) => {
+  ] as const)('cli %s: conv=false, hint=true, resume=false', (tool) => {
     const config = makeConfig({ planner: { kind: 'cli', tool } });
     const planner = createCliPlanner(config);
     expect(planner.capabilities).toEqual({
       supportsConversationalPlanning: false,
       supportsHintEscalation: true,
       supportsSessionResume: false,
-      supportsMidStreamInjection: false,
     });
+    expect(planner.injectUserTurn).toBeUndefined();
   });
 
   it('shell (default): all false', () => {
@@ -63,8 +63,8 @@ describe('capability matrix — per-backend declared values (FR-003)', () => {
       supportsConversationalPlanning: false,
       supportsHintEscalation: false,
       supportsSessionResume: false,
-      supportsMidStreamInjection: false,
     });
+    expect(planner.injectUserTurn).toBeUndefined();
   });
 
   it('agent (default): all false', () => {
@@ -74,8 +74,8 @@ describe('capability matrix — per-backend declared values (FR-003)', () => {
       supportsConversationalPlanning: false,
       supportsHintEscalation: false,
       supportsSessionResume: false,
-      supportsMidStreamInjection: false,
     });
+    expect(planner.injectUserTurn).toBeUndefined();
   });
 });
 
@@ -93,7 +93,6 @@ describe('shell/agent capabilities config override (FR-004)', () => {
       supportsConversationalPlanning: true,
       supportsHintEscalation: false,
       supportsSessionResume: true,
-      supportsMidStreamInjection: false,
     });
   });
 
@@ -110,7 +109,6 @@ describe('shell/agent capabilities config override (FR-004)', () => {
       supportsConversationalPlanning: false,
       supportsHintEscalation: true,
       supportsSessionResume: false,
-      supportsMidStreamInjection: false,
     });
   });
 });

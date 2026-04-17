@@ -14,10 +14,8 @@ interface UseFilterableListOptions<T> {
 
 interface UseFilterableListResult<T> {
   filter: string;
-  setFilter: (f: string) => void;
   filtered: T[];
   selectedIndex: number;
-  setSelectedIndex: (i: number) => void;
 }
 
 export function useFilterableList<T>({
@@ -75,5 +73,5 @@ export function useFilterableList<T>({
     { isActive },
   );
 
-  return { filter, setFilter, filtered, selectedIndex: effectiveIndex, setSelectedIndex };
+  return { filter, filtered, selectedIndex: effectiveIndex };
 }

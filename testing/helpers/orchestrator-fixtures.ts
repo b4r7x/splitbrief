@@ -42,7 +42,6 @@ export function makePlanner(overrides?: Partial<Planner>): Planner {
       supportsConversationalPlanning: false,
       supportsHintEscalation: true,
       supportsSessionResume: false,
-      supportsMidStreamInjection: false,
     },
     ...overrides,
   };

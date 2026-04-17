@@ -1,95 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { isENOENT, isNodeError, CommandNotFoundError } from './process-errors.js';
+import { isENOENT, CommandNotFoundError, formatCommandError } from './process-errors.js';
 import { redactSecrets } from './redact.js';
-
-
-const SIGKILL_DELAY = 2000;
-const ABORT_KILL_DELAY = 2000;
-
-const activeProcesses = new Set<ChildProcess>();
-
-export function registerProcess(proc: ChildProcess): void {
-  activeProcesses.add(proc);
-}
-
-export function unregisterProcess(proc: ChildProcess): void {
-  activeProcesses.delete(proc);
-}
-
-export function getActiveProcessCount(): number {
-  return activeProcesses.size;
-}
-
-export function killProcess(proc: ChildProcess, options?: { group?: boolean; killDelay?: number }): void {
-  if (proc.exitCode !== null || proc.killed) return;
-  const pid = proc.pid;
-  const useGroup = options?.group && pid !== undefined;
-  const delay = options?.killDelay ?? SIGKILL_DELAY;
-  try {
-    if (useGroup && pid !== undefined) {
-      process.kill(-pid, 'SIGTERM');
-    } else {
-      proc.kill('SIGTERM');
-    }
-  } catch (err) {
-    if (!(isNodeError(err) && err.code === 'ESRCH')) {
-      throw err;
-    }
-  }
-  setTimeout(() => {
-    const currentPid = proc.pid;
-    if (currentPid === undefined) return;
-    try {
-      process.kill(useGroup ? -currentPid : currentPid, 0);
-      if (useGroup) {
-        process.kill(-currentPid, 'SIGKILL');
-      } else {
-        proc.kill('SIGKILL');
-      }
-    } catch (err) {
-      if (!(isNodeError(err) && err.code === 'ESRCH')) {
-        throw err;
-      }
-    }
-  }, delay);
-}
-
-export function abortProcess(proc: ChildProcess, signal: AbortSignal): void {
-  if (proc.exitCode !== null || proc.killed) return;
-
-  const onAbort = () => killProcess(proc, { group: true, killDelay: ABORT_KILL_DELAY });
-
-  if (signal.aborted) {
-    onAbort();
-    return;
-  }
-
-  signal.addEventListener('abort', onAbort, { once: true });
-  proc.on('close', () => signal.removeEventListener('abort', onAbort));
-}
-
-export function killAllProcesses(): void {
-  for (const proc of activeProcesses) {
-    killProcess(proc);
-  }
-}
+import { createLineBuffer } from './line-buffer.js';
+import { registerProcess, unregisterProcess, killProcess, abortProcess } from './process-registry.js';
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
-
-export function createLineBuffer(onLine: (line: string) => void): { push(chunk: string): void; flush(): void } {
-  let buffer = '';
-  return {
-    push(chunk: string) {
-      buffer += chunk;
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-      for (const line of lines) onLine(line);
-    },
-    flush() {
-      if (buffer) { onLine(buffer); buffer = ''; }
-    },
-  };
-}
 
 interface SpawnPipeOptions<T> {
   command: string;
@@ -249,9 +164,8 @@ export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
 }
 
 export async function spawnWithShellFallback(opts: SpawnOptions): Promise<SpawnResult> {
-  // Strip notFoundMessage for the first attempt — let raw ENOENT propagate
-  // so we can detect it and try the shell fallback.
-  const { notFoundMessage, ...firstAttemptOpts } = opts;
+  const { notFoundMessage: _drop, ...firstAttemptOpts } = opts;
+  void _drop;
   try {
     return await spawnWithTimeout(firstAttemptOpts);
   } catch (err: unknown) {
@@ -300,9 +214,14 @@ export async function spawnWithStdin(opts: {
       }
 
       if (code !== 0 && !rawText) {
-        const detail = stderrOutput.trim();
         throw new Error(
-          redactSecrets(`${opts.command} exited with code ${code}${detail ? `: ${detail}` : ''}`),
+          redactSecrets(
+            formatCommandError('exit-code', {
+              command: opts.command,
+              code,
+              stderr: stderrOutput,
+            }),
+          ),
         );
       }
 

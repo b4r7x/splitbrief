@@ -1,4 +1,6 @@
-import type { WorkflowState, StateAction, TaskStatus, TokenUsage, TaskId } from '../types/index.js';
+import type { WorkflowState, StateAction, TaskStatus, TaskId } from '../types/state-actions.js';
+import type { TokenUsage } from '../types/summary.js';
+import { assertNever } from '../../utils/type-guards.js';
 
 export const CURRENT_STATE_VERSION = 3;
 
@@ -196,7 +198,6 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
       return { ...state, messageQueue: state.messageQueue.filter(m => m.drainedAt) };
 
     default:
-      action satisfies never;
-      return state;
+      return assertNever(action);
   }
 }

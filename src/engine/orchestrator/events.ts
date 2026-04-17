@@ -1,7 +1,15 @@
-import type { WorkflowState, OrchestratorCallbacks, ValidationResult, ValidationStages, TaskId, TaskCompletionMethod, TokenUsage, WorkflowMode } from '../../types.js';
-import type { CostPrediction } from '../../core/types/summary.js';
-import type { OrchestratorEventPayloadMap } from '../../core/types/events.js';
+import type { WorkflowState, TaskId } from '../../core/types/state-actions.js';
+import type { WorkflowMode } from '../../core/types/config-options.js';
+import type { OrchestratorCallbacks, ValidationStages, OrchestratorEventPayloadMap } from '../../core/types/events.js';
+import type { ValidationResult, TaskCompletionMethod, TokenUsage, CostPrediction } from '../../core/types/summary.js';
 import { appendEvent } from '../../core/state/persistence.js';
+import { transitionAndEmit } from './helpers.js';
+
+export type PlanApprovedContext = {
+  projectDir: string;
+  sessionId: string;
+  callbacks: OrchestratorCallbacks;
+};
 
 export function emit<T extends keyof OrchestratorEventPayloadMap>(
   projectDir: string,
@@ -20,24 +28,33 @@ export function emit<T extends keyof OrchestratorEventPayloadMap>(
   });
 }
 
-export function emitValidationStart(callbacks: OrchestratorCallbacks): void {
-  callbacks.onEvent({
-    type: 'validate', ts: Date.now(), status: 'running', passed: false,
-    stages: { tsc: false, lint: false, test: false },
-  });
-}
+const EMPTY_STAGES: ValidationStages = { tsc: false, lint: false, test: false };
 
-export function emitValidationProgress(callbacks: OrchestratorCallbacks, stages: ValidationStages, startTime: number): void {
-  callbacks.onEvent({
-    type: 'validate', ts: startTime, status: 'running', passed: false, stages,
-  });
-}
+type ValidationPhase =
+  | { phase: 'start' }
+  | { phase: 'progress'; stages: ValidationStages; startTime: number }
+  | { phase: 'result'; results: ValidationResult[]; startTime: number };
 
-export function emitValidationResult(callbacks: OrchestratorCallbacks, validationResults: ValidationResult[], startTime: number): void {
-  const stages = { tsc: false, lint: false, test: false };
+export function emitValidation(callbacks: OrchestratorCallbacks, opts: ValidationPhase): void {
+  if (opts.phase === 'start') {
+    callbacks.onEvent({
+      type: 'validate', ts: Date.now(), status: 'running', passed: false,
+      stages: { ...EMPTY_STAGES },
+    });
+    return;
+  }
+
+  if (opts.phase === 'progress') {
+    callbacks.onEvent({
+      type: 'validate', ts: opts.startTime, status: 'running', passed: false, stages: opts.stages,
+    });
+    return;
+  }
+
+  const stages: ValidationStages = { ...EMPTY_STAGES };
   let failedError: string | undefined;
   let passed = true;
-  for (const r of validationResults) {
+  for (const r of opts.results) {
     if (r.stage === 'tsc') stages.tsc = r.passed;
     else if (r.stage === 'lint') stages.lint = r.passed;
     else if (r.stage === 'test') stages.test = r.passed;
@@ -50,7 +67,20 @@ export function emitValidationResult(callbacks: OrchestratorCallbacks, validatio
     type: 'validate', ts: Date.now(), status: 'done', passed,
     stages,
     error: failedError,
-    duration: Date.now() - startTime,
+    duration: Date.now() - opts.startTime,
+  });
+}
+
+export function emitPlanApproved(state: WorkflowState, ctx: PlanApprovedContext): WorkflowState {
+  return transitionAndEmit({
+    state,
+    projectDir: ctx.projectDir,
+    sessionId: ctx.sessionId,
+    callbacks: ctx.callbacks,
+    action: { type: 'APPROVE_PLAN' },
+    eventName: 'plan_approved',
+    status: 'running',
+    emitData: {},
   });
 }
 

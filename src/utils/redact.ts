@@ -1,7 +1,4 @@
-// Minimum 20 chars prevents false positives on short identifiers and git SHAs.
-// Order: specific prefixes first, then generic prefix (sk-), then contextual keyword patterns.
-// Overlap between prefix and keyword patterns is intentional — prefix patterns catch bare keys,
-// keyword patterns catch key=value assignments where the value lacks a known prefix.
+// Order matters: specific prefixes before generic sk-, then keyword-contextual patterns.
 const KEY_PATTERNS: [RegExp, string][] = [
   [/sk-ant-[a-zA-Z0-9_-]{20,}/g, 'sk-ant-***REDACTED***'],
   [/sk-or-[a-zA-Z0-9_-]{20,}/g, 'sk-or-***REDACTED***'],

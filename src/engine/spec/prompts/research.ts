@@ -1,15 +1,13 @@
-import { buildPrompt } from './shared.js';
+import { buildPrompt, instructionsSection } from './shared.js';
 
 export function buildResearchPrompt(feature: string, projectContext: string, skillsContext?: string): string {
   return buildPrompt({
     title: 'Research Task',
     intro: 'You are preparing to implement a new feature. Before writing any specification, you need to deeply understand the existing codebase.',
     sections: [
-      { heading: 'Feature Request', body: feature },
+      { heading: 'Specification', body: feature },
       { heading: 'Project Context', body: `${projectContext}${skillsContext ? `\n${skillsContext}` : ''}` },
-      {
-        heading: 'Instructions',
-        body: `Analyze this codebase thoroughly:
+      instructionsSection(`Analyze this codebase thoroughly:
 
 1. **Read key files**  -  Identify and read the most important source files: entry points, core modules, configuration, and type definitions.
 
@@ -29,8 +27,7 @@ export function buildResearchPrompt(feature: string, projectContext: string, ski
    - Coding conventions (naming, style, error handling)
    - Testing patterns and test infrastructure
    - Build and runtime requirements
-   - Any technical debt or limitations that affect this feature`,
-      },
+   - Any technical debt or limitations that affect this feature`),
       {
         heading: 'Output Format',
         body: `Write a structured research report in markdown with these sections:

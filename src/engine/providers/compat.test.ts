@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createOpenAICompatProvider } from './compat.js';
-import { setupFetchMock } from './testing.js';
+import { setupFetchMock } from './test-helpers.js';
 
 describe('createOpenAICompatProvider', () => {
   setupFetchMock();
@@ -28,6 +28,7 @@ describe('createOpenAICompatProvider', () => {
   });
 
   it('listModels fetches and parses model list from /v1/models', async () => {
+    process.env.TEST_PROVIDER_API_KEY = 'some-key';
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ data: [{ id: 'gpt-4' }, { id: 'gpt-3.5' }] }), { status: 200 }),
     );
@@ -43,6 +44,7 @@ describe('createOpenAICompatProvider', () => {
   });
 
   it('listModels normalises baseURL trailing slash', async () => {
+    process.env.TEST_PROVIDER_API_KEY = 'some-key';
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ data: [{ id: 'm1' }] }), { status: 200 }),
     );
@@ -62,6 +64,7 @@ describe('createOpenAICompatProvider', () => {
     ['malformed JSON', async () => new Response('not json', { status: 200 })],
     ['missing data field', async () => new Response(JSON.stringify({ models: ['a'] }), { status: 200 })],
   ] as const)('listModels returns empty on %s', async (_label, mockFetch) => {
+    process.env.TEST_PROVIDER_API_KEY = 'some-key';
     vi.mocked(globalThis.fetch).mockImplementation(mockFetch);
     const p = createOpenAICompatProvider('test', 'https://api.example.com/v1', 'TEST_PROVIDER_API_KEY', false);
     expect(await p.listModels()).toEqual([]);
@@ -82,18 +85,11 @@ describe('createOpenAICompatProvider', () => {
     );
   });
 
-  it('omits Authorization header when no api key', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({ data: [] }), { status: 200 }),
-    );
-
+  it('returns empty without fetching when no api key on non-local provider', async () => {
     const p = createOpenAICompatProvider('test', 'https://api.example.com/v1', 'TEST_PROVIDER_API_KEY', false);
-    await p.listModels();
-
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ headers: {} }),
-    );
+    const models = await p.listModels();
+    expect(models).toEqual([]);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it('api key falls back to environment variable', () => {

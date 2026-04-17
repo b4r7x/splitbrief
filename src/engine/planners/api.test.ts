@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { Config } from '../../types.js';
+import type { Config } from '../../core/types/config-options.js';
 import { createApiPlanner } from './api.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 

@@ -1,8 +1,6 @@
-import type { TokenUsage } from '../../types.js';
-import type { CostPrediction } from '../../core/types/summary.js';
+import type { TokenUsage, CostPrediction } from '../../core/types/summary.js';
 import { getProviderPricing, calculateCost } from '../providers/pricing.js';
 
-// Token estimates for cost prediction. Ranges communicate uncertainty.
 const DEFAULT_IMPLEMENTER_TOKENS_PER_TASK = 2000;
 const DEFAULT_ESCALATION_TOKENS_PER_TASK = 500;
 const DEFAULT_PLANNER_TOKENS_PER_TASK = 3000;
@@ -37,7 +35,6 @@ function estimateImplementerCost(taskCount: number, escalationRate: number, plan
   const plannerPricing = getProviderPricing(plannerTool, plannerModel);
 
   const implementerTokens = taskCount * DEFAULT_IMPLEMENTER_TOKENS_PER_TASK;
-  // Split implementer tokens roughly 60/40 input/output
   const implementerCost = calculateCost(implementerTokens * 0.6, implementerTokens * 0.4, implementerPricing);
 
   const escalatedTasks = Math.round(taskCount * escalationRate);

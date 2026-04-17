@@ -1,53 +1,24 @@
 import { z } from 'zod';
 import { includes } from '../../../utils/type-guards.js';
 
-// Semantic provider groups — CLI tools, API providers, local servers, meta
 export const CLI_TOOL_IDS = ['claude-code', 'codex', 'opencode', 'aider', 'copilot', 'kilo-code'] as const;
-// API_PROVIDER_IDS: cloud-priced API providers only. agent-sdk is NOT here — it is unpriced (no per-token billing).
+// agent-sdk is NOT here — it is unpriced (subscription, no per-token billing).
 export const API_PROVIDER_IDS = ['anthropic', 'openrouter', 'deepseek', 'openai', 'groq', 'together'] as const;
 export const LOCAL_PROVIDER_IDS = ['ollama', 'lm-studio'] as const;
-// META_PROVIDER_IDS: runners that are neither CLI tools nor priced APIs — shell, agent, agent-sdk.
 export const META_PROVIDER_IDS = ['shell', 'agent', 'agent-sdk'] as const;
 
-// Complete list for backward compatibility — must enumerate all values explicitly
-// for TypeScript to infer the correct tuple type for z.enum()
 export const PROVIDER_IDS = [
-  'claude-code',
-  'codex',
-  'opencode',
-  'aider',
-  'copilot',
-  'kilo-code',
-  'agent-sdk',
-  'anthropic',
-  'openrouter',
-  'deepseek',
-  'openai',
-  'groq',
-  'together',
-  'ollama',
-  'lm-studio',
-  'shell',
-  'agent',
+  ...CLI_TOOL_IDS,
+  ...API_PROVIDER_IDS,
+  ...LOCAL_PROVIDER_IDS,
+  ...META_PROVIDER_IDS,
 ] as const;
 
-// Planner-only tools: CLI tools + API providers + shell + agent. Excludes local-only providers (ollama, lm-studio).
+// Excludes local-only providers (ollama, lm-studio).
 export const PLANNER_TOOL_IDS = [
-  'claude-code',
-  'codex',
-  'opencode',
-  'aider',
-  'copilot',
-  'kilo-code',
-  'agent-sdk',
-  'anthropic',
-  'openrouter',
-  'deepseek',
-  'openai',
-  'groq',
-  'together',
-  'shell',
-  'agent',
+  ...CLI_TOOL_IDS,
+  ...API_PROVIDER_IDS,
+  ...META_PROVIDER_IDS,
 ] as const;
 
 export type CliToolId = (typeof CLI_TOOL_IDS)[number];
@@ -98,14 +69,10 @@ export const OutputFormatSchema = z.enum(OUTPUT_FORMATS);
 export type OutputFormat = z.infer<typeof OutputFormatSchema>;
 
 export const CliToolIdSchema = z.enum(CLI_TOOL_IDS);
-export const CliPlannerToolSchema = CliToolIdSchema;
-export type CliPlannerTool = z.infer<typeof CliPlannerToolSchema>;
 
-// Runner kind discriminant values
 export const RUNNER_KINDS = ['cli', 'api', 'shell', 'agent', 'agent-sdk'] as const;
 export const RunnerKindSchema = z.enum(RUNNER_KINDS);
 export type RunnerKind = z.infer<typeof RunnerKindSchema>;
 
-// API provider categories
 export const KNOWN_API_PROVIDERS = [...LOCAL_PROVIDER_IDS, ...API_PROVIDER_IDS] as const;
 

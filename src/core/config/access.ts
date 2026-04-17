@@ -1,4 +1,4 @@
-import type { Config } from '../types/index.js';
+import type { Config } from '../types/config-options.js';
 import { ConfigSchema } from '../types/schemas/config.js';
 import { isRecord, narrowRecord } from '../../utils/type-guards.js';
 

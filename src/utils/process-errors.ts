@@ -8,9 +8,7 @@ export function isENOENT(err: unknown): boolean {
   return isNodeError(err) && err.code === 'ENOENT';
 }
 
-// Intentional class — `Error` subclasses are the one allowed exception to the
-// project's zero-class rule, since `instanceof Error` is the standard pattern
-// for distinguishing error types in catch blocks.
+// Error subclasses are the one allowed exception to the project's zero-class rule.
 export class CommandNotFoundError extends Error {
   constructor(message: string) {
     super(message);
@@ -27,7 +25,6 @@ export class CommandTimeoutError extends Error {
   }
 }
 
-// Intentional class: Error subclass
 export class ProcessOutputError extends Error {
   readonly output: string;
   constructor(message: string, output: string) {
@@ -39,4 +36,32 @@ export class ProcessOutputError extends Error {
 
 export function createProcessError(message: string, output: string): ProcessOutputError {
   return new ProcessOutputError(redactSecrets(message), redactSecrets(output));
+}
+
+export type CommandErrorKind = 'not-found' | 'timeout' | 'exit-code' | 'spawn-failed';
+
+export interface CommandErrorOptions {
+  label?: string | undefined;
+  command: string;
+  code?: number | null | undefined;
+  timeoutMs?: number | undefined;
+  stderr?: string | undefined;
+}
+
+export function formatCommandError(kind: CommandErrorKind, opts: CommandErrorOptions): string {
+  const subject = opts.label ?? opts.command;
+  switch (kind) {
+    case 'not-found': {
+      const base = `Command not found: ${opts.command}`;
+      return opts.label ? `${opts.label}: ${base}` : base;
+    }
+    case 'timeout':
+      return `${subject} timed out after ${Math.round((opts.timeoutMs ?? 0) / 1000)}s`;
+    case 'exit-code': {
+      const detail = opts.stderr?.trim();
+      return `${subject} exited with code ${opts.code}${detail ? `: ${detail}` : ''}`;
+    }
+    case 'spawn-failed':
+      return `${subject} failed to spawn`;
+  }
 }

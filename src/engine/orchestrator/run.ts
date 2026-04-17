@@ -1,39 +1,37 @@
-import type { Config, WorkflowState, Summary, OrchestratorCallbacks, SkillMeta, ProjectContext, Task, Session } from '../../types.js';
-import { DEFAULT_WORKFLOW_MODE } from '../../types.js';
+import type { Config } from '../../core/types/config-options.js';
+import { DEFAULT_WORKFLOW_MODE } from '../../core/types/config-options.js';
+import type { WorkflowState, Task, ProjectContext } from '../../core/types/state-actions.js';
+import type { Summary } from '../../core/types/summary.js';
+import type { OrchestratorCallbacks } from '../../core/types/events.js';
+import type { SkillMeta, Session } from '../../core/types/app.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../../core/config/runner-config.js';
-import { createInitialState, CURRENT_STATE_VERSION } from '../../core/state/machine.js';
+import { createInitialState } from '../../core/state/machine.js';
 import { saveState, appendMessage } from '../../core/state/persistence.js';
-import { saveSummary } from '../../core/sessions/io.js';
 import { generateSessionId } from '../../core/sessions/id.js';
-import { clearActive } from '../../core/sessions/active.js';
 import { ensureSessionDir, ensureDiptychDir, type SpecMetadata } from '../../core/paths-io.js';
-import { readPackageJson } from '../../utils/fs.js';
-import { resolveAutoModel } from '../../core/providers.js';
-import { killAllProcesses } from '../../utils/process.js';
-import { toErrorMessage, labelError } from '../../utils/format.js';
-import { warnError } from '../../utils/warn.js';
+import { readPackageJson } from '../../core/project-meta.js';
+import { resolveAutoModel } from '../../core/providers/index.js';
+import { killAllProcesses } from '../../utils/process-registry.js';
+import { toErrorMessage, labelError } from '../../utils/format-errors.js';
 import { createPlanner, createImplementer } from '../runners/factory.js';
 
-import type { WorkflowContext, ResumeContextHolder } from './types.js';
+import type { WorkflowContext, WorkflowSinks, ResumeContextHolder } from './types.js';
 import { buildSummary, type SummaryBase } from './summary.js';
 import { emit, emitError, emitWarning, emitPlannerStatus, emitCostPrediction, emitWorkflowConfig, emitUserMessage } from './events.js';
 import { predictCost } from './cost-prediction.js';
-import { transitionAndSave, withSignalHandlers } from './helpers.js';
-import { runPlanningPhase } from './planning.js';
+import { transitionAndSave, applyRebuiltContext } from './helpers.js';
+import { runPlanningPhase } from './planning/index.js';
 import { runTaskLoop } from './task-loop.js';
-import { runFinalReviewPhase, shutdownWorkflow } from './final-review.js';
-import { buildResumeContext } from './transcript-rebuild.js';
+import { runFinalReviewPhase } from './final-review.js';
 import { drainQueue } from './queue-drain.js';
-import { createQueueHandler } from './queue.js';
-import { workflowStore } from '../../stores/workflow.js';
-
-export type { WorkflowContext } from './types.js';
+import { saveFinalSession, withShutdownHandlers, installQueueHandler } from './session-lifecycle.js';
 
 export type RunWorkflowOptions = {
   feature: string;
   projectDir: string;
   config: Config;
   callbacks: OrchestratorCallbacks;
+  sinks: WorkflowSinks;
   savedState?: WorkflowState | undefined;
   sessionId?: string | undefined;
   selectedSkills?: SkillMeta[] | undefined;
@@ -52,23 +50,16 @@ async function initializeWorkflow(
   setTrackedState: (s: WorkflowState) => void,
   resumeHolder: ResumeContextHolder,
 ): Promise<InitResult> {
-  const { feature, projectDir, config, callbacks, savedState } = opts;
+  const { feature, projectDir, config, callbacks, savedState, sinks } = opts;
 
   ensureDiptychDir(projectDir);
   ensureSessionDir(projectDir, sessionId);
 
-  // On resume: only thread the persisted planner session id into the factory when the backend
-  // declares `supportsSessionResume: true`. For stateless backends we pre-build the transcript
-  // instead and inject it as `priorMessages` on the first phase.
+  // Stateless backends receive priorMessages instead of plannerSessionId.
   const initialSessionId = savedState?.plannerSessionId ?? null;
   const planner = createPlanner(config, initialSessionId);
   if (savedState && !planner.capabilities.supportsSessionResume) {
-    const rebuilt = await buildResumeContext(projectDir, sessionId, config.workflow.persistTranscript !== false);
-    if (rebuilt.warning === 'transcript-unavailable') {
-      emitWarning(callbacks, 'Previous planner conversation expired and no transcript was persisted. Continuing with spec.md/plan.md/tasks.md only — the planner may regenerate differently.');
-    } else if (rebuilt.messages.length > 0) {
-      resumeHolder.messages = rebuilt.messages;
-    }
+    await applyRebuiltContext({ projectDir, sessionId, callbacks, config, resumeHolder, requireNonEmpty: true });
   }
   const available = await planner.isAvailable();
   if (!available) {
@@ -118,9 +109,22 @@ async function initializeWorkflow(
     testCommand: config.validation.testCommand,
   };
 
-  const wctx: WorkflowContext = { projectDir, sessionId, config, callbacks, planner, context, implementer, signal: opts.signal, metadata, resumeHolder };
+  const wctx: WorkflowContext = { projectDir, sessionId, config, callbacks, planner, context, implementer, signal: opts.signal, metadata, resumeHolder, sinks };
 
   return { ok: true, state, wctx };
+}
+
+function applyPostPlanDrain(
+  projectDir: string,
+  sessionId: string,
+  state: WorkflowState,
+  callbacks: OrchestratorCallbacks,
+  setTrackedState: (s: WorkflowState) => void,
+): WorkflowState {
+  const drain = drainQueue(projectDir, sessionId, state, callbacks);
+  if (drain.messages.length === 0) return state;
+  setTrackedState(drain.state);
+  return drain.state;
 }
 
 type RunPlanningPhasesOptions = {
@@ -140,7 +144,7 @@ async function runPlanningPhases(opts: RunPlanningPhasesOptions): Promise<{ stat
 
   if (!savedState || savedState.rewindPending) {
     const planning = await runPlanningPhase({
-      wctx: { projectDir, sessionId, config, callbacks, signal: wctx.signal, metadata: wctx.metadata },
+      wctx: { projectDir, sessionId, config, callbacks, signal: wctx.signal, metadata: wctx.metadata, sinks: wctx.sinks },
       planner,
       state,
       feature: state.feature,
@@ -231,90 +235,70 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   let result: Summary | undefined;
   let sessionStatus: Session['status'] = 'interrupted';
 
-  const saveFinalSession = (summary: Summary) => {
-    try {
-      const session: Session = {
-        id: sessionId,
-        feature,
-        startedAt: startTime,
-        completedAt: Date.now(),
-        stateVersion: CURRENT_STATE_VERSION,
-        stateFile: null,
-        status: sessionStatus,
-        summary,
-      };
-      saveSummary(projectDir, sessionId, session);
-      clearActive(projectDir);
-    } catch (err) {
-      warnError('Failed to save final session', err);
-    }
-  };
+  const { cancelled } = await withShutdownHandlers(
+    {
+      projectDir, sessionId,
+      getTrackedState: () => trackedState,
+      getCurrentTask: () => currentTask,
+    },
+    async () => {
+      try {
+        const resumeHolder: ResumeContextHolder = { messages: [] };
+        const init = await initializeWorkflow(opts, sessionId, summaryBase, metadata, (s) => { trackedState = s; }, resumeHolder);
+        if (!init.ok) { result = init.summary; return; }
 
-  const shutdown = () => shutdownWorkflow(projectDir, sessionId, () => trackedState, () => currentTask);
+        const { wctx } = init;
+        trackedState = init.state;
+        const phaseTimings: Record<string, number> = {};
 
-  const { cancelled } = await withSignalHandlers(shutdown, async () => {
-    try {
-      const resumeHolder: ResumeContextHolder = { messages: [] };
-      const init = await initializeWorkflow(opts, sessionId, summaryBase, metadata, (s) => { trackedState = s; }, resumeHolder);
-      if (!init.ok) { result = init.summary; return; }
+        installQueueHandler({
+          projectDir, sessionId,
+          sinks: wctx.sinks,
+          getTrackedState: () => trackedState,
+          setTrackedState: (s) => { trackedState = s; },
+          callbacks,
+          config,
+          planner: wctx.planner,
+        });
 
-      const { wctx } = init;
-      trackedState = init.state;
-      const phaseTimings: Record<string, number> = {};
+        const planning = await runPlanningPhases({
+          wctx, state: init.state, savedState, selectedSkills, phaseTimings, startTime,
+          setTrackedState: (s) => { trackedState = s; },
+        });
+        if (planning.cancelled) { result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings }); return; }
 
-      workflowStore.setQueueHandler(createQueueHandler(
-        projectDir, sessionId,
-        () => trackedState,
-        (s) => { trackedState = s; },
-        callbacks,
-        config.workflow.persistTranscript,
-        wctx.planner,
-      ));
+        if (opts.signal?.aborted) { result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings }); return; }
 
-      const planning = await runPlanningPhases({
-        wctx, state: init.state, savedState, selectedSkills, phaseTimings, startTime,
-        setTrackedState: (s) => { trackedState = s; },
-      });
-      if (planning.cancelled) { result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings }); return; }
+        const postPlanState = applyPostPlanDrain(projectDir, sessionId, planning.state, callbacks, (s) => { trackedState = s; });
 
-      if (opts.signal?.aborted) { result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings }); return; }
-
-      let postPlanState = planning.state;
-      {
-        const drain = drainQueue(projectDir, sessionId, postPlanState, callbacks);
-        if (drain.messages.length > 0) {
-          postPlanState = drain.state;
-          trackedState = postPlanState;
+        result = await runTasksAndReview({
+          wctx, state: postPlanState, summaryBase, phaseTimings,
+          setTrackedState: (s) => { trackedState = s; },
+          setCurrentTask: (t) => { currentTask = t; },
+        });
+        sessionStatus = 'complete';
+      } catch (err) {
+        if (trackedState) {
+          try { saveState(projectDir, sessionId, trackedState); } catch (saveErr) {
+            emitWarning(callbacks, labelError('Failed to save state', saveErr));
+          }
         }
+        killAllProcesses();
+        emitError(callbacks, toErrorMessage(err));
+        sessionStatus = 'failed';
+        result = buildSummary({ ...summaryBase, state: trackedState ?? createInitialState(feature) });
       }
-
-      result = await runTasksAndReview({
-        wctx, state: postPlanState, summaryBase, phaseTimings,
-        setTrackedState: (s) => { trackedState = s; },
-        setCurrentTask: (t) => { currentTask = t; },
-      });
-      sessionStatus = 'complete';
-    } catch (err) {
-      if (trackedState) {
-        try { saveState(projectDir, sessionId, trackedState); } catch (saveErr) {
-          emitWarning(callbacks, labelError('Failed to save state', saveErr));
-        }
-      }
-      killAllProcesses();
-      emitError(callbacks, toErrorMessage(err));
-      sessionStatus = 'failed';
-      result = buildSummary({ ...summaryBase, state: trackedState ?? createInitialState(feature) });
-    }
-  });
+    },
+  );
 
   if (!result) {
     if (cancelled) {
       const summary = buildSummary({ ...summaryBase, state: trackedState ?? createInitialState(feature) });
-      saveFinalSession(summary);
+      saveFinalSession({ projectDir, sessionId, feature, startTime, status: sessionStatus, summary });
       return summary;
     }
     throw new Error('Unreachable: workflow did not produce a summary');
   }
-  saveFinalSession(result);
+  saveFinalSession({ projectDir, sessionId, feature, startTime, status: sessionStatus, summary: result });
   return result;
 }

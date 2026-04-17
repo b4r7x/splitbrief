@@ -1,10 +1,7 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
+import { writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { dirname } from 'node:path';
 
-export const DIPTYCH_DIR = '.diptych';
-
-// Node.js ignores file mode on Windows — these are effective on Unix/macOS only.
 export const SECURE_DIR_MODE = 0o700;
 export const SECURE_FILE_MODE = 0o600;
 
@@ -41,19 +38,5 @@ export async function readFileOrEmpty(filePath: string): Promise<string> {
     return await readFile(filePath, 'utf-8');
   } catch {
     return '';
-  }
-}
-
-export const getDiptychPath = (projectDir: string, ...parts: string[]): string =>
-  join(projectDir, DIPTYCH_DIR, ...parts);
-
-// Sync: called once at workflow start, not in per-task hot path.
-export function readPackageJson(projectDir: string): Record<string, unknown> | null {
-  const pkgPath = join(projectDir, 'package.json');
-  if (!existsSync(pkgPath)) return null;
-  try {
-    return JSON.parse(readFileSync(pkgPath, 'utf-8'));
-  } catch {
-    return null;
   }
 }

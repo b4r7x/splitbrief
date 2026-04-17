@@ -7,7 +7,7 @@ import { isResumable } from '../../core/phases.js';
 import { renderApp } from '../render.js';
 import { addWorkflowOptions, setupWorkflow, resolveProjectDir } from '../workflow.js';
 import { cliError } from '../errors.js';
-import { routerStore } from '../../stores/router.js';
+import { routerStore } from '../../stores/navigation/router.js';
 import { initStores } from '../init-stores.js';
 import { readActive } from '../../core/sessions/active.js';
 import { maybeMigrate } from './migrate.js';
@@ -24,17 +24,17 @@ export function registerResumeCommand(program: Command): void {
 
     const sessionId = readActive(projectDir);
     if (!sessionId) {
-      throw cliError('Error: no active session to resume.');
+      throw cliError('no active session to resume.');
     }
 
     const state = loadState(projectDir, sessionId);
 
     if (!state) {
-      throw cliError(`Error: session '${sessionId}' has no state.json — cannot resume.`);
+      throw cliError(`session '${sessionId}' has no state.json — cannot resume.`);
     }
 
     if (!('stateVersion' in state) || state.stateVersion < CURRENT_STATE_VERSION) {
-      throw cliError('Error: saved state is from an older version and cannot be resumed.\nPlease start a new workflow with `diptych start`.');
+      throw cliError('saved state is from an older version and cannot be resumed.\nPlease start a new workflow with `diptych start`.');
     }
 
     if (!isResumable(state)) {

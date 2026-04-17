@@ -1,10 +1,10 @@
 import { Box, Text } from 'ink';
-import { useTheme } from '../../ui/theme.js';
+import { useTheme } from '../theme.js';
 import { OverlayPanel } from './overlay-panel.js';
-import { configStore } from '../../stores/config.js';
-import { overlayStore } from '../../stores/overlay.js';
-import { feedbackStore } from '../../stores/feedback.js';
-import { CURSOR, NO_CURSOR } from '../pickers/picker-utils.js';
+import { configStore } from '../../stores/project/config.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
+import { CursorCell } from '../pickers/cursor-cell.js';
 import { useStaticSelector } from '../../hooks/use-static-selector.js';
 import type { WorkflowMode } from '../../types.js';
 
@@ -32,10 +32,12 @@ export function ModeSelector() {
     initialIndex: currentIdx,
     onSelect: (item) => {
       const updated = { ...config, workflow: { ...config.workflow, mode: item.mode } };
-      const saved = configStore.save(updated);
-      if (saved) {
+      const result = configStore.save(updated);
+      if (result.ok) {
         feedbackStore.setMessage(`Mode set to: ${item.mode}`);
         overlayStore.close();
+      } else if (result.error) {
+        feedbackStore.setError(`Failed to save config: ${result.error.message}`);
       }
     },
     onCancel: () => overlayStore.close(),
@@ -52,9 +54,7 @@ export function ModeSelector() {
         const isCurrent = m.mode === currentMode;
         return (
           <Box key={m.mode}>
-            <Text color={isSelected ? t.accent : t.textDim}>
-              {isSelected ? CURSOR : NO_CURSOR}
-            </Text>
+            <CursorCell isCursor={isSelected} dimWhenInactive />
             <Box width={10}>
               <Text color={isSelected ? t.text : t.textDim} bold={isSelected}>
                 {m.mode}

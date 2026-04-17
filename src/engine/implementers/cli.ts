@@ -1,15 +1,15 @@
-import type { CliImplementerConfig } from '../../types.js';
+import type { CliImplementerConfig } from '../../core/types/config-options.js';
 import type { Implementer } from './types.js';
 import type { InvokeOpts } from './utils.js';
-import { createChangeDetector, DEFAULT_TIMEOUT, assertSpawnSuccess } from './utils.js';
+import { DEFAULT_TIMEOUT, assertSpawnSuccess } from './utils.js';
+import { createChangeDetector } from '../change-detection.js';
 import { createImplementerBase } from './base.js';
 import { spawnWithTimeout } from '../../utils/process.js';
 import type { SpawnResult } from '../../utils/process.js';
-import { CommandNotFoundError, CommandTimeoutError } from '../../utils/process-errors.js';
 import { CLI_TOOLS } from '../cli-tools.js';
 import { createCommandAvailability } from '../../utils/availability.js';
 import { runClaudeOneShot } from '../claude-runner.js';
-import { resolveAutoModel } from '../../core/providers.js';
+import { resolveAutoModel } from '../../core/providers/index.js';
 
 export function createCliImplementer(config: CliImplementerConfig): Implementer {
   const toolName = config.tool;
@@ -44,10 +44,6 @@ export function createCliImplementer(config: CliImplementerConfig): Implementer 
     },
 
     detectChanges: createChangeDetector(`Tool implementer (${toolName})`),
-
-    shouldThrow(err: unknown) {
-      return err instanceof CommandNotFoundError || err instanceof CommandTimeoutError;
-    },
 
     ...createCommandAvailability(tool.command),
   });

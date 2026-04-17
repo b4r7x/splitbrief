@@ -1,6 +1,6 @@
-import type { Config } from '../types/config.js';
-import type { PlannerTool } from '../types/config.js';
-import { resolveAutoModel, isPlannerToolId } from '../providers.js';
+import type { Config } from '../types/config-options.js';
+import type { PlannerTool } from '../types/config-options.js';
+import { resolveAutoModel, isPlannerToolId } from '../providers/index.js';
 import { assertNever } from '../../utils/type-guards.js';
 
 export type RunnerConfig = Config['planner'] | Config['implementer'];
@@ -12,10 +12,7 @@ export function getRunnerDisplayName(runner: RunnerConfig): string {
     case 'shell':     return 'shell';
     case 'agent':     return 'agent';
     case 'agent-sdk': return 'agent-sdk';
-    default: {
-      const _exhaustive: never = runner;
-      return _exhaustive;
-    }
+    default:          return assertNever(runner);
   }
 }
 

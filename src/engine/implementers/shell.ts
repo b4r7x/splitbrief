@@ -1,4 +1,4 @@
-import type { Config } from '../../types.js';
+import type { Config } from '../../core/types/config-options.js';
 import type { Implementer } from './types.js';
 import { assertImplementerKind } from './utils.js';
 import { createCommandBasedImplementer } from './command-invoke.js';

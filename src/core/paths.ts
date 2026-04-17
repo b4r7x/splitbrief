@@ -1,6 +1,6 @@
 import { join } from 'node:path';
-import { DIPTYCH_DIR } from '../utils/fs.js';
-export { DIPTYCH_DIR };
+
+export const DIPTYCH_DIR = '.diptych';
 export const CODEX_DIR = '.codex';
 export const SKILLS_DIR = 'skills';
 export const SESSIONS_DIR = 'sessions';
@@ -17,6 +17,10 @@ export const sessionsRoot = (projectDir: string): string =>
 
 export const sessionDir = (projectDir: string, sessionId: string): string =>
   join(projectDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+
+export const getDiptychPath = (projectDir: string, ...parts: string[]): string =>
+  join(projectDir, DIPTYCH_DIR, ...parts);
+
 export const SPEC_FILE = 'spec.md';
 export const PLAN_FILE = 'plan.md';
 export const TASKS_FILE = 'tasks.md';

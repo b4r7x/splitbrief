@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { WorkflowState } from '../../types.js';
+import type { WorkflowState } from '../../core/types/state-actions.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-fixtures.js';
 
@@ -46,7 +46,6 @@ describe('collectAndPersistClarifications', () => {
         supportsConversationalPlanning: true,
         supportsHintEscalation: false,
         supportsSessionResume: true,
-        supportsMidStreamInjection: true,
       },
       injectUserTurn,
     });
@@ -73,7 +72,7 @@ describe('collectAndPersistClarifications', () => {
   it('enqueues answer but does not call native injection for stateless planner', async () => {
     const state = makeSpecifyingState();
     const { callbacks } = makeCallbacks();
-    const planner = makePlanner(); // supportsMidStreamInjection: false
+    const planner = makePlanner(); // no injectUserTurn
     const questions = [{ id: 'q2', type: 'input' as const, text: 'Use sessions?' }];
     const onQuestionAsked = vi.fn().mockResolvedValue('No sessions');
 

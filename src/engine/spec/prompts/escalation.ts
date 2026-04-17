@@ -1,5 +1,5 @@
-import type { Task } from '../../../types.js';
-import { buildPrompt, ESM_CONVENTION, type PromptSection } from './shared.js';
+import type { Task } from '../../../core/types/state-actions.js';
+import { buildPrompt, ESM_CONVENTION, instructionsSection, type PromptSection } from './shared.js';
 
 function taskMetaSection(task: Task): PromptSection {
   return {
@@ -40,7 +40,7 @@ export function buildHintPrompt(task: Task, error: string): string {
       taskMetaSection(task),
       { heading: 'Constraints', body: constraintsBlock(task) },
       { heading: 'Validation Error', body: '```\n' + error + '\n```' },
-      { heading: 'Instructions', body: HINT_INSTRUCTIONS },
+      instructionsSection(HINT_INSTRUCTIONS),
     ],
   });
 }
@@ -70,7 +70,7 @@ export function buildEscalationPrompt(task: Task, lastAttempt: string, error: st
     { heading: 'Constraints', body: constraintsBlock(task) },
     { heading: 'Last Failed Attempt', body: '```\n' + lastAttempt + '\n```' },
     { heading: 'Validation Error', body: '```\n' + error + '\n```' },
-    { heading: 'Instructions', body: escalationInstructions(task) },
+    instructionsSection(escalationInstructions(task)),
   );
 
   return buildPrompt({

@@ -1,5 +1,5 @@
 import { API_PROVIDER_IDS, CLI_TOOL_IDS, META_PROVIDER_IDS, type ProviderId } from '../../core/types/schemas/enums.js';
-import { isProviderId, isProviderLocal, isProviderSubscription } from '../../core/providers.js';
+import { isProviderId, isProviderLocal, isProviderSubscription } from '../../core/providers/index.js';
 import {
   NULL_CACHE,
   findKnownModel,
@@ -34,7 +34,6 @@ export interface ResolvedPricing {
 
 const PRICED_PROVIDER_IDS = new Set<ProviderId>(API_PROVIDER_IDS);
 const UNPRICED_CLI_PROVIDER_IDS = new Set<string>(CLI_TOOL_IDS);
-// Derived from META_PROVIDER_IDS so the two stay in sync automatically.
 const META_UNPRICED_IDS = new Set<string>(META_PROVIDER_IDS);
 
 export const LOCAL_PRICING: ResolvedPricing = {
@@ -49,19 +48,21 @@ export const LOCAL_PRICING: ResolvedPricing = {
 
 function makeUnpriced(providerId: string, name?: string): ResolvedPricing {
   if (isProviderLocal(providerId)) return name ? { ...LOCAL_PRICING, name } : LOCAL_PRICING;
-  const pricingMode: PricingMode =
-    UNPRICED_CLI_PROVIDER_IDS.has(providerId) || isProviderSubscription(providerId) ? 'unpriced-cli'
-    : META_UNPRICED_IDS.has(providerId) ? 'unpriced-meta'
-    : 'unpriced-unknown';
   return {
     inputPer1M: 0,
     outputPer1M: 0,
     isLocal: false,
     isPriced: false,
-    pricingMode,
+    pricingMode: pickUnpricedMode(providerId),
     name: name ?? providerId,
     source: 'unpriced',
   };
+}
+
+function pickUnpricedMode(providerId: string): PricingMode {
+  if (UNPRICED_CLI_PROVIDER_IDS.has(providerId) || isProviderSubscription(providerId)) return 'unpriced-cli';
+  if (META_UNPRICED_IDS.has(providerId)) return 'unpriced-meta';
+  return 'unpriced-unknown';
 }
 
 export function isApiPricedProvider(providerId: string): providerId is ProviderId {

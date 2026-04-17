@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import type { DetectedModel, ProviderDefWithMetadata, ProviderOverrides } from './types.js';
-import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers.js';
-import { createMetadataProvider, stripV1Suffix, DEFAULT_MODEL_FALLBACK } from './client.js';
+import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers/index.js';
+import { createMetadataProvider } from './client.js';
+import { stripV1Suffix } from '../http.js';
 import { perTokenToPerMillion } from './metadata.js';
 
 const DEFAULT_BASE = KNOWN_PROVIDER_BASE_URLS.openrouter;
@@ -73,7 +74,7 @@ export function createOpenRouterProvider(overrides?: ProviderOverrides): Provide
       envKeyName: 'OPENROUTER_API_KEY',
       isLocal: false,
       schema: OpenRouterModelSchema,
-      fallback: DEFAULT_MODEL_FALLBACK,
+      fallback: (id) => ({ id }),
       toDetected: toDetectedModel,
       contextLength: (m) => m.context_length ?? null,
       modelsUrl: openRouterModelsUrl,

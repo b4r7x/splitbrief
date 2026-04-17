@@ -5,7 +5,7 @@ import { loadConfig, initConfig, configPath } from '../core/config/index.js';
 import { isGitRepo } from '../utils/git.js';
 import { DIPTYCH_DIR, CONFIG_FILE } from '../core/paths.js';
 import { cliError } from './errors.js';
-import { toErrorMessage } from '../utils/format.js';
+import { toErrorMessage } from '../utils/format-errors.js';
 import type { WorkflowOpts } from '../types.js';
 
 const NO_CONFIG_MSG = `No config found. Creating default ${DIPTYCH_DIR}/${CONFIG_FILE}`;
@@ -42,7 +42,7 @@ export function loadConfigOrExit(projectDir: string): ReturnType<typeof loadConf
 
 async function assertGitRepo(projectDir: string): Promise<void> {
   if (!(await isGitRepo(projectDir))) {
-    throw cliError('Error: not a git repository. Run `git init` first.', 1);
+    throw cliError('not a git repository. Run `git init` first.', 1);
   }
 }
 
@@ -62,15 +62,6 @@ export interface SetupResult {
   needsSetup?: boolean | undefined;
 }
 
-const OVERRIDE_KEYS = [
-  'model', 'provider', 'planner', 'plannerModel', 'plannerCommand',
-  'implementer', 'implementerModel', 'implementerCommand',
-] as const satisfies readonly (keyof WorkflowOpts)[];
-
-function hasRunnerOverrides(opts: WorkflowOpts): boolean {
-  return OVERRIDE_KEYS.some((k) => opts[k] !== undefined);
-}
-
 export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
   const projectDir = resolveProjectDir(opts.project);
 
@@ -80,7 +71,15 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
   const useFullscreen = opts.fullscreen !== false && isInteractive;
   const useMouse = opts.mouse !== false && useFullscreen;
 
-  const hasOverrides = hasRunnerOverrides(opts);
+  const hasOverrides =
+    opts.model !== undefined ||
+    opts.provider !== undefined ||
+    opts.planner !== undefined ||
+    opts.plannerModel !== undefined ||
+    opts.plannerCommand !== undefined ||
+    opts.implementer !== undefined ||
+    opts.implementerModel !== undefined ||
+    opts.implementerCommand !== undefined;
   if (!existsSync(configPath(projectDir))) {
     if (hasOverrides) {
       console.log(NO_CONFIG_MSG);

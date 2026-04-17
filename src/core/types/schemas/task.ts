@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { TaskStatusSchema } from './enums.js';
-import type { TaskId } from '../workflow.js';
 
-export const TaskIdSchema = z.string().transform((s) => s as TaskId);
+export const TaskIdSchema = z.string().brand<'TaskId'>();
+export type TaskId = z.infer<typeof TaskIdSchema>;
+export const taskId = (s: string): TaskId => TaskIdSchema.parse(s);
 
 export const TaskSchema = z.object({
   id: TaskIdSchema,
