@@ -1,5 +1,5 @@
 import type { Phase } from '../schemas/enums.js';
-import type { WorkflowMode } from '../types/config-options.js';
+import type { WorkflowMode } from '../schemas/enums.js';
 import type { OverlayType, Screen } from '../../stores/navigation/router.js';
 
 interface SlashCommandBase {

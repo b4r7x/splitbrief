@@ -4,6 +4,8 @@ import { activeFile, sessionDir, sessionsRoot, STATE_FILE } from '../paths.js';
 import { ensureSessionDir } from '../paths-io.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import { writeSecureFile } from '../../lib/fs.js';
+import { slugify } from '../../utils/slugify.js';
+import { sessionError } from './errors.js';
 
 export function readActive(projectDir: string): string | null {
   const p = activeFile(projectDir);
@@ -35,13 +37,6 @@ export function isSessionLive(projectDir: string, sessionId: string): boolean {
 const MAX_SLUG_LENGTH = 50;
 const MAX_COLLISION_ATTEMPTS = 999;
 
-function slugify(s: string): string {
-  return s.toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-+/g, '-');
-}
-
 function findUniqueId(projectDir: string, base: string): string {
   const root = sessionsRoot(projectDir);
   if (!existsSync(join(root, base))) return base;
@@ -49,7 +44,7 @@ function findUniqueId(projectDir: string, base: string): string {
     const candidate = `${base}-${n}`;
     if (!existsSync(join(root, candidate))) return candidate;
   }
-  throw new Error(`Could not generate unique session-id from base '${base}': all suffixes up to ${MAX_COLLISION_ATTEMPTS} are taken`);
+  throw sessionError.idCollision(base, MAX_COLLISION_ATTEMPTS);
 }
 
 export function generateSessionId(projectDir: string, feature: string, now: Date = new Date()): string {

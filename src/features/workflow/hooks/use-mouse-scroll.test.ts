@@ -38,7 +38,7 @@ describe('wireMouseScroll', () => {
   beforeEach(() => {
     routerStore.reset();
     reviewStore.reset();
-    terminalSizeStore.set({ rows: 20, cols: 80, isSmall: false });
+    terminalSizeStore.__testReset({ rows: 20, cols: 80, isSmall: false });
     conversationScrollStore.reset();
     resetWorkflow();
     inputHeightStore.reset();
@@ -75,7 +75,7 @@ describe('wireMouseScroll', () => {
 
   it('scrolls the conversation when the wheel is inside the content rectangle', () => {
     routerStore.init({ screen: 'workflow', feature: 'feat' });
-    eventsStore.set({
+    eventsStore.__testReset({
       events: Array.from({ length: 20 }, (_, ts) => ({
         type: 'planner-text' as const,
         ts,

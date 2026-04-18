@@ -1,4 +1,4 @@
-import type { Config } from '../../core/types/config-options.js';
+import type { Config } from '../../core/schemas/config.js';
 import type { InvokeResult } from '../runners/types.js';
 import type { Planner, PriorMessage } from './types.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
@@ -6,7 +6,9 @@ import { createPlannerBase } from './base.js';
 import { getProvider } from '../providers/registry.js';
 import { createClientFromProvider } from '../providers/client.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
-import { streamApiCompletion, throwAutoModelError } from '../api-shared.js';
+import { streamCompletion, type StreamClient } from '../providers/openai-stream.js';
+import { streamAnthropicCompletion } from '../providers/anthropic/stream.js';
+import { providerError } from '../providers/errors.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import type OpenAI from 'openai';
 
@@ -26,15 +28,25 @@ async function invokeApi(
   onOutput: (text: string) => void,
   priorMessages?: PriorMessage[] | undefined,
 ): Promise<InvokeResult> {
-  return streamApiCompletion({
-    client,
-    provider: planner.provider,
-    apiBase: planner.apiBase,
-    apiKey: planner.apiKey,
-    model,
-    messages: buildMessages(prompt, priorMessages),
+  const messages = buildMessages(prompt, priorMessages);
+
+  if (planner.provider === 'anthropic') {
+    return streamAnthropicCompletion({
+      apiKey: planner.apiKey,
+      apiBase: planner.apiBase ?? '',
+      model,
+      messages,
+      temperature: 0.3,
+      onProgress: onOutput,
+    });
+  }
+
+  if (!client) throw providerError.expectedOpenAIClient(planner.provider);
+
+  return streamCompletion(client as StreamClient, model, messages, {
     temperature: 0.3,
     onProgress: onOutput,
+    endpoint: { provider: planner.provider, apiBase: planner.apiBase },
   });
 }
 
@@ -42,7 +54,7 @@ export function createApiPlanner(config: Config): Planner {
   const plannerCfg = assertPlannerKind(config, 'api');
   const provider = plannerCfg.provider;
   const model = resolveAutoModel(plannerCfg.model, provider);
-  if (!model) throwAutoModelError('planner');
+  if (!model) throw providerError.missingModel('planner');
   const resolved = getProvider(provider, {
     apiBase: plannerCfg.apiBase,
     apiKey: plannerCfg.apiKey,

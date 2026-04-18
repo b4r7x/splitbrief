@@ -1,6 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { isENOENT, CommandNotFoundError, formatCommandError } from './errors.js';
-import { redactSecrets } from '../../utils/redact.js';
+import { isENOENT, processError } from './errors.js';
 import { createLineBuffer } from './line-buffer.js';
 import { registerProcess, unregisterProcess, killProcess, abortProcess } from './registry.js';
 
@@ -68,6 +67,12 @@ function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       } catch (err: unknown) {
         reject(err);
       }
+    });
+
+    stdin.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EPIPE') return;
+      unregisterProcess(proc);
+      reject(err);
     });
 
     if (opts.stdin !== undefined) {
@@ -157,7 +162,7 @@ export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
     },
     onError: (err) => {
       if (timer !== null) clearTimeout(timer);
-      if (opts.notFoundMessage && isENOENT(err)) return new CommandNotFoundError(opts.notFoundMessage);
+      if (opts.notFoundMessage && isENOENT(err)) return processError.notFound(opts.command, opts.notFoundMessage);
       return null;
     },
   });
@@ -184,7 +189,7 @@ export async function spawnWithStdin(opts: {
   stdin?: string | undefined;
   onLine: (line: string) => void;
   onStderr?: ((chunk: string) => void) | undefined;
-  notFoundMessage: string;
+  notFoundMessage?: string | undefined;
   signal?: AbortSignal | undefined;
 }): Promise<{ text: string; stderrOutput: string; code: number }> {
   let rawText = '';
@@ -205,24 +210,20 @@ export async function spawnWithStdin(opts: {
       stderrOutput += chunk;
       opts.onStderr?.(chunk);
     },
-    onError: (err) => isENOENT(err) ? new CommandNotFoundError(opts.notFoundMessage) : null,
+    onError: (err) => isENOENT(err) ? processError.notFound(opts.command, opts.notFoundMessage) : null,
     onClose: (code) => {
       stdoutBuf.flush();
 
       if (code === 127) {
-        throw new CommandNotFoundError(opts.notFoundMessage);
+        throw processError.notFound(opts.command, opts.notFoundMessage);
       }
 
       if (code !== 0 && !rawText) {
-        throw new Error(
-          redactSecrets(
-            formatCommandError('exit-code', {
-              command: opts.command,
-              code,
-              stderr: stderrOutput,
-            }),
-          ),
-        );
+        throw processError.exitCode({
+          command: opts.command,
+          code,
+          stderr: stderrOutput,
+        });
       }
 
       return { text: rawText, stderrOutput, code: code ?? 0 };

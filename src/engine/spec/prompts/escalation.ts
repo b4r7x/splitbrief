@@ -1,4 +1,4 @@
-import type { Task } from '../../../core/types/state-actions.js';
+import type { Task } from '../../../core/schemas/task.js';
 import { buildPrompt, ESM_CONVENTION, instructionsSection, type PromptSection } from './shared.js';
 
 function taskMetaSection(task: Task): PromptSection {

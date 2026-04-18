@@ -1,4 +1,4 @@
-import type { Config } from '../../core/types/config-options.js';
+import type { Config } from '../../core/schemas/config.js';
 import type { Implementer } from './types.js';
 import { DEFAULT_TIMEOUT, assertImplementerKind } from './utils.js';
 import { createChangeDetector } from '../change-detection.js';

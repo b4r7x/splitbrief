@@ -20,10 +20,6 @@ export function useInputMode(): UseInputModeResult {
   const reviewResolverRef = useRef<((value: ReviewResult) => void) | null>(null);
   const questionResolverRef = useRef<((value: string) => void) | null>(null);
 
-  useEffect(() => {
-    return () => controlsStore.clearInputMode();
-  }, []);
-
   const setReviewMode = (h: string): Promise<ReviewResult> => {
     return new Promise((resolve) => {
       reviewResolverRef.current = resolve;
@@ -72,6 +68,7 @@ export function useInputMode(): UseInputModeResult {
       questionResolverRef.current?.('');
       reviewResolverRef.current = null;
       questionResolverRef.current = null;
+      controlsStore.clearInputMode();
     };
   }, []);
 

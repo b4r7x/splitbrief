@@ -1,67 +1,50 @@
 import { describe, it, expect } from 'vitest';
-import type { Session } from '../schemas/session.js';
-import type { Summary } from '../types/summary.js';
+import type { Summary } from '../schemas/summary.js';
 import { aggregateSessionCosts } from './analytics.js';
+import { makeSession } from '#testing/helpers/factories/session.js';
+import { makeSummary as makeBaseSummary } from '#testing/helpers/factories/summary.js';
 
 function makeSummary(overrides: Partial<Summary> = {}): Summary {
-  return {
+  return makeBaseSummary({
     feature: 'f',
     totalTasks: 3,
     completedByLocal: 2,
     escalatedToPlanner: 1,
-    skipped: 0,
-    failed: 0,
     totalTime: 5000,
-    tokenUsage: { plannerInput: 0, plannerOutput: 0, implementerInput: 0, implementerOutput: 0, escalationInput: 0, escalationOutput: 0 },
     estimatedCostSavings: '~$1.00',
     escalationRate: 0.33,
     ...overrides,
-  };
+  });
 }
 
-function makeCompleteSession(overrides: Partial<Omit<Session, 'status' | 'summary'>> & { summary?: Summary } = {}): Session {
-  const { summary = makeSummary(), ...rest } = overrides;
-  return {
-    id: 'sess-1',
-    feature: 'test',
-    startedAt: 1000,
-    completedAt: 2000,
-    stateVersion: 1,
-    stateFile: null,
-    ...rest,
+const completeDefaults = { id: 'sess-1', feature: 'test', startedAt: 1000, completedAt: 2000, stateFile: null, stateVersion: 1 };
+const interruptedDefaults = { id: 'sess-1', feature: 'test', startedAt: 1000, completedAt: null, stateFile: null, stateVersion: 1 };
+
+function makeCompleteSession(overrides: { id?: string; summary?: Summary } = {}) {
+  return makeSession({
+    ...completeDefaults,
+    id: overrides.id ?? completeDefaults.id,
     status: 'complete',
-    summary,
-  };
+    summary: overrides.summary ?? makeSummary(),
+  });
 }
 
-function makeInterruptedSession(overrides: Partial<Omit<Session, 'status' | 'summary'>> & { summary?: Summary | null } = {}): Session {
-  const { summary = null, ...rest } = overrides;
-  return {
-    id: 'sess-1',
-    feature: 'test',
-    startedAt: 1000,
-    completedAt: null,
-    stateVersion: 1,
-    stateFile: null,
-    ...rest,
+function makeInterruptedSession(overrides: { id?: string; summary?: Summary | null } = {}) {
+  return makeSession({
+    ...interruptedDefaults,
+    id: overrides.id ?? interruptedDefaults.id,
     status: 'interrupted',
-    summary,
-  };
+    summary: overrides.summary ?? null,
+  });
 }
 
-function makeFailedSession(overrides: Partial<Omit<Session, 'status' | 'summary'>> & { summary?: Summary | null } = {}): Session {
-  const { summary = null, ...rest } = overrides;
-  return {
-    id: 'sess-1',
-    feature: 'test',
-    startedAt: 1000,
-    completedAt: null,
-    stateVersion: 1,
-    stateFile: null,
-    ...rest,
+function makeFailedSession(overrides: { id?: string; summary?: Summary | null } = {}) {
+  return makeSession({
+    ...interruptedDefaults,
+    id: overrides.id ?? interruptedDefaults.id,
     status: 'failed',
-    summary,
-  };
+    summary: overrides.summary ?? null,
+  });
 }
 
 describe('aggregateSessionCosts', () => {
@@ -170,7 +153,7 @@ describe('aggregateSessionCosts', () => {
     expect(result.totalCost).toBe(1);
   });
 
-  it('handles interrupted session with null summary gracefully', () => {
+  it('counts interrupted sessions with null summary in total but excludes their cost', () => {
     const session = makeInterruptedSession();
     const result = aggregateSessionCosts([session]);
     expect(result.totalSessions).toBe(1);

@@ -1,4 +1,4 @@
-import type { Config } from '../types/config-options.js';
+import type { Config } from '../schemas/config.js';
 import { getProviderDisplayName } from '../providers/catalog.js';
 import { formatModelName } from '../model-display.js';
 import { getRunnerDisplayName } from '../config/accessors/runner-config.js';

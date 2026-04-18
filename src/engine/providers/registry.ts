@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import type { DetectedModel, ProviderDef, ProviderOverrides } from './types.js';
-import type { Config, ProviderDetection } from '../../core/types/config-options.js';
+import type { Config } from '../../core/schemas/config.js';
+import type { ProviderDetection } from '../../core/types/config-options.js';
 import { createClientFromProvider } from './client.js';
 import { createOllamaProvider } from './ollama.js';
 import { createLmStudioProvider } from './lm-studio.js';
@@ -15,6 +16,7 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { withTimeout } from '../../utils/with-timeout.js';
 import { DETECTION_TIMEOUT_MS } from '../constants.js';
+import { providerError } from './errors.js';
 
 export { DETECTION_TIMEOUT_MS };
 
@@ -49,20 +51,14 @@ export const KNOWN_PROVIDERS: Partial<Record<ProviderId, ProviderFactory>> = {
 export function getProvider(name: string, overrides?: ProviderOverrides): ProviderDef {
   const factory = isProviderId(name) ? KNOWN_PROVIDERS[name] : undefined;
   if (factory) return factory(overrides);
-  if (!overrides?.apiBase) {
-    throw new Error(`Unknown provider '${name}' requires an apiBase override`);
-  }
-  if (!overrides.apiKey) {
-    throw new Error(`Unknown provider '${name}' requires an overrides.apiKey`);
-  }
+  if (!overrides?.apiBase) throw providerError.unknownNeedsApiBase(name);
+  if (!overrides.apiKey) throw providerError.unknownNeedsApiKey(name);
   return createOpenAICompatProvider(name, overrides.apiBase, '', false, overrides);
 }
 
 function getImplementerProvider(config: Config): ProviderDef {
   const impl = config.implementer;
-  if (impl.kind !== 'api') {
-    throw new Error(`getImplementerProvider requires kind=api, got kind=${impl.kind}`);
-  }
+  if (impl.kind !== 'api') throw providerError.notApi(impl.kind);
   return getProvider(impl.provider, {
     apiBase: impl.apiBase,
     apiKey: impl.apiKey,
@@ -71,9 +67,7 @@ function getImplementerProvider(config: Config): ProviderDef {
 
 export function createClient(config: Config): OpenAI {
   const provider = getImplementerProvider(config);
-  if (provider.name === 'anthropic') {
-    throw new Error('Anthropic API is not OpenAI-compatible; use the Anthropic streaming path');
-  }
+  if (provider.name === 'anthropic') throw providerError.anthropicNotOpenAICompat();
   return createClientFromProvider(provider);
 }
 

@@ -1,16 +1,11 @@
-import { describe, it, expect } from 'vitest';
-import { Fzf } from 'fzf';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import React from 'react';
+import { Text } from 'ink';
+import { render } from 'ink-testing-library';
+import { fuzzyMatchCommand, useSlashAutocomplete } from './use-slash-autocomplete.js';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';
-
-// Extract the pure fuzzy logic for unit testing without React hooks
-function fuzzyMatchCommand(commands: SlashCommandDef[], query: string): SlashCommandDef | null {
-  const bare = query.startsWith('/') ? query.slice(1) : query;
-  if (!bare) return null;
-  const fzf = new Fzf(commands, { selector: (c: SlashCommandDef) => c.name.slice(1) });
-  const results = fzf.find(bare);
-  const top = results[0];
-  return top !== undefined && top.score > 0 ? top.item : null;
-}
+import { inputHistoryStore } from '../../stores/ui/input-history.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 
 const COMMANDS: SlashCommandDef[] = [
   { kind: 'noarg', name: '/help', label: 'Help', description: '', validScreens: ['home'], handler: () => {} },
@@ -20,34 +15,110 @@ const COMMANDS: SlashCommandDef[] = [
   { kind: 'noarg', name: '/quit', label: 'Quit', description: '', validScreens: ['home'], handler: () => {} },
 ];
 
-describe('fuzzyMatchCommand', () => {
+describe('fuzzyMatchCommand (re-exported from use-slash-autocomplete)', () => {
   it('returns null for empty query', () => {
     expect(fuzzyMatchCommand(COMMANDS, '')).toBeNull();
     expect(fuzzyMatchCommand(COMMANDS, '/')).toBeNull();
   });
 
-  it('/mde → /mode (dropped letter)', () => {
-    const result = fuzzyMatchCommand(COMMANDS, '/mde');
-    expect(result?.name).toBe('/mode');
+  it('resolves typos to the closest command', () => {
+    expect(fuzzyMatchCommand(COMMANDS, '/mde')?.name).toBe('/mode');
+    expect(fuzzyMatchCommand(COMMANDS, '/settngs')?.name).toBe('/settings');
+    expect(fuzzyMatchCommand(COMMANDS, '/hlp')?.name).toBe('/help');
   });
 
-  it('/settngs → /settings', () => {
-    const result = fuzzyMatchCommand(COMMANDS, '/settngs');
-    expect(result?.name).toBe('/settings');
+  it('returns null when the query has no resemblance to any command', () => {
+    expect(fuzzyMatchCommand(COMMANDS, '/zzzzzzzzz')).toBeNull();
   });
 
-  it('/hlp → /help', () => {
-    const result = fuzzyMatchCommand(COMMANDS, '/hlp');
-    expect(result?.name).toBe('/help');
+  it('matches without a leading slash', () => {
+    expect(fuzzyMatchCommand(COMMANDS, 'hlp')?.name).toBe('/help');
+  });
+});
+
+interface HarnessProps {
+  value: string;
+  onSlashCommand: (command: string) => void;
+  onState?: (state: { filtered: SlashCommandDef[]; fuzzyMatch: SlashCommandDef | null }) => void;
+  setValueSpy?: { current: ((v: string) => void) | null };
+}
+
+function Harness({ value: initialValue, onSlashCommand, onState, setValueSpy }: HarnessProps) {
+  const [value, setValue] = React.useState(initialValue);
+  if (setValueSpy) setValueSpy.current = setValue;
+  const result = useSlashAutocomplete({
+    commands: COMMANDS,
+    currentScreen: 'home',
+    value,
+    setValue,
+    onSlashCommand,
+  });
+  if (onState) onState({ filtered: result.filtered, fuzzyMatch: result.fuzzyMatch });
+  return React.createElement(Text, null, `value=${value}|first=${result.filtered[0]?.name ?? ''}|fuzzy=${result.fuzzyMatch?.name ?? ''}`);
+}
+
+async function flush(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+}
+
+describe('useSlashAutocomplete (integration)', () => {
+  beforeEach(() => {
+    inputHistoryStore.reset();
+    lifecycleStore.__testReset();
   });
 
-  it('returns null for a query with no resemblance to any command', () => {
-    const result = fuzzyMatchCommand(COMMANDS, '/zzzzzzzzz');
-    expect(result).toBeNull();
+  afterEach(() => {
+    inputHistoryStore.reset();
+    lifecycleStore.__testReset();
   });
 
-  it('works without leading slash', () => {
-    const result = fuzzyMatchCommand(COMMANDS, 'hlp');
-    expect(result?.name).toBe('/help');
+  it('Enter on a prefix-filtered command invokes onSlashCommand with the selected command', async () => {
+    let received: string | null = null;
+    const instance = render(
+      React.createElement(Harness, {
+        value: '/he',
+        onSlashCommand: (cmd: string) => { received = cmd; },
+      }),
+    );
+    await flush();
+    // Prefix filter surfaces /help as the first match for "/he".
+    expect(instance.lastFrame() ?? '').toContain('first=/help');
+
+    instance.stdin.write('\r');
+    await flush();
+
+    expect(received).toBe('/help');
+    // Selected command is pushed to input history on the home screen.
+    expect(inputHistoryStore.get().entries[0]).toBe('/help');
+
+    instance.unmount();
+  });
+
+  it('Tab with only a fuzzy match rewrites the value to the fuzzy-matched command name', async () => {
+    const setValueSpy: HarnessProps['setValueSpy'] = { current: null };
+    let received: string | null = null;
+    const instance = render(
+      React.createElement(Harness, {
+        value: '/hlp',
+        onSlashCommand: (cmd: string) => { received = cmd; },
+        setValueSpy,
+      }),
+    );
+    await flush();
+    // No prefix match; fuzzy resolves /hlp → /help.
+    const frame = instance.lastFrame() ?? '';
+    expect(frame).toContain('first=');
+    expect(frame).toContain('fuzzy=/help');
+
+    instance.stdin.write('\t');
+    await flush();
+
+    // After Tab, the controlled value has been rewritten to the fuzzy match.
+    expect(instance.lastFrame() ?? '').toContain('value=/help');
+    // Tab on a fuzzy match completes; it does not dispatch the command.
+    expect(received).toBeNull();
+
+    instance.unmount();
   });
 });

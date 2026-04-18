@@ -1,12 +1,8 @@
 import type { OutputFormat } from '../../core/schemas/enums.js';
-import type { TokenDelta } from '../../core/types/summary.js';
+import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { spawnWithShellFallback } from '../../lib/process/spawn.js';
-import {
-  CommandTimeoutError,
-  CommandNotFoundError,
-  formatCommandError,
-} from '../../lib/process/errors.js';
+import { processError } from '../../lib/process/errors.js';
 import { extractCode } from '../parsers/response-extractor.js';
 
 export interface CommandBasedOptions {
@@ -68,7 +64,6 @@ export async function invokeCommandBasedRunner(
     useStdin = substituted.useStdin;
   }
 
-  const notFoundMessage = opts.notFoundMessage ?? formatCommandError('not-found', { command: opts.command });
   let stdout: string;
   let stderr = '';
   let usage: TokenDelta | null = null;
@@ -81,19 +76,21 @@ export async function invokeCommandBasedRunner(
       timeout: opts.timeout,
       onProgress: onOutput ?? (() => {}),
       stdinInput: useStdin ? prompt : undefined,
-      notFoundMessage,
+      notFoundMessage: opts.notFoundMessage,
       signal,
     });
 
     if (result.timedOut) {
-      throw new CommandTimeoutError(
-        formatCommandError('timeout', { command: 'Command', label: 'Command', timeoutMs: opts.timeout }),
-        result.output,
-      );
+      throw processError.timeout({
+        command: 'Command',
+        label: 'Command',
+        timeoutMs: opts.timeout,
+        output: result.output,
+      });
     }
 
     if (result.code === 127) {
-      throw new CommandNotFoundError(notFoundMessage);
+      throw processError.notFound(opts.command, opts.notFoundMessage);
     }
 
     stdout = result.output;
@@ -105,7 +102,7 @@ export async function invokeCommandBasedRunner(
       cwd: projectDir,
       stdin: useStdin ? prompt : undefined,
       format,
-      notFoundMessage,
+      notFoundMessage: opts.notFoundMessage,
       onText: onOutput,
       signal,
       onStderr: chunk => {

@@ -27,7 +27,7 @@ describe('tokensStore — task-complete counters', () => {
   beforeEach(() => resetWorkflow());
 
   it('increments localCount on task-complete with method=local', () => {
-    tokensStore.set(s => ({ ...s, localCount: 1 }));
+    tokensStore.__testReset({ localCount: 1 });
     addEvent(makeTaskComplete({ method: 'local' }));
     expect(tokensStore.get().localCount).toBe(2);
   });

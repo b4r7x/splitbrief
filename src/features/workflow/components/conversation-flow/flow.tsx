@@ -7,13 +7,22 @@ import { computeConversationScroll } from '../../../../core/layout/conversation-
 import { trimRenderableItemsToViewport } from '../../../../core/layout/viewport-trimming.js';
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
 import { useStores } from '../../../../stores/use-stores.js';
-import { computeScrollBannerText } from '../../../../core/layout/scroll-banner.js';
 import type { Section } from '../../../../core/layout/event-sections.js';
 
 interface ConversationFlowProps {
   sections: Section[];
   height: number;
   width: number;
+}
+
+function computeScrollBannerText(
+  linesAbove: number,
+  linesBelow: number,
+): { above: string; below: string } {
+  return {
+    above: linesAbove > 0 ? `─── ${linesAbove} line${linesAbove === 1 ? '' : 's'} above ───` : '',
+    below: linesBelow > 0 ? `─── ${linesBelow} line${linesBelow === 1 ? '' : 's'} below ───` : '',
+  };
 }
 
 export function ConversationFlow({ sections, height, width }: ConversationFlowProps) {

@@ -1,4 +1,4 @@
-import type { Config } from '../core/types/config-options.js';
+import type { Config } from '../core/schemas/config.js';
 import type {
   AgentPlannerConfig,
   AgentSdkPlannerConfig,
@@ -12,10 +12,7 @@ import type {
   ApiImplementerConfig,
   ShellImplementerConfig,
 } from '../core/schemas/implementer-config.js';
-
-function expectedConfigKind(role: 'planner' | 'implementer', kind: string): Error {
-  return new Error(`Expected ${kind} ${role} config`);
-}
+import { configError } from '../core/config/errors.js';
 
 export function assertPlannerKind(config: Config, kind: 'api'): ApiPlannerConfig;
 export function assertPlannerKind(config: Config, kind: 'cli'): CliPlannerConfig;
@@ -26,7 +23,7 @@ export function assertPlannerKind(
   config: Config,
   kind: Config['planner']['kind'],
 ): Config['planner'] {
-  if (config.planner.kind !== kind) throw expectedConfigKind('planner', kind);
+  if (config.planner.kind !== kind) throw configError.kindMismatch('planner', kind);
   return config.planner;
 }
 
@@ -38,6 +35,6 @@ export function assertImplementerKind(
   config: Config,
   kind: Config['implementer']['kind'],
 ): Config['implementer'] {
-  if (config.implementer.kind !== kind) throw expectedConfigKind('implementer', kind);
+  if (config.implementer.kind !== kind) throw configError.kindMismatch('implementer', kind);
   return config.implementer;
 }

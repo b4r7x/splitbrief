@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { createDefaultConfig, loadConfig } from './load.js';
 import { toYaml } from './transform.js';
-import type { PlannerConfig } from '../../types/config-options.js';
+import type { PlannerConfig } from '../../schemas/planner-config.js';
 import { DIPTYCH_DIR } from '../../paths.js';
 
 function expectCli(p: PlannerConfig): Extract<PlannerConfig, { kind: 'cli' }> {
@@ -37,7 +37,7 @@ describe('config loading', () => {
       const dir = join(TMP, 'no-config');
       mkdirSync(dir, { recursive: true });
 
-      const config = loadConfig(dir);
+      const { config } = loadConfig(dir);
       const defaults = createDefaultConfig();
       expect(config).toEqual(defaults);
     });
@@ -48,7 +48,7 @@ describe('config loading', () => {
         implementer: { model: 'codellama:13b' },
       });
 
-      const config = loadConfig(dir);
+      const { config } = loadConfig(dir);
       expect(config.implementer.model).toBe('codellama:13b');
       expect(expectCli(config.planner).tool).toBe('claude-code');
     });
@@ -59,7 +59,7 @@ describe('config loading', () => {
         workflow: { max_retries: 5, commit_per_task: false },
       });
 
-      const config = loadConfig(dir);
+      const { config } = loadConfig(dir);
       expect(config.workflow.maxRetries).toBe(5);
       expect(config.workflow.commitStrategy).toBe('none');
     });
@@ -73,7 +73,7 @@ describe('config loading', () => {
         workflow: { auto_approve_spec: true },
       });
 
-      const config = loadConfig(dir);
+      const { config } = loadConfig(dir);
       expect(expectCli(config.planner).tool).toBe('codex');
       expect(config.implementer.temperature).toBe(0.7);
       // v2 uses 'provider' instead of 'tool' for API implementers
@@ -90,7 +90,7 @@ describe('config loading', () => {
         implementer: { model: 'deepseek-coder:6.7b' },
       });
 
-      const config = loadConfig(dir);
+      const { config } = loadConfig(dir);
       const defaults = createDefaultConfig();
       expect(config.planner).toEqual(defaults.planner);
       expect(config.validation).toEqual(defaults.validation);
@@ -102,40 +102,31 @@ describe('config loading', () => {
       expect(configImpl.contextLength).toBe(defaultImpl.contextLength);
     });
 
-    it('emits security warnings to stderr via console.warn', () => {
+    it('returns security warnings in the warnings array', () => {
       const dir = join(TMP, 'security-warn');
       const orig = process.env['ANTHROPIC_API_KEY'];
       delete process.env['ANTHROPIC_API_KEY'];
-      const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       try {
         writeConfigYaml(dir, {
           planner: { kind: 'api', provider: 'anthropic', model: 'm', api_key: 'sk-ant-test' },
         });
 
-        loadConfig(dir);
-        expect(spy).toHaveBeenCalled();
-        const calls = spy.mock.calls.map(c => c[0] as string);
-        expect(calls.some(c => c.startsWith('⚠') && c.includes('ANTHROPIC_API_KEY'))).toBe(true);
+        const { warnings } = loadConfig(dir);
+        expect(warnings.some(w => w.includes('ANTHROPIC_API_KEY'))).toBe(true);
       } finally {
-        spy.mockRestore();
         if (orig === undefined) delete process.env['ANTHROPIC_API_KEY'];
         else process.env['ANTHROPIC_API_KEY'] = orig;
       }
     });
 
-    it('does not emit warnings when no api keys in config', () => {
+    it('returns no warnings when no api keys in config', () => {
       const dir = join(TMP, 'no-warn');
-      const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      try {
-        writeConfigYaml(dir, {
-          implementer: { model: 'codellama:13b' },
-        });
+      writeConfigYaml(dir, {
+        implementer: { model: 'codellama:13b' },
+      });
 
-        loadConfig(dir);
-        expect(spy).not.toHaveBeenCalled();
-      } finally {
-        spy.mockRestore();
-      }
+      const { warnings } = loadConfig(dir);
+      expect(warnings).toEqual([]);
     });
 
     it('returns defaults when YAML parses to a primitive', () => {
@@ -144,7 +135,7 @@ describe('config loading', () => {
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, 'config.yaml'), '42', 'utf-8');
 
-      const config = loadConfig(dir);
+      const { config } = loadConfig(dir);
       expect(config).toEqual(createDefaultConfig());
     });
 
@@ -154,7 +145,7 @@ describe('config loading', () => {
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, 'config.yaml'), '- item1\n- item2', 'utf-8');
 
-      const config = loadConfig(dir);
+      const { config } = loadConfig(dir);
       expect(config).toEqual(createDefaultConfig());
     });
 
@@ -172,7 +163,7 @@ describe('config loading', () => {
         },
       });
 
-      const config = loadConfig(dir);
+      const { config } = loadConfig(dir);
       expect(config.implementer.kind).toBe('cli');
       expect((config.implementer as Record<string, unknown>).provider).toBeUndefined();
       expect((config.implementer as Record<string, unknown>).apiBase).toBeUndefined();
@@ -184,7 +175,7 @@ describe('config loading', () => {
         implementer: { model: 'llama3' },
       });
 
-      const config = loadConfig(dir);
+      const { config } = loadConfig(dir);
       expect(config.implementer.kind).toBe('api');
       expect(config.implementer.model).toBe('llama3');
       // contextLength and temperature filled from defaults
@@ -198,7 +189,7 @@ describe('config loading', () => {
         workflow: { commit_per_task: true },
       });
 
-      const config = loadConfig(dir);
+      const { config } = loadConfig(dir);
       expect(config.workflow.commitStrategy).toBe('per-task');
     });
 
@@ -208,7 +199,7 @@ describe('config loading', () => {
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, 'config.yaml'), '', 'utf-8');
 
-      const config = loadConfig(dir);
+      const { config } = loadConfig(dir);
       expect(config).toEqual(createDefaultConfig());
     });
 

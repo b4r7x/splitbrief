@@ -24,8 +24,13 @@ function subscribeToResize(): () => void {
   };
 }
 
+// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+function __testReset(next?: Partial<TerminalSize>): void {
+  store.set(next ? { ...measure(), ...next } : measure());
+}
+
 export const terminalSizeStore = {
   ...storeBase(store),
-  set: store.set,
   subscribeToResize,
+  __testReset,
 };

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { resolveDefaultApiBase } from '../../../core/providers/catalog.js';
 import { createMetadataProvider } from '../client.js';
-import { ANTHROPIC_API_VERSION, v1ModelsUrl } from '../../http.js';
+import { ANTHROPIC_API_VERSION, v1ModelsUrl } from '../constants.js';
 import type { DetectedModel, ProviderDefWithMetadata, ProviderOverrides } from '../types.js';
 
 const DEFAULT_ANTHROPIC_BASE_URL =

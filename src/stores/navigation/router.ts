@@ -1,8 +1,7 @@
 import { createStore, storeBase } from '../create-store.js';
 import { feedbackStore } from '../ui/feedback.js';
-import type { WorkflowState } from '../../core/types/state-actions.js';
-import type { Summary } from '../../core/types/summary.js';
-import { assertNever } from '../../utils/type-guards.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { Summary } from '../../core/schemas/summary.js';
 
 export type Screen = 'home' | 'workflow' | 'summary' | 'setup';
 
@@ -74,8 +73,6 @@ function navigate(args: NavigateArgs) {
         feature: args.feature,
       });
       return;
-    default:
-      assertNever(args);
   }
 }
 

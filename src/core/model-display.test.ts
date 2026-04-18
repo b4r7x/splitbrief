@@ -15,7 +15,7 @@ describe('formatModelName', () => {
       expect(formatModelName('custom')).toBe('Custom');
     });
 
-    it('handles already-pretty names gracefully', () => {
+    it('returns already-pretty names unchanged', () => {
       expect(formatModelName('MyModel')).toBe('MyModel');
     });
   });

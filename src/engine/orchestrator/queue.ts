@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import type { Phase, QueuedMessage, WorkflowState } from '../../core/types/state-actions.js';
+import type { Phase } from '../../core/schemas/enums.js';
+import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks } from './types.js';
 import type { Planner } from '../planners/types.js';
 import { transitionAndSave } from './state-ops.js';
 import { emit } from './events.js';
 import { appendMessage } from '../../core/state/persistence.js';
 import { dispatchNativeInjection } from './native-injection.js';
+import { warnError } from '../../lib/warn.js';
 
 export const MAX_QUEUE_SIZE = 50;
 
@@ -42,8 +44,8 @@ export function createQueueHandler(
     appendMessage(projectDir, sessionId, { role: 'user', text, queuedAt: message.queuedAt }, persistTranscript);
     callbacks.onEvent({ type: 'message-queued', ts: Date.now(), id: message.id, phase });
 
-    // Fire-and-forget: attempt native mid-stream injection for planners that support it.
-    void dispatchNativeInjection(message, planner, projectDir, sessionId, next, setState, callbacks);
+    dispatchNativeInjection(message, planner, projectDir, sessionId, next, setState, callbacks)
+      .catch(err => warnError('native-injection failed', err));
   };
 }
 

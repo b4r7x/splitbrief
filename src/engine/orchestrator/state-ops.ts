@@ -1,7 +1,9 @@
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import type { Task, WorkflowState, StateAction } from '../../core/types/state-actions.js';
-import type { TokenDelta } from '../../core/types/summary.js';
+import type { StateAction } from '../../core/types/state-actions.js';
+import type { Task } from '../../core/schemas/task.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { OrchestratorCallbacks } from './types.js';
 import type { OrchestratorEventPayloadMap } from './events.js';
 import { isENOENT } from '../../lib/process/errors.js';

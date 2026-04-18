@@ -1,14 +1,14 @@
 import fs from 'node:fs';
 import YAML from 'yaml';
-import type { Config } from '../../types/config-options.js';
+import type { Config } from '../../schemas/config.js';
 import { resolveDefaultApiBase, KNOWN_PROVIDER_BASE_URLS } from '../../providers/catalog.js';
 import { validateConfig } from './validate.js';
 import { fromYaml, toYaml } from './transform.js';
 import { DIPTYCH_DIR, CONFIG_FILE, getDiptychPath } from '../../paths.js';
 import { migrateConfig } from './migrate.js';
-import { writeSecureFile, checkConfigPermissions } from '../../../lib/fs.js';
-import { ensureGitignore } from '../../../lib/git.js';
+import { writeSecureFile, checkConfigPermissions, ensureGitignore } from '../../../lib/fs.js';
 import { narrowRecord } from '../../../utils/type-guards.js';
+import { configError } from '../errors.js';
 
 export function configPath(projectDir: string): string {
   return getDiptychPath(projectDir, CONFIG_FILE);
@@ -84,25 +84,33 @@ function mergeWithDefaults(migrated: Record<string, unknown>): Record<string, un
   };
 }
 
-export function loadConfig(projectDir: string): Config {
+export interface LoadConfigResult {
+  config: Config;
+  warnings: string[];
+}
+
+export function loadConfig(projectDir: string): LoadConfigResult {
   const filePath = configPath(projectDir);
 
-  if (!fs.existsSync(filePath)) return createDefaultConfig();
+  if (!fs.existsSync(filePath)) return { config: createDefaultConfig(), warnings: [] };
 
   const yamlText = fs.readFileSync(filePath, 'utf-8');
 
+  const warnings: string[] = [];
   if (process.platform !== 'win32' && !checkConfigPermissions(filePath)) {
-    console.warn(`⚠ Config file ${filePath} has overly permissive permissions. Consider running: chmod 600 ${filePath}`);
+    warnings.push(`Config file ${filePath} has overly permissive permissions. Consider running: chmod 600 ${filePath}`);
   }
 
   let parsed: unknown;
   try {
     parsed = YAML.parse(yamlText);
-  } catch {
-    throw new Error(`Malformed YAML in ${filePath} — fix the syntax or delete the file to use defaults.`);
+  } catch (err) {
+    throw configError.invalidYaml(filePath, err);
   }
 
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return createDefaultConfig();
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { config: createDefaultConfig(), warnings };
+  }
 
   const camelCased = fromYaml(parsed);
 
@@ -110,21 +118,23 @@ export function loadConfig(projectDir: string): Config {
 
   const merged = mergeWithDefaults(migrated);
 
-  const { errors, warnings, data } = validateConfig(merged);
+  const { errors, warnings: validationWarnings, data } = validateConfig(merged);
   if (errors.length > 0) {
     const lines = [`Configuration errors in ${DIPTYCH_DIR}/${CONFIG_FILE}:`];
     for (const err of errors) {
       lines.push(`  ${err.path}: ${err.message}`);
     }
-    throw new Error(lines.join('\n'));
+    throw configError.validationFailed(filePath, lines);
   }
 
-  for (const w of warnings) {
-    console.warn(`⚠ ${w}`);
-  }
+  warnings.push(...validationWarnings);
 
-  if (!data) throw new Error('Unexpected validation state: no data after successful validation');
-  return data;
+  if (!data) {
+    throw configError.validationFailed(filePath, [
+      'Unexpected validation state: no data after successful validation',
+    ]);
+  }
+  return { config: data, warnings };
 }
 
 export function writeConfig(projectDir: string, config: Config): void {

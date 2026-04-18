@@ -1,5 +1,5 @@
-import type { Task } from '../../core/types/state-actions.js';
-import type { TokenDelta } from '../../core/types/summary.js';
+import type { Task } from '../../core/schemas/task.js';
+import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { RunnerRuntime } from '../runners/types.js';
 

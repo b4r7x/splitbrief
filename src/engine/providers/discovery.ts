@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { DetectedModel } from '../../core/types/config-options.js';
 import type { CliToolId } from '../../core/schemas/enums.js';
 import { runCommand } from '../../lib/process/spawn.js';
+import { isENOENT } from '../../lib/process/errors.js';
 import { fetchJsonWithTimeout } from './client.js';
 import { buildPricingFields } from './metadata.js';
 import { warnError } from '../../lib/warn.js';
@@ -40,13 +41,9 @@ async function discoverSubprocessModels(command: string, args: string[]): Promis
     });
     return parseSubprocessLines(stdout).map((id) => ({ id }));
   } catch (err) {
-    if (!isMissingBinary(err)) warnError(`discoverSubprocessModels(${command})`, err);
+    if (!isENOENT(err)) warnError(`discoverSubprocessModels(${command})`, err);
     return [];
   }
-}
-
-function isMissingBinary(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && 'code' in err && (err as { code: unknown }).code === 'ENOENT';
 }
 
 async function discoverKilo(): Promise<DetectedModel[]> {

@@ -1,9 +1,10 @@
-import type { Task, WorkflowState } from '../../core/types/state-actions.js';
-import type { Config } from '../../core/types/config-options.js';
+import type { Task } from '../../core/schemas/task.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { Config } from '../../core/schemas/config.js';
 import type { OrchestratorCallbacks } from './types.js';
-import type { ValidationResult, TaskCompletionMethod } from '../../core/types/summary.js';
-import { commitChanges } from '../../lib/git.js';
-import { createCheckpoint } from './git.js';
+import type { ValidationResult } from '../../core/types/summary.js';
+import type { TaskCompletionMethod } from '../../core/schemas/enums.js';
+import { commitChanges, createCheckpoint, stageAll } from '../../lib/git.js';
 import { labelError } from '../../utils/format-errors.js';
 import { emit, emitWarning, emitGitCommit, emitGitCheckpoint, emitTaskComplete } from './events.js';
 import { transitionAndSave } from './state-ops.js';
@@ -34,6 +35,7 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
     const suffix = commitSuffix ? ` (${commitSuffix})` : '';
     const commitMsg = `feat(diptych): ${task.id} - ${task.title}${suffix}`;
     try {
+      await stageAll(projectDir);
       await commitChanges(projectDir, commitMsg);
       emitGitCommit(callbacks, commitMsg);
     } catch (err) {

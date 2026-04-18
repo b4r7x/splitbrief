@@ -28,7 +28,6 @@ See `CLAUDE.md` for the full source tree and architectural notes.
 - `npm test` — Vitest unit tests
 - `npm run test:watch` — Vitest in watch mode
 - `npm run test:coverage` — coverage report (v8)
-- `npm run test:integration` — integration tests under `testing/integration/`
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run lint` — `biome check .`
 - `npm run format` — `biome format --write .`

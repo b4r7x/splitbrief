@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { formatTaskPrompt, formatRetryPrompt } from './formatter.js';
 import { estimateTokens, truncateMiddle, computeTokenBudget } from './token-budget.js';
-import { makeTask as makeBaseTask, defaultContext } from '#testing/helpers/fixtures.js';
-import type { Task } from '../../core/types/state-actions.js';
+import { makeTask as makeBaseTask } from '#testing/helpers/factories/task.js';
+import { defaultContext } from '#testing/helpers/factories/config.js';
+import type { Task } from '../../core/schemas/task.js';
 
 const context = { ...defaultContext, testCommand: 'node --test' };
 
@@ -142,7 +143,7 @@ describe('truncateMiddle', () => {
     expect(result.endsWith('END!!')).toBeTruthy();
   });
 
-  it('handles very small budgets gracefully', () => {
+  it('returns no more characters than the input when the budget is tiny', () => {
     const text = 'some content here';
     const result = truncateMiddle(text, 1);
     expect(result.length).toBeLessThanOrEqual(text.length);

@@ -1,4 +1,5 @@
-import type { Task, WorkflowState } from '../../../core/types/state-actions.js';
+import type { Task } from '../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createEventEmitter, createTextHandler, emitRetry } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { runRetryStep, type EscalationContext, type RetryStepOutcome } from './step.js';

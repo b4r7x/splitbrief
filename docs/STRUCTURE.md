@@ -42,6 +42,82 @@ The distinction between `lib/` (infrastructure wrappers around external systems)
 
 There is no `src/screens/` directory. Each feature exports its own `screen.tsx` (or `picker.tsx` / `overlay.tsx` for overlay-style features), and `src/app.tsx` dispatches based on `routerStore.use(s => s.screen)`.
 
+## Layer inventory — non-feature folders
+
+Contents of the non-feature folders that have more than a handful of files. Feature folders are catalogued in [Feature inventory](#feature-inventory).
+
+### `src/cli/` — CLI entry + subcommand handlers
+
+```
+src/cli/
+├── init-stores.ts     # single-file bootstrap; 3 internal helpers; see BOOTSTRAP.md
+├── options.ts         # commander option builder (addWorkflowOptions)
+├── setup.ts           # bootstrap prep (resolveProjectDir, ensureGitAndConfig, setupWorkflow)
+├── render.ts          # Ink / fullscreen render setup
+├── errors.ts          # cliError() factory + isCliError predicate — see ERRORS.md
+└── commands/          # commander subcommand handlers (thin — delegate to core)
+    ├── start.ts
+    ├── resume.ts
+    ├── spec.ts
+    ├── init.ts
+    ├── status.ts
+    └── migrate.ts     # thin wrapper; business logic in core/migration/executor.ts
+```
+
+The previous `cli/workflow.ts` is split into `options.ts` + `setup.ts`; `cli/input-history-persistence.ts` moved to `stores/ui/persistence.ts`.
+
+### `src/stores/ui/` — ephemeral UI chrome stores
+
+```
+src/stores/ui/
+├── controls.ts        # sidebarVisible + inputMode (cross-tree flags)
+├── terminal-size.ts   # terminal resize tracking + responsive layout
+├── overlay.ts         # overlay active/exclusive/stack state
+├── feedback.ts        # feedback/error message state
+├── input-history.ts   # command input history (in-memory)
+├── input-height.ts    # input bar rendered height (cross-tree)
+└── persistence.ts     # disk I/O for inputHistoryStore (hydrate + debounced save)
+```
+
+`persistence.ts` is called from `cli/init-stores.ts` at boot. See [`BOOTSTRAP.md`](./BOOTSTRAP.md) for why I/O colocates with the store rather than living in `cli/`.
+
+### `src/core/sessions/` — session domain
+
+```
+src/core/sessions/
+├── analytics.ts       # session analytics (cost, duration, tasks)
+├── io.ts              # read/write session state + log files
+├── lifecycle.ts       # active-session pointer (readActive, writeActive, clearActive)
+├── log-reader.ts      # JSONL session log reader
+└── guards.ts          # clearStaleSession and related session-state predicates
+```
+
+### `src/core/migration/` — pre-v3 state migration
+
+```
+src/core/migration/
+├── legacy.ts          # pure helpers: deriveSessionId, migrateState, migrateEvents
+└── executor.ts        # business logic for the migrate command (orchestrates legacy helpers + I/O)
+```
+
+The `migrate` subcommand handler in `cli/commands/migrate.ts` is a thin wrapper: it registers the command with commander and delegates to `executor.ts`. `maybeMigrate()` (used by start/resume) also lives in `executor.ts` — multiple consumers justify the domain placement.
+
+### `src/utils/` — generic primitives
+
+```
+src/utils/
+├── diff.ts            # LCS diff algorithm
+├── error.ts           # error(kind, msg, data?, cause?) factory + matches(kind) predicate — see ERRORS.md
+├── format-errors.ts   # error → string with redaction
+├── format-time.ts     # generic time formatters
+├── frontmatter.ts     # generic YAML frontmatter parser
+├── redact.ts          # secret / API-key redaction
+├── sectioned-list.ts  # list grouping helper
+├── truncate.ts        # text truncation helpers
+├── type-guards.ts     # assertNever, isRecord, typedEntries
+└── with-timeout.ts    # promise / async-iterable timeout
+```
+
 ## Feature anatomy
 
 A feature folder contains the code a feature needs, and nothing else. Subfolders appear only where there is natural grouping.
@@ -77,8 +153,10 @@ features/settings/
 
 ```
 features/setup/
-└── screen.tsx
+└── screen.tsx                # accepts render-prop callbacks for cross-feature composition
 ```
+
+`features/setup/` never imports from `features/tool-picker/`. It accepts a `renderToolPicker` prop; `src/app.tsx` composes setup + tool-picker together. This is the canonical **callback-composition-at-app.tsx** pattern for cases where one feature needs to render UI owned by another.
 
 Rules:
 - **`components/` subfolder** appears only when the feature has ≥2 component files.
@@ -104,7 +182,7 @@ If you are not sure whether code is shared, **start in the feature**. Promote to
 
 ## Cross-feature rule
 
-**Features must not import from each other.** `features/home/*` must not import from `features/workflow/*`.
+**Features must not import from each other.** `features/home/*` must not import from `features/workflow/*`. Shared UI goes to `src/components/`. If two features need the same component, promote it — see the `SessionRow` case in [`LAYERS.md`](./LAYERS.md#promoting-a-shared-component-the-2-consumer-rule).
 
 Why:
 - Two features importing each other breaks the "one folder, one concept" model.
@@ -112,6 +190,8 @@ Why:
 - It invites circular imports.
 
 If you need shared behavior across features, it belongs in `src/components/`, `src/hooks/`, `src/utils/`, `src/core/`, or `src/stores/`. Composition between features happens at the app level (`src/app.tsx` dispatches, `src/layout.tsx` wraps).
+
+When feature A needs to render UI owned by feature B (e.g. `setup` rendering the `tool-picker`), feature A accepts a render-prop callback (`renderToolPicker`) and `src/app.tsx` supplies the implementation. See ADR [0007](./adr/0007-feature-boundary-enforcement.md) for the rationale and the canonical `setup/` example.
 
 The one sanctioned cross-cutting channel between features is **stores**. Feature A can write to `workflowStore`, and feature B can read from it — that is the same engine→UI pattern already described in [`STORES.md`](./STORES.md).
 
@@ -121,7 +201,7 @@ The one sanctioned cross-cutting channel between features is **stores**. Feature
 
 - **Primitives** — `theme.tsx`, `spinner.tsx`, `scroll-indicator.tsx`, `card.tsx`, `labeled-row.tsx`, `screen-shell.tsx`, `diff-view.tsx`, `filter-input.tsx`, `markdown.tsx`.
 - **Input subsystem** — `input/` (multiline input primitive), `input-bar/` (composite used on every screen).
-- **Shared overlays** — `overlays/overlay-panel.tsx`, `overlays/command-palette.tsx`, `overlays/help-overlay.tsx`, `overlays/mode-selector.tsx`, `overlays/text-input-overlay.tsx`.
+- **Shared overlays** — `overlays/overlay-panel.tsx`, `overlays/command-palette.tsx`, `overlays/help-overlay.tsx`, `overlays/text-input-overlay.tsx`. Feature-specific overlays live in their feature folder (e.g. `features/settings/mode-selector.tsx`).
 - **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/static-selector.tsx`, `pickers/two-column-picker/`.
 
 There is **no separate `src/ui/` directory** for primitives. The distinction between "primitive" and "composed" is fuzzy in practice (stateful primitives exist; stateless composed widgets exist). Flat `src/components/` with natural subfolders (`input/`, `overlays/`, `pickers/`) is enough.
@@ -161,11 +241,28 @@ Consistency helps `grep` and editor navigation. If a feature has multiple entry 
 
 ## Test strategy
 
-- Tests live next to source (`keyboard.test.ts` next to `keyboard.ts`).
-- **Integration / behavior tests belong at the hook or component level.** Test what a consumer would observe.
-- **Pure helpers have their own tests.** `keyboard.ts`, `layout.ts`, `handlers.ts` — pure fns are trivial to test without React.
-- **Trivial hooks (≤30 LOC, no branching) do not need tests.** They are covered through the integration test of the component that uses them. See [`HOOKS.md`](./HOOKS.md) for the full rule.
-- **Do not test implementation.** Do not assert on `setState` calls, hook call counts, or private-module internals. See [`test-behavior-not-implementation`](../CLAUDE.md#testing-policy).
+Tests follow a hybrid layout driven by **blast radius** — how many top-level folders a test imports from. See [`TESTING.md`](./TESTING.md) for the hands-on guide and [ADR T1](./adr/T1-hybrid-test-layout.md) for the rationale.
+
+**Placement rule (two bins):**
+
+| Blast radius | Location | Example |
+|---|---|---|
+| ≤ 1 top-level folder | Colocated next to source (`foo.test.ts` by `foo.ts`) | `src/engine/orchestrator/validation.test.ts`, `src/features/workflow/keyboard.test.ts` |
+| ≥ 2 top-level folders | `testing/integration/<layer>/` | `testing/integration/cli/`, `testing/integration/orchestrator/`, `testing/integration/ui/` |
+
+The three `testing/integration/` subfolders align with the three stable seams: commander (`cli/`), `runWorkflow()` (`orchestrator/`), and Ink screen + engine-written stores (`ui/`).
+
+**Companion rules:**
+
+- **Pure helpers get colocated tests.** `keyboard.ts`, `layout.ts`, `handlers.ts`, `core/state/machine.ts`, parsers, pricing math — inputs → outputs, zero I/O.
+- **Ink tested at the feature seam.** Feature entries (`screen.tsx`, `overlay.tsx`, `picker.tsx`) get tests; feature sub-components do not. Shared primitives in `src/components/` (`FilterableList`, `MultilineInput`, `TwoColumnPicker`) earn dedicated tests because their cost amortises across consumers. See [ADR T3](./adr/T3-ink-feature-seam.md).
+- **Engine tested at `runWorkflow()`.** Pure decision modules get colocated units; orchestrator control-flow modules are covered only via integration tests at the `runWorkflow()` seam with fakes from `testing/helpers/orchestrator-factories.ts`. See [ADR T4](./adr/T4-engine-at-runworkflow-boundary.md).
+- **Trivial hooks (≤30 LOC, no branching) do not need tests.** Covered through the component that uses them. See [`HOOKS.md`](./HOOKS.md).
+- **Fixtures vs factories split by kind.** `testing/fixtures/<domain>/` = read-only bytes on disk; `testing/helpers/factories/<domain>.ts` = pure TS constructors. Rule of two: inline until the second consumer appears. See [ADR T2](./adr/T2-fixtures-vs-factories.md).
+- **Static is a tier.** TS strict + Zod schemas are first-class correctness — no runtime shape tests for Zod schemas, no `expectType<>` games. See [ADR T5](./adr/T5-static-as-trophy-tier.md).
+- **Do not test implementation.** No `vi.mock()` on `./` / `../` siblings, no spies on internal module functions, no `toHaveBeenCalledTimes` unless call-count IS the contract. See [`test-behavior-not-implementation`](../CLAUDE.md#testing-policy).
+
+Test discovery is configured in `vitest.config.ts` via `include: ['src/**/*.test.{ts,tsx}', 'testing/integration/**/*.test.{ts,tsx}']`. Both trees are picked up by a single `npm test`.
 
 ## Design decisions
 

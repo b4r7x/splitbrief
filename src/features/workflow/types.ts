@@ -1,7 +1,8 @@
 import type { TaskId } from '../../core/schemas/task.js';
 import type { Phase, TaskCompletionMethod } from '../../core/schemas/enums.js';
-import type { TokenUsage, CostPrediction } from '../../core/types/summary.js';
-import type { WorkflowMode } from '../../core/types/config-options.js';
+import type { TokenUsage } from '../../core/schemas/tokens.js';
+import type { CostPrediction } from '../../core/schemas/summary.js';
+import type { WorkflowMode } from '../../core/schemas/enums.js';
 
 export type ValidationStages = { tsc: boolean; lint: boolean; test: boolean };
 

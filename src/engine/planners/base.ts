@@ -1,6 +1,6 @@
-import type { Task } from '../../core/types/state-actions.js';
+import type { Task } from '../../core/schemas/task.js';
 import type { InvokeResult } from '../runners/types.js';
-import type { TokenDelta } from '../../core/types/summary.js';
+import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { Planner, PlannerCallbacks, PlanResult, EscalationResult, RegenerateResult, PhaseResult, PlannerCapabilities, PriorMessage } from './types.js';
 import { formatMessagesForCli } from '../orchestrator/transcript-rebuild.js';
 import { buildResearchPrompt } from '../spec/prompts/research.js';
@@ -18,7 +18,7 @@ import { DEFAULT_AVAILABILITY } from '../../lib/availability.js';
 import { getChangedFiles } from '../../lib/git.js';
 import { createChangeDetector } from '../change-detection.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
-import type { Phase } from '../../core/types/state-actions.js';
+import type { Phase } from '../../core/schemas/enums.js';
 
 const PHASE_MAP: Partial<Record<string, Phase>> = {
   researching: 'researching',

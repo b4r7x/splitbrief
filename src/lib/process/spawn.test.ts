@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { runCommand, spawnWithTimeout, spawnWithStdin } from './spawn.js';
 import { killProcess, getActiveProcessCount } from './registry.js';
-import { isENOENT, createProcessError } from './errors.js';
+import { isENOENT, processError } from './errors.js';
 import { spawn } from 'node:child_process';
 describe('runCommand', () => {
   it('resolves with stdout, stderr, and exit code', async () => {
@@ -136,12 +136,19 @@ describe('spawnWithTimeout', () => {
   });
 });
 
-describe('createProcessError', () => {
-  it('creates an Error with output property', () => {
-    const err = createProcessError('something failed', 'partial output');
+describe('processError.exitCode', () => {
+  it('creates an AppError with output in data', () => {
+    const err = processError.exitCode({
+      command: 'test-cmd',
+      code: 1,
+      stderr: 'something failed',
+      output: 'partial output',
+    });
     expect(err).toBeInstanceOf(Error);
-    expect(err.message).toBe('something failed');
-    expect(err.output).toBe('partial output');
+    expect(err.kind).toBe('process-output');
+    expect(err.message).toBe('test-cmd exited with code 1: something failed');
+    expect(err.data.output).toBe('partial output');
+    expect(processError.isExitCode(err)).toBe(true);
   });
 });
 

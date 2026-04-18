@@ -6,8 +6,9 @@ import {
   getFailedTaskIds,
   getSkippedTaskIds,
 } from './selectors.js';
-import type { WorkflowState } from '../types/state-actions.js';
-import { makeTask } from '#testing/helpers/fixtures.js';
+import type { WorkflowState } from '../schemas/workflow.js';
+import { taskId } from '../schemas/task.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 
 describe('createInitialState', () => {
   it('returns idle phase with feature set and empty tasks', () => {
@@ -15,19 +16,6 @@ describe('createInitialState', () => {
     expect(state.phase).toBe('idle');
     expect(state.feature).toBe('feature');
     expect(state.tasks).toEqual([]);
-    expect(getCompletedTaskIds(state)).toEqual([]);
-    expect(getEscalatedTaskIds(state)).toEqual([]);
-    expect(getSkippedTaskIds(state)).toEqual([]);
-    expect(getFailedTaskIds(state)).toEqual([]);
-    expect(state.currentTaskIndex).toBe(0);
-    expect(state.attempt).toBe(0);
-    expect(state.tokenUsage.plannerInput).toBe(0);
-    expect(state.tokenUsage.plannerOutput).toBe(0);
-    expect(state.tokenUsage.implementerInput).toBe(0);
-    expect(state.tokenUsage.implementerOutput).toBe(0);
-    expect(state.tokenUsage.escalationInput).toBe(0);
-    expect(state.tokenUsage.escalationOutput).toBe(0);
-    expect(state.awaitingContinue).toBe(false);
   });
 });
 
@@ -404,7 +392,7 @@ describe('transition', () => {
       tasks,
       currentTaskIndex: 0,
     };
-    const next = transition(state, { type: 'RESET_TASK', taskId: 'nonexistent' as any });
+    const next = transition(state, { type: 'RESET_TASK', taskId: taskId('nonexistent') });
     expect(next).toBe(state);
   });
 

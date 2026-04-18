@@ -8,7 +8,6 @@ import { detectionStore } from '../../stores/project/detection.js';
 import { loadDetectionIntoStores } from './adapter.js';
 import { createDetectionService } from './service.js';
 import type { DetectionDeps, DetectionService } from './service.js';
-import type { fetchModelsDevCatalog } from '../providers/models-dev.js';
 
 const makePlanner = (overrides?: Partial<PlannerDetection>): PlannerDetection => ({
   tool: 'claude-code',
@@ -24,9 +23,22 @@ const makeImplementer = (overrides?: Partial<ProviderDetection>): ProviderDetect
   ...overrides,
 });
 
-function makeDeps(overrides: Partial<DetectionDeps> = {}): DetectionDeps {
+/**
+ * Build deps where detectAll stamps the call generation (1, 2, 3, …) into the
+ * planner's `version` field. Tests observe the generation that lands in
+ * detectionStore instead of asserting on call counts.
+ */
+function makeCountingDeps(overrides: Partial<DetectionDeps> = {}): DetectionDeps {
+  let calls = 0;
+  const detectAll = async () => {
+    calls++;
+    return {
+      planners: [makePlanner({ version: `gen-${calls}` })],
+      implementers: [makeImplementer()],
+    };
+  };
   return {
-    detectAll: vi.fn().mockResolvedValue({ planners: [], implementers: [] }),
+    detectAll,
     fetchModelsDevCatalog: vi.fn().mockResolvedValue({}),
     discoverAllCliTools: vi.fn().mockResolvedValue({}),
     ...overrides,
@@ -45,14 +57,17 @@ describe('loadDetectionIntoStores', () => {
   it('populates both planners and implementers from detectAll', async () => {
     const planners = [makePlanner({ tool: 'claude-code' }), makePlanner({ tool: 'codex', available: false })];
     const implementers = [makeImplementer({ provider: 'ollama' }), makeImplementer({ provider: 'lm-studio', available: false })];
-    const deps = makeDeps({ detectAll: vi.fn().mockResolvedValue({ planners, implementers }) });
+    const deps: DetectionDeps = {
+      detectAll: async () => ({ planners, implementers }),
+      fetchModelsDevCatalog: vi.fn().mockResolvedValue({}),
+      discoverAllCliTools: vi.fn().mockResolvedValue({}),
+    };
 
     await loadDetectionIntoStores(deps, undefined, service);
 
-    expect(deps.detectAll).toHaveBeenCalledOnce();
     const state = detectionStore.get();
-    expect(state.planners).toBe(planners);
-    expect(state.implementers).toBe(implementers);
+    expect(state.planners).toEqual(planners);
+    expect(state.implementers).toEqual(implementers);
   });
 
   describe('cache integration', () => {
@@ -70,23 +85,20 @@ describe('loadDetectionIntoStores', () => {
     });
 
     it('uses cache on second call when projectDir is supplied', async () => {
-      const deps = makeDeps({ detectAll: vi.fn().mockResolvedValue({ planners: [makePlanner()], implementers: [makeImplementer()] }) });
+      const deps = makeCountingDeps();
 
       await loadDetectionIntoStores(deps, tempDir, service);
-      expect(deps.detectAll).toHaveBeenCalledOnce();
-      expect(deps.fetchModelsDevCatalog).toHaveBeenCalledOnce();
-      expect(deps.discoverAllCliTools).toHaveBeenCalledOnce();
+      // First call ran real detection — planner version stamped gen-1.
+      expect(detectionStore.get().planners[0]?.version).toBe('gen-1');
 
       await service.getPendingSave();
+      // Reset the store so we can observe what the second call writes.
+      detectionStore.reset();
 
       await loadDetectionIntoStores(deps, tempDir, service);
-      expect(deps.detectAll).toHaveBeenCalledTimes(1);
-      expect(deps.fetchModelsDevCatalog).toHaveBeenCalledTimes(2);
-      expect(deps.discoverAllCliTools).toHaveBeenCalledTimes(2);
-
-      const state = detectionStore.get();
-      expect(state.planners).toHaveLength(1);
-      expect(state.implementers).toHaveLength(1);
+      // Second call hit the cache — the cached payload (gen-1) is restored,
+      // proving detectAll was NOT re-invoked (otherwise we would see gen-2).
+      expect(detectionStore.get().planners[0]?.version).toBe('gen-1');
     });
 
     it('hydrates models.dev and CLI discovery on cache hit', async () => {
@@ -103,11 +115,11 @@ describe('loadDetectionIntoStores', () => {
         },
       };
 
-      const deps = makeDeps({
-        detectAll: vi.fn().mockResolvedValue({ planners: [makePlanner()], implementers: [makeImplementer()] }),
-        fetchModelsDevCatalog: vi.fn().mockResolvedValue(catalog) as typeof fetchModelsDevCatalog,
+      const deps: DetectionDeps = {
+        ...makeCountingDeps(),
+        fetchModelsDevCatalog: vi.fn().mockResolvedValue(catalog),
         discoverAllCliTools: vi.fn().mockResolvedValue({ opencode: [{ id: 'anthropic/claude-sonnet-4.6' }] }),
-      });
+      };
 
       await loadDetectionIntoStores(deps, tempDir, service);
       await service.getPendingSave();
@@ -117,31 +129,35 @@ describe('loadDetectionIntoStores', () => {
 
       await loadDetectionIntoStores(deps, tempDir, service);
 
-      expect(deps.detectAll).toHaveBeenCalledTimes(1);
-      expect(deps.fetchModelsDevCatalog).toHaveBeenCalledTimes(2);
-      expect(deps.discoverAllCliTools).toHaveBeenCalledTimes(2);
+      // Cached planner gen-1 is restored (not re-detected into gen-2).
+      expect(detectionStore.get().planners[0]?.version).toBe('gen-1');
       expect(modelCacheStore.getModelsDevCatalog()).toEqual(catalog);
       expect(modelCacheStore.getProviderModels('opencode')).toEqual([{ id: 'anthropic/claude-sonnet-4.6' }]);
     });
 
     it('always runs detection when projectDir is undefined (no cache scope)', async () => {
-      const deps = makeDeps();
-      await loadDetectionIntoStores(deps, undefined, service);
-      await loadDetectionIntoStores(deps, undefined, service);
+      const deps = makeCountingDeps();
 
-      expect(deps.detectAll).toHaveBeenCalledTimes(2);
+      await loadDetectionIntoStores(deps, undefined, service);
+      expect(detectionStore.get().planners[0]?.version).toBe('gen-1');
+
+      await loadDetectionIntoStores(deps, undefined, service);
+      // No projectDir → no cache path → every call re-detects.
+      expect(detectionStore.get().planners[0]?.version).toBe('gen-2');
     });
 
     it('invalidate() forces re-detection on next load', async () => {
-      const deps = makeDeps({ detectAll: vi.fn().mockResolvedValue({ planners: [makePlanner()], implementers: [makeImplementer()] }) });
+      const deps = makeCountingDeps();
 
       await loadDetectionIntoStores(deps, tempDir, service);
-      expect(deps.detectAll).toHaveBeenCalledOnce();
+      expect(detectionStore.get().planners[0]?.version).toBe('gen-1');
 
+      await service.getPendingSave();
       await service.invalidateDetection(tempDir);
 
       await loadDetectionIntoStores(deps, tempDir, service);
-      expect(deps.detectAll).toHaveBeenCalledTimes(2);
+      // After invalidation the second load re-ran detection → gen-2 lands.
+      expect(detectionStore.get().planners[0]?.version).toBe('gen-2');
     });
   });
 });

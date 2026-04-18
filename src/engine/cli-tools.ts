@@ -1,8 +1,8 @@
 import type { ParsedLine } from './runners/types.js';
 import { parseJsonlLine, parseOpencodeLine, parseTextLine } from './streaming/output-parsers.js';
-import type { CliToolId } from '../core/types/config-options.js';
+import type { CliToolId } from '../core/schemas/enums.js';
 import type { InvokeResult } from './runners/types.js';
-import type { TokenDelta } from '../core/types/summary.js';
+import type { TokenDelta } from '../core/schemas/tokens.js';
 
 export interface CliToolPlanner {
   buildArgs(opts: { prompt: string; model?: string | undefined; projectDir: string; mode: 'plan' | 'escalate'; sessionId?: string | null | undefined }): string[];
@@ -30,9 +30,6 @@ export const CLI_TOOLS: Record<CliToolId, CliToolEntry> = {
     command: 'claude',
     description: 'Claude Code CLI',
     notFoundMessage: 'Claude Code CLI not found. Install it from https://claude.ai/code',
-    // No `implementer` field: claude-code implementer is handled by `runClaudeOneShot`
-    // in `src/engine/claude-runner.ts` (stream-json parsing, tool-use formatting), not via
-    // the generic CLI buildArgs path. See `src/engine/implementers/cli.ts`.
   },
   codex: {
     command: 'codex',

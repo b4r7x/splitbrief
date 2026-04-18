@@ -2,16 +2,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeSecureFile } from '../../lib/fs.js';
 import { narrowRecord } from '../../utils/type-guards.js';
+import { slugify } from '../../utils/slugify.js';
 import { sessionsRoot } from '../paths.js';
 import { CURRENT_STATE_VERSION } from '../state/machine.js';
-
-export function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-+/g, '-');
-}
 
 export function deriveSessionId(feature: string, startedAt: string, projectDir: string): string {
   const date = new Date(startedAt).toISOString().slice(0, 10);

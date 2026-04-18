@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { parseStreamLine, getLineParser } from './output-parsers.js';
 
 describe('parseStreamLine', () => {
@@ -45,12 +45,21 @@ describe('parseStreamLine', () => {
     expect(result.isResult).toBeUndefined();
   });
 
-  it('returns undefined fields for malformed JSON', () => {
-    const result = parseStreamLine('not valid json {{{');
-    expect(result.text).toBeUndefined();
-    expect(result.sessionId).toBeUndefined();
-    expect(result.isResult).toBeUndefined();
-    expect(result.usage).toBeUndefined();
+  it('returns undefined fields for malformed JSON and emits a stderr warning', () => {
+    const writeSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const result = parseStreamLine('not valid json {{{');
+      expect(result.text).toBeUndefined();
+      expect(result.sessionId).toBeUndefined();
+      expect(result.isResult).toBeUndefined();
+      expect(result.usage).toBeUndefined();
+      const warned = writeSpy.mock.calls.some(([chunk]) =>
+        typeof chunk === 'string' && chunk.includes('output-parser: malformed stream-json line'),
+      );
+      expect(warned).toBe(true);
+    } finally {
+      writeSpy.mockRestore();
+    }
   });
 
   it('returns undefined fields for empty line', () => {

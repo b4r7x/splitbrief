@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { join } from 'node:path';
-import type { Config } from '../../core/types/config-options.js';
+import type { Config } from '../../core/schemas/config.js';
 import { createAgentImplementer } from './agent.js';
-import { makeConfig as makeBaseConfig, makeTask, defaultContext } from '#testing/helpers/fixtures.js';
+import { makeConfig as makeBaseConfig, defaultContext } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 

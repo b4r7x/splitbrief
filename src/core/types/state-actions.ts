@@ -1,18 +1,5 @@
-import type { z } from 'zod';
-import type { WorkflowStateSchema, QueuedMessageSchema } from '../schemas/workflow.js';
-import type { TaskId, TaskSchema } from '../schemas/task.js';
-
-export type { Phase, TaskStatus } from '../schemas/enums.js';
-export { PHASES, TASK_STATUSES } from '../schemas/enums.js';
-
-export type { TaskId } from '../schemas/task.js';
-export { taskId } from '../schemas/task.js';
-
-export type Task = z.infer<typeof TaskSchema>;
-
-export type WorkflowState = z.infer<typeof WorkflowStateSchema>;
-
-export type QueuedMessage = z.infer<typeof QueuedMessageSchema>;
+import type { Task, TaskId } from '../schemas/task.js';
+import type { QueuedMessage } from '../schemas/workflow.js';
 
 export type StateAction =
   | { type: 'START'; feature: string }

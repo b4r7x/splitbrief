@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { tasksStore, updateTaskMap } from './tasks.js';
 import { addEvent, resetWorkflow } from './actions.js';
-import { taskId } from '../../core/types/state-actions.js';
+import { taskId } from '../../core/schemas/task.js';
 import type { SidebarTask } from '../../features/workflow/components/sidebar.js';
 import {
   makeTaskStart,

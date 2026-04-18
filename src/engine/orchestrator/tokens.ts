@@ -1,5 +1,6 @@
-import type { Task, TaskId, WorkflowState } from '../../core/types/state-actions.js';
-import type { TokenUsage, TokenDelta, TaskTokenUsage } from '../../core/types/summary.js';
+import type { Task, TaskId } from '../../core/schemas/task.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { TokenUsage, TokenDelta, TaskTokenUsage } from '../../core/schemas/tokens.js';
 import { emit } from './events.js';
 
 export type UsageCategory = 'planner' | 'implementer' | 'escalation';

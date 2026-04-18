@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useInput, type Key } from 'ink';
+import { navigateIndex } from './navigate-index.js';
 
 interface UseFilterableListOptions<T> {
   items: T[];
@@ -48,15 +49,11 @@ export function useFilterableList<T>({
         return;
       }
       if (key.upArrow) {
-        setSelectedIndex((prev) => (
-          filtered.length === 0 ? 0 : (prev > 0 ? prev - 1 : filtered.length - 1)
-        ));
+        setSelectedIndex((prev) => filtered.length === 0 ? 0 : navigateIndex('up', prev, filtered.length));
         return;
       }
       if (key.downArrow) {
-        setSelectedIndex((prev) => (
-          filtered.length === 0 ? 0 : (prev < filtered.length - 1 ? prev + 1 : 0)
-        ));
+        setSelectedIndex((prev) => filtered.length === 0 ? 0 : navigateIndex('down', prev, filtered.length));
         return;
       }
       if (key.backspace || key.delete) {

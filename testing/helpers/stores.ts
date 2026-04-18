@@ -1,0 +1,48 @@
+import { eventsStore } from '../../src/stores/workflow/events.js';
+import { tasksStore } from '../../src/stores/workflow/tasks.js';
+import { tokensStore } from '../../src/stores/workflow/tokens.js';
+import { lifecycleStore } from '../../src/stores/workflow/lifecycle.js';
+import { abortStore } from '../../src/stores/workflow/abort.js';
+import { conversationScrollStore } from '../../src/stores/workflow/conversation-scroll.js';
+import { reviewStore } from '../../src/stores/workflow/review.js';
+import { controlsStore } from '../../src/stores/ui/controls.js';
+import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
+import { overlayStore } from '../../src/stores/ui/overlay.js';
+import { feedbackStore } from '../../src/stores/ui/feedback.js';
+import { inputHistoryStore } from '../../src/stores/ui/input-history.js';
+import { inputHeightStore } from '../../src/stores/ui/input-height.js';
+import { routerStore } from '../../src/stores/navigation/router.js';
+import { configStore } from '../../src/stores/project/config.js';
+import { sessionsStore } from '../../src/stores/project/sessions.js';
+import { skillsStore } from '../../src/stores/project/skills.js';
+import { detectionStore } from '../../src/stores/project/detection.js';
+import { modelCacheStore } from '../../src/stores/discovery/model-cache.js';
+
+/**
+ * Reset every application store to its initial state.
+ *
+ * Call this from `beforeEach` when a test touches stores directly or
+ * transitively. Stores are module-scoped singletons, so state leaks across
+ * tests without explicit reset.
+ */
+export function resetAllStores(): void {
+  eventsStore.reset();
+  tasksStore.reset();
+  tokensStore.reset();
+  lifecycleStore.reset();
+  abortStore.reset();
+  conversationScrollStore.reset();
+  reviewStore.reset();
+  controlsStore.reset();
+  terminalSizeStore.reset();
+  overlayStore.reset();
+  feedbackStore.reset();
+  inputHistoryStore.reset();
+  inputHeightStore.reset();
+  routerStore.reset();
+  configStore.reset();
+  sessionsStore.reset();
+  skillsStore.reset();
+  detectionStore.reset();
+  modelCacheStore.reset();
+}

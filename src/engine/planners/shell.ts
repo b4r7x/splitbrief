@@ -1,4 +1,4 @@
-import type { Config } from '../../core/types/config-options.js';
+import type { Config } from '../../core/schemas/config.js';
 import type { Planner } from './types.js';
 import { createCommandBasedPlanner, resolveCapabilities } from './command-invoke.js';
 import { assertPlannerKind } from '../config-assertions.js';

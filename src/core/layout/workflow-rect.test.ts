@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getReviewContentHeight,
+  getWorkflowContentRect,
   getWorkflowContentWidth,
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
@@ -8,60 +9,109 @@ import {
 } from './workflow-rect.js';
 
 describe('hasWorkflowConfig', () => {
-  it('detects workflow-config events', () => {
-    expect(hasWorkflowConfig([{
-      type: 'workflow-config',
-      ts: 0,
-      mode: 'standard',
-      plannerTool: 'claude-code',
-      implementerTool: 'ollama',
-    }])).toBe(true);
-  });
-
-  it('ignores non-config events', () => {
-    expect(hasWorkflowConfig([{ type: 'planner-text', ts: 0, text: 'hello' }])).toBe(false);
-  });
-});
-
-describe('getWorkflowViewportHeight', () => {
-  it('subtracts chrome rows and clamps at zero', () => {
-    expect(getWorkflowViewportHeight(30, 4, true)).toBeGreaterThan(0);
-    expect(getWorkflowViewportHeight(10, 20, false)).toBe(0);
+  it('returns true when any workflow-config event is present, false otherwise', () => {
+    expect(hasWorkflowConfig([])).toBe(false);
+    expect(hasWorkflowConfig([{ type: 'planner-text', ts: 0, text: 'hi' }])).toBe(false);
+    expect(
+      hasWorkflowConfig([
+        { type: 'planner-text', ts: 0, text: 'hi' },
+        {
+          type: 'workflow-config',
+          ts: 0,
+          mode: 'standard',
+          plannerTool: 'claude-code',
+          implementerTool: 'ollama',
+        },
+      ]),
+    ).toBe(true);
   });
 });
 
-describe('getWorkflowContentWidth', () => {
-  it('returns full width when sidebar is hidden', () => {
-    expect(getWorkflowContentWidth(100, false, false)).toBe(100);
-    expect(getWorkflowContentWidth(100, true, true)).toBe(100);
+describe('workflow viewport layout', () => {
+  it('splits width between sidebar and content exactly, only when sidebar is visible on large screens', () => {
+    const cols = 120;
+
+    // Sidebar hidden — full width to content, no sidebar
+    expect(getWorkflowSidebarWidth(cols, false, false)).toBe(0);
+    expect(getWorkflowContentWidth(cols, false, false)).toBe(cols);
+
+    // Small screen — sidebar collapses even when requested
+    expect(getWorkflowSidebarWidth(cols, true, true)).toBe(0);
+    expect(getWorkflowContentWidth(cols, true, true)).toBe(cols);
+
+    // Visible + large — sidebar + content partition cols with no gap/overlap
+    const sidebar = getWorkflowSidebarWidth(cols, true, false);
+    const content = getWorkflowContentWidth(cols, true, false);
+    expect(sidebar).toBeGreaterThan(0);
+    expect(content).toBeGreaterThan(0);
+    expect(sidebar + content).toBe(cols);
   });
 
-  it('subtracts sidebar width when sidebar is visible on large screens', () => {
-    expect(getWorkflowContentWidth(100, true, false)).toBe(75);
+  it('subtracts chrome + input rows from viewport height and clamps at zero', () => {
+    // Enough vertical space — viewport fits under chrome
+    const tall = getWorkflowViewportHeight(30, 4, true);
+    expect(tall).toBeGreaterThan(0);
+
+    // Terminal shorter than the required chrome — clamps at 0 rather than going negative
+    expect(getWorkflowViewportHeight(5, 20, true)).toBe(0);
+
+    // More input rows always shrink the viewport (monotonic)
+    const base = getWorkflowViewportHeight(30, 2, true);
+    const withExtraInput = getWorkflowViewportHeight(30, 5, true);
+    expect(withExtraInput).toBeLessThan(base);
+    expect(base - withExtraInput).toBe(3);
+
+    // Showing the config chrome also shrinks the viewport
+    expect(getWorkflowViewportHeight(30, 2, false)).toBeGreaterThan(
+      getWorkflowViewportHeight(30, 2, true),
+    );
   });
 });
 
-describe('getWorkflowSidebarWidth', () => {
-  it('returns zero when the sidebar is hidden', () => {
-    expect(getWorkflowSidebarWidth(100, false, false)).toBe(0);
-    expect(getWorkflowSidebarWidth(100, true, true)).toBe(0);
+describe('getWorkflowContentRect', () => {
+  it('produces a geometrically consistent rect that agrees with the width/height helpers', () => {
+    const cols = 120;
+    const rows = 30;
+    const inputRows = 4;
+    const hasConfig = true;
+    const sidebarVisible = true;
+    const isSmall = false;
+
+    const rect = getWorkflowContentRect(cols, rows, inputRows, hasConfig, sidebarVisible, isSmall);
+
+    // width/height match the dedicated helpers
+    expect(rect.width).toBe(getWorkflowContentWidth(cols, sidebarVisible, isSmall));
+    expect(rect.height).toBe(getWorkflowViewportHeight(rows, inputRows, hasConfig));
+
+    // right/bottom are inclusive edges of a rect described by left/top + width/height
+    expect(rect.right).toBe(rect.left + rect.width - 1);
+    expect(rect.bottom).toBe(rect.top + rect.height - 1);
+
+    // Content sits after the sidebar when it is visible (leaves one gap column), otherwise at col 1
+    const sidebarWidth = getWorkflowSidebarWidth(cols, sidebarVisible, isSmall);
+    expect(rect.left).toBe(sidebarWidth + 1);
   });
 
-  it('returns a quarter width when the sidebar is visible on large screens', () => {
-    expect(getWorkflowSidebarWidth(100, true, false)).toBe(25);
+  it('when the sidebar is hidden the rect starts at column 1 and takes full width', () => {
+    const rect = getWorkflowContentRect(100, 30, 2, true, false, false);
+    expect(rect.left).toBe(1);
+    expect(rect.width).toBe(100);
   });
 });
 
 describe('getReviewContentHeight', () => {
-  it('reserves one line for the file header', () => {
-    expect(getReviewContentHeight(10, 3)).toBe(9);
-  });
+  it('reserves a header row always and an extra footer row only when content overflows', () => {
+    // Content fits — only the header row is reserved
+    const fits = getReviewContentHeight(10, 3);
+    expect(fits).toBe(10 - 1);
 
-  it('reserves a footer row when the review remains scrollable', () => {
-    expect(getReviewContentHeight(10, 12)).toBe(8);
-  });
+    // Content overflows — an additional footer row is reserved for the scroll indicator
+    const overflows = getReviewContentHeight(10, 12);
+    expect(overflows).toBe(10 - 1 - 1);
+    expect(overflows).toBeLessThan(fits);
 
-  it('clamps at zero for tiny viewports', () => {
+    // Tiny container — clamps to 0 rather than going negative
     expect(getReviewContentHeight(1, 20)).toBe(0);
+    expect(getReviewContentHeight(0, 0)).toBe(0);
   });
 });

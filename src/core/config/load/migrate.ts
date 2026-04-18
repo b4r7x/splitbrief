@@ -1,16 +1,17 @@
-import { CLI_TOOL_IDS, RUNNER_KINDS } from '../../schemas/enums.js';
+import { CLI_TOOL_IDS, RUNNER_KINDS, KNOWN_API_PROVIDERS } from '../../schemas/enums.js';
 import { getRunnerKindMeta } from '../../schemas/runner-fields.js';
 import { resolveDefaultApiBase } from '../../providers/catalog.js';
 import { narrowRecord, includes } from '../../../utils/type-guards.js';
+import { configError } from '../errors.js';
 import type { RunnerKind } from '../../schemas/enums.js';
 
 export function migrateConfig(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object') {
-    throw new Error('Config must be an object');
+    throw configError.notAnObject('Config');
   }
 
   const obj = narrowRecord(raw);
-  if (!obj) throw new Error('Config must be an object');
+  if (!obj) throw configError.notAnObject('Config');
   const version = typeof obj.version === 'number' ? obj.version : undefined;
 
   if (version === 2) {
@@ -18,7 +19,7 @@ export function migrateConfig(raw: unknown): unknown {
   }
 
   if (version !== undefined && version !== 1 && version !== 2) {
-    throw new Error(`Unsupported config version: ${version}. Expected 1 or 2.`);
+    throw configError.unsupportedVersion(version);
   }
 
   // v1 or missing version → migrate to v2
@@ -60,7 +61,7 @@ function migrateWorkflowV1ToV2(raw: unknown): unknown {
 function migrateRunnerV1ToV2(role: 'planner' | 'implementer', raw: unknown): unknown {
   const runner = narrowRecord(raw);
   if (!runner) {
-    throw new Error(`${role} config must be an object`);
+    throw configError.notAnObject(`${role} config`);
   }
 
   const legacyKind = typeof runner.kind === 'string' ? runner.kind : undefined;
@@ -89,10 +90,7 @@ function migrateRunnerV1ToV2(role: 'planner' | 'implementer', raw: unknown): unk
 
     const resolvedApiBase = apiBase || resolveDefaultApiBase(provider);
     if (!resolvedApiBase) {
-      throw new Error(
-        `${role}: Unknown provider '${provider}' requires explicit apiBase. ` +
-          `Known providers: ollama, lm-studio, anthropic, openrouter, deepseek`
-      );
+      throw configError.unknownProvider(provider, KNOWN_API_PROVIDERS, role);
     }
 
     const apiKeyValue = typeof runner.apiKey === 'string' ? runner.apiKey : undefined;
@@ -109,7 +107,7 @@ function migrateRunnerV1ToV2(role: 'planner' | 'implementer', raw: unknown): unk
   const meta = getRunnerKindMeta(kind);
 
   if (meta.requiresCommand && !command) {
-    throw new Error(`${role} ${kind} kind requires 'command' field`);
+    throw configError.runnerMissingField(role, kind, 'command');
   }
 
   const result: Record<string, unknown> = { kind };

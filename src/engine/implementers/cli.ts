@@ -1,4 +1,4 @@
-import type { CliImplementerConfig } from '../../core/types/config-options.js';
+import type { CliImplementerConfig } from '../../core/schemas/implementer-config.js';
 import type { Implementer } from './types.js';
 import type { InvokeOpts } from './utils.js';
 import { DEFAULT_TIMEOUT, assertSpawnSuccess } from './utils.js';
@@ -10,6 +10,7 @@ import { CLI_TOOLS } from '../cli-tools.js';
 import { createCommandAvailability } from '../../lib/availability.js';
 import { runClaudeOneShot } from '../claude-runner.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
+import { runnerConfigError } from '../runners/errors.js';
 
 export function createCliImplementer(config: CliImplementerConfig): Implementer {
   const toolName = config.tool;
@@ -27,9 +28,7 @@ export function createCliImplementer(config: CliImplementerConfig): Implementer 
         return runClaudeOneShot({ prompt, projectDir, onOutput, model: effectiveModel });
       }
 
-      if (!tool.implementer) {
-        throw new Error(`Tool ${toolName} has no implementer buildArgs in CLI_TOOLS`);
-      }
+      if (!tool.implementer) throw runnerConfigError.missingToolConfig(toolName, 'implementer');
       const args = tool.implementer.buildArgs({ prompt, model: effectiveModel });
 
       const result: SpawnResult = await spawnWithTimeout({ command: tool.command, args, cwd: projectDir, timeout, onProgress: onOutput, notFoundMessage: tool.notFoundMessage, signal });

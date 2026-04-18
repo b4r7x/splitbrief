@@ -1,4 +1,4 @@
-import type { Phase } from '../../core/types/state-actions.js';
+import type { Phase } from '../../core/schemas/enums.js';
 import { appendMessage } from '../../core/state/persistence.js';
 
 const MAX_BUFFER_BYTES = 16 * 1024;

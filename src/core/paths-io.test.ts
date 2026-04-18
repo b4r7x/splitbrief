@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, test } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileOrEmpty } from '../lib/fs.js';
@@ -12,6 +12,7 @@ import {
   validateTaskPath,
   validateFilename,
   buildSpecFrontmatter,
+  pathError,
   type SpecMetadata,
 } from './paths-io.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -223,7 +224,8 @@ describe('writeSpecFile with metadata', () => {
   it('prepends frontmatter to spec files when metadata is passed', () => {
     const dir = makeTmp();
     writeSpecFile(dir, SESSION_ID, 'spec.md', '# My Spec', meta);
-    const content = readSpecFile(dir, SESSION_ID, 'spec.md')!;
+    const content = readSpecFile(dir, SESSION_ID, 'spec.md');
+    if (content === null) throw new Error('expected spec file to be present');
     expect(content).toMatch(/^---\n/);
     expect(content).toContain('generated_by: diptych v');
     expect(content).toContain('# My Spec');
@@ -239,7 +241,8 @@ describe('writeSpecFile with metadata', () => {
     const dir = makeTmp();
     const existing = '---\ngenerated_by: diptych v0.1.0\n---\n# Spec with clarifications';
     writeSpecFile(dir, SESSION_ID, 'spec.md', existing, meta);
-    const content = readSpecFile(dir, SESSION_ID, 'spec.md')!;
+    const content = readSpecFile(dir, SESSION_ID, 'spec.md');
+    if (content === null) throw new Error('expected spec file to be present');
     const fmCount = (content.match(/generated_by:/g) ?? []).length;
     expect(fmCount).toBe(1);
   });
@@ -248,5 +251,45 @@ describe('writeSpecFile with metadata', () => {
     const dir = makeTmp();
     writeSpecFile(dir, SESSION_ID, 'spec.md', '# Plain Spec');
     expect(readSpecFile(dir, SESSION_ID, 'spec.md')).toBe('# Plain Spec');
+  });
+});
+
+describe('pathError.escapesProject factory', () => {
+  test('produces AppError with kind + message + data', () => {
+    const err = pathError.escapesProject('../outside.ts');
+    expect(err).toBeInstanceOf(Error);
+    expect(err.kind).toBe('path-escapes-project');
+    expect(err.message).toContain('../outside.ts');
+    expect(err.data).toEqual({ filePath: '../outside.ts' });
+  });
+});
+
+describe('pathError.isEscapesProject predicate', () => {
+  test('matches escapesProject output', () => {
+    expect(pathError.isEscapesProject(pathError.escapesProject('../x'))).toBe(true);
+  });
+
+  test('rejects non-matching values', () => {
+    expect(pathError.isEscapesProject(new Error('plain'))).toBe(false);
+    expect(pathError.isEscapesProject(null)).toBe(false);
+    expect(pathError.isEscapesProject(undefined)).toBe(false);
+  });
+
+  test('narrows type for data access', () => {
+    const err: unknown = pathError.escapesProject('/etc/passwd');
+    if (pathError.isEscapesProject(err)) {
+      expect(err.data).toEqual({ filePath: '/etc/passwd' });
+    } else {
+      throw new Error('predicate should match');
+    }
+  });
+
+  test('validateTaskPath throws pathError matched by predicate', () => {
+    try {
+      validateTaskPath('/tmp/project', '../../evil.ts');
+      throw new Error('expected throw');
+    } catch (err) {
+      expect(pathError.isEscapesProject(err)).toBe(true);
+    }
   });
 });

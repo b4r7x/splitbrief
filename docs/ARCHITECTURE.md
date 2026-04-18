@@ -263,7 +263,6 @@ Adding a new capability means extending `PlannerCapabilities`, setting it per ba
 - Vitest runs under `tsx` — no build step.
 - Engine tests are headless (no Ink mount). Stores are reset per test.
 - Agent-implementer tests spawn real subprocesses (slow; 30s timeout each).
-- Integration tests under `testing/integration/` cover end-to-end flows with fake planners/implementers.
 
 Rules (see `CLAUDE.md` for the full list):
 
@@ -282,7 +281,7 @@ Rules (see `CLAUDE.md` for the full list):
 | New implementer backend | Mirror of above under `src/engine/implementers/` |
 | New provider (for `api` kind) | `src/engine/providers/<name>.ts` + register in `providers/registry.ts` |
 | New phase | `src/core/state/machine.ts` (+ update `core/phases.ts` sets) — **read `docs/WORKFLOW.md` first**, phases are load-bearing |
-| New event type | `src/core/types/tui-events.ts` + renderer in `src/features/workflow/components/event-cards/event-card.tsx` |
+| New event type | `src/features/workflow/types.ts` (add variant to `TuiEvent` union) + renderer in `src/features/workflow/components/event-cards/event-card.tsx` |
 | New store | `src/stores/<group>/<name>.ts` using `createStore` from `create-store.ts`; init in `cli/init-stores.ts` if it reads disk |
 | New shared overlay (used by 2+ features) | `src/components/overlays/<name>.tsx` + register via `overlayStore` |
 | New feature overlay | `src/features/<feature>/overlay.tsx` + register via `overlayStore` |

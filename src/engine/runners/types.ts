@@ -1,4 +1,4 @@
-import type { TokenDelta } from '../../core/types/summary.js';
+import type { TokenDelta } from '../../core/schemas/tokens.js';
 
 export interface ToolUseInfo {
   name: string;

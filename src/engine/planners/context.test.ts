@@ -52,7 +52,7 @@ describe('buildProjectContextMarkdown', () => {
     expect(result).not.toContain('Line 51');
   });
 
-  it('handles missing README gracefully', async () => {
+  it('omits the README section when no README file exists', async () => {
     const result = await buildProjectContextMarkdown(tempDir);
     expect(result).not.toContain('## README');
   });

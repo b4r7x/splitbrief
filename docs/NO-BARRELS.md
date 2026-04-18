@@ -60,6 +60,12 @@ export type { Baz } from './baz.js';
 
 A file that **contains real code** and happens to be named `index.ts` is NOT a barrel. Example: `src/components/input-bar/index.tsx` is the component implementation — that stays. The "index = folder module" convention for single-component folders is fine.
 
+### Disguised barrels — name is not the test
+
+**Content determines barrel status, not the filename.** A file named `config-options.ts`, `catalog-adapter.ts`, or `picker-model-catalog.ts` whose body is mostly `export { X } from './x.js'` / `export type { Y } from '../schemas/...'` **is a barrel** and is equally forbidden. The `index.ts` name is just the most common giveaway — a disguised barrel by content inflates the module graph identically.
+
+Heuristic: if deleting every `export { … } from '…'` / `export type { … } from '…'` line leaves the file at zero (or near-zero) own code, it is a disguised barrel. Fix by deleting it and rewriting consumer imports to the real producer. Canonical cases removed in Batch 1A / 1C: `core/types/config-options.ts` re-export block, `features/tool-picker/picker-model-catalog.ts`, `features/tool-picker/catalog-adapter.ts` — see inventory below and [ADR 0006](./adr/0006-types-colocation-with-schemas.md).
+
 ## Exceptions
 
 The principle allows one exception: **public API surfaces of published libraries or package boundaries**. This project is an app, not a library — so right now the exception applies to **nothing**. If we later publish a package, the top-level entry point of that package can be a barrel (that's what @tanstack/react-query does, and it's the right call for consumer ergonomics).
@@ -85,6 +91,10 @@ Shared type re-exports are not an exception. If `src/types/index.ts` re-exports 
 | `src/engine/orchestrator/planning/index.ts` | FW-2 | Renamed to `planning/run.ts` — contained real dispatch code, not just re-exports. |
 | `src/engine/skills/index.ts` | FW-2 | Imported directly from `discovery.ts`. |
 | `src/components/summary/index.ts` | Features restructure | Summary components moved to `src/features/summary/components/`. |
+| `src/core/types/config-options.ts` (re-export block) | Batch 1A (2026-04) | ~12 `export type { X } from '../schemas/...'` lines re-exporting `PlannerConfig`, `ImplementerConfig`, workflow/planner config variants, and enum values. A disguised barrel by content — the filename was not `index.ts` but the re-exports made `config-options.ts` a second public surface. Consumers now import directly from `core/schemas/*`. |
+| `src/core/schemas/config.ts` tail (lines 43-46) | Batch 1A (2026-04) | `export type { PlannerConfig } from './planner-config.js'`, same for `ImplementerConfig`, plus `export { PlannerConfigSchema, ImplementerConfigSchema }`. Consumers now import from `planner-config.ts` / `implementer-config.ts` directly. |
+| `src/stores/discovery/model-cache.ts` line 5 | Batch 1A (2026-04) | `export type { DetectedModel } from '../../core/types/config-options.js'` — one-liner type re-export. Consumers now import `DetectedModel` from `core/types/config-options.ts` directly. |
+| `src/features/tool-picker/picker-model-catalog.ts` + `catalog-adapter.ts` | Batch 1C (2026-04) | **Disguised barrels**: even if a file isn't named `index.ts`, if its content is mostly re-exports (like `picker-model-catalog.ts`, which re-exported the contents of `model-sorting.ts` + `picker-options.ts` plus one own function, and `catalog-adapter.ts`, a 12-line wrapper injecting the `modelCacheStore`), it IS a barrel and must be eliminated. Dissolved into the deep module `src/features/tool-picker/model-catalog.ts`. |
 
 ### Not barrels (keep as-is)
 

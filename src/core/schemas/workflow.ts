@@ -36,3 +36,6 @@ export const WorkflowStateSchema = z.object({
     comment: z.string().optional(),
   }).optional(),
 });
+
+export type WorkflowState = z.infer<typeof WorkflowStateSchema>;
+export type QueuedMessage = z.infer<typeof QueuedMessageSchema>;

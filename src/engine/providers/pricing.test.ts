@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { calculateCost, calculateCostBreakdown, getModelPricing, getProviderPricing } from './pricing.js';
-import { makeUsage } from '#testing/helpers/fixtures.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 describe('calculateCost', () => {
   it('returns 0 for unpriced providers', () => {

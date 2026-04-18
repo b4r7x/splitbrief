@@ -14,20 +14,19 @@ export function useReviewContent(filePath: string | null): string {
       return;
     }
 
-    let cancelled = false;
-    fs.readFile(filePath, 'utf-8').then((data) => {
-      if (cancelled) return;
+    const controller = new AbortController();
+    fs.readFile(filePath, { signal: controller.signal, encoding: 'utf8' }).then((data) => {
       setContent(data);
       reviewStore.setLineCount(data.split('\n').length);
     }).catch((err: unknown) => {
-      if (cancelled) return;
+      if (controller.signal.aborted) return;
       setContent('');
       reviewStore.setLineCount(0);
       feedbackStore.setError(labelError(`Failed to read ${filePath}`, err));
     });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [filePath]);
 

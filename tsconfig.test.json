@@ -8,6 +8,6 @@
       "#testing/*": ["./testing/*"]
     }
   },
-  "include": ["src/**/*", "src/**/*.test.ts", "src/**/*.test.tsx", "testing/**/*"],
+  "include": ["src/**/*", "src/**/*.test.ts", "src/**/*.test.tsx", "testing/**/*", "testing/integration/**/*"],
   "exclude": ["node_modules", "dist"]
 }

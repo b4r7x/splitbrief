@@ -2,7 +2,6 @@ import { createStore, storeBase } from '../create-store.js';
 import { isProviderId, type ProviderId } from '../../core/schemas/enums.js';
 import type { DetectedModel } from '../../core/types/config-options.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
-export type { DetectedModel } from '../../core/types/config-options.js';
 
 interface ProviderModelCache {
   models: DetectedModel[];

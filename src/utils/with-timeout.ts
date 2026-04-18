@@ -1,3 +1,11 @@
+import { error, matches } from './error.js';
+
+export const timeoutError = {
+  idle: (message = 'Idle timeout') =>
+    error('idle-timeout', message, { message }),
+  isIdle: matches('idle-timeout'),
+} as const;
+
 export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('timeout')), ms);
@@ -6,15 +14,6 @@ export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
       (e) => { clearTimeout(timer); reject(e); },
     );
   });
-}
-
-// Error subclasses are the one allowed exception to the project's zero-class rule.
-export class IdleTimeoutError extends Error {
-  readonly isTimeout = true;
-  constructor(message = 'Idle timeout') {
-    super(message);
-    this.name = 'IdleTimeoutError';
-  }
 }
 
 export async function* withIdleTimeout<T>(
@@ -26,7 +25,7 @@ export async function* withIdleTimeout<T>(
   while (true) {
     let timerId: ReturnType<typeof setTimeout> | null = null;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      timerId = setTimeout(() => reject(new IdleTimeoutError(errorMessage)), ms);
+      timerId = setTimeout(() => reject(timeoutError.idle(errorMessage)), ms);
     });
 
     let result: IteratorResult<T>;

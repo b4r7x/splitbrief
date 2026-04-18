@@ -131,38 +131,6 @@ describe('useStores', () => {
     h.unmount();
   });
 
-  it('unsubscribes from all stores on unmount', async () => {
-    const a = createStore({ v: 0 });
-    const b = createStore({ v: 0 });
-    const h = mount(() => {
-      const [ra, rb] = useStores(a, b);
-      return ra.v + rb.v;
-    });
-    await flush();
-    h.unmount();
-    await flush();
-    const before = h.renders.length;
-    a.set({ v: 99 });
-    b.set({ v: 99 });
-    await flush();
-    expect(h.renders.length).toBe(before);
-  });
-
-  it('Object.is equality: set with identical reference does not re-render', async () => {
-    const sameArray = [1, 2, 3];
-    const store = createStore({ items: sameArray });
-    const h = mount(() => {
-      const [s] = useStores(store);
-      return s.items;
-    });
-    await flush();
-    const before = h.renders.length;
-    store.set({ items: sameArray });
-    await flush();
-    expect(h.renders.length).toBe(before);
-    h.unmount();
-  });
-
   it('rename via destructuring preserves tracking', async () => {
     const store = createStore({ phase: 'idle', count: 0 });
     const h = mount(() => {

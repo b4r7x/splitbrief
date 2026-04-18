@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useInput } from 'ink';
-import { Fzf } from 'fzf';
 import type { Screen } from '../../stores/navigation/router.js';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';
+import { fuzzyMatchCommand } from '../../core/slash-commands/fuzzy.js';
+
+export { fuzzyMatchCommand };
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 
@@ -13,15 +15,6 @@ function matchesSlashQuery(cmd: SlashCommandDef, query: string): boolean {
 
 function rotateIndex(current: number, length: number, delta: 1 | -1): number {
   return (current + delta + length) % length;
-}
-
-function fuzzyMatchCommand(commands: SlashCommandDef[], query: string): SlashCommandDef | null {
-  const bare = query.startsWith('/') ? query.slice(1) : query;
-  if (!bare) return null;
-  const fzf = new Fzf(commands, { selector: (c: SlashCommandDef) => c.name.slice(1) });
-  const results = fzf.find(bare);
-  const top = results[0];
-  return top !== undefined && top.score > 0 ? top.item : null;
 }
 
 interface UseSlashAutocompleteOptions {

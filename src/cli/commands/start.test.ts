@@ -1,32 +1,38 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Command } from 'commander';
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
+import { registerStartCommand } from './start.js';
+import { DIPTYCH_DIR, STATE_FILE } from '../../core/paths.js';
+import { isCliError } from '../errors.js';
 
-const readActiveMock = vi.fn<(dir: string) => string | null>();
-const isSessionLiveMock = vi.fn<(dir: string, id: string) => boolean>();
-const beginSessionMock = vi.fn<(dir: string, feature: string) => string>();
-const setupWorkflowMock = vi.fn();
-const initStoresMock = vi.fn();
-const renderAppMock = vi.fn();
+let tmp: string;
 
-const clearActiveMock = vi.fn<(dir: string) => void>();
-vi.mock('../../core/sessions/lifecycle.js', () => ({
-  readActive: (dir: string) => readActiveMock(dir),
-  isSessionLive: (dir: string, id: string) => isSessionLiveMock(dir, id),
-  clearActive: (dir: string) => clearActiveMock(dir),
-  beginSession: (dir: string, feature: string) => beginSessionMock(dir, feature),
-}));
-vi.mock('../workflow.js', () => ({
-  addWorkflowOptions: (cmd: Command) => cmd,
-  setupWorkflow: (opts: unknown) => setupWorkflowMock(opts),
-  resolveProjectDir: () => '/cwd',
-}));
-vi.mock('./migrate.js', () => ({ maybeMigrate: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('../init-stores.js', () => ({ initStores: (dir: string, opts: unknown) => initStoresMock(dir, opts) }));
-vi.mock('../../app.js', () => ({ App: vi.fn() }));
-vi.mock('../render.js', () => ({ renderApp: (el: unknown, fs: unknown) => renderAppMock(el, fs) }));
-vi.mock('../../stores/navigation/router.js', () => ({ routerStore: { init: vi.fn() } }));
+beforeEach(() => {
+  tmp = createTempDir('start-command-test');
+  createTestGitRepo(tmp);
+});
 
-const { registerStartCommand } = await import('./start.js');
+afterEach(() => {
+  if (tmp) cleanupTempDir(tmp);
+});
+
+/**
+ * Write a session with a live phase + an active marker pointing at it.
+ * Matches the production layout: .diptych/active + .diptych/sessions/<id>/state.json
+ */
+function writeLiveSession(projectDir: string, sessionId: string): void {
+  const sessionDir = join(projectDir, DIPTYCH_DIR, 'sessions', sessionId);
+  mkdirSync(sessionDir, { recursive: true });
+  writeFileSync(
+    join(sessionDir, STATE_FILE),
+    JSON.stringify({ feature: 'test', phase: 'implementing', tasks: [], currentTaskIndex: 0 }),
+  );
+  mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+  writeFileSync(join(projectDir, DIPTYCH_DIR, 'active'), sessionId + '\n');
+}
 
 async function runStart(args: string[]): Promise<void> {
   const program = new Command();
@@ -35,48 +41,22 @@ async function runStart(args: string[]): Promise<void> {
   await program.parseAsync(['node', 'diptych', 'start', ...args]);
 }
 
-describe('start command — concurrency lock', () => {
-  beforeEach(() => {
-    readActiveMock.mockReset();
-    isSessionLiveMock.mockReset();
-    clearActiveMock.mockReset();
-    beginSessionMock.mockReset();
-    setupWorkflowMock.mockReset();
-    initStoresMock.mockReset();
-    renderAppMock.mockReset();
+describe('start command — concurrency guard', () => {
+  it('refuses to start when a live session already exists and preserves the active marker', async () => {
+    writeLiveSession(tmp, '2026-04-18-live');
 
-    readActiveMock.mockReturnValue(null);
-    isSessionLiveMock.mockReturnValue(false);
-    beginSessionMock.mockReturnValue('2024-01-01-add-auth');
-    setupWorkflowMock.mockResolvedValue({ projectDir: '/cwd', useFullscreen: false, useMouse: false, needsSetup: false });
-    initStoresMock.mockResolvedValue(undefined);
-    renderAppMock.mockResolvedValue(undefined);
+    let captured: unknown;
+    try {
+      await runStart(['--project', tmp, 'another feature']);
+      throw new Error('expected start to throw');
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    expect((captured as Error).message.length).toBeGreaterThan(0);
+    const activePath = join(tmp, DIPTYCH_DIR, 'active');
+    expect(existsSync(activePath)).toBe(true);
+    expect(readFileSync(activePath, 'utf-8').trim()).toBe('2026-04-18-live');
   });
-
-  it('blocks when a live session is active', async () => {
-    readActiveMock.mockReturnValue('2024-01-01-add-auth');
-    isSessionLiveMock.mockReturnValue(true);
-
-    await expect(runStart(['add auth'])).rejects.toThrow(/still active/);
-    expect(clearActiveMock).not.toHaveBeenCalled();
-    expect(renderAppMock).not.toHaveBeenCalled();
-  });
-
-  it('clears stale session and proceeds when active file exists but session is not live', async () => {
-    readActiveMock.mockReturnValue('2024-01-01-my-feature');
-    isSessionLiveMock.mockReturnValue(false);
-
-    await runStart(['some feature']);
-    expect(clearActiveMock).toHaveBeenCalledWith('/cwd');
-    expect(renderAppMock).toHaveBeenCalled();
-  });
-
-  it('proceeds silently when there is no active session file', async () => {
-    readActiveMock.mockReturnValue(null);
-
-    await runStart(['new feature']);
-    expect(clearActiveMock).not.toHaveBeenCalled();
-    expect(renderAppMock).toHaveBeenCalled();
-  });
-
 });

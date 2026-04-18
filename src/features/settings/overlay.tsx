@@ -19,6 +19,8 @@ import { toSectionedList } from '../../utils/sectioned-list.js';
 const MIN_VISIBLE_ROWS = 3;
 const DESCRIPTION_MIN_TERMINAL_ROWS = 18;
 const MAX_PANEL_WIDTH = 80;
+const BASE_CHROME_ROWS = 9;
+const DESCRIPTION_ROWS = 3;
 
 export function SettingsOverlay() {
   const t = useTheme();
@@ -26,7 +28,7 @@ export function SettingsOverlay() {
   const onClose = overlayStore.close;
   const [{ focus: focusSetting }, { cols, rows }] = useStores(overlayStore, terminalSizeStore);
   const showDescription = rows >= DESCRIPTION_MIN_TERMINAL_ROWS;
-  const chrome = 9 + (showDescription ? 3 : 0);
+  const chrome = BASE_CHROME_ROWS + (showDescription ? DESCRIPTION_ROWS : 0);
   const panelWidth = getClampedTerminalWidth(cols, MAX_PANEL_WIDTH);
 
   const openSubPicker = (def: SettingDef) => {

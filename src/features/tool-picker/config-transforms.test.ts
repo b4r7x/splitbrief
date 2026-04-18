@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { Config } from '../../core/types/config-options.js';
+import type { Config } from '../../core/schemas/config.js';
 import {
   commitCustomCommand,
   commitImplementerSelection,
@@ -193,7 +193,7 @@ describe('removeCustomModel', () => {
     expect(updated.implementer.model).toBe('my-custom-impl');
   });
 
-  it('handles empty customModels gracefully', () => {
+  it('leaves customModels empty when removing from a config with no custom models', () => {
     const config = makeBaseConfig();
     const updated = removeCustomModel(config, 'implementer', 'nonexistent');
     expect(updated.implementer.customModels).toEqual([]);

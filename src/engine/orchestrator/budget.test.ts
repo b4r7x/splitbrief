@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { TokenUsage } from '../../core/types/summary.js';
+import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { OrchestratorCallbacks } from './types.js';
 import { checkBudget, getCurrentCost, enforceBudget } from './budget.js';
+import { makeCallbacks as makeSharedCallbacks } from '#testing/helpers/orchestrator-factories.js';
 
 const zeroUsage: TokenUsage = {
   plannerInput: 0, plannerOutput: 0,
@@ -10,13 +11,7 @@ const zeroUsage: TokenUsage = {
 };
 
 function makeCallbacks(overrides?: Partial<OrchestratorCallbacks>): OrchestratorCallbacks {
-  return {
-    onEvent: vi.fn(),
-    onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
-    onExternalChanges: vi.fn().mockResolvedValue(false),
-    onComplete: vi.fn(),
-    ...overrides,
-  };
+  return makeSharedCallbacks({ onEvent: vi.fn(), ...overrides }).callbacks;
 }
 
 describe('checkBudget', () => {

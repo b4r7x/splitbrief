@@ -1,12 +1,13 @@
-import type { WorkflowState, Task } from '../../core/types/state-actions.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { Task } from '../../core/schemas/task.js';
 import type { OrchestratorCallbacks } from './types.js';
-import type { TaskTokenUsage, Summary } from '../../core/types/summary.js';
+import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
+import type { Summary } from '../../core/schemas/summary.js';
 import { saveState } from '../../core/state/persistence.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, REVIEW_FILE } from '../../core/paths.js';
 import { killAllProcesses } from '../../lib/process/registry.js';
-import { getCurrentDiff } from '../../lib/git.js';
-import { discardTaskChanges } from './git.js';
+import { getCurrentDiff, discardTaskChanges } from '../../lib/git.js';
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { buildFinalReviewPrompt } from '../spec/prompts/review.js';

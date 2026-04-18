@@ -3,6 +3,7 @@ import { includes, assertNever } from '../../../utils/type-guards.js';
 import { resolveDefaultApiBase } from '../../providers/catalog.js';
 import { PlannerConfigSchema } from '../../schemas/planner-config.js';
 import { ImplementerConfigSchema } from '../../schemas/implementer-config.js';
+import { configError } from '../errors.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
 import type { ImplementerConfig } from '../../schemas/implementer-config.js';
 import type { RunnerKind } from '../../schemas/enums.js';
@@ -74,7 +75,7 @@ function spreadGenParams(gen: ReturnType<typeof resolveGenerationParams>): Recor
 
 function assertModelPresent(role: Role, model: string | undefined): void {
   if (role === 'implementer' && !model) {
-    throw new Error(`${role}: 'model' is required but was not provided.`);
+    throw configError.runnerMissingModel(role);
   }
 }
 
@@ -92,9 +93,7 @@ function inferKind(role: Role, opts: BuildRunnerOpts): RunnerKind {
   if (opts.apiBase) return 'api';
   if (opts.command) return 'shell';
   if (opts.existing?.kind) return opts.existing.kind;
-  throw new Error(
-    `Cannot infer runner kind for ${role}: need one of 'kind', 'tool', 'apiBase', 'command', or 'existing' to be provided. Got: ${JSON.stringify(opts)}`
-  );
+  throw configError.runnerKindIndeterminate(role, opts);
 }
 
 function parseRunnerConfig(
@@ -137,11 +136,9 @@ function buildCliConfig(
   role: Role,
   opts: BuildRunnerOpts
 ): PlannerConfig | ImplementerConfig {
-  if (!opts.tool) throw new Error(`${role} cli kind requires 'tool' field`);
+  if (!opts.tool) throw configError.runnerMissingField(role, 'cli', 'tool');
   if (!includes(CLI_TOOL_IDS, opts.tool)) {
-    throw new Error(
-      `Unknown CLI tool: ${opts.tool}. Valid tools: ${CLI_TOOL_IDS.join(', ')}`
-    );
+    throw configError.unknownCliTool(opts.tool, CLI_TOOL_IDS);
   }
 
   const gen = resolveGenerationParams(opts);
@@ -167,10 +164,7 @@ function buildApiConfig(
   const apiBase = opts.apiBase || existingApiBase || resolveDefaultApiBase(provider);
 
   if (!apiBase) {
-    throw new Error(
-      `Unknown provider '${provider}' requires explicit apiBase. ` +
-        `Known providers: ${KNOWN_API_PROVIDERS.join(', ')}`
-    );
+    throw configError.unknownProvider(provider, KNOWN_API_PROVIDERS);
   }
 
   const existingApiKey = getExistingApiKey(opts.existing, 'api', provider);
@@ -193,7 +187,7 @@ function buildCommandConfig(
   opts: BuildRunnerOpts,
   kind: 'shell' | 'agent'
 ): PlannerConfig | ImplementerConfig {
-  if (!opts.command) throw new Error(`${role} ${kind} kind requires 'command' field`);
+  if (!opts.command) throw configError.runnerMissingField(role, kind, 'command');
 
   const gen = resolveGenerationParams(opts);
   assertModelPresent(role, gen.model);

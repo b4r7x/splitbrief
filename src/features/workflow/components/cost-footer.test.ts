@@ -31,7 +31,7 @@ describe('computeEta', () => {
     expect(result).toBe('');
   });
 
-  it('handles negative completion times gracefully', () => {
+  it('uses the most recent completion time when an earlier entry is negative', () => {
     const result = computeEta([-1000, 2000], 1, 3);
     expect(result).toBe('~1s remaining');
   });

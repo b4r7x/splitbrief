@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { groupEventsIntoSections, findLatestRenderableDiffEventIndex, findLatestEventByType } from './event-sections.js';
 import type { Section } from './event-sections.js';
-import { taskId } from '../types/state-actions.js';
+import { taskId } from '../schemas/task.js';
 import {
   makePlannerText,
   makeTaskStart,
@@ -9,6 +9,17 @@ import {
   makeTaskSkipped,
   makeImplementerGenerate,
 } from '#testing/helpers/events.js';
+
+function requireSection<T extends Section['type']>(
+  sections: Section[],
+  idx: number,
+  type: T,
+): Extract<Section, { type: T }> {
+  const section = sections[idx];
+  if (!section) throw new Error(`Expected section at index ${idx}, got undefined`);
+  if (section.type !== type) throw new Error(`Expected section[${idx}].type === '${type}', got '${section.type}'`);
+  return section as Extract<Section, { type: T }>;
+}
 
 describe('groupEventsIntoSections', () => {
   it('returns empty array for empty events', () => {
@@ -19,8 +30,7 @@ describe('groupEventsIntoSections', () => {
     const events = [makePlannerText(), makePlannerText()];
     const sections = groupEventsIntoSections(events);
     expect(sections).toHaveLength(1);
-    expect(sections[0]!.type).toBe('events');
-    expect((sections[0] as Extract<Section, { type: 'events' }>).items).toHaveLength(2);
+    expect(requireSection(sections, 0, 'events').items).toHaveLength(2);
   });
 
   it('creates completed-task section for task-start + task-complete pair', () => {
@@ -31,8 +41,7 @@ describe('groupEventsIntoSections', () => {
     ];
     const sections = groupEventsIntoSections(events);
     expect(sections).toHaveLength(1);
-    expect(sections[0]!.type).toBe('completed-task');
-    const summary = (sections[0] as Extract<Section, { type: 'completed-task' }>).summary;
+    const summary = requireSection(sections, 0, 'completed-task').summary;
     expect(summary.index).toBe(1);
     expect(summary.title).toBe('Auth');
     expect(summary.method).toBe('local');
@@ -47,8 +56,7 @@ describe('groupEventsIntoSections', () => {
     ];
     const sections = groupEventsIntoSections(events);
     expect(sections).toHaveLength(1);
-    expect(sections[0]!.type).toBe('completed-task');
-    const summary = (sections[0] as Extract<Section, { type: 'completed-task' }>).summary;
+    const summary = requireSection(sections, 0, 'completed-task').summary;
     expect(summary.method).toBe('skipped');
     expect(summary.reason).toBe('dep failed');
     expect(summary.retries).toBe(0);
@@ -62,8 +70,7 @@ describe('groupEventsIntoSections', () => {
     ];
     const sections = groupEventsIntoSections(events);
     expect(sections).toHaveLength(1);
-    expect(sections[0]!.type).toBe('active-task');
-    expect((sections[0] as Extract<Section, { type: 'active-task' }>).items).toHaveLength(2);
+    expect(requireSection(sections, 0, 'active-task').items).toHaveLength(2);
   });
 
   it('handles events before first task as events section', () => {
@@ -74,8 +81,8 @@ describe('groupEventsIntoSections', () => {
     ];
     const sections = groupEventsIntoSections(events);
     expect(sections).toHaveLength(2);
-    expect(sections[0]!.type).toBe('events');
-    expect(sections[1]!.type).toBe('completed-task');
+    requireSection(sections, 0, 'events');
+    requireSection(sections, 1, 'completed-task');
   });
 
   it('handles multiple completed tasks in sequence', () => {
@@ -87,8 +94,8 @@ describe('groupEventsIntoSections', () => {
     ];
     const sections = groupEventsIntoSections(events);
     expect(sections).toHaveLength(2);
-    expect(sections[0]!.type).toBe('completed-task');
-    expect(sections[1]!.type).toBe('completed-task');
+    requireSection(sections, 0, 'completed-task');
+    requireSection(sections, 1, 'completed-task');
   });
 
   it('interleaved: events, task, events, task', () => {
@@ -102,10 +109,10 @@ describe('groupEventsIntoSections', () => {
     ];
     const sections = groupEventsIntoSections(events);
     expect(sections).toHaveLength(4);
-    expect(sections[0]!.type).toBe('events');
-    expect(sections[1]!.type).toBe('completed-task');
-    expect(sections[2]!.type).toBe('events');
-    expect(sections[3]!.type).toBe('completed-task');
+    requireSection(sections, 0, 'events');
+    requireSection(sections, 1, 'completed-task');
+    requireSection(sections, 2, 'events');
+    requireSection(sections, 3, 'completed-task');
   });
 });
 

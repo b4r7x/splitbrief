@@ -1,8 +1,7 @@
 import { useRef, useEffect, useEffectEvent, useState } from 'react';
-import type { Config } from '../../../core/types/config-options.js';
-import type { StateAction, WorkflowState } from '../../../core/types/state-actions.js';
-import { taskId } from '../../../core/types/state-actions.js';
-import type { Summary } from '../../../core/types/summary.js';
+import type { Config } from '../../../core/schemas/config.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { Summary } from '../../../core/schemas/summary.js';
 import type { TuiEvent } from '../types.js';
 import type { SkillMeta } from '../../../engine/skills/discovery.js';
 import { addEvent, resetWorkflow } from '../../../stores/workflow/actions.js';
@@ -20,11 +19,12 @@ import {
   clearAllHandlers,
 } from '../handlers.js';
 import { killAllProcesses } from '../../../lib/process/registry.js';
-import { loadState, saveState, appendEvent } from '../../../core/state/persistence.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
 import { readActive } from '../../../core/sessions/lifecycle.js';
 import { transition } from '../../../core/state/machine.js';
 import { REVIEW_HINT } from '../review-parser.js';
 import type { UseInputModeResult } from './use-input-mode.js';
+import { buildRewindAction } from './build-rewind-action.js';
 
 interface UseWorkflowRunnerOptions {
   feature: string;
@@ -83,34 +83,7 @@ export function useWorkflowRunner({
       const current = loadState(projectDir, activeSessionId);
       if (!current) return;
 
-      let action: StateAction;
-      let event: TuiEvent;
-      if (request.target === 'spec') {
-        action = { type: 'REWIND_TO_SPEC', ...(request.comment ? { comment: request.comment } : {}) };
-        event = { type: 'rewind', ts: Date.now(), target: 'spec', comment: request.comment };
-        const data = request.comment ? { comment: request.comment } : {};
-        appendEvent(projectDir, activeSessionId, {
-          ts: Date.now(), type: 'rewind_to_spec', taskId: undefined,
-          phase: current.phase, data,
-        });
-      } else if (request.target === 'plan') {
-        action = { type: 'REWIND_TO_PLAN', ...(request.comment ? { comment: request.comment } : {}) };
-        event = { type: 'rewind', ts: Date.now(), target: 'plan', comment: request.comment };
-        const data = request.comment ? { comment: request.comment } : {};
-        appendEvent(projectDir, activeSessionId, {
-          ts: Date.now(), type: 'rewind_to_plan', taskId: undefined,
-          phase: current.phase, data,
-        });
-      } else {
-        const tid = taskId(request.taskId);
-        action = { type: 'RESET_TASK', taskId: tid };
-        event = { type: 'task-reset', ts: Date.now(), taskId: tid };
-        appendEvent(projectDir, activeSessionId, {
-          ts: Date.now(), type: 'task_reset', taskId: tid,
-          phase: current.phase, data: { taskId: request.taskId },
-        });
-      }
-
+      const { action, event } = buildRewindAction(request, projectDir, activeSessionId, current);
       const next = transition(current, action);
       saveState(projectDir, activeSessionId, next);
       pendingRewindEventRef.current = event;

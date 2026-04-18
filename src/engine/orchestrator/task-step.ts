@@ -1,6 +1,7 @@
-import type { Task, WorkflowState } from '../../core/types/state-actions.js';
-import type { TaskTokenUsage, TokenUsage } from '../../core/types/summary.js';
-import { formatValidationError, runValidationWithEvents } from './validation.js';
+import type { Task } from '../../core/schemas/task.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { TaskTokenUsage, TokenUsage } from '../../core/schemas/tokens.js';
+import { formatValidationError } from './validation.js';
 
 import type { WorkflowContext } from './types.js';
 import { recordTaskUsage } from './tokens.js';
@@ -120,7 +121,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   if (wctx.signal?.aborted) return state;
 
-  const validationResults = await runValidationWithEvents(task, projectDir, config, callbacks);
+  const validationResults = await wctx.validator.runValidation(task, projectDir, config, callbacks);
   const commitResult = await validateCommitAndAdvance({
     task, projectDir, sessionId, config, callbacks, state,
     method: 'local', transitionType: 'VALIDATION_PASS', taskStartTime,

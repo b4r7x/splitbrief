@@ -1,5 +1,5 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { Phase } from '../../core/types/state-actions.js';
+import type { Phase } from '../../core/schemas/enums.js';
 import type { TuiEvent } from '../../features/workflow/types.js';
 
 export interface LifecycleState {
@@ -16,9 +16,18 @@ const initial: LifecycleState = {
 
 const store = createStore<LifecycleState>(initial);
 
+// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+function __testReset(next?: Partial<LifecycleState>): void {
+  store.set(next ? { ...initial, ...next } : initial);
+}
+
+// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+// Production use is limited to workflow/actions.ts (the dispatcher).
+export const _lifecycleInternal = { set: store.set };
+
 export const lifecycleStore = {
   ...storeBase(store),
-  set: store.set,
+  __testReset,
 };
 
 export function updatePhase(state: LifecycleState, event: TuiEvent): LifecycleState {

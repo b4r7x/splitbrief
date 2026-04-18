@@ -1,8 +1,11 @@
-import type { WorkflowState, TaskId, Phase } from '../../core/types/state-actions.js';
-import type { WorkflowMode } from '../../core/types/config-options.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { TaskId } from '../../core/schemas/task.js';
+import type { Phase, TaskCompletionMethod, WorkflowMode } from '../../core/schemas/enums.js';
 import type { ValidationStages } from '../../features/workflow/types.js';
 import type { OrchestratorCallbacks } from './types.js';
-import type { ValidationResult, TaskCompletionMethod, TokenUsage, CostPrediction } from '../../core/types/summary.js';
+import type { ValidationResult } from '../../core/types/summary.js';
+import type { TokenUsage } from '../../core/schemas/tokens.js';
+import type { CostPrediction } from '../../core/schemas/summary.js';
 import { appendEvent } from '../../core/state/persistence.js';
 
 export type OrchestratorEventPayloadMap = {

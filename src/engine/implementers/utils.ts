@@ -1,9 +1,4 @@
-import {
-  CommandNotFoundError,
-  CommandTimeoutError,
-  createProcessError,
-  formatCommandError,
-} from '../../lib/process/errors.js';
+import { processError } from '../../lib/process/errors.js';
 import type { SpawnResult } from '../../lib/process/spawn.js';
 import type { ImplementerOptions } from './types.js';
 
@@ -14,28 +9,24 @@ export function assertSpawnSuccess(
   opts: { label: string; timeoutMs: number; notFoundMessage: string },
 ): void {
   if (result.code === 127) {
-    throw new CommandNotFoundError(opts.notFoundMessage);
+    throw processError.notFound(opts.label, opts.notFoundMessage);
   }
   if (result.timedOut) {
-    throw new CommandTimeoutError(
-      formatCommandError('timeout', {
-        command: opts.label,
-        label: opts.label,
-        timeoutMs: opts.timeoutMs,
-      }),
-      result.output,
-    );
+    throw processError.timeout({
+      command: opts.label,
+      label: opts.label,
+      timeoutMs: opts.timeoutMs,
+      output: result.output,
+    });
   }
   if (result.code !== 0) {
-    throw createProcessError(
-      formatCommandError('exit-code', {
-        command: opts.label,
-        label: opts.label,
-        code: result.code,
-        stderr: result.stderr,
-      }),
-      result.output,
-    );
+    throw processError.exitCode({
+      command: opts.label,
+      label: opts.label,
+      code: result.code,
+      stderr: result.stderr,
+      output: result.output,
+    });
   }
 }
 
@@ -50,14 +41,6 @@ export interface InvokeOpts {
   onOutput: (text: string) => void;
   temperature?: number;
   signal?: AbortSignal | undefined;
-}
-
-function hasOutput(err: unknown): err is { output: string } {
-  return typeof err === 'object' && err !== null && 'output' in err && typeof err.output === 'string';
-}
-
-export function extractOutput(err: unknown): string {
-  return hasOutput(err) ? err.output : '';
 }
 
 const MAX_TEMPERATURE = 2;

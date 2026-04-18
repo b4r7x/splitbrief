@@ -1,4 +1,5 @@
-import type { TokenUsage, CostPrediction } from '../../core/types/summary.js';
+import type { TokenUsage } from '../../core/schemas/tokens.js';
+import type { CostPrediction } from '../../core/schemas/summary.js';
 import { getProviderPricing, calculateCost } from '../providers/pricing.js';
 
 const DEFAULT_IMPLEMENTER_TOKENS_PER_TASK = 2000;

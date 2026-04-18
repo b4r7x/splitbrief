@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useApp } from 'ink';
 import { createCommands } from './core/slash-commands/catalog.js';
+import { buildCommandContext } from './core/slash-commands/context.js';
 import { toPaletteItems, executeSlashCommand } from './core/slash-commands/dispatch.js';
 import { useAppKeys } from './hooks/use-app-keys.js';
 import { useMouseScroll } from './features/workflow/hooks/use-mouse-scroll.js';
@@ -10,10 +11,7 @@ import { routerStore } from './stores/navigation/router.js';
 import { configStore } from './stores/project/config.js';
 import { overlayStore } from './stores/ui/overlay.js';
 import { feedbackStore } from './stores/ui/feedback.js';
-import { lifecycleStore } from './stores/workflow/lifecycle.js';
-import { requestRewind, requestClearQueue } from './features/workflow/handlers.js';
 import { useStores } from './stores/use-stores.js';
-import { refreshDetection } from './engine/detection/service.js';
 import { HomeScreen } from './features/home/screen.js';
 import { WorkflowScreen } from './features/workflow/screen.js';
 import { SummaryScreen } from './features/summary/screen.js';
@@ -23,9 +21,9 @@ import { CommandPalette } from './components/overlays/command-palette.js';
 import { SkillsPicker } from './features/skills/picker.js';
 import { SessionsPicker } from './features/sessions/picker.js';
 import { SettingsOverlay } from './features/settings/overlay.js';
-import { ModeSelector } from './components/overlays/mode-selector.js';
+import { ModeSelector } from './features/settings/mode-selector.js';
 import { ToolModelPicker } from './features/tool-picker/picker.js';
-import type { CommandContext, CommandPaletteItem, SlashCommandDef } from './core/slash-commands/types.js';
+import type { CommandPaletteItem, SlashCommandDef } from './core/slash-commands/types.js';
 import type { OverlayType, Screen } from './stores/navigation/router.js';
 import { assertNever } from './utils/type-guards.js';
 
@@ -35,35 +33,7 @@ export function App() {
   const config = configStore.useConfig();
   const theme = getTheme(config.theme);
 
-  const ctx: CommandContext = {
-    openOverlay: overlayStore.open,
-    navigate: (to) => routerStore.navigate({ to }),
-    quit: exit,
-    setWorkflowMode: (mode) => {
-      const current = configStore.get().config;
-      if (!current) return false;
-      const result = configStore.save({ ...current, workflow: { ...current.workflow, mode } });
-      if (!result.ok && result.error) {
-        feedbackStore.setError(`Failed to save config: ${result.error.message}`);
-      }
-      return result.ok;
-    },
-    setFeedbackMessage: feedbackStore.setMessage,
-    setFeedbackError: feedbackStore.setError,
-    refreshDetection: async () => {
-      const projectDir = configStore.get().projectDir;
-      await refreshDetection(projectDir);
-    },
-    getCurrentPhase: () => lifecycleStore.get().phase,
-    requestRewind: (target, comment) => {
-      const base = { target } as const;
-      return requestRewind(comment ? { ...base, comment } : base);
-    },
-    requestTaskRedo: (taskId) =>
-      requestRewind({ target: 'task', taskId }),
-    getQueueDepth: () => lifecycleStore.get().queueDepth,
-    clearQueue: () => requestClearQueue(),
-  };
+  const ctx = buildCommandContext({ exit });
   const commands = createCommands(ctx);
   const paletteItems = toPaletteItems(commands);
   const handleSlashCommand = (raw: string, from: Screen) =>
@@ -110,7 +80,18 @@ function renderScreen({ screen, commands, onSlash }: {
         />
       );
     case 'setup':
-      return <SetupScreen />;
+      return (
+        <SetupScreen
+          renderToolPicker={({ role, stepLabel, onConfirm, onCancel }) => (
+            <ToolModelPicker
+              role={role}
+              stepLabel={stepLabel}
+              onConfirm={onConfirm}
+              onCancel={onCancel}
+            />
+          )}
+        />
+      );
     default:
       return assertNever(screen);
   }

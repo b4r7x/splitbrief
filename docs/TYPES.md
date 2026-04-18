@@ -89,11 +89,13 @@ A type stays in `src/core/types/` only if it meets **both** criteria:
 - Fan-in > 30 files
 - Consumers span ≥3 top-level folders (e.g., `engine/` + `features/` + `stores/`)
 
-Currently three types qualify:
+Currently three files qualify (TS-only, no Zod schema — see ADR 0006):
 
-- `Config` + friends → `core/types/config-options.ts`
-- `StateAction` + `Task` → `core/types/state-actions.ts`
-- `Summary` → `core/types/summary.ts`
+- `core/types/config-options.ts` — `DetectedModel`, `WorkflowOpts`, `PlannerDetection`, `ProviderDetection`, `PlannerTool`
+- `core/types/state-actions.ts` — `StateAction`, `TokenBudget`, `CodeContext`, `ProjectContext`
+- `core/types/summary.ts` — `ImplementerResult`, `ValidationResult`
+
+Inferred counterparts (`Config`, `Task`, `WorkflowState`, `Summary`, `TokenUsage`, etc.) live beside their Zod schema in `core/schemas/`. `z.infer` is forbidden inside `core/types/`.
 
 Everything else moves to Case A/B/C.
 
@@ -161,6 +163,8 @@ export type Task = z.infer<typeof TaskSchema>;
 ```
 
 Consumers import whichever they need (or both). They do **not** import `Task` from one place and `TaskSchema` from another.
+
+**Enforcement — `core/types/` MUST NOT contain `z.infer`.** Inferred types live next to their schema in `core/schemas/`. `core/types/` is only for TS-only types with no runtime schema backing (e.g., `StateAction`, `ProjectContext`, `WorkflowOpts`). Anything derived from a Zod schema via `z.infer<>` belongs in the schema file.
 
 **Why the folder is flat**: schemas are a cohesive cross-cutting concern. Grouping them further (e.g., `schemas/config/` vs `schemas/workflow/`) adds depth without separating unrelated things — every consumer of one schema tends to consume others. Flat beats fake hierarchy.
 

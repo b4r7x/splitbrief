@@ -1,4 +1,4 @@
-import type { QueuedMessage, WorkflowState } from '../../core/types/state-actions.js';
+import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks } from './types.js';
 import type { Planner } from '../planners/types.js';
 import { transitionAndSave } from './state-ops.js';

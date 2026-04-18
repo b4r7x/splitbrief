@@ -39,3 +39,20 @@ export function createSessionResumeState(
     },
   };
 }
+
+export async function runWithResumeFallback<T>(
+  session: SessionResumeState,
+  runOnce: (resumeId: string | undefined) => Promise<T>,
+  onExpired?: (() => void) | undefined,
+): Promise<T> {
+  const resumeId = session.getResumeId() ?? undefined;
+  try {
+    return await runOnce(resumeId);
+  } catch (err) {
+    if (session.handleResumeError(err)) {
+      onExpired?.();
+      return await runOnce(undefined);
+    }
+    throw err;
+  }
+}

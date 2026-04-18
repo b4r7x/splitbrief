@@ -1,6 +1,6 @@
 import { readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { WorkflowState } from '../types/state-actions.js';
+import type { WorkflowState } from '../schemas/workflow.js';
 import type { OrchestratorEvent, OrchestratorEventType, SessionLogEventEntryFor } from '../../engine/orchestrator/events.js';
 import type { SessionLogEventEntry, SessionLogMessageEntry } from '../schemas/session-log.js';
 import { WorkflowStateSchema } from '../schemas/workflow.js';

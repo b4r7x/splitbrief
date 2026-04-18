@@ -1,6 +1,6 @@
 export function truncateByChars(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
-  return text.slice(0, maxChars) + '...[truncated]';
+  return text.slice(0, maxChars) + '\u2026';
 }
 
 export function truncateByLines(text: string, maxLines: number): string {

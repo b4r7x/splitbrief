@@ -1,138 +1,129 @@
-import React from 'react';
-import { PassThrough } from 'node:stream';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render } from 'ink';
-import { makeSession, makeSummary } from '#testing/helpers/fixtures.js';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { render } from 'ink-testing-library';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { makeSession } from '#testing/helpers/factories/session.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
+import { DIPTYCH_DIR } from '../../core/paths.js';
+import { sessionsStore } from '../../stores/project/sessions.js';
+import { configStore } from '../../stores/project/config.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
+import { routerStore } from '../../stores/navigation/router.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
+import type { Session } from '../../core/schemas/session.js';
+import { SessionsPicker } from './picker.js';
+import { handleSelect } from './picker-select.js';
 
-const loadAll = vi.fn();
-const overlayClose = vi.fn();
-const routerNavigate = vi.fn();
-const feedbackSetMessage = vi.fn();
+let tmp: string;
 
-const sessionsState = { allSessions: [] as unknown[] };
-vi.mock('../../stores/project/sessions.js', () => ({
-  sessionsStore: {
-    loadAll,
-    use: <T,>(selector: (state: typeof sessionsState) => T) => selector(sessionsState),
-    get: () => sessionsState,
-    subscribe: () => () => {},
-  },
-}));
+function writeSessionSummary(projectDir: string, session: Session): void {
+  const dir = join(projectDir, DIPTYCH_DIR, 'sessions', session.id);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'summary.json'), JSON.stringify(session));
+}
 
-const configState = {
-  projectDir: '/tmp/project',
-  config: { sessions: { scope: 'global' } },
-};
-vi.mock('../../stores/project/config.js', () => ({
-  configStore: {
-    use: <T,>(selector: (state: typeof configState) => T) => selector(configState),
-    get: () => configState,
-    subscribe: () => () => {},
-  },
-}));
+async function tick(): Promise<void> {
+  // Two microtasks: one for useEffect to run, one for setState fan-out.
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
 
-vi.mock('../../stores/ui/overlay.js', () => ({
-  overlayStore: { close: overlayClose },
-}));
+beforeEach(() => {
+  tmp = createTempDir('sessions-picker-test');
+  sessionsStore.reset();
+  configStore.reset();
+  overlayStore.reset();
+  routerStore.reset();
+  feedbackStore.reset();
+  // Seed configStore with a real tmpDir projectDir via real load (defaults ok).
+  configStore.load(tmp);
+});
 
-vi.mock('../../stores/navigation/router.js', () => ({
-  routerStore: { navigate: routerNavigate },
-}));
-
-vi.mock('../../stores/ui/feedback.js', () => ({
-  feedbackStore: { setMessage: feedbackSetMessage },
-}));
-
-vi.mock('../../components/theme.js', () => ({
-  useTheme: () => ({
-    accent: 'cyan',
-    text: 'white',
-    textDim: 'gray',
-    success: 'green',
-    warning: 'yellow',
-    error: 'red',
-    implementer: 'green',
-    planner: 'blue',
-    border: 'gray',
-  }),
-}));
-
-const terminalState = { cols: 120, rows: 40, isSmall: false };
-vi.mock('../../stores/ui/terminal-size.js', () => ({
-  terminalSizeStore: {
-    use: <T,>(selector: (state: typeof terminalState) => T) => selector(terminalState),
-    get: () => terminalState,
-    subscribe: () => () => {},
-  },
-}));
-vi.mock('../../core/layout/terminal-width.js', () => ({
-  getResponsivePanelWidth: () => 110,
-  getClampedTerminalWidth: () => 110,
-}));
-
-vi.mock('../../components/pickers/filterable-list.js', () => ({
-  FilterableList: () => null,
-}));
+afterEach(() => {
+  if (tmp) cleanupTempDir(tmp);
+  sessionsStore.reset();
+  configStore.reset();
+  overlayStore.reset();
+  routerStore.reset();
+  feedbackStore.reset();
+});
 
 describe('SessionsPicker', () => {
-  afterEach(() => {
-    loadAll.mockClear();
-    overlayClose.mockClear();
-    routerNavigate.mockClear();
-    feedbackSetMessage.mockClear();
-  });
+  it('renders session feature names from disk once the store loads them', async () => {
+    writeSessionSummary(tmp, makeSession({ id: 'sess-alpha', feature: 'add authentication', status: 'interrupted', summary: null }));
+    writeSessionSummary(tmp, makeSession({ id: 'sess-beta', feature: 'refactor payments', status: 'interrupted', summary: null }));
 
-  it('loads sessions using the configured scope', async () => {
-    const { SessionsPicker } = await import('./picker.js');
-    const instance = render(React.createElement(SessionsPicker), {
-      stdout: new PassThrough() as unknown as NodeJS.WriteStream,
-      stdin: new PassThrough() as unknown as NodeJS.ReadStream,
-      stderr: new PassThrough() as unknown as NodeJS.WriteStream,
-      debug: true,
-      patchConsole: false,
-    });
+    const instance = render(<SessionsPicker />);
+    await tick();
 
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    // User-observable: the features appear in the rendered frame.
+    const frame = instance.lastFrame() ?? '';
+    expect(frame).toContain('add authentication');
+    expect(frame).toContain('refactor payments');
+    // Title reflects the number of sessions loaded from disk.
+    expect(frame).toContain('(2)');
 
-    expect(loadAll).toHaveBeenCalledWith('/tmp/project');
     instance.unmount();
   });
 
-  describe('handleSelect', () => {
-    it('navigates to workflow for interrupted sessions', async () => {
-      const { handleSelect: handleSelectForTest } = await import('./picker-select.js');
-      const session = makeSession({ feature: 'add auth', status: 'interrupted', summary: null });
+  it('shows an empty-state hint when there are no sessions on disk', async () => {
+    const instance = render(<SessionsPicker />);
+    await tick();
 
-      handleSelectForTest(session);
+    const frame = instance.lastFrame() ?? '';
+    expect(frame).toContain('(0)');
+    expect(frame.toLowerCase()).toMatch(/no.*sessions/);
 
-      expect(overlayClose).toHaveBeenCalledOnce();
-      expect(routerNavigate).toHaveBeenCalledWith({ to: 'workflow', feature: 'add auth' });
-      expect(feedbackSetMessage).not.toHaveBeenCalled();
-    });
+    instance.unmount();
+  });
+});
 
-    it('navigates to summary when session has a summary', async () => {
-      const { handleSelect: handleSelectForTest } = await import('./picker-select.js');
-      const summary = makeSummary();
-      const session = makeSession({ status: 'complete', summary });
+/**
+ * handleSelect is the routing logic triggered by Enter on a row. We test it by
+ * invoking the real function against real stores — no internal mocks.
+ * The three branches of the union (interrupted / complete-with-summary /
+ * failed-without-summary) are the user-observable decisions the feature makes.
+ */
+describe('SessionsPicker handleSelect (Enter routing)', () => {
+  it('navigates to the workflow screen and closes the overlay for an interrupted session', () => {
+    overlayStore.open('sessions');
+    const session = makeSession({ feature: 'add auth', status: 'interrupted', summary: null });
 
-      handleSelectForTest(session);
+    handleSelect(session);
 
-      expect(overlayClose).toHaveBeenCalledOnce();
-      expect(routerNavigate).toHaveBeenCalledWith({ to: 'summary', summary });
-      expect(feedbackSetMessage).not.toHaveBeenCalled();
-    });
+    expect(overlayStore.get().active).toBe('none');
+    const route = routerStore.get();
+    expect(route.screen).toBe('workflow');
+    if (route.screen === 'workflow') expect(route.feature).toBe('add auth');
+    expect(feedbackStore.get().message).toBeNull();
+  });
 
-    it('shows feedback and keeps overlay open for failed sessions without a summary', async () => {
-      const { handleSelect: handleSelectForTest } = await import('./picker-select.js');
-      const session = makeSession({ feature: 'add auth', status: 'failed', summary: null });
+  it('navigates to the summary screen when the session completed with a summary', () => {
+    // The picker can sit on top of the workflow screen; workflow→summary is a valid transition.
+    routerStore.navigate({ to: 'workflow', feature: 'existing' });
+    overlayStore.open('sessions');
+    const summary = makeSummary({ feature: 'refactor payments' });
+    const session = makeSession({ status: 'complete', summary });
 
-      handleSelectForTest(session);
+    handleSelect(session);
 
-      expect(overlayClose).not.toHaveBeenCalled();
-      expect(routerNavigate).not.toHaveBeenCalled();
-      expect(feedbackSetMessage).toHaveBeenCalledWith(
-        expect.stringContaining('add auth'),
-      );
-    });
+    expect(overlayStore.get().active).toBe('none');
+    const route = routerStore.get();
+    expect(route.screen).toBe('summary');
+    if (route.screen === 'summary') expect(route.summary).toEqual(summary);
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
+  it('keeps the overlay open and surfaces feedback for a failed session without a summary', () => {
+    overlayStore.open('sessions');
+    const session = makeSession({ feature: 'add auth', status: 'failed', summary: null });
+
+    handleSelect(session);
+
+    // Overlay still open and router unchanged — user stays on the picker.
+    expect(overlayStore.get().active).toBe('sessions');
+    expect(routerStore.get().screen).toBe('home');
+    expect(feedbackStore.get().message ?? '').toContain('add auth');
   });
 });

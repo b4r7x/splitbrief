@@ -1,7 +1,9 @@
 import { createStore, storeBase } from '../create-store.js';
-import { loadConfig, writeConfig } from '../../core/config/load/load.js';
+import { loadConfig, writeConfig, configPath } from '../../core/config/load/load.js';
 import { applyCLIOverrides, applyRunnerOverrides, type CLIOverrides } from '../../core/config/runtime/overrides.js';
-import type { Config } from '../../core/types/config-options.js';
+import type { Config } from '../../core/schemas/config.js';
+import { configError } from '../../core/config/errors.js';
+import { warnStderr } from '../../lib/warn.js';
 
 interface ConfigState {
   config: Config | null;
@@ -23,26 +25,28 @@ export interface SaveResult {
 }
 
 function load(projectDir: string, overrides: CLIOverrides = {}) {
-  const base = structuredClone(loadConfig(projectDir));
+  const { config: loaded, warnings } = loadConfig(projectDir);
+  for (const w of warnings) warnStderr(`⚠ ${w}`);
+  const base = structuredClone(loaded);
   const config = applyCLIOverrides(base, overrides);
   store.set({ config, projectDir, overrides });
 }
 
 function save(updated: Config): SaveResult {
   const { projectDir } = store.get();
-  if (!projectDir) throw new Error('configStore.load must be called before save');
+  if (!projectDir) throw configError.loadNotCalled('save');
   try {
     writeConfig(projectDir, updated);
     store.set(s => ({ ...s, config: updated }));
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err : new Error(String(err)) };
+    return { ok: false, error: configError.saveFailed(configPath(projectDir), err) };
   }
 }
 
 function useConfig(): Config {
   const config = store.use(s => s.config);
-  if (!config) throw new Error('configStore.load must be called before rendering');
+  if (!config) throw configError.loadNotCalled('rendering');
   return config;
 }
 
@@ -57,4 +61,9 @@ function setContextLength(contextLength: number) {
   });
 }
 
-export const configStore = { ...storeBase(store), set: store.set, load, save, useConfig, setContextLength };
+// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+function __testReset(next?: Partial<ConfigState>): void {
+  store.set(next ? { ...initial, ...next } : initial);
+}
+
+export const configStore = { ...storeBase(store), load, save, useConfig, setContextLength, __testReset };

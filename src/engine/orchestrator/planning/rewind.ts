@@ -1,5 +1,6 @@
 import { join } from 'node:path';
-import type { WorkflowState, Task } from '../../../core/types/state-actions.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { Task } from '../../../core/schemas/task.js';
 import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../../core/paths.js';
 import { buildRegeneratePrompt } from '../../spec/prompts/plan.js';

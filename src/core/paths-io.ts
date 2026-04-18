@@ -2,7 +2,15 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, resolve, relative, isAbsolute, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DIPTYCH_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE, sessionDir } from './paths.js';
-import { ensureSecureDir, validateSafeIdentifier, SECURE_FILE_MODE } from '../lib/fs.js';
+import { ensureSecureDir, fsError, SECURE_FILE_MODE } from '../lib/fs.js';
+import { validateSafeIdentifier } from '../utils/validate-identifier.js';
+import { error, matches } from '../utils/error.js';
+
+export const pathError = {
+  escapesProject: (filePath: string) =>
+    error('path-escapes-project', `Path '${filePath}' escapes project directory`, { filePath }),
+  isEscapesProject: matches('path-escapes-project'),
+} as const;
 
 let cachedVersion: string | null = null;
 
@@ -61,7 +69,10 @@ export function ensureDiptychDir(projectDir: string): void {
 }
 
 export function validateFilename(filename: string): void {
-  validateSafeIdentifier(filename, 'filename');
+  const result = validateSafeIdentifier(filename);
+  if (!result.ok) {
+    throw fsError.invalidId('filename', filename, result.reason);
+  }
 }
 
 export function writeSpecFile(projectDir: string, sessionId: string, filename: string, content: string, metadata?: SpecMetadata | null): void {
@@ -87,13 +98,13 @@ export function readSpecFileOrEmpty(projectDir: string, sessionId: string, filen
 
 export function validateTaskPath(projectDir: string, filePath: string): string {
   if (isAbsolute(filePath)) {
-    throw new Error(`Path '${filePath}' escapes project directory`);
+    throw pathError.escapesProject(filePath);
   }
   const root = resolve(projectDir);
   const resolved = resolve(root, filePath);
   const rel = relative(root, resolved);
   if (rel.startsWith('..') || isAbsolute(rel)) {
-    throw new Error(`Path '${filePath}' escapes project directory`);
+    throw pathError.escapesProject(filePath);
   }
   return resolved;
 }

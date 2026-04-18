@@ -6,14 +6,11 @@ import { createCommandAvailability } from '../../lib/availability.js';
 import { writeProjectFile } from '../../core/paths-io.js';
 import { runClaudePlannerStream, runClaudeOneShot } from '../claude-runner.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
-import { createSessionResumeState } from '../session-expiry.js';
+import { createSessionResumeState, runWithResumeFallback } from '../session-expiry.js';
 
 export function createClaudeCodePlanner(model?: string, initialSessionId?: string | null): Planner {
   const resolvedModel = resolveAutoModel(model, 'claude-code');
-  let pendingExpiredCallback: ((id: string) => void) | undefined;
-  const session = createSessionResumeState({
-    onExpired: (id) => pendingExpiredCallback?.(id),
-  });
+  const session = createSessionResumeState();
   session.capture(initialSessionId ?? null);
 
   async function invokeWithSessionFallback(
@@ -21,25 +18,15 @@ export function createClaudeCodePlanner(model?: string, initialSessionId?: strin
     projectDir: string,
     callbacks: { onOutput: (text: string) => void; onSessionId?: ((id: string) => void) | undefined; onSessionExpired?: ((id: string) => void) | undefined; onQuestion?: ((q: ClarificationQuestion[]) => void) | undefined },
   ) {
-    pendingExpiredCallback = callbacks.onSessionExpired;
-    try {
-      try {
-        return await runClaudePlannerStream({
-          prompt, projectDir, sessionId: session.getResumeId(),
-          onOutput: callbacks.onOutput, onQuestion: callbacks.onQuestion, model: resolvedModel,
-        });
-      } catch (err) {
-        if (session.handleResumeError(err)) {
-          return await runClaudePlannerStream({
-            prompt, projectDir, sessionId: null,
-            onOutput: callbacks.onOutput, onQuestion: callbacks.onQuestion, model: resolvedModel,
-          });
-        }
-        throw err;
-      }
-    } finally {
-      pendingExpiredCallback = undefined;
-    }
+    const priorId = session.getResumeId();
+    return runWithResumeFallback(
+      session,
+      (resumeId) => runClaudePlannerStream({
+        prompt, projectDir, sessionId: resumeId ?? null,
+        onOutput: callbacks.onOutput, onQuestion: callbacks.onQuestion, model: resolvedModel,
+      }),
+      () => { if (priorId) callbacks.onSessionExpired?.(priorId); },
+    );
   }
 
   return createPlannerBase({

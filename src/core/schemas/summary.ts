@@ -1,19 +1,5 @@
 import { z } from 'zod';
-import { TaskCompletionMethodSchema } from './enums.js';
-import { TaskIdSchema } from './task.js';
-import { TokenUsageSchema } from './tokens.js';
-
-export const TaskTokenUsageSchema = z.object({
-  taskId: TaskIdSchema,
-  taskTitle: z.string(),
-  method: TaskCompletionMethodSchema,
-  implementerTokens: z.number().nonnegative(),
-  escalationTokens: z.number().nonnegative(),
-  retryCount: z.number().nonnegative(),
-  cost: z.number().nonnegative().optional(),
-  tool: z.string().optional(),
-  model: z.string().optional(),
-});
+import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
 
 export const ProviderCostSchema = z.object({
   inputTokens: z.number().nonnegative(),
@@ -63,3 +49,7 @@ export const CostPredictionSchema = z.object({
   plannerTool: z.string(),
   implementerTool: z.string(),
 });
+
+export type CostBreakdown = z.infer<typeof CostBreakdownSchema>;
+export type Summary = z.infer<typeof SummarySchema>;
+export type CostPrediction = z.infer<typeof CostPredictionSchema>;

@@ -1,9 +1,9 @@
 import { ALL_SCREENS } from '../../stores/navigation/router.js';
-import { WORKFLOW_MODES } from '../types/config-options.js';
+import { WORKFLOW_MODES } from '../schemas/enums.js';
 import type { SlashCommandDef, CommandContext } from './types.js';
 import { getShortcutKey } from './keybindings.js';
 import { includes } from '../../utils/type-guards.js';
-import type { Phase } from '../types/state-actions.js';
+import type { Phase } from '../schemas/enums.js';
 import { PHASES } from '../schemas/enums.js';
 
 export function phaseOrder(phase: Phase): number {

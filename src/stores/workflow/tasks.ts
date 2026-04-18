@@ -20,9 +20,18 @@ const initial: TasksState = {
 
 const store = createStore<TasksState>(initial);
 
+// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+function __testReset(next?: Partial<TasksState>): void {
+  store.set(next ? { ...initial, ...next } : initial);
+}
+
+// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+// Production use is limited to workflow/actions.ts (the dispatcher).
+export const _tasksInternal = { set: store.set };
+
 export const tasksStore = {
   ...storeBase(store),
-  set: store.set,
+  __testReset,
 };
 
 export function updateTaskMap(

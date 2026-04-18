@@ -1,17 +1,12 @@
-import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
-import { readFileSync, existsSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { saveState, loadState, appendEvent, appendMessage } from './persistence.js';
 import { createInitialState } from './machine.js';
-import { taskId } from '../types/state-actions.js';
+import { taskId } from '../schemas/task.js';
 import type { OrchestratorEvent } from '../../engine/orchestrator/events.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
-
-vi.mock('node:fs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs')>();
-  return { ...actual, appendFileSync: vi.fn(actual.appendFileSync) };
-});
 
 let tmp: string;
 const SESSION_ID = '2024-01-01-test-feature';
@@ -45,11 +40,11 @@ describe('saveState / loadState roundtrip', () => {
     };
     saveState(dir, SESSION_ID, state);
     const loaded = loadState(dir, SESSION_ID);
-    expect(loaded).not.toBeNull();
-    expect(loaded!.plannerTool).toBe('openrouter');
-    expect(loaded!.plannerModel).toBe('claude-sonnet-4-20250514');
-    expect(loaded!.implementerTool).toBe('ollama');
-    expect(loaded!.implementerModel).toBe('qwen2.5-coder:14b');
+    if (!loaded) throw new Error('expected loadState to return saved state');
+    expect(loaded.plannerTool).toBe('openrouter');
+    expect(loaded.plannerModel).toBe('claude-sonnet-4-20250514');
+    expect(loaded.implementerTool).toBe('ollama');
+    expect(loaded.implementerModel).toBe('qwen2.5-coder:14b');
   });
 
   it('creates session directory when it does not exist', () => {
@@ -121,23 +116,27 @@ describe('appendEvent', () => {
     expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'))).toBe(true);
   });
 
-  describe('failure handling', () => {
-    beforeEach(() => { vi.mocked(appendFileSync).mockClear(); });
-    afterEach(() => { vi.mocked(appendFileSync).mockRestore(); });
+  it('warns to stderr and does not throw when write fails on a read-only session dir', () => {
+    // Real disk-permission failure — no vi.mock. The session dir exists but is
+    // read-only (mode 0o500), so appendFileSync genuinely fails with EACCES.
+    const dir = makeTmp();
+    const sessionPath = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+    mkdirSync(sessionPath, { recursive: true });
+    // Remove write permission from the session dir. On POSIX this makes
+    // appendFileSync fail for files that don't yet exist inside it.
+    chmodSync(sessionPath, 0o500);
 
-    it('warns to stderr and does not throw when write fails', () => {
-      vi.mocked(appendFileSync).mockImplementationOnce(() => { throw new Error('disk full'); });
-      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-      try {
-        const dir = makeTmp();
-        const event: OrchestratorEvent = { ts: 1000, type: 'workflow_started', phase: 'idle', data: {} };
-        expect(() => appendEvent(dir, SESSION_ID, event)).not.toThrow();
-        const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
-        expect(output).toContain('disk full');
-      } finally {
-        stderrSpy.mockRestore();
-      }
-    });
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const event: OrchestratorEvent = { ts: 1000, type: 'workflow_started', phase: 'idle', data: {} };
+      expect(() => appendEvent(dir, SESSION_ID, event)).not.toThrow();
+      const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
+      expect(output).toContain('failed to persist log entry');
+    } finally {
+      stderrSpy.mockRestore();
+      // Restore perms so cleanupTempDir can remove the directory.
+      chmodSync(sessionPath, 0o700);
+    }
   });
 });
 

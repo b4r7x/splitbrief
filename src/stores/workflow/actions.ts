@@ -1,12 +1,12 @@
 import { groupEventsIntoSections } from '../../core/layout/event-sections.js';
 import type { Section } from '../../core/layout/event-sections.js';
-import type { WorkflowState } from '../../core/types/state-actions.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TuiEvent } from '../../features/workflow/types.js';
 import { abortStore } from './abort.js';
-import { eventsStore, mergeEvent, type EventsState } from './events.js';
-import { tasksStore, updateTaskCounts, updateTaskMap, type TasksState } from './tasks.js';
-import { tokensStore, updateTokens, type TokensState } from './tokens.js';
-import { lifecycleStore, updatePhase, updateQueueDepth, type LifecycleState } from './lifecycle.js';
+import { _eventsInternal, eventsStore, mergeEvent, type EventsState } from './events.js';
+import { _tasksInternal, tasksStore, updateTaskCounts, updateTaskMap, type TasksState } from './tasks.js';
+import { _tokensInternal, tokensStore, updateTokens, type TokensState } from './tokens.js';
+import { _lifecycleInternal, lifecycleStore, updatePhase, updateQueueDepth, type LifecycleState } from './lifecycle.js';
 
 export type WorkflowViewState = EventsState & TasksState & TokensState & LifecycleState;
 
@@ -16,7 +16,7 @@ export function addEvent(event: TuiEvent): void {
 
   // Fast path: cost-update only touches tokenUsage.
   if (event.type === 'cost-update') {
-    tokensStore.set(s => ({ ...s, tokenUsage: event.tokenUsage }));
+    _tokensInternal.set(s => ({ ...s, tokenUsage: event.tokenUsage }));
     return;
   }
 
@@ -24,9 +24,9 @@ export function addEvent(event: TuiEvent): void {
   // Strictly synchronous — no await, no setTimeout, no microtask scheduling.
   // React 19 + Ink batch synchronous store updates so subscribers observe one
   // consistent commit with all four stores updated.
-  eventsStore.set(s => ({ ...s, events: mergeEvent(s.events, event) }));
+  _eventsInternal.set(s => ({ ...s, events: mergeEvent(s.events, event) }));
 
-  tasksStore.set(s => {
+  _tasksInternal.set(s => {
     const taskMap = updateTaskMap(s.taskMap, event);
     const counts = updateTaskCounts(s, event);
     const tasks = taskMap !== s.taskMap ? Array.from(taskMap.values()) : s.tasks;
@@ -42,9 +42,9 @@ export function addEvent(event: TuiEvent): void {
     return { ...s, ...counts, taskMap, tasks };
   });
 
-  tokensStore.set(s => updateTokens(s, event));
+  _tokensInternal.set(s => updateTokens(s, event));
 
-  lifecycleStore.set(s => {
+  _lifecycleInternal.set(s => {
     const afterPhase = updatePhase(s, event);
     return updateQueueDepth(afterPhase, event);
   });
@@ -53,7 +53,7 @@ export function addEvent(event: TuiEvent): void {
 export function markCancelled(): boolean {
   if (lifecycleStore.get().cancelled) return false;
   const now = Date.now();
-  eventsStore.set(s => {
+  _eventsInternal.set(s => {
     const rewritten = s.events.map(ev =>
       ev.type === 'planner-status' && ev.status === 'running'
         ? { ...ev, status: 'done' as const }
@@ -61,7 +61,7 @@ export function markCancelled(): boolean {
     );
     return { events: [...rewritten, { type: 'workflow-cancelled' as const, ts: now }] };
   });
-  lifecycleStore.set(s => ({ ...s, cancelled: true }));
+  _lifecycleInternal.set(s => ({ ...s, cancelled: true }));
   return true;
 }
 
@@ -72,9 +72,11 @@ export function resetWorkflow(resume?: WorkflowState): void {
   tasksStore.reset();
   tokensStore.reset();
   lifecycleStore.reset();
+  cachedEvents = null;
+  cachedSections = [];
   if (resume) {
-    lifecycleStore.set(s => ({ ...s, phase: resume.phase }));
-    tasksStore.set(s => ({
+    _lifecycleInternal.set(s => ({ ...s, phase: resume.phase }));
+    _tasksInternal.set(s => ({
       ...s,
       currentTask: resume.currentTaskIndex ?? 0,
       totalTasks: resume.tasks?.length ?? 0,

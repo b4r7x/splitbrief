@@ -5,12 +5,13 @@ import { loadState } from '../../core/state/persistence.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
 import { isResumable } from '../../core/phases.js';
 import { renderApp } from '../render.js';
-import { addWorkflowOptions, setupWorkflow, resolveProjectDir } from '../workflow.js';
+import { addWorkflowOptions } from '../options.js';
+import { setupWorkflow, resolveProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { initStores } from '../init-stores.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
-import { maybeMigrate } from './migrate.js';
+import { maybeMigrate } from '../../core/migration/executor.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
 export function registerResumeCommand(program: Command): void {

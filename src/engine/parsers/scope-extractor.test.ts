@@ -16,10 +16,10 @@ describe('extractFunctionContext', () => {
     ].join('\n');
 
     const result = extractFunctionContext(file, 'foo', 0);
-    expect(result).toBeTruthy();
-    expect(result!.targetFunction).toContain('export function foo()');
-    expect(result!.imports).toContain('import { join }');
-    expect(result!.otherExports).toContain('other');
+    if (!result) throw new Error('expected extractFunctionContext to return a value');
+    expect(result.targetFunction).toContain('export function foo()');
+    expect(result.imports).toContain('import { join }');
+    expect(result.otherExports).toContain('other');
   });
 
   it('extracts export const arrow function by name', () => {
@@ -34,8 +34,8 @@ describe('extractFunctionContext', () => {
     ].join('\n');
 
     const result = extractFunctionContext(file, 'bar', 0);
-    expect(result).toBeTruthy();
-    expect(result!.targetFunction).toContain('export const bar');
+    if (!result) throw new Error('expected extractFunctionContext to return a value');
+    expect(result.targetFunction).toContain('export const bar');
   });
 
   it('extracts export async function by name', () => {
@@ -48,8 +48,8 @@ describe('extractFunctionContext', () => {
     ].join('\n');
 
     const result = extractFunctionContext(file, 'baz', 0);
-    expect(result).toBeTruthy();
-    expect(result!.targetFunction).toContain('export async function baz');
+    if (!result) throw new Error('expected extractFunctionContext to return a value');
+    expect(result.targetFunction).toContain('export async function baz');
   });
 
   it('extracts export interface by name', () => {
@@ -65,9 +65,9 @@ describe('extractFunctionContext', () => {
     ].join('\n');
 
     const result = extractFunctionContext(file, 'Config', 0);
-    expect(result).toBeTruthy();
-    expect(result!.targetFunction).toContain('export interface Config');
-    expect(result!.otherExports).toContain('create');
+    if (!result) throw new Error('expected extractFunctionContext to return a value');
+    expect(result.targetFunction).toContain('export interface Config');
+    expect(result.otherExports).toContain('create');
   });
 
   it('extracts export type by name', () => {
@@ -80,8 +80,8 @@ describe('extractFunctionContext', () => {
     ].join('\n');
 
     const result = extractFunctionContext(file, 'Status', 0);
-    expect(result).toBeTruthy();
-    expect(result!.targetFunction).toContain('export type Status');
+    if (!result) throw new Error('expected extractFunctionContext to return a value');
+    expect(result.targetFunction).toContain('export type Status');
   });
 
   it('extracts export class by name', () => {
@@ -97,9 +97,9 @@ describe('extractFunctionContext', () => {
     ].join('\n');
 
     const result = extractFunctionContext(file, 'MyClass', 0);
-    expect(result).toBeTruthy();
-    expect(result!.targetFunction).toContain('export class MyClass');
-    expect(result!.otherExports).toContain('helper');
+    if (!result) throw new Error('expected extractFunctionContext to return a value');
+    expect(result.targetFunction).toContain('export class MyClass');
+    expect(result.otherExports).toContain('helper');
   });
 
   it('returns import lines in imports field', () => {
@@ -113,9 +113,9 @@ describe('extractFunctionContext', () => {
     ].join('\n');
 
     const result = extractFunctionContext(file, 'doStuff', 0);
-    expect(result).toBeTruthy();
-    expect(result!.imports).toContain('import { join } from "node:path"');
-    expect(result!.imports).toContain('import fs from "node:fs"');
+    if (!result) throw new Error('expected extractFunctionContext to return a value');
+    expect(result.imports).toContain('import { join } from "node:path"');
+    expect(result.imports).toContain('import fs from "node:fs"');
   });
 
   it('returns null when function name is not found', () => {
@@ -148,8 +148,8 @@ describe('extractFunctionContext', () => {
     ].join('\n');
 
     const result = extractFunctionContext(file, 'second', 3);
-    expect(result).toBeTruthy();
-    expect(result!.targetFunction).toContain('// some note');
+    if (!result) throw new Error('expected extractFunctionContext to return a value');
+    expect(result.targetFunction).toContain('// some note');
   });
 
   it('returns names of all other exports', () => {
@@ -166,8 +166,8 @@ describe('extractFunctionContext', () => {
     ].join('\n');
 
     const result = extractFunctionContext(file, 'beta', 0);
-    expect(result).toBeTruthy();
-    expect(result!.otherExports.sort()).toEqual(['Delta', 'Epsilon', 'Gamma', 'alpha'].sort());
+    if (!result) throw new Error('expected extractFunctionContext to return a value');
+    expect(result.otherExports.sort()).toEqual(['Delta', 'Epsilon', 'Gamma', 'alpha'].sort());
   });
 
   it('does not treat re-export as a boundary', () => {
@@ -184,8 +184,8 @@ describe('extractFunctionContext', () => {
     ].join('\n');
 
     const result = extractFunctionContext(file, 'realExport', 0);
-    expect(result).toBeTruthy();
-    expect(result!.targetFunction).toContain('export { name }');
+    if (!result) throw new Error('expected extractFunctionContext to return a value');
+    expect(result.targetFunction).toContain('export { name }');
   });
 
   it('uses word boundary matching and does not match partial names', () => {
@@ -200,9 +200,9 @@ describe('extractFunctionContext', () => {
     ].join('\n');
 
     const result = extractFunctionContext(file, 'foo', 0);
-    expect(result).toBeTruthy();
-    expect(result!.targetFunction).toContain('export function foo()');
-    expect(result!.targetFunction).not.toContain('export function fooBar()');
-    expect(result!.otherExports).toContain('fooBar');
+    if (!result) throw new Error('expected extractFunctionContext to return a value');
+    expect(result.targetFunction).toContain('export function foo()');
+    expect(result.targetFunction).not.toContain('export function fooBar()');
+    expect(result.otherExports).toContain('fooBar');
   });
 });

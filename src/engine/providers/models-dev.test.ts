@@ -4,7 +4,7 @@ import {
   getModelsForProvider,
   type ModelsDevCatalog,
 } from './models-dev.js';
-import { setupFetchMock } from './test-helpers.js';
+import { setupFetchMock } from './__test-helpers__.js';
 
 const FIXTURE: ModelsDevCatalog = {
   anthropic: {
@@ -193,7 +193,7 @@ describe('getModelsForProvider', () => {
     expect(models).toEqual([]);
   });
 
-  it('handles model with no cost field gracefully', () => {
+  it('returns models with undefined pricing fields when the catalog omits cost', () => {
     const catalog: ModelsDevCatalog = {
       openai: {
         id: 'openai',

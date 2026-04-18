@@ -1,6 +1,6 @@
 # diptych — Concepts & Glossary
 
-Shared vocabulary for anyone (human or AI agent) reading the codebase. All terms here are used throughout `src/`, `specs/`, and other docs.
+Shared vocabulary for anyone (human or AI agent) reading the codebase. All terms here are used throughout `src/` and the other docs in this folder.
 
 ---
 
@@ -112,7 +112,7 @@ idle
 
 A **task** is the atomic unit of implementation. Produced by the planner in `tasks.md`, parsed into structured objects by `src/engine/spec/parser.ts`.
 
-Task fields (`src/core/types/schemas/task.ts`):
+Task fields (`src/core/schemas/task.ts`):
 
 - `id` — branded `TaskId`, unique inside a workflow
 - `file` — path to the file the task edits or creates
@@ -315,4 +315,4 @@ implementer: # same five kinds
   apiBase: http://localhost:11434/v1
 ```
 
-Schemas: `src/core/types/schemas/planner-config.ts`, `implementer-config.ts`. `version: 1` configs are migrated automatically by `src/core/config/migration.ts`.
+Schemas: `src/core/schemas/planner-config.ts`, `src/core/schemas/implementer-config.ts`. `version: 1` configs are migrated automatically by `src/core/config/load/migrate.ts`.

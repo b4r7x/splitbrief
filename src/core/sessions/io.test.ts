@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import { listSessions, listAllSessions, getSessionDir, saveSummary } from './io.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { makeSession } from '#testing/helpers/fixtures.js';
+import { makeSession } from '#testing/helpers/factories/session.js';
 
 let tmp: string;
 
@@ -78,7 +78,7 @@ describe('listSessions', () => {
     expect(sessions[0]?.id).toBe('2024-01-02-good');
   });
 
-  it('skips malformed JSON files gracefully', () => {
+  it('skips sessions with malformed summary.json and returns only the valid ones', () => {
     tmp = createTempDir('sessions-io-test');
     const badDir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-bad');
     mkdirSync(badDir, { recursive: true });
