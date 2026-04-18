@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import type { TuiEvent, ValidationStages } from '../../../../core/types/events.js';
+import type { TuiEvent, ValidationStages } from '../../types.js';
 import { useTheme } from '../../../../components/theme.js';
 import { Spinner } from '../../../../components/spinner.js';
 import { formatDuration } from '../../../../utils/format-time.js';

@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import type { TaskCompletionMethod } from '../../../core/types/summary.js';
-import { getMethodDisplay } from '../../../core/sessions/status.js';
+import { getMethodDisplay } from '../../../core/sessions-display.js';
 
 interface TaskSummaryProps {
   index: number;

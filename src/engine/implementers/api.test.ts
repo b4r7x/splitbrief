@@ -9,17 +9,17 @@ vi.mock('../providers/registry.js', () => ({
   detectCapabilities: vi.fn(),
 }));
 
-vi.mock('../streaming/openai-stream.js', () => ({
+vi.mock('../providers/openai-stream.js', () => ({
   streamCompletion: vi.fn(),
   asStreamClient: (c: unknown) => c,
 }));
 
-vi.mock('../streaming/anthropic-stream.js', () => ({
+vi.mock('../providers/anthropic/stream.js', () => ({
   streamAnthropicCompletion: vi.fn(),
 }));
 
-import { streamCompletion } from '../streaming/openai-stream.js';
-import { streamAnthropicCompletion } from '../streaming/anthropic-stream.js';
+import { streamCompletion } from '../providers/openai-stream.js';
+import { streamAnthropicCompletion } from '../providers/anthropic/stream.js';
 import { createClient } from '../providers/registry.js';
 import { createApiImplementer } from './api.js';
 

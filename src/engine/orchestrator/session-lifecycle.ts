@@ -1,13 +1,13 @@
 import type { Config } from '../../core/types/config-options.js';
-import type { OrchestratorCallbacks } from '../../core/types/events.js';
-import type { Session } from '../../core/types/app.js';
+import type { OrchestratorCallbacks } from './types.js';
+import type { Session } from '../../core/schemas/session.js';
 import type { Summary } from '../../core/types/summary.js';
 import type { Task, WorkflowState } from '../../core/types/state-actions.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
-import { clearActive } from '../../core/sessions/active.js';
+import { clearActive } from '../../core/sessions/lifecycle.js';
 import { saveSummary } from '../../core/sessions/io.js';
 import { warnError } from '../../lib/warn.js';
-import { withSignalHandlers } from './helpers.js';
+import { withSignalHandlers } from './signals.js';
 import { shutdownWorkflow } from './final-review.js';
 import { createQueueHandler } from './queue.js';
 import type { Planner } from '../planners/types.js';

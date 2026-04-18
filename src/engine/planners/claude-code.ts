@@ -1,5 +1,5 @@
 import type { Planner, EscalationResult } from './types.js';
-import type { ClarificationQuestion } from '../../core/types/events.js';
+import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import { CONVERSATIONAL_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { createCommandAvailability } from '../../lib/availability.js';

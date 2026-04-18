@@ -1,7 +1,7 @@
 import type { QueuedMessage, WorkflowState } from '../../core/types/state-actions.js';
-import type { OrchestratorCallbacks } from '../../core/types/events.js';
+import type { OrchestratorCallbacks } from './types.js';
 import type { Planner } from '../planners/types.js';
-import { transitionAndSave } from './helpers.js';
+import { transitionAndSave } from './state-ops.js';
 import { emit } from './events.js';
 
 export async function dispatchNativeInjection(

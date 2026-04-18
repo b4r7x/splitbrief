@@ -5,7 +5,7 @@ import { getSkippedTaskIds } from '../../core/state/selectors.js';
 import { makeTask, makeConfig, defaultContext } from '#testing/helpers/fixtures.js';
 import { makeCallbacks, makePlanner, makeImplementer, passingResults } from '#testing/helpers/orchestrator-fixtures.js';
 
-vi.mock('./validator.js', () => ({
+vi.mock('./validation.js', () => ({
   validateTask: vi.fn(),
   runValidationWithEvents: vi.fn(),
   formatValidationError: vi.fn().mockReturnValue('validation error'),
@@ -21,7 +21,7 @@ vi.mock('../../core/state/persistence.js', () => ({
 }));
 
 import { runTaskLoop } from './task-loop.js';
-import { runValidationWithEvents } from './validator.js';
+import { runValidationWithEvents } from './validation.js';
 import { commitChanges } from '../../lib/git.js';
 import type { WorkflowSinks } from './types.js';
 

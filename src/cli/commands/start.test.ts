@@ -9,12 +9,10 @@ const initStoresMock = vi.fn();
 const renderAppMock = vi.fn();
 
 const clearActiveMock = vi.fn<(dir: string) => void>();
-vi.mock('../../core/sessions/active.js', () => ({
+vi.mock('../../core/sessions/lifecycle.js', () => ({
   readActive: (dir: string) => readActiveMock(dir),
   isSessionLive: (dir: string, id: string) => isSessionLiveMock(dir, id),
   clearActive: (dir: string) => clearActiveMock(dir),
-}));
-vi.mock('../../core/sessions/begin.js', () => ({
   beginSession: (dir: string, feature: string) => beginSessionMock(dir, feature),
 }));
 vi.mock('../workflow.js', () => ({

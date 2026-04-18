@@ -4,7 +4,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { calculateCostBreakdown } from '../../../engine/providers/pricing.js';
-import { getRunnerDisplayName, getRunnerModelName } from '../../../core/config/runner-config.js';
+import { getRunnerDisplayName, getRunnerModelName } from '../../../core/config/accessors/runner-config.js';
 import { formatCost } from '../../../core/formatting.js';
 import type { CostBreakdown } from '../../../core/types/summary.js';
 

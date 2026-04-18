@@ -1,5 +1,5 @@
 import type { SettingDef } from "./catalog.js";
-import type { ThemeColors } from "../types/theme.js";
+import type { ThemeColors } from "../../components/theme.js";
 
 export function valueColor(
   def: SettingDef,

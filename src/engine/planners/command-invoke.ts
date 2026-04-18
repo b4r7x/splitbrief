@@ -1,4 +1,4 @@
-import type { InvokeResult } from '../../core/types/runner.js';
+import type { InvokeResult } from '../runners/types.js';
 import type { PlannerCallbacks, PlannerCapabilities } from './types.js';
 import type { PlannerBaseConfig } from './base.js';
 import type { Planner } from './types.js';
@@ -7,7 +7,7 @@ import { invokeCommandBasedRunner } from '../runners/command-based.js';
 import { extractQuestionsFromStream } from '../parsers/question-parser.js';
 import { createCommandAvailability } from '../../lib/availability.js';
 import { getChangedFiles } from '../../lib/git.js';
-import type { OutputFormat } from '../../core/types/schemas/enums.js';
+import type { OutputFormat } from '../../core/schemas/enums.js';
 
 export function resolveCapabilities(override: { [K in keyof PlannerCapabilities]?: boolean | undefined } | undefined): PlannerCapabilities {
   return {

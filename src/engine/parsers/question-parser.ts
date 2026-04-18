@@ -1,5 +1,5 @@
-import type { ClarificationQuestion } from '../../core/types/events.js';
-import { ClarificationQuestionSchema } from '../../core/types/schemas/question.js';
+import type { ClarificationQuestion } from '../../core/schemas/question.js';
+import { ClarificationQuestionSchema } from '../../core/schemas/question.js';
 import { warnError } from '../../lib/warn.js';
 
 const MARKER_PREFIX = '<!-- Q:';

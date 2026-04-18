@@ -6,7 +6,7 @@ import { addWorkflowOptions, setupWorkflow, resolveProjectDir } from '../workflo
 import { routerStore } from '../../stores/navigation/router.js';
 import { initStores } from '../init-stores.js';
 import { clearStaleSession } from './guards.js';
-import { beginSession } from '../../core/sessions/begin.js';
+import { beginSession } from '../../core/sessions/lifecycle.js';
 import { maybeMigrate } from './migrate.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 

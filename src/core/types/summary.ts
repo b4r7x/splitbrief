@@ -1,9 +1,9 @@
 import type { z } from 'zod';
-import type { TokenUsageSchema, TokenDeltaSchema } from './schemas/tokens.js';
-import type { TaskTokenUsageSchema, CostBreakdownSchema, SummarySchema, CostPredictionSchema } from './schemas/summary.js';
+import type { TokenUsageSchema, TokenDeltaSchema } from '../schemas/tokens.js';
+import type { TaskTokenUsageSchema, CostBreakdownSchema, SummarySchema, CostPredictionSchema } from '../schemas/summary.js';
 
-export type { TaskCompletionMethod } from './schemas/enums.js';
-export { TASK_COMPLETION_METHODS } from './schemas/enums.js';
+export type { TaskCompletionMethod } from '../schemas/enums.js';
+export { TASK_COMPLETION_METHODS } from '../schemas/enums.js';
 
 export type TokenDelta = z.infer<typeof TokenDeltaSchema>;
 

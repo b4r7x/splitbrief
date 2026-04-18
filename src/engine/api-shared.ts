@@ -1,7 +1,7 @@
-import type { InvokeResult } from '../core/types/runner.js';
+import type { InvokeResult } from './runners/types.js';
 import type OpenAI from 'openai';
-import { asStreamClient, streamCompletion } from './streaming/openai-stream.js';
-import { streamAnthropicCompletion } from './streaming/anthropic-stream.js';
+import { asStreamClient, streamCompletion } from './providers/openai-stream.js';
+import { streamAnthropicCompletion } from './providers/anthropic/stream.js';
 
 export interface ApiStreamOptions {
   client: OpenAI | null;

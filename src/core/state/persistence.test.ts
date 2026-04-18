@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { saveState, loadState, appendEvent, appendMessage } from './persistence.js';
 import { createInitialState } from './machine.js';
 import { taskId } from '../types/state-actions.js';
-import type { OrchestratorEvent } from '../types/events.js';
+import type { OrchestratorEvent } from '../../engine/orchestrator/events.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
 

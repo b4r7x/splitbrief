@@ -213,9 +213,34 @@ A: Validation against a tiny-spec-defined format → `src/core/sessions/id.ts`.
 
 ---
 
+## Ports and adapters
+
+When a file declares a contract (interface, type, base helper) and sibling files implement that contract, **keep the port and its implementations in the same folder**. Do not move the port out to a separate `ports/` or `interfaces/` folder — that is an abstraction without value.
+
+Canonical examples in this codebase:
+
+```
+engine/planners/
+├── types.ts          # PORT — declares Planner, PlannerBackend, PlannerCapabilities
+├── base.ts           # shared scaffolding used by adapters
+├── cli.ts            # ADAPTER — Claude Code / Codex / OpenCode subprocess
+├── api.ts            # ADAPTER — OpenAI-compatible HTTP
+├── shell.ts          # ADAPTER — arbitrary shell command
+├── agent.ts          # ADAPTER — file-writing agent
+└── agent-sdk.ts      # ADAPTER — Anthropic Agent SDK
+
+engine/implementers/   # mirror of planners/ — same port+adapter pattern
+```
+
+`types.ts` in these folders is a port file — it **declares** types, it does not re-export them. It is not a barrel (see [NO-BARRELS.md](./NO-BARRELS.md)).
+
+**Rule**: if you are tempted to create `src/ports/`, `src/interfaces/`, or `src/contracts/`, stop — the interface belongs with its implementations. See [Sandor Dargo's deep-module case for port colocation](https://www.sandordargo.com/blog/2023/01/25/deep-vs-shallow-modules).
+
 ## References
 
-- [`STRUCTURE.md`](./STRUCTURE.md) — file tree, feature anatomy, placement rules
+- [`PRINCIPLES.md`](./PRINCIPLES.md) — one-page index of all architectural rules.
+- [`STRUCTURE.md`](./STRUCTURE.md) — file tree, feature anatomy, placement rules, folder colocation
+- [`TYPES.md`](./TYPES.md) — type placement, Zod schema conventions
 - [`STORES.md`](./STORES.md) — state architecture
 - [`NO-BARRELS.md`](./NO-BARRELS.md) — why `index.ts` re-exports are banned
 - [`FUTURE.md`](./FUTURE.md) — deferred features (not yet built)

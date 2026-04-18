@@ -1,4 +1,4 @@
-import type { InvokeResult } from '../core/types/runner.js';
+import type { InvokeResult } from './runners/types.js';
 import { accumulateUsage } from './streaming/output-parsers.js';
 import { toTokenDelta } from './streaming/token-utils.js';
 import { createChangeDetector } from './change-detection.js';

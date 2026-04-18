@@ -1,12 +1,12 @@
 import type { Task, WorkflowState } from '../../core/types/state-actions.js';
 import type { Config } from '../../core/types/config-options.js';
-import type { OrchestratorCallbacks } from '../../core/types/events.js';
+import type { OrchestratorCallbacks } from './types.js';
 import type { ValidationResult, TaskCompletionMethod } from '../../core/types/summary.js';
 import { commitChanges } from '../../lib/git.js';
-import { createCheckpoint } from './git-ops.js';
+import { createCheckpoint } from './git.js';
 import { labelError } from '../../utils/format-errors.js';
 import { emit, emitWarning, emitGitCommit, emitGitCheckpoint, emitTaskComplete } from './events.js';
-import { transitionAndSave } from './helpers.js';
+import { transitionAndSave } from './state-ops.js';
 
 type ValidateCommitOptions = {
   task: Task;

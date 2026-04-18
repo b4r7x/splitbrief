@@ -1,7 +1,7 @@
 import type { Config } from '../../core/types/config-options.js';
 import type { Planner } from '../planners/types.js';
 import type { Implementer } from '../implementers/types.js';
-import type { RunnerKind } from '../../core/types/schemas/enums.js';
+import type { RunnerKind } from '../../core/schemas/enums.js';
 
 import { createClaudeCodePlanner } from '../planners/claude-code.js';
 import { createCliPlanner } from '../planners/cli.js';

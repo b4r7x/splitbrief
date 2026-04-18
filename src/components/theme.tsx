@@ -1,5 +1,15 @@
 import { createContext, useContext } from 'react';
 
+export interface ThemeColors {
+  text: string;
+  textDim: string;
+  accent: string;
+  success: string;
+  error: string;
+  warning: string;
+  info: string;
+}
+
 export interface Theme {
   text: string;
   textDim: string;

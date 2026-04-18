@@ -3,14 +3,14 @@ import type { Config } from '../../../core/types/config-options.js';
 import type { StateAction, WorkflowState } from '../../../core/types/state-actions.js';
 import { taskId } from '../../../core/types/state-actions.js';
 import type { Summary } from '../../../core/types/summary.js';
-import type { TuiEvent } from '../../../core/types/events.js';
-import type { SkillMeta } from '../../../core/types/app.js';
+import type { TuiEvent } from '../types.js';
+import type { SkillMeta } from '../../../engine/skills/discovery.js';
 import { addEvent, resetWorkflow } from '../../../stores/workflow/actions.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
-import { runWorkflow } from '../../../engine/orchestrator/run.js';
+import { runWorkflow } from '../../../engine/orchestrator/run/run.js';
 import type { WorkflowSinks } from '../../../engine/orchestrator/types.js';
 import {
   setAbortHandler,
@@ -21,9 +21,9 @@ import {
 } from '../handlers.js';
 import { killAllProcesses } from '../../../lib/process/registry.js';
 import { loadState, saveState, appendEvent } from '../../../core/state/persistence.js';
-import { readActive } from '../../../core/sessions/active.js';
+import { readActive } from '../../../core/sessions/lifecycle.js';
 import { transition } from '../../../core/state/machine.js';
-import { REVIEW_HINT } from '../../../core/slash-commands/review-commands.js';
+import { REVIEW_HINT } from '../review-parser.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 
 interface UseWorkflowRunnerOptions {

@@ -7,7 +7,7 @@ import { feedbackStore } from '../ui/feedback.js';
 import type { PlannerConfig } from '../../core/types/config-options.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { DIPTYCH_DIR } from '../../core/paths.js';
-import { createDefaultConfig } from '../../core/config/loading.js';
+import { createDefaultConfig } from '../../core/config/load/load.js';
 
 function expectCli(p: PlannerConfig): Extract<PlannerConfig, { kind: 'cli' }> {
   if (p.kind !== 'cli') throw new Error(`Expected cli planner, got ${p.kind}`);

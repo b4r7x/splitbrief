@@ -1,4 +1,4 @@
-import type { OutputFormat } from '../../core/types/schemas/enums.js';
+import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { TokenDelta } from '../../core/types/summary.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { spawnWithShellFallback } from '../../lib/process/spawn.js';

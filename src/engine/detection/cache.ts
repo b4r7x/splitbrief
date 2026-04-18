@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import { z } from 'zod';
 import type { PlannerDetection, ProviderDetection } from '../../core/types/config-options.js';
 import type { DetectedModel } from '../../core/types/config-options.js';
-import { PLANNER_TOOL_IDS, PROVIDER_IDS } from '../../core/types/schemas/enums.js';
+import { PLANNER_TOOL_IDS, PROVIDER_IDS } from '../../core/schemas/enums.js';
 import { getDiptychPath } from '../../core/paths.js';
 
 const CACHE_FILENAME = 'detection-cache.json';

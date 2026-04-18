@@ -7,7 +7,7 @@ import { formatTaskPrompt, formatRetryPrompt, SYSTEM_PREAMBLE } from '../spec/fo
 import { estimateTokens } from '../spec/token-budget.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { PROVIDER_CATALOG } from '../../core/providers/catalog.js';
-import { isProviderId } from '../../core/types/schemas/enums.js';
+import { isProviderId } from '../../core/schemas/enums.js';
 import { assertImplementerKind } from './utils.js';
 import { streamApiCompletion, throwAutoModelError } from '../api-shared.js';
 

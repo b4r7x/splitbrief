@@ -1,5 +1,5 @@
 import { Text } from 'ink';
-import type { TuiEvent } from '../../../../core/types/events.js';
+import type { TuiEvent } from '../../types.js';
 import { useTheme } from '../../../../components/theme.js';
 import { Spinner } from '../../../../components/spinner.js';
 import { formatDuration } from '../../../../utils/format-time.js';

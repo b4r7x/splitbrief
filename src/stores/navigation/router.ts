@@ -2,8 +2,30 @@ import { createStore, storeBase } from '../create-store.js';
 import { feedbackStore } from '../ui/feedback.js';
 import type { WorkflowState } from '../../core/types/state-actions.js';
 import type { Summary } from '../../core/types/summary.js';
-import type { RouteData, Screen } from '../../core/types/app.js';
 import { assertNever } from '../../utils/type-guards.js';
+
+export type Screen = 'home' | 'workflow' | 'summary' | 'setup';
+
+export const ALL_SCREENS: readonly Screen[] = ['home', 'workflow', 'summary', 'setup'];
+
+export type InputMode = 'normal' | 'review' | 'question';
+
+export type OverlayType =
+  | 'none'
+  | 'help'
+  | 'command-palette'
+  | 'skills'
+  | 'settings'
+  | 'mode-selector'
+  | 'planner-picker'
+  | 'implementer-picker'
+  | 'sessions';
+
+export type RouteData =
+  | { screen: 'home' }
+  | { screen: 'workflow'; feature: string; resumeState?: WorkflowState | undefined; sessionId?: string | undefined }
+  | { screen: 'summary'; summary: Summary }
+  | { screen: 'setup'; onComplete?: 'home' | 'workflow' | undefined; feature?: string | undefined };
 
 const transitions: Record<Screen, Screen[]> = {
   home: ['workflow', 'setup'],

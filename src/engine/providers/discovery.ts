@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { DetectedModel } from '../../core/types/config-options.js';
-import type { CliToolId } from '../../core/types/schemas/enums.js';
+import type { CliToolId } from '../../core/schemas/enums.js';
 import { runCommand } from '../../lib/process/spawn.js';
 import { fetchJsonWithTimeout } from './client.js';
 import { buildPricingFields } from './metadata.js';

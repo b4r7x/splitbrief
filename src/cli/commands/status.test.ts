@@ -9,7 +9,7 @@ const aggregateSessionCostsMock = vi.fn();
 const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
 vi.mock('../../core/state/persistence.js', () => ({ loadState: (dir: string, sessionId: string) => loadStateMock(dir, sessionId) }));
-vi.mock('../../core/sessions/active.js', () => ({ readActive: (dir: string) => readActiveMock(dir) }));
+vi.mock('../../core/sessions/lifecycle.js', () => ({ readActive: (dir: string) => readActiveMock(dir) }));
 vi.mock('../../core/sessions/io.js', () => ({
   listSessions: (dir: string) => listSessionsMock(dir),
   getSessionDir: (scope: 'project' | 'global', projectDir: string) => getSessionDirMock(scope, projectDir),

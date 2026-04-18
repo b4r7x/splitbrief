@@ -1,7 +1,7 @@
-import type { ParsedLine } from '../core/types/runner.js';
+import type { ParsedLine } from './runners/types.js';
 import { parseJsonlLine, parseOpencodeLine, parseTextLine } from './streaming/output-parsers.js';
 import type { CliToolId } from '../core/types/config-options.js';
-import type { InvokeResult } from '../core/types/runner.js';
+import type { InvokeResult } from './runners/types.js';
 import type { TokenDelta } from '../core/types/summary.js';
 
 export interface CliToolPlanner {

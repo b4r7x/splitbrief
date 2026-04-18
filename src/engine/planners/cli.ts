@@ -1,5 +1,5 @@
 import type { Config } from '../../core/types/config-options.js';
-import type { InvokeResult } from '../../core/types/runner.js';
+import type { InvokeResult } from '../runners/types.js';
 import type { Planner, PlannerCallbacks } from './types.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';

@@ -1,6 +1,6 @@
-import type { InvokeResult } from '../core/types/runner.js';
+import type { InvokeResult } from './runners/types.js';
 import type { TokenDelta } from '../core/types/summary.js';
-import type { ClarificationQuestion } from '../core/types/events.js';
+import type { ClarificationQuestion } from '../core/schemas/question.js';
 import { spawnWithStdin } from '../lib/process/spawn.js';
 import { parseStreamLine, type ToolUseInfo } from './streaming/output-parsers.js';
 import { createQuestionAccumulator } from './parsers/question-parser.js';

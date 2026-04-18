@@ -1,14 +1,72 @@
-import type { WorkflowState, TaskId } from '../../core/types/state-actions.js';
+import type { WorkflowState, TaskId, Phase } from '../../core/types/state-actions.js';
 import type { WorkflowMode } from '../../core/types/config-options.js';
-import type { OrchestratorCallbacks, ValidationStages, OrchestratorEventPayloadMap } from '../../core/types/events.js';
+import type { ValidationStages } from '../../features/workflow/types.js';
+import type { OrchestratorCallbacks } from './types.js';
 import type { ValidationResult, TaskCompletionMethod, TokenUsage, CostPrediction } from '../../core/types/summary.js';
 import { appendEvent } from '../../core/state/persistence.js';
-import { transitionAndEmit } from './helpers.js';
 
-export type PlanApprovedContext = {
-  projectDir: string;
-  sessionId: string;
-  callbacks: OrchestratorCallbacks;
+export type OrchestratorEventPayloadMap = {
+  workflow_started: Record<string, never>;
+  workflow_resumed: Record<string, never>;
+  workflow_complete: Record<string, never>;
+  all_tasks_done: Record<string, never>;
+  task_started: Record<string, never>;
+  task_completed: { method: TaskCompletionMethod };
+  task_failed: Record<string, never>;
+  task_skipped: Record<string, never>;
+  task_retry: { attempt: number; error: string };
+  task_escalating: Record<string, never>;
+  task_full_fail: Record<string, never>;
+  task_tokens: {
+    method: TaskCompletionMethod;
+    implementerTokens: number;
+    escalationTokens: number;
+    retryCount: number;
+  };
+  hint_failed: Record<string, never>;
+  paused_external_changes: Record<string, never>;
+  spec_rejected: Record<string, never>;
+  spec_regenerated: { comment: string };
+  plan_rejected: Record<string, never>;
+  plan_regenerated: { comment: string };
+  clarifications_collected: {
+    count: number;
+    clarifications: Array<{ question: string; answer: string }>;
+  };
+  clarification_answered: { questionId?: string | undefined; answer: string };
+  research_done: Record<string, never>;
+  spec_done: Record<string, never>;
+  spec_approved: Record<string, never>;
+  plan_done: { taskCount: number };
+  plan_approved: Record<string, never>;
+  rewind_to_spec: { comment?: string };
+  rewind_to_plan: { comment?: string };
+  task_reset: { taskId: string };
+  message_queued: { id: string; phase: Phase };
+  message_injected_native: { id: string };
+  queue_drained: { count: number };
+  queue_cleared: { count: number };
+};
+
+export type OrchestratorEventType = keyof OrchestratorEventPayloadMap;
+
+export type OrchestratorEvent<T extends OrchestratorEventType = OrchestratorEventType> = {
+  [K in T]: {
+    ts: number;
+    type: K;
+    taskId?: TaskId | undefined;
+    phase: Phase;
+    data: OrchestratorEventPayloadMap[K];
+  };
+}[T];
+
+export type SessionLogEventEntryFor<T extends OrchestratorEventType> = {
+  ts: string;
+  kind: 'event';
+  type: T;
+  taskId?: TaskId | undefined;
+  phase: Phase;
+  data: OrchestratorEventPayloadMap[T];
 };
 
 export function emit<T extends keyof OrchestratorEventPayloadMap>(
@@ -26,6 +84,54 @@ export function emit<T extends keyof OrchestratorEventPayloadMap>(
     phase: state.phase,
     data,
   });
+}
+
+export function createEventEmitter(projectDir: string, sessionId: string) {
+  return <T extends keyof OrchestratorEventPayloadMap>(
+    state: WorkflowState,
+    type: T,
+    taskId: TaskId | undefined,
+    data: OrchestratorEventPayloadMap[T],
+  ): void => emit(projectDir, sessionId, state, type, taskId, data);
+}
+
+export function createTextHandler(callbacks: OrchestratorCallbacks): (text: string) => void {
+  return (text) => callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text });
+}
+
+export function emitPlannerStatus(
+  callbacks: OrchestratorCallbacks, state: WorkflowState,
+  status: 'running' | 'done', extra?: { duration?: number; summary?: string; tool?: string; model?: string },
+): void {
+  const tool = extra?.tool ?? state.plannerTool;
+  const model = extra?.model ?? state.plannerModel;
+  callbacks.onEvent({
+    type: 'planner-status', ts: Date.now(), phase: state.phase, status,
+    ...extra,
+    ...(tool !== undefined && { tool }),
+    ...(model !== undefined && { model }),
+  });
+}
+
+export function emitTaskStart(
+  callbacks: OrchestratorCallbacks,
+  opts: { taskId: TaskId; title: string; index: number; total: number; file: string; action: 'create' | 'modify'; tool?: string; model?: string },
+): void {
+  callbacks.onEvent({ type: 'task-start', ts: Date.now(), ...opts });
+}
+
+export function emitTaskSkipped(
+  callbacks: OrchestratorCallbacks,
+  opts: { taskId: TaskId; title: string; reason: string },
+): void {
+  callbacks.onEvent({ type: 'task-skipped', ts: Date.now(), ...opts });
+}
+
+export function emitTaskComplete(
+  callbacks: OrchestratorCallbacks,
+  opts: { taskId: TaskId; title: string; method: TaskCompletionMethod; retries: number; duration: number; tool?: string; model?: string },
+): void {
+  callbacks.onEvent({ type: 'task-complete', ts: Date.now(), ...opts });
 }
 
 const EMPTY_STAGES: ValidationStages = { tsc: false, lint: false, test: false };
@@ -71,66 +177,6 @@ export function emitValidation(callbacks: OrchestratorCallbacks, opts: Validatio
   });
 }
 
-export function emitPlanApproved(state: WorkflowState, ctx: PlanApprovedContext): WorkflowState {
-  return transitionAndEmit({
-    state,
-    projectDir: ctx.projectDir,
-    sessionId: ctx.sessionId,
-    callbacks: ctx.callbacks,
-    action: { type: 'APPROVE_PLAN' },
-    eventName: 'plan_approved',
-    status: 'running',
-    emitData: {},
-  });
-}
-
-export function createTextHandler(callbacks: OrchestratorCallbacks): (text: string) => void {
-  return (text) => callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text });
-}
-
-export function emitError(callbacks: OrchestratorCallbacks, message: string): void {
-  callbacks.onEvent({ type: 'error', ts: Date.now(), message });
-}
-
-export function emitWarning(callbacks: OrchestratorCallbacks, message: string): void {
-  callbacks.onEvent({ type: 'warning', ts: Date.now(), message });
-}
-
-export function emitPlannerStatus(
-  callbacks: OrchestratorCallbacks, state: WorkflowState,
-  status: 'running' | 'done', extra?: { duration?: number; summary?: string; tool?: string; model?: string },
-): void {
-  const tool = extra?.tool ?? state.plannerTool;
-  const model = extra?.model ?? state.plannerModel;
-  callbacks.onEvent({
-    type: 'planner-status', ts: Date.now(), phase: state.phase, status,
-    ...extra,
-    ...(tool !== undefined && { tool }),
-    ...(model !== undefined && { model }),
-  });
-}
-
-export function emitTaskStart(
-  callbacks: OrchestratorCallbacks,
-  opts: { taskId: TaskId; title: string; index: number; total: number; file: string; action: 'create' | 'modify'; tool?: string; model?: string },
-): void {
-  callbacks.onEvent({ type: 'task-start', ts: Date.now(), ...opts });
-}
-
-export function emitTaskSkipped(
-  callbacks: OrchestratorCallbacks,
-  opts: { taskId: TaskId; title: string; reason: string },
-): void {
-  callbacks.onEvent({ type: 'task-skipped', ts: Date.now(), ...opts });
-}
-
-export function emitTaskComplete(
-  callbacks: OrchestratorCallbacks,
-  opts: { taskId: TaskId; title: string; method: TaskCompletionMethod; retries: number; duration: number; tool?: string; model?: string },
-): void {
-  callbacks.onEvent({ type: 'task-complete', ts: Date.now(), ...opts });
-}
-
 export function emitGitCommit(callbacks: OrchestratorCallbacks, message: string): void {
   callbacks.onEvent({ type: 'git-commit', ts: Date.now(), message });
 }
@@ -168,6 +214,14 @@ export function emitBudgetExceeded(callbacks: OrchestratorCallbacks, currentCost
   callbacks.onEvent({ type: 'budget-exceeded', ts: Date.now(), currentCost, maxBudget });
 }
 
+export function emitError(callbacks: OrchestratorCallbacks, message: string): void {
+  callbacks.onEvent({ type: 'error', ts: Date.now(), message });
+}
+
+export function emitWarning(callbacks: OrchestratorCallbacks, message: string): void {
+  callbacks.onEvent({ type: 'warning', ts: Date.now(), message });
+}
+
 export function emitUserMessage(callbacks: OrchestratorCallbacks, text: string): void {
   callbacks.onEvent({ type: 'user-message', ts: Date.now(), text });
 }
@@ -187,13 +241,4 @@ export function emitWorkflowConfig(callbacks: OrchestratorCallbacks, opts: {
     implementerTool: opts.implementerTool,
     ...(opts.implementerModel !== undefined && { implementerModel: opts.implementerModel }),
   });
-}
-
-export function createEventEmitter(projectDir: string, sessionId: string) {
-  return <T extends keyof OrchestratorEventPayloadMap>(
-    state: WorkflowState,
-    type: T,
-    taskId: TaskId | undefined,
-    data: OrchestratorEventPayloadMap[T],
-  ): void => emit(projectDir, sessionId, state, type, taskId, data);
 }

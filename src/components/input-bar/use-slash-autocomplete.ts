@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useInput } from 'ink';
 import { Fzf } from 'fzf';
-import type { Screen, SlashCommandDef } from '../../core/types/app.js';
+import type { Screen } from '../../stores/navigation/router.js';
+import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 

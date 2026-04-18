@@ -7,7 +7,7 @@ import {
   getFailedTaskIds,
 } from '../../core/state/selectors.js';
 import { resolveProjectDir } from '../workflow.js';
-import { readActive } from '../../core/sessions/active.js';
+import { readActive } from '../../core/sessions/lifecycle.js';
 import { listSessions } from '../../core/sessions/io.js';
 import { aggregateSessionCosts } from '../../core/sessions/analytics.js';
 import { formatCost } from '../../core/formatting.js';

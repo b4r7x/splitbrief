@@ -1,6 +1,6 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { TuiEvent } from '../../core/types/events.js';
-import type { SidebarTask } from '../../core/types/app.js';
+import type { TuiEvent } from '../../features/workflow/types.js';
+import type { SidebarTask } from '../../features/workflow/components/sidebar.js';
 
 export interface TasksState {
   currentTask: number;

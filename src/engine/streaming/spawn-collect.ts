@@ -1,5 +1,5 @@
 import type { OutputFormat } from '../../core/types/config-options.js';
-import type { InvokeResult, ParsedLine } from '../../core/types/runner.js';
+import type { InvokeResult, ParsedLine } from '../runners/types.js';
 import type { TokenDelta } from '../../core/types/summary.js';
 import { spawnWithStdin } from '../../lib/process/spawn.js';
 import { formatCommandError } from '../../lib/process/errors.js';

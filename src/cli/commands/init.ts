@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { createElement } from 'react';
 import { existsSync } from 'node:fs';
 import { App } from '../../app.js';
-import { configPath, initConfig } from '../../core/config/loading.js';
+import { configPath, initConfig } from '../../core/config/load/load.js';
 import { renderApp } from '../render.js';
 import { resolveProjectDir } from '../workflow.js';
 import { initStores } from '../init-stores.js';

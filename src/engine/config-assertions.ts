@@ -5,13 +5,13 @@ import type {
   ApiPlannerConfig,
   CliPlannerConfig,
   ShellPlannerConfig,
-} from '../core/types/schemas/planner-config.js';
+} from '../core/schemas/planner-config.js';
 import type {
   AgentImplementerConfig,
   AgentSdkImplementerConfig,
   ApiImplementerConfig,
   ShellImplementerConfig,
-} from '../core/types/schemas/implementer-config.js';
+} from '../core/schemas/implementer-config.js';
 
 function expectedConfigKind(role: 'planner' | 'implementer', kind: string): Error {
   return new Error(`Expected ${kind} ${role} config`);

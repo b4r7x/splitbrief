@@ -11,7 +11,7 @@ import { renderToolRow, renderModelRow } from './tool-row.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
 import { PROVIDER_CATALOG } from '../../core/providers/catalog.js';
-import { isProviderId } from '../../core/types/schemas/enums.js';
+import { isProviderId } from '../../core/schemas/enums.js';
 
 interface PickerViewProps {
   role: 'planner' | 'implementer';

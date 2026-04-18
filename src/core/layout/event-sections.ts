@@ -1,4 +1,4 @@
-import type { TuiEvent } from '../types/events.js';
+import type { TuiEvent } from '../../features/workflow/types.js';
 import type { TaskCompletionMethod } from '../types/summary.js';
 
 function hasEventType<T extends TuiEvent['type']>(

@@ -2,12 +2,12 @@ import { Command } from 'commander';
 import ansis from 'ansis';
 import { createPlanner } from '../../engine/runners/factory.js';
 import type { PlanResult } from '../../engine/planners/types.js';
-import { getRunnerDisplayName } from '../../core/config/runner-config.js';
+import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
 import { ensureGitAndConfig, resolveProjectDir, loadConfigOrExit } from '../workflow.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
-import { beginSession } from '../../core/sessions/begin.js';
+import { beginSession } from '../../core/sessions/lifecycle.js';
 import { clearStaleSession } from './guards.js';
 
 type SpecOpts = { auto: boolean; project?: string };
