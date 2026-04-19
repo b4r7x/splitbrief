@@ -22,7 +22,7 @@ Testing in this repo means exercising observable behaviour — rendered output, 
 
 ## Where does this test go?
 
-Placement is mechanical: **count the top-level folders a test imports from.** See [ADR T1](./adr/T1-hybrid-test-layout.md).
+Placement is mechanical: **count the top-level folders a test imports from.**
 
 ```
 How many top-level folders does the test import from?
@@ -51,20 +51,20 @@ How many top-level folders does the test import from?
 | Shared test helpers (fakes, renderers, resetters) | `testing/helpers/*.ts` — ≥ 2 consumers, no `expect()` | n/a |
 | Static fixtures (YAML, JSON, recorded HTTP bodies, migration snapshots) | `testing/fixtures/<domain>/` | n/a |
 
-**Fixtures vs factories.** Split by kind (see [ADR T2](./adr/T2-fixtures-vs-factories.md)):
+**Fixtures vs factories.** Split by kind:
 - `testing/fixtures/<domain>/` = read-only **bytes on disk**. Consumers read via `fs.readFile`.
 - `testing/helpers/factories/<domain>.ts` = pure **TypeScript constructors** returning typed objects with overrides. No I/O.
 - **Rule of two:** data stays inline inside one test file until a second test needs it. Promotion happens on the second consumer, not the first.
 
-**Feature sub-components do not get dedicated tests.** Ink is tested at the feature seam (`screen.tsx` / `overlay.tsx` / `picker.tsx`). See [ADR T3](./adr/T3-ink-feature-seam.md). Shared primitives in `src/components/` (`FilterableList`, `MultilineInput`, `TwoColumnPicker`) are the exception — their cost amortises across consumers.
+**Feature sub-components do not get dedicated tests.** Ink is tested at the feature seam (`screen.tsx` / `overlay.tsx` / `picker.tsx`). Shared primitives in `src/components/` (`FilterableList`, `MultilineInput`, `TwoColumnPicker`) are the exception — their cost amortises across consumers.
 
-**Orchestrator internals do not get dedicated tests.** Pure decision modules in `src/engine/` do (parsers, state machine, layout math, pricing math). Control-flow modules (`approval`, `continuation`, `escalation/*`, `task-loop`, `task-step`, `queue`, `signals`, `planning/*`, `run/*`) are covered only via integration tests at the `runWorkflow()` seam. See [ADR T4](./adr/T4-engine-at-runworkflow-boundary.md).
+**Orchestrator internals do not get dedicated tests.** Pure decision modules in `src/engine/` do (parsers, state machine, layout math, pricing math). Control-flow modules (`approval`, `continuation`, `escalation/*`, `task-loop`, `task-step`, `queue`, `signals`, `planning/*`, `run/*`) are covered only via integration tests at the `runWorkflow()` seam.
 
-**Zod schemas do not get shape tests.** TS strict + Zod `.parse()` is first-class correctness — no runtime tests for schema shape. See [ADR T5](./adr/T5-static-as-trophy-tier.md). One repo-wide `.strict()` rejection test lives in `src/core/schemas/runner-fields.test.ts`; do not duplicate per schema.
+**Zod schemas do not get shape tests.** TS strict + Zod `.parse()` is first-class correctness — no runtime tests for schema shape. One repo-wide `.strict()` rejection test lives in `src/core/schemas/runner-fields.test.ts`; do not duplicate per schema.
 
 Test support files that import `vitest` (or any other dev-only dependency) MUST be named `__test-helpers__*.ts` and be excluded from the production `tsc` build via `tsconfig.json` `exclude: ["**/__test-helpers__*"]`. Place them beside the test files that consume them. This keeps `vitest` out of the production type-check graph so `npm run build` does not need dev dependencies.
 
-**Coverage thresholds** (`vitest.config.ts`): `statements: 50, branches: 40, functions: 50, lines: 55`. These are **non-regression gates, not aspirational targets** — do not add dead tests to lift coverage. Static (TS strict + Zod) is a first-class tier and carries real safety even when it does not increment coverage numbers (see [ADR T5](./adr/T5-static-as-trophy-tier.md)).
+**Coverage thresholds** (`vitest.config.ts`): `statements: 50, branches: 40, functions: 50, lines: 55`. These are **non-regression gates, not aspirational targets** — do not add dead tests to lift coverage. Static (TS strict + Zod) is a first-class tier and carries real safety even when it does not increment coverage numbers.
 
 **Zero barrels anywhere in `testing/`**, not just `src/`. No `index.ts` inside `testing/helpers/`, `testing/helpers/factories/`, `testing/fixtures/`, or `testing/integration/*`. Consumers import directly from the file they need. Same rule and rationale as [`NO-BARRELS.md`](./NO-BARRELS.md).
 
@@ -139,7 +139,7 @@ it('workflow screen shows an escalation card when escalate event arrives', async
 - Use `testing/helpers/temp-dir.ts:withTempDir()` for filesystem work. Never mock `node:fs`.
 - Use real `git` via `testing/helpers/git.ts:createTestGitRepo()`. Never stub `simple-git`.
 - **Zero new fakes.** Use `createFakePlanner` / `createFakeImplementer` from `testing/helpers/orchestrator-factories.ts`. Extend them via their `script` parameter, not by copying their shape into a new file.
-- **No `vi.mock()` on internal modules** (`./`, `../`). The sanctioned repo-wide targets are `@anthropic-ai/claude-agent-sdk` (optional peer dep), `node:os` (persistence home-dir), `node:fs` (disk-full simulation), and `ink` + `fullscreen-ink` (CLI integration tests only — see [ADR T4](./adr/T4-engine-at-runworkflow-boundary.md)).
+- **No `vi.mock()` on internal modules** (`./`, `../`). The sanctioned repo-wide targets are `@anthropic-ai/claude-agent-sdk` (optional peer dep), `node:os` (persistence home-dir), `node:fs` (disk-full simulation), and `ink` + `fullscreen-ink` (CLI integration tests only).
 - Exit codes via `isCliError`. `commander.exitOverride()` throws; `runCommand()` catches and returns the exit code.
 
 ## How to extend the fakes
@@ -243,7 +243,7 @@ Why: real stores, real Ink render, observable output + observable store state.
 - Real git binary via `createTestGitRepo` (`testing/helpers/git.ts`). Do not stub `simple-git`.
 - Real HTTP via `http.createServer` for provider tests.
 - Data factories are TypeScript functions in `testing/helpers/factories.ts` (`makeTask`, `makeConfig`, `makeSession`, `makeSummary`). On-disk artefacts live in `testing/fixtures/`; the single consumer currently reaches them via a relative path (`src/core/migration/executor.test.ts`).
-- Sanctioned `vi.mock` targets (whole repo): `@anthropic-ai/claude-agent-sdk` (optional peer dep), `node:os` (home dir for `stores/ui/persistence`), `node:fs` (disk-full only), `ink` + `fullscreen-ink` (CLI integration tests only — suppresses `waitUntilExit()` / `withFullScreen` so commander handlers run to completion without a TTY; all other exports preserved; see [ADR T4](./adr/T4-engine-at-runworkflow-boundary.md)). Anything else is a bug.
+- Sanctioned `vi.mock` targets (whole repo): `@anthropic-ai/claude-agent-sdk` (optional peer dep), `node:os` (home dir for `stores/ui/persistence`), `node:fs` (disk-full only), `ink` + `fullscreen-ink` (CLI integration tests only — suppresses `waitUntilExit()` / `withFullScreen` so commander handlers run to completion without a TTY; all other exports preserved). Anything else is a bug.
 
 ## Pre-merge PR checklist
 
@@ -268,16 +268,34 @@ Why: real stores, real Ink render, observable output + observable store state.
 - Styling-only components with no conditional logic.
 - Library internals (`Array.prototype.filter`, `fzf.find`, Zod `.strict()`).
 
+## Convention cross-reference
+
+When a testing rule appears in multiple docs, the canonical source is cited first.
+
+| Convention | Canonical | Also in |
+|---|---|---|
+| Colocated tests (`foo.test.ts` next to `foo.ts`) | this doc §Where does this test go? | `STRUCTURE.md` §Test strategy, `CLAUDE.md` §Core conventions |
+| Blast-radius rule for placement | this doc §Where does this test go? | `STRUCTURE.md` §Test strategy |
+| `testing/integration/{cli,orchestrator,ui}/` structure | this doc §How to add an integration test | `STRUCTURE.md` §Test strategy |
+| Zero `vi.mock()` on internal modules | this doc §How to add an integration test and §Test I/O | — |
+| No new fakes — extend `createFakePlanner` / `createFakeImplementer` | this doc §How to extend the fakes | — |
+| Engine tested at `runWorkflow()` boundary | this doc | `STRUCTURE.md` §Test strategy |
+| Ink tested at the feature seam | this doc | `STRUCTURE.md` §Test strategy |
+| Fakes vs fixtures split | this doc §Where does this test go? | `STRUCTURE.md` §Test strategy |
+| Static as a trophy tier (no Zod shape tests) | this doc §When NOT to write a test | — |
+| Test behavior, not implementation | this doc §Core rules, §Forbidden patterns | `PRINCIPLES.md` rule 15 |
+| Neutral test voice | this doc §Core rules | `STRUCTURE.md` §No decorative comments, `PRINCIPLES.md` rule 10 |
+| Test escape hatches (`__testReset`, `_*Internal`) | `STORES.md` §Test escape hatches, §Cross-module writes | — |
+| Testing helper rules (no barrels, promote on 2+ consumers) | this doc §Where does this test go? | — |
+| Hook test rules (trivial covered transitively, non-trivial dedicated) | `HOOKS.md` §Rules of thumb | this doc §Non-trivial hooks, `STRUCTURE.md` §Test strategy |
+| Zero `index.ts` barrels (incl. `testing/`) | `NO-BARRELS.md` | this doc §Zero barrels |
+| ESM `.js` imports for TS source | `CLAUDE.md` §Core conventions | `NO-BARRELS.md` §Why |
+| Store actions pattern (writes through actions module) | `STORES.md` §Domain Store Pattern, §Workflow actions module | — |
+
 ## References
 
 - Skill: `test-behavior-not-implementation` — Kent C. Dodds Testing Trophy + TkDodo's testing principles. The spine of these rules.
 - Skill: `react-senior-guide` — React 19 patterns, hook contracts, anti-pattern checklist.
-- [ADR T1](./adr/T1-hybrid-test-layout.md) — hybrid colocated + `testing/integration/` layout.
-- [ADR T2](./adr/T2-fixtures-vs-factories.md) — fixtures-on-disk vs TS factories split.
-- [ADR T3](./adr/T3-ink-feature-seam.md) — Ink tested at the feature seam.
-- [ADR T4](./adr/T4-engine-at-runworkflow-boundary.md) — engine tested at `runWorkflow()` boundary.
-- [ADR T5](./adr/T5-static-as-trophy-tier.md) — TS strict + Zod as a first-class test tier.
-- [`TESTING-INDEX.md`](./TESTING-INDEX.md) — one-line where-to-find-it table for every testing/restructure convention.
+- [`STRUCTURE.md`](./STRUCTURE.md) — file tree, test strategy summary, colocation rule, file-length thresholds.
 - [`PRINCIPLES.md`](./PRINCIPLES.md) — rule 15: test behavior, not implementation.
-- [`STRUCTURE.md`](./STRUCTURE.md) — colocation rule and file-length thresholds.
 - [`LAYERS.md`](./LAYERS.md) — layer boundaries that define what counts as a "boundary" test.

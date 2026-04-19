@@ -29,7 +29,7 @@ Distilled from:
 | 14 | **Prompts get their own folder** — never inlined into orchestrator or runner code. Currently `src/engine/spec/prompts/`. | [STRUCTURE.md](./STRUCTURE.md#prompts-folder) |
 | 15 | **Test behavior, not implementation** — no tests of trivial helpers, hooks in isolation, mocks being called, or TS types. Test at meaningful consumer boundaries. | [STRUCTURE.md](./STRUCTURE.md#test-strategy), [HOOKS.md](./HOOKS.md) |
 | 16 | **No backwards-compatibility shims** — during refactors, update all import sites in the same change. No re-export shims to smooth migration (that would create barrels). | [NO-BARRELS.md](./NO-BARRELS.md) |
-| 17 | **DRY at the third occurrence** — two copies of a pattern may remain local; a third triggers an extraction. Canonical example: `runWithResumeFallback` (`src/engine/session-expiry.ts`) unifies the session-resume-with-fallback pattern across three planner backends. `runPlannerCallInContinuationLoop` (`src/engine/orchestrator/planning/shared.ts`) unifies the planner-in-continuation-loop body across two planning phases (extracted early because the shape was identical). | [adr/0009](./adr/0009-session-resume-fallback-helper.md) |
+| 17 | **DRY at the third occurrence** — two copies of a pattern may remain local; a third triggers an extraction. Canonical example: `runWithResumeFallback` (`src/engine/session-expiry.ts`) unifies the session-resume-with-fallback pattern across three planner backends. `runPlannerCallInContinuationLoop` (`src/engine/orchestrator/planning/shared.ts`) unifies the planner-in-continuation-loop body across two planning phases (extracted early because the shape was identical). | this doc |
 
 ## Decision lookup — "where does X go?"
 

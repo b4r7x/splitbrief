@@ -64,7 +64,7 @@ A file that **contains real code** and happens to be named `index.ts` is NOT a b
 
 **Content determines barrel status, not the filename.** A file named `config-options.ts`, `catalog-adapter.ts`, or `picker-model-catalog.ts` whose body is mostly `export { X } from './x.js'` / `export type { Y } from '../schemas/...'` **is a barrel** and is equally forbidden. The `index.ts` name is just the most common giveaway — a disguised barrel by content inflates the module graph identically.
 
-Heuristic: if deleting every `export { … } from '…'` / `export type { … } from '…'` line leaves the file at zero (or near-zero) own code, it is a disguised barrel. Fix by deleting it and rewriting consumer imports to the real producer. Canonical cases removed in Batch 1A / 1C: `core/types/config-options.ts` re-export block, `features/tool-picker/picker-model-catalog.ts`, `features/tool-picker/catalog-adapter.ts` — see inventory below and [ADR 0006](./adr/0006-types-colocation-with-schemas.md).
+Heuristic: if deleting every `export { … } from '…'` / `export type { … } from '…'` line leaves the file at zero (or near-zero) own code, it is a disguised barrel. Fix by deleting it and rewriting consumer imports to the real producer. Canonical cases removed in Batch 1A / 1C: `core/types/config-options.ts` re-export block, `features/tool-picker/picker-model-catalog.ts`, `features/tool-picker/catalog-adapter.ts` — see inventory below.
 
 ## Exceptions
 
