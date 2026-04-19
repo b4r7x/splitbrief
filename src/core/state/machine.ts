@@ -1,5 +1,8 @@
-import type { WorkflowState, StateAction, TaskStatus, TaskId } from '../types/state-actions.js';
-import type { TokenUsage } from '../types/summary.js';
+import type { StateAction } from '../types/state-actions.js';
+import type { WorkflowState } from '../schemas/workflow.js';
+import type { TaskId } from '../schemas/task.js';
+import type { TaskStatus } from '../schemas/enums.js';
+import type { TokenUsage } from '../schemas/tokens.js';
 import { assertNever } from '../../utils/type-guards.js';
 
 export const CURRENT_STATE_VERSION = 3;

@@ -1,4 +1,5 @@
-import type { Phase, WorkflowState } from './types/state-actions.js';
+import type { Phase } from './schemas/enums.js';
+import type { WorkflowState } from './schemas/workflow.js';
 
 const IMPLEMENTER_PHASES: ReadonlySet<Phase> = new Set([
   'implementing',

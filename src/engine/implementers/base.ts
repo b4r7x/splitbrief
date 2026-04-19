@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import type { Implementer, ImplementerOptions, RetryOptions } from './types.js';
-import type { Task } from '../../core/types/state-actions.js';
+import type { Task } from '../../core/schemas/task.js';
 import type { TuiEvent } from '../../features/workflow/types.js';
 import type { ImplementerResult } from '../../core/types/summary.js';
 import type { InvokeResult } from '../runners/types.js';
@@ -11,8 +11,8 @@ import { extractCode } from '../parsers/response-extractor.js';
 import { applyCode } from './apply.js';
 import { computeDiff } from '../../utils/diff.js';
 import { SYSTEM_PREAMBLE, formatTaskPrompt, formatRetryPrompt } from '../spec/formatter.js';
-import { CommandNotFoundError, CommandTimeoutError } from '../../lib/process/errors.js';
-import { extractOutput, retryTemperature, type InvokeOpts } from './utils.js';
+import { processError } from '../../lib/process/errors.js';
+import { retryTemperature, type InvokeOpts } from './utils.js';
 import { DEFAULT_AVAILABILITY } from '../../lib/availability.js';
 import { getChangedFiles } from '../../lib/git.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
@@ -90,7 +90,7 @@ export interface ImplementerBaseConfig {
 }
 
 function defaultShouldThrow(err: unknown): boolean {
-  return err instanceof CommandNotFoundError || err instanceof CommandTimeoutError;
+  return processError.isNotFound(err) || processError.isTimeout(err);
 }
 
 export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implementer {
@@ -147,7 +147,8 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         return { success: false, output: '', error: 'Aborted' };
       }
       if (shouldThrow(err)) throw err;
-      return { success: false, output: extractOutput(err), error: formatErrorWithHint(toErrorMessage(err)) };
+      const output = typeof err === 'object' && err !== null && 'output' in err && typeof err.output === 'string' ? err.output : '';
+      return { success: false, output, error: formatErrorWithHint(toErrorMessage(err)) };
     }
 
     implBuffer?.flush();

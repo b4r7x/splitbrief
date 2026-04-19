@@ -12,29 +12,33 @@ Open-source CLI tool that orchestrates expensive AI (Claude Code / Opus) for pla
 
 ## Quick Context
 
-- `specs/002-cost-optimized-orchestrator/spec.md`  -  Full specification (4 user stories, 24 FRs)
-- `specs/002-cost-optimized-orchestrator/plan.md`  -  Architecture, state machine, dependencies
-- `specs/002-cost-optimized-orchestrator/tasks.md`  -  45 tasks across 7 phases (all complete)
-- `specs/002-cost-optimized-orchestrator/research.md`  -  12 research sections from 9 parallel agents
-- `specs/002-cost-optimized-orchestrator/data-model.md`  -  Entity definitions and state transitions
-- `specs/002-cost-optimized-orchestrator/contracts/cli-commands.md`  -  CLI interface contract
-- `specs/002-cost-optimized-orchestrator/quickstart.md`  -  End-to-end usage guide
-- `.specify/memory/constitution.md`  -  6 project principles (v1.3.1)
-- `docs/VISION.md`  -  Strategic direction, competitive analysis, design decisions
-- `docs/PRINCIPLES.md`  -  One-page index of all 16 architectural rules (screaming architecture, deep modules, folder colocation, type placement, etc.) with links to canonical docs. **Read first for orientation.**
-- `docs/STORES.md`  -  External store architecture (factory, patterns, inventory). **Read when touching anything under `src/stores/`.**
-- `docs/LAYERS.md`  -  Decision tree for `utils/` vs `lib/` vs `core/` vs `engine/` vs `features/`. **Read before adding any new file to these folders.**
+Start here to orient yourself in the codebase. Every link below exists.
+
+- `docs/VISION.md`  -  Strategic direction, competitive analysis, design decisions. **Read first for why diptych exists.**
+- `docs/PRINCIPLES.md`  -  One-page index of architectural rules (screaming architecture, deep modules, folder colocation, type placement, etc.) with links to canonical docs. **Read first for orientation.**
+- `docs/ARCHITECTURE.md`  -  How the pieces fit together — planner/implementer runner contracts, the orchestrator loop, event model, capability matrix.
+- `docs/CONCEPTS.md`  -  Shared vocabulary (planner, implementer, escalation, session, event, etc.) used across `src/` and docs.
 - `docs/STRUCTURE.md`  -  File-tree layout, feature anatomy, folder colocation rules, file length thresholds. Companion to `LAYERS.md` (what vs where).
+- `docs/LAYERS.md`  -  Decision tree for `utils/` vs `lib/` vs `core/` vs `engine/` vs `features/`. **Read before adding any new file to these folders.**
+- `docs/STORES.md`  -  External store architecture (factory, patterns, inventory). **Read when touching anything under `src/stores/`.**
 - `docs/TYPES.md`  -  Type placement rules (Zod schemas vs TS types, three-case rule, screaming types). **Read before adding or moving any type.**
 - `docs/NO-BARRELS.md`  -  Codebase-wide principle: no re-export-only `index.ts` files. **Read before creating any new `index.ts`.** Enforced — zero barrels anywhere in `src/`.
+- `docs/HOOKS.md`  -  React hook conventions (what stays a hook, what becomes a store, keyboard mounting).
+- `docs/BOOTSTRAP.md`  -  How the app starts (`initStores()`, phase responsibilities, cross-store orchestration). **Read before adding a startup step.**
+- `docs/ERRORS.md`  -  Canonical error pattern: `error()` factory + domain predicate bag + `kind` discriminator. **Read before creating a new error type.**
+- `docs/TESTING.md`  -  Test placement (colocated vs `testing/integration/`), fake factories, and the static-as-trophy-tier rule.
+- `docs/WORKFLOW.md`  -  End-user workflow: modes, approval gates, slash commands, rewind/resume.
 - `docs/FUTURE.md`  -  Deliberately deferred features (not yet built). Current roadmap for ideas that have shape but await priority.
+- `docs/API-KEYS.md`  -  How API keys are resolved and redacted.
+- `docs/adr/`  -  Architecture Decision Records (rationale + alternatives considered).
+- `.specify/memory/constitution.md`  -  6 constitutional principles (v1.3.1) — referenced from `docs/VISION.md`.
 
 ## Tech Stack
 
 - **Runtime**: Node.js 22+
 - **Language**: TypeScript 6.x, ESM only (`"type": "module"`)
 - **Dev runner**: `tsx` (handles TypeScript + JSX/TSX + ESM, no custom loaders needed)
-- **Testing**: Vitest 4.x (146 colocated test files / 1657 tests)
+- **Testing**: Vitest 4.x (colocated tests: `foo.test.ts` next to `foo.ts`)
 - **Linter/formatter**: Biome 2.x (`npm run lint`, `npm run format`)
 - **TUI**: Ink 6.8 (React 19 for CLI) + fullscreen-ink (custom multiline-input primitive under `src/components/input/`)
 - **Syntax highlighting**: Shiki 4.x (WASM-based, async)
@@ -78,7 +82,8 @@ src/
 │   │   ├── overlay.ts        # Overlay active/exclusive/stack state
 │   │   ├── feedback.ts       # Feedback/error message state
 │   │   ├── input-history.ts  # Command input history (persisted to ~/.diptych/history)
-│   │   └── input-height.ts   # Input bar rendered height (cross-tree)
+│   │   ├── input-height.ts   # Input bar rendered height (cross-tree)
+│   │   └── persistence.ts    # Disk I/O for inputHistoryStore (hydrate + debounced save)
 │   ├── workflow/             # State scoped to a running workflow (4 sub-stores + actions)
 │   │   ├── events.ts         # eventsStore + mergeEvent + MAX_EVENTS
 │   │   ├── tasks.ts          # tasksStore + updateTaskMap + updateTaskCounts
@@ -100,6 +105,7 @@ src/
 ├── core/                     # Shared domain logic (config, schemas, commands, state, layout)
 │   ├── phases.ts             # Phase role mapping + cancellable/implementer phase sets
 │   ├── config/               # YAML config loading, defaults, validation (grouped by lifecycle)
+│   │   ├── errors.ts         # configError() factory + isConfigError predicate
 │   │   ├── load/             # Disk → validated config (load, migrate, transform, validate)
 │   │   │   ├── load.ts
 │   │   │   ├── migrate.ts
@@ -117,15 +123,14 @@ src/
 │   │   ├── conversation-scroll.ts
 │   │   ├── diff-height.ts
 │   │   ├── event-sections.ts
-│   │   ├── picker-chrome.ts
 │   │   ├── renderable-conversation.ts
-│   │   ├── scroll-banner.ts
 │   │   ├── scroll-window.ts
 │   │   ├── terminal-width.ts
 │   │   ├── viewport-trimming.ts
 │   │   └── workflow-rect.ts
 │   ├── migration/
-│   │   └── legacy.ts         # Pre-v3 .diptych/current/ state migration
+│   │   ├── executor.ts       # Business logic for the migrate command (orchestrates legacy helpers + I/O)
+│   │   └── legacy.ts         # Pre-v3 .diptych/current/ state migration primitives
 │   ├── model-display.ts
 │   ├── paths.ts
 │   ├── paths-io.ts
@@ -148,18 +153,22 @@ src/
 │   │   ├── task.ts
 │   │   ├── tokens.ts
 │   │   └── workflow.ts
-│   ├── sessions/             # Session domain helpers (consolidated to lifecycle + io + log-reader + analytics)
+│   ├── sessions/             # Session domain helpers (consolidated to lifecycle + io + log-reader + analytics + guards + display + errors)
 │   │   ├── analytics.ts
+│   │   ├── display.ts        # Session display formatters (was core/sessions-display.ts)
+│   │   ├── errors.ts         # sessionError() factory + isSessionError predicate
+│   │   ├── guards.ts         # clearStaleSession and session-state predicates
 │   │   ├── io.ts
 │   │   ├── lifecycle.ts
 │   │   └── log-reader.ts
-│   ├── sessions-display.ts   # Session display formatters (was sessions/status.ts)
 │   ├── settings/             # Setting definitions and presentation
 │   │   ├── catalog.ts
 │   │   └── presentation.ts
 │   ├── slash-commands/       # Slash command catalog + dispatch + keybindings + types
 │   │   ├── catalog.ts
+│   │   ├── context.ts        # Slash command execution context assembly
 │   │   ├── dispatch.ts
+│   │   ├── fuzzy.ts          # Fuzzy match scorer for slash command filtering
 │   │   ├── keybindings.ts
 │   │   └── types.ts
 │   ├── state/                # Workflow state machine
@@ -167,33 +176,32 @@ src/
 │   │   ├── persistence.ts
 │   │   ├── selectors.ts
 │   │   └── topo-sort.ts
-│   └── types/                # Cross-cutting TS types (3 files — most types now colocated with producers)
-│       ├── config-options.ts
-│       ├── state-actions.ts
-│       └── summary.ts
+│   ├── validation/           # Validation domain heuristics
+│   │   └── test-discovery.ts # src/foo.ts → tests/foo.test.ts resolver (cached)
+│   └── types/                # Cross-cutting TS-only types. No `z.infer` (those live with their schema in core/schemas/).
+│       ├── config-options.ts # DetectedModel, WorkflowOpts, PlannerDetection, ProviderDetection, PlannerTool
+│       ├── state-actions.ts  # StateAction, TokenBudget, CodeContext, ProjectContext
+│       └── summary.ts        # ImplementerResult, ValidationResult
 ├── cli/                      # CLI-specific logic (non-React)
 │   ├── commands/             # commander subcommand handlers
-│   │   ├── guards.ts
 │   │   ├── init.ts
 │   │   ├── migrate.ts
 │   │   ├── resume.ts
 │   │   ├── spec.ts
 │   │   ├── start.ts
 │   │   └── status.ts
-│   ├── errors.ts
-│   ├── init-stores.ts        # Eager store bootstrap before React renders
-│   ├── input-history-persistence.ts  # Disk I/O + debounced save for inputHistoryStore (hydrates at startup, subscribes for writes)
+│   ├── errors.ts             # cliError() factory + isCliError predicate — see docs/ERRORS.md
+│   ├── init-stores.ts        # Eager store bootstrap before React renders (3 internal helpers) — see docs/BOOTSTRAP.md
+│   ├── options.ts            # Commander fluent builder (addWorkflowOptions)
 │   ├── render.ts             # Ink/fullscreen rendering setup
-│   └── workflow.ts           # Shared CLI workflow helpers
+│   └── setup.ts              # Bootstrap prep: resolveProjectDir, ensureGitAndConfig, setupWorkflow
 ├── engine/                   # Workflow logic (zero React/Ink imports) — zero barrels
 │   ├── agent-sdk.ts          # Shared Anthropic Agent SDK loader (optional peer dep)
-│   ├── api-shared.ts
 │   ├── change-detection.ts
 │   ├── claude-runner.ts
 │   ├── cli-tools.ts          # Shared CLI-tool detection / spawn helpers
 │   ├── config-assertions.ts
 │   ├── constants.ts
-│   ├── http.ts
 │   ├── session-expiry.ts
 │   ├── errors/               # Engine-scoped error diagnosis
 │   │   └── hints.ts          # Provider error hints (Ollama, LM Studio, etc.)
@@ -205,7 +213,6 @@ src/
 │   │   ├── cost-prediction.ts
 │   │   ├── events.ts         # Event emission primitives (state-change events live in state-ops.ts)
 │   │   ├── final-review.ts
-│   │   ├── git.ts            # Git helpers (was git-ops.ts)
 │   │   ├── native-injection.ts
 │   │   ├── planner-review.ts
 │   │   ├── queue.ts          # Queue management (absorbed queue-drain)
@@ -263,6 +270,7 @@ src/
 │   ├── runners/              # Symmetric planner/implementer factory
 │   │   ├── factory.ts
 │   │   ├── command-based.ts
+│   │   ├── errors.ts         # runnerError() factory + isRunnerError predicate
 │   │   └── types.ts          # Runner config types (was core/types/runner.ts)
 │   ├── providers/            # Provider registry, catalogs, pricing, HTTP clients
 │   │   ├── anthropic/        # Per-provider folder (adapter + stream)
@@ -284,7 +292,9 @@ src/
 │   │   ├── pricing.ts
 │   │   ├── pricing-resolver.ts
 │   │   ├── registry.ts
-│   │   ├── test-helpers.ts
+│   │   ├── constants.ts      # Provider constants (default models, timeouts)
+│   │   ├── errors.ts         # providerError() factory + isProviderError predicate
+│   │   ├── __test-helpers__.ts  # Test support (vitest import); excluded from production tsc
 │   │   ├── together.ts
 │   │   └── types.ts
 │   ├── spec/                 # Spec parsing, formatting & prompt generation
@@ -332,7 +342,9 @@ src/
 │   │   │   ├── config-line.tsx
 │   │   │   ├── cost-display.tsx
 │   │   │   ├── cost-footer.tsx
+│   │   │   ├── feedback-row.tsx   # Feedback/error row + abort hint — consumed only by workflow screen
 │   │   │   ├── header.tsx
+│   │   │   ├── input-footer.tsx   # Input bar footer (status text + token counter)
 │   │   │   ├── pipeline-bar.tsx
 │   │   │   ├── review-view.tsx
 │   │   │   ├── sidebar.tsx
@@ -350,9 +362,8 @@ src/
 │   │   │       ├── validate-card.tsx
 │   │   │       └── workflow-config-card.tsx
 │   │   └── hooks/
-│   │       ├── use-workflow.ts             # Composite facade
+│   │       ├── build-rewind-action.ts      # Pure builder: session → rewind StateAction
 │   │       ├── use-workflow-runner.ts      # Engine lifecycle, resume, rewind
-│   │       ├── use-workflow-review-input.ts # Review/question command parsing
 │   │       ├── use-workflow-keys.ts        # Workflow-only keyboard (mounted under screen==='workflow')
 │   │       ├── use-input-mode.ts           # Promise-based modal input
 │   │       ├── use-review-content.ts       # Async file read with cancellation
@@ -374,20 +385,17 @@ src/
 │   │       └── summary-task-table.tsx
 │   ├── settings/             # Settings overlay — unified field editor
 │   │   ├── overlay.tsx       # Feature entry rendered when overlay active
+│   │   ├── mode-selector.tsx # Workflow mode picker (quick/standard/full) — single consumer is app.tsx overlay switch
 │   │   ├── use-edit-buffer.ts
 │   │   └── use-settings-editor.ts
 │   ├── sessions/             # Sessions picker — resume past session
 │   │   ├── picker.tsx
-│   │   ├── picker-select.ts
-│   │   └── session-row.tsx
+│   │   └── picker-select.ts
 │   ├── tool-picker/          # Planner/implementer backend + model selection
 │   │   ├── picker.tsx
 │   │   ├── picker-view.tsx
-│   │   ├── catalog-adapter.ts
+│   │   ├── model-catalog.ts
 │   │   ├── config-transforms.ts
-│   │   ├── model-sorting.ts
-│   │   ├── picker-model-catalog.ts
-│   │   ├── picker-options.ts
 │   │   ├── tool-row.tsx
 │   │   ├── view-state.ts
 │   │   ├── use-picker-actions.ts
@@ -401,6 +409,7 @@ src/
 │   ├── markdown.tsx          # Shared markdown rendering (parseBlocks, renderMarkdownLine, HighlightedCode)
 │   ├── screen-shell.tsx      # <ScreenShell header footer /> — outer frame for screens
 │   ├── scroll-indicator.tsx  # Scroll position indicator
+│   ├── session-row.tsx       # Shared session row (used by features/sessions + features/home)
 │   ├── spinner.tsx           # Braille spinner component with elapsed time
 │   ├── theme.tsx             # Centralized color palette — zero hardcoded colors elsewhere
 │   ├── input/                # Controlled multiline input primitives
@@ -412,16 +421,13 @@ src/
 │   │   └── viewport-scroll.ts
 │   ├── input-bar/            # Composite input bar used on every screen
 │   │   ├── index.tsx         # InputBar (real component, not a barrel)
-│   │   ├── feedback-row.tsx
 │   │   ├── history-navigation.ts
-│   │   ├── input-footer.tsx
 │   │   ├── slash-suggestions.tsx
 │   │   ├── use-input-bar-history.ts
 │   │   └── use-slash-autocomplete.ts
 │   ├── overlays/             # SHARED overlays only — feature overlays live in features/
 │   │   ├── command-palette.tsx   # Ctrl+K command palette
 │   │   ├── help-overlay.tsx      # Keyboard shortcut help
-│   │   ├── mode-selector.tsx     # Workflow mode picker (quick/standard/full)
 │   │   ├── overlay-panel.tsx     # Overlay panel primitive
 │   │   └── text-input-overlay.tsx
 │   └── pickers/              # Generic picker primitives
@@ -435,14 +441,15 @@ src/
 │           ├── use-column-state.ts
 │           └── use-two-column-state.ts
 ├── hooks/                    # SHARED React hooks only (cross-feature primitives) — flat, no subdirs, no barrels
+│   ├── navigate-index.ts     # Pure index wrap/clamp helper shared by list/selector hooks
 │   ├── use-app-keys.ts       # App-wide keyboard dispatch (Ctrl+C, Ctrl+K, Escape, etc.) — always mounted
 │   ├── use-async-highlight.ts # Shiki async highlight wrapper with cancellation
 │   ├── use-filterable-list.ts # Filterable, searchable picker state (arrow-nav, filter, selection)
 │   └── use-static-selector.ts # Fixed-list keyboard selector (no filter) — peer of use-filterable-list
 ├── lib/                      # Infrastructure wrappers — see docs/LAYERS.md
 │   ├── availability.ts       # Tool availability probing (version parsing + isAvailable)
-│   ├── fs.ts                 # Security-aware filesystem helpers (ensureSecureDir, writeSecureFile)
-│   ├── git.ts                # simple-git wrapper (commit, diff, status, discard)
+│   ├── fs.ts                 # Security-aware filesystem helpers (ensureSecureDir, writeSecureFile, ensureGitignore)
+│   ├── git.ts                # simple-git wrapper (stageAll, commitChanges, diff, status, createCheckpoint, discardTaskChanges) — sole simple-git importer
 │   ├── highlight.ts          # Shiki syntax highlighting wrapper (async, WASM)
 │   ├── warn.ts               # stderr formatter
 │   ├── process/              # Subprocess subsystem
@@ -455,14 +462,18 @@ src/
 │       └── kitty-keyboard.ts # Kitty keyboard protocol detection
 └── utils/                    # Generic primitives (zero domain, zero infra) — see docs/LAYERS.md
     ├── diff.ts               # LCS diff algorithm
+    ├── error.ts              # error() factory + matches() predicate helper — see docs/ERRORS.md
     ├── format-errors.ts      # Error → string with redaction
     ├── format-time.ts        # Generic time formatters (formatDuration, formatTime, formatTimeHHMMSS, formatEta)
     ├── frontmatter.ts        # Generic YAML frontmatter parser
+    ├── parse-shell-command.ts # Quote/escape-aware shell tokenizer
     ├── redact.ts             # Secret/API-key redaction
     ├── sectioned-list.ts     # List grouping helper
+    ├── slugify.ts            # kebab-case slug generator (used by sessions + migration)
     ├── truncate.ts           # Text truncation (truncateByChars, truncateByLines, truncateWithEllipsis)
     ├── type-guards.ts        # assertNever, isRecord, typedEntries, etc.
-    └── with-timeout.ts       # Promise timeout wrapper
+    ├── validate-identifier.ts # Safe identifier validators (e.g. feature slugs)
+    └── with-timeout.ts       # withTimeout + withIdleTimeout + timeoutError bag
 ```
 
 Domain-aware formatters moved to `src/core/formatting.ts` (`formatCost`, `formatContextLength`). Provider-specific error hints moved to `src/engine/errors/hints.ts`.
@@ -482,7 +493,6 @@ npm run dev -- migrate           # Migrate pre-v3 .diptych/current/ state
 npm test                         # Run unit tests (vitest)
 npm run test:watch               # Vitest in watch mode
 npm run test:coverage            # Vitest with v8 coverage
-npm run test:integration         # Integration tests under testing/integration/
 npm run typecheck                # tsc --noEmit
 npm run lint                     # Biome check
 npm run format                   # Biome format --write
@@ -595,8 +605,7 @@ Provider catalog (`src/core/providers/catalog.ts`): static list of known provide
 
 ## Implementation Status
 
-All 45 tasks from `specs/002-cost-optimized-orchestrator/tasks.md` are complete (45 checked, 0 pending).
-Current package version: `0.1.0` (see `package.json`). Test suite: 146 colocated test files / 1657 tests.
+Core orchestrator is shipped and in daily use. Current package version: see `package.json`. For the current direction and deferred work, see `docs/VISION.md` and `docs/FUTURE.md`.
 
 ### TUI Architecture
 
@@ -649,7 +658,7 @@ CLI (initStores → store.load) → render(<App />)
 
 **What stays as React hooks (can't be stores):**
 - `useInputMode` (`src/features/workflow/hooks/use-input-mode.ts`) — Promise-based resolver pattern (workflow-scoped lifecycle)
-- `useWorkflow` (`src/features/workflow/hooks/use-workflow.ts`) — orchestrator lifecycle (useEffect + store reads + engine bridge)
+- `useWorkflowRunner` (`src/features/workflow/hooks/use-workflow-runner.ts`) — orchestrator lifecycle (useEffect + store reads + engine bridge)
 - `useAppKeys` (`src/hooks/use-app-keys.ts`) — app-wide keybindings (Ctrl+C, Ctrl+K, Escape, etc.); always mounted
 - `useWorkflowKeys` (`src/features/workflow/hooks/use-workflow-keys.ts`) — workflow-only keyboard (scroll, review chords, sidebar toggle); mounted only when `screen === 'workflow'`
 - `useFilterableList` (`src/hooks/use-filterable-list.ts`) — keyboard-driven list state
@@ -669,21 +678,27 @@ App-wide keyboard handling lives in `src/hooks/use-app-keys.ts` (mounted at the 
 - Don't put `commands` in a store — it closes over Ink's `exit()` function
 - Don't use `configStore.get()` in components — use `configStore.use(selector)` or `configStore.useConfig()` for reactive reads (`.get()` is for non-React code)
 - Use `feedbackStore.setMessage()` for informational messages (e.g., slash command feedback), `setError()` for actual errors
-- When updating config via store, create new objects (immutable): `configStore.set({ ...configStore.get(), config: { ...config, workflow: { ...config.workflow, mode } } })`
+- Don't export raw `store.set` from a store facade — expose named actions. Tests may use `__testReset(nextState?)` as the single sanctioned escape hatch (see `docs/STORES.md` anti-patterns, `docs/adr/0010-store-setter-hardening.md`).
+- When updating config via store, use a named action (e.g. `configStore.setContextLength(n)`, `configStore.save(updated)`) or `configStore.__testReset(...)` in tests.
 - Don't create re-export-only `index.ts` barrels anywhere in `src/` — zero tolerance, see `docs/NO-BARRELS.md`. All application barrels have been removed; `find src -name 'index.ts'` must stay at zero.
 - Don't reintroduce `workflowStore` as a single object — the split into `eventsStore`/`tasksStore`/`tokensStore`/`lifecycleStore` + `actions.ts` is deliberate. Read the sub-store or call an action from `workflow/actions.js`.
 
 ### Testing Policy
 
 - **Zero failing tests** — all tests must pass before any PR. No pre-existing failures accepted.
+- **Blast-radius rule for placement.** Colocated (`foo.test.ts` beside `foo.ts`) if the test touches one top-level folder; `testing/integration/<layer>/` (`cli/` | `orchestrator/` | `ui/`) if it spans multiple. See [`docs/TESTING.md`](./docs/TESTING.md) and [ADR T1](./docs/adr/T1-hybrid-test-layout.md).
+- **Zero new fakes.** Use `createFakePlanner` / `createFakeImplementer` from `testing/helpers/orchestrator-factories.ts` for orchestrator integration tests. Extend via the fake's `script` parameter; do not add parallel fake implementations. See [ADR T4](./docs/adr/T4-engine-at-runworkflow-boundary.md).
+- **Zod schemas do not get runtime shape tests.** TS strict + `schema.parse()` is the test. One repo-wide `.strict()` rejection test lives in `src/core/schemas/runner-fields.test.ts`. See [ADR T5](./docs/adr/T5-static-as-trophy-tier.md).
+- **Ink tested at the feature seam.** `screen.tsx` / `overlay.tsx` / `picker.tsx` get tests; sub-components under `features/<f>/components/` do not. Shared primitives in `src/components/` are the exception. See [ADR T3](./docs/adr/T3-ink-feature-seam.md).
+- **CI runs `npm run typecheck && npm run lint && npm test`** in that order via the `test-ci` script. Static fails fast; runtime tests never run against a broken type graph.
 - **Agent implementer tests** spawn real subprocesses. The `command not found` test uses a login shell fallback (`-lc`) which can be slow on machines with heavy shell configs — it has a 30s timeout for this reason.
 
 ### Known Limitations
 
 - TypeScript/JavaScript projects only (multi-language future)
 
-See `specs/002-cost-optimized-orchestrator/research.md` for all architectural decisions and rationale.
+See `docs/ARCHITECTURE.md` for system architecture and `docs/adr/` for individual decision records with alternatives considered.
 
 ## Active Technologies
-- TypeScript 6.x, ESM only (`"type": "module"`), Node.js 22+ + `zod` 3.x (schema validation), `yaml` (YAML parsing), `vitest` 4.x (testing), `ink` 6.x (TUI / React 19), `commander` (CLI), `@anthropic-ai/claude-agent-sdk` (optional peer dep — isolated in `src/engine/agent-sdk.ts:loadSdk`)
+- TypeScript 6.x, ESM only (`"type": "module"`), Node.js 22+ + `zod` 4.x (v4.3.6, schema validation), `yaml` (YAML parsing), `vitest` 4.x (testing), `ink` 6.x (TUI / React 19), `commander` (CLI), `@anthropic-ai/claude-agent-sdk` (optional peer dep — isolated in `src/engine/agent-sdk.ts:loadSdk`)
 - `.diptych/config.yaml` (user config, YAML, version: 2), `.diptych/sessions/<id>/state.json` (workflow state, display strings only)

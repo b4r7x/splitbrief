@@ -1,11 +1,13 @@
-import type { Config } from '../../core/types/config-options.js';
-import type { Phase, ProjectContext } from '../../core/types/state-actions.js';
+import type { Config } from '../../core/schemas/config.js';
+import type { Phase } from '../../core/schemas/enums.js';
+import type { ProjectContext } from '../../core/types/state-actions.js';
 import type { Planner, PriorMessage } from '../planners/types.js';
 import type { Implementer } from '../implementers/types.js';
 import type { SpecMetadata } from '../../core/paths-io.js';
 import type { TuiEvent } from '../../features/workflow/types.js';
-import type { Summary } from '../../core/types/summary.js';
+import type { Summary } from '../../core/schemas/summary.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
+import type { Validator } from './validation.js';
 
 export interface OrchestratorCallbacks {
   onEvent: (event: TuiEvent) => void;
@@ -40,6 +42,7 @@ export interface WorkflowContext {
   metadata: SpecMetadata;
   resumeHolder?: ResumeContextHolder | undefined;
   sinks: WorkflowSinks;
+  validator: Validator;
 }
 
 export type PlannerCallbacksContext = Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'config' | 'callbacks' | 'signal' | 'metadata' | 'resumeHolder' | 'sinks'>;

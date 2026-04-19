@@ -4,8 +4,8 @@ import { isProviderLocal } from "../../core/providers/catalog.js";
 import { formatModelName } from "../../core/model-display.js";
 import { formatContextLength } from "../../core/formatting.js";
 import { truncateWithEllipsis } from "../../utils/truncate.js";
-import type { PickerOption, ModelOption } from "./picker-model-catalog.js";
-import { isCustomModel } from "./picker-model-catalog.js";
+import type { PickerOption, ModelOption } from "./model-catalog.js";
+import { isCustomModel } from "./model-catalog.js";
 
 const CHECKMARK_WIDTH = 2;
 

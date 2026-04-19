@@ -6,7 +6,7 @@ import {
   getEscalatedTaskIds,
   getFailedTaskIds,
 } from '../../core/state/selectors.js';
-import { resolveProjectDir } from '../workflow.js';
+import { resolveProjectDir } from '../setup.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { listSessions } from '../../core/sessions/io.js';
 import { aggregateSessionCosts } from '../../core/sessions/analytics.js';

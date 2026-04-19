@@ -6,6 +6,7 @@ import { SessionSchema } from '../schemas/session.js';
 import { DIPTYCH_DIR, SESSIONS_DIR, sessionDir, sessionsRoot, getDiptychPath } from '../paths.js';
 import { warnError, warnStderr } from '../../lib/warn.js';
 import { isENOENT } from '../../lib/process/errors.js';
+import { sessionError } from './errors.js';
 
 export function getSessionDir(scope: 'project' | 'global', projectDir: string): string {
   if (scope === 'global') {
@@ -35,7 +36,7 @@ function readSummaryFile(filePath: string): Session | null {
 export function saveSummary(projectDir: string, id: string, session: Session): void {
   const result = SessionSchema.safeParse(session);
   if (!result.success) {
-    throw new Error(`Invalid session data: ${result.error.message}`);
+    throw sessionError.invalidData(id, result.error.message);
   }
   const dir = sessionDir(projectDir, id);
   mkdirSync(dir, { recursive: true, mode: 0o700 });

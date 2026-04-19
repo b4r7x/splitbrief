@@ -1,4 +1,4 @@
-import type { Config } from '../../types/config-options.js';
+import type { Config } from '../../schemas/config.js';
 import type { PlannerTool } from '../../types/config-options.js';
 import { resolveAutoModel } from '../../providers/model-selection.js';
 import { isPlannerToolId } from '../../schemas/enums.js';

@@ -1,19 +1,18 @@
-import type { Planner } from '../../planners/types.js';
-import { emit, createTextHandler, emitPlannerStatus } from '../events.js';
+import type { PlanResult } from '../../planners/types.js';
+import { emit, emitPlannerStatus } from '../events.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
-import { createSessionExpiredHandler } from '../resume-context.js';
-import { withContinuationLoop } from '../continuation.js';
 import {
   drainAndFormat,
   handlePlanningFailure,
   persistPhases,
+  runPlannerCallInContinuationLoop,
   type PlanningPhaseOptions,
   type PlanningPhaseResult,
 } from './shared.js';
 
 export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx, planner } = opts;
-  const { projectDir, sessionId, config, callbacks, metadata, resumeHolder, sinks } = wctx;
+  const { projectDir, sessionId, callbacks, metadata, resumeHolder } = wctx;
   let { state } = opts;
   let feature = opts.feature;
 
@@ -23,31 +22,18 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
     feature = prefix + feature;
   }
 
-  const textHandler = createTextHandler(callbacks);
-  type PlanFnResult = Awaited<ReturnType<Planner['plan']>>;
-  let planResult: PlanFnResult;
-
+  let planResult: PlanResult;
   try {
-    const loop = await withContinuationLoop<PlanFnResult>({
-      ctx: { projectDir, sessionId, callbacks, signal: wctx.signal, sinks },
+    const run = await runPlannerCallInContinuationLoop({
+      wctx,
       state,
-      onStateChange: (s) => { state = s; },
-      body: async ({ continuationPrompt, recordOutput }) => {
-        const quickPlanFn = planner.quickPlan ?? planner.plan;
-        const prompt = continuationPrompt ?? feature;
-        const result = await quickPlanFn.call(planner, prompt, projectDir, {
-          onOutput: (text) => { recordOutput(text); textHandler(text); },
-          onSessionId: (id) => { state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PLANNER_SESSION_ID', sessionId: id }); },
-          onSessionExpired: createSessionExpiredHandler({ projectDir, sessionId, callbacks, config, resumeHolder }),
-          sessionId,
-          persistTranscript: config.workflow.persistTranscript,
-          ...(resumeHolder && resumeHolder.messages.length > 0 ? { priorMessages: resumeHolder.messages } : {}),
-        });
-        return { value: result };
-      },
+      planner,
+      feature,
+      mode: 'quick',
+      ...(resumeHolder && resumeHolder.messages.length > 0 ? { priorMessages: resumeHolder.messages } : {}),
     });
-    state = loop.state;
-    planResult = loop.value;
+    state = run.state;
+    planResult = run.result;
   } catch (err) {
     return handlePlanningFailure(err, projectDir, sessionId, state, callbacks);
   }

@@ -1,60 +1,115 @@
-import { describe, it, expect } from 'vitest';
-import { parseReviewCommand } from './review-parser.js';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { addEvent, resetWorkflow } from '../../stores/workflow/actions.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
+import { setQueueHandler, clearAllHandlers } from './handlers.js';
+import { createReviewInputHandler } from './review-parser.js';
+import type { UseInputModeResult } from './hooks/use-input-mode.js';
+import type { Phase } from '../../core/schemas/enums.js';
 
-describe('parseReviewCommand', () => {
-  it.each(['approve', 'yes', 'y', 'ok', 'lgtm', 'continue'])
-    ('recognizes approve alias: %s', (input) => {
-      expect(parseReviewCommand(input)).toEqual({ action: 'approve' });
-    });
+function makeInputMode(mode: 'normal' | 'review' | 'question', resolve = vi.fn()): UseInputModeResult {
+  if (mode === 'review') return { mode, resolve } as unknown as UseInputModeResult;
+  if (mode === 'question') return { mode, resolve } as unknown as UseInputModeResult;
+  return { mode: 'normal' } as unknown as UseInputModeResult;
+}
 
-  it.each(['quit', 'reject', 'no', 'n'])
-    ('recognizes quit alias: %s', (input) => {
-      expect(parseReviewCommand(input)).toEqual({ action: 'quit' });
-    });
+function setPhase(phase: Phase) {
+  addEvent({ type: 'planner-status', ts: Date.now(), phase, status: 'running' });
+}
 
-  it('recognizes edit', () => {
-    expect(parseReviewCommand('edit')).toEqual({ action: 'edit' });
+beforeEach(() => {
+  resetWorkflow();
+  feedbackStore.reset();
+  clearAllHandlers();
+  vi.clearAllMocks();
+});
+
+describe('createReviewInputHandler – implementer-phase guard (Bug #5)', () => {
+  it('sets error feedback when submitting during implementing phase', async () => {
+    setPhase('implementing');
+    const enqueue = vi.fn();
+    setQueueHandler(enqueue);
+
+    const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
+    await handleInput('some text');
+
+    const { message, isError } = feedbackStore.get();
+    expect(isError).toBe(true);
+    expect(message).toContain('Input disabled during task implementation');
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
-  it('parses comment with text', () => {
-    expect(parseReviewCommand('comment fix the typo')).toEqual({
-      action: 'approve',
-      comment: 'fix the typo',
-    });
+  it('sets error feedback when submitting during validating-task phase', async () => {
+    setPhase('validating-task');
+    const enqueue = vi.fn();
+    setQueueHandler(enqueue);
+
+    const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
+    await handleInput('some text');
+
+    const { isError } = feedbackStore.get();
+    expect(isError).toBe(true);
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
-  it('returns null for unknown input', () => {
-    expect(parseReviewCommand('foobar')).toBeNull();
+  it('sets error feedback when submitting during escalating phase', async () => {
+    setPhase('escalating');
+    const enqueue = vi.fn();
+    setQueueHandler(enqueue);
+
+    const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
+    await handleInput('some text');
+
+    expect(feedbackStore.get().isError).toBe(true);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe('createReviewInputHandler – enqueue during live planner phase (Bug #4)', () => {
+  it('queues user input while the planner is researching', async () => {
+    setPhase('researching');
+    const enqueue = vi.fn();
+    setQueueHandler(enqueue);
+
+    const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
+    await handleInput('add error handling');
+
+    expect(enqueue).toHaveBeenCalledWith('add error handling', 'researching');
   });
 
-  it('is case insensitive', () => {
-    expect(parseReviewCommand('APPROVE')).toEqual({ action: 'approve' });
-    expect(parseReviewCommand('Quit')).toEqual({ action: 'quit' });
-    expect(parseReviewCommand('EDIT')).toEqual({ action: 'edit' });
+  it('queues user input while the planner is specifying', async () => {
+    setPhase('specifying');
+    const enqueue = vi.fn();
+    setQueueHandler(enqueue);
+
+    const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
+    await handleInput('make it simpler');
+
+    expect(enqueue).toHaveBeenCalledWith('make it simpler', 'specifying');
   });
 
-  it('trims whitespace', () => {
-    expect(parseReviewCommand('  approve  ')).toEqual({ action: 'approve' });
-  });
+  it('sets error when no queue handler is set', async () => {
+    setPhase('researching');
+    // no setQueueHandler — returns false
 
-  it('preserves original case in comment text', () => {
-    expect(parseReviewCommand('comment Please Fix This')).toEqual({
-      action: 'approve',
-      comment: 'Please Fix This',
-    });
-  });
+    const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
+    await handleInput('no handler');
 
-  it('handles leading whitespace in comment command', () => {
-    expect(parseReviewCommand('  comment Keep original')).toEqual({
-      action: 'approve',
-      comment: 'Keep original',
-    });
+    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().message).toContain('no active workflow');
   });
+});
 
-  it('handles leading whitespace with uppercase COMMENT', () => {
-    expect(parseReviewCommand('  COMMENT Preserve Case')).toEqual({
-      action: 'approve',
-      comment: 'Preserve Case',
-    });
+describe('createReviewInputHandler – idle / other phases', () => {
+  it('does nothing when phase is idle and mode is normal', async () => {
+    // phase stays as 'idle' (initial state)
+    const enqueue = vi.fn();
+    setQueueHandler(enqueue);
+
+    const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
+    await handleInput('ignored');
+
+    expect(enqueue).not.toHaveBeenCalled();
+    // feedbackStore should not be set with error
+    expect(feedbackStore.get().isError).toBe(false);
   });
 });

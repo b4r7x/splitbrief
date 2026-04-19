@@ -39,8 +39,3 @@ export const ConfigSchema = z.object({
 export type Config = z.infer<typeof ConfigSchema>;
 
 export const DEFAULT_WORKFLOW_MODE = 'standard' as const;
-
-export type { PlannerConfig } from './planner-config.js';
-export type { ImplementerConfig } from './implementer-config.js';
-
-export { PlannerConfigSchema, ImplementerConfigSchema };

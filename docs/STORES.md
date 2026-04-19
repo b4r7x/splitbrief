@@ -46,8 +46,9 @@ src/stores/
 │   ├── terminal-size.ts      # Terminal dimensions + responsive layout
 │   ├── overlay.ts            # Active overlay panel + stack
 │   ├── feedback.ts           # Info/error feedback messages
-│   ├── input-history.ts      # Command history — pure in-memory state; persistence lives in cli/input-history-persistence.ts
-│   └── input-height.ts       # Input bar rendered height
+│   ├── input-history.ts      # Command history — pure in-memory state; persistence lives in stores/ui/persistence.ts
+│   ├── input-height.ts       # Input bar rendered height
+│   └── persistence.ts        # Disk I/O for inputHistoryStore (hydrate + debounced save)
 ├── workflow/                 # State that only exists during a workflow run
 │   ├── workflow.ts           # Event log, phase, task counters
 │   ├── reducers.ts           # Pure reducer functions for workflow updates
@@ -168,7 +169,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `overlayStore` | `ui/overlay.ts` | `{ active, exclusive, focus?, stack[] }` | `open()`, `close()`, `setExclusive()` |
 | `feedbackStore` | `ui/feedback.ts` | `{ message: string \| null, isError: boolean }` | `setMessage()`, `setError()`, `reset()` |
 | `terminalSizeStore` | `ui/terminal-size.ts` | `{ cols, rows, isSmall }` | `set()`, `subscribeToResize()` |
-| `inputHistoryStore` | `ui/input-history.ts` | `{ entries: string[] }` | `push()`, `hydrate()` — disk I/O lives in `cli/input-history-persistence.ts` wired from `init-stores.ts` |
+| `inputHistoryStore` | `ui/input-history.ts` | `{ entries: string[] }` | `push()`, `hydrate()` — disk I/O lives in `stores/ui/persistence.ts` wired from `init-stores.ts` |
 | `inputHeightStore` | `ui/input-height.ts` | `{ rows: number }` | `setRows()` |
 | `eventsStore` | `workflow/events.ts` | `{ events: TuiEvent[] }` | internal writes via `actions.addEvent` |
 | `tasksStore` | `workflow/tasks.ts` | `{ currentTask, totalTasks, taskCompletionTimes, taskMap, tasks }` | internal writes via `actions.addEvent` |
@@ -192,7 +193,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 |---|---|
 | `addEvent(event: TuiEvent)` | Single ingress for engine events. Reads `lifecycleStore.cancelled` as a gate; short-circuits for `cost-update`; otherwise fans out (events → tasks → tokens → lifecycle). Strictly synchronous. |
 | `markCancelled(): boolean` | Writes terminal `workflow-cancelled` event to `eventsStore`, sets `lifecycleStore.cancelled`. Idempotent. |
-| `resetWorkflow(resume?)` | Calls `abortStore.clear()` first, then resets all 4 sub-stores; applies resume state if provided. |
+| `resetWorkflow(resume?)` | Calls `abortStore.clear()` first, then resets all 4 sub-stores **and invalidates the memo caches** (`cachedEvents`, `cachedSections`) so subscribers observe a clean slate; applies resume state if provided. Cache invalidation is symmetric with sub-store reset — missing it leaks pre-reset sections into the first post-reset `useSections()` call. See [ADR 0010](./adr/0010-store-setter-hardening.md). |
 | `getSections()` / `useSections()` | Memoized derivation of conversation sections from `eventsStore.events`. Cache lives file-local. |
 | `WorkflowViewState` | Type alias `EventsState & TasksState & TokensState & LifecycleState` — exported for any consumer that needs the flattened shape. |
 
@@ -219,9 +220,28 @@ Store selectors make them unnecessary. Components subscribe to specific slices a
 | Call `store.set()` during React render | Causes infinite render loops |
 | Add `loaded: boolean` flags to stores | Init belongs in CLI entry point, not hooks |
 | Create React Context for shared state | Use stores instead |
-| Export raw `store.set()` | Breaks encapsulation — use named actions |
+| Export raw `store.set()` from a facade | Breaks encapsulation — use named actions. Tests MAY use `__testReset(nextState?)` where no action fits; the `__` prefix signals internal/test-only and is the single sanctioned bypass. |
 | Use `configStore.get()` in components | Use `configStore.use(selector)` for reactive reads |
 | Add `useMemo` / `useCallback` / `React.memo` | Store selectors make them unnecessary |
+
+### Cross-module writes within a store group
+
+Workflow sub-stores (`events`, `tasks`, `tokens`, `lifecycle`) are written exclusively by `workflow/actions.ts`. Each sub-store exports a package-private mutator (`_eventsInternal`, `_tasksInternal`, etc.) that only `actions.ts` imports. Consumers (UI, engine, tests) must go through `addEvent`, `markCancelled`, or `resetWorkflow`. The raw `set` is not part of the facade — tests bypass actions via `__testReset`.
+
+### Test escape hatches
+
+A small number of stores ship two test-only exports so tests can arrange specific starting states that no domain action produces. See ADR [`0010-store-setter-hardening.md`](./adr/0010-store-setter-hardening.md) for the full rationale.
+
+| Symbol | Shape | Who may import |
+|---|---|---|
+| `__testReset(next?)` on a store facade | Replaces current state with `{ ...initial, ...next }` | `*.test.ts` / `*.test.tsx` files only |
+| `_<name>Internal = { set }` (e.g. `_lifecycleInternal`, `_eventsInternal`, `_tasksInternal`, `_tokensInternal`) | Exposes the raw store setter | `src/stores/workflow/actions.ts` for the production write path; tests that need to reach a state the public actions cannot produce (e.g. `src/hooks/use-app-keys.test.tsx` forcing a mid-workflow phase) |
+
+**Rule.** Production code outside `workflow/actions.ts` MUST NOT import either symbol. Reviewers reject PRs that add new call sites in `src/` outside that one module. Tests are the only other sanctioned caller.
+
+**Why they exist.** `lifecycleStore` (and the other workflow sub-stores) expose no public setter — `addEvent` is the single ingress, and it gates on `cancelled` and fan-out order. A test that needs to assert behaviour while the store is already at `phase: 'implementing'` cannot replay a full event stream to get there, so `__testReset` arranges the state directly. Similarly, `_lifecycleInternal.set` lets a test (or the dispatcher) write one slice without tripping the fan-out.
+
+**Rejected alternative.** Adding a full `lifecycleStore.setPhase(...)` / generic `set()` action to the public facade. Rejected — it widens the public surface to solve a test-only problem, and makes it trivial for production code to bypass the dispatcher's invariants. The `__` / `_Internal` prefix is the signal that the symbol is off-limits outside tests and the dispatcher.
 
 ## Engine Write Pattern
 

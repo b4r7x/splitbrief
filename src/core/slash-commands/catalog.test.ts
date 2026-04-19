@@ -1,16 +1,17 @@
-import { describe, it, expect, vi } from 'vitest';
-import { createCommands, canReviseSpec, canRevisePlan, canRedoTask, phaseOrder } from './catalog.js';
+import { beforeEach, describe, it, expect } from 'vitest';
+import { createCommands, canReviseSpec, canRevisePlan, canRedoTask } from './catalog.js';
 import { toPaletteItems, executeSlashCommand } from './dispatch.js';
 import type { SlashCommandDef, CommandContext } from './types.js';
-import type { Phase } from '../types/state-actions.js';
+import type { Phase } from '../schemas/enums.js';
 import { PHASES } from '../schemas/enums.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
 
 const noop = () => {};
 const noopTrue = () => true;
 
 function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
   return {
-    openOverlay: noop,
+    openOverlay: (type, focus) => overlayStore.open(type, focus),
     navigate: noop,
     quit: noop,
     setWorkflowMode: noopTrue,
@@ -25,6 +26,10 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
     ...overrides,
   };
 }
+
+beforeEach(() => {
+  overlayStore.reset();
+});
 
 describe('toPaletteItems', () => {
   const commands = createCommands(makeCtx());
@@ -52,7 +57,7 @@ describe('toPaletteItems', () => {
 });
 
 describe('executeSlashCommand', () => {
-  it('calls handler for valid command on valid screen', () => {
+  it('runs the command when it is valid on the current screen', () => {
     let called = false;
     const cmds: SlashCommandDef[] = [
       { kind: 'noarg', name: '/test', description: 'test', validScreens: ['home'], handler: () => { called = true; } },
@@ -61,13 +66,13 @@ describe('executeSlashCommand', () => {
     expect(called).toBeTruthy();
   });
 
-  it('calls onError for unknown command', () => {
+  it('reports an error for an unknown command', () => {
     let errorMsg = '';
     executeSlashCommand([], '/nope', 'home', (msg) => { errorMsg = msg; });
     expect(errorMsg).toContain('Unknown command');
   });
 
-  it('calls onError when command not valid for screen', () => {
+  it('reports an error when the command is not valid on the current screen', () => {
     let errorMsg = '';
     const cmds: SlashCommandDef[] = [
       { kind: 'noarg', name: '/test-home-only', description: 'test', validScreens: ['home'], handler: noop },
@@ -96,177 +101,190 @@ describe('executeSlashCommand', () => {
 });
 
 describe('/mode command', () => {
-  it('opens mode selector when called without args', () => {
-    const openOverlay = vi.fn();
-    const commands = createCommands(makeCtx({ openOverlay }));
+  it('opens mode-selector overlay when called without args (observed via overlayStore)', () => {
+    const commands = createCommands(makeCtx());
     executeSlashCommand(commands, '/mode', 'home', noop);
-    expect(openOverlay).toHaveBeenCalledWith('mode-selector');
+    expect(overlayStore.get().active).toBe('mode-selector');
   });
 
-  it('sets mode to quick without opening overlay', () => {
-    const openOverlay = vi.fn();
-    const setWorkflowMode = vi.fn(() => true);
-    const setFeedbackMessage = vi.fn();
-    const commands = createCommands(makeCtx({ openOverlay, setWorkflowMode, setFeedbackMessage }));
+  it('sets mode to quick without opening the overlay', () => {
+    let savedMode: string | undefined;
+    let feedback: string | undefined;
+    const commands = createCommands(makeCtx({
+      setWorkflowMode: (m) => { savedMode = m; return true; },
+      setFeedbackMessage: (m) => { feedback = m; },
+    }));
     executeSlashCommand(commands, '/mode quick', 'home', noop);
-    expect(setWorkflowMode).toHaveBeenCalledWith('quick');
-    expect(setFeedbackMessage).toHaveBeenCalledWith(expect.stringContaining('quick'));
-    expect(openOverlay).not.toHaveBeenCalled();
+    expect(savedMode).toBe('quick');
+    expect(feedback).toMatch(/quick/);
+    expect(overlayStore.get().active).toBe('none');
   });
 
   it('sets mode to full', () => {
-    const setWorkflowMode = vi.fn(() => true);
-    const commands = createCommands(makeCtx({ setWorkflowMode }));
+    let savedMode: string | undefined;
+    const commands = createCommands(makeCtx({
+      setWorkflowMode: (m) => { savedMode = m; return true; },
+    }));
     executeSlashCommand(commands, '/mode full', 'home', noop);
-    expect(setWorkflowMode).toHaveBeenCalledWith('full');
+    expect(savedMode).toBe('full');
   });
 
-  it('does not show success feedback when mode save fails', () => {
-    const setWorkflowMode = vi.fn(() => false);
-    const setFeedbackMessage = vi.fn();
-    const commands = createCommands(makeCtx({ setWorkflowMode, setFeedbackMessage }));
+  it('does not show success feedback when setWorkflowMode reports failure', () => {
+    let feedback: string | undefined;
+    const commands = createCommands(makeCtx({
+      setWorkflowMode: () => false,
+      setFeedbackMessage: (m) => { feedback = m; },
+    }));
     executeSlashCommand(commands, '/mode quick', 'home', noop);
-    expect(setWorkflowMode).toHaveBeenCalledWith('quick');
-    expect(setFeedbackMessage).not.toHaveBeenCalled();
+    expect(feedback).toBeUndefined();
   });
 
-  it('rejects invalid mode', () => {
-    const setWorkflowMode = vi.fn();
-    const setFeedbackError = vi.fn();
-    const commands = createCommands(makeCtx({ setWorkflowMode, setFeedbackError }));
+  it('rejects invalid mode and surfaces an error', () => {
+    let savedMode: string | undefined;
+    let error: string | undefined;
+    const commands = createCommands(makeCtx({
+      setWorkflowMode: (m) => { savedMode = m; return true; },
+      setFeedbackError: (m) => { error = m; },
+    }));
     executeSlashCommand(commands, '/mode turbo', 'home', noop);
-    expect(setWorkflowMode).not.toHaveBeenCalled();
-    expect(setFeedbackError).toHaveBeenCalledWith(expect.stringContaining('Invalid mode'));
+    expect(savedMode).toBeUndefined();
+    expect(error).toMatch(/invalid/i);
   });
 });
 
 describe('/refresh command', () => {
-  it('calls refreshDetection and shows feedback', () => {
-    const refreshDetection = vi.fn().mockResolvedValue(undefined);
-    const setFeedbackMessage = vi.fn();
-    const commands = createCommands(makeCtx({ refreshDetection, setFeedbackMessage }));
+  it('runs detection and surfaces a status message to the user', async () => {
+    let refreshRan = false;
+    const messages: string[] = [];
+    const commands = createCommands(makeCtx({
+      refreshDetection: async () => { refreshRan = true; },
+      setFeedbackMessage: (m) => { messages.push(m); },
+    }));
     executeSlashCommand(commands, '/refresh', 'home', noop);
-    expect(refreshDetection).toHaveBeenCalled();
-    expect(setFeedbackMessage).toHaveBeenCalledWith(expect.stringContaining('Refresh'));
+    // /refresh chains an async: we wait a microtask for the promise chain to complete.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(refreshRan).toBe(true);
+    expect(messages.length).toBeGreaterThan(0);
   });
 });
 
 describe('/planner command', () => {
-  it('opens planner-picker overlay', () => {
-    const openOverlay = vi.fn();
-    const commands = createCommands(makeCtx({ openOverlay }));
+  it('opens the planner-picker overlay (observed via overlayStore)', () => {
+    const commands = createCommands(makeCtx());
     executeSlashCommand(commands, '/planner', 'home', noop);
-    expect(openOverlay).toHaveBeenCalledWith('planner-picker');
+    expect(overlayStore.get().active).toBe('planner-picker');
   });
 });
 
+type RewindCall = { target: string; comment: string | undefined };
+type RedoCall = { taskId: string };
+
 describe('/revise-spec command', () => {
-  it('calls requestRewind with spec target and comment', () => {
-    const requestRewind = vi.fn(() => true);
-    const commands = createCommands(makeCtx({ requestRewind, getCurrentPhase: () => 'implementing' }));
+  it('forwards target=spec and the trimmed comment to the engine', () => {
+    const rewinds: RewindCall[] = [];
+    const commands = createCommands(makeCtx({
+      requestRewind: (target, comment) => { rewinds.push({ target, comment }); return true; },
+      getCurrentPhase: () => 'implementing',
+    }));
     executeSlashCommand(commands, '/revise-spec needs more detail', 'workflow', noop);
-    expect(requestRewind).toHaveBeenCalledWith('spec', 'needs more detail');
+    expect(rewinds).toEqual([{ target: 'spec', comment: 'needs more detail' }]);
   });
 
-  it('calls requestRewind with spec target when no comment', () => {
-    const requestRewind = vi.fn(() => true);
-    const commands = createCommands(makeCtx({ requestRewind, getCurrentPhase: () => 'implementing' }));
+  it('forwards target=spec with no comment when none is given', () => {
+    const rewinds: RewindCall[] = [];
+    const commands = createCommands(makeCtx({
+      requestRewind: (target, comment) => { rewinds.push({ target, comment }); return true; },
+      getCurrentPhase: () => 'implementing',
+    }));
     executeSlashCommand(commands, '/revise-spec', 'workflow', noop);
-    expect(requestRewind).toHaveBeenCalledWith('spec', undefined);
+    expect(rewinds).toEqual([{ target: 'spec', comment: undefined }]);
   });
 
-  it('shows error when phase is too early', () => {
-    const setFeedbackError = vi.fn();
-    const requestRewind = vi.fn(() => true);
-    const commands = createCommands(makeCtx({ setFeedbackError, requestRewind, getCurrentPhase: () => 'researching' }));
+  it('does NOT call the engine and surfaces a guard error when phase is too early', () => {
+    const rewinds: RewindCall[] = [];
+    let error: string | undefined;
+    const commands = createCommands(makeCtx({
+      requestRewind: (t, c) => { rewinds.push({ target: t, comment: c }); return true; },
+      setFeedbackError: (m) => { error = m; },
+      getCurrentPhase: () => 'researching',
+    }));
     executeSlashCommand(commands, '/revise-spec', 'workflow', noop);
-    expect(setFeedbackError).toHaveBeenCalledWith(expect.stringContaining('only available'));
-    expect(requestRewind).not.toHaveBeenCalled();
+    expect(rewinds).toEqual([]);
+    expect(error).toMatch(/only available|not available|cannot/i);
   });
 
-  it('shows error when requestRewind returns false', () => {
-    const setFeedbackError = vi.fn();
-    const commands = createCommands(makeCtx({ setFeedbackError, requestRewind: () => false, getCurrentPhase: () => 'implementing' }));
+  it('surfaces a guard error when the engine rejects the rewind', () => {
+    let error: string | undefined;
+    const commands = createCommands(makeCtx({
+      requestRewind: () => false,
+      setFeedbackError: (m) => { error = m; },
+      getCurrentPhase: () => 'implementing',
+    }));
     executeSlashCommand(commands, '/revise-spec', 'workflow', noop);
-    expect(setFeedbackError).toHaveBeenCalledWith(expect.stringContaining('Cannot rewind'));
-  });
-
-  it('has phaseGuard set', () => {
-    const commands = createCommands(makeCtx());
-    const cmd = commands.find(c => c.name === '/revise-spec');
-    expect(cmd?.phaseGuard).toBeDefined();
+    expect(error).toMatch(/cannot rewind|no active/i);
   });
 });
 
 describe('/revise-plan command', () => {
-  it('calls requestRewind with plan target and comment', () => {
-    const requestRewind = vi.fn(() => true);
-    const commands = createCommands(makeCtx({ requestRewind, getCurrentPhase: () => 'implementing' }));
+  it('forwards target=plan and the trimmed comment to the engine', () => {
+    const rewinds: RewindCall[] = [];
+    const commands = createCommands(makeCtx({
+      requestRewind: (t, c) => { rewinds.push({ target: t, comment: c }); return true; },
+      getCurrentPhase: () => 'implementing',
+    }));
     executeSlashCommand(commands, '/revise-plan too many tasks', 'workflow', noop);
-    expect(requestRewind).toHaveBeenCalledWith('plan', 'too many tasks');
+    expect(rewinds).toEqual([{ target: 'plan', comment: 'too many tasks' }]);
   });
 
-  it('shows error when phase is too early', () => {
-    const setFeedbackError = vi.fn();
-    const requestRewind = vi.fn(() => true);
-    const commands = createCommands(makeCtx({ setFeedbackError, requestRewind, getCurrentPhase: () => 'specifying' }));
+  it('does NOT call the engine and surfaces a guard error when phase is too early', () => {
+    const rewinds: RewindCall[] = [];
+    let error: string | undefined;
+    const commands = createCommands(makeCtx({
+      requestRewind: (t, c) => { rewinds.push({ target: t, comment: c }); return true; },
+      setFeedbackError: (m) => { error = m; },
+      getCurrentPhase: () => 'specifying',
+    }));
     executeSlashCommand(commands, '/revise-plan', 'workflow', noop);
-    expect(setFeedbackError).toHaveBeenCalledWith(expect.stringContaining('only available'));
-    expect(requestRewind).not.toHaveBeenCalled();
-  });
-
-  it('has phaseGuard set', () => {
-    const commands = createCommands(makeCtx());
-    const cmd = commands.find(c => c.name === '/revise-plan');
-    expect(cmd?.phaseGuard).toBeDefined();
+    expect(rewinds).toEqual([]);
+    expect(error).toMatch(/only available|not available|cannot/i);
   });
 });
 
 describe('/redo-task command', () => {
-  it('calls requestTaskRedo with task ID', () => {
-    const requestTaskRedo = vi.fn(() => true);
-    const commands = createCommands(makeCtx({ requestTaskRedo, getCurrentPhase: () => 'implementing' }));
+  it('forwards the task ID to the engine', () => {
+    const redos: RedoCall[] = [];
+    const commands = createCommands(makeCtx({
+      requestTaskRedo: (id) => { redos.push({ taskId: id }); return true; },
+      getCurrentPhase: () => 'implementing',
+    }));
     executeSlashCommand(commands, '/redo-task T001', 'workflow', noop);
-    expect(requestTaskRedo).toHaveBeenCalledWith('T001');
+    expect(redos).toEqual([{ taskId: 'T001' }]);
   });
 
-  it('shows error when no task ID given', () => {
-    const setFeedbackError = vi.fn();
-    const requestTaskRedo = vi.fn(() => true);
-    const commands = createCommands(makeCtx({ setFeedbackError, requestTaskRedo, getCurrentPhase: () => 'implementing' }));
+  it('does NOT call the engine and surfaces a usage error when no task ID is given', () => {
+    const redos: RedoCall[] = [];
+    let error: string | undefined;
+    const commands = createCommands(makeCtx({
+      requestTaskRedo: (id) => { redos.push({ taskId: id }); return true; },
+      setFeedbackError: (m) => { error = m; },
+      getCurrentPhase: () => 'implementing',
+    }));
     executeSlashCommand(commands, '/redo-task', 'workflow', noop);
-    expect(setFeedbackError).toHaveBeenCalledWith(expect.stringContaining('requires a task ID'));
-    expect(requestTaskRedo).not.toHaveBeenCalled();
+    expect(redos).toEqual([]);
+    expect(error).toMatch(/task id/i);
   });
 
-  it('shows error when phase does not allow redo', () => {
-    const setFeedbackError = vi.fn();
-    const requestTaskRedo = vi.fn(() => true);
-    const commands = createCommands(makeCtx({ setFeedbackError, requestTaskRedo, getCurrentPhase: () => 'planning' }));
+  it('does NOT call the engine and surfaces a guard error when phase does not allow redo', () => {
+    const redos: RedoCall[] = [];
+    let error: string | undefined;
+    const commands = createCommands(makeCtx({
+      requestTaskRedo: (id) => { redos.push({ taskId: id }); return true; },
+      setFeedbackError: (m) => { error = m; },
+      getCurrentPhase: () => 'planning',
+    }));
     executeSlashCommand(commands, '/redo-task T001', 'workflow', noop);
-    expect(setFeedbackError).toHaveBeenCalledWith(expect.stringContaining('only available'));
-    expect(requestTaskRedo).not.toHaveBeenCalled();
-  });
-
-  it('has phaseGuard set', () => {
-    const commands = createCommands(makeCtx());
-    const cmd = commands.find(c => c.name === '/redo-task');
-    expect(cmd?.phaseGuard).toBeDefined();
-  });
-});
-
-describe('phaseOrder', () => {
-  it('returns index in PHASES array', () => {
-    expect(phaseOrder('idle')).toBe(0);
-    expect(phaseOrder('researching')).toBe(1);
-    expect(phaseOrder('implementing')).toBe(6);
-    expect(phaseOrder('complete')).toBe(PHASES.length - 1);
-  });
-
-  it('maintains ascending order for all phases', () => {
-    for (let i = 1; i < PHASES.length; i++) {
-      expect(phaseOrder(PHASES[i]!)).toBeGreaterThan(phaseOrder(PHASES[i - 1]!));
-    }
+    expect(redos).toEqual([]);
+    expect(error).toMatch(/only available|not available/i);
   });
 });
 

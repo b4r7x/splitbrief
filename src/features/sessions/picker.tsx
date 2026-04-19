@@ -9,7 +9,7 @@ import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-stores.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
-import { SessionRow } from './session-row.js';
+import { SessionRow } from '../../components/session-row.js';
 import { handleSelect } from './picker-select.js';
 
 const filterSession = (s: Session, query: string): boolean =>

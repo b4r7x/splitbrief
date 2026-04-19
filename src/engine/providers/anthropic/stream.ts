@@ -1,11 +1,9 @@
-import type { TokenDelta } from '../../../core/types/summary.js';
+import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { InvokeResult } from '../../runners/types.js';
-import { formatErrorWithHint } from '../../errors/hints.js';
-import { redactSecrets } from '../../../utils/redact.js';
-import { IdleTimeoutError, withIdleTimeout } from '../../../utils/with-timeout.js';
-import { stripV1Suffix, ANTHROPIC_API_VERSION } from '../../http.js';
+import { timeoutError, withIdleTimeout } from '../../../utils/with-timeout.js';
+import { stripV1Suffix, ANTHROPIC_API_VERSION } from '../constants.js';
 import { narrowRecord, assertNever } from '../../../utils/type-guards.js';
-import { STREAM_TIMEOUT_MS, throwMappedError } from '../../streaming/stream-errors.js';
+import { STREAM_TIMEOUT_MS, streamError, throwMappedError } from '../../streaming/stream-errors.js';
 
 type AnthropicEventType =
   | 'message_start'
@@ -194,13 +192,13 @@ export async function streamAnthropicCompletion(
 
   if (!response.ok) {
     const message = await response.text();
-    const raw = redactSecrets(`API error ${response.status} from anthropic: ${message}`);
-    throw new Error(formatErrorWithHint(raw));
+    throw streamError.httpStatus('anthropic', response.status, message);
   }
 
   if (!response.body) {
-    throw new Error('Anthropic response stream was empty');
+    throw streamError.emptyResponse('Anthropic');
   }
+
 
   let fullResponse = '';
   let usage: TokenDelta | null = null;
@@ -232,10 +230,8 @@ export async function streamAnthropicCompletion(
         case 'message_delta':
           usage = mergeUsage(usage, parseUsage(payload.usage));
           break;
-        case 'error': {
-          const raw = redactSecrets(`API error from anthropic: ${getApiErrorMessage(payload)}`);
-          throw new Error(formatErrorWithHint(raw));
-        }
+        case 'error':
+          throw streamError.apiError('anthropic', getApiErrorMessage(payload));
         case 'content_block_start':
         case 'content_block_stop':
         case 'message_stop':
@@ -249,9 +245,9 @@ export async function streamAnthropicCompletion(
     if (opts.signal?.aborted) {
       return { text: fullResponse, usage };
     }
-    if (err instanceof IdleTimeoutError) throw err;
+    if (timeoutError.isIdle(err)) throw err;
     if (err instanceof SyntaxError) {
-      throw new Error(formatErrorWithHint(`Invalid Anthropic stream payload: ${err.message}`));
+      throw streamError.invalidPayload(`Invalid Anthropic stream payload: ${err.message}`, err);
     }
     throwMappedError(err, endpoint);
   }

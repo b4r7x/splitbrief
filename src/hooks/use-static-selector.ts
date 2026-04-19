@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useInput } from 'ink';
+import { navigateIndex } from './navigate-index.js';
 
 interface UseStaticSelectorOptions<T> {
   items: readonly T[];
@@ -25,11 +26,11 @@ export function useStaticSelector<T>({
   useInput(
     (_input, key) => {
       if (key.upArrow) {
-        setSelectedIndex((i) => (i > 0 ? i - 1 : items.length - 1));
+        setSelectedIndex((i) => navigateIndex('up', i, items.length));
         return;
       }
       if (key.downArrow) {
-        setSelectedIndex((i) => (i < items.length - 1 ? i + 1 : 0));
+        setSelectedIndex((i) => navigateIndex('down', i, items.length));
         return;
       }
       if (key.return) {

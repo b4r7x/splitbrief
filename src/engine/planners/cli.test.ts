@@ -1,133 +1,141 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { writeFileSync, chmodSync } from 'node:fs';
+import { join } from 'node:path';
 import { createCliPlanner } from './cli.js';
-import { makeConfig } from '#testing/helpers/fixtures.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { CommandNotFoundError } from '../../lib/process/errors.js';
+import { processError } from '../../lib/process/errors.js';
 
-vi.mock('../streaming/spawn-collect.js', () => ({
-  spawnAndCollect: vi.fn(),
-}));
-
-vi.mock('../../lib/process/spawn.js', () => ({
-  runCommand: vi.fn(),
-}));
-
-vi.mock('../../core/providers/model-selection.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../core/providers/model-selection.js')>();
-  return { ...actual, resolveAutoModel: vi.fn(actual.resolveAutoModel) };
-});
-
-import { spawnAndCollect } from '../streaming/spawn-collect.js';
-import { runCommand } from '../../lib/process/spawn.js';
-import { resolveAutoModel } from '../../core/providers/model-selection.js';
+/**
+ * CLI planner is a thin wrapper around a real subprocess. Instead of mocking
+ * the subprocess seam, we install a shell shim on PATH that emits the exact
+ * JSONL / JSON lines the planner's parser expects. This exercises the real
+ * spawn pipeline from top to bottom: createCliPlanner → spawnAndCollect →
+ * spawnWithStdin → child_process → parseLine → accumulated text/usage.
+ *
+ * Same technique as `src/engine/claude-runner.test.ts`.
+ */
 
 let projectDir: string;
+let shimDir: string;
+let originalPath: string | undefined;
+
+function installShim(command: string, bodyLines: string[]): void {
+  const shimPath = join(shimDir, command);
+  const body = bodyLines
+    .map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`)
+    .join('\n');
+  writeFileSync(shimPath, `#!/bin/bash\n${body}\n`, 'utf8');
+  chmodSync(shimPath, 0o755);
+}
 
 beforeEach(() => {
-  vi.clearAllMocks();
-  projectDir = createTempDir('cli-planner-test');
+  projectDir = createTempDir('cli-planner-project');
   createTestGitRepo(projectDir);
+  shimDir = createTempDir('cli-planner-shim');
+  originalPath = process.env['PATH'];
+  process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 });
 
 afterEach(() => {
+  if (originalPath === undefined) delete process.env['PATH'];
+  else process.env['PATH'] = originalPath;
   cleanupTempDir(projectDir);
+  cleanupTempDir(shimDir);
 });
 
 describe('createCliPlanner', () => {
-  it('isAvailable returns true when runCommand returns code 0 for --version', async () => {
-    vi.mocked(runCommand).mockResolvedValue({ stdout: 'codex 1.0.0', stderr: '', code: 0 });
+  it('isAvailable returns true when the CLI responds to --version', async () => {
+    installShim('codex', ['codex 1.0.0']);
 
-    const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
-    const planner = createCliPlanner(config);
-
-    const available = await planner.isAvailable();
-    expect(available).toBe(true);
-  });
-
-  it('capabilities: supportsHintEscalation is always true; supportsSessionResume mirrors tool config', () => {
-    // codex has supportsSessionResume: true
-    const configWithResume = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
-    const plannerWithResume = createCliPlanner(configWithResume);
-    expect(plannerWithResume.capabilities.supportsHintEscalation).toBe(true);
-    expect(plannerWithResume.capabilities.supportsSessionResume).toBe(true);
-
-    // opencode does not have supportsSessionResume set
-    const configNoResume = makeConfig({ planner: { kind: 'cli', tool: 'opencode' } });
-    const plannerNoResume = createCliPlanner(configNoResume);
-    expect(plannerNoResume.capabilities.supportsHintEscalation).toBe(true);
-    expect(plannerNoResume.capabilities.supportsSessionResume).toBe(false);
-  });
-
-  it('session ID is threaded via onSessionId callback into buildArgs on the second invocation', async () => {
-    const SESSION_ID = 'test-session-abc';
-
-    vi.mocked(spawnAndCollect).mockImplementation(async (opts) => {
-      // First call fires onSessionId to simulate the backend emitting a session
-      opts.onSessionId?.(SESSION_ID);
-      return { text: 'planner output', usage: null, sessionId: SESSION_ID };
-    });
-
-    const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
-    const planner = createCliPlanner(config);
-    const callbacks = { onOutput: vi.fn(), onSessionId: vi.fn() };
-
-    // First call — session ID gets captured
-    await planner.review('first prompt', projectDir, callbacks);
-
-    // Second call — session ID should be threaded into buildArgs
-    vi.mocked(spawnAndCollect).mockResolvedValue({ text: 'second output', usage: null });
-    await planner.review('second prompt', projectDir, callbacks);
-
-    const secondCallArgs = vi.mocked(spawnAndCollect).mock.calls[1]?.[0];
-    expect(secondCallArgs).toBeDefined();
-    // codex with a session ID and mode=escalate uses one-shot (no sessionId in buildArgs),
-    // but the onSessionId from the first call should have been forwarded to the consumer callback
-    expect(callbacks.onSessionId).toHaveBeenCalledWith(SESSION_ID);
-  });
-
-  it('postProcess hook is applied when the tool config defines it', async () => {
-    // aider defines a postProcess that extracts usage from combined text+stderr
-    const stderrWithUsage = 'Tokens: 100 sent, 50 received.';
-    vi.mocked(spawnAndCollect).mockImplementation(async (opts) => {
-      // Simulate stderr accumulation via onStderr callback
-      opts.onStderr?.(stderrWithUsage);
-      return { text: 'Aider response text', usage: null };
-    });
-
-    const config = makeConfig({ planner: { kind: 'cli', tool: 'aider' } });
-    const planner = createCliPlanner(config);
-    const callbacks = { onOutput: vi.fn() };
-
-    const result = await planner.review('test prompt', projectDir, callbacks);
-    // postProcess for aider trims the text
-    expect(result.text).toBe('Aider response text');
-    // postProcess is called (onStderr was passed to spawnAndCollect only because postProcess exists)
-    const call = vi.mocked(spawnAndCollect).mock.calls[0]?.[0];
-    expect(call?.onStderr).toBeInstanceOf(Function);
-  });
-
-  it('CommandNotFoundError propagates when spawnAndCollect throws code-127-equivalent error', async () => {
-    const notFoundError = new CommandNotFoundError(
-      'Codex CLI not found. Install it with: npm install -g @openai/codex',
+    const planner = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
     );
-    vi.mocked(spawnAndCollect).mockRejectedValue(notFoundError);
 
-    const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
-    const planner = createCliPlanner(config);
-    const callbacks = { onOutput: vi.fn() };
-
-    await expect(planner.review('test prompt', projectDir, callbacks)).rejects.toBeInstanceOf(
-      CommandNotFoundError,
-    );
+    expect(await planner.isAvailable()).toBe(true);
   });
 
-  it('resolveAutoModel is called when model is "auto"', async () => {
-    vi.mocked(spawnAndCollect).mockResolvedValue({ text: 'output', usage: null });
+  it('capabilities: supportsSessionResume mirrors the tool config (codex yes, opencode no)', () => {
+    const withResume = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
+    );
+    expect(withResume.capabilities.supportsHintEscalation).toBe(true);
+    expect(withResume.capabilities.supportsSessionResume).toBe(true);
 
-    const config = makeConfig({ planner: { kind: 'cli', tool: 'codex', model: 'auto' } });
-    createCliPlanner(config);
+    const noResume = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }),
+    );
+    expect(noResume.capabilities.supportsHintEscalation).toBe(true);
+    expect(noResume.capabilities.supportsSessionResume).toBe(false);
+  });
 
-    expect(resolveAutoModel).toHaveBeenCalledWith('auto', 'codex');
+  it('captures a session id emitted via stream-json thread.started and forwards it to onSessionId', async () => {
+    // Codex planner uses JSONL. `thread.started` is parsed as sessionId.
+    // Emit a minimal spec/plan/tasks plus thread.started; plan() is the path
+    // that propagates onSessionId (review()'s callback type is narrower).
+    installShim('codex', [
+      JSON.stringify({ type: 'thread.started', thread_id: 'sess-abc' }),
+      JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: '# spec\nbody' } }),
+    ]);
+
+    const planner = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
+    );
+    const onSessionId = vi.fn();
+
+    // plan() runs multiple phases; we just need session capture on first phase.
+    // Capture errors so the test does not depend on full plan success.
+    try {
+      await planner.plan('add auth', projectDir, { onOutput: vi.fn(), onSessionId });
+    } catch {
+      // Shim only emits one "phase" — later phase invocations may throw. The
+      // session-id capture happens on the first run regardless.
+    }
+
+    expect(onSessionId).toHaveBeenCalledWith('sess-abc');
+  });
+
+  it('applies the aider postProcess hook: pulls usage from stderr when present', async () => {
+    // Aider parses stdout as text-lines and uses postProcess to extract token counts from stderr.
+    // The shim writes a usage line to stderr; postProcess should find it and populate result.usage.
+    const shimPath = join(shimDir, 'aider');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        "printf '%s\\n' 'Aider response text'",
+        "printf '%s\\n' 'Tokens: 100 sent, 50 received.' >&2",
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+
+    const planner = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'aider' } }),
+    );
+
+    const result = await planner.review('prompt', projectDir, { onOutput: vi.fn() });
+
+    expect(result.text).toContain('Aider response text');
+    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
+  });
+
+  it('rejects with a not-found error when the CLI binary is missing from PATH', async () => {
+    // Point PATH at an empty dir — no `codex` shim → ENOENT.
+    process.env['PATH'] = createTempDir('empty-path');
+
+    const planner = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
+    );
+
+    try {
+      await expect(
+        planner.review('prompt', projectDir, { onOutput: vi.fn() }),
+      ).rejects.toSatisfy(processError.isNotFound);
+    } finally {
+      cleanupTempDir(process.env['PATH']!);
+    }
   });
 });

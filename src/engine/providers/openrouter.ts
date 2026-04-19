@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { DetectedModel, ProviderDefWithMetadata, ProviderOverrides } from './types.js';
 import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers/catalog.js';
 import { createMetadataProvider } from './client.js';
-import { stripV1Suffix } from '../http.js';
+import { stripV1Suffix } from './constants.js';
 import { perTokenToPerMillion } from './metadata.js';
 
 const DEFAULT_BASE = KNOWN_PROVIDER_BASE_URLS.openrouter;

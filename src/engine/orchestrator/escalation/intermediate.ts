@@ -1,5 +1,7 @@
-import type { Task, WorkflowState } from '../../../core/types/state-actions.js';
-import type { ApiImplementerConfig, Config } from '../../../core/types/config-options.js';
+import type { Task } from '../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { Config } from '../../../core/schemas/config.js';
+import type { ApiImplementerConfig } from '../../../core/schemas/implementer-config.js';
 import { hasApiBase } from '../../../core/config/accessors/runner-config.js';
 import { createTextHandler, emitWarning, emitEscalate } from '../events.js';
 import { createImplementer } from '../../runners/factory.js';

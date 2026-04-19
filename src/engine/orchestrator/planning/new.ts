@@ -1,16 +1,13 @@
 import { join } from 'node:path';
-import type { WorkflowState } from '../../../core/types/state-actions.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
-import type { Planner } from '../../planners/types.js';
+import type { PlanResult } from '../../planners/types.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../../core/paths.js';
 import { buildSkillsSection } from '../../skills/discovery.js';
-import { createTextHandler } from '../events.js';
 import { addUsageAndSave, transitionAndSave, transitionAndEmit, emitPlanApproved } from '../state-ops.js';
-import { createSessionExpiredHandler } from '../resume-context.js';
 import { collectAndPersistClarifications } from '../clarifications.js';
 import { runApprovalLoop } from '../approval.js';
-import { withContinuationLoop } from '../continuation.js';
 import { handleRewindSpec, handleRewindPlan } from './rewind.js';
 import {
   drainAndFormat,
@@ -18,7 +15,7 @@ import {
   persistPhases,
   regenerateTasks,
   regeneratePlanAndTasks,
-  MAX_CLARIFICATION_QUESTIONS,
+  runPlannerCallInContinuationLoop,
   type PlanningPhaseOptions,
   type PlanningPhaseResult,
 } from './shared.js';
@@ -31,7 +28,7 @@ async function runNewPlanning(
   state: WorkflowState,
 ): Promise<PlanningPhaseResult> {
   const { wctx, planner } = opts;
-  const { projectDir, sessionId, config, callbacks, resumeHolder, sinks } = wctx;
+  const { projectDir, sessionId, config, callbacks, resumeHolder } = wctx;
   const signal = wctx.signal;
   const conversational = planner.capabilities.supportsConversationalPlanning;
   let feature = opts.feature;
@@ -43,37 +40,20 @@ async function runNewPlanning(
     feature = prefix + feature;
   }
 
-  const textHandler = createTextHandler(callbacks);
-  type PlanFnResult = Awaited<ReturnType<Planner['plan']>>;
-  let planResult: PlanFnResult;
-
+  let planResult: PlanResult;
   try {
-    const loop = await withContinuationLoop<PlanFnResult>({
-      ctx: { projectDir, sessionId, callbacks, signal, sinks },
+    const run = await runPlannerCallInContinuationLoop({
+      wctx,
       state,
-      onStateChange: (s) => { state = s; },
-      body: async ({ continuationPrompt, recordOutput }) => {
-        const prompt = continuationPrompt ?? feature;
-        const result = await planner.plan(prompt, projectDir, {
-          onOutput: (text) => { recordOutput(text); textHandler(text); },
-          onSessionId: (id) => { state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PLANNER_SESSION_ID', sessionId: id }); },
-          onSessionExpired: createSessionExpiredHandler({ projectDir, sessionId, callbacks, config, resumeHolder }),
-          onQuestion: conversational ? (questions) => {
-            for (const q of questions) {
-              if (collectedQuestions.length < MAX_CLARIFICATION_QUESTIONS) {
-                collectedQuestions.push(q);
-              }
-            }
-          } : undefined,
-          sessionId,
-          persistTranscript: config.workflow.persistTranscript,
-          ...(resumeHolder && resumeHolder.messages.length > 0 ? { priorMessages: resumeHolder.messages } : {}),
-        }, skillsContext);
-        return { value: result };
-      },
+      planner,
+      feature,
+      mode: 'full',
+      skillsContext,
+      ...(resumeHolder && resumeHolder.messages.length > 0 ? { priorMessages: resumeHolder.messages } : {}),
+      collectedQuestions,
     });
-    state = loop.state;
-    planResult = loop.value;
+    state = run.state;
+    planResult = run.result;
   } catch (err) {
     return handlePlanningFailure(err, projectDir, sessionId, state, callbacks);
   }

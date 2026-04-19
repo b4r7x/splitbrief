@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { validateConfig, securityWarnings } from './validate.js';
-import type { Config, ApiImplementerConfig } from '../../types/config-options.js';
+import type { Config } from '../../schemas/config.js';
+import type { ApiImplementerConfig } from '../../schemas/implementer-config.js';
 
 const validConfig = {
   version: 2 as const,
@@ -51,7 +52,6 @@ describe('validateConfig', () => {
     };
     const { errors } = validateConfig(config);
     expect(errors.find(e => e.path === 'planner.kind')).toBeTruthy();
-    // apiBase validation is now in zod schema, so error appears even with planner error
     expect(errors.find(e => e.path === 'implementer.apiBase')).toBeTruthy();
   });
 

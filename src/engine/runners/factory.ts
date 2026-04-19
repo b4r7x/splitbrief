@@ -1,4 +1,4 @@
-import type { Config } from '../../core/types/config-options.js';
+import type { Config } from '../../core/schemas/config.js';
 import type { Planner } from '../planners/types.js';
 import type { Implementer } from '../implementers/types.js';
 import type { RunnerKind } from '../../core/schemas/enums.js';
@@ -15,10 +15,11 @@ import { createApiImplementer } from '../implementers/api.js';
 import { createShellImplementer } from '../implementers/shell.js';
 import { createAgentImplementer } from '../implementers/agent.js';
 import { createAgentSdkImplementer } from '../implementers/agent-sdk.js';
+import { runnerConfigError } from './errors.js';
 
 const PLANNER_FACTORIES: Record<RunnerKind, (config: Config, initialSessionId?: string | null) => Planner> = {
   cli: (c, initialSessionId) => {
-    if (c.planner.kind !== 'cli') throw new Error(`PLANNER_FACTORIES['cli']: expected planner.kind='cli', got '${c.planner.kind}'`);
+    if (c.planner.kind !== 'cli') throw runnerConfigError.kindMismatch('cli', c.planner.kind, 'planner');
     return c.planner.tool === 'claude-code'
       ? createClaudeCodePlanner(c.planner.model, initialSessionId)
       : createCliPlanner(c, initialSessionId);
@@ -27,14 +28,14 @@ const PLANNER_FACTORIES: Record<RunnerKind, (config: Config, initialSessionId?: 
   shell: createShellPlanner,
   agent: createAgentPlanner,
   'agent-sdk': (c, initialSessionId) => {
-    if (c.planner.kind !== 'agent-sdk') throw new Error(`PLANNER_FACTORIES['agent-sdk']: expected planner.kind='agent-sdk', got '${c.planner.kind}'`);
+    if (c.planner.kind !== 'agent-sdk') throw runnerConfigError.kindMismatch('agent-sdk', c.planner.kind, 'planner');
     return createAgentSdkPlanner(c.planner.model, c.planner.apiKey, initialSessionId);
   },
 };
 
 const IMPLEMENTER_FACTORIES: Record<RunnerKind, (config: Config) => Implementer> = {
   cli: (c) => {
-    if (c.implementer.kind !== 'cli') throw new Error(`IMPLEMENTER_FACTORIES['cli']: expected implementer.kind='cli', got '${c.implementer.kind}'`);
+    if (c.implementer.kind !== 'cli') throw runnerConfigError.kindMismatch('cli', c.implementer.kind, 'implementer');
     return createCliImplementer(c.implementer);
   },
   api: createApiImplementer,
@@ -45,18 +46,12 @@ const IMPLEMENTER_FACTORIES: Record<RunnerKind, (config: Config) => Implementer>
 
 export function createPlanner(config: Config, initialSessionId?: string | null): Planner {
   const factory = PLANNER_FACTORIES[config.planner.kind];
-  if (!factory) {
-    const supported = Object.keys(PLANNER_FACTORIES).join(', ');
-    throw new Error(`Unknown planner kind: ${config.planner.kind}. Supported: ${supported}`);
-  }
+  if (!factory) throw runnerConfigError.invalidKind(config.planner.kind, 'planner');
   return factory(config, initialSessionId);
 }
 
 export function createImplementer(config: Config): Implementer {
   const factory = IMPLEMENTER_FACTORIES[config.implementer.kind];
-  if (!factory) {
-    const supported = Object.keys(IMPLEMENTER_FACTORIES).join(', ');
-    throw new Error(`Unknown implementer kind: ${config.implementer.kind}. Supported: ${supported}`);
-  }
+  if (!factory) throw runnerConfigError.invalidKind(config.implementer.kind, 'implementer');
   return factory(config);
 }

@@ -25,24 +25,43 @@ export function resolveDefaultApiBase(providerId: string): string | null {
   return urls[providerId] ?? null;
 }
 
+type ProviderIdWithBaseURL = keyof typeof KNOWN_PROVIDER_BASE_URLS;
+
+function hasKnownBaseURL(id: ProviderId): id is ProviderId & ProviderIdWithBaseURL {
+  return id in KNOWN_PROVIDER_BASE_URLS;
+}
+
+function makeProvider(
+  id: ProviderId,
+  displayName: string,
+  extras: Omit<ProviderInfo, 'id' | 'displayName' | 'baseURL'> = {},
+): ProviderInfo {
+  return {
+    id,
+    displayName,
+    ...(hasKnownBaseURL(id) && { baseURL: KNOWN_PROVIDER_BASE_URLS[id] }),
+    ...extras,
+  };
+}
+
 export const PROVIDER_CATALOG: Record<ProviderId, ProviderInfo> = {
-  'claude-code': { id: 'claude-code', displayName: 'Claude Code' },
-  codex: { id: 'codex', displayName: 'Codex' },
-  opencode: { id: 'opencode', displayName: 'OpenCode' },
-  aider: { id: 'aider', displayName: 'Aider' },
-  copilot: { id: 'copilot', displayName: 'Copilot', isSubscription: true },
-  'kilo-code': { id: 'kilo-code', displayName: 'Kilo Code', isSubscription: true },
-  'agent-sdk': { id: 'agent-sdk', displayName: 'Agent SDK', apiKeyEnv: 'ANTHROPIC_API_KEY' },
-  anthropic: { id: 'anthropic', displayName: 'Anthropic', baseURL: KNOWN_PROVIDER_BASE_URLS.anthropic, apiKeyEnv: 'ANTHROPIC_API_KEY' },
-  openrouter: { id: 'openrouter', displayName: 'OpenRouter', baseURL: KNOWN_PROVIDER_BASE_URLS.openrouter, apiKeyEnv: 'OPENROUTER_API_KEY' },
-  deepseek: { id: 'deepseek', displayName: 'DeepSeek', baseURL: KNOWN_PROVIDER_BASE_URLS.deepseek, apiKeyEnv: 'DEEPSEEK_API_KEY' },
-  openai: { id: 'openai', displayName: 'OpenAI', baseURL: KNOWN_PROVIDER_BASE_URLS.openai, apiKeyEnv: 'OPENAI_API_KEY' },
-  groq: { id: 'groq', displayName: 'Groq', baseURL: KNOWN_PROVIDER_BASE_URLS.groq, apiKeyEnv: 'GROQ_API_KEY' },
-  together: { id: 'together', displayName: 'Together AI', baseURL: KNOWN_PROVIDER_BASE_URLS.together, apiKeyEnv: 'TOGETHER_API_KEY' },
-  ollama: { id: 'ollama', displayName: 'Ollama', baseURL: KNOWN_PROVIDER_BASE_URLS.ollama, isLocal: true },
-  'lm-studio': { id: 'lm-studio', displayName: 'LM Studio', baseURL: KNOWN_PROVIDER_BASE_URLS['lm-studio'], isLocal: true },
-  shell: { id: 'shell', displayName: 'Custom Shell' },
-  agent: { id: 'agent', displayName: 'Agent' },
+  'claude-code': makeProvider('claude-code', 'Claude Code'),
+  codex: makeProvider('codex', 'Codex'),
+  opencode: makeProvider('opencode', 'OpenCode'),
+  aider: makeProvider('aider', 'Aider'),
+  copilot: makeProvider('copilot', 'Copilot', { isSubscription: true }),
+  'kilo-code': makeProvider('kilo-code', 'Kilo Code', { isSubscription: true }),
+  'agent-sdk': makeProvider('agent-sdk', 'Agent SDK', { apiKeyEnv: 'ANTHROPIC_API_KEY' }),
+  anthropic: makeProvider('anthropic', 'Anthropic', { apiKeyEnv: 'ANTHROPIC_API_KEY' }),
+  openrouter: makeProvider('openrouter', 'OpenRouter', { apiKeyEnv: 'OPENROUTER_API_KEY' }),
+  deepseek: makeProvider('deepseek', 'DeepSeek', { apiKeyEnv: 'DEEPSEEK_API_KEY' }),
+  openai: makeProvider('openai', 'OpenAI', { apiKeyEnv: 'OPENAI_API_KEY' }),
+  groq: makeProvider('groq', 'Groq', { apiKeyEnv: 'GROQ_API_KEY' }),
+  together: makeProvider('together', 'Together AI', { apiKeyEnv: 'TOGETHER_API_KEY' }),
+  ollama: makeProvider('ollama', 'Ollama', { isLocal: true }),
+  'lm-studio': makeProvider('lm-studio', 'LM Studio', { isLocal: true }),
+  shell: makeProvider('shell', 'Custom Shell'),
+  agent: makeProvider('agent', 'Agent'),
 };
 
 export function getProviderDisplayName(id: string): string {

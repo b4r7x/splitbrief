@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { KNOWN_PROVIDERS, getProvider, detectAvailableProviders, detectCapabilities } from './registry.js';
-import { setupFetchMock } from './test-helpers.js';
-import type { Config } from '../../core/types/config-options.js';
+import { setupFetchMock } from './__test-helpers__.js';
+import type { Config } from '../../core/schemas/config.js';
 
 describe('getProvider', () => {
   setupFetchMock();

@@ -79,7 +79,7 @@ describe('invokeCommandBasedRunner', () => {
     expect(result.stdout).toContain('no code here');
   });
 
-  it('calls detectChanges when extractsCode is false', async () => {
+  it('reports changed files via detectChanges when extractsCode is false', async () => {
     const detectChanges = vi.fn().mockResolvedValue({ changed: true, output: '' });
     const result = await invokeCommandBasedRunner(
       { command: 'echo', args: ['done'], extractsCode: false, detectChanges },
@@ -110,7 +110,7 @@ describe('invokeCommandBasedRunner', () => {
     ).rejects.toThrow(/Command not found/);
   });
 
-  it('calls onOutput callback with stdout chunks', async () => {
+  it('streams stdout chunks to the output subscriber', async () => {
     const onOutput = vi.fn();
     await invokeCommandBasedRunner(
       { command: 'echo', args: ['hello'], extractsCode: false },

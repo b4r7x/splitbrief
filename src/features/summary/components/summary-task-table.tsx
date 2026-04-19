@@ -2,8 +2,8 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { formatCost } from '../../../core/formatting.js';
 import { truncateWithEllipsis } from '../../../utils/truncate.js';
-import { getMethodDisplay } from '../../../core/sessions-display.js';
-import type { TaskTokenUsage } from '../../../core/types/summary.js';
+import { getMethodDisplay } from '../../../core/sessions/display.js';
+import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 
 interface SummaryTaskTableProps {
   tasks: TaskTokenUsage[];

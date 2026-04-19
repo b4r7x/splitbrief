@@ -1,5 +1,3 @@
-import { existsSync, readFileSync, appendFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { simpleGit, type SimpleGit } from 'simple-git';
 
 const getGit = (dir: string): SimpleGit => simpleGit(dir);
@@ -13,10 +11,12 @@ export async function isGitRepo(dir: string): Promise<boolean> {
   return git.checkIsRepo();
 }
 
+export async function stageAll(dir: string): Promise<void> {
+  await getGit(dir).add('.');
+}
+
 export async function commitChanges(dir: string, message: string): Promise<string> {
   const git = getGit(dir);
-  // Intentional: the orchestrator expects all implementation changes to be staged
-  await git.add('.');
   const result = await git.commit(message);
   return result.commit;
 }
@@ -42,15 +42,26 @@ export async function getChangedFiles(dir: string): Promise<string[]> {
   return getStatusPaths(status);
 }
 
-export function ensureGitignore(projectDir: string, entry: string): void {
-  const gitignorePath = join(projectDir, '.gitignore');
-  if (existsSync(gitignorePath)) {
-    const content = readFileSync(gitignorePath, 'utf-8');
-    if (content.split('\n').some(line => line.trim() === entry)) return;
-    const prefix = content.endsWith('\n') ? '' : '\n';
-    appendFileSync(gitignorePath, `${prefix}${entry}\n`);
-  } else {
-    writeFileSync(gitignorePath, `${entry}\n`);
-  }
+export async function createCheckpoint(dir: string, label: string): Promise<string> {
+  await stageAll(dir);
+  const git = getGit(dir);
+  const stashSha = (await git.raw(['stash', 'create', `diptych checkpoint: ${label}`])).trim();
+  if (!stashSha) return '';
+  const tagName = `diptych/${label}`;
+  await git.tag([tagName, stashSha]);
+  await git.reset();
+  return tagName;
 }
 
+export async function discardTaskChanges(
+  dir: string,
+  taskFile: string,
+  action: 'create' | 'modify',
+): Promise<void> {
+  const git = getGit(dir);
+  if (action === 'modify') {
+    await git.checkout(['--', taskFile]);
+  } else {
+    await git.clean('f', ['--', taskFile]);
+  }
+}

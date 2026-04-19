@@ -1,4 +1,5 @@
-import type { Config, ApiImplementerConfig } from '../../core/types/config-options.js';
+import type { Config } from '../../core/schemas/config.js';
+import type { ApiImplementerConfig } from '../../core/schemas/implementer-config.js';
 import type { Implementer, ImplementerOptions, RetryOptions } from './types.js';
 import type { InvokeOpts } from './utils.js';
 import { createImplementerBase } from './base.js';
@@ -9,7 +10,9 @@ import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { PROVIDER_CATALOG } from '../../core/providers/catalog.js';
 import { isProviderId } from '../../core/schemas/enums.js';
 import { assertImplementerKind } from './utils.js';
-import { streamApiCompletion, throwAutoModelError } from '../api-shared.js';
+import { streamCompletion, type StreamClient } from '../providers/openai-stream.js';
+import { streamAnthropicCompletion } from '../providers/anthropic/stream.js';
+import { providerError } from '../providers/errors.js';
 
 function asApiConfig(config: Config): ApiImplementerConfig {
   return assertImplementerKind(config, 'api');
@@ -34,25 +37,37 @@ export function createApiImplementer(initialConfig: Config): Implementer {
       const maxTokens = Math.min(Math.max(available, 1024), contextLength);
 
       const model = resolveAutoModel(impl.model, impl.provider);
-      if (!model) throwAutoModelError('implementer');
+      if (!model) throw providerError.missingModel('implementer');
 
       const client = impl.provider === 'anthropic' ? null : createClient(config);
 
       const providerEnvKey = isProviderId(impl.provider) ? PROVIDER_CATALOG[impl.provider]?.apiKeyEnv : undefined;
       const resolvedApiKey = impl.apiKey ?? (providerEnvKey ? process.env[providerEnvKey] : undefined) ?? '';
 
-      return streamApiCompletion({
-        client,
-        provider: impl.provider,
-        apiBase: impl.apiBase,
-        apiKey: resolvedApiKey,
-        model,
-        messages: [
-          { role: 'system', content: SYSTEM_PREAMBLE },
-          { role: 'user', content: prompt },
-        ],
+      const messages = [
+        { role: 'system' as const, content: SYSTEM_PREAMBLE },
+        { role: 'user' as const, content: prompt },
+      ];
+
+      if (impl.provider === 'anthropic') {
+        return streamAnthropicCompletion({
+          apiKey: resolvedApiKey,
+          apiBase: impl.apiBase ?? '',
+          model,
+          messages,
+          temperature,
+          onProgress: onOutput,
+          maxTokens,
+          signal,
+        });
+      }
+
+      if (!client) throw providerError.expectedOpenAIClient(impl.provider);
+
+      return streamCompletion(client as StreamClient, model, messages, {
         temperature,
         onProgress: onOutput,
+        endpoint: { provider: impl.provider, apiBase: impl.apiBase },
         maxTokens,
         signal,
       });

@@ -1,7 +1,9 @@
 import { ConfigSchema } from '../../schemas/config.js';
 import { PROVIDER_CATALOG } from '../../providers/catalog.js';
 import { isProviderId } from '../../schemas/enums.js';
-import type { Config, PlannerConfig, ImplementerConfig } from '../../types/config-options.js';
+import type { Config } from '../../schemas/config.js';
+import type { PlannerConfig } from '../../schemas/planner-config.js';
+import type { ImplementerConfig } from '../../schemas/implementer-config.js';
 import { getRunnerDisplayName, getRunnerApiKey } from '../accessors/runner-config.js';
 
 export interface ConfigError {

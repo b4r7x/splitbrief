@@ -1,5 +1,6 @@
-import type { Task, WorkflowState } from '../../../core/types/state-actions.js';
-import { discardTaskChanges } from '../git.js';
+import type { Task } from '../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { discardTaskChanges } from '../../../lib/git.js';
 import { createEventEmitter, createTextHandler, emitWarning, emitEscalate } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { warnOnFailure } from '../signals.js';

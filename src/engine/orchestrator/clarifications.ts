@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { WorkflowState, QueuedMessage } from '../../core/types/state-actions.js';
+import type { WorkflowState, QueuedMessage } from '../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks } from './types.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';
@@ -9,6 +9,7 @@ import { appendMessage } from '../../core/state/persistence.js';
 import { transitionAndSave } from './state-ops.js';
 import { dispatchNativeInjection } from './native-injection.js';
 import type { Planner } from '../planners/types.js';
+import { warnError } from '../../lib/warn.js';
 
 export async function collectAndPersistClarifications(
   questions: ClarificationQuestion[],
@@ -22,7 +23,7 @@ export async function collectAndPersistClarifications(
   callbacks?: OrchestratorCallbacks,
 ): Promise<WorkflowState> {
   if (state.phase !== 'researching' && state.phase !== 'specifying') {
-    process.stderr.write(`[clarifications] skipping: unexpected phase "${state.phase}"\n`);
+    warnError('clarifications: unexpected phase', { phase: state.phase });
     return state;
   }
 

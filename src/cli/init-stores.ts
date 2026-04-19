@@ -1,7 +1,7 @@
 import { configStore } from '../stores/project/config.js';
 import { sessionsStore } from '../stores/project/sessions.js';
 import { skillsStore } from '../stores/project/skills.js';
-import { installHistoryPersistence } from './input-history-persistence.js';
+import { installHistoryPersistence } from '../stores/ui/persistence.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { setHighlightTheme } from '../lib/highlight.js';
@@ -16,7 +16,16 @@ import { cliError } from './errors.js';
 import { getPlannerToolId } from '../core/config/accessors/runner-config.js';
 
 export async function initStores(projectDir: string, opts: WorkflowOpts = {}): Promise<void> {
+  initUIChrome();
+  loadProjectState(projectDir, opts);
+  await loadDiscovery(projectDir);
+}
+
+function initUIChrome(): void {
   terminalSizeStore.subscribeToResize();
+}
+
+function loadProjectState(projectDir: string, opts: WorkflowOpts): void {
   configStore.load(projectDir, {
     planner: {
       tool: opts.planner,
@@ -37,6 +46,11 @@ export async function initStores(projectDir: string, opts: WorkflowOpts = {}): P
   if (storeConfig.shikiTheme) setHighlightTheme(storeConfig.shikiTheme);
   sessionsStore.load(projectDir);
   installHistoryPersistence();
+}
+
+async function loadDiscovery(projectDir: string): Promise<void> {
+  const storeConfig = configStore.get().config;
+  if (!storeConfig) return;
 
   let contextLength: number | undefined;
   try {

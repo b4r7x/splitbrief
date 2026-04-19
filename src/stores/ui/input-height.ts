@@ -15,12 +15,17 @@ function normalizeRows(rows: number): number {
   return Math.max(1, Math.floor(rows));
 }
 
+// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+function __testReset(next?: Partial<InputHeightState>): void {
+  store.set(next ? { ...initial, ...next } : initial);
+}
+
 export const inputHeightStore = {
   ...storeBase(store),
-  set: store.set,
   setRows: (rows: number) => {
     const nextRows = normalizeRows(rows);
     if (store.get().rows === nextRows) return;
     store.set({ rows: nextRows });
   },
+  __testReset,
 };

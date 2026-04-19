@@ -1,4 +1,5 @@
-import type { Config, PlannerTool, PlannerDetection, ProviderDetection } from '../../core/types/config-options.js';
+import type { Config } from '../../core/schemas/config.js';
+import type { PlannerTool, PlannerDetection, ProviderDetection } from '../../core/types/config-options.js';
 import { buildRunnerConfig } from '../../core/config/runtime/build-runner.js';
 import { createDefaultConfig } from '../../core/config/load/load.js';
 import { createPlanner } from '../runners/factory.js';

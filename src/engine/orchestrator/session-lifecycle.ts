@@ -1,8 +1,9 @@
-import type { Config } from '../../core/types/config-options.js';
+import type { Config } from '../../core/schemas/config.js';
 import type { OrchestratorCallbacks } from './types.js';
 import type { Session } from '../../core/schemas/session.js';
-import type { Summary } from '../../core/types/summary.js';
-import type { Task, WorkflowState } from '../../core/types/state-actions.js';
+import type { Summary } from '../../core/schemas/summary.js';
+import type { Task } from '../../core/schemas/task.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
 import { clearActive } from '../../core/sessions/lifecycle.js';
 import { saveSummary } from '../../core/sessions/io.js';
@@ -48,11 +49,6 @@ export type WithShutdownHandlersOpts = {
   getCurrentTask: () => Pick<Task, 'file' | 'action'> | undefined;
 };
 
-/**
- * Run `fn` with SIGINT/SIGTERM handlers installed that trigger a workflow shutdown (kill
- * subprocesses, save tracked state, discard in-flight file changes). Returns `{ cancelled }`
- * signalling whether a signal was received during `fn`.
- */
 export async function withShutdownHandlers(
   opts: WithShutdownHandlersOpts,
   fn: () => Promise<void>,

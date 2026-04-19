@@ -1,4 +1,4 @@
-import type { Config } from '../../core/types/config-options.js';
+import type { Config } from '../../core/schemas/config.js';
 import type { InvokeResult } from '../runners/types.js';
 import type { Planner, PlannerCallbacks } from './types.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
@@ -8,22 +8,18 @@ import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { CLI_TOOLS } from '../cli-tools.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { assertPlannerKind } from '../config-assertions.js';
-import { createSessionResumeState } from '../session-expiry.js';
+import { createSessionResumeState, runWithResumeFallback } from '../session-expiry.js';
+import { runnerConfigError } from '../runners/errors.js';
 
 export function createCliPlanner(config: Config, initialSessionId?: string | null): Planner {
   const plannerCfg = assertPlannerKind(config, 'cli');
   const resolvedModel = resolveAutoModel(plannerCfg.model, plannerCfg.tool);
   const tool = CLI_TOOLS[plannerCfg.tool];
-  if (!tool.planner) {
-    throw new Error(`CLI tool '${plannerCfg.tool}' has no planner configuration`);
-  }
+  if (!tool.planner) throw runnerConfigError.missingToolConfig(plannerCfg.tool, 'planner');
   const planner = tool.planner;
   const supportsSessionResume = planner.supportsSessionResume === true;
 
-  let pendingExpiredCallback: ((id: string) => void) | undefined;
-  const session = createSessionResumeState({
-    onExpired: (id) => pendingExpiredCallback?.(id),
-  });
+  const session = createSessionResumeState();
   if (supportsSessionResume) session.capture(initialSessionId ?? null);
 
   async function runOnce(
@@ -72,19 +68,12 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
       return runOnce(prompt, projectDir, callbacks, mode, null);
     }
 
-    pendingExpiredCallback = callbacks.onSessionExpired;
-    try {
-      try {
-        return await runOnce(prompt, projectDir, callbacks, mode, session.getResumeId());
-      } catch (err) {
-        if (session.handleResumeError(err)) {
-          return await runOnce(prompt, projectDir, callbacks, mode, null);
-        }
-        throw err;
-      }
-    } finally {
-      pendingExpiredCallback = undefined;
-    }
+    const priorId = session.getResumeId();
+    return runWithResumeFallback(
+      session,
+      (resumeId) => runOnce(prompt, projectDir, callbacks, mode, resumeId ?? null),
+      () => { if (priorId) callbacks.onSessionExpired?.(priorId); },
+    );
   }
 
   return createPlannerBase({

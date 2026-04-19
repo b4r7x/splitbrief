@@ -1,6 +1,8 @@
-import type { Config, ImplementerConfig, PlannerConfig } from '../../core/types/config-options.js';
+import type { Config } from '../../core/schemas/config.js';
+import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
+import type { PlannerConfig } from '../../core/schemas/planner-config.js';
 import { buildRunnerConfig } from '../../core/config/runtime/build-runner.js';
-import type { PickerOption } from './picker-model-catalog.js';
+import type { PickerOption } from './model-catalog.js';
 
 function setPlanner(config: Config, planner: PlannerConfig): Config {
   return { ...config, planner };
@@ -8,11 +10,6 @@ function setPlanner(config: Config, planner: PlannerConfig): Config {
 
 function setImplementer(config: Config, implementer: ImplementerConfig): Config {
   return { ...config, implementer };
-}
-
-function commitForRole(config: Config, role: 'planner' | 'implementer', opts: Parameters<typeof buildRunnerConfig>[1]): Config {
-  if (role === 'planner') return setPlanner(config, buildRunnerConfig('planner', opts));
-  return setImplementer(config, buildRunnerConfig('implementer', opts));
 }
 
 export function commitPlannerSelection(config: Config, selection: PickerOption, model: { id: string } | null): Config {
@@ -43,7 +40,8 @@ export function commitCustomCommand(config: Config, role: 'planner' | 'implement
     ...(role === 'implementer' && { model: config.implementer.model }),
   };
 
-  return commitForRole(config, role, opts);
+  if (role === 'planner') return setPlanner(config, buildRunnerConfig('planner', opts));
+  return setImplementer(config, buildRunnerConfig('implementer', opts));
 }
 
 export function commitCustomModel(
@@ -64,8 +62,9 @@ export function commitCustomModel(
     customModels: newCustomModels,
     existing: role === 'planner' ? config.planner : config.implementer,
   };
-  
-  return commitForRole(config, role, opts);
+
+  if (role === 'planner') return setPlanner(config, buildRunnerConfig('planner', opts));
+  return setImplementer(config, buildRunnerConfig('implementer', opts));
 }
 
 export function removeCustomModel(config: Config, role: 'planner' | 'implementer', modelId: string): Config {
@@ -88,26 +87,6 @@ export function removeCustomModel(config: Config, role: 'planner' | 'implementer
 }
 
 function omitModel(planner: PlannerConfig, customModels: string[]): PlannerConfig {
-  switch (planner.kind) {
-    case 'cli': {
-      const { model: _m, ...rest } = planner;
-      return { ...rest, customModels };
-    }
-    case 'api': {
-      const { model: _m, ...rest } = planner;
-      return { ...rest, customModels };
-    }
-    case 'shell': {
-      const { model: _m, ...rest } = planner;
-      return { ...rest, customModels };
-    }
-    case 'agent': {
-      const { model: _m, ...rest } = planner;
-      return { ...rest, customModels };
-    }
-    case 'agent-sdk': {
-      const { model: _m, ...rest } = planner;
-      return { ...rest, customModels };
-    }
-  }
+  const { model: _m, ...rest } = planner;
+  return { ...rest, customModels } as PlannerConfig;
 }

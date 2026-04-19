@@ -1,4 +1,4 @@
-import { DEFAULT_WORKFLOW_MODE } from '../../../core/types/config-options.js';
+import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import { runQuickPlanning } from './quick.js';
 import { runFullPlanning } from './new.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './shared.js';

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { expectApi, expectCli } from '#testing/helpers/config-narrowing.js';
 import { buildRunnerConfig, inferKindFromTool } from './build-runner.js';
 
 describe('buildRunnerConfig', () => {
@@ -8,8 +9,7 @@ describe('buildRunnerConfig', () => {
         kind: 'cli',
         tool: 'claude-code',
       });
-      expect(result.kind).toBe('cli');
-      expect((result as any).tool).toBe('claude-code');
+      expect(expectCli(result).tool).toBe('claude-code');
     });
 
     it('uses explicit kind: api', () => {
@@ -19,8 +19,7 @@ describe('buildRunnerConfig', () => {
         apiBase: 'http://localhost:11434/v1',
         model: 'qwen2.5:7b',
       });
-      expect(result.kind).toBe('api');
-      expect((result as any).provider).toBe('ollama');
+      expect(expectApi(result).provider).toBe('ollama');
     });
   });
 
@@ -64,7 +63,7 @@ describe('buildRunnerConfig', () => {
         tool: 'ollama',
         model: 'qwen2.5:7b',
       });
-      expect((result as any).apiBase).toBe('http://localhost:11434/v1');
+      expect(expectApi(result).apiBase).toBe('http://localhost:11434/v1');
     });
 
     it('auto-fills apiBase for lm-studio', () => {
@@ -73,7 +72,7 @@ describe('buildRunnerConfig', () => {
         tool: 'lm-studio',
         model: 'test',
       });
-      expect((result as any).apiBase).toBe('http://localhost:1234/v1');
+      expect(expectApi(result).apiBase).toBe('http://localhost:1234/v1');
     });
 
     it('does not reuse the previous provider apiBase when switching providers', () => {
@@ -91,8 +90,9 @@ describe('buildRunnerConfig', () => {
         },
       });
 
-      expect((result as any).apiBase).toBe('https://api.anthropic.com/v1');
-      expect((result as any).apiKey).toBeUndefined();
+      const api = expectApi(result);
+      expect(api.apiBase).toBe('https://api.anthropic.com/v1');
+      expect(api.apiKey).toBeUndefined();
     });
   });
 
@@ -114,8 +114,9 @@ describe('buildRunnerConfig', () => {
         apiBase: 'http://my-server:8080/v1',
         model: 'test',
       });
-      expect((result as any).provider).toBe('my-custom-provider');
-      expect((result as any).apiBase).toBe('http://my-server:8080/v1');
+      const api = expectApi(result);
+      expect(api.provider).toBe('my-custom-provider');
+      expect(api.apiBase).toBe('http://my-server:8080/v1');
     });
   });
 
@@ -147,7 +148,7 @@ describe('buildRunnerConfig', () => {
       });
       expect(result.model).toBe('qwen2.5:7b');
       expect(result.contextLength).toBe(8192);
-      expect((result as any).temperature).toBe(0.3);
+      expect(expectApi(result).temperature).toBe(0.3);
     });
 
     it('opts.model overrides existing.model', () => {

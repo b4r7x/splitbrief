@@ -1,5 +1,6 @@
-import type { Task, ProjectContext } from '../../core/types/state-actions.js';
-import type { Config } from '../../core/types/config-options.js';
+import type { ProjectContext } from '../../core/types/state-actions.js';
+import type { Task } from '../../core/schemas/task.js';
+import type { Config } from '../../core/schemas/config.js';
 import type { TuiEvent } from '../../features/workflow/types.js';
 import type { ImplementerResult } from '../../core/types/summary.js';
 import type { RunnerRuntime } from '../runners/types.js';

@@ -1,6 +1,7 @@
 import { buildRunnerConfig, inferKindFromTool, type BuildRunnerOpts } from './build-runner.js';
 import { WORKFLOW_MODES } from '../../schemas/enums.js';
 import { includes } from '../../../utils/type-guards.js';
+import { configError } from '../errors.js';
 import type { Config } from '../../schemas/config.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
 import type { ImplementerConfig } from '../../schemas/implementer-config.js';
@@ -82,13 +83,21 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Conf
   }
   if (overrides.mode !== undefined) {
     if (!includes(WORKFLOW_MODES, overrides.mode)) {
-      throw new Error(`Invalid workflow mode: ${overrides.mode}. Must be: ${WORKFLOW_MODES.join(', ')}`);
+      throw configError.invalidOverride(
+        'workflow mode',
+        overrides.mode,
+        `Must be: ${WORKFLOW_MODES.join(', ')}`,
+      );
     }
     next = { ...next, workflow: { ...next.workflow, mode: overrides.mode } };
   }
   if (overrides.budget !== undefined) {
     if (!Number.isFinite(overrides.budget) || overrides.budget <= 0) {
-      throw new Error(`Invalid budget: ${overrides.budget}. Must be a positive number.`);
+      throw configError.invalidOverride(
+        'budget',
+        overrides.budget,
+        'Must be a positive number.',
+      );
     }
     next = { ...next, workflow: { ...next.workflow, maxBudget: overrides.budget } };
   }

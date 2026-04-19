@@ -1,12 +1,15 @@
-import type { WorkflowState, Task } from '../../../core/types/state-actions.js';
-import type { OrchestratorCallbacks } from '../types.js';
-import type { PlannerCallbacksContext } from '../types.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { Task } from '../../../core/schemas/task.js';
+import type { OrchestratorCallbacks, PlannerCallbacksContext } from '../types.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
-import { emitError } from '../events.js';
+import { createTextHandler, emitError } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
+import { createSessionExpiredHandler } from '../resume-context.js';
+import { withContinuationLoop } from '../continuation.js';
 import { labelError } from '../../../utils/format-errors.js';
-import type { Planner, PlanResult } from '../../planners/types.js';
+import type { Planner, PlanResult, PlannerCallbacks, PriorMessage } from '../../planners/types.js';
+import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { SkillMeta } from '../../skills/discovery.js';
 import { drainQueue, formatDrainedMessages } from '../queue.js';
 import { regenerateFromFeedback } from '../continuation.js';
@@ -93,4 +96,69 @@ export async function regenerateTasksIfNeeded(
 ): Promise<{ state: WorkflowState; tasks: Task[] }> {
   if (!regenerated) return { state, tasks };
   return regenerateTasks(projectDir, sessionId, planner, callbacks, state, metadata);
+}
+
+export type PlannerCallRunResult = {
+  state: WorkflowState;
+  result: PlanResult;
+};
+
+export type PlannerCallOptions = {
+  wctx: PlannerCallbacksContext;
+  state: WorkflowState;
+  planner: Planner;
+  feature: string;
+  mode: 'quick' | 'full';
+  skillsContext?: string | undefined;
+  priorMessages?: PriorMessage[] | undefined;
+  collectedQuestions?: ClarificationQuestion[] | undefined;
+};
+
+export async function runPlannerCallInContinuationLoop(
+  opts: PlannerCallOptions,
+): Promise<PlannerCallRunResult> {
+  const { wctx, planner, feature, mode, skillsContext, priorMessages, collectedQuestions } = opts;
+  const { projectDir, sessionId, config, callbacks, resumeHolder, sinks, signal } = wctx;
+  let state = opts.state;
+  const textHandler = createTextHandler(callbacks);
+  const conversational = planner.capabilities.supportsConversationalPlanning;
+
+  const loop = await withContinuationLoop<PlanResult>({
+    ctx: { projectDir, sessionId, callbacks, signal, sinks },
+    state,
+    onStateChange: (s) => { state = s; },
+    body: async ({ continuationPrompt, recordOutput }) => {
+      const prompt = continuationPrompt ?? feature;
+      const plannerCallbacks: PlannerCallbacks = {
+        onOutput: (text) => { recordOutput(text); textHandler(text); },
+        onSessionId: (id) => { state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PLANNER_SESSION_ID', sessionId: id }); },
+        onSessionExpired: createSessionExpiredHandler({ projectDir, sessionId, callbacks, config, resumeHolder }),
+        sessionId,
+        persistTranscript: config.workflow.persistTranscript,
+        ...(priorMessages && priorMessages.length > 0 ? { priorMessages } : {}),
+        ...(mode === 'full' && conversational && collectedQuestions
+          ? {
+              onQuestion: (questions) => {
+                for (const q of questions) {
+                  if (collectedQuestions.length < MAX_CLARIFICATION_QUESTIONS) {
+                    collectedQuestions.push(q);
+                  }
+                }
+              },
+            }
+          : {}),
+      };
+
+      if (mode === 'quick') {
+        const quickPlanFn = planner.quickPlan ?? planner.plan;
+        const result = await quickPlanFn.call(planner, prompt, projectDir, plannerCallbacks);
+        return { value: result };
+      }
+      const result = await planner.plan(prompt, projectDir, plannerCallbacks, skillsContext);
+      return { value: result };
+    },
+  });
+
+  state = loop.state;
+  return { state, result: loop.value };
 }

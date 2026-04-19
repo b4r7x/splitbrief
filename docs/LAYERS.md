@@ -74,6 +74,20 @@ Is it a wrapper around an external system
 - Has `process.exit` or hardcoded exit codes — that's feature-level
 - Depends on a specific file-system layout (`.diptych/sessions/` etc.) — that's `core/`
 
+**Pure validators live in `utils/`, even when a related error kind lives in `lib/`:**
+
+`validateSafeIdentifier` (`src/utils/validate-identifier.ts`) is a pure string check — no `..`, no `/`, no `\`, non-empty. It has zero I/O, zero Node API, and takes/returns plain data: `(id: string) => { ok: true } | { ok: false; reason: string }`. That's the `utils/` contract.
+
+The matching `fsError.invalidId` factory stays in `src/lib/fs.ts` because it is a filesystem-domain error — it describes a rejection surfaced at a fs boundary. Callers compose the two: validate with `utils`, throw the `lib` error on failure.
+
+```ts
+// src/core/paths-io.ts
+const result = validateSafeIdentifier(filename);
+if (!result.ok) throw fsError.invalidId('filename', filename, result.reason);
+```
+
+Moral: validators (pure) split from error factories (domain). If a "validator" also throws, it's not a validator — it's an assertion helper, and the domain of the assertion decides its home.
+
 ---
 
 ## `lib/` — infrastructure wrappers
@@ -99,6 +113,11 @@ Is it a wrapper around an external system
 
 **Nesting rule:** create a sub-folder under `lib/` only when you have ≥3 closely-coupled files for a single subsystem (`lib/process/` has `spawn`, `errors`, `registry`, `line-buffer`). One-file subsystems stay flat (`lib/git.ts`, not `lib/git/git.ts`).
 
+**Single-source rules for wrapped subsystems:**
+- **No `simple-git` imports outside `src/lib/git.ts`** (and its colocated test file). Every git operation — `commit`, `stash`, `checkout`, `clean`, `tag`, `reset`, `add` — routes through a named export in `lib/git.ts`. Engine, core, and features import named helpers only. See [ADR 0008](./adr/0008-engine-git-boundary.md).
+- `lib/git.ts` contains no orchestrator convention knowledge. Staging is explicit: `commitChanges(dir, msg)` commits the current index; callers call `stageAll(dir)` first when they mean "stage everything then commit". Convenience coupling ("commit auto-stages") belongs in the caller, not the wrapper.
+- **`ensureGitignore` lives in `lib/fs.ts`, not `lib/git.ts`.** It uses only `node:fs` (no `simple-git` call) — placement follows runtime dependency, not subject matter. See [ADR 0008](./adr/0008-engine-git-boundary.md).
+
 ---
 
 ## `core/` — domain logic (no React, no orchestration)
@@ -111,7 +130,8 @@ Is it a wrapper around an external system
 
 **What lives here:**
 - `core/config/` — YAML config loading, validation, migration
-- `core/types/` — Zod schemas + type definitions (the source of truth for Config, Task, Session, etc.)
+- `core/schemas/` — Zod schemas + their inferred TS types (the source of truth for `Config`, `Task`, `WorkflowState`, `Session`, token/summary shapes, etc.)
+- `core/types/` — cross-cutting TS-only types that have no runtime schema (`StateAction`, `TokenBudget`, `DetectedModel`, `WorkflowOpts`, etc.). `z.infer` is forbidden here — inferred types live in `core/schemas/`. See `docs/TYPES.md` and ADR 0006.
 - `core/state/` — workflow state machine, transitions, persistence shape
 - `core/sessions/` — session metadata, analytics, ID generation
 - `core/formatting.ts` — LLM-specific formatters (`formatCost`, `formatContextLength`)
@@ -162,6 +182,25 @@ Top-level `src/components/` and `src/hooks/` hold cross-feature React code:
 
 Single-feature code stays under `src/features/{f}/`. See [`STRUCTURE.md`](./STRUCTURE.md).
 
+### Promoting a shared component — the 2-consumer rule
+
+A component earns its place in `src/components/` only when a **second** feature imports it. The first feature keeps it locally; the second consumer triggers the promotion.
+
+**Canonical promotion — `SessionRow`:** originally lived at `src/features/sessions/session-row.tsx` while only `features/sessions/picker.tsx` consumed it. When `features/home/components/recent-sessions.tsx` added a second consumer, the file moved to `src/components/session-row.tsx` (a cross-feature import would otherwise have been required).
+
+### Demoting a misplaced shared component — the 1-consumer reversal
+
+If a file in `src/components/` turns out to have a single feature consumer, demote it back into that feature. Pretending shared ownership when none exists is a lie.
+
+**Canonical demotions (Batch 1B):**
+
+| File (old home in `components/`) | Real consumer | New home |
+|---|---|---|
+| `components/overlays/mode-selector.tsx` | `app.tsx` overlay switch; writes to `configStore.workflow.mode` (settings domain) | `features/settings/mode-selector.tsx` |
+| `components/input-bar/feedback-row.tsx` | `features/workflow/screen.tsx`; reads `abortStore` (workflow domain) | `features/workflow/components/feedback-row.tsx` |
+
+The demotions cost one import-path rewrite each; the benefit is that `src/components/` stops advertising false sharing. See ADR [0007](./adr/0007-feature-boundary-enforcement.md).
+
 ---
 
 ## `features/` — vertical business slices
@@ -198,6 +237,9 @@ A: Generic → `src/utils/frontmatter.ts`. The fact that it's used for skills di
 **Q: I need a function that returns `true` if a session ID is valid.**
 A: Validation against a tiny-spec-defined format → `src/core/sessions/id.ts`.
 
+**Q: I need to map `src/foo.ts` to its colocated test file `tests/foo.test.ts`.**
+A: Test-discovery heuristics are domain logic (project-layout convention) → belongs in `core/validation/` not `engine/orchestrator/`. Engine composes the resolver at workflow-init time and shares it across task/retry pipelines.
+
 ---
 
 ## Anti-patterns
@@ -212,6 +254,50 @@ A: Validation against a tiny-spec-defined format → `src/core/sessions/id.ts`.
 | Re-export barrel (`utils/index.ts`) | Indirection with no added value | Delete it — consumers import from source |
 
 ---
+
+## Promoting from `cli/` to `core/` — the 2nd-consumer rule
+
+`src/cli/` holds code that is only ever called from a commander subcommand handler — argument parsing, prep logic for a single command flow, TTY detection, etc. That is a legitimate home when the CLI is the only consumer.
+
+**Promote to `core/` when a second consumer appears — not before.**
+
+### Examples
+
+**Stays in `cli/`** — single CLI consumer:
+
+```
+src/cli/setup.ts
+  setupWorkflow(opts)          # git check + config presence + fullscreen detect
+  resolveProjectDir(dir?)      # resolve --project flag
+  ensureGitAndConfig(dir)      # fallback init when config missing
+```
+
+Only the CLI subcommands call this. An API server, SDK bootstrap, or programmatic entry point would be a second consumer — at which point `setupWorkflow` promotes to `src/core/config/setup.ts` and the CLI keeps a thin adapter.
+
+**Starts in `core/`** — domain concern, not CLI-specific:
+
+```
+src/core/sessions/guards.ts
+  clearStaleSession(projectDir)   # session-state predicate + cleanup
+```
+
+Session lifecycle is a domain concern. Even though today only `cli/commands/resume.ts` calls it, putting it in `cli/` would mean moving it later when (not if) another code path needs the same predicate. When the producer naturally belongs to a domain, start in that domain.
+
+**Decision heuristic:**
+
+| Situation | Placement |
+|---|---|
+| Code only makes sense as CLI prep (TTY, commander flags, exit codes) | `cli/` |
+| Code describes a domain concept (sessions, migration, config) | `core/` — even with one consumer today |
+| Unsure | Start in `cli/`, promote on the second consumer |
+
+### Persistence belongs with the store, not with the CLI
+
+A second placement rule: **bootstrap / persistence logic for a store lives next to the store, not next to its CLI caller.**
+
+The `input-history` store in `src/stores/ui/input-history.ts` holds in-memory state. Its disk I/O (hydrate on startup, debounced save on change) lives in `src/stores/ui/persistence.ts`, **not** in `src/cli/`. `cli/init-stores.ts` calls `installHistoryPersistence()` at boot — the CLI layer triggers the wiring, but the logic is a store concern.
+
+This mirrors the folder-colocation rule in [`STRUCTURE.md`](./STRUCTURE.md#deep-modules-and-folder-colocation): helpers live with the module they support, not with the caller that happens to drive them.
 
 ## Ports and adapters
 

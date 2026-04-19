@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { addEvent, markCancelled, resetWorkflow, getSections } from './actions.js';
 import { eventsStore } from './events.js';
 import { tasksStore } from './tasks.js';
@@ -11,14 +11,14 @@ import {
   makeTaskStart,
   makeTaskComplete,
 } from '#testing/helpers/events.js';
-import { makeTask } from '#testing/helpers/fixtures.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 
 describe('addEvent — cross-bucket isolation', () => {
   beforeEach(() => resetWorkflow());
 
   it('preserves unrelated sub-store fields on generic events', () => {
-    lifecycleStore.set(s => ({ ...s, phase: 'implementing' }));
-    tokensStore.set(s => ({ ...s, localCount: 3, escalatedCount: 1 }));
+    lifecycleStore.__testReset({ phase: 'implementing' });
+    tokensStore.__testReset({ localCount: 3, escalatedCount: 1 });
     addEvent(makeRetry());
     expect(lifecycleStore.get().phase).toBe('implementing');
     expect(tokensStore.get().localCount).toBe(3);
@@ -90,11 +90,13 @@ describe('addEvent — cancelled gate', () => {
 describe('resetWorkflow', () => {
   beforeEach(() => resetWorkflow());
 
-  it('calls abortStore.clear before resetting sub-stores', () => {
-    const clearSpy = vi.spyOn(abortStore, 'clear');
+  it('clears abort pending state before resetting sub-stores', () => {
+    // Seed the abort store into a pending state, then verify resetWorkflow clears it
+    // — this is the observable contract the dispatcher must preserve.
+    abortStore.markPending();
+    expect(abortStore.get().pending).toBe(true);
     resetWorkflow();
-    expect(clearSpy).toHaveBeenCalled();
-    clearSpy.mockRestore();
+    expect(abortStore.get().pending).toBe(false);
   });
 
   it('resets all four sub-stores to initial state', () => {

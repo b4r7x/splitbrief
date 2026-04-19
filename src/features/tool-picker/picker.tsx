@@ -1,6 +1,6 @@
 import { useReducer } from 'react';
 import { Text, useInput } from 'ink';
-import type { Config } from '../../core/types/config-options.js';
+import type { Config } from '../../core/schemas/config.js';
 import { useTheme } from '../../components/theme.js';
 import { TextInputOverlay } from '../../components/overlays/text-input-overlay.js';
 import { usePickerCatalog } from './use-picker-catalog.js';

@@ -1,7 +1,8 @@
-import type { Config } from '../../../core/types/config-options.js';
-import { DEFAULT_WORKFLOW_MODE } from '../../../core/types/config-options.js';
-import type { WorkflowState, ProjectContext } from '../../../core/types/state-actions.js';
-import type { Summary } from '../../../core/types/summary.js';
+import type { Config } from '../../../core/schemas/config.js';
+import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
+import type { ProjectContext } from '../../../core/types/state-actions.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { Summary } from '../../../core/schemas/summary.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { SkillMeta } from '../../skills/discovery.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
@@ -16,6 +17,7 @@ import { buildSummary, type SummaryBase } from '../summary.js';
 import { emit, emitError, emitPlannerStatus, emitWorkflowConfig, emitUserMessage } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { applyRebuiltContext } from '../resume-context.js';
+import { createValidator } from '../validation.js';
 
 export type RunWorkflowOptions = {
   feature: string;
@@ -100,7 +102,8 @@ export async function initializeWorkflow(
     testCommand: config.validation.testCommand,
   };
 
-  const wctx: WorkflowContext = { projectDir, sessionId, config, callbacks, planner, context, implementer, signal: opts.signal, metadata, resumeHolder, sinks };
+  const validator = createValidator();
+  const wctx: WorkflowContext = { projectDir, sessionId, config, callbacks, planner, context, implementer, signal: opts.signal, metadata, resumeHolder, sinks, validator };
 
   return { ok: true, state, wctx };
 }

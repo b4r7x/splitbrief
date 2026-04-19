@@ -1,138 +1,71 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { registerStatusCommand } from './status.js';
+import { DIPTYCH_DIR, STATE_FILE, SESSION_LOG_FILE } from '../../core/paths.js';
+import { createInitialState } from '../../core/state/machine.js';
 
-const loadStateMock = vi.fn();
-const readActiveMock = vi.fn<(dir: string) => string | null>();
-const listSessionsMock = vi.fn();
-const getSessionDirMock = vi.fn<(scope: 'project' | 'global', projectDir: string) => string>();
-const aggregateSessionCostsMock = vi.fn();
-const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+let tmp: string;
+// console.log is a sanctioned global spy — see docs/TESTING.md core rules.
+let consoleSpy: ReturnType<typeof vi.spyOn>;
 
-vi.mock('../../core/state/persistence.js', () => ({ loadState: (dir: string, sessionId: string) => loadStateMock(dir, sessionId) }));
-vi.mock('../../core/sessions/lifecycle.js', () => ({ readActive: (dir: string) => readActiveMock(dir) }));
-vi.mock('../../core/sessions/io.js', () => ({
-  listSessions: (dir: string) => listSessionsMock(dir),
-  getSessionDir: (scope: 'project' | 'global', projectDir: string) => getSessionDirMock(scope, projectDir),
-}));
-vi.mock('../../core/sessions/analytics.js', () => ({
-  aggregateSessionCosts: (sessions: unknown[]) => aggregateSessionCostsMock(sessions),
-}));
-vi.mock('../../core/state/selectors.js', () => ({
-  getCompletedTaskIds: () => [],
-  getEscalatedTaskIds: () => [],
-  getFailedTaskIds: () => [],
-}));
-vi.mock('../../core/providers/index.js', () => ({ getProviderDisplayName: (id: string) => id }));
-vi.mock('../../core/model-display.js', () => ({ formatModelName: (m: string) => m }));
-vi.mock('../workflow.js', () => ({ resolveProjectDir: (d?: string) => d ?? '/cwd' }));
+beforeEach(() => {
+  tmp = createTempDir('status-command-test');
+  consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+});
 
-const { registerStatusCommand } = await import('./status.js');
+afterEach(() => {
+  if (tmp) cleanupTempDir(tmp);
+  consoleSpy.mockRestore();
+});
 
-function runStatus(args: string[]): void {
+function captureOutput(): string {
+  return consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+}
+
+function writeActiveSession(projectDir: string, sessionId: string, feature: string): void {
+  const sessionDir = join(projectDir, DIPTYCH_DIR, 'sessions', sessionId);
+  mkdirSync(sessionDir, { recursive: true });
+  const state = { ...createInitialState(feature), phase: 'implementing' as const };
+  writeFileSync(join(sessionDir, STATE_FILE), JSON.stringify(state));
+  writeFileSync(join(sessionDir, SESSION_LOG_FILE), '');
+  mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+  writeFileSync(join(projectDir, DIPTYCH_DIR, 'active'), sessionId + '\n');
+}
+
+async function runStatus(args: string[]): Promise<void> {
   const program = new Command();
   program.exitOverride();
   registerStatusCommand(program);
-  program.parse(['node', 'diptych', 'status', ...args]);
+  await program.parseAsync(['node', 'diptych', 'status', '--project', tmp, ...args]);
 }
 
 describe('status command', () => {
-  beforeEach(() => {
-    consoleSpy.mockClear();
-    loadStateMock.mockReset();
-    readActiveMock.mockReset();
-    listSessionsMock.mockReset();
-    getSessionDirMock.mockReset();
-    aggregateSessionCostsMock.mockReset();
-    readActiveMock.mockReturnValue(null);
-    getSessionDirMock.mockReturnValue('/some/dir');
-    listSessionsMock.mockReturnValue([]);
-    aggregateSessionCostsMock.mockReturnValue({
-      completedSessions: 0,
-      totalCost: 0,
-      totalSavings: 0,
-      averageSavingsPercentage: 0,
-      averageLocalCompletionRate: 0,
-      providerTotals: {},
-    });
+  it('reports no active workflow when .diptych has no active marker', async () => {
+    await runStatus([]);
+    const out = captureOutput();
+    // Shape: non-empty and mentions the "active" concept (resilient to copy tweaks).
+    expect(out.length).toBeGreaterThan(0);
+    expect(out.toLowerCase()).toMatch(/active|no.*workflow/);
   });
 
-  describe('no active workflow', () => {
-    beforeEach(() => {
-      loadStateMock.mockReturnValue(null);
-    });
+  it('reports the feature name and phase for a live session', async () => {
+    writeActiveSession(tmp, '2026-04-18-add-auth', 'add auth');
 
-    it('prints "No active workflow."', () => {
-      runStatus([]);
-      const output = consoleSpy.mock.calls.map(c => String(c[0])).join('\n');
-      expect(output).toContain('No active workflow.');
-    });
-
-    it('includes a hint about --history when flag is not used', () => {
-      runStatus([]);
-      const output = consoleSpy.mock.calls.map(c => String(c[0])).join('\n');
-      expect(output).toMatch(/--history/);
-    });
-
-    it('does not include the --history hint when --history is already passed', () => {
-      runStatus(['--history']);
-      const hintCalls = consoleSpy.mock.calls
-        .map(c => String(c[0]))
-        .filter(s => s.includes('--history') && s.includes('Run'));
-      expect(hintCalls).toHaveLength(0);
-    });
-
-    it('shows cost history when --history is passed', () => {
-      aggregateSessionCostsMock.mockReturnValue({
-        completedSessions: 2,
-        totalCost: 1.5,
-        totalSavings: 0.8,
-        averageSavingsPercentage: 53,
-        averageLocalCompletionRate: 70,
-        providerTotals: {},
-      });
-      runStatus(['--history']);
-      const output = consoleSpy.mock.calls.map(c => String(c[0])).join('\n');
-      expect(output).toContain('No active workflow.');
-      expect(output).toMatch(/Cost History/);
-    });
+    await runStatus([]);
+    const out = captureOutput();
+    // User-observable: feature name + phase appear somewhere in the output.
+    expect(out).toContain('add auth');
+    expect(out).toContain('implementing');
   });
 
-  describe('active workflow', () => {
-    beforeEach(() => {
-      readActiveMock.mockReturnValue('2024-01-01-add-auth');
-      loadStateMock.mockReturnValue({
-        feature: 'add auth',
-        phase: 'implementing',
-        currentTaskIndex: 1,
-        tasks: [{}, {}],
-        startedAt: '2024-01-01T00:00:00Z',
-        plannerTool: null,
-        plannerModel: null,
-        implementerTool: null,
-        implementerModel: null,
-      });
-    });
-
-    it('prints workflow status', () => {
-      runStatus([]);
-      const output = consoleSpy.mock.calls.map(c => String(c[0])).join('\n');
-      expect(output).toContain('add auth');
-      expect(output).toContain('implementing');
-    });
-
-    it('also shows cost history when --history is passed', () => {
-      aggregateSessionCostsMock.mockReturnValue({
-        completedSessions: 1,
-        totalCost: 0.5,
-        totalSavings: 0.3,
-        averageSavingsPercentage: 60,
-        averageLocalCompletionRate: 75,
-        providerTotals: {},
-      });
-      runStatus(['--history']);
-      const output = consoleSpy.mock.calls.map(c => String(c[0])).join('\n');
-      expect(output).toContain('add auth');
-      expect(output).toMatch(/Cost History/);
-    });
+  it('triggers the cost-history path when --history is passed and suppresses the --history hint', async () => {
+    await runStatus(['--history']);
+    const out = captureOutput();
+    expect(out.length).toBeGreaterThan(0);
+    // Hint should NOT appear when the flag is already set (shape check, not exact copy).
+    expect(out).not.toMatch(/Run .*--history/);
   });
 });

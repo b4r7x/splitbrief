@@ -3,12 +3,13 @@ import ansis from 'ansis';
 import { createPlanner } from '../../engine/runners/factory.js';
 import type { PlanResult } from '../../engine/planners/types.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
-import { ensureGitAndConfig, resolveProjectDir, loadConfigOrExit } from '../workflow.js';
+import { ensureGitAndConfig, resolveProjectDir, loadConfigOrExit } from '../setup.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { warnStderr } from '../../lib/warn.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import { beginSession } from '../../core/sessions/lifecycle.js';
-import { clearStaleSession } from './guards.js';
+import { clearStaleSession } from '../../core/sessions/guards.js';
 
 type SpecOpts = { auto: boolean; project?: string };
 
@@ -24,7 +25,8 @@ export function registerSpecCommand(program: Command): void {
 
       clearStaleSession(projectDir);
 
-      const baseConfig = loadConfigOrExit(projectDir);
+      const { config: baseConfig, warnings } = loadConfigOrExit(projectDir);
+      for (const w of warnings) warnStderr(`⚠ ${w}`);
       const config = opts.auto
         ? {
             ...baseConfig,

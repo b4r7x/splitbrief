@@ -1,5 +1,5 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { TokenUsage } from '../../core/types/summary.js';
+import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { TuiEvent } from '../../features/workflow/types.js';
 
 export interface TokensState {
@@ -16,9 +16,18 @@ const initial: TokensState = {
 
 const store = createStore<TokensState>(initial);
 
+// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+function __testReset(next?: Partial<TokensState>): void {
+  store.set(next ? { ...initial, ...next } : initial);
+}
+
+// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+// Production use is limited to workflow/actions.ts (the dispatcher).
+export const _tokensInternal = { set: store.set };
+
 export const tokensStore = {
   ...storeBase(store),
-  set: store.set,
+  __testReset,
 };
 
 export function updateTokens(state: TokensState, event: TuiEvent): TokensState {

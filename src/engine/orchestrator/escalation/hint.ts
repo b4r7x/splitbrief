@@ -1,4 +1,5 @@
-import type { Task, WorkflowState } from '../../../core/types/state-actions.js';
+import type { Task } from '../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createEventEmitter, createTextHandler, emitPlannerStatus, emitEscalate } from '../events.js';
 import { transitionAndSave, addUsageAndSave } from '../state-ops.js';
 import { truncateByChars } from '../../../utils/truncate.js';

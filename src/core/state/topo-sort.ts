@@ -1,4 +1,15 @@
-import type { Task } from '../types/state-actions.js';
+import type { Task } from '../schemas/task.js';
+import { error, matches } from '../../utils/error.js';
+
+export const topoError = {
+  circularDependency: (cycle: string[]) =>
+    error(
+      'topo-circular-dependency',
+      `Circular dependency detected: ${cycle.join(' → ')}`,
+      { cycle },
+    ),
+  isCircularDependency: matches('topo-circular-dependency'),
+} as const;
 
 export function topoSort(tasks: Task[]): Task[] {
   const taskMap = new Map<string, Task>();
@@ -12,7 +23,7 @@ export function topoSort(tasks: Task[]): Task[] {
     if (visited.has(id)) return;
     if (visiting.has(id)) {
       const cycle = [...path.slice(path.indexOf(id)), id];
-      throw new Error(`Circular dependency detected: ${cycle.join(' -> ')}`);
+      throw topoError.circularDependency(cycle);
     }
 
     const task = taskMap.get(id);

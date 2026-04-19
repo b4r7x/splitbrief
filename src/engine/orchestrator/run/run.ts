@@ -1,8 +1,9 @@
-import type { WorkflowState, Task } from '../../../core/types/state-actions.js';
-import type { Summary } from '../../../core/types/summary.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { Task } from '../../../core/schemas/task.js';
+import type { Summary } from '../../../core/schemas/summary.js';
 import type { Session } from '../../../core/schemas/session.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
-import { DEFAULT_WORKFLOW_MODE } from '../../../core/types/config-options.js';
+import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../../../core/config/accessors/runner-config.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { saveState } from '../../../core/state/persistence.js';
@@ -10,6 +11,7 @@ import { generateSessionId } from '../../../core/sessions/lifecycle.js';
 import { resolveAutoModel } from '../../../core/providers/model-selection.js';
 import { killAllProcesses } from '../../../lib/process/registry.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
+import { error } from '../../../utils/error.js';
 
 import type { ResumeContextHolder } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary.js';
@@ -111,7 +113,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
       saveFinalSession({ projectDir, sessionId, feature, startTime, status: sessionStatus, summary });
       return summary;
     }
-    throw new Error('Unreachable: workflow did not produce a summary');
+    throw error('workflow-no-summary', 'Unreachable: workflow did not produce a summary');
   }
   saveFinalSession({ projectDir, sessionId, feature, startTime, status: sessionStatus, summary: result });
   return result;

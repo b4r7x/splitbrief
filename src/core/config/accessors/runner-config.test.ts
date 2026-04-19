@@ -1,56 +1,35 @@
 import { describe, expect, it } from 'vitest';
-import { getRunnerDisplayName, getRunnerCommand, getRunnerApiKey } from './runner-config.js';
+import { getPlannerToolId } from './runner-config.js';
+import type { PlannerConfig } from '../../schemas/planner-config.js';
 
-describe('getRunnerDisplayName', () => {
-  it('returns tool name for cli kind', () => {
-    expect(getRunnerDisplayName({ kind: 'cli', tool: 'claude-code' } as any)).toBe('claude-code');
+describe('getPlannerToolId', () => {
+  it('returns the tool for cli kind', () => {
+    const config: PlannerConfig = { kind: 'cli', tool: 'claude-code' };
+    expect(getPlannerToolId(config)).toBe('claude-code');
   });
 
-  it('returns provider for api kind', () => {
-    expect(getRunnerDisplayName({ kind: 'api', provider: 'ollama', apiBase: 'http://localhost:11434/v1' } as any)).toBe('ollama');
+  it('returns the provider for api kind when it is a valid PlannerToolId', () => {
+    const config: PlannerConfig = { kind: 'api', provider: 'anthropic', apiBase: 'https://api.anthropic.com/v1', model: 'claude-opus-4-5' };
+    expect(getPlannerToolId(config)).toBe('anthropic');
   });
 
-  it('returns "shell" for shell kind', () => {
-    expect(getRunnerDisplayName({ kind: 'shell', command: '/usr/bin/my-tool' } as any)).toBe('shell');
+  it('falls back to anthropic for api kind with unknown provider', () => {
+    const config: PlannerConfig = { kind: 'api', provider: 'my-custom', apiBase: 'http://localhost:9999/v1', model: 'my-model' };
+    expect(getPlannerToolId(config)).toBe('anthropic');
   });
 
-  it('returns "agent" for agent kind', () => {
-    expect(getRunnerDisplayName({ kind: 'agent', command: 'claude' } as any)).toBe('agent');
+  it('returns shell for shell kind', () => {
+    const config: PlannerConfig = { kind: 'shell', command: 'my-planner' };
+    expect(getPlannerToolId(config)).toBe('shell');
   });
 
-  it('returns "agent-sdk" for agent-sdk kind', () => {
-    expect(getRunnerDisplayName({ kind: 'agent-sdk' } as any)).toBe('agent-sdk');
-  });
-});
-
-describe('getRunnerCommand', () => {
-  it('returns command for shell kind', () => {
-    expect(getRunnerCommand({ kind: 'shell', command: 'my-tool' } as any)).toBe('my-tool');
+  it('returns agent (not shell) for agent kind', () => {
+    const config: PlannerConfig = { kind: 'agent', command: 'my-agent' };
+    expect(getPlannerToolId(config)).toBe('agent');
   });
 
-  it('returns command for agent kind', () => {
-    expect(getRunnerCommand({ kind: 'agent', command: 'claude' } as any)).toBe('claude');
-  });
-
-  it('returns undefined for cli kind', () => {
-    expect(getRunnerCommand({ kind: 'cli', tool: 'claude-code' } as any)).toBeUndefined();
-  });
-
-  it('returns undefined for api kind', () => {
-    expect(getRunnerCommand({ kind: 'api', provider: 'ollama' } as any)).toBeUndefined();
-  });
-});
-
-describe('getRunnerApiKey', () => {
-  it('returns apiKey when present', () => {
-    expect(getRunnerApiKey({ kind: 'api', apiKey: 'sk-123' } as any)).toBe('sk-123');
-  });
-
-  it('returns apiKey for agent-sdk kind', () => {
-    expect(getRunnerApiKey({ kind: 'agent-sdk', apiKey: 'sk-456' } as any)).toBe('sk-456');
-  });
-
-  it('returns undefined when apiKey is missing', () => {
-    expect(getRunnerApiKey({ kind: 'cli', tool: 'claude-code' } as any)).toBeUndefined();
+  it('returns agent-sdk for agent-sdk kind', () => {
+    const config: PlannerConfig = { kind: 'agent-sdk' };
+    expect(getPlannerToolId(config)).toBe('agent-sdk');
   });
 });

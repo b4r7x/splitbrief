@@ -3,7 +3,7 @@ import { useTheme } from '../../../components/theme.js';
 import { formatCost } from '../../../core/formatting.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import { LabeledRow } from '../../../components/labeled-row.js';
-import type { CostBreakdown } from '../../../core/types/summary.js';
+import type { CostBreakdown } from '../../../core/schemas/summary.js';
 
 interface SummaryCostBreakdownProps {
   costBreakdown: CostBreakdown;

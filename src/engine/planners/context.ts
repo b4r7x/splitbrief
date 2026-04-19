@@ -1,7 +1,6 @@
 import { readFile, readdir, access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { readPackageJson } from '../../core/project-meta.js';
-import { warnError } from '../../lib/warn.js';
 
 const MAX_LISTED_ENTRIES = 500;
 
@@ -10,23 +9,21 @@ export async function buildProjectContextMarkdown(projectDir: string): Promise<s
 
   const pkg = readPackageJson(projectDir);
   if (pkg) {
-    try {
-      const name = typeof pkg.name === 'string' ? pkg.name : 'unknown';
-      const description = typeof pkg.description === 'string' ? pkg.description : '';
-      const rawScripts = (typeof pkg.scripts === 'object' && pkg.scripts !== null && !Array.isArray(pkg.scripts))
-        ? pkg.scripts
-        : {};
+    const name = typeof pkg.name === 'string' ? pkg.name : 'unknown';
+    const description = typeof pkg.description === 'string' ? pkg.description : '';
+    const rawScripts = (typeof pkg.scripts === 'object' && pkg.scripts !== null && !Array.isArray(pkg.scripts))
+      ? pkg.scripts
+      : {};
 
-      parts.push(`## Package: ${name}`);
-      if (description) parts.push(description);
-      const scriptEntries = Object.entries(rawScripts).filter(([, v]) => typeof v === 'string');
-      if (scriptEntries.length > 0) {
-        parts.push('\n### Scripts');
-        for (const [scriptName, cmd] of scriptEntries) {
-          parts.push(`- \`${scriptName}\`: \`${cmd}\``);
-        }
+    parts.push(`## Package: ${name}`);
+    if (description) parts.push(description);
+    const scriptEntries = Object.entries(rawScripts).filter(([, v]) => typeof v === 'string');
+    if (scriptEntries.length > 0) {
+      parts.push('\n### Scripts');
+      for (const [scriptName, cmd] of scriptEntries) {
+        parts.push(`- \`${scriptName}\`: \`${cmd}\``);
       }
-    } catch (err) { warnError('Failed to read package.json', err); }
+    }
   }
 
   const readmePath = join(projectDir, 'README.md');

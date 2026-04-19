@@ -5,7 +5,7 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';
 import { configStore } from '../../../stores/project/config.js';
 import { useStores } from '../../../stores/use-stores.js';
-import { SessionRow } from '../../sessions/session-row.js';
+import { SessionRow } from '../../../components/session-row.js';
 
 export function RecentSessions() {
   const [{ sessions }, { isSmall }, { projectDir }] = useStores(

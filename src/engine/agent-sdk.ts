@@ -2,7 +2,8 @@ import type { InvokeResult } from './runners/types.js';
 import { accumulateUsage } from './streaming/output-parsers.js';
 import { toTokenDelta } from './streaming/token-utils.js';
 import { createChangeDetector } from './change-detection.js';
-import { createSessionResumeState } from './session-expiry.js';
+import { createSessionResumeState, runWithResumeFallback } from './session-expiry.js';
+import { error } from '../utils/error.js';
 
 export const PLANNER_ALLOWED_TOOLS = ['Read', 'Glob', 'Grep', 'Write'] as const;
 export const IMPLEMENTER_ALLOWED_TOOLS = ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'] as const;
@@ -31,6 +32,7 @@ interface SdkQueryOptions {
     model: string;
     cwd: string;
     resume?: string | undefined;
+    env?: Record<string, string | undefined>;
   };
 }
 
@@ -52,7 +54,8 @@ export async function loadSdk(): Promise<SdkClient> {
     return await import('@anthropic-ai/claude-agent-sdk');
   } catch (err) {
     if (isModuleNotFoundError(err)) {
-      throw new Error(
+      throw error(
+        'agent-sdk-not-installed',
         'Agent SDK not installed. Run: npm install @anthropic-ai/claude-agent-sdk',
       );
     }
@@ -151,47 +154,35 @@ export interface AgentSdkBackend {
 export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBackend {
   const permissionMode = opts.permissionMode ?? 'acceptEdits';
   // SDK keys session files by cwd; passing a mismatched cwd silently starts a fresh session.
-  let pendingExpiredCallback: ((id: string) => void) | undefined;
-  const session = createSessionResumeState({
-    onExpired: (id) => pendingExpiredCallback?.(id),
-  });
+  const session = createSessionResumeState();
   session.capture(opts.initialSessionId ?? null);
 
   const backend: AgentSdkBackend = {
     async invoke({ prompt, projectDir, model, onOutput, onSessionId, onSessionExpired }) {
       const { query } = await loadSdk();
 
-      // SDK has no apiKey option; env mutation only safe because one workflow runs at a time.
-      const savedKey = process.env['ANTHROPIC_API_KEY'];
       const apiKey = opts.apiKey;
-      if (apiKey && !savedKey) process.env['ANTHROPIC_API_KEY'] = apiKey;
-
       const captureSession = (id: string) => { session.capture(id); onSessionId?.(id); };
 
-      const runQuery = async (resumeId: string | null) => {
+      const runQuery = async (resumeId: string | undefined) => {
         const options: SdkQueryOptions['options'] = {
           allowedTools: opts.allowedTools, permissionMode, model, cwd: projectDir,
         };
         if (resumeId) options.resume = resumeId;
+        // Scope ANTHROPIC_API_KEY to this SDK call via the `env` option so concurrent
+        // workflows with different keys don't race. Omit `env` entirely when no override
+        // is set so the SDK inherits process.env as usual.
+        if (apiKey) options.env = { ...process.env, ANTHROPIC_API_KEY: apiKey };
         return processStream(query({ prompt, options }), onOutput, captureSession);
       };
 
-      pendingExpiredCallback = onSessionExpired;
-      try {
-        try {
-          const result = await runQuery(session.getResumeId());
-          return { text: result.text, usage: result.usage };
-        } catch (err) {
-          if (session.handleResumeError(err)) {
-            const retry = await runQuery(null);
-            return { text: retry.text, usage: retry.usage };
-          }
-          throw err;
-        }
-      } finally {
-        pendingExpiredCallback = undefined;
-        if (apiKey && !savedKey) delete process.env['ANTHROPIC_API_KEY'];
-      }
+      const priorId = session.getResumeId();
+      const result = await runWithResumeFallback(
+        session,
+        (resumeId) => runQuery(resumeId),
+        () => { if (priorId) onSessionExpired?.(priorId); },
+      );
+      return { text: result.text, usage: result.usage };
     },
   };
 

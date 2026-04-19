@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createOpenRouterProvider, parsePrice, toDetectedModel } from './openrouter.js';
-import { setupFetchMock, setupEnvMock } from './test-helpers.js';
+import { setupFetchMock, setupEnvMock } from './__test-helpers__.js';
+
+// Shared provider contract (listModels / detectContextLength / error paths / overrides)
+// lives in provider-contract.test.ts. This file covers OpenRouter-specific pure helpers
+// (price parsing, model→DetectedModel transformation) and the metadata fetch shape.
 
 describe('parsePrice', () => {
   it('returns 0 for undefined', () => {
@@ -109,47 +113,11 @@ describe('toDetectedModel', () => {
   });
 });
 
-describe('createOpenRouterProvider', () => {
+describe('createOpenRouterProvider listModelsWithMetadata', () => {
   setupFetchMock();
   setupEnvMock('OPENROUTER_API_KEY', 'test-key');
 
-  it('uses default base URL', () => {
-    const p = createOpenRouterProvider();
-    expect(p.baseURL).toBe('https://openrouter.ai/api/v1');
-  });
-
-  it('respects overrides', () => {
-    const p = createOpenRouterProvider({
-      apiBase: 'https://custom.openrouter.ai/v1',
-      apiKey: 'custom-key',
-    });
-    expect(p.baseURL).toBe('https://custom.openrouter.ai/v1');
-    expect(p.apiKey()).toBe('custom-key');
-  });
-
-  it('listModels returns model IDs', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          data: [
-            { id: 'openai/gpt-4o', context_length: 128000 },
-            { id: 'anthropic/claude-3-opus', context_length: 200000 },
-          ],
-        }),
-        { status: 200 },
-      ),
-    );
-
-    const p = createOpenRouterProvider();
-    const models = await p.listModels();
-
-    expect(models).toEqual(['openai/gpt-4o', 'anthropic/claude-3-opus']);
-    expect(globalThis.fetch).toHaveBeenCalledWith('https://openrouter.ai/api/v1/models', {
-      headers: { Authorization: 'Bearer test-key' },
-    });
-  });
-
-  it('listModelsWithMetadata returns full metadata', async () => {
+  it('returns full metadata with pricing conversion and vision capability', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -166,75 +134,16 @@ describe('createOpenRouterProvider', () => {
       ),
     );
 
-    const p = createOpenRouterProvider();
-    const models = await p.listModelsWithMetadata();
-
-    expect(models).toHaveLength(1);
-    expect(models[0]).toEqual({
-      id: 'openai/gpt-4o',
-      contextLength: 128000,
-      pricingInput: 5,
-      pricingOutput: 15,
-      isFree: false,
-      capabilities: ['vision'],
-    });
+    const models = await createOpenRouterProvider().listModelsWithMetadata();
+    expect(models).toEqual([
+      {
+        id: 'openai/gpt-4o',
+        contextLength: 128000,
+        pricingInput: 5,
+        pricingOutput: 15,
+        isFree: false,
+        capabilities: ['vision'],
+      },
+    ]);
   });
-
-  it('detectContextLength returns context length for known model', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          data: [{ id: 'anthropic/claude-3-opus', context_length: 200000 }],
-        }),
-        { status: 200 },
-      ),
-    );
-
-    const p = createOpenRouterProvider();
-    expect(await p.detectContextLength('anthropic/claude-3-opus')).toBe(200000);
-  });
-
-  it('detectContextLength returns null for unknown model', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          data: [{ id: 'other-model', context_length: 4096 }],
-        }),
-        { status: 200 },
-      ),
-    );
-
-    const p = createOpenRouterProvider();
-    expect(await p.detectContextLength('unknown-model')).toBeNull();
-  });
-
-  it('returns empty array when no API key', async () => {
-    delete process.env.OPENROUTER_API_KEY;
-    const p = createOpenRouterProvider();
-    expect(await p.listModels()).toEqual([]);
-  });
-
-  it('returns empty array on non-ok response', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(new Response('error', { status: 500 }));
-
-    const p = createOpenRouterProvider();
-    expect(await p.listModels()).toEqual([]);
-  });
-
-  it('returns empty array on fetch error', async () => {
-    vi.mocked(globalThis.fetch).mockRejectedValue(new Error('network error'));
-
-    const p = createOpenRouterProvider();
-    expect(await p.listModels()).toEqual([]);
-  });
-
-  it('returns empty array on invalid response shape', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({ invalid: 'shape' }), { status: 200 }),
-    );
-
-    const p = createOpenRouterProvider();
-    expect(await p.listModels()).toEqual([]);
-  });
-
 });

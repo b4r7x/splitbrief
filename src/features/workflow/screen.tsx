@@ -1,20 +1,21 @@
 import { Box } from 'ink';
-import type { Summary } from '../../core/types/summary.js';
+import type { Summary } from '../../core/schemas/summary.js';
 import type { InputMode } from '../../stores/navigation/router.js';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { Header } from './components/header.js';
 import { AgentStatusRow } from './components/agent-status-row.js';
 import { ConfigLine } from './components/config-line.js';
 import { ConversationFlow } from './components/conversation-flow/flow.js';
-import { FeedbackRow } from '../../components/input-bar/feedback-row.js';
+import { FeedbackRow } from './components/feedback-row.js';
 import { InputBar } from '../../components/input-bar/index.js';
 import { InputFooter } from './components/input-footer.js';
 import { ScreenShell } from '../../components/screen-shell.js';
 import { ReviewView } from './components/review-view.js';
 import { Sidebar } from './components/sidebar.js';
-import { useWorkflow } from './hooks/use-workflow.js';
+import { useInputMode } from './hooks/use-input-mode.js';
+import { useWorkflowRunner } from './hooks/use-workflow-runner.js';
 import { useWorkflowKeys } from './hooks/use-workflow-keys.js';
-import { REVIEW_HINT } from './review-parser.js';
+import { REVIEW_HINT, createReviewInputHandler } from './review-parser.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { configStore } from '../../stores/project/config.js';
 import { skillsStore } from '../../stores/project/skills.js';
@@ -48,14 +49,13 @@ function resolveInputHint(cancelled: boolean, inputHint: string, inputMode: Inpu
 
 export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps) {
   useWorkflowKeys();
-  const [configState, skills, input, terminal] = useStores(
-    configStore,
+  const config = configStore.useConfig();
+  const projectDir = configStore.use(s => s.projectDir);
+  const [skills, input, terminal] = useStores(
     skillsStore,
     inputHeightStore,
     terminalSizeStore,
   );
-  const { config, projectDir } = configState;
-  if (!config) throw new Error('configStore.load must be called before rendering');
   const selectedSkillMetas = skills.available.filter(m => skills.selected.has(m.id));
   const hasOverlay = overlayStore.use(s => s.active !== 'none');
   const feature = routerStore.use(s => s.screen === 'workflow' ? s.feature : '');
@@ -67,7 +67,8 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
   const onComplete = (summary: Summary) =>
     routerStore.navigate({ to: 'summary', summary });
 
-  const workflow = useWorkflow({
+  const inputMode = useInputMode();
+  const runner = useWorkflowRunner({
     feature,
     projectDir,
     config,
@@ -75,7 +76,9 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
     initialResumeState: resumeState,
     selectedSkills: selectedSkillMetas,
     sessionId,
+    inputMode,
   });
+  const review = createReviewInputHandler(inputMode);
 
   const [{ cancelled }, { filePath: reviewFilePath }] = useStores(lifecycleStore, reviewStore);
   const sections = useSections();
@@ -92,7 +95,7 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
     <ScreenShell
       header={
         <>
-          <Header startedAt={workflow.startedAt} />
+          <Header startedAt={runner.startedAt} />
           <ConfigLine />
           <AgentStatusRow />
           <Box height={1} flexShrink={0} />
@@ -102,11 +105,11 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
         <>
           <FeedbackRow />
           <InputBar
-            onSubmit={cancelled ? workflow.handleResume : workflow.handleInput}
+            onSubmit={cancelled ? runner.handleResume : review.handleInput}
             onSlashCommand={onSlashCommand}
             commands={commands}
-            mode={workflow.inputMode}
-            hint={resolveInputHint(cancelled, workflow.inputHint, workflow.inputMode)}
+            mode={inputMode.mode}
+            hint={resolveInputHint(cancelled, inputMode.hint, inputMode.mode)}
             currentScreen="workflow"
             disabled={hasOverlay}
           />
@@ -118,7 +121,7 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
         {showSidebar && (
           <Sidebar width={sidebarWidth} />
         )}
-        {workflow.inputMode === 'review' && reviewFilePath ? (
+        {inputMode.mode === 'review' && reviewFilePath ? (
           <ReviewView height={contentHeight} width={contentWidth} />
         ) : (
           <ConversationFlow sections={sections} height={contentHeight} width={contentWidth} />

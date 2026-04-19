@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createPlannerBase } from './base.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeTask } from '#testing/helpers/fixtures.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { PlannerCapabilities } from './types.js';

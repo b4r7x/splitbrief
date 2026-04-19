@@ -30,8 +30,8 @@ describe('readConversationScrollSnapshot', () => {
   });
 
   it('reflects seeded terminal size in contentRect and viewportHeight', () => {
-    terminalSizeStore.set({ cols: 160, rows: 40, isSmall: false });
-    inputHeightStore.set({ rows: 3 });
+    terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
 
     const snap = readConversationScrollSnapshot();
 
@@ -41,8 +41,8 @@ describe('readConversationScrollSnapshot', () => {
   });
 
   it('reduces viewportHeight on a small terminal', () => {
-    terminalSizeStore.set({ cols: 80, rows: 20, isSmall: true });
-    inputHeightStore.set({ rows: 3 });
+    terminalSizeStore.__testReset({ cols: 80, rows: 20, isSmall: true });
+    inputHeightStore.__testReset({ rows: 3 });
 
     const snap = readConversationScrollSnapshot();
 
@@ -51,12 +51,12 @@ describe('readConversationScrollSnapshot', () => {
   });
 
   it('accounts for config chrome rows when a workflow-config event is present', () => {
-    terminalSizeStore.set({ cols: 120, rows: 30, isSmall: false });
-    inputHeightStore.set({ rows: 3 });
+    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
 
     const snapWithout = readConversationScrollSnapshot();
 
-    eventsStore.set({
+    eventsStore.__testReset({
       events: [{ type: 'workflow-config', ts: 0, mode: 'standard', plannerTool: 'claude-code', implementerTool: 'ollama' }],
     });
 
@@ -66,7 +66,7 @@ describe('readConversationScrollSnapshot', () => {
   });
 
   it('sidebar presence narrows content width', () => {
-    terminalSizeStore.set({ cols: 120, rows: 30, isSmall: false });
+    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
 
     const snapNoSidebar = readConversationScrollSnapshot();
 
@@ -78,8 +78,8 @@ describe('readConversationScrollSnapshot', () => {
   });
 
   it('scrollOffset stays within [0, maxOffset]', () => {
-    terminalSizeStore.set({ cols: 120, rows: 30, isSmall: false });
-    conversationScrollStore.set({ ...conversationScrollStore.get(), scrollOffset: 999 });
+    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+    conversationScrollStore.__testReset({ scrollOffset: 999 });
 
     const snap = readConversationScrollSnapshot();
 
@@ -90,8 +90,8 @@ describe('readConversationScrollSnapshot', () => {
 
 describe('readReviewContentHeight', () => {
   it('returns a positive height for a normal terminal with content', () => {
-    terminalSizeStore.set({ cols: 120, rows: 30, isSmall: false });
-    inputHeightStore.set({ rows: 3 });
+    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
     reviewStore.setLineCount(50);
 
     const height = readReviewContentHeight();
@@ -100,8 +100,8 @@ describe('readReviewContentHeight', () => {
   });
 
   it('accounts for scrollable content by reserving a footer row', () => {
-    terminalSizeStore.set({ cols: 120, rows: 30, isSmall: false });
-    inputHeightStore.set({ rows: 3 });
+    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
 
     reviewStore.setLineCount(1);
     const shortContent = readReviewContentHeight();

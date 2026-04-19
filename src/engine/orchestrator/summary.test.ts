@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { buildSummary, calculateTaskCost } from './summary.js';
 import { calculateCostBreakdown } from '../providers/pricing.js';
 import type { BuildSummaryState } from './summary.js';
-import { taskId } from '../../core/types/state-actions.js';
-import { makeUsage, makeTask } from '#testing/helpers/fixtures.js';
+import { taskId } from '../../core/schemas/task.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -87,8 +88,8 @@ describe('buildSummary', () => {
     expect(summary.totalTasks).toBe(0);
     expect(summary.escalationRate).toBe(0);
     expect(Number.isFinite(summary.escalationRate)).toBe(true);
-    expect(summary.costBreakdown).toBeDefined();
-    expect(Number.isFinite(summary.costBreakdown!.savingsPercentage)).toBe(true);
+    if (!summary.costBreakdown) throw new Error('expected costBreakdown on summary');
+    expect(Number.isFinite(summary.costBreakdown.savingsPercentage)).toBe(true);
   });
 
   it('token usage passed through correctly', () => {
@@ -367,7 +368,7 @@ describe('calculateTaskCost', () => {
     expect(cost).toBeGreaterThan(0);
   });
 
-  it('handles zero global tokens gracefully', () => {
+  it('returns cost 0 when all global token totals are zero', () => {
     const task = { taskId: taskId('T001'), taskTitle: 'test', method: 'local' as const, implementerTokens: 0, escalationTokens: 0, retryCount: 0 };
     const globalUsage = { implementerInput: 0, implementerOutput: 0, escalationInput: 0, escalationOutput: 0 };
     const cost = calculateTaskCost(task, globalUsage, 'ollama', 'claude-code');
@@ -409,12 +410,14 @@ describe('buildSummary task costs', () => {
       implementerTool: 'deepseek',
     });
 
-    expect(summary.taskBreakdown![0]!.cost).toBeDefined();
-    expect(summary.taskBreakdown![1]!.cost).toBeDefined();
-    expect(summary.taskBreakdown![0]!.cost! + summary.taskBreakdown![1]!.cost!).toBeCloseTo(
-      summary.costBreakdown!.actualImplementerCost,
-      6,
-    );
+    const breakdown = summary.taskBreakdown;
+    if (!breakdown || breakdown.length < 2) throw new Error('expected 2 task breakdowns');
+    const first = breakdown[0];
+    const second = breakdown[1];
+    if (!first || !second) throw new Error('expected 2 task breakdowns');
+    if (first.cost === undefined || second.cost === undefined) throw new Error('expected cost on task breakdowns');
+    if (!summary.costBreakdown) throw new Error('expected costBreakdown on summary');
+    expect(first.cost + second.cost).toBeCloseTo(summary.costBreakdown.actualImplementerCost, 6);
   });
 
   it('task cost is 0 for local implementer', () => {
@@ -432,6 +435,8 @@ describe('buildSummary task costs', () => {
       implementerTool: 'ollama',
     });
 
-    expect(summary.taskBreakdown![0]!.cost).toBe(0);
+    const first = summary.taskBreakdown?.[0];
+    if (!first) throw new Error('expected a task breakdown entry');
+    expect(first.cost).toBe(0);
   });
 });

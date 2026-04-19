@@ -1,9 +1,21 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { modelCacheStore, type DetectedModel } from './model-cache.js';
-import type { ModelsDevCatalog } from '../../engine/providers/models-dev.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { modelCacheStore } from './model-cache.js';
+import type { DetectedModel } from '../../core/types/config-options.js';
+import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 
 const TTL_MS = 5 * 60 * 1000;
 const MODELS_DEV_TTL_MS = 60 * 60 * 1000;
+
+const ollamaModels: DetectedModel[] = [
+  { id: 'qwen2.5:7b', contextLength: 8192, isFree: true },
+  { id: 'llama3:8b', contextLength: 4096, isFree: true },
+];
+
+const deepseekModels: DetectedModel[] = [{ id: 'deepseek-r1' }];
+
+const catalog: ModelsDevCatalog = {
+  openai: { id: 'openai', models: { 'gpt-4o': { id: 'gpt-4o' } } },
+};
 
 describe('modelCacheStore', () => {
   beforeEach(() => {
@@ -15,162 +27,68 @@ describe('modelCacheStore', () => {
     vi.useRealTimers();
   });
 
-  const sampleModels: DetectedModel[] = [
-    { id: 'qwen2.5:7b', contextLength: 8192, isFree: true },
-    { id: 'llama3:8b', contextLength: 4096, isFree: true },
-  ];
+  it('provider cache lifecycle: set → read → TTL expires → invalidate → reset', () => {
+    // set + read returns the models with fresh (non-stale) cache metadata
+    modelCacheStore.setProviderModels('ollama', ollamaModels);
+    expect(modelCacheStore.getProviderModels('ollama')).toEqual(ollamaModels);
+    expect(modelCacheStore.get().providers['ollama']?.isStale).toBe(false);
 
-  describe('setProviderModels / getProviderModels', () => {
-    it('sets and retrieves models for a provider', () => {
-      modelCacheStore.setProviderModels('ollama', sampleModels);
-      const result = modelCacheStore.getProviderModels('ollama');
-      expect(result).toEqual(sampleModels);
-    });
+    // just before TTL — still fresh
+    vi.advanceTimersByTime(TTL_MS - 1);
+    expect(modelCacheStore.getProviderModels('ollama')).toEqual(ollamaModels);
 
-    it('returns null for uncached provider', () => {
-      expect(modelCacheStore.getProviderModels('ollama')).toBeNull();
-    });
+    // at TTL — stale, reads null even though internal state remains populated
+    vi.advanceTimersByTime(1);
+    expect(modelCacheStore.getProviderModels('ollama')).toBeNull();
 
-    it('stores models with fetchedAt timestamp', () => {
-      const now = Date.now();
-      modelCacheStore.setProviderModels('ollama', sampleModels);
-      const cache = modelCacheStore.get().providers['ollama'];
-      expect(cache?.fetchedAt).toBe(now);
-      expect(cache?.isStale).toBe(false);
-    });
+    // re-populating refreshes the cache
+    modelCacheStore.setProviderModels('ollama', ollamaModels);
+    modelCacheStore.setProviderModels('deepseek', deepseekModels);
+    expect(modelCacheStore.getProviderModels('ollama')).toEqual(ollamaModels);
+    expect(modelCacheStore.getProviderModels('deepseek')).toEqual(deepseekModels);
+
+    // invalidateAll marks every provider stale — subsequent reads are null
+    modelCacheStore.invalidateAll();
+    expect(modelCacheStore.getProviderModels('ollama')).toBeNull();
+    expect(modelCacheStore.getProviderModels('deepseek')).toBeNull();
+
+    // reset clears all cached providers
+    modelCacheStore.setProviderModels('ollama', ollamaModels);
+    modelCacheStore.reset();
+    expect(modelCacheStore.get().providers).toEqual({});
+    expect(modelCacheStore.getProviderModels('ollama')).toBeNull();
   });
 
-  describe('cache expiration', () => {
-    it('returns models before TTL expires', () => {
-      modelCacheStore.setProviderModels('ollama', sampleModels);
-      vi.advanceTimersByTime(TTL_MS - 1);
-      expect(modelCacheStore.getProviderModels('ollama')).toEqual(sampleModels);
-    });
-
-    it('returns null after TTL expires', () => {
-      modelCacheStore.setProviderModels('ollama', sampleModels);
-      vi.advanceTimersByTime(TTL_MS);
-      expect(modelCacheStore.getProviderModels('ollama')).toBeNull();
-    });
+  it('returns null for an unknown provider before anything is cached', () => {
+    expect(modelCacheStore.getProviderModels('ollama')).toBeNull();
   });
 
-  describe('invalidateAll', () => {
-    it('marks all providers as stale', () => {
-      modelCacheStore.setProviderModels('ollama', sampleModels);
-      modelCacheStore.setProviderModels('deepseek', [{ id: 'deepseek-r1' }]);
-      modelCacheStore.setProviderModels('lm-studio', [{ id: 'local-model' }]);
+  it('Models.dev catalog lifecycle: set → read → TTL expires → invalidate clears it', () => {
+    modelCacheStore.setModelsDevCatalog(catalog);
+    expect(modelCacheStore.getModelsDevCatalog()).toEqual(catalog);
 
-      modelCacheStore.invalidateAll();
+    vi.advanceTimersByTime(MODELS_DEV_TTL_MS - 1);
+    expect(modelCacheStore.getModelsDevCatalog()).toEqual(catalog);
 
-      expect(modelCacheStore.get().providers['ollama']?.isStale).toBe(true);
-      expect(modelCacheStore.get().providers['deepseek']?.isStale).toBe(true);
-      expect(modelCacheStore.get().providers['lm-studio']?.isStale).toBe(true);
-    });
+    vi.advanceTimersByTime(1);
+    expect(modelCacheStore.getModelsDevCatalog()).toBeNull();
 
-    it('getProviderModels returns null for all providers after invalidateAll', () => {
-      modelCacheStore.setProviderModels('ollama', sampleModels);
-      modelCacheStore.setProviderModels('deepseek', [{ id: 'deepseek-r1' }]);
-
-      modelCacheStore.invalidateAll();
-
-      expect(modelCacheStore.getProviderModels('ollama')).toBeNull();
-      expect(modelCacheStore.getProviderModels('deepseek')).toBeNull();
-    });
+    modelCacheStore.setModelsDevCatalog(catalog);
+    modelCacheStore.invalidateAll();
+    expect(modelCacheStore.getModelsDevCatalog()).toBeNull();
   });
 
-  describe('reset', () => {
-    it('clears all cached data', () => {
-      modelCacheStore.setProviderModels('ollama', sampleModels);
-
-      modelCacheStore.reset();
-
-      expect(modelCacheStore.get().providers).toEqual({});
-    });
+  it('returns null for Models.dev catalog before anything is cached', () => {
+    expect(modelCacheStore.getModelsDevCatalog()).toBeNull();
   });
 
-  describe('Models.dev catalog caching', () => {
-    const sampleCatalog: ModelsDevCatalog = {
-      openai: { id: 'openai', models: { 'gpt-4o': { id: 'gpt-4o' } } },
-    };
+  it('provider and Models.dev catalog caches expire independently', () => {
+    modelCacheStore.setProviderModels('ollama', ollamaModels);
+    modelCacheStore.setModelsDevCatalog(catalog);
 
-    describe('setModelsDevCatalog', () => {
-      it('stores the catalog', () => {
-        modelCacheStore.setModelsDevCatalog(sampleCatalog);
-        expect(modelCacheStore.get().modelsDevCatalog).toEqual(sampleCatalog);
-      });
-
-      it('sets modelsDevFetchedAt to current time', () => {
-        const now = Date.now();
-        modelCacheStore.setModelsDevCatalog(sampleCatalog);
-        expect(modelCacheStore.get().modelsDevFetchedAt).toBe(now);
-      });
-    });
-
-    describe('getModelsDevCatalog', () => {
-      it('returns catalog when fresh', () => {
-        modelCacheStore.setModelsDevCatalog(sampleCatalog);
-        expect(modelCacheStore.getModelsDevCatalog()).toEqual(sampleCatalog);
-      });
-
-      it('returns null when no catalog is set', () => {
-        expect(modelCacheStore.getModelsDevCatalog()).toBeNull();
-      });
-
-      it('returns null when stale', () => {
-        modelCacheStore.setModelsDevCatalog(sampleCatalog);
-        vi.advanceTimersByTime(MODELS_DEV_TTL_MS);
-        expect(modelCacheStore.getModelsDevCatalog()).toBeNull();
-      });
-
-      it('returns catalog just before TTL expires', () => {
-        modelCacheStore.setModelsDevCatalog(sampleCatalog);
-        vi.advanceTimersByTime(MODELS_DEV_TTL_MS - 1);
-        expect(modelCacheStore.getModelsDevCatalog()).toEqual(sampleCatalog);
-      });
-    });
-
-    describe('invalidateAll clears Models.dev catalog', () => {
-      it('sets modelsDevCatalog to null', () => {
-        modelCacheStore.setModelsDevCatalog(sampleCatalog);
-        modelCacheStore.invalidateAll();
-        expect(modelCacheStore.get().modelsDevCatalog).toBeNull();
-      });
-
-      it('sets modelsDevFetchedAt to null', () => {
-        modelCacheStore.setModelsDevCatalog(sampleCatalog);
-        modelCacheStore.invalidateAll();
-        expect(modelCacheStore.get().modelsDevFetchedAt).toBeNull();
-      });
-
-      it('also marks all providers stale', () => {
-        modelCacheStore.setProviderModels('ollama', sampleModels);
-        modelCacheStore.setModelsDevCatalog(sampleCatalog);
-
-        modelCacheStore.invalidateAll();
-
-        expect(modelCacheStore.get().providers['ollama']?.isStale).toBe(true);
-        expect(modelCacheStore.getModelsDevCatalog()).toBeNull();
-      });
-    });
-
-    describe('per-provider caching still works', () => {
-      it('provider cache is independent of Models.dev catalog', () => {
-        modelCacheStore.setProviderModels('ollama', sampleModels);
-        modelCacheStore.setModelsDevCatalog(sampleCatalog);
-
-        expect(modelCacheStore.getProviderModels('ollama')).toEqual(sampleModels);
-        expect(modelCacheStore.getModelsDevCatalog()).toEqual(sampleCatalog);
-      });
-
-      it('provider TTL expiry does not affect Models.dev catalog', () => {
-        modelCacheStore.setProviderModels('ollama', sampleModels);
-        modelCacheStore.setModelsDevCatalog(sampleCatalog);
-
-        vi.advanceTimersByTime(TTL_MS);
-
-        expect(modelCacheStore.getProviderModels('ollama')).toBeNull();
-        expect(modelCacheStore.getModelsDevCatalog()).toEqual(sampleCatalog);
-      });
-    });
+    // Provider TTL is shorter than Models.dev TTL — crossing it clears only the provider cache
+    vi.advanceTimersByTime(TTL_MS);
+    expect(modelCacheStore.getProviderModels('ollama')).toBeNull();
+    expect(modelCacheStore.getModelsDevCatalog()).toEqual(catalog);
   });
 });

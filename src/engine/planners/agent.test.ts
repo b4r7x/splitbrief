@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createAgentPlanner } from './agent.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeConfig, makeTask } from '#testing/helpers/fixtures.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -32,13 +33,6 @@ describe('createAgentPlanner', () => {
   it('throws for wrong config kind', () => {
     const config = makeConfig({ planner: { kind: 'shell', command: 'echo' } });
     expect(() => createAgentPlanner(config)).toThrow('Expected agent planner config');
-  });
-
-  it('creates planner with availability methods', () => {
-    const config = defaultAgentConfig();
-    const planner = createAgentPlanner(config);
-    expect(planner.isAvailable).toBeInstanceOf(Function);
-    expect(planner.getVersion).toBeInstanceOf(Function);
   });
 
   it('supports regenerate', async () => {

@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { App } from '../../app.js';
 import { configPath, initConfig } from '../../core/config/load/load.js';
 import { renderApp } from '../render.js';
-import { resolveProjectDir } from '../workflow.js';
+import { resolveProjectDir } from '../setup.js';
 import { initStores } from '../init-stores.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { DIPTYCH_DIR, CONFIG_FILE } from '../../core/paths.js';

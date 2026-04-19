@@ -1,5 +1,6 @@
-import type { WorkflowState } from '../../core/types/state-actions.js';
-import type { Summary, TaskTokenUsage } from '../../core/types/summary.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
+import type { Summary } from '../../core/schemas/summary.js';
 import { calculateCostBreakdown, getProviderPricing, calculateCost } from '../providers/pricing.js';
 import { formatCost } from '../../core/formatting.js';
 import {

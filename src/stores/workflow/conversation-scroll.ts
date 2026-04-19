@@ -20,9 +20,14 @@ function clearAnchor<T extends { renderableCountAtScroll: number; heightAtScroll
 
 const store = createStore<ConversationScrollState>(initial);
 
+// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+function __testReset(next?: Partial<ConversationScrollState>): void {
+  store.set(next ? { ...initial(), ...next } : initial());
+}
+
 export const conversationScrollStore = {
   ...storeBase(store),
-  set: store.set,
+  __testReset,
   scrollUp: ({ renderableCount, totalHeight, step = 1 }: { renderableCount: number; totalHeight: number; step?: number }) => store.set(s => {
     const next = Math.min(s.scrollOffset + Math.max(1, step), totalHeight);
     const justStarted = s.scrollOffset === 0 && next > 0;

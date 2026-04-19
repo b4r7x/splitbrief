@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createShellPlanner } from './shell.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeConfig, makeTask } from '#testing/helpers/fixtures.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { join } from 'node:path';
 
 let projectDir: string;
@@ -20,13 +21,6 @@ describe('createShellPlanner', () => {
   it('throws for wrong config kind', () => {
     const config = makeConfig({ planner: { kind: 'agent', command: 'echo' } });
     expect(() => createShellPlanner(config)).toThrow("Expected shell planner config");
-  });
-
-  it('creates planner with availability methods', () => {
-    const config = makeConfig({ planner: { kind: 'shell', command: 'echo', args: ['test output'] } });
-    const planner = createShellPlanner(config);
-    expect(planner.isAvailable).toBeInstanceOf(Function);
-    expect(planner.getVersion).toBeInstanceOf(Function);
   });
 
   it('escalateHint — success when shell command writes files', async () => {

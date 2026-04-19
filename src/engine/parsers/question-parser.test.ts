@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { extractQuestionsFromStream, createQuestionAccumulator } from './question-parser.js';
 
 describe('extractQuestionsFromStream', () => {
@@ -29,14 +29,23 @@ describe('extractQuestionsFromStream', () => {
     expect(questions[0]?.text).toBe('Module name?');
   });
 
-  it('silently skips malformed JSON but extracts valid questions', () => {
-    const text = [
-      '<!-- Q:{not valid json} -->',
-      '<!-- Q:{"id":"q1","type":"choice","text":"Valid?","options":["Yes","No"]} -->',
-    ].join('\n');
-    const questions = extractQuestionsFromStream(text);
-    expect(questions.length).toBe(1);
-    expect(questions[0]?.id).toBe('q1');
+  it('silently skips malformed JSON (emits stderr warning) but extracts valid questions', () => {
+    const writeSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const text = [
+        '<!-- Q:{not valid json} -->',
+        '<!-- Q:{"id":"q1","type":"choice","text":"Valid?","options":["Yes","No"]} -->',
+      ].join('\n');
+      const questions = extractQuestionsFromStream(text);
+      expect(questions.length).toBe(1);
+      expect(questions[0]?.id).toBe('q1');
+      const warned = writeSpy.mock.calls.some(([chunk]) =>
+        typeof chunk === 'string' && chunk.includes('question-parser: malformed marker'),
+      );
+      expect(warned).toBe(true);
+    } finally {
+      writeSpy.mockRestore();
+    }
   });
 
   it('skips questions missing required fields', () => {

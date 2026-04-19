@@ -1,5 +1,3 @@
-// Sole sanctioned assertion location — these primitives enable assertion-free code elsewhere
-
 export function includes<T>(arr: readonly T[], item: unknown): item is T {
   return (arr as readonly unknown[]).includes(item);
 }

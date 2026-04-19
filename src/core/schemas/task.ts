@@ -21,3 +21,5 @@ export const TaskSchema = z.object({
   implementationSteps: z.array(z.string()),
   status: TaskStatusSchema,
 });
+
+export type Task = z.infer<typeof TaskSchema>;

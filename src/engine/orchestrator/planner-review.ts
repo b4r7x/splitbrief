@@ -1,4 +1,4 @@
-import type { WorkflowState } from '../../core/types/state-actions.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks } from './types.js';
 import type { Planner } from '../planners/types.js';
 import { writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';

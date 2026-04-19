@@ -1,29 +1,18 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { WorkflowState } from '../../core/types/state-actions.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { getSkippedTaskIds } from '../../core/state/selectors.js';
-import { makeTask, makeConfig, defaultContext } from '#testing/helpers/fixtures.js';
-import { makeCallbacks, makePlanner, makeImplementer, passingResults } from '#testing/helpers/orchestrator-fixtures.js';
-
-vi.mock('./validation.js', () => ({
-  validateTask: vi.fn(),
-  runValidationWithEvents: vi.fn(),
-  formatValidationError: vi.fn().mockReturnValue('validation error'),
-}));
-vi.mock('../../lib/git.js', () => ({
-  hasExternalChanges: vi.fn().mockResolvedValue(false),
-  commitChanges: vi.fn(),
-}));
-vi.mock('../../core/state/persistence.js', () => ({
-  saveState: vi.fn(),
-  loadState: vi.fn(),
-  appendEvent: vi.fn(),
-}));
-
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeCallbacks, makePlanner, makeImplementer } from '#testing/helpers/orchestrator-factories.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
+import { ensureSessionDir } from '../../core/paths-io.js';
 import { runTaskLoop } from './task-loop.js';
-import { runValidationWithEvents } from './validation.js';
-import { commitChanges } from '../../lib/git.js';
 import type { WorkflowSinks } from './types.js';
+import { createValidator } from './validation.js';
 
 const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' };
 
@@ -32,9 +21,23 @@ const TEST_SINKS: WorkflowSinks = {
   setQueueHandler: () => {},
 };
 
-beforeEach(() => {
-  vi.clearAllMocks();
+const TEST_VALIDATOR = createValidator();
+
+let dirs: string[] = [];
+
+afterEach(() => {
+  for (const d of dirs) cleanupTempDir(d);
+  dirs = [];
 });
+
+function setupProject(): { projectDir: string; sessionId: string } {
+  const projectDir = createTempDir('task-loop-test');
+  dirs.push(projectDir);
+  createTestGitRepo(projectDir);
+  const sessionId = 'sess-loop';
+  ensureSessionDir(projectDir, sessionId);
+  return { projectDir, sessionId };
+}
 
 function makeImplState(tasks: ReturnType<typeof makeTask>[]): WorkflowState {
   let state = createInitialState('feat');
@@ -47,12 +50,16 @@ function makeImplState(tasks: ReturnType<typeof makeTask>[]): WorkflowState {
   return state;
 }
 
+// Validation disabled: keeps us from spawning tsc/eslint/npm-test subprocesses.
+const defaultWorkflow = { commitStrategy: 'none' as const, maxRetries: 2 };
+
 describe('runTaskLoop', () => {
   it('task with failed dependency is skipped and emits task-skipped event', async () => {
+    const { projectDir, sessionId } = setupProject();
     const t1 = makeTask({ id: 'T001', status: 'failed' });
     const t2 = makeTask({ id: 'T002', dependsOn: ['T001'] });
     let state = makeImplState([t1, t2]);
-    // Simulate T001 failed: set status and advance index past it.
+    // Simulate T001 failed: advance currentTaskIndex past it.
     state = {
       ...state,
       currentTaskIndex: 1,
@@ -62,7 +69,17 @@ describe('runTaskLoop', () => {
     const { callbacks, events } = makeCallbacks();
 
     const result = await runTaskLoop({
-      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer: makeImplementer(), metadata: TEST_METADATA, sessionId: 'test-session', sinks: TEST_SINKS },
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer: makeImplementer(),
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+      },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
@@ -74,18 +91,36 @@ describe('runTaskLoop', () => {
     expect(getSkippedTaskIds(result.state)).toContain('T002');
   });
 
-  it('happy path: implement → validate pass → commit', async () => {
+  it('happy path: implement → validate pass → commit when commit strategy is per-task', async () => {
+    const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
     const state = makeImplState([task]);
 
-    const implementer = makeImplementer();
-    vi.mocked(runValidationWithEvents).mockResolvedValue(passingResults);
-    vi.mocked(commitChanges).mockResolvedValue('abc123');
+    // The implementer port is a subprocess seam — we fake success via makeImplementer().
+    // The implementer produces a file on disk so per-task commit has something to commit.
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        writeFileSync(join(projectDir, 'out.txt'), 'implementation');
+        return { success: true, output: 'code', usage: { inputTokens: 100, outputTokens: 50 } };
+      }),
+    });
 
     const { callbacks, events } = makeCallbacks();
 
     await runTaskLoop({
-      wctx: { projectDir: '/tmp/proj', config: makeConfig({ workflow: { commitStrategy: 'per-task' } }), callbacks, context: defaultContext, planner: makePlanner(), implementer, metadata: TEST_METADATA, sessionId: 'test-session', sinks: TEST_SINKS },
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({
+          workflow: { commitStrategy: 'per-task' },
+        }),
+        callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+      },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
@@ -99,50 +134,72 @@ describe('runTaskLoop', () => {
     expect(taskComplete).toMatchObject({ type: 'task-complete', taskId: 'T001', method: 'local' });
   });
 
-  it('token usage accumulated via state persistence', async () => {
+  it('token usage accumulated on state through implementer', async () => {
+    const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
     const state = makeImplState([task]);
 
     const implementer = makeImplementer({
-      implement: vi.fn().mockResolvedValue({ success: true, output: 'code', usage: { inputTokens: 500, outputTokens: 200 } }),
+      implement: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'code',
+        usage: { inputTokens: 500, outputTokens: 200 },
+      }),
     });
-    vi.mocked(runValidationWithEvents).mockResolvedValue(passingResults);
-    vi.mocked(commitChanges).mockResolvedValue('abc123');
 
     const { callbacks } = makeCallbacks();
 
     const result = await runTaskLoop({
-      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer, metadata: TEST_METADATA, sessionId: 'test-session', sinks: TEST_SINKS },
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+      },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
 
-    // Token usage should have been updated
     expect(result.state.tokenUsage.implementerInput).toBe(500);
     expect(result.state.tokenUsage.implementerOutput).toBe(200);
   });
 
-  it('external changes detected → callback called and workflow cancelled', async () => {
+  it('external changes detected on disk: onExternalChanges callback consulted, workflow cancelled on decline', async () => {
+    const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
     const state = makeImplState([task]);
 
-    const { hasExternalChanges } = await import('../../lib/git.js');
-    vi.mocked(hasExternalChanges).mockResolvedValue(true);
+    // Write a real file to the real repo so `hasExternalChanges` returns true naturally.
+    writeFileSync(join(projectDir, 'external-change.txt'), 'external edit');
 
     const onExternalChanges = vi.fn().mockResolvedValue(false);
-    const { callbacks } = makeCallbacks();
-    callbacks.onExternalChanges = onExternalChanges;
+    const { callbacks } = makeCallbacks({ onExternalChanges });
 
     const result = await runTaskLoop({
-      wctx: { projectDir: '/tmp/proj', config: makeConfig(), callbacks, context: defaultContext, planner: makePlanner(), implementer: makeImplementer(), metadata: TEST_METADATA, sessionId: 'test-session', sinks: TEST_SINKS },
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer: makeImplementer(),
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+      },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
 
     expect(onExternalChanges).toHaveBeenCalled();
-    // When external changes detected and user declines, phase should be cancelled
+    // When external changes detected and user declines, phase transitions away from implementing.
     expect(result.state.phase).not.toBe('implementing');
   });
 });

@@ -1,4 +1,4 @@
-import type { Config } from '../../core/types/config-options.js';
+import type { Config } from '../../core/schemas/config.js';
 import type { Implementer } from './types.js';
 import type { InvokeOpts } from './utils.js';
 import { createImplementerBase } from './base.js';

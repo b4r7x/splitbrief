@@ -1,5 +1,5 @@
-import type { Config } from '../../core/types/config-options.js';
-import type { Task } from '../../core/types/state-actions.js';
+import type { Config } from '../../core/schemas/config.js';
+import type { Task } from '../../core/schemas/task.js';
 import type { Planner } from './types.js';
 import { createCommandBasedPlanner, resolveCapabilities } from './command-invoke.js';
 import { buildEscalationPrompt } from '../spec/prompts/escalation.js';

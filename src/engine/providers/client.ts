@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { DetectedModel, ProviderDef, ProviderDefWithMetadata, ProviderOverrides } from './types.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
+import { providerError } from './errors.js';
 
 interface ProviderShell {
   base: { name: string; baseURL: string; isLocal: boolean };
@@ -49,7 +50,7 @@ export async function fetchJsonWithTimeout(
 
   try {
     const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw providerError.httpFailure(res.status, url);
     return await res.json();
   } finally {
     clearTimeout(timer);

@@ -1,5 +1,5 @@
 import type { TuiEvent } from '../../src/features/workflow/types.js';
-import { taskId } from '../../src/core/types/state-actions.js';
+import { taskId } from '../../src/core/schemas/task.js';
 
 type EventOfType<T extends TuiEvent['type']> = Extract<TuiEvent, { type: T }>;
 

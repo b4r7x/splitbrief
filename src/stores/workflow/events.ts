@@ -9,9 +9,18 @@ const initial: EventsState = { events: [] };
 
 const store = createStore<EventsState>(initial);
 
+// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+function __testReset(next?: Partial<EventsState>): void {
+  store.set(next ? { ...initial, ...next } : initial);
+}
+
+// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
+// Production use is limited to workflow/actions.ts (the dispatcher).
+export const _eventsInternal = { set: store.set };
+
 export const eventsStore = {
   ...storeBase(store),
-  set: store.set,
+  __testReset,
 };
 
 export const MAX_EVENTS = 10_000;

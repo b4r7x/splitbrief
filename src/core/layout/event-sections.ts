@@ -1,5 +1,5 @@
 import type { TuiEvent } from '../../features/workflow/types.js';
-import type { TaskCompletionMethod } from '../types/summary.js';
+import type { TaskCompletionMethod } from '../schemas/enums.js';
 
 function hasEventType<T extends TuiEvent['type']>(
   event: TuiEvent,

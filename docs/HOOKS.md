@@ -20,6 +20,17 @@ This is the same rule [bulletproof-react](https://github.com/alan2207/bulletproo
 
 **Single-consumer hooks colocated with their component are acceptable** when the hook's sole job is to decompose that component's internals (e.g. `src/components/pickers/two-column-picker/use-two-column-state.ts`). They are private implementation details of the component, not part of any public surface.
 
+## Shallow-hook policy
+
+A module deserves the `use-` prefix only when it has at least one of:
+
+- **Real React lifecycle** — uses `useState`, `useEffect`, `useRef`, `useContext`, `useReducer`, `useEffectEvent`, or the equivalent.
+- **Multi-consumer abstraction** sharing a non-trivial pattern (e.g. a cancellation contract, a promise-based resolver, a keyboard handler).
+
+Modules that only rename fields, flatten other hooks' return shapes, or carry no React-ness at all are **not hooks**. Convert them to plain functions and put them next to the domain they serve (usually the feature root, `src/utils/`, or `src/core/`).
+
+The single-consumer gate matters too: a hook used by exactly one caller with no React state has zero abstraction power — inline it. Dissolved examples: `use-workflow.ts` (facade flattening three hook returns), `use-workflow-review-input.ts` (75 LOC with zero React lifecycle, replaced by `createReviewInputHandler`). See [ADR 0011](./adr/0011-shallow-hook-dissolution.md).
+
 ## Inventory
 
 ### Shared (`src/hooks/`)
@@ -39,11 +50,9 @@ Hooks whose sole consumer is inside one feature folder. Example from `features/w
 
 | Hook | Purpose |
 |---|---|
-| `use-workflow.ts` | Composite facade wiring runner + review-input + input-mode. |
 | `use-workflow-runner.ts` | Engine lifecycle, resume, rewind, approval/question prompts. |
-| `use-workflow-review-input.ts` | Review-mode command parsing (approve/edit/comment/quit). |
 | `use-input-mode.ts` | Promise-based modal input (normal/review/question). |
-| `use-review-content.ts` | Async file read with cancellation + line-count sync to `reviewStore`. |
+| `use-review-content.ts` | Async file read via `AbortController`-cancelled `fs.readFile` + line-count sync to `reviewStore`. |
 | `use-mouse-scroll.ts` | Mouse-wheel binding to conversation/review scroll. |
 | `use-cost-stats.ts` | Cost breakdown from tokens + tasks stores, formatted for footer. |
 | `use-workflow-keys.ts` | Workflow-only keyboard: scroll, review chords, sidebar toggle. Mounted only when `screen === 'workflow'`. |
@@ -109,6 +118,7 @@ When a hook would wrap another hook and add only trivial logic, inline instead. 
 2. **Behavior lives in the hook, not the pure helper.** If you split a hook into `use-foo.ts` + `foo-helpers.ts`, the hook orchestrates, the helpers stay pure. Test the pure helpers directly; test the hook at the behavior level.
 3. **Hooks do not import from other features.** `features/home/hooks/*` must not import from `features/workflow/*`. Cross-feature needs go through a shared hook in `src/hooks/` or a store.
 4. **One `useInput` per concern.** Splitting `use-global-keys` into `use-app-keys` + `use-workflow-keys` was a direct application of this: global keybindings stay always-on, workflow keybindings mount conditionally under `screen === 'workflow'`.
+5. **Prefer `AbortController` over ad-hoc `cancelled` flags for async cancellation.** When a hook races a promise against unmount, use `new AbortController()` + `controller.signal` and return `() => controller.abort()` from the effect. Node's `fs.readFile`, `fetch`, and most async APIs accept `{ signal }` natively. Closure booleans (`let cancelled = false`) work but signal the wrong intent — `AbortController.abort()` is self-documenting and the Node-native SOTA. Canonical example: `use-review-content.ts`. See [ADR 0011](./adr/0011-shallow-hook-dissolution.md).
 
 ## Design decisions
 

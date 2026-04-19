@@ -5,13 +5,15 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { refreshDetectionStores } from '../../engine/detection/adapter.js';
 import { configStore } from '../../stores/project/config.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import type { PickerOption, ModelOption } from './picker-model-catalog.js';
-import { isCustomModel } from './picker-model-catalog.js';
+import type { PickerOption, ModelOption } from './model-catalog.js';
+import { isCustomModel } from './model-catalog.js';
 import { renderToolRow, renderModelRow } from './tool-row.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
 import { PROVIDER_CATALOG } from '../../core/providers/catalog.js';
 import { isProviderId } from '../../core/schemas/enums.js';
+
+const CUSTOM_ROW_OFFSET = 1;
 
 interface PickerViewProps {
   role: 'planner' | 'implementer';
@@ -69,8 +71,8 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
   const currentModelIdx = catalog.focusModels
     ? catalog.rightModels.findIndex(m => m.id === catalog.currentModel)
     : -1;
-  // +1 offset accounts for virtual custom row prepended by allowCustomRight
-  const initialRightIndex = currentModelIdx >= 0 ? currentModelIdx + 1 : undefined;
+  // Offset accounts for virtual custom row prepended by allowCustomRight
+  const initialRightIndex = currentModelIdx >= 0 ? currentModelIdx + CUSTOM_ROW_OFFSET : undefined;
 
   const handleRefresh = () => {
     refreshDetectionStores(projectDir);

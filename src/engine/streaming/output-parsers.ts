@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import type { OutputFormat } from '../../core/types/config-options.js';
+import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { ParsedLine, ToolUseInfo } from '../runners/types.js';
-import type { TokenDelta } from '../../core/types/summary.js';
+import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { toTokenDelta } from './token-utils.js';
 import { assertNever, narrowRecord } from '../../utils/type-guards.js';
 import { warnError } from '../../lib/warn.js';

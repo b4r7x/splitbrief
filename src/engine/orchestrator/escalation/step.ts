@@ -1,6 +1,8 @@
-import type { Task, WorkflowState } from '../../../core/types/state-actions.js';
-import type { TaskCompletionMethod, TokenDelta } from '../../../core/types/summary.js';
-import { formatValidationError, runValidationWithEvents } from '../validation.js';
+import type { Task } from '../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
+import type { TokenDelta } from '../../../core/schemas/tokens.js';
+import { formatValidationError } from '../validation.js';
 import type { WorkflowContext } from '../types.js';
 import { refreshAndPersistCode, addUsageAndSave } from '../state-ops.js';
 import { validateCommitAndAdvance } from '../task-commit.js';
@@ -14,19 +16,16 @@ export type RetryResult =
 
 export type EscalationContext = WorkflowContext & { taskStartTime?: number | undefined };
 
-/** Outcome of a single retry step: a shared shape regardless of tier. */
 export type RetryStepOutcome = {
   state: WorkflowState;
   task: Task;
   lastError: string;
   attempts: number;
-  /** Set when this step produced a successful, validated commit. */
   result?: RetryResult;
 };
 
 export type SuccessMethod = Exclude<TaskCompletionMethod, 'failed' | 'skipped'>;
 
-/** Inputs describing one tier-attempt's retry invocation. */
 export type RetryStepOpts = {
   ctx: EscalationContext;
   task: Task;
@@ -37,11 +36,8 @@ export type RetryStepOpts = {
   transitionType: 'VALIDATION_PASS' | 'HINT_SUCCESS' | 'FULL_SUCCESS';
   commitSuffix?: string | undefined;
   usageCategory: UsageCategory;
-  /** Fallback error message when retry fails without a specific error. */
   retryFailureFallback: string;
-  /** Invokes the actual retry (implementer / intermediate implementer / planner-hint wrapped) and returns success/error/usage. */
   invokeRetry: (args: { task: Task; lastError: string; attempts: number }) => Promise<{ success: boolean; error?: string | undefined; usage?: TokenDelta | null | undefined }>;
-  /** Invoked with the validation error when retry succeeds but validation fails (lets tier 2 emit a warning). */
   onValidationAfterRetryFail?: ((validationError: string) => void) | undefined;
 };
 
@@ -52,7 +48,7 @@ export async function validateAndCommit(
   retryCount: number,
   commitSuffix?: string,
 ) {
-  const validationResults = await runValidationWithEvents(task, ctx.projectDir, ctx.config, ctx.callbacks);
+  const validationResults = await ctx.validator.runValidation(task, ctx.projectDir, ctx.config, ctx.callbacks);
   const result = await validateCommitAndAdvance({
     task, projectDir: ctx.projectDir, sessionId: ctx.sessionId,
     config: ctx.config, callbacks: ctx.callbacks,

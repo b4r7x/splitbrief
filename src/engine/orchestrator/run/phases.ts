@@ -1,5 +1,6 @@
-import type { Task, WorkflowState } from '../../../core/types/state-actions.js';
-import type { Summary } from '../../../core/types/summary.js';
+import type { Task } from '../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { Summary } from '../../../core/schemas/summary.js';
 import type { OrchestratorCallbacks, WorkflowContext } from '../types.js';
 import type { SkillMeta } from '../../skills/discovery.js';
 

@@ -1,6 +1,6 @@
-import type { TokenDelta } from '../../core/types/summary.js';
+import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { InvokeResult } from '../runners/types.js';
-import { IdleTimeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
+import { timeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
 import { toTokenDelta } from '../streaming/token-utils.js';
 import { STREAM_TIMEOUT_MS, throwMappedError } from '../streaming/stream-errors.js';
 
@@ -23,30 +23,19 @@ interface StreamChunk {
 export interface StreamClient {
   chat: {
     completions: {
-      create: (body: {
-        model: string;
-        messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
-        temperature: number;
-        stream: true;
-        stream_options: { include_usage: true };
-        max_tokens?: number | undefined;
-      }) => Promise<AsyncIterable<StreamChunk>>;
+      create: (
+        body: {
+          model: string;
+          messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+          temperature: number;
+          stream: true;
+          stream_options: { include_usage: true };
+          max_tokens?: number | undefined;
+        },
+        requestOptions?: { signal?: AbortSignal | undefined | null },
+      ) => Promise<AsyncIterable<StreamChunk>>;
     };
   };
-}
-
-function isStreamClient(client: unknown): client is StreamClient {
-  return (
-    typeof client === 'object' && client !== null &&
-    'chat' in client && typeof client.chat === 'object' && client.chat !== null &&
-    'completions' in client.chat && typeof client.chat.completions === 'object' && client.chat.completions !== null &&
-    'create' in client.chat.completions && typeof client.chat.completions.create === 'function'
-  );
-}
-
-export function asStreamClient(client: unknown): StreamClient {
-  if (isStreamClient(client)) return client;
-  throw new TypeError('Expected an OpenAI-compatible client with chat.completions.create()');
 }
 
 export async function streamCompletion(
@@ -55,17 +44,23 @@ export async function streamCompletion(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   opts: StreamCompletionOptions,
 ): Promise<InvokeResult> {
-  const { temperature, onProgress, endpoint, maxTokens } = opts;
+  const { temperature, onProgress, endpoint, maxTokens, signal } = opts;
   let stream: AsyncIterable<StreamChunk>;
   try {
-    stream = await client.chat.completions.create({
-      model,
-      messages,
-      temperature,
-      stream: true,
-      stream_options: { include_usage: true },
-      ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
-    });
+    stream = await client.chat.completions.create(
+      {
+        model,
+        messages,
+        temperature,
+        stream: true,
+        stream_options: { include_usage: true },
+        ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
+      },
+      // OpenAI SDK v6 forwards `signal` to the underlying fetch so an abort
+      // during the initial POST cancels the in-flight request, not just the
+      // chunk-iteration loop below.
+      signal ? { signal } : undefined,
+    );
   } catch (err: unknown) {
     throwMappedError(err, endpoint);
   }
@@ -89,7 +84,7 @@ export async function streamCompletion(
     if (opts.signal?.aborted) {
       return { text: fullResponse, usage };
     }
-    if (err instanceof IdleTimeoutError) throw err;
+    if (timeoutError.isIdle(err)) throw err;
     throwMappedError(err, endpoint);
   }
 

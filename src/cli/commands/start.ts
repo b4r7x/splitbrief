@@ -2,12 +2,13 @@ import { Command } from 'commander';
 import { createElement } from 'react';
 import { App } from '../../app.js';
 import { renderApp } from '../render.js';
-import { addWorkflowOptions, setupWorkflow, resolveProjectDir } from '../workflow.js';
+import { addWorkflowOptions } from '../options.js';
+import { setupWorkflow, resolveProjectDir } from '../setup.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { initStores } from '../init-stores.js';
-import { clearStaleSession } from './guards.js';
+import { clearStaleSession } from '../../core/sessions/guards.js';
 import { beginSession } from '../../core/sessions/lifecycle.js';
-import { maybeMigrate } from './migrate.js';
+import { maybeMigrate } from '../../core/migration/executor.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
 export function registerStartCommand(program: Command): void {

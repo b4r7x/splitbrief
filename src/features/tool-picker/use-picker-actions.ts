@@ -1,9 +1,10 @@
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { error } from '../../utils/error.js';
 import { formatModelName } from '../../core/model-display.js';
-import type { Config } from '../../core/types/config-options.js';
-import type { PickerOption, ModelOption } from './picker-model-catalog.js';
+import type { Config } from '../../core/schemas/config.js';
+import type { PickerOption, ModelOption } from './model-catalog.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import {
   commitPlannerSelection,
@@ -80,7 +81,11 @@ export function usePickerActions(
     },
     customCommand(cmd: string) {
       if (viewState.view.kind !== 'custom-command') {
-        throw new Error('customCommand called outside custom-command view');
+        throw error(
+          'picker-invalid-view',
+          'customCommand called outside custom-command view',
+          { view: viewState.view.kind },
+        );
       }
       commit(commitCustomCommand(config, role, cmd, viewState.view.intendedKind), `${catalog.roleLabel} set to: ${viewState.view.intendedKind}: ${cmd}`);
     },

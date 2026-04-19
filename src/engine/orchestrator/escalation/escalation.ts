@@ -1,4 +1,5 @@
-import type { Task, WorkflowState } from '../../../core/types/state-actions.js';
+import type { Task } from '../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import { runLocalRetries } from './local.js';
 import { runTier0Intermediate } from './intermediate.js';

@@ -8,11 +8,11 @@ import { normalizeConfiguredModel } from '../../core/providers/model-selection.j
 import {
   buildPlannerPickerOptions,
   buildImplementerPickerOptions,
+  buildRightModelsForPicker,
   isCurrentConfig,
   type PickerOption,
   type ModelOption,
-} from './picker-model-catalog.js';
-import { buildRightModelsForPicker } from './catalog-adapter.js';
+} from './model-catalog.js';
 
 export interface PickerCatalog {
   items: PickerOption[];

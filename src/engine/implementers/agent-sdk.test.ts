@@ -1,167 +1,198 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { makeConfig, makeTask, defaultContext } from '#testing/helpers/fixtures.js';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import type { AgentSdkBackend } from '../agent-sdk.js';
-
-vi.mock('../agent-sdk.js', () => ({
-  createAgentSdkBackend: vi.fn(),
-  isAgentSdkAvailable: vi.fn(),
-  IMPLEMENTER_ALLOWED_TOOLS: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
-}));
-
-vi.mock('../../core/providers/model-selection.js', () => ({
-  resolveAutoModel: vi.fn(),
-}));
-
-import { createAgentSdkBackend, isAgentSdkAvailable } from '../agent-sdk.js';
-import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { createAgentSdkImplementer } from './agent-sdk.js';
+import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
+
+/**
+ * Agent SDK implementer — exercised against the real wrapper in
+ * `src/engine/agent-sdk.ts`. The only sanctioned mock here is the optional
+ * peer dep `@anthropic-ai/claude-agent-sdk`, whose `query()` is stubbed to
+ * yield a canned stream. Everything else (resolveAutoModel, known-models
+ * defaults, change detection via git, apiKey env threading) runs for real.
+ */
+
+const queryMock = vi.fn();
+
+vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+  query: (opts: unknown) => queryMock(opts),
+}));
+
+async function* asyncIter<T>(items: T[]): AsyncIterable<T> {
+  for (const i of items) yield i;
+}
+
+/** Stream that writes a canned assistant message then a result. */
+function setQueryResponse(text: string): void {
+  queryMock.mockImplementation(() => asyncIter([
+    { type: 'system', subtype: 'init', session_id: 'sess-1' },
+    { type: 'assistant', content: [{ type: 'text', text }] },
+    { type: 'result', content: [{ type: 'text', text }], session_id: 'sess-1', usage: { input_tokens: 10, output_tokens: 5 } },
+  ]));
+}
 
 function makeAgentSdkConfig(overrides?: Record<string, unknown>) {
   return makeConfig({
     implementer: {
       kind: 'agent-sdk' as const,
-      model: 'claude-sonnet-4-6',
+      model: DEFAULT_AGENT_SDK_MODEL,
       apiKey: undefined,
       ...overrides,
     },
   });
 }
 
-function makeBackendStub(extra?: Partial<AgentSdkBackend>): AgentSdkBackend {
-  return {
-    invoke: vi.fn().mockResolvedValue({ text: 'done', usage: null }),
-    ...extra,
-  };
-}
+let projectDir: string;
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  queryMock.mockReset();
+  projectDir = createTempDir('agent-sdk-impl');
+  createTestGitRepo(projectDir);
+});
+
+afterEach(() => {
+  cleanupTempDir(projectDir);
 });
 
 describe('createAgentSdkImplementer', () => {
-  it('resolveAutoModel is called; resolved model is passed to backend.invoke', async () => {
-    const backend = makeBackendStub();
-    vi.mocked(createAgentSdkBackend).mockReturnValue(backend);
-    vi.mocked(resolveAutoModel).mockReturnValue('claude-opus-4-5');
+  it('passes configured model through to the SDK query call', async () => {
+    setQueryResponse('done');
+    // Make sure change detection sees a modification
+    writeFileSync(join(projectDir, 'init.txt'), 'changed\n');
+
+    const cfg = makeAgentSdkConfig({ model: 'claude-opus-4-6' });
+    const implementer = createAgentSdkImplementer(cfg);
+
+    await implementer.implement({
+      task: makeTask(), projectDir, config: cfg, context: defaultContext, onOutput: vi.fn(),
+    });
+
+    const callOpts = queryMock.mock.calls[0]?.[0];
+    expect(callOpts?.options?.model).toBe('claude-opus-4-6');
+  });
+
+  it('resolves model "auto" to the agent-sdk default', async () => {
+    setQueryResponse('done');
+    writeFileSync(join(projectDir, 'init.txt'), 'changed\n');
 
     const cfg = makeAgentSdkConfig({ model: 'auto' });
     const implementer = createAgentSdkImplementer(cfg);
 
     await implementer.implement({
-      task: makeTask(),
-      projectDir: '/tmp/proj',
-      config: cfg,
-      context: defaultContext,
-      onOutput: vi.fn(),
+      task: makeTask(), projectDir, config: cfg, context: defaultContext, onOutput: vi.fn(),
     });
 
-    expect(resolveAutoModel).toHaveBeenCalledWith('auto', 'agent-sdk');
-    const invokeCall = vi.mocked(backend.invoke).mock.calls[0];
-    expect(invokeCall).toBeDefined();
-    expect(invokeCall![0].model).toBe('claude-opus-4-5');
+    const callOpts = queryMock.mock.calls[0]?.[0];
+    expect(callOpts?.options?.model).toBe(DEFAULT_AGENT_SDK_MODEL);
   });
 
-  it('isAvailable() mirrors isAgentSdkAvailable — both true and false', async () => {
-    const backend = makeBackendStub();
-    vi.mocked(createAgentSdkBackend).mockReturnValue(backend);
-    vi.mocked(resolveAutoModel).mockReturnValue('claude-sonnet-4-6');
+  it('isAvailable() is true when an API key is configured, false otherwise', async () => {
+    const origEnv = process.env['ANTHROPIC_API_KEY'];
+    delete process.env['ANTHROPIC_API_KEY'];
+    try {
+      const noKey = createAgentSdkImplementer(makeAgentSdkConfig());
+      expect(await noKey.isAvailable!()).toBe(false);
 
-    vi.mocked(isAgentSdkAvailable).mockResolvedValue(true);
-    const implementerTrue = createAgentSdkImplementer(makeAgentSdkConfig());
-    expect(await implementerTrue.isAvailable()).toBe(true);
-
-    vi.mocked(isAgentSdkAvailable).mockResolvedValue(false);
-    const implementerFalse = createAgentSdkImplementer(makeAgentSdkConfig());
-    expect(await implementerFalse.isAvailable()).toBe(false);
+      const withKey = createAgentSdkImplementer(makeAgentSdkConfig({ apiKey: 'sk-test' }));
+      // isAvailable tries to load the SDK; since the peer dep is mocked (present), it returns true.
+      expect(await withKey.isAvailable!()).toBe(true);
+    } finally {
+      if (origEnv === undefined) delete process.env['ANTHROPIC_API_KEY'];
+      else process.env['ANTHROPIC_API_KEY'] = origEnv;
+    }
   });
 
-  describe('detectChanges forwarding', () => {
-    let testDir: string;
-
-    beforeEach(() => {
-      testDir = createTempDir('agent-sdk-detect-test');
-      createTestGitRepo(testDir);
-    });
-
-    afterEach(() => {
-      cleanupTempDir(testDir);
-    });
-
-    it('detectChanges is forwarded when backend provides it; absent otherwise', async () => {
-      vi.mocked(resolveAutoModel).mockReturnValue('claude-sonnet-4-6');
-
-      const detectChangesFn = vi.fn().mockResolvedValue({ changed: true, output: '' });
-      const backendWithDetect = makeBackendStub({ detectChanges: detectChangesFn });
-      vi.mocked(createAgentSdkBackend).mockReturnValue(backendWithDetect);
-
-      const cfg = makeAgentSdkConfig();
-      const implementerWithDetect = createAgentSdkImplementer(cfg);
-
-      await implementerWithDetect.implement({
-        task: makeTask(),
-        projectDir: testDir,
-        config: cfg,
-        context: defaultContext,
-        onOutput: vi.fn(),
-      });
-      expect(detectChangesFn).toHaveBeenCalled();
-
-      // Backend without detectChanges: detectChangesFn must not be called again
-      const callsBefore = detectChangesFn.mock.calls.length;
-      const backendWithout = makeBackendStub();
-      vi.mocked(createAgentSdkBackend).mockReturnValue(backendWithout);
-      const implementerWithout = createAgentSdkImplementer(cfg);
-
-      await implementerWithout.implement({
-        task: makeTask(),
-        projectDir: testDir,
-        config: cfg,
-        context: defaultContext,
-        onOutput: vi.fn(),
-      });
-      expect(detectChangesFn.mock.calls.length).toBe(callsBefore);
-    });
-  });
-
-  it('implement() invokes backend.invoke with correct shape', async () => {
-    const backend = makeBackendStub();
-    vi.mocked(createAgentSdkBackend).mockReturnValue(backend);
-    vi.mocked(resolveAutoModel).mockReturnValue('claude-sonnet-4-6');
+  it('reports failure via real change detection when the SDK produced no file changes', async () => {
+    setQueryResponse('I considered this but did not edit anything.');
 
     const cfg = makeAgentSdkConfig();
     const implementer = createAgentSdkImplementer(cfg);
-    const onOutput = vi.fn();
 
-    await implementer.implement({
-      task: makeTask(),
-      projectDir: '/tmp/my-project',
-      config: cfg,
-      context: defaultContext,
-      onOutput,
+    const result = await implementer.implement({
+      task: makeTask(), projectDir, config: cfg, context: defaultContext, onOutput: vi.fn(),
     });
 
-    const invokeCall = vi.mocked(backend.invoke).mock.calls[0];
-    expect(invokeCall).toBeDefined();
-    const invokeOpts = invokeCall![0];
-    expect(typeof invokeOpts.prompt).toBe('string');
-    expect(invokeOpts.prompt.length).toBeGreaterThan(0);
-    expect(invokeOpts.projectDir).toBe('/tmp/my-project');
-    expect(invokeOpts.model).toBe('claude-sonnet-4-6');
-    expect(typeof invokeOpts.onOutput).toBe('function');
+    // The real createChangeDetector sees no new dirty files → reports false.
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error).toMatch(/Agent SDK.*without changing/);
   });
 
-  it('apiKey is threaded to createAgentSdkBackend when set', () => {
-    const backend = makeBackendStub();
-    vi.mocked(createAgentSdkBackend).mockReturnValue(backend);
-    vi.mocked(resolveAutoModel).mockReturnValue('claude-sonnet-4-6');
+  it('reports success when the SDK-triggered work leaves new dirty files in the repo', async () => {
+    // Simulate the SDK writing a file as part of its stream processing.
+    queryMock.mockImplementation((_opts: unknown) => {
+      return asyncIter([
+        { type: 'system', subtype: 'init', session_id: 'sess-1' },
+        { type: 'assistant', content: [{ type: 'text', text: 'wrote a file' }] },
+        {
+          type: 'result',
+          content: [{ type: 'text', text: 'wrote a file' }],
+          session_id: 'sess-1',
+          usage: { input_tokens: 10, output_tokens: 5 },
+        },
+      ]);
+    });
+    // Create a new, untracked file BEFORE invoke — createAgentSdkBackend will snapshot
+    // the dirty list BEFORE the SDK runs, so we need to write the file during the
+    // async SDK iteration. Simulate by tweaking the stream iterator:
+    queryMock.mockImplementation(async function* () {
+      yield { type: 'system', subtype: 'init', session_id: 'sess-1' };
+      mkdirSync(join(projectDir, 'src'), { recursive: true });
+      writeFileSync(join(projectDir, 'src/new-file.ts'), 'export const x = 1;\n');
+      yield { type: 'assistant', content: [{ type: 'text', text: 'ok' }] };
+      yield {
+        type: 'result',
+        content: [{ type: 'text', text: 'ok' }],
+        session_id: 'sess-1',
+        usage: { input_tokens: 10, output_tokens: 5 },
+      };
+    });
 
-    const cfg = makeAgentSdkConfig({ apiKey: 'sk-test-api-key' });
-    createAgentSdkImplementer(cfg);
+    const cfg = makeAgentSdkConfig();
+    const implementer = createAgentSdkImplementer(cfg);
 
-    expect(createAgentSdkBackend).toHaveBeenCalledWith(
-      expect.objectContaining({ apiKey: 'sk-test-api-key' }),
-    );
+    const result = await implementer.implement({
+      task: makeTask(), projectDir, config: cfg, context: defaultContext, onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 5 });
+  });
+
+  it('threads apiKey through to the SDK via the scoped env option without mutating process.env', async () => {
+    const origEnv = process.env['ANTHROPIC_API_KEY'];
+    delete process.env['ANTHROPIC_API_KEY'];
+
+    // Trigger change detection success by writing a file in the stream
+    queryMock.mockImplementationOnce(async function* () {
+      yield { type: 'system', subtype: 'init', session_id: 'sess-1' };
+      writeFileSync(join(projectDir, 'touched.txt'), 'v2\n');
+      yield { type: 'assistant', content: [{ type: 'text', text: 'ok' }] };
+      yield {
+        type: 'result', content: [{ type: 'text', text: 'ok' }],
+        session_id: 'sess-1', usage: { input_tokens: 1, output_tokens: 1 },
+      };
+    });
+
+    try {
+      const cfg = makeAgentSdkConfig({ apiKey: 'sk-threaded-key' });
+      const implementer = createAgentSdkImplementer(cfg);
+
+      await implementer.implement({
+        task: makeTask(), projectDir, config: cfg, context: defaultContext, onOutput: vi.fn(),
+      });
+
+      // The SDK was invoked with a scoped `env` dict carrying the configured key.
+      const callOpts = queryMock.mock.calls[0]?.[0] as { options?: { env?: Record<string, string> } } | undefined;
+      expect(callOpts?.options?.env?.['ANTHROPIC_API_KEY']).toBe('sk-threaded-key');
+      // process.env was NOT mutated — the SDK received the key via its own scoped env option.
+      expect(process.env['ANTHROPIC_API_KEY']).toBeUndefined();
+    } finally {
+      if (origEnv === undefined) delete process.env['ANTHROPIC_API_KEY'];
+      else process.env['ANTHROPIC_API_KEY'] = origEnv;
+    }
   });
 });

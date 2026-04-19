@@ -1,6 +1,8 @@
-import { availableRows } from '../../core/layout/picker-chrome.js';
-
 export type FilterableItem = { id: string; displayName: string };
+
+export function availableRows(rows: number, chrome: number, floor = 3): number {
+  return Math.max(rows - chrome, floor);
+}
 
 export const CURSOR = '\u25B8 ';
 export const NO_CURSOR = '  ';

@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import type { Config } from '../../core/types/config-options.js';
+import type { Config } from '../../core/schemas/config.js';
 import type { TuiEvent } from '../../features/workflow/types.js';
-import { makeConfig as makeBaseConfig, makeTask, defaultContext } from '#testing/helpers/fixtures.js';
+import { makeConfig as makeBaseConfig, defaultContext } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { createImplementer } from '../runners/factory.js';
 
 function makeConfig(extra?: Partial<Config['implementer']>): Config {

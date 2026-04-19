@@ -1,8 +1,17 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { isGitRepo, commitChanges, getCurrentDiff, hasExternalChanges, ensureGitignore, getChangedFiles } from './git.js';
+import {
+  isGitRepo,
+  commitChanges,
+  getCurrentDiff,
+  hasExternalChanges,
+  getChangedFiles,
+  stageAll,
+  createCheckpoint,
+  discardTaskChanges,
+} from './git.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 
@@ -39,15 +48,37 @@ describe('git utils', () => {
     });
   });
 
-  describe('commitChanges', () => {
-    it('stages and commits, returns a hash', async () => {
+  describe('stageAll', () => {
+    it('stages new untracked files', async () => {
       const dir = tracked(setupGitRepo());
       writeFileSync(join(dir, 'new.txt'), 'hello');
+      await stageAll(dir);
+      const status = execSync('git status --porcelain', { cwd: dir, encoding: 'utf-8' });
+      expect(status).toMatch(/^A\s+new\.txt/m);
+    });
+  });
+
+  describe('commitChanges', () => {
+    it('commits previously staged changes and returns a hash', async () => {
+      const dir = tracked(setupGitRepo());
+      writeFileSync(join(dir, 'new.txt'), 'hello');
+      await stageAll(dir);
       const hash = await commitChanges(dir, 'add new file');
       expect(hash).toBeTruthy();
       expect(typeof hash).toBe('string');
       const log = execSync('git log --oneline', { cwd: dir, encoding: 'utf-8' });
       expect(log).toContain('add new file');
+    });
+
+    it('does not auto-stage: unstaged changes are not committed', async () => {
+      const dir = tracked(setupGitRepo());
+      const headBefore = execSync('git rev-parse HEAD', { cwd: dir, encoding: 'utf-8' }).trim();
+      writeFileSync(join(dir, 'new.txt'), 'hello');
+      await commitChanges(dir, 'should not include new.txt');
+      const headAfter = execSync('git rev-parse HEAD', { cwd: dir, encoding: 'utf-8' }).trim();
+      expect(headAfter).toBe(headBefore);
+      const log = execSync('git log --oneline', { cwd: dir, encoding: 'utf-8' });
+      expect(log).not.toContain('should not include new.txt');
     });
   });
 
@@ -120,40 +151,37 @@ describe('git utils', () => {
     });
   });
 
-  describe('ensureGitignore', () => {
-    it('creates .gitignore with entry when file does not exist', () => {
-      const dir = tracked(createTempDir('diptych-gitignore'));
-      ensureGitignore(dir, '.diptych/');
-      const content = readFileSync(join(dir, '.gitignore'), 'utf-8');
-      expect(content).toBe('.diptych/\n');
+  describe('createCheckpoint', () => {
+    it('creates a tagged stash sha for dirty working tree and returns its tag', async () => {
+      const dir = tracked(setupGitRepo());
+      writeFileSync(join(dir, 'init.txt'), 'modified');
+      const tag = await createCheckpoint(dir, 'T001');
+      expect(tag).toBe('diptych/T001');
+      const tags = execSync('git tag', { cwd: dir, encoding: 'utf-8' });
+      expect(tags).toContain('diptych/T001');
     });
 
-    it('appends entry to existing .gitignore', () => {
-      const dir = tracked(createTempDir('diptych-gitignore'));
-      writeFileSync(join(dir, '.gitignore'), 'node_modules/\n');
-      ensureGitignore(dir, '.diptych/');
-      const content = readFileSync(join(dir, '.gitignore'), 'utf-8');
-      expect(content).toContain('node_modules/');
-      expect(content).toContain('.diptych/');
-    });
-
-    it('does not duplicate entry if already present', () => {
-      const dir = tracked(createTempDir('diptych-gitignore'));
-      writeFileSync(join(dir, '.gitignore'), '.diptych/\n');
-      ensureGitignore(dir, '.diptych/');
-      const content = readFileSync(join(dir, '.gitignore'), 'utf-8');
-      const matches = content.split('\n').filter(l => l.trim() === '.diptych/');
-      expect(matches).toHaveLength(1);
-    });
-
-    it('does not produce double blank lines when file lacks trailing newline', () => {
-      const dir = tracked(createTempDir('diptych-gitignore'));
-      writeFileSync(join(dir, '.gitignore'), 'node_modules/');
-      ensureGitignore(dir, '.diptych/');
-      const content = readFileSync(join(dir, '.gitignore'), 'utf-8');
-      expect(content).not.toContain('\n\n');
-      expect(content).toContain('.diptych/');
+    it('returns empty string when there is nothing to stash', async () => {
+      const dir = tracked(setupGitRepo());
+      const tag = await createCheckpoint(dir, 'T002');
+      expect(tag).toBe('');
     });
   });
 
+  describe('discardTaskChanges', () => {
+    it('checks out modified file on modify action', async () => {
+      const dir = tracked(setupGitRepo());
+      writeFileSync(join(dir, 'init.txt'), 'modified');
+      await discardTaskChanges(dir, 'init.txt', 'modify');
+      const content = readFileSync(join(dir, 'init.txt'), 'utf-8');
+      expect(content).toBe('init');
+    });
+
+    it('cleans created file on create action', async () => {
+      const dir = tracked(setupGitRepo());
+      writeFileSync(join(dir, 'created.txt'), 'new file');
+      await discardTaskChanges(dir, 'created.txt', 'create');
+      expect(existsSync(join(dir, 'created.txt'))).toBe(false);
+    });
+  });
 });
