@@ -193,7 +193,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 |---|---|
 | `addEvent(event: TuiEvent)` | Single ingress for engine events. Reads `lifecycleStore.cancelled` as a gate; short-circuits for `cost-update`; otherwise fans out (events → tasks → tokens → lifecycle). Strictly synchronous. |
 | `markCancelled(): boolean` | Writes terminal `workflow-cancelled` event to `eventsStore`, sets `lifecycleStore.cancelled`. Idempotent. |
-| `resetWorkflow(resume?)` | Calls `abortStore.clear()` first, then resets all 4 sub-stores **and invalidates the memo caches** (`cachedEvents`, `cachedSections`) so subscribers observe a clean slate; applies resume state if provided. Cache invalidation is symmetric with sub-store reset — missing it leaks pre-reset sections into the first post-reset `useSections()` call. See [ADR 0010](./adr/0010-store-setter-hardening.md). |
+| `resetWorkflow(resume?)` | Calls `abortStore.clear()` first, then resets all 4 sub-stores **and invalidates the memo caches** (`cachedEvents`, `cachedSections`) so subscribers observe a clean slate; applies resume state if provided. Cache invalidation is symmetric with sub-store reset — missing it leaks pre-reset sections into the first post-reset `useSections()` call. |
 | `getSections()` / `useSections()` | Memoized derivation of conversation sections from `eventsStore.events`. Cache lives file-local. |
 | `WorkflowViewState` | Type alias `EventsState & TasksState & TokensState & LifecycleState` — exported for any consumer that needs the flattened shape. |
 
@@ -230,7 +230,7 @@ Workflow sub-stores (`events`, `tasks`, `tokens`, `lifecycle`) are written exclu
 
 ### Test escape hatches
 
-A small number of stores ship two test-only exports so tests can arrange specific starting states that no domain action produces. See ADR [`0010-store-setter-hardening.md`](./adr/0010-store-setter-hardening.md) for the full rationale.
+A small number of stores ship two test-only exports so tests can arrange specific starting states that no domain action produces.
 
 | Symbol | Shape | Who may import |
 |---|---|---|

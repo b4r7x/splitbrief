@@ -16,25 +16,25 @@ npm test
 
 ## The gates
 
-| # | Command | Expected | Rule / ADR |
+| # | Command | Expected | Rule |
 |---|---|---|---|
 | 1 | `find src -name 'index.ts'` | 0 results | No barrels — [NO-BARRELS.md](./NO-BARRELS.md) |
-| 2 | `rg "z\.infer" src/core/types/` | 0 matches | Inferred types live with their schema — [TYPES.md](./TYPES.md), [ADR 0006](./adr/0006-types-colocation-with-schemas.md) |
+| 2 | `rg "z\.infer" src/core/types/` | 0 matches | Inferred types live with their schema — [TYPES.md](./TYPES.md) |
 | 3 | `rg "useMemo\|useCallback\|React\.memo\|forwardRef\|useImperativeHandle" src/` | 0 matches | Zero memoization, no imperative handles — [STORES.md](./STORES.md), [CLAUDE.md](../CLAUDE.md) |
 | 4 | `rg "throw new Error" src/engine/ src/lib/ src/cli/ \| rg -v "\.test\."` | 0 matches | Errors go through `error()` factory + domain bag — [ERRORS.md](./ERRORS.md) |
-| 5 | `rg "^\s*set:\s*store\.set" src/stores/` | 0 matches | No raw setter on store facade — [STORES.md](./STORES.md), [ADR 0010](./adr/0010-store-setter-hardening.md) |
-| 6 | `rg "from 'simple-git'" src/ \| rg -v "lib/git"` | 0 matches | `simple-git` imported only in `lib/git.ts` — [LAYERS.md](./LAYERS.md), [ADR 0008](./adr/0008-engine-git-boundary.md) |
-| 7 | `rg "process\.env\['ANTHROPIC_API_KEY'\]" src/engine/agent-sdk.ts` | 0 matches | Anthropic SDK key scoped via `env:` option, no global mutation — [ADR 0012](./adr/0012-anthropic-sdk-and-openai-signal.md) |
+| 5 | `rg "^\s*set:\s*store\.set" src/stores/` | 0 matches | No raw setter on store facade — [STORES.md](./STORES.md) |
+| 6 | `rg "from 'simple-git'" src/ \| rg -v "lib/git"` | 0 matches | `simple-git` imported only in `lib/git.ts` — [LAYERS.md](./LAYERS.md) |
+| 7 | `rg "process\.env\['ANTHROPIC_API_KEY'\]" src/engine/agent-sdk.ts` | 0 matches | Anthropic SDK key scoped via `env:` option, no global mutation — [LAYERS.md](./LAYERS.md) §SOTA provider decisions |
 | 8 | `rg "class\s+\w+\s+extends\s+Error" src/` | 0 matches | Zero classes — errors via factory bags — [ERRORS.md](./ERRORS.md) |
-| 9 | `rg "from '\.\./\.\./features/" src/features/` | 0 matches | No cross-feature imports — [STRUCTURE.md](./STRUCTURE.md), [ADR 0007](./adr/0007-feature-boundary-enforcement.md) |
+| 9 | `rg "from '\.\./\.\./features/" src/features/` | 0 matches | No cross-feature imports — [STRUCTURE.md](./STRUCTURE.md) |
 
-Gates 1, 2, 5, 6, 7 have historical precedent in the ADR "Verification" sections — this doc collects them in one place so nothing slips.
+Gates are consolidated here; full rationale for each lives in the linked doc.
 
 ---
 
 ## SOTA provider decisions (reference)
 
-When touching provider SDK code, match these patterns rather than reinventing — see [ADR 0012](./adr/0012-anthropic-sdk-and-openai-signal.md):
+When touching provider SDK code, match these patterns rather than reinventing:
 
 - **Anthropic Agent SDK key scoping.** Pass `options.env = { ...process.env, ANTHROPIC_API_KEY: apiKey }` to `query()`. Never mutate `process.env` globally. The per-call `env` option was confirmed in SDK `0.2.114`.
 - **OpenAI abort signal.** Pass `signal` as the second arg to every resource call: `client.chat.completions.create(body, { signal })`. The in-loop `opts.signal?.aborted` check stays for aborts landing between chunks, but the wire-through makes the initial POST cancellable too.

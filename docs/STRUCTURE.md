@@ -191,7 +191,7 @@ Why:
 
 If you need shared behavior across features, it belongs in `src/components/`, `src/hooks/`, `src/utils/`, `src/core/`, or `src/stores/`. Composition between features happens at the app level (`src/app.tsx` dispatches, `src/layout.tsx` wraps).
 
-When feature A needs to render UI owned by feature B (e.g. `setup` rendering the `tool-picker`), feature A accepts a render-prop callback (`renderToolPicker`) and `src/app.tsx` supplies the implementation. See ADR [0007](./adr/0007-feature-boundary-enforcement.md) for the rationale and the canonical `setup/` example.
+When feature A needs to render UI owned by feature B (e.g. `setup` rendering the `tool-picker`), feature A accepts a render-prop callback (`renderToolPicker`) and `src/app.tsx` supplies the implementation. The canonical example is `setup/`.
 
 The one sanctioned cross-cutting channel between features is **stores**. Feature A can write to `workflowStore`, and feature B can read from it — that is the same engine→UI pattern already described in [`STORES.md`](./STORES.md).
 
@@ -241,7 +241,7 @@ Consistency helps `grep` and editor navigation. If a feature has multiple entry 
 
 ## Test strategy
 
-Tests follow a hybrid layout driven by **blast radius** — how many top-level folders a test imports from. See [`TESTING.md`](./TESTING.md) for the hands-on guide and [ADR T1](./adr/T1-hybrid-test-layout.md) for the rationale.
+Tests follow a hybrid layout driven by **blast radius** — how many top-level folders a test imports from. See [`TESTING.md`](./TESTING.md) for the hands-on guide.
 
 **Placement rule (two bins):**
 
@@ -255,11 +255,11 @@ The three `testing/integration/` subfolders align with the three stable seams: c
 **Companion rules:**
 
 - **Pure helpers get colocated tests.** `keyboard.ts`, `layout.ts`, `handlers.ts`, `core/state/machine.ts`, parsers, pricing math — inputs → outputs, zero I/O.
-- **Ink tested at the feature seam.** Feature entries (`screen.tsx`, `overlay.tsx`, `picker.tsx`) get tests; feature sub-components do not. Shared primitives in `src/components/` (`FilterableList`, `MultilineInput`, `TwoColumnPicker`) earn dedicated tests because their cost amortises across consumers. See [ADR T3](./adr/T3-ink-feature-seam.md).
-- **Engine tested at `runWorkflow()`.** Pure decision modules get colocated units; orchestrator control-flow modules are covered only via integration tests at the `runWorkflow()` seam with fakes from `testing/helpers/orchestrator-factories.ts`. See [ADR T4](./adr/T4-engine-at-runworkflow-boundary.md).
+- **Ink tested at the feature seam.** Feature entries (`screen.tsx`, `overlay.tsx`, `picker.tsx`) get tests; feature sub-components do not. Shared primitives in `src/components/` (`FilterableList`, `MultilineInput`, `TwoColumnPicker`) earn dedicated tests because their cost amortises across consumers.
+- **Engine tested at `runWorkflow()`.** Pure decision modules get colocated units; orchestrator control-flow modules are covered only via integration tests at the `runWorkflow()` seam with fakes from `testing/helpers/orchestrator-factories.ts`.
 - **Trivial hooks (≤30 LOC, no branching) do not need tests.** Covered through the component that uses them. See [`HOOKS.md`](./HOOKS.md).
-- **Fixtures vs factories split by kind.** `testing/fixtures/<domain>/` = read-only bytes on disk; `testing/helpers/factories/<domain>.ts` = pure TS constructors. Rule of two: inline until the second consumer appears. See [ADR T2](./adr/T2-fixtures-vs-factories.md).
-- **Static is a tier.** TS strict + Zod schemas are first-class correctness — no runtime shape tests for Zod schemas, no `expectType<>` games. See [ADR T5](./adr/T5-static-as-trophy-tier.md).
+- **Fixtures vs factories split by kind.** `testing/fixtures/<domain>/` = read-only bytes on disk; `testing/helpers/factories/<domain>.ts` = pure TS constructors. Rule of two: inline until the second consumer appears.
+- **Static is a tier.** TS strict + Zod schemas are first-class correctness — no runtime shape tests for Zod schemas, no `expectType<>` games.
 - **Do not test implementation.** No `vi.mock()` on `./` / `../` siblings, no spies on internal module functions, no `toHaveBeenCalledTimes` unless call-count IS the contract. See [`test-behavior-not-implementation`](../CLAUDE.md#testing-policy).
 
 Test discovery is configured in `vitest.config.ts` via `include: ['src/**/*.test.{ts,tsx}', 'testing/integration/**/*.test.{ts,tsx}']`. Both trees are picked up by a single `npm test`.

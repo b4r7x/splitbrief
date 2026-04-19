@@ -262,7 +262,7 @@ The four subclasses at the point of writing (`CommandNotFoundError`, `CommandTim
 
 **Why not `Error` subclasses (status quo):** forces a class exception to the zero-class rule with no benefit. `instanceof` is equivalent to `matches('kind')` at runtime, both narrow the type at compile time, and the factory gives us autocomplete on the bag (`processError.` → list of factories).
 
-**Why not `neverthrow` / `Result<T, E>`:** viral type. Every function in the call chain has to declare `Result`. Forty-five `throw cliError(...)` sites today, almost none are branched on — a `Result`-typed call chain would be pure noise at those sites. See [ADR-0001](./adr/0001-error-pattern-domain-predicates.md).
+**Why not `neverthrow` / `Result<T, E>`:** viral type. Every function in the call chain has to declare `Result`. Forty-five `throw cliError(...)` sites today, almost none are branched on — a `Result`-typed call chain would be pure noise at those sites.
 
 **Why not `effect-ts`:** paradigm shift. Bundle size, learning curve, and dependency footprint are too large for a single-binary CLI that throws in fewer than 50 places.
 
@@ -291,7 +291,6 @@ The four subclasses at the point of writing (`CommandNotFoundError`, `CommandTim
 
 ## References
 
-- [ADR-0001](./adr/0001-error-pattern-domain-predicates.md) — decision record and alternatives
 - [CLAUDE.md](../CLAUDE.md) — zero-class rule
 - [LAYERS.md](./LAYERS.md) — which layer owns which error bag
 - [TYPES.md](./TYPES.md) — type placement (factory bags colocate with their producer, per three-case rule)

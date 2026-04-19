@@ -29,7 +29,7 @@ A module deserves the `use-` prefix only when it has at least one of:
 
 Modules that only rename fields, flatten other hooks' return shapes, or carry no React-ness at all are **not hooks**. Convert them to plain functions and put them next to the domain they serve (usually the feature root, `src/utils/`, or `src/core/`).
 
-The single-consumer gate matters too: a hook used by exactly one caller with no React state has zero abstraction power — inline it. Dissolved examples: `use-workflow.ts` (facade flattening three hook returns), `use-workflow-review-input.ts` (75 LOC with zero React lifecycle, replaced by `createReviewInputHandler`). See [ADR 0011](./adr/0011-shallow-hook-dissolution.md).
+The single-consumer gate matters too: a hook used by exactly one caller with no React state has zero abstraction power — inline it. Dissolved examples: `use-workflow.ts` (facade flattening three hook returns), `use-workflow-review-input.ts` (75 LOC with zero React lifecycle, replaced by `createReviewInputHandler`).
 
 ## Inventory
 
@@ -118,7 +118,7 @@ When a hook would wrap another hook and add only trivial logic, inline instead. 
 2. **Behavior lives in the hook, not the pure helper.** If you split a hook into `use-foo.ts` + `foo-helpers.ts`, the hook orchestrates, the helpers stay pure. Test the pure helpers directly; test the hook at the behavior level.
 3. **Hooks do not import from other features.** `features/home/hooks/*` must not import from `features/workflow/*`. Cross-feature needs go through a shared hook in `src/hooks/` or a store.
 4. **One `useInput` per concern.** Splitting `use-global-keys` into `use-app-keys` + `use-workflow-keys` was a direct application of this: global keybindings stay always-on, workflow keybindings mount conditionally under `screen === 'workflow'`.
-5. **Prefer `AbortController` over ad-hoc `cancelled` flags for async cancellation.** When a hook races a promise against unmount, use `new AbortController()` + `controller.signal` and return `() => controller.abort()` from the effect. Node's `fs.readFile`, `fetch`, and most async APIs accept `{ signal }` natively. Closure booleans (`let cancelled = false`) work but signal the wrong intent — `AbortController.abort()` is self-documenting and the Node-native SOTA. Canonical example: `use-review-content.ts`. See [ADR 0011](./adr/0011-shallow-hook-dissolution.md).
+5. **Prefer `AbortController` over ad-hoc `cancelled` flags for async cancellation.** When a hook races a promise against unmount, use `new AbortController()` + `controller.signal` and return `() => controller.abort()` from the effect. Node's `fs.readFile`, `fetch`, and most async APIs accept `{ signal }` natively. Closure booleans (`let cancelled = false`) work but signal the wrong intent — `AbortController.abort()` is self-documenting and the Node-native SOTA. Canonical example: `use-review-content.ts`.
 
 ## Design decisions
 

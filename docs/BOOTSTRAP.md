@@ -109,7 +109,7 @@ src/stores/ui/
 
 `initStores()` calls `installHistoryPersistence()` from `stores/ui/persistence.js`. The CLI layer knows about the step, but the I/O logic is a store concern.
 
-See [ADR-0004](./adr/0004-input-history-persistence-placement.md) for the rationale behind this placement.
+The placement follows colocation: UI-ephemeral state lives under `stores/ui/`, and its disk I/O sits beside the store it serializes.
 
 ### 5. Cross-store orchestration goes in `initStores()`
 
@@ -143,7 +143,7 @@ Independent async steps fan out here. If you add a third, it joins this `Promise
 
 It does **not** touch stores. Stores know nothing about TTY flags or the git check result. `setupWorkflow()` returns a `SetupResult` that the subcommand handler passes to `renderApp()` and `initStores()`.
 
-See [ADR-0003](./adr/0003-cli-options-setup-split.md) for why `addWorkflowOptions` (commander flags) and `setupWorkflow` (bootstrap prep) are split into two files.
+`addWorkflowOptions` (commander flags) and `setupWorkflow` (bootstrap prep) are split into two files because they have different change rates: flags are rewritten when the commander surface changes; setup is rewritten when the bootstrap prerequisites change.
 
 ---
 
@@ -173,6 +173,3 @@ If a component calls `store.use()` on a field that was never set by `initStores(
 - [STORES.md](./STORES.md) — full store architecture
 - [STRUCTURE.md](./STRUCTURE.md#deep-modules-and-folder-colocation) — 150 LOC threshold and folder-colocation pattern
 - [LAYERS.md](./LAYERS.md) — `cli/` / `core/` / `stores/` boundaries
-- [ADR-0002](./adr/0002-init-stores-single-file.md) — why one file for init
-- [ADR-0003](./adr/0003-cli-options-setup-split.md) — why options and setup split
-- [ADR-0004](./adr/0004-input-history-persistence-placement.md) — why persistence lives with the store

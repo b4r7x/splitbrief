@@ -114,9 +114,9 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 **Nesting rule:** create a sub-folder under `lib/` only when you have ≥3 closely-coupled files for a single subsystem (`lib/process/` has `spawn`, `errors`, `registry`, `line-buffer`). One-file subsystems stay flat (`lib/git.ts`, not `lib/git/git.ts`).
 
 **Single-source rules for wrapped subsystems:**
-- **No `simple-git` imports outside `src/lib/git.ts`** (and its colocated test file). Every git operation — `commit`, `stash`, `checkout`, `clean`, `tag`, `reset`, `add` — routes through a named export in `lib/git.ts`. Engine, core, and features import named helpers only. See [ADR 0008](./adr/0008-engine-git-boundary.md).
+- **No `simple-git` imports outside `src/lib/git.ts`** (and its colocated test file). Every git operation — `commit`, `stash`, `checkout`, `clean`, `tag`, `reset`, `add` — routes through a named export in `lib/git.ts`. Engine, core, and features import named helpers only.
 - `lib/git.ts` contains no orchestrator convention knowledge. Staging is explicit: `commitChanges(dir, msg)` commits the current index; callers call `stageAll(dir)` first when they mean "stage everything then commit". Convenience coupling ("commit auto-stages") belongs in the caller, not the wrapper.
-- **`ensureGitignore` lives in `lib/fs.ts`, not `lib/git.ts`.** It uses only `node:fs` (no `simple-git` call) — placement follows runtime dependency, not subject matter. See [ADR 0008](./adr/0008-engine-git-boundary.md).
+- **`ensureGitignore` lives in `lib/fs.ts`, not `lib/git.ts`.** It uses only `node:fs` (no `simple-git` call) — placement follows runtime dependency, not subject matter.
 
 ---
 
@@ -199,7 +199,7 @@ If a file in `src/components/` turns out to have a single feature consumer, demo
 | `components/overlays/mode-selector.tsx` | `app.tsx` overlay switch; writes to `configStore.workflow.mode` (settings domain) | `features/settings/mode-selector.tsx` |
 | `components/input-bar/feedback-row.tsx` | `features/workflow/screen.tsx`; reads `abortStore` (workflow domain) | `features/workflow/components/feedback-row.tsx` |
 
-The demotions cost one import-path rewrite each; the benefit is that `src/components/` stops advertising false sharing. See ADR [0007](./adr/0007-feature-boundary-enforcement.md).
+The demotions cost one import-path rewrite each; the benefit is that `src/components/` stops advertising false sharing.
 
 ---
 
