@@ -1,12 +1,12 @@
 # Layers: `utils/` vs `lib/` vs `core/` vs `engine/` vs `features/`
 
-When you add a new module, ask: **what kind of code is this?** The answer tells you which top-level folder it belongs in. Get this wrong and the import graph rots — pure helpers start knowing about `.diptych/`, infrastructure wrappers start depending on features, and the codebase becomes hard to reason about.
+Per-layer reference. For the **decision tree** ("where does this file go?"), see [`STRUCTURE.md` §File placement decision tree](./STRUCTURE.md#file-placement-decision-tree). This doc answers the follow-up question: **once I know the layer, what exactly lives there and what does not?**
 
-This document is the decision authority. Companion to [`STRUCTURE.md`](./STRUCTURE.md) (which documents the file tree) and [`NO-BARRELS.md`](./NO-BARRELS.md) (which bans re-export indirection).
+Companion to [`STRUCTURE.md`](./STRUCTURE.md) (file tree, feature anatomy) and [`NO-BARRELS.md`](./NO-BARRELS.md) (barrel policy).
 
 ---
 
-## The five layers
+## Layer summary
 
 | Layer | Role | Imports from | Imported by |
 |---|---|---|---|
@@ -17,39 +17,13 @@ This document is the decision authority. Companion to [`STRUCTURE.md`](./STRUCTU
 | `src/stores/` | External state stores — the only cross-cutting channel between engine and UI | `utils/`, `core/`, `lib/` | anyone |
 | `src/features/{f}/` | Vertical business slices — screens, feature-local hooks, components | everything below + shared `components/`, `hooks/` | only `app.tsx` |
 
-**Import direction is one-way, top to bottom.** Violations are blockers:
-- ❌ `utils/` importing from `core/` — breaks the "leaf primitive" contract
-- ❌ `lib/` importing from `engine/` — infra must not know about workflow
-- ❌ `core/` importing from `features/` — domain must not know about UI
-- ❌ `features/A` importing from `features/B` — features are independent
-
----
-
-## Decision tree: where does this code go?
-
-```
-Does the code import React/Ink?
-├── YES → `src/components/`, `src/hooks/`, or `src/features/{f}/`
-└── NO ↓
-
-Does the code know about tiny-spec concepts
-(`.diptych/`, cost $, tokens K/M, workflow phases,
-Ollama, Claude Code, LLM providers, etc.)?
-├── YES ↓
-│   Is it workflow orchestration (planner, implementer, validation)?
-│   ├── YES → `src/engine/`
-│   └── NO  → `src/core/`
-└── NO ↓
-
-Is it a wrapper around an external system
-(git, filesystem, node:child_process, terminal I/O, Shiki, simple-git)?
-├── YES → `src/lib/`
-└── NO  → `src/utils/`  (pure primitive, npm-publishable in isolation)
-```
+Import direction is one-way, top to bottom. For the cross-check table and blockers, see [`STRUCTURE.md` §File placement decision tree](./STRUCTURE.md#file-placement-decision-tree).
 
 ---
 
 ## `utils/` — generic primitives
+
+**Purpose.** Pure, stateless, framework-agnostic helpers that could be npm-published in isolation. The leaf of the import graph.
 
 **Acceptance criteria:**
 - No imports from `core/`, `engine/`, `stores/`, `features/`, `components/`, `hooks/`, or `lib/`
@@ -57,9 +31,9 @@ Is it a wrapper around an external system
 - Pure function or small stateless module — you could publish it to npm under a different name without touching the code
 - Reusable across unrelated projects
 
-**Examples of what lives here:**
+**What lives here (`src/utils/`):**
 - `type-guards.ts` — `assertNever`, `isRecord`, `typedEntries`
-- `format-errors.ts` — `toErrorMessage(unknown)` → string
+- `error.ts` / `format-errors.ts` — `error(kind, msg, …)` factory + `toErrorMessage(unknown)` → string
 - `redact.ts` — strip API keys from strings
 - `truncate.ts` — `truncateByChars`, `truncateByLines`, `truncateWithEllipsis`
 - `format-time.ts` — `formatDuration`, `formatTime`, `formatTimeHHMMSS`, `formatEta`
@@ -68,7 +42,9 @@ Is it a wrapper around an external system
 - `sectioned-list.ts` — group a flat list into sections
 - `diff.ts` — LCS diff algorithm
 
-**Red flags that something doesn't belong in `utils/`:**
+**Prohibited imports:** `core/`, `engine/`, `stores/`, `features/`, `components/`, `hooks/`, `lib/`, `cli/`.
+
+**Red flags that something does not belong in `utils/`:**
 - Contains a string literal that names a tiny-spec tool, provider, or internal path
 - Imports `node:child_process`, `simple-git`, `shiki`, or wraps a specific binary — that's `lib/`
 - Has `process.exit` or hardcoded exit codes — that's feature-level
@@ -86,11 +62,13 @@ const result = validateSafeIdentifier(filename);
 if (!result.ok) throw fsError.invalidId('filename', filename, result.reason);
 ```
 
-Moral: validators (pure) split from error factories (domain). If a "validator" also throws, it's not a validator — it's an assertion helper, and the domain of the assertion decides its home.
+Moral: validators (pure) split from error factories (domain). If a "validator" also throws, it is not a validator — it is an assertion helper, and the domain of the assertion decides its home.
 
 ---
 
 ## `lib/` — infrastructure wrappers
+
+**Purpose.** Single-responsibility adapters around Node stdlib, npm packages, or terminal protocols. Infra the codebase needs but does not speak tiny-spec.
 
 **Acceptance criteria:**
 - Wraps a single external system (Node stdlib, npm package, terminal protocol)
@@ -107,6 +85,8 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 - `lib/process/` — subprocess lifecycle (`spawn`, `errors`, `registry`, `line-buffer`)
 - `lib/terminal/` — terminal I/O (`mouse` events, `kitty-keyboard` protocol)
 
+**Prohibited imports:** `core/`, `engine/`, `stores/`, `features/`, `components/`, `hooks/`, `cli/`. `lib/` may import other `lib/` siblings and `utils/`.
+
 **Why `lib/` is not `utils/`:** these modules depend on Node APIs, external packages, or protocol specifics. They are reusable, but not as drop-in primitives. `utils/` is for things you could copy-paste into any TypeScript project; `lib/` is for things that only make sense in a Node + terminal context.
 
 **Why `lib/` is not `core/`:** these modules don't know anything about tiny-spec. A workflow runner, a `.diptych/` session store, a cost calculation — all domain. A git-commit wrapper, a process spawner, a terminal mouse parser — all infrastructure. Swap `simple-git` for another implementation, `lib/git.ts` changes; `core/` doesn't.
@@ -118,9 +98,22 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 - `lib/git.ts` contains no orchestrator convention knowledge. Staging is explicit: `commitChanges(dir, msg)` commits the current index; callers call `stageAll(dir)` first when they mean "stage everything then commit". Convenience coupling ("commit auto-stages") belongs in the caller, not the wrapper.
 - **`ensureGitignore` lives in `lib/fs.ts`, not `lib/git.ts`.** It uses only `node:fs` (no `simple-git` call) — placement follows runtime dependency, not subject matter.
 
+**Good / bad examples:**
+
+```ts
+// GOOD — lib/git.ts: pure simple-git wrapper
+export async function commitChanges(dir: string, message: string) { ... }
+
+// BAD — lib/git.ts knowing a workflow naming convention
+export async function commitTaskResult(taskId: TaskId) { ... }
+//     ^ TaskId is a core/ concept; this belongs in engine/
+```
+
 ---
 
 ## `core/` — domain logic (no React, no orchestration)
+
+**Purpose.** Describes tiny-spec: config shape, state machine, paths, sessions, cost/token math. UI-agnostic and orchestration-agnostic.
 
 **Acceptance criteria:**
 - Knows tiny-spec concepts: config shape, workflow state machine, task entities, cost/token math, session metadata, path conventions
@@ -131,7 +124,7 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 **What lives here:**
 - `core/config/` — YAML config loading, validation, migration
 - `core/schemas/` — Zod schemas + their inferred TS types (the source of truth for `Config`, `Task`, `WorkflowState`, `Session`, token/summary shapes, etc.)
-- `core/types/` — cross-cutting TS-only types that have no runtime schema (`StateAction`, `TokenBudget`, `DetectedModel`, `WorkflowOpts`, etc.). `z.infer` is forbidden here — inferred types live in `core/schemas/`. See `docs/TYPES.md` and ADR 0006.
+- `core/types/` — cross-cutting TS-only types that have no runtime schema (`StateAction`, `TokenBudget`, `DetectedModel`, `WorkflowOpts`, etc.). `z.infer` is forbidden here — inferred types live in `core/schemas/`. See [`docs/TYPES.md`](./TYPES.md).
 - `core/state/` — workflow state machine, transitions, persistence shape
 - `core/sessions/` — session metadata, analytics, ID generation
 - `core/formatting.ts` — LLM-specific formatters (`formatCost`, `formatContextLength`)
@@ -139,6 +132,10 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 - `core/paths.ts`, `core/paths-io.ts` — `.diptych/` path derivation and validation
 - `core/slash-commands/` — command definitions (pure data + handlers)
 - `core/providers/` — provider catalog, known-models, model-selection logic
+- `core/hooks/` — workflow hook config validation + sha256 trust hashing (`trust.ts`)
+- `core/tokens/` — pure token accounting helpers (`estimate.ts`) used by the repo-map budget and the planner base
+
+**Prohibited imports:** `engine/`, `stores/`, `features/`, `components/`, `hooks/`, `cli/`. `core/` may import `utils/`, `lib/`, and other `core/` siblings.
 
 **Why `core/` is not `engine/`:** `engine/` runs the workflow (spawns subprocesses, streams tokens, retries tasks). `core/` just describes it — the types, the transitions, the derived formatters. You could delete `engine/` and rewrite it in a different runtime; `core/` stays.
 
@@ -148,10 +145,12 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 
 ## `engine/` — workflow orchestration
 
+**Purpose.** Runs the workflow loop: planners, implementers, validation, retry, escalation, commits. Side-effectful and stateful.
+
 **Acceptance criteria:**
 - Zero imports from React, Ink, `src/components/`, `src/hooks/`, `src/features/`
 - Owns the workflow loop: planners, implementers, validation, retry, escalation, commits
-- Emits `TuiEvent` events for the UI via stores — never calls React directly
+- Emits `EngineEvent` values through the `EventBus`; sinks fan out to the workflow store (for the UI), JSONL log, stdout NDJSON, OTel, and hooks. Engine never calls React directly.
 - Side-effectful: spawns subprocesses, streams HTTP, writes files
 
 **What lives here:**
@@ -165,6 +164,15 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 - `engine/detection/` — auto-detect installed tools
 - `engine/skills/` — skill discovery
 - `engine/errors/` — engine-scoped error diagnosis (provider hints, etc.)
+- `engine/events/` — event bus subsystem: `types.ts` (`EngineEvent` discriminated union, `EventBus`/`EventSink` types), `bus.ts` (`createEventBus()` factory with crash isolation per sink), and `sinks/` holding the four shipped subscribers:
+  - `sinks/tui.ts` — pass-through sink forwarding `EngineEvent` to `workflow/actions.addEvent` (workflow sub-stores consume `EngineEvent` directly)
+  - `sinks/jsonl.ts` — appends every event to `.diptych/sessions/<id>/session.jsonl` via `appendEngineEvent`
+  - `sinks/stdout-json.ts` — NDJSON emitter for `diptych start --json` / headless mode
+  - `sinks/otel.ts` — optional OpenTelemetry span emitter (workflow → phase → task span tree)
+- `engine/hooks/` — workflow hook runtime: `dispatch.ts` (subprocess `command` hooks), `load-module.ts` (in-process `module` hooks), `substitute.ts` (safe `${event.*}` regex substitution), `run-pre-hook.ts` (sequential `pre_*` runner with deny short-circuit), `sink.ts` (bus sink for `post_*`/`on_*` fire-and-forget), `types.ts`, `builtins/` (`prettier-on-change`, `block-secrets`, `registry.ts`)
+- `engine/codebase/` — repo-map pipeline (`parse`, `cache`, `graph`, `pagerank`, `format`, `budget`, `rebuild`, `extract-mentioned-filenames`, `repomap.ts` entry, `types.ts`) — produces the token-budgeted codebase summary injected into the planner prompt. See [REPOMAP.md](./REPOMAP.md).
+
+**Prohibited imports:** `features/`, `components/`, `hooks/`, `cli/`, `react`, `ink`. Grep gate in [`INVARIANTS.md`](./INVARIANTS.md).
 
 ---
 
@@ -174,9 +182,11 @@ See [`STORES.md`](./STORES.md) for full architecture. In layer terms: stores are
 
 ---
 
-## `components/` and `hooks/`
+## `components/` and `hooks/` — shared UI
 
-Top-level `src/components/` and `src/hooks/` hold cross-feature React code:
+**Purpose.** Cross-feature React code (used by ≥2 features, or a UI primitive that will be).
+
+Top-level `src/components/` and `src/hooks/` hold:
 - A component used by ≥2 features → `src/components/`
 - A hook used by ≥2 features or a UI primitive → `src/hooks/`
 
@@ -205,40 +215,11 @@ The demotions cost one import-path rewrite each; the benefit is that `src/compon
 
 ## `features/` — vertical business slices
 
-One folder per feature. Contains the feature's screen/overlay/picker entry + its components + its hooks + its pure helpers.
+**Purpose.** One folder per business concept. Contains the feature's screen/overlay/picker entry + its components + its hooks + its pure helpers.
 
-**Features do not import from each other.** The only cross-cutting channel is stores.
+**Features do not import from each other.** The only cross-cutting channel is stores. See [`STRUCTURE.md` §Cross-feature rule](./STRUCTURE.md#cross-feature-rule).
 
----
-
-## Worked examples
-
-**Q: I need to format a date as `YYYY-MM-DD`.**
-A: Generic, reusable, no domain → `src/utils/` (pick an existing time file or create one).
-
-**Q: I need to format a cost in dollars with a `$` prefix.**
-A: LLM-domain (cost is a tiny-spec concept) → `src/core/formatting.ts`.
-
-**Q: I need to parse CLI version output to detect if `git` is installed.**
-A: Infrastructure (wraps `node:child_process` to probe an external tool) → `src/lib/availability.ts`.
-
-**Q: I need to write a file at `.diptych/config.yaml` with secure permissions.**
-A: The file-write primitive (`writeSecureFile`) is `src/lib/fs.ts`. The path derivation (`getConfigPath`) is `src/core/paths.ts`. The "write the config" operation composes both from `core/config/loading.ts`.
-
-**Q: I need to detect when Ollama returns "model not found" and show a hint.**
-A: That's a tiny-spec LLM-domain concern → `src/engine/errors/hints.ts` (close to the engine consumers that call it).
-
-**Q: I need a React hook to debounce user input.**
-A: Generic UI primitive → `src/hooks/use-debounce.ts`. If only one feature uses it, it starts inside that feature and gets promoted to shared when a second consumer appears.
-
-**Q: I need to parse a YAML frontmatter block.**
-A: Generic → `src/utils/frontmatter.ts`. The fact that it's used for skills discovery is the consumer's business.
-
-**Q: I need a function that returns `true` if a session ID is valid.**
-A: Validation against a tiny-spec-defined format → `src/core/sessions/id.ts`.
-
-**Q: I need to map `src/foo.ts` to its colocated test file `tests/foo.test.ts`.**
-A: Test-discovery heuristics are domain logic (project-layout convention) → belongs in `core/validation/` not `engine/orchestrator/`. Engine composes the resolver at workflow-init time and shares it across task/retry pipelines.
+**Prohibited imports:** other `features/` siblings. The callback-composition-at-app.tsx pattern covers the "feature A renders UI owned by feature B" case.
 
 ---
 
@@ -250,6 +231,7 @@ A: Test-discovery heuristics are domain logic (project-layout convention) → be
 | `lib/bar.ts` contains `"claude-code"` | Infra wrapper knows domain | Extract the domain part to `core/` or `engine/` |
 | `core/baz.ts` imports from `engine/` | Wrong direction | Invert: `engine/` should depend on `core/`, not the other way |
 | `features/A/x.ts` imports from `features/B/y.ts` | Features must be independent | Promote the shared code to `core/`, `stores/`, `components/`, or `hooks/` |
+| `src/engine/**` importing from `src/features/**` | Engine must be UI-agnostic | Resolved 2026-04-19 via event bus (bridge sink deleted — zero engine→features imports remain) — see [ARCHITECTURE.md §Design decisions](./ARCHITECTURE.md#design-decisions--why-eventbus) |
 | New `utils/` file with 1 consumer | Not shared yet | Keep it inside the consumer until ≥2 users exist |
 | Re-export barrel (`utils/index.ts`) | Indirection with no added value | Delete it — consumers import from source |
 
@@ -324,7 +306,8 @@ engine/implementers/   # mirror of planners/ — same port+adapter pattern
 
 ## References
 
-- [`PRINCIPLES.md`](./PRINCIPLES.md) — one-page index of all architectural rules.
+- [`STRUCTURE.md` §File placement decision tree](./STRUCTURE.md#file-placement-decision-tree) — the canonical "where does this file go?" flow
+- [`PRINCIPLES.md`](./PRINCIPLES.md) — one-page index of all architectural rules
 - [`STRUCTURE.md`](./STRUCTURE.md) — file tree, feature anatomy, placement rules, folder colocation
 - [`TYPES.md`](./TYPES.md) — type placement, Zod schema conventions
 - [`STORES.md`](./STORES.md) — state architecture

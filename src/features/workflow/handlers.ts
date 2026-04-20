@@ -61,7 +61,7 @@ export function requestClearQueue(): number {
   if (handlers.clearQueue) return handlers.clearQueue();
   const depth = lifecycleStore.get().queueDepth;
   if (depth > 0) {
-    addEvent({ type: 'queue-cleared', ts: Date.now(), count: depth });
+    addEvent({ type: 'queue_cleared', ts: Date.now(), phase: lifecycleStore.get().phase, count: depth });
   }
   return depth;
 }

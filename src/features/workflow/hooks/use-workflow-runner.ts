@@ -2,7 +2,7 @@ import { useRef, useEffect, useEffectEvent, useState } from 'react';
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
-import type { TuiEvent } from '../types.js';
+import type { EngineEvent } from '../../../engine/events/types.js';
 import type { SkillMeta } from '../../../engine/skills/discovery.js';
 import { addEvent, resetWorkflow } from '../../../stores/workflow/actions.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
@@ -53,7 +53,7 @@ export function useWorkflowRunner({
   sessionId: initialSessionId,
 }: UseWorkflowRunnerOptions): UseWorkflowRunnerResult {
   const abortedRef = useRef(false);
-  const pendingRewindEventRef = useRef<TuiEvent | null>(null);
+  const pendingRewindEventRef = useRef<EngineEvent | null>(null);
   const [startedAt] = useState(() => new Date().toISOString());
   const [runId, setRunId] = useState(0);
   const [inlineResume, setInlineResume] = useState<WorkflowState | undefined>(undefined);
@@ -92,11 +92,6 @@ export function useWorkflowRunner({
       setRunId(id => id + 1);
     });
 
-    const pushEvent = (event: TuiEvent) => {
-      if (abortedRef.current) return;
-      addEvent(event);
-    };
-
     runWorkflow({
       feature,
       projectDir,
@@ -104,7 +99,6 @@ export function useWorkflowRunner({
       sinks,
       signal: controller.signal,
       callbacks: {
-        onEvent: pushEvent,
         onApprovalNeeded: async (_type, filePath) => {
           reviewStore.setReviewFile(filePath);
           const result = await inputMode.setReviewMode(REVIEW_HINT);
@@ -128,7 +122,7 @@ export function useWorkflowRunner({
       sessionId: initialSessionId,
     }).catch((err) => {
       if (!abortedRef.current && !lifecycleStore.get().cancelled) {
-        addEvent({ type: 'error', ts: Date.now(), message: String(err) });
+        addEvent({ type: 'error', ts: Date.now(), phase: lifecycleStore.get().phase, message: String(err) });
       }
     });
   });

@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { WorkflowModeSchema, CommitStrategySchema, ThemeModeSchema, ShikiThemeSchema } from './enums.js';
 import { PlannerConfigSchema } from './planner-config.js';
 import { ImplementerConfigSchema } from './implementer-config.js';
+import { CodebaseConfigSchema } from './codebase.js';
+import { HooksConfigSchema } from './hooks.js';
+import { OtelConfigSchema } from './otel.js';
 
 export const EscalationConfigSchema = z.object({
   intermediateProvider: z.string().optional(),
@@ -34,6 +37,9 @@ export const ConfigSchema = z.object({
     scope: z.enum(['project', 'global']).optional(),
   }).optional(),
   escalation: EscalationConfigSchema.optional(),
+  codebase: CodebaseConfigSchema.optional(),
+  hooks: HooksConfigSchema.optional(),
+  otel: OtelConfigSchema.optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

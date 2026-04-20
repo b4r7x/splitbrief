@@ -1,141 +1,11 @@
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { Phase, TaskCompletionMethod, WorkflowMode } from '../../core/schemas/enums.js';
-import type { ValidationStages } from '../../features/workflow/types.js';
-import type { OrchestratorCallbacks } from './types.js';
+import type { ValidationStages } from '../events/types.js';
 import type { ValidationResult } from '../../core/types/summary.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
-import { appendEvent } from '../../core/state/persistence.js';
-
-export type OrchestratorEventPayloadMap = {
-  workflow_started: Record<string, never>;
-  workflow_resumed: Record<string, never>;
-  workflow_complete: Record<string, never>;
-  all_tasks_done: Record<string, never>;
-  task_started: Record<string, never>;
-  task_completed: { method: TaskCompletionMethod };
-  task_failed: Record<string, never>;
-  task_skipped: Record<string, never>;
-  task_retry: { attempt: number; error: string };
-  task_escalating: Record<string, never>;
-  task_full_fail: Record<string, never>;
-  task_tokens: {
-    method: TaskCompletionMethod;
-    implementerTokens: number;
-    escalationTokens: number;
-    retryCount: number;
-  };
-  hint_failed: Record<string, never>;
-  paused_external_changes: Record<string, never>;
-  spec_rejected: Record<string, never>;
-  spec_regenerated: { comment: string };
-  plan_rejected: Record<string, never>;
-  plan_regenerated: { comment: string };
-  clarifications_collected: {
-    count: number;
-    clarifications: Array<{ question: string; answer: string }>;
-  };
-  clarification_answered: { questionId?: string | undefined; answer: string };
-  research_done: Record<string, never>;
-  spec_done: Record<string, never>;
-  spec_approved: Record<string, never>;
-  plan_done: { taskCount: number };
-  plan_approved: Record<string, never>;
-  rewind_to_spec: { comment?: string };
-  rewind_to_plan: { comment?: string };
-  task_reset: { taskId: string };
-  message_queued: { id: string; phase: Phase };
-  message_injected_native: { id: string };
-  queue_drained: { count: number };
-  queue_cleared: { count: number };
-};
-
-export type OrchestratorEventType = keyof OrchestratorEventPayloadMap;
-
-export type OrchestratorEvent<T extends OrchestratorEventType = OrchestratorEventType> = {
-  [K in T]: {
-    ts: number;
-    type: K;
-    taskId?: TaskId | undefined;
-    phase: Phase;
-    data: OrchestratorEventPayloadMap[K];
-  };
-}[T];
-
-export type SessionLogEventEntryFor<T extends OrchestratorEventType> = {
-  ts: string;
-  kind: 'event';
-  type: T;
-  taskId?: TaskId | undefined;
-  phase: Phase;
-  data: OrchestratorEventPayloadMap[T];
-};
-
-export function emit<T extends keyof OrchestratorEventPayloadMap>(
-  projectDir: string,
-  sessionId: string,
-  state: WorkflowState,
-  type: T,
-  taskId: TaskId | undefined,
-  data: OrchestratorEventPayloadMap[T],
-): void {
-  appendEvent(projectDir, sessionId, {
-    ts: Date.now(),
-    type,
-    taskId,
-    phase: state.phase,
-    data,
-  });
-}
-
-export function createEventEmitter(projectDir: string, sessionId: string) {
-  return <T extends keyof OrchestratorEventPayloadMap>(
-    state: WorkflowState,
-    type: T,
-    taskId: TaskId | undefined,
-    data: OrchestratorEventPayloadMap[T],
-  ): void => emit(projectDir, sessionId, state, type, taskId, data);
-}
-
-export function createTextHandler(callbacks: OrchestratorCallbacks): (text: string) => void {
-  return (text) => callbacks.onEvent({ type: 'planner-text', ts: Date.now(), text });
-}
-
-export function emitPlannerStatus(
-  callbacks: OrchestratorCallbacks, state: WorkflowState,
-  status: 'running' | 'done', extra?: { duration?: number; summary?: string; tool?: string; model?: string },
-): void {
-  const tool = extra?.tool ?? state.plannerTool;
-  const model = extra?.model ?? state.plannerModel;
-  callbacks.onEvent({
-    type: 'planner-status', ts: Date.now(), phase: state.phase, status,
-    ...extra,
-    ...(tool !== undefined && { tool }),
-    ...(model !== undefined && { model }),
-  });
-}
-
-export function emitTaskStart(
-  callbacks: OrchestratorCallbacks,
-  opts: { taskId: TaskId; title: string; index: number; total: number; file: string; action: 'create' | 'modify'; tool?: string; model?: string },
-): void {
-  callbacks.onEvent({ type: 'task-start', ts: Date.now(), ...opts });
-}
-
-export function emitTaskSkipped(
-  callbacks: OrchestratorCallbacks,
-  opts: { taskId: TaskId; title: string; reason: string },
-): void {
-  callbacks.onEvent({ type: 'task-skipped', ts: Date.now(), ...opts });
-}
-
-export function emitTaskComplete(
-  callbacks: OrchestratorCallbacks,
-  opts: { taskId: TaskId; title: string; method: TaskCompletionMethod; retries: number; duration: number; tool?: string; model?: string },
-): void {
-  callbacks.onEvent({ type: 'task-complete', ts: Date.now(), ...opts });
-}
+import type { EventBus, EngineEvent } from '../events/types.js';
 
 const EMPTY_STAGES: ValidationStages = { tsc: false, lint: false, test: false };
 
@@ -144,18 +14,59 @@ type ValidationPhase =
   | { phase: 'progress'; stages: ValidationStages; startTime: number }
   | { phase: 'result'; results: ValidationResult[]; startTime: number };
 
-export function emitValidation(callbacks: OrchestratorCallbacks, opts: ValidationPhase): void {
+export function createBusTextHandler(bus: EventBus, phase: Phase): (text: string) => void {
+  return (text) => bus.publish({ type: 'planner_text', ts: Date.now(), phase, text });
+}
+
+export function publishPlannerStatus(
+  bus: EventBus, state: WorkflowState,
+  status: 'running' | 'done', extra?: { duration?: number; summary?: string; tool?: string; model?: string },
+): void {
+  const tool = extra?.tool ?? state.plannerTool;
+  const model = extra?.model ?? state.plannerModel;
+  bus.publish({
+    type: 'planner_status', ts: Date.now(), phase: state.phase, status,
+    ...(extra?.duration !== undefined && { duration: extra.duration }),
+    ...(extra?.summary !== undefined && { summary: extra.summary }),
+    ...(tool !== undefined && { tool }),
+    ...(model !== undefined && { model }),
+  });
+}
+
+export function publishTaskStart(
+  bus: EventBus, phase: Phase,
+  opts: { taskId: TaskId; title: string; index: number; total: number; file: string; action: 'create' | 'modify'; tool?: string; model?: string },
+): void {
+  bus.publish({ type: 'task_started', ts: Date.now(), phase, ...opts });
+}
+
+export function publishTaskSkipped(
+  bus: EventBus, phase: Phase,
+  opts: { taskId: TaskId; title: string; reason: string },
+): void {
+  bus.publish({ type: 'task_skipped', ts: Date.now(), phase, ...opts });
+}
+
+export function publishTaskComplete(
+  bus: EventBus, phase: Phase,
+  opts: { taskId: TaskId; title: string; method: TaskCompletionMethod; retries: number; duration: number; tool?: string; model?: string },
+): void {
+  bus.publish({ type: 'task_completed', ts: Date.now(), phase, ...opts });
+}
+
+export function publishValidation(bus: EventBus, workflowPhase: Phase, taskId: TaskId, opts: ValidationPhase): void {
   if (opts.phase === 'start') {
-    callbacks.onEvent({
-      type: 'validate', ts: Date.now(), status: 'running', passed: false,
-      stages: { ...EMPTY_STAGES },
+    bus.publish({
+      type: 'validate', ts: Date.now(), phase: workflowPhase, taskId,
+      status: 'running', passed: false, stages: { ...EMPTY_STAGES },
     });
     return;
   }
 
   if (opts.phase === 'progress') {
-    callbacks.onEvent({
-      type: 'validate', ts: opts.startTime, status: 'running', passed: false, stages: opts.stages,
+    bus.publish({
+      type: 'validate', ts: opts.startTime, phase: workflowPhase, taskId,
+      status: 'running', passed: false, stages: opts.stages,
     });
     return;
   }
@@ -172,76 +83,93 @@ export function emitValidation(callbacks: OrchestratorCallbacks, opts: Validatio
       if (failedError === undefined) failedError = r.error;
     }
   }
-  callbacks.onEvent({
-    type: 'validate', ts: Date.now(), status: 'done', passed,
-    stages,
-    error: failedError,
+  bus.publish({
+    type: 'validate', ts: Date.now(), phase: workflowPhase, taskId,
+    status: 'done', passed, stages,
+    ...(failedError !== undefined && { error: failedError }),
     duration: Date.now() - opts.startTime,
   });
 }
 
-export function emitGitCommit(callbacks: OrchestratorCallbacks, message: string): void {
-  callbacks.onEvent({ type: 'git-commit', ts: Date.now(), message });
+export function publishGitCommit(bus: EventBus, phase: Phase, taskId: TaskId, message: string, file?: string): void {
+  bus.publish({ type: 'git_commit', ts: Date.now(), phase, taskId, message, ...(file !== undefined && { file }) });
 }
 
-export function emitGitCheckpoint(callbacks: OrchestratorCallbacks, tag: string, taskId: TaskId): void {
-  callbacks.onEvent({ type: 'git-checkpoint', ts: Date.now(), tag, taskId });
+export function publishGitCheckpoint(bus: EventBus, phase: Phase, taskId: TaskId, tag: string): void {
+  bus.publish({ type: 'git_checkpoint', ts: Date.now(), phase, taskId, tag });
 }
 
-export function emitRetry(callbacks: OrchestratorCallbacks, taskId: TaskId, attempt: number, maxRetries: number): void {
-  callbacks.onEvent({ type: 'retry', ts: Date.now(), taskId, attempt, maxRetries });
+export function publishRetry(bus: EventBus, phase: Phase, taskId: TaskId, attempt: number, maxRetries: number, error: string): void {
+  bus.publish({ type: 'task_retry', ts: Date.now(), phase, taskId, attempt, maxRetries, error });
 }
 
-export function emitEscalate(callbacks: OrchestratorCallbacks, tier: 0 | 1 | 2, hint?: string, tool?: string, model?: string): void {
-  callbacks.onEvent({
-    type: 'escalate', ts: Date.now(), tier,
+export function publishEscalate(bus: EventBus, phase: Phase, taskId: TaskId, tier: 0 | 1 | 2, hint?: string, tool?: string, model?: string): void {
+  bus.publish({
+    type: 'escalate', ts: Date.now(), phase, taskId, tier,
     ...(hint !== undefined && { hint }),
     ...(tool !== undefined && { tool }),
     ...(model !== undefined && { model }),
   });
 }
 
-export function emitCostUpdate(callbacks: OrchestratorCallbacks, tokenUsage: TokenUsage): void {
-  callbacks.onEvent({ type: 'cost-update', ts: Date.now(), tokenUsage });
+export function publishCostUpdate(bus: EventBus, phase: Phase, tokenUsage: TokenUsage): void {
+  bus.publish({ type: 'cost_update', ts: Date.now(), phase, tokenUsage });
 }
 
-export function emitCostPrediction(callbacks: OrchestratorCallbacks, prediction: CostPrediction): void {
-  callbacks.onEvent({ type: 'cost-prediction', ts: Date.now(), prediction });
+export function publishCostPrediction(bus: EventBus, phase: Phase, prediction: CostPrediction): void {
+  bus.publish({ type: 'cost_prediction', ts: Date.now(), phase, prediction });
 }
 
-export function emitBudgetWarning(callbacks: OrchestratorCallbacks, currentCost: number, maxBudget: number): void {
-  callbacks.onEvent({ type: 'budget-warning', ts: Date.now(), currentCost, maxBudget });
+export function publishBudgetWarning(bus: EventBus, phase: Phase, currentCost: number, maxBudget: number): void {
+  bus.publish({ type: 'budget_warning', ts: Date.now(), phase, currentCost, maxBudget });
 }
 
-export function emitBudgetExceeded(callbacks: OrchestratorCallbacks, currentCost: number, maxBudget: number): void {
-  callbacks.onEvent({ type: 'budget-exceeded', ts: Date.now(), currentCost, maxBudget });
+export function publishBudgetExceeded(bus: EventBus, phase: Phase, currentCost: number, maxBudget: number): void {
+  bus.publish({ type: 'budget_exceeded', ts: Date.now(), phase, currentCost, maxBudget });
 }
 
-export function emitError(callbacks: OrchestratorCallbacks, message: string): void {
-  callbacks.onEvent({ type: 'error', ts: Date.now(), message });
+export function publishError(bus: EventBus, phase: Phase, message: string): void {
+  bus.publish({ type: 'error', ts: Date.now(), phase, message });
 }
 
-export function emitWarning(callbacks: OrchestratorCallbacks, message: string): void {
-  callbacks.onEvent({ type: 'warning', ts: Date.now(), message });
+export function publishWarning(bus: EventBus, phase: Phase, message: string): void {
+  bus.publish({ type: 'warning', ts: Date.now(), phase, message });
 }
 
-export function emitUserMessage(callbacks: OrchestratorCallbacks, text: string): void {
-  callbacks.onEvent({ type: 'user-message', ts: Date.now(), text });
+export function publishUserMessage(bus: EventBus, phase: Phase, text: string): void {
+  bus.publish({ type: 'user_message', ts: Date.now(), phase, text });
 }
 
-export function emitWorkflowConfig(callbacks: OrchestratorCallbacks, opts: {
+export function publishWorkflowConfig(bus: EventBus, phase: Phase, opts: {
   mode: WorkflowMode;
   plannerTool: string;
   plannerModel?: string | undefined;
   implementerTool: string;
   implementerModel?: string | undefined;
 }): void {
-  callbacks.onEvent({
-    type: 'workflow-config', ts: Date.now(),
+  bus.publish({
+    type: 'workflow_config', ts: Date.now(), phase,
     mode: opts.mode,
     plannerTool: opts.plannerTool,
     ...(opts.plannerModel !== undefined && { plannerModel: opts.plannerModel }),
     implementerTool: opts.implementerTool,
     ...(opts.implementerModel !== undefined && { implementerModel: opts.implementerModel }),
   });
+}
+
+export function publishImplementerGenerateRunning(bus: EventBus, phase: Phase, taskId: TaskId, file?: string): void {
+  bus.publish({ type: 'implementer_generate_running', ts: Date.now(), phase, taskId, ...(file !== undefined && { file }) });
+}
+
+export function publishImplementerGenerateDone(bus: EventBus, phase: Phase, opts: { taskId: TaskId; file: string; diff?: string; linesAdded: number; linesRemoved: number; duration: number }): void {
+  bus.publish({ type: 'implementer_generate_done', ts: Date.now(), phase, ...opts });
+}
+
+export function publishImplementerGenerateFailed(bus: EventBus, phase: Phase, taskId: TaskId, model: string): void {
+  bus.publish({ type: 'implementer_generate_failed', ts: Date.now(), phase, taskId, model });
+}
+
+/** Low-level publish for sites that don't fit a typed helper. Prefer the publish* helpers above when one applies. */
+export function publishEvent(bus: EventBus, event: EngineEvent): void {
+  bus.publish(event);
 }

@@ -2,6 +2,10 @@
 
 Split AI coding costs in half. Expensive model plans, cheap model implements.
 
+## What is diptych?
+
+An open-source CLI that orchestrates expensive AI (Claude/Opus) for planning and cheap/local AI (Ollama/LM Studio) for implementation. Saves 50%+ on AI coding costs by routing the right model to the right task.
+
 ## The idea
 
 Most AI coding tokens go to writing code — not thinking about what to write. A 7B model running locally can handle the mechanical parts just fine. So diptych uses Claude Code (or any CLI tool) for the hard stuff — codebase research, spec writing, task decomposition — and routes implementation to a local model via Ollama, LM Studio, or any OpenAI-compatible endpoint.
@@ -295,11 +299,25 @@ npm test                         # Vitest (72 test files)
 npm run build                    # tsc → dist/
 ```
 
+Running the CLI via `diptych` or `npm run dev -- start` requires a fresh build (`npm run build`) if you've just pulled. The `dist/` directory is gitignored and regenerated.
+
 TypeScript 6.x, ESM only, Ink 6.8 + React 19 for the TUI. Tests are colocated with source files.
+
+## Extensibility
+
+- **EventBus architecture** — engine emits typed `EngineEvent` discriminated union (50 variants); UI, persistence, hooks, and observability subscribe as independent sinks. See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md#eventbus).
+- **Workflow hooks** — fire shell commands or JS modules at workflow events (`pre_task`, `post_commit`, etc.). 2 built-ins: `prettier-on-change`, `block-secrets`. See [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md).
+- **Repo-map context** — Aider-style symbol summary auto-injected into the planner prompt. Tree-sitter + PageRank + SQLite cache for fast incremental updates. See [docs/REPOMAP.md](./docs/REPOMAP.md).
+- **Headless mode** — `diptych start --json "feature"` emits each engine event as NDJSON to stdout, skips the TUI. CI/agent-friendly; auto-approves all gates.
+- **OpenTelemetry** — opt-in span emission for workflow, phase, and task lifecycle with per-cost attributes. See [docs/OTEL.md](./docs/OTEL.md).
 
 ## Current state
 
 TypeScript/JavaScript projects only. Not tested on Windows.
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, conventions, and pre-merge gates.
 
 ## License
 

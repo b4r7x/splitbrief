@@ -63,12 +63,12 @@ describe('estimateSectionHeight', () => {
 
 describe('isChromeEvent', () => {
   it('marks planner status and workflow config as chrome-only events', () => {
-    expect(isChromeEvent('planner-status')).toBe(true);
-    expect(isChromeEvent('workflow-config')).toBe(true);
+    expect(isChromeEvent('planner_status')).toBe(true);
+    expect(isChromeEvent('workflow_config')).toBe(true);
   });
 
   it('keeps regular conversation events in the scroll region', () => {
-    expect(isChromeEvent('planner-text')).toBe(false);
-    expect(isChromeEvent('user-message')).toBe(false);
+    expect(isChromeEvent('planner_text')).toBe(false);
+    expect(isChromeEvent('user_message')).toBe(false);
   });
 });

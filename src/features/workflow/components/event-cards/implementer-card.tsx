@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import type { TuiEvent } from '../../types.js';
+import type { EngineEvent } from '../../../../engine/events/types.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { useTheme } from '../../../../components/theme.js';
 import { DiffView } from '../../../../components/diff-view.js';
@@ -10,20 +10,20 @@ import { formatModelName } from '../../../../core/model-display.js';
 import { Card } from './card.js';
 
 export type ImplementerGenerateEvent = Extract<
-  TuiEvent,
-  { type: 'implementer-generate-running' | 'implementer-generate-done' | 'implementer-generate-failed' }
+  EngineEvent,
+  { type: 'implementer_generate_running' | 'implementer_generate_done' | 'implementer_generate_failed' }
 >;
 
 export function ImplementerCard({ event, diffExpanded }: { event: ImplementerGenerateEvent; diffExpanded: boolean }) {
   const t = useTheme();
   const rows = terminalSizeStore.use(s => s.rows);
 
-  if (event.type === 'implementer-generate-running') {
+  if (event.type === 'implementer_generate_running') {
     const fileHint = event.file ? `generating ${event.file}...` : 'generating...';
     return <Spinner label={fileHint} color={t.implementer} startTime={event.ts} />;
   }
 
-  if (event.type === 'implementer-generate-failed') {
+  if (event.type === 'implementer_generate_failed') {
     return (
       <Card
         label={formatModelName(event.model)}

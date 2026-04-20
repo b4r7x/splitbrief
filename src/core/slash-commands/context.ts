@@ -5,6 +5,7 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { requestRewind, requestClearQueue, type RewindTarget } from '../../features/workflow/handlers.js';
 import { refreshDetection } from '../../engine/detection/service.js';
+import { rebuildRepomap as doRebuildRepomap } from '../../engine/codebase/rebuild.js';
 import type { CommandContext } from './types.js';
 
 export function buildCommandContext({ exit }: { exit: () => void }): CommandContext {
@@ -36,5 +37,9 @@ export function buildCommandContext({ exit }: { exit: () => void }): CommandCont
       requestRewind({ target: 'task', taskId }),
     getQueueDepth: () => lifecycleStore.get().queueDepth,
     clearQueue: () => requestClearQueue(),
+    rebuildRepomap: async () => {
+      const projectDir = configStore.get().projectDir;
+      return doRebuildRepomap(projectDir);
+    },
   };
 }

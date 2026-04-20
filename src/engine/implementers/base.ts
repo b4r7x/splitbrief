@@ -1,7 +1,6 @@
 import { join } from 'node:path';
 import type { Implementer, ImplementerOptions, RetryOptions } from './types.js';
 import type { Task } from '../../core/schemas/task.js';
-import type { TuiEvent } from '../../features/workflow/types.js';
 import type { ImplementerResult } from '../../core/types/summary.js';
 import type { InvokeResult } from '../runners/types.js';
 import { readFileOrEmpty } from '../../lib/fs.js';
@@ -16,34 +15,7 @@ import { retryTemperature, type InvokeOpts } from './utils.js';
 import { DEFAULT_AVAILABILITY } from '../../lib/availability.js';
 import { getChangedFiles } from '../../lib/git.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
-
-type GenEventEmitter = (status: 'running' | 'done' | 'failed', extra?: Record<string, unknown>) => void;
-
-function createGenEventEmitter(
-  onEvent: ((event: TuiEvent) => void) | undefined,
-  model: string,
-  file: string,
-): GenEventEmitter {
-  const startTime = Date.now();
-  return (status, extra) => {
-    if (status === 'running') {
-      onEvent?.({ type: 'implementer-generate-running', ts: Date.now(), file });
-    } else if (status === 'done') {
-      const diff = typeof extra?.diff === 'string' ? extra.diff : undefined;
-      onEvent?.({
-        type: 'implementer-generate-done',
-        ts: Date.now(),
-        file,
-        duration: Date.now() - startTime,
-        linesAdded: typeof extra?.linesAdded === 'number' ? extra.linesAdded : 0,
-        linesRemoved: typeof extra?.linesRemoved === 'number' ? extra.linesRemoved : 0,
-        ...(diff !== undefined && { diff }),
-      });
-    } else {
-      onEvent?.({ type: 'implementer-generate-failed', ts: Date.now(), model });
-    }
-  };
-}
+import { publishImplementerGenerateRunning, publishImplementerGenerateDone, publishImplementerGenerateFailed } from '../orchestrator/events.js';
 
 async function processImplementerOutput(
   text: string,
@@ -107,10 +79,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     temperature?: number,
   ): Promise<ImplementerResult> {
     const prompt = prependSystemPreamble ? SYSTEM_PREAMBLE + '\n\n' + rawPrompt : rawPrompt;
-    const { task, projectDir, config, onOutput, onEvent, sessionId } = opts;
-    const emitGenEvent = createGenEventEmitter(onEvent, config.implementer.model, task.file);
-
-    emitGenEvent('running');
+    const { task, projectDir, config, onOutput, sessionId, bus, phase } = opts;
 
     let oldContent = '';
     if (baseConfig.extractsCode) {
@@ -133,6 +102,11 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         }
       : onOutput;
 
+    if (bus && phase) {
+      publishImplementerGenerateRunning(bus, phase, task.id, task.file);
+    }
+    const startTime = Date.now();
+
     let invokeResult: InvokeResult;
     try {
       invokeResult = await baseConfig.invoke({
@@ -141,13 +115,15 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         signal: opts.signal,
       });
     } catch (err) {
-      emitGenEvent('failed');
       if (opts.signal?.aborted) {
         implBuffer?.flushInterrupted();
         return { success: false, output: '', error: 'Aborted' };
       }
       if (shouldThrow(err)) throw err;
       const output = typeof err === 'object' && err !== null && 'output' in err && typeof err.output === 'string' ? err.output : '';
+      if (bus && phase) {
+        publishImplementerGenerateFailed(bus, phase, task.id, config.implementer.model);
+      }
       return { success: false, output, error: formatErrorWithHint(toErrorMessage(err)) };
     }
 
@@ -159,26 +135,43 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       if (baseConfig.extractsCode) {
         const result = await processImplementerOutput(invokeResult.text, task, projectDir, oldContent);
         if (!result.success) {
-          emitGenEvent('failed');
+          if (bus && phase) {
+            publishImplementerGenerateFailed(bus, phase, task.id, config.implementer.model);
+          }
           return { success: false, output: invokeResult.text, error: result.error, ...usageField };
         }
-        emitGenEvent('done', { linesAdded: result.linesAdded, linesRemoved: result.linesRemoved, diff: result.diff });
+        if (bus && phase) {
+          publishImplementerGenerateDone(bus, phase, {
+            taskId: task.id, file: task.file,
+            diff: result.diff, linesAdded: result.linesAdded, linesRemoved: result.linesRemoved,
+            duration: Date.now() - startTime,
+          });
+        }
         return { success: true, output: invokeResult.text, ...usageField };
       }
 
       if (baseConfig.detectChanges) {
         const changes = await baseConfig.detectChanges(projectDir, filesBefore);
         if (!changes.changed) {
-          emitGenEvent('failed');
+          if (bus && phase) {
+            publishImplementerGenerateFailed(bus, phase, task.id, config.implementer.model);
+          }
           return { success: false, output: invokeResult.text, error: changes.output, ...usageField };
         }
       }
     } catch (err) {
-      emitGenEvent('failed');
+      if (bus && phase) {
+        publishImplementerGenerateFailed(bus, phase, task.id, config.implementer.model);
+      }
       return { success: false, output: invokeResult.text, error: toErrorMessage(err), ...usageField };
     }
 
-    emitGenEvent('done');
+    if (bus && phase) {
+      publishImplementerGenerateDone(bus, phase, {
+        taskId: task.id, file: task.file,
+        linesAdded: 0, linesRemoved: 0, duration: Date.now() - startTime,
+      });
+    }
     return { success: true, output: invokeResult.text, ...usageField };
   }
 

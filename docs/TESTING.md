@@ -109,15 +109,37 @@ it('start writes state.json and exits 0', async () => {
 ```ts
 import { createFakePlanner, createFakeImplementer } from '../../helpers/orchestrator-factories.js';
 import { runWorkflow } from '#src/engine/orchestrator/run/run.js'; // adjust path
+import type { EngineEvent } from '#src/engine/events/types.js';
 
 it('quick mode completes one task via local implementer', async () => {
   const planner = createFakePlanner({ script: [/* ... */] });
   const implementer = createFakeImplementer({ script: [/* success */] });
-  const events = [];
-  await runWorkflow({ planner, implementer, callbacks: { onEvent: (e) => events.push(e) } });
-  expect(events.at(-1)).toMatchObject({ type: 'workflow-complete' });
+  const events: EngineEvent[] = [];
+  await runWorkflow({
+    planner,
+    implementer,
+    _eventSink: (e) => events.push(e),   // subscribed to the internal EventBus
+    callbacks: { /* gating stubs: onApprovalNeeded, onQuestionAsked, ... */ },
+  });
+  expect(events.at(-1)).toMatchObject({ type: 'workflow_complete' });
 });
 ```
+
+**Headless `--json` CLI flow** (`testing/integration/cli/`):
+
+```ts
+it('start --json emits NDJSON and exits 0', async () => {
+  await withTempDir(async (dir) => {
+    // seed config + fakes
+    const { stdout, exitCode } = await runCommand(['start', '--json', 'add endpoint'], { cwd: dir });
+    expect(exitCode).toBe(0);
+    const events = stdout.trim().split('\n').map((l) => JSON.parse(l));
+    expect(events[0]).toMatchObject({ type: 'workflow_started' });
+    expect(events.at(-1)).toMatchObject({ type: 'workflow_complete' });
+  });
+});
+```
+The headless driver (`src/cli/headless.ts`) wires `stdoutJsonSink` to the bus and stubs every gating callback to auto-approve, so an integration test can drive `diptych start --json` end-to-end and assert on the event sequence plus exit code. No Ink mount, no TTY detection.
 
 **UI flow — render a feature + drive engine events through stores** (`testing/helpers/ink.ts`):
 
@@ -148,7 +170,7 @@ it('workflow screen shows an escalation card when escalate event arrives', async
 
 1. Open `testing/helpers/orchestrator-factories.ts`. Read the existing `script` shape.
 2. Add a new test file in `testing/integration/orchestrator/<scenario>.test.ts`. Build the `script` array that represents your scenario (success, fail-then-succeed, fail-3x-then-escalate, approval-pending, abort-midstream).
-3. **Do not** add a new fake class. Do not copy the fake shape into a local helper. If the existing script grammar cannot express your scenario, raise it as an ADR amendment — new grammar gets one pull request, not N parallel implementations.
+3. **Do not** add a new fake class. Do not copy the fake shape into a local helper. If the existing script grammar cannot express your scenario, propose a grammar extension in a dedicated PR — new grammar gets one pull request, not N parallel implementations.
 
 Real adapter boundaries (`Planner`, `Implementer`, `ProviderClient`) are the only sanctioned injection points. Everything else is a real import.
 
@@ -193,12 +215,16 @@ expect(emitEvent).toHaveBeenCalledWith({ type: 'phase-complete' });
 ```
 Good:
 ```ts
-const events: TuiEvent[] = [];
-const callbacks = { onEvent: (e) => events.push(e) };
-await runPhase(state, callbacks);
-expect(events.at(-1)).toMatchObject({ type: 'phase-complete' });
+import { createEventBus } from '#src/engine/events/bus.js';
+import type { EngineEvent } from '#src/engine/events/types.js';
+
+const events: EngineEvent[] = [];
+const bus = createEventBus();
+bus.subscribe((e) => events.push(e));
+await runPhase(state, { bus });
+expect(events.at(-1)).toMatchObject({ type: 'workflow_complete' });
 ```
-Why: the real `events` module runs, we observe the output a consumer actually receives.
+Why: the real bus runs and the test observes the same stream a production sink would see. Gating callbacks (`onApprovalNeeded`, etc.) stay as `await`-able stubs; the event channel is a sink subscription.
 
 **Resetting a workflow sub-store.**
 
@@ -291,6 +317,66 @@ When a testing rule appears in multiple docs, the canonical source is cited firs
 | Zero `index.ts` barrels (incl. `testing/`) | `NO-BARRELS.md` | this doc §Zero barrels |
 | ESM `.js` imports for TS source | `CLAUDE.md` §Core conventions | `NO-BARRELS.md` §Why |
 | Store actions pattern (writes through actions module) | `STORES.md` §Domain Store Pattern, §Workflow actions module | — |
+
+## Manual smoke checklist
+
+`npm run test-ci` covers the vast majority of the surface. A handful of flows need a real TTY, a fresh checkout, or an external process and therefore live outside the automated suite. Run the checks below after a fresh install or any change that touches the CLI entry point, the TUI mount, hook dispatch, or the OTel sink.
+
+### M1. TUI smoke (full interactive render)
+
+Ink needs a real TTY; the agent test runner cannot drive it. Manual steps:
+
+```bash
+mkdir /tmp/smoke-tui && cd /tmp/smoke-tui
+git init && git config user.email x@x.com && git config user.name X
+# Seed .diptych/config.yaml with a shell planner + shell implementer
+#   (same shape as testing/fixtures/config/*.yaml)
+npm run dev -- --project /tmp/smoke-tui start "smoke tui test"
+```
+
+Verify: the fullscreen Ink TUI renders, phases progress visually, and the workflow completes with a `workflow_complete` banner.
+
+### M2. Headless `--json` mode
+
+From any project with a valid `.diptych/config.yaml`:
+
+```bash
+node dist/cli.js start --json --mode quick "smoke feature"
+```
+
+Verify: NDJSON on stdout, first event is `workflow_started`, last event is `workflow_complete`, and the process exits `0`. If `--json` is unrecognized, run `npm run build` — stale `dist/` is the most common cause.
+
+### M3. block-secrets hook
+
+Enable `commitStrategy: per-task` + `hooks.builtin.block-secrets: true` and have the implementer write `AKIAIOSFODNN7EXAMPLE` into the target file:
+
+```bash
+node dist/cli.js start --json --mode quick "add secret file"
+```
+
+Verify: a `warning` event with `pre_commit blocked ... AWS access key` fires, no `git_commit` event is emitted, HEAD is unchanged, and `task_completed` still advances (non-fatal skip).
+
+### M4. OTel activation
+
+Any of the three paths below should emit `diptych.workflow`, `diptych.phase.*`, and `diptych.task` spans on stderr:
+
+```bash
+OTEL_TRACES_EXPORTER=console   node dist/cli.js start --json --mode quick "otel test"
+DIPTYCH_OTEL_EXPORTER=console  node dist/cli.js start --json --mode quick "otel test"
+node dist/cli.js --otel-exporter=console start --json --mode quick "otel test"
+```
+
+See [`OTEL.md` §Design decisions](./OTEL.md) for why the bootstrap has to run before commander parses.
+
+### M5. Fresh checkout + install
+
+```bash
+rsync -a --exclude=node_modules --exclude=dist --exclude=.git . /tmp/diptych-fresh/
+cd /tmp/diptych-fresh
+npm ci && npm run test-ci
+```
+
+Verify: install completes, `npm run test-ci` (typecheck + lint + full test suite) is green.
 
 ## References
 

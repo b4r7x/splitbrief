@@ -6,7 +6,7 @@ import { handleRetryAndEscalation } from '../../../src/engine/orchestrator/escal
 import { createValidator } from '../../../src/engine/orchestrator/validation.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeCallbacks, makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks, makeImplementer, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -42,7 +42,8 @@ function setupProject(): { projectDir: string; sessionId: string } {
 describe('retry-then-escalate bridge', () => {
   it('two implement failures followed by retry success stays inside local tier with no escalate events', async () => {
     const { projectDir, sessionId } = setupProject();
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
     const retry = vi.fn()
       .mockResolvedValueOnce({ success: false, output: '', error: 'fail-1', usage: { inputTokens: 5, outputTokens: 5 } })
       .mockResolvedValueOnce({ success: true, output: 'fixed', usage: { inputTokens: 20, outputTokens: 10 } });
@@ -51,18 +52,19 @@ describe('retry-then-escalate bridge', () => {
     const { result } = await handleRetryAndEscalation({
       wctx: { projectDir, sessionId, config: makeNoValidationConfig({ workflow: { maxRetries: 3, commitStrategy: 'none' } }),
         context: defaultContext, planner: makePlanner(), callbacks, implementer,
-        metadata: META, sinks: SINKS, validator: createValidator() },
+        metadata: META, sinks: SINKS, validator: createValidator(), bus },
       task: makeTask(), initialError: 'type err', currentState: makeValidatingState(),
     });
 
     expect(result.completed).toBe(true);
     expect(result.method).toBe('local');
-    expect(events.filter((e) => e.type === 'escalate')).toEqual([]);
+    expect(busEvents.filter((e) => e.type === 'escalate')).toEqual([]);
   });
 
   it('three implement failures exhausts local tier and triggers hint-tier escalate event', async () => {
     const { projectDir, sessionId } = setupProject();
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
     const implementer = makeImplementer({
       retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'persistent', usage: { inputTokens: 5, outputTokens: 5 } }),
     });
@@ -74,11 +76,11 @@ describe('retry-then-escalate bridge', () => {
     await handleRetryAndEscalation({
       wctx: { projectDir, sessionId, config: makeNoValidationConfig({ workflow: { maxRetries: 3, commitStrategy: 'none' } }),
         context: defaultContext, planner, callbacks, implementer,
-        metadata: META, sinks: SINKS, validator: createValidator() },
+        metadata: META, sinks: SINKS, validator: createValidator(), bus },
       task: makeTask(), initialError: 'type err', currentState: makeValidatingState(),
     });
 
-    expect(events.find((e) => e.type === 'escalate' && (e as { tier: number }).tier === 1)).toBeDefined();
+    expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 1)).toBeDefined();
     expect(planner.escalateHint).toHaveBeenCalled();
   });
 });

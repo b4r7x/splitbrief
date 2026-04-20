@@ -171,7 +171,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `terminalSizeStore` | `ui/terminal-size.ts` | `{ cols, rows, isSmall }` | `set()`, `subscribeToResize()` |
 | `inputHistoryStore` | `ui/input-history.ts` | `{ entries: string[] }` | `push()`, `hydrate()` — disk I/O lives in `stores/ui/persistence.ts` wired from `init-stores.ts` |
 | `inputHeightStore` | `ui/input-height.ts` | `{ rows: number }` | `setRows()` |
-| `eventsStore` | `workflow/events.ts` | `{ events: TuiEvent[] }` | internal writes via `actions.addEvent` |
+| `eventsStore` | `workflow/events.ts` | `{ events: EngineEvent[] }` | internal writes via `actions.addEvent` |
 | `tasksStore` | `workflow/tasks.ts` | `{ currentTask, totalTasks, taskCompletionTimes, taskMap, tasks }` | internal writes via `actions.addEvent` |
 | `tokensStore` | `workflow/tokens.ts` | `{ localCount, escalatedCount, tokenUsage }` | internal writes via `actions.addEvent` |
 | `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, cancelled, queueDepth }` | internal writes via `actions.addEvent` |
@@ -191,7 +191,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 
 | Export | Purpose |
 |---|---|
-| `addEvent(event: TuiEvent)` | Single ingress for engine events. Reads `lifecycleStore.cancelled` as a gate; short-circuits for `cost-update`; otherwise fans out (events → tasks → tokens → lifecycle). Strictly synchronous. |
+| `addEvent(event: EngineEvent)` | Single ingress for engine events. Called by `tuiSink` (registered on the engine `EventBus`), **not** directly by the orchestrator. Reads `lifecycleStore.cancelled` as a gate; short-circuits for `cost_update`; otherwise fans out (events → tasks → tokens → lifecycle). Strictly synchronous. |
 | `markCancelled(): boolean` | Writes terminal `workflow-cancelled` event to `eventsStore`, sets `lifecycleStore.cancelled`. Idempotent. |
 | `resetWorkflow(resume?)` | Calls `abortStore.clear()` first, then resets all 4 sub-stores **and invalidates the memo caches** (`cachedEvents`, `cachedSections`) so subscribers observe a clean slate; applies resume state if provided. Cache invalidation is symmetric with sub-store reset — missing it leaks pre-reset sections into the first post-reset `useSections()` call. |
 | `getSections()` / `useSections()` | Memoized derivation of conversation sections from `eventsStore.events`. Cache lives file-local. |
@@ -245,10 +245,10 @@ A small number of stores ship two test-only exports so tests can arrange specifi
 
 ## Engine Write Pattern
 
-`src/engine/orchestrator/planning.ts`, `run.ts`, and `task-step.ts` deliberately import `workflowStore` (and `abortStore` where needed) to write events and register abort/queue handlers. This is the intended **engine → store → UI** data flow direction, not a layer violation:
+Since the 2026-04 uplift the engine no longer calls `workflowStore` / `actions.addEvent` directly. Events are published on the `EventBus` (`wctx.bus.publish(event)`); the `tuiSink` (`src/engine/events/sinks/tui.ts`) is subscribed at workflow init and forwards each `EngineEvent` to `workflow/actions.addEvent`. This keeps the intended **engine → bus → sink → store → UI** direction and preserves the layer rule (engine has zero React imports):
 
-- The engine writes events via `workflowStore.addEvent()` — UI components subscribe reactively and re-render only when their selected slice changes.
-- `abortStore` (or equivalent) is written by the engine to signal cancellation; the UI reads it to show abort state.
+- Engine code publishes events; sinks write to stores; UI components subscribe reactively and re-render only when their selected slice changes.
+- Non-event cross-cutting writes (abort / queue handler registration) still go through the `sinks` surface on the workflow context; `abortStore` is the one store engine code still reads directly for cancellation status.
 - Engine modules live in `src/engine/` and have zero React/Ink imports — they only touch store singletons, which are plain module-scoped objects with no UI dependencies.
 
 The distinction is one-directional: engine code **writes** to stores; React components **read** from stores. Nothing in `src/engine/` calls `store.use()` (a React hook) — it only calls `store.get()` and `store.set()` / named actions.

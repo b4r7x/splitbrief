@@ -1,10 +1,11 @@
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks } from './types.js';
+import type { EventBus } from '../events/types.js';
 import { readSpecFileOrEmpty } from '../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE } from '../../core/paths.js';
 import { buildRegeneratePrompt } from '../spec/prompts/plan.js';
 import type { Planner } from '../planners/types.js';
-import { emit, createTextHandler, emitPlannerStatus } from './events.js';
+import { createBusTextHandler, publishPlannerStatus, publishEvent } from './events.js';
 import { addUsageAndSave, transitionAndSave } from './state-ops.js';
 import { appendMessage } from '../../core/state/persistence.js';
 
@@ -15,13 +16,14 @@ type ApprovalLoopOptions = {
   projectDir: string;
   sessionId: string;
   callbacks: OrchestratorCallbacks;
+  bus: EventBus;
   state: WorkflowState;
   signal?: AbortSignal | undefined;
   persistTranscript: boolean;
 };
 
 export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ state: WorkflowState; rejected: boolean; regenerated: boolean }> {
-  const { type, filePath, planner, projectDir, sessionId, callbacks, signal, persistTranscript } = opts;
+  const { type, filePath, planner, projectDir, sessionId, callbacks, bus, signal, persistTranscript } = opts;
   let { state } = opts;
   let regenerated = false;
   const rejectType = type === 'spec' ? 'REJECT_SPEC' : 'REJECT_PLAN';
@@ -36,8 +38,8 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ stat
     if (signal?.aborted) return { state, rejected: false, regenerated };
     if (!result.approved && !result.comment) {
       state = transitionAndSave(projectDir, sessionId, state, { type: rejectType });
-      emitPlannerStatus(callbacks, state, 'done');
-      emit(projectDir, sessionId, state, rejectedEvent, undefined, {});
+      publishPlannerStatus(bus, state, 'done');
+      publishEvent(bus, { type: rejectedEvent, ts: Date.now(), phase: state.phase });
       return { state, rejected: true, regenerated };
     }
     if (!result.comment) return { state, rejected: false, regenerated };
@@ -50,13 +52,13 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ stat
 
     const current = readSpecFileOrEmpty(projectDir, sessionId, filename);
     const regenPrompt = buildRegeneratePrompt(type, current, result.comment);
-    createTextHandler(callbacks)(`\n[Regenerating ${type} with feedback: ${result.comment}]\n`);
+    createBusTextHandler(bus, state.phase)(`\n[Regenerating ${type} with feedback: ${result.comment}]\n`);
     const regenResult = await planner.regenerate(regenPrompt, type, projectDir, {
-      onOutput: createTextHandler(callbacks),
+      onOutput: createBusTextHandler(bus, state.phase),
     });
-    state = addUsageAndSave(projectDir, sessionId, state, 'planner', regenResult.usage, callbacks);
+    state = addUsageAndSave(projectDir, sessionId, state, 'planner', regenResult.usage, bus);
     regenerated = true;
-    emit(projectDir, sessionId, state, regeneratedEvent, undefined, { comment: result.comment });
+    publishEvent(bus, { type: regeneratedEvent, ts: Date.now(), phase: state.phase, comment: result.comment });
   }
 
 }

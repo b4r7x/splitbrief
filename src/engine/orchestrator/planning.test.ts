@@ -3,7 +3,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { runPlanningPhase } from './planning/run.js';
@@ -91,7 +91,7 @@ async function runPhase(opts: RunOpts = {}) {
   const state = opts.state ?? prepareState();
   const sinks = opts.sinks ?? createTestSinks();
   const result = await runPlanningPhase({
-    wctx: { projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, sinks },
+    wctx: { projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, sinks, bus: makeBusRecorder().bus },
     planner,
     state,
     feature: 'test-feature',
@@ -117,8 +117,13 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
   it.each(happyCases)('$name', async ({ workflow, approvals, useQuickPlan }) => {
     const onApprovalNeeded = approvals ? sequencedApproval(approvals) : undefined;
     const { callbacks } = makeCallbacks(onApprovalNeeded ? { onApprovalNeeded } : undefined);
+    // Distinctive task id lets us verify quickPlan's output flowed through, not plan's.
+    let quickPlanCalls = 0;
     const quickPlan = useQuickPlan
-      ? vi.fn().mockResolvedValue({ spec: '', plan: '', tasks: [makeTask()], usage: { inputTokens: 50, outputTokens: 25 } })
+      ? async () => {
+          quickPlanCalls++;
+          return { spec: '', plan: '', tasks: [makeTask({ id: 'T-QUICK' })], usage: { inputTokens: 50, outputTokens: 25 } };
+        }
       : undefined;
     const planner = makePlanner(quickPlan ? { quickPlan } : undefined);
 
@@ -127,7 +132,10 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     expect(result.cancelled).toBe(false);
     expect(result.tasks).toHaveLength(1);
     expect(result.state.phase).toBe('implementing');
-    if (useQuickPlan) expect(quickPlan).toHaveBeenCalledOnce();
+    if (useQuickPlan) {
+      expect(quickPlanCalls).toBe(1);
+      expect(result.tasks[0]?.id).toBe('T-QUICK');
+    }
   });
 
   it('user comment → spec regenerated, workflow completes', async () => {
@@ -138,15 +146,27 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     ]);
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     // After regeneration, regeneratePlanAndTasks → planner.review() produces a
-    // real tasks.md block that parseTasks will accept.
-    const planner = makePlanner({ review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }) });
+    // real tasks.md block that parseTasks will accept. The regenerate output is
+    // distinctive text so we can observe it flowed through instead of the
+    // initial plan's spec.
+    const regenArgs: Array<{ prompt: string; target: string }> = [];
+    const planner = makePlanner({
+      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+      regenerate: async (prompt: string, target: 'spec' | 'plan') => {
+        regenArgs.push({ prompt, target });
+        return { text: '# Regenerated Spec\n\nauth section added.\n', usage: null };
+      },
+    });
 
     const { result } = await runPhase({ planner, callbacks, config: makeConfig({ workflow: manual() }) });
 
     expect(result.cancelled).toBe(false);
     expect(result.tasks).toHaveLength(1);
     expect(result.state.phase).toBe('implementing');
-    expect(planner.regenerate).toHaveBeenCalled();
+    // Observable: regeneration happened and forwarded the user's comment.
+    expect(regenArgs).toHaveLength(1);
+    expect(regenArgs[0]?.prompt).toContain('add auth section');
+    expect(regenArgs[0]?.target).toBe('spec');
   });
 });
 
@@ -250,7 +270,7 @@ describe('runPlanningPhase — abort + continuation', () => {
   it.each(abortCases)('$name', async ({ fnKey, workflow, partialText, continuationText }) => {
     const sinks = createTestSinks();
     let callCount = 0;
-    const fn = vi.fn().mockImplementation(async (feature: string, _dir: string, plannerCbs: { onOutput: (t: string) => void }) => {
+    const fn = async (feature: string, _dir: string, plannerCbs: { onOutput: (t: string) => void }) => {
       callCount++;
       if (callCount === 1) {
         plannerCbs.onOutput(partialText);
@@ -262,25 +282,31 @@ describe('runPlanningPhase — abort + continuation', () => {
       return fnKey === 'quickPlan'
         ? { spec: '', plan: '', tasks: [makeTask()], usage: { inputTokens: 50, outputTokens: 25 } }
         : { spec: '# Full Spec', plan: '# Full Plan', tasks: [makeTask()], usage: { inputTokens: 100, outputTokens: 50 } };
-    });
+    };
 
-    const onContinuationNeeded = vi.fn().mockResolvedValue(continuationText);
+    const continuationPrompts: string[] = [];
+    const onContinuationNeeded = async (partial: string) => {
+      continuationPrompts.push(partial);
+      return continuationText;
+    };
     const { callbacks } = makeCallbacks({ onContinuationNeeded });
     const planner = makePlanner({ [fnKey]: fn });
 
     const { result } = await runPhase({ planner, callbacks, config: makeConfig({ workflow }), sinks });
 
     expect(result.cancelled).toBe(false);
-    expect(onContinuationNeeded).toHaveBeenCalledWith(partialText);
+    expect(continuationPrompts).toEqual([partialText]);
     expect(callCount).toBe(2);
   });
 
   it('abort without onContinuationNeeded falls through to planning failure', async () => {
     const sinks = createTestSinks();
-    const plan = vi.fn().mockImplementation(async () => {
+    let planCalls = 0;
+    const plan = async () => {
+      planCalls++;
       sinks.abortTurn();
       throw new DOMException('The user aborted a request.', 'AbortError');
-    });
+    };
     const { callbacks } = makeCallbacks({ onContinuationNeeded: undefined });
 
     const { result } = await runPhase({
@@ -291,7 +317,7 @@ describe('runPlanningPhase — abort + continuation', () => {
     });
 
     expect(result.cancelled).toBe(true);
-    expect(plan).toHaveBeenCalledOnce();
+    expect(planCalls).toBe(1);
   });
 });
 
@@ -302,7 +328,18 @@ describe('runPlanningPhase — rewindPending', () => {
   ];
 
   it.each(rewindRegenCases)('rewindPending target=$target with comment triggers regenerate', async ({ target, phase, comment }) => {
-    const planner = makePlanner();
+    const regenCalls: Array<{ prompt: string; target: string }> = [];
+    let planCalls = 0;
+    const planner = makePlanner({
+      regenerate: async (prompt: string, t: 'spec' | 'plan') => {
+        regenCalls.push({ prompt, target: t });
+        return { text: 'regenerated', usage: null };
+      },
+      plan: async () => {
+        planCalls++;
+        return { spec: '# Spec', plan: '# Plan', tasks: [makeTask()], usage: { inputTokens: 100, outputTokens: 50 } };
+      },
+    });
     const { result } = await runPhase({
       planner,
       config: makeConfig({ workflow: auto() }),
@@ -311,11 +348,10 @@ describe('runPlanningPhase — rewindPending', () => {
     });
 
     expect(result.cancelled).toBe(false);
-    expect(planner.regenerate).toHaveBeenCalledOnce();
-    const regenCall = vi.mocked(planner.regenerate).mock.calls[0];
-    expect(regenCall?.[0]).toContain(comment);
-    expect(regenCall?.[1]).toBe(target);
-    expect(planner.plan).not.toHaveBeenCalled();
+    expect(regenCalls).toHaveLength(1);
+    expect(regenCalls[0]?.prompt).toContain(comment);
+    expect(regenCalls[0]?.target).toBe(target);
+    expect(planCalls).toBe(0);
   });
 
   const rewindRejectCases: Array<{ target: 'spec' | 'plan'; phase: 'specifying' | 'planning'; mode?: 'full' }> = [
@@ -325,7 +361,13 @@ describe('runPlanningPhase — rewindPending', () => {
 
   it.each(rewindRejectCases)('rewindPending target=$target — rejected during approval → cancelled', async ({ target, phase, mode }) => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false }) });
-    const planner = makePlanner();
+    let planCalls = 0;
+    const planner = makePlanner({
+      plan: async () => {
+        planCalls++;
+        return { spec: '# Spec', plan: '# Plan', tasks: [makeTask()], usage: { inputTokens: 100, outputTokens: 50 } };
+      },
+    });
 
     const { result } = await runPhase({
       planner,
@@ -337,12 +379,24 @@ describe('runPlanningPhase — rewindPending', () => {
 
     expect(result.cancelled).toBe(true);
     expect(result.tasks).toHaveLength(0);
-    expect(planner.plan).not.toHaveBeenCalled();
+    expect(planCalls).toBe(0);
   });
 
   it('rewindPending without comment skips regen and runs from rewound phase', async () => {
     // Rewind fast-path still calls regeneratePlanAndTasks → planner.review() → parseTasks().
-    const planner = makePlanner({ review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }) });
+    let regenCalls = 0;
+    let planCalls = 0;
+    const planner = makePlanner({
+      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+      regenerate: async () => {
+        regenCalls++;
+        return { text: 'regenerated', usage: null };
+      },
+      plan: async () => {
+        planCalls++;
+        return { spec: '# Spec', plan: '# Plan', tasks: [makeTask()], usage: { inputTokens: 100, outputTokens: 50 } };
+      },
+    });
 
     const { result } = await runPhase({
       planner,
@@ -352,8 +406,8 @@ describe('runPlanningPhase — rewindPending', () => {
     });
 
     expect(result.cancelled).toBe(false);
-    expect(planner.regenerate).not.toHaveBeenCalled();
-    expect(planner.plan).not.toHaveBeenCalled();
+    expect(regenCalls).toBe(0);
+    expect(planCalls).toBe(0);
     expect(result.tasks).toHaveLength(1);
   });
 
@@ -369,13 +423,28 @@ describe('runPlanningPhase — rewindPending', () => {
   });
 
   it('full mode new-planning (no rewind) invokes planner.plan exactly once', async () => {
-    const planner = makePlanner();
+    let planCalls = 0;
+    let regenCalls = 0;
+    const planner = makePlanner({
+      plan: async () => {
+        planCalls++;
+        // Distinctive task id proves these tasks came from plan(), not a stale
+        // path. If plan() were called more than once, the result would come
+        // from the last call but we assert the counter directly.
+        return { spec: '# Spec', plan: '# Plan', tasks: [makeTask({ id: 'T-FROMPLAN' })], usage: { inputTokens: 100, outputTokens: 50 } };
+      },
+      regenerate: async () => {
+        regenCalls++;
+        return { text: 'regenerated', usage: null };
+      },
+    });
     const { result } = await runPhase({ planner, config: makeConfig({ workflow: auto('full') }) });
 
     expect(result.cancelled).toBe(false);
     expect(result.tasks).toHaveLength(1);
+    expect(result.tasks[0]?.id).toBe('T-FROMPLAN');
     expect(result.state.phase).toBe('implementing');
-    expect(planner.plan).toHaveBeenCalledOnce();
-    expect(planner.regenerate).not.toHaveBeenCalled();
+    expect(planCalls).toBe(1);
+    expect(regenCalls).toBe(0);
   });
 });

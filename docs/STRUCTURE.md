@@ -55,6 +55,9 @@ src/cli/
 ├── setup.ts           # bootstrap prep (resolveProjectDir, ensureGitAndConfig, setupWorkflow)
 ├── render.ts          # Ink / fullscreen render setup
 ├── errors.ts          # cliError() factory + isCliError predicate — see ERRORS.md
+├── headless.ts        # runHeadless(feature, dir, opts) — no-TUI workflow driver for `--json`; stubs all gating callbacks
+├── hook-trust-prompt.ts  # TTY trust prompt for hook config; refuses in non-TTY unless --allow-hooks
+├── otel-bootstrap.ts  # OTEL_TRACES_EXPORTER=console shortcut (BasicTracerProvider + ConsoleSpanExporter)
 └── commands/          # commander subcommand handlers (thin — delegate to core)
     ├── start.ts
     ├── resume.ts
@@ -80,6 +83,65 @@ src/stores/ui/
 ```
 
 `persistence.ts` is called from `cli/init-stores.ts` at boot. See [`BOOTSTRAP.md`](./BOOTSTRAP.md) for why I/O colocates with the store rather than living in `cli/`.
+
+### `src/engine/events/` — EventBus subsystem
+
+```
+src/engine/events/
+├── bus.ts             # createEventBus() — sync pub/sub with per-sink crash isolation
+├── types.ts           # EngineEvent discriminated union + EventSink + EventBus types
+└── sinks/
+    ├── tui.ts         # pass-through into workflow/actions.addEvent
+    ├── jsonl.ts       # appends every event to sessions/<id>/session.jsonl
+    ├── stdout-json.ts # NDJSON emitter for `diptych start --json`
+    └── otel.ts        # optional OpenTelemetry span emitter
+```
+
+### `src/engine/hooks/` — workflow hook runtime
+
+```
+src/engine/hooks/
+├── dispatch.ts        # runHook(entry, event, ctx) — subprocess for command hooks
+├── load-module.ts     # dynamic import() for `kind: module` hooks
+├── substitute.ts      # ${event.<path>} regex substitution (no eval)
+├── run-pre-hook.ts    # sequential pre_* runner; deny short-circuits
+├── sink.ts            # bus sink fan-out for post_*/on_* (fire-and-forget)
+├── types.ts           # HookOutcome, HookContext
+└── builtins/
+    ├── registry.ts
+    ├── prettier-on-change.ts
+    └── block-secrets.ts
+```
+
+### `src/engine/codebase/` — repo-map pipeline
+
+```
+src/engine/codebase/
+├── repomap.ts                       # entry; composes the pipeline into a budgeted summary
+├── parse.ts                         # tree-sitter symbol extraction
+├── cache.ts                         # per-project SQLite cache of parsed symbols
+├── graph.ts                         # symbol → file edge graph
+├── pagerank.ts                      # rank files by reference density
+├── format.ts                        # render the ranked graph into the planner-facing section
+├── budget.ts                        # token-aware truncation
+├── rebuild.ts                       # /repomap rebuild TUI command handler
+├── extract-mentioned-filenames.ts   # pulls filenames out of user feature prompt for seeding
+└── types.ts
+```
+
+### `src/core/hooks/` — hook config domain
+
+```
+src/core/hooks/
+└── trust.ts           # sha256(canonical-JSON) trust hashing; compared against .diptych/hook-trust.json
+```
+
+### `src/core/tokens/` — token math
+
+```
+src/core/tokens/
+└── estimate.ts        # shared token estimator (planner base + repo-map budget)
+```
 
 ### `src/core/sessions/` — session domain
 
@@ -164,21 +226,70 @@ Rules:
 - **Pure helpers** (non-React modules) sit at the feature root as flat files (`handlers.ts`, `keyboard.ts`, `layout.ts`). They get the `.ts` extension and their tests colocate (`keyboard.test.ts`).
 - **No `index.ts` barrels** inside a feature. The entry point is a named file (`screen.tsx`, `overlay.tsx`, `picker.tsx`). See [`NO-BARRELS.md`](./NO-BARRELS.md).
 
-## Placement decision
+## File placement decision tree
 
-When adding new UI code, ask: **does this belong to a single business feature, or to multiple?**
+This is the **canonical decision tree** for any new module. For the per-layer reference (what each layer contains, acceptance criteria, anti-patterns), see [`LAYERS.md`](./LAYERS.md).
 
-| Situation | Location |
-|---|---|
-| Code used by one feature only | `src/features/{feature}/` |
-| Component reused by ≥2 features | `src/components/` (flat or in an existing subfolder like `overlays/` / `pickers/`) |
-| Hook reused by ≥2 features or a UI primitive | `src/hooks/` — see [`HOOKS.md`](./HOOKS.md) |
-| Pure primitive (no React, no domain, no infra) | `src/utils/` |
-| Infrastructure wrapper (wraps an external system — git, filesystem, subprocess, terminal) | `src/lib/` |
-| Domain logic (knows tiny-spec concepts — config, cost, tokens, sessions) | `src/core/` |
-| New business concept that does not fit any existing feature | New `src/features/{new-name}/` |
+Ask the questions in order; stop at the first `YES`.
 
-If you are not sure whether code is shared, **start in the feature**. Promote to shared only when the second consumer appears. The reverse (moving shared code back into a feature) is a worse refactor.
+```
+Is it a Zod schema (data shape validated at runtime)?
+└── YES → src/core/schemas/<domain>.ts
+
+Is it a TypeScript type (compile-time only)?
+├── One file uses it                  → inline into that file
+├── Multiple files in one folder      → <folder>/types.ts
+├── Cross-folder (multi-consumer)     → next to producer, consumers `import type`
+└── Fan-in >30, ≥3 top-level folders  → src/core/types/
+   (see TYPES.md for the three-case rule)
+
+Does the code import React / Ink?
+├── Shared across ≥2 features         → src/components/<category>/
+├── React hook shared across ≥2 features or a UI primitive → src/hooks/
+└── Single-feature UI                 → src/features/<name>/
+                                          ├── components/ (≥2 component files)
+                                          ├── hooks/ (≥2 hook files)
+                                          └── <entry>.tsx (screen|overlay|picker)
+
+Is it global state with subscribers?
+└── YES → src/stores/<domain>/  (see STORES.md)
+
+Is it a pure, zero-dep, framework-agnostic primitive?
+  (no tiny-spec literals, no Node APIs beyond stdlib types, npm-publishable in isolation)
+└── YES → src/utils/
+
+Is it a boundary wrapper around an external system?
+  (git, fs, node:child_process, terminal I/O, shiki, simple-git, HTTP)
+└── YES → src/lib/<domain>/
+
+Does it know tiny-spec concepts (config, cost, tokens, sessions, `.diptych/`, state machine)?
+├── Workflow orchestration (planner/implementer/validation/retry) → src/engine/<domain>/
+└── Pure domain logic / types / formatting                         → src/core/<domain>/
+
+Is it CLI-only prep (commander flags, TTY, exit codes) with a single consumer?
+└── YES → src/cli/  (promote to core/ on second consumer)
+
+Is the file about to exceed 300 LOC with >1 concern?
+└── Create a folder with helpers (see Deep modules and folder colocation)
+
+Am I about to create an `index.ts` that only re-exports?
+└── STOP — barrels banned (see NO-BARRELS.md).
+```
+
+**Default rule: start narrow, promote on the second consumer.** Single-feature UI starts inside the feature; it moves to `src/components/` or `src/hooks/` only when a second feature imports it. The reverse (moving shared code back into a feature) is a worse refactor — but demote if the false sharing is already in place (see [`LAYERS.md` §Demoting a misplaced shared component](./LAYERS.md#demoting-a-misplaced-shared-component--the-1-consumer-reversal)).
+
+**Cross-check — import direction is one-way, top to bottom** (enforced by review):
+
+| Layer | May import from | Imported by |
+|---|---|---|
+| `src/utils/` | stdlib, npm, other `utils/` | anyone |
+| `src/lib/` | stdlib, npm, `utils/`, other `lib/` | anyone except `utils/` |
+| `src/core/` | `utils/`, `lib/`, `core/` siblings | `engine/`, `stores/`, `features/` |
+| `src/engine/` | `utils/`, `lib/`, `core/`, `engine/` siblings | `cli/`, `features/workflow/` |
+| `src/stores/` | `utils/`, `core/`, `lib/` | anyone |
+| `src/features/{f}/` | everything below + shared `components/`, `hooks/` | only `app.tsx` |
+
+Violations are blockers: `utils/ → core/`, `lib/ → engine/`, `core/ → features/`, `features/A → features/B`.
 
 ## Cross-feature rule
 

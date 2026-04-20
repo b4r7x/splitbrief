@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { WorkflowState, QueuedMessage } from '../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { createQueueHandler, drainQueue, formatDrainedMessages, formatMessage } from './queue.js';
 import { dispatchNativeInjection } from './native-injection.js';
@@ -57,7 +57,7 @@ describe('enqueue', () => {
   it('enqueues a message into state and emits message-queued event', () => {
     const { projectDir, sessionId } = setupProject();
     let state: WorkflowState | undefined = makeResearchingState();
-    const { callbacks, events } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
     const planner = makePlanner();
 
     const handler = createQueueHandler(
@@ -65,7 +65,7 @@ describe('enqueue', () => {
       sessionId,
       () => state,
       (s) => { state = s; },
-      callbacks,
+      bus,
       false,
       planner,
     );
@@ -76,21 +76,23 @@ describe('enqueue', () => {
     expect(state?.messageQueue[0]?.text).toBe('hello world');
     expect(state?.messageQueue[0]?.phase).toBe('researching');
     expect(state?.messageQueue[0]?.deliveredViaNative).toBe(false);
-    expect(events.find((e) => e.type === 'message-queued')).toBeDefined();
+    expect(events.find((e) => e.type === 'message_queued')).toBeDefined();
   });
 
   it('delivers queued input natively when the planner supports injection', async () => {
     const { projectDir, sessionId } = setupProject();
     let state: WorkflowState | undefined = makeResearchingState();
-    const { callbacks } = makeCallbacks();
-    const injectUserTurn = vi.fn().mockResolvedValue(undefined);
+    const { bus } = makeBusRecorder();
+    const injectedTurns: Array<{ text: string; dir: string }> = [];
     const planner = makePlanner({
       capabilities: {
         supportsConversationalPlanning: true,
         supportsHintEscalation: false,
         supportsSessionResume: true,
       },
-      injectUserTurn,
+      injectUserTurn: async (text: string, dir: string) => {
+        injectedTurns.push({ text, dir });
+      },
     });
 
     const handler = createQueueHandler(
@@ -98,7 +100,7 @@ describe('enqueue', () => {
       sessionId,
       () => state,
       (s) => { state = s; },
-      callbacks,
+      bus,
       false,
       planner,
     );
@@ -108,47 +110,46 @@ describe('enqueue', () => {
     // Give the fire-and-forget dispatch a tick to run.
     await new Promise((r) => setTimeout(r, 0));
 
-    // The planner port (subprocess/network seam) received the enqueued text.
-    expect(injectUserTurn).toHaveBeenCalled();
-    const [text, dir] = vi.mocked(injectUserTurn).mock.calls[0] ?? [];
-    expect(text).toBe('inject me');
-    expect(dir).toBe(projectDir);
+    // Observable: the planner's injection port delivered the enqueued text.
+    expect(injectedTurns).toHaveLength(1);
+    expect(injectedTurns[0]?.text).toBe('inject me');
+    expect(injectedTurns[0]?.dir).toBe(projectDir);
   });
 
   it('does not enqueue when state getter returns undefined', () => {
     const { projectDir, sessionId } = setupProject();
-    const { callbacks, events } = makeCallbacks();
-    const injectUserTurn = vi.fn().mockResolvedValue(undefined);
+    const { bus, events } = makeBusRecorder();
     const planner = makePlanner({
       capabilities: {
         supportsConversationalPlanning: false,
         supportsHintEscalation: false,
         supportsSessionResume: false,
       },
-      injectUserTurn,
+      injectUserTurn: async () => {},
     });
-    const setStateSpy = vi.fn();
+    let writtenState: WorkflowState | undefined;
+    const setState = (s: WorkflowState) => { writtenState = s; };
 
     const handler = createQueueHandler(
       projectDir,
       sessionId,
       () => undefined,
-      setStateSpy,
-      callbacks,
+      setState,
+      bus,
       false,
       planner,
     );
 
     handler('no state', 'researching');
 
-    expect(setStateSpy).not.toHaveBeenCalled();
-    expect(events.find((e) => e.type === 'message-queued')).toBeUndefined();
+    expect(writtenState).toBeUndefined();
+    expect(events.find((e) => e.type === 'message_queued')).toBeUndefined();
   });
 
   it('emits warning and does not enqueue when queue is full', () => {
     const { projectDir, sessionId } = setupProject();
     let state: WorkflowState | undefined = makeResearchingState();
-    const { callbacks, events } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
     const planner = makePlanner();
 
     // Pre-fill the queue to MAX_QUEUE_SIZE (50).
@@ -166,7 +167,7 @@ describe('enqueue', () => {
       sessionId,
       () => state,
       (s) => { state = s; },
-      callbacks,
+      bus,
       false,
       planner,
     );
@@ -184,9 +185,9 @@ describe('drain', () => {
     const { projectDir, sessionId } = setupProject();
     let state = createInitialState('test-feature');
     state = transition(state, { type: 'START', feature: 'test-feature' });
-    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
 
-    const result = drainQueue(projectDir, sessionId, state, callbacks);
+    const result = drainQueue(projectDir, sessionId, state, bus);
 
     expect(result.messages).toHaveLength(0);
     expect(result.state).toBe(state);
@@ -198,18 +199,20 @@ describe('drain', () => {
       { id: 'msg-1', text: 'first message', queuedAt: new Date().toISOString(), phase: 'researching' },
       { id: 'msg-2', text: 'second message', queuedAt: new Date().toISOString(), phase: 'researching' },
     ]);
-    const { callbacks, events } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
 
-    const result = drainQueue(projectDir, sessionId, state, callbacks);
+    const result = drainQueue(projectDir, sessionId, state, bus);
 
     expect(result.messages).toHaveLength(2);
     expect(result.messages[0]?.text).toBe('first message');
     expect(result.messages[1]?.text).toBe('second message');
     expect(result.state.messageQueue.every((m) => m.drainedAt)).toBe(true);
 
-    const drained = events.find((e) => e.type === 'queue-drained');
+    const drained = events.find((e) => e.type === 'queue_drained');
     expect(drained).toBeDefined();
-    expect((drained as { count: number }).count).toBe(2);
+    if (drained?.type === 'queue_drained') {
+      expect(drained.count).toBe(2);
+    }
   });
 
   it('ignores already-drained messages', () => {
@@ -219,9 +222,9 @@ describe('drain', () => {
       { id: 'msg-1', text: 'already drained', queuedAt: now, phase: 'researching', drainedAt: now },
       { id: 'msg-2', text: 'pending', queuedAt: now, phase: 'researching' },
     ]);
-    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
 
-    const result = drainQueue(projectDir, sessionId, state, callbacks);
+    const result = drainQueue(projectDir, sessionId, state, bus);
 
     expect(result.messages).toHaveLength(1);
     expect(result.messages[0]?.text).toBe('pending');
@@ -292,14 +295,15 @@ describe('native injection', () => {
   it('does nothing when planner has no injectUserTurn method', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeResearchingState();
-    const setState = vi.fn();
-    const { callbacks } = makeCallbacks();
+    let writtenState: WorkflowState | undefined;
+    const setState = (s: WorkflowState) => { writtenState = s; };
+    const { bus } = makeBusRecorder();
     const planner = makePlanner();
     // makePlanner() produces a planner without injectUserTurn
 
-    await dispatchNativeInjection(makeMessage(), planner, projectDir, sessionId, state, setState, callbacks);
+    await dispatchNativeInjection(makeMessage(), planner, projectDir, sessionId, state, setState, bus);
 
-    expect(setState).not.toHaveBeenCalled();
+    expect(writtenState).toBeUndefined();
   });
 
   it('marks the message delivered after native injection succeeds', async () => {
@@ -307,46 +311,50 @@ describe('native injection', () => {
     const state = makeResearchingState();
     let capturedState: WorkflowState | undefined;
     const setState = (s: WorkflowState) => { capturedState = s; };
-    const { callbacks, events } = makeCallbacks();
-    const injectUserTurn = vi.fn().mockResolvedValue(undefined);
+    const { bus, events } = makeBusRecorder();
+    const injectedTurns: Array<{ text: string; dir: string }> = [];
     const planner = makePlanner({
       capabilities: {
         supportsConversationalPlanning: true,
         supportsHintEscalation: false,
         supportsSessionResume: true,
       },
-      injectUserTurn,
+      injectUserTurn: async (text: string, dir: string) => {
+        injectedTurns.push({ text, dir });
+      },
     });
     const message = makeMessage('inject this');
 
-    await dispatchNativeInjection(message, planner, projectDir, sessionId, state, setState, callbacks);
+    await dispatchNativeInjection(message, planner, projectDir, sessionId, state, setState, bus);
 
-    expect(injectUserTurn).toHaveBeenCalledWith('inject this', projectDir);
+    expect(injectedTurns).toEqual([{ text: 'inject this', dir: projectDir }]);
     expect(capturedState).toBeDefined();
-    expect(events.find((e) => e.type === 'message-injected-native')).toBeDefined();
+    expect(events.find((e) => e.type === 'message_injected_native')).toBeDefined();
   });
 
   it('swallows injectUserTurn errors — state and callbacks untouched', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeResearchingState();
-    const setState = vi.fn();
-    const { callbacks, events } = makeCallbacks();
-    const injectUserTurn = vi.fn().mockRejectedValue(new Error('injection failed'));
+    let writtenState: WorkflowState | undefined;
+    const setState = (s: WorkflowState) => { writtenState = s; };
+    const { bus, events } = makeBusRecorder();
     const planner = makePlanner({
       capabilities: {
         supportsConversationalPlanning: true,
         supportsHintEscalation: false,
         supportsSessionResume: true,
       },
-      injectUserTurn,
+      injectUserTurn: async () => {
+        throw new Error('injection failed');
+      },
     });
 
     await expect(
-      dispatchNativeInjection(makeMessage(), planner, projectDir, sessionId, state, setState, callbacks),
+      dispatchNativeInjection(makeMessage(), planner, projectDir, sessionId, state, setState, bus),
     ).resolves.toBeUndefined();
 
-    expect(setState).not.toHaveBeenCalled();
-    expect(events.find((e) => e.type === 'message-injected-native')).toBeUndefined();
+    expect(writtenState).toBeUndefined();
+    expect(events.find((e) => e.type === 'message_injected_native')).toBeUndefined();
   });
 });
 
@@ -354,22 +362,24 @@ describe('clarifications', () => {
   it('enqueues answer with origin:clarification and invokes injectUserTurn for capable planner', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeSpecifyingState();
-    const { callbacks, events } = makeCallbacks();
-    const injectUserTurn = vi.fn().mockResolvedValue(undefined);
+    const { bus, events } = makeBusRecorder();
+    const injectedTurns: Array<{ text: string; dir: string }> = [];
     const planner = makePlanner({
       capabilities: {
         supportsConversationalPlanning: true,
         supportsHintEscalation: false,
         supportsSessionResume: true,
       },
-      injectUserTurn,
+      injectUserTurn: async (text: string, dir: string) => {
+        injectedTurns.push({ text, dir });
+      },
     });
     const questions = [{ id: 'q1', type: 'input' as const, text: 'Use JWT?' }];
     const onQuestionAsked = vi.fn().mockResolvedValue('Yes, use JWT');
 
     const resultState = await collectAndPersistClarifications(
       questions, projectDir, sessionId, state,
-      onQuestionAsked, false, null, planner, callbacks,
+      onQuestionAsked, false, bus, null, planner,
     );
 
     expect(resultState.messageQueue).toHaveLength(1);
@@ -380,28 +390,29 @@ describe('clarifications', () => {
     expect(msg.questionId).toBe('q1');
     expect(msg.text).toBe('Yes, use JWT');
 
-    expect(events.find((e) => e.type === 'message-queued')).toBeDefined();
+    expect(events.find((e) => e.type === 'message_queued')).toBeDefined();
 
     await new Promise((r) => setTimeout(r, 0));
-    expect(injectUserTurn).toHaveBeenCalled();
-    const [injectedText, dir] = vi.mocked(injectUserTurn).mock.calls[0] ?? [];
-    expect(injectedText).toContain('[clarification answer]');
-    expect(injectedText).toContain('Q: Use JWT?');
-    expect(injectedText).toContain('A: Yes, use JWT');
-    expect(dir).toBe(projectDir);
+    expect(injectedTurns).toHaveLength(1);
+    const injected = injectedTurns[0];
+    if (!injected) throw new Error('expected an injected turn');
+    expect(injected.text).toContain('[clarification answer]');
+    expect(injected.text).toContain('Q: Use JWT?');
+    expect(injected.text).toContain('A: Yes, use JWT');
+    expect(injected.dir).toBe(projectDir);
   });
 
   it('enqueues answer and leaves queue state consistent for a stateless planner', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeSpecifyingState();
-    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
     const planner = makePlanner(); // no injectUserTurn
     const questions = [{ id: 'q2', type: 'input' as const, text: 'Use sessions?' }];
     const onQuestionAsked = vi.fn().mockResolvedValue('No sessions');
 
     const resultState = await collectAndPersistClarifications(
       questions, projectDir, sessionId, state,
-      onQuestionAsked, false, null, planner, callbacks,
+      onQuestionAsked, false, bus, null, planner,
     );
 
     expect(resultState.messageQueue).toHaveLength(1);
@@ -417,20 +428,67 @@ describe('clarifications', () => {
     state = transition(state, { type: 'START', feature: 'test-feature' });
     state = transition(state, { type: 'RESEARCH_DONE' });
     state = transition(state, { type: 'SPEC_DONE' }); // → reviewing-spec (not specifying)
-    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
     const planner = makePlanner();
     const questions = [{ id: 'q3', type: 'input' as const, text: 'Should I use Redis?' }];
-    const onQuestionAsked = vi.fn().mockResolvedValue('Yes');
+    let asked = 0;
+    const onQuestionAsked = async () => { asked++; return 'Yes'; };
 
-    const warnSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const resultState = await collectAndPersistClarifications(
+    // process.stderr.write is a sanctioned global boundary; we observe that
+    // the unexpected-phase warning reached it.
+    const stderrWrites: string[] = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      stderrWrites.push(typeof chunk === 'string' ? chunk : chunk.toString());
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const resultState = await collectAndPersistClarifications(
+        questions, projectDir, sessionId, state,
+        onQuestionAsked, false, bus, null, planner,
+      );
+
+      expect(resultState.messageQueue).toHaveLength(0);
+      expect(asked).toBe(0);
+      expect(stderrWrites.some((s) => s.includes('clarifications: unexpected phase'))).toBe(true);
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+  });
+
+  it('publishes clarification_answered, message_queued, and clarifications_collected events when conversational planner provides answers', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = makeSpecifyingState();
+    const { bus, events } = makeBusRecorder();
+    const injectUserTurn = vi.fn().mockResolvedValue(undefined);
+    const planner = makePlanner({
+      capabilities: {
+        supportsConversationalPlanning: true,
+        supportsHintEscalation: false,
+        supportsSessionResume: true,
+      },
+      injectUserTurn,
+    });
+    const questions = [{ id: 'cq1', type: 'input' as const, text: 'Should we use GraphQL?' }];
+    const onQuestionAsked = vi.fn().mockResolvedValue('Yes, use GraphQL');
+
+    await collectAndPersistClarifications(
       questions, projectDir, sessionId, state,
-      onQuestionAsked, false, null, planner, callbacks,
+      onQuestionAsked, false, bus, null, planner,
     );
 
-    expect(resultState.messageQueue).toHaveLength(0);
-    expect(onQuestionAsked).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalled();
-    warnSpy.mockRestore();
+    expect(events.some((e) => e.type === 'clarification_answered')).toBe(true);
+    expect(events.some((e) => e.type === 'message_queued')).toBe(true);
+    expect(events.some((e) => e.type === 'clarifications_collected')).toBe(true);
+
+    const answeredEvent = events.find((e) => e.type === 'clarification_answered');
+    if (!answeredEvent || answeredEvent.type !== 'clarification_answered') throw new Error('clarification_answered event missing');
+    expect(answeredEvent.questionId).toBe('cq1');
+    expect(answeredEvent.answer).toBe('Yes, use GraphQL');
+
+    const collectedEvent = events.find((e) => e.type === 'clarifications_collected');
+    if (!collectedEvent || collectedEvent.type !== 'clarifications_collected') throw new Error('clarifications_collected event missing');
+    expect(collectedEvent.count).toBe(1);
   });
 });

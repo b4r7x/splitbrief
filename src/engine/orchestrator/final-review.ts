@@ -1,6 +1,7 @@
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { OrchestratorCallbacks } from './types.js';
+import type { EventBus } from '../events/types.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import { saveState } from '../../core/state/persistence.js';
@@ -14,23 +15,23 @@ import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
 
 import type { Planner } from '../planners/types.js';
 import { buildSummary, type SummaryBase } from './summary.js';
-import { emit, emitError, emitPlannerStatus } from './events.js';
+import { publishEvent, publishError, publishPlannerStatus } from './events.js';
 import { transitionAndSave } from './state-ops.js';
 import { runPlannerReview } from './planner-review.js';
 
 export async function runFinalReviewPhase(
-  opts: { projectDir: string; sessionId: string; callbacks: OrchestratorCallbacks; state: WorkflowState; planner: Planner; metadata?: SpecMetadata | null },
+  opts: { projectDir: string; sessionId: string; callbacks: OrchestratorCallbacks; bus: EventBus; state: WorkflowState; planner: Planner; metadata?: SpecMetadata | null },
   summaryBase: SummaryBase,
   taskBreakdowns: TaskTokenUsage[],
   phaseTimings?: Record<string, number>,
 ): Promise<Summary> {
   let { state } = opts;
-  const { projectDir, sessionId, callbacks, planner, metadata } = opts;
+  const { projectDir, sessionId, callbacks, bus, planner, metadata } = opts;
 
   state = transitionAndSave(projectDir, sessionId, state, { type: 'ALL_DONE' });
   const finalReviewStart = Date.now();
-  emitPlannerStatus(callbacks, state, 'running');
-  emit(projectDir, sessionId, state, 'all_tasks_done', undefined, {});
+  publishPlannerStatus(bus, state, 'running');
+  publishEvent(bus, { type: 'all_tasks_done', ts: Date.now(), phase: state.phase });
 
   try {
     const diff = await getCurrentDiff(projectDir);
@@ -40,19 +41,19 @@ export async function runFinalReviewPhase(
       prompt: buildFinalReviewPrompt(spec, diff),
       projectDir,
       sessionId,
-      callbacks,
+      bus,
       state,
       metadata,
       writeTo: REVIEW_FILE,
     });
     state = review.state;
   } catch (err) {
-    emitError(callbacks, labelError('Final review failed', err));
+    publishError(bus, state.phase, labelError('Final review failed', err));
   }
 
   state = transitionAndSave(projectDir, sessionId, state, { type: 'REVIEW_DONE' });
-  emitPlannerStatus(callbacks, state, 'done', { duration: Date.now() - finalReviewStart });
-  emit(projectDir, sessionId, state, 'workflow_complete', undefined, {});
+  publishPlannerStatus(bus, state, 'done', { duration: Date.now() - finalReviewStart });
+  publishEvent(bus, { type: 'workflow_complete', ts: Date.now(), phase: state.phase });
 
   if (phaseTimings) {
     phaseTimings.review = Date.now() - finalReviewStart;

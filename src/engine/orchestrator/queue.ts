@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
-import type { OrchestratorCallbacks } from './types.js';
 import type { Planner } from '../planners/types.js';
+import type { EventBus } from '../events/types.js';
 import { transitionAndSave } from './state-ops.js';
-import { emit } from './events.js';
+import { publishEvent, publishWarning } from './events.js';
 import { appendMessage } from '../../core/state/persistence.js';
 import { dispatchNativeInjection } from './native-injection.js';
 import { warnError } from '../../lib/warn.js';
@@ -16,7 +16,7 @@ export function createQueueHandler(
   sessionId: string,
   getState: () => WorkflowState | undefined,
   setState: (s: WorkflowState) => void,
-  callbacks: OrchestratorCallbacks,
+  bus: EventBus,
   persistTranscript: boolean,
   planner: Planner,
 ): (text: string, phase: Phase) => void {
@@ -26,7 +26,7 @@ export function createQueueHandler(
 
     const pending = state.messageQueue.filter(m => !m.drainedAt);
     if (pending.length >= MAX_QUEUE_SIZE) {
-      callbacks.onEvent({ type: 'warning', ts: Date.now(), message: `Queue full (${MAX_QUEUE_SIZE} messages). Wait for the current phase to complete.` });
+      publishWarning(bus, phase, `Queue full (${MAX_QUEUE_SIZE} messages). Wait for the current phase to complete.`);
       return;
     }
 
@@ -40,11 +40,10 @@ export function createQueueHandler(
 
     const next = transitionAndSave(projectDir, sessionId, state, { type: 'ENQUEUE_USER_MSG', message });
     setState(next);
-    emit(projectDir, sessionId, next, 'message_queued', undefined, { id: message.id, phase });
     appendMessage(projectDir, sessionId, { role: 'user', text, queuedAt: message.queuedAt }, persistTranscript);
-    callbacks.onEvent({ type: 'message-queued', ts: Date.now(), id: message.id, phase });
 
-    dispatchNativeInjection(message, planner, projectDir, sessionId, next, setState, callbacks)
+    publishEvent(bus, { type: 'message_queued', ts: Date.now(), phase: next.phase, id: message.id });
+    dispatchNativeInjection(message, planner, projectDir, sessionId, next, setState, bus)
       .catch(err => warnError('native-injection failed', err));
   };
 }
@@ -53,14 +52,13 @@ export function drainQueue(
   projectDir: string,
   sessionId: string,
   state: WorkflowState,
-  callbacks: OrchestratorCallbacks,
+  bus: EventBus,
 ): { state: WorkflowState; messages: QueuedMessage[] } {
   const pending = state.messageQueue.filter(m => !m.drainedAt);
   if (pending.length === 0) return { state, messages: [] };
 
   const next = transitionAndSave(projectDir, sessionId, state, { type: 'DRAIN_QUEUE' });
-  emit(projectDir, sessionId, next, 'queue_drained', undefined, { count: pending.length });
-  callbacks.onEvent({ type: 'queue-drained', ts: Date.now(), count: pending.length });
+  publishEvent(bus, { type: 'queue_drained', ts: Date.now(), phase: next.phase, count: pending.length });
 
   return { state: next, messages: pending };
 }

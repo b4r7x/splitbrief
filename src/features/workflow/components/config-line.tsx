@@ -5,7 +5,7 @@ import { WorkflowConfigCard } from './event-cards/workflow-config-card.js';
 
 export function ConfigLine() {
   const events = eventsStore.use(s => s.events);
-  const configEvent = findLatestEventByType(events, 'workflow-config');
+  const configEvent = findLatestEventByType(events, 'workflow_config');
 
   if (!configEvent) return null;
 

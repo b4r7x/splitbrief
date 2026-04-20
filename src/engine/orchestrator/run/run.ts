@@ -13,9 +13,9 @@ import { killAllProcesses } from '../../../lib/process/registry.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
 
-import type { ResumeContextHolder } from '../types.js';
+import type { ResumeContextHolder, WorkflowContext } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary.js';
-import { emitError, emitWarning } from '../events.js';
+import { publishError, publishWarning } from '../events.js';
 import { saveFinalSession, withShutdownHandlers, installQueueHandler } from '../session-lifecycle.js';
 
 import { initializeWorkflow, type RunWorkflowOptions } from './init.js';
@@ -24,7 +24,7 @@ import { runPlanningPhases, runTasksAndReview, applyPostPlanDrain } from './phas
 export type { RunWorkflowOptions } from './init.js';
 
 export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
-  const { feature, projectDir, config, callbacks, savedState, selectedSkills } = opts;
+  const { feature, projectDir, config, savedState, selectedSkills } = opts;
   const startTime = Date.now();
   const plannerModel = getRunnerModelName(config.planner);
   const implementerModel = resolveAutoModel(config.implementer.model, getRunnerDisplayName(config.implementer));
@@ -50,6 +50,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   let currentTask: Pick<Task, 'file' | 'action'> | undefined;
   let result: Summary | undefined;
   let sessionStatus: Session['status'] = 'interrupted';
+  let wctx: WorkflowContext | undefined;
 
   const { cancelled } = await withShutdownHandlers(
     {
@@ -63,7 +64,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
         const init = await initializeWorkflow(opts, sessionId, summaryBase, metadata, (s) => { trackedState = s; }, resumeHolder);
         if (!init.ok) { result = init.summary; return; }
 
-        const { wctx } = init;
+        wctx = init.wctx;
         trackedState = init.state;
         const phaseTimings: Record<string, number> = {};
 
@@ -72,7 +73,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
           sinks: wctx.sinks,
           getTrackedState: () => trackedState,
           setTrackedState: (s) => { trackedState = s; },
-          callbacks,
+          bus: wctx.bus,
           config,
           planner: wctx.planner,
         });
@@ -85,7 +86,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
 
         if (opts.signal?.aborted) { result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings }); return; }
 
-        const postPlanState = applyPostPlanDrain(projectDir, sessionId, planning.state, callbacks, (s) => { trackedState = s; });
+        const postPlanState = applyPostPlanDrain(projectDir, sessionId, planning.state, wctx.bus, (s) => { trackedState = s; });
 
         result = await runTasksAndReview({
           wctx, state: postPlanState, summaryBase, phaseTimings,
@@ -96,11 +97,11 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
       } catch (err) {
         if (trackedState) {
           try { saveState(projectDir, sessionId, trackedState); } catch (saveErr) {
-            emitWarning(callbacks, labelError('Failed to save state', saveErr));
+            if (wctx) publishWarning(wctx.bus, trackedState.phase, labelError('Failed to save state', saveErr));
           }
         }
         killAllProcesses();
-        emitError(callbacks, toErrorMessage(err));
+        if (wctx && trackedState) publishError(wctx.bus, trackedState.phase, toErrorMessage(err));
         sessionStatus = 'failed';
         result = buildSummary({ ...summaryBase, state: trackedState ?? createInitialState(feature) });
       }

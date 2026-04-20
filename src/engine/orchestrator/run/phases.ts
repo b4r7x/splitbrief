@@ -1,11 +1,12 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
-import type { OrchestratorCallbacks, WorkflowContext } from '../types.js';
+import type { WorkflowContext } from '../types.js';
 import type { SkillMeta } from '../../skills/discovery.js';
+import type { EventBus } from '../../events/types.js';
 
 import { buildSummary, type SummaryBase } from '../summary.js';
-import { emitCostPrediction } from '../events.js';
+import { publishCostPrediction } from '../events.js';
 import { predictCost } from '../cost-prediction.js';
 import { runPlanningPhase } from '../planning/run.js';
 import { runTaskLoop } from '../task-loop.js';
@@ -16,10 +17,10 @@ export function applyPostPlanDrain(
   projectDir: string,
   sessionId: string,
   state: WorkflowState,
-  callbacks: OrchestratorCallbacks,
+  bus: EventBus,
   setTrackedState: (s: WorkflowState) => void,
 ): WorkflowState {
-  const drain = drainQueue(projectDir, sessionId, state, callbacks);
+  const drain = drainQueue(projectDir, sessionId, state, bus);
   if (drain.messages.length === 0) return state;
   setTrackedState(drain.state);
   return drain.state;
@@ -42,7 +43,7 @@ export async function runPlanningPhases(opts: RunPlanningPhasesOptions): Promise
 
   if (!savedState || savedState.rewindPending) {
     const planning = await runPlanningPhase({
-      wctx: { projectDir, sessionId, config, callbacks, signal: wctx.signal, metadata: wctx.metadata, sinks: wctx.sinks },
+      wctx: { projectDir, sessionId, config, callbacks, bus: wctx.bus, signal: wctx.signal, metadata: wctx.metadata, sinks: wctx.sinks },
       planner,
       state,
       feature: state.feature,
@@ -79,7 +80,7 @@ export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise
       implementerTool: state.implementerTool ?? '',
       tokenUsage: state.tokenUsage,
     });
-    emitCostPrediction(callbacks, prediction);
+    publishCostPrediction(wctx.bus, state.phase, prediction);
   }
 
   const phaseStart = Date.now();
@@ -98,7 +99,7 @@ export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise
   }
 
   return runFinalReviewPhase(
-    { projectDir: wctx.projectDir, sessionId: wctx.sessionId, callbacks, state, planner: wctx.planner, metadata: wctx.metadata },
+    { projectDir: wctx.projectDir, sessionId: wctx.sessionId, callbacks, bus: wctx.bus, state, planner: wctx.planner, metadata: wctx.metadata },
     summaryBase,
     taskResult.taskBreakdowns,
     phaseTimings,

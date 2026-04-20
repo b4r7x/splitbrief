@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
 import { sessionDir, REVIEW_FILE, SPEC_FILE } from '../../core/paths.js';
@@ -63,36 +63,41 @@ describe('runFinalReviewPhase', () => {
     writeSpecFile(projectDir, sessionId, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
 
     const reviewText = '### Verdict\npass\n\n### Findings\nNone.';
-    const review = vi.fn().mockResolvedValue({ text: reviewText, usage: { inputTokens: 200, outputTokens: 40 } });
-    const onComplete = vi.fn();
-    const { callbacks, events } = makeCallbacks({ onComplete });
+    const reviewPrompts: string[] = [];
+    const review = async (prompt: string) => {
+      reviewPrompts.push(prompt);
+      return { text: reviewText, usage: { inputTokens: 200, outputTokens: 40 } };
+    };
+    const completions: Summary[] = [];
+    const onComplete = (s: Summary) => { completions.push(s); };
+    const { callbacks } = makeCallbacks({ onComplete });
+    const { bus, events } = makeBusRecorder();
     const planner = makePlanner({ review });
 
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })]);
     const phaseTimings: Record<string, number> = {};
 
     const summary = await runFinalReviewPhase(
-      { projectDir, sessionId, callbacks, state, planner, metadata: TEST_METADATA },
+      { projectDir, sessionId, callbacks, bus, state, planner, metadata: TEST_METADATA },
       SUMMARY_BASE,
       [] satisfies TaskTokenUsage[],
       phaseTimings,
     );
 
-    // Planner was given a review prompt (contract: the spec content is passed in).
-    expect(review).toHaveBeenCalled();
-    const [prompt] = review.mock.calls[0] ?? [];
-    expect(typeof prompt).toBe('string');
-    expect(prompt).toContain('Add auth');
+    // Planner received a review prompt containing the spec content.
+    expect(reviewPrompts).toHaveLength(1);
+    expect(reviewPrompts[0]).toContain('Add auth');
 
     // review.md was written with the planner's output.
     const reviewPath = join(sessionDir(projectDir, sessionId), REVIEW_FILE);
     expect(existsSync(reviewPath)).toBe(true);
     expect(readFileSync(reviewPath, 'utf-8')).toContain(reviewText);
 
-    expect(onComplete).toHaveBeenCalledTimes(1);
-    expect(onComplete.mock.calls[0]?.[0]).toBe(summary);
+    // onComplete was invoked once with the final summary.
+    expect(completions).toHaveLength(1);
+    expect(completions[0]).toBe(summary);
 
-    const statusEvents = events.filter((e) => e.type === 'planner-status');
+    const statusEvents = events.filter((e) => e.type === 'planner_status');
     expect(statusEvents.length).toBeGreaterThanOrEqual(2);
     expect(statusEvents[0]).toMatchObject({ status: 'running' });
     expect(statusEvents.at(-1)).toMatchObject({ status: 'done' });
@@ -106,16 +111,20 @@ describe('runFinalReviewPhase', () => {
     const { projectDir, sessionId } = setupProject();
     writeSpecFile(projectDir, sessionId, SPEC_FILE, '# Spec\n', null);
 
-    const review = vi.fn().mockRejectedValue(new Error('planner crashed'));
-    const onComplete = vi.fn();
-    const { callbacks, events } = makeCallbacks({ onComplete });
+    const review = async () => {
+      throw new Error('planner crashed');
+    };
+    const completions: Summary[] = [];
+    const onComplete = (s: Summary) => { completions.push(s); };
+    const { callbacks } = makeCallbacks({ onComplete });
+    const { bus, events } = makeBusRecorder();
     const planner = makePlanner({ review });
 
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })]);
     const phaseTimings: Record<string, number> = {};
 
     const summary = await runFinalReviewPhase(
-      { projectDir, sessionId, callbacks, state, planner, metadata: TEST_METADATA },
+      { projectDir, sessionId, callbacks, bus, state, planner, metadata: TEST_METADATA },
       SUMMARY_BASE,
       [],
       phaseTimings,
@@ -132,7 +141,7 @@ describe('runFinalReviewPhase', () => {
     expect(existsSync(reviewPath)).toBe(false);
 
     // Terminal transitions still happened.
-    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(completions).toHaveLength(1);
     expect(phaseTimings.review).toBeGreaterThanOrEqual(0);
     // The state passed to onComplete is internal; the returned summary is the observable.
     expect(summary).toBeDefined();
@@ -143,13 +152,14 @@ describe('runFinalReviewPhase', () => {
     writeSpecFile(projectDir, sessionId, SPEC_FILE, '# Spec\n', null);
 
     const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
     const planner = makePlanner({
       review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }),
     });
     const state = allTasksDoneState([]);
 
     const result: Summary = await runFinalReviewPhase(
-      { projectDir, sessionId, callbacks, state, planner },
+      { projectDir, sessionId, callbacks, bus, state, planner },
       SUMMARY_BASE,
       [],
     );

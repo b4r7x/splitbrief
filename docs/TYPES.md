@@ -16,7 +16,7 @@ Two kinds of "types" exist in this codebase:
 | **Lives at runtime?** | Yes — emitted to JS, runs in the bundle | No — erased by `tsc` |
 | **Lives where** | `src/core/schemas/` | With its consumer (see three-case rule below) |
 | **Source of truth for data shapes?** | Yes — types are derived via `z.infer<>` | Only for TS-only concepts (functions, generics, branded IDs, discriminated unions of React components) |
-| **Examples** | `Config`, `Task`, `Session`, `WorkflowState`, `ModelsDevCatalog` | `TuiEvent` union, `RunnerRuntime` interface, `OrchestratorCallbacks`, branded `TaskId` nominal type, React prop types |
+| **Examples** | `Config`, `Task`, `Session`, `WorkflowState`, `ModelsDevCatalog` | `EngineEvent` union, `RunnerRuntime` interface, `OrchestratorCallbacks`, branded `TaskId` nominal type, React prop types |
 
 Zod schemas are the primary source of truth for every data shape that crosses a runtime boundary — anything written to disk, sent over HTTP, parsed from LLM output, or exchanged between subprocess and parent. These are not TypeScript types that happen to have validators; they are schemas, and their TypeScript type is a byproduct of calling `z.infer<typeof X>`.
 
@@ -89,7 +89,7 @@ A type stays in `src/core/types/` only if it meets **both** criteria:
 - Fan-in > 30 files
 - Consumers span ≥3 top-level folders (e.g., `engine/` + `features/` + `stores/`)
 
-Currently three files qualify (TS-only, no Zod schema — see ADR 0006):
+Currently three files qualify (TS-only, no Zod schema):
 
 - `core/types/config-options.ts` — `DetectedModel`, `WorkflowOpts`, `PlannerDetection`, `ProviderDetection`, `PlannerTool`
 - `core/types/state-actions.ts` — `StateAction`, `TokenBudget`, `CodeContext`, `ProjectContext`
@@ -107,9 +107,9 @@ Types should live where their domain meaning is created — not in a central `ty
 
 | Type | Old home | New home | Why |
 |---|---|---|---|
-| `TuiEvent` | `core/types/tui-events.ts` | `features/workflow/types.ts` | Created and consumed by the workflow UI — it is workflow-domain |
+| `EngineEvent` | n/a (new) | `engine/events/types.ts` | Single source of truth for every engine event; workflow sub-stores and all sinks consume it directly |
+| `EventBus`, `EventSink` | n/a (new) | `engine/events/types.ts` | Declared alongside `EngineEvent`; ports for `createEventBus()` and sink subscribers |
 | `RunnerRuntime`, `ToolUseInfo`, `ParsedLine`, `InvokeResult` | `core/types/runner.ts` | `engine/runners/types.ts` | Created by the runner factory — runner-domain |
-| `OrchestratorEvent`, `OrchestratorEventPayloadMap` | `core/types/orchestrator-events.ts` | `engine/orchestrator/` (inline in `events.ts` or in-folder `types.ts`) | Created by the event bus |
 | `SkillMeta` | `core/types/app.ts` | `engine/skills/discovery.ts` (inline) | Produced by `discoverSkills`, consumed everywhere |
 | `ThemeColors` | `core/types/theme.ts` | `components/theme.tsx` (inline) | Only used by the theme component |
 | `SidebarTask` | `core/types/app.ts` | `features/workflow/components/sidebar.tsx` (inline) | Single consumer |
@@ -122,6 +122,13 @@ Types should live where their domain meaning is created — not in a central `ty
 - ❌ Feature-scoped types in `src/core/types/`
 - ❌ `*-types.ts` suffix when the folder name already implies the domain
 - ❌ A `core/types/app.ts` kitchen-sink grouping unrelated types
+
+**Removed in the 2026-04-19 uplift:**
+
+| Type | Status |
+|---|---|
+| `TuiEvent` (formerly `features/workflow/types.ts`) | Removed. The workflow store consumes `EngineEvent` directly. Use `EngineEvent` from `engine/events/types.ts`. |
+| `OrchestratorEvent`, `OrchestratorEventPayloadMap` (formerly `engine/orchestrator/events.ts` / `core/types/orchestrator-events.ts`) | Removed. Replaced by `EngineEvent`. |
 
 ---
 
@@ -195,14 +202,14 @@ This matters in this project because:
 
 Example from this codebase:
 ```ts
-// engine/orchestrator/events.ts emits TuiEvent, which is defined in features/workflow/types.ts
-import type { TuiEvent } from '../../features/workflow/types.js';
+// features/workflow/components/event-cards/event-card.tsx renders engine events
+import type { EngineEvent } from '../../../../engine/events/types.js';
 ```
 
 This is allowed because:
 1. The type is erased — no runtime import
-2. The contract semantically belongs to the consumer (UI renders it), so the UI owns the shape
-3. The engine conforms to the UI's contract, not the other way round
+2. The contract is owned by the producer (`engine/events/`) because `EngineEvent` is the single source of truth for workflow events
+3. UI conforms to the engine's event shape — the reverse direction (engine importing from features) is banned by the layer rule
 
 If it turns out a value (constant, helper fn) from `features/workflow/` is needed in `engine/`, that's a signal the value should move to a neutral location — `core/` or extracted to a shared module.
 

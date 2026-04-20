@@ -242,6 +242,41 @@ The orchestrator reads capabilities at run start and degrades gracefully per bac
 
 ---
 
+## EventBus, EngineEvent, EventSink
+
+The engine publishes every observable step as an `EngineEvent` on a single `EventBus` (synchronous pub/sub, `src/engine/events/bus.ts`). Sinks subscribe and receive the stream in registration order. The bus is the only broadcast channel between engine and the rest of the system.
+
+- **EngineEvent** — the discriminated union (snake_case `type`, mandatory `ts: number` and `phase: Phase`) in `src/engine/events/types.ts`. Single source of truth for every workflow event that crosses the engine boundary. Extended by adding a new variant to the union — no separate registration step. The legacy `TuiEvent` / `OrchestratorEvent` types were removed during the 2026-04 uplift.
+- **EventBus** — synchronous pub/sub port declared in `src/engine/events/types.ts`, created by `createEventBus()`. `publish(event)` fans out to every subscribed sink inline, in registration order; a throw in one sink is caught and surfaced as a warning but does not break fan-out to the others.
+- **EventSink** — any subscriber that matches `(event: EngineEvent) => void`. Synchronous by contract (so ordering is preserved and one slow sink cannot starve another). Four are shipped: `tuiSink` (workflow store), `jsonlSink` (session log), `stdoutJsonSink` (NDJSON on stdout for `--json`), `otelSink` (OpenTelemetry spans). The workflow hook system attaches its own sink for `post_*`/`on_*` events.
+- **Phase** — `'idle' | 'researching' | 'specifying' | 'reviewing-spec' | 'planning' | 'reviewing-plan' | 'implementing' | 'validating-task' | 'escalating' | 'final-review' | 'complete'` (`src/core/schemas/enums.ts`). Every `EngineEvent` carries the current `phase` so sinks (OTel span hierarchy, hook dispatcher, TUI router) can filter and group without having to reconstruct workflow position from event type alone.
+
+Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`, `onBudgetExceeded`, `onExternalChanges`, `onComplete`) are a **separate** mechanism — they are discrete `await`-able request/response pairs supplied by the workflow host. Use the bus for broadcast; use callbacks for gates.
+
+## Headless mode
+
+`diptych start --json "feature"` runs the workflow without the Ink TUI. All gating callbacks are stubbed (`auto-approve`, empty clarifications, continue on budget). Events stream as NDJSON on stdout via `stdoutJsonSink` — one JSON-encoded `EngineEvent` per line, parseable by `jq` or any NDJSON consumer. Driver: `src/cli/headless.ts` → `runWorkflow({ headless: true })`. Intended for CI, logging pipelines, and programmatic integration. See [MIGRATION.md §Headless mode](./MIGRATION.md).
+
+## Hooks (workflow)
+
+Workflow lifecycle hooks let users run custom commands or in-process modules at well-known moments (pre/post task, pre/post commit, etc.). Built on top of the EventBus — `post_*`/`on_*` are a fire-and-forget sink; `pre_*` hooks run sequentially at the orchestrator call site and a `deny` outcome short-circuits the upcoming action. Hooks are declared under `hooks:` in `.diptych/config.yml`. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — **not** to be confused with React hooks ([HOOKS.md](./HOOKS.md)).
+
+- **HookEvent** — the lifecycle trigger keys (`src/core/schemas/hooks.ts`): `'pre_planning' | 'post_planning' | 'pre_task' | 'post_task' | 'pre_validation' | 'post_validation' | 'pre_commit' | 'post_commit' | 'pre_escalation' | 'pre_compact' | 'on_error' | 'on_complete'`. `pre_*` hooks block the upcoming action (a `deny` outcome short-circuits it); `post_*` and `on_*` hooks are fire-and-forget through the EventBus sink.
+- **HookEntry** — one configured hook: discriminated on `kind: 'command' | 'module'`. `command` entries carry `{ command, args, timeout_ms, on_failure }`; `module` entries carry `{ path, timeout_ms, on_failure }`. `on_failure` is one of `'block' | 'warn' | 'ignore'`. `timeout_ms` is bounded at 300_000 ms with a 30_000 ms default.
+- **HooksConfig** — the `hooks:` section of `.diptych/config.yml`: a map from `HookEvent` to `HookEntry[]`, plus an optional `builtin: Record<string, boolean>` toggles block for shipped hooks (e.g. `prettier-on-change`, `block-secrets`).
+
+## Hook trust
+
+First-time trust gate for hook configs. `src/core/hooks/trust.ts` computes `sha256(canonical-JSON)` of the hook section; `src/cli/hook-trust-prompt.ts` prompts in a TTY the first time (`Trust these hooks for this project? [y/N]`) and stores the accepted hash in `.diptych/hook-trust.json`. Any edit to the hooks section invalidates the hash and re-prompts. In CI (non-TTY), `--allow-hooks` is required — otherwise diptych refuses to start. This prevents silent RCE via a config edit.
+
+## Repo-map
+
+Token-budgeted codebase summary injected into the planner prompt at workflow start. Pipeline: tree-sitter parse → SQLite cache → symbol graph → PageRank → token-aware format. Lives in `src/engine/codebase/`. Opt-out via `codebase.enabled: false`. Force a rebuild with `/repomap rebuild` in the TUI. See [REPOMAP.md](./REPOMAP.md).
+
+- **RepoMapOptions** — options to `buildRepoMap(projectDir, opts)` in `src/engine/codebase/repomap.ts`: `{ projectDir, tokenBudget?, include?, exclude?, focusFiles? }`. `tokenBudget` defaults to 4000. `include`/`exclude` default to `['src/**/*.ts', 'src/**/*.tsx']` minus tests, `dist/`, and `node_modules/`. `focusFiles` boosts the PageRank personalization vector for files the planner already knows are relevant.
+
+---
+
 ## Artifacts on disk
 
 All workflow state lives under `.diptych/` in the target project. Each session gets its own self-contained folder.

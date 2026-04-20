@@ -1,8 +1,8 @@
 import { Box, Text } from 'ink';
-import type { TuiEvent } from '../../types.js';
+import type { EngineEvent } from '../../../../engine/events/types.js';
 import { useTheme } from '../../../../components/theme.js';
 
-type UserMessageEvent = Extract<TuiEvent, { type: 'user-message' }>;
+type UserMessageEvent = Extract<EngineEvent, { type: 'user_message' }>;
 
 export function UserMessageCard({ event }: { event: UserMessageEvent }) {
   const t = useTheme();

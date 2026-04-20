@@ -1,7 +1,8 @@
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { OrchestratorCallbacks } from './types.js';
+import type { EventBus } from '../events/types.js';
 import { calculateCostBreakdown } from '../providers/pricing.js';
-import { emitBudgetWarning, emitBudgetExceeded, emitWarning } from './events.js';
+import { publishBudgetWarning, publishBudgetExceeded, publishWarning } from './events.js';
 import { formatCost } from '../../core/formatting.js';
 
 export type BudgetCheckResult =
@@ -54,6 +55,7 @@ export type EnforceBudgetOptions = {
   plannerTool: string;
   implementerTool: string;
   callbacks: OrchestratorCallbacks;
+  bus: EventBus;
   warningEmitted: boolean;
 };
 
@@ -62,25 +64,25 @@ function fmtBudgetRange(currentCost: number, maxBudget: number): string {
 }
 
 export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{ stop: boolean; warningEmitted: boolean }> {
-  const { maxBudget, callbacks, warningEmitted } = opts;
+  const { maxBudget, callbacks, bus, warningEmitted } = opts;
   const currentCost = getCurrentCost(opts);
   const result = checkBudget(currentCost, maxBudget);
 
   if (result.action === 'warning' && !warningEmitted) {
-    emitBudgetWarning(callbacks, currentCost, maxBudget);
-    emitWarning(callbacks, `Budget 80% reached: ${fmtBudgetRange(currentCost, maxBudget)} limit`);
+    publishBudgetWarning(bus, 'implementing', currentCost, maxBudget);
+    publishWarning(bus, 'implementing', `Budget 80% reached: ${fmtBudgetRange(currentCost, maxBudget)} limit`);
     return { stop: false, warningEmitted: true };
   }
 
   if (result.action === 'exceeded') {
-    emitBudgetExceeded(callbacks, currentCost, maxBudget);
+    publishBudgetExceeded(bus, 'implementing', currentCost, maxBudget);
 
     if (callbacks.onBudgetExceeded) {
       const shouldContinue = await callbacks.onBudgetExceeded(currentCost, maxBudget);
       return { stop: !shouldContinue, warningEmitted: true };
     }
 
-    emitWarning(callbacks, `Budget exceeded: ${fmtBudgetRange(currentCost, maxBudget)} limit — stopping workflow`);
+    publishWarning(bus, 'implementing', `Budget exceeded: ${fmtBudgetRange(currentCost, maxBudget)} limit — stopping workflow`);
     return { stop: true, warningEmitted: true };
   }
 

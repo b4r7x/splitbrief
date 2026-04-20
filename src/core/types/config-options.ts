@@ -27,6 +27,9 @@ export interface WorkflowOpts {
   mouse?: boolean;
   mode?: WorkflowMode;
   budget?: number;
+  allowHooks?: boolean;
+  json?: boolean;
+  otelExporter?: string;
 }
 
 export interface PlannerDetection {

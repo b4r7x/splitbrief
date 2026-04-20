@@ -27,6 +27,10 @@ npm test
 | 7 | `rg "process\.env\['ANTHROPIC_API_KEY'\]" src/engine/agent-sdk.ts` | 0 matches | Anthropic SDK key scoped via `env:` option, no global mutation — [LAYERS.md](./LAYERS.md) §SOTA provider decisions |
 | 8 | `rg "class\s+\w+\s+extends\s+Error" src/` | 0 matches | Zero classes — errors via factory bags — [ERRORS.md](./ERRORS.md) |
 | 9 | `rg "from '\.\./\.\./features/" src/features/` | 0 matches | No cross-feature imports — [STRUCTURE.md](./STRUCTURE.md) |
+| 10 | `grep -rn "callbacks\.onEvent" src/` | 0 matches | **Post-migration defensive regression guard.** Engine no longer uses the `onEvent` callback — `EventBus` + sinks are the only event path. Expected 0; any match means a regression has been reintroduced. (See [ARCHITECTURE.md §Design decisions](./ARCHITECTURE.md#design-decisions--why-eventbus)) |
+| 11 | `grep -rn "OrchestratorEvent\b" src/` | 0 matches | **Post-migration defensive regression guard.** Legacy `OrchestratorEvent` type was deleted during the 2026-04 uplift; `EngineEvent` is the single source of truth. Expected 0; any match means a regression. (See [ARCHITECTURE.md §Design decisions](./ARCHITECTURE.md#design-decisions--why-eventbus)) |
+| 12 | `grep -rln "from.*features" src/engine \| grep -v "\.test\." \| wc -l` | 0 | Engine MUST NOT import from features. (See [LAYERS.md](./LAYERS.md)) |
+| 13 | `grep -rn "\bTuiEvent\b" src/` | 0 matches | **Post-migration defensive regression guard.** The `TuiEvent` union was removed during the 2026-04 uplift; the workflow store consumes `EngineEvent` directly. Expected 0; any match means a regression. |
 
 Gates are consolidated here; full rationale for each lives in the linked doc.
 

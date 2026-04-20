@@ -1,7 +1,8 @@
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TokenUsage, TokenDelta, TaskTokenUsage } from '../../core/schemas/tokens.js';
-import { emit } from './events.js';
+import type { EventBus } from '../events/types.js';
+import { publishEvent } from './events.js';
 
 export type UsageCategory = 'planner' | 'implementer' | 'escalation';
 
@@ -41,8 +42,12 @@ function tokenDelta(before: TokenUsage, after: TokenUsage): { implementerTokens:
   };
 }
 
-export function emitTaskTokens(projectDir: string, sessionId: string, state: WorkflowState, id: TaskId, usage: TaskTokenUsage): void {
-  emit(projectDir, sessionId, state, 'task_tokens', id, {
+export function emitTaskTokens(bus: EventBus, state: WorkflowState, id: TaskId, usage: TaskTokenUsage): void {
+  publishEvent(bus, {
+    type: 'task_tokens',
+    ts: Date.now(),
+    phase: state.phase,
+    taskId: id,
     method: usage.method,
     implementerTokens: usage.implementerTokens,
     escalationTokens: usage.escalationTokens,
@@ -55,8 +60,7 @@ type RecordTaskUsageOptions = {
   method: TaskTokenUsage['method'];
   tokensBefore: TokenUsage;
   currentUsage: TokenUsage;
-  projectDir: string;
-  sessionId: string;
+  bus: EventBus;
   state: WorkflowState;
   taskBreakdowns: TaskTokenUsage[];
   retryCount?: number;
@@ -65,7 +69,7 @@ type RecordTaskUsageOptions = {
 };
 
 export function recordTaskUsage(opts: RecordTaskUsageOptions): void {
-  const { task, method, tokensBefore, currentUsage, projectDir, sessionId, state, taskBreakdowns, retryCount, tool, model } = opts;
+  const { task, method, tokensBefore, currentUsage, bus, state, taskBreakdowns, retryCount, tool, model } = opts;
   const delta = tokenDelta(tokensBefore, currentUsage);
   const usage: TaskTokenUsage = {
     taskId: task.id, taskTitle: task.title, method,
@@ -75,5 +79,5 @@ export function recordTaskUsage(opts: RecordTaskUsageOptions): void {
     ...(model !== undefined && { model }),
   };
   taskBreakdowns.push(usage);
-  emitTaskTokens(projectDir, sessionId, state, task.id, usage);
+  emitTaskTokens(bus, state, task.id, usage);
 }

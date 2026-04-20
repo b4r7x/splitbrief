@@ -30,37 +30,15 @@ Distilled from:
 | 15 | **Test behavior, not implementation** — no tests of trivial helpers, hooks in isolation, mocks being called, or TS types. Test at meaningful consumer boundaries. | [STRUCTURE.md](./STRUCTURE.md#test-strategy), [HOOKS.md](./HOOKS.md) |
 | 16 | **No backwards-compatibility shims** — during refactors, update all import sites in the same change. No re-export shims to smooth migration (that would create barrels). | [NO-BARRELS.md](./NO-BARRELS.md) |
 | 17 | **DRY at the third occurrence** — two copies of a pattern may remain local; a third triggers an extraction. Canonical example: `runWithResumeFallback` (`src/engine/session-expiry.ts`) unifies the session-resume-with-fallback pattern across three planner backends. `runPlannerCallInContinuationLoop` (`src/engine/orchestrator/planning/shared.ts`) unifies the planner-in-continuation-loop body across two planning phases (extracted early because the shape was identical). | this doc |
+| 18 | **EventBus port** — engine emits all events through `src/engine/events/bus.ts`; UI / persistence / observability / hooks attach as sinks. `EngineEvent` is the single source of truth; `TuiEvent` / `OrchestratorEvent` / `callbacks.onEvent` are gone. **Event sinks are synchronous** (registered in order, throw isolated per sink) and **hook dispatch is sequential per event** (`pre_*` runs one hook at a time, deny short-circuits; `post_*`/`on_*` runs without awaiting). | [ARCHITECTURE.md](./ARCHITECTURE.md#eventbus) |
+| 19 | **Repo-map context** — the planner sees a token-budgeted symbol summary of the codebase per workflow. PageRank ranking, SQLite cache, opt-out via `codebase.enabled: false`. | [REPOMAP.md](./REPOMAP.md) |
+| 20 | **Hook system** — user-extensible commands fire at workflow events (`pre_task`, `post_commit`, etc.); trust prompt prevents RCE; 2 opt-in built-ins (`prettier-on-change`, `block-secrets`). | [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) |
 
 ## Decision lookup — "where does X go?"
 
-Quick flowchart:
+For file placement, see [`STRUCTURE.md` §File placement decision tree](./STRUCTURE.md#file-placement-decision-tree) — the canonical flow covers Zod schemas, TypeScript types, React/Ink components, stores, pure primitives, infrastructure wrappers, domain logic, orchestration, CLI prep, and the barrel / length-threshold guardrails.
 
-```
-Is it a Zod schema (data shape validated at runtime)?
-├── YES → src/core/schemas/
-└── NO ↓
-
-Is it a React/Ink component?
-├── Used by multiple features → src/components/
-└── Used by one feature       → src/features/<name>/components/
-
-Is it a TypeScript type?
-├── One file uses it                  → inline into that file
-├── Multiple files in one folder      → <folder>/types.ts
-├── Cross-folder                      → next to producer, consumers `import type`
-└── Fan-in >30, ≥3 top-level folders  → src/core/types/
-
-Is it a runtime value / function?
-├── Pure algorithmic primitive, no domain → src/utils/
-├── Infrastructure wrapper (fs, git, process, terminal) → src/lib/
-└── Domain helper → follow screaming architecture, folder named by capability
-
-Is the file about to exceed 300 LOC with >1 concern?
-└── Create a folder with helpers (see STRUCTURE.md → deep-modules-and-folder-colocation)
-
-Am I about to create an `index.ts` that only re-exports?
-└── STOP. See NO-BARRELS.md.
-```
+For the per-layer reference (what each layer contains, acceptance criteria, prohibited imports, anti-patterns), see [`LAYERS.md`](./LAYERS.md).
 
 ## Canonical docs
 

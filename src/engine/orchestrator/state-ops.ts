@@ -4,13 +4,12 @@ import type { StateAction } from '../../core/types/state-actions.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
-import type { OrchestratorCallbacks } from './types.js';
-import type { OrchestratorEventPayloadMap } from './events.js';
+import type { EventBus } from '../events/types.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { transition } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
 import { addUsage, type UsageCategory } from './tokens.js';
-import { emitCostUpdate, emit, emitPlannerStatus } from './events.js';
+import { publishCostUpdate, publishPlannerStatus, publishEvent } from './events.js';
 
 export function transitionAndSave(
   projectDir: string,
@@ -47,50 +46,25 @@ export async function refreshAndPersistCode(
 
 export function addUsageAndSave(
   projectDir: string, sessionId: string, state: WorkflowState, category: UsageCategory, usage: TokenDelta | null | undefined,
-  callbacks: OrchestratorCallbacks,
+  bus: EventBus,
 ): WorkflowState {
   const next = addUsage(state, category, usage);
   saveState(projectDir, sessionId, next);
   if (usage) {
-    emitCostUpdate(callbacks, next.tokenUsage);
+    publishCostUpdate(bus, next.phase, next.tokenUsage);
   }
   return next;
 }
 
-export type TransitionAndEmitOptions = {
-  state: WorkflowState;
+export type PlanApprovedBusContext = {
   projectDir: string;
   sessionId: string;
-  callbacks: OrchestratorCallbacks;
-  action: StateAction;
-  eventName: keyof OrchestratorEventPayloadMap;
-  status?: 'running' | 'done' | undefined;
-  emitData: OrchestratorEventPayloadMap[keyof OrchestratorEventPayloadMap];
+  bus: EventBus;
 };
 
-export function transitionAndEmit(opts: TransitionAndEmitOptions): WorkflowState {
-  const { state, projectDir, sessionId, callbacks, action, eventName, status, emitData } = opts;
-  const next = transitionAndSave(projectDir, sessionId, state, action);
-  if (status) emitPlannerStatus(callbacks, next, status);
-  emit(projectDir, sessionId, next, eventName, undefined, emitData);
+export function publishPlanApproved(state: WorkflowState, ctx: PlanApprovedBusContext): WorkflowState {
+  const next = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'APPROVE_PLAN' });
+  publishPlannerStatus(ctx.bus, next, 'running');
+  publishEvent(ctx.bus, { type: 'plan_approved', ts: Date.now(), phase: next.phase });
   return next;
-}
-
-export type PlanApprovedContext = {
-  projectDir: string;
-  sessionId: string;
-  callbacks: OrchestratorCallbacks;
-};
-
-export function emitPlanApproved(state: WorkflowState, ctx: PlanApprovedContext): WorkflowState {
-  return transitionAndEmit({
-    state,
-    projectDir: ctx.projectDir,
-    sessionId: ctx.sessionId,
-    callbacks: ctx.callbacks,
-    action: { type: 'APPROVE_PLAN' },
-    eventName: 'plan_approved',
-    status: 'running',
-    emitData: {},
-  });
 }

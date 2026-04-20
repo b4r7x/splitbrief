@@ -2,22 +2,24 @@ import { describe, it, expect } from 'vitest';
 import { trimRenderableItemsToViewport } from './viewport-trimming.js';
 import { getRenderableConversationItems } from './renderable-conversation.js';
 import type { DynamicSection } from './event-sections.js';
-import type { TuiEvent } from '../../features/workflow/types.js';
+import type { EngineEvent } from '../../engine/events/types.js';
 import { makeImplementerGenerate } from '#testing/helpers/events.js';
 
 function makeEventsSection(count: number, startIndex = 0): DynamicSection {
-  const items: TuiEvent[] = Array.from({ length: count }, (_, i) => ({
-    type: 'planner-text' as const,
+  const items: EngineEvent[] = Array.from({ length: count }, (_, i) => ({
+    type: 'planner_text' as const,
     ts: i,
+    phase: 'implementing' as const,
     text: `event-${i}`,
   }));
   return { type: 'events', items, startIndex };
 }
 
 function makeActiveTaskSection(count: number, startIndex = 0): DynamicSection {
-  const items: TuiEvent[] = Array.from({ length: count }, (_, i) => ({
-    type: 'planner-text' as const,
+  const items: EngineEvent[] = Array.from({ length: count }, (_, i) => ({
+    type: 'planner_text' as const,
     ts: i,
+    phase: 'implementing' as const,
     text: `task-event-${i}`,
   }));
   return { type: 'active-task', items, startIndex };

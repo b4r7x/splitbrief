@@ -3,7 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ApiImplementerConfig } from '../../../core/schemas/implementer-config.js';
 import { hasApiBase } from '../../../core/config/accessors/runner-config.js';
-import { createTextHandler, emitWarning, emitEscalate } from '../events.js';
+import { createBusTextHandler, publishWarning, publishEscalate } from '../events.js';
 import { createImplementer } from '../../runners/factory.js';
 import type { Implementer } from '../../implementers/types.js';
 import { getProviderBaseURL } from '../../../core/providers/catalog.js';
@@ -19,19 +19,19 @@ export async function runTier0Intermediate(
   }
 
   const attempts = priorAttempts + 1;
-  const textHandler = createTextHandler(ctx.callbacks);
+  const textHandler = createBusTextHandler(ctx.bus, state.phase);
 
-  emitEscalate(ctx.callbacks, 0, undefined, escalation.intermediateProvider, escalation.intermediateModel ?? ctx.config.implementer.model);
+  publishEscalate(ctx.bus, state.phase, initialTask.id, 0, undefined, escalation.intermediateProvider, escalation.intermediateModel ?? ctx.config.implementer.model);
 
   const resolvedApiBase = getProviderBaseURL(escalation.intermediateProvider);
   if (!resolvedApiBase) {
-    emitWarning(ctx.callbacks, `Unknown intermediate provider "${escalation.intermediateProvider}" — falling back to current implementer endpoint`);
+    publishWarning(ctx.bus, state.phase, `Unknown intermediate provider "${escalation.intermediateProvider}" — falling back to current implementer endpoint`);
   }
 
   const currentApiBase = hasApiBase(ctx.config.implementer) ? ctx.config.implementer.apiBase : undefined;
   const effectiveApiBase = resolvedApiBase || currentApiBase;
   if (!effectiveApiBase) {
-    emitWarning(ctx.callbacks, `Cannot escalate: no API base URL available for intermediate provider "${escalation.intermediateProvider}"`);
+    publishWarning(ctx.bus, state.phase, `Cannot escalate: no API base URL available for intermediate provider "${escalation.intermediateProvider}"`);
     return { state, task: initialTask, lastError, attempts: priorAttempts };
   }
 
@@ -55,7 +55,7 @@ export async function runTier0Intermediate(
   try {
     intermediateImplementer = createImplementer(intermediateConfig);
   } catch (err) {
-    emitWarning(ctx.callbacks, `Intermediate provider failed to initialize: ${toErrorMessage(err)}`);
+    publishWarning(ctx.bus, state.phase, `Intermediate provider failed to initialize: ${toErrorMessage(err)}`);
     return { state, task: initialTask, lastError, attempts: priorAttempts };
   }
 
@@ -72,7 +72,9 @@ export async function runTier0Intermediate(
       intermediateImplementer.retry({
         task: t, projectDir: ctx.projectDir, config: intermediateConfig, context: ctx.context,
         error: err, attempt: a, kind: 'local',
-        onOutput: textHandler, onEvent: ctx.callbacks.onEvent,
+        onOutput: textHandler,
+        bus: ctx.bus,
+        phase: state.phase,
       }),
   });
 }

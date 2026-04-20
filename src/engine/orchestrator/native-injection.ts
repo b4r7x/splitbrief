@@ -1,8 +1,8 @@
 import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
-import type { OrchestratorCallbacks } from './types.js';
 import type { Planner } from '../planners/types.js';
+import type { EventBus } from '../events/types.js';
 import { transitionAndSave } from './state-ops.js';
-import { emit } from './events.js';
+import { publishEvent } from './events.js';
 
 export async function dispatchNativeInjection(
   message: QueuedMessage,
@@ -11,7 +11,7 @@ export async function dispatchNativeInjection(
   sessionId: string,
   state: WorkflowState,
   setState: (s: WorkflowState) => void,
-  callbacks: OrchestratorCallbacks,
+  bus: EventBus,
 ): Promise<void> {
   if (!planner.injectUserTurn) return;
 
@@ -25,8 +25,7 @@ export async function dispatchNativeInjection(
       id: message.id,
     });
     setState(next);
-    emit(projectDir, sessionId, next, 'message_injected_native', undefined, { id: message.id });
-    callbacks.onEvent({ type: 'message-injected-native', ts: Date.now(), id: message.id });
+    publishEvent(bus, { type: 'message_injected_native', ts: Date.now(), phase: next.phase, id: message.id });
   } catch {
     // Fire-and-forget — failure is not fatal, message stays in queue for drain
   }

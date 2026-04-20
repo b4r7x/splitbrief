@@ -48,10 +48,10 @@ export async function validateAndCommit(
   retryCount: number,
   commitSuffix?: string,
 ) {
-  const validationResults = await ctx.validator.runValidation(task, ctx.projectDir, ctx.config, ctx.callbacks);
+  const validationResults = await ctx.validator.runValidation(task, ctx.projectDir, ctx.config, ctx.bus, state.phase, task.id);
   const result = await validateCommitAndAdvance({
     task, projectDir: ctx.projectDir, sessionId: ctx.sessionId,
-    config: ctx.config, callbacks: ctx.callbacks,
+    config: ctx.config, bus: ctx.bus,
     state, method, transitionType, commitSuffix,
     taskStartTime: ctx.taskStartTime, retryCount,
     results: validationResults,
@@ -71,7 +71,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, ctx.sessionId, state));
 
   const retryResult = await invokeRetry({ task, lastError, attempts });
-  state = addUsageAndSave(ctx.projectDir, ctx.sessionId, state, usageCategory, retryResult.usage, ctx.callbacks);
+  state = addUsageAndSave(ctx.projectDir, ctx.sessionId, state, usageCategory, retryResult.usage, ctx.bus);
 
   if (!retryResult.success) {
     return { state, task, lastError: retryResult.error ?? retryFailureFallback, attempts };

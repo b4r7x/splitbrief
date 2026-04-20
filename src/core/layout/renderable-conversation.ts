@@ -1,18 +1,18 @@
-import type { TuiEvent } from '../../features/workflow/types.js';
+import type { EngineEvent } from '../../engine/events/types.js';
 import type { DynamicSection } from './event-sections.js';
 import { getMaxVisibleDiffLines } from './diff-height.js';
 
 export interface RenderableConversationItem {
-  event: TuiEvent;
+  event: EngineEvent;
   globalIndex: number;
   height: number;
   leadingSpacer: boolean;
 }
 
 const GUTTER_PADDING = 14;
-const CHROME_EVENT_TYPES = new Set<TuiEvent['type']>(['planner-status', 'workflow-config']);
+const CHROME_EVENT_TYPES = new Set<EngineEvent['type']>(['planner_status', 'workflow_config']);
 
-export function isChromeEvent(type: TuiEvent['type']): boolean {
+export function isChromeEvent(type: EngineEvent['type']): boolean {
   return CHROME_EVENT_TYPES.has(type);
 }
 
@@ -37,45 +37,47 @@ function estimateExpandedDiffBodyHeight(diff: string, rows: number): number {
 
 type HeightCtx = { cols: number; rows: number; diffExpanded: boolean };
 
-function applyHeightRule(event: TuiEvent, ctx: HeightCtx): number {
+function applyHeightRule(event: EngineEvent, ctx: HeightCtx): number {
   const { cols, rows, diffExpanded } = ctx;
   switch (event.type) {
-    case 'planner-status': return 0;
-    case 'workflow-config': return 0;
-    case 'planner-text': return Math.max(1, visualLineCount(event.text, cols));
-    case 'task-start': return 1;
-    case 'task-complete': return 1;
-    case 'task-skipped': return 1;
-    case 'implementer-generate-running': return 1;
-    case 'implementer-generate-done':
+    case 'planner_status': return 0;
+    case 'workflow_config': return 0;
+    case 'planner_text': return Math.max(1, visualLineCount(event.text, cols));
+    case 'task_started': return 1;
+    case 'task_completed': return 1;
+    case 'task_skipped': return 1;
+    case 'implementer_generate_running': return 1;
+    case 'implementer_generate_done':
       if (!event.diff) return 2;
       return diffExpanded ? 1 + estimateExpandedDiffBodyHeight(event.diff, rows) : 2;
-    case 'implementer-generate-failed': return 1;
+    case 'implementer_generate_failed': return 1;
     case 'validate':
       if (event.status === 'running') return 1;
       return event.error ? 1 + visualLineCount(event.error, cols - 2) : 1;
-    case 'retry': return 1;
+    case 'task_retry': return 1;
     case 'escalate': return event.hint ? 1 + visualLineCount(event.hint, cols - 2) : 1;
-    case 'git-commit': return 1;
-    case 'git-checkpoint': return 1;
+    case 'git_commit': return 1;
+    case 'git_checkpoint': return 1;
     case 'warning': return visualLineCount(`warning  ${event.message}`, cols);
     case 'error': return visualLineCount(`error  ${event.message}`, cols);
-    case 'cost-update': return 1;
-    case 'cost-prediction': return 3;
-    case 'budget-warning': return 1;
-    case 'budget-exceeded': return 1;
-    case 'workflow-cancelled': return 2;
-    case 'rewind': return 1;
-    case 'task-reset': return 1;
-    case 'message-queued': return 1;
-    case 'message-injected-native': return 1;
-    case 'queue-drained': return 1;
-    case 'queue-cleared': return 1;
-    case 'user-message': return Math.max(1, visualLineCount(event.text, cols));
+    case 'cost_update': return 1;
+    case 'cost_prediction': return 3;
+    case 'budget_warning': return 1;
+    case 'budget_exceeded': return 1;
+    case 'workflow_cancelled': return 2;
+    case 'rewind_to_spec': return 1;
+    case 'rewind_to_plan': return 1;
+    case 'task_reset': return 1;
+    case 'message_queued': return 1;
+    case 'message_injected_native': return 1;
+    case 'queue_drained': return 1;
+    case 'queue_cleared': return 1;
+    case 'user_message': return Math.max(1, visualLineCount(event.text, cols));
+    default: return 0;
   }
 }
 
-export function estimateEventHeight(event: TuiEvent, diffExpanded = false, cols = 80, rows = 24): number {
+export function estimateEventHeight(event: EngineEvent, diffExpanded = false, cols = 80, rows = 24): number {
   return applyHeightRule(event, { cols, rows, diffExpanded });
 }
 

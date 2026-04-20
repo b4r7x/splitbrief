@@ -2,12 +2,13 @@ import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks } from './types.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
+import type { EventBus } from '../events/types.js';
 import { hasExternalChanges } from '../../lib/git.js';
 import { labelError } from '../../utils/format-errors.js';
 import { getFailedTaskIds, getSkippedTaskIds, getEscalatedTaskIds } from '../../core/state/selectors.js';
 
 import type { WorkflowContext } from './types.js';
-import { emit, emitWarning, emitTaskSkipped } from './events.js';
+import { publishEvent, publishWarning, publishTaskSkipped } from './events.js';
 import { runSingleTask } from './task-step.js';
 import { emitTaskTokens } from './tokens.js';
 import { transitionAndSave } from './state-ops.js';
@@ -20,20 +21,20 @@ function hasDependencyFailed(task: Task, failedTasks: TaskId[], skippedTasks: Ta
 }
 
 async function checkExternalChanges(
-  projectDir: string, sessionId: string, callbacks: OrchestratorCallbacks, state: WorkflowState, taskId: TaskId,
+  projectDir: string, sessionId: string, callbacks: OrchestratorCallbacks, bus: EventBus, state: WorkflowState,
 ): Promise<WorkflowState | null> {
   try {
     const externalChanges = await hasExternalChanges(projectDir);
     if (externalChanges) {
       const proceed = await callbacks.onExternalChanges();
       if (!proceed) {
-        emit(projectDir, sessionId, state, 'paused_external_changes', taskId, {});
+        publishEvent(bus, { type: 'paused_external_changes', ts: Date.now(), phase: state.phase });
         const cancelled = transitionAndSave(projectDir, sessionId, state, { type: 'CANCEL' });
         return cancelled;
       }
     }
   } catch (err) {
-    emitWarning(callbacks, labelError('Failed to check external changes', err));
+    publishWarning(bus, state.phase, labelError('Failed to check external changes', err));
   }
   return null;
 }
@@ -43,23 +44,22 @@ type HandleSkippedTaskOptions = {
   state: WorkflowState;
   projectDir: string;
   sessionId: string;
-  callbacks: OrchestratorCallbacks;
+  bus: EventBus;
   taskBreakdowns: TaskTokenUsage[];
 };
 
 function handleSkippedTask(opts: HandleSkippedTaskOptions): WorkflowState {
-  const { task, projectDir, sessionId, callbacks, taskBreakdowns } = opts;
+  const { task, projectDir, sessionId, bus, taskBreakdowns } = opts;
   const blockedBy = new Set<string>([
     ...getFailedTaskIds(opts.state),
     ...getSkippedTaskIds(opts.state),
   ]);
   const skipReason = `dependency failed: ${task.dependsOn.filter((d) => blockedBy.has(d)).join(', ')}`;
   const state = transitionAndSave(projectDir, sessionId, opts.state, { type: 'SKIP_TASK', taskId: task.id });
-  emitTaskSkipped(callbacks, { taskId: task.id, title: task.title, reason: skipReason });
-  emit(projectDir, sessionId, state, 'task_skipped', task.id, {});
+  publishTaskSkipped(bus, state.phase, { taskId: task.id, title: task.title, reason: skipReason });
   const usage: TaskTokenUsage = { taskId: task.id, taskTitle: task.title, method: 'skipped', implementerTokens: 0, escalationTokens: 0, retryCount: 0 };
   taskBreakdowns.push(usage);
-  emitTaskTokens(projectDir, sessionId, state, task.id, usage);
+  emitTaskTokens(bus, state, task.id, usage);
   return state;
 }
 
@@ -84,11 +84,11 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: Wo
     const task = state.tasks[i];
     if (!task) continue;
 
-    const cancelledState = await checkExternalChanges(projectDir, sessionId, callbacks, state, task.id);
+    const cancelledState = await checkExternalChanges(projectDir, sessionId, callbacks, wctx.bus, state);
     if (cancelledState) return { state: cancelledState, taskBreakdowns };
 
     if (hasDependencyFailed(task, getFailedTaskIds(state), getSkippedTaskIds(state))) {
-      state = handleSkippedTask({ task, state, projectDir, sessionId, callbacks, taskBreakdowns });
+      state = handleSkippedTask({ task, state, projectDir, sessionId, bus: wctx.bus, taskBreakdowns });
       continue;
     }
 
@@ -103,6 +103,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: Wo
         plannerTool: state.plannerTool ?? getRunnerDisplayName(config.planner),
         implementerTool: getRunnerDisplayName(config.implementer),
         callbacks,
+        bus: wctx.bus,
         warningEmitted: budgetWarningEmitted,
       });
       budgetWarningEmitted = budgetResult.warningEmitted;

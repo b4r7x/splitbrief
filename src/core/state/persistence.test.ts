@@ -1,10 +1,10 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { readFileSync, existsSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
-import { saveState, loadState, appendEvent, appendMessage } from './persistence.js';
+import { saveState, loadState, appendEngineEvent, appendMessage } from './persistence.js';
 import { createInitialState } from './machine.js';
 import { taskId } from '../schemas/task.js';
-import type { OrchestratorEvent } from '../../engine/orchestrator/events.js';
+import type { EngineEvent } from '../../engine/events/types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
 
@@ -87,14 +87,14 @@ describe('loadState', () => {
   });
 });
 
-describe('appendEvent', () => {
+describe('appendEngineEvent', () => {
   it('appends JSONL lines to session log file with kind:event and ISO ts', () => {
     const dir = makeTmp();
-    const event1: OrchestratorEvent = { ts: 1000, type: 'task_started', taskId: taskId('T001'), phase: 'implementing', data: {} };
-    const event2: OrchestratorEvent = { ts: 2000, type: 'task_completed', taskId: taskId('T001'), phase: 'implementing', data: { method: 'local' } };
+    const event1: EngineEvent = { ts: 1000, type: 'task_started', taskId: taskId('T001'), phase: 'implementing', title: 'Task 1', index: 0, total: 1, file: 'src/x.ts', action: 'create' };
+    const event2: EngineEvent = { ts: 2000, type: 'task_completed', taskId: taskId('T001'), phase: 'implementing', title: 'Task 1', method: 'local', retries: 0, duration: 100 };
 
-    appendEvent(dir, SESSION_ID, event1);
-    appendEvent(dir, SESSION_ID, event2);
+    appendEngineEvent(dir, SESSION_ID, event1);
+    appendEngineEvent(dir, SESSION_ID, event2);
 
     const raw = readFileSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'), 'utf-8');
     const lines = raw.trim().split('\n');
@@ -111,8 +111,8 @@ describe('appendEvent', () => {
 
   it('creates directory when it does not exist', () => {
     const dir = makeTmp();
-    const event: OrchestratorEvent = { ts: 1000, type: 'workflow_started', phase: 'idle', data: {} };
-    appendEvent(dir, SESSION_ID, event);
+    const event: EngineEvent = { ts: 1000, type: 'workflow_started', phase: 'idle', feature: 'test-feature' };
+    appendEngineEvent(dir, SESSION_ID, event);
     expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'))).toBe(true);
   });
 
@@ -128,8 +128,8 @@ describe('appendEvent', () => {
 
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
-      const event: OrchestratorEvent = { ts: 1000, type: 'workflow_started', phase: 'idle', data: {} };
-      expect(() => appendEvent(dir, SESSION_ID, event)).not.toThrow();
+      const event: EngineEvent = { ts: 1000, type: 'workflow_started', phase: 'idle', feature: 'test-feature' };
+      expect(() => appendEngineEvent(dir, SESSION_ID, event)).not.toThrow();
       const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
       expect(output).toContain('failed to persist log entry');
     } finally {

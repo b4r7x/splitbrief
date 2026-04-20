@@ -23,6 +23,7 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
     requestTaskRedo: noopTrue,
     getQueueDepth: () => 0,
     clearQueue: () => 0,
+    rebuildRepomap: async () => ({ deleted: false, files: [] }),
     ...overrides,
   };
 }
@@ -319,6 +320,50 @@ describe('canRevisePlan', () => {
 
   it('covers all phases', () => {
     expect([...allowed, ...denied].sort()).toEqual([...PHASES].sort());
+  });
+});
+
+describe('/repomap rebuild command', () => {
+  it('calls rebuildRepomap and surfaces success message when cache was present', async () => {
+    const messages: string[] = [];
+    const commands = createCommands(makeCtx({
+      rebuildRepomap: async () => ({ deleted: true, files: ['/proj/.diptych/repomap.sqlite'] }),
+      setFeedbackMessage: (m) => { messages.push(m); },
+    }));
+    executeSlashCommand(commands, '/repomap rebuild', 'home', noop);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(messages.length).toBeGreaterThan(0);
+    expect(messages[0]).toMatch(/cleared/i);
+  });
+
+  it('calls rebuildRepomap and surfaces not-present message when no cache exists', async () => {
+    const messages: string[] = [];
+    const commands = createCommands(makeCtx({
+      rebuildRepomap: async () => ({ deleted: false, files: [] }),
+      setFeedbackMessage: (m) => { messages.push(m); },
+    }));
+    executeSlashCommand(commands, '/repomap rebuild', 'home', noop);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(messages.length).toBeGreaterThan(0);
+    expect(messages[0]).toMatch(/not present/i);
+  });
+
+  it('surfaces a usage error for unknown sub-commands', () => {
+    let error: string | undefined;
+    const commands = createCommands(makeCtx({
+      setFeedbackError: (m) => { error = m; },
+    }));
+    executeSlashCommand(commands, '/repomap purge', 'home', noop);
+    expect(error).toMatch(/unknown repomap/i);
+  });
+
+  it('surfaces a usage error when called with no sub-command', () => {
+    let error: string | undefined;
+    const commands = createCommands(makeCtx({
+      setFeedbackError: (m) => { error = m; },
+    }));
+    executeSlashCommand(commands, '/repomap', 'home', noop);
+    expect(error).toMatch(/unknown repomap/i);
   });
 });
 

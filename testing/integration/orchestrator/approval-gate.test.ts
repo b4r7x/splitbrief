@@ -4,7 +4,7 @@ import { SPEC_FILE } from '../../../src/core/paths.js';
 import { ensureSessionDir, writeSpecFile } from '../../../src/core/paths-io.js';
 import { runApprovalLoop } from '../../../src/engine/orchestrator/approval.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks, makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 
 type ApprovalResolution = { approved: boolean; comment?: string | undefined };
@@ -25,14 +25,15 @@ describe('spec approval gate suspends until externally resolved', () => {
     let resolveApproval!: (value: ApprovalResolution) => void;
     const approvalPromise = new Promise<ApprovalResolution>((resolve) => { resolveApproval = resolve; });
     const onApprovalNeeded = (): Promise<ApprovalResolution> => approvalPromise;
-    const { callbacks, events } = makeCallbacks({ onApprovalNeeded });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus, events } = makeBusRecorder();
 
     let state = createInitialState('feat');
     state = transition(state, { type: 'START', feature: 'feat' });
 
     const loopPromise = runApprovalLoop({
       type: 'spec', filePath: '/tmp/spec.md', planner: makePlanner(),
-      projectDir, sessionId, callbacks, state, persistTranscript: false,
+      projectDir, sessionId, callbacks, bus, state, persistTranscript: false,
     });
 
     // Workflow is suspended: onApprovalNeeded is in-flight, no resolution yet.
@@ -49,6 +50,6 @@ describe('spec approval gate suspends until externally resolved', () => {
     expect(result.rejected).toBe(false);
     expect(result.regenerated).toBe(false);
     // No planner-status 'done' event was emitted on this approved path — only rejection path emits that.
-    expect(events.find((e) => e.type === 'planner-status' && e.status === 'done')).toBeUndefined();
+    expect(events.find((e) => e.type === 'planner_status' && e.status === 'done')).toBeUndefined();
   });
 });

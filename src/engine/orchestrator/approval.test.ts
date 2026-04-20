@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
 import { SPEC_FILE } from '../../core/paths.js';
 import { runApprovalLoop } from './approval.js';
@@ -34,6 +34,7 @@ describe('runApprovalLoop', () => {
   it('returns not-rejected when user approves', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
     const { callbacks } = makeCallbacks({ onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }) });
+    const { bus } = makeBusRecorder();
     const result = await runApprovalLoop({
       type: 'spec',
       filePath: specPath,
@@ -41,6 +42,7 @@ describe('runApprovalLoop', () => {
       projectDir,
       sessionId,
       callbacks,
+      bus,
       state: prepareState(),
       persistTranscript: false,
     });
@@ -50,7 +52,8 @@ describe('runApprovalLoop', () => {
 
   it('rejects when user declines without comment — state transitions and spec_rejected event fires', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
-    const { callbacks, events } = makeCallbacks({ onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false }) });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false }) });
+    const { bus, events } = makeBusRecorder();
     const result = await runApprovalLoop({
       type: 'spec',
       filePath: specPath,
@@ -58,19 +61,25 @@ describe('runApprovalLoop', () => {
       projectDir,
       sessionId,
       callbacks,
+      bus,
       state: prepareState(),
       persistTranscript: false,
     });
     expect(result.rejected).toBe(true);
-    expect(events.some((e) => e.type === 'planner-status' && e.status === 'done')).toBe(true);
+    expect(events.some((e) => e.type === 'planner_status' && 'status' in e && e.status === 'done')).toBe(true);
   });
 
   it('returns not-rejected immediately when AbortSignal is already aborted', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
     const controller = new AbortController();
     controller.abort();
-    const onApprovalNeeded = vi.fn();
+    let approvalPrompts = 0;
+    const onApprovalNeeded = async () => {
+      approvalPrompts++;
+      return { approved: true };
+    };
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus } = makeBusRecorder();
     const result = await runApprovalLoop({
       type: 'spec',
       filePath: specPath,
@@ -78,22 +87,26 @@ describe('runApprovalLoop', () => {
       projectDir,
       sessionId,
       callbacks,
+      bus,
       state: prepareState(),
       persistTranscript: false,
       signal: controller.signal,
     });
     expect(result.rejected).toBe(false);
-    expect(onApprovalNeeded).not.toHaveBeenCalled();
+    expect(approvalPrompts).toBe(0);
   });
 
   it('does not treat an aborted in-flight approval prompt as rejection', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
     const controller = new AbortController();
-    const onApprovalNeeded = vi.fn().mockImplementationOnce(async () => {
+    let approvalPrompts = 0;
+    const onApprovalNeeded = async () => {
+      approvalPrompts++;
       controller.abort();
       return { approved: false };
-    });
+    };
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus } = makeBusRecorder();
     const result = await runApprovalLoop({
       type: 'spec',
       filePath: specPath,
@@ -101,21 +114,37 @@ describe('runApprovalLoop', () => {
       projectDir,
       sessionId,
       callbacks,
+      bus,
       state: prepareState(),
       persistTranscript: false,
       signal: controller.signal,
     });
     expect(result.rejected).toBe(false);
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
+    expect(approvalPrompts).toBe(1);
   });
 
   it('regenerate on feedback: planner.regenerate receives prompt containing user comment, loop continues until approval', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
-    const onApprovalNeeded = vi.fn()
-      .mockResolvedValueOnce({ approved: false, comment: 'please add auth section' })
-      .mockResolvedValueOnce({ approved: true });
+    const approvalPrompts: Array<{ approved: boolean; comment?: string }> = [
+      { approved: false, comment: 'please add auth section' },
+      { approved: true },
+    ];
+    let approvalCalls = 0;
+    const onApprovalNeeded = async () => {
+      const next = approvalPrompts[approvalCalls++];
+      if (!next) throw new Error('unexpected extra approval prompt');
+      return next;
+    };
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const planner = makePlanner();
+    const { bus } = makeBusRecorder();
+
+    const regenCalls: Array<[string, string]> = [];
+    const planner = makePlanner({
+      regenerate: async (prompt: string, target: 'spec' | 'plan') => {
+        regenCalls.push([prompt, target]);
+        return { text: 'regenerated', usage: null };
+      },
+    });
 
     const result = await runApprovalLoop({
       type: 'spec',
@@ -124,17 +153,16 @@ describe('runApprovalLoop', () => {
       projectDir,
       sessionId,
       callbacks,
+      bus,
       state: prepareState(),
       persistTranscript: false,
     });
 
     expect(result.rejected).toBe(false);
     expect(result.regenerated).toBe(true);
-    // Planner regenerate port was exercised with the user's comment in the prompt.
-    expect(planner.regenerate).toHaveBeenCalledTimes(1);
-    const regenArgs = vi.mocked(planner.regenerate).mock.calls[0];
-    expect(regenArgs?.[0]).toContain('please add auth section');
-    expect(regenArgs?.[1]).toBe('spec');
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
+    expect(regenCalls).toHaveLength(1);
+    expect(regenCalls[0]?.[0]).toContain('please add auth section');
+    expect(regenCalls[0]?.[1]).toBe('spec');
+    expect(approvalCalls).toBe(2);
   });
 });

@@ -1,8 +1,8 @@
-import type { TuiEvent } from '../../features/workflow/types.js';
+import type { EngineEvent } from '../../engine/events/types.js';
 import { getChromeHeight, getContentTopRow } from './chrome-rows.js';
 
-export function hasWorkflowConfig(events: TuiEvent[]): boolean {
-  return events.some((event) => event.type === 'workflow-config');
+export function hasWorkflowConfig(events: EngineEvent[]): boolean {
+  return events.some((event) => event.type === 'workflow_config');
 }
 
 export function getWorkflowSidebarWidth(

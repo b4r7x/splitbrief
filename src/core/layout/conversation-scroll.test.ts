@@ -6,7 +6,7 @@ function makeEventSection(count: number, startIndex = 0): Extract<Section, { typ
   return {
     type: 'events',
     startIndex,
-    items: Array.from({ length: count }, (_, ts) => ({ type: 'planner-text' as const, ts, text: `event-${ts}` })),
+    items: Array.from({ length: count }, (_, ts) => ({ type: 'planner_text' as const, ts, phase: 'implementing' as const, text: `event-${ts}` })),
   };
 }
 
@@ -45,11 +45,12 @@ describe('computeConversationScroll', () => {
         type: 'events',
         startIndex: 0,
         items: [
-          { type: 'planner-text', ts: 0, text: 'visible' },
-          { type: 'planner-status', ts: 1, phase: 'planning', status: 'running' },
+          { type: 'planner_text', ts: 0, phase: 'implementing', text: 'visible' },
+          { type: 'planner_status', ts: 1, phase: 'planning', status: 'running' },
           {
-            type: 'workflow-config',
+            type: 'workflow_config',
             ts: 2,
+            phase: 'implementing',
             mode: 'standard',
             plannerTool: 'claude-code',
             implementerTool: 'ollama',

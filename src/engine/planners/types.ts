@@ -88,6 +88,7 @@ export interface Planner extends RunnerRuntime {
     projectDir: string,
     callbacks: PlannerCallbacks,
     skillsContext?: string,
+    codebaseContext?: string,
   ): Promise<PlanResult>;
 
   regenerate(
@@ -115,6 +116,7 @@ export interface Planner extends RunnerRuntime {
     feature: string,
     projectDir: string,
     callbacks: PlannerCallbacks,
+    codebaseContext?: string,
   ): Promise<PlanResult>;
 
   review(

@@ -10,8 +10,9 @@ import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../core/paths.j
 import { writeSpecFile } from '../../core/paths-io.js';
 import { beginSession } from '../../core/sessions/lifecycle.js';
 import { clearStaleSession } from '../../core/sessions/guards.js';
+import { ensureHooksTrusted } from '../hook-trust-prompt.js';
 
-type SpecOpts = { auto: boolean; project?: string };
+type SpecOpts = { auto: boolean; project?: string; allowHooks: boolean };
 
 export function registerSpecCommand(program: Command): void {
   program
@@ -19,6 +20,7 @@ export function registerSpecCommand(program: Command): void {
     .description('Generate spec, plan, and tasks only (no implementation)')
     .option('--auto', 'Auto-approve spec and plan', false)
     .option('--project <dir>', 'Project directory (default: cwd)')
+    .option('--allow-hooks', 'Trust hook config without prompting (use in CI)', false)
     .action(async (feature: string, opts: SpecOpts) => {
       const projectDir = resolveProjectDir(opts.project);
       await ensureGitAndConfig(projectDir);
@@ -26,6 +28,7 @@ export function registerSpecCommand(program: Command): void {
       clearStaleSession(projectDir);
 
       const { config: baseConfig, warnings } = loadConfigOrExit(projectDir);
+      await ensureHooksTrusted({ projectDir, hooks: baseConfig.hooks, allowHooks: opts.allowHooks });
       for (const w of warnings) warnStderr(`⚠ ${w}`);
       const config = opts.auto
         ? {
