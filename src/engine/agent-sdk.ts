@@ -1,4 +1,7 @@
 import type { InvokeResult } from './runners/types.js';
+import type { EffortLevel } from '../core/schemas/enums.js';
+import type { Attachment } from '../core/schemas/attachment.js';
+import { effortToAnthropicBudget } from '../core/schemas/enums.js';
 import { accumulateUsage } from './streaming/output-parsers.js';
 import { toTokenDelta } from './streaming/token-utils.js';
 import { createChangeDetector } from './change-detection.js';
@@ -33,6 +36,7 @@ interface SdkQueryOptions {
     cwd: string;
     resume?: string | undefined;
     env?: Record<string, string | undefined>;
+    thinking?: { type: 'enabled'; budget_tokens: number } | undefined;
   };
 }
 
@@ -144,11 +148,22 @@ export interface AgentSdkInvokeOpts {
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
   onSessionExpired?: ((previousId: string) => void) | undefined;
+  effort?: EffortLevel | undefined;
+  images?: Attachment[] | undefined;
 }
 
 export interface AgentSdkBackend {
   invoke(opts: AgentSdkInvokeOpts): Promise<InvokeResult>;
   detectChanges?: (projectDir: string, before: string[]) => Promise<{ changed: boolean; output: string }>;
+}
+
+function buildPromptWithImages(prompt: string, images: Attachment[] | undefined): string {
+  if (!images || images.length === 0) return prompt;
+  // Agent SDK exposes Read tool to planners; surface attachment paths so the
+  // model loads them itself. Vision arrives via the Read tool result rather
+  // than inline content blocks (the SDK string `prompt` is the supported entry).
+  const refs = images.map(img => `[image attachment: ${img.path}]`).join('\n');
+  return `${refs}\n\n${prompt}`;
 }
 
 export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBackend {
@@ -158,22 +173,24 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
   session.capture(opts.initialSessionId ?? null);
 
   const backend: AgentSdkBackend = {
-    async invoke({ prompt, projectDir, model, onOutput, onSessionId, onSessionExpired }) {
+    async invoke({ prompt, projectDir, model, onOutput, onSessionId, onSessionExpired, effort, images }) {
       const { query } = await loadSdk();
 
       const apiKey = opts.apiKey;
       const captureSession = (id: string) => { session.capture(id); onSessionId?.(id); };
+      const finalPrompt = buildPromptWithImages(prompt, images);
 
       const runQuery = async (resumeId: string | undefined) => {
         const options: SdkQueryOptions['options'] = {
           allowedTools: opts.allowedTools, permissionMode, model, cwd: projectDir,
         };
         if (resumeId) options.resume = resumeId;
+        if (effort) options.thinking = { type: 'enabled', budget_tokens: effortToAnthropicBudget(effort) };
         // Scope ANTHROPIC_API_KEY to this SDK call via the `env` option so concurrent
         // workflows with different keys don't race. Omit `env` entirely when no override
         // is set so the SDK inherits process.env as usual.
         if (apiKey) options.env = { ...process.env, ANTHROPIC_API_KEY: apiKey };
-        return processStream(query({ prompt, options }), onOutput, captureSession);
+        return processStream(query({ prompt: finalPrompt, options }), onOutput, captureSession);
       };
 
       const priorId = session.getResumeId();

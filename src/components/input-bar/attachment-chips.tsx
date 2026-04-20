@@ -1,0 +1,20 @@
+import { Box, Text } from 'ink';
+import { useTheme } from '../theme.js';
+import { attachmentsStore } from '../../stores/workflow/attachments.js';
+import { useStores } from '../../stores/use-stores.js';
+import { basenameShort } from '../../features/workflow/attach-resolver.js';
+
+export function AttachmentChips() {
+  const theme = useTheme();
+  const [{ pending }] = useStores(attachmentsStore);
+  if (pending.length === 0) return null;
+  return (
+    <Box flexDirection="row" flexWrap="wrap" paddingX={1}>
+      {pending.map((a, i) => (
+        <Box key={a.id} marginRight={1}>
+          <Text color={theme.info}>📎 {i + 1}: {basenameShort(a.path)}</Text>
+        </Box>
+      ))}
+    </Box>
+  );
+}

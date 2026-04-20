@@ -1,4 +1,4 @@
-import type { PlannerToolId, ProviderId, WorkflowMode } from '../schemas/enums.js';
+import type { ApproveLevel, EffortLevel, PlannerToolId, ProviderId, WorkflowMode } from '../schemas/enums.js';
 
 export interface DetectedModel {
   id: string;
@@ -26,7 +26,9 @@ export interface WorkflowOpts {
   fullscreen?: boolean;
   mouse?: boolean;
   mode?: WorkflowMode;
+  approve?: ApproveLevel;
   budget?: number;
+  plannerEffort?: EffortLevel;
   allowHooks?: boolean;
   json?: boolean;
   otelExporter?: string;

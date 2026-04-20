@@ -95,8 +95,8 @@ describe('configStore.load', () => {
 
   it('applies mode override', () => {
     writeConfigYaml();
-    configStore.load(tmpDir, { mode: 'full' });
-    expect(loadedConfig().workflow.mode).toBe('full');
+    configStore.load(tmpDir, { mode: 'full' as 'speckit' });
+    expect(loadedConfig().workflow.mode).toBe('speckit');
   });
 
   it('throws on NaN budget override', () => {

@@ -23,14 +23,21 @@ All phases and transitions live in `src/core/state/machine.ts`. The primary stat
 | From phase | Action | To phase | Notes |
 |------------|--------|---------|-------|
 | `idle` | `START` | `researching` | Normal `start` |
+| `idle` | `START_INSTANT` | `implementing` | `--mode instant`; tasks provided directly, no spec/plan/research artifacts |
 | `idle` | `START_QUICK` | `implementing` | `--mode quick`; tasks provided directly |
 | `researching` | `RESEARCH_DONE` | `specifying` | |
 | `specifying` | `SPEC_DONE` | `reviewing-spec` | |
 | `reviewing-spec` | `APPROVE_SPEC` | `planning` | |
 | `reviewing-spec` | `REJECT_SPEC` | `idle` | Workflow ends |
+| `reviewing-spec` *(speckit)* | `SPEC_CLARIFY_START` | `clarifying` | Marker phase; conversational planners gather questions inline during `specifying` |
+| `clarifying` *(speckit)* | `SPEC_CLARIFY_DONE` | `constitution-check` | Writes `clarifications.md` |
+| `constitution-check` *(speckit)* | `CONSTITUTION_CHECK_PASS` | `planning` | Writes `constitution-check.json`; planning proceeds |
+| `constitution-check` *(speckit)* | `CONSTITUTION_CHECK_FAIL` | `idle` | Hard violation; workflow aborts. Reason persisted in `constitution-check.json` and emitted as a `warning` event |
 | `planning` | `PLAN_DONE` | `reviewing-plan` | Tasks attached to action |
 | `reviewing-plan` | `APPROVE_PLAN` | `implementing` | In `standard` mode, auto-dispatched |
 | `reviewing-plan` | `REJECT_PLAN` | `idle` | |
+| `implementing` *(speckit)* | `ANALYZE_START` | `analyzing` | Speckit-only post-planning audit |
+| `analyzing` *(speckit)* | `ANALYZE_DONE` | `implementing` | Writes `analyze.json`; coverage below `workflow.speckit.minCoverage` (default `0.9`) emits a `warning` event but does not block |
 | `implementing` | `START_TASK` | `implementing` | Sets task `in_progress`, resets attempt counter |
 | `implementing` | `TASK_SENT` | `validating-task` | Implementer response received |
 | `validating-task` | `VALIDATION_PASS` | `implementing` (next task) | Task marked `done`, index++ |
@@ -69,9 +76,12 @@ Full reference: `docs/SLASH-COMMANDS.md`.
 
 Mode selection happens in `src/engine/orchestrator/planning.ts`:
 
+- `instant` — one planner call, no spec/plan/research artifacts. Writes `tasks.md` + `session.jsonl` + `summary.json`. No approval gates. `START_INSTANT` transitions straight into the task loop.
 - `quick` — one planner call (`planner.quickPlan(...)`) that emits `tasks.md` only. No spec / plan files, no approval gates. `START_QUICK` transitions straight into the task loop.
-- `standard` — four planner calls (research, spec, plan, tasks). One approval gate on the spec. The plan gate (`reviewing-plan`) is entered but auto-advanced.
-- `full` — same four calls, both gates active.
+- `standard` — four planner calls (research, spec, plan, tasks). One approval gate on the spec by default (`approve: spec`); the plan gate (`reviewing-plan`) is entered but auto-advanced.
+- `speckit` — seven planner calls: research → spec → clarify → constitution-check → plan → analyze → tasks. Both gates active by default (`approve: all`). Fast-fails on constitution-check violations.
+
+Approval gates are governed by `workflow.approve` (`none` | `spec` | `plan` | `all` | `default`). Each mode has a default (instant/quick → `none`, standard → `spec`, speckit → `all`); `default` follows that mode default. Override via `--approve <level>` on the CLI or `/approve` at runtime. The legacy `--auto` flag is now a synonym for `--approve none`. Resolution flows through the single `resolveApproveLevel()` helper in `src/core/config/runtime/resolve.ts` (per spec invariant §2: gate decisions never read `config.workflow.autoApprove*` directly).
 
 The `/mode` slash command and `--mode` CLI flag both write into `config.workflow.mode`.
 
@@ -116,6 +126,30 @@ The `/mode` slash command and `--mode` CLI flag both write into `config.workflow
       phase: complete      → summary.json written, .diptych/active cleared
 ```
 
+### 1.3.1 An `instant` run, step by step
+
+`diptych start --mode instant "rename foo to bar"` follows the same bootstrap as a normal run up to `runWorkflow()`, then takes the `runInstantPlanning` path:
+
+1. Single `planner.instantPlan()` call (or falls back to `planner.quickPlan` / `planner.plan` if the backend doesn't implement it).
+2. Parse `tasks.md` from the response.
+3. Dispatch `START_INSTANT` with the tasks → phase becomes `implementing`.
+4. Task loop runs identically to other modes (per-task validation, retry, escalation, git commit per `workflow.git.commitStrategy`).
+5. Final review still runs (no spec to compare against, but the existing review path is shared).
+
+Persisted artifacts: `tasks.md`, `session.jsonl`, `summary.json`. No `spec.md`, `plan.md`, or `research.md`.
+
+### 1.3.2 A `speckit` run, step by step
+
+`diptych start --mode speckit "feature"` runs `runSpeckitPlanning`, which wraps the standard planning pipeline with three speckit-only phases (`clarifying`, `constitution-check`, `analyzing`):
+
+1. **`clarifying`** (marker phase). Writes `clarifications.md` to the session folder. The actual question/answer round is collected inline by the conversational planner during `specifying`; this phase exists to make the speckit chain observable in the state machine and to host a placeholder artifact pointing back at `spec.md`.
+2. **`constitution-check`**. Reads `.specify/memory/constitution.md` if present. If absent, the check passes silently. If present, calls `planner.review()` with the constitution prompt and parses strict-JSON `{ passed, violations: [{ principle, reason, severity }] }` output. Result is persisted to `constitution-check.json`. A `severity: 'hard'` violation (or `passed: false`) dispatches `CONSTITUTION_CHECK_FAIL`, emits a `warning` event with the reason, and returns the workflow to `idle`. Otherwise dispatches `CONSTITUTION_CHECK_PASS` and proceeds.
+3. **Standard pipeline.** `runFullPlanning(opts)` runs research → spec → plan → tasks. Approval gates are gated by `resolveApproveLevel({ mode, configApprove, cliOverride })` — `blocksSpecGate(level)` and `blocksPlanGate(level)` decide whether each gate runs. For `speckit` the default is `all` (both gates active).
+4. **`analyzing`**. Reads `spec.md`, `plan.md`, and `tasks.md` from the session folder, calls `planner.review()` with the analyze prompt, and persists strict-JSON `{ specTaskCoverage, planTaskCoverage, orphanTasks, unaddressedSpecSections, warnings }` to `analyze.json`. If either coverage value falls below `workflow.speckit.minCoverage` (default `0.9`), emits an advisory `warning` event but does not block. Dispatches `ANALYZE_DONE` to enter `implementing`.
+5. **Task loop and final review** run identically to other modes.
+
+Persisted artifacts: `research.md`, `spec.md`, `clarifications.md`, `constitution-check.json`, `plan.md`, `tasks.md`, `analyze.json`, `session.jsonl`, `state.json`, `summary.json`.
+
 ### 1.4 Persistence timing
 
 | Event | Writes | File |
@@ -125,6 +159,9 @@ The `/mode` slash command and `--mode` CLI flag both write into `config.workflow
 | Every emitted event | Append line (kind: `event`) | `sessions/<id>/session.jsonl` |
 | Every planner/user text chunk (if `persistTranscript`) | Append line (kind: `message`) | `sessions/<id>/session.jsonl` |
 | End of a planning phase | Write artifact | `sessions/<id>/{spec,plan,tasks}.md` |
+| End of `clarifying` phase *(speckit)* | Write marker file | `sessions/<id>/clarifications.md` |
+| End of `constitution-check` phase *(speckit)* | Write check result | `sessions/<id>/constitution-check.json` |
+| End of `analyzing` phase *(speckit)* | Write coverage metrics | `sessions/<id>/analyze.json` |
 | Successful task (per-task commits on) | `git commit` | Git history |
 | Single Ctrl-C during cancellable phase | Save state with `awaitingContinue: true`, append `kind: event, type: turn_aborted` | `state.json` + `session.jsonl` |
 | Double Ctrl-C | Save state, clear `.diptych/active` | `state.json` + `.diptych/active` |

@@ -440,4 +440,45 @@ describe('transition', () => {
     expect(next.rewindPending).toBeUndefined();
     expect(next.phase).toBe('specifying');
   });
+
+  it('SPEC_CLARIFY_START -> clarifying', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-spec' };
+    const next = transition(state, { type: 'SPEC_CLARIFY_START' });
+    expect(next.phase).toBe('clarifying');
+  });
+
+  it('SPEC_CLARIFY_DONE -> constitution-check', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'clarifying' };
+    const next = transition(state, { type: 'SPEC_CLARIFY_DONE' });
+    expect(next.phase).toBe('constitution-check');
+  });
+
+  it('CONSTITUTION_CHECK_PASS -> planning', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'constitution-check' };
+    const next = transition(state, { type: 'CONSTITUTION_CHECK_PASS' });
+    expect(next.phase).toBe('planning');
+  });
+
+  it('CONSTITUTION_CHECK_FAIL -> idle and clears awaitingContinue', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'constitution-check',
+      awaitingContinue: true,
+    };
+    const next = transition(state, { type: 'CONSTITUTION_CHECK_FAIL', reason: 'violates principle X' });
+    expect(next.phase).toBe('idle');
+    expect(next.awaitingContinue).toBe(false);
+  });
+
+  it('ANALYZE_START -> analyzing', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'implementing' };
+    const next = transition(state, { type: 'ANALYZE_START' });
+    expect(next.phase).toBe('analyzing');
+  });
+
+  it('ANALYZE_DONE -> implementing', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'analyzing' };
+    const next = transition(state, { type: 'ANALYZE_DONE' });
+    expect(next.phase).toBe('implementing');
+  });
 });

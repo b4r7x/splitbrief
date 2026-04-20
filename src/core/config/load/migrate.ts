@@ -1,11 +1,23 @@
-import { CLI_TOOL_IDS, RUNNER_KINDS, KNOWN_API_PROVIDERS } from '../../schemas/enums.js';
+import { CLI_TOOL_IDS, RUNNER_KINDS, KNOWN_API_PROVIDERS, type ApproveLevel } from '../../schemas/enums.js';
 import { getRunnerKindMeta } from '../../schemas/runner-fields.js';
 import { resolveDefaultApiBase } from '../../providers/catalog.js';
 import { narrowRecord, includes } from '../../../utils/type-guards.js';
 import { configError } from '../errors.js';
 import type { RunnerKind } from '../../schemas/enums.js';
 
-export function migrateConfig(raw: unknown): unknown {
+/**
+ * Migrate a raw config blob through v1 → v2 → v3 in sequence. Returns the
+ * fully-migrated v3 shape. Optional `warnings` array collects deprecation
+ * notices produced during migration (e.g. from v2 to v3 of a config still
+ * declaring `version: 2`).
+ *
+ * The returned config preserves deprecated v2 workflow keys
+ * (`autoApproveSpec`, `autoApprovePlan`, top-level `commitStrategy`) alongside
+ * their v3 replacements (`approve`, `git.commitStrategy`). Briefs 04 and 07
+ * remove the v2 read sites; until then dual-population keeps existing readers
+ * working.
+ */
+export function migrateConfig(raw: unknown, warnings?: string[]): unknown {
   if (!raw || typeof raw !== 'object') {
     throw configError.notAnObject('Config');
   }
@@ -14,16 +26,84 @@ export function migrateConfig(raw: unknown): unknown {
   if (!obj) throw configError.notAnObject('Config');
   const version = typeof obj.version === 'number' ? obj.version : undefined;
 
-  if (version === 2) {
-    return raw;
-  }
-
-  if (version !== undefined && version !== 1 && version !== 2) {
+  if (version !== undefined && version !== 1 && version !== 2 && version !== 3) {
     throw configError.unsupportedVersion(version);
   }
 
-  // v1 or missing version → migrate to v2
-  return migrateV1ToV2(obj);
+  let v2: Record<string, unknown>;
+  if (version === 3) {
+    return raw;
+  } else if (version === 2) {
+    v2 = obj;
+    warnings?.push("config.version 2 is deprecated; upgrade to 3 (run `diptych migrate` or rerun `diptych init`).");
+  } else {
+    v2 = narrowRecord(migrateV1ToV2(obj)) ?? {};
+  }
+
+  return migrateV2ToV3(v2);
+}
+
+/**
+ * Migrate a v2 config to v3:
+ *  - bumps `version` to 3
+ *  - introduces `workflow.approve` derived from v2 auto-approve flags
+ *  - moves `workflow.commitStrategy` into `workflow.git.commitStrategy`
+ *  - normalizes legacy `workflow.mode = 'full'` to `'speckit'`
+ *  - preserves deprecated v2 keys for backward-compat reads
+ */
+export function migrateV2ToV3(v2: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...v2, version: 3 };
+
+  const workflow = narrowRecord(v2.workflow);
+  if (workflow) {
+    const newWorkflow: Record<string, unknown> = { ...workflow };
+
+    const autoSpec = workflow.autoApproveSpec === true;
+    const autoPlan = workflow.autoApprovePlan === true;
+    if (newWorkflow.approve === undefined) {
+      newWorkflow.approve = deriveApproveLevel({ autoApproveSpec: autoSpec, autoApprovePlan: autoPlan });
+    }
+
+    const topCommit = workflow.commitStrategy;
+    const existingGit = narrowRecord(workflow.git);
+    if (topCommit !== undefined || existingGit) {
+      const git: Record<string, unknown> = { ...(existingGit ?? {}) };
+      if (git.commitStrategy === undefined && topCommit !== undefined) {
+        git.commitStrategy = topCommit;
+      }
+      newWorkflow.git = git;
+    }
+
+    if (typeof workflow.mode === 'string' && workflow.mode === 'full') {
+      newWorkflow.mode = 'speckit';
+    }
+
+    result.workflow = newWorkflow;
+  }
+
+  return result;
+}
+
+export interface DeriveApproveLevelInput {
+  autoApproveSpec?: boolean;
+  autoApprovePlan?: boolean;
+}
+
+/**
+ * Derive the v3 `workflow.approve` level from v2 auto-approve flags.
+ *
+ *  - both true   → 'none'   (no manual gates)
+ *  - spec true   → 'plan'   (gate at plan)
+ *  - plan true   → 'spec'   (gate at spec)
+ *  - both false  → 'default' (preserve mode-defined gates)
+ */
+export function deriveApproveLevel(flags: DeriveApproveLevelInput): ApproveLevel {
+  const spec = flags.autoApproveSpec === true;
+  const plan = flags.autoApprovePlan === true;
+  if (spec && plan) return 'none';
+  if (spec) return 'plan';
+  if (plan) return 'spec';
+  return 'default';
 }
 
 function migrateV1ToV2(obj: Record<string, unknown>): unknown {

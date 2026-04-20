@@ -14,6 +14,8 @@ export function resolveCapabilities(override: { [K in keyof PlannerCapabilities]
     supportsConversationalPlanning: override?.supportsConversationalPlanning ?? false,
     supportsHintEscalation: override?.supportsHintEscalation ?? false,
     supportsSessionResume: override?.supportsSessionResume ?? false,
+    supportsEffort: override?.supportsEffort ?? false,
+    supportsImages: override?.supportsImages ?? false,
   };
 }
 

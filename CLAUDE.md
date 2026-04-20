@@ -103,9 +103,10 @@ Full config schemas and YAML examples: [docs/ARCHITECTURE.md](./docs/ARCHITECTUR
 
 | Mode | Planner calls | Approval gates | Best for |
 |---|:---:|:---:|---|
-| `quick` | 1 | 0 | Small: "add endpoint", "fix bug" |
-| `standard` (default) | 4 | 1 (spec) | Medium features |
-| `full` | 4 | 2 (spec + plan) | Large features, team handoffs |
+| `instant` | 1 | none | Trivial: "typo", "rename foo", "add null check" |
+| `quick` | 1 | none | Small: "add endpoint", "fix bug" |
+| `standard` (default) | 4 | spec | Medium features |
+| `speckit` | 6–7 | spec + plan | Large features, team handoffs, compliance (includes constitution check, clarify, analyze) |
 
 Set via `--mode`, config `workflow.mode`, or `/mode` at runtime. Full semantics: [docs/WORKFLOW.md](./docs/WORKFLOW.md).
 

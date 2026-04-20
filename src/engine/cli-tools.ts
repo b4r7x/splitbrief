@@ -1,16 +1,18 @@
 import type { ParsedLine } from './runners/types.js';
 import { parseJsonlLine, parseOpencodeLine, parseTextLine } from './streaming/output-parsers.js';
-import type { CliToolId } from '../core/schemas/enums.js';
+import type { CliToolId, EffortLevel } from '../core/schemas/enums.js';
 import type { InvokeResult } from './runners/types.js';
 import type { TokenDelta } from '../core/schemas/tokens.js';
 
 export interface CliToolPlanner {
-  buildArgs(opts: { prompt: string; model?: string | undefined; projectDir: string; mode: 'plan' | 'escalate'; sessionId?: string | null | undefined }): string[];
+  buildArgs(opts: { prompt: string; model?: string | undefined; projectDir: string; mode: 'plan' | 'escalate'; sessionId?: string | null | undefined; effort?: EffortLevel | undefined }): string[];
   parseLine: (line: string) => ParsedLine;
   postProcess?: (text: string, stderrOutput: string, usage: TokenDelta | null) => InvokeResult;
   isAvailableOpts?: { timeout?: number | undefined };
   /** Whether this tool supports resuming a previous session via a backend-specific flag. */
   supportsSessionResume?: boolean;
+  /** Whether this CLI tool honours the planner-effort flag (e.g. codex --reasoning-effort). */
+  supportsEffort?: boolean;
 }
 
 export interface CliToolImplementer {
@@ -37,16 +39,19 @@ export const CLI_TOOLS: Record<CliToolId, CliToolEntry> = {
     notFoundMessage: 'Codex CLI not found. Install it with: npm install -g @openai/codex',
     planner: {
       supportsSessionResume: true,
-      buildArgs: ({ prompt, model, projectDir, mode, sessionId }) => {
+      supportsEffort: true,
+      buildArgs: ({ prompt, model, projectDir, mode, sessionId, effort }) => {
         // Resume path: `codex exec resume --json <SESSION_ID> <PROMPT>`. Only valid for live
         // planning turns; escalate uses one-shot `exec` to avoid polluting the resumed session.
         if (sessionId && mode === 'plan') {
           const args = ['exec', 'resume', '--json', sessionId, prompt];
           if (model) args.splice(2, 0, '--model', model);
+          if (effort) args.splice(2, 0, '--reasoning-effort', effort);
           return args;
         }
         const args = ['exec', '--json', '--full-auto', '--cd', projectDir, prompt];
         if (model) args.unshift('--model', model);
+        if (effort) args.unshift('--reasoning-effort', effort);
         return args;
       },
       parseLine: parseJsonlLine,

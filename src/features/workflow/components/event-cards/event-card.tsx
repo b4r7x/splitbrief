@@ -27,7 +27,7 @@ function getGutterRole(event: EngineEvent): "planner" | "implementer" | null {
     case "planner_text": case "task_started": case "escalate": return "planner";
     case "implementer_generate_running": case "implementer_generate_done":
     case "implementer_generate_failed": case "validate":
-    case "git_commit": case "git_checkpoint": case "task_retry": return "implementer";
+    case "git_commit": case "git_checkpoint": case "git_branch_created": case "task_retry": return "implementer";
     case "warning": case "error": case "task_completed": case "task_skipped":
     case "cost_update": case "cost_prediction": case "budget_warning":
     case "budget_exceeded": case "workflow_cancelled": case "workflow_config":
@@ -35,6 +35,7 @@ function getGutterRole(event: EngineEvent): "planner" | "implementer" | null {
     case "message_queued": case "message_injected_native":
     case "queue_drained": case "queue_cleared":
     case "user_message":
+    case "planner_attachment_added": case "planner_attachments_dropped":
     case "workflow_started": case "workflow_resumed": case "workflow_complete":
     case "paused_external_changes":
     case "research_done": case "spec_done": case "spec_approved": case "spec_rejected":
@@ -42,6 +43,7 @@ function getGutterRole(event: EngineEvent): "planner" | "implementer" | null {
     case "plan_regenerated": case "all_tasks_done":
     case "task_failed": case "task_escalating": case "task_full_fail":
     case "task_tokens": case "hint_failed":
+    case "mode_resolved": case "mode_downgrade_advised": case "instant_plan_received":
     case "clarifications_collected": case "clarification_answered": return null;
     default: return assertNever(event);
   }
@@ -127,6 +129,16 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
           label="checkpoint"
           labelColor={t.success}
           value={event.tag}
+          valueColor={t.textDim}
+        />
+      );
+      break;
+    case "git_branch_created":
+      content = (
+        <Card
+          label="branch"
+          labelColor={t.success}
+          value={event.name}
           valueColor={t.textDim}
         />
       );
@@ -265,6 +277,31 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
     case "user_message":
       content = <UserMessageCard event={event} />;
       break;
+    case "planner_attachment_added":
+      content = (
+        <Card
+          label="attached"
+          labelColor={t.info}
+          value={event.path}
+          valueColor={t.textDim}
+        />
+      );
+      break;
+    case "planner_attachments_dropped":
+      content = (
+        <Card
+          label="attachments dropped"
+          labelColor={t.warning}
+          value={`${event.count} image${event.count === 1 ? '' : 's'} dropped (${event.reason})`}
+          valueColor={t.warning}
+        />
+      );
+      break;
+    case "mode_downgrade_advised":
+      content = (
+        <Text color={t.warning}>This looks trivial. Consider --mode {event.suggestedMode} instead of --mode {event.currentMode}.</Text>
+      );
+      break;
     case "workflow_started":
     case "workflow_resumed":
     case "workflow_complete":
@@ -284,6 +321,8 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
     case "task_full_fail":
     case "task_tokens":
     case "hint_failed":
+    case "mode_resolved":
+    case "instant_plan_received":
     case "clarifications_collected":
     case "clarification_answered":
       content = null;

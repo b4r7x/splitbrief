@@ -11,7 +11,10 @@ import {
   stageAll,
   createCheckpoint,
   discardTaskChanges,
+  branchExists,
+  createBranch,
 } from './git.js';
+import { simpleGit } from 'simple-git';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 
@@ -165,6 +168,56 @@ describe('git utils', () => {
       const dir = tracked(setupGitRepo());
       const tag = await createCheckpoint(dir, 'T002');
       expect(tag).toBe('');
+    });
+  });
+
+  describe('branchExists', () => {
+    it('returns false for a branch that does not exist', async () => {
+      const dir = tracked(setupGitRepo());
+      expect(await branchExists(dir, 'diptych/nonexistent')).toBe(false);
+    });
+
+    it('returns true for the current branch', async () => {
+      const dir = tracked(setupGitRepo());
+      const g = simpleGit(dir);
+      const status = await g.status();
+      const currentBranch = status.current ?? 'main';
+      expect(await branchExists(dir, currentBranch)).toBe(true);
+    });
+  });
+
+  describe('createBranch', () => {
+    it('creates a new branch and returns its name', async () => {
+      const dir = tracked(setupGitRepo());
+      const name = await createBranch(dir, 'diptych/add-auth');
+      expect(name).toBe('diptych/add-auth');
+      const g = simpleGit(dir);
+      const status = await g.status();
+      expect(status.current).toBe('diptych/add-auth');
+    });
+
+    it('appends -2 on collision', async () => {
+      const dir = tracked(setupGitRepo());
+      const g = simpleGit(dir);
+      const initStatus = await g.status();
+      const defaultBranch = initStatus.current ?? 'main';
+      await createBranch(dir, 'diptych/foo');
+      await g.checkout(defaultBranch);
+      const name = await createBranch(dir, 'diptych/foo');
+      expect(name).toBe('diptych/foo-2');
+    });
+
+    it('increments suffix through multiple collisions', async () => {
+      const dir = tracked(setupGitRepo());
+      const g = simpleGit(dir);
+      const initStatus = await g.status();
+      const defaultBranch = initStatus.current ?? 'main';
+      await createBranch(dir, 'diptych/bar');
+      await g.checkout(defaultBranch);
+      await g.checkoutLocalBranch('diptych/bar-2');
+      await g.checkout(defaultBranch);
+      const name = await createBranch(dir, 'diptych/bar');
+      expect(name).toBe('diptych/bar-3');
     });
   });
 

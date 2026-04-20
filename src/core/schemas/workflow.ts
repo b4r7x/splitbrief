@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { PhaseSchema } from './enums.js';
 import { TaskSchema } from './task.js';
 import { TokenUsageSchema } from './tokens.js';
+import { AnalyzeResultSchema } from './analyze.js';
 
 export const QueuedMessageSchema = z.object({
   id: z.string(),
@@ -35,6 +36,13 @@ export const WorkflowStateSchema = z.object({
     target: z.enum(['spec', 'plan']),
     comment: z.string().optional(),
   }).optional(),
+  clarifications: z.array(z.object({
+    id: z.string(),
+    question: z.string(),
+    answer: z.string(),
+  })).optional(),
+  constitutionFailureReason: z.string().optional(),
+  analysisResult: AnalyzeResultSchema.optional(),
 });
 
 export type WorkflowState = z.infer<typeof WorkflowStateSchema>;

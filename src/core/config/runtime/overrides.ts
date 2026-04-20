@@ -1,6 +1,15 @@
 import { buildRunnerConfig, inferKindFromTool, type BuildRunnerOpts } from './build-runner.js';
-import { WORKFLOW_MODES } from '../../schemas/enums.js';
-import { includes } from '../../../utils/type-guards.js';
+import {
+  APPROVE_LEVELS,
+  ApproveLevelSchema,
+  EFFORT_LEVELS,
+  EffortLevelSchema,
+  WORKFLOW_MODES,
+  normalizeLegacyMode,
+  type ApproveLevel,
+  type EffortLevel,
+  type WorkflowMode,
+} from '../../schemas/enums.js';
 import { configError } from '../errors.js';
 import type { Config } from '../../schemas/config.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
@@ -11,8 +20,10 @@ export interface CLIOverrides {
   implementer?: { tool?: string | undefined; model?: string | undefined; command?: string | undefined };
   contextLength?: number | undefined;
   autoApprove?: boolean | undefined;
-  mode?: string | undefined;
+  approve?: string | undefined;
+  mode?: WorkflowMode | undefined;
   budget?: number | undefined;
+  plannerEffort?: string | undefined;
 }
 
 export interface RunnerOverrides {
@@ -54,6 +65,17 @@ export function applyRunnerOverrides(role: 'planner' | 'implementer', overrides:
   return { ...config, [role]: updated };
 }
 
+export function applyApproveOverride(config: Config, level: ApproveLevel): Config {
+  return {
+    ...config,
+    workflow: {
+      ...config.workflow,
+      approve: level,
+      ...(level === 'none' ? { autoApproveSpec: true, autoApprovePlan: true } : {}),
+    },
+  };
+}
+
 export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Config {
   let next = config;
   if (overrides.planner) {
@@ -71,6 +93,17 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Conf
       ...(overrides.implementer?.command !== undefined && { command: overrides.implementer.command }),
     }, next);
   }
+  if (overrides.approve !== undefined) {
+    const parsed = ApproveLevelSchema.safeParse(overrides.approve);
+    if (!parsed.success) {
+      throw configError.invalidOverride(
+        '--approve',
+        overrides.approve,
+        `Must be one of: ${APPROVE_LEVELS.join(', ')}`,
+      );
+    }
+    next = applyApproveOverride(next, parsed.data);
+  }
   if (overrides.autoApprove !== undefined) {
     next = {
       ...next,
@@ -78,18 +111,20 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Conf
         ...next.workflow,
         autoApproveSpec: overrides.autoApprove,
         autoApprovePlan: overrides.autoApprove,
+        ...(overrides.autoApprove ? { approve: 'none' as ApproveLevel } : {}),
       },
     };
   }
   if (overrides.mode !== undefined) {
-    if (!includes(WORKFLOW_MODES, overrides.mode)) {
+    const normalized = normalizeLegacyMode(overrides.mode);
+    if (!normalized) {
       throw configError.invalidOverride(
         'workflow mode',
         overrides.mode,
         `Must be: ${WORKFLOW_MODES.join(', ')}`,
       );
     }
-    next = { ...next, workflow: { ...next.workflow, mode: overrides.mode } };
+    next = { ...next, workflow: { ...next.workflow, mode: normalized } };
   }
   if (overrides.budget !== undefined) {
     if (!Number.isFinite(overrides.budget) || overrides.budget <= 0) {
@@ -101,5 +136,29 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Conf
     }
     next = { ...next, workflow: { ...next.workflow, maxBudget: overrides.budget } };
   }
+  if (overrides.plannerEffort !== undefined) {
+    const parsed = EffortLevelSchema.safeParse(overrides.plannerEffort);
+    if (!parsed.success) {
+      throw configError.invalidOverride(
+        '--planner-effort',
+        overrides.plannerEffort,
+        `Must be one of: ${EFFORT_LEVELS.join(', ')}`,
+      );
+    }
+    next = applyPlannerEffort(next, parsed.data);
+  }
   return next;
+}
+
+function applyPlannerEffort(config: Config, effort: EffortLevel): Config {
+  const planner: PlannerConfig = (() => {
+    switch (config.planner.kind) {
+      case 'cli': return { ...config.planner, effort };
+      case 'api': return { ...config.planner, effort };
+      case 'shell': return { ...config.planner, effort };
+      case 'agent': return { ...config.planner, effort };
+      case 'agent-sdk': return { ...config.planner, effort };
+    }
+  })();
+  return { ...config, planner };
 }

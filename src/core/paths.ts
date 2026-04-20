@@ -29,3 +29,6 @@ export const REVIEW_FILE = 'review.md';
 export const STATE_FILE = 'state.json';
 export const SESSION_LOG_FILE = 'session.jsonl';
 export const CONFIG_FILE = 'config.yaml';
+export const CLARIFICATIONS_FILE = 'clarifications.md';
+export const CONSTITUTION_CHECK_FILE = 'constitution-check.json';
+export const ANALYZE_FILE = 'analyze.json';

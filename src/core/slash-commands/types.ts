@@ -1,5 +1,5 @@
 import type { Phase } from '../schemas/enums.js';
-import type { WorkflowMode } from '../schemas/enums.js';
+import type { EffortLevel, WorkflowMode } from '../schemas/enums.js';
 import type { OverlayType, Screen } from '../../stores/navigation/router.js';
 
 interface SlashCommandBase {
@@ -21,6 +21,7 @@ export interface CommandContext {
   navigate: (to: 'home') => void;
   quit: () => void;
   setWorkflowMode: (mode: WorkflowMode) => boolean;
+  setPlannerEffort: (effort: EffortLevel) => boolean;
   setFeedbackMessage: (msg: string) => void;
   setFeedbackError: (msg: string) => void;
   refreshDetection: () => Promise<void>;
@@ -30,6 +31,9 @@ export interface CommandContext {
   getQueueDepth: () => number;
   clearQueue: () => number;
   rebuildRepomap: () => Promise<{ deleted: boolean; files: string[] }>;
+  attachImage: (input: string) => { ok: true; path: string } | { ok: false; reason: string };
+  detachImage: (idOrIndex: string) => boolean;
+  listAttachments: () => Array<{ id: string; path: string }>;
 }
 
 export interface CommandPaletteItem {

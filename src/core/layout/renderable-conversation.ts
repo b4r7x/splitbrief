@@ -73,6 +73,8 @@ function applyHeightRule(event: EngineEvent, ctx: HeightCtx): number {
     case 'queue_drained': return 1;
     case 'queue_cleared': return 1;
     case 'user_message': return Math.max(1, visualLineCount(event.text, cols));
+    case 'planner_attachment_added': return 1;
+    case 'planner_attachments_dropped': return 1;
     default: return 0;
   }
 }

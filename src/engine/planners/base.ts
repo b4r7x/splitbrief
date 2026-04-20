@@ -1,6 +1,7 @@
 import type { Task } from '../../core/schemas/task.js';
 import type { InvokeResult } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
+import type { Attachment } from '../../core/schemas/attachment.js';
 import type { Planner, PlannerCallbacks, PlanResult, EscalationResult, RegenerateResult, PhaseResult, PlannerCapabilities, PriorMessage } from './types.js';
 import { formatMessagesForCli } from '../orchestrator/transcript-rebuild.js';
 import { buildResearchPrompt } from '../spec/prompts/research.js';
@@ -9,6 +10,7 @@ import { buildPlanPrompt } from '../spec/prompts/plan.js';
 import { buildTasksPrompt } from '../spec/prompts/tasks.js';
 import { buildHintPrompt, buildEscalationPrompt } from '../spec/prompts/escalation.js';
 import { buildQuickPlanPrompt } from '../spec/prompts/quick-plan.js';
+import { buildInstantPrompt } from '../spec/prompts/instant.js';
 import { parseTasks } from '../spec/parser.js';
 import { RESEARCH_FILE, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 import { extractCode } from '../parsers/response-extractor.js';
@@ -33,6 +35,7 @@ type InternalInvokeFn = (opts: {
   projectDir: string;
   callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired'>;
   priorMessages?: PriorMessage[] | undefined;
+  images?: Attachment[] | undefined;
 }) => Promise<InvokeResult>;
 
 // invokeEscalate exists separately: Claude Code uses session-chaining for plan phases but one-shot for escalations.
@@ -76,6 +79,8 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       const phases: PhaseResult[] = [];
 
       let priorInjected = false;
+      let imagesInjected = false;
+      const pendingImages = callbacks.attachments;
       async function runPhase(phase: string, prompt: string, filename: string): Promise<string> {
         callbacks.onPhase?.(phase);
         const plannerPhase = PHASE_MAP[phase];
@@ -93,6 +98,9 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
         }
         priorInjected = true;
 
+        const images = !imagesInjected && pendingImages && pendingImages.length > 0 ? pendingImages : undefined;
+        imagesInjected = true;
+
         const result = await config.invokePlan({
           prompt: effectivePrompt,
           projectDir,
@@ -103,6 +111,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
             onSessionExpired: callbacks.onSessionExpired,
           },
           ...(config.consumesPriorMessages && priorMessages ? { priorMessages } : {}),
+          ...(images ? { images } : {}),
         });
         buffer.flush();
         if (result.usage) usage = accumulateUsage(usage, result.usage);
@@ -143,6 +152,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       if (priorMessages && priorMessages.length > 0 && !config.consumesPriorMessages) {
         effectivePrompt = formatMessagesForCli(priorMessages) + prompt;
       }
+      const images = callbacks.attachments && callbacks.attachments.length > 0 ? callbacks.attachments : undefined;
       const result = await config.invokePlan({
         prompt: effectivePrompt, projectDir, callbacks: {
           onOutput: (text) => { callbacks.onOutput(text); buffer.append(text); },
@@ -151,6 +161,47 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
           onSessionExpired: callbacks.onSessionExpired,
         },
         ...(config.consumesPriorMessages && priorMessages ? { priorMessages } : {}),
+        ...(images ? { images } : {}),
+      });
+      buffer.flush();
+
+      const tasksContent = config.readPhaseOutput
+        ? config.readPhaseOutput(TASKS_FILE, result.text, projectDir, callbacks.sessionId)
+        : result.text;
+      const tasks = parseTasks(tasksContent);
+      const rawOutput = tasksContent !== result.text ? result.text : undefined;
+      return { spec: '', plan: '', tasks, usage: result.usage, phases: [{ text: tasksContent, filename: TASKS_FILE, rawOutput }] };
+    },
+
+    async instantPlan(
+      feature: string,
+      projectDir: string,
+      callbacks: PlannerCallbacks,
+      codebaseContext?: string,
+    ): Promise<PlanResult> {
+      const projectContext = await buildProjectContextMarkdown(projectDir);
+      const repoMapBlock = codebaseContext ? `<repo-map>\n${codebaseContext}\n</repo-map>\n\n` : '';
+      const prompt = repoMapBlock + buildInstantPrompt(feature, projectContext);
+
+      callbacks.onPhase?.('quick-planning');
+      const buffer = createTranscriptBuffer(
+        projectDir, callbacks.sessionId ?? '', 'planning', callbacks.persistTranscript ?? true,
+      );
+      const priorMessages = callbacks.priorMessages;
+      let effectivePrompt = prompt;
+      if (priorMessages && priorMessages.length > 0 && !config.consumesPriorMessages) {
+        effectivePrompt = formatMessagesForCli(priorMessages) + prompt;
+      }
+      const images = callbacks.attachments && callbacks.attachments.length > 0 ? callbacks.attachments : undefined;
+      const result = await config.invokePlan({
+        prompt: effectivePrompt, projectDir, callbacks: {
+          onOutput: (text) => { callbacks.onOutput(text); buffer.append(text); },
+          onQuestion: callbacks.onQuestion,
+          onSessionId: callbacks.onSessionId,
+          onSessionExpired: callbacks.onSessionExpired,
+        },
+        ...(config.consumesPriorMessages && priorMessages ? { priorMessages } : {}),
+        ...(images ? { images } : {}),
       });
       buffer.flush();
 

@@ -15,6 +15,7 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
     navigate: noop,
     quit: noop,
     setWorkflowMode: noopTrue,
+    setPlannerEffort: noopTrue,
     setFeedbackMessage: noop,
     setFeedbackError: noop,
     refreshDetection: async () => {},
@@ -24,6 +25,9 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
     getQueueDepth: () => 0,
     clearQueue: () => 0,
     rebuildRepomap: async () => ({ deleted: false, files: [] }),
+    attachImage: () => ({ ok: false, reason: 'not-image' }),
+    detachImage: () => false,
+    listAttachments: () => [],
     ...overrides,
   };
 }
@@ -121,13 +125,13 @@ describe('/mode command', () => {
     expect(overlayStore.get().active).toBe('none');
   });
 
-  it('sets mode to full', () => {
+  it('sets mode to speckit', () => {
     let savedMode: string | undefined;
     const commands = createCommands(makeCtx({
       setWorkflowMode: (m) => { savedMode = m; return true; },
     }));
-    executeSlashCommand(commands, '/mode full', 'home', noop);
-    expect(savedMode).toBe('full');
+    executeSlashCommand(commands, '/mode speckit', 'home', noop);
+    expect(savedMode).toBe('speckit');
   });
 
   it('does not show success feedback when setWorkflowMode reports failure', () => {
@@ -290,7 +294,7 @@ describe('/redo-task command', () => {
 });
 
 describe('canReviseSpec', () => {
-  const allowed: Phase[] = ['reviewing-spec', 'planning', 'reviewing-plan', 'implementing', 'validating-task', 'escalating', 'final-review'];
+  const allowed: Phase[] = ['reviewing-spec', 'clarifying', 'constitution-check', 'planning', 'reviewing-plan', 'analyzing', 'implementing', 'validating-task', 'escalating', 'final-review'];
   const denied: Phase[] = ['idle', 'researching', 'specifying', 'complete'];
 
   it.each(allowed)('returns true for %s', (phase) => {
@@ -307,8 +311,8 @@ describe('canReviseSpec', () => {
 });
 
 describe('canRevisePlan', () => {
-  const allowed: Phase[] = ['reviewing-plan', 'implementing', 'validating-task', 'escalating', 'final-review'];
-  const denied: Phase[] = ['idle', 'researching', 'specifying', 'reviewing-spec', 'planning', 'complete'];
+  const allowed: Phase[] = ['reviewing-plan', 'analyzing', 'implementing', 'validating-task', 'escalating', 'final-review'];
+  const denied: Phase[] = ['idle', 'researching', 'specifying', 'reviewing-spec', 'clarifying', 'constitution-check', 'planning', 'complete'];
 
   it.each(allowed)('returns true for %s', (phase) => {
     expect(canRevisePlan(phase)).toBe(true);
@@ -369,7 +373,7 @@ describe('/repomap rebuild command', () => {
 
 describe('canRedoTask', () => {
   const allowed: Phase[] = ['implementing', 'validating-task', 'escalating'];
-  const denied: Phase[] = ['idle', 'researching', 'specifying', 'reviewing-spec', 'planning', 'reviewing-plan', 'final-review', 'complete'];
+  const denied: Phase[] = ['idle', 'researching', 'specifying', 'reviewing-spec', 'clarifying', 'constitution-check', 'planning', 'reviewing-plan', 'analyzing', 'final-review', 'complete'];
 
   it.each(allowed)('returns true for %s', (phase) => {
     expect(canRedoTask(phase)).toBe(true);

@@ -36,7 +36,22 @@ export function isPlannerToolId(id: string): id is PlannerToolId {
   return includes(PLANNER_TOOL_IDS, id);
 }
 
-export const PHASES = ['idle', 'researching', 'specifying', 'reviewing-spec', 'planning', 'reviewing-plan', 'implementing', 'validating-task', 'escalating', 'final-review', 'complete'] as const;
+export const PHASES = [
+  'idle',
+  'researching',
+  'specifying',
+  'reviewing-spec',
+  'clarifying',
+  'constitution-check',
+  'planning',
+  'reviewing-plan',
+  'analyzing',
+  'implementing',
+  'validating-task',
+  'escalating',
+  'final-review',
+  'complete',
+] as const;
 export const PhaseSchema = z.enum(PHASES);
 export type Phase = z.infer<typeof PhaseSchema>;
 
@@ -48,9 +63,29 @@ export const TASK_COMPLETION_METHODS = ['local', 'escalated-intermediate', 'esca
 export const TaskCompletionMethodSchema = z.enum(TASK_COMPLETION_METHODS);
 export type TaskCompletionMethod = z.infer<typeof TaskCompletionMethodSchema>;
 
-export const WORKFLOW_MODES = ['quick', 'standard', 'full'] as const;
+export const WORKFLOW_MODES = ['instant', 'quick', 'standard', 'speckit'] as const;
 export const WorkflowModeSchema = z.enum(WORKFLOW_MODES);
 export type WorkflowMode = z.infer<typeof WorkflowModeSchema>;
+
+/**
+ * Legacy mode aliases accepted on input only. Aliased to canonical
+ * {@link WorkflowMode} via {@link normalizeLegacyMode}. These names never
+ * appear in memory as canonical config values.
+ */
+export const LEGACY_WORKFLOW_MODE_ALIASES = { full: 'speckit' } as const;
+export type LegacyWorkflowMode = keyof typeof LEGACY_WORKFLOW_MODE_ALIASES;
+
+export function normalizeLegacyMode(input: string): WorkflowMode | null {
+  if (includes(WORKFLOW_MODES, input)) return input;
+  if (input in LEGACY_WORKFLOW_MODE_ALIASES) {
+    return LEGACY_WORKFLOW_MODE_ALIASES[input as LegacyWorkflowMode];
+  }
+  return null;
+}
+
+export const APPROVE_LEVELS = ['none', 'spec', 'plan', 'all', 'default'] as const;
+export const ApproveLevelSchema = z.enum(APPROVE_LEVELS);
+export type ApproveLevel = z.infer<typeof ApproveLevelSchema>;
 
 export const COMMIT_STRATEGIES = ['none', 'checkpoint', 'per-task'] as const;
 export const CommitStrategySchema = z.enum(COMMIT_STRATEGIES);
@@ -75,4 +110,20 @@ export const RunnerKindSchema = z.enum(RUNNER_KINDS);
 export type RunnerKind = z.infer<typeof RunnerKindSchema>;
 
 export const KNOWN_API_PROVIDERS = [...LOCAL_PROVIDER_IDS, ...API_PROVIDER_IDS] as const;
+
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh'] as const;
+export const EffortLevelSchema = z.enum(EFFORT_LEVELS);
+export type EffortLevel = z.infer<typeof EffortLevelSchema>;
+
+const ANTHROPIC_EFFORT_BUDGET: Record<EffortLevel, number> = {
+  low: 2_000,
+  medium: 8_000,
+  high: 24_000,
+  xhigh: 48_000,
+};
+
+/** Map an effort level to the Anthropic `thinking.budget_tokens` approximation. */
+export function effortToAnthropicBudget(level: EffortLevel): number {
+  return ANTHROPIC_EFFORT_BUDGET[level];
+}
 
