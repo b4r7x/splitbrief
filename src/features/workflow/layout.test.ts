@@ -57,7 +57,7 @@ describe('readConversationScrollSnapshot', () => {
     const snapWithout = readConversationScrollSnapshot();
 
     eventsStore.__testReset({
-      events: [{ type: 'workflow-config', ts: 0, mode: 'standard', plannerTool: 'claude-code', implementerTool: 'ollama' }],
+      events: [{ type: 'workflow_config', ts: 0, phase: 'idle' as const, mode: 'standard', plannerTool: 'claude-code', implementerTool: 'ollama' }],
     });
 
     const snapWith = readConversationScrollSnapshot();

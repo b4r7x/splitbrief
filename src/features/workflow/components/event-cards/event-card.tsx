@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Box, Text } from "ink";
-import type { TuiEvent } from '../../types.js';
+import type { EngineEvent } from '../../../../engine/events/types.js';
 import { useTheme } from "../../../../components/theme.js";
 import { MarkdownBlock } from "../../../../components/markdown.js";
 import { formatCost } from "../../../../core/formatting.js";
@@ -17,24 +17,32 @@ import { EscalateCard } from "./escalate-card.js";
 import { UserMessageCard } from "./user-message-card.js";
 
 interface EventCardProps {
-  event: TuiEvent;
+  event: EngineEvent;
   diffExpanded?: boolean;
 }
 
-function getGutterRole(event: TuiEvent): "planner" | "implementer" | null {
+function getGutterRole(event: EngineEvent): "planner" | "implementer" | null {
   switch (event.type) {
-    case "planner-status": return phaseRole(event.phase);
-    case "planner-text": case "task-start": case "escalate": return "planner";
-    case "implementer-generate-running": case "implementer-generate-done":
-    case "implementer-generate-failed": case "validate":
-    case "git-commit": case "git-checkpoint": case "retry": return "implementer";
-    case "warning": case "error": case "task-complete": case "task-skipped":
-    case "cost-update": case "cost-prediction": case "budget-warning":
-    case "budget-exceeded": case "workflow-cancelled": case "workflow-config":
-    case "rewind": case "task-reset":
-    case "message-queued": case "message-injected-native":
-    case "queue-drained": case "queue-cleared":
-    case "user-message": return null;
+    case "planner_status": return phaseRole(event.phase);
+    case "planner_text": case "task_started": case "escalate": return "planner";
+    case "implementer_generate_running": case "implementer_generate_done":
+    case "implementer_generate_failed": case "validate":
+    case "git_commit": case "git_checkpoint": case "task_retry": return "implementer";
+    case "warning": case "error": case "task_completed": case "task_skipped":
+    case "cost_update": case "cost_prediction": case "budget_warning":
+    case "budget_exceeded": case "workflow_cancelled": case "workflow_config":
+    case "rewind_to_spec": case "rewind_to_plan": case "task_reset":
+    case "message_queued": case "message_injected_native":
+    case "queue_drained": case "queue_cleared":
+    case "user_message":
+    case "workflow_started": case "workflow_resumed": case "workflow_complete":
+    case "paused_external_changes":
+    case "research_done": case "spec_done": case "spec_approved": case "spec_rejected":
+    case "spec_regenerated": case "plan_done": case "plan_approved": case "plan_rejected":
+    case "plan_regenerated": case "all_tasks_done":
+    case "task_failed": case "task_escalating": case "task_full_fail":
+    case "task_tokens": case "hint_failed":
+    case "clarifications_collected": case "clarification_answered": return null;
     default: return assertNever(event);
   }
 }
@@ -44,13 +52,13 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
   let content: ReactNode;
 
   switch (event.type) {
-    case "planner-status":
+    case "planner_status":
       content = <PlannerStatusCard event={event} />;
       break;
-    case "planner-text":
+    case "planner_text":
       content = <MarkdownBlock text={event.text} />;
       break;
-    case "task-start": {
+    case "task_started": {
       const toolLabel = formatToolModel(event.tool, event.model);
       const value = toolLabel
         ? `${event.file} (${event.action}) · ${toolLabel}`
@@ -69,10 +77,10 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
       );
       break;
     }
-    case "task-complete":
+    case "task_completed":
       content = null;
       break;
-    case "task-skipped":
+    case "task_skipped":
       content = (
         <Card
           label="skipped"
@@ -82,15 +90,15 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
         />
       );
       break;
-    case "implementer-generate-running":
-    case "implementer-generate-done":
-    case "implementer-generate-failed":
+    case "implementer_generate_running":
+    case "implementer_generate_done":
+    case "implementer_generate_failed":
       content = <ImplementerCard event={event} diffExpanded={diffExpanded} />;
       break;
     case "validate":
       content = <ValidateCard event={event} />;
       break;
-    case "retry":
+    case "task_retry":
       content = (
         <Card
           label="retry"
@@ -103,7 +111,7 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
     case "escalate":
       content = <EscalateCard event={event} />;
       break;
-    case "git-commit":
+    case "git_commit":
       content = (
         <Card
           label="committed"
@@ -113,7 +121,7 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
         />
       );
       break;
-    case "git-checkpoint":
+    case "git_checkpoint":
       content = (
         <Card
           label="checkpoint"
@@ -143,13 +151,13 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
         />
       );
       break;
-    case "cost-update":
+    case "cost_update":
       content = null;
       break;
-    case "cost-prediction":
+    case "cost_prediction":
       content = <CostPredictionCard event={event} />;
       break;
-    case "budget-warning":
+    case "budget_warning":
       content = (
         <Card
           label="budget"
@@ -159,7 +167,7 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
         />
       );
       break;
-    case "budget-exceeded":
+    case "budget_exceeded":
       content = (
         <Card
           label="budget"
@@ -169,7 +177,7 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
         />
       );
       break;
-    case "workflow-cancelled":
+    case "workflow_cancelled":
       content = (
         <Box flexDirection="column">
           <Text color={t.warning} bold>
@@ -181,20 +189,30 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
         </Box>
       );
       break;
-    case "workflow-config":
+    case "workflow_config":
       content = <WorkflowConfigCard event={event} />;
       break;
-    case "rewind":
+    case "rewind_to_spec":
       content = (
         <Card
-          label={`rewind → ${event.target}`}
+          label="rewind → spec"
           labelColor={t.warning}
           value={event.comment || undefined}
           valueColor={t.textDim}
         />
       );
       break;
-    case "task-reset":
+    case "rewind_to_plan":
+      content = (
+        <Card
+          label="rewind → plan"
+          labelColor={t.warning}
+          value={event.comment || undefined}
+          valueColor={t.textDim}
+        />
+      );
+      break;
+    case "task_reset":
       content = (
         <Card
           label="task reset"
@@ -204,7 +222,7 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
         />
       );
       break;
-    case "message-queued":
+    case "message_queued":
       content = (
         <Card
           label="queued"
@@ -214,7 +232,7 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
         />
       );
       break;
-    case "message-injected-native":
+    case "message_injected_native":
       content = (
         <Card
           label="injected"
@@ -224,7 +242,7 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
         />
       );
       break;
-    case "queue-drained":
+    case "queue_drained":
       content = (
         <Card
           label="drained"
@@ -234,7 +252,7 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
         />
       );
       break;
-    case "queue-cleared":
+    case "queue_cleared":
       content = (
         <Card
           label="queue cleared"
@@ -244,8 +262,31 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
         />
       );
       break;
-    case "user-message":
+    case "user_message":
       content = <UserMessageCard event={event} />;
+      break;
+    case "workflow_started":
+    case "workflow_resumed":
+    case "workflow_complete":
+    case "paused_external_changes":
+    case "research_done":
+    case "spec_done":
+    case "spec_approved":
+    case "spec_rejected":
+    case "spec_regenerated":
+    case "plan_done":
+    case "plan_approved":
+    case "plan_rejected":
+    case "plan_regenerated":
+    case "all_tasks_done":
+    case "task_failed":
+    case "task_escalating":
+    case "task_full_fail":
+    case "task_tokens":
+    case "hint_failed":
+    case "clarifications_collected":
+    case "clarification_answered":
+      content = null;
       break;
     default:
       return assertNever(event);

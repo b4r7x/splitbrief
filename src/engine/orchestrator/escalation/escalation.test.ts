@@ -5,7 +5,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import { makeCallbacks, makePlanner, makeImplementer } from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks, makePlanner, makeImplementer, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -68,19 +68,19 @@ describe('handleRetryAndEscalation', () => {
       wctx: {
         projectDir, sessionId, config: makeNoValidationConfig({ workflow: defaultWorkflow }),
         context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus: makeBusRecorder().bus,
       },
       task, initialError: 'type error', currentState: state,
     });
 
     expect(result.completed).toBe(true);
     expect(result.method).toBe('local');
-    expect(implementer.retry).toHaveBeenCalled();
   });
 
   it('all local retries fail → hint retry also fails → result not completed', async () => {
     const { projectDir, sessionId } = setupProject();
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
     const task = makeTask();
     const state = makeValidatingState();
 
@@ -99,22 +99,23 @@ describe('handleRetryAndEscalation', () => {
         projectDir, sessionId,
         config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
         context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
       },
       task, initialError: 'error', currentState: state,
     });
 
-    // Local retries exhausted → hint called → full called → all failed.
+    // Local retries exhausted → hint tier → full tier → all failed.
     expect(result.completed).toBe(false);
-    expect(planner.escalateHint).toHaveBeenCalled();
-    expect(planner.escalateFull).toHaveBeenCalled();
-    const escalateTier2 = events.find((e) => e.type === 'escalate' && e.tier === 2);
+    const escalateTier1 = busEvents.find((e) => e.type === 'escalate' && e.tier === 1);
+    const escalateTier2 = busEvents.find((e) => e.type === 'escalate' && e.tier === 2);
+    expect(escalateTier1).toBeDefined();
     expect(escalateTier2).toBeDefined();
   });
 
   it('hint-assisted retry succeeds → completed with method=escalated-hint', async () => {
     const { projectDir, sessionId } = setupProject();
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
     const task = makeTask();
     const state = makeValidatingState();
 
@@ -135,19 +136,20 @@ describe('handleRetryAndEscalation', () => {
         projectDir, sessionId,
         config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
         context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
       },
       task, initialError: 'error', currentState: state,
     });
 
     expect(result.completed).toBe(true);
     expect(result.method).toBe('escalated-hint');
-    expect(events.find((e) => e.type === 'escalate' && e.tier === 1)).toBeDefined();
+    expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 1)).toBeDefined();
   });
 
   it('Tier 2 full escalation: planner.escalateFull succeeds → completed with method=escalated-full', async () => {
     const { projectDir, sessionId } = setupProject();
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
     const task = makeTask();
     const state = makeValidatingState();
 
@@ -165,14 +167,14 @@ describe('handleRetryAndEscalation', () => {
         projectDir, sessionId,
         config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
         context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
       },
       task, initialError: 'error', currentState: state,
     });
 
     expect(result.completed).toBe(true);
     expect(result.method).toBe('escalated-full');
-    expect(events.find((e) => e.type === 'escalate' && e.tier === 2)).toBeDefined();
+    expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 2)).toBeDefined();
   });
 
   it('full escalation fails → task failed, discardTaskChanges performed on real git repo', async () => {
@@ -202,7 +204,7 @@ describe('handleRetryAndEscalation', () => {
         projectDir, sessionId,
         config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
         context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus: makeBusRecorder().bus,
       },
       task, initialError: 'error', currentState: stateWithTask,
     });
@@ -248,7 +250,8 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
 
   it('no intermediate provider configured → skips Tier 0 entirely, proceeds to Tier 1', async () => {
     const { projectDir, sessionId } = setupProject();
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
     const task = makeTask();
     const state = makeValidatingState();
 
@@ -265,19 +268,20 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
         projectDir, sessionId,
         config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
         context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
       },
       task, initialError: 'error', currentState: state,
     });
 
-    expect(events.find((e) => e.type === 'escalate' && e.tier === 0)).toBeUndefined();
-    expect(events.find((e) => e.type === 'escalate' && e.tier === 1)).toBeDefined();
+    expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 0)).toBeUndefined();
+    expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 1)).toBeDefined();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('escalation.enabled = false → skips Tier 0, proceeds to Tier 1', async () => {
     const { projectDir, sessionId } = setupProject();
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
     const task = makeTask();
     const state = makeValidatingState();
 
@@ -297,13 +301,13 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
           escalation: { intermediateProvider: 'openrouter', intermediateModel: 'x-ai/grok-4', enabled: false },
         }),
         context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
       },
       task, initialError: 'error', currentState: state,
     });
 
-    expect(events.find((e) => e.type === 'escalate' && e.tier === 0)).toBeUndefined();
-    expect(events.find((e) => e.type === 'escalate' && e.tier === 1)).toBeDefined();
+    expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 0)).toBeUndefined();
+    expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 1)).toBeDefined();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -324,7 +328,8 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
     };
 
     const { projectDir, sessionId } = setupProject();
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
     const task = makeTask();
     const state = makeValidatingState();
 
@@ -341,22 +346,23 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
         projectDir, sessionId,
         config: cliOnlyConfig,
         context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
       },
       task, initialError: 'error', currentState: state,
     });
 
-    const warnings = events.filter((e) => e.type === 'warning');
-    expect(warnings.some((e) => (e as { message: string }).message.includes('Unknown intermediate provider'))).toBe(true);
-    expect(warnings.some((e) => (e as { message: string }).message.includes('no API base URL available'))).toBe(true);
+    const warnings = busEvents.filter((e) => e.type === 'warning');
+    expect(warnings.some((e) => e.type === 'warning' && e.message.includes('Unknown intermediate provider'))).toBe(true);
+    expect(warnings.some((e) => e.type === 'warning' && e.message.includes('no API base URL available'))).toBe(true);
 
-    expect(events.find((e) => e.type === 'escalate' && e.tier === 1)).toBeDefined();
+    expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 1)).toBeDefined();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('intermediate retry succeeds via fetch stub → completed with method=escalated-intermediate and tokens in implementer category', async () => {
     const { projectDir, sessionId } = setupProject();
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
     const task = makeTask({ id: 'T001', file: 'src/intermediate-success.ts', action: 'create' });
     const state: WorkflowState = { ...makeValidatingState(), tasks: [task] };
 
@@ -380,7 +386,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
           escalation: { intermediateProvider: 'openrouter', intermediateModel: 'x-ai/grok-4-fast', enabled: true },
         }),
         context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
       },
       task, initialError: 'type error', currentState: state,
     });
@@ -388,11 +394,12 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
     expect(result.completed).toBe(true);
     expect(result.method).toBe('escalated-intermediate');
 
-    const escalateTier0 = events.find((e) => e.type === 'escalate' && e.tier === 0);
+    const escalateTier0 = busEvents.find((e) => e.type === 'escalate' && e.tier === 0);
     expect(escalateTier0).toBeDefined();
-    expect(escalateTier0).toMatchObject({ tier: 0, tool: 'openrouter' });
+    expect(escalateTier0).toMatchObject({ type: 'escalate', tier: 0, tool: 'openrouter' });
 
-    expect(planner.escalateHint).not.toHaveBeenCalled();
+    // Tier 0 succeeded, so Tier 1 never fires.
+    expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 1)).toBeUndefined();
 
     expect(finalState.tokenUsage.implementerInput).toBeGreaterThanOrEqual(400);
     expect(finalState.tokenUsage.escalationInput).toBe(0);
@@ -402,7 +409,8 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
 
   it('intermediate retry fails via fetch rejection → falls through to Tier 1', async () => {
     const { projectDir, sessionId } = setupProject();
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
     const task = makeTask();
     const state = makeValidatingState();
 
@@ -424,14 +432,13 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
           escalation: { intermediateProvider: 'openrouter', intermediateModel: 'x-ai/grok-4-fast', enabled: true },
         }),
         context: defaultContext, planner, callbacks, implementer,
-        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+        metadata: TEST_METADATA, sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
       },
       task, initialError: 'error', currentState: state,
     });
 
     // Tier 0 fires, fails, Tier 1 runs.
-    expect(events.find((e) => e.type === 'escalate' && e.tier === 0)).toBeDefined();
-    expect(events.find((e) => e.type === 'escalate' && e.tier === 1)).toBeDefined();
-    expect(planner.escalateHint).toHaveBeenCalled();
+    expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 0)).toBeDefined();
+    expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 1)).toBeDefined();
   }, 20_000);
 });

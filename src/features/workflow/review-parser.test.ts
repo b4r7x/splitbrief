@@ -13,7 +13,7 @@ function makeInputMode(mode: 'normal' | 'review' | 'question', resolve = vi.fn()
 }
 
 function setPhase(phase: Phase) {
-  addEvent({ type: 'planner-status', ts: Date.now(), phase, status: 'running' });
+  addEvent({ type: 'planner_status', ts: Date.now(), phase, status: 'running' });
 }
 
 beforeEach(() => {

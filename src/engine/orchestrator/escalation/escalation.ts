@@ -6,6 +6,8 @@ import { runTier0Intermediate } from './intermediate.js';
 import { runTier1Hint } from './hint.js';
 import { runTier2Full } from './full.js';
 import type { EscalationContext, RetryResult } from './step.js';
+import { runPreHooks } from '../../hooks/run-pre-hook.js';
+import { publishWarning } from '../events.js';
 
 export type { EscalationContext, RetryResult } from './step.js';
 
@@ -25,6 +27,17 @@ export async function handleRetryAndEscalation(opts: HandleRetryOptions): Promis
   if (retries.result) return { state: retries.state, result: retries.result };
 
   if (ctx.signal?.aborted) return { state: retries.state, result: { completed: false, method: 'failed', attempts: retries.attempts } };
+
+  if (ctx.config.hooks) {
+    const preEscalationPayload: import('../../events/types.js').EngineEvent = {
+      type: 'task_escalating', ts: Date.now(), phase: retries.state.phase, taskId: task.id,
+    };
+    const pre = await runPreHooks(ctx.config.hooks, 'pre_escalation', preEscalationPayload, { projectDir: ctx.projectDir, sessionId: ctx.sessionId });
+    if (!pre.allow) {
+      publishWarning(ctx.bus, retries.state.phase, `pre_escalation blocked: ${pre.reason ?? 'hook denied'}`);
+      return { state: retries.state, result: { completed: false, method: 'failed', attempts: retries.attempts } };
+    }
+  }
 
   const tier0 = await runTier0Intermediate(ctx, retries.task, retries.state, retries.lastError, retries.attempts);
   if (tier0.result) return { state: tier0.state, result: tier0.result };

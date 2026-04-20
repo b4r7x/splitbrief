@@ -3,12 +3,14 @@ import { createElement } from 'react';
 import { App } from '../../app.js';
 import { renderApp } from '../render.js';
 import { addWorkflowOptions } from '../options.js';
-import { setupWorkflow, resolveProjectDir } from '../setup.js';
+import { setupWorkflow, resolveProjectDir, ensureGitAndConfig } from '../setup.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { initStores } from '../init-stores.js';
 import { clearStaleSession } from '../../core/sessions/guards.js';
 import { beginSession } from '../../core/sessions/lifecycle.js';
 import { maybeMigrate } from '../../core/migration/executor.js';
+import { runHeadless } from '../headless.js';
+import { cliError } from '../errors.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
 export function registerStartCommand(program: Command): void {
@@ -19,6 +21,15 @@ export function registerStartCommand(program: Command): void {
   ).action(async (feature: string | undefined, opts: WorkflowOpts) => {
     const projectDir = resolveProjectDir(opts.project);
     await maybeMigrate(projectDir);
+
+    if (opts.json) {
+      if (!feature) throw cliError('--json requires a feature argument');
+      await ensureGitAndConfig(projectDir);
+      clearStaleSession(projectDir);
+      const sessionId = beginSession(projectDir, feature);
+      await runHeadless(feature, projectDir, opts, undefined, sessionId);
+      return;
+    }
 
     const { useFullscreen, useMouse, needsSetup } = await setupWorkflow(opts);
 

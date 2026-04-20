@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { bootstrapOtel } from './cli/otel-bootstrap.js';
 import { Command } from 'commander';
 import ansis from 'ansis';
 import { registerStartCommand } from './cli/commands/start.js';
@@ -10,6 +11,8 @@ import { registerResumeCommand } from './cli/commands/resume.js';
 import { registerMigrateCommand } from './cli/commands/migrate.js';
 import { isCliError } from './cli/errors.js';
 import { toErrorMessage } from './utils/format-errors.js';
+
+bootstrapOtel();
 
 const program = new Command();
 

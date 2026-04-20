@@ -6,7 +6,8 @@ import { formatValidationError } from './validation.js';
 import type { WorkflowContext } from './types.js';
 import { recordTaskUsage } from './tokens.js';
 import { toErrorMessage, labelError } from '../../utils/format-errors.js';
-import { emit, createTextHandler, emitError, emitTaskStart } from './events.js';
+import { createBusTextHandler, publishError, publishEvent, publishTaskStart, publishTaskSkipped, publishWarning } from './events.js';
+import { runPreHooks } from '../hooks/run-pre-hook.js';
 import { handleRetryAndEscalation } from './escalation/escalation.js';
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave } from './state-ops.js';
 import { validateCommitAndAdvance } from './task-commit.js';
@@ -26,13 +27,12 @@ type RetryAndRecordOptions = {
 
 export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ state: WorkflowState; completed: boolean }> {
   const { wctx, task, initialError, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState } = opts;
-  const { projectDir, sessionId } = wctx;
   const { state, result } = await handleRetryAndEscalation({
     wctx, task, initialError, currentState: opts.state, taskStartTime,
   });
   setTrackedState(state);
-  recordTaskUsage({ task, method: result.method, tokensBefore, currentUsage: state.tokenUsage, projectDir, sessionId, state, taskBreakdowns, retryCount: result.attempts, tool: getRunnerDisplayName(wctx.config.implementer), model: wctx.config.implementer.model });
-  if (!result.completed) emit(projectDir, sessionId, state, 'task_failed', task.id, {});
+  recordTaskUsage({ task, method: result.method, tokensBefore, currentUsage: state.tokenUsage, bus: wctx.bus, state, taskBreakdowns, retryCount: result.attempts, tool: getRunnerDisplayName(wctx.config.implementer), model: wctx.config.implementer.model });
+  if (!result.completed) publishEvent(wctx.bus, { type: 'task_failed', ts: Date.now(), phase: state.phase, taskId: task.id });
   return { state, completed: result.completed };
 }
 
@@ -54,6 +54,22 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   if (wctx.signal?.aborted) return state;
 
+  if (wctx.config.hooks) {
+    const preTaskPayload: import('../events/types.js').EngineEvent = {
+      type: 'task_started', ts: Date.now(), phase: state.phase,
+      taskId: opts.task.id, title: opts.task.title, index, total: totalTasks,
+      file: opts.task.file, action: opts.task.action,
+    };
+    const pre = await runPreHooks(wctx.config.hooks, 'pre_task', preTaskPayload, { projectDir, sessionId });
+    if (!pre.allow) {
+      publishWarning(wctx.bus, state.phase, `pre_task blocked: ${pre.reason ?? 'hook denied'}`);
+      publishTaskSkipped(wctx.bus, state.phase, { taskId: opts.task.id, title: opts.task.title, reason: pre.reason ?? 'pre_task hook denied' });
+      state = transitionAndSave(projectDir, sessionId, state, { type: 'SKIP_TASK', taskId: opts.task.id });
+      setTrackedState(state);
+      return state;
+    }
+  }
+
   state = transitionAndSave(projectDir, sessionId, state, { type: 'START_TASK', taskId: opts.task.id });
   setTrackedState(state);
 
@@ -63,17 +79,16 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   setCurrentTask(task);
   const taskStartTime = Date.now();
-  emitTaskStart(callbacks, {
+  publishTaskStart(wctx.bus, state.phase, {
     taskId: task.id, title: task.title, index, total: totalTasks, file: task.file, action: task.action,
     tool: getRunnerDisplayName(config.implementer), model: config.implementer.model,
   });
-  emit(projectDir, sessionId, state, 'task_started', task.id, {});
 
   const tokensBefore = { ...state.tokenUsage };
 
   if (wctx.signal?.aborted) return state;
 
-  const textHandler = createTextHandler(callbacks);
+  const textHandler = createBusTextHandler(wctx.bus, state.phase);
 
   type ImplResult = Awaited<ReturnType<typeof wctx.implementer.implement>>;
   let implResult: ImplResult;
@@ -86,10 +101,11 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
         const result = await wctx.implementer.implement({
           task, projectDir, config, context,
           onOutput: (text) => { recordOutput(text); textHandler(text); },
-          onEvent: callbacks.onEvent,
           sessionId,
           signal,
           continuationPrompt,
+          bus: wctx.bus,
+          phase: state.phase,
         });
         return { value: result, continueIfAborted: !result.success };
       },
@@ -97,7 +113,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     state = loop.state;
     implResult = loop.value;
   } catch (err) {
-    emitError(callbacks, labelError('Implementation failed', err));
+    publishError(wctx.bus, state.phase, labelError('Implementation failed', err));
     const retry = await retryAndRecord({
       wctx, task, initialError: toErrorMessage(err),
       state, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState,
@@ -105,7 +121,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     return retry.state;
   }
 
-  state = addUsageAndSave(projectDir, sessionId, state, 'implementer', implResult.usage, callbacks);
+  state = addUsageAndSave(projectDir, sessionId, state, 'implementer', implResult.usage, wctx.bus);
   setTrackedState(state);
 
   if (!implResult.success) {
@@ -121,16 +137,29 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   if (wctx.signal?.aborted) return state;
 
-  const validationResults = await wctx.validator.runValidation(task, projectDir, config, callbacks);
+  if (wctx.config.hooks) {
+    const preValidationPayload: import('../events/types.js').EngineEvent = {
+      type: 'validate', ts: Date.now(), phase: state.phase,
+      taskId: task.id, status: 'running', passed: false,
+      stages: { tsc: false, lint: false, test: false },
+    };
+    const preVal = await runPreHooks(wctx.config.hooks, 'pre_validation', preValidationPayload, { projectDir, sessionId });
+    if (!preVal.allow) {
+      publishWarning(wctx.bus, state.phase, `pre_validation blocked: ${preVal.reason ?? 'hook denied'}`);
+      return state;
+    }
+  }
+
+  const validationResults = await wctx.validator.runValidation(task, projectDir, config, wctx.bus, state.phase, task.id);
   const commitResult = await validateCommitAndAdvance({
-    task, projectDir, sessionId, config, callbacks, state,
+    task, projectDir, sessionId, config, bus: wctx.bus, state,
     method: 'local', transitionType: 'VALIDATION_PASS', taskStartTime,
     results: validationResults,
   });
   if (commitResult.completed) {
     state = commitResult.state;
     setTrackedState(state);
-    recordTaskUsage({ task, method: 'local', tokensBefore, currentUsage: state.tokenUsage, projectDir, sessionId, state, taskBreakdowns, tool: getRunnerDisplayName(config.implementer), model: config.implementer.model });
+    recordTaskUsage({ task, method: 'local', tokensBefore, currentUsage: state.tokenUsage, bus: wctx.bus, state, taskBreakdowns, tool: getRunnerDisplayName(config.implementer), model: config.implementer.model });
     return state;
   }
 

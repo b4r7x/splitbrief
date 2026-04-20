@@ -1,7 +1,7 @@
 import { groupEventsIntoSections } from '../../core/layout/event-sections.js';
 import type { Section } from '../../core/layout/event-sections.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { TuiEvent } from '../../features/workflow/types.js';
+import type { EngineEvent } from '../../engine/events/types.js';
 import { abortStore } from './abort.js';
 import { _eventsInternal, eventsStore, mergeEvent, type EventsState } from './events.js';
 import { _tasksInternal, tasksStore, updateTaskCounts, updateTaskMap, type TasksState } from './tasks.js';
@@ -10,12 +10,12 @@ import { _lifecycleInternal, lifecycleStore, updatePhase, updateQueueDepth, type
 
 export type WorkflowViewState = EventsState & TasksState & TokensState & LifecycleState;
 
-export function addEvent(event: TuiEvent): void {
+export function addEvent(event: EngineEvent): void {
   // Cancelled gate: dispatcher policy — sub-stores are passive containers.
   if (lifecycleStore.get().cancelled) return;
 
-  // Fast path: cost-update only touches tokenUsage.
-  if (event.type === 'cost-update') {
+  // Fast path: cost_update only touches tokenUsage.
+  if (event.type === 'cost_update') {
     _tokensInternal.set(s => ({ ...s, tokenUsage: event.tokenUsage }));
     return;
   }
@@ -51,15 +51,17 @@ export function addEvent(event: TuiEvent): void {
 }
 
 export function markCancelled(): boolean {
-  if (lifecycleStore.get().cancelled) return false;
+  const lifecycle = lifecycleStore.get();
+  if (lifecycle.cancelled) return false;
   const now = Date.now();
+  const phase = lifecycle.phase;
   _eventsInternal.set(s => {
     const rewritten = s.events.map(ev =>
-      ev.type === 'planner-status' && ev.status === 'running'
+      ev.type === 'planner_status' && ev.status === 'running'
         ? { ...ev, status: 'done' as const }
         : ev,
     );
-    return { events: [...rewritten, { type: 'workflow-cancelled' as const, ts: now }] };
+    return { events: [...rewritten, { type: 'workflow_cancelled' as const, ts: now, phase }] };
   });
   _lifecycleInternal.set(s => ({ ...s, cancelled: true }));
   return true;
@@ -84,10 +86,10 @@ export function resetWorkflow(resume?: WorkflowState): void {
   }
 }
 
-let cachedEvents: TuiEvent[] | null = null;
+let cachedEvents: EngineEvent[] | null = null;
 let cachedSections: Section[] = [];
 
-function computeSections(events: TuiEvent[]): Section[] {
+function computeSections(events: EngineEvent[]): Section[] {
   if (cachedEvents === events) return cachedSections;
   cachedEvents = events;
   cachedSections = groupEventsIntoSections(events);

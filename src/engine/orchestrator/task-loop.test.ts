@@ -6,7 +6,7 @@ import { createInitialState, transition } from '../../core/state/machine.js';
 import { getSkippedTaskIds } from '../../core/state/selectors.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import { makeCallbacks, makePlanner, makeImplementer } from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks, makePlanner, makeImplementer, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
@@ -66,7 +66,8 @@ describe('runTaskLoop', () => {
       tasks: state.tasks.map((t) => (t.id === 'T001' ? { ...t, status: 'failed' } : t)),
     };
 
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
 
     const result = await runTaskLoop({
       wctx: {
@@ -78,14 +79,14 @@ describe('runTaskLoop', () => {
         planner: makePlanner(),
         implementer: makeImplementer(),
         metadata: TEST_METADATA,
-        sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
       },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
 
-    const skipEvent = events.find((e) => e.type === 'task-skipped');
+    const skipEvent = events.find((e) => e.type === 'task_skipped');
     expect(skipEvent).toBeDefined();
     expect(skipEvent).toMatchObject({ taskId: 'T002' });
     expect(getSkippedTaskIds(result.state)).toContain('T002');
@@ -105,7 +106,8 @@ describe('runTaskLoop', () => {
       }),
     });
 
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
 
     await runTaskLoop({
       wctx: {
@@ -119,19 +121,19 @@ describe('runTaskLoop', () => {
         planner: makePlanner(),
         implementer,
         metadata: TEST_METADATA,
-        sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
       },
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
 
-    const taskStart = events.find((e) => e.type === 'task-start');
+    const taskStart = events.find((e) => e.type === 'task_started');
     expect(taskStart).toBeDefined();
-    expect(taskStart).toMatchObject({ type: 'task-start', taskId: 'T001', index: 0, total: 1 });
-    const taskComplete = events.find((e) => e.type === 'task-complete');
+    expect(taskStart).toMatchObject({ type: 'task_started', taskId: 'T001', index: 0, total: 1 });
+    const taskComplete = events.find((e) => e.type === 'task_completed');
     expect(taskComplete).toBeDefined();
-    expect(taskComplete).toMatchObject({ type: 'task-complete', taskId: 'T001', method: 'local' });
+    expect(taskComplete).toMatchObject({ type: 'task_completed', taskId: 'T001', method: 'local' });
   });
 
   it('token usage accumulated on state through implementer', async () => {
@@ -159,7 +161,7 @@ describe('runTaskLoop', () => {
         planner: makePlanner(),
         implementer,
         metadata: TEST_METADATA,
-        sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus: makeBusRecorder().bus,
       },
       initialState: state,
       setTrackedState: vi.fn(),
@@ -191,7 +193,7 @@ describe('runTaskLoop', () => {
         planner: makePlanner(),
         implementer: makeImplementer(),
         metadata: TEST_METADATA,
-        sinks: TEST_SINKS, validator: TEST_VALIDATOR,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus: makeBusRecorder().bus,
       },
       initialState: state,
       setTrackedState: vi.fn(),

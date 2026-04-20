@@ -5,7 +5,7 @@ import { PlannerStatusCard } from './event-cards/planner-status-card.js';
 
 export function AgentStatusRow() {
   const events = eventsStore.use(s => s.events);
-  const latestStatus = findLatestEventByType(events, 'planner-status');
+  const latestStatus = findLatestEventByType(events, 'planner_status');
 
   if (!latestStatus) return <Box height={1} />;
 

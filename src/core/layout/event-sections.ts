@@ -1,17 +1,17 @@
-import type { TuiEvent } from '../../features/workflow/types.js';
+import type { EngineEvent } from '../../engine/events/types.js';
 import type { TaskCompletionMethod } from '../schemas/enums.js';
 
-function hasEventType<T extends TuiEvent['type']>(
-  event: TuiEvent,
+function hasEventType<T extends EngineEvent['type']>(
+  event: EngineEvent,
   type: T,
-): event is Extract<TuiEvent, { type: T }> {
+): event is Extract<EngineEvent, { type: T }> {
   return event.type === type;
 }
 
-export function findLatestEventByType<T extends TuiEvent['type']>(
-  events: readonly TuiEvent[],
+export function findLatestEventByType<T extends EngineEvent['type']>(
+  events: readonly EngineEvent[],
   type: T,
-): Extract<TuiEvent, { type: T }> | undefined {
+): Extract<EngineEvent, { type: T }> | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i];
     if (e && hasEventType(e, type)) return e;
@@ -26,7 +26,7 @@ export function findLatestRenderableDiffEventIndex(sections: Section[]): number 
     for (let index = section.items.length - 1; index >= 0; index--) {
       const event = section.items[index];
       if (!event) continue;
-      if (event.type === 'implementer-generate-done' && event.diff) {
+      if (event.type === 'implementer_generate_done' && event.diff) {
         return section.startIndex + index;
       }
     }
@@ -35,24 +35,24 @@ export function findLatestRenderableDiffEventIndex(sections: Section[]): number 
 }
 
 export type Section =
-  | { type: 'events'; items: TuiEvent[]; startIndex: number }
+  | { type: 'events'; items: EngineEvent[]; startIndex: number }
   | { type: 'completed-task'; summary: { index: number; title: string; method: TaskCompletionMethod; retries: number; duration: number; file?: string; reason?: string } }
-  | { type: 'active-task'; items: TuiEvent[]; startIndex: number };
+  | { type: 'active-task'; items: EngineEvent[]; startIndex: number };
 
 export type DynamicSection = Extract<Section, { type: 'events' | 'active-task' }>;
 
-export function groupEventsIntoSections(events: TuiEvent[]): Section[] {
-  const taskRanges: { taskId: string; startIdx: number; endIdx: number; startEvent: TuiEvent & { type: 'task-start' }; endEvent?: TuiEvent }[] = [];
+export function groupEventsIntoSections(events: EngineEvent[]): Section[] {
+  const taskRanges: { taskId: string; startIdx: number; endIdx: number; startEvent: EngineEvent & { type: 'task_started' }; endEvent?: EngineEvent }[] = [];
   const openTasks = new Map<string, number>();
 
   for (let i = 0; i < events.length; i++) {
     const ev = events[i];
     if (ev === undefined) continue;
-    if (ev.type === 'task-start') {
+    if (ev.type === 'task_started') {
       const idx = taskRanges.length;
       taskRanges.push({ taskId: ev.taskId, startIdx: i, endIdx: -1, startEvent: ev });
       openTasks.set(ev.taskId, idx);
-    } else if (ev.type === 'task-complete' || ev.type === 'task-skipped') {
+    } else if (ev.type === 'task_completed' || ev.type === 'task_skipped') {
       const rangeIdx = openTasks.get(ev.taskId);
       if (rangeIdx != null) {
         const range = taskRanges[rangeIdx];
@@ -74,7 +74,7 @@ export function groupEventsIntoSections(events: TuiEvent[]): Section[] {
 
     if (range.endIdx >= 0 && range.endEvent) {
       const endEvent = range.endEvent;
-      if (endEvent.type === 'task-complete') {
+      if (endEvent.type === 'task_completed') {
         sections.push({
           type: 'completed-task',
           summary: {
@@ -86,7 +86,7 @@ export function groupEventsIntoSections(events: TuiEvent[]): Section[] {
             file: range.startEvent.file,
           },
         });
-      } else if (endEvent.type === 'task-skipped') {
+      } else if (endEvent.type === 'task_skipped') {
         sections.push({
           type: 'completed-task',
           summary: {

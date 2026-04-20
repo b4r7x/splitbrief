@@ -10,7 +10,20 @@ Each entry has:
 
 ---
 
-## Full message-level rewind (Claude Code "double-Esc" style)
+## Priority legend
+
+Items below are labeled using MoSCoW:
+
+- **Must** — core gap; v1 is incomplete without this.
+- **Should** — high value; next major cycle.
+- **Could** — nice-to-have; low priority.
+- **Won't-v1** — deferred to v2 or beyond; consciously out-of-scope.
+
+Labels are opinions, not contracts. Contributors can argue for re-labeling via PR.
+
+---
+
+## **[Could]** Full message-level rewind (Claude Code "double-Esc" style)
 
 **Why we want it.** Claude Code's double-Esc lets the user pick a prior user-message from the current session and fork the conversation from there — subsequent history dropped, conversation continues from the chosen point. Useful when a mid-session wrong turn requires more than one step of undo.
 
@@ -38,7 +51,7 @@ Each entry has:
 
 ---
 
-## Cursor-style per-run code snapshot undo
+## **[Could]** Cursor-style per-run code snapshot undo
 
 **Why we want it.** Cursor Composer snapshots the working-tree state at the start of each agent run and lets the user "accept" or "reject" the whole diff at the end. If rejected, the working tree reverts. This is more fine-grained than git-commit-per-task — it lets you try a whole feature and throw it away without polluting git history.
 
@@ -63,7 +76,7 @@ Each entry has:
 
 ---
 
-## Parallel sessions in the same project
+## **[Could]** Parallel sessions in the same project
 
 **Why we want it.** Users sometimes want to run multiple diptych workflows against the same codebase at once — e.g., plan one feature while implementing another. Today this is blocked by the `.diptych/active` lock.
 
@@ -84,7 +97,7 @@ The canonical solution is git worktrees: each worktree is an isolated checkout a
 
 ---
 
-## Transcript compaction / summarisation
+## **[Should]** Transcript compaction / summarisation
 
 **Why we want it.** `session.jsonl` grows without bound over a session's lifetime. Long sessions with many regenerations, clarifications, and aborts can produce hundreds of KB of message content. On resume, rebuilding context from a 500KB transcript and feeding it into a planner that has an 8K or 32K context window won't fit.
 
@@ -109,7 +122,7 @@ The canonical solution is git worktrees: each worktree is an isolated checkout a
 
 ---
 
-## Session browser UI
+## **[Could]** Session browser UI
 
 **Why we want it.** Today there is no UI for browsing past sessions. `.diptych/sessions/` is visible in the filesystem, but discoverability is bad — summary is buried in `summary.json`, transcripts require manual file opening.
 
@@ -132,7 +145,7 @@ The canonical solution is git worktrees: each worktree is an isolated checkout a
 
 ---
 
-## Non-TypeScript language support
+## **[Should]** Non-TypeScript language support
 
 **Why we want it.** Obvious: not all users are on TS projects.
 
@@ -146,7 +159,7 @@ No work yet. Will be a separate design effort when demand appears.
 
 ---
 
-## Windows support
+## **[Could]** Windows support
 
 **Why we want it.** Many devs still use Windows.
 
@@ -160,7 +173,7 @@ Testing + CI on Windows would come first, before any behavioural fixes.
 
 ---
 
-## Mid-stream injection UX on Claude Code
+## **[Could]** Mid-stream injection UX on Claude Code
 
 **Why we want it.** When the user queues a message and it is injected as a native turn into the live planner session, Claude's response may arrive *while* we are still streaming the prior turn. The TUI needs a clear visual separator to make this readable.
 
@@ -174,6 +187,39 @@ Not yet designed. The interaction semantics are clear (see `docs/WORKFLOW.md` §
 
 **Where to start when we do it.**
 
-- Extend the `TuiEvent` union with an `injection_separator` event type.
-- Emit it from the mid-stream dispatch path in `src/engine/orchestrator/index.ts` when a queued message is folded into a live session.
-- Add a renderer in `src/components/event-cards/index.tsx`.
+- Extend the `EngineEvent` union with an `injection_separator` variant (`src/engine/events/types.ts`).
+- Publish it from the mid-stream dispatch path in `src/engine/orchestrator/` when a queued message is folded into a live session.
+- Add a renderer in `src/components/event-cards/`.
+
+---
+
+## EventBus & OTel evolution (mixed)
+
+Follow-ups from the EventBus and OpenTelemetry work — see [ARCHITECTURE.md §Design decisions](./ARCHITECTURE.md#design-decisions--why-eventbus) and [OTEL.md §Design decisions](./OTEL.md#design-decisions). The bus is in; these are the rough edges that did not make v1.
+
+- **[Should] Subprocess context propagation.** Planner and implementer spawns do not receive a `traceparent` today, so calls into Claude Code / Ollama / LM Studio appear as opaque windows inside the parent phase span. Fix: thread a W3C trace-context propagator through every runner adapter — as an environment variable for `cli` / `shell` / `agent` kinds, and as a request header for `api` kinds.
+- **[Should] CLI bootstrap UX.** Pre-registering a `NodeTracerProvider` from an external wrapper is defeated by ESM's dual-resolution of `@opentelemetry/api` (absolute path vs. bare specifier → distinct module-cache entries). Fix approach: a `--otel-exporter <console|otlp-http>` CLI flag, or a `DIPTYCH_OTEL_EXPORTER` env variable read inside `src/engine/orchestrator/run/init.ts` so the provider is registered in the same resolution context the sink imports from.
+- **[Could] Retry span semantics.** Today a task with two retries produces one span covering all attempts. Open question: model retries as sibling spans under a shared parent, or keep a single task span with a `diptych.task.retries` attribute. Ambiguous which users actually want — deferred until we see real trace consumption.
+- **[Could] Error status propagation.** `task_failed` marks only the task span `ERROR`; parent phase and workflow stay `OK`. OTel convention varies across backends (Honeycomb vs. Tempo bubble-up behavior differs). Needs a calibration pass before codifying.
+- **[Won't-v1] Logs via `@opentelemetry/api-logs`.** Structured log records with trace correlation, replacing `console.*` inside the engine. Out of scope for v1. Would land alongside a `/log` channel that exposes planner/implementer stdout as log records.
+- **[Could] Metric emission.** Counters (`task_completed{method=local|escalated|full}`), histograms (phase durations), gauges (tokens remaining against budget). Derivable from spans by most backends today; a future `otel.metrics.enabled` flag could emit them natively if derived metrics prove lossy.
+
+---
+
+## Hook system v2 (mixed)
+
+Follow-ups from the workflow hook system — see [HOOKS-CONFIG.md §Design decisions](./HOOKS-CONFIG.md#design-decisions). v1 ships command-kind hooks; the schema already reserves space for more.
+
+- **[Should] JS/TS module hooks.** `kind: 'module'` with `path: './hooks/my-hook.ts'` is validated by the v1 schema but not yet invoked. Dynamic-import semantics, return-value contract, and timeout behavior need to match the command-kind dispatcher's outcome model (`{ kind: 'allow' | 'deny', message? }`).
+- **[Could] Async fan-out within a single event.** Today hooks run sequentially in declaration order (order matters for `modify` patches). Opt-in parallel execution for events where ordering is irrelevant (`post_*`, `on_*`), with timeout aggregation and an explicit `parallel: true` flag on the entry.
+- **[Could] Hook discovery.** Auto-detect `.diptych/hooks/*.ts` files and register them under a conventional event inferred from the filename (e.g. `pre-task.ts` → `pre_task`). Avoids configuring the obvious.
+
+---
+
+## Repo-map v2 (mixed)
+
+Follow-ups from the repo-map subsystem — see [REPOMAP.md §Design decisions](./REPOMAP.md#design-decisions). v1 is TypeScript-only via tree-sitter + PageRank; these are the axes along which it will grow.
+
+- **[Won't-v1] Embeddings-based retrieval.** Optional `codebase.kind: 'embeddings'` with a pluggable provider (Voyage, OpenAI, a local embedding model). Semantically richer than symbol matching; deferred because of per-call cost, index-sync work, and the cost/latency profile for local-only users. The symbol-graph path stays the default.
+- **[Should] Non-TypeScript language support.** Python, Go, Rust via their respective tree-sitter grammars. Each language needs its own `tags.scm`-equivalent extractor and a validator pipeline fit for the language. Blocked on the separate "Non-TypeScript language support" item above.
+- **[Should] Grammar version bumps.** Procedure to increment the `parse_version` column in `.diptych/repomap.sqlite` and force a global cache rebuild when the tree-sitter grammar changes. Today `/repomap rebuild` handles it per-project, but a migration note in release notes and an automatic bump on install is cleaner.

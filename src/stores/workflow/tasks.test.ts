@@ -12,41 +12,38 @@ import {
 describe('tasksStore — via addEvent', () => {
   beforeEach(() => resetWorkflow());
 
-  it('updates currentTask and totalTasks on task-start', () => {
-    const event = makeTaskStart({ index: 2, total: 5 });
-    addEvent(event);
+  it('covers task-start → task-complete happy path end-to-end', () => {
+    // task-start updates currentTask/totalTasks and registers task as in_progress.
+    addEvent(makeTaskStart({ taskId: taskId('T010'), title: 'New task', index: 2, total: 5 }));
     expect(tasksStore.get().currentTask).toBe(3);
     expect(tasksStore.get().totalTasks).toBe(5);
-  });
+    expect(tasksStore.get().taskMap.get('T010')).toEqual({
+      id: 'T010',
+      title: 'New task',
+      status: 'in_progress',
+    });
 
-  it('adds task to taskMap as in_progress on task-start', () => {
-    const event = makeTaskStart({ taskId: taskId('T010'), title: 'New task' });
-    addEvent(event);
-    expect(tasksStore.get().taskMap.get('T010')).toEqual({ id: 'T010', title: 'New task', status: 'in_progress' });
-  });
+    // task-complete for the known task flips status to done and records its duration.
+    addEvent(makeTaskComplete({ taskId: taskId('T010'), duration: 5000 }));
+    expect(tasksStore.get().taskMap.get('T010')!.status).toBe('done');
+    expect(tasksStore.get().taskCompletionTimes).toEqual([5000]);
 
-  it('updates taskMap status to done on task-complete', () => {
-    addEvent(makeTaskStart({ taskId: taskId('T001'), title: 'Test' }));
-    addEvent(makeTaskComplete({ taskId: taskId('T001') }));
-    expect(tasksStore.get().taskMap.get('T001')!.status).toBe('done');
-  });
-
-  it('updates taskMap status to skipped on task-skipped', () => {
-    addEvent(makeTaskStart({ taskId: taskId('T001'), title: 'Test' }));
-    addEvent(makeTaskSkipped({ taskId: taskId('T001') }));
-    expect(tasksStore.get().taskMap.get('T001')!.status).toBe('skipped');
-  });
-
-  it('tracks task duration in taskCompletionTimes on task-complete', () => {
-    addEvent(makeTaskComplete({ duration: 5000 }));
-    addEvent(makeTaskComplete({ taskId: taskId('T002'), duration: 8000 }));
+    // task-complete for an unknown taskId does not add a new entry to taskMap,
+    // but its duration is still tracked (duration is event-sourced, not taskMap-sourced).
+    addEvent(makeTaskComplete({ taskId: taskId('UNKNOWN'), duration: 8000 }));
+    expect(tasksStore.get().taskMap.get('UNKNOWN')).toBeUndefined();
+    expect(tasksStore.get().taskMap.size).toBe(1);
     expect(tasksStore.get().taskCompletionTimes).toEqual([5000, 8000]);
   });
 
-  it('does not update taskMap for unknown taskId on task-complete', () => {
-    const event = makeTaskComplete({ taskId: taskId('UNKNOWN') });
-    addEvent(event);
-    expect(tasksStore.get().taskMap.size).toBe(0);
+  it('covers task-start → task-skipped path end-to-end', () => {
+    addEvent(makeTaskStart({ taskId: taskId('T001'), title: 'Test' }));
+    expect(tasksStore.get().taskMap.get('T001')!.status).toBe('in_progress');
+
+    addEvent(makeTaskSkipped({ taskId: taskId('T001') }));
+    expect(tasksStore.get().taskMap.get('T001')!.status).toBe('skipped');
+    // skipped does not contribute a completion time.
+    expect(tasksStore.get().taskCompletionTimes).toEqual([]);
   });
 });
 

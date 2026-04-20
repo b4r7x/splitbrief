@@ -1,6 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { createEventEmitter, createTextHandler, emitRetry } from '../events.js';
+import { createBusTextHandler, publishRetry } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { runRetryStep, type EscalationContext, type RetryStepOutcome } from './step.js';
 
@@ -13,14 +13,12 @@ export async function runLocalRetries(
   let attempts = 0;
   const maxRetries = ctx.config.workflow.maxRetries;
 
-  const textHandler = createTextHandler(ctx.callbacks);
-  const emitEv = createEventEmitter(ctx.projectDir, ctx.sessionId);
+  const textHandler = createBusTextHandler(ctx.bus, state.phase);
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     attempts = attempt;
     state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'VALIDATION_FAIL' }, maxRetries);
-    emitRetry(ctx.callbacks, task.id, attempt, maxRetries);
-    emitEv(state, 'task_retry', task.id, { attempt, error: lastError });
+    publishRetry(ctx.bus, state.phase, task.id, attempt, maxRetries, lastError);
 
     const outcome = await runRetryStep({
       ctx, task, state, lastError, attempts,
@@ -31,7 +29,9 @@ export async function runLocalRetries(
         ctx.implementer.retry({
           task: t, projectDir: ctx.projectDir, config: ctx.config, context: ctx.context,
           error: err, attempt: a, kind: 'local',
-          onOutput: textHandler, onEvent: ctx.callbacks.onEvent,
+          onOutput: textHandler,
+          bus: ctx.bus,
+          phase: state.phase,
         }),
     });
 

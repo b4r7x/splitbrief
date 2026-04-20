@@ -10,7 +10,7 @@ import { runTaskLoop } from '../../../src/engine/orchestrator/task-loop.js';
 import { createValidator } from '../../../src/engine/orchestrator/validation.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeCallbacks, makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks, makeImplementer, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -35,18 +35,19 @@ describe('quick-mode one-task workflow', () => {
     state = transition(state, { type: 'START', feature: 'add hello' });
     state = transition(state, { type: 'START_QUICK', tasks: [task] });
 
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
     const config = makeNoValidationConfig({ workflow: { commitStrategy: 'none', maxRetries: 1, mode: 'quick' } });
     const implementer = makeImplementer({
       implement: vi.fn().mockResolvedValue({ success: true, output: 'code', usage: { inputTokens: 40, outputTokens: 20 } }),
     });
 
     const { state: finalState, taskBreakdowns } = await runTaskLoop({
-      wctx: { projectDir, sessionId, config, callbacks, planner: makePlanner(), implementer, context: defaultContext, metadata: META, sinks: SINKS, validator: createValidator() },
+      wctx: { projectDir, sessionId, config, callbacks, planner: makePlanner(), implementer, context: defaultContext, metadata: META, sinks: SINKS, validator: createValidator(), bus },
       initialState: state, setTrackedState: vi.fn(), setCurrentTask: vi.fn(),
     });
 
-    expect(events.find((e) => e.type === 'task-complete')).toMatchObject({ taskId: 'T001', method: 'local' });
+    expect(events.find((e) => e.type === 'task_completed')).toMatchObject({ taskId: 'T001', method: 'local' });
     expect(getCompletedTaskIds(finalState)).toEqual(['T001']);
     expect(existsSync(join(sessionDir(projectDir, sessionId), STATE_FILE))).toBe(true);
 

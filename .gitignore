@@ -7,6 +7,7 @@ dist/
 
 # Runtime state (diptych working directory)
 .diptych/
+testing/fixtures/**/.diptych/
 
 # SpecKit — only constitution and specs are tracked
 .specify/scripts/

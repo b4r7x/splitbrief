@@ -31,10 +31,10 @@ How the code is organized and how data flows through the system. For *what* the 
 │                        │   │      captures keys            │
 └───────────────────┬────┘   └───────────────────────────────┘
                     │                      ▲
-                    │  emits TuiEvents     │  subscribes
+                    │  publishes EngineEvent│ subscribes
                     └──────────────────────┘
-                       via OrchestratorCallbacks
-                       → workflowStore.addEvent()
+                       via EventBus (src/engine/events/bus.ts)
+                       tuiSink → workflowStore.addEvent()
 ```
 
 **Strict rules:**
@@ -131,14 +131,18 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 1. **User** runs `diptych start "add JWT auth"`.
 2. `cli/commands/start.ts` boots stores, initialises router with the feature, renders `<App/>`.
 3. `<App/>` reads `routerStore` and mounts `<WorkflowScreen/>`.
-4. `useWorkflow` hook is triggered in the workflow screen. It calls `runWorkflow(opts)` from `src/engine/orchestrator/run.ts` with `OrchestratorCallbacks` that forward events back to `workflowStore.addEvent()`.
+4. `useWorkflow` hook is triggered in the workflow screen. It calls `runWorkflow(opts)` from `src/engine/orchestrator/run/run.ts`. `initializeWorkflow` builds an `EventBus` and subscribes the TUI sink (writes to `workflowStore.addEvent`), JSONL sink (writes to `session.jsonl`), and Hook sink (when `config.hooks` is configured). The bus is threaded through `WorkflowContext.bus`.
 5. `runWorkflow` creates planner + implementer via factories, runs the planning phases, then the task loop, then the final review.
-6. During each phase, the engine emits:
-   - `TuiEvent`s to `workflowStore` (for the UI).
-   - `appendEvent()` to `.diptych/sessions/<id>/session.jsonl` (for persistence).
-   - `saveState()` to `.diptych/sessions/<id>/state.json` on every phase transition.
+6. During each phase, the engine emits via `wctx.bus.publish(EngineEvent)`. The bus fans out synchronously to all subscribed sinks:
+   - `tuiSink` (`src/engine/events/sinks/tui.ts`) — pass-through to `workflow/actions.addEvent(event)`; workflow sub-stores consume `EngineEvent` directly, so the sink is a named wiring point, not a mapper (UI re-renders).
+   - `jsonlSink` (`src/engine/events/sinks/jsonl.ts`) — appends to `.diptych/sessions/<id>/session.jsonl` via `appendEngineEvent`.
+   - `stdoutJsonSink` (`src/engine/events/sinks/stdout-json.ts`) — opt-in under `--json` / `diptych start --json`; writes NDJSON events on stdout for headless integration (see `src/cli/headless.ts`).
+   - `otelSink` (`src/engine/events/sinks/otel.ts`) — opt-in via `config.otel.enabled`; maps `EngineEvent` to OpenTelemetry spans. See [`OTEL.md`](./OTEL.md) §Design decisions.
+   - Hook sink (`src/engine/hooks/sink.ts`) — dispatches matching `post_*`/`on_*` workflow hooks fire-and-forget. `pre_*` hooks are run synchronously at the orchestrator call site via `run-pre-hook.ts`.
+
+   `saveState()` writes to `.diptych/sessions/<id>/state.json` on every phase transition.
 7. TUI components subscribe to slices of `workflowStore` via `store.use(selector)` and re-render only when their slice changes.
-8. For user-gated moments (approval, clarification, escalation choice), the engine `await`s a callback: `callbacks.onApprovalNeeded(…)`, `callbacks.onQuestionAsked(…)`. The UI fulfils these by switching input mode and capturing the response.
+8. For user-gated moments (approval, clarification, escalation choice, continuation, budget, external-change prompts), the engine `await`s a callback: `callbacks.onApprovalNeeded(…)`, `callbacks.onQuestionAsked(…)`, `callbacks.onContinuationNeeded(…)`, etc. These gating callbacks are **not** the same channel as event emission — events fan out through the `EventBus` (pub/sub, fire-and-forget); gates remain discrete async request/response pairs supplied by the workflow caller (CLI TUI for interactive runs, `runHeadless` stubs for `--json`). The UI fulfils gates by switching input mode and resolving the awaited promise.
 9. **Queue**: during live planner phases, the user may type and press Enter without aborting. The message is appended to `workflowStore.messageQueue`. The orchestrator drains the queue at safe-points (end of current call) and appends queued messages to the next planner prompt. For Claude Code specifically (`supportsMidStreamInjection: true`), each queued message is also dispatched in parallel as a native user turn into the live session.
 10. **Abort**: a single Ctrl-C fires an `AbortController` which propagates into the active planner/implementer call (for HTTP) or sends SIGTERM (for subprocesses). The partial response is preserved in `session.jsonl` with `interrupted: true`. The workflow enters an **awaiting-continue** sub-state but the `phase` does *not* reset. A second Ctrl-C within 2 seconds exits the workflow (state saved for `resume`). Esc does **not** abort generation — it only closes overlays.
 11. When the last task passes validation, `runFinalReviewPhase` runs; then `shutdownWorkflow` writes `summary.json` into the session folder, clears `.diptych/active`, and unmounts.
@@ -146,6 +150,8 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 ---
 
 ## Planner / implementer symmetry
+
+The planner receives a token-budgeted [repo-map](./REPOMAP.md) of the codebase on every workflow start.
 
 Both are configured by the same five runner kinds. The factories dispatch identically:
 
@@ -179,7 +185,7 @@ Full rationale in `docs/STORES.md`. Short version:
 - No `useMemo`, `useCallback`, `React.memo`, `forwardRef`, `useImperativeHandle` — stores make them unnecessary.
 - Stores are module-scoped singletons built on `useSyncExternalStore`.
 - Components subscribe to slices: `const tasks = workflowStore.use(s => s.tasks)`.
-- The engine calls `workflowStore.addEvent(ev)` directly — no prop drilling, no callback chains.
+- The engine publishes `EngineEvent` values via the `EventBus`; `tuiSink` forwards them to `workflow/actions.addEvent` — no prop drilling, no callback chains.
 - Tests reset stores in `beforeEach(() => store.reset())`.
 
 This architecture was deliberately chosen to keep the engine/UI boundary clean: the engine doesn't know React exists, and the UI doesn't own workflow state.
@@ -281,12 +287,83 @@ Rules (see `CLAUDE.md` for the full list):
 | New implementer backend | Mirror of above under `src/engine/implementers/` |
 | New provider (for `api` kind) | `src/engine/providers/<name>.ts` + register in `providers/registry.ts` |
 | New phase | `src/core/state/machine.ts` (+ update `core/phases.ts` sets) — **read `docs/WORKFLOW.md` first**, phases are load-bearing |
-| New event type | `src/features/workflow/types.ts` (add variant to `TuiEvent` union) + renderer in `src/features/workflow/components/event-cards/event-card.tsx` |
+| New event type | `src/engine/events/types.ts` (add variant to the `EngineEvent` discriminated union) + renderer in `src/features/workflow/components/event-cards/event-card.tsx` |
 | New store | `src/stores/<group>/<name>.ts` using `createStore` from `create-store.ts`; init in `cli/init-stores.ts` if it reads disk |
 | New shared overlay (used by 2+ features) | `src/components/overlays/<name>.tsx` + register via `overlayStore` |
 | New feature overlay | `src/features/<feature>/overlay.tsx` + register via `overlayStore` |
 | New feature (new screen / picker / overlay) | `src/features/<feature>/` with `screen.tsx` \| `picker.tsx` \| `overlay.tsx` as entry; wire in `src/app.tsx` |
 | New planner capability flag | Extend `PlannerCapabilities` in `src/engine/planners/types.ts`, set the default in each backend, add the fallback branch in the orchestrator |
+
+---
+
+## EventBus
+
+The engine emits **EngineEvent** values through a single `EventBus` port. Sinks (TUI store writer, JSONL persister, hooks dispatcher) subscribe to the bus and observe every event in synchronous fan-out order. This decouples event producers (planner adapters, implementer base, orchestrator phases) from consumers (UI, audit log, hooks system).
+
+```
+                 ┌──────────────────────────────────────────┐
+                 │          src/engine/events/bus.ts        │
+                 │      createEventBus() → publish/subscribe │
+                 └──────────────────────────────────────────┘
+                              │  publish(event: EngineEvent)
+                              │
+   ┌──────────┬───────────────┼───────────────┬──────────────┐
+   ▼          ▼               ▼               ▼              ▼
+┌────────┐ ┌──────────┐ ┌────────────┐ ┌──────────────┐ ┌──────────┐
+│tuiSink │ │jsonlSink │ │stdoutJson  │ │  otelSink    │ │hooks sink│
+│(store) │ │(.jsonl)  │ │(--json     │ │(opt-in OTel  │ │(post_*/  │
+│        │ │          │ │ NDJSON)    │ │ spans)       │ │ on_*)    │
+└────────┘ └──────────┘ └────────────┘ └──────────────┘ └──────────┘
+```
+
+- **`EngineEvent`** is a discriminated union with snake_case `type` and mandatory `phase` (`src/engine/events/types.ts`) — the single source of truth for all engine events. The legacy `TuiEvent` / `OrchestratorEvent` types are removed.
+- **`createEventBus`** is a sync pub/sub with crash isolation per sink (`src/engine/events/bus.ts`)
+- **`publish*` helpers** (e.g. `publishTaskStart`, `publishPlannerStatus`) wrap `bus.publish` with typed signatures (`src/engine/orchestrator/events.ts`)
+- **`tuiSink`** (`src/engine/events/sinks/tui.ts`) forwards `EngineEvent` straight into `workflow/actions.addEvent` — no mapping, because workflow sub-stores now consume `EngineEvent` directly.
+- **`jsonlSink`** (`src/engine/events/sinks/jsonl.ts`) appends events to `.diptych/sessions/<id>/session.jsonl`. Transcript kinds respect `workflow.persistTranscript`.
+- **`stdoutJsonSink`** (`src/engine/events/sinks/stdout-json.ts`) emits NDJSON to stdout for headless / `--json` mode (see `src/cli/headless.ts`).
+- **`otelSink`** (opt-in, `config.otel.enabled: true`) maps `EngineEvent` → OpenTelemetry spans — see [OTEL.md](./OTEL.md) §Design decisions.
+- **Event sinks are synchronous.** Each `publish()` runs all subscribed sinks in registration order, inline. A throw inside one sink is caught per-sink and does not break fan-out to the others.
+
+Events and gating callbacks are separate mechanisms. `bus.publish` is pub/sub (broadcast, fire-and-forget, no return value). `callbacks.onApprovalNeeded` / `onQuestionAsked` / `onContinuationNeeded` / `onBudgetExceeded` / `onExternalChanges` / `onComplete` stay as discrete `await`-able request/response pairs supplied by the workflow host — CLI TUI for interactive runs, stubs from `runHeadless` for `--json`.
+
+### Design decisions — Why EventBus
+
+The bus replaces an earlier design that split events across two independent shapes — `TuiEvent` (consumed by the UI through `callbacks.onEvent`) and `OrchestratorEvent` (persisted to `session.jsonl` via `appendEvent`) — plus ad-hoc side-effects (`abortStore.markPending`, `feedbackStore.setError`, queue handler install). Three forces drove the collapse:
+
+- **Layer violation.** `TuiEvent` lived in `src/features/workflow/types.ts` and was imported by seven files under `src/engine/`, breaking the "engine never imports from features/" rule and making headless runs impossible without dragging the UI type tree along.
+- **Two sources of truth.** Adding an event meant touching `TuiEvent`, `OrchestratorEventPayloadMap`, and an emit helper that called both. Drift was silent — a typo meant the JSONL log and the UI disagreed on what happened.
+- **Closed for extension.** OTel spans, `--json` stdout, session replay, and future MCP/remote subscribers all needed the same stream. With direct `callbacks.onEvent` + `appendEvent` call sites, there was nowhere to attach them.
+
+The bus is synchronous by design so fan-out order matches the pre-bus `addEvent` → `appendEvent` back-to-back sequence that `workflow/actions.ts` and `core/state/persistence.ts` rely on. Event `type` values use snake_case to match the on-disk JSONL convention (what users grep against); the old kebab-case `TuiEvent` names were dropped.
+
+**Rejected alternatives:**
+
+- **Keep two shapes plus a third union for non-UI consumers.** Triples the sources of truth and leaves the `engine → features` layer violation intact.
+- **Fold `TuiEvent` into `OrchestratorEvent`, keep direct `appendEvent` + `callbacks.onEvent` calls.** Fixes type drift but every new consumer (OTel, headless, replay) becomes another direct call site scattered through the orchestrator — same architectural rigidity.
+- **Node's `EventEmitter`.** Untyped payloads (`emit('x', anything)`) and async-by-default reverse the type-safety and ordering guarantees we rely on.
+- **Pre-built lib (mitt, nanoevents, rxjs Subject).** A two-method interface with one ordering rule is ~30 LOC; a dependency costs more than it saves, same reasoning as the in-house `createStore` vs Zustand.
+
+### Headless mode (--json)
+
+`diptych start --json` skips the Ink render entirely and attaches `stdoutJsonSink` instead of `tuiSink`. Every published `EngineEvent` is written as one NDJSON line to stdout, one object per line, snake_case `type` field, monotonic `ts`. Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, …) are fulfilled by non-interactive stubs in `src/cli/headless.ts` — approvals auto-accept or auto-reject per config, questions resolve with empty answers. Exit code is `0` on clean completion, non-zero on unhandled error or rejected approval. `jsonlSink` still runs so the on-disk transcript is byte-identical to an interactive run.
+
+```bash
+diptych start --json "add endpoint" | jq -c 'select(.type == "task_completed")'
+```
+
+## Architecture decision records
+
+Design rationale is documented inline next to each subsystem:
+
+| Subsystem | Rationale |
+|---|---|
+| EventBus | [ARCHITECTURE.md §Design decisions — Why EventBus](#design-decisions--why-eventbus) |
+| Workflow hook system | [HOOKS-CONFIG.md §Design decisions](./HOOKS-CONFIG.md#design-decisions) |
+| Repo-map context | [REPOMAP.md §Design decisions](./REPOMAP.md#design-decisions) |
+| OpenTelemetry sink | [OTEL.md §Design decisions](./OTEL.md#design-decisions) |
+
+See [CHANGELOG.md](../CHANGELOG.md) for release history and amendments.
 
 ---
 

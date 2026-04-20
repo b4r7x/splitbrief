@@ -11,36 +11,31 @@ describe('feedbackStore', () => {
     vi.useRealTimers();
   });
 
-  it('clears error with setError(null)', () => {
-    feedbackStore.setError('oops');
-    feedbackStore.setError(null);
-    expect(feedbackStore.get().message).toBeNull();
-    expect(feedbackStore.get().isError).toBe(false);
-  });
-
-  it('sets informational message with isError false', () => {
+  it('covers set/auto-clear/error/reset end-to-end', () => {
+    // setMessage sets informational (non-error) state.
     feedbackStore.setMessage('saved');
     expect(feedbackStore.get().message).toBe('saved');
     expect(feedbackStore.get().isError).toBe(false);
-  });
 
-  it('auto-clears informational messages after 3 seconds', () => {
-    feedbackStore.setMessage('temporary');
-    expect(feedbackStore.get().message).toBe('temporary');
-
+    // Informational messages auto-clear after 3s.
     vi.advanceTimersByTime(3000);
     expect(feedbackStore.get().message).toBeNull();
     expect(feedbackStore.get().isError).toBe(false);
-  });
 
-  it('does not auto-clear error messages', () => {
+    // setError persists and does not auto-clear.
     feedbackStore.setError('persistent');
+    expect(feedbackStore.get().message).toBe('persistent');
+    expect(feedbackStore.get().isError).toBe(true);
     vi.advanceTimersByTime(5000);
     expect(feedbackStore.get().message).toBe('persistent');
     expect(feedbackStore.get().isError).toBe(true);
-  });
 
-  it('reset clears pending auto-clear timer', () => {
+    // setError(null) clears the error.
+    feedbackStore.setError(null);
+    expect(feedbackStore.get().message).toBeNull();
+    expect(feedbackStore.get().isError).toBe(false);
+
+    // reset cancels the pending auto-clear timer and clears state.
     feedbackStore.setMessage('will be cleared');
     feedbackStore.reset();
     expect(feedbackStore.get().message).toBeNull();

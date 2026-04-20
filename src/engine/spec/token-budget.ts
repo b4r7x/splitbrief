@@ -1,12 +1,11 @@
 import type { TokenBudget } from '../../core/types/state-actions.js';
+import { estimateTokens } from '../../core/tokens/estimate.js';
+
+export { estimateTokens };
 
 const CHARS_PER_TOKEN = 4;
 const OUTPUT_RESERVE_RATIO = 0.25;
 const TRUNCATION_HEADER_WIDTH = 50;
-
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / CHARS_PER_TOKEN);
-}
 
 export function truncateMiddle(text: string, maxTokens: number): string {
   const maxChars = Math.floor(maxTokens * CHARS_PER_TOKEN);

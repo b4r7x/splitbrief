@@ -1,6 +1,7 @@
-import type { OrchestratorCallbacks } from './types.js';
+import type { EventBus } from '../events/types.js';
+import type { Phase } from '../../core/schemas/enums.js';
 import { labelError } from '../../utils/format-errors.js';
-import { emitWarning } from './events.js';
+import { publishWarning } from './events.js';
 
 export async function withSignalHandlers(
   handler: () => void,
@@ -25,13 +26,14 @@ export async function withSignalHandlers(
 }
 
 export async function warnOnFailure(
-  callbacks: OrchestratorCallbacks,
+  bus: EventBus,
+  phase: Phase,
   action: string,
   fn: () => Promise<void>,
 ): Promise<void> {
   try {
     await fn();
   } catch (err) {
-    emitWarning(callbacks, labelError(`Failed to ${action}`, err));
+    publishWarning(bus, phase, labelError(`Failed to ${action}`, err));
   }
 }

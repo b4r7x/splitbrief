@@ -141,18 +141,18 @@ describe('findLatestRenderableDiffEventIndex', () => {
 
 describe('findLatestEventByType', () => {
   it('returns undefined for empty array', () => {
-    expect(findLatestEventByType([], 'planner-text')).toBeUndefined();
+    expect(findLatestEventByType([], 'planner_text')).toBeUndefined();
   });
 
   it('returns the last matching event', () => {
     const e1 = makePlannerText({ text: 'first' });
     const e2 = makePlannerText({ text: 'second' });
-    const result = findLatestEventByType([e1, e2], 'planner-text');
+    const result = findLatestEventByType([e1, e2], 'planner_text');
     expect(result).toBe(e2);
   });
 
   it('returns undefined when no event of that type exists', () => {
     const e = makePlannerText({ text: 'hello' });
-    expect(findLatestEventByType([e], 'workflow-config')).toBeUndefined();
+    expect(findLatestEventByType([e], 'workflow_config')).toBeUndefined();
   });
 });

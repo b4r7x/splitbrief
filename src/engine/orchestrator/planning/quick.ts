@@ -1,5 +1,5 @@
 import type { PlanResult } from '../../planners/types.js';
-import { emit, emitPlannerStatus } from '../events.js';
+import { publishEvent, publishPlannerStatus } from '../events.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import {
   drainAndFormat,
@@ -12,12 +12,12 @@ import {
 
 export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx, planner } = opts;
-  const { projectDir, sessionId, callbacks, metadata, resumeHolder } = wctx;
+  const { projectDir, sessionId, metadata, resumeHolder } = wctx;
   let { state } = opts;
   let feature = opts.feature;
 
   {
-    const { state: drainedState, prefix } = drainAndFormat(projectDir, sessionId, state, callbacks);
+    const { state: drainedState, prefix } = drainAndFormat(projectDir, sessionId, state, wctx.bus);
     state = drainedState;
     feature = prefix + feature;
   }
@@ -30,20 +30,21 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
       planner,
       feature,
       mode: 'quick',
+      ...(opts.codebaseContext !== undefined ? { codebaseContext: opts.codebaseContext } : {}),
       ...(resumeHolder && resumeHolder.messages.length > 0 ? { priorMessages: resumeHolder.messages } : {}),
     });
     state = run.state;
     planResult = run.result;
   } catch (err) {
-    return handlePlanningFailure(err, projectDir, sessionId, state, callbacks);
+    return handlePlanningFailure(err, projectDir, sessionId, state, wctx);
   }
 
   persistPhases(projectDir, sessionId, planResult.phases, metadata);
-  state = addUsageAndSave(projectDir, sessionId, state, 'planner', planResult.usage, callbacks);
+  state = addUsageAndSave(projectDir, sessionId, state, 'planner', planResult.usage, wctx.bus);
 
   state = transitionAndSave(projectDir, sessionId, state, { type: 'START_QUICK', tasks: planResult.tasks });
-  emitPlannerStatus(callbacks, state, 'running');
-  emit(projectDir, sessionId, state, 'plan_approved', undefined, {});
+  publishPlannerStatus(wctx.bus, state, 'running');
+  publishEvent(wctx.bus, { type: 'plan_approved', ts: Date.now(), phase: state.phase });
 
   return { state, tasks: planResult.tasks, cancelled: false };
 }

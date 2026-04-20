@@ -29,19 +29,19 @@ describe('addEvent — cross-bucket isolation', () => {
 describe('markCancelled', () => {
   beforeEach(() => resetWorkflow());
 
-  it('sets cancelled and appends workflow-cancelled event', () => {
+  it('sets cancelled and appends workflow_cancelled event', () => {
     addEvent(makePlannerStatus({ phase: 'researching', status: 'running' }));
     markCancelled();
     expect(lifecycleStore.get().cancelled).toBe(true);
     const events = eventsStore.get().events;
-    expect(events[events.length - 1]?.type).toBe('workflow-cancelled');
+    expect(events[events.length - 1]?.type).toBe('workflow_cancelled');
   });
 
-  it('replaces running planner-status with done', () => {
+  it('replaces running planner_status with done', () => {
     addEvent(makePlannerStatus({ phase: 'researching', status: 'running' }));
     markCancelled();
     const events = eventsStore.get().events;
-    const status = events.find(e => e.type === 'planner-status');
+    const status = events.find(e => e.type === 'planner_status');
     expect(status && 'status' in status ? status.status : undefined).toBe('done');
   });
 
@@ -63,14 +63,14 @@ describe('addEvent — cancelled gate', () => {
 
   it('drops error events after cancel', () => {
     markCancelled();
-    addEvent({ type: 'error', ts: Date.now(), message: 'noise' });
+    addEvent({ type: 'error', ts: Date.now(), phase: 'implementing', message: 'noise' });
     expect(eventsStore.get().events.filter(e => e.type === 'error')).toHaveLength(0);
   });
 
-  it('drops planner-status events after cancel', () => {
+  it('drops planner_status events after cancel', () => {
     markCancelled();
     addEvent(makePlannerStatus({ phase: 'researching', status: 'running' }));
-    expect(eventsStore.get().events.filter(e => e.type === 'planner-status')).toHaveLength(0);
+    expect(eventsStore.get().events.filter(e => e.type === 'planner_status')).toHaveLength(0);
   });
 
   it('does not mutate tasks store after cancel', () => {

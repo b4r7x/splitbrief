@@ -1,0 +1,97 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
+import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
+import { runWorkflow } from '../../../src/engine/orchestrator/run/run.js';
+import type { EngineEvent } from '../../../src/engine/events/types.js';
+import type { WorkflowSinks } from '../../../src/engine/orchestrator/types.js';
+
+const SINKS: WorkflowSinks = { setAbortHandler: () => {}, setQueueHandler: () => {} };
+
+const TASK_MARKDOWN = [
+  '---',
+  'id: T001',
+  'title: Create hello module',
+  'action: create',
+  'file: src/hello.ts',
+  '---',
+  '',
+  '### Description',
+  'Create a hello world module',
+].join('\n');
+
+const CODE_RESPONSE = [
+  '```typescript',
+  'export function hello() { return "hello"; }',
+  '```',
+].join('\n');
+
+const dirs: string[] = [];
+
+beforeEach(() => resetAllStores());
+afterEach(() => { while (dirs.length) cleanupTempDir(dirs.pop() as string); });
+
+describe('EventBus end-to-end flow', () => {
+  it('publishes a coherent event sequence for a one-task quick-mode workflow', async () => {
+    const projectDir = createTempDir('orch-int-bus-flow');
+    dirs.push(projectDir);
+    createTestGitRepo(projectDir);
+
+    const recorded: EngineEvent[] = [];
+    const { callbacks } = makeCallbacks({ onExternalChanges: async () => true });
+
+    const config = makeConfig({
+      planner: {
+        kind: 'shell',
+        command: 'node',
+        args: ['-e', `process.stdout.write(${JSON.stringify(TASK_MARKDOWN)})`],
+      },
+      implementer: {
+        kind: 'shell',
+        command: 'node',
+        args: ['-e', `process.stdout.write(${JSON.stringify(CODE_RESPONSE)})`],
+        model: 'fake-model',
+        contextLength: 4096,
+        temperature: 0,
+      },
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: { mode: 'quick', commitStrategy: 'none', persistTranscript: false, maxRetries: 1 },
+    });
+
+    await runWorkflow({
+      feature: 'add foo',
+      projectDir,
+      config,
+      callbacks,
+      sinks: SINKS,
+      _eventSink: (e) => recorded.push(e),
+    });
+
+    const types = recorded.map((e) => e.type);
+
+    // Quick mode emits plan_approved (not plan_done) — it auto-approves and skips the gate.
+    expect(types).toContain('workflow_started');
+    expect(types).toContain('workflow_config');
+    expect(types).toContain('plan_approved');
+    expect(types).toContain('task_started');
+    expect(types).toContain('implementer_generate_running');
+    expect(types).toContain('implementer_generate_done');
+    expect(types).toContain('task_completed');
+    expect(types).toContain('all_tasks_done');
+    expect(types).toContain('workflow_complete');
+
+    const idx = (t: EngineEvent['type']) => types.indexOf(t);
+
+    // Canonical ordering invariants:
+    expect(idx('workflow_started')).toBeLessThan(idx('workflow_config'));
+    expect(idx('workflow_config')).toBeLessThan(idx('plan_approved'));
+    expect(idx('plan_approved')).toBeLessThan(idx('task_started'));
+    expect(idx('task_started')).toBeLessThan(idx('implementer_generate_running'));
+    expect(idx('implementer_generate_running')).toBeLessThan(idx('implementer_generate_done'));
+    expect(idx('implementer_generate_done')).toBeLessThan(idx('task_completed'));
+    expect(idx('task_completed')).toBeLessThan(idx('all_tasks_done'));
+    expect(idx('all_tasks_done')).toBeLessThan(idx('workflow_complete'));
+  });
+});

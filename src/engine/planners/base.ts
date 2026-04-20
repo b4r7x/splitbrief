@@ -68,8 +68,10 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       projectDir: string,
       callbacks: PlannerCallbacks,
       skillsContext?: string,
+      codebaseContext?: string,
     ): Promise<PlanResult> {
       const projectContext = await buildProjectContextMarkdown(projectDir);
+      const repoMapBlock = codebaseContext ? `<repo-map>\n${codebaseContext}\n</repo-map>\n\n` : '';
       let usage: TokenDelta | null = null;
       const phases: PhaseResult[] = [];
 
@@ -112,7 +114,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
         return artifactText;
       }
 
-      const research = await runPhase('researching', buildResearchPrompt(feature, projectContext, skillsContext), RESEARCH_FILE);
+      const research = await runPhase('researching', repoMapBlock + buildResearchPrompt(feature, projectContext, skillsContext), RESEARCH_FILE);
       const spec = await runPhase('specifying', buildSpecPrompt(feature, research), SPEC_FILE);
       const plan = await runPhase('planning', buildPlanPrompt({ content: spec, hasClarifications: spec.includes('## Clarifications') }, projectContext, skillsContext), PLAN_FILE);
       const tasksMarkdown = await runPhase('generating-tasks', buildTasksPrompt(spec, plan), TASKS_FILE);
@@ -126,9 +128,11 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       feature: string,
       projectDir: string,
       callbacks: PlannerCallbacks,
+      codebaseContext?: string,
     ): Promise<PlanResult> {
       const projectContext = await buildProjectContextMarkdown(projectDir);
-      const prompt = buildQuickPlanPrompt(feature, projectContext);
+      const repoMapBlock = codebaseContext ? `<repo-map>\n${codebaseContext}\n</repo-map>\n\n` : '';
+      const prompt = repoMapBlock + buildQuickPlanPrompt(feature, projectContext);
 
       callbacks.onPhase?.('quick-planning');
       const buffer = createTranscriptBuffer(

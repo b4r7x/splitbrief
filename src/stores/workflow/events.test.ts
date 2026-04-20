@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { eventsStore, MAX_EVENTS, mergeEvent } from './events.js';
 import { addEvent, resetWorkflow } from './actions.js';
 import { taskId } from '../../core/schemas/task.js';
-import type { TuiEvent } from '../../features/workflow/types.js';
+import type { EngineEvent } from '../../engine/events/types.js';
 import {
   makePlannerText,
   makePlannerStatus,
@@ -81,7 +81,7 @@ describe('mergeEvent (pure)', () => {
   });
 
   it('trims one event when events.length === MAX_EVENTS (circular buffer)', () => {
-    const events: TuiEvent[] = Array.from({ length: MAX_EVENTS }, (_, i) => makeRetry({ taskId: taskId(`T${i}`) }));
+    const events: EngineEvent[] = Array.from({ length: MAX_EVENTS }, (_, i) => makeRetry({ taskId: taskId(`T${i}`) }));
     const incoming = makeRetry({ taskId: taskId('newest') });
     const next = mergeEvent(events, incoming);
     expect(next).toHaveLength(MAX_EVENTS);

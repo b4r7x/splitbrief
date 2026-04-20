@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import type { Config } from '../../core/schemas/config.js';
-import type { TuiEvent } from '../../features/workflow/types.js';
 import { makeConfig as makeBaseConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createImplementer } from '../runners/factory.js';
@@ -13,12 +12,12 @@ function makeConfig(extra?: Partial<Config['implementer']>): Config {
 
 const context = { ...defaultContext, dir: '/tmp', runtime: 'node' };
 
-async function implementTask(task: ReturnType<typeof makeTask>, opts: { projectDir: string; config: Config; context: typeof defaultContext; onOutput: (text: string) => void; onEvent?: (event: TuiEvent) => void }) {
+async function implementTask(task: ReturnType<typeof makeTask>, opts: { projectDir: string; config: Config; context: typeof defaultContext; onOutput: (text: string) => void }) {
   const implementer = createImplementer(opts.config);
   return implementer.implement({ ...opts, task });
 }
 
-async function retryTask(task: ReturnType<typeof makeTask>, opts: { projectDir: string; config: Config; context: typeof defaultContext; error: string; attempt: number; onOutput: (text: string) => void; onEvent?: (event: TuiEvent) => void }) {
+async function retryTask(task: ReturnType<typeof makeTask>, opts: { projectDir: string; config: Config; context: typeof defaultContext; error: string; attempt: number; onOutput: (text: string) => void }) {
   const implementer = createImplementer(opts.config);
   return implementer.retry({ ...opts, task, kind: 'local' });
 }

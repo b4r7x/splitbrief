@@ -12,6 +12,7 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { initStores } from '../init-stores.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { maybeMigrate } from '../../core/migration/executor.js';
+import { runHeadless } from '../headless.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
 export function registerResumeCommand(program: Command): void {
@@ -40,6 +41,11 @@ export function registerResumeCommand(program: Command): void {
 
     if (!isResumable(state)) {
       throw cliError(`Cannot resume from phase "${state.phase}".`);
+    }
+
+    if (opts.json) {
+      await runHeadless(state.feature, projectDir, opts, state, sessionId);
+      return;
     }
 
     console.log(`Resuming: ${state.feature} (phase: ${state.phase}, task ${state.currentTaskIndex + 1}/${state.tasks.length})`);

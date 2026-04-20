@@ -11,13 +11,14 @@ import {
 describe('hasWorkflowConfig', () => {
   it('returns true when any workflow-config event is present, false otherwise', () => {
     expect(hasWorkflowConfig([])).toBe(false);
-    expect(hasWorkflowConfig([{ type: 'planner-text', ts: 0, text: 'hi' }])).toBe(false);
+    expect(hasWorkflowConfig([{ type: 'planner_text', ts: 0, phase: 'implementing', text: 'hi' }])).toBe(false);
     expect(
       hasWorkflowConfig([
-        { type: 'planner-text', ts: 0, text: 'hi' },
+        { type: 'planner_text', ts: 0, phase: 'implementing', text: 'hi' },
         {
-          type: 'workflow-config',
+          type: 'workflow_config',
           ts: 0,
+          phase: 'implementing',
           mode: 'standard',
           plannerTool: 'claude-code',
           implementerTool: 'ollama',

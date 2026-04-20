@@ -1,8 +1,8 @@
 import { readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkflowState } from '../schemas/workflow.js';
-import type { OrchestratorEvent, OrchestratorEventType, SessionLogEventEntryFor } from '../../engine/orchestrator/events.js';
 import type { SessionLogEventEntry, SessionLogMessageEntry } from '../schemas/session-log.js';
+import type { EngineEvent } from '../../engine/events/types.js';
 import { WorkflowStateSchema } from '../schemas/workflow.js';
 import { CURRENT_STATE_VERSION } from './machine.js';
 import { STATE_FILE, SESSION_LOG_FILE, sessionDir } from '../paths.js';
@@ -34,8 +34,6 @@ export function loadState(projectDir: string, sessionId: string): WorkflowState 
   return result.data;
 }
 
-function appendLine(projectDir: string, sessionId: string, entry: SessionLogMessageEntry): void;
-function appendLine<T extends OrchestratorEventType>(projectDir: string, sessionId: string, entry: SessionLogEventEntryFor<T>): void;
 function appendLine(
   projectDir: string,
   sessionId: string,
@@ -50,23 +48,6 @@ function appendLine(
   }
 }
 
-function toSessionLogEventEntry<T extends OrchestratorEventType>(
-  event: OrchestratorEvent<T>,
-): SessionLogEventEntryFor<T> {
-  return {
-    kind: 'event',
-    ts: new Date(event.ts).toISOString(),
-    type: event.type,
-    phase: event.phase,
-    data: event.data,
-    ...(event.taskId ? { taskId: event.taskId } : {}),
-  };
-}
-
-export function appendEvent<T extends OrchestratorEventType>(projectDir: string, sessionId: string, event: OrchestratorEvent<T>): void {
-  appendLine(projectDir, sessionId, toSessionLogEventEntry(event));
-}
-
 export function appendMessage(
   projectDir: string,
   sessionId: string,
@@ -76,4 +57,26 @@ export function appendMessage(
   if (!persistTranscript) return;
   const entry: SessionLogMessageEntry = { kind: 'message', ts: new Date().toISOString(), ...message };
   appendLine(projectDir, sessionId, entry);
+}
+
+export function appendEngineEvent(projectDir: string, sessionId: string, event: EngineEvent): void {
+  const { type, ts, phase, ...rest } = event;
+  const taskId = 'taskId' in event ? (event as { taskId?: unknown }).taskId : undefined;
+  const data = { ...rest };
+  if ('taskId' in data) delete (data as Record<string, unknown>)['taskId'];
+  const entry = {
+    kind: 'event' as const,
+    ts: new Date(ts).toISOString(),
+    type,
+    phase,
+    ...(taskId !== undefined && { taskId }),
+    data,
+  };
+  const dir = sessionDir(projectDir, sessionId);
+  try {
+    ensureSecureDir(dir);
+    appendFileSync(join(dir, SESSION_LOG_FILE), JSON.stringify(entry) + '\n', { mode: SECURE_FILE_MODE });
+  } catch (err) {
+    warnStderr(`Warning: failed to persist log entry: ${toErrorMessage(err)}`);
+  }
 }

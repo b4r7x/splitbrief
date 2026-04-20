@@ -20,7 +20,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test-ci": "npm run typecheck && npm run lint && npm test"
+    "test-ci": "npm run typecheck && npm run lint && npm test",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "ai",
@@ -44,7 +45,12 @@
     }
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/resources": "^2.7.0",
+    "@opentelemetry/sdk-trace-base": "^2.7.0",
+    "@opentelemetry/semantic-conventions": "^1.40.0",
     "ansis": "^3.0.0",
+    "better-sqlite3": "^12.9.0",
     "cfonts": "^3.3.1",
     "commander": "^14.0.0",
     "fullscreen-ink": "^0.1.0",
@@ -54,12 +60,16 @@
     "react": "^19.0.0",
     "shiki": "^4.0.0",
     "simple-git": "^3.0.0",
+    "tree-sitter-typescript": "^0.23.2",
+    "web-tree-sitter": "^0.26.8",
     "wrap-ansi": "^10.0.0",
     "yaml": "^2.0.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",
+    "@opentelemetry/sdk-trace-node": "^2.7.0",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@vitest/coverage-v8": "^4.1.2",

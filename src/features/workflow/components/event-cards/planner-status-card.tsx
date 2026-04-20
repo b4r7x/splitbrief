@@ -1,12 +1,12 @@
 import { Text } from 'ink';
-import type { TuiEvent } from '../../types.js';
+import type { EngineEvent } from '../../../../engine/events/types.js';
 import { useTheme } from '../../../../components/theme.js';
 import { Spinner } from '../../../../components/spinner.js';
 import { formatDuration } from '../../../../utils/format-time.js';
 import { formatToolModel } from '../../../../core/model-display.js';
 import { phaseRole } from '../../../../core/phases.js';
 
-type PlannerStatusEvent = Extract<TuiEvent, { type: 'planner-status' }>;
+type PlannerStatusEvent = Extract<EngineEvent, { type: 'planner_status' }>;
 
 export function PlannerStatusCard({ event }: { event: PlannerStatusEvent }) {
   const t = useTheme();

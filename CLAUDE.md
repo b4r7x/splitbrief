@@ -34,8 +34,11 @@ npm run test-ci                  # typecheck && lint && test
 
 Read the canonical doc **before** touching the matching area. Every link below exists.
 
+**Start here:** New? Read [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) → [docs/CONCEPTS.md](./docs/CONCEPTS.md) → [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+
 | When you're about to… | Read |
 |---|---|
+| Start reading the docs | [docs/README.md](./docs/README.md) — index + reading order |
 | Orient yourself in the codebase | [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) — one-page rule index |
 | Understand the system end-to-end | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — planner/implementer contracts, orchestrator loop, event model |
 | Look up shared vocabulary | [docs/CONCEPTS.md](./docs/CONCEPTS.md) |
@@ -50,8 +53,17 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Place a test | [docs/TESTING.md](./docs/TESTING.md) |
 | Enforce a cross-cutting rule | [docs/INVARIANTS.md](./docs/INVARIANTS.md) — pre-merge grep gates |
 | Understand end-user modes | [docs/WORKFLOW.md](./docs/WORKFLOW.md) |
+| Use a slash command at runtime | [docs/SLASH-COMMANDS.md](./docs/SLASH-COMMANDS.md) |
 | Check strategic direction | [docs/VISION.md](./docs/VISION.md), [docs/FUTURE.md](./docs/FUTURE.md) |
+| Contribute to this project | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 | Work with API keys | [docs/API-KEYS.md](./docs/API-KEYS.md) |
+| Look up any config field | [docs/CONFIG.md](./docs/CONFIG.md) |
+| Debug a failing workflow | [docs/DEBUGGING.md](./docs/DEBUGGING.md) |
+| Work with workflow hooks (user-declared commands) | [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md) |
+| Enable OpenTelemetry | [docs/OTEL.md](./docs/OTEL.md) |
+| Tune the planner repo-map | [docs/REPOMAP.md](./docs/REPOMAP.md) |
+| Review architectural rationale | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) §Design decisions, [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md) §Design decisions, [docs/REPOMAP.md](./docs/REPOMAP.md) §Design decisions, [docs/OTEL.md](./docs/OTEL.md) §Design decisions |
+| Look up release history & amendments | [CHANGELOG.md](./CHANGELOG.md), [docs/CHANGELOG.md](./docs/CHANGELOG.md) |
 
 Reference also: `.specify/memory/constitution.md` — 6 constitutional principles (v1.3.1, linked from VISION).
 
@@ -64,7 +76,7 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 - **kebab-case** file and folder names (`models-dev.ts`, `lm-studio.ts`). Single-word where natural (`pricing.ts`).
 - **No decorative comments.** No section banners. Ordering is the documentation.
 - **Error at boundaries.** Internal functions propagate; callers decide. See [ERRORS.md](./docs/ERRORS.md).
-- **No unsafe assertions.** No incidental `!` or broad `as` in production. Sanctioned exceptions: `src/utils/type-guards.ts`, `src/stores/create-store.ts`, `src/stores/use-stores.ts`, branded ID constructors in `src/core/types/state-actions.ts` and `src/core/schemas/task.ts`.
+- **No unsafe assertions.** No incidental `!` or broad `as` in production. Sanctioned exceptions: `src/utils/type-guards.ts`, `src/stores/create-store.ts`, `src/stores/use-stores.ts`, branded ID constructors in `src/core/types/state-actions.ts` and `src/core/schemas/task.ts`, `Map.get(...)!` in `src/engine/codebase/graph.ts` and `src/engine/codebase/pagerank.ts` (Map.get after pre-population — invariant documented inline), `as unknown` for path-walking arbitrary shapes in `src/engine/hooks/substitute.ts` (recursive Record traversal) and `src/engine/hooks/dispatch.ts` (parsing untyped hook stdout JSON).
 - **Zero barrels.** No re-export-only `index.ts` anywhere in `src/`. `find src -name 'index.ts'` must return nothing. See [NO-BARRELS.md](./docs/NO-BARRELS.md).
 - **Zero memoization.** No `useMemo`, `useCallback`, or `React.memo`. Store selectors make them unnecessary. See [STORES.md](./docs/STORES.md).
 - **No imperative handles.** No `forwardRef` / `useImperativeHandle`. Extract state to a store instead.

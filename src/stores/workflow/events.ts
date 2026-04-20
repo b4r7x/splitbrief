@@ -1,8 +1,8 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { TuiEvent } from '../../features/workflow/types.js';
+import type { EngineEvent } from '../../engine/events/types.js';
 
 export interface EventsState {
-  events: TuiEvent[];
+  events: EngineEvent[];
 }
 
 const initial: EventsState = { events: [] };
@@ -25,9 +25,9 @@ export const eventsStore = {
 
 export const MAX_EVENTS = 10_000;
 
-export function mergeEvent(events: TuiEvent[], event: TuiEvent): TuiEvent[] {
+export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEvent[] {
   const last = events[events.length - 1];
-  if (event.type === 'planner-text' && last?.type === 'planner-text') {
+  if (event.type === 'planner_text' && last?.type === 'planner_text') {
     const merged = { ...last, text: last.text + event.text };
     const next = events.slice();
     next[next.length - 1] = merged;

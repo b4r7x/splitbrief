@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../core/paths.js';
 import type { ResumeContextHolder } from './types.js';
@@ -53,13 +53,15 @@ describe('applyRebuiltContext', () => {
       messageEntry('user', 'add auth'),
       messageEntry('assistant', 'here is the spec'),
     ]);
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
     const resumeHolder: ResumeContextHolder = { messages: [] };
 
     await applyRebuiltContext({
       projectDir,
       sessionId,
       callbacks,
+      bus,
       config: { workflow: workflowConfig(true) },
       resumeHolder,
     });
@@ -74,7 +76,8 @@ describe('applyRebuiltContext', () => {
 
   it('emits the transcript-unavailable warning and leaves the resume holder untouched when persistTranscript is false', async () => {
     const { projectDir, sessionId } = setupSession();
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
     const resumeHolder: ResumeContextHolder = {
       messages: [{ role: 'user', content: 'pre-existing' }],
     };
@@ -83,6 +86,7 @@ describe('applyRebuiltContext', () => {
       projectDir,
       sessionId,
       callbacks,
+      bus,
       config: { workflow: workflowConfig(false) },
       resumeHolder,
     });
@@ -95,13 +99,15 @@ describe('applyRebuiltContext', () => {
 
   it('skips populating the holder when requireNonEmpty is set and no messages were rebuilt', async () => {
     const { projectDir, sessionId } = setupSession();
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
     const resumeHolder: ResumeContextHolder = { messages: [] };
 
     await applyRebuiltContext({
       projectDir,
       sessionId,
       callbacks,
+      bus,
       config: { workflow: workflowConfig(true) },
       resumeHolder,
       requireNonEmpty: true,
@@ -114,12 +120,14 @@ describe('applyRebuiltContext', () => {
   it('populates the holder even on non-empty build when requireNonEmpty is set', async () => {
     const { projectDir, sessionId } = setupSession([messageEntry('user', 'keep me')]);
     const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
     const resumeHolder: ResumeContextHolder = { messages: [] };
 
     await applyRebuiltContext({
       projectDir,
       sessionId,
       callbacks,
+      bus,
       config: { workflow: workflowConfig(true) },
       resumeHolder,
       requireNonEmpty: true,
@@ -130,12 +138,14 @@ describe('applyRebuiltContext', () => {
 
   it('tolerates a missing resumeHolder and still emits the fallback warning', async () => {
     const { projectDir, sessionId } = setupSession();
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
 
     await applyRebuiltContext({
       projectDir,
       sessionId,
       callbacks,
+      bus,
       config: { workflow: workflowConfig(false) },
       resumeHolder: undefined,
     });
@@ -150,13 +160,15 @@ describe('createSessionExpiredHandler', () => {
       messageEntry('user', 'first turn'),
       messageEntry('assistant', 'ack'),
     ]);
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
     const resumeHolder: ResumeContextHolder = { messages: [] };
 
     const handler = createSessionExpiredHandler({
       projectDir,
       sessionId,
       callbacks,
+      bus,
       config: { workflow: workflowConfig(true) },
       resumeHolder,
     });

@@ -11,10 +11,18 @@ import { appendMessage } from '../../../core/state/persistence.js';
 import { ensureSessionDir, ensureDiptychDir, type SpecMetadata } from '../../../core/paths-io.js';
 import { readPackageJson } from '../../../core/project-meta.js';
 import { createPlanner, createImplementer } from '../../runners/factory.js';
+import { createEventBus } from '../../events/bus.js';
+import { createJsonlSink } from '../../events/sinks/jsonl.js';
+import { createStdoutJsonSink } from '../../events/sinks/stdout-json.js';
+import { createOtelSink } from '../../events/sinks/otel.js';
+import { createTuiSink } from '../../events/sinks/tui.js';
+import type { EventSink } from '../../events/types.js';
+import { createHookSink } from '../../hooks/sink.js';
+import { runPreHooks } from '../../hooks/run-pre-hook.js';
 
 import type { WorkflowContext, WorkflowSinks, ResumeContextHolder } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary.js';
-import { emit, emitError, emitPlannerStatus, emitWorkflowConfig, emitUserMessage } from '../events.js';
+import { publishEvent, publishError, publishPlannerStatus, publishWorkflowConfig, publishUserMessage } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { applyRebuiltContext } from '../resume-context.js';
 import { createValidator } from '../validation.js';
@@ -29,6 +37,10 @@ export type RunWorkflowOptions = {
   sessionId?: string | undefined;
   selectedSkills?: SkillMeta[] | undefined;
   signal?: AbortSignal | undefined;
+  /** Headless mode: emit events as NDJSON to stdout. TUI render is skipped at the CLI layer. */
+  headless?: boolean | undefined;
+  /** Test-only: subscribe an extra sink to the bus (used by integration tests for recording). */
+  _eventSink?: EventSink | undefined;
 };
 
 export type InitResult =
@@ -48,15 +60,26 @@ export async function initializeWorkflow(
   ensureDiptychDir(projectDir);
   ensureSessionDir(projectDir, sessionId);
 
+  const bus = createEventBus();
+  if (!opts.headless) bus.subscribe(createTuiSink());
+  bus.subscribe(createJsonlSink(projectDir, sessionId, config.workflow.persistTranscript));
+  if (opts.headless) bus.subscribe(createStdoutJsonSink());
+  if (opts._eventSink) bus.subscribe(opts._eventSink);
+  if (config.hooks) bus.subscribe(createHookSink(config.hooks, { projectDir, sessionId }, bus));
+  if (config.otel?.enabled) {
+    const { trace } = await import('@opentelemetry/api');
+    bus.subscribe(createOtelSink({ provider: trace.getTracerProvider(), serviceName: config.otel.serviceName }));
+  }
+
   // Stateless backends receive priorMessages instead of plannerSessionId.
   const initialSessionId = savedState?.plannerSessionId ?? null;
   const planner = createPlanner(config, initialSessionId);
   if (savedState && !planner.capabilities.supportsSessionResume) {
-    await applyRebuiltContext({ projectDir, sessionId, callbacks, config, resumeHolder, requireNonEmpty: true });
+    await applyRebuiltContext({ projectDir, sessionId, callbacks, bus, config, resumeHolder, requireNonEmpty: true });
   }
   const available = await planner.isAvailable();
   if (!available) {
-    emitError(callbacks, `Planner '${getRunnerDisplayName(config.planner)}' is not available. Make sure it's installed.`);
+    publishError(bus, 'idle', `Planner '${getRunnerDisplayName(config.planner)}' is not available. Make sure it's installed.`);
     return { ok: false, summary: buildSummary({ ...summaryBase, state: createInitialState(feature) }) };
   }
 
@@ -67,8 +90,8 @@ export async function initializeWorkflow(
   if (savedState) {
     state = savedState;
     setTrackedState(state);
-    emitPlannerStatus(callbacks, state, 'running');
-    emit(projectDir, sessionId, state, 'workflow_resumed', undefined, {});
+    publishPlannerStatus(bus, state, 'running');
+    publishEvent(bus, { type: 'workflow_resumed', ts: Date.now(), phase: state.phase });
   } else {
     state = createInitialState(feature);
     state = {
@@ -80,13 +103,13 @@ export async function initializeWorkflow(
     };
     state = transitionAndSave(projectDir, sessionId, state, { type: 'START', feature });
     setTrackedState(state);
-    emitPlannerStatus(callbacks, state, 'running');
-    emit(projectDir, sessionId, state, 'workflow_started', undefined, {});
+    publishPlannerStatus(bus, state, 'running');
+    publishEvent(bus, { type: 'workflow_started', ts: Date.now(), phase: state.phase, feature });
     appendMessage(projectDir, sessionId, { role: 'user', text: feature }, config.workflow.persistTranscript);
-    emitUserMessage(callbacks, feature);
+    publishUserMessage(bus, state.phase, feature);
   }
 
-  emitWorkflowConfig(callbacks, {
+  publishWorkflowConfig(bus, state.phase, {
     mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
     plannerTool: summaryBase.plannerTool,
     plannerModel: summaryBase.plannerModel,
@@ -103,7 +126,16 @@ export async function initializeWorkflow(
   };
 
   const validator = createValidator();
-  const wctx: WorkflowContext = { projectDir, sessionId, config, callbacks, planner, context, implementer, signal: opts.signal, metadata, resumeHolder, sinks, validator };
+  const wctx: WorkflowContext = { projectDir, sessionId, config, callbacks, bus, planner, context, implementer, signal: opts.signal, metadata, resumeHolder, sinks, validator };
+
+  if (!savedState && config.hooks) {
+    const prePlanPayload: import('../../events/types.js').EngineEvent = { type: 'workflow_started', ts: Date.now(), phase: state.phase, feature };
+    const pre = await runPreHooks(config.hooks, 'pre_planning', prePlanPayload, { projectDir, sessionId });
+    if (!pre.allow) {
+      publishEvent(bus, { type: 'warning', ts: Date.now(), phase: state.phase, message: `pre_planning blocked: ${pre.reason ?? 'hook denied'}` });
+      return { ok: false, summary: buildSummary({ ...summaryBase, state }) };
+    }
+  }
 
   return { ok: true, state, wctx };
 }

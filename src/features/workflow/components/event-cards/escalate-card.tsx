@@ -1,8 +1,8 @@
 import { Box, Text } from 'ink';
-import type { TuiEvent } from '../../types.js';
+import type { EngineEvent } from '../../../../engine/events/types.js';
 import { useTheme } from '../../../../components/theme.js';
 
-type EscalateEvent = Extract<TuiEvent, { type: 'escalate' }>;
+type EscalateEvent = Extract<EngineEvent, { type: 'escalate' }>;
 
 export function EscalateCard({ event }: { event: EscalateEvent }) {
   const t = useTheme();

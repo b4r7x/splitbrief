@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { WorkflowState, QueuedMessage } from '../../core/schemas/workflow.js';
-import type { OrchestratorCallbacks } from './types.js';
+import type { EventBus } from '../events/types.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE } from '../../core/paths.js';
-import { emit } from './events.js';
+import { publishEvent } from './events.js';
 import { appendMessage } from '../../core/state/persistence.js';
 import { transitionAndSave } from './state-ops.js';
 import { dispatchNativeInjection } from './native-injection.js';
@@ -16,11 +16,11 @@ export async function collectAndPersistClarifications(
   projectDir: string,
   sessionId: string,
   state: WorkflowState,
-  onQuestionAsked: NonNullable<OrchestratorCallbacks['onQuestionAsked']>,
+  onQuestionAsked: (question: ClarificationQuestion, index: number, total: number) => Promise<string>,
   persistTranscript: boolean,
+  bus: EventBus,
   metadata?: SpecMetadata | null,
   planner?: Planner,
-  callbacks?: OrchestratorCallbacks,
 ): Promise<WorkflowState> {
   if (state.phase !== 'researching' && state.phase !== 'specifying') {
     warnError('clarifications: unexpected phase', { phase: state.phase });
@@ -51,11 +51,11 @@ export async function collectAndPersistClarifications(
     };
 
     state = transitionAndSave(projectDir, sessionId, state, { type: 'ENQUEUE_USER_MSG', message });
-    emit(projectDir, sessionId, state, 'clarification_answered', undefined, { questionId: question.id, answer });
 
-    if (planner && callbacks) {
-      void dispatchNativeInjection(message, planner, projectDir, sessionId, state, (s) => { state = s; }, callbacks);
-      callbacks.onEvent({ type: 'message-queued', ts: Date.now(), id: message.id, phase: state.phase });
+    publishEvent(bus, { type: 'clarification_answered', ts: Date.now(), phase: state.phase, questionId: question.id, answer });
+    if (planner) {
+      publishEvent(bus, { type: 'message_queued', ts: Date.now(), phase: state.phase, id: message.id });
+      void dispatchNativeInjection(message, planner, projectDir, sessionId, state, (s) => { state = s; }, bus);
     }
   }
 
@@ -74,9 +74,10 @@ export async function collectAndPersistClarifications(
   }
 
   writeSpecFile(projectDir, sessionId, SPEC_FILE, content, metadata);
-  emit(projectDir, sessionId, state, 'clarifications_collected', undefined, {
-    count: clarifications.length,
-    clarifications,
+
+  publishEvent(bus, {
+    type: 'clarifications_collected', ts: Date.now(), phase: state.phase,
+    count: clarifications.length, clarifications,
   });
 
   return state;

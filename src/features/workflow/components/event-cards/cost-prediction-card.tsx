@@ -1,10 +1,10 @@
 import { Box, Text } from 'ink';
-import type { TuiEvent } from '../../types.js';
+import type { EngineEvent } from '../../../../engine/events/types.js';
 import { useTheme } from '../../../../components/theme.js';
 import { formatCost } from '../../../../core/formatting.js';
 import { getProviderDisplayName } from '../../../../core/providers/catalog.js';
 
-type CostPredictionEvent = Extract<TuiEvent, { type: 'cost-prediction' }>;
+type CostPredictionEvent = Extract<EngineEvent, { type: 'cost_prediction' }>;
 
 export function CostPredictionCard({ event }: { event: CostPredictionEvent }) {
   const t = useTheme();

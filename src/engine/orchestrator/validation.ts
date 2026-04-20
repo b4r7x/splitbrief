@@ -1,13 +1,14 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Task } from '../../core/schemas/task.js';
+import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { ValidationResult } from '../../core/types/summary.js';
-import type { ValidationStages } from '../../features/workflow/types.js';
-import type { OrchestratorCallbacks } from './types.js';
+import type { ValidationStages } from '../events/types.js';
+import type { EventBus } from '../events/types.js';
+import type { Phase } from '../../core/schemas/enums.js';
 import { runCommand } from '../../lib/process/spawn.js';
 import { isENOENT } from '../../lib/process/errors.js';
-import { emitValidation } from './events.js';
+import { publishValidation } from './events.js';
 import { truncateByLines } from '../../utils/truncate.js';
 import { parseShellCommand } from '../../utils/parse-shell-command.js';
 import { createTestFileFinder } from '../../core/validation/test-discovery.js';
@@ -23,7 +24,9 @@ export interface Validator {
     task: Task,
     projectDir: string,
     config: Config,
-    callbacks: OrchestratorCallbacks,
+    bus: EventBus,
+    phase: Phase,
+    taskId: TaskId,
   ) => Promise<ValidationResult[]>;
 }
 
@@ -111,14 +114,16 @@ export function createValidator(): Validator {
     task: Task,
     projectDir: string,
     config: Config,
-    callbacks: OrchestratorCallbacks,
+    bus: EventBus,
+    phase: Phase,
+    taskId: TaskId,
   ): Promise<ValidationResult[]> {
     const startTime = Date.now();
-    emitValidation(callbacks, { phase: 'start' });
+    publishValidation(bus, phase, taskId, { phase: 'start' });
     const results = await validateTask(task, projectDir, config, (stages) => {
-      emitValidation(callbacks, { phase: 'progress', stages, startTime });
+      publishValidation(bus, phase, taskId, { phase: 'progress', stages, startTime });
     });
-    emitValidation(callbacks, { phase: 'result', results, startTime });
+    publishValidation(bus, phase, taskId, { phase: 'result', results, startTime });
     return results;
   }
 

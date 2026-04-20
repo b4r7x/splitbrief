@@ -29,6 +29,7 @@ export interface CommandContext {
   requestTaskRedo: (taskId: string) => boolean;
   getQueueDepth: () => number;
   clearQueue: () => number;
+  rebuildRepomap: () => Promise<{ deleted: boolean; files: string[] }>;
 }
 
 export interface CommandPaletteItem {

@@ -5,6 +5,7 @@ import {
   makeCallbacks,
   makePlanner,
   makeImplementer,
+  makeBusRecorder,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
@@ -68,6 +69,7 @@ function makeWorkflowContext(overrides?: Partial<WorkflowContext>): WorkflowCont
       workflow: { commitStrategy: 'none', maxRetries: 2 },
     }),
     callbacks,
+    bus: makeBusRecorder().bus,
     planner: makePlanner(),
     implementer: makeImplementer(),
     context: defaultContext,
@@ -83,7 +85,8 @@ describe('runSingleTask — happy path', () => {
     const task = makeTask({ id: 'T001' });
     const state = implementingState([task]);
 
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
     const implementer = makeImplementer({
       implement: vi.fn().mockResolvedValue({
         success: true,
@@ -92,7 +95,7 @@ describe('runSingleTask — happy path', () => {
       }),
     });
 
-    const wctx = makeWorkflowContext({ callbacks, implementer });
+    const wctx = makeWorkflowContext({ callbacks, implementer, bus });
 
     const taskBreakdowns: TaskTokenUsage[] = [];
     const setTrackedState = vi.fn();
@@ -117,10 +120,10 @@ describe('runSingleTask — happy path', () => {
     expect(result.tokenUsage.implementerInput).toBe(300);
     expect(result.tokenUsage.implementerOutput).toBe(120);
 
-    const start = events.find((e) => e.type === 'task-start');
-    const complete = events.find((e) => e.type === 'task-complete');
-    expect(start).toMatchObject({ type: 'task-start', taskId: 'T001', index: 0, total: 1 });
-    expect(complete).toMatchObject({ type: 'task-complete', taskId: 'T001', method: 'local' });
+    const start = events.find((e) => e.type === 'task_started');
+    const complete = events.find((e) => e.type === 'task_completed');
+    expect(start).toMatchObject({ type: 'task_started', taskId: 'T001', index: 0, total: 1 });
+    expect(complete).toMatchObject({ type: 'task_completed', taskId: 'T001', method: 'local' });
 
     // One per-task breakdown recorded.
     expect(taskBreakdowns).toHaveLength(1);
@@ -161,7 +164,8 @@ describe('retryAndRecord — retry budget', () => {
     const task = makeTask({ id: 'T001' });
     const state = implementingState([task]);
 
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
     const retry = vi.fn().mockResolvedValue({
       success: true,
       output: 'fixed',
@@ -169,7 +173,7 @@ describe('retryAndRecord — retry budget', () => {
     });
     const implementer = makeImplementer({ retry });
 
-    const wctx = makeWorkflowContext({ callbacks, implementer });
+    const wctx = makeWorkflowContext({ callbacks, implementer, bus });
     const setTrackedState = vi.fn();
     const taskBreakdowns: TaskTokenUsage[] = [];
 
@@ -189,9 +193,13 @@ describe('retryAndRecord — retry budget', () => {
     expect(res.state.currentTaskIndex).toBe(1);
 
     // Retry event observed with attempt=1.
-    const retryEvents = events.filter((e) => e.type === 'retry');
+    const retryEvents = busEvents.filter((e) => e.type === 'task_retry');
     expect(retryEvents.length).toBeGreaterThanOrEqual(1);
-    expect(retryEvents[0]).toMatchObject({ taskId: 'T001', attempt: 1 });
+    const firstRetry = retryEvents[0];
+    if (firstRetry?.type === 'task_retry') {
+      expect(firstRetry.taskId).toBe('T001');
+      expect(firstRetry.attempt).toBe(1);
+    }
 
     // Breakdown recorded with method=local.
     expect(taskBreakdowns[0]?.method).toBe('local');
@@ -201,7 +209,8 @@ describe('retryAndRecord — retry budget', () => {
     const task = makeTask({ id: 'T001' });
     const state = implementingState([task]);
 
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
     // Local retry always fails.
     const retry = vi.fn().mockResolvedValue({
       success: false,
@@ -221,6 +230,7 @@ describe('retryAndRecord — retry budget', () => {
       callbacks,
       implementer,
       planner,
+      bus,
       // Shrink the retry budget to keep the test fast.
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
@@ -245,12 +255,12 @@ describe('retryAndRecord — retry budget', () => {
     // Final task status recorded as failed.
     expect(res.state.tasks[0]?.status).toBe('failed');
 
-    // Retry events and task_failed session-log event fan-out happens; on onEvent callbacks
-    // the observable failure signal is the lack of task-complete AND the retry events.
-    const complete = events.find((e) => e.type === 'task-complete');
+    // Retry events and task_failed session-log event fan-out happens.
+    // The observable failure signal is the lack of task_completed AND the retry events.
+    const complete = busEvents.find((e) => e.type === 'task_completed');
     expect(complete).toBeUndefined();
 
-    const retryEvents = events.filter((e) => e.type === 'retry');
+    const retryEvents = busEvents.filter((e) => e.type === 'task_retry');
     // At least as many retry events as local attempts.
     expect(retryEvents.length).toBeGreaterThanOrEqual(2);
   });

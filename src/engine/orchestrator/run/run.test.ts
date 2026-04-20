@@ -4,8 +4,8 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { EngineEvent } from '../../../engine/events/types.js';
 import { runWorkflow } from './run.js';
-import type { TuiEvent } from '../../../features/workflow/types.js';
 
 let dirs: string[] = [];
 
@@ -38,7 +38,8 @@ function unavailablePlannerConfig(): Config {
 describe('runWorkflow — smoke', () => {
   it('returns a summary without throwing when the configured planner is unavailable', async () => {
     const projectDir = setupProject();
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const events: EngineEvent[] = [];
     const config = unavailablePlannerConfig();
 
     const summary = await runWorkflow({
@@ -47,6 +48,7 @@ describe('runWorkflow — smoke', () => {
       config,
       callbacks,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _eventSink: (e) => events.push(e),
     });
 
     // The entry point produces a Summary even when planner is not available.
@@ -55,7 +57,7 @@ describe('runWorkflow — smoke', () => {
     expect(summary.totalTasks).toBe(0);
 
     // An error event was emitted explaining the missing planner to the user.
-    const errorEvent = events.find((e): e is Extract<TuiEvent, { type: 'error' }> => e.type === 'error');
+    const errorEvent = events.find((e): e is Extract<EngineEvent, { type: 'error' }> => e.type === 'error');
     expect(errorEvent).toBeDefined();
     expect(errorEvent?.message).toMatch(/not available/i);
 
@@ -70,7 +72,8 @@ describe('runWorkflow — smoke', () => {
     // path. The observable contract on the unavailable-planner boundary is that NONE
     // of those initialisation events fire — only the error event does.
     const projectDir = setupProject();
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const events: EngineEvent[] = [];
     const config = unavailablePlannerConfig();
 
     await runWorkflow({
@@ -79,10 +82,11 @@ describe('runWorkflow — smoke', () => {
       config,
       callbacks,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _eventSink: (e) => events.push(e),
     });
 
-    expect(events.find((e) => e.type === 'workflow-config')).toBeUndefined();
-    expect(events.find((e) => e.type === 'user-message')).toBeUndefined();
+    expect(events.find((e) => e.type === 'workflow_config')).toBeUndefined();
+    expect(events.find((e) => e.type === 'user_message')).toBeUndefined();
     expect(events.find((e) => e.type === 'error')).toBeDefined();
   });
 

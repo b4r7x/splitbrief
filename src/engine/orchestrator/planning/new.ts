@@ -5,7 +5,8 @@ import type { PlanResult } from '../../planners/types.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../../core/paths.js';
 import { buildSkillsSection } from '../../skills/discovery.js';
-import { addUsageAndSave, transitionAndSave, transitionAndEmit, emitPlanApproved } from '../state-ops.js';
+import { addUsageAndSave, transitionAndSave, publishPlanApproved } from '../state-ops.js';
+import { publishPlannerStatus } from '../events.js';
 import { collectAndPersistClarifications } from '../clarifications.js';
 import { runApprovalLoop } from '../approval.js';
 import { handleRewindSpec, handleRewindPlan } from './rewind.js';
@@ -35,7 +36,7 @@ async function runNewPlanning(
   const collectedQuestions: ClarificationQuestion[] = [];
 
   {
-    const { state: drainedState, prefix } = drainAndFormat(projectDir, sessionId, state, callbacks);
+    const { state: drainedState, prefix } = drainAndFormat(projectDir, sessionId, state, wctx.bus);
     state = drainedState;
     feature = prefix + feature;
   }
@@ -49,58 +50,62 @@ async function runNewPlanning(
       feature,
       mode: 'full',
       skillsContext,
+      ...(opts.codebaseContext !== undefined ? { codebaseContext: opts.codebaseContext } : {}),
       ...(resumeHolder && resumeHolder.messages.length > 0 ? { priorMessages: resumeHolder.messages } : {}),
       collectedQuestions,
     });
     state = run.state;
     planResult = run.result;
   } catch (err) {
-    return handlePlanningFailure(err, projectDir, sessionId, state, callbacks);
+    return handlePlanningFailure(err, projectDir, sessionId, state, wctx);
   }
 
   persistPhases(projectDir, sessionId, planResult.phases, metadata);
   let tasks = planResult.tasks;
 
-  state = addUsageAndSave(projectDir, sessionId, state, 'planner', planResult.usage, callbacks);
+  state = addUsageAndSave(projectDir, sessionId, state, 'planner', planResult.usage, wctx.bus);
 
-  state = transitionAndEmit({ state, projectDir, sessionId, callbacks, action: { type: 'RESEARCH_DONE' }, eventName: 'research_done', emitData: {} });
+  state = transitionAndSave(projectDir, sessionId, state, { type: 'RESEARCH_DONE' });
 
   if (conversational && collectedQuestions.length > 0 && callbacks.onQuestionAsked) {
-    state = await collectAndPersistClarifications(collectedQuestions, projectDir, sessionId, state, callbacks.onQuestionAsked, config.workflow.persistTranscript, metadata, planner, callbacks);
-    ({ state, tasks } = await regeneratePlanAndTasks(projectDir, sessionId, planner, callbacks, state, metadata, skillsContext));
+    state = await collectAndPersistClarifications(collectedQuestions, projectDir, sessionId, state, callbacks.onQuestionAsked, config.workflow.persistTranscript, wctx.bus, metadata, planner);
+    ({ state, tasks } = await regeneratePlanAndTasks(projectDir, sessionId, planner, callbacks, wctx.bus, state, metadata, skillsContext));
   }
 
-  state = transitionAndEmit({ state, projectDir, sessionId, callbacks, action: { type: 'SPEC_DONE' }, eventName: 'spec_done', status: 'running', emitData: {} });
+  state = transitionAndSave(projectDir, sessionId, state, { type: 'SPEC_DONE' });
+  publishPlannerStatus(wctx.bus, state, 'running');
 
   const specPath = join(sessionDir(projectDir, sessionId), SPEC_FILE);
 
   if (!config.workflow.autoApproveSpec) {
-    const specLoop = await runApprovalLoop({ type: 'spec', filePath: specPath, planner, projectDir, sessionId, callbacks, state, signal, persistTranscript: config.workflow.persistTranscript });
+    const specLoop = await runApprovalLoop({ type: 'spec', filePath: specPath, planner, projectDir, sessionId, callbacks, bus: wctx.bus, state, signal, persistTranscript: config.workflow.persistTranscript });
     state = specLoop.state;
     if (specLoop.rejected) return { state, tasks: [], cancelled: true };
     if (specLoop.regenerated) {
-      ({ state, tasks } = await regeneratePlanAndTasks(projectDir, sessionId, planner, callbacks, state, metadata, skillsContext));
+      ({ state, tasks } = await regeneratePlanAndTasks(projectDir, sessionId, planner, callbacks, wctx.bus, state, metadata, skillsContext));
     }
   }
 
-  state = transitionAndEmit({ state, projectDir, sessionId, callbacks, action: { type: 'APPROVE_SPEC' }, eventName: 'spec_approved', status: 'running', emitData: {} });
+  state = transitionAndSave(projectDir, sessionId, state, { type: 'APPROVE_SPEC' });
+  publishPlannerStatus(wctx.bus, state, 'running');
 
-  state = transitionAndEmit({ state, projectDir, sessionId, callbacks, action: { type: 'PLAN_DONE', tasks }, eventName: 'plan_done', status: 'running', emitData: { taskCount: tasks.length } });
+  state = transitionAndSave(projectDir, sessionId, state, { type: 'PLAN_DONE', tasks });
+  publishPlannerStatus(wctx.bus, state, 'running');
 
   const planPath = join(sessionDir(projectDir, sessionId), PLAN_FILE);
 
   if (!skipPlanApproval && !config.workflow.autoApprovePlan) {
-    const planLoop = await runApprovalLoop({ type: 'plan', filePath: planPath, planner, projectDir, sessionId, callbacks, state, signal, persistTranscript: config.workflow.persistTranscript });
+    const planLoop = await runApprovalLoop({ type: 'plan', filePath: planPath, planner, projectDir, sessionId, callbacks, bus: wctx.bus, state, signal, persistTranscript: config.workflow.persistTranscript });
     state = planLoop.state;
     if (planLoop.rejected) return { state, tasks: [], cancelled: true };
     if (planLoop.regenerated) {
-      const taskRegen = await regenerateTasks(projectDir, sessionId, planner, callbacks, state, metadata);
+      const taskRegen = await regenerateTasks(projectDir, sessionId, planner, callbacks, wctx.bus, state, metadata);
       state = taskRegen.state;
       tasks = taskRegen.tasks;
     }
   }
 
-  state = emitPlanApproved(state, { projectDir, sessionId, callbacks });
+  state = publishPlanApproved(state, { projectDir, sessionId, bus: wctx.bus });
 
   return { state, tasks, cancelled: false };
 }

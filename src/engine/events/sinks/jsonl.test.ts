@@ -1,0 +1,61 @@
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createJsonlSink } from './jsonl.js';
+import { ensureDiptychDir, ensureSessionDir } from '../../../core/paths-io.js';
+import { sessionDir } from '../../../core/paths.js';
+
+describe('jsonlSink', () => {
+  let projectDir: string;
+  const sessionId = 'test-session';
+
+  beforeEach(() => {
+    projectDir = mkdtempSync(join(tmpdir(), 'diptych-jsonl-'));
+    ensureDiptychDir(projectDir);
+    ensureSessionDir(projectDir, sessionId);
+  });
+  afterEach(() => { rmSync(projectDir, { recursive: true, force: true }); });
+
+  function readLog(): Array<Record<string, unknown>> {
+    const path = join(sessionDir(projectDir, sessionId), 'session.jsonl');
+    return readFileSync(path, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  }
+
+  it('writes event-kind entries with on-disk shape (kind, ts ISO, type, phase, data)', () => {
+    const sink = createJsonlSink(projectDir, sessionId, true);
+    sink({ type: 'workflow_started', ts: 100, phase: 'idle', feature: 'add x' });
+    sink({ type: 'plan_done', ts: 200, phase: 'planning', taskCount: 3 });
+
+    const lines = readLog();
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({ kind: 'event', type: 'workflow_started', phase: 'idle', data: { feature: 'add x' } });
+    expect(typeof lines[0]?.['ts']).toBe('string');
+    expect(String(lines[0]?.['ts'])).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(lines[1]).toMatchObject({ kind: 'event', type: 'plan_done', phase: 'planning', data: { taskCount: 3 } });
+  });
+
+  it('drops planner_text events when persistTranscript=false', () => {
+    const sink = createJsonlSink(projectDir, sessionId, false);
+    sink({ type: 'planner_text', ts: 100, phase: 'researching', text: 'thinking...' });
+    sink({ type: 'workflow_started', ts: 200, phase: 'idle', feature: 'x' });
+    const lines = readLog();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.['type']).toBe('workflow_started');
+  });
+
+  it('keeps user_message events even when persistTranscript=false', () => {
+    const sink = createJsonlSink(projectDir, sessionId, false);
+    sink({ type: 'user_message', ts: 100, phase: 'researching', text: 'hi' });
+    const lines = readLog();
+    expect(lines).toHaveLength(1);
+  });
+
+  it('serializes taskId outside data when present', () => {
+    const sink = createJsonlSink(projectDir, sessionId, true);
+    sink({ type: 'task_started', ts: 100, phase: 'implementing', taskId: 'task-1' as never, title: 't', index: 0, total: 1, file: 'a.ts', action: 'create' });
+    const lines = readLog();
+    expect(lines[0]?.['taskId']).toBe('task-1');
+    expect((lines[0]?.['data'] as Record<string, unknown>)?.['taskId']).toBeUndefined();
+  });
+});

@@ -6,7 +6,6 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import type { TuiEvent } from '../../features/workflow/types.js';
 import type { InvokeResult } from '../runners/types.js';
 
 let projectDir: string;
@@ -105,13 +104,12 @@ describe('createImplementerBase — extractsCode pipeline success', () => {
       text: '```ts\nexport const hello = () => "world";\n```',
       usage: { inputTokens: 10, outputTokens: 20 },
     });
-    const events: TuiEvent[] = [];
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
     const task = makeTask({ id: 'T001', file: 'src/hello.ts', action: 'modify' });
 
     const result = await implementer.implement({
       task, projectDir, config: makeConfig(), context: defaultContext,
-      onOutput: vi.fn(), onEvent: (e) => events.push(e),
+      onOutput: vi.fn(),
     });
 
     expect(result.success).toBe(true);
@@ -119,14 +117,6 @@ describe('createImplementerBase — extractsCode pipeline success', () => {
 
     const written = readFileSync(join(projectDir, 'src/hello.ts'), 'utf-8');
     expect(written).toContain('export const hello');
-
-    const doneEvent = events.find((e) => e.type === 'implementer-generate-done');
-    expect(doneEvent).toBeDefined();
-    if (doneEvent?.type === 'implementer-generate-done') {
-      expect(doneEvent.linesAdded).toBeGreaterThan(0);
-      expect(doneEvent.linesRemoved).toBeGreaterThan(0);
-      expect(typeof doneEvent.diff).toBe('string');
-    }
   });
 });
 
@@ -237,31 +227,3 @@ describe('createImplementerBase — retry', () => {
   });
 });
 
-describe('createImplementerBase — onEvent lifecycle', () => {
-  it('fires "running" at start and "failed" on invoke error', async () => {
-    const invoke = vi.fn().mockRejectedValue(new Error('fail'));
-    const events: TuiEvent[] = [];
-    const implementer = createImplementerBase(makeBaseConfig({ invoke }));
-
-    await implementer.implement({
-      task: makeTask(), projectDir, config: makeConfig(), context: defaultContext,
-      onOutput: vi.fn(), onEvent: (e) => events.push(e),
-    });
-
-    expect(events[0]?.type).toBe('implementer-generate-running');
-    expect(events.some((e) => e.type === 'implementer-generate-failed')).toBe(true);
-  });
-
-  it('fires "failed" when extractCode cannot parse output', async () => {
-    const invoke = vi.fn().mockResolvedValue({ text: '', usage: null });
-    const events: TuiEvent[] = [];
-    const implementer = createImplementerBase(makeBaseConfig({ invoke }));
-
-    await implementer.implement({
-      task: makeTask(), projectDir, config: makeConfig(), context: defaultContext,
-      onOutput: vi.fn(), onEvent: (e) => events.push(e),
-    });
-
-    expect(events.some((e) => e.type === 'implementer-generate-failed')).toBe(true);
-  });
-});

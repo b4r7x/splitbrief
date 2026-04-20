@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import type { TuiEvent, ValidationStages } from '../../types.js';
+import type { EngineEvent, ValidationStages } from '../../../../engine/events/types.js';
 import { useTheme } from '../../../../components/theme.js';
 import { Spinner } from '../../../../components/spinner.js';
 import { formatDuration } from '../../../../utils/format-time.js';
@@ -32,7 +32,7 @@ function Stages({ stages, currentStage, failedStage }: StagesProps): React.React
   );
 }
 
-export function ValidateCard({ event }: { event: Extract<TuiEvent, { type: 'validate' }> }) {
+export function ValidateCard({ event }: { event: Extract<EngineEvent, { type: 'validate' }> }) {
   const t = useTheme();
   const dur = event.duration ? `  ${formatDuration(event.duration)}` : '';
 

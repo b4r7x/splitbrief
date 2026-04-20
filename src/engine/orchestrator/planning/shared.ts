@@ -1,9 +1,10 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { OrchestratorCallbacks, PlannerCallbacksContext } from '../types.js';
+import type { EventBus } from '../../events/types.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
-import { createTextHandler, emitError } from '../events.js';
+import { createBusTextHandler, publishError } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { createSessionExpiredHandler } from '../resume-context.js';
 import { withContinuationLoop } from '../continuation.js';
@@ -23,6 +24,7 @@ export type PlanningPhaseOptions = {
   feature: string;
   selectedSkills?: SkillMeta[] | undefined;
   rewindPending?: { target: 'spec' | 'plan'; comment?: string | undefined } | undefined;
+  codebaseContext?: string | undefined;
 };
 
 export type PlanningPhaseResult = { state: WorkflowState; tasks: Task[]; cancelled: boolean };
@@ -31,9 +33,9 @@ export function drainAndFormat(
   projectDir: string,
   sessionId: string,
   state: WorkflowState,
-  callbacks: OrchestratorCallbacks,
+  bus: EventBus,
 ): { state: WorkflowState; prefix: string } {
-  const drain = drainQueue(projectDir, sessionId, state, callbacks);
+  const drain = drainQueue(projectDir, sessionId, state, bus);
   if (drain.messages.length === 0) return { state, prefix: '' };
   return { state: drain.state, prefix: formatDrainedMessages(drain.messages) };
 }
@@ -45,9 +47,9 @@ export function persistPhases(projectDir: string, sessionId: string, phases: Pla
 }
 
 export function handlePlanningFailure(
-  err: unknown, projectDir: string, sessionId: string, state: WorkflowState, callbacks: PlannerCallbacksContext['callbacks'],
+  err: unknown, projectDir: string, sessionId: string, state: WorkflowState, wctx: PlannerCallbacksContext,
 ): { state: WorkflowState; tasks: Task[]; cancelled: true } {
-  emitError(callbacks, labelError('Planning failed', err));
+  publishError(wctx.bus, state.phase, labelError('Planning failed', err));
   return { state: transitionAndSave(projectDir, sessionId, state, { type: 'CANCEL' }), tasks: [], cancelled: true };
 }
 
@@ -56,12 +58,13 @@ export async function regenerateTasks(
   sessionId: string,
   planner: Planner,
   callbacks: OrchestratorCallbacks,
+  bus: EventBus,
   state: WorkflowState,
   metadata: SpecMetadata,
   planOverride?: string,
 ): Promise<{ state: WorkflowState; tasks: Task[] }> {
   const result = await regenerateFromFeedback('tasks', {
-    projectDir, sessionId, planner, callbacks, state, metadata, planOverride,
+    projectDir, sessionId, planner, callbacks, bus, state, metadata, planOverride,
   });
   return { state: result.state, tasks: result.tasks };
 }
@@ -71,15 +74,16 @@ export async function regeneratePlanAndTasks(
   sessionId: string,
   planner: Planner,
   callbacks: OrchestratorCallbacks,
+  bus: EventBus,
   state: WorkflowState,
   metadata: SpecMetadata,
   skillsContext?: string,
 ): Promise<{ state: WorkflowState; tasks: Task[] }> {
   const planRegen = await regenerateFromFeedback('plan', {
-    projectDir, sessionId, planner, callbacks, state, metadata, skillsContext,
+    projectDir, sessionId, planner, callbacks, bus, state, metadata, skillsContext,
   });
   const taskRegen = await regenerateFromFeedback('tasks', {
-    projectDir, sessionId, planner, callbacks, state: planRegen.state, metadata, planOverride: planRegen.plan,
+    projectDir, sessionId, planner, callbacks, bus, state: planRegen.state, metadata, planOverride: planRegen.plan,
   });
   return { state: taskRegen.state, tasks: taskRegen.tasks };
 }
@@ -90,12 +94,13 @@ export async function regenerateTasksIfNeeded(
   sessionId: string,
   planner: Planner,
   callbacks: OrchestratorCallbacks,
+  bus: EventBus,
   state: WorkflowState,
   tasks: Task[],
   metadata: SpecMetadata,
 ): Promise<{ state: WorkflowState; tasks: Task[] }> {
   if (!regenerated) return { state, tasks };
-  return regenerateTasks(projectDir, sessionId, planner, callbacks, state, metadata);
+  return regenerateTasks(projectDir, sessionId, planner, callbacks, bus, state, metadata);
 }
 
 export type PlannerCallRunResult = {
@@ -110,6 +115,7 @@ export type PlannerCallOptions = {
   feature: string;
   mode: 'quick' | 'full';
   skillsContext?: string | undefined;
+  codebaseContext?: string | undefined;
   priorMessages?: PriorMessage[] | undefined;
   collectedQuestions?: ClarificationQuestion[] | undefined;
 };
@@ -117,10 +123,10 @@ export type PlannerCallOptions = {
 export async function runPlannerCallInContinuationLoop(
   opts: PlannerCallOptions,
 ): Promise<PlannerCallRunResult> {
-  const { wctx, planner, feature, mode, skillsContext, priorMessages, collectedQuestions } = opts;
+  const { wctx, planner, feature, mode, skillsContext, codebaseContext, priorMessages, collectedQuestions } = opts;
   const { projectDir, sessionId, config, callbacks, resumeHolder, sinks, signal } = wctx;
   let state = opts.state;
-  const textHandler = createTextHandler(callbacks);
+  const textHandler = createBusTextHandler(wctx.bus, state.phase);
   const conversational = planner.capabilities.supportsConversationalPlanning;
 
   const loop = await withContinuationLoop<PlanResult>({
@@ -132,7 +138,7 @@ export async function runPlannerCallInContinuationLoop(
       const plannerCallbacks: PlannerCallbacks = {
         onOutput: (text) => { recordOutput(text); textHandler(text); },
         onSessionId: (id) => { state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PLANNER_SESSION_ID', sessionId: id }); },
-        onSessionExpired: createSessionExpiredHandler({ projectDir, sessionId, callbacks, config, resumeHolder }),
+        onSessionExpired: createSessionExpiredHandler({ projectDir, sessionId, callbacks, bus: wctx.bus, config, resumeHolder }),
         sessionId,
         persistTranscript: config.workflow.persistTranscript,
         ...(priorMessages && priorMessages.length > 0 ? { priorMessages } : {}),
@@ -151,10 +157,10 @@ export async function runPlannerCallInContinuationLoop(
 
       if (mode === 'quick') {
         const quickPlanFn = planner.quickPlan ?? planner.plan;
-        const result = await quickPlanFn.call(planner, prompt, projectDir, plannerCallbacks);
+        const result = await quickPlanFn.call(planner, prompt, projectDir, plannerCallbacks, codebaseContext);
         return { value: result };
       }
-      const result = await planner.plan(prompt, projectDir, plannerCallbacks, skillsContext);
+      const result = await planner.plan(prompt, projectDir, plannerCallbacks, skillsContext, codebaseContext);
       return { value: result };
     },
   });

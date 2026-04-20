@@ -1,6 +1,6 @@
 import { createStore, storeBase } from '../create-store.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
-import type { TuiEvent } from '../../features/workflow/types.js';
+import type { EngineEvent } from '../../engine/events/types.js';
 
 export interface TokensState {
   localCount: number;
@@ -30,11 +30,11 @@ export const tokensStore = {
   __testReset,
 };
 
-export function updateTokens(state: TokensState, event: TuiEvent): TokensState {
-  if (event.type === 'cost-update') {
+export function updateTokens(state: TokensState, event: EngineEvent): TokensState {
+  if (event.type === 'cost_update') {
     return { ...state, tokenUsage: event.tokenUsage };
   }
-  if (event.type === 'task-complete') {
+  if (event.type === 'task_completed') {
     let { localCount, escalatedCount } = state;
     if (event.method === 'local') localCount += 1;
     else if (

@@ -1,13 +1,14 @@
 import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { OrchestratorCallbacks } from './types.js';
 import type { ValidationResult } from '../../core/types/summary.js';
 import type { TaskCompletionMethod } from '../../core/schemas/enums.js';
+import type { EventBus } from '../events/types.js';
 import { commitChanges, createCheckpoint, stageAll } from '../../lib/git.js';
 import { labelError } from '../../utils/format-errors.js';
-import { emit, emitWarning, emitGitCommit, emitGitCheckpoint, emitTaskComplete } from './events.js';
+import { publishWarning, publishGitCommit, publishGitCheckpoint, publishTaskComplete } from './events.js';
 import { transitionAndSave } from './state-ops.js';
+import { runPreHooks } from '../hooks/run-pre-hook.js';
 
 type ValidateCommitOptions = {
   task: Task;
@@ -16,7 +17,7 @@ type ValidateCommitOptions = {
   sessionId: string;
   config: Config;
   state: WorkflowState;
-  callbacks: OrchestratorCallbacks;
+  bus: EventBus;
   method: TaskCompletionMethod;
   transitionType: 'VALIDATION_PASS' | 'HINT_SUCCESS' | 'FULL_SUCCESS';
   commitSuffix?: string | undefined;
@@ -25,7 +26,7 @@ type ValidateCommitOptions = {
 };
 
 export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Promise<{ state: WorkflowState; completed: boolean }> {
-  const { task, results, projectDir, sessionId, config, callbacks, method, transitionType, commitSuffix, taskStartTime, state, retryCount } = opts;
+  const { task, results, projectDir, sessionId, config, bus, method, transitionType, commitSuffix, taskStartTime, state, retryCount } = opts;
   if (!results.every((r) => r.passed)) {
     return { state, completed: false };
   }
@@ -34,33 +35,52 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
   if (strategy === 'per-task') {
     const suffix = commitSuffix ? ` (${commitSuffix})` : '';
     const commitMsg = `feat(diptych): ${task.id} - ${task.title}${suffix}`;
+
+    if (config.hooks) {
+      const preCommitPayload: import('../events/types.js').EngineEvent = {
+        type: 'git_commit', ts: Date.now(), phase: state.phase, taskId: task.id, message: commitMsg, file: task.file,
+      };
+      const pre = await runPreHooks(config.hooks, 'pre_commit', preCommitPayload, { projectDir, sessionId });
+      if (!pre.allow) {
+        publishWarning(bus, state.phase, `pre_commit blocked: ${pre.reason ?? 'hook denied'}`);
+        const nextState = transitionAndSave(projectDir, sessionId, state, { type: transitionType });
+        publishTaskComplete(bus, nextState.phase, {
+          taskId: task.id, title: task.title,
+          method, retries: retryCount ?? state.attempt,
+          duration: taskStartTime ? Date.now() - taskStartTime : 0,
+          ...(state.implementerTool !== undefined && { tool: state.implementerTool }),
+          ...(state.implementerModel !== undefined && { model: state.implementerModel }),
+        });
+        return { state: nextState, completed: true };
+      }
+    }
+
     try {
       await stageAll(projectDir);
       await commitChanges(projectDir, commitMsg);
-      emitGitCommit(callbacks, commitMsg);
+      publishGitCommit(bus, state.phase, task.id, commitMsg, task.file);
     } catch (err) {
-      emitWarning(callbacks, labelError('Failed to commit', err));
+      publishWarning(bus, state.phase, labelError('Failed to commit', err));
     }
   } else if (strategy === 'checkpoint') {
     try {
       const tag = await createCheckpoint(projectDir, task.id);
       if (tag) {
-        emitGitCheckpoint(callbacks, tag, task.id);
+        publishGitCheckpoint(bus, state.phase, task.id, tag);
       }
     } catch (err) {
-      emitWarning(callbacks, labelError('Failed to create checkpoint', err));
+      publishWarning(bus, state.phase, labelError('Failed to create checkpoint', err));
     }
   }
 
   const nextState = transitionAndSave(projectDir, sessionId, state, { type: transitionType });
-  emitTaskComplete(callbacks, {
+  publishTaskComplete(bus, nextState.phase, {
     taskId: task.id, title: task.title,
     method, retries: retryCount ?? state.attempt,
     duration: taskStartTime ? Date.now() - taskStartTime : 0,
     ...(state.implementerTool !== undefined && { tool: state.implementerTool }),
     ...(state.implementerModel !== undefined && { model: state.implementerModel }),
   });
-  emit(projectDir, sessionId, nextState, 'task_completed', task.id, { method });
 
   return { state: nextState, completed: true };
 }

@@ -1,9 +1,9 @@
 import type { Config } from '../../core/schemas/config.js';
-import type { OrchestratorCallbacks } from './types.js';
 import type { Session } from '../../core/schemas/session.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { EventBus } from '../events/types.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
 import { clearActive } from '../../core/sessions/lifecycle.js';
 import { saveSummary } from '../../core/sessions/io.js';
@@ -63,7 +63,7 @@ export type InstallQueueHandlerOpts = {
   sinks: WorkflowSinks;
   getTrackedState: () => WorkflowState | undefined;
   setTrackedState: (s: WorkflowState) => void;
-  callbacks: OrchestratorCallbacks;
+  bus: EventBus;
   config: Config;
   planner: Planner;
 };
@@ -75,7 +75,7 @@ export function installQueueHandler(opts: InstallQueueHandlerOpts): void {
     opts.sessionId,
     opts.getTrackedState,
     opts.setTrackedState,
-    opts.callbacks,
+    opts.bus,
     opts.config.workflow.persistTranscript,
     opts.planner,
   ));

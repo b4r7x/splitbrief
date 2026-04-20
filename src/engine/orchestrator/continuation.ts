@@ -1,6 +1,7 @@
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
+import type { EventBus } from '../events/types.js';
 import type { Planner } from '../planners/types.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
@@ -98,6 +99,7 @@ export type RegenerateFromFeedbackCtx = {
   sessionId: string;
   planner: Planner;
   callbacks: OrchestratorCallbacks;
+  bus: EventBus;
   state: WorkflowState;
   metadata: SpecMetadata;
   skillsContext?: string | undefined;
@@ -120,10 +122,10 @@ export async function regenerateFromFeedback(
   kind: 'plan' | 'tasks',
   ctx: RegenerateFromFeedbackCtx,
 ): Promise<PlanRegenResult | TasksRegenResult> {
-  const { projectDir, sessionId, planner, callbacks, metadata, skillsContext, planOverride } = ctx;
+  const { projectDir, sessionId, planner, bus, metadata, skillsContext, planOverride } = ctx;
   let { state } = ctx;
 
-  const drain = drainQueue(projectDir, sessionId, state, callbacks);
+  const drain = drainQueue(projectDir, sessionId, state, bus);
   state = drain.state;
   const prefix = drain.messages.length > 0 ? formatDrainedMessages(drain.messages) : '';
 
@@ -137,7 +139,7 @@ export async function regenerateFromFeedback(
       prompt: prefix ? prefix + basePrompt : basePrompt,
       projectDir,
       sessionId,
-      callbacks,
+      bus,
       state,
       metadata,
       writeTo: PLAN_FILE,
@@ -152,7 +154,7 @@ export async function regenerateFromFeedback(
     prompt: prefix ? prefix + basePrompt : basePrompt,
     projectDir,
     sessionId,
-    callbacks,
+    bus,
     state,
     metadata,
     writeTo: TASKS_FILE,

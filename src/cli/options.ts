@@ -15,5 +15,8 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--no-fullscreen', 'Disable fullscreen alternate screen buffer')
     .option('--no-mouse', 'Disable mouse tracking')
     .option('--mode <mode>', 'Workflow mode: quick, standard, or full')
-    .option('--budget <amount>', 'Maximum budget in dollars (e.g., 2.00)', parseFloat);
+    .option('--budget <amount>', 'Maximum budget in dollars (e.g., 2.00)', parseFloat)
+    .option('--allow-hooks', 'Trust hook config without prompting (use in CI)', false)
+    .option('--json', 'Headless mode: emit each EngineEvent as NDJSON to stdout, skip TUI render', false)
+    .option('--otel-exporter <name>', 'Bootstrap an OTel exporter (currently only "console"); requires otel.enabled in config');
 }

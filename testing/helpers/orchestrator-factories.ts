@@ -1,17 +1,15 @@
 import { vi } from 'vitest';
 import type { ValidationResult } from '../../src/core/types/summary.js';
 import type { OrchestratorCallbacks } from '../../src/engine/orchestrator/types.js';
-import type { TuiEvent } from '../../src/features/workflow/types.js';
 import type { Planner } from '../../src/engine/planners/types.js';
 import type { Implementer } from '../../src/engine/implementers/types.js';
 import { makeTask } from './factories/task.js';
+import { createEventBus } from '../../src/engine/events/bus.js';
+import type { EngineEvent, EventBus } from '../../src/engine/events/types.js';
 
-export function makeCallbacks(overrides?: Partial<OrchestratorCallbacks>): { callbacks: OrchestratorCallbacks; events: TuiEvent[] } {
-  const events: TuiEvent[] = [];
+export function makeCallbacks(overrides?: Partial<OrchestratorCallbacks>): { callbacks: OrchestratorCallbacks } {
   return {
-    events,
     callbacks: {
-      onEvent: (e) => events.push(e),
       onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
       onExternalChanges: vi.fn().mockResolvedValue(false),
       onComplete: vi.fn(),
@@ -68,3 +66,10 @@ export const passingResults: ValidationResult[] = [
 export const failingResults: ValidationResult[] = [
   { passed: false, stage: 'tsc', error: 'TS error' },
 ];
+
+export function makeBusRecorder(): { bus: EventBus; events: EngineEvent[] } {
+  const events: EngineEvent[] = [];
+  const bus = createEventBus();
+  bus.subscribe((e) => events.push(e));
+  return { bus, events };
+}

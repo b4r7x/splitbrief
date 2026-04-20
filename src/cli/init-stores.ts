@@ -14,10 +14,17 @@ import { discoverAllCliTools } from '../engine/providers/discovery.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 import { cliError } from './errors.js';
 import { getPlannerToolId } from '../core/config/accessors/runner-config.js';
+import { ensureHooksTrusted } from './hook-trust-prompt.js';
 
 export async function initStores(projectDir: string, opts: WorkflowOpts = {}): Promise<void> {
   initUIChrome();
   loadProjectState(projectDir, opts);
+  const storeConfig = configStore.get().config;
+  await ensureHooksTrusted({
+    projectDir,
+    hooks: storeConfig?.hooks,
+    allowHooks: opts.allowHooks ?? false,
+  });
   await loadDiscovery(projectDir);
 }
 

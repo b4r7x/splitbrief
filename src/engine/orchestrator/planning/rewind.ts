@@ -4,8 +4,8 @@ import type { Task } from '../../../core/schemas/task.js';
 import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../../core/paths.js';
 import { buildRegeneratePrompt } from '../../spec/prompts/plan.js';
-import { emit, createTextHandler } from '../events.js';
-import { addUsageAndSave, transitionAndEmit, emitPlanApproved } from '../state-ops.js';
+import { publishEvent, createBusTextHandler, publishPlannerStatus } from '../events.js';
+import { addUsageAndSave, transitionAndSave, publishPlanApproved } from '../state-ops.js';
 import { appendMessage } from '../../../core/state/persistence.js';
 import { runApprovalLoop } from '../approval.js';
 import {
@@ -34,46 +34,49 @@ export async function handleRewindSpec(
   if (rewindPending.comment) {
     appendMessage(projectDir, sessionId, { role: 'user', phase: 'specifying', text: rewindPending.comment }, config.workflow.persistTranscript);
     const current = readSpecFileOrEmpty(projectDir, sessionId, SPEC_FILE);
-    const { state: drainedState, prefix: drainPrefix } = drainAndFormat(projectDir, sessionId, state, callbacks);
+    const { state: drainedState, prefix: drainPrefix } = drainAndFormat(projectDir, sessionId, state, wctx.bus);
     state = drainedState;
     const regenPrompt = drainPrefix + buildRegeneratePrompt('spec', current, rewindPending.comment);
-    createTextHandler(callbacks)(`\n[Regenerating spec with feedback: ${rewindPending.comment}]\n`);
+    createBusTextHandler(wctx.bus, state.phase)(`\n[Regenerating spec with feedback: ${rewindPending.comment}]\n`);
     const regenResult = await planner.regenerate(regenPrompt, 'spec', projectDir, {
-      onOutput: createTextHandler(callbacks),
+      onOutput: createBusTextHandler(wctx.bus, state.phase),
     });
-    state = addUsageAndSave(projectDir, sessionId, state, 'planner', regenResult.usage, callbacks);
+    state = addUsageAndSave(projectDir, sessionId, state, 'planner', regenResult.usage, wctx.bus);
     writeSpecFile(projectDir, sessionId, SPEC_FILE, regenResult.text, metadata);
-    emit(projectDir, sessionId, state, 'spec_regenerated', undefined, { comment: rewindPending.comment });
+    publishEvent(wctx.bus, { type: 'spec_regenerated', ts: Date.now(), phase: state.phase, comment: rewindPending.comment });
   }
 
-  state = transitionAndEmit({ state, projectDir, sessionId, callbacks, action: { type: 'SPEC_DONE' }, eventName: 'spec_done', status: 'running', emitData: {} });
+  state = transitionAndSave(projectDir, sessionId, state, { type: 'SPEC_DONE' });
+  publishPlannerStatus(wctx.bus, state, 'running');
 
   const specPath = join(sessionDir(projectDir, sessionId), SPEC_FILE);
   if (!config.workflow.autoApproveSpec) {
-    const specLoop = await runApprovalLoop({ type: 'spec', filePath: specPath, planner, projectDir, sessionId, callbacks, state, signal, persistTranscript: config.workflow.persistTranscript });
+    const specLoop = await runApprovalLoop({ type: 'spec', filePath: specPath, planner, projectDir, sessionId, callbacks, bus: wctx.bus, state, signal, persistTranscript: config.workflow.persistTranscript });
     state = specLoop.state;
     if (specLoop.rejected) return { state, tasks: [], cancelled: true };
   }
 
-  state = transitionAndEmit({ state, projectDir, sessionId, callbacks, action: { type: 'APPROVE_SPEC' }, eventName: 'spec_approved', status: 'running', emitData: {} });
+  state = transitionAndSave(projectDir, sessionId, state, { type: 'APPROVE_SPEC' });
+  publishPlannerStatus(wctx.bus, state, 'running');
 
-  const { state: planAndTasksState, tasks } = await regeneratePlanAndTasks(projectDir, sessionId, planner, callbacks, state, metadata, skillsContext);
+  const { state: planAndTasksState, tasks } = await regeneratePlanAndTasks(projectDir, sessionId, planner, callbacks, wctx.bus, state, metadata, skillsContext);
   state = planAndTasksState;
 
-  state = transitionAndEmit({ state, projectDir, sessionId, callbacks, action: { type: 'PLAN_DONE', tasks }, eventName: 'plan_done', status: 'running', emitData: { taskCount: tasks.length } });
+  state = transitionAndSave(projectDir, sessionId, state, { type: 'PLAN_DONE', tasks });
+  publishPlannerStatus(wctx.bus, state, 'running');
 
   const planPath = join(sessionDir(projectDir, sessionId), PLAN_FILE);
   let finalTasks = tasks;
   if (!skipPlanApproval && !config.workflow.autoApprovePlan) {
-    const planLoop = await runApprovalLoop({ type: 'plan', filePath: planPath, planner, projectDir, sessionId, callbacks, state, signal, persistTranscript: config.workflow.persistTranscript });
+    const planLoop = await runApprovalLoop({ type: 'plan', filePath: planPath, planner, projectDir, sessionId, callbacks, bus: wctx.bus, state, signal, persistTranscript: config.workflow.persistTranscript });
     state = planLoop.state;
     if (planLoop.rejected) return { state, tasks: [], cancelled: true };
-    const regen = await regenerateTasksIfNeeded(planLoop.regenerated, projectDir, sessionId, planner, callbacks, state, tasks, metadata);
+    const regen = await regenerateTasksIfNeeded(planLoop.regenerated, projectDir, sessionId, planner, callbacks, wctx.bus, state, tasks, metadata);
     state = regen.state;
     finalTasks = regen.tasks;
   }
 
-  state = emitPlanApproved(state, { projectDir, sessionId, callbacks });
+  state = publishPlanApproved(state, { projectDir, sessionId, bus: wctx.bus });
   return { state, tasks: finalTasks, cancelled: false };
 }
 
@@ -91,35 +94,36 @@ export async function handleRewindPlan(
   if (rewindPending.comment) {
     appendMessage(projectDir, sessionId, { role: 'user', phase: 'planning', text: rewindPending.comment }, config.workflow.persistTranscript);
     const current = readSpecFileOrEmpty(projectDir, sessionId, PLAN_FILE);
-    const { state: drainedState, prefix: drainPrefix } = drainAndFormat(projectDir, sessionId, state, callbacks);
+    const { state: drainedState, prefix: drainPrefix } = drainAndFormat(projectDir, sessionId, state, wctx.bus);
     state = drainedState;
     const regenPrompt = drainPrefix + buildRegeneratePrompt('plan', current, rewindPending.comment);
-    createTextHandler(callbacks)(`\n[Regenerating plan with feedback: ${rewindPending.comment}]\n`);
+    createBusTextHandler(wctx.bus, state.phase)(`\n[Regenerating plan with feedback: ${rewindPending.comment}]\n`);
     const regenResult = await planner.regenerate(regenPrompt, 'plan', projectDir, {
-      onOutput: createTextHandler(callbacks),
+      onOutput: createBusTextHandler(wctx.bus, state.phase),
     });
-    state = addUsageAndSave(projectDir, sessionId, state, 'planner', regenResult.usage, callbacks);
+    state = addUsageAndSave(projectDir, sessionId, state, 'planner', regenResult.usage, wctx.bus);
     writeSpecFile(projectDir, sessionId, PLAN_FILE, regenResult.text, metadata);
-    emit(projectDir, sessionId, state, 'plan_regenerated', undefined, { comment: rewindPending.comment });
+    publishEvent(wctx.bus, { type: 'plan_regenerated', ts: Date.now(), phase: state.phase, comment: rewindPending.comment });
   }
 
-  const taskRegen = await regenerateTasks(projectDir, sessionId, planner, callbacks, state, metadata);
+  const taskRegen = await regenerateTasks(projectDir, sessionId, planner, callbacks, wctx.bus, state, metadata);
   state = taskRegen.state;
   const rewindTasks: Task[] = taskRegen.tasks;
 
-  state = transitionAndEmit({ state, projectDir, sessionId, callbacks, action: { type: 'PLAN_DONE', tasks: rewindTasks }, eventName: 'plan_done', status: 'running', emitData: { taskCount: rewindTasks.length } });
+  state = transitionAndSave(projectDir, sessionId, state, { type: 'PLAN_DONE', tasks: rewindTasks });
+  publishPlannerStatus(wctx.bus, state, 'running');
 
   const planPath = join(sessionDir(projectDir, sessionId), PLAN_FILE);
   let finalTasks = rewindTasks;
   if (!skipPlanApproval && !config.workflow.autoApprovePlan) {
-    const planLoop = await runApprovalLoop({ type: 'plan', filePath: planPath, planner, projectDir, sessionId, callbacks, state, signal, persistTranscript: config.workflow.persistTranscript });
+    const planLoop = await runApprovalLoop({ type: 'plan', filePath: planPath, planner, projectDir, sessionId, callbacks, bus: wctx.bus, state, signal, persistTranscript: config.workflow.persistTranscript });
     state = planLoop.state;
     if (planLoop.rejected) return { state, tasks: [], cancelled: true };
-    const regen = await regenerateTasksIfNeeded(planLoop.regenerated, projectDir, sessionId, planner, callbacks, state, rewindTasks, metadata);
+    const regen = await regenerateTasksIfNeeded(planLoop.regenerated, projectDir, sessionId, planner, callbacks, wctx.bus, state, rewindTasks, metadata);
     state = regen.state;
     finalTasks = regen.tasks;
   }
 
-  state = emitPlanApproved(state, { projectDir, sessionId, callbacks });
+  state = publishPlanApproved(state, { projectDir, sessionId, bus: wctx.bus });
   return { state, tasks: finalTasks, cancelled: false };
 }

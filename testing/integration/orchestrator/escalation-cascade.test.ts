@@ -5,7 +5,7 @@ import { handleRetryAndEscalation } from '../../../src/engine/orchestrator/escal
 import { createValidator } from '../../../src/engine/orchestrator/validation.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeCallbacks, makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks, makeImplementer, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -35,7 +35,8 @@ describe('escalation cascade: local retries exhaust, then hint (tier 1), then fu
     state = transition(state, { type: 'APPROVE_PLAN' });
     state = transition(state, { type: 'TASK_SENT' });
 
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
     // Every implementer retry fails → local retries exhaust → hint/full escalations exercised.
     const implementer = makeImplementer({
       retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken', usage: { inputTokens: 5, outputTokens: 5 } }),
@@ -51,14 +52,14 @@ describe('escalation cascade: local retries exhaust, then hint (tier 1), then fu
         projectDir, sessionId,
         config: makeNoValidationConfig({ workflow: { maxRetries: 2, commitStrategy: 'none' } }),
         context: defaultContext, planner, callbacks, implementer,
-        metadata: META, sinks: SINKS, validator: createValidator(),
+        metadata: META, sinks: SINKS, validator: createValidator(), bus,
       },
       task, initialError: 'type error', currentState: state,
     });
 
-    const retryEvents = events.filter((e) => e.type === 'retry');
-    const escalateEvents = events.filter((e) => e.type === 'escalate');
-    const tiers = escalateEvents.map((e) => (e as { tier: number }).tier);
+    const retryEvents = busEvents.filter((e) => e.type === 'task_retry');
+    const escalateEvents = busEvents.filter((e) => e.type === 'escalate');
+    const tiers = escalateEvents.map((e) => e.type === 'escalate' ? e.tier : -1);
 
     expect(retryEvents.length).toBeGreaterThanOrEqual(2);
     expect(tiers).toEqual([1, 2]);

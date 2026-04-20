@@ -219,6 +219,29 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
       },
     },
     {
+      kind: 'arg',
+      name: '/repomap',
+      label: 'Repomap',
+      description: 'Manage the repo-map cache',
+      validScreens: ALL_SCREENS,
+      handler: (args) => {
+        const sub = args?.trim().toLowerCase();
+        if (sub === 'rebuild') {
+          ctx.rebuildRepomap()
+            .then((result) => {
+              if (result.deleted) {
+                ctx.setFeedbackMessage('Repomap cache cleared. Next planner phase will parse from scratch.');
+              } else {
+                ctx.setFeedbackMessage('Repomap cache was not present.');
+              }
+            })
+            .catch(() => ctx.setFeedbackError('Failed to clear repomap cache.'));
+          return;
+        }
+        ctx.setFeedbackError(`Unknown repomap command: ${sub ?? ''}. Use: /repomap rebuild`);
+      },
+    },
+    {
       kind: 'noarg',
       name: '/quit',
       label: 'Quit',

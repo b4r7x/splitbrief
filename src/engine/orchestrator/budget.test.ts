@@ -1,8 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { OrchestratorCallbacks } from './types.js';
 import { checkBudget, getCurrentCost, enforceBudget } from './budget.js';
-import { makeCallbacks as makeSharedCallbacks } from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks as makeSharedCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 
 const zeroUsage: TokenUsage = {
   plannerInput: 0, plannerOutput: 0,
@@ -11,7 +11,7 @@ const zeroUsage: TokenUsage = {
 };
 
 function makeCallbacks(overrides?: Partial<OrchestratorCallbacks>): OrchestratorCallbacks {
-  return makeSharedCallbacks({ onEvent: vi.fn(), ...overrides }).callbacks;
+  return makeSharedCallbacks({ ...overrides }).callbacks;
 }
 
 describe('checkBudget', () => {
@@ -109,11 +109,13 @@ describe('enforceBudget', () => {
   };
 
   it('returns stop=false for cost under threshold', async () => {
+    const { bus } = makeBusRecorder();
     const result = await enforceBudget({
       ...baseOpts,
       tokenUsage: zeroUsage,
       maxBudget: 1.00,
       callbacks: makeCallbacks(),
+      bus,
       warningEmitted: false,
     });
     expect(result.stop).toBe(false);
@@ -122,6 +124,7 @@ describe('enforceBudget', () => {
 
   it('emits warning at 80% and sets warningEmitted', async () => {
     const callbacks = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
     // Use an API-priced planner with enough tokens to hit 80%
     const usage: TokenUsage = {
       ...zeroUsage,
@@ -141,17 +144,18 @@ describe('enforceBudget', () => {
       tokenUsage: usage,
       maxBudget: budget,
       callbacks,
+      bus,
       warningEmitted: false,
     });
 
     expect(result.stop).toBe(false);
     expect(result.warningEmitted).toBe(true);
-    const events = vi.mocked(callbacks.onEvent).mock.calls.map(c => c[0]);
-    expect(events.some(e => e.type === 'budget-warning')).toBe(true);
+    expect(events.some(e => e.type === 'budget_warning')).toBe(true);
   });
 
   it('does not re-emit warning if already emitted', async () => {
     const callbacks = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
     const usage: TokenUsage = {
       ...zeroUsage,
       plannerInput: 200_000,
@@ -170,16 +174,17 @@ describe('enforceBudget', () => {
       tokenUsage: usage,
       maxBudget: budget,
       callbacks,
+      bus,
       warningEmitted: true,
     });
 
     expect(result.stop).toBe(false);
-    const events = vi.mocked(callbacks.onEvent).mock.calls.map(c => c[0]);
-    expect(events.some(e => e.type === 'budget-warning')).toBe(false);
+    expect(events.some(e => e.type === 'budget_warning')).toBe(false);
   });
 
   it('stops workflow when budget exceeded and no callback', async () => {
     const callbacks = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
     const usage: TokenUsage = {
       ...zeroUsage,
       plannerInput: 1_000_000,
@@ -198,18 +203,23 @@ describe('enforceBudget', () => {
       tokenUsage: usage,
       maxBudget: budget,
       callbacks,
+      bus,
       warningEmitted: false,
     });
 
     expect(result.stop).toBe(true);
     expect(result.warningEmitted).toBe(true);
-    const events = vi.mocked(callbacks.onEvent).mock.calls.map(c => c[0]);
-    expect(events.some(e => e.type === 'budget-exceeded')).toBe(true);
+    expect(events.some(e => e.type === 'budget_exceeded')).toBe(true);
   });
 
   it('asks onBudgetExceeded callback when provided and continues if true', async () => {
-    const onBudgetExceeded = vi.fn().mockResolvedValue(true);
+    const budgetPromptArgs: Array<{ current: number; max: number }> = [];
+    const onBudgetExceeded = async (current: number, max: number) => {
+      budgetPromptArgs.push({ current, max });
+      return true;
+    };
     const callbacks = makeCallbacks({ onBudgetExceeded });
+    const { bus } = makeBusRecorder();
     const usage: TokenUsage = {
       ...zeroUsage,
       plannerInput: 1_000_000,
@@ -228,16 +238,26 @@ describe('enforceBudget', () => {
       tokenUsage: usage,
       maxBudget: budget,
       callbacks,
+      bus,
       warningEmitted: false,
     });
 
-    expect(onBudgetExceeded).toHaveBeenCalled();
+    // Observable: the prompt was delivered to the user callback with the
+    // realised cost/budget, and the user's "continue" answer propagated.
+    expect(budgetPromptArgs).toHaveLength(1);
+    expect(budgetPromptArgs[0]?.current).toBeGreaterThan(budget);
+    expect(budgetPromptArgs[0]?.max).toBe(budget);
     expect(result.stop).toBe(false);
   });
 
   it('stops when onBudgetExceeded callback returns false', async () => {
-    const onBudgetExceeded = vi.fn().mockResolvedValue(false);
+    const budgetPromptArgs: Array<{ current: number; max: number }> = [];
+    const onBudgetExceeded = async (current: number, max: number) => {
+      budgetPromptArgs.push({ current, max });
+      return false;
+    };
     const callbacks = makeCallbacks({ onBudgetExceeded });
+    const { bus } = makeBusRecorder();
     const usage: TokenUsage = {
       ...zeroUsage,
       plannerInput: 1_000_000,
@@ -256,10 +276,11 @@ describe('enforceBudget', () => {
       tokenUsage: usage,
       maxBudget: budget,
       callbacks,
+      bus,
       warningEmitted: false,
     });
 
-    expect(onBudgetExceeded).toHaveBeenCalled();
+    expect(budgetPromptArgs).toHaveLength(1);
     expect(result.stop).toBe(true);
   });
 });

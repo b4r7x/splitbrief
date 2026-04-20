@@ -1,9 +1,9 @@
 import { Box, Text } from 'ink';
-import type { TuiEvent } from '../../types.js';
+import type { EngineEvent } from '../../../../engine/events/types.js';
 import { useTheme } from '../../../../components/theme.js';
 import { getProviderDisplayName } from '../../../../core/providers/catalog.js';
 
-type WorkflowConfigEvent = Extract<TuiEvent, { type: 'workflow-config' }>;
+type WorkflowConfigEvent = Extract<EngineEvent, { type: 'workflow_config' }>;
 
 export function WorkflowConfigCard({ event }: { event: WorkflowConfigEvent }) {
   const t = useTheme();

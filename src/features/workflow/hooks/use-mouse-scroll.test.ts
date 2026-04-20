@@ -77,8 +77,9 @@ describe('wireMouseScroll', () => {
     routerStore.init({ screen: 'workflow', feature: 'feat' });
     eventsStore.__testReset({
       events: Array.from({ length: 20 }, (_, ts) => ({
-        type: 'planner-text' as const,
+        type: 'planner_text' as const,
         ts,
+        phase: 'specifying' as const,
         text: `event-${ts}`,
       })),
     });

@@ -53,6 +53,8 @@ All phases and transitions live in `src/core/state/machine.ts`. The primary stat
 
 #### Slash-command actions
 
+Full reference: `docs/SLASH-COMMANDS.md`.
+
 `/revise-spec [comment]` dispatches `REWIND_TO_SPEC` (sets `phase: 'specifying'`, clears tasks, sets `rewindPending: { target: 'spec', comment? }`). On the next workflow restart, `runPlanningPhase` detects `rewindPending` and takes the rewind fast-path: if `comment` is non-empty it calls `planner.regenerate(buildRegeneratePrompt('spec', currentSpec, comment), 'spec', …)` (identical to the approval-gate regeneration path), then presents the spec approval gate. If `comment` is empty it skips regeneration and goes directly to the spec approval gate. Either way, `rewindPending` is cleared via `CLEAR_REWIND_PENDING` before the gate. Similarly `/revise-plan [comment]` dispatches `REWIND_TO_PLAN` (target `'plan'`): fast-path regenerates only the plan (spec preserved), then re-derives tasks and presents the plan approval gate (in `full` mode) or proceeds directly. `/redo-task <id>` dispatches `RESET_TASK` (sets task status to `pending`, rewinds `currentTaskIndex`); no `rewindPending` is set — the task loop re-picks it up on its next iteration without replanning.
 
 | Action | `rewindPending` | Planning re-runs? | `planner.regenerate` called? |

@@ -6,7 +6,7 @@ import { createValidator } from '../../../src/engine/orchestrator/validation.js'
 import { abortStore } from '../../../src/stores/workflow/abort.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeCallbacks, makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks, makeImplementer, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -35,7 +35,8 @@ describe('abort during implementer phase terminates the task loop cleanly', () =
     state = transition(state, { type: 'APPROVE_PLAN' });
 
     const controller = new AbortController();
-    const { callbacks, events } = makeCallbacks();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
 
     // Trigger the engine's AbortSignal and the UI-level abortStore.markPending() while
     // the implementer is "running". Once aborted, the task loop bails out of the loop.
@@ -50,16 +51,16 @@ describe('abort during implementer phase terminates the task loop cleanly', () =
     const { state: finalState } = await runTaskLoop({
       wctx: { projectDir, sessionId, config: makeNoValidationConfig({ workflow: { commitStrategy: 'none', maxRetries: 1 } }),
         callbacks, planner: makePlanner(), implementer, context: defaultContext,
-        metadata: META, sinks: SINKS, validator: createValidator(), signal: controller.signal },
+        metadata: META, sinks: SINKS, validator: createValidator(), bus, signal: controller.signal },
       initialState: state, setTrackedState: vi.fn(), setCurrentTask: vi.fn(),
     });
 
     expect(abortStore.get().pending).toBe(true);
     // Second task (T002) was never started — the signal short-circuits the outer loop.
-    const t002Start = events.find((e) => e.type === 'task-start' && (e as { taskId: string }).taskId === 'T002');
+    const t002Start = busEvents.find((e) => e.type === 'task_started' && (e as { taskId: string }).taskId === 'T002');
     expect(t002Start).toBeUndefined();
     // No task was marked complete after the abort.
-    expect(events.find((e) => e.type === 'task-complete')).toBeUndefined();
+    expect(busEvents.find((e) => e.type === 'task_completed')).toBeUndefined();
     expect(finalState.currentTaskIndex).toBeLessThan(finalState.tasks.length);
   });
 });
