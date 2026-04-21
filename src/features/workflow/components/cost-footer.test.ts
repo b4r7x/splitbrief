@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeEta } from './cost-footer.js';
+import { computeEta, formatModeLabel } from './cost-footer.js';
 
 describe('computeEta', () => {
   it('returns empty when no tasks completed yet', () => {
@@ -34,5 +34,24 @@ describe('computeEta', () => {
   it('uses the most recent completion time when an earlier entry is negative', () => {
     const result = computeEta([-1000, 2000], 1, 3);
     expect(result).toBe('~1s remaining');
+  });
+});
+
+describe('formatModeLabel', () => {
+  it('returns empty when mode is undefined', () => {
+    expect(formatModeLabel(undefined)).toBe('');
+  });
+
+  it('renders the mode label when mode is provided', () => {
+    expect(formatModeLabel('standard')).toBe('mode: standard');
+    expect(formatModeLabel('instant')).toBe('mode: instant');
+    expect(formatModeLabel('quick')).toBe('mode: quick');
+    expect(formatModeLabel('speckit')).toBe('mode: speckit');
+  });
+
+  it('never renders the legacy "full" label for any supported mode', () => {
+    for (const mode of ['instant', 'quick', 'standard', 'speckit'] as const) {
+      expect(formatModeLabel(mode)).not.toContain('full');
+    }
   });
 });

@@ -1,6 +1,6 @@
 # Hook system (workflow lifecycle hooks)
 
-> **Different from `docs/HOOKS.md`!** That doc covers React hooks. This doc covers user-extensible **workflow lifecycle hooks** — shell commands or built-in scanners that fire at well-known moments during a diptych workflow.
+> **Different from `docs/HOOKS.md`!** That doc covers React hooks. This doc covers user-extensible **workflow lifecycle hooks** — shell commands or built-in scanners that fire at well-known moments during a diptych workflow. Lifecycle hooks are not React hooks.
 
 User-extensible hook system inspired by Claude Agent SDK. Declare commands in `.diptych/config.yml` to fire at workflow events (pre/post task, pre/post validation, pre/post commit, etc.). Used for `prettier --write` after each task, secret scanning before commit, Slack notifications, custom validators — anything you can run from a script.
 
@@ -32,7 +32,7 @@ The first time you run with hooks defined, diptych prompts to trust them. Use `-
 | Event            | When                                        | Payload (event fields)                                              |
 |------------------|---------------------------------------------|----------------------------------------------------------------------|
 | `pre_planning`   | Before any planner phase starts             | `feature`                                                            |
-| `post_planning`  | After tasks.md written, before implementing | `taskCount`                                                          |
+| `post_planning`  | After Task Brief transport (`tasks.md`) is written, before implementing | `taskCount`                                                          |
 | `pre_task`       | Before each implementer task starts         | `taskId`, `title`, `file`, `action`, `index`, `total`                |
 | `post_task`      | After each implementer task succeeds        | `taskId`, `title`, `method`, `file`, `retries`, `duration`           |
 | `pre_validation` | Before tsc/lint/test runs                   | `taskId`, `file`                                                     |
@@ -216,7 +216,7 @@ A single JSON object is written to the child's stdin, then stdin is closed:
 ```
 
 - `event` is the in-flight `EngineEvent` — the same payload rendered in the TUI. Fields present depend on event type (see [per-event availability](#per-event-availability)).
-- `context` is static for the run: `projectDir` (absolute), `sessionId` (per-invocation), `phase` (`plan` / `implement` / `validate`), `mode` (`quick` / `standard` / `full`).
+- `context` is static for the run: `projectDir` (absolute), `sessionId` (per-invocation), `phase` (`plan` / `implement` / `validate`), `mode` (`instant` / `quick` / `standard` / `speckit`).
 
 ### stdout — optional response
 
@@ -234,7 +234,7 @@ A hook that only needs to run side effects can exit 0 and write nothing. To infl
 |-----------|-----------------------------------|-----------------------------------------------------------------------------------------------|
 | `decision`| `"allow" \| "deny" \| "warn"`     | Workflow control. `deny` on a `pre_*` hook with `on_failure: block` aborts the upcoming action. |
 | `message` | string                            | Surfaced in the TUI and in the `hook_blocked` / `warning` event.                               |
-| `modify`  | object                            | `pre_task` only: rewrites task prompt fields. Allowed keys: `signature`, `implSteps`, `constraints`. |
+| `modify`  | object                            | `pre_task` only: rewrites task prompt fields. Allowed keys: `signature`, `implementationSteps`, `constraints`. |
 
 Invalid stdout JSON is treated as success with an empty body (the hook's side effects stand; no warning is emitted for malformed output beyond a debug log).
 

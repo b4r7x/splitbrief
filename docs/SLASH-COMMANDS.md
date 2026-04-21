@@ -2,7 +2,7 @@
 
 Runtime commands available during a diptych session. Type `/` in the TUI to open the command picker; the fuzzy matcher accepts partial names (e.g. `/rev-spec` resolves to `/revise-spec`). Each command runs against the current workflow state and either mutates it, opens an overlay, or prints feedback into the status line.
 
-The full catalog lives in `src/core/slash-commands/catalog.ts`. Dispatch (name resolution + screen-guard enforcement) lives in `src/core/slash-commands/dispatch.ts`. The execution context (how a command reaches the stores / engine) is wired in `src/core/slash-commands/context.ts`.
+The complete catalog lives in `src/core/slash-commands/catalog.ts`. Dispatch (name resolution + screen-guard enforcement) lives in `src/core/slash-commands/dispatch.ts`. The execution context (how a command reaches the stores / engine) is wired in `src/core/slash-commands/context.ts`.
 
 ## Availability
 
@@ -51,12 +51,12 @@ Rewind-family commands (`/revise-spec`, `/revise-plan`, `/redo-task`) additional
 - **Example**: `/settings` or `/config`.
 - **Implementation**: `src/core/slash-commands/catalog.ts` — `ctx.openOverlay('settings')`.
 
-### `/mode <quick|standard|full>`
+### `/mode <instant|quick|standard|speckit>`
 
 - **Purpose**: switch workflow mode at runtime. With no argument, opens the mode-selector overlay. With a valid mode, persists it via `configStore.save(...)` so subsequent runs inherit the change.
 - **Screens**: all.
-- **Args**: one of `quick`, `standard`, `full` (`WORKFLOW_MODES` in `src/core/schemas/enums.ts`). Invalid values produce an error message listing the valid set.
-- **Example**: `/mode full`
+- **Args**: one of `instant`, `quick`, `standard`, `speckit` (`WORKFLOW_MODES` in `src/core/schemas/enums.ts`). `full` remains a legacy alias for `speckit`. Invalid values produce an error message listing the valid set.
+- **Example**: `/mode speckit`
 - **Implementation**: `src/core/slash-commands/catalog.ts`; persistence in `src/core/slash-commands/context.ts` (calls `configStore.save`). Mode semantics: `docs/WORKFLOW.md` §1.2.
 
 ### `/planner`
@@ -89,7 +89,7 @@ Rewind-family commands (`/revise-spec`, `/revise-plan`, `/redo-task`) additional
 
 ### `/revise-spec [comment]`
 
-- **Purpose**: rewind to the spec phase. With a comment, the next planning run regenerates `spec.md` using the comment as feedback. Without a comment, the workflow jumps to the spec approval gate without regenerating.
+- **Purpose**: rewind to the spec-support phase. With a comment, the next planning run regenerates the supporting spec and Task Brief using the comment as feedback. Without a comment, the workflow jumps to the spec approval gate without regenerating.
 - **Screens**: `workflow`.
 - **Phase guard**: `canReviseSpec` — allowed from `reviewing-spec` onward (`reviewing-spec`, `planning`, `reviewing-plan`, `implementing`, `validating-task`, `escalating`, `final-review`). Denied in `idle`, `researching`, `specifying`, `complete`.
 - **Example**: `/revise-spec the validator should also strip whitespace`
@@ -97,7 +97,7 @@ Rewind-family commands (`/revise-spec`, `/revise-plan`, `/redo-task`) additional
 
 ### `/revise-plan [comment]`
 
-- **Purpose**: rewind to the plan phase (spec is preserved). With a comment, `plan.md` / `tasks.md` are regenerated using the comment; without a comment, the workflow jumps to the plan approval gate.
+- **Purpose**: rewind to the plan-support phase (spec is preserved). With a comment, the Task Brief transport and dependent plan artifacts are regenerated using the comment; without a comment, the workflow jumps to the plan approval gate.
 - **Screens**: `workflow`.
 - **Phase guard**: `canRevisePlan` — allowed from `reviewing-plan` onward.
 - **Example**: `/revise-plan split task T003 into smaller steps`

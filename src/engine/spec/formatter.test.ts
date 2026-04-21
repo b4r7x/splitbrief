@@ -38,13 +38,13 @@ describe('formatTaskPrompt', () => {
     expect(prompt).toContain('export function old(): void {}');
   });
 
-  it('task with signature contains Function Signature section', () => {
+  it('task with signature contains the canonical Signature section', () => {
     const task = makeTask({
       signature: 'export function greet(name: string): string',
     });
     const prompt = formatTaskPrompt(task, context);
 
-    expect(prompt).toContain('### Function Signature');
+    expect(prompt).toContain('### Signature');
     expect(prompt).toContain('export function greet(name: string): string');
   });
 
@@ -55,9 +55,19 @@ describe('formatTaskPrompt', () => {
     const prompt = formatTaskPrompt(task, context);
 
     expect(prompt).toContain('### Tests');
-    expect(prompt).toContain('Should handle empty input');
-    expect(prompt).toContain('Should trim whitespace');
-    expect(prompt).toContain('Should return lowercase');
+    expect(prompt).toContain('- Should handle empty input');
+    expect(prompt).toContain('- Should trim whitespace');
+    expect(prompt).toContain('- Should return lowercase');
+  });
+
+  it('task with a pattern keeps the codebase pattern in the implementer brief', () => {
+    const task = makeTask({
+      pattern: 'Follow the existing parseConfig(raw) guard shape.',
+    });
+    const prompt = formatTaskPrompt(task, context);
+
+    expect(prompt).toContain('### Pattern');
+    expect(prompt).toContain('Follow the existing parseConfig(raw) guard shape.');
   });
 
   it('task with constraints contains Constraints section', () => {
@@ -80,6 +90,94 @@ describe('formatTaskPrompt', () => {
     expect(lastLine).toContain('No markdown fences');
   });
 
+  it('omits Scope / Escalation / Evidence sections when the brief has none', () => {
+    const task = makeTask();
+    const prompt = formatTaskPrompt(task, context);
+    expect(prompt).not.toContain('### Scope');
+    expect(prompt).not.toContain('### Escalation');
+    expect(prompt).not.toContain('### Evidence');
+  });
+
+  it('renders Scope with In bounds / Out of bounds bullets when present', () => {
+    const task = makeTask({
+      scope: {
+        inBounds: ['only touch helpers.ts'],
+        outOfBounds: ['do not modify SignupForm'],
+      },
+    });
+    const prompt = formatTaskPrompt(task, context);
+    expect(prompt).toContain('### Scope');
+    expect(prompt).toContain('**In bounds:**');
+    expect(prompt).toContain('- only touch helpers.ts');
+    expect(prompt).toContain('**Out of bounds:**');
+    expect(prompt).toContain('- do not modify SignupForm');
+  });
+
+  it('renders Scope with only the bucket that has bullets', () => {
+    const task = makeTask({ scope: { inBounds: ['just this file'] } });
+    const prompt = formatTaskPrompt(task, context);
+    expect(prompt).toContain('### Scope');
+    expect(prompt).toContain('**In bounds:**');
+    expect(prompt).not.toContain('**Out of bounds:**');
+  });
+
+  it('renders Escalation bullets when present so the implementer knows when to stop', () => {
+    const task = makeTask({
+      escalation: ['ambiguous error message format', 'missing dependency'],
+    });
+    const prompt = formatTaskPrompt(task, context);
+    expect(prompt).toContain('### Escalation');
+    expect(prompt).toContain('- ambiguous error message format');
+    expect(prompt).toContain('- missing dependency');
+  });
+
+  it('renders Evidence bullets when present so the proof to leave behind is explicit', () => {
+    const task = makeTask({
+      evidence: ['npm test passes', 'changed file list'],
+    });
+    const prompt = formatTaskPrompt(task, context);
+    expect(prompt).toContain('### Evidence');
+    expect(prompt).toContain('- npm test passes');
+    expect(prompt).toContain('- changed file list');
+  });
+
+  it('places Scope / Escalation / Evidence after Tests and before Constraints', () => {
+    const task = makeTask({
+      tests: ['returns true'],
+      scope: { inBounds: ['file A'] },
+      escalation: ['ambiguous A'],
+      evidence: ['proof A'],
+      constraints: ['pure function'],
+    });
+    const prompt = formatTaskPrompt(task, context);
+    const idxTests = prompt.indexOf('### Tests');
+    const idxScope = prompt.indexOf('### Scope');
+    const idxEsc = prompt.indexOf('### Escalation');
+    const idxEvidence = prompt.indexOf('### Evidence');
+    const idxConstraints = prompt.indexOf('### Constraints');
+
+    expect(idxTests).toBeGreaterThan(-1);
+    expect(idxScope).toBeGreaterThan(idxTests);
+    expect(idxEsc).toBeGreaterThan(idxScope);
+    expect(idxEvidence).toBeGreaterThan(idxEsc);
+    expect(idxConstraints).toBeGreaterThan(idxEvidence);
+  });
+
+  it('retry prompt surfaces Scope / Escalation / Evidence and keeps the retry framing', () => {
+    const task = makeTask({
+      scope: { outOfBounds: ['no schema changes'] },
+      escalation: ['stop on type error in shared schema'],
+      evidence: ['typecheck output'],
+    });
+    const prompt = formatRetryPrompt(task, context, 'boom', 1);
+    expect(prompt).toContain('Fix it:');
+    expect(prompt).toContain('### Scope');
+    expect(prompt).toContain('- no schema changes');
+    expect(prompt).toContain('### Escalation');
+    expect(prompt).toContain('- stop on type error in shared schema');
+    expect(prompt).toContain('### Evidence');
+    expect(prompt).toContain('- typecheck output');
+  });
 });
 
 describe('formatRetryPrompt', () => {
@@ -171,6 +269,24 @@ describe('formatTaskPrompt with contextLength', () => {
     const prompt = formatTaskPrompt(task, context, 8192);
     expect(prompt).toContain(smallCode);
     expect(prompt).not.toContain('truncated');
+  });
+
+  it('places current code inside Code Context before implementation steps', () => {
+    const task = makeTask({
+      action: 'modify',
+      currentCode: 'export function greet(): string { return "hi"; }\n',
+      implementationSteps: ['Update greet to accept a name'],
+      tests: ['returns a personalized greeting'],
+    });
+    const prompt = formatTaskPrompt(task, context);
+
+    const idxCurrentCode = prompt.indexOf('### Current Code');
+    const idxSteps = prompt.indexOf('### Implementation Steps');
+    const idxTests = prompt.indexOf('### Tests');
+
+    expect(idxCurrentCode).toBeGreaterThan(-1);
+    expect(idxSteps).toBeGreaterThan(idxCurrentCode);
+    expect(idxTests).toBeGreaterThan(idxSteps);
   });
 
   it('works without contextLength (backward compatible)', () => {

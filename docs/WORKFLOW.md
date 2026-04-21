@@ -44,12 +44,12 @@ All phases and transitions live in `src/core/state/machine.ts`. The primary stat
 | `validating-task` | `VALIDATION_FAIL` (attempt < max) | `implementing` | Retry with attempt++ |
 | `validating-task` | `VALIDATION_FAIL` (attempt ≥ max) | `escalating` | |
 | `escalating` | `HINT_SUCCESS` | `implementing` (next task) | Task `done` |
-| `escalating` | `HINT_FAIL` | `escalating` | Fall through to full |
+| `escalating` | `HINT_FAIL` | `escalating` | Fall through to direct escalation |
 | `escalating` | `FULL_SUCCESS` | `implementing` (next task) | Task `escalated` |
 | `escalating` | `FULL_FAIL` | `implementing` (next task) | Task `failed` |
 | `implementing` (last task done) | `ALL_DONE` | `final-review` | |
 | `final-review` | `REVIEW_DONE` | `complete` | |
-| *(any)* | `CANCEL` | `idle` | Double Ctrl-C / full exit |
+| *(any)* | `CANCEL` | `idle` | Double Ctrl-C / exit |
 | *(any)* | `ABORT_TURN` | *(same phase)* + `awaitingContinue: true` | Single Ctrl-C; partial preserved |
 | *(any)* | `CONTINUE_TURN` | *(same phase)* + `awaitingContinue: false` | User typed or pressed Enter on awaiting-continue |
 | *(any)* | `SET_PLANNER_SESSION_ID` | *(same)* | Captures backend session handle for resume |
@@ -62,7 +62,7 @@ All phases and transitions live in `src/core/state/machine.ts`. The primary stat
 
 Full reference: `docs/SLASH-COMMANDS.md`.
 
-`/revise-spec [comment]` dispatches `REWIND_TO_SPEC` (sets `phase: 'specifying'`, clears tasks, sets `rewindPending: { target: 'spec', comment? }`). On the next workflow restart, `runPlanningPhase` detects `rewindPending` and takes the rewind fast-path: if `comment` is non-empty it calls `planner.regenerate(buildRegeneratePrompt('spec', currentSpec, comment), 'spec', …)` (identical to the approval-gate regeneration path), then presents the spec approval gate. If `comment` is empty it skips regeneration and goes directly to the spec approval gate. Either way, `rewindPending` is cleared via `CLEAR_REWIND_PENDING` before the gate. Similarly `/revise-plan [comment]` dispatches `REWIND_TO_PLAN` (target `'plan'`): fast-path regenerates only the plan (spec preserved), then re-derives tasks and presents the plan approval gate (in `full` mode) or proceeds directly. `/redo-task <id>` dispatches `RESET_TASK` (sets task status to `pending`, rewinds `currentTaskIndex`); no `rewindPending` is set — the task loop re-picks it up on its next iteration without replanning.
+`/revise-spec [comment]` dispatches `REWIND_TO_SPEC` (sets `phase: 'specifying'`, clears tasks, sets `rewindPending: { target: 'spec', comment? }`). On the next workflow restart, `runPlanningPhase` detects `rewindPending` and takes the rewind fast-path: if `comment` is non-empty it calls `planner.regenerate(buildRegeneratePrompt('spec', currentSpec, comment), 'spec', …)` (identical to the approval-gate regeneration path), then presents the spec approval gate. If `comment` is empty it skips regeneration and goes directly to the spec approval gate. Either way, `rewindPending` is cleared via `CLEAR_REWIND_PENDING` before the gate. Similarly `/revise-plan [comment]` dispatches `REWIND_TO_PLAN` (target `'plan'`): fast-path regenerates only the plan (spec preserved), then re-derives tasks and presents the plan approval gate (in `speckit` mode, or whenever it is explicitly enabled) or proceeds directly. `/redo-task <id>` dispatches `RESET_TASK` (sets task status to `pending`, rewinds `currentTaskIndex`); no `rewindPending` is set — the task loop re-picks it up on its next iteration without replanning.
 
 | Action | `rewindPending` | Planning re-runs? | `planner.regenerate` called? |
 |--------|-----------------|-------------------|-----------------------------|
@@ -74,12 +74,14 @@ Full reference: `docs/SLASH-COMMANDS.md`.
 
 ### 1.2 Mode dispatch
 
-Mode selection happens in `src/engine/orchestrator/planning.ts`:
+Mode selection happens in `src/engine/orchestrator/planning/run.ts`:
 
-- `instant` — one planner call, no spec/plan/research artifacts. Writes `tasks.md` + `session.jsonl` + `summary.json`. No approval gates. `START_INSTANT` transitions straight into the task loop.
-- `quick` — one planner call (`planner.quickPlan(...)`) that emits `tasks.md` only. No spec / plan files, no approval gates. `START_QUICK` transitions straight into the task loop.
-- `standard` — four planner calls (research, spec, plan, tasks). One approval gate on the spec by default (`approve: spec`); the plan gate (`reviewing-plan`) is entered but auto-advanced.
-- `speckit` — seven planner calls: research → spec → clarify → constitution-check → plan → analyze → tasks. Both gates active by default (`approve: all`). Fast-fails on constitution-check violations.
+- `instant` — one planner call. Produces a Task Brief plus `tasks.md` transport for a trivial change, with no supporting spec/plan artifacts and no approval gates. `START_INSTANT` transitions straight into the task loop.
+- `quick` — one planner call (`planner.quickPlan(...)`) that produces the Task Brief transport only. No supporting spec / plan files, no approval gates. `START_QUICK` transitions straight into the task loop.
+- `standard` — four planner calls: research → supporting spec → plan → Task Brief transport. One approval gate on the supporting spec by default (`approve: spec`); the plan gate (`reviewing-plan`) is entered but auto-advanced.
+- `speckit` — seven planner calls: research → supporting spec → clarify → constitution-check → plan → analyze → Task Brief transport. Both gates active by default (`approve: all`). Fast-fails on constitution-check violations.
+
+`full` is a legacy alias for `speckit` at the CLI/config boundary.
 
 Approval gates are governed by `workflow.approve` (`none` | `spec` | `plan` | `all` | `default`). Each mode has a default (instant/quick → `none`, standard → `spec`, speckit → `all`); `default` follows that mode default. Override via `--approve <level>` on the CLI or `/approve` at runtime. The legacy `--auto` flag is now a synonym for `--approve none`. Resolution flows through the single `resolveApproveLevel()` helper in `src/core/config/runtime/resolve.ts` (per spec invariant §2: gate decisions never read `config.workflow.autoApprove*` directly).
 
@@ -102,15 +104,15 @@ The `/mode` slash command and `--mode` CLI flag both write into `config.workflow
         └─ planner may emit <!-- Q:{...} --> markers → clarifications
         └─ research output → session.jsonl (kind: message) + workflow store → UI
         └─ planner_session_id captured → SET_PLANNER_SESSION_ID → state.json
-      phase: specifying   → planner writes spec.md
+      phase: specifying   → planner writes supporting spec.md
       phase: reviewing-spec
         └─ callbacks.onApprovalNeeded('spec', specPath)
         └─ UI captures input: approve | comment | reject
            ├─ approve   → APPROVE_SPEC
            ├─ comment   → planner.regenerate('spec', prompt, …) loop back
            └─ reject    → REJECT_SPEC, workflow ends
-      phase: planning     → planner writes plan.md + tasks.md
-      phase: reviewing-plan (full mode only blocks)
+      phase: planning     → planner compiles the Task Brief and writes tasks.md transport
+      phase: reviewing-plan (speckit mode only blocks by default)
       phase: implementing (per task):
         └─ START_TASK
         └─ implementer.implement(taskPrompt) → code
@@ -121,8 +123,8 @@ The `/mode` slash command and `--mode` CLI flag both write into `config.workflow
               └─ fail → retry up to maxRetries
       phase: escalating (only on repeated failure):
         └─ hint escalation (if capability)
-        └─ full escalation
-      phase: final-review  → planner reviews full diff against spec
+        └─ direct escalation
+      phase: final-review  → planner reviews the entire diff against the Task Brief and any supporting spec
       phase: complete      → summary.json written, .diptych/active cleared
 ```
 
@@ -136,19 +138,19 @@ The `/mode` slash command and `--mode` CLI flag both write into `config.workflow
 4. Task loop runs identically to other modes (per-task validation, retry, escalation, git commit per `workflow.git.commitStrategy`).
 5. Final review still runs (no spec to compare against, but the existing review path is shared).
 
-Persisted artifacts: `tasks.md`, `session.jsonl`, `summary.json`. No `spec.md`, `plan.md`, or `research.md`.
+Persisted artifacts: `tasks.md` transport, `session.jsonl`, `summary.json`. No supporting `spec.md`, `plan.md`, or `research.md`.
 
 ### 1.3.2 A `speckit` run, step by step
 
 `diptych start --mode speckit "feature"` runs `runSpeckitPlanning`, which wraps the standard planning pipeline with three speckit-only phases (`clarifying`, `constitution-check`, `analyzing`):
 
-1. **`clarifying`** (marker phase). Writes `clarifications.md` to the session folder. The actual question/answer round is collected inline by the conversational planner during `specifying`; this phase exists to make the speckit chain observable in the state machine and to host a placeholder artifact pointing back at `spec.md`.
+1. **`clarifying`** (marker phase). Writes `clarifications.md` to the session folder. The actual question/answer round is collected inline by the conversational planner during `specifying`; this phase exists to make the speckit chain observable in the state machine and to host a placeholder artifact pointing back at the supporting spec.
 2. **`constitution-check`**. Reads `.specify/memory/constitution.md` if present. If absent, the check passes silently. If present, calls `planner.review()` with the constitution prompt and parses strict-JSON `{ passed, violations: [{ principle, reason, severity }] }` output. Result is persisted to `constitution-check.json`. A `severity: 'hard'` violation (or `passed: false`) dispatches `CONSTITUTION_CHECK_FAIL`, emits a `warning` event with the reason, and returns the workflow to `idle`. Otherwise dispatches `CONSTITUTION_CHECK_PASS` and proceeds.
-3. **Standard pipeline.** `runFullPlanning(opts)` runs research → spec → plan → tasks. Approval gates are gated by `resolveApproveLevel({ mode, configApprove, cliOverride })` — `blocksSpecGate(level)` and `blocksPlanGate(level)` decide whether each gate runs. For `speckit` the default is `all` (both gates active).
-4. **`analyzing`**. Reads `spec.md`, `plan.md`, and `tasks.md` from the session folder, calls `planner.review()` with the analyze prompt, and persists strict-JSON `{ specTaskCoverage, planTaskCoverage, orphanTasks, unaddressedSpecSections, warnings }` to `analyze.json`. If either coverage value falls below `workflow.speckit.minCoverage` (default `0.9`), emits an advisory `warning` event but does not block. Dispatches `ANALYZE_DONE` to enter `implementing`.
+3. **Standard pipeline.** `runFullPlanning(opts)` runs research → supporting spec → plan → Task Brief transport. Approval gates are gated by `resolveApproveLevel({ mode, configApprove, cliOverride })` — `blocksSpecGate(level)` and `blocksPlanGate(level)` decide whether each gate runs. For `speckit` the default is `all` (both gates active).
+4. **`analyzing`**. Reads the supporting `spec.md`, `plan.md`, and `tasks.md` transport from the session folder, calls `planner.review()` with the analyze prompt, and persists strict-JSON `{ specTaskCoverage, planTaskCoverage, orphanTasks, unaddressedSpecSections, warnings }` to `analyze.json`. If either coverage value falls below `workflow.speckit.minCoverage` (default `0.9`), emits an advisory `warning` event but does not block. Dispatches `ANALYZE_DONE` to enter `implementing`.
 5. **Task loop and final review** run identically to other modes.
 
-Persisted artifacts: `research.md`, `spec.md`, `clarifications.md`, `constitution-check.json`, `plan.md`, `tasks.md`, `analyze.json`, `session.jsonl`, `state.json`, `summary.json`.
+Persisted artifacts: `research.md`, supporting `spec.md`, `clarifications.md`, `constitution-check.json`, supporting `plan.md`, `tasks.md` transport, `analyze.json`, `session.jsonl`, `state.json`, `summary.json`.
 
 ### 1.4 Persistence timing
 
@@ -180,7 +182,7 @@ Persisted artifacts: `research.md`, `spec.md`, `clarifications.md`, `constitutio
 1. If the backend has `supportsSessionResume: true` **and** `state.plannerSessionId` is set, attempt to reuse the native session. For Claude Code this means `claude --session-id <id>`. For Codex this means `codex exec resume --json <id> <prompt>` (`thread_id` captured from the `thread.started` JSONL event). For Agent SDK this means the `options.resume` argument to `query()`.
 2. If the backend rejects the session id (expired, unknown, 4xx), emit `session_expired` to `session.jsonl`, notify the user with a short toast ("Previous planner conversation expired — rebuilding context from transcript"), and proceed to step 3.
 3. **Rebuild context from `session.jsonl`**: read all `kind: "message"` lines, assemble a messages array of alternating user / assistant turns, and pass that as the initial context to the fresh planner call. For stateless `api` backends this is the *native* way to resume. For `cli` backends without `supportsSessionResume`, we prepend the rebuilt transcript as a `<!-- prior conversation -->` block in the prompt.
-4. If `persistTranscript: false` and step 1 failed, there is no transcript to rebuild from. Emit `transcript_unavailable`, ask the user to confirm, and continue with `spec.md` / `plan.md` / `tasks.md` as the only handoff.
+4. If `persistTranscript: false` and step 1 failed, there is no transcript to rebuild from. Emit `transcript_unavailable`, ask the user to confirm, and continue with the Task Brief transport plus any supporting `spec.md` / `plan.md` as the only handoff.
 
 In-flight task state: tasks marked `in_progress` at save time are re-attempted from `attempt: 0`. Partial implementer output (if any was captured before abort) is in `session.jsonl` and is used as a hint in the retry prompt.
 
@@ -203,14 +205,14 @@ Four user actions during a live phase, each with a distinct effect:
 
 **Partial response lifecycle.** When a call is aborted, whatever was streamed up to that point is written to `session.jsonl` as a normal `kind: "message"` line with `interrupted: true` appended. On continue, the resumption prompt is aware of the partial so the planner can pick up rather than starting over.
 
-### 1.7 Mid-phase user interjection — full flow
+### 1.7 Mid-phase user interjection — complete flow
 
 1. User types during live phase. UI appends to `workflowStore.messageQueue` and emits `message_queued` event.
 2. On backends with `supportsMidStreamInjection` (Claude Code, agent-sdk), the message is also dispatched in parallel via a second call to the live session: `claude --session-id <id> "<queued>"`. Claude picks this up on its next model turn without waiting for our orchestrator.
 3. Independently, on the next safe-point (end of current planner call), the orchestrator reads `messageQueue`, folds its contents into the next prompt as a dedicated `[user also says: ...]` block, dispatches `DRAIN_QUEUE`, and proceeds.
 4. Entries drained from the queue are logged to `session.jsonl` as `kind: "message", role: "user"` with `queuedAt` and `drainedAt` timestamps for audit.
 
-**Clarification answers go through the same queue.** When the planner asks a question via `<!-- Q:{...} -->` and the user answers, the answer is (a) stored in the `## Clarifications` section of `spec.md` exactly as today, and (b) pushed through the same queue so it reaches the planner's live session immediately on capable backends. This closes the pre-existing gap where clarification answers only affected the *next* planner call. Clarification answers are also routed through the queue (see Queue & Interjection in CONCEPTS.md); on Claude Code, the answer arrives mid-stream; on stateless backends, at the next phase boundary.
+**Clarification answers go through the same queue.** When the planner asks a question via `<!-- Q:{...} -->` and the user answers, the answer is (a) stored in the `## Clarifications` section of `spec.md` when a supporting spec exists, and (b) pushed through the same queue so it reaches the planner's live session immediately on capable backends. This closes the pre-existing gap where clarification answers only affected the *next* planner call. Clarification answers are also routed through the queue (see Queue & Interjection in CONCEPTS.md); on Claude Code, the answer arrives mid-stream; on stateless backends, at the next phase boundary.
 
 ### 1.8 Escalation flow
 
@@ -233,6 +235,6 @@ No open questions remain after specs 001–009. See `docs/FUTURE.md` for deferre
 
 - `docs/CONCEPTS.md` — terminology (sessions, queue, awaiting-continue, capability matrix)
 - `docs/ARCHITECTURE.md` — code layers, persistence tables, capability matrix per backend
-- `docs/FUTURE.md` — deferred scope: full message-level rewind, Cursor-style snapshot undo, transcript compaction, parallel sessions
+- `docs/FUTURE.md` — deferred scope: message-level rewind, Cursor-style snapshot undo, transcript compaction, parallel sessions
 - `docs/STORES.md` — state management details (external stores, zero React Context)
 - `docs/VISION.md` — project identity, anti-goals, strategic direction

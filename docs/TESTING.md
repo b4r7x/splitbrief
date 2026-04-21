@@ -68,7 +68,7 @@ Test support files that import `vitest` (or any other dev-only dependency) MUST 
 
 **Zero barrels anywhere in `testing/`**, not just `src/`. No `index.ts` inside `testing/helpers/`, `testing/helpers/factories/`, `testing/fixtures/`, or `testing/integration/*`. Consumers import directly from the file they need. Same rule and rationale as [`NO-BARRELS.md`](./NO-BARRELS.md).
 
-**Non-trivial hooks get dedicated tests.** Trivial hooks (≤30 LOC, no branching, thin selector wrappers) are covered transitively through their consumer's integration test — see [`HOOKS.md`](./HOOKS.md). Non-trivial hooks (state machines, async race / cancellation, promise-based resolvers like `useInputMode`) earn a dedicated colocated test that asserts their observable contract — inputs, effects, and returned state — not internal `useState` / `useEffect` calls.
+**Hook tests follow behavior, not wiring.** Trivial hooks (≤30 LOC, no branching, thin selector wrappers) are covered transitively through their consumer's integration test — see [`HOOKS.md`](./HOOKS.md). Only behavior-bearing hooks (state machines, async race / cancellation, promise-based resolvers like `useInputMode`) get a dedicated colocated test, and that test asserts the observable contract: inputs, effects, and returned state. Do not test internal `useState` / `useEffect` calls.
 
 ## How to add an integration test
 

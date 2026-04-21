@@ -8,10 +8,10 @@ Shared vocabulary for anyone (human or AI agent) reading the codebase. All terms
 
 diptych is a CLI that splits AI coding work across two roles:
 
-- A **planner** — an expensive, high-quality model (Claude Code, Codex, GPT-4-class, …) does the *thinking*: researches the codebase, writes a specification, a plan, and a task list.
+- A **planner** — an expensive, high-quality model (Claude Code, Codex, GPT-4-class, …) does the *thinking*: researches the codebase and compiles the request into a Task Brief, with optional supporting spec/plan artifacts when the work needs more structure.
 - An **implementer** — a cheap or local model (Ollama, LM Studio, DeepSeek, …) does the *typing*: turns each task from the list into code, one task at a time.
 
-The orchestrator in the middle owns the workflow: it runs the planner, persists artifacts, walks through tasks, validates each one (`tsc → lint → tests`), commits, and escalates back to the planner when the implementer gets stuck.
+The orchestrator in the middle owns the workflow: it runs the planner, persists the Task Brief transport and supporting artifacts, walks through tasks, validates each one (`tsc → lint → tests`), commits, and escalates back to the planner when the implementer gets stuck.
 
 The goal is *same planning quality, lower total cost*. Typical split: ~350K planner tokens per feature, ~$0 implementer tokens when running locally.
 
@@ -24,13 +24,13 @@ The goal is *same planning quality, lower total cost*. Typical split: ~350K plan
 The "smart" side. Its responsibilities, in order:
 
 1. **Research** the project (read files, understand existing patterns).
-2. **Write `spec.md`** — what the feature does and what it doesn't.
-3. **Write `plan.md`** — the architectural approach.
-4. **Write `tasks.md`** — atomic, independently-implementable tasks.
-5. **Review** the full diff at the end against the original spec.
+2. **Compile a Task Brief** — the durable execution contract for the change.
+3. **Write supporting docs when needed** — `spec.md` and `plan.md` for larger, riskier, or more ambiguous work.
+4. **Write `tasks.md`** — the transport format that carries one or more Task Briefs to the implementer.
+5. **Review** the entire diff at the end against the Task Brief and any supporting spec.
 6. **Escalate** — when the implementer fails a task 3× in a row, the planner either hints or takes over and fixes the task itself.
 
-The planner also supports **clarifying questions**: it can pause and ask the user questions before finalizing the spec (only for backends that support this — see `capabilities.supportsConversationalPlanning` on `Planner` in `src/engine/planners/types.ts`).
+The planner also supports **clarifying questions**: it can pause and ask the user questions before finalizing the Task Brief and any supporting spec (only for backends that support this — see `capabilities.supportsConversationalPlanning` on `Planner` in `src/engine/planners/types.ts`).
 
 ### Implementer
 
@@ -47,7 +47,7 @@ The implementer is *stateless per task*. No conversation is maintained between t
 The middle layer. Zero React, zero Ink — pure logic in `src/engine/orchestrator/`. Owns:
 
 - The state machine (see `docs/WORKFLOW.md`).
-- Disk writes (`spec.md`, `plan.md`, `tasks.md`, `sessions/<id>/state.json`, `sessions/<id>/session.jsonl`).
+- Disk writes (`tasks.md` as Task Brief transport, optional `spec.md` / `plan.md`, `sessions/<id>/state.json`, `sessions/<id>/session.jsonl`).
 - Validation pipeline (`tsc → lint → tests`).
 - Git commits (one per task).
 - Event emission to the TUI.
@@ -63,7 +63,7 @@ Both the planner and the implementer are configured with a `kind` field. There a
 | `cli` | A known CLI tool invoked as a subprocess (stream-json or jsonl parsed) | `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code` | Default planner path; uses existing subscriptions |
 | `api` | Any OpenAI-compatible HTTP endpoint | Ollama, LM Studio, DeepSeek, OpenRouter, Together | Default implementer path |
 | `shell` | An arbitrary command. Prompt → stdin, code → stdout | Any custom script | Users who want to plug in a tool we don't know |
-| `agent` | A command that writes files directly to disk (no stdout code extraction) | A full coding agent used as an implementer | When the tool handles file writing itself |
+| `agent` | A command that writes files directly to disk (no stdout code extraction) | A complete coding agent used as an implementer | When the tool handles file writing itself |
 | `agent-sdk` | Programmatic call into the Anthropic Agent SDK (no subprocess) | `@anthropic-ai/claude-agent-sdk` | When you want SDK-level control and already have `ANTHROPIC_API_KEY` |
 
 All five kinds implement the same `Planner` / `Implementer` interface (`src/engine/planners/types.ts`, `src/engine/implementers/types.ts`). The orchestrator doesn't care which kind is active.
@@ -76,11 +76,14 @@ The `workflow.mode` config field controls how many planner calls run before impl
 
 | Mode | Planner calls | Approval gates | Best for |
 |------|:---:|:---:|---|
-| `quick` | 1 (a single "quick plan" that produces tasks directly) | 0 | Small work: "add endpoint", "fix bug" |
-| `standard` (default) | 4 (research → spec → plan → tasks) | 1 (on spec) | Normal features |
-| `full` | 4 | 2 (on spec and on plan) | Large features, team handoffs |
+| `instant` | 1 (minimal Task Brief + task transport) | 0 | Tiny fixes, obvious one-step changes |
+| `quick` | 1 (small Task Brief + task transport) | 0 | Small work that still needs a little structure |
+| `standard` (default) | 4 (research → supporting spec → plan → Task Brief transport) | 1 (supporting spec) | Normal features |
+| `speckit` | 7 (research → supporting spec → clarify → constitution-check → plan → analyze → Task Brief transport) | 2 (supporting spec + plan) | Large, risky, or audited work |
 
-The dispatch happens in `src/engine/orchestrator/planning.ts` on `config.workflow.mode`.
+`full` is a legacy alias for `speckit` at the CLI/config boundary.
+
+The dispatch happens in `src/engine/orchestrator/planning/run.ts` on `config.workflow.mode`.
 
 ---
 
@@ -91,14 +94,14 @@ A workflow is a state machine. Each state is a **phase**. Full definitions live 
 ```
 idle
  ├─► researching       (planner is reading the code)
- ├─► specifying        (planner is writing spec.md)
+ ├─► specifying        (planner is writing supporting spec.md)
  │   └─► reviewing-spec   (waiting for user to approve/edit/reject)
- ├─► planning          (planner is writing plan.md + tasks.md)
- │   └─► reviewing-plan   (waiting for user, full mode only)
+ ├─► planning          (planner is compiling the Task Brief + tasks.md transport)
+ │   └─► reviewing-plan   (waiting for user, speckit-only by default)
  ├─► implementing      (implementer is working on current task)
  │   └─► validating-task  (tsc → lint → tests running)
  │       └─► escalating   (validation failed 3× → planner takes over)
- ├─► final-review      (planner reviews whole diff vs spec)
+ ├─► final-review      (planner reviews whole diff vs Task Brief/supporting spec)
  └─► complete
 ```
 
@@ -108,31 +111,31 @@ idle
 
 ---
 
-## Tasks
+## Task briefs
 
-A **task** is the atomic unit of implementation. Produced by the planner in `tasks.md`, parsed into structured objects by `src/engine/spec/parser.ts`.
+A **Task Brief** is the atomic semantic unit of implementation. It is transported in `tasks.md` and parsed into structured objects by `src/engine/spec/parser.ts`.
 
 Task fields (`src/core/schemas/task.ts`):
 
 - `id` — branded `TaskId`, unique inside a workflow
 - `file` — path to the file the task edits or creates
-- `action` — one-line description ("Add `validateEmail` to `src/utils/email.ts`")
+- `action` — file operation: `create` or `modify`
 - `description` — longer task body
 - `signature` — TypeScript signature for the function/class being added
 - `typeDefs` — inlined type definitions (the planner resolves types so the implementer doesn't have to)
-- `tests` — the test code that will be run against the result
+- `tests` — concrete test cases / acceptance criteria
 - `constraints` — rules the implementer must follow
-- `implSteps` — 3–5 step recipe for the implementation
+- `implementationSteps` — 3–5 step recipe for the implementation
 - `status` — `pending | in_progress | done | escalated | failed | skipped`
 - `currentCode` — code as it exists at task start (for whole-file / function-level context)
 
-Tasks are topologically sorted on dependency. Each task is independently prompt-able — the prompt sent to the implementer is fully self-contained.
+Task briefs are topologically sorted on dependency. Each task is independently prompt-able — the prompt sent to the implementer is fully self-contained.
 
 ---
 
 ## Validation pipeline
 
-Runs after every implementer response. Defined in `src/engine/orchestrator/validator.ts`.
+Runs after every implementer response. Defined in `src/engine/orchestrator/validation.ts`.
 
 1. **Type-check** — `tsc --noEmit` (or project's equivalent).
 2. **Lint** — `npm run lint` / Biome / ESLint, depending on config.
@@ -146,7 +149,7 @@ Each step *stops on first failure* and reports the error back to the orchestrato
 
 On validation failure:
 
-- **Attempts 1–3**: the implementer retries with the same full context but a slightly higher temperature (+0.1 per attempt). No planner involvement.
+- **Attempts 1–3**: the implementer retries with the same entire context but a slightly higher temperature (+0.1 per attempt). No planner involvement.
 - **After 3rd failure**: escalate.
   - **Hint escalation** (if the planner supports it — see `supportsHintEscalation`): planner reads the error, returns a short hint, implementer retries once with the hint.
   - **Full escalation**: planner takes over and writes the code itself. The task is marked `escalated` (not `done`) in the summary so you can see cost impact.
@@ -159,8 +162,8 @@ Escalation logic: `src/engine/orchestrator/escalation.ts`.
 
 User-facing pauses where the workflow waits for explicit input. Each gate asks: *approve / edit (with a comment) / reject*.
 
-- **Spec gate** — after `specifying`, before `planning`. Active in `standard` and `full` modes.
-- **Plan gate** — after `planning`, before `implementing`. Active only in `full` mode.
+- **Spec gate** — after `specifying`, before `planning`. Active in `standard` and `speckit` modes.
+- **Plan gate** — after `planning`, before `implementing`. Active only in `speckit` mode by default.
 
 On a gate:
 
@@ -178,9 +181,9 @@ During `specifying`, a conversation-capable planner (Claude Code today) can emit
 
 Up to 5 questions per run. User can answer each, type `skip` to skip one, or type `done` to stop accepting questions.
 
-Answered questions are appended to `spec.md` under a `## Clarifications` section. On the next planner call (regenerate or plan phase), the planner sees them as part of the spec context.
+Answered questions are appended to `spec.md` under a `## Clarifications` section when a supporting spec exists. On the next planner call (regenerate or plan phase), the planner sees them as part of the supporting-spec context.
 
-Since spec 008, clarification answers also route through the same queue as user-initiated interjections (see §Queue & Interjection). On backends with `supportsMidStreamInjection`, the answer reaches the live session immediately; on stateless backends it is drained at the next phase boundary. The `spec.md` Clarifications section is still written as before.
+Since spec 008, clarification answers also route through the same queue as user-initiated interjections (see §Queue & Interjection). On backends with `supportsMidStreamInjection`, the answer reaches the live session immediately; on stateless backends it is drained at the next phase boundary.
 
 ---
 
@@ -188,7 +191,7 @@ Since spec 008, clarification answers also route through the same queue as user-
 
 Optional markdown files under `.claude/skills/` that provide extra context to the planner (coding standards, domain knowledge, architectural notes). Discovered at startup via `src/engine/skills/discovery.ts`. User picks which skills to include for a given run; selected skills are concatenated into a `skills_context` block and passed to the planner alongside the feature prompt.
 
-Skills are planner-only. The implementer never sees them — its prompts are derived from the resolved spec/plan/tasks.
+Skills are planner-only. The implementer never sees them — its prompts are derived from the resolved Task Brief transport and any supporting artifacts.
 
 ---
 
@@ -213,7 +216,7 @@ Flow:
 
 **Scope:** the queue is **planner-only**. Implementers (small local models) do not receive queued messages. Mid-task interjection is explicitly disallowed because small models lose coherence when their single-shot task prompt is perturbed. If the user needs to change something during implementation, they abort the current task (Ctrl-C) and use `/redo-task <id>` after updating the spec.
 
-**Message origin.** Each `QueuedMessage` carries an `origin` discriminator: `'user'` for text the user typed directly, and `'clarification'` for answers routed from the clarification Q&A flow. The drain block formats them differently: clarification answers use `[clarification answer during <phase>]\nQ: ...\nA: ...\n[/clarification answer]` while user-initiated interjections use the generic `[user also says during <phase>]` wrapper.
+**Message origin.** Each `QueuedMessage` carries an `origin` discriminator: `'user-input'` for text the user typed directly, and `'clarification'` for answers routed from the clarification Q&A flow. The drain block formats them differently: clarification answers use `[clarification answer during <phase>]\nQ: ...\nA: ...\n[/clarification answer]` while user-initiated interjections use the generic `[user also says during <phase>]` wrapper.
 
 ## Awaiting-continue
 
@@ -232,7 +235,7 @@ Each `Planner` implementation exposes a `capabilities` struct declaring what it 
 ```ts
 type PlannerCapabilities = {
   supportsConversationalPlanning: boolean;  // inline clarification questions (existing)
-  supportsHintEscalation: boolean;          // hint-before-full escalation (existing)
+  supportsHintEscalation: boolean;          // hint-before-direct escalation (existing)
   supportsSessionResume: boolean;           // --session-id reuse on resume
   supportsMidStreamInjection: boolean;      // parallel user turn into live session
 };
@@ -249,7 +252,7 @@ The engine publishes every observable step as an `EngineEvent` on a single `Even
 - **EngineEvent** — the discriminated union (snake_case `type`, mandatory `ts: number` and `phase: Phase`) in `src/engine/events/types.ts`. Single source of truth for every workflow event that crosses the engine boundary. Extended by adding a new variant to the union — no separate registration step. The legacy `TuiEvent` / `OrchestratorEvent` types were removed during the 2026-04 uplift.
 - **EventBus** — synchronous pub/sub port declared in `src/engine/events/types.ts`, created by `createEventBus()`. `publish(event)` fans out to every subscribed sink inline, in registration order; a throw in one sink is caught and surfaced as a warning but does not break fan-out to the others.
 - **EventSink** — any subscriber that matches `(event: EngineEvent) => void`. Synchronous by contract (so ordering is preserved and one slow sink cannot starve another). Four are shipped: `tuiSink` (workflow store), `jsonlSink` (session log), `stdoutJsonSink` (NDJSON on stdout for `--json`), `otelSink` (OpenTelemetry spans). The workflow hook system attaches its own sink for `post_*`/`on_*` events.
-- **Phase** — `'idle' | 'researching' | 'specifying' | 'reviewing-spec' | 'planning' | 'reviewing-plan' | 'implementing' | 'validating-task' | 'escalating' | 'final-review' | 'complete'` (`src/core/schemas/enums.ts`). Every `EngineEvent` carries the current `phase` so sinks (OTel span hierarchy, hook dispatcher, TUI router) can filter and group without having to reconstruct workflow position from event type alone.
+- **Phase** — `'idle' | 'researching' | 'specifying' | 'reviewing-spec' | 'clarifying' | 'constitution-check' | 'planning' | 'reviewing-plan' | 'analyzing' | 'implementing' | 'validating-task' | 'escalating' | 'final-review' | 'complete'` (`src/core/schemas/enums.ts`). Every `EngineEvent` carries the current `phase` so sinks (OTel span hierarchy, hook dispatcher, TUI router) can filter and group without having to reconstruct workflow position from event type alone.
 
 Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`, `onBudgetExceeded`, `onExternalChanges`, `onComplete`) are a **separate** mechanism — they are discrete `await`-able request/response pairs supplied by the workflow host. Use the bus for broadcast; use callbacks for gates.
 
@@ -290,9 +293,9 @@ All workflow state lives under `.diptych/` in the target project. Each session g
     │   ├── state.json                      # mutable: phase, tasks, currentTaskIndex, tokenUsage, plannerSessionId
     │   ├── session.jsonl                   # append-only log: type-tagged events + messages
     │   ├── summary.json                    # written once at end of run (Summary: tokens, cost, timings, outcomes)
-    │   ├── spec.md                         # planner output (final artifact)
-    │   ├── plan.md                         # planner output (final artifact)
-    │   └── tasks.md                        # planner output (final artifact)
+    │   ├── spec.md                         # supporting artifact (optional)
+    │   ├── plan.md                         # supporting artifact (optional)
+    │   └── tasks.md                        # Task Brief transport
     └── 2026-04-13-fix-auth-bug/
         └── …                               # same shape, one folder per historical session
 ```
@@ -303,7 +306,7 @@ Key rules:
 - `state.json` is what `diptych resume` reads to rebuild the in-memory `WorkflowState`. It is overwritten on every phase transition.
 - `summary.json` is written exactly once, at end-of-run.
 - `session.jsonl` is append-only and the single source of truth for history (see "Events & messages" below).
-- `spec.md` / `plan.md` / `tasks.md` are human-readable artifacts, written when the corresponding planner phase finishes. They are **always** written, regardless of `workflow.persistTranscript`.
+- `tasks.md` is the human-readable Task Brief transport. `spec.md` and `plan.md` are supporting artifacts written when the corresponding planner phase needs them. They are **always** written when produced, regardless of `workflow.persistTranscript`.
 - `.diptych/active` holds the session-id of whichever session is currently running. Its presence acts as a lock against a second concurrent `diptych start` in the same project directory.
 
 ---

@@ -9,20 +9,22 @@ export function buildInstantPrompt(
     { heading: 'Feature', body: feature },
     { heading: 'Project Context', body: projectContext },
     ...(skillsContext ? [{ heading: 'Skills', body: skillsContext }] : []),
-    instructionsSection(`You are given a tiny feature request — the requester has already decided this change is trivial.
+    instructionsSection(`You are given a tiny feature request — the requester has already decided this change is trivial. Emit the narrowest useful **Product Task Brief v1** records and stop.
 
-1. Do NOT emit a spec or plan section. Output ONLY a tasks list.
-2. A single task is fine; do not over-engineer. 1-5 tasks max.
-3. Each task MUST be self-contained so a small local model can implement it without additional context.
+1. Output ONLY a tasks list. No spec, no plan document.
+2. A single Task Brief is fine; do not over-engineer. 1-5 briefs max.
+3. Each brief MUST be self-contained so a small local model can execute it without additional context.
+4. Required per brief: Description (Intent), Implementation Steps, Tests (Validation), Constraints, Type Definitions.
+5. \`### Scope\`, \`### Escalation\`, and \`### Evidence\` are optional in instant mode — include them when even a "trivial" step has a risky edge (ambiguous behavior, multiple plausible interpretations, irreversible change).
 
-Use this exact format for each task:
+Each brief must be rendered in this exact markdown shape:
 
 ${TASK_FORMAT_EXAMPLE}`),
   ];
 
   return buildPrompt({
-    title: 'Instant: Generate Tasks',
-    intro: 'You are implementing a tiny feature in an existing codebase. Emit a minimal task breakdown — no spec, no plan.',
+    title: 'Instant: Compile Task Briefs',
+    intro: 'You are compiling a minimal set of **Product Task Brief v1** records for a tiny change in an existing codebase. The brief is the durable contract; `tasks.md` is the markdown transport. Stay narrow — no spec, no plan.',
     sections,
     output: 'Write the complete tasks.md content.',
   });

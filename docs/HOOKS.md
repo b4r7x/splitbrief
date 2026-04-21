@@ -116,7 +116,7 @@ When a hook would wrap another hook and add only trivial logic, inline instead. 
 
 ## Rules of thumb
 
-1. **Trivial hooks do not need tests.** A 20-LOC hook with no branching that wraps an Ink API is tested through its consumer's integration test. Writing a direct test for it asserts implementation.
+1. **Trivial hooks do not need direct tests.** A 20-LOC hook with no branching that wraps an Ink API is covered transitively through its consumer's integration test. Writing a direct test for it asserts implementation.
 2. **Behavior lives in the hook, not the pure helper.** If you split a hook into `use-foo.ts` + `foo-helpers.ts`, the hook orchestrates, the helpers stay pure. Test the pure helpers directly; test the hook at the behavior level.
 3. **Hooks do not import from other features.** `features/home/hooks/*` must not import from `features/workflow/*`. Cross-feature needs go through a shared hook in `src/hooks/` or a store.
 4. **One `useInput` per concern.** Splitting `use-global-keys` into `use-app-keys` + `use-workflow-keys` was a direct application of this: global keybindings stay always-on, workflow keybindings mount conditionally under `screen === 'workflow'`.

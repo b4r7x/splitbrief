@@ -1,16 +1,14 @@
 # diptych
 
-Split AI coding costs in half. Expensive model plans, cheap model implements.
+A cost-aware task compiler for AI coding agents.
 
 ## What is diptych?
 
-An open-source CLI that orchestrates expensive AI (Claude/Opus) for planning and cheap/local AI (Ollama/LM Studio) for implementation. Saves 50%+ on AI coding costs by routing the right model to the right task.
+An open-source CLI that compiles user requests into precise Task Briefs with an expensive planner, then executes them with a cheaper implementer. It keeps cost, validation, retry, escalation, and evidence in the loop instead of treating them as afterthoughts.
 
 ## The idea
 
-Most AI coding tokens go to writing code — not thinking about what to write. A 7B model running locally can handle the mechanical parts just fine. So diptych uses Claude Code (or any CLI tool) for the hard stuff — codebase research, spec writing, task decomposition — and routes implementation to a local model via Ollama, LM Studio, or any OpenAI-compatible endpoint.
-
-You keep frontier-level planning. The grunt work costs nothing.
+Most AI coding tokens go to reasoning and handoff churn, not to the mechanical parts of implementation. Diptych keeps an expensive planner on the hard work: codebase research, Task Brief compilation, and deciding when a spec is worth the cost. The cheaper implementer gets a narrow brief and executes it directly.
 
 ## How it works
 
@@ -19,42 +17,42 @@ You: "add user authentication with JWT"
           │
           ▼
 ┌─────────────────────┐
-│  PLANNER             │  Research codebase, write spec,
-│  (any CLI tool)      │  break into atomic tasks
+│  PLANNER             │  Research codebase, compile a Task Brief,
+│  (any CLI tool)      │  add support docs when they buy down risk
 └─────────┬───────────┘
           │ may ask clarifying questions
-          │ spec.md, plan.md, tasks.md
+          │ tasks.md transport, optional spec/plan support
           │ you approve, edit, comment, or quit
           ▼
 ┌─────────────────────┐
-│  IMPLEMENTER         │  Implement each task one-by-one
+│  IMPLEMENTER         │  Execute precise Task Briefs one-by-one
 │  (any OAI-compat)    │  using self-contained prompts
 └─────────┬───────────┘
           │ code changes
           ▼
 ┌─────────────────────┐
-│  VALIDATION          │  tsc → lint → tests
-│  Per task            │  Stop on first failure
+│  VALIDATION          │  tsc → lint → tests → evidence
+│  Per task            │  Retry, then escalate if needed
 └─────────┬───────────┘
           │
     ┌─────┴─────┐
     │           │
   pass        fail
     │           │
-  commit     retry (max 3)
-  next task     │
+  next task   retry (max 3)
+                │
                 fail again
                 │
             escalate to planner
                 │
           ┌─────┴─────┐
           │           │
-        hints       full fix
+        hints       planner fix
         to local    by planner
           │
           ▼
 ┌─────────────────────┐
-│  PLANNER (Review)    │  Compare full diff against spec
+│  PLANNER (Review)    │  Compare the result against the brief and evidence
 └─────────────────────┘
 ```
 
@@ -92,9 +90,9 @@ After `diptych init`, diptych creates a `.diptych/` folder in your project:
     └── 2026-04-14-add-user-auth/
         ├── state.json
         ├── session.jsonl
-        ├── spec.md
+        ├── spec.md      ← optional support doc for larger work
         ├── plan.md
-        └── tasks.md
+        └── tasks.md     ← markdown transport for Task Briefs
 ```
 
 Needs **Node.js 22+** and **git** in the project.
@@ -118,8 +116,8 @@ export DIPTYCH_CONTEXT_LENGTH=32768
 
 | Command | What it does |
 |---------|-------------|
-| `diptych start "feature"` | Full pipeline: plan → implement → validate → commit |
-| `diptych spec "feature"` | Generate spec/plan/tasks only, no implementation |
+| `diptych start "feature"` | Complete pipeline: compile Task Briefs, implement, validate, and review |
+| `diptych spec "feature"` | Generate Task Brief transport and supporting planning artifacts only, no implementation |
 | `diptych init` | Create config, auto-detect available models |
 | `diptych resume` | Resume an interrupted workflow |
 | `diptych status` | Show current workflow state |
@@ -195,7 +193,7 @@ planner:
   output_format: stream-json  # stream-json | jsonl | text
 ```
 
-Planner backends vary in supported features. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full capability matrix.
+Planner backends vary in supported features. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the complete capability matrix.
 
 ### Implementer providers
 
@@ -288,7 +286,7 @@ With Claude Code Max 5x ($100/month):
 | Opus only | $100 | 5-6 |
 | **Opus + diptych** | **$100** | **12-15** |
 
-The planner handles research, spec, plan, and escalation (~350K tokens/feature). Implementation is $0 with local models. In practice, 70-85% of tasks complete locally without escalation.
+The planner handles research, Task Brief compilation, and escalation (~350K tokens/feature). Implementation is $0 with local models. In practice, 70-85% of tasks complete locally without escalation.
 
 ## Development
 
@@ -307,7 +305,7 @@ TypeScript 6.x, ESM only, Ink 6.8 + React 19 for the TUI. Tests are colocated wi
 
 - **EventBus architecture** — engine emits typed `EngineEvent` discriminated union (50 variants); UI, persistence, hooks, and observability subscribe as independent sinks. See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md#eventbus).
 - **Workflow hooks** — fire shell commands or JS modules at workflow events (`pre_task`, `post_commit`, etc.). 2 built-ins: `prettier-on-change`, `block-secrets`. See [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md).
-- **Repo-map context** — Aider-style symbol summary auto-injected into the planner prompt. Tree-sitter + PageRank + SQLite cache for fast incremental updates. See [docs/REPOMAP.md](./docs/REPOMAP.md).
+- **Repo-map context** — Aider-style symbol summary auto-injected into the planner prompt so it can compile a sharper Task Brief. Tree-sitter + PageRank + SQLite cache for fast incremental updates. See [docs/REPOMAP.md](./docs/REPOMAP.md).
 - **Headless mode** — `diptych start --json "feature"` emits each engine event as NDJSON to stdout, skips the TUI. CI/agent-friendly; auto-approves all gates.
 - **OpenTelemetry** — opt-in span emission for workflow, phase, and task lifecycle with per-cost attributes. See [docs/OTEL.md](./docs/OTEL.md).
 

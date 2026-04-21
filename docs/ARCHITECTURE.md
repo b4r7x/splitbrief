@@ -78,7 +78,7 @@ src/
 │   ├── implementers/         Five runner kinds implementing Implementer interface
 │   ├── runners/              Factory dispatching on config.kind
 │   ├── providers/            Model catalog, pricing, HTTP clients
-│   ├── spec/                 Prompt templates + tasks.md parser
+│   ├── spec/                 Task Brief templates + tasks.md transport/parser
 │   ├── streaming/            Subprocess spawn + output parsers (stream-json, jsonl)
 │   ├── parsers/              Question/code/scope extractors
 │   ├── detection/            Auto-detect available tools on startup
@@ -120,19 +120,19 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 |---------|---------------|-------------------------------|
 | `diptych start "feature"` | `workflow` or `setup` | Creates new session folder, writes `.diptych/active` with new session-id; fails if `active` already points at a live session |
 | `diptych resume` | `workflow` with `resumeState` | Reads `.diptych/active`, loads `sessions/<id>/state.json`; fails if missing or version mismatched |
-| `diptych spec "feature"` | `workflow` (engine returns after tasks.md) | Creates session like `start`, but exits after planning phases |
+| `diptych spec "feature"` | `workflow` (engine returns after planning artifacts) | Creates session like `start`, but exits after planning phases |
 | `diptych init` | `setup` (interactive config builder) | No session created |
 | `diptych status` | Prints active session's `state.json` to stdout, no TUI | Read-only; doesn't claim the lock |
 
 ---
 
-## Data flow, one full task
+## Data flow, one task
 
 1. **User** runs `diptych start "add JWT auth"`.
 2. `cli/commands/start.ts` boots stores, initialises router with the feature, renders `<App/>`.
 3. `<App/>` reads `routerStore` and mounts `<WorkflowScreen/>`.
 4. `useWorkflow` hook is triggered in the workflow screen. It calls `runWorkflow(opts)` from `src/engine/orchestrator/run/run.ts`. `initializeWorkflow` builds an `EventBus` and subscribes the TUI sink (writes to `workflowStore.addEvent`), JSONL sink (writes to `session.jsonl`), and Hook sink (when `config.hooks` is configured). The bus is threaded through `WorkflowContext.bus`.
-5. `runWorkflow` creates planner + implementer via factories, runs the planning phases, then the task loop, then the final review.
+5. `runWorkflow` creates planner + implementer via factories, compiles Task Briefs, produces supporting spec/plan artifacts when the selected mode includes them, then runs the task loop and final review.
 6. During each phase, the engine emits via `wctx.bus.publish(EngineEvent)`. The bus fans out synchronously to all subscribed sinks:
    - `tuiSink` (`src/engine/events/sinks/tui.ts`) — pass-through to `workflow/actions.addEvent(event)`; workflow sub-stores consume `EngineEvent` directly, so the sink is a named wiring point, not a mapper (UI re-renders).
    - `jsonlSink` (`src/engine/events/sinks/jsonl.ts`) — appends to `.diptych/sessions/<id>/session.jsonl` via `appendEngineEvent`.
@@ -151,7 +151,7 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 
 ## Planner / implementer symmetry
 
-The planner receives a token-budgeted [repo-map](./REPOMAP.md) of the codebase on every workflow start.
+The planner receives a token-budgeted [repo-map](./REPOMAP.md) of the codebase on every workflow start so it can compile sharper Task Briefs and decide when spec work is worth the cost.
 
 Both are configured by the same five runner kinds. The factories dispatch identically:
 
@@ -201,7 +201,7 @@ One session = one folder. All per-session state lives inside it. See `docs/CONCE
 | `active` pointer | `.diptych/active` | On `start`, cleared on clean exit | Plain text, single session-id; acts as a lock against concurrent runs |
 | `state.json` | `.diptych/sessions/<id>/` | On every phase transition | Mutable — overwritten |
 | `session.jsonl` | `.diptych/sessions/<id>/` | Append-only, on every event and (unless disabled) every message chunk | Grows over the run |
-| `spec.md` / `plan.md` / `tasks.md` | `.diptych/sessions/<id>/` | At the end of each planning phase | Always written regardless of `persistTranscript` |
+| `spec.md` / `plan.md` / `tasks.md` | `.diptych/sessions/<id>/` | At the end of each planning phase | Mode-dependent; `tasks.md` is the markdown transport for Task Briefs |
 | `summary.json` | `.diptych/sessions/<id>/` | Exactly once at end-of-run | Final aggregates — tokens, cost, timings, task outcomes |
 | Skills metadata | `.claude/skills/*.md` (in project root) | Read-only; never written by diptych | Per-project, cross-session |
 

@@ -31,11 +31,20 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
   const labelWidth = isSmall ? 15 : 20;
   const taskTitleWidth = isSmall ? 20 : 30;
   const truncateLength = isSmall ? 18 : 28;
+  const mode = summary.mode;
+  const compiledByPlannerCount = summary.totalTasks;
+  const localCount = summary.completedByLocal;
+  const escalatedCount = summary.escalatedToPlanner;
 
   return (
     <ScreenShell padding={1}>
       <Box justifyContent="center" width="100%">
         <Text bold color={theme.success}>diptych complete</Text>
+      </Box>
+      <Box justifyContent="center" width="100%">
+        <Text color={theme.textDim}>
+          Planner compiled {compiledByPlannerCount} {compiledByPlannerCount === 1 ? 'brief' : 'briefs'} · Implementer executed {localCount} locally · {escalatedCount} escalated
+        </Text>
       </Box>
 
       <Box flexDirection="column" marginTop={1} gap={isSmall ? 0 : 1}>
@@ -43,6 +52,7 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
         <LabeledRow label="Time" labelWidth={labelWidth}><Text>{formatTime(summary.totalTime)}</Text></LabeledRow>
         {summary.plannerTool && <LabeledRow label="Planner" labelWidth={labelWidth}><Text>{formatToolModel(summary.plannerTool, summary.plannerModel)}</Text></LabeledRow>}
         {summary.implementerTool && <LabeledRow label="Implementer" labelWidth={labelWidth}><Text>{formatToolModel(summary.implementerTool, summary.implementerModel)}</Text></LabeledRow>}
+        {mode && <LabeledRow label="Mode" labelWidth={labelWidth}><Text>{mode}</Text></LabeledRow>}
         {(summary.costBreakdown?.hasSavingsEstimate ?? true) && (
           <LabeledRow label="Savings" labelWidth={labelWidth}><Text bold color={theme.success}>{summary.estimatedCostSavings}</Text></LabeledRow>
         )}

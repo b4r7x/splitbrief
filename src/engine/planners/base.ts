@@ -1,3 +1,12 @@
+/**
+ * Shared planner runtime: orchestrates the planning phases (research, spec, plan,
+ * brief compilation) on top of a backend-specific invoke function. The durable
+ * planner→implementer handoff is the array of Product Task Briefs that ends up
+ * in `PlanResult.tasks`; the markdown phases (`spec.md`, `plan.md`, `tasks.md`)
+ * are transport for human review and brief compilation, not the contract itself.
+ *
+ * @see docs/TASK-CONTRACT.md
+ */
 import type { Task } from '../../core/schemas/task.js';
 import type { InvokeResult } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';

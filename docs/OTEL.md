@@ -104,7 +104,7 @@ The sink maps every `EngineEvent` type to exactly one span effect. Any event bef
 | Attribute | Description |
 |---|---|
 | `diptych.feature` | Feature description passed to diptych |
-| `diptych.mode` | Workflow mode: `quick`, `standard`, or `full` |
+| `diptych.mode` | Workflow mode: `instant`, `quick`, `standard`, or `speckit` (legacy `full` alias) |
 | `diptych.planner.tool` | Planner runner identifier |
 | `diptych.planner.model` | Planner model name (if applicable) |
 | `diptych.implementer.tool` | Implementer runner identifier |
@@ -160,7 +160,7 @@ Currently `task_failed` marks only the task span `ERROR`; the parent phase and w
 ### Out of scope for v1
 
 - **Logs via `@opentelemetry/api-logs`.** If a `/log` channel emerges (structured planner/implementer stdout as log records with trace correlation), this is where it would land.
-- **Metric emission.** Counters for `task_completed{method=local|escalated|full}`, histograms for phase durations. Derivable from spans by backends today; a future `otel.metrics.enabled` flag could emit them natively if derived metrics prove lossy.
+- **Metric emission.** Counters for `task_completed` by completion method, histograms for phase durations. Derivable from spans by backends today; a future `otel.metrics.enabled` flag could emit them natively if derived metrics prove lossy.
 
 ## References
 

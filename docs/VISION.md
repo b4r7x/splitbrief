@@ -2,19 +2,19 @@
 
 ## What diptych IS
 
-Cost-optimized AI coding orchestrator. Splits coding work between:
+Cost-aware task compiler for AI coding work. Splits work between:
 
-- **Planner** (expensive/smart AI) — research, spec, plan, task breakdown, escalation, review
-- **Implementer** (cheap/local AI) — code generation task by task
+- **Planner** (expensive/smart AI) — research, compile Task Briefs, decide when a spec is worth the cost, escalate, review
+- **Implementer** (cheap/local AI) — execute precise Task Briefs task by task
 
-Core value: **same planning quality, 50%+ cost savings** by offloading mechanical coding to cheap models.
+Core value: **same planning quality, lower execution cost** by offloading mechanical coding to cheap models while keeping validation and escalation explicit.
 
 ## What diptych is NOT
 
 - **NOT a universal AI connector** — we don't "connect any AI to any AI"
 - **NOT Claude Squad / Overstory** — we don't manage multiple parallel agent sessions
 - **NOT a multi-agent coordinator** — exactly 2 roles (planner + implementer), clear hierarchy
-- **NOT a generic orchestration framework** — opinionated workflow (spec → plan → tasks → implement → validate → commit)
+- **NOT a generic orchestration framework** — opinionated workflow centered on Task Briefs, with specs only when the work needs more structure
 
 ## USP — Why This Exists
 
@@ -22,10 +22,10 @@ Core value: **same planning quality, 50%+ cost savings** by offloading mechanica
 |------|-------------|--------------------------|
 | Claude Squad | Manages multiple Claude Code/Codex/Aider instances in parallel | Doesn't split planning from implementation. Same expensive model for everything. |
 | Agent Orchestrator (Composio) | Parallel coding agents with git worktrees | Multi-agent coordination, not cost optimization. |
-| Overstory | Multi-agent with 11 runtimes, SQLite mail | Coordination complexity. No planner/implementer split. |
+| Overstory | Multi-agent with 11 runtimes, SQLite mail | Coordination complexity. No cost-aware Task Brief handoff. |
 | Claude Code native teams | Multiple Claude Code sessions coordinating | All sessions use Opus. No cost savings. |
 
-**Our moat**: Intelligent planner/implementer split with validation, retry, and escalation pipeline. Nobody else does this.
+**Our moat**: Intelligent Task Brief compilation with cheap execution, validation, retry, escalation, and evidence. Nobody else does this.
 
 ## Strategic Decisions
 
@@ -47,7 +47,7 @@ Small models (7B-27B) can't reliably produce tool call format. Current pipeline 
 
 ### 5. Don't wrap agents in agents
 
-If the implementer IS a full coding agent, there's a conflict of control. diptych owns file writing, validation, and git. The implementer returns code, nothing more.
+If the implementer IS a file-writing coding agent, there's a conflict of control. diptych owns file writing, validation, retry, escalation, and git. The implementer returns code, nothing more.
 
 ### 6. OpenCode-inspired TUI (v0.5 — 2026-03-31)
 
@@ -107,7 +107,7 @@ None of these optimize for cost. They assume the same tier of model for all work
 See `.specify/memory/constitution.md` for the 6 constitutional principles (v1.3.1):
 
 1. **Cost-Optimal Orchestration** — Opus only for tasks where quality matters; implementation on cheap models
-2. **Spec-Driven Development** — No code without spec; self-contained task prompts
+2. **Spec-Driven Development** — Task Briefs first; specs only for larger or riskier work
 3. **Local-First Implementation** — Default to Ollama/LM Studio ($0); cloud is opt-in
 4. **Functional Purity** — Zero classes, pure functions, ESM, no unnecessary comments
 5. **Validate Before Commit** — tsc → lint → test per task; final Opus review

@@ -1,5 +1,15 @@
 export const ESM_CONVENTION = 'ESM imports with .js extensions, pure functions, no classes';
 
+// Markdown rendering of one Product Task Brief v1. Section -> brief mapping:
+//   frontmatter             = Identity
+//   ### Description         = Intent
+//   ### Signature / Current Code / Types / Pattern = Code Context
+//   ### Implementation Steps= Implementation Plan
+//   ### Tests               = Validation
+//   ### Constraints         = Constraints
+//   ### Scope (optional)    = Scope (in/out of bounds)
+//   ### Escalation (opt)    = Escalation (when to stop and ask)
+//   ### Evidence (optional) = Evidence (proof to leave behind)
 export const TASK_FORMAT_EXAMPLE = `\`\`\`markdown
 ---
 id: T001
@@ -22,6 +32,14 @@ export function exampleFn(param: Type): ReturnType
 // All referenced types, copied verbatim
 \\\`\\\`\\\`
 
+### Current Code
+\\\`\\\`\\\`typescript
+// Relevant existing code for modify tasks
+\\\`\\\`\\\`
+
+### Pattern
+Existing codebase pattern or exact snippet the implementer should follow.
+
 ### Implementation Steps
 1. Step-by-step HOW to implement
 2. Specific function calls and patterns
@@ -29,6 +47,18 @@ export function exampleFn(param: Type): ReturnType
 
 ### Tests
 - Test case with concrete inputs/outputs
+
+### Scope
+**In bounds:**
+- Concrete change this brief is allowed to make
+**Out of bounds:**
+- Adjacent change the implementer must NOT make
+
+### Escalation
+- Stop and ask when the required behavior is ambiguous, when a dependency is missing, or when the brief conflicts with local code.
+
+### Evidence
+- Reviewable proof the task completed (passing tests, typecheck, changed files, behavioral note).
 
 ### Constraints
 - ESM imports with .js extensions

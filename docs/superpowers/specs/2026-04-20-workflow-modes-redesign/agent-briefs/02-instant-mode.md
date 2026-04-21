@@ -393,7 +393,7 @@ describe('runWorkflow instant mode', () => {
       plannerResult: {
         spec: '',
         plan: '',
-        tasks: [{ id: 'T-001', title: 'rename', file: 'src/foo.ts', action: 'modify', acceptanceCriteria: [] }],
+        tasks: [{ id: 'T001', title: 'rename', file: 'src/foo.ts', action: 'modify', acceptanceCriteria: [] }],
         phases: [{ text: '## Tasks\n- rename', filename: 'tasks.md' }],
       },
     });

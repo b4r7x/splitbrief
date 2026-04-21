@@ -38,6 +38,7 @@ export function SummaryProgress({
         <Text color={t.warning}>{escalatedToPlanner} escalated</Text>
         {failed > 0 && <Text color={t.error}>{failed} failed</Text>}
       </Box>
+      <Text color={t.textDim}>local = cheap implementer, escalated = planner fallback</Text>
     </Box>
   );
 }

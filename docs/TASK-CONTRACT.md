@@ -3,17 +3,35 @@
 > **Status:** stable as of diptych v0.7 (config v3).
 > **Audience:** external tool authors reading `state.json` to render Kanban boards, export to Jira/Linear/GitHub Issues, generate reports, or drive custom UIs.
 
+## Task Brief v1: the semantic contract
+
+A `Task` is the persisted, transport-stable form of a **Product Task Brief v1** — the durable contract the planner writes for the implementer. The brief is the meaning; `tasks.md` is the markdown rendering used to hand work between phases; `state.json` is the stable external JSON that downstream tools consume.
+
+Every Task Brief v1 covers nine semantic sections, even when a section is brief. Each section maps onto existing `Task` schema fields so external tools do not need a new shape:
+
+| # | Brief section | Schema fields | Notes |
+|---|---|---|---|
+| 1 | **Identity** | `id`, `title`, `file`, `action` | Stable identity for the task. |
+| 2 | **Intent** | `description` | What change is needed and why it matters. |
+| 3 | **Scope** | `description`, `constraints`, optional `scope.inBounds` / `scope.outOfBounds` | What is in bounds and what is out of bounds. |
+| 4 | **Code Context** | `signature`, `currentCode`, `typeDefs`, `pattern` | Existing code, signatures, types, or patterns the implementer needs. |
+| 5 | **Implementation Plan** | `implementationSteps` | Ordered steps for the change. |
+| 6 | **Validation** | `tests` | Concrete checks, tests, or assertions that define success. |
+| 7 | **Constraints** | `constraints` | Invariants, dependencies, refusal conditions. |
+| 8 | **Escalation** | optional `escalation` | When the implementer must stop and ask instead of guessing. |
+| 9 | **Evidence** | optional `evidence` | Final reviewable proof preserved after the task completes. |
+
+`tasks.md` is the markdown transport: one task block per brief, frontmatter for identity and dependencies, `### …` headings for each semantic section. The implementer prompt may reformat a brief but must not change its meaning. `state.json` is the stable external JSON; consume that for machine-readable workflows.
+
 ## Where tasks live on disk
 
 `state.json` at `.diptych/sessions/<id>/state.json`. Tasks are at `state.tasks: Task[]`. Current task index at `state.currentTaskIndex: number`. Current retry count at `state.attempt: number`.
-
-Also: `tasks.md` is a human-readable rendering of the same content. The JSON is the source of truth; the markdown is generated.
 
 ## Task shape
 
 ```ts
 type Task = {
-  id: TaskId;                        // branded string, e.g. "T-001"
+  id: TaskId;                        // branded string, e.g. "T001"
   title: string;                     // short human label
   file: string;                      // project-relative path (e.g. "src/foo.ts")
   action: 'create' | 'modify';
@@ -26,13 +44,19 @@ type Task = {
   signature?: string;                // optional: function/interface signature hint
   currentCode?: string;              // optional: captured existing code at task start
   pattern?: string;                  // optional: code pattern hint
+  scope?: {                          // optional: Task Brief v1 §Scope
+    inBounds?: string[];
+    outOfBounds?: string[];
+  };
+  escalation?: string[];             // optional: Task Brief v1 §Escalation
+  evidence?: string[];               // optional: Task Brief v1 §Evidence
   status: TaskStatus;
 };
 ```
 
 ### `TaskId`
 
-A branded string. Format: `T-NNN` where `NNN` is zero-padded sequential starting at `001`. IDs are stable across retries and reorderings. IDs are never reused within a session.
+A branded string. Format: `TNNN` where `NNN` is zero-padded sequential starting at `001`. IDs are stable across retries and reorderings. IDs are never reused within a session.
 
 ### `TaskStatus`
 
@@ -106,7 +130,7 @@ External tools may attach their own metadata in `state.external` under a namespa
 {
   "tasks": [...],
   "external": {
-    "my-kanban": { "lanes": { "T-001": "in-review" } }
+    "my-kanban": { "lanes": { "T001": "in-review" } }
   }
 }
 ```
@@ -129,7 +153,7 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 
 - `summary.json` shape — still evolving.
 - `session.jsonl` event variants — we add new types regularly; consumers MUST tolerate unknown `type` values.
-- `tasks.md` markdown structure — render format; use `state.json` for machine consumption.
+- `tasks.md` markdown structure — transport format; use `state.json` for machine consumption.
 - Internal plan / spec artifact formats — change based on prompt evolution.
 - `state.messageQueue` entries — internal coordination; structure may change.
 
@@ -137,7 +161,7 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 
 ```json
 {
-  "id": "T-003",
+  "id": "T003",
   "title": "Add email validation to SignupForm",
   "file": "src/features/auth/SignupForm.tsx",
   "action": "modify",

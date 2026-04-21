@@ -368,6 +368,17 @@ describe('calculateTaskCost', () => {
     expect(cost).toBeGreaterThan(0);
   });
 
+  it('uses planner model pricing for per-task escalation attribution', () => {
+    const task = { taskId: taskId('T001'), taskTitle: 'test', method: 'escalated-full' as const, implementerTokens: 0, escalationTokens: 150_000, retryCount: 1 };
+    const globalUsage = { implementerInput: 0, implementerOutput: 0, escalationInput: 100_000, escalationOutput: 50_000 };
+
+    const sonnetCost = calculateTaskCost(task, globalUsage, 'ollama', 'anthropic', undefined, 'claude-sonnet-4-6');
+    const opusCost = calculateTaskCost(task, globalUsage, 'ollama', 'anthropic', undefined, 'claude-opus-4-6');
+
+    expect(sonnetCost).toBeCloseTo(1.05, 6);
+    expect(opusCost).toBeCloseTo(1.75, 6);
+  });
+
   it('returns cost 0 when all global token totals are zero', () => {
     const task = { taskId: taskId('T001'), taskTitle: 'test', method: 'local' as const, implementerTokens: 0, escalationTokens: 0, retryCount: 0 };
     const globalUsage = { implementerInput: 0, implementerOutput: 0, escalationInput: 0, escalationOutput: 0 };
@@ -438,5 +449,30 @@ describe('buildSummary task costs', () => {
     const first = summary.taskBreakdown?.[0];
     if (!first) throw new Error('expected a task breakdown entry');
     expect(first.cost).toBe(0);
+  });
+
+  it('keeps per-task escalation costs aligned with model-aware summary totals', () => {
+    const usage = makeUsage({
+      escalationInput: 100_000,
+      escalationOutput: 50_000,
+    });
+    const breakdowns = [
+      { taskId: taskId('T001'), taskTitle: 'task 1', method: 'escalated-full' as const, implementerTokens: 0, escalationTokens: 150_000, retryCount: 0 },
+    ];
+
+    const summary = buildSummary({
+      feature: 'model-aware-costs',
+      state: makeState({ tokenUsage: usage }),
+      startTime: Date.now(),
+      taskBreakdowns: breakdowns,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-opus-4-6',
+      implementerTool: 'ollama',
+    });
+
+    const first = summary.taskBreakdown?.[0];
+    if (!first || !summary.costBreakdown) throw new Error('expected task and cost breakdown');
+    expect(first.cost).toBeCloseTo(summary.costBreakdown.actualPlannerCost, 6);
+    expect(first.cost).toBeCloseTo(1.75, 6);
   });
 });

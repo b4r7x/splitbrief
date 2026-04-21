@@ -51,7 +51,7 @@ Also: `tasks.md` is a human-readable rendering of the same content. The JSON is 
 
 \`\`\`ts
 type Task = {
-  id: TaskId;                // branded string, e.g. "T-001"
+  id: TaskId;                // branded string, e.g. "T001"
   title: string;             // short human label
   file: string;              // project-relative path (e.g. "src/foo.ts")
   action: 'create' | 'modify';
@@ -66,7 +66,7 @@ type Task = {
 
 ### `TaskId`
 
-A branded string. Format: `T-NNN` where `NNN` is zero-padded sequential starting at `001`. IDs are stable across retries and reorderings. IDs are never reused within a session.
+A branded string. Format: `TNNN` where `NNN` is zero-padded sequential starting at `001`. IDs are stable across retries and reorderings. IDs are never reused within a session.
 
 ### `TaskStatus`
 
@@ -137,7 +137,7 @@ External tools may attach their own metadata in `state.external` under a namespa
 {
   "tasks": [...],
   "external": {
-    "my-kanban": { "lanes": { "T-001": "in-review" } }
+    "my-kanban": { "lanes": { "T001": "in-review" } }
   }
 }
 \`\`\`
@@ -167,7 +167,7 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 
 \`\`\`json
 {
-  "id": "T-003",
+  "id": "T003",
   "title": "Add email validation to SignupForm",
   "file": "src/features/auth/SignupForm.tsx",
   "action": "modify",

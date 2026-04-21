@@ -26,7 +26,7 @@ export function SummaryCostBreakdown({
         </LabeledRow>
       )}
       {(costBreakdown.hasSavingsEstimate ?? true) && (
-        <LabeledRow label="Saved" labelWidth={labelWidth}>
+        <LabeledRow label="Saved vs all-planner baseline" labelWidth={labelWidth}>
           <Text color={t.success}>
             {`${formatCost(costBreakdown.savingsAmount)} (${costBreakdown.savingsPercentage.toFixed(0)}%)`}
           </Text>

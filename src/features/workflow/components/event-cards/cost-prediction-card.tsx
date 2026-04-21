@@ -11,8 +11,9 @@ export function CostPredictionCard({ event }: { event: CostPredictionEvent }) {
   return (
     <Box flexDirection="column">
       <Text color={t.accent} bold>
-        Cost Estimate
+        Cost prediction
       </Text>
+      <Text color={t.textDim}>Low: all local · Expected: ~15% escalation · High: ~40% escalation</Text>
       <Box marginLeft={3}>
         <Text color={t.success}>Low: {formatCost(event.prediction.lowCost)}</Text>
         <Text color={t.textDim}> (all local) </Text>
