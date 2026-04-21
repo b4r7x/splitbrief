@@ -5,6 +5,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { SkillMeta } from '../../skills/discovery.js';
+import type { Planner } from '../../planners/types.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { appendMessage } from '../../../core/state/persistence.js';
@@ -19,10 +20,12 @@ import { createTuiSink } from '../../events/sinks/tui.js';
 import type { EventSink } from '../../events/types.js';
 import { createHookSink } from '../../hooks/sink.js';
 import { runPreHooks } from '../../hooks/run-pre-hook.js';
+import { createBranch } from '../../../lib/git.js';
+import { slug } from '../../../utils/slug.js';
 
 import type { WorkflowContext, WorkflowSinks, ResumeContextHolder } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary.js';
-import { publishEvent, publishError, publishPlannerStatus, publishWorkflowConfig, publishUserMessage } from '../events.js';
+import { publishEvent, publishError, publishPlannerStatus, publishWorkflowConfig, publishUserMessage, publishWarning, publishGitBranchCreated } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { applyRebuiltContext } from '../resume-context.js';
 import { createValidator } from '../validation.js';
@@ -41,6 +44,8 @@ export type RunWorkflowOptions = {
   headless?: boolean | undefined;
   /** Test-only: subscribe an extra sink to the bus (used by integration tests for recording). */
   _eventSink?: EventSink | undefined;
+  /** Test-only: inject a pre-built planner (avoids spawning real subprocesses in tests). */
+  _planner?: Planner | undefined;
 };
 
 export type InitResult =
@@ -73,7 +78,7 @@ export async function initializeWorkflow(
 
   // Stateless backends receive priorMessages instead of plannerSessionId.
   const initialSessionId = savedState?.plannerSessionId ?? null;
-  const planner = createPlanner(config, initialSessionId);
+  const planner = opts._planner ?? createPlanner(config, initialSessionId);
   if (savedState && !planner.capabilities.supportsSessionResume) {
     await applyRebuiltContext({ projectDir, sessionId, callbacks, bus, config, resumeHolder, requireNonEmpty: true });
   }
@@ -107,6 +112,16 @@ export async function initializeWorkflow(
     publishEvent(bus, { type: 'workflow_started', ts: Date.now(), phase: state.phase, feature });
     appendMessage(projectDir, sessionId, { role: 'user', text: feature }, config.workflow.persistTranscript);
     publishUserMessage(bus, state.phase, feature);
+
+    if (config.workflow.git?.createBranch) {
+      const desired = `diptych/${slug(feature)}`;
+      try {
+        const actual = await createBranch(projectDir, desired);
+        publishGitBranchCreated(bus, state.phase, actual);
+      } catch (err) {
+        publishWarning(bus, state.phase, `failed to create branch: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   }
 
   publishWorkflowConfig(bus, state.phase, {

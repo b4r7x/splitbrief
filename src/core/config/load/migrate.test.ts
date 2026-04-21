@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { migrateConfig } from './migrate.js';
+import { migrateConfig, migrateV2ToV3, deriveApproveLevel } from './migrate.js';
 import type { CliPlannerConfig, ApiPlannerConfig, AgentSdkPlannerConfig } from '../../schemas/planner-config.js';
 import type { ApiImplementerConfig, ShellImplementerConfig, AgentImplementerConfig } from '../../schemas/implementer-config.js';
 
 describe('migrateConfig', () => {
   describe('version detection', () => {
-    it('passes through v2 configs unchanged', () => {
+    it('migrates v2 configs to v3, preserving deprecated workflow keys', () => {
       const v2Config = {
         version: 2,
         planner: { kind: 'cli', tool: 'claude-code' },
@@ -15,8 +15,35 @@ describe('migrateConfig', () => {
           apiBase: 'http://localhost:11434/v1',
           model: 'qwen2.5:7b',
         },
+        workflow: {
+          autoApproveSpec: false,
+          autoApprovePlan: false,
+          maxRetries: 3,
+          commitStrategy: 'none',
+        },
       };
-      expect(migrateConfig(v2Config)).toEqual(v2Config);
+      const warnings: string[] = [];
+      const result = migrateConfig(v2Config, warnings) as Record<string, unknown>;
+      expect(result.version).toBe(3);
+      const workflow = result.workflow as Record<string, unknown>;
+      expect(workflow.commitStrategy).toBe('none');
+      expect(workflow.git).toEqual({ commitStrategy: 'none' });
+      expect(workflow.approve).toBe('default');
+      expect(warnings.some(w => /version 2 is deprecated/.test(w))).toBe(true);
+    });
+
+    it('passes through v3 configs unchanged', () => {
+      const v3Config = {
+        version: 3,
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'qwen2.5:7b',
+        },
+      };
+      expect(migrateConfig(v3Config)).toEqual(v3Config);
     });
 
     it('throws on unsupported version', () => {
@@ -29,13 +56,13 @@ describe('migrateConfig', () => {
       ).toThrow(/Unsupported config version/);
     });
 
-    it('treats missing version as v1 and migrates', () => {
+    it('treats missing version as v1 and migrates to v3', () => {
       const noVersion = {
         planner: { kind: 'claude-code' },
         implementer: { kind: 'api', tool: 'ollama', model: 'qwen' },
       };
       const result = migrateConfig(noVersion) as Record<string, unknown>;
-      expect(result.version).toBe(2);
+      expect(result.version).toBe(3);
     });
 
     it('throws if config is not an object', () => {
@@ -57,7 +84,7 @@ describe('migrateConfig', () => {
       };
       const result = migrateConfig(v1) as Record<string, unknown>;
       const planner = result.planner as CliPlannerConfig;
-      expect(result.version).toBe(2);
+      expect(result.version).toBe(3);
       expect(planner.kind).toBe('cli');
       expect(planner.tool).toBe('claude-code');
       expect(planner.model).toBe('opus');
@@ -249,5 +276,72 @@ describe('migrateConfig', () => {
       expect(planner.tool).toBe('claude-code');
       expect(planner.model).toBe('claude-opus-4');
     });
+  });
+});
+
+describe('migrateV2ToV3', () => {
+  it('bumps version to 3', () => {
+    const v3 = migrateV2ToV3({ version: 2 });
+    expect(v3.version).toBe(3);
+  });
+
+  it('moves top-level workflow.commitStrategy into workflow.git', () => {
+    const v3 = migrateV2ToV3({
+      version: 2,
+      workflow: { commitStrategy: 'per-task', maxRetries: 3 },
+    });
+    const workflow = v3.workflow as Record<string, unknown>;
+    expect(workflow.commitStrategy).toBe('per-task');
+    expect(workflow.git).toEqual({ commitStrategy: 'per-task' });
+  });
+
+  it('preserves an existing workflow.git block over the top-level field', () => {
+    const v3 = migrateV2ToV3({
+      version: 2,
+      workflow: { commitStrategy: 'per-task', git: { commitStrategy: 'final' } },
+    });
+    const workflow = v3.workflow as Record<string, unknown>;
+    expect(workflow.git).toEqual({ commitStrategy: 'final' });
+  });
+
+  it('derives workflow.approve from auto-approve flags', () => {
+    const both = migrateV2ToV3({ workflow: { autoApproveSpec: true, autoApprovePlan: true } });
+    expect((both.workflow as Record<string, unknown>).approve).toBe('none');
+
+    const specOnly = migrateV2ToV3({ workflow: { autoApproveSpec: true } });
+    expect((specOnly.workflow as Record<string, unknown>).approve).toBe('plan');
+
+    const planOnly = migrateV2ToV3({ workflow: { autoApprovePlan: true } });
+    expect((planOnly.workflow as Record<string, unknown>).approve).toBe('spec');
+  });
+
+  it('rewrites legacy workflow.mode "full" to "speckit"', () => {
+    const v3 = migrateV2ToV3({ workflow: { mode: 'full' } });
+    const workflow = v3.workflow as Record<string, unknown>;
+    expect(workflow.mode).toBe('speckit');
+  });
+
+  it('does not invent a workflow block when none was present', () => {
+    const v3 = migrateV2ToV3({ version: 2 });
+    expect(v3.workflow).toBeUndefined();
+  });
+});
+
+describe('deriveApproveLevel', () => {
+  it('returns "default" when no flags are set', () => {
+    expect(deriveApproveLevel({})).toBe('default');
+    expect(deriveApproveLevel({ autoApproveSpec: false, autoApprovePlan: false })).toBe('default');
+  });
+
+  it('returns "none" when both flags are true', () => {
+    expect(deriveApproveLevel({ autoApproveSpec: true, autoApprovePlan: true })).toBe('none');
+  });
+
+  it('returns "plan" when only the spec flag is true', () => {
+    expect(deriveApproveLevel({ autoApproveSpec: true })).toBe('plan');
+  });
+
+  it('returns "spec" when only the plan flag is true', () => {
+    expect(deriveApproveLevel({ autoApprovePlan: true })).toBe('spec');
   });
 });

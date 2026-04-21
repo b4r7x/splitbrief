@@ -111,7 +111,7 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     { name: 'auto-approve both completes without user interaction', workflow: auto() },
     { name: 'quick mode skips approval and uses quickPlan', workflow: manual('quick'), useQuickPlan: true },
     { name: 'standard mode uses single approval gate', workflow: manual('standard'), approvals: [{ approved: true }] },
-    { name: 'full mode requires two approvals (spec + plan)', workflow: manual('full'), approvals: [{ approved: true }, { approved: true }] },
+    { name: 'speckit mode requires two approvals (spec + plan)', workflow: manual('speckit'), approvals: [{ approved: true }, { approved: true }] },
   ];
 
   it.each(happyCases)('$name', async ({ workflow, approvals, useQuickPlan }) => {
@@ -178,7 +178,7 @@ describe('runPlanningPhase — rejection paths', () => {
     expectPhase?: WorkflowState['phase'];
   }> = [
     { name: 'user rejects spec → cancelled, zero tasks, phase idle', workflow: manual(), approvals: [{ approved: false }], expectPhase: 'idle' },
-    { name: 'user rejects plan (full mode) → cancelled', workflow: manual('full'), approvals: [{ approved: true }, { approved: false }] },
+    { name: 'user rejects plan (speckit mode) → cancelled', workflow: manual('speckit'), approvals: [{ approved: true }, { approved: false }] },
   ];
 
   it.each(rejectCases)('$name', async ({ workflow, approvals, expectPhase }) => {
@@ -243,7 +243,7 @@ describe('runPlanningPhase — onQuestion wiring', () => {
     const planner = makePlanner({
       plan,
       ...(supports
-        ? { capabilities: { supportsConversationalPlanning: true, supportsHintEscalation: true, supportsSessionResume: false } }
+        ? { capabilities: { supportsConversationalPlanning: true, supportsHintEscalation: true, supportsSessionResume: false, supportsEffort: false, supportsImages: false } }
         : {}),
     });
 
@@ -354,9 +354,9 @@ describe('runPlanningPhase — rewindPending', () => {
     expect(planCalls).toBe(0);
   });
 
-  const rewindRejectCases: Array<{ target: 'spec' | 'plan'; phase: 'specifying' | 'planning'; mode?: 'full' }> = [
+  const rewindRejectCases: Array<{ target: 'spec' | 'plan'; phase: 'specifying' | 'planning'; mode?: 'speckit' }> = [
     { target: 'spec', phase: 'specifying' },
-    { target: 'plan', phase: 'planning', mode: 'full' },
+    { target: 'plan', phase: 'planning', mode: 'speckit' },
   ];
 
   it.each(rewindRejectCases)('rewindPending target=$target — rejected during approval → cancelled', async ({ target, phase, mode }) => {
@@ -422,7 +422,7 @@ describe('runPlanningPhase — rewindPending', () => {
     expect(result.state.rewindPending).toBeUndefined();
   });
 
-  it('full mode new-planning (no rewind) invokes planner.plan exactly once', async () => {
+  it('speckit mode new-planning (no rewind) invokes planner.plan exactly once', async () => {
     let planCalls = 0;
     let regenCalls = 0;
     const planner = makePlanner({
@@ -438,7 +438,7 @@ describe('runPlanningPhase — rewindPending', () => {
         return { text: 'regenerated', usage: null };
       },
     });
-    const { result } = await runPhase({ planner, config: makeConfig({ workflow: auto('full') }) });
+    const { result } = await runPhase({ planner, config: makeConfig({ workflow: auto('speckit') }) });
 
     expect(result.cancelled).toBe(false);
     expect(result.tasks).toHaveLength(1);

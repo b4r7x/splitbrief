@@ -2,6 +2,7 @@ import type { Config } from '../../core/schemas/config.js';
 import type { Planner } from '../planners/types.js';
 import type { Implementer } from '../implementers/types.js';
 import type { RunnerKind } from '../../core/schemas/enums.js';
+import { warnStderr } from '../../lib/warn.js';
 
 import { createClaudeCodePlanner } from '../planners/claude-code.js';
 import { createCliPlanner } from '../planners/cli.js';
@@ -21,7 +22,7 @@ const PLANNER_FACTORIES: Record<RunnerKind, (config: Config, initialSessionId?: 
   cli: (c, initialSessionId) => {
     if (c.planner.kind !== 'cli') throw runnerConfigError.kindMismatch('cli', c.planner.kind, 'planner');
     return c.planner.tool === 'claude-code'
-      ? createClaudeCodePlanner(c.planner.model, initialSessionId)
+      ? createClaudeCodePlanner(c.planner.model, initialSessionId, c.planner.effort)
       : createCliPlanner(c, initialSessionId);
   },
   api: createApiPlanner,
@@ -29,7 +30,7 @@ const PLANNER_FACTORIES: Record<RunnerKind, (config: Config, initialSessionId?: 
   agent: createAgentPlanner,
   'agent-sdk': (c, initialSessionId) => {
     if (c.planner.kind !== 'agent-sdk') throw runnerConfigError.kindMismatch('agent-sdk', c.planner.kind, 'planner');
-    return createAgentSdkPlanner(c.planner.model, c.planner.apiKey, initialSessionId);
+    return createAgentSdkPlanner(c.planner.model, c.planner.apiKey, initialSessionId, c.planner.effort);
   },
 };
 
@@ -47,7 +48,11 @@ const IMPLEMENTER_FACTORIES: Record<RunnerKind, (config: Config) => Implementer>
 export function createPlanner(config: Config, initialSessionId?: string | null): Planner {
   const factory = PLANNER_FACTORIES[config.planner.kind];
   if (!factory) throw runnerConfigError.invalidKind(config.planner.kind, 'planner');
-  return factory(config, initialSessionId);
+  const planner = factory(config, initialSessionId);
+  if (config.planner.effort && !planner.capabilities.supportsEffort) {
+    warnStderr(`planner-effort: dropped (${config.planner.kind} backend has no reasoning control)`);
+  }
+  return planner;
 }
 
 export function createImplementer(config: Config): Implementer {

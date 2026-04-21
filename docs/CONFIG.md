@@ -29,10 +29,14 @@ validation:
   testCommand: "npm test"
 workflow:
   mode: quick | standard | full
-  autoApproveSpec: false
-  autoApprovePlan: false
+  approve: none | spec | plan | all | default
+  autoApproveSpec: false   # deprecated; prefer approve
+  autoApprovePlan: false   # deprecated; prefer approve
   maxRetries: 3
-  commitStrategy: none | checkpoint | per-task
+  commitStrategy: none | checkpoint | per-task  # deprecated; use workflow.git.commitStrategy
+  git:
+    commitStrategy: none | checkpoint | per-task
+    createBranch: false     # auto-create diptych/<slug> branch at workflow start
   maxBudget: 2.0          # optional
   persistTranscript: true
 theme: terminal | mono               # optional
@@ -137,11 +141,14 @@ Same discriminated union as `planner` (`src/core/schemas/implementer-config.ts`)
 
 | Field | Type | Required | Default | Description |
 |---|---|:---:|---|---|
-| `autoApproveSpec` | boolean | yes | `false` | Skip spec approval gate |
-| `autoApprovePlan` | boolean | yes | `false` | Skip plan approval gate |
+| `approve` | enum | no | `default` | `none` \| `spec` \| `plan` \| `all` \| `default`. Controls which approval gates block the workflow. `default` follows the per-mode default (instant/quick → `none`, standard → `spec`, speckit → `all`). |
+| `autoApproveSpec` | boolean | no | `false` | **Deprecated** — read by legacy code paths only. Use `approve` instead. |
+| `autoApprovePlan` | boolean | no | `false` | **Deprecated** — read by legacy code paths only. Use `approve` instead. |
 | `maxRetries` | integer >= 0 | yes | `3` | Max per-task local retries before escalation |
-| `commitStrategy` | enum | yes | `none` | `none` \| `checkpoint` \| `per-task` |
-| `mode` | enum | no | `standard` | `quick` \| `standard` \| `full` |
+| `commitStrategy` | enum | no | `none` | **Deprecated** — use `git.commitStrategy` instead. `none` \| `checkpoint` \| `per-task` |
+| `git.commitStrategy` | enum | yes | `none` | `none` \| `checkpoint` \| `per-task` |
+| `git.createBranch` | boolean | no | `false` | Auto-create a `diptych/<slug>` branch at workflow start |
+| `mode` | enum | no | `standard` | `instant` \| `quick` \| `standard` \| `speckit`. Legacy `full` accepted on input and silently migrated to `speckit` with a one-time deprecation notice. |
 | `maxBudget` | number > 0 | no | — | Dollar ceiling; workflow prompts on exceed |
 | `persistTranscript` | boolean | no | `true` | Persist planner/user text chunks to `session.jsonl` |
 
@@ -245,7 +252,8 @@ Declared in `src/cli/options.ts` (shared by `start` + `resume`) and per-command 
 
 | Flag | Purpose | Commands |
 |---|---|---|
-| `--auto` | Auto-approve spec and plan | start, resume, spec |
+| `--auto` | Alias for `--approve none` (auto-approve spec and plan) | start, resume, spec |
+| `--approve <level>` | Approval gates: `none`, `spec`, `plan`, `all`, `default` | start, resume |
 | `--model <model>` | Alias for `--implementer-model` | start, resume |
 | `--provider <p>` | Alias for `--implementer` | start, resume |
 | `--planner <tool>` | Planner tool override | start, resume |
@@ -300,8 +308,7 @@ validation:
   test: true
   testCommand: npm test
 workflow:
-  autoApproveSpec: false
-  autoApprovePlan: false
+  approve: default
   maxRetries: 3
   commitStrategy: none
   mode: standard
@@ -323,8 +330,7 @@ implementer:
   temperature: 0.3
 validation: { typecheck: true, lint: true, test: true, testCommand: npm test }
 workflow:
-  autoApproveSpec: false
-  autoApprovePlan: false
+  approve: default
   maxRetries: 3
   commitStrategy: none
   mode: standard
@@ -346,8 +352,7 @@ implementer:
   model: gpt-5-codex
 validation: { typecheck: true, lint: true, test: true, testCommand: npm test }
 workflow:
-  autoApproveSpec: false
-  autoApprovePlan: false
+  approve: default
   maxRetries: 3
   commitStrategy: per-task
   mode: full
@@ -380,8 +385,7 @@ implementer:
   model: deepseek-coder
 validation: { typecheck: true, lint: true, test: true, testCommand: npm test }
 workflow:
-  autoApproveSpec: true
-  autoApprovePlan: true
+  approve: none
   maxRetries: 2
   commitStrategy: none
   mode: quick

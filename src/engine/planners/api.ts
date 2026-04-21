@@ -1,6 +1,8 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { InvokeResult } from '../runners/types.js';
 import type { Planner, PriorMessage } from './types.js';
+import type { EffortLevel, ProviderId } from '../../core/schemas/enums.js';
+import type { Attachment } from '../../core/schemas/attachment.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { getProvider } from '../providers/registry.js';
@@ -10,6 +12,8 @@ import { streamCompletion, type StreamClient } from '../providers/openai-stream.
 import { streamAnthropicCompletion } from '../providers/anthropic/stream.js';
 import { providerError } from '../providers/errors.js';
 import { assertPlannerKind } from '../config-assertions.js';
+import { isProviderId } from '../../core/schemas/enums.js';
+import { modelSupportsEffort, modelSupportsImages } from '../providers/capability-inference.js';
 import type OpenAI from 'openai';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
@@ -27,6 +31,8 @@ async function invokeApi(
   prompt: string,
   onOutput: (text: string) => void,
   priorMessages?: PriorMessage[] | undefined,
+  effort?: EffortLevel | undefined,
+  images?: Attachment[] | undefined,
 ): Promise<InvokeResult> {
   const messages = buildMessages(prompt, priorMessages);
 
@@ -38,6 +44,8 @@ async function invokeApi(
       messages,
       temperature: 0.3,
       onProgress: onOutput,
+      ...(effort !== undefined && { effort }),
+      ...(images && images.length > 0 ? { images } : {}),
     });
   }
 
@@ -47,6 +55,8 @@ async function invokeApi(
     temperature: 0.3,
     onProgress: onOutput,
     endpoint: { provider: planner.provider, apiBase: planner.apiBase },
+    ...(effort !== undefined && { effort }),
+    ...(images && images.length > 0 ? { images } : {}),
   });
 }
 
@@ -61,12 +71,17 @@ export function createApiPlanner(config: Config): Planner {
   });
 
   const client = provider === 'anthropic' ? null : createClientFromProvider(resolved);
+  const effort = plannerCfg.effort;
+  const providerId: ProviderId | null = isProviderId(provider) ? provider : null;
+  const supportsEffort = providerId !== null && modelSupportsEffort(providerId, model);
+  const supportsImages = providerId !== null && modelSupportsImages(providerId, model);
 
-  const invoke = ({ prompt, callbacks, priorMessages }: {
+  const invoke = ({ prompt, callbacks, priorMessages, images }: {
     prompt: string;
     projectDir: string;
     callbacks: { onOutput: (text: string) => void };
     priorMessages?: PriorMessage[] | undefined;
+    images?: Attachment[] | undefined;
   }) =>
     invokeApi(
       client,
@@ -75,6 +90,8 @@ export function createApiPlanner(config: Config): Planner {
       prompt,
       callbacks.onOutput,
       priorMessages,
+      supportsEffort ? effort : undefined,
+      supportsImages ? images : undefined,
     );
 
   return createPlannerBase({
@@ -94,6 +111,6 @@ export function createApiPlanner(config: Config): Planner {
       return model;
     },
 
-    capabilities: ONE_SHOT_API_CAPS,
+    capabilities: { ...ONE_SHOT_API_CAPS, supportsEffort, supportsImages },
   });
 }

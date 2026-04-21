@@ -1,5 +1,5 @@
 import { ALL_SCREENS } from '../../stores/navigation/router.js';
-import { WORKFLOW_MODES } from '../schemas/enums.js';
+import { EFFORT_LEVELS, WORKFLOW_MODES } from '../schemas/enums.js';
 import type { SlashCommandDef, CommandContext } from './types.js';
 import { getShortcutKey } from './keybindings.js';
 import { includes } from '../../utils/type-guards.js';
@@ -88,6 +88,27 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
         }
         if (ctx.setWorkflowMode(mode)) {
           ctx.setFeedbackMessage(`Workflow mode set to: ${mode}`);
+        }
+      },
+    },
+    {
+      kind: 'arg',
+      name: '/effort',
+      label: 'Effort',
+      description: `Set planner effort: ${EFFORT_LEVELS.join(' | ')}`,
+      validScreens: ALL_SCREENS,
+      handler: (args) => {
+        const value = args?.trim().toLowerCase();
+        if (!value) {
+          ctx.setFeedbackError(`Usage: /effort <${EFFORT_LEVELS.join('|')}>`);
+          return;
+        }
+        if (!includes(EFFORT_LEVELS, value)) {
+          ctx.setFeedbackError(`Invalid effort: ${value}. Valid: ${EFFORT_LEVELS.join(', ')}`);
+          return;
+        }
+        if (ctx.setPlannerEffort(value)) {
+          ctx.setFeedbackMessage(`Planner effort set to: ${value}`);
         }
       },
     },
@@ -239,6 +260,51 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
           return;
         }
         ctx.setFeedbackError(`Unknown repomap command: ${sub ?? ''}. Use: /repomap rebuild`);
+      },
+    },
+    {
+      kind: 'arg',
+      name: '/attach',
+      label: 'Attach',
+      description: 'Attach an image for the next planner call',
+      validScreens: ['home', 'workflow'],
+      handler: (args) => {
+        const value = args?.trim();
+        if (!value) {
+          const pending = ctx.listAttachments();
+          if (pending.length === 0) {
+            ctx.setFeedbackMessage('No image attachments pending. Usage: /attach <path>');
+          } else {
+            const summary = pending.map((a, i) => `${i + 1}: ${a.path}`).join(', ');
+            ctx.setFeedbackMessage(`Pending attachments: ${summary}`);
+          }
+          return;
+        }
+        const result = ctx.attachImage(value);
+        if (!result.ok) {
+          ctx.setFeedbackError(`Cannot attach: ${result.reason}`);
+          return;
+        }
+        ctx.setFeedbackMessage(`Attached: ${result.path}`);
+      },
+    },
+    {
+      kind: 'arg',
+      name: '/detach',
+      label: 'Detach',
+      description: 'Remove a pending image attachment by index or id',
+      validScreens: ['home', 'workflow'],
+      handler: (args) => {
+        const value = args?.trim();
+        if (!value) {
+          ctx.setFeedbackError('Usage: /detach <index|id>');
+          return;
+        }
+        if (ctx.detachImage(value)) {
+          ctx.setFeedbackMessage(`Detached: ${value}`);
+        } else {
+          ctx.setFeedbackError(`No attachment matched: ${value}`);
+        }
       },
     },
     {

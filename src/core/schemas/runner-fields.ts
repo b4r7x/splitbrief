@@ -1,11 +1,12 @@
 import { z } from 'zod';
-import { CliToolIdSchema, OutputFormatSchema } from './enums.js';
+import { CliToolIdSchema, EffortLevelSchema, OutputFormatSchema } from './enums.js';
 import type { RunnerKind } from './enums.js';
 
 export const PlannerCapabilitiesSchema = z.object({
   supportsConversationalPlanning: z.boolean(),
   supportsHintEscalation: z.boolean(),
   supportsSessionResume: z.boolean(),
+  supportsEffort: z.boolean(),
 }).strict();
 
 export const CliRunnerFields = {
@@ -49,6 +50,7 @@ export const GenerationCommonFields = {
   contextLength: z.number().int().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),
   timeout: z.number().positive().max(600000).optional(),
+  effort: EffortLevelSchema.optional(),
 };
 
 export interface RunnerKindCapabilities {

@@ -1,6 +1,8 @@
 import type { Phase } from '../../core/schemas/enums.js';
 import { addEvent, markCancelled } from '../../stores/workflow/actions.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { resolveAttachment } from './attach-resolver.js';
+import { attachmentsStore } from '../../stores/workflow/attachments.js';
 
 export type RewindTarget =
   | { target: 'spec'; comment?: string }
@@ -64,4 +66,24 @@ export function requestClearQueue(): number {
     addEvent({ type: 'queue_cleared', ts: Date.now(), phase: lifecycleStore.get().phase, count: depth });
   }
   return depth;
+}
+
+export function requestAttach(path: string, projectDir: string): { ok: true; resolvedPath: string } | { ok: false; reason: string } {
+  const result = resolveAttachment({ input: path, projectDir });
+  if (!result.ok) return { ok: false, reason: result.reason };
+  attachmentsStore.add(result.attachment);
+  return { ok: true, resolvedPath: result.attachment.path };
+}
+
+export function requestDetach(id?: string): boolean {
+  const pending = attachmentsStore.peek();
+  if (pending.length === 0) return false;
+  if (id) {
+    const match = pending.find(a => a.id === id || a.path.endsWith(id));
+    if (!match) return false;
+    attachmentsStore.remove(match.id);
+    return true;
+  }
+  attachmentsStore.remove(pending[pending.length - 1]!.id);
+  return true;
 }

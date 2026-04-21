@@ -16,7 +16,7 @@ export function configPath(projectDir: string): string {
 
 export function createDefaultConfig(): Config {
   return {
-    version: 2,
+    version: 3,
     planner: { kind: 'cli', tool: 'claude-code' },
     implementer: {
       kind: 'api',
@@ -35,8 +35,10 @@ export function createDefaultConfig(): Config {
     workflow: {
       autoApproveSpec: false,
       autoApprovePlan: false,
+      approve: 'default',
       maxRetries: 3,
       commitStrategy: 'none',
+      git: { commitStrategy: 'none' },
       persistTranscript: true,
       mode: 'standard',
     },
@@ -63,7 +65,7 @@ function mergeWithDefaults(migrated: Record<string, unknown>): Record<string, un
   const implementerDefaults: Record<string, unknown> = { ...defaults.implementer };
 
   return {
-    version: 2,
+    version: 3,
     planner: migrated['planner'] ?? defaults.planner,
     implementer: mergeRunner(
       narrowRecord(migrated['implementer']),
@@ -114,7 +116,7 @@ export function loadConfig(projectDir: string): LoadConfigResult {
 
   const camelCased = fromYaml(parsed);
 
-  const migrated = narrowRecord(migrateConfig(camelCased)) ?? {};
+  const migrated = narrowRecord(migrateConfig(camelCased, warnings)) ?? {};
 
   const merged = mergeWithDefaults(migrated);
 

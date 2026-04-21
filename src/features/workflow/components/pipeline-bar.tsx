@@ -13,8 +13,8 @@ function getStageIndex(phase: Phase): number {
   switch (phase) {
     case 'idle': return -1;
     case 'researching': return 0;
-    case 'specifying': case 'reviewing-spec': return 1;
-    case 'planning': case 'reviewing-plan': return 2;
+    case 'specifying': case 'reviewing-spec': case 'clarifying': case 'constitution-check': return 1;
+    case 'planning': case 'reviewing-plan': case 'analyzing': return 2;
     case 'implementing': case 'validating-task': case 'escalating': return 3;
     case 'final-review': return 4;
     case 'complete': return 5;

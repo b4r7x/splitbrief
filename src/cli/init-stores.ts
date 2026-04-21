@@ -5,7 +5,7 @@ import { installHistoryPersistence } from '../stores/ui/persistence.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { setHighlightTheme } from '../lib/highlight.js';
-import { warnError } from '../lib/warn.js';
+import { warnError, warnStderr } from '../lib/warn.js';
 import { detectCapabilities } from '../engine/providers/registry.js';
 import { detectAll } from '../engine/detection/detect.js';
 import { loadDetectionIntoStores } from '../engine/detection/adapter.js';
@@ -15,6 +15,7 @@ import type { WorkflowOpts } from '../core/types/config-options.js';
 import { cliError } from './errors.js';
 import { getPlannerToolId } from '../core/config/accessors/runner-config.js';
 import { ensureHooksTrusted } from './hook-trust-prompt.js';
+import { normalizeLegacyMode } from '../core/schemas/enums.js';
 
 export async function initStores(projectDir: string, opts: WorkflowOpts = {}): Promise<void> {
   initUIChrome();
@@ -33,6 +34,11 @@ function initUIChrome(): void {
 }
 
 function loadProjectState(projectDir: string, opts: WorkflowOpts): void {
+  const rawMode = opts.mode as string | undefined;
+  if (rawMode === 'full' && process.env.DIPTYCH_QUIET !== '1') {
+    warnStderr('--mode full is deprecated; use --mode speckit');
+  }
+  const normalizedMode = rawMode ? normalizeLegacyMode(rawMode) ?? undefined : undefined;
   configStore.load(projectDir, {
     planner: {
       tool: opts.planner,
@@ -45,8 +51,10 @@ function loadProjectState(projectDir: string, opts: WorkflowOpts): void {
       command: opts.implementerCommand,
     },
     autoApprove: opts.auto,
-    mode: opts.mode,
+    ...(opts.approve !== undefined ? { approve: opts.approve } : {}),
+    mode: normalizedMode,
     budget: opts.budget,
+    ...(opts.plannerEffort !== undefined ? { plannerEffort: opts.plannerEffort } : {}),
   });
   const storeConfig = configStore.get().config;
   if (!storeConfig) throw cliError('configStore.load did not populate config');

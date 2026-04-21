@@ -15,8 +15,11 @@ export const CANCELLABLE_PHASES: ReadonlySet<Phase> = new Set([
   'researching',
   'specifying',
   'reviewing-spec',
+  'clarifying',
+  'constitution-check',
   'planning',
   'reviewing-plan',
+  'analyzing',
   'implementing',
   'validating-task',
   'escalating',
@@ -24,8 +27,15 @@ export const CANCELLABLE_PHASES: ReadonlySet<Phase> = new Set([
 ]);
 
 export const RESUMABLE_PHASES: ReadonlySet<Phase> = new Set<Phase>([
-  'reviewing-spec', 'reviewing-plan', 'implementing',
-  'validating-task', 'escalating', 'final-review',
+  'reviewing-spec',
+  'clarifying',
+  'constitution-check',
+  'reviewing-plan',
+  'analyzing',
+  'implementing',
+  'validating-task',
+  'escalating',
+  'final-review',
 ]);
 
 const LIVE_PHASES: ReadonlySet<Phase> = new Set<Phase>([

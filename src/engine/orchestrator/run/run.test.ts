@@ -1,10 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
+import { simpleGit } from 'simple-git';
 import { runWorkflow } from './run.js';
 
 let dirs: string[] = [];
@@ -144,5 +145,71 @@ describe('runWorkflow — smoke', () => {
 
     expect(summary).toBeDefined();
     expect(summary.feature).toBe('aborted-before-start');
+  });
+});
+
+describe('runWorkflow — createBranch', () => {
+  it('creates diptych/<slug> branch when git.createBranch is enabled', async () => {
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const events: EngineEvent[] = [];
+    const controller = new AbortController();
+    controller.abort();
+
+    const config = makeConfig({
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: { git: { createBranch: true, commitStrategy: 'none' }, mode: 'quick', persistTranscript: false },
+    });
+
+    await runWorkflow({
+      feature: 'add auth',
+      projectDir,
+      config,
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _eventSink: (e) => events.push(e),
+      _planner: makePlanner(),
+      signal: controller.signal,
+    });
+
+    const branchEvent = events.find((e): e is Extract<EngineEvent, { type: 'git_branch_created' }> => e.type === 'git_branch_created');
+    expect(branchEvent).toBeDefined();
+    expect(branchEvent?.name).toBe('diptych/add-auth');
+
+    const g = simpleGit(projectDir);
+    const status = await g.status();
+    expect(status.current).toBe('diptych/add-auth');
+  });
+
+  it('does not create a branch when git.createBranch is false', async () => {
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const events: EngineEvent[] = [];
+    const controller = new AbortController();
+    controller.abort();
+
+    const config = makeConfig({
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: { git: { createBranch: false, commitStrategy: 'none' }, mode: 'quick', persistTranscript: false },
+    });
+
+    const g = simpleGit(projectDir);
+    const statusBefore = await g.status();
+    const defaultBranch = statusBefore.current ?? 'main';
+
+    await runWorkflow({
+      feature: 'add auth',
+      projectDir,
+      config,
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _eventSink: (e) => events.push(e),
+      _planner: makePlanner(),
+      signal: controller.signal,
+    });
+
+    expect(events.find((e) => e.type === 'git_branch_created')).toBeUndefined();
+    const statusAfter = await g.status();
+    expect(statusAfter.current).toBe(defaultBranch);
   });
 });

@@ -89,6 +89,8 @@ describe('enqueue', () => {
         supportsConversationalPlanning: true,
         supportsHintEscalation: false,
         supportsSessionResume: true,
+        supportsEffort: false,
+        supportsImages: false,
       },
       injectUserTurn: async (text: string, dir: string) => {
         injectedTurns.push({ text, dir });
@@ -124,6 +126,8 @@ describe('enqueue', () => {
         supportsConversationalPlanning: false,
         supportsHintEscalation: false,
         supportsSessionResume: false,
+        supportsEffort: false,
+        supportsImages: false,
       },
       injectUserTurn: async () => {},
     });
@@ -318,6 +322,8 @@ describe('native injection', () => {
         supportsConversationalPlanning: true,
         supportsHintEscalation: false,
         supportsSessionResume: true,
+        supportsEffort: false,
+        supportsImages: false,
       },
       injectUserTurn: async (text: string, dir: string) => {
         injectedTurns.push({ text, dir });
@@ -343,6 +349,8 @@ describe('native injection', () => {
         supportsConversationalPlanning: true,
         supportsHintEscalation: false,
         supportsSessionResume: true,
+        supportsEffort: false,
+        supportsImages: false,
       },
       injectUserTurn: async () => {
         throw new Error('injection failed');
@@ -369,6 +377,8 @@ describe('clarifications', () => {
         supportsConversationalPlanning: true,
         supportsHintEscalation: false,
         supportsSessionResume: true,
+        supportsEffort: false,
+        supportsImages: false,
       },
       injectUserTurn: async (text: string, dir: string) => {
         injectedTurns.push({ text, dir });
@@ -467,6 +477,8 @@ describe('clarifications', () => {
         supportsConversationalPlanning: true,
         supportsHintEscalation: false,
         supportsSessionResume: true,
+        supportsEffort: false,
+        supportsImages: false,
       },
       injectUserTurn,
     });

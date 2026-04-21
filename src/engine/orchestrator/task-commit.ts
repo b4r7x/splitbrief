@@ -31,7 +31,7 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
     return { state, completed: false };
   }
 
-  const strategy = config.workflow.commitStrategy;
+  const strategy = config.workflow.git?.commitStrategy;
   if (strategy === 'per-task') {
     const suffix = commitSuffix ? ` (${commitSuffix})` : '';
     const commitMsg = `feat(diptych): ${task.id} - ${task.title}${suffix}`;

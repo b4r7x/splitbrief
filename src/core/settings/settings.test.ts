@@ -39,7 +39,7 @@ describe('displayValue with formatValue', () => {
 
 describe('matchesFilter', () => {
   it('matches on label', () => {
-    const def = SETTINGS_DEFS.find(d => d.id === 'workflow.commitStrategy')!;
+    const def = SETTINGS_DEFS.find(d => d.id === 'workflow.git.commitStrategy')!;
     expect(matchesFilter(def, 'commit')).toBe(true);
     expect(matchesFilter(def, 'Strategy')).toBe(true);
   });

@@ -1,9 +1,13 @@
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { InvokeResult } from '../../runners/types.js';
+import type { EffortLevel } from '../../../core/schemas/enums.js';
+import type { Attachment } from '../../../core/schemas/attachment.js';
+import { effortToAnthropicBudget } from '../../../core/schemas/enums.js';
 import { timeoutError, withIdleTimeout } from '../../../utils/with-timeout.js';
 import { stripV1Suffix, ANTHROPIC_API_VERSION } from '../constants.js';
 import { narrowRecord, assertNever } from '../../../utils/type-guards.js';
 import { STREAM_TIMEOUT_MS, streamError, throwMappedError } from '../../streaming/stream-errors.js';
+import { readFileSync } from 'node:fs';
 
 type AnthropicEventType =
   | 'message_start'
@@ -17,9 +21,16 @@ type AnthropicEventType =
 
 const DEFAULT_MAX_TOKENS = 4096;
 
+interface AnthropicTextBlock { type: 'text'; text: string }
+interface AnthropicImageBlock {
+  type: 'image';
+  source: { type: 'base64'; media_type: string; data: string };
+}
+type AnthropicContentBlock = AnthropicTextBlock | AnthropicImageBlock;
+
 interface AnthropicMessage {
   role: 'assistant' | 'user';
-  content: string;
+  content: string | AnthropicContentBlock[];
 }
 
 interface AnthropicStreamOptions {
@@ -31,6 +42,8 @@ interface AnthropicStreamOptions {
   onProgress: (text: string) => void;
   maxTokens?: number | undefined;
   signal?: AbortSignal | undefined;
+  effort?: EffortLevel | undefined;
+  images?: Attachment[] | undefined;
 }
 
 interface SseEvent {
@@ -160,10 +173,38 @@ function getApiErrorMessage(payload: Record<string, unknown>): string {
   return JSON.stringify(payload);
 }
 
+function attachImagesToLastUserMessage(
+  conversation: AnthropicMessage[],
+  images: Attachment[],
+): void {
+  if (images.length === 0) return;
+  const blocks: AnthropicImageBlock[] = images.map(img => ({
+    type: 'image',
+    source: {
+      type: 'base64',
+      media_type: img.mimeType,
+      data: readFileSync(img.path).toString('base64'),
+    },
+  }));
+  for (let i = conversation.length - 1; i >= 0; i--) {
+    const msg = conversation[i]!;
+    if (msg.role !== 'user') continue;
+    const existing: AnthropicContentBlock[] = typeof msg.content === 'string'
+      ? [{ type: 'text', text: msg.content }]
+      : msg.content;
+    msg.content = [...blocks, ...existing];
+    return;
+  }
+  conversation.push({ role: 'user', content: blocks });
+}
+
 export async function streamAnthropicCompletion(
   opts: AnthropicStreamOptions,
 ): Promise<InvokeResult> {
   const { system, conversation } = splitSystemMessages(opts.messages);
+  if (opts.images && opts.images.length > 0) {
+    attachImagesToLastUserMessage(conversation, opts.images);
+  }
   const url = `${stripV1Suffix(opts.apiBase)}/v1/messages`;
   const endpoint = { provider: 'anthropic', apiBase: opts.apiBase };
 
@@ -183,6 +224,9 @@ export async function streamAnthropicCompletion(
         stream: true,
         max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
         ...(system && { system }),
+        ...(opts.effort !== undefined && {
+          thinking: { type: 'enabled', budget_tokens: effortToAnthropicBudget(opts.effort) },
+        }),
       }),
       signal: opts.signal ?? null,
     });

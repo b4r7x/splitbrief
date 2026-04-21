@@ -1,6 +1,8 @@
 import type { InvokeResult } from './runners/types.js';
 import type { TokenDelta } from '../core/schemas/tokens.js';
 import type { ClarificationQuestion } from '../core/schemas/question.js';
+import type { EffortLevel } from '../core/schemas/enums.js';
+import type { Attachment } from '../core/schemas/attachment.js';
 import { spawnWithStdin } from '../lib/process/spawn.js';
 import { parseStreamLine, type ToolUseInfo } from './streaming/output-parsers.js';
 import { createQuestionAccumulator } from './parsers/question-parser.js';
@@ -102,16 +104,29 @@ interface BuildArgsOpts {
   sessionId?: string | null;
   model?: string | undefined;
   useStdin?: boolean | undefined;
+  effort?: EffortLevel | undefined;
+  images?: Attachment[] | undefined;
+}
+
+export function applyEffortPrefix(prompt: string, effort: EffortLevel | undefined): string {
+  if (!effort) return prompt;
+  return `/effort ${effort}\n\n${prompt}`;
 }
 
 function buildClaudeArgs(opts: BuildArgsOpts): string[] {
-  const { prompt, sessionId, model, useStdin } = opts;
+  const { prompt, sessionId, model, useStdin, effort, images } = opts;
+  const effectivePrompt = applyEffortPrefix(prompt ?? '', effort);
   const args: string[] = useStdin
     ? ['-p', '--output-format', 'stream-json', '--verbose']
-    : ['-p', prompt ?? '', '--output-format', 'stream-json', '--verbose'];
+    : ['-p', effectivePrompt, '--output-format', 'stream-json', '--verbose'];
 
   if (model) args.push('--model', model);
   if (sessionId) args.push('--session-id', sessionId);
+  if (images) {
+    for (const img of images) {
+      args.push('--image', img.path);
+    }
+  }
   return args;
 }
 
@@ -128,11 +143,13 @@ export interface ClaudePlannerStreamOpts {
   onOutput: (text: string) => void;
   onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
   model?: string | undefined;
+  effort?: EffortLevel | undefined;
+  images?: Attachment[] | undefined;
 }
 
 export async function runClaudePlannerStream(opts: ClaudePlannerStreamOpts): Promise<ClaudePlannerStreamResult> {
-  const { prompt, projectDir, sessionId, onOutput, onQuestion, model } = opts;
-  const args = buildClaudeArgs({ prompt, sessionId, model });
+  const { prompt, projectDir, sessionId, onOutput, onQuestion, model, effort, images } = opts;
+  const args = buildClaudeArgs({ prompt, sessionId, model, effort, ...(images ? { images } : {}) });
 
   const { state, handleLine } = createStreamHandler({ onOutput, onQuestion });
   state.sessionId = sessionId;
@@ -153,18 +170,19 @@ export interface ClaudeOneShotOpts {
   projectDir: string;
   onOutput: (text: string) => void;
   model?: string | undefined;
+  effort?: EffortLevel | undefined;
 }
 
 export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<InvokeResult> {
-  const { prompt, projectDir, onOutput, model } = opts;
+  const { prompt, projectDir, onOutput, model, effort } = opts;
   const { state, handleLine } = createStreamHandler({ onOutput });
-  const args = buildClaudeArgs({ useStdin: true, model });
+  const args = buildClaudeArgs({ useStdin: true, model, effort });
 
   await spawnWithStdin({
     command: 'claude',
     args,
     cwd: projectDir,
-    stdin: prompt,
+    stdin: applyEffortPrefix(prompt, effort),
     notFoundMessage: CLAUDE_NOT_FOUND,
     onLine: handleLine,
   });

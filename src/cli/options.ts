@@ -2,7 +2,8 @@ import { Command } from 'commander';
 
 export function addWorkflowOptions(cmd: Command): Command {
   return cmd
-    .option('--auto', 'Auto-approve spec and plan')
+    .option('--auto', 'Auto-approve spec and plan (alias for --approve none)')
+    .option('--approve <level>', 'Approval gates: none, spec, plan, all, default (follows mode)')
     .option('--model <model>', 'Override implementer model (alias for --implementer-model)')
     .option('--provider <provider>', 'Override implementer provider (alias for --implementer)')
     .option('--planner <tool>', 'Planner tool (claude-code, codex, opencode, aider, copilot, kilo-code, agent-sdk, anthropic, openrouter, shell)')
@@ -14,8 +15,9 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--no-fullscreen', 'Disable fullscreen alternate screen buffer')
     .option('--no-mouse', 'Disable mouse tracking')
-    .option('--mode <mode>', 'Workflow mode: quick, standard, or full')
+    .option('--mode <mode>', 'Workflow mode: instant, quick, standard, or speckit (full=speckit alias)')
     .option('--budget <amount>', 'Maximum budget in dollars (e.g., 2.00)', parseFloat)
+    .option('--planner-effort <level>', 'Planner effort hint: low, medium, high, xhigh. Dropped on unsupported backends.')
     .option('--allow-hooks', 'Trust hook config without prompting (use in CI)', false)
     .option('--json', 'Headless mode: emit each EngineEvent as NDJSON to stdout, skip TUI render', false)
     .option('--otel-exporter <name>', 'Bootstrap an OTel exporter (currently only "console"); requires otel.enabled in config');

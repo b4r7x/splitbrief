@@ -53,6 +53,32 @@ export async function createCheckpoint(dir: string, label: string): Promise<stri
   return tagName;
 }
 
+export async function branchExists(dir: string, name: string): Promise<boolean> {
+  const git = getGit(dir);
+  const result = await git.branch(['--list', name]);
+  return result.all.includes(name);
+}
+
+/**
+ * Create a local branch named `desiredName`. If that name already exists,
+ * appends a numeric suffix (-2, -3, …) until a free name is found (up to -99).
+ * Returns the actual branch name created.
+ */
+export async function createBranch(dir: string, desiredName: string): Promise<string> {
+  const git = getGit(dir);
+  let name = desiredName;
+  let suffix = 2;
+  while (await branchExists(dir, name)) {
+    if (suffix > 99) {
+      throw new Error(`too many branch name collisions on ${desiredName}`);
+    }
+    name = `${desiredName}-${suffix}`;
+    suffix++;
+  }
+  await git.checkoutLocalBranch(name);
+  return name;
+}
+
 export async function discardTaskChanges(
   dir: string,
   taskFile: string,

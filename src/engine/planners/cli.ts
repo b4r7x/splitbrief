@@ -21,6 +21,8 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
 
   const session = createSessionResumeState();
   if (supportsSessionResume) session.capture(initialSessionId ?? null);
+  const effort = plannerCfg.effort;
+  const supportsEffort = planner.supportsEffort === true;
 
   async function runOnce(
     prompt: string,
@@ -36,6 +38,7 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
       mode,
       ...(resolvedModel !== undefined && { model: resolvedModel }),
       ...(supportsSessionResume && resumeId ? { sessionId: resumeId } : {}),
+      ...(supportsEffort && effort !== undefined ? { effort } : {}),
     };
 
     const result = await spawnAndCollect({
@@ -83,6 +86,6 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
 
     ...createCommandAvailability(tool.command, planner.isAvailableOpts),
 
-    capabilities: { ...ONE_SHOT_API_CAPS, supportsSessionResume },
+    capabilities: { ...ONE_SHOT_API_CAPS, supportsSessionResume, supportsEffort },
   });
 }

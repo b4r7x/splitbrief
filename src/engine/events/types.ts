@@ -1,5 +1,5 @@
 import type { TaskId } from '../../core/schemas/task.js';
-import type { Phase, TaskCompletionMethod, WorkflowMode } from '../../core/schemas/enums.js';
+import type { ApproveLevel, Phase, TaskCompletionMethod, WorkflowMode } from '../../core/schemas/enums.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 
@@ -29,6 +29,9 @@ export type EngineEvent =
   | { type: 'rewind_to_spec'; ts: number; phase: Phase; comment?: string }
   | { type: 'rewind_to_plan'; ts: number; phase: Phase; comment?: string }
   | { type: 'all_tasks_done'; ts: number; phase: Phase }
+  | { type: 'mode_resolved'; ts: number; phase: Phase; mode: WorkflowMode; approve: ApproveLevel }
+  | { type: 'mode_downgrade_advised'; ts: number; phase: Phase; currentMode: WorkflowMode; suggestedMode: WorkflowMode }
+  | { type: 'instant_plan_received'; ts: number; phase: Phase; taskCount: number }
   // Task lifecycle
   | { type: 'task_started'; ts: number; phase: Phase; taskId: TaskId; title: string; index: number; total: number; file: string; action: 'create' | 'modify'; tool?: string; model?: string }
   | { type: 'task_completed'; ts: number; phase: Phase; taskId: TaskId; title: string; method: TaskCompletionMethod; retries: number; duration: number; tool?: string; model?: string }
@@ -51,6 +54,7 @@ export type EngineEvent =
   // Git
   | { type: 'git_commit'; ts: number; phase: Phase; taskId: TaskId; message: string; file?: string }
   | { type: 'git_checkpoint'; ts: number; phase: Phase; taskId: TaskId; tag: string }
+  | { type: 'git_branch_created'; ts: number; phase: Phase; name: string }
   // Clarifications
   | { type: 'clarifications_collected'; ts: number; phase: Phase; count: number; clarifications: Array<{ question: string; answer: string }> }
   | { type: 'clarification_answered'; ts: number; phase: Phase; questionId?: string; answer: string }
@@ -60,6 +64,9 @@ export type EngineEvent =
   | { type: 'queue_drained'; ts: number; phase: Phase; count: number }
   | { type: 'queue_cleared'; ts: number; phase: Phase; count: number }
   | { type: 'user_message'; ts: number; phase: Phase; text: string }
+  // Attachments
+  | { type: 'planner_attachment_added'; ts: number; phase: Phase; id: string; path: string; sizeBytes: number }
+  | { type: 'planner_attachments_dropped'; ts: number; phase: Phase; count: number; reason: 'unsupported-backend' | 'capability-degraded' }
   // Cost & budget
   | { type: 'cost_update'; ts: number; phase: Phase; tokenUsage: TokenUsage }
   | { type: 'cost_prediction'; ts: number; phase: Phase; prediction: CostPrediction }

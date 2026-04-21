@@ -95,6 +95,10 @@ export function publishGitCommit(bus: EventBus, phase: Phase, taskId: TaskId, me
   bus.publish({ type: 'git_commit', ts: Date.now(), phase, taskId, message, ...(file !== undefined && { file }) });
 }
 
+export function publishGitBranchCreated(bus: EventBus, phase: Phase, name: string): void {
+  bus.publish({ type: 'git_branch_created', ts: Date.now(), phase, name });
+}
+
 export function publishGitCheckpoint(bus: EventBus, phase: Phase, taskId: TaskId, tag: string): void {
   bus.publish({ type: 'git_checkpoint', ts: Date.now(), phase, taskId, tag });
 }

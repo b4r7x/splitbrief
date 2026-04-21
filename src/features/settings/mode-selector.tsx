@@ -16,9 +16,10 @@ interface ModeDef {
 }
 
 const MODES: readonly ModeDef[] = [
+  { mode: 'instant', calls: 0, approvals: 0, size: 'trivial edits' },
   { mode: 'quick', calls: 1, approvals: 0, size: 'small fixes' },
   { mode: 'standard', calls: 4, approvals: 1, size: 'features' },
-  { mode: 'full', calls: 4, approvals: 2, size: 'large scope' },
+  { mode: 'speckit', calls: 4, approvals: 2, size: 'large scope' },
 ];
 
 export function ModeSelector() {

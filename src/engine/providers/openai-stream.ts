@@ -1,8 +1,11 @@
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { InvokeResult } from '../runners/types.js';
+import type { EffortLevel } from '../../core/schemas/enums.js';
+import type { Attachment } from '../../core/schemas/attachment.js';
 import { timeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
 import { toTokenDelta } from '../streaming/token-utils.js';
 import { STREAM_TIMEOUT_MS, throwMappedError } from '../streaming/stream-errors.js';
+import { readFileSync } from 'node:fs';
 
 interface StreamCompletionOptions {
   temperature: number;
@@ -10,6 +13,8 @@ interface StreamCompletionOptions {
   endpoint?: { provider: string; apiBase?: string | undefined } | undefined;
   maxTokens?: number | undefined;
   signal?: AbortSignal | undefined;
+  effort?: EffortLevel | undefined;
+  images?: Attachment[] | undefined;
 }
 
 interface StreamChunk {
@@ -20,22 +25,54 @@ interface StreamChunk {
   } | null;
 }
 
+interface OpenAITextPart { type: 'text'; text: string }
+interface OpenAIImagePart { type: 'image_url'; image_url: { url: string } }
+type OpenAIContentPart = OpenAITextPart | OpenAIImagePart;
+
+type ChatMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string | OpenAIContentPart[];
+};
+
 export interface StreamClient {
   chat: {
     completions: {
       create: (
         body: {
           model: string;
-          messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+          messages: ChatMessage[];
           temperature: number;
           stream: true;
           stream_options: { include_usage: true };
           max_tokens?: number | undefined;
+          reasoning_effort?: EffortLevel | undefined;
         },
         requestOptions?: { signal?: AbortSignal | undefined | null },
       ) => Promise<AsyncIterable<StreamChunk>>;
     };
   };
+}
+
+function attachImagesToLastUserMessage(messages: ChatMessage[], images: Attachment[]): ChatMessage[] {
+  if (images.length === 0) return messages;
+  const parts: OpenAIImagePart[] = images.map(img => ({
+    type: 'image_url',
+    image_url: {
+      url: `data:${img.mimeType};base64,${readFileSync(img.path).toString('base64')}`,
+    },
+  }));
+  const out = messages.map(m => ({ ...m }));
+  for (let i = out.length - 1; i >= 0; i--) {
+    const msg = out[i]!;
+    if (msg.role !== 'user') continue;
+    const existing: OpenAIContentPart[] = typeof msg.content === 'string'
+      ? [{ type: 'text', text: msg.content }]
+      : msg.content;
+    msg.content = [...existing, ...parts];
+    return out;
+  }
+  out.push({ role: 'user', content: parts });
+  return out;
 }
 
 export async function streamCompletion(
@@ -44,17 +81,22 @@ export async function streamCompletion(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   opts: StreamCompletionOptions,
 ): Promise<InvokeResult> {
-  const { temperature, onProgress, endpoint, maxTokens, signal } = opts;
+  const { temperature, onProgress, endpoint, maxTokens, signal, effort, images } = opts;
+  const baseMessages: ChatMessage[] = messages.map(m => ({ role: m.role, content: m.content }));
+  const finalMessages = images && images.length > 0
+    ? attachImagesToLastUserMessage(baseMessages, images)
+    : baseMessages;
   let stream: AsyncIterable<StreamChunk>;
   try {
     stream = await client.chat.completions.create(
       {
         model,
-        messages,
+        messages: finalMessages,
         temperature,
         stream: true,
         stream_options: { include_usage: true },
         ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
+        ...(effort !== undefined ? { reasoning_effort: effort } : {}),
       },
       // OpenAI SDK v6 forwards `signal` to the underlying fetch so an abort
       // during the initial POST cancels the in-flight request, not just the

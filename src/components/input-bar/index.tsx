@@ -2,15 +2,19 @@ import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { MultilineInput } from '../input/multiline-input.js';
 import { SlashSuggestions } from './slash-suggestions.js';
+import { AttachmentChips } from './attachment-chips.js';
 import { useSlashAutocomplete } from './use-slash-autocomplete.js';
 import { useTheme } from '../theme.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
+import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-stores.js';
 import type { InputMode, Screen } from '../../stores/navigation/router.js';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { useInputBarHistory } from './use-input-bar-history.js';
+import { requestAttach } from '../../features/workflow/handlers.js';
 
 function borderColorForMode(mode: InputMode, theme: { planner: string; warning: string; border: string }): string {
   if (mode === 'review') return theme.planner;
@@ -68,6 +72,16 @@ export function InputBar({
     disabled,
   });
 
+  const handleFileDrop = (path: string) => {
+    const projectDir = configStore.get().projectDir;
+    const result = requestAttach(path, projectDir);
+    if (result.ok) {
+      feedbackStore.setMessage(`Attached: ${result.resolvedPath}`);
+    } else {
+      feedbackStore.setError(`Cannot attach: ${result.reason}`);
+    }
+  };
+
   const handleSubmit = (text: string) => {
     if (showSuggestions) return;
     const trimmed = text.trim();
@@ -106,6 +120,7 @@ export function InputBar({
           fuzzyMatch={fuzzyMatch}
         />
       )}
+      <AttachmentChips />
       <Box
         borderStyle="round"
         borderColor={borderColorForMode(mode, theme)}
@@ -120,6 +135,7 @@ export function InputBar({
             value={value}
             onChange={onChange}
             onSubmit={handleSubmit}
+            onFileDrop={handleFileDrop}
             columns={inputColumns}
             focus={!disabled}
             placeholder={placeholderForMode(mode, hint)}

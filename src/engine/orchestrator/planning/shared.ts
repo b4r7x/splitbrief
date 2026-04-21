@@ -12,6 +12,8 @@ import { labelError } from '../../../utils/format-errors.js';
 import type { Planner, PlanResult, PlannerCallbacks, PriorMessage } from '../../planners/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { SkillMeta } from '../../skills/discovery.js';
+import type { ApproveLevel } from '../../../core/schemas/enums.js';
+import type { Attachment } from '../../../core/schemas/attachment.js';
 import { drainQueue, formatDrainedMessages } from '../queue.js';
 import { regenerateFromFeedback } from '../continuation.js';
 
@@ -25,6 +27,8 @@ export type PlanningPhaseOptions = {
   selectedSkills?: SkillMeta[] | undefined;
   rewindPending?: { target: 'spec' | 'plan'; comment?: string | undefined } | undefined;
   codebaseContext?: string | undefined;
+  approveLevel?: ApproveLevel | undefined;
+  attachments?: Attachment[] | undefined;
 };
 
 export type PlanningPhaseResult = { state: WorkflowState; tasks: Task[]; cancelled: boolean };
@@ -113,21 +117,23 @@ export type PlannerCallOptions = {
   state: WorkflowState;
   planner: Planner;
   feature: string;
-  mode: 'quick' | 'full';
+  mode: 'quick' | 'speckit';
   skillsContext?: string | undefined;
   codebaseContext?: string | undefined;
   priorMessages?: PriorMessage[] | undefined;
   collectedQuestions?: ClarificationQuestion[] | undefined;
+  attachments?: Attachment[] | undefined;
 };
 
 export async function runPlannerCallInContinuationLoop(
   opts: PlannerCallOptions,
 ): Promise<PlannerCallRunResult> {
-  const { wctx, planner, feature, mode, skillsContext, codebaseContext, priorMessages, collectedQuestions } = opts;
+  const { wctx, planner, feature, mode, skillsContext, codebaseContext, priorMessages, collectedQuestions, attachments } = opts;
   const { projectDir, sessionId, config, callbacks, resumeHolder, sinks, signal } = wctx;
   let state = opts.state;
   const textHandler = createBusTextHandler(wctx.bus, state.phase);
   const conversational = planner.capabilities.supportsConversationalPlanning;
+  let attachmentsConsumed = false;
 
   const loop = await withContinuationLoop<PlanResult>({
     ctx: { projectDir, sessionId, callbacks, signal, sinks },
@@ -135,6 +141,8 @@ export async function runPlannerCallInContinuationLoop(
     onStateChange: (s) => { state = s; },
     body: async ({ continuationPrompt, recordOutput }) => {
       const prompt = continuationPrompt ?? feature;
+      const callAttachments = !attachmentsConsumed && attachments && attachments.length > 0 ? attachments : undefined;
+      attachmentsConsumed = true;
       const plannerCallbacks: PlannerCallbacks = {
         onOutput: (text) => { recordOutput(text); textHandler(text); },
         onSessionId: (id) => { state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PLANNER_SESSION_ID', sessionId: id }); },
@@ -142,7 +150,8 @@ export async function runPlannerCallInContinuationLoop(
         sessionId,
         persistTranscript: config.workflow.persistTranscript,
         ...(priorMessages && priorMessages.length > 0 ? { priorMessages } : {}),
-        ...(mode === 'full' && conversational && collectedQuestions
+        ...(callAttachments ? { attachments: callAttachments } : {}),
+        ...(mode === 'speckit' && conversational && collectedQuestions
           ? {
               onQuestion: (questions) => {
                 for (const q of questions) {

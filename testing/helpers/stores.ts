@@ -3,6 +3,7 @@ import { tasksStore } from '../../src/stores/workflow/tasks.js';
 import { tokensStore } from '../../src/stores/workflow/tokens.js';
 import { lifecycleStore } from '../../src/stores/workflow/lifecycle.js';
 import { abortStore } from '../../src/stores/workflow/abort.js';
+import { attachmentsStore } from '../../src/stores/workflow/attachments.js';
 import { conversationScrollStore } from '../../src/stores/workflow/conversation-scroll.js';
 import { reviewStore } from '../../src/stores/workflow/review.js';
 import { controlsStore } from '../../src/stores/ui/controls.js';
@@ -31,6 +32,7 @@ export function resetAllStores(): void {
   tokensStore.reset();
   lifecycleStore.reset();
   abortStore.reset();
+  attachmentsStore.reset();
   conversationScrollStore.reset();
   reviewStore.reset();
   controlsStore.reset();

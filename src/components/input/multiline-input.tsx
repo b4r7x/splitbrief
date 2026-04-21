@@ -6,9 +6,12 @@ import { ControlledMultilineInput, type ControlledMultilineInputProps } from './
 
 const MULTI_BYTE_SUPPRESS_MS = 50;
 
+const FILE_DROP_PATTERN = /^\S+\.(jpe?g|png|gif|webp|bmp)$/i;
+
 interface MultilineInputProps extends ControlledMultilineInputProps {
   onChange: (value: string) => void;
   onSubmit?: (value: string) => void;
+  onFileDrop?: (path: string) => void;
   columns?: number;
   keyBindings?: {
     submit?: (key: Key) => boolean;
@@ -23,6 +26,7 @@ export function MultilineInput({
   value,
   onChange,
   onSubmit,
+  onFileDrop,
   columns,
   keyBindings,
   showCursor = true,
@@ -60,6 +64,11 @@ export function MultilineInput({
     }
 
     if (key.tab || (key.shift && key.tab) || (key.ctrl && input === 'c')) {
+      return;
+    }
+
+    if (input.length > 1 && onFileDrop && FILE_DROP_PATTERN.test(input.trim())) {
+      onFileDrop(input.trim());
       return;
     }
 

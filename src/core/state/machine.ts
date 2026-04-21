@@ -58,6 +58,9 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
     case 'START_QUICK':
       return { ...state, phase: 'implementing', tasks: action.tasks, currentTaskIndex: 0, attempt: 0 };
 
+    case 'START_INSTANT':
+      return { ...state, phase: 'implementing', tasks: action.tasks, currentTaskIndex: 0, attempt: 0 };
+
     case 'RESEARCH_DONE':
       return { ...state, phase: 'specifying' };
 
@@ -78,6 +81,24 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
 
     case 'REJECT_PLAN':
       return { ...state, phase: 'idle' };
+
+    case 'SPEC_CLARIFY_START':
+      return { ...state, phase: 'clarifying' };
+
+    case 'SPEC_CLARIFY_DONE':
+      return { ...state, phase: 'constitution-check' };
+
+    case 'CONSTITUTION_CHECK_PASS':
+      return { ...state, phase: 'planning' };
+
+    case 'CONSTITUTION_CHECK_FAIL':
+      return { ...state, phase: 'idle', awaitingContinue: false };
+
+    case 'ANALYZE_START':
+      return { ...state, phase: 'analyzing' };
+
+    case 'ANALYZE_DONE':
+      return { ...state, phase: 'implementing' };
 
     case 'START_TASK':
       return { ...setTaskStatus(state, action.taskId, 'in_progress'), attempt: 0 };

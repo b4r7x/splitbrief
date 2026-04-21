@@ -4,6 +4,7 @@ import type { QueuedMessage } from '../schemas/workflow.js';
 export type StateAction =
   | { type: 'START'; feature: string }
   | { type: 'START_QUICK'; tasks: Task[] }
+  | { type: 'START_INSTANT'; tasks: Task[] }
   | { type: 'RESEARCH_DONE' }
   | { type: 'SPEC_DONE' }
   | { type: 'APPROVE_SPEC' }
@@ -11,6 +12,12 @@ export type StateAction =
   | { type: 'PLAN_DONE'; tasks: Task[] }
   | { type: 'APPROVE_PLAN' }
   | { type: 'REJECT_PLAN' }
+  | { type: 'SPEC_CLARIFY_START' }
+  | { type: 'SPEC_CLARIFY_DONE' }
+  | { type: 'CONSTITUTION_CHECK_PASS' }
+  | { type: 'CONSTITUTION_CHECK_FAIL'; reason: string }
+  | { type: 'ANALYZE_START' }
+  | { type: 'ANALYZE_DONE' }
   | { type: 'START_TASK'; taskId: TaskId }
   | { type: 'TASK_SENT' }
   | { type: 'VALIDATION_PASS' }

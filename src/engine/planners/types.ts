@@ -1,6 +1,7 @@
 import type { Task } from '../../core/schemas/task.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
+import type { Attachment } from '../../core/schemas/attachment.js';
 import type { RunnerRuntime } from '../runners/types.js';
 
 export type PlannerCapabilities = {
@@ -10,6 +11,10 @@ export type PlannerCapabilities = {
   supportsHintEscalation: boolean;
   /** Backend exposes a session handle that can be reused on resume (e.g. Claude Code --session-id). */
   supportsSessionResume: boolean;
+  /** Backend honours an effort/reasoning hint (Claude Code prefix, Codex flag, Anthropic thinking, OpenAI reasoning_effort). */
+  supportsEffort: boolean;
+  /** Backend can accept image attachments (vision models, --image flag, content blocks, etc.). */
+  supportsImages: boolean;
 };
 
 /** Preset for session-based conversational planners (Claude Code, Agent SDK, codex). */
@@ -17,6 +22,8 @@ export const CONVERSATIONAL_CAPS: PlannerCapabilities = {
   supportsConversationalPlanning: true,
   supportsHintEscalation: true,
   supportsSessionResume: true,
+  supportsEffort: true,
+  supportsImages: true,
 };
 
 /** Preset for one-shot API planners (OpenAI-compatible endpoints). */
@@ -24,6 +31,8 @@ export const ONE_SHOT_API_CAPS: PlannerCapabilities = {
   supportsConversationalPlanning: false,
   supportsHintEscalation: true,
   supportsSessionResume: false,
+  supportsEffort: false,
+  supportsImages: false,
 };
 
 export interface PriorMessage {
@@ -50,6 +59,14 @@ export interface PlannerCallbacks {
    * OpenAI messages array).
    */
   priorMessages?: PriorMessage[] | undefined;
+  /**
+   * Image attachments to deliver with the next planner call. Drained from the
+   * attachments store at planning-phase entry. Backends that report
+   * `capabilities.supportsImages: false` should never receive a non-empty list
+   * (the orchestrator drops them with a `planner_attachments_dropped` event).
+   * Multi-phase backends consume them on the first invocation only.
+   */
+  attachments?: Attachment[] | undefined;
 }
 
 /** Result from a single planning phase. */
@@ -118,6 +135,19 @@ export interface Planner extends RunnerRuntime {
     callbacks: PlannerCallbacks,
     codebaseContext?: string,
   ): Promise<PlanResult>;
+
+  /**
+   * One-shot planner call for `instant` mode. Mirrors {@link Planner.quickPlan}
+   * but uses the instant prompt (no spec/plan section, tolerates a single task).
+   * Optional: backends that don't implement it fall back to `quickPlan ?? plan`
+   * via the dispatcher in `runInstantPlanning`.
+   */
+  instantPlan?: (
+    feature: string,
+    projectDir: string,
+    callbacks: PlannerCallbacks,
+    codebaseContext?: string,
+  ) => Promise<PlanResult>;
 
   review(
     prompt: string,
