@@ -22,7 +22,7 @@ export function CostDisplay({ spentHiddenWhenSavings = false, useRateColor: colo
 
   return (
     <>
-      <Text color={t.textDim}>Local: <Text color={localColor}>{localRatePct}</Text></Text>
+      <Text color={t.textDim}>Local rate: <Text color={localColor}>{localRatePct}</Text></Text>
       {showSpent && (
         <Text color={t.textDim}>Spent: <Text color={t.text}>{spentText}</Text></Text>
       )}

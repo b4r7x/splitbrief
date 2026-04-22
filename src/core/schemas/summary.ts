@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
+import { WorkflowModeSchema } from './enums.js';
 
 export const ProviderCostSchema = z.object({
   inputTokens: z.number().nonnegative(),
@@ -39,6 +40,11 @@ export const SummarySchema = z.object({
   implementerTool: z.string().optional(),
   implementerModel: z.string().optional(),
   phaseTimings: z.record(z.string(), z.number()).optional(),
+  /**
+   * Workflow mode the run actually executed in. Optional for backward
+   * compatibility with persisted summaries from older sessions.
+   */
+  mode: WorkflowModeSchema.optional(),
 });
 
 export const CostPredictionSchema = z.object({

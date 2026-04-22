@@ -68,6 +68,22 @@ const CLOSING_CONSTRAINTS = [
   'Do NOT import packages not listed in the project dependencies',
 ];
 
+function buildScopeLines(task: Task): string[] {
+  const inBounds = task.scope?.inBounds ?? [];
+  const outOfBounds = task.scope?.outOfBounds ?? [];
+  if (inBounds.length === 0 && outOfBounds.length === 0) return [];
+
+  const lines: string[] = [];
+  if (inBounds.length > 0) {
+    lines.push('**In bounds:**', ...inBounds.map(b => `- ${b}`));
+  }
+  if (outOfBounds.length > 0) {
+    if (lines.length > 0) lines.push('');
+    lines.push('**Out of bounds:**', ...outOfBounds.map(b => `- ${b}`));
+  }
+  return lines;
+}
+
 function buildTaskSections(task: Task, context?: ProjectContext): string[] {
   const sections: string[] = [];
 
@@ -80,21 +96,35 @@ function buildTaskSections(task: Task, context?: ProjectContext): string[] {
     `### Action: ${task.action}`,
     `### File: ${task.file}`,
     '',
-    '### What To Do',
+    '### Description',
     task.description,
   );
 
   if (task.signature) {
-    sections.push('', '### Function Signature', task.signature);
+    sections.push('', '### Signature', task.signature);
   }
   if (task.typeDefs) {
     sections.push('', '### Type Definitions', task.typeDefs);
+  }
+  if (task.pattern) {
+    sections.push('', '### Pattern', task.pattern);
   }
   if (task.implementationSteps.length > 0) {
     sections.push('', '### Implementation Steps', ...task.implementationSteps.map((s, i) => `${i + 1}. ${s}`));
   }
   if (task.tests.length > 0) {
-    sections.push('', '### Tests (must pass after implementation)', task.tests.join('\n'));
+    sections.push('', '### Tests', ...task.tests.map(t => `- ${t}`));
+  }
+
+  const scopeLines = buildScopeLines(task);
+  if (scopeLines.length > 0) {
+    sections.push('', '### Scope', ...scopeLines);
+  }
+  if (task.escalation && task.escalation.length > 0) {
+    sections.push('', '### Escalation', ...task.escalation.map(e => `- ${e}`));
+  }
+  if (task.evidence && task.evidence.length > 0) {
+    sections.push('', '### Evidence', ...task.evidence.map(e => `- ${e}`));
   }
 
   const allConstraints = [...task.constraints, ...CLOSING_CONSTRAINTS];
@@ -104,10 +134,28 @@ function buildTaskSections(task: Task, context?: ProjectContext): string[] {
   return sections;
 }
 
-function insertCodeBeforeConstraints(sections: string[], codeLines: string[]): void {
-  const constraintIdx = sections.indexOf('### Constraints');
-  if (constraintIdx !== -1) {
-    sections.splice(constraintIdx, 0, ...codeLines);
+function findCodeContextInsertIndex(sections: string[]): number {
+  const headingsAfterCodeContext = [
+    '### Implementation Steps',
+    '### Tests',
+    '### Scope',
+    '### Escalation',
+    '### Evidence',
+    '### Constraints',
+  ];
+
+  for (const heading of headingsAfterCodeContext) {
+    const idx = sections.indexOf(heading);
+    if (idx !== -1) return idx;
+  }
+
+  return -1;
+}
+
+function insertCodeContextSection(sections: string[], codeLines: string[]): void {
+  const insertIdx = findCodeContextInsertIndex(sections);
+  if (insertIdx !== -1) {
+    sections.splice(insertIdx, 0, ...codeLines);
   } else {
     sections.push(...codeLines);
   }
@@ -117,7 +165,7 @@ function insertCodeContext(sections: string[], task: Task, budget?: { remaining:
   if (!task.currentCode) return;
 
   if (!budget) {
-    insertCodeBeforeConstraints(sections, ['', '### Current Code', task.currentCode]);
+    insertCodeContextSection(sections, ['', '### Current Code', task.currentCode]);
     return;
   }
 
@@ -130,14 +178,14 @@ function insertCodeContext(sections: string[], task: Task, budget?: { remaining:
   const codeCtx = resolveCodeContext(task.currentCode, functionName, budget.remaining);
 
   if (codeCtx.mode === 'function-level') {
-    insertCodeBeforeConstraints(sections, [
+    insertCodeContextSection(sections, [
       '', '### Current Code (relevant section)',
       '// === Imports ===', codeCtx.imports, '',
       '// === Target Function ===', codeCtx.targetFunction, '',
       `// === Other Exports (do not modify): ${codeCtx.otherExports.join(', ')}`,
     ]);
   } else {
-    insertCodeBeforeConstraints(sections, ['', '### Current Code', codeCtx.content]);
+    insertCodeContextSection(sections, ['', '### Current Code', codeCtx.content]);
   }
 }
 

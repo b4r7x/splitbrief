@@ -78,6 +78,13 @@ export interface PhaseResult {
   rawOutput?: string | undefined;
 }
 
+/**
+ * Result of a planner run. The durable contract handed to the implementer is the
+ * `tasks` array — each entry is the persisted form of a Product Task Brief v1
+ * (see `docs/TASK-CONTRACT.md`). `spec` and `plan` are optional support documents
+ * that may be empty for instant/quick modes; they exist to feed brief compilation,
+ * not as the primary handoff artifact.
+ */
 export interface PlanResult {
   spec: string;
   plan: string;
@@ -138,9 +145,10 @@ export interface Planner extends RunnerRuntime {
 
   /**
    * One-shot planner call for `instant` mode. Mirrors {@link Planner.quickPlan}
-   * but uses the instant prompt (no spec/plan section, tolerates a single task).
-   * Optional: backends that don't implement it fall back to `quickPlan ?? plan`
-   * via the dispatcher in `runInstantPlanning`.
+   * but uses the instant prompt: emits the narrowest useful Task Brief set with
+   * no spec/plan support documents (a single brief is acceptable). Optional:
+   * backends that don't implement it fall back to `quickPlan ?? plan` via the
+   * dispatcher in `runInstantPlanning`.
    */
   instantPlan?: (
     feature: string,

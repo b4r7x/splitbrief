@@ -6,8 +6,8 @@ Start here if you're new.
 
 1. **[PRINCIPLES.md](./PRINCIPLES.md)** — 20 rules at a glance. Read first.
 2. **[CONCEPTS.md](./CONCEPTS.md)** — shared vocabulary (EventBus, EngineEvent, Phase, Hook, RepoMap, etc.).
-3. **[ARCHITECTURE.md](./ARCHITECTURE.md)** — system overview: planner/implementer split, data flow, sinks.
-4. **[WORKFLOW.md](./WORKFLOW.md)** — user-facing modes (quick, standard, full), interaction model, slash commands.
+3. **[ARCHITECTURE.md](./ARCHITECTURE.md)** — system overview: Task Brief handoff, planner/implementer roles, data flow, sinks.
+4. **[WORKFLOW.md](./WORKFLOW.md)** — user-facing modes (`instant`, `quick`, `standard`, `speckit`), interaction model, slash commands.
 
 ## By task
 

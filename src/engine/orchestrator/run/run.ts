@@ -34,6 +34,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     ...(plannerModel !== undefined && { plannerModel }),
     implementerTool: getRunnerDisplayName(config.implementer),
     ...(implementerModel !== undefined && { implementerModel }),
+    mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
   };
 
   const metadata: SpecMetadata = {

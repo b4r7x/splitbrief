@@ -28,7 +28,7 @@ validation:
   test: true
   testCommand: "npm test"
 workflow:
-  mode: quick | standard | full
+  mode: instant | quick | standard | speckit
   approve: none | spec | plan | all | default
   autoApproveSpec: false   # deprecated; prefer approve
   autoApprovePlan: false   # deprecated; prefer approve
@@ -148,7 +148,7 @@ Same discriminated union as `planner` (`src/core/schemas/implementer-config.ts`)
 | `commitStrategy` | enum | no | `none` | **Deprecated** — use `git.commitStrategy` instead. `none` \| `checkpoint` \| `per-task` |
 | `git.commitStrategy` | enum | yes | `none` | `none` \| `checkpoint` \| `per-task` |
 | `git.createBranch` | boolean | no | `false` | Auto-create a `diptych/<slug>` branch at workflow start |
-| `mode` | enum | no | `standard` | `instant` \| `quick` \| `standard` \| `speckit`. Legacy `full` accepted on input and silently migrated to `speckit` with a one-time deprecation notice. |
+| `mode` | enum | no | `standard` | `instant` \| `quick` \| `standard` \| `speckit`. Legacy `full` is still accepted on input as an alias for `speckit`, with a one-time deprecation notice. |
 | `maxBudget` | number > 0 | no | — | Dollar ceiling; workflow prompts on exceed |
 | `persistTranscript` | boolean | no | `true` | Persist planner/user text chunks to `session.jsonl` |
 
@@ -197,7 +197,7 @@ Lifecycle hook system. Full details: [HOOKS-CONFIG.md](./HOOKS-CONFIG.md).
 |---|---|:---:|---|---|
 | `builtin` | `Record<string, boolean>` | no | — | Toggle built-ins: `prettier-on-change`, `block-secrets` |
 | `pre_planning` | HookEntry[] | no | — | Before planner phase |
-| `post_planning` | HookEntry[] | no | — | After `tasks.md` written |
+| `post_planning` | HookEntry[] | no | — | After planning artifacts are written |
 | `pre_task` | HookEntry[] | no | — | Before each implementer task |
 | `post_task` | HookEntry[] | no | — | After successful task |
 | `pre_validation` | HookEntry[] | no | — | Before tsc/lint/test |
@@ -265,7 +265,7 @@ Declared in `src/cli/options.ts` (shared by `start` + `resume`) and per-command 
 | `--project <dir>` | Project directory (default: cwd) | start, resume, spec, status |
 | `--no-fullscreen` | Disable fullscreen alt-screen buffer | start, resume |
 | `--no-mouse` | Disable mouse tracking | start, resume |
-| `--mode <mode>` | `quick` / `standard` / `full` | start, resume |
+| `--mode <mode>` | `instant` / `quick` / `standard` / `speckit` (`full` legacy alias) | start, resume |
 | `--budget <amount>` | Dollar ceiling | start, resume |
 | `--allow-hooks` | Trust hook config without prompting (CI) | start, resume, spec |
 | `--json` | Headless — NDJSON EngineEvents to stdout, no TUI | start, resume |
@@ -339,7 +339,7 @@ codebase:
   tokenBudget: 4000
 ```
 
-### Full Claude + Codex with hooks + OTel
+### Speckit Claude + Codex with hooks + OTel
 
 ```yaml
 version: 2
@@ -355,7 +355,7 @@ workflow:
   approve: default
   maxRetries: 3
   commitStrategy: per-task
-  mode: full
+  mode: speckit
   maxBudget: 5.00
 hooks:
   builtin:

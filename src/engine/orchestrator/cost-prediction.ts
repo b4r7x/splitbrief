@@ -6,6 +6,10 @@ const DEFAULT_IMPLEMENTER_TOKENS_PER_TASK = 2000;
 const DEFAULT_ESCALATION_TOKENS_PER_TASK = 500;
 const DEFAULT_PLANNER_TOKENS_PER_TASK = 3000;
 
+// Escalation-rate scenarios used to bracket the cost prediction:
+//   - low      = no escalation (every task handled by the cheap implementer)
+//   - expected = ~15% planner fallback (typical mix in steady state)
+//   - high     = ~40% planner fallback (worst-case: most tasks escalated)
 const LOW_ESCALATION_RATE = 0;
 const EXPECTED_ESCALATION_RATE = 0.15;
 const HIGH_ESCALATION_RATE = 0.40;

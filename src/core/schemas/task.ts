@@ -5,6 +5,11 @@
  * External tools (Kanban viewers, Jira exporters, custom UIs) rely on it.
  * Breaking changes require a `stateVersion` bump.
  *
+ * The schema is the persisted transport for **Product Task Brief v1**, whose
+ * 9 semantic sections are: Identity, Intent, Scope, Code Context,
+ * Implementation Plan, Validation, Constraints, Escalation, and Evidence.
+ * Field-to-section mapping lives in `docs/TASK-CONTRACT.md`.
+ *
  * When adding fields: prefer optional fields so old consumers keep working.
  * When renaming or changing types: bump `stateVersion` in `src/core/state/machine.ts`
  * and add a migration entry to `CHANGELOG.md`.
@@ -19,7 +24,7 @@ export type TaskId = z.infer<typeof TaskIdSchema>;
 export const taskId = (s: string): TaskId => TaskIdSchema.parse(s);
 
 export const TaskSchema = z.object({
-  /** Branded string ID in `T-NNN` format. Stable for the lifetime of the session. @see docs/TASK-CONTRACT.md */
+  /** Branded string ID in `TNNN` format. Stable for the lifetime of the session. @see docs/TASK-CONTRACT.md */
   id: TaskIdSchema,
   /** Short human-readable label. */
   title: z.string(),
@@ -45,6 +50,26 @@ export const TaskSchema = z.object({
   typeDefs: z.string(),
   /** Ordered list of implementation steps for the implementer to follow. */
   implementationSteps: z.array(z.string()),
+  /**
+   * Optional Task Brief v1 §Scope: explicit in-bounds / out-of-bounds notes
+   * carried alongside the prose `description`. Older briefs may omit it.
+   */
+  scope: z
+    .object({
+      inBounds: z.array(z.string()).optional(),
+      outOfBounds: z.array(z.string()).optional(),
+    })
+    .optional(),
+  /**
+   * Optional Task Brief v1 §Escalation: refusal/escalation conditions where the
+   * implementer must stop and ask instead of guessing.
+   */
+  escalation: z.array(z.string()).optional(),
+  /**
+   * Optional Task Brief v1 §Evidence: the final reviewable proof the workflow
+   * should preserve once the task is done.
+   */
+  evidence: z.array(z.string()).optional(),
   /** Current task status. @see docs/TASK-CONTRACT.md §TaskStatus */
   status: TaskStatusSchema,
 });

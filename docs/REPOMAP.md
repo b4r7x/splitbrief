@@ -1,10 +1,10 @@
 # Repo-map context
 
-The diptych planner sees a token-budgeted **repo-map** of your project's TypeScript source on every workflow start. The repo-map gives the planner a structural overview — file paths, top-level signatures, exports — without burning context tokens on file reads. Inspired by [Aider's repomap](https://aider.chat/docs/repomap.html), tuned for the diptych planner/implementer split.
+The diptych planner sees a token-budgeted **repo-map** of your project's TypeScript source on every workflow start. The repo-map gives the planner a structural overview — file paths, top-level signatures, exports — without burning context tokens on file reads. Inspired by [Aider's repomap](https://aider.chat/docs/repomap.html), tuned for a planner that compiles Task Briefs and decides when extra structure is worth paying for.
 
 ## Why
 
-Without a repo-map, cheap API planners (Ollama, DeepSeek, etc.) miss existing helpers and propose duplicates. Even Claude burns tokens reading files we could have summarized. The repo-map costs ~4000 tokens per workflow and saves orders of magnitude more on `researching` phase reads.
+Without a repo-map, cheap planners (Ollama, DeepSeek, etc.) miss existing helpers and propose duplicates. Even Claude burns tokens reading files we could have summarized. The repo-map costs ~4000 tokens per workflow and saves orders of magnitude more on `researching` phase reads.
 
 ## What it contains
 
@@ -120,7 +120,7 @@ The resulting string is passed to the planner as a new `codebaseContext: string`
 - `api` planners include it in the system prompt.
 - `agent-sdk` adds it as a `<repo-map>` block on the user turn.
 
-The implementer does not see the repo-map — it's planner-side context only, so `tasks.md` shape and implementer prompts are unchanged.
+The implementer does not see the repo-map — it's planner-side context only, so `tasks.md` remains transport for Task Briefs and implementer prompts stay unchanged.
 
 Setting `codebase.enabled: false` short-circuits `buildRepoMap` before parsing; the planner runs without the block.
 

@@ -331,6 +331,41 @@ Depends on A.
 });
 
 describe('typeDefs and implementationSteps parsing', () => {
+  it('parses Current Code and Pattern as code context for modify tasks', () => {
+    const input = `---
+id: T001
+title: Test task
+action: modify
+file: src/test.ts
+depends_on: []
+---
+
+### Description
+Implement something.
+
+### Current Code
+\`\`\`typescript
+export function existing(): string {
+  return 'old';
+}
+\`\`\`
+
+### Pattern
+Follow the existing parser helper shape.
+
+### Tests
+- test() should return new value
+
+### Constraints
+- Use ESM imports
+`;
+
+    const tasks = parseTasks(input);
+    expect(tasks.length).toBe(1);
+    expect(tasks[0]?.currentCode).toBe("export function existing(): string {\n  return 'old';\n}");
+    expect(tasks[0]?.pattern).toBe('Follow the existing parser helper shape.');
+  });
+
   it('parses Type Definitions section', () => {
     const input = `---
 id: T001
@@ -426,6 +461,35 @@ Has implementation steps but no type definitions.
       'Transform the data',
     ]);
   });
+
+  it('accepts legacy implementer heading aliases without losing contract fields', () => {
+    const input = `---
+id: T001
+title: Test task
+action: create
+file: src/test.ts
+depends_on: []
+---
+
+### What To Do
+Implement something.
+
+### Function Signature
+export function test(): void
+
+### Tests (must pass after implementation)
+- test() should not throw
+
+### Constraints
+- Use ESM imports
+`;
+
+    const tasks = parseTasks(input);
+    expect(tasks.length).toBe(1);
+    expect(tasks[0]?.description).toBe('Implement something.');
+    expect(tasks[0]?.signature).toBe('export function test(): void');
+    expect(tasks[0]?.tests).toEqual(['test() should not throw']);
+  });
 });
 
 describe('stripFileFrontmatter', () => {
@@ -502,5 +566,118 @@ Set up the initial project directory structure.
     expect(tasks.length).toBe(1);
     expect(tasks[0]?.id).toBe('T001');
     expect(tasks[0]?.title).toBe('Create project structure');
+  });
+});
+
+describe('Task Brief v1 optional sections (Scope, Escalation, Evidence)', () => {
+  it('omits scope, escalation, and evidence when sections are absent', () => {
+    const input = `---
+id: T100
+title: "No brief sections"
+action: create
+file: src/none.ts
+depends_on: []
+---
+
+### Description
+Older brief without Scope/Escalation/Evidence.
+
+### Tests
+- Should still parse
+
+### Constraints
+- None
+`;
+
+    const tasks = parseTasks(input);
+    expect(tasks.length).toBe(1);
+    const task = tasks[0];
+    if (!task) throw new Error('expected task');
+    expect(task.scope).toBeUndefined();
+    expect(task.escalation).toBeUndefined();
+    expect(task.evidence).toBeUndefined();
+  });
+
+  it('parses Scope in/out bounds, Escalation, and Evidence when present', () => {
+    const input = `---
+id: T101
+title: "Full brief"
+action: modify
+file: src/full.ts
+depends_on: []
+---
+
+### Description
+A brief with all Task Brief v1 optional sections.
+
+### Scope
+**In bounds:**
+- update src/full.ts only
+- keep public API stable
+
+**Out of bounds:**
+- changing unrelated modules
+- adding new dependencies
+
+### Tests
+- Should compile
+
+### Constraints
+- ESM only
+
+### Escalation
+- if the public type signature would change
+- if a new dependency is required
+
+### Evidence
+- npm test passes
+- diff limited to src/full.ts
+`;
+
+    const tasks = parseTasks(input);
+    expect(tasks.length).toBe(1);
+    const task = tasks[0];
+    if (!task) throw new Error('expected task');
+    expect(task.scope).toEqual({
+      inBounds: ['update src/full.ts only', 'keep public API stable'],
+      outOfBounds: ['changing unrelated modules', 'adding new dependencies'],
+    });
+    expect(task.escalation).toEqual([
+      'if the public type signature would change',
+      'if a new dependency is required',
+    ]);
+    expect(task.evidence).toEqual([
+      'npm test passes',
+      'diff limited to src/full.ts',
+    ]);
+  });
+
+  it('sets scope with only one bucket when only one is present', () => {
+    const input = `---
+id: T102
+title: "Partial scope"
+action: create
+file: src/partial.ts
+depends_on: []
+---
+
+### Description
+Only in bounds listed.
+
+### Scope
+**In bounds:**
+- new file src/partial.ts
+
+### Tests
+- Should compile
+
+### Constraints
+- None
+`;
+
+    const tasks = parseTasks(input);
+    const task = tasks[0];
+    if (!task) throw new Error('expected task');
+    expect(task.scope).toEqual({ inBounds: ['new file src/partial.ts'] });
   });
 });

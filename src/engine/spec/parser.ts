@@ -70,7 +70,7 @@ function parseTaskBlock(block: string): Task | null {
   const dependsOn: TaskId[] = (frontmatter.depends_on ?? []).map(taskId);
   const sections = extractSections(block);
 
-  return {
+  const task: Task = {
     id: taskId(id),
     title,
     action,
@@ -85,6 +85,17 @@ function parseTaskBlock(block: string): Task | null {
     implementationSteps: sections.implementationSteps,
     status: 'pending',
   };
+
+  if (sections.currentCode) task.currentCode = sections.currentCode;
+
+  const scope: { inBounds?: string[]; outOfBounds?: string[] } = {};
+  if (sections.scopeInBounds.length > 0) scope.inBounds = sections.scopeInBounds;
+  if (sections.scopeOutOfBounds.length > 0) scope.outOfBounds = sections.scopeOutOfBounds;
+  if (scope.inBounds || scope.outOfBounds) task.scope = scope;
+  if (sections.escalation.length > 0) task.escalation = sections.escalation;
+  if (sections.evidence.length > 0) task.evidence = sections.evidence;
+
+  return task;
 }
 
 function extractTaskFrontmatter(block: string): TaskFrontmatter | null {
@@ -101,8 +112,25 @@ interface Sections {
   tests: string[];
   constraints: string[];
   pattern: string;
+  currentCode: string;
   typeDefs: string;
   implementationSteps: string[];
+  scopeInBounds: string[];
+  scopeOutOfBounds: string[];
+  escalation: string[];
+  evidence: string[];
+}
+
+function readSection(sectionMap: Record<string, string>, ...headers: string[]): string {
+  for (const header of headers) {
+    const exact = sectionMap[header];
+    if (exact !== undefined) return exact;
+
+    const prefixed = Object.entries(sectionMap).find(([key]) => key.startsWith(`${header} (`));
+    if (prefixed) return prefixed[1];
+  }
+
+  return '';
 }
 
 function extractSections(block: string): Sections {
@@ -121,15 +149,51 @@ function extractSections(block: string): Sections {
     }
   }
 
+  const scopeText = sectionMap['scope'] ?? '';
+  const { inBounds, outOfBounds } = extractScopeBuckets(scopeText);
+
   return {
-    description: (sectionMap['description'] ?? '').trim(),
-    signature: extractCodeBlock(sectionMap['signature'] ?? ''),
-    tests: extractListItems(sectionMap['tests'] ?? ''),
-    constraints: extractListItems(sectionMap['constraints'] ?? ''),
-    pattern: (sectionMap['pattern'] ?? '').trim(),
-    typeDefs: extractCodeBlock(sectionMap['type definitions'] ?? ''),
-    implementationSteps: extractNumberedItems(sectionMap['implementation steps'] ?? ''),
+    description: readSection(sectionMap, 'description', 'what to do').trim(),
+    signature: extractCodeBlock(readSection(sectionMap, 'signature', 'function signature')),
+    tests: extractListItems(readSection(sectionMap, 'tests')),
+    constraints: extractListItems(readSection(sectionMap, 'constraints')),
+    pattern: readSection(sectionMap, 'pattern').trim(),
+    currentCode: extractCodeBlock(readSection(sectionMap, 'current code')).trim(),
+    typeDefs: extractCodeBlock(readSection(sectionMap, 'type definitions', 'types')),
+    implementationSteps: extractNumberedItems(readSection(sectionMap, 'implementation steps')),
+    scopeInBounds: inBounds,
+    scopeOutOfBounds: outOfBounds,
+    escalation: extractListItems(readSection(sectionMap, 'escalation')),
+    evidence: extractListItems(readSection(sectionMap, 'evidence')),
   };
+}
+
+function extractScopeBuckets(text: string): { inBounds: string[]; outOfBounds: string[] } {
+  if (!text.trim()) return { inBounds: [], outOfBounds: [] };
+
+  type Bucket = 'in' | 'out' | null;
+  let bucket: Bucket = null;
+  const inBounds: string[] = [];
+  const outOfBounds: string[] = [];
+
+  for (const line of text.split('\n')) {
+    const labelMatch = line.match(/^\s*\*\*(.+?):\*\*\s*(.*)$/);
+    if (labelMatch?.[1] !== undefined) {
+      const label = labelMatch[1].trim().toLowerCase();
+      if (label === 'in bounds' || label === 'in-bounds' || label === 'in') bucket = 'in';
+      else if (label === 'out of bounds' || label === 'out-of-bounds' || label === 'out') bucket = 'out';
+      else bucket = null;
+      continue;
+    }
+    const itemMatch = line.match(/^-\s+(.*)/);
+    if (itemMatch?.[1] !== undefined && bucket) {
+      const value = itemMatch[1].trim();
+      if (bucket === 'in') inBounds.push(value);
+      else outOfBounds.push(value);
+    }
+  }
+
+  return { inBounds, outOfBounds };
 }
 
 function extractCodeBlock(text: string): string {

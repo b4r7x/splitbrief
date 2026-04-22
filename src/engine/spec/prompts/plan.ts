@@ -18,7 +18,7 @@ Note: The specification contains a Clarifications section with user decisions. R
 
   return buildPrompt({
     title: 'Write Implementation Plan',
-    intro: 'You are writing a detailed implementation plan based on the specification below. The plan defines **how** to build the feature.',
+    intro: 'You are writing a detailed implementation plan based on the specification below. The plan defines **how** to build the feature, and feeds the next phase: compiling Product Task Briefs the implementer model will execute against. Be concrete enough that brief compilation does not need to invent decisions.',
     sections: [
       { heading: 'Specification', body: spec.content },
       { heading: 'Project Context', body: `${projectContext}${skillsContext ? `\n${skillsContext}` : ''}` },

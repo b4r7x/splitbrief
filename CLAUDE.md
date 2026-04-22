@@ -1,6 +1,6 @@
 # diptych
 
-Open-source CLI that orchestrates expensive AI (Claude Code / Opus) for planning and cheap/local AI (Ollama / LM Studio) for implementation — saves 50%+ on AI coding costs.
+Open-source cost-aware task compiler for AI coding agents. An expensive planner compiles Task Briefs; a cheaper implementer executes them.
 
 ## CRITICAL — NEVER COMMIT, NEVER STAGE
 
@@ -21,7 +21,7 @@ Do **NOT** run `git commit`, `git add`, `git stage`, or any command that creates
 
 ```bash
 npm run dev -- start "feature"   # Full workflow with TUI
-npm run dev -- start --mode quick|standard|full "..."
+npm run dev -- start --mode instant|quick|standard|speckit "..."
 npm run dev -- spec|init|status|resume|migrate
 npm run typecheck                # tsc --noEmit (src + test configs)
 npm run lint                     # Biome check
@@ -103,12 +103,12 @@ Full config schemas and YAML examples: [docs/ARCHITECTURE.md](./docs/ARCHITECTUR
 
 | Mode | Planner calls | Approval gates | Best for |
 |---|:---:|:---:|---|
-| `instant` | 1 | none | Trivial: "typo", "rename foo", "add null check" |
-| `quick` | 1 | none | Small: "add endpoint", "fix bug" |
-| `standard` (default) | 4 | spec | Medium features |
-| `speckit` | 6–7 | spec + plan | Large features, team handoffs, compliance (includes constitution check, clarify, analyze) |
+| `instant` | 1 | none | Trivial edits that need almost no ceremony |
+| `quick` | 1 | none | Small tasks that still need a brief |
+| `standard` (default) | 4 | supporting spec | Ordinary feature work |
+| `speckit` | 6–7 | supporting spec + plan | Large, risky, or externally visible work |
 
-Set via `--mode`, config `workflow.mode`, or `/mode` at runtime. Full semantics: [docs/WORKFLOW.md](./docs/WORKFLOW.md).
+Set via `--mode`, config `workflow.mode`, or `/mode` at runtime. `full` is only a legacy alias. Detailed semantics: [docs/WORKFLOW.md](./docs/WORKFLOW.md).
 
 ## Known limitations
 
