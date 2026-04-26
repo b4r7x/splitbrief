@@ -2,6 +2,30 @@ import { z } from 'zod';
 import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
 import { WorkflowModeSchema } from './enums.js';
 
+export const ChainDriftSummarySchema = z.object({
+  score: z.number().min(0).max(1),
+  chainLength: z.number().int().nonnegative(),
+  uniqueOutOfBoundsFiles: z.array(z.string()),
+  representativePath: z.string(),
+  emittedChainCount: z.number().int().nonnegative(),
+});
+
+export type ChainDriftSummary = z.infer<typeof ChainDriftSummarySchema>;
+
+export const BriefQualitySummarySchema = z.object({
+  score: z.number().min(0).max(1),
+  passed: z.boolean(),
+  errorCount: z.number().nonnegative(),
+  warningCount: z.number().nonnegative(),
+});
+
+export const DriftSummarySchema = z.object({
+  passed: z.boolean(),
+  score: z.number().min(0).max(1),
+  errorCount: z.number().nonnegative(),
+  warningCount: z.number().nonnegative(),
+});
+
 export const ProviderCostSchema = z.object({
   inputTokens: z.number().nonnegative(),
   outputTokens: z.number().nonnegative(),
@@ -20,6 +44,18 @@ export const CostBreakdownSchema = z.object({
   hasUnpricedUsage: z.boolean().optional(),
   hasSavingsEstimate: z.boolean().optional(),
   providerCosts: z.record(z.string(), ProviderCostSchema).optional(),
+  cacheReadSavings: z.number().nonnegative().optional(),
+  cacheReadTokens: z.number().nonnegative().optional(),
+  cacheWriteTokens: z.number().nonnegative().optional(),
+});
+
+export const CostPredictionSchema = z.object({
+  estimatedTasks: z.number().nonnegative(),
+  lowCost: z.number().nonnegative(),
+  expectedCost: z.number().nonnegative(),
+  highCost: z.number().nonnegative(),
+  plannerTool: z.string(),
+  implementerTool: z.string(),
 });
 
 export const SummarySchema = z.object({
@@ -45,17 +81,44 @@ export const SummarySchema = z.object({
    * compatibility with persisted summaries from older sessions.
    */
   mode: WorkflowModeSchema.optional(),
+  /**
+   * Compact rollup of the evidence ledger written for the run, if any. Optional
+   * for backward compatibility with sessions that ran before the ledger was
+   * introduced. Full per-task evidence lives in `evidence.json` referenced by
+   * `path`.
+   */
+  evidenceSummary: z.object({
+    path: z.string(),
+    totalTasks: z.number().nonnegative(),
+    tasksWithValidationEvidence: z.number().nonnegative(),
+    escalatedTasks: z.number().nonnegative(),
+    failedTasks: z.number().nonnegative(),
+    rejectionCount: z.number().nonnegative().optional(),
+  }).optional(),
+  /**
+   * Brief quality gate result from the planner's task compilation step.
+   * Optional for backward compatibility with older sessions.
+   */
+  briefQuality: BriefQualitySummarySchema.optional(),
+  /**
+   * Drift analysis result computed at the end of the run.
+   * Optional for backward compatibility with older sessions.
+   */
+  driftSummary: DriftSummarySchema.optional(),
+  /**
+   * Chain drift analysis result from the run, if any chains were emitted.
+   * Optional for backward compatibility with older sessions.
+   */
+  chainDriftSummary: ChainDriftSummarySchema.optional(),
+  /**
+   * Cost prediction made before implementing tasks. Optional — not present
+   * in instant/quick modes that skip prediction or in old sessions.
+   */
+  costPrediction: CostPredictionSchema.optional(),
 });
 
-export const CostPredictionSchema = z.object({
-  estimatedTasks: z.number().nonnegative(),
-  lowCost: z.number().nonnegative(),
-  expectedCost: z.number().nonnegative(),
-  highCost: z.number().nonnegative(),
-  plannerTool: z.string(),
-  implementerTool: z.string(),
-});
-
+export type BriefQualitySummary = z.infer<typeof BriefQualitySummarySchema>;
+export type DriftSummary = z.infer<typeof DriftSummarySchema>;
 export type CostBreakdown = z.infer<typeof CostBreakdownSchema>;
 export type Summary = z.infer<typeof SummarySchema>;
 export type CostPrediction = z.infer<typeof CostPredictionSchema>;

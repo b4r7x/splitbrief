@@ -28,4 +28,28 @@ describe('CostPredictionCard', () => {
 
     ui.unmount();
   });
+
+  it('renders "prediction n/a" when estimatedTasks and expectedCost are zero', () => {
+    const event: EngineEventOf<'cost_prediction'> = {
+      type: 'cost_prediction',
+      ts: Date.now(),
+      phase: 'planning',
+      prediction: {
+        estimatedTasks: 0,
+        lowCost: 0,
+        expectedCost: 0,
+        highCost: 0,
+        plannerTool: 'anthropic',
+        implementerTool: 'deepseek',
+      },
+    };
+
+    const ui = renderFeature(<CostPredictionCard event={event} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('prediction n/a');
+    expect(frame).not.toContain('Cost prediction');
+
+    ui.unmount();
+  });
 });

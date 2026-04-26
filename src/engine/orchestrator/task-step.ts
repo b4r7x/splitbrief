@@ -1,4 +1,4 @@
-import type { Task } from '../../core/schemas/task.js';
+import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TaskTokenUsage, TokenUsage } from '../../core/schemas/tokens.js';
 import { formatValidationError } from './validation.js';
@@ -6,13 +6,186 @@ import { formatValidationError } from './validation.js';
 import type { WorkflowContext } from './types.js';
 import { recordTaskUsage } from './tokens.js';
 import { toErrorMessage, labelError } from '../../utils/format-errors.js';
-import { createBusTextHandler, publishError, publishEvent, publishTaskStart, publishTaskSkipped, publishWarning } from './events.js';
+import { createBusTextHandler, publishDriftChainDetected, publishError, publishEvent, publishTaskStart, publishTaskSkipped, publishWarning } from './events.js';
 import { runPreHooks } from '../hooks/run-pre-hook.js';
 import { handleRetryAndEscalation } from './escalation/escalation.js';
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave } from './state-ops.js';
 import { validateCommitAndAdvance } from './task-commit.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
 import { withContinuationLoop } from './continuation.js';
+import {
+  gateAction,
+  gateChangedFiles,
+  getChangedFilesSinceSnapshot,
+  getChangedFilesSnapshot,
+  type ChangedFilesSnapshot,
+  type GateDecision,
+} from './tiered-approval.js';
+import {
+  createEvidenceLedger,
+  readEvidenceLedger,
+  recordLocalTaskEvidence,
+  recordRejectionEvidence,
+  recordRetryOrEscalationEvidence,
+  recordSkippedTaskEvidence,
+  writeEvidenceLedger,
+} from './evidence.js';
+import { DEFAULT_WORKFLOW_MODE } from '../../core/schemas/config.js';
+import type { ValidationResult } from '../../core/types/summary.js';
+import type { TaskCompletionMethod, TaskStatus } from '../../core/schemas/enums.js';
+import type { EventBus } from '../events/types.js';
+import {
+  readDriftChainState,
+  writeDriftChainState,
+  initialDriftChainState,
+} from './drift-chain-state.js';
+import { computePerTaskOutOfBounds, analyzeDriftChain } from './drift-chain.js';
+
+export function resolveDependsOnFiles(tasks: Task[], task: Task): string[] {
+  return task.dependsOn.flatMap((id: TaskId) => {
+    const dep = tasks.find((t) => t.id === id);
+    return dep ? [dep.file] : [];
+  });
+}
+
+async function runChainAnalysisSafe(opts: {
+  wctx: WorkflowContext;
+  task: Task;
+  projectDir: string;
+  sessionId: string;
+  state: WorkflowState;
+  taskStartSnapshot: ChangedFilesSnapshot;
+  bus: EventBus;
+}): Promise<void> {
+  try {
+    const taskChangedFiles = getChangedFilesSinceSnapshot(opts.projectDir, opts.taskStartSnapshot);
+    const outOfBoundsFiles = computePerTaskOutOfBounds(opts.task, taskChangedFiles);
+
+    const existing = readDriftChainState(opts.projectDir, opts.sessionId)
+      ?? initialDriftChainState(opts.sessionId);
+
+    const threshold = opts.wctx.config.workflow.driftChainThreshold ?? 0.6;
+    const update = analyzeDriftChain(existing, opts.task.id, outOfBoundsFiles, threshold);
+
+    writeDriftChainState(opts.projectDir, opts.sessionId, update.state);
+
+    if (update.emitted) {
+      publishDriftChainDetected(opts.bus, opts.state.phase, update.emitted, threshold);
+    }
+  } catch (err) {
+    publishWarning(opts.wctx.bus, opts.state.phase, `drift chain analysis failed: ${toErrorMessage(err)}`);
+  }
+}
+
+function persistTaskEvidence(
+  wctx: WorkflowContext,
+  state: WorkflowState,
+  task: Task,
+  recordKind: 'local' | 'retry' | 'skipped',
+  details: {
+    status: TaskStatus;
+    method?: TaskCompletionMethod | undefined;
+    retries?: number | undefined;
+    durationMs?: number | undefined;
+    validation?: ValidationResult[] | undefined;
+    escalated?: boolean | undefined;
+    reason?: string | undefined;
+    changedFiles?: string[] | undefined;
+  },
+): void {
+  try {
+    const existing = readEvidenceLedger(wctx.projectDir, wctx.sessionId);
+    const ledger = existing ?? createEvidenceLedger({
+      sessionId: wctx.sessionId,
+      feature: state.feature,
+      mode: wctx.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+      tasks: state.tasks,
+    });
+    let updated = ledger;
+    if (recordKind === 'local') {
+      updated = recordLocalTaskEvidence({
+        ledger, task,
+        status: details.status,
+        method: details.method,
+        retries: details.retries,
+        durationMs: details.durationMs,
+        validation: details.validation ?? [],
+        changedFiles: details.changedFiles,
+      });
+    } else if (recordKind === 'retry') {
+      updated = recordRetryOrEscalationEvidence({
+        ledger, task,
+        status: details.status,
+        method: details.method,
+        retries: details.retries,
+        durationMs: details.durationMs,
+        validation: details.validation,
+        escalated: details.escalated ?? false,
+        changedFiles: details.changedFiles,
+      });
+    } else {
+      updated = recordSkippedTaskEvidence({
+        ledger, task, reason: details.reason ?? 'skipped',
+      });
+    }
+    writeEvidenceLedger(wctx.projectDir, wctx.sessionId, updated);
+  } catch (err) {
+    publishWarning(wctx.bus, state.phase, `failed to persist evidence ledger: ${toErrorMessage(err)}`);
+  }
+}
+
+function persistRejectionEvidence(
+  wctx: WorkflowContext,
+  state: WorkflowState,
+  reason: string,
+  actionClass: import('../../core/schemas/approval-store.js').ActionClass,
+  tier: 'sticky' | 'confirm',
+  actionDescription: string,
+  taskId?: TaskId,
+): void {
+  try {
+    const existing = readEvidenceLedger(wctx.projectDir, wctx.sessionId);
+    const ledger = existing ?? createEvidenceLedger({
+      sessionId: wctx.sessionId,
+      feature: state.feature,
+      mode: wctx.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+      tasks: state.tasks,
+    });
+    const updated = recordRejectionEvidence({
+      ledger,
+      tier,
+      actionClass,
+      actionDescription,
+      ...(taskId !== undefined && { taskId }),
+      reason,
+    });
+    writeEvidenceLedger(wctx.projectDir, wctx.sessionId, updated);
+  } catch {
+    // non-fatal: rejection evidence loss is acceptable vs crashing
+  }
+}
+
+function recordApprovalDenial(
+  wctx: WorkflowContext,
+  state: WorkflowState,
+  task: Task,
+  decision: GateDecision,
+  message: string,
+): void {
+  publishError(wctx.bus, state.phase, message);
+  const rejectedTier = decision.tier;
+  if (rejectedTier && rejectedTier !== 'auto' && decision.actionClass && decision.actionDescription) {
+    persistRejectionEvidence(
+      wctx,
+      state,
+      decision.reason ?? 'denied',
+      decision.actionClass,
+      rejectedTier,
+      decision.actionDescription,
+      task.id,
+    );
+  }
+}
 
 type RetryAndRecordOptions = {
   wctx: WorkflowContext;
@@ -20,6 +193,7 @@ type RetryAndRecordOptions = {
   initialError: string;
   state: WorkflowState;
   taskStartTime: number;
+  taskStartSnapshot?: ChangedFilesSnapshot;
   tokensBefore: TokenUsage;
   taskBreakdowns: TaskTokenUsage[];
   setTrackedState: (s: WorkflowState) => void;
@@ -29,10 +203,21 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
   const { wctx, task, initialError, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState } = opts;
   const { state, result } = await handleRetryAndEscalation({
     wctx, task, initialError, currentState: opts.state, taskStartTime,
+    taskStartSnapshot: opts.taskStartSnapshot ?? getChangedFilesSnapshot(wctx.projectDir),
+    dependsOnFiles: resolveDependsOnFiles(opts.state.tasks, task),
   });
   setTrackedState(state);
   recordTaskUsage({ task, method: result.method, tokensBefore, currentUsage: state.tokenUsage, bus: wctx.bus, state, taskBreakdowns, retryCount: result.attempts, tool: getRunnerDisplayName(wctx.config.implementer), model: wctx.config.implementer.model });
   if (!result.completed) publishEvent(wctx.bus, { type: 'task_failed', ts: Date.now(), phase: state.phase, taskId: task.id });
+  const escalated = result.completed && result.method !== 'local';
+  const status: TaskStatus = result.completed ? (escalated ? 'escalated' : 'done') : 'failed';
+  persistTaskEvidence(wctx, state, task, 'retry', {
+    status,
+    method: result.method,
+    retries: result.attempts,
+    durationMs: Date.now() - taskStartTime,
+    escalated,
+  });
   return { state, completed: result.completed };
 }
 
@@ -66,6 +251,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       publishTaskSkipped(wctx.bus, state.phase, { taskId: opts.task.id, title: opts.task.title, reason: pre.reason ?? 'pre_task hook denied' });
       state = transitionAndSave(projectDir, sessionId, state, { type: 'SKIP_TASK', taskId: opts.task.id });
       setTrackedState(state);
+      persistTaskEvidence(wctx, state, opts.task, 'skipped', { status: 'skipped', reason: pre.reason ?? 'pre_task hook denied' });
       return state;
     }
   }
@@ -84,6 +270,30 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     tool: getRunnerDisplayName(config.implementer), model: config.implementer.model,
   });
 
+  const gateResult = await gateAction({
+    actionDescription: `${task.action} ${task.file}`,
+    task,
+    dependsOnFiles: resolveDependsOnFiles(state.tasks, task),
+    projectDir,
+    sessionId,
+    phase: state.phase,
+    taskId: task.id,
+    bus: wctx.bus,
+    callbacks,
+    config,
+  });
+  if (!gateResult.allow) {
+    recordApprovalDenial(
+      wctx,
+      state,
+      task,
+      gateResult,
+      `Task blocked by approval gate: ${gateResult.reason ?? 'denied'}`,
+    );
+    return state;
+  }
+
+  const taskStartSnapshot = getChangedFilesSnapshot(projectDir);
   const tokensBefore = { ...state.tokenUsage };
 
   if (wctx.signal?.aborted) return state;
@@ -116,8 +326,9 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     publishError(wctx.bus, state.phase, labelError('Implementation failed', err));
     const retry = await retryAndRecord({
       wctx, task, initialError: toErrorMessage(err),
-      state, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState,
+      state, taskStartTime, taskStartSnapshot, tokensBefore, taskBreakdowns, setTrackedState,
     });
+    await runChainAnalysisSafe({ wctx, task, projectDir, sessionId, state: retry.state, taskStartSnapshot, bus: wctx.bus });
     return retry.state;
   }
 
@@ -127,9 +338,35 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   if (!implResult.success) {
     const retry = await retryAndRecord({
       wctx, task, initialError: implResult.error ?? 'Implementation failed to produce valid code',
-      state, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState,
+      state, taskStartTime, taskStartSnapshot, tokensBefore, taskBreakdowns, setTrackedState,
     });
+    await runChainAnalysisSafe({ wctx, task, projectDir, sessionId, state: retry.state, taskStartSnapshot, bus: wctx.bus });
     return retry.state;
+  }
+
+  const taskChangedFiles = getChangedFilesSinceSnapshot(projectDir, taskStartSnapshot);
+  const changedFilesGate = await gateChangedFiles({
+    changedFiles: taskChangedFiles,
+    task,
+    dependsOnFiles: resolveDependsOnFiles(state.tasks, task),
+    projectDir,
+    sessionId,
+    phase: state.phase,
+    taskId: task.id,
+    bus: wctx.bus,
+    callbacks,
+    config,
+  });
+  if (!changedFilesGate.allow) {
+    const files = changedFilesGate.changedFiles.join(', ');
+    recordApprovalDenial(
+      wctx,
+      state,
+      task,
+      changedFilesGate,
+      `Task changed files blocked by approval gate: ${changedFilesGate.reason ?? 'denied'} (${files})`,
+    );
+    return state;
   }
 
   state = transitionAndSave(projectDir, sessionId, state, { type: 'TASK_SENT' });
@@ -160,13 +397,21 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     state = commitResult.state;
     setTrackedState(state);
     recordTaskUsage({ task, method: 'local', tokensBefore, currentUsage: state.tokenUsage, bus: wctx.bus, state, taskBreakdowns, tool: getRunnerDisplayName(config.implementer), model: config.implementer.model });
+    persistTaskEvidence(wctx, state, task, 'local', {
+      status: 'done', method: 'local', retries: 0,
+      durationMs: Date.now() - taskStartTime,
+      validation: validationResults,
+      changedFiles: taskChangedFiles,
+    });
+    await runChainAnalysisSafe({ wctx, task, projectDir, sessionId, state, taskStartSnapshot, bus: wctx.bus });
     return state;
   }
 
   const errorText = formatValidationError(validationResults);
   const retry = await retryAndRecord({
     wctx, task, initialError: errorText,
-    state, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState,
+    state, taskStartTime, taskStartSnapshot, tokensBefore, taskBreakdowns, setTrackedState,
   });
+  await runChainAnalysisSafe({ wctx, task, projectDir, sessionId, state: retry.state, taskStartSnapshot, bus: wctx.bus });
   return retry.state;
 }

@@ -6,18 +6,21 @@ import type { SpecMetadata } from '../../../core/paths-io.js';
 import type { ApproveLevel } from '../../../core/schemas/enums.js';
 import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../../core/paths.js';
 import { buildSkillsSection } from '../../skills/discovery.js';
-import { addUsageAndSave, transitionAndSave, publishPlanApproved } from '../state-ops.js';
-import { publishPlannerStatus } from '../events.js';
+import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
+import { publishPlannerStatus, publishEvent } from '../events.js';
 import { collectAndPersistClarifications } from '../clarifications.js';
 import { runApprovalLoop } from '../approval.js';
 import { blocksSpecGate, blocksPlanGate, resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
 import { handleRewindSpec, handleRewindPlan } from './rewind.js';
+import { resetDriftChainState } from '../drift-chain-state.js';
 import {
   drainAndFormat,
   handlePlanningFailure,
   persistPhases,
   regenerateTasks,
   regeneratePlanAndTasks,
+  runBriefQualityGate,
+  runBriefsApprovalLoop,
   runPlannerCallInContinuationLoop,
   type PlanningPhaseOptions,
   type PlanningPhaseResult,
@@ -108,7 +111,27 @@ async function runNewPlanning(
     }
   }
 
-  state = publishPlanApproved(state, { projectDir, sessionId, bus: wctx.bus });
+  runBriefQualityGate(tasks, projectDir, sessionId, wctx.bus, state.phase);
+
+  if (!opts.deferBriefGate) {
+    const briefsLoop = await runBriefsApprovalLoop({
+      tasks,
+      planner,
+      projectDir,
+      sessionId,
+      callbacks,
+      bus: wctx.bus,
+      state,
+      metadata,
+      signal,
+    });
+    state = briefsLoop.state;
+    tasks = briefsLoop.tasks;
+    if (briefsLoop.rejected) return { state, tasks: [], cancelled: true };
+
+    publishPlannerStatus(wctx.bus, state, 'running');
+    publishEvent(wctx.bus, { type: 'plan_approved', ts: Date.now(), phase: state.phase });
+  }
 
   return { state, tasks, cancelled: false };
 }
@@ -128,6 +151,11 @@ export async function runFullPlanning(opts: PlanningPhaseOptions): Promise<Plann
   const rewindPending = opts.rewindPending;
   if (rewindPending) {
     state = transitionAndSave(projectDir, sessionId, state, { type: 'CLEAR_REWIND_PENDING' });
+    try {
+      resetDriftChainState(projectDir, sessionId);
+    } catch {
+      // non-fatal: rewind continues even if chain state reset fails
+    }
     if (rewindPending.target === 'spec') {
       return handleRewindSpec(opts, rewindPending, skipPlanApproval, metadata, skillsContext, state);
     }

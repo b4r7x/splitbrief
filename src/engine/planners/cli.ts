@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
 import type { InvokeResult } from '../runners/types.js';
 import type { Planner, PlannerCallbacks } from './types.js';
@@ -10,6 +12,53 @@ import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import { createSessionResumeState, runWithResumeFallback } from '../session-expiry.js';
 import { runnerConfigError } from '../runners/errors.js';
+import { readSpecFile } from '../../core/paths-io.js';
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function isInsideProject(projectDir: string, candidate: string): boolean {
+  const root = resolve(projectDir);
+  const resolved = resolve(candidate);
+  const rel = relative(root, resolved);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+function readArtifactPath(projectDir: string, filename: string, candidate: string): string | null {
+  if (basename(candidate) !== filename) return null;
+  if (!isInsideProject(projectDir, candidate)) return null;
+  if (!existsSync(candidate)) return null;
+  return readFileSync(candidate, 'utf8');
+}
+
+function extractMarkdownLinkedArtifact(resultText: string, filename: string): string | null {
+  const linkedPath = resultText.match(new RegExp(`\\[${escapeRegExp(filename)}\\]\\(([^)]+)\\)`))?.[1];
+  return linkedPath ?? null;
+}
+
+function mentionsWrittenArtifact(resultText: string, filename: string): boolean {
+  return new RegExp(`\\b(?:wrote|written|saved|created|updated)\\b[\\s\\S]{0,80}\\b${escapeRegExp(filename)}\\b`, 'i')
+    .test(resultText);
+}
+
+function readCliPhaseOutput(filename: string, resultText: string, projectDir: string, sessionId?: string): string {
+  const sessionArtifact = sessionId ? readSpecFile(projectDir, sessionId, filename) : null;
+  if (sessionArtifact !== null) return sessionArtifact;
+
+  const linkedPath = extractMarkdownLinkedArtifact(resultText, filename);
+  if (linkedPath) {
+    const linkedArtifact = readArtifactPath(projectDir, filename, linkedPath);
+    if (linkedArtifact !== null) return linkedArtifact;
+  }
+
+  if (mentionsWrittenArtifact(resultText, filename)) {
+    const rootArtifact = readArtifactPath(projectDir, filename, join(projectDir, filename));
+    if (rootArtifact !== null) return rootArtifact;
+  }
+
+  return resultText;
+}
 
 export function createCliPlanner(config: Config, initialSessionId?: string | null): Planner {
   const plannerCfg = assertPlannerKind(config, 'cli');
@@ -83,6 +132,7 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
     invokePlan: ({ prompt, projectDir, callbacks }) => invoke(prompt, projectDir, callbacks, 'plan'),
     invokeEscalate: ({ prompt, projectDir, callbacks }) => invoke(prompt, projectDir, callbacks, 'escalate'),
     hintSuccessMode: 'files',
+    readPhaseOutput: readCliPhaseOutput,
 
     ...createCommandAvailability(tool.command, planner.isAvailableOpts),
 

@@ -20,6 +20,14 @@ const TASK_MARKDOWN = [
   '',
   '### Description',
   'Create a hello world module',
+  '',
+  '### Tests',
+  '',
+  '- returns expected greeting',
+  '',
+  '### Implementation Steps',
+  '',
+  '1. Implement the module',
 ].join('\n');
 
 const CODE_RESPONSE = [

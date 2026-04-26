@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { OrchestratorCallbacks } from './types.js';
 import { checkBudget, getCurrentCost, enforceBudget } from './budget.js';
@@ -27,8 +27,24 @@ describe('checkBudget', () => {
     expect(checkBudget(0.80, 1.00)).toEqual({ action: 'warning' });
   });
 
-  it('returns warning between 80% and 100%', () => {
-    expect(checkBudget(0.95, 1.00)).toEqual({ action: 'warning' });
+  it('returns warning between 80% and 85%', () => {
+    expect(checkBudget(0.82, 1.00)).toEqual({ action: 'warning' });
+  });
+
+  it('returns paused at exactly 85%', () => {
+    expect(checkBudget(0.85, 1.00)).toEqual({ action: 'paused' });
+  });
+
+  it('returns paused between 85% and 100%', () => {
+    expect(checkBudget(0.95, 1.00)).toEqual({ action: 'paused' });
+  });
+
+  it('returns paused at custom pauseThreshold of 90%', () => {
+    expect(checkBudget(0.90, 1.00, 0.90)).toEqual({ action: 'paused' });
+  });
+
+  it('returns warning at 85% when custom pauseThreshold is 90%', () => {
+    expect(checkBudget(0.85, 1.00, 0.90)).toEqual({ action: 'warning' });
   });
 
   it('returns exceeded at 100%', () => {
@@ -117,6 +133,7 @@ describe('enforceBudget', () => {
       callbacks: makeCallbacks(),
       bus,
       warningEmitted: false,
+      pauseEmitted: false,
     });
     expect(result.stop).toBe(false);
     expect(result.warningEmitted).toBe(false);
@@ -125,7 +142,7 @@ describe('enforceBudget', () => {
   it('emits warning at 80% and sets warningEmitted', async () => {
     const callbacks = makeCallbacks();
     const { bus, events } = makeBusRecorder();
-    // Use an API-priced planner with enough tokens to hit 80%
+    // Use an API-priced planner with enough tokens to hit ~82% (within warning zone [80%, 85%))
     const usage: TokenUsage = {
       ...zeroUsage,
       plannerInput: 200_000,
@@ -136,7 +153,7 @@ describe('enforceBudget', () => {
       tokenUsage: usage,
       plannerTool: 'anthropic',
     });
-    const budget = cost / 0.85; // make sure we're at ~85%
+    const budget = cost / 0.82; // puts cost at ~82%, inside warning zone
 
     const result = await enforceBudget({
       ...baseOpts,
@@ -146,6 +163,7 @@ describe('enforceBudget', () => {
       callbacks,
       bus,
       warningEmitted: false,
+      pauseEmitted: false,
     });
 
     expect(result.stop).toBe(false);
@@ -166,7 +184,7 @@ describe('enforceBudget', () => {
       tokenUsage: usage,
       plannerTool: 'anthropic',
     });
-    const budget = cost / 0.85;
+    const budget = cost / 0.82; // puts cost at ~82%, inside warning zone
 
     const result = await enforceBudget({
       ...baseOpts,
@@ -176,6 +194,7 @@ describe('enforceBudget', () => {
       callbacks,
       bus,
       warningEmitted: true,
+      pauseEmitted: false,
     });
 
     expect(result.stop).toBe(false);
@@ -205,6 +224,7 @@ describe('enforceBudget', () => {
       callbacks,
       bus,
       warningEmitted: false,
+      pauseEmitted: false,
     });
 
     expect(result.stop).toBe(true);
@@ -240,6 +260,7 @@ describe('enforceBudget', () => {
       callbacks,
       bus,
       warningEmitted: false,
+      pauseEmitted: false,
     });
 
     // Observable: the prompt was delivered to the user callback with the
@@ -278,9 +299,200 @@ describe('enforceBudget', () => {
       callbacks,
       bus,
       warningEmitted: false,
+      pauseEmitted: false,
     });
 
     expect(budgetPromptArgs).toHaveLength(1);
     expect(result.stop).toBe(true);
+  });
+
+  it('stops workflow when paused and no onBudgetPaused callback', async () => {
+    const callbacks = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const usage: TokenUsage = {
+      ...zeroUsage,
+      plannerInput: 200_000,
+      plannerOutput: 20_000,
+    };
+    const cost = getCurrentCost({
+      ...baseOpts,
+      tokenUsage: usage,
+      plannerTool: 'anthropic',
+    });
+    const budget = cost / 0.87; // puts cost at ~87%, inside pause zone [85%, 100%)
+
+    const result = await enforceBudget({
+      ...baseOpts,
+      plannerTool: 'anthropic',
+      tokenUsage: usage,
+      maxBudget: budget,
+      callbacks,
+      bus,
+      warningEmitted: false,
+      pauseEmitted: false,
+    });
+
+    expect(result.stop).toBe(true);
+    expect(result.pauseEmitted).toBe(true);
+    expect(events.some(e => e.type === 'budget_paused')).toBe(true);
+  });
+
+  it('does not stop when paused and onBudgetPaused returns continue', async () => {
+    const onBudgetPaused = async () => 'continue' as const;
+    const callbacks = makeCallbacks({ onBudgetPaused });
+    const { bus, events } = makeBusRecorder();
+    const usage: TokenUsage = {
+      ...zeroUsage,
+      plannerInput: 200_000,
+      plannerOutput: 20_000,
+    };
+    const cost = getCurrentCost({
+      ...baseOpts,
+      tokenUsage: usage,
+      plannerTool: 'anthropic',
+    });
+    const budget = cost / 0.87;
+
+    const result = await enforceBudget({
+      ...baseOpts,
+      plannerTool: 'anthropic',
+      tokenUsage: usage,
+      maxBudget: budget,
+      callbacks,
+      bus,
+      warningEmitted: false,
+      pauseEmitted: false,
+    });
+
+    expect(result.stop).toBe(false);
+    expect(result.pauseEmitted).toBe(true);
+    expect(events.some(e => e.type === 'budget_paused')).toBe(true);
+  });
+
+  it('stops when paused and onBudgetPaused returns abort', async () => {
+    const onBudgetPaused = async () => 'abort' as const;
+    const callbacks = makeCallbacks({ onBudgetPaused });
+    const { bus } = makeBusRecorder();
+    const usage: TokenUsage = {
+      ...zeroUsage,
+      plannerInput: 200_000,
+      plannerOutput: 20_000,
+    };
+    const cost = getCurrentCost({
+      ...baseOpts,
+      tokenUsage: usage,
+      plannerTool: 'anthropic',
+    });
+    const budget = cost / 0.87;
+
+    const result = await enforceBudget({
+      ...baseOpts,
+      plannerTool: 'anthropic',
+      tokenUsage: usage,
+      maxBudget: budget,
+      callbacks,
+      bus,
+      warningEmitted: false,
+      pauseEmitted: false,
+    });
+
+    expect(result.stop).toBe(true);
+    expect(result.pauseEmitted).toBe(true);
+  });
+
+  it('does not re-pause when pauseEmitted is true', async () => {
+    const onBudgetPaused = vi.fn().mockResolvedValue('continue');
+    const callbacks = makeCallbacks({ onBudgetPaused });
+    const { bus, events } = makeBusRecorder();
+    const usage: TokenUsage = {
+      ...zeroUsage,
+      plannerInput: 200_000,
+      plannerOutput: 20_000,
+    };
+    const cost = getCurrentCost({
+      ...baseOpts,
+      tokenUsage: usage,
+      plannerTool: 'anthropic',
+    });
+    const budget = cost / 0.87;
+
+    const result = await enforceBudget({
+      ...baseOpts,
+      plannerTool: 'anthropic',
+      tokenUsage: usage,
+      maxBudget: budget,
+      callbacks,
+      bus,
+      warningEmitted: true,
+      pauseEmitted: true,
+    });
+
+    expect(result.stop).toBe(false);
+    expect(onBudgetPaused).not.toHaveBeenCalled();
+    expect(events.some(e => e.type === 'budget_paused')).toBe(false);
+  });
+
+  it('publishes budget_paused event on first pause trigger', async () => {
+    const onBudgetPaused = async () => 'continue' as const;
+    const callbacks = makeCallbacks({ onBudgetPaused });
+    const { bus, events } = makeBusRecorder();
+    const usage: TokenUsage = {
+      ...zeroUsage,
+      plannerInput: 200_000,
+      plannerOutput: 20_000,
+    };
+    const cost = getCurrentCost({
+      ...baseOpts,
+      tokenUsage: usage,
+      plannerTool: 'anthropic',
+    });
+    const budget = cost / 0.87;
+
+    await enforceBudget({
+      ...baseOpts,
+      plannerTool: 'anthropic',
+      tokenUsage: usage,
+      maxBudget: budget,
+      callbacks,
+      bus,
+      warningEmitted: false,
+      pauseEmitted: false,
+    });
+
+    const pauseEvent = events.find(e => e.type === 'budget_paused');
+    expect(pauseEvent).toBeDefined();
+    expect(pauseEvent?.type === 'budget_paused' && pauseEvent.threshold).toBe(0.85);
+  });
+
+  it('treats raise response as continue and warns', async () => {
+    const onBudgetPaused = async () => 'raise' as const;
+    const callbacks = makeCallbacks({ onBudgetPaused });
+    const { bus, events } = makeBusRecorder();
+    const usage: TokenUsage = {
+      ...zeroUsage,
+      plannerInput: 200_000,
+      plannerOutput: 20_000,
+    };
+    const cost = getCurrentCost({
+      ...baseOpts,
+      tokenUsage: usage,
+      plannerTool: 'anthropic',
+    });
+    const budget = cost / 0.87;
+
+    const result = await enforceBudget({
+      ...baseOpts,
+      plannerTool: 'anthropic',
+      tokenUsage: usage,
+      maxBudget: budget,
+      callbacks,
+      bus,
+      warningEmitted: false,
+      pauseEmitted: false,
+    });
+
+    expect(result.stop).toBe(false);
+    expect(result.pauseEmitted).toBe(true);
+    expect(events.some(e => e.type === 'warning')).toBe(true);
   });
 });

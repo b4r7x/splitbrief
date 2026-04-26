@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { calculateCost, calculateCostBreakdown, getModelPricing, getProviderPricing } from './pricing.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { CostBreakdownSchema } from '../../core/schemas/summary.js';
 
 describe('calculateCost', () => {
   it('returns 0 for unpriced providers', () => {
@@ -225,5 +226,141 @@ describe('getProviderPricing', () => {
       outputPer1M: 15,
       isPriced: true,
     });
+  });
+});
+
+describe('cache pricing', () => {
+  it('calculateCostBreakdown with cacheRead tokens + priced provider returns correct cacheReadSavings', () => {
+    // Sonnet 4.6: input=$3/MTok, cacheRead=$0.30/MTok => savings=$2.70/MTok of cache reads
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 500_000,
+      implementerOutput: 200_000,
+      plannerCacheRead: 1_000_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 3,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      implementerTool: 'deepseek',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerModel: 'deepseek-chat',
+    });
+
+    // 1_000_000 cache read tokens at (3.00 - 0.30) = $2.70/MTok = $2.70 savings
+    expect(result.cacheReadSavings).toBeCloseTo(2.70, 10);
+    expect(result.cacheReadTokens).toBe(1_000_000);
+  });
+
+  it('calculateCostBreakdown with cacheRead tokens + unpriced provider returns no cacheReadSavings', () => {
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 500_000,
+      implementerOutput: 200_000,
+      plannerCacheRead: 1_000_000,
+    });
+
+    // claude-code is unpriced-cli — no cacheReadPer1M
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 3,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    });
+
+    expect(result.cacheReadSavings).toBeUndefined();
+    expect(result.cacheReadTokens).toBe(1_000_000);
+  });
+
+  it('calculateCostBreakdown without cacheRead tokens returns no cacheReadSavings (backward compat)', () => {
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 500_000,
+      implementerOutput: 200_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 3,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      implementerTool: 'deepseek',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerModel: 'deepseek-chat',
+    });
+
+    expect(result.cacheReadSavings).toBeUndefined();
+    expect(result.cacheReadTokens).toBeUndefined();
+    expect(result.cacheWriteTokens).toBeUndefined();
+  });
+
+  it('calculateCostBreakdown accumulates cache savings across both planner and implementer', () => {
+    // Both planner and implementer are anthropic/sonnet
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 200_000,
+      implementerOutput: 80_000,
+      plannerCacheRead: 500_000,
+      implementerCacheRead: 500_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 2,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      implementerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerModel: 'claude-sonnet-4-6',
+    });
+
+    // (500k + 500k) @ $2.70/MTok = $2.70 total
+    expect(result.cacheReadSavings).toBeCloseTo(2.70, 10);
+    expect(result.cacheReadTokens).toBe(1_000_000);
+  });
+});
+
+describe('CostBreakdown schema backward compatibility', () => {
+  it('accepts old shape without cache fields', () => {
+    const old = {
+      hypotheticalCost: 1,
+      actualPlannerCost: 0.5,
+      actualImplementerCost: 0.2,
+      totalActualCost: 0.7,
+      savingsAmount: 0.3,
+      savingsPercentage: 30,
+      localCompletionRate: 0.5,
+    };
+    expect(() => CostBreakdownSchema.parse(old)).not.toThrow();
+    const parsed = CostBreakdownSchema.parse(old);
+    expect(parsed.cacheReadSavings).toBeUndefined();
+    expect(parsed.cacheReadTokens).toBeUndefined();
+    expect(parsed.cacheWriteTokens).toBeUndefined();
+  });
+
+  it('accepts new shape with cache fields', () => {
+    const withCache = {
+      hypotheticalCost: 1,
+      actualPlannerCost: 0.5,
+      actualImplementerCost: 0.2,
+      totalActualCost: 0.7,
+      savingsAmount: 0.3,
+      savingsPercentage: 30,
+      localCompletionRate: 0.5,
+      cacheReadSavings: 2.7,
+      cacheReadTokens: 1_000_000,
+      cacheWriteTokens: 500_000,
+    };
+    const parsed = CostBreakdownSchema.parse(withCache);
+    expect(parsed.cacheReadSavings).toBe(2.7);
+    expect(parsed.cacheReadTokens).toBe(1_000_000);
+    expect(parsed.cacheWriteTokens).toBe(500_000);
   });
 });

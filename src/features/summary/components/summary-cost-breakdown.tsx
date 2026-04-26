@@ -18,14 +18,22 @@ export function SummaryCostBreakdown({
 }: SummaryCostBreakdownProps) {
   const t = useTheme();
 
+  const isUnpricedOnly = costBreakdown.hasUnpricedUsage && !costBreakdown.hasPricedUsage;
+  const localRatePct = `${(costBreakdown.localCompletionRate * 100).toFixed(0)}%`;
+
   return (
     <Box flexDirection="column" marginTop={1} gap={isSmall ? 0 : 1}>
-      {(costBreakdown.hasPricedUsage ?? true) && (
+      {isUnpricedOnly && (
+        <LabeledRow label="Execution" labelWidth={labelWidth}>
+          <Text color={t.textDim}>local / subscription (unpriced)</Text>
+        </LabeledRow>
+      )}
+      {!isUnpricedOnly && (costBreakdown.hasPricedUsage ?? true) && (
         <LabeledRow label="Actual cost" labelWidth={labelWidth}>
           <Text bold>{formatCost(costBreakdown.totalActualCost)}</Text>
         </LabeledRow>
       )}
-      {(costBreakdown.hasSavingsEstimate ?? true) && (
+      {!isUnpricedOnly && (costBreakdown.hasSavingsEstimate ?? true) && (
         <LabeledRow label="Saved vs all-planner baseline" labelWidth={labelWidth}>
           <Text color={t.success}>
             {`${formatCost(costBreakdown.savingsAmount)} (${costBreakdown.savingsPercentage.toFixed(0)}%)`}
@@ -33,11 +41,9 @@ export function SummaryCostBreakdown({
         </LabeledRow>
       )}
       <LabeledRow label="Local rate" labelWidth={labelWidth}>
-        <Text color={t.success}>
-          {`${(costBreakdown.localCompletionRate * 100).toFixed(0)}%`}
-        </Text>
+        <Text color={t.success}>{localRatePct}</Text>
       </LabeledRow>
-      {costBreakdown.providerCosts &&
+      {!isUnpricedOnly && costBreakdown.providerCosts &&
         Object.entries(costBreakdown.providerCosts).map(([provider, pc]) => (
           <LabeledRow key={provider} label={getProviderDisplayName(provider)} labelWidth={labelWidth}>
             <Text color={t.textDim}>{formatCost(pc.cost)}</Text>

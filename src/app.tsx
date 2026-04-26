@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useApp } from 'ink';
 import { createCommands } from './core/slash-commands/catalog.js';
 import { buildCommandContext } from './core/slash-commands/context.js';
-import { toPaletteItems, executeSlashCommand } from './core/slash-commands/dispatch.js';
+import { executeSlashCommand } from './core/slash-commands/dispatch.js';
 import { useAppKeys } from './hooks/use-app-keys.js';
 import { useMouseScroll } from './features/workflow/hooks/use-mouse-scroll.js';
 import { Layout } from './layout.js';
@@ -17,13 +17,15 @@ import { WorkflowScreen } from './features/workflow/screen.js';
 import { SummaryScreen } from './features/summary/screen.js';
 import { SetupScreen } from './features/setup/screen.js';
 import { HelpOverlay } from './components/overlays/help-overlay.js';
-import { CommandPalette } from './components/overlays/command-palette.js';
+import { CommandPaletteOverlay } from './features/workflow/components/command-palette-overlay.js';
 import { SkillsPicker } from './features/skills/picker.js';
 import { SessionsPicker } from './features/sessions/picker.js';
 import { SettingsOverlay } from './features/settings/overlay.js';
 import { ModeSelector } from './features/settings/mode-selector.js';
 import { ToolModelPicker } from './features/tool-picker/picker.js';
-import type { CommandPaletteItem, SlashCommandDef } from './core/slash-commands/types.js';
+import { CostDrilldownOverlay } from './features/workflow/components/cost-drilldown-overlay.js';
+import { PlanEditorHelpOverlay } from './features/workflow/components/plan-editor-help-overlay.js';
+import type { SlashCommandDef } from './core/slash-commands/types.js';
 import type { OverlayType, Screen } from './stores/navigation/router.js';
 import { assertNever } from './utils/type-guards.js';
 
@@ -35,7 +37,6 @@ export function App() {
 
   const ctx = buildCommandContext({ exit });
   const commands = createCommands(ctx);
-  const paletteItems = toPaletteItems(commands);
   const handleSlashCommand = (raw: string, from: Screen) =>
     executeSlashCommand(commands, raw, from, feedbackStore.setError);
 
@@ -46,7 +47,7 @@ export function App() {
     <ThemeProvider theme={theme}>
       <Layout
         screen={renderScreen({ screen, commands, onSlash: handleSlashCommand })}
-        overlay={renderOverlay({ active: overlayActive, screen, commands, paletteItems })}
+        overlay={renderOverlay({ active: overlayActive, screen, commands })}
       />
     </ThemeProvider>
   );
@@ -97,11 +98,10 @@ function renderScreen({ screen, commands, onSlash }: {
   }
 }
 
-function renderOverlay({ active, screen, commands, paletteItems }: {
+function renderOverlay({ active, screen, commands }: {
   active: OverlayType;
   screen: Screen;
   commands: SlashCommandDef[];
-  paletteItems: CommandPaletteItem[];
 }): ReactNode | null {
   switch (active) {
     case 'none':
@@ -109,7 +109,7 @@ function renderOverlay({ active, screen, commands, paletteItems }: {
     case 'help':
       return <HelpOverlay currentScreen={screen} commands={commands} />;
     case 'command-palette':
-      return <CommandPalette items={paletteItems} currentScreen={screen} />;
+      return <CommandPaletteOverlay />;
     case 'skills':
       return <SkillsPicker />;
     case 'settings':
@@ -122,6 +122,10 @@ function renderOverlay({ active, screen, commands, paletteItems }: {
       return <ToolModelPicker role="implementer" />;
     case 'sessions':
       return <SessionsPicker />;
+    case 'cost-drilldown':
+      return <CostDrilldownOverlay />;
+    case 'plan-editor-help':
+      return <PlanEditorHelpOverlay />;
     default:
       return assertNever(active);
   }

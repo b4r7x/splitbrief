@@ -2,12 +2,13 @@ import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { OrchestratorCallbacks } from './types.js';
 import type { EventBus } from '../events/types.js';
 import { calculateCostBreakdown } from '../providers/pricing.js';
-import { publishBudgetWarning, publishBudgetExceeded, publishWarning } from './events.js';
+import { publishBudgetWarning, publishBudgetExceeded, publishBudgetPaused, publishWarning } from './events.js';
 import { formatCost } from '../../core/formatting.js';
 
 export type BudgetCheckResult =
   | { action: 'ok' }
   | { action: 'warning' }
+  | { action: 'paused' }
   | { action: 'exceeded'; shouldStop: boolean };
 
 export type BudgetCheckOptions = {
@@ -20,6 +21,7 @@ export type BudgetCheckOptions = {
 };
 
 const BUDGET_WARNING_THRESHOLD = 0.8;
+const BUDGET_PAUSE_THRESHOLD = 0.85;
 
 export function getCurrentCost(opts: Omit<BudgetCheckOptions, 'maxBudget'>): number {
   const breakdown = calculateCostBreakdown({
@@ -32,7 +34,11 @@ export function getCurrentCost(opts: Omit<BudgetCheckOptions, 'maxBudget'>): num
   return breakdown.totalActualCost;
 }
 
-export function checkBudget(currentCost: number, maxBudget: number): BudgetCheckResult {
+export function checkBudget(
+  currentCost: number,
+  maxBudget: number,
+  pauseThreshold = BUDGET_PAUSE_THRESHOLD,
+): BudgetCheckResult {
   if (!Number.isFinite(maxBudget) || maxBudget <= 0) {
     return { action: 'exceeded', shouldStop: true };
   }
@@ -40,6 +46,9 @@ export function checkBudget(currentCost: number, maxBudget: number): BudgetCheck
   if (!Number.isFinite(currentCost)) return { action: 'exceeded', shouldStop: true };
   if (currentCost >= maxBudget) {
     return { action: 'exceeded', shouldStop: true };
+  }
+  if (currentCost >= maxBudget * pauseThreshold) {
+    return { action: 'paused' };
   }
   if (currentCost >= maxBudget * BUDGET_WARNING_THRESHOLD) {
     return { action: 'warning' };
@@ -57,21 +66,43 @@ export type EnforceBudgetOptions = {
   callbacks: OrchestratorCallbacks;
   bus: EventBus;
   warningEmitted: boolean;
+  pauseEmitted: boolean;
+  pauseThreshold?: number | undefined;
 };
 
 function fmtBudgetRange(currentCost: number, maxBudget: number): string {
   return `${formatCost(currentCost)} of ${formatCost(maxBudget)}`;
 }
 
-export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{ stop: boolean; warningEmitted: boolean }> {
-  const { maxBudget, callbacks, bus, warningEmitted } = opts;
+export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{ stop: boolean; warningEmitted: boolean; pauseEmitted: boolean }> {
+  const { maxBudget, callbacks, bus, warningEmitted, pauseEmitted } = opts;
+  const effectivePauseThreshold = opts.pauseThreshold ?? BUDGET_PAUSE_THRESHOLD;
   const currentCost = getCurrentCost(opts);
-  const result = checkBudget(currentCost, maxBudget);
+  const result = checkBudget(currentCost, maxBudget, effectivePauseThreshold);
 
   if (result.action === 'warning' && !warningEmitted) {
     publishBudgetWarning(bus, 'implementing', currentCost, maxBudget);
     publishWarning(bus, 'implementing', `Budget 80% reached: ${fmtBudgetRange(currentCost, maxBudget)} limit`);
-    return { stop: false, warningEmitted: true };
+    return { stop: false, warningEmitted: true, pauseEmitted };
+  }
+
+  if (result.action === 'paused' && !pauseEmitted) {
+    publishBudgetPaused(bus, 'implementing', currentCost, maxBudget, effectivePauseThreshold);
+
+    if (callbacks.onBudgetPaused) {
+      const response = await callbacks.onBudgetPaused(currentCost, maxBudget);
+      if (response === 'raise') {
+        // 'raise' is reserved for future budget-editing UX; treat as 'continue' for now
+        publishWarning(bus, 'implementing', "Budget 'raise' not yet implemented — continuing");
+        return { stop: false, warningEmitted: true, pauseEmitted: true };
+      }
+      const stop = response === 'abort';
+      return { stop, warningEmitted: true, pauseEmitted: true };
+    }
+
+    // No callback — default to abort (safe for unattended runs)
+    publishWarning(bus, 'implementing', `Budget ${Math.round(effectivePauseThreshold * 100)}% reached: ${fmtBudgetRange(currentCost, maxBudget)} limit — stopping workflow`);
+    return { stop: true, warningEmitted: true, pauseEmitted: true };
   }
 
   if (result.action === 'exceeded') {
@@ -79,12 +110,12 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{ stop:
 
     if (callbacks.onBudgetExceeded) {
       const shouldContinue = await callbacks.onBudgetExceeded(currentCost, maxBudget);
-      return { stop: !shouldContinue, warningEmitted: true };
+      return { stop: !shouldContinue, warningEmitted: true, pauseEmitted };
     }
 
     publishWarning(bus, 'implementing', `Budget exceeded: ${fmtBudgetRange(currentCost, maxBudget)} limit — stopping workflow`);
-    return { stop: true, warningEmitted: true };
+    return { stop: true, warningEmitted: true, pauseEmitted };
   }
 
-  return { stop: false, warningEmitted };
+  return { stop: false, warningEmitted, pauseEmitted };
 }

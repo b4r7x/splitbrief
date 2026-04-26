@@ -5,6 +5,7 @@ import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factor
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
+import { createEventBus } from '../../../engine/events/bus.js';
 import { simpleGit } from 'simple-git';
 import { runWorkflow } from './run.js';
 
@@ -110,6 +111,26 @@ describe('runWorkflow — smoke', () => {
     const { existsSync } = await import('node:fs');
     const { sessionDir } = await import('../../../core/paths.js');
     expect(existsSync(sessionDir(projectDir, 'explicit-sid'))).toBe(true);
+  });
+
+  it('publishes workflow events to an externally owned event bus', async () => {
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const config = unavailablePlannerConfig();
+    const bus = createEventBus();
+    const events: EngineEvent[] = [];
+    bus.subscribe((event) => events.push(event));
+
+    await runWorkflow({
+      feature: 'detached-stream',
+      projectDir,
+      config,
+      callbacks,
+      eventBus: bus,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+    });
+
+    expect(events.find((event) => event.type === 'error')).toBeDefined();
   });
 
   it('skips most of the flow when the AbortSignal is aborted before planning completes and still returns a Summary', async () => {

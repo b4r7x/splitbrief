@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runFullPlanning } from './new.js';
 import { transitionAndSave } from '../state-ops.js';
-import { publishPlannerStatus, createBusTextHandler } from '../events.js';
+import { publishPlannerStatus, createBusTextHandler, publishEvent } from '../events.js';
 import {
   ANALYZE_FILE,
   CLARIFICATIONS_FILE,
@@ -14,6 +14,7 @@ import {
 } from '../../../core/paths.js';
 import { buildConstitutionPrompt } from '../../spec/prompts/constitution.js';
 import { buildAnalyzePrompt } from '../../spec/prompts/analyze.js';
+import { runBriefQualityGate, runBriefsApprovalLoop } from './shared.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './shared.js';
 import type { ConstitutionCheckResult, ConstitutionViolation } from '../../../core/schemas/constitution.js';
 import type { AnalyzeResult } from '../../../core/schemas/analyze.js';
@@ -164,9 +165,10 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
   state = transitionAndSave(projectDir, sessionId, state, { type: 'CONSTITUTION_CHECK_PASS' });
   publishPlannerStatus(bus, state, 'done');
 
-  const planResult = await runFullPlanning({ ...opts, state });
+  const planResult = await runFullPlanning({ ...opts, state, deferBriefGate: true });
   state = planResult.state;
   if (planResult.cancelled) return planResult;
+  let tasks = planResult.tasks;
 
   state = transitionAndSave(projectDir, sessionId, state, { type: 'ANALYZE_START' });
   publishPlannerStatus(bus, state, 'running');
@@ -193,5 +195,25 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
   state = transitionAndSave(projectDir, sessionId, state, { type: 'ANALYZE_DONE' });
   publishPlannerStatus(bus, state, 'done');
 
-  return { state, tasks: planResult.tasks, cancelled: false };
+  runBriefQualityGate(tasks, projectDir, sessionId, bus, state.phase);
+
+  const briefsLoop = await runBriefsApprovalLoop({
+    tasks,
+    planner,
+    projectDir,
+    sessionId,
+    callbacks: wctx.callbacks,
+    bus,
+    state,
+    metadata: wctx.metadata,
+    signal: wctx.signal,
+  });
+  state = briefsLoop.state;
+  tasks = briefsLoop.tasks;
+  if (briefsLoop.rejected) return { state, tasks: [], cancelled: true };
+
+  publishPlannerStatus(bus, state, 'running');
+  publishEvent(bus, { type: 'plan_approved', ts: Date.now(), phase: state.phase });
+
+  return { state, tasks, cancelled: false };
 }

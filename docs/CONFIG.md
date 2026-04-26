@@ -149,6 +149,7 @@ Same discriminated union as `planner` (`src/core/schemas/implementer-config.ts`)
 | `git.commitStrategy` | enum | yes | `none` | `none` \| `checkpoint` \| `per-task` |
 | `git.createBranch` | boolean | no | `false` | Auto-create a `diptych/<slug>` branch at workflow start |
 | `mode` | enum | no | `standard` | `instant` \| `quick` \| `standard` \| `speckit`. Legacy `full` is still accepted on input as an alias for `speckit`, with a one-time deprecation notice. |
+| `briefReview` | enum | no | `simple` | `simple` \| `rich`. Review mode for Task Briefs during the `reviewing-briefs` phase. `rich` activates the interactive plan editor for standard/speckit users. Press `e` from the simple view to activate rich mode for the current session without changing this setting. |
 | `maxBudget` | number > 0 | no | — | Dollar ceiling; workflow prompts on exceed |
 | `persistTranscript` | boolean | no | `true` | Persist planner/user text chunks to `session.jsonl` |
 
@@ -223,6 +224,30 @@ OpenTelemetry sink. Full details: [OTEL.md](./OTEL.md).
 | `serviceName` | string | no | `diptych` | `service.name` resource attribute |
 
 Schema: `src/core/schemas/otel.ts` (`.strict()`).
+
+## `snapshots`
+
+Controls automatic snapshot behavior. All auto-triggers are off by default. Failures emit a warning event and do not abort the run.
+
+### `snapshots.auto`
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `preTask` | boolean | `false` | Take a snapshot immediately before each task starts |
+| `postTask` | boolean | `false` | Take a snapshot immediately after each task completes successfully |
+| `preFinalReview` | boolean | `false` | Take a snapshot before the final planner review runs |
+
+YAML example:
+
+```yaml
+snapshots:
+  auto:
+    preTask: true
+    postTask: true
+    preFinalReview: false
+```
+
+Manual snapshots are always available via `diptych snapshot create` regardless of this config. Schema: `src/core/schemas/config.ts` (`SnapshotsConfigSchema`).
 
 ## Environment variables
 

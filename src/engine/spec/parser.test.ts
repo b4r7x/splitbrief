@@ -168,6 +168,38 @@ This task has missing required fields and invalid action.
     expect(tasks[0]?.id).toBe('T020');
   });
 
+  it('parses task frontmatter when planner narration is attached to the delimiter', () => {
+    const input = `---
+generated_by: diptych v0.1.0
+planner: codex
+implementer: codex
+mode: quick
+created_at: 2026-04-22T17:31:07.683Z
+---
+I inspected the repo and will emit tasks now.---
+id: T030
+title: "Task after narration"
+action: create
+file: src/after-narration.ts
+depends_on: []
+---
+
+### Description
+Create a file after planner narration.
+
+### Tests
+- Should parse the task
+
+### Constraints
+- None
+`;
+
+    const tasks = parseTasks(input);
+    expect(tasks.length).toBe(1);
+    expect(tasks[0]?.id).toBe('T030');
+    expect(tasks[0]?.file).toBe('src/after-narration.ts');
+  });
+
   it('parses bare depends_on without brackets as single-element array', () => {
     const input = `---
 id: T050

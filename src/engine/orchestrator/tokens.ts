@@ -6,7 +6,9 @@ import { publishEvent } from './events.js';
 
 export type UsageCategory = 'planner' | 'implementer' | 'escalation';
 
-const categoryFields: Record<UsageCategory, { input: keyof TokenUsage; output: keyof TokenUsage }> = {
+type CoreTokenKey = 'plannerInput' | 'plannerOutput' | 'implementerInput' | 'implementerOutput' | 'escalationInput' | 'escalationOutput';
+
+const categoryFields: Record<UsageCategory, { input: CoreTokenKey; output: CoreTokenKey }> = {
   planner: { input: 'plannerInput', output: 'plannerOutput' },
   implementer: { input: 'implementerInput', output: 'implementerOutput' },
   escalation: { input: 'escalationInput', output: 'escalationOutput' },

@@ -12,6 +12,9 @@ export type StateAction =
   | { type: 'PLAN_DONE'; tasks: Task[] }
   | { type: 'APPROVE_PLAN' }
   | { type: 'REJECT_PLAN' }
+  | { type: 'BRIEFS_READY'; tasks: Task[] }
+  | { type: 'APPROVE_BRIEFS' }
+  | { type: 'REJECT_BRIEFS' }
   | { type: 'SPEC_CLARIFY_START' }
   | { type: 'SPEC_CLARIFY_DONE' }
   | { type: 'CONSTITUTION_CHECK_PASS' }

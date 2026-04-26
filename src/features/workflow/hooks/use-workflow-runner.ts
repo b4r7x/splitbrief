@@ -5,6 +5,7 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { SkillMeta } from '../../../engine/skills/discovery.js';
 import { addEvent, resetWorkflow } from '../../../stores/workflow/actions.js';
+import { openApprovalPrompt } from '../../../stores/approval-prompt/actions.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
@@ -23,6 +24,7 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import { readActive } from '../../../core/sessions/lifecycle.js';
 import { transition } from '../../../core/state/machine.js';
 import { REVIEW_HINT } from '../review-parser.js';
+import { formatCost } from '../../../core/formatting.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 import { buildRewindAction } from './build-rewind-action.js';
 
@@ -35,6 +37,7 @@ interface UseWorkflowRunnerOptions {
   selectedSkills?: SkillMeta[] | undefined;
   inputMode: UseInputModeResult;
   sessionId?: string | undefined;
+  enabled?: boolean | undefined;
 }
 
 interface UseWorkflowRunnerResult {
@@ -51,6 +54,7 @@ export function useWorkflowRunner({
   selectedSkills,
   inputMode,
   sessionId: initialSessionId,
+  enabled = true,
 }: UseWorkflowRunnerOptions): UseWorkflowRunnerResult {
   const abortedRef = useRef(false);
   const pendingRewindEventRef = useRef<EngineEvent | null>(null);
@@ -109,8 +113,15 @@ export function useWorkflowRunner({
           (await inputMode.setReviewMode('External changes detected. continue / quit')).approved,
         onBudgetExceeded: async (currentCost, maxBudget) =>
           (await inputMode.setReviewMode(`Budget exceeded: $${currentCost.toFixed(2)} of $${maxBudget.toFixed(2)}. continue / quit`)).approved,
+        onBudgetPaused: async (currentCost, maxBudget) => {
+          const result = await inputMode.setReviewMode(
+            `Budget ${Math.round((currentCost / maxBudget) * 100)}% reached: ${formatCost(currentCost)} of ${formatCost(maxBudget)}. continue / abort`,
+          );
+          return result.approved ? 'continue' : 'abort';
+        },
         onContinuationNeeded: async (_partial) =>
           inputMode.setQuestionMode('Task interrupted. Enter instructions to continue (or press Enter to retry):'),
+        onTieredApproval: (request) => openApprovalPrompt(request),
         onQuestionAsked: (question, num, total) =>
           inputMode.setQuestionMode(`Question ${num}/${total}: ${question.text}`),
         onComplete: (summary) => {
@@ -128,6 +139,8 @@ export function useWorkflowRunner({
   });
 
   useEffect(() => {
+    if (!enabled) return undefined;
+
     abortedRef.current = false;
     const controller = new AbortController();
     startWorkflow(controller);
@@ -141,7 +154,7 @@ export function useWorkflowRunner({
   // config is intentionally excluded from the dep array: config changes mid-workflow
   // should NOT restart the workflow. The latest config is captured via useEffectEvent
   // when startWorkflow fires.
-  }, [feature, projectDir, runId]);
+  }, [enabled, feature, projectDir, runId]);
 
   const handleResume = () => {
     const sessionId = readActive(projectDir);

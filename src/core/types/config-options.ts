@@ -32,6 +32,11 @@ export interface WorkflowOpts {
   allowHooks?: boolean;
   json?: boolean;
   otelExporter?: string;
+  // When present, start the session in a new linked worktree.
+  // Value is the worktree slug (directory name under .trees/).
+  // If the flag is passed with no value, the feature argument is slugified.
+  worktree?: string;
+  detach?: boolean;
 }
 
 export interface PlannerDetection {

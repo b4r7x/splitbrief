@@ -99,7 +99,7 @@ export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise
   }
 
   return runFinalReviewPhase(
-    { projectDir: wctx.projectDir, sessionId: wctx.sessionId, callbacks, bus: wctx.bus, state, planner: wctx.planner, metadata: wctx.metadata },
+    { projectDir: wctx.projectDir, sessionId: wctx.sessionId, config: wctx.config, callbacks, bus: wctx.bus, state, planner: wctx.planner, metadata: wctx.metadata },
     summaryBase,
     taskResult.taskBreakdowns,
     phaseTimings,

@@ -9,6 +9,10 @@ export const ALL_SCREENS: readonly Screen[] = ['home', 'workflow', 'summary', 's
 
 export type InputMode = 'normal' | 'review' | 'question';
 
+export type WorkflowAttach = {
+  sockPath: string;
+};
+
 export type OverlayType =
   | 'none'
   | 'help'
@@ -18,12 +22,14 @@ export type OverlayType =
   | 'mode-selector'
   | 'planner-picker'
   | 'implementer-picker'
-  | 'sessions';
+  | 'sessions'
+  | 'cost-drilldown'
+  | 'plan-editor-help';
 
 export type RouteData =
   | { screen: 'home' }
-  | { screen: 'workflow'; feature: string; resumeState?: WorkflowState | undefined; sessionId?: string | undefined }
-  | { screen: 'summary'; summary: Summary }
+  | { screen: 'workflow'; feature: string; resumeState?: WorkflowState | undefined; sessionId?: string | undefined; worktreeName?: string | undefined; attach?: WorkflowAttach | undefined }
+  | { screen: 'summary'; summary: Summary; sessionId?: string | undefined }
   | { screen: 'setup'; onComplete?: 'home' | 'workflow' | undefined; feature?: string | undefined };
 
 const transitions: Record<Screen, Screen[]> = {
@@ -39,8 +45,8 @@ const store = createStore<RouteData>(initial);
 
 export type NavigateArgs =
   | { to: 'home' }
-  | { to: 'workflow'; feature: string; resumeState?: WorkflowState | undefined; sessionId?: string | undefined }
-  | { to: 'summary'; summary: Summary }
+  | { to: 'workflow'; feature: string; resumeState?: WorkflowState | undefined; sessionId?: string | undefined; attach?: WorkflowAttach | undefined }
+  | { to: 'summary'; summary: Summary; sessionId?: string | undefined }
   | { to: 'setup'; onComplete?: 'home' | 'workflow' | undefined; feature?: string | undefined };
 
 function navigate(args: NavigateArgs) {
@@ -61,10 +67,11 @@ function navigate(args: NavigateArgs) {
         feature: args.feature,
         resumeState: args.resumeState,
         sessionId: args.sessionId,
+        attach: args.attach,
       });
       return;
     case 'summary':
-      store.set({ screen: 'summary', summary: args.summary });
+      store.set({ screen: 'summary', summary: args.summary, sessionId: args.sessionId });
       return;
     case 'setup':
       store.set({

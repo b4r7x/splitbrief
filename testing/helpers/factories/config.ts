@@ -44,6 +44,7 @@ export function makeConfig(overrides?: Omit<Partial<Config>, 'implementer' | 'pl
   if (overrides?.escalation !== undefined) base.escalation = overrides.escalation;
   if (overrides?.codebase !== undefined) base.codebase = overrides.codebase;
   if (overrides?.hooks !== undefined) base.hooks = overrides.hooks;
+  if (overrides?.approval !== undefined) base.approval = overrides.approval;
   return base;
 }
 

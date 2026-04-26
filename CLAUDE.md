@@ -38,9 +38,17 @@ Read the canonical doc **before** touching the matching area. Every link below e
 
 | When you're about to… | Read |
 |---|---|
+| I'm using diptych for the first time | [docs/GETTING-STARTED.md](./docs/GETTING-STARTED.md) — onboarding |
+| Look up a feature | [docs/FEATURES.md](./docs/FEATURES.md) — full feature catalog |
+| Look up a CLI command | [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md) — all 13 commands |
+| Look up a slash command or keybinding | [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md) — all 21 |
+| Configure diptych | [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) — full config reference |
+| Run end-to-end scenarios / find a recipe | [docs/USAGE-EXAMPLES.md](./docs/USAGE-EXAMPLES.md) — 50+ recipes |
+| Hit a problem | [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) — symptoms & fixes |
 | Start reading the docs | [docs/README.md](./docs/README.md) — index + reading order |
 | Orient yourself in the codebase | [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) — one-page rule index |
 | Understand the system end-to-end | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — planner/implementer contracts, orchestrator loop, event model |
+| See current architecture inventory (file counts, events, commands) | [docs/ARCHITECTURE.md#part-2--current-state-the-what](./docs/ARCHITECTURE.md#part-2--current-state-the-what) |
 | Look up shared vocabulary | [docs/CONCEPTS.md](./docs/CONCEPTS.md) |
 | Add or move any file | [docs/STRUCTURE.md](./docs/STRUCTURE.md) — file tree, feature anatomy, length thresholds |
 | Decide `utils/` vs `lib/` vs `core/` vs `engine/` vs `features/` | [docs/LAYERS.md](./docs/LAYERS.md) |
@@ -53,17 +61,15 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Place a test | [docs/TESTING.md](./docs/TESTING.md) |
 | Enforce a cross-cutting rule | [docs/INVARIANTS.md](./docs/INVARIANTS.md) — pre-merge grep gates |
 | Understand end-user modes | [docs/WORKFLOW.md](./docs/WORKFLOW.md) |
-| Use a slash command at runtime | [docs/SLASH-COMMANDS.md](./docs/SLASH-COMMANDS.md) |
 | Check strategic direction | [docs/VISION.md](./docs/VISION.md), [docs/FUTURE.md](./docs/FUTURE.md) |
 | Contribute to this project | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 | Work with API keys | [docs/API-KEYS.md](./docs/API-KEYS.md) |
-| Look up any config field | [docs/CONFIG.md](./docs/CONFIG.md) |
 | Debug a failing workflow | [docs/DEBUGGING.md](./docs/DEBUGGING.md) |
 | Work with workflow hooks (user-declared commands) | [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md) |
 | Enable OpenTelemetry | [docs/OTEL.md](./docs/OTEL.md) |
 | Tune the planner repo-map | [docs/REPOMAP.md](./docs/REPOMAP.md) |
 | Review architectural rationale | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) §Design decisions, [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md) §Design decisions, [docs/REPOMAP.md](./docs/REPOMAP.md) §Design decisions, [docs/OTEL.md](./docs/OTEL.md) §Design decisions |
-| Look up release history & amendments | [CHANGELOG.md](./CHANGELOG.md), [docs/CHANGELOG.md](./docs/CHANGELOG.md) |
+| Look up release history & amendments | [CHANGELOG.md](./CHANGELOG.md) — canonical; [docs/CHANGELOG.md](./docs/CHANGELOG.md) — supplementary narrative |
 
 Reference also: `.specify/memory/constitution.md` — 6 constitutional principles (v1.3.1, linked from VISION).
 

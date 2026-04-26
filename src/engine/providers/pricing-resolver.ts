@@ -25,6 +25,8 @@ export type PricingMode =
 export interface ResolvedPricing {
   inputPer1M: number;
   outputPer1M: number;
+  cacheReadPer1M?: number;
+  cacheWritePer1M?: number;
   isLocal: boolean;
   isPriced: boolean;
   pricingMode: PricingMode;
@@ -101,10 +103,19 @@ export function formatPricing(input: number | undefined, output: number | undefi
   return `${formatNum(input)}/${formatNum(output)}`;
 }
 
-function makePricedResult(modelId: string, input: number, output: number, source: ResolvedPricing['source']): ResolvedPricing {
+function makePricedResult(
+  modelId: string,
+  input: number,
+  output: number,
+  source: ResolvedPricing['source'],
+  cacheRead?: number,
+  cacheWrite?: number,
+): ResolvedPricing {
   return {
     inputPer1M: input,
     outputPer1M: output,
+    ...(cacheRead !== undefined && { cacheReadPer1M: cacheRead }),
+    ...(cacheWrite !== undefined && { cacheWritePer1M: cacheWrite }),
     isLocal: false,
     isPriced: true,
     pricingMode: 'api-priced',
@@ -132,7 +143,14 @@ export function resolvePricing(providerId: string, cache: ModelCacheAccessor = N
 
   const fallback = findKnownModel(providerId, effectiveModelId);
   if (fallback?.pricingInput !== undefined && fallback.pricingOutput !== undefined) {
-    return makePricedResult(effectiveModelId, fallback.pricingInput, fallback.pricingOutput, 'bundled-fallback');
+    return makePricedResult(
+      effectiveModelId,
+      fallback.pricingInput,
+      fallback.pricingOutput,
+      'bundled-fallback',
+      fallback.pricingCacheRead,
+      fallback.pricingCacheWrite,
+    );
   }
 
   return makeUnpriced(providerId, effectiveModelId);

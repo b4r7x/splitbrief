@@ -8,6 +8,16 @@ type CostPredictionEvent = Extract<EngineEvent, { type: 'cost_prediction' }>;
 
 export function CostPredictionCard({ event }: { event: CostPredictionEvent }) {
   const t = useTheme();
+  const hasPrediction = event.prediction.estimatedTasks > 0 || event.prediction.expectedCost > 0;
+
+  if (!hasPrediction) {
+    return (
+      <Box>
+        <Text color={t.textDim}>prediction n/a</Text>
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="column">
       <Text color={t.accent} bold>

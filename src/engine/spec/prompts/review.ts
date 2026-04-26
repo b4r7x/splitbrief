@@ -27,16 +27,22 @@ List any issues found, categorized as:
 ### Summary
 One-paragraph overall assessment.`;
 
-export function buildFinalReviewPrompt(spec: string, diff: string): string {
+export function buildFinalReviewPrompt(spec: string, diff: string, driftReport?: string): string {
+  const sections = [
+    { heading: 'Specification', body: spec },
+    { heading: 'Implementation Diff', body: '```diff\n' + diff + '\n```' },
+  ];
+  if (driftReport) {
+    sections.push({ heading: 'Deterministic Drift Report', body: driftReport });
+  }
+  sections.push(
+    instructionsSection(REVIEW_INSTRUCTIONS),
+    { heading: 'Review Checklist', body: REVIEW_CHECKLIST },
+    { heading: 'Output Format', body: REVIEW_OUTPUT },
+  );
   return buildPrompt({
     title: 'Final Implementation Review',
-    intro: 'You are reviewing a completed implementation against its specification. Your job is to verify that the implementation satisfies the spec and identify any issues.',
-    sections: [
-      { heading: 'Specification', body: spec },
-      { heading: 'Implementation Diff', body: '```diff\n' + diff + '\n```' },
-      instructionsSection(REVIEW_INSTRUCTIONS),
-      { heading: 'Review Checklist', body: REVIEW_CHECKLIST },
-      { heading: 'Output Format', body: REVIEW_OUTPUT },
-    ],
+    intro: 'You are reviewing a completed implementation against its specification. Your job is to verify that the implementation satisfies the spec and identify any issues. Treat error-level drift findings as review blockers unless you can clearly explain why they are false positives.',
+    sections,
   });
 }

@@ -6,6 +6,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { processError } from '../../lib/process/errors.js';
+import { TASKS_FILE } from '../../core/paths.js';
 
 /**
  * CLI planner is a thin wrapper around a real subprocess. Instead of mocking
@@ -120,6 +121,52 @@ describe('createCliPlanner', () => {
 
     expect(result.text).toContain('Aider response text');
     expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
+  });
+
+  it('uses a CLI-written tasks.md artifact when stdout reports the file path', async () => {
+    const tasksMarkdown = `---
+id: T001
+title: CLI-written task
+action: create
+file: src/cli-written.ts
+depends_on: []
+---
+
+### Description
+Create the CLI-written file.
+
+### Tests
+- creates the file
+
+### Constraints
+- no extra files
+`;
+    const artifactPath = join(projectDir, TASKS_FILE);
+    const shimPath = join(shimDir, 'codex');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        `cat > '${artifactPath}' <<'EOF'`,
+        tasksMarkdown,
+        'EOF',
+        `printf '%s\\n' '${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: `Wrote [${TASKS_FILE}](${artifactPath}).` } }).replace(/'/g, "'\\''")}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+
+    const planner = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
+    );
+
+    const result = await planner.quickPlan('make it better', projectDir, { onOutput: vi.fn() });
+
+    expect(result.tasks).toHaveLength(1);
+    expect(result.tasks[0]?.id).toBe('T001');
+    expect(result.phases?.[0]?.text).toContain('CLI-written task');
+    expect(result.phases?.[0]?.rawOutput).toContain(`Wrote [${TASKS_FILE}]`);
   });
 
   it('rejects with a not-found error when the CLI binary is missing from PATH', async () => {

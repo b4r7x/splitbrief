@@ -45,6 +45,7 @@ export const PHASES = [
   'constitution-check',
   'planning',
   'reviewing-plan',
+  'reviewing-briefs',
   'analyzing',
   'implementing',
   'validating-task',

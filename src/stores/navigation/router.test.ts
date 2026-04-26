@@ -51,6 +51,14 @@ describe('routerStore', () => {
     expect(feedbackStore.get().message).toMatch(/Cannot navigate from "home" to "summary"/);
   });
 
+  it('sessionId round-trips through navigate({ to: "summary" })', () => {
+    routerStore.navigate({ to: 'workflow', feature: 'x' });
+    routerStore.navigate({ to: 'summary', summary: dummySummary, sessionId: 'abc' });
+    const s = routerStore.get();
+    expect(s.screen).toBe('summary');
+    if (s.screen === 'summary') expect(s.sessionId).toBe('abc');
+  });
+
   it('init sets arbitrary route', () => {
     routerStore.init({ screen: 'workflow', feature: 'resume' });
     expect(routerStore.get().screen).toBe('workflow');

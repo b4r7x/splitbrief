@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { InputBar } from './index.js';
+import { InputBar } from './input-bar.js';
 import { renderFeature, tick } from '../../../testing/helpers/ink.js';
 import { resetAllStores } from '../../../testing/helpers/stores.js';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';

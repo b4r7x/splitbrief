@@ -20,5 +20,6 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--planner-effort <level>', 'Planner effort hint: low, medium, high, xhigh. Dropped on unsupported backends.')
     .option('--allow-hooks', 'Trust hook config without prompting (use in CI)', false)
     .option('--json', 'Headless mode: emit each EngineEvent as NDJSON to stdout, skip TUI render', false)
-    .option('--otel-exporter <name>', 'Bootstrap an OTel exporter (currently only "console"); requires otel.enabled in config');
+    .option('--otel-exporter <name>', 'Bootstrap an OTel exporter (currently only "console"); requires otel.enabled in config')
+    .option('--worktree [name]', 'run in a new linked git worktree (.trees/<name>)');
 }

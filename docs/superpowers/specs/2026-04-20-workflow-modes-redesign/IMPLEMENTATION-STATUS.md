@@ -21,7 +21,7 @@ Forbidden-pattern checks: zero memoization, zero barrels, zero classes, zero eng
 | 03 — Speckit phases | ✅ Complete | Phases in enum, state machine handlers, prompts. **Fixed:** WorkflowState schema now declares `clarifications?`, `constitutionFailureReason?`, `analysisResult?`. Path constants moved from `speckit.ts` to `paths.ts`. `phases.ts` already had new phases. |
 | 04 — Approve flag | ✅ Complete | APPROVE_LEVELS, resolveApproveLevel, --approve CLI, /approve command, settings. |
 | 05 — Planner effort | ✅ Complete | EFFORT_LEVELS, per-backend pass-through, /effort command, settings. Note: real field name is `GenerationCommonFields` not `CommonFields`. |
-| 06 — Image passthrough | ✅ Complete | **Fixed:** Added `onFileDrop` prop + `FILE_DROP_PATTERN` to `multiline-input.tsx`. Added `requestAttach`/`requestDetach` to `handlers.ts`. Wired `handleFileDrop` in `input-bar/index.tsx`. `/attach` and `/detach` slash commands already existed. |
+| 06 — Image passthrough | ✅ Complete | **Fixed:** Added `onFileDrop` prop + `FILE_DROP_PATTERN` to `multiline-input.tsx`. Added `requestAttach`/`requestDetach` to `handlers.ts`. Wired `handleFileDrop` in `input-bar/input-bar.tsx`. `/attach` and `/detach` slash commands already existed. |
 | 07 — Git modes settings | ✅ Complete | createBranch, slug, settings catalog, footer badge, task-commit reads correct path. |
 | 08 — Downgrade warning | ✅ Complete | **Fixed:** Added `mode_downgrade_advised` event to `events/types.ts`. Added `bus.publish()` in `run.ts` alongside existing store pattern. Added renderer in `event-card.tsx`. |
 | 09 — Task contract docs | ✅ Complete (pre-existing) | `docs/TASK-CONTRACT.md` exists with correct schema. JSDoc on `task.ts`. Brief had stale schema — marked SKIP. |
@@ -36,7 +36,7 @@ Forbidden-pattern checks: zero memoization, zero barrels, zero classes, zero eng
 | `src/engine/orchestrator/planning/speckit.ts` | Replaced local constants with imports from paths.ts |
 | `src/components/input/multiline-input.tsx` | Added onFileDrop prop + FILE_DROP_PATTERN detection |
 | `src/features/workflow/handlers.ts` | Added requestAttach, requestDetach exports |
-| `src/components/input-bar/index.tsx` | Wired handleFileDrop → requestAttach |
+| `src/components/input-bar/input-bar.tsx` | Wired handleFileDrop → requestAttach |
 | `src/core/slash-commands/context.ts` | Delegated attachImage to requestAttach |
 | `src/engine/events/types.ts` | Added mode_downgrade_advised event variant |
 | `src/engine/orchestrator/planning/run.ts` | Added bus.publish for mode_downgrade_advised |

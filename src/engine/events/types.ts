@@ -2,6 +2,8 @@ import type { TaskId } from '../../core/schemas/task.js';
 import type { ApproveLevel, Phase, TaskCompletionMethod, WorkflowMode } from '../../core/schemas/enums.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
+import type { ActionClass } from '../../core/schemas/approval-store.js';
+import type { ApprovalTier } from '../orchestrator/action-classifier.js';
 
 export type ValidationStages = { tsc: boolean; lint: boolean; test: boolean };
 
@@ -29,8 +31,16 @@ export type EngineEvent =
   | { type: 'rewind_to_spec'; ts: number; phase: Phase; comment?: string }
   | { type: 'rewind_to_plan'; ts: number; phase: Phase; comment?: string }
   | { type: 'all_tasks_done'; ts: number; phase: Phase }
+  | { type: 'brief_quality_passed'; ts: number; phase: Phase; score: number; warningCount: number }
+  | { type: 'brief_quality_failed'; ts: number; phase: Phase; score: number; errorCount: number; warningCount: number }
+  | { type: 'drift_report'; ts: number; phase: Phase; passed: boolean; score: number; errorCount: number; warningCount: number }
+  | { type: 'drift_chain_detected'; ts: number; phase: Phase; chainLength: number; score: number; threshold: number; uniqueOutOfBoundsFiles: string[]; representativePath: string }
+  | { type: 'snapshot_created'; ts: number; phase: Phase; snapshotId: string; name?: string; fileCount: number; taskIndex?: number }
+  | { type: 'snapshot_restored'; ts: number; snapshotId: string; restoredCount: number; conflictedCount: number; forcedCount: number; forced: boolean }
+  | { type: 'snapshot_restore_conflict'; ts: number; snapshotId: string; conflictedPaths: string[] }
   | { type: 'mode_resolved'; ts: number; phase: Phase; mode: WorkflowMode; approve: ApproveLevel }
   | { type: 'mode_downgrade_advised'; ts: number; phase: Phase; currentMode: WorkflowMode; suggestedMode: WorkflowMode }
+  | { type: 'mode_advice'; ts: number; phase: Phase; kind: 'none' | 'downgrade' | 'upgrade' | 'missing-context'; risk: 'trivial' | 'small' | 'normal' | 'high'; currentMode: WorkflowMode; suggestedMode: WorkflowMode; confidence: number; factors: string[]; missing: string[] }
   | { type: 'instant_plan_received'; ts: number; phase: Phase; taskCount: number }
   // Task lifecycle
   | { type: 'task_started'; ts: number; phase: Phase; taskId: TaskId; title: string; index: number; total: number; file: string; action: 'create' | 'modify'; tool?: string; model?: string }
@@ -71,7 +81,23 @@ export type EngineEvent =
   | { type: 'cost_update'; ts: number; phase: Phase; tokenUsage: TokenUsage }
   | { type: 'cost_prediction'; ts: number; phase: Phase; prediction: CostPrediction }
   | { type: 'budget_warning'; ts: number; phase: Phase; currentCost: number; maxBudget: number }
+  | { type: 'budget_paused'; ts: number; phase: Phase; currentCost: number; maxBudget: number; threshold: number }
   | { type: 'budget_exceeded'; ts: number; phase: Phase; currentCost: number; maxBudget: number }
+  // Tiered approval gate
+  | { type: 'approval_prompted'; ts: number; phase: Phase; tier: ApprovalTier; actionClass: ActionClass; taskId?: TaskId }
+  | { type: 'approval_granted'; ts: number; phase: Phase; tier: ApprovalTier; actionClass: ActionClass; taskId?: TaskId; scope: 'once' | 'session' | 'always' }
+  | { type: 'approval_rejected'; ts: number; phase: Phase; tier: ApprovalTier; actionClass: ActionClass; taskId?: TaskId; reason: string }
+  | { type: 'approval_sticky_recorded'; ts: number; phase: Phase; pattern: string; scope: 'session' | 'always'; actionClass: ActionClass }
+  // IPC
+  | { type: 'ipc_server_started'; ts: number; phase: Phase; sockPath: string }
+  | { type: 'ipc_client_attached'; ts: number; phase: Phase }
+  | { type: 'ipc_client_detached'; ts: number; phase: Phase }
+  | { type: 'ipc_reconnect_attempt'; ts: number; phase: Phase; attempt: number; maxAttempts: number }
+  | { type: 'ipc_reconnect_failed'; ts: number; phase: Phase }
+  | { type: 'server_crash_detected'; ts: number; phase: Phase; sessionId: string; pid: number | null; signal: string | null }
+  | { type: 'server_post_mortem_shown'; ts: number; phase: Phase; sessionId: string }
+  | { type: 'replay_started'; ts: number; phase: Phase; totalEvents: number }
+  | { type: 'replay_complete'; ts: number; phase: Phase; totalEvents: number; durationMs: number }
   // Generic
   | { type: 'warning'; ts: number; phase: Phase; message: string }
   | { type: 'error'; ts: number; phase: Phase; message: string };

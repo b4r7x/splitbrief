@@ -1,6 +1,9 @@
 import type { Phase } from '../schemas/enums.js';
 import type { EffortLevel, WorkflowMode } from '../schemas/enums.js';
 import type { OverlayType, Screen } from '../../stores/navigation/router.js';
+import type { HandoffTarget } from '../../engine/handoff/types.js';
+import type { ApprovalGrant } from '../schemas/approval-store.js';
+import type { AcceptRunSnapshotResult, RejectRunSnapshotResult } from '../../engine/snapshots/run.js';
 
 interface SlashCommandBase {
   name: string;
@@ -34,6 +37,11 @@ export interface CommandContext {
   attachImage: (input: string) => { ok: true; path: string } | { ok: false; reason: string };
   detachImage: (idOrIndex: string) => boolean;
   listAttachments: () => Array<{ id: string; path: string }>;
+  writeHandoff: (target: HandoffTarget, taskId?: string) => Promise<{ outputDir: string }>;
+  listApprovals: () => ApprovalGrant[];
+  clearApprovals: (scope?: 'session' | 'always' | 'all') => number;
+  acceptRunSnapshot: () => Promise<AcceptRunSnapshotResult>;
+  rejectRunSnapshot: () => Promise<RejectRunSnapshotResult>;
 }
 
 export interface CommandPaletteItem {

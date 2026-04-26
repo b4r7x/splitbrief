@@ -206,6 +206,123 @@ export function formatTaskPrompt(task: Task, context: ProjectContext, contextLen
   return sections.join('\n');
 }
 
+function formatSingleTask(task: Task): string {
+  const lines: string[] = [];
+
+  const dependsOnYaml = task.dependsOn.length > 0
+    ? task.dependsOn.map(id => `  - ${id}`).join('\n')
+    : '[]';
+
+  lines.push('---');
+  lines.push(`id: ${task.id}`);
+  lines.push(`title: ${task.title}`);
+  lines.push(`action: ${task.action}`);
+  lines.push(`file: ${task.file}`);
+  if (task.dependsOn.length > 0) {
+    lines.push('depends_on:');
+    lines.push(dependsOnYaml);
+  } else {
+    lines.push('depends_on: []');
+  }
+  lines.push('---');
+
+  lines.push('');
+  lines.push('### Description');
+  lines.push(task.description);
+
+  if (task.implementationSteps.length > 0) {
+    lines.push('');
+    lines.push('### Implementation Steps');
+    for (let i = 0; i < task.implementationSteps.length; i++) {
+      lines.push(`${i + 1}. ${task.implementationSteps[i]}`);
+    }
+  }
+
+  if (task.tests.length > 0) {
+    lines.push('');
+    lines.push('### Tests');
+    for (const t of task.tests) {
+      lines.push(`- ${t}`);
+    }
+  }
+
+  if (task.constraints.length > 0) {
+    lines.push('');
+    lines.push('### Constraints');
+    for (const c of task.constraints) {
+      lines.push(`- ${c}`);
+    }
+  }
+
+  if (task.signature) {
+    lines.push('');
+    lines.push('### Signature');
+    lines.push(task.signature);
+  }
+
+  if (task.currentCode) {
+    lines.push('');
+    lines.push('### Current Code');
+    lines.push(task.currentCode);
+  }
+
+  if (task.typeDefs) {
+    lines.push('');
+    lines.push('### Type Definitions');
+    lines.push(task.typeDefs);
+  }
+
+  if (task.pattern) {
+    lines.push('');
+    lines.push('### Pattern');
+    lines.push(task.pattern);
+  }
+
+  if (task.scope) {
+    const { inBounds, outOfBounds } = task.scope;
+    if ((inBounds && inBounds.length > 0) || (outOfBounds && outOfBounds.length > 0)) {
+      lines.push('');
+      lines.push('### Scope');
+      if (inBounds && inBounds.length > 0) {
+        lines.push('**In bounds:**');
+        for (const b of inBounds) {
+          lines.push(`- ${b}`);
+        }
+      }
+      if (outOfBounds && outOfBounds.length > 0) {
+        if (inBounds && inBounds.length > 0) lines.push('');
+        lines.push('**Out of bounds:**');
+        for (const b of outOfBounds) {
+          lines.push(`- ${b}`);
+        }
+      }
+    }
+  }
+
+  if (task.escalation && task.escalation.length > 0) {
+    lines.push('');
+    lines.push('### Escalation');
+    for (const e of task.escalation) {
+      lines.push(`- ${e}`);
+    }
+  }
+
+  if (task.evidence && task.evidence.length > 0) {
+    lines.push('');
+    lines.push('### Evidence');
+    for (const e of task.evidence) {
+      lines.push(`- ${e}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+export function formatTasks(tasks: Task[]): string {
+  if (tasks.length === 0) return '';
+  return tasks.map(formatSingleTask).join('\n');
+}
+
 export function formatRetryPrompt(task: Task, context: ProjectContext, error: string, attempt: number, contextLength?: number): string {
   const framings: Record<number, string> = {
     1: 'Your previous attempt had an error. Fix it:',

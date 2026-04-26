@@ -55,10 +55,17 @@ function getWorkflowScrollAction(input: string, key: Key): WorkflowKeyAction {
   );
 }
 
-export function useWorkflowKeys() {
+export function useWorkflowKeys(isActive: boolean) {
   const [overlay, { isSmall }] = useStores(overlayStore, terminalSizeStore);
   const { active: overlayActive } = overlay;
   const isOpen = overlayActive !== 'none';
+
+  useInput(
+    (_input, _key) => {
+      overlayStore.close();
+    },
+    { isActive: isActive && overlayActive === 'cost-drilldown' },
+  );
 
   useInput(
     (input, key) => {
@@ -75,9 +82,11 @@ export function useWorkflowKeys() {
 
       if (controlsStore.get().inputMode !== 'normal') return;
 
+      if (input === '$') { overlayStore.open('cost-drilldown'); return; }
+
       const scroll = getWorkflowScrollAction(input, key);
       if (scroll.type !== 'none') { applyAction(scroll); return; }
     },
-    { isActive: !isOpen },
+    { isActive: isActive && !isOpen },
   );
 }

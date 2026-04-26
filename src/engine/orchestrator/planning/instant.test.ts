@@ -8,7 +8,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import { sessionDir, TASKS_FILE, SPEC_FILE, PLAN_FILE, RESEARCH_FILE } from '../../../core/paths.js';
+import { sessionDir, TASKS_FILE, SPEC_FILE, PLAN_FILE, RESEARCH_FILE, BRIEF_QUALITY_FILE } from '../../../core/paths.js';
 import { runPlanningPhase } from './run.js';
 import type { Planner, PlanResult } from '../../planners/types.js';
 
@@ -26,6 +26,16 @@ Rename the symbol.
 
 ### Tests
 - passes tsc
+
+### Implementation Steps
+1. Rename the symbol in src/foo.ts.
+
+### Scope
+- In bounds: src/foo.ts
+- Out of bounds: unrelated modules
+
+### Evidence
+- brief-quality.json shows the task brief is complete
 `;
 
 let dirs: string[] = [];
@@ -46,11 +56,37 @@ function instantPlanResult(overrides?: Partial<PlanResult>): PlanResult {
   return {
     spec: '',
     plan: '',
-    tasks: [makeTask({ id: 'T-INSTANT' })],
+    tasks: [makeTask({
+      id: 'T-INSTANT',
+      scope: { inBounds: ['src/foo.ts'], outOfBounds: ['other files'] },
+      evidence: ['brief-quality.json recorded a passing gate'],
+      typeDefs: 'type RenameTask = { file: string }',
+    })],
     usage: { inputTokens: 30, outputTokens: 15 },
     phases: [{ text: SAMPLE_TASKS_MD, filename: TASKS_FILE }],
     ...overrides,
   };
+}
+
+function invalidPlanResult(overrides?: Partial<PlanResult>): PlanResult {
+  return {
+    spec: '',
+    plan: '',
+    tasks: [makeTask({ id: 'T-BAD', tests: [], implementationSteps: [] })],
+    usage: { inputTokens: 30, outputTokens: 15 },
+    phases: [{ text: SAMPLE_TASKS_MD, filename: TASKS_FILE }],
+    ...overrides,
+  };
+}
+
+function expectBriefQualityBlocked(result: Awaited<ReturnType<typeof runPlanningPhase>>, projectDir: string, sessionId: string, events: ReturnType<typeof makeBusRecorder>['events']) {
+  expect(result.cancelled).toBe(true);
+  expect(result.state.phase).not.toBe('implementing');
+  const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE);
+  expect(existsSync(reportPath)).toBe(true);
+  const persisted = JSON.parse(readFileSync(reportPath, 'utf8'));
+  expect(persisted.passed).toBe(false);
+  expect(events.find(e => e.type === 'brief_quality_failed')).toBeDefined();
 }
 
 async function runInstant(plannerOverrides?: Partial<Planner>) {
@@ -178,5 +214,28 @@ describe('runInstantPlanning', () => {
       expect(warning.message).toContain('instant');
       expect(warning.message).toContain('all');
     }
+  });
+
+  it('blocks invalid briefs before implementing and writes the brief-quality report', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const planner = makePlanner({
+      instantPlan: vi.fn().mockResolvedValue(invalidPlanResult()),
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const config = makeConfig({ workflow: { mode: 'instant' } });
+    const initial = createInitialState('feature');
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...initial, phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expectBriefQualityBlocked(result, projectDir, sessionId, events);
   });
 });

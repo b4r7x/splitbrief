@@ -481,4 +481,37 @@ describe('transition', () => {
     const next = transition(state, { type: 'ANALYZE_DONE' });
     expect(next.phase).toBe('implementing');
   });
+
+  it('BRIEFS_READY -> reviewing-briefs with tasks set', () => {
+    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-plan', currentTaskIndex: 3, attempt: 2 };
+    const next = transition(state, { type: 'BRIEFS_READY', tasks });
+    expect(next.phase).toBe('reviewing-briefs');
+    expect(next.tasks).toEqual(tasks);
+    expect(next.currentTaskIndex).toBe(0);
+    expect(next.attempt).toBe(0);
+  });
+
+  it('APPROVE_BRIEFS -> implementing with index and attempt reset', () => {
+    const tasks = [makeTask({ id: 't1' })];
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-briefs', tasks };
+    const next = transition(state, { type: 'APPROVE_BRIEFS' });
+    expect(next.phase).toBe('implementing');
+    expect(next.currentTaskIndex).toBe(0);
+    expect(next.attempt).toBe(0);
+  });
+
+  it('REJECT_BRIEFS -> idle', () => {
+    const tasks = [makeTask({ id: 't1' })];
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-briefs', tasks };
+    const next = transition(state, { type: 'REJECT_BRIEFS' });
+    expect(next.phase).toBe('idle');
+  });
+
+  it('BRIEFS_READY can be called from implementing phase', () => {
+    const tasks = [makeTask({ id: 't1' })];
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'implementing' };
+    const next = transition(state, { type: 'BRIEFS_READY', tasks });
+    expect(next.phase).toBe('reviewing-briefs');
+  });
 });
