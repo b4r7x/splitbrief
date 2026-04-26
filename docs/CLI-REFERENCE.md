@@ -1,0 +1,1164 @@
+# CLI Reference
+
+Complete reference for every `diptych` command. Generated from `src/cli.ts` and `src/cli/commands/*.ts`.
+
+```
+diptych — Cost-optimized AI coding orchestrator (v0.1.0)
+```
+
+## Global behavior
+
+- **Binary name:** `diptych`. The `npm run dev -- <cmd>` form is equivalent during local development.
+- **Working directory:** Most commands accept `--project <dir>` (a few use `--project-dir <dir>` — noted per-command). When omitted, the project resolves to the current working directory.
+- **Exit codes:**
+  - `0` — success.
+  - `1` — generic CLI failure. Almost every command throws via `cliError(message)` which defaults to `exitCode: 1`. The top-level handler in `src/cli.ts` prints `Error: <message>` to stderr and exits with the carried code.
+  - `2` — reserved for guardrail hooks (e.g. `.claude/hooks/block-git-commits.sh`). The CLI itself does not raise `2`; observe it in subprocess output only.
+- **Error format:** Failures print `Error: <message>` in red on stderr. Programmatic callers should grep stderr, not stdout.
+- **OpenTelemetry:** `src/cli.ts` calls `bootstrapOtel()` before parsing. When `otel.enabled: true` in config and `--otel-exporter console` is passed (where supported), spans flow to stdout. See [OTEL.md](./OTEL.md).
+- **Platform notes:** `attach`, `ps`, and `--detach` (server lifecycle) call `assertNotWindows()` and exit with `1` and the message `diptych attach/detach/ps are not supported on Windows.` on `win32`.
+
+## Command index
+
+| # | Command | Purpose |
+|---|---|---|
+| 1 | `diptych start` | Launch a workflow (TUI, headless, or detached). |
+| 2 | `diptych spec` | Run the planner only — produce spec/plan/tasks, no implementation. |
+| 3 | `diptych init` | Create `.diptych/config.yaml` with detected models. |
+| 4 | `diptych status` | Show the active session and optional cost history. |
+| 5 | `diptych resume` | Resume the most recent interrupted workflow. |
+| 6 | `diptych migrate` | Migrate pre-v3 `.diptych/current/` state to per-session folders. |
+| 7 | `diptych handoff` | Export a Handoff Pack for an external coding agent. |
+| 8 | `diptych snapshot` | Create / list / restore / diff working-tree snapshots. |
+| 9 | `diptych approval` | List or clear sticky approval grants. |
+| 10 | `diptych mcp` | Run the MCP resource server. |
+| 11 | `diptych worktree` | List / switch / remove `.trees/<slug>` git worktrees. |
+| 12 | `diptych attach` | Attach a TUI client to a detached background session. |
+| 13 | `diptych ps` | List sessions in the current project with status. |
+
+---
+
+## diptych start
+
+**Synopsis**
+
+```
+diptych start [feature] [options]
+```
+
+Launch a complete plan-and-implement workflow. Without a feature argument the TUI opens to the home screen so you can pick one interactively. With a feature, diptych runs the planner, gathers approvals (per `--mode`), then dispatches the implementer loop. This is the canonical entry point for ordinary work.
+
+### Usage
+
+```
+diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
+  [--planner <tool>] [--planner-model <model>] [--planner-command <cmd>] \
+  [--implementer <provider>] [--implementer-model <model>] [--implementer-command <cmd>] \
+  [--model <model>] [--provider <provider>] \
+  [--budget <amount>] [--planner-effort <level>] \
+  [--project <dir>] [--worktree [name]] [--detach] \
+  [--no-fullscreen] [--no-mouse] \
+  [--allow-hooks] [--json] [--otel-exporter <name>]
+```
+
+### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--mode <mode>` | enum | `standard` (or `workflow.mode` from config) | One of `instant`, `quick`, `standard`, `speckit`. `full` is a legacy alias for `speckit`. See [WORKFLOW.md](./WORKFLOW.md). |
+| `--auto` | boolean | `false` | Auto-approve spec and plan. Equivalent to `--approve none`. |
+| `--approve <level>` | enum | `default` | Approval gates: `none`, `spec`, `plan`, `all`, `default`. `default` follows the mode's built-in policy. |
+| `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `agent-sdk`, `anthropic`, `openrouter`, `shell`. |
+| `--planner-model <model>` | string | from config | Planner model identifier (for API planners). |
+| `--planner-command <cmd>` | string | from config | Custom planner command (when `--planner=shell`). |
+| `--planner-effort <level>` | enum | — | Effort hint: `low`, `medium`, `high`, `xhigh`. Silently dropped on backends that don't support it. |
+| `--implementer <provider>` | string | from config | Implementer provider: `ollama`, `lm-studio`, `deepseek`, `openrouter`, `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `shell`. |
+| `--implementer-model <model>` | string | from config | Implementer model identifier. |
+| `--implementer-command <cmd>` | string | from config | Custom implementer command (when `--implementer=shell`). |
+| `--model <model>` | string | — | Alias for `--implementer-model`. |
+| `--provider <provider>` | string | — | Alias for `--implementer`. |
+| `--budget <amount>` | float | — | Maximum budget in USD (e.g. `2.00`). Workflow stops when exceeded. |
+| `--project <dir>` | path | cwd | Project directory. |
+| `--worktree [name]` | string \| boolean | — | Run inside a new linked git worktree at `.trees/<name>` on branch `diptych/<name>`. If `name` is omitted, the feature slug is used. |
+| `--detach` | boolean | `false` | Spawn the workflow as a background server and exit. Requires a `feature` argument and is mutually exclusive with `--json`. |
+| `--no-fullscreen` | boolean | fullscreen on | Disable the alternate screen buffer. Useful when piping or debugging. |
+| `--no-mouse` | boolean | mouse on | Disable Ink mouse tracking. |
+| `--allow-hooks` | boolean | `false` | Trust the hook config without prompting (CI). |
+| `--json` | boolean | `false` | Headless: emit each `EngineEvent` as NDJSON to stdout, skip TUI. Requires a `feature`. |
+| `--otel-exporter <name>` | string | — | Bootstrap an OTel exporter (currently only `console`). Requires `otel.enabled: true` in config. |
+
+### Examples
+
+```bash
+# Interactive TUI (no feature → home screen)
+diptych start
+
+# Standard workflow on a feature description
+diptych start "extract auth into module"
+
+# Speckit mode with budget cap
+diptych start --mode speckit --budget 2.00 "rewrite billing"
+
+# Headless / CI: stream NDJSON events
+diptych start --json --auto "fix flaky test in user.test.ts"
+
+# Detached background session, attach later
+diptych start --detach "long migration"
+diptych ps
+diptych attach <session-id>
+
+# Isolated worktree
+diptych start --worktree migration "Postgres 17 upgrade"
+```
+
+### Exit codes
+
+- `0` — workflow completed (or TUI exited cleanly).
+- `1` — invalid flag combination, missing config, planner/implementer failure, budget exceeded, or any uncaught error.
+
+### Files affected
+
+- **Reads:** `.diptych/config.yaml`, `.diptych/sessions/<id>/state.json` (if resuming), repo files supplied to the planner.
+- **Writes:** `.diptych/sessions/<id>/{spec.md,plan.md,tasks.md,state.json,events.ndjson}`, working-tree changes by the implementer, `.diptych/sessions/<id>/.diptych.lock` and `.diptych.sock` when detached, `.trees/<slug>/` when `--worktree` is used.
+
+### See also
+
+- `diptych spec` — planning only, no implementation.
+- `diptych resume` — continue an interrupted run.
+- `diptych ps` / `diptych attach` — manage detached sessions.
+- [WORKFLOW.md](./WORKFLOW.md), [ARCHITECTURE.md](./ARCHITECTURE.md), [CONFIG.md](./CONFIG.md).
+
+### Behavior notes
+
+- `--detach` and `--json` cannot be combined; `--detach` requires a feature; both checks throw `1`.
+- The startup pipeline calls `maybeMigrate(projectDir)` first, so a stale pre-v3 state is migrated on the fly.
+- `clearStaleSession()` runs before a new session begins, so leftover lockfiles from crashed runs do not block a fresh start.
+- When `--worktree` is passed, the project directory is reassigned to the newly created worktree path before any state is written. If worktree creation fails, the command exits `1` with the underlying message.
+- The `setupWorkflow()` step may show an interactive setup screen if config is incomplete; pass `--allow-hooks` in CI to skip the hook-trust prompt.
+
+---
+
+## diptych spec
+
+**Synopsis**
+
+```
+diptych spec <feature> [options]
+```
+
+Run only the planner. Produces `spec.md`, `plan.md`, and `tasks.md` for the feature in a fresh session folder, then exits without invoking the implementer. Useful for review-only flows, scripting, or bootstrapping a Handoff Pack.
+
+### Usage
+
+```
+diptych spec <feature> [--auto] [--project <dir>] [--allow-hooks]
+```
+
+### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--auto` | boolean | `false` | Auto-approve spec and plan (sets `workflow.autoApproveSpec` and `workflow.autoApprovePlan` in the loaded config). |
+| `--project <dir>` | path | cwd | Project directory. |
+| `--allow-hooks` | boolean | `false` | Trust the hook config without prompting (CI). |
+
+### Examples
+
+```bash
+# Generate a spec for review
+diptych spec "add SSO via Okta"
+
+# Auto-approve and run in another repo
+diptych spec --auto --project ../service-a "add health endpoint"
+
+# CI-friendly invocation
+diptych spec --auto --allow-hooks "tighten zod schemas"
+```
+
+### Exit codes
+
+- `0` — all three artifacts written.
+- `1` — config missing, hooks distrusted, planner threw, or any other failure (the underlying error message is preserved through `Error.cause`).
+
+### Files affected
+
+- **Reads:** `.diptych/config.yaml`, repo files passed to the planner, `.diptych/.hooks-trust.json`.
+- **Writes:** `.diptych/sessions/<id>/spec.md`, `.diptych/sessions/<id>/plan.md`, `.diptych/sessions/<id>/tasks.md`, the active-session pointer.
+
+### See also
+
+- `diptych start` — full plan-and-implement.
+- `diptych handoff` — export the produced artifacts to another tool.
+- [TASK-CONTRACT.md](./TASK-CONTRACT.md), [WORKFLOW.md](./WORKFLOW.md).
+
+### Behavior notes
+
+- Planner output streams to stdout in real time via the `onOutput` callback. Phase headings appear as bold `--- <phase> ---` separators.
+- `clearStaleSession()` runs before `beginSession()` — a crashed prior run will not block this one.
+- Session id is generated from the feature; the final summary prints the absolute paths to the three artifacts.
+- The number of generated tasks is reported as `... (N tasks)` after the run.
+
+---
+
+## diptych init
+
+**Synopsis**
+
+```
+diptych init [--reconfigure]
+```
+
+Bootstrap a project. Creates `.diptych/config.yaml` populated with detected planner / implementer providers and models, then opens the TUI setup screen for review. Safe to re-run with `--reconfigure` to start over.
+
+### Usage
+
+```
+diptych init [--reconfigure]
+```
+
+### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--reconfigure` | boolean | `false` | Overwrite an existing `.diptych/config.yaml`. Without this flag, init refuses to overwrite. |
+
+### Examples
+
+```bash
+# First-time setup in a repo
+diptych init
+
+# Throw away current config and start over
+diptych init --reconfigure
+```
+
+### Exit codes
+
+- `0` — config exists / was created and the TUI exited cleanly.
+- `1` — TUI render failure or unexpected I/O error.
+
+### Files affected
+
+- **Reads:** existing `.diptych/config.yaml` (to detect collision), provider environment.
+- **Writes:** `.diptych/config.yaml`, store directories under `.diptych/`.
+
+### See also
+
+- [CONFIG.md](./CONFIG.md) — every config field.
+- [API-KEYS.md](./API-KEYS.md) — credential resolution.
+- [BOOTSTRAP.md](./BOOTSTRAP.md) — startup sequence.
+
+### Behavior notes
+
+- If `.diptych/config.yaml` already exists and `--reconfigure` is not passed, init prints "Config already exists at .diptych/config.yaml" plus a hint and exits `0`.
+- The TUI launches in fullscreen mode. The `setup` screen handoffs to the home screen when the user finishes.
+- `init` always uses cwd; it does not honor `--project`.
+
+---
+
+## diptych status
+
+**Synopsis**
+
+```
+diptych status [--project <dir>] [--history]
+```
+
+Print the current session's phase, task progress, planner / implementer identity, and counts for completed / escalated / failed tasks. With `--history`, also aggregate cost across all completed sessions in the project.
+
+### Usage
+
+```
+diptych status [--project <dir>] [--history]
+```
+
+### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--project <dir>` | path | cwd | Project directory. |
+| `--history` | boolean | `false` | Append a cost history block aggregated across all completed sessions. |
+
+### Examples
+
+```bash
+# What is the current run doing?
+diptych status
+
+# Same plus past spend
+diptych status --history
+
+# Inspect a different repo
+diptych status --project ../other-repo --history
+```
+
+### Exit codes
+
+- `0` — always (status is read-only).
+- `1` — only on unexpected I/O failure when reading session files.
+
+### Files affected
+
+- **Reads:** `.diptych/active-session`, `.diptych/sessions/<id>/state.json`, every `state.json` under `.diptych/sessions/` when `--history` is set.
+- **Writes:** none.
+
+### See also
+
+- `diptych ps` — broader session listing including detached / crashed runs.
+- `diptych resume` — pick up where the active session left off.
+
+### Behavior notes
+
+- If there is no active session, prints `No active workflow.` and (when `--history` is absent) a hint about `--history`.
+- The `(awaiting continue)` suffix on the phase line means the run paused at an approval gate and is waiting for user input.
+- Cost history loads via `aggregateSessionCosts(listSessions(...))`. If a state file fails to load, the whole history block prints the labeled error and continues.
+- `Done`, `Escalated`, `Failed` lines only appear when the corresponding count is non-zero.
+
+---
+
+## diptych resume
+
+**Synopsis**
+
+```
+diptych resume [options]
+```
+
+Resume the most recently active session. Validates the saved state version and current phase; refuses to resume from a non-resumable phase or stale schema. Accepts the same workflow flags as `start`.
+
+### Usage
+
+```
+diptych resume [--mode <mode>] [--auto] [--approve <level>] \
+  [--planner <tool>] [--planner-model <model>] [--planner-command <cmd>] \
+  [--implementer <provider>] [--implementer-model <model>] [--implementer-command <cmd>] \
+  [--model <model>] [--provider <provider>] \
+  [--budget <amount>] [--planner-effort <level>] \
+  [--project <dir>] [--worktree [name]] \
+  [--no-fullscreen] [--no-mouse] \
+  [--allow-hooks] [--json] [--otel-exporter <name>]
+```
+
+### Options
+
+Resume inherits every workflow option except `--detach`. See [`diptych start`](#diptych-start) for the full table.
+
+| Flag | Notes |
+|---|---|
+| `--json` | Resume the run in headless mode, streaming NDJSON to stdout. |
+| `--worktree [name]` | Honored on resume; verify the saved state matches the worktree before relying on this. |
+| `--mode` / `--approve` / planner+implementer flags | Override the persisted values for this run only. |
+
+### Examples
+
+```bash
+# Pick up where the last session stopped
+diptych resume
+
+# Resume in headless mode for CI re-runs
+diptych resume --json --auto
+
+# Force a different implementer for the rest of the run
+diptych resume --implementer claude-code --implementer-model claude-sonnet-4-5
+```
+
+### Exit codes
+
+- `0` — resumed successfully (TUI or headless).
+- `1` — no active session, missing `state.json`, schema older than `CURRENT_STATE_VERSION`, non-resumable phase, or any downstream failure.
+
+### Files affected
+
+- **Reads:** `.diptych/active-session`, `.diptych/sessions/<id>/state.json`, `.diptych/config.yaml`.
+- **Writes:** updates to `state.json`, `events.ndjson`, working-tree edits as the run proceeds.
+
+### See also
+
+- `diptych start` — fresh run.
+- `diptych status` — see the current phase before resuming.
+- [WORKFLOW.md](./WORKFLOW.md), [docs/CHANGELOG.md](./CHANGELOG.md) — schema migrations.
+
+### Behavior notes
+
+- `maybeMigrate(projectDir)` runs before state load, so legacy layouts are upgraded transparently.
+- The version guard rejects resume with: `saved state is from an older version and cannot be resumed. Please start a new workflow with 'diptych start'.`
+- `isResumable(state)` rejects terminal phases with: `Cannot resume from phase "<phase>".`
+- A short `Resuming: <feature> (phase: <phase>, task N/M)` line prints before the TUI mounts.
+
+---
+
+## diptych migrate
+
+**Synopsis**
+
+```
+diptych migrate [-p <dir>]
+```
+
+One-shot migrator from the pre-v3 single-session layout (`.diptych/current/`) to the per-session layout (`.diptych/sessions/<id>/`). Idempotent — safe to run twice.
+
+### Usage
+
+```
+diptych migrate [-p <dir> | --project <dir>]
+```
+
+### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `-p, --project <dir>` | path | `.` | Project directory to migrate. Resolved with `path.resolve()`. |
+
+### Examples
+
+```bash
+# Migrate the current repo
+diptych migrate
+
+# Migrate another checkout
+diptych migrate -p ../legacy-repo
+
+# Long-form
+diptych migrate --project /Users/me/code/app
+```
+
+### Exit codes
+
+- `0` — migration succeeded or nothing to migrate.
+- `1` — I/O failure during migration.
+
+### Files affected
+
+- **Reads:** `.diptych/current/` and any siblings.
+- **Writes:** new entries under `.diptych/sessions/<id>/`; cleans up legacy paths it no longer needs.
+
+### See also
+
+- [docs/CHANGELOG.md](./CHANGELOG.md) — schema versions.
+- `diptych start` and `diptych resume` — both call `maybeMigrate()` automatically; this command is for explicit, predictable migration.
+
+### Behavior notes
+
+- The `start` and `resume` commands invoke the same migration code via `maybeMigrate()`. Running `diptych migrate` directly is mostly useful for CI or for one-off cleanup before a manual sweep of `.diptych/`.
+- The default `--project` value is the literal `.`, then resolved via `path.resolve()`. Passing `--project ../foo` yields the absolute path of the parent.
+
+---
+
+## diptych handoff
+
+**Synopsis**
+
+```
+diptych handoff [target] [options]
+```
+
+Export a Handoff Pack — a directory of artifacts (spec, plan, tasks, optional context) formatted for an external coding agent. Built-in targets cover spec-kit and other common destinations; custom renderers under `.diptych/renderers/` are auto-discovered.
+
+### Usage
+
+```
+diptych handoff [target] [--session <id>] [--out <dir>] [--task <ids>] \
+  [--mode <mode>] [--project <dir>] [--list]
+```
+
+The optional `target` argument defaults to `spec-kit`.
+
+### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--session <id>` | string | active session | Session ID to export. |
+| `--out <dir>` | path | `./handoff/<target>/` | Output directory. |
+| `--task <ids>` | csv | all tasks | Comma-separated list of task IDs to include. |
+| `--mode <mode>` | enum | `default` | Write mode: `default` (refuse on conflict), `append`, or `overwrite`. |
+| `--project <dir>` | path | cwd | Project directory. |
+| `--list` | boolean | `false` | List built-in and custom render targets, then exit. |
+
+### Examples
+
+```bash
+# Default: spec-kit pack into ./handoff/spec-kit/
+diptych handoff
+
+# Pack a specific session for cursor
+diptych handoff cursor --session 2026-04-26-abcd1234
+
+# Subset of tasks, custom output directory
+diptych handoff aider --task T-001,T-003,T-007 --out ./pack
+
+# Overwrite a previous export
+diptych handoff --mode overwrite
+
+# See what targets are available (built-in + custom renderers under .diptych/)
+diptych handoff --list
+```
+
+### Exit codes
+
+- `0` — pack written or `--list` printed.
+- `1` — no active session and `--session` omitted, invalid `--mode`, missing renderer, or write failure.
+
+### Files affected
+
+- **Reads:** `.diptych/sessions/<id>/{spec.md,plan.md,tasks.md,state.json}`, custom renderer modules under `.diptych/renderers/`.
+- **Writes:** every file in `--out` (default `./handoff/<target>/`).
+
+### See also
+
+- [WORKFLOW.md](./WORKFLOW.md) — when to hand off vs. continue in diptych.
+- [TASK-CONTRACT.md](./TASK-CONTRACT.md) — contract every renderer must respect.
+
+### Behavior notes
+
+- `--list` prints built-in `HANDOFF_TARGETS` first, then a `Custom renderers:` block when renderers exist.
+- The default target string is `spec-kit`. If you pass an unknown target without `--list`, the renderer factory throws and the command exits `1`.
+- `--mode default` refuses to clobber existing files. Use `append` for additive updates, `overwrite` to start clean.
+- Output prints `Handoff written to: <dir>` followed by every emitted relative file path, one per line.
+
+---
+
+## diptych snapshot
+
+**Synopsis**
+
+```
+diptych snapshot <subcommand> [options]
+```
+
+Manage working-tree snapshots scoped to a session. Snapshots live under `.diptych/sessions/<id>/snapshots/<snapshot-id>/` and let you compare or revert the implementer's changes without touching git.
+
+Subcommands: `create`, `list`, `restore`, `diff`.
+
+---
+
+### diptych snapshot create
+
+**Synopsis**
+
+```
+diptych snapshot create [--name <name>] [--session <id>] [--project <dir>]
+```
+
+Capture the current working tree state for the active session. The snapshot is tagged `phase: manual`.
+
+#### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--name <name>` | string | — | Optional human label. |
+| `--session <id>` | string | active session | Session ID. |
+| `--project <dir>` | path | cwd | Project directory. |
+
+#### Examples
+
+```bash
+diptych snapshot create
+diptych snapshot create --name "before refactor"
+diptych snapshot create --session 2026-04-26-abcd1234 --name pre-merge
+```
+
+#### Exit codes
+
+- `0` — snapshot written.
+- `1` — no active session (and no `--session`), or storage failure.
+
+#### Output
+
+```
+Snapshot created: <id>
+  Name: <name>            # only when --name passed
+  Files: <N>
+  Location: <absolute path>
+```
+
+---
+
+### diptych snapshot list
+
+**Synopsis**
+
+```
+diptych snapshot list [--session <id>] [--project <dir>]
+```
+
+List snapshots for a session in chronological order.
+
+#### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--session <id>` | string | active session | Session ID. |
+| `--project <dir>` | path | cwd | Project directory. |
+
+#### Output format
+
+```
+<id>  <createdAt>  files=<N>  phase=<phase>  <name>
+```
+
+#### Exit codes
+
+- `0` — listed (zero snapshots prints `No snapshots found for session <id>.`).
+- `1` — no active session and `--session` not passed.
+
+---
+
+### diptych snapshot restore
+
+**Synopsis**
+
+```
+diptych snapshot restore <id-or-name> [--session <id>] [--project <dir>] [--force]
+```
+
+Restore the working tree to a previously captured snapshot. Files modified after the snapshot are reported as conflicts and skipped — pass `--force` to overwrite them.
+
+#### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `<id-or-name>` | string (positional) | — | Snapshot id or `--name` label. Required. |
+| `--session <id>` | string | active session | Session ID. |
+| `--project <dir>` | path | cwd | Project directory. |
+| `--force` | boolean | `false` | Overwrite files modified since the snapshot. |
+
+#### Examples
+
+```bash
+diptych snapshot restore snap-7f2c
+diptych snapshot restore "before refactor"
+diptych snapshot restore snap-7f2c --force
+```
+
+#### Exit codes
+
+- `0` — restore completed without conflicts.
+- `1` — no active session, snapshot not found, or restore left conflicts (`process.exit(1)` after the report).
+
+#### Output
+
+```
+Restored <N> file(s) from snapshot <id>.
+Conflicts (not restored — modified since snapshot):
+  <path>
+Run with --force to overwrite.
+
+Forced (<N> file(s) overwritten):    # when --force is used
+  <path>
+
+Warning: <N> file(s) missing from snapshot storage (skipped).   # when applicable
+```
+
+---
+
+### diptych snapshot diff
+
+**Synopsis**
+
+```
+diptych snapshot diff <id-or-name> [--session <id>] [--project <dir>] [--no-color]
+```
+
+Print a unified diff between the current working tree and a snapshot.
+
+#### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `<id-or-name>` | string (positional) | — | Snapshot id or `--name` label. Required. |
+| `--session <id>` | string | active session | Session ID. |
+| `--project <dir>` | path | cwd | Project directory. |
+| `--no-color` | boolean | color on | Disable ANSI color in the diff. |
+
+#### Examples
+
+```bash
+diptych snapshot diff snap-7f2c
+diptych snapshot diff "before refactor" --no-color > /tmp/changes.diff
+```
+
+#### Exit codes
+
+- `0` — no changes between working tree and snapshot.
+- `1` — at least one file changed (the diff is still printed). Useful as a gate in scripts: `diptych snapshot diff <id> > /dev/null && echo clean`.
+
+### Files affected (snapshot subcommands)
+
+- **Reads:** `.diptych/sessions/<id>/snapshots/<snapshot-id>/manifest.json` and stored blobs.
+- **Writes:** new snapshot directories on `create`; working-tree files on `restore`. `list` and `diff` are read-only.
+
+### See also (snapshot)
+
+- `diptych worktree` — physical isolation as an alternative to snapshots.
+- [DEBUGGING.md](./DEBUGGING.md) — reverting bad runs.
+
+---
+
+## diptych approval
+
+**Synopsis**
+
+```
+diptych approval <subcommand> [options]
+```
+
+Manage sticky approval grants. When a workflow asks for approval and the user picks "always allow", the choice is recorded as a grant. This command lists or clears those grants.
+
+Subcommands: `list`, `clear`.
+
+> Both subcommands use `--project-dir` (not `--project`) — match the underlying option name exactly.
+
+---
+
+### diptych approval list
+
+**Synopsis**
+
+```
+diptych approval list [--project-dir <dir>]
+```
+
+Print every grant in `.diptych/.approvals.json` as an aligned table.
+
+#### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--project-dir <dir>` | path | cwd | Project directory. |
+
+#### Output
+
+Columns: `pattern`, `class`, `scope`, `sessionId`, `grantedAt`. If empty, prints `No sticky approvals on record.`
+
+#### Exit codes
+
+- `0` — listed.
+- `1` — store could not be read.
+
+---
+
+### diptych approval clear
+
+**Synopsis**
+
+```
+diptych approval clear [--scope <scope>] [--project-dir <dir>]
+```
+
+Remove grants whose scope matches the filter.
+
+#### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--scope <scope>` | enum | `all` | One of `session`, `always`, `all`. |
+| `--project-dir <dir>` | path | cwd | Project directory. |
+
+#### Examples
+
+```bash
+diptych approval list
+diptych approval clear                      # clears everything
+diptych approval clear --scope session      # only per-session grants
+diptych approval clear --scope always       # only persistent grants
+```
+
+#### Exit codes
+
+- `0` — cleared (prints `Cleared <N> approval grant(s).`, where `N` may be `0`).
+- `1` — invalid scope or store write failure.
+
+### Files affected (approval)
+
+- **Reads / writes:** `.diptych/.approvals.json`.
+
+### See also (approval)
+
+- [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — `/approval` semantics during a run.
+- [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — hook policies that interact with approvals.
+
+---
+
+## diptych mcp
+
+**Synopsis**
+
+```
+diptych mcp serve [options]
+```
+
+Start an MCP (Model Context Protocol) HTTP server that exposes the project's diptych resources — sessions, specs, plans, tasks, events — to MCP-aware clients (Claude Code, Cursor, etc.). Currently exposes a single subcommand: `serve`.
+
+### Usage
+
+```
+diptych mcp serve [--port <number>] [--session <id> | --all-sessions] [--project <dir>]
+```
+
+### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--port <number>` | integer | `4321` | TCP port to listen on. Validated as an integer in `[1, 65535]`. |
+| `--session <id>` | string | active session | Serve only this session. Mutually exclusive with `--all-sessions`. |
+| `--all-sessions` | boolean | `false` | Serve every session in the project. Mutually exclusive with `--session`. |
+| `--project <dir>` | path | cwd | Project directory. |
+
+### Examples
+
+```bash
+# Default port, active session
+diptych mcp serve
+
+# All sessions on a custom port
+diptych mcp serve --port 4400 --all-sessions
+
+# Specific session
+diptych mcp serve --session 2026-04-26-abcd1234
+```
+
+### Exit codes
+
+- `0` — server shut down cleanly via SIGINT or SIGTERM.
+- `1` — invalid port, both `--session` and `--all-sessions`, server bind failure, or session resolution failure.
+
+### Files affected
+
+- **Reads:** session artifacts under `.diptych/sessions/`.
+- **Writes:** none persistent. The server binds to `127.0.0.1:<port>` and emits a fresh bearer token on stdout each invocation.
+
+### Output
+
+After binding, prints the URL, generated bearer token, listed sessions, and a ready-to-paste `mcpServers.diptych` block for `.claude/settings.json`. The server runs until `Ctrl+C` (SIGINT) or SIGTERM.
+
+### See also
+
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — MCP integration in the engine.
+- Anthropic MCP docs — protocol spec.
+
+### Behavior notes
+
+- The bearer token is regenerated every run via `generateToken()`. Keep it private; treat the output as a credential.
+- The server binds to `127.0.0.1` only — it is not accessible over the network without your own proxy.
+- `--port 0` is rejected (the validator requires `>= 1`); a free random port cannot be requested via this CLI.
+
+---
+
+## diptych worktree
+
+**Synopsis**
+
+```
+diptych worktree <subcommand> [options]
+```
+
+List, switch into, or remove diptych-managed git worktrees under `.trees/<slug>` (branch `diptych/<slug>`). Created with `diptych start --worktree`. Subcommands: `list`, `switch`, `remove`.
+
+---
+
+### diptych worktree list
+
+**Synopsis**
+
+```
+diptych worktree list [--project <dir>]
+```
+
+Print a table of every diptych-managed worktree with its branch and live status. Columns adapt to terminal width.
+
+#### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--project <dir>` | path | cwd | Project directory. |
+
+#### Output
+
+Columns: `NAME`, `BRANCH`, `STATUS`. `STATUS` is `none` when no session is bound, otherwise `<status>  (<sessionId>)`.
+
+#### Exit codes
+
+- `0` — always (read-only). Empty result prints `No diptych-managed worktrees found.`
+
+---
+
+### diptych worktree switch
+
+**Synopsis**
+
+```
+diptych worktree switch <name> [--project <dir>]
+```
+
+Print shell instructions to enter the worktree (the CLI cannot `cd` for you). Verifies the worktree exists.
+
+#### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `<name>` | string (positional) | — | Worktree slug. Required. |
+| `--project <dir>` | path | cwd | Project directory. |
+
+#### Examples
+
+```bash
+diptych worktree switch migration
+# prints:
+#   To switch to worktree "migration", run:
+#     cd .trees/migration
+#   ...
+```
+
+#### Exit codes
+
+- `0` — instructions printed.
+- `1` — worktree not found.
+
+---
+
+### diptych worktree remove
+
+**Synopsis**
+
+```
+diptych worktree remove <name> [--force] [--delete-branch] [--project <dir>]
+```
+
+Remove a worktree directory. By default, refuses to remove a worktree with a live session or uncommitted changes — pass `--force` to bypass both guards.
+
+#### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `<name>` | string (positional) | — | Worktree slug. Required. |
+| `--force` | boolean | `false` | Bypass live-session and uncommitted-changes guards. |
+| `--delete-branch` | boolean | `false` | Also delete the `diptych/<name>` branch after removal. |
+| `--project <dir>` | path | cwd | Project directory. |
+
+#### Examples
+
+```bash
+# Safe removal (fails if dirty or session is live)
+diptych worktree remove migration
+
+# Force removal and delete the branch
+diptych worktree remove migration --force --delete-branch
+```
+
+#### Exit codes
+
+- `0` — removed.
+- `1` — worktree not found, guard refused removal, or git error.
+
+### Files affected (worktree)
+
+- **Reads:** `git worktree list`, `.diptych/sessions/` to determine `STATUS`.
+- **Writes:** `git worktree add/remove`, optional `git branch -d/-D`.
+
+### See also (worktree)
+
+- `diptych start --worktree` — create one.
+- [WORKTREES.md](./WORKTREES.md) — design rationale.
+
+### Behavior notes
+
+- The list view truncates the `BRANCH` column first, then `NAME`, when the terminal is narrow. Status is never truncated.
+- Removing a worktree does not delete the session under `.diptych/sessions/`; that state remains for `diptych status --history` and `diptych handoff`.
+
+---
+
+## diptych attach
+
+**Synopsis**
+
+```
+diptych attach [session-id] [--project <dir>]
+```
+
+Connect a TUI client to a background session that was launched with `diptych start --detach`. The session keeps running across attaches and detaches. If `session-id` is omitted, attaches to the unique running session in the project (errors when there are zero or two-plus).
+
+### Usage
+
+```
+diptych attach [session-id] [--project <dir>]
+```
+
+### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `<session-id>` | string (positional) | auto-resolved | Specific session to attach to. Optional when exactly one session is running. |
+| `--project <dir>` | path | cwd | Project directory. |
+
+### Examples
+
+```bash
+# One running session — no id needed
+diptych attach
+
+# Pick a specific session
+diptych attach 2026-04-26-abcd1234
+
+# Different project
+diptych attach 2026-04-26-abcd1234 --project ../service-a
+```
+
+### Exit codes
+
+- `0` — attach succeeded (or detached cleanly).
+- `1` — Windows platform, no running session, multiple running sessions and no id specified, or the named session is not running (a crash diagnostic is shown first).
+
+### Files affected
+
+- **Reads:** `.diptych/sessions/<id>/.diptych.lock`, `.diptych/sessions/<id>/.diptych.sock`, crash logs on failure.
+- **Writes:** none directly; the IPC connection forwards user input to the running server.
+
+### See also
+
+- `diptych start --detach` — start a background session.
+- `diptych ps` — find running sessions.
+
+### Behavior notes
+
+- Not supported on Windows: prints `diptych attach/detach/ps are not supported on Windows.` and exits `1`.
+- When the resolver finds zero running sessions: `no running sessions found; pass <session-id> explicitly`.
+- When more than one is running: `multiple running sessions (<a>, <b>); pass <session-id> explicitly`.
+- If the named session is dead, `showCrashDiagnostic()` prints the post-mortem before the exit.
+- Attach renders the workflow TUI as an IPC client, replays session events from disk, streams live events, forwards submitted input to the server, and detaches with Ctrl-D.
+
+---
+
+## diptych ps
+
+**Synopsis**
+
+```
+diptych ps [--project <dir>]
+```
+
+List every session in the current project (running, exited, crashed, unknown), newest first. Mirrors `ps`/`docker ps` ergonomics.
+
+### Usage
+
+```
+diptych ps [--project <dir>]
+```
+
+### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--project <dir>` | path | cwd | Project directory. |
+
+### Examples
+
+```bash
+# All sessions in this repo
+diptych ps
+
+# Sessions in a sibling project
+diptych ps --project ../service-b
+```
+
+### Exit codes
+
+- `0` — listed (empty result prints `No sessions found in this project.`).
+- `1` — Windows platform.
+
+### Files affected
+
+- **Reads:** `.diptych/sessions/<id>/.diptych.lock` for every session directory.
+- **Writes:** none.
+
+### Output
+
+Columns (whitespace-aligned): `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPSED`, `FEATURE`.
+
+- `STATUS` is one of `running`, `exited`, `crashed`, `unknown`.
+- `ELAPSED` shows `Hh Mm Ss` / `Mm Ss` / `Ss`. For running sessions it's measured against the current clock; for finished sessions, against `exitedAt`.
+
+### See also
+
+- `diptych attach` — connect to a running session.
+- `diptych status` — focused view of the active session.
+
+### Behavior notes
+
+- Not supported on Windows: prints `diptych attach/detach/ps are not supported on Windows.` and exits `1`.
+- A session whose lockfile is missing reports `STATUS=unknown`, `PID=-`, `MODE=-`, `FEATURE=-`. This usually means the session crashed before writing the lock or was deleted manually.
+- Sorting is by `startTimeMs DESC` — newest first, with sessions missing a start time anchored at `0`.
+- Column widths grow to fit content; very long feature descriptions push the table wider than the terminal (no truncation).
+
+---
+
+## Cross-cutting reference
+
+### Common flags across multiple commands
+
+| Flag | Commands | Default | Notes |
+|---|---|---|---|
+| `--project <dir>` | most | cwd | Project directory. |
+| `--project-dir <dir>` | `approval` | cwd | Same idea; different option name. Verbatim flag string is `--project-dir`. |
+| `-p, --project <dir>` | `migrate` | `.` | The only command with the `-p` short alias. |
+| `--session <id>` | `handoff`, `snapshot *`, `mcp serve` | active session | When omitted, the active session is read from `.diptych/active-session`. |
+| `--auto` | `start`, `resume`, `spec` | `false` | Skip approval gates. On `start` / `resume` it aliases `--approve none`. |
+| `--allow-hooks` | `start`, `resume`, `spec` | `false` | Skip the hook-trust prompt. CI flag. |
+| `--json` | `start`, `resume` | `false` | NDJSON event stream on stdout instead of TUI. |
+
+### Where state lives
+
+| Path | Owner | Purpose |
+|---|---|---|
+| `.diptych/config.yaml` | `init` | Provider, model, workflow, hooks, OTel config. |
+| `.diptych/active-session` | `start`, `resume`, `spec` | Pointer to the latest session id. |
+| `.diptych/sessions/<id>/spec.md` | planner | Spec phase output. |
+| `.diptych/sessions/<id>/plan.md` | planner | Plan phase output. |
+| `.diptych/sessions/<id>/tasks.md` | planner | Task list. |
+| `.diptych/sessions/<id>/state.json` | orchestrator | Persisted machine state for `resume` / `status`. |
+| `.diptych/sessions/<id>/events.ndjson` | orchestrator | Append-only event log. |
+| `.diptych/sessions/<id>/snapshots/<snap-id>/` | `snapshot create` | Working-tree snapshots. |
+| `.diptych/sessions/<id>/.diptych.lock` | `start --detach` | Background server lockfile. |
+| `.diptych/sessions/<id>/.diptych.sock` | `start --detach` | Unix domain socket for IPC. |
+| `.diptych/.approvals.json` | `approval`, runtime `/approval` | Sticky grants. |
+| `.diptych/.hooks-trust.json` | `start`/`resume`/`spec` trust prompt | Hook trust ledger. |
+| `.diptych/renderers/` | user | Custom Handoff Pack renderers. |
+| `.trees/<slug>/` | `worktree`, `start --worktree` | Linked git worktrees on branch `diptych/<slug>`. |
+| `handoff/<target>/` | `handoff` | Default Handoff Pack output (overridden by `--out`). |
+
+### Headless event stream (`--json`)
+
+When `start` or `resume` runs with `--json`, every `EngineEvent` is emitted as a single-line JSON object on stdout (NDJSON). The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse` are no-ops in this mode. Pair `--json` with `--auto` (or an explicit `--approve`) so the run does not wait for interactive input.
+
+### Workflow modes (`--mode`)
+
+| Mode | Planner calls | Approval gates | Best for |
+|---|:---:|:---:|---|
+| `instant` | 1 | none | Trivial edits that need almost no ceremony. |
+| `quick` | 1 | none | Small tasks that still need a brief. |
+| `standard` (default) | 4 | supporting spec | Ordinary feature work. |
+| `speckit` | 6–7 | supporting spec + plan | Large, risky, or externally visible work. |
+
+`full` is a legacy alias for `speckit`. Detailed semantics in [WORKFLOW.md](./WORKFLOW.md).
+
+### Runner kinds (`--planner` / `--implementer`)
+
+| `kind` | What it is | Examples |
+|---|---|---|
+| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code` |
+| `api` | OpenAI-compatible HTTP endpoint | `ollama`, `lm-studio`, `openrouter`, `deepseek`, `groq`, `together`, `anthropic` |
+| `shell` | Arbitrary command (stdin → stdout) | Custom scripts via `--planner-command` / `--implementer-command` |
+| `agent` | Subprocess that writes files directly (no stdout extraction) | Custom file-writing tools |
+| `agent-sdk` | Anthropic Agent SDK library call | Via `@anthropic-ai/claude-agent-sdk` |
+
+Schemas and YAML shape live in [ARCHITECTURE.md](./ARCHITECTURE.md) and [CONFIG.md](./CONFIG.md).
+
+### Getting help
+
+```bash
+diptych --help                     # top-level help
+diptych <command> --help           # command help (Commander-generated)
+diptych snapshot --help            # subcommand parents print their child list
+diptych snapshot create --help     # leaf subcommand help
+```
+
+Commander emits a usage banner, the description string, and the option table verbatim — this reference document expands the same surface with examples, exit codes, files, and behavior notes.

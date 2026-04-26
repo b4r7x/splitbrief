@@ -1,0 +1,119 @@
+import { useInput, type Key } from 'ink';
+import { overlayStore } from '../../../stores/ui/overlay.js';
+import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
+import {
+  deleteTask,
+  mergeWithPrevious,
+  moveTaskDown,
+  moveTaskUp,
+} from '../components/plan-editor/actions.js';
+import { openExternalEditor } from '../components/plan-editor/external-editor.js';
+
+export type PlanEditorAction =
+  | { type: 'none' }
+  | { type: 'move-cursor'; direction: 'up' | 'down' }
+  | { type: 'move-task'; direction: 'up' | 'down' }
+  | { type: 'delete-task' }
+  | { type: 'merge-task' }
+  | { type: 'toggle-expand' }
+  | { type: 'open-help' }
+  | { type: 'open-editor'; mode: 'edit' | 'split' }
+  | { type: 'save' }
+  | { type: 'discard' };
+
+export function handlePlanEditorInput(input: string, key: Key): PlanEditorAction {
+  if (key.ctrl) {
+    if (input === 'j' || input === 'n') return { type: 'move-task', direction: 'down' };
+    if (input === 'k' || input === 'p') return { type: 'move-task', direction: 'up' };
+    return { type: 'none' };
+  }
+  if (key.downArrow) return { type: 'move-cursor', direction: 'down' };
+  if (key.upArrow) return { type: 'move-cursor', direction: 'up' };
+  if (key.return) return { type: 'toggle-expand' };
+  if (input === 'j') return { type: 'move-cursor', direction: 'down' };
+  if (input === 'k') return { type: 'move-cursor', direction: 'up' };
+  if (input === 'd') return { type: 'delete-task' };
+  if (input === 'm') return { type: 'merge-task' };
+  if (input === 's') return { type: 'open-editor', mode: 'split' };
+  if (input === 'e') return { type: 'open-editor', mode: 'edit' };
+  if (input === '?') return { type: 'open-help' };
+  if (input === 'Y') return { type: 'save' };
+  if (input === 'q') return { type: 'discard' };
+  return { type: 'none' };
+}
+
+export function applyPlanEditorAction(
+  action: PlanEditorAction,
+  onSave: () => Promise<void>,
+): void {
+  switch (action.type) {
+    case 'none': return;
+    case 'move-cursor': planEditorStore.moveCursor(action.direction); return;
+    case 'move-task': {
+      const { tasks, cursor } = planEditorStore.get();
+      const result = action.direction === 'down'
+        ? moveTaskDown(tasks, cursor)
+        : moveTaskUp(tasks, cursor);
+      planEditorStore.setTasks(result.tasks);
+      planEditorStore.setCursor(result.cursor);
+      return;
+    }
+    case 'delete-task': {
+      const { tasks, cursor } = planEditorStore.get();
+      const result = deleteTask(tasks, cursor);
+      planEditorStore.setTasks(result.tasks);
+      planEditorStore.setCursor(result.cursor);
+      return;
+    }
+    case 'merge-task': {
+      const { tasks, cursor } = planEditorStore.get();
+      const result = mergeWithPrevious(tasks, cursor);
+      if (result.error) { planEditorStore.setSaveError(result.error); return; }
+      planEditorStore.setTasks(result.tasks);
+      planEditorStore.setCursor(result.cursor);
+      return;
+    }
+    case 'toggle-expand': {
+      const { tasks, cursor } = planEditorStore.get();
+      const task = tasks[cursor];
+      if (task) planEditorStore.toggleExpand(task.id);
+      return;
+    }
+    case 'open-help': overlayStore.open('plan-editor-help'); return;
+    case 'open-editor': return;
+    case 'save': void onSave(); return;
+    case 'discard': {
+      planEditorStore.setRuntimeRichMode(false);
+      planEditorStore.reset();
+      return;
+    }
+  }
+}
+
+export function usePlanEditorKeys(
+  isActive: boolean,
+  onSave: () => Promise<void>,
+  sessionDir: string,
+): void {
+  const isOverlayOpen = overlayStore.use(s => s.active !== 'none');
+
+  useInput(
+    (_input, _key) => { overlayStore.close(); },
+    { isActive: overlayStore.use(s => s.active === 'plan-editor-help') },
+  );
+
+  useInput(
+    (input, key) => {
+      const action = handlePlanEditorInput(input, key);
+      if (action.type === 'open-editor') {
+        const { tasks, cursor } = planEditorStore.get();
+        const task = tasks[cursor];
+        if (!task) return;
+        openExternalEditor(task, action.mode, sessionDir);
+        return;
+      }
+      applyPlanEditorAction(action, onSave);
+    },
+    { isActive: isActive && !isOverlayOpen },
+  );
+}
