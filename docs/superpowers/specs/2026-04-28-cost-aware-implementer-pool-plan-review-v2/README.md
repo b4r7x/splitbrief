@@ -1,8 +1,8 @@
 # Cost-Aware Implementer Pool + Plan Review v2 - 2026-04-28
 
 > **Status:** implemented and verified with targeted validation.
-> **Scope:** keep diptych focused as an expensive-planner to cheap-implementer orchestrator; add implementer-pool planning, context-aware task routing, stronger plan review, user-edit conflict handling, and cleanup guidance.
-> **Out of scope:** long-lived plan archive, kanban, cross-plan dependencies, same-directory parallel writes, MCP tools, generic agent swarms, automatic git staging/commits.
+> **Scope:** keep diptych focused as an expensive-planner to cheap-implementer orchestrator; add implementer-pool planning, context-aware task routing, stronger plan review, user-edit conflict handling, durable session artifacts, and cleanup guidance.
+> **Out of scope:** separate plan archive/plan-management system, kanban, cross-plan dependencies, same-directory or same-checkout parallel writes, MCP write tools, generic agent swarms, automatic git staging/commits.
 
 ## Current State
 
@@ -31,6 +31,10 @@ expensive planner -> self-contained Task Briefs -> cheap implementer workers -> 
 ```
 
 The implementer now supports an optional **pool of profiles**, but it is still one product role. This is not a multi-agent manager. A pool lets diptych choose the cheapest capable worker for each task and keep every worker call under its context limit.
+
+Durable workflow sessions are core. Resume, session history, previous-session browsing/filtering/search, and artifacts such as `spec.md`, `plan.md`, `tasks.md`, `summary.json`, `review.md`, evidence, and drift are part of the product surface.
+
+Those sessions are execution records, not a separate plan archive. This pack does not add saved-plan libraries, kanban, cross-plan orchestration, plan cloning, or plan-management workflows.
 
 The canonical direction document is:
 
@@ -106,10 +110,10 @@ These were the required references before implementation:
 - Optional implementer profiles can be selected per task.
 - Each task is dispatched with a fresh context.
 - Context-fit failures are visible before execution and block or re-route safely.
-- Same-directory parallel writes are not introduced.
+- Same-directory and same-checkout parallel writes are not introduced.
 - User edits are detected by file and mapped to affected tasks.
 - TUI surfaces plan review, routing, context fit, checkpoint, and conflict state without becoming kanban.
-- MCP remains read-only unless a later spec explicitly changes that.
+- MCP remains read-only; write tools are outside this roadmap.
 - Documentation states that tool calls belong to underlying runners, while diptych owns deterministic guardrails.
 - Tests focus on behavior, artifacts, files, public state, and rendered output.
 
