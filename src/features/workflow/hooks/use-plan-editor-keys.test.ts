@@ -1,5 +1,9 @@
 import { beforeEach, describe, it, expect } from 'vitest';
-import { applyPlanEditorAction, handlePlanEditorInput } from './use-plan-editor-keys.js';
+import {
+  applyPlanEditorAction,
+  handlePlanEditorInput,
+  type PlanEditorAction,
+} from './use-plan-editor-keys.js';
 import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import type { Key } from 'ink';
@@ -28,77 +32,33 @@ const noKey: Key = {
 };
 
 describe('handlePlanEditorInput', () => {
-  it("'j' → move-cursor down", () => {
-    expect(handlePlanEditorInput('j', noKey)).toEqual({ type: 'move-cursor', direction: 'down' });
-  });
-
-  it("'k' → move-cursor up", () => {
-    expect(handlePlanEditorInput('k', noKey)).toEqual({ type: 'move-cursor', direction: 'up' });
-  });
-
-  it('downArrow → move-cursor down', () => {
-    expect(handlePlanEditorInput('', { ...noKey, downArrow: true })).toEqual({ type: 'move-cursor', direction: 'down' });
-  });
-
-  it('upArrow → move-cursor up', () => {
-    expect(handlePlanEditorInput('', { ...noKey, upArrow: true })).toEqual({ type: 'move-cursor', direction: 'up' });
-  });
-
-  it('ctrl+j → move-task down', () => {
-    expect(handlePlanEditorInput('j', { ...noKey, ctrl: true })).toEqual({ type: 'move-task', direction: 'down' });
-  });
-
-  it('ctrl+k → move-task up', () => {
-    expect(handlePlanEditorInput('k', { ...noKey, ctrl: true })).toEqual({ type: 'move-task', direction: 'up' });
-  });
-
-  it('ctrl+n → move-task down', () => {
-    expect(handlePlanEditorInput('n', { ...noKey, ctrl: true })).toEqual({ type: 'move-task', direction: 'down' });
-  });
-
-  it('ctrl+p → move-task up', () => {
-    expect(handlePlanEditorInput('p', { ...noKey, ctrl: true })).toEqual({ type: 'move-task', direction: 'up' });
-  });
-
-  it("'d' → delete-task", () => {
-    expect(handlePlanEditorInput('d', noKey)).toEqual({ type: 'delete-task' });
-  });
-
-  it("'m' → merge-task", () => {
-    expect(handlePlanEditorInput('m', noKey)).toEqual({ type: 'merge-task' });
-  });
-
-  it("'s' → open-editor split", () => {
-    expect(handlePlanEditorInput('s', noKey)).toEqual({ type: 'open-editor', mode: 'split' });
-  });
-
-  it("'e' → open-editor edit", () => {
-    expect(handlePlanEditorInput('e', noKey)).toEqual({ type: 'open-editor', mode: 'edit' });
-  });
-
-  it('return → toggle-expand', () => {
-    expect(handlePlanEditorInput('', { ...noKey, return: true })).toEqual({ type: 'toggle-expand' });
-  });
-
-  it("'?' → open-help", () => {
-    expect(handlePlanEditorInput('?', noKey)).toEqual({ type: 'open-help' });
-  });
-
-  it("'Y' (capital) → save", () => {
-    expect(handlePlanEditorInput('Y', noKey)).toEqual({ type: 'save' });
-  });
-
-  it("'y' (lowercase) → none", () => {
-    expect(handlePlanEditorInput('y', noKey)).toEqual({ type: 'none' });
-  });
-
-  it("'q' → discard", () => {
-    expect(handlePlanEditorInput('q', noKey)).toEqual({ type: 'discard' });
-  });
-
-  it('unrecognized input → none', () => {
-    expect(handlePlanEditorInput('x', noKey)).toEqual({ type: 'none' });
-    expect(handlePlanEditorInput('', noKey)).toEqual({ type: 'none' });
+  it.each<{
+    label: string;
+    input: string;
+    key?: Partial<Key>;
+    expected: PlanEditorAction;
+  }>([
+    { label: 'j', input: 'j', expected: { type: 'move-cursor', direction: 'down' } },
+    { label: 'k', input: 'k', expected: { type: 'move-cursor', direction: 'up' } },
+    { label: 'downArrow', input: '', key: { downArrow: true }, expected: { type: 'move-cursor', direction: 'down' } },
+    { label: 'upArrow', input: '', key: { upArrow: true }, expected: { type: 'move-cursor', direction: 'up' } },
+    { label: 'ctrl+j', input: 'j', key: { ctrl: true }, expected: { type: 'move-task', direction: 'down' } },
+    { label: 'ctrl+k', input: 'k', key: { ctrl: true }, expected: { type: 'move-task', direction: 'up' } },
+    { label: 'ctrl+n', input: 'n', key: { ctrl: true }, expected: { type: 'move-task', direction: 'down' } },
+    { label: 'ctrl+p', input: 'p', key: { ctrl: true }, expected: { type: 'move-task', direction: 'up' } },
+    { label: 'd', input: 'd', expected: { type: 'delete-task' } },
+    { label: 'm', input: 'm', expected: { type: 'merge-task' } },
+    { label: 's', input: 's', expected: { type: 'open-editor', mode: 'split' } },
+    { label: 'e', input: 'e', expected: { type: 'open-editor', mode: 'edit' } },
+    { label: 'return', input: '', key: { return: true }, expected: { type: 'toggle-expand' } },
+    { label: '?', input: '?', expected: { type: 'open-help' } },
+    { label: 'Y', input: 'Y', expected: { type: 'save' } },
+    { label: 'q', input: 'q', expected: { type: 'discard' } },
+    { label: 'lowercase y', input: 'y', expected: { type: 'none' } },
+    { label: 'unrecognized input', input: 'x', expected: { type: 'none' } },
+    { label: 'empty input', input: '', expected: { type: 'none' } },
+  ])('$label maps to $expected.type', ({ input, key, expected }) => {
+    expect(handlePlanEditorInput(input, { ...noKey, ...key })).toEqual(expected);
   });
 });
 

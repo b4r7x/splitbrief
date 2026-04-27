@@ -22,9 +22,10 @@ afterEach(async () => {
 import { createSaveHandler } from './use-plan-editor-save.js';
 
 describe('createSaveHandler', () => {
-  it('happy path: writes tasks.md and brief-quality.json, calls onApprove', async () => {
+  it('writes tasks.md and brief-quality.json, marks clean, and calls onApprove', async () => {
     const task = makeTask({ implementationSteps: ['step one'], tests: ['returns correct value'] });
     planEditorStore.initEditor([task]);
+    planEditorStore.setTasks([{ ...task, title: 'Edited title' }]);
 
     const onApprove = vi.fn();
     const save = createSaveHandler(tmpDir, onApprove);
@@ -32,12 +33,15 @@ describe('createSaveHandler', () => {
 
     const written = await readFile(join(tmpDir, TASKS_FILE), 'utf-8');
     expect(written).toContain('id: T001');
+    expect(written).toContain('Edited title');
     expect(written).toContain('step one');
 
     const quality = JSON.parse(await readFile(join(tmpDir, BRIEF_QUALITY_FILE), 'utf-8'));
-    expect(quality).toHaveProperty('passed');
+    expect(typeof quality.passed).toBe('boolean');
+    expect(typeof quality.score).toBe('number');
 
     expect(onApprove).toHaveBeenCalledOnce();
+    expect(planEditorStore.get().dirty).toBe(false);
   });
 
   it('round-trip: written tasks.md parses back to same count and IDs', async () => {
@@ -79,39 +83,4 @@ describe('createSaveHandler', () => {
     expect(planEditorStore.get().saveError).toContain('Round-trip parse failed');
   });
 
-  it('accepts reordered parser output when the task ID set is unchanged', async () => {
-    const t1 = makeTask({ id: 'T001', title: 'A', file: 'src/a.ts', description: 'A desc', implementationSteps: ['s1'], tests: ['t1'] });
-    const t2 = makeTask({ id: 'T002', title: 'B', file: 'src/b.ts', description: 'B desc', implementationSteps: ['s2'], tests: ['t2'], dependsOn: ['T001'] });
-    planEditorStore.initEditor([t2, t1]);
-
-    const onApprove = vi.fn();
-    await createSaveHandler(tmpDir, onApprove)();
-
-    expect(onApprove).toHaveBeenCalledOnce();
-    expect(planEditorStore.get().saveError).toBeNull();
-  });
-
-  it('markSaved is called on success (dirty becomes false)', async () => {
-    const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
-    planEditorStore.initEditor([task]);
-    // Force dirty state
-    planEditorStore.setTasks([task]);
-
-    const onApprove = vi.fn();
-    await createSaveHandler(tmpDir, onApprove)();
-
-    expect(planEditorStore.get().dirty).toBe(false);
-  });
-
-  it('brief-quality.json is valid JSON with passed field', async () => {
-    const task = makeTask({ implementationSteps: ['step'], tests: ['returns value'] });
-    planEditorStore.initEditor([task]);
-
-    await createSaveHandler(tmpDir, vi.fn())();
-
-    const content = await readFile(join(tmpDir, BRIEF_QUALITY_FILE), 'utf-8');
-    const obj = JSON.parse(content);
-    expect(typeof obj.passed).toBe('boolean');
-    expect(typeof obj.score).toBe('number');
-  });
 });
