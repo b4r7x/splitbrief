@@ -90,12 +90,13 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
 
         const postPlanState = applyPostPlanDrain(projectDir, sessionId, planning.state, wctx.bus, (s) => { trackedState = s; });
 
-        result = await runTasksAndReview({
+        const taskRun = await runTasksAndReview({
           wctx, state: postPlanState, summaryBase, phaseTimings,
           setTrackedState: (s) => { trackedState = s; },
           setCurrentTask: (t) => { currentTask = t; },
         });
-        sessionStatus = 'complete';
+        result = taskRun.summary;
+        sessionStatus = taskRun.completed ? 'complete' : 'interrupted';
       } catch (err) {
         if (trackedState) {
           try { saveState(projectDir, sessionId, trackedState); } catch (saveErr) {

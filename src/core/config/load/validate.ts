@@ -24,26 +24,40 @@ const KEY_FORMAT_HINTS: Record<string, { pattern: RegExp; example: string }> = {
   deepseek: { pattern: /^sk-/, example: 'sk-...' },
 };
 
-function checkApiKey(role: 'planner' | 'implementer', config: PlannerConfig | ImplementerConfig, errors: ConfigError[]): void {
+function checkApiKey(opts: {
+  role: 'planner' | 'implementer';
+  path: string;
+  config: PlannerConfig | ImplementerConfig;
+  errors: ConfigError[];
+}): void {
+  const { role, path, config, errors } = opts;
   if (config.kind === 'agent-sdk') {
     const envVar = PROVIDER_CATALOG['agent-sdk']?.apiKeyEnv ?? 'ANTHROPIC_API_KEY';
     if (!config.apiKey && !process.env[envVar]) {
-      errors.push({ path: `${role}.apiKey`, message: `Agent SDK requires ${role}.apiKey or ${envVar} env var` });
+      errors.push({ path: `${path}.apiKey`, message: `Agent SDK requires ${path}.apiKey or ${envVar} env var` });
     }
   }
 
   if (config.kind === 'api' && isProviderId(config.provider)) {
     const info = PROVIDER_CATALOG[config.provider];
     if (info.apiKeyEnv && !config.apiKey && !process.env[info.apiKeyEnv]) {
-      errors.push({ path: `${role}.apiKey`, message: `${info.displayName} ${role} requires ${role}.apiKey or ${info.apiKeyEnv} env var` });
+      errors.push({ path: `${path}.apiKey`, message: `${info.displayName} ${role} requires ${path}.apiKey or ${info.apiKeyEnv} env var` });
     }
   }
 }
 
 function apiKeyErrors(config: Config): ConfigError[] {
   const errors: ConfigError[] = [];
-  checkApiKey('planner', config.planner, errors);
-  checkApiKey('implementer', config.implementer, errors);
+  checkApiKey({ role: 'planner', path: 'planner', config: config.planner, errors });
+  checkApiKey({ role: 'implementer', path: 'implementer', config: config.implementer, errors });
+  for (const [name, profile] of Object.entries(config.implementerProfiles?.profiles ?? {})) {
+    checkApiKey({
+      role: 'implementer',
+      path: `implementerProfiles.profiles.${name}`,
+      config: profile,
+      errors,
+    });
+  }
   return errors;
 }
 
@@ -90,6 +104,17 @@ export function securityWarnings(config: Config): string[] {
   const warnings: string[] = [];
 
   for (const [role, info] of [['planner', plannerKeyInfo(config.planner)], ['implementer', implementerKeyInfo(config.implementer)]] as const) {
+    if (info.inConfig && info.envVar) {
+      warnings.push(`API key found in ${role} config. For better security, set ${info.envVar} environment variable and remove apiKey from config.`);
+    }
+    if (info.key && info.provider) {
+      warnings.push(...keyFormatWarnings(info.provider, info.key));
+    }
+  }
+
+  for (const [name, profile] of Object.entries(config.implementerProfiles?.profiles ?? {})) {
+    const info = implementerKeyInfo(profile);
+    const role = `implementer profile ${name}`;
     if (info.inConfig && info.envVar) {
       warnings.push(`API key found in ${role} config. For better security, set ${info.envVar} environment variable and remove apiKey from config.`);
     }

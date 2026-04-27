@@ -13,11 +13,11 @@ const DEFAULT_PORT = 4321;
 export function registerMcpCommand(program: Command): void {
   const mcp = program
     .command('mcp')
-    .description('MCP server commands');
+    .description('MCP read-only resource server commands');
 
   mcp
     .command('serve')
-    .description('Start an MCP resource server for the current project')
+    .description('Start a read-only MCP resource server for the current project')
     .option('--port <number>', 'Port to listen on', String(DEFAULT_PORT))
     .option('--session <id>', 'Serve only this session')
     .option('--all-sessions', 'Serve all sessions in the project')
@@ -73,6 +73,7 @@ export function registerMcpCommand(program: Command): void {
         process.stdout.write(
           [
             'diptych MCP server ready',
+            '  Read-only: exposes session resources only; no MCP tools or writes.',
             '',
             `  URL:    http://127.0.0.1:${actualPort}/mcp`,
             `  Token:  ${token}`,

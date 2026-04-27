@@ -8,20 +8,26 @@ Single source of truth for the diptych configuration file. Every field, default,
 <project-root>/.diptych/config.yaml
 ```
 
-The bootstrap creates it on first `diptych start` / `diptych init`. Missing file is equivalent to the default config (see `createDefaultConfig()` in `src/core/config/load/load.ts`). Schema version is `version: 2`.
+The bootstrap creates it on first `diptych start` / `diptych init`. Missing file is equivalent to the default config (see `createDefaultConfig()` in `src/core/config/load/load.ts`). Current schema version is `version: 3`. `version: 2` is still accepted on input, emits a deprecation warning, and is migrated to v3 at load time.
 
 Keys accept **both** `snake_case` and `camelCase` — the loader transforms `snake_case` YAML into `camelCase` before validation (`src/core/config/load/transform.ts`). Examples in this doc use `camelCase` to match the rest of the docs set.
 
 ## Top-level structure
 
 ```yaml
-version: 2
+version: 3
 planner:
   kind: cli | api | shell | agent | agent-sdk
   # + kind-specific fields (see below)
 implementer:
   kind: cli | api | shell | agent | agent-sdk
   # + kind-specific fields
+implementerProfiles:
+  default: local-qwen
+  profiles:
+    local-qwen:
+      kind: api | cli | shell | agent | agent-sdk
+      # + implementer fields, plus optional label/costTier/capabilities
 validation:
   typecheck: true
   lint: true
@@ -127,6 +133,22 @@ Each object is `.strict()` — unknown fields fail validation.
 ## `implementer`
 
 Same discriminated union as `planner` (`src/core/schemas/implementer-config.ts`). The only difference: `model` is **required** on every kind except `agent-sdk` (planner treats `model` as optional).
+
+## `implementerProfiles`
+
+Optional named implementer profiles for task routing. `implementer` remains required for backwards compatibility and as the single default implementer role.
+
+An implementer pool does not make diptych a swarm manager: the router selects one cheapest capable profile for each Task Brief, still with fresh bounded task context and sequential writes unless a future worktree-isolated design explicitly says otherwise.
+
+| Field | Type | Required | Default | Description |
+|---|---|:---:|---|---|
+| `default` | profile name | no | first sorted profile name | Preferred default profile; must exist in `profiles` when set. |
+| `profiles` | record | yes | — | Map of profile name → implementer runner config. At least one profile is required when the block exists. |
+| `profiles.*.label` | string | no | — | Optional display label for TUI/events. |
+| `profiles.*.costTier` | enum | no | `unknown` in accessors | `local` \| `cheap` \| `standard` \| `frontier` \| `unknown` |
+| `profiles.*.capabilities.writesFiles` | enum | no | inferred from runner kind | `extracted-code` for `api`/`shell`, `direct` for `cli`/`agent`/`agent-sdk`. If set, it must match the runner kind. |
+
+Profile names must be lowercase letters, numbers, and hyphens, start with a letter, and be at most 64 characters.
 
 ## `validation`
 
@@ -314,7 +336,7 @@ Non-fatal conditions emit warnings on stderr (`warnStderr` in `src/lib/warn.ts`)
 ### Local Ollama only (zero cost)
 
 ```yaml
-version: 2
+version: 3
 planner:
   kind: api
   provider: ollama
@@ -335,14 +357,15 @@ validation:
 workflow:
   approve: default
   maxRetries: 3
-  commitStrategy: none
+  git:
+    commitStrategy: none
   mode: standard
 ```
 
 ### Hybrid — Claude Code planner + Ollama implementer (default after `diptych init`)
 
 ```yaml
-version: 2
+version: 3
 planner:
   kind: cli
   tool: claude-code
@@ -357,7 +380,8 @@ validation: { typecheck: true, lint: true, test: true, testCommand: npm test }
 workflow:
   approve: default
   maxRetries: 3
-  commitStrategy: none
+  git:
+    commitStrategy: none
   mode: standard
 codebase:
   enabled: true
@@ -367,7 +391,7 @@ codebase:
 ### Speckit Claude + Codex with hooks + OTel
 
 ```yaml
-version: 2
+version: 3
 planner:
   kind: cli
   tool: claude-code
@@ -379,7 +403,8 @@ validation: { typecheck: true, lint: true, test: true, testCommand: npm test }
 workflow:
   approve: default
   maxRetries: 3
-  commitStrategy: per-task
+  git:
+    commitStrategy: per-task
   mode: speckit
   maxBudget: 5.00
 hooks:
@@ -397,7 +422,7 @@ otel:
 ### Headless CI (batch `spec` generation)
 
 ```yaml
-version: 2
+version: 3
 planner:
   kind: api
   provider: anthropic
@@ -412,7 +437,8 @@ validation: { typecheck: true, lint: true, test: true, testCommand: npm test }
 workflow:
   approve: none
   maxRetries: 2
-  commitStrategy: none
+  git:
+    commitStrategy: none
   mode: quick
 ```
 

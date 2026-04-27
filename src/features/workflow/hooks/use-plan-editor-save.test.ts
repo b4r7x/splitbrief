@@ -6,7 +6,6 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
 import { TASKS_FILE, BRIEF_QUALITY_FILE } from '../../../core/paths.js';
 import { parseTasks } from '../../../engine/spec/parser.js';
-import * as formatterModule from '../../../engine/spec/formatter.js';
 
 let tmpDir: string;
 
@@ -56,18 +55,16 @@ describe('createSaveHandler', () => {
     expect(parsed[1]?.id).toBe(t2.id);
   });
 
-  it('does not call onApprove and sets saveError when formatTasks returns unparseable output', async () => {
+  it('does not call onApprove and sets saveError when tasks.md cannot be written', async () => {
     const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
     planEditorStore.initEditor([task]);
 
-    vi.spyOn(formatterModule, 'formatTasks').mockReturnValue('this is not valid task markdown');
-
     const onApprove = vi.fn();
-    const save = createSaveHandler(tmpDir, onApprove);
+    const save = createSaveHandler(join(tmpDir, 'missing-session'), onApprove);
     await save();
 
     expect(onApprove).not.toHaveBeenCalled();
-    expect(planEditorStore.get().saveError).not.toBeNull();
+    expect(planEditorStore.get().saveError).toContain('Failed to write');
   });
 
   it('catches parse errors and surfaces them as saveError', async () => {

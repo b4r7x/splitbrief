@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { calculateCost, calculateCostBreakdown, calculateUsageCost, getModelPricing, getProviderPricing } from './pricing.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { CostBreakdownSchema } from '../../core/schemas/summary.js';
+import { taskId } from '../../core/schemas/task.js';
 import type { ModelCacheAccessor } from './model-resolution.js';
 
 describe('calculateCost', () => {
@@ -197,6 +198,81 @@ describe('calculateCostBreakdown', () => {
         cost: result.totalActualCost,
       },
     });
+  });
+
+  it('uses per-task implementer metadata for mixed local and paid profile costs', () => {
+    const usage = makeUsage({
+      implementerInput: 1_000_000,
+      implementerOutput: 1_000_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 2,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
+      taskBreakdowns: [
+        { taskId: taskId('T001'), taskTitle: 'local task', method: 'local', implementerTokens: 1_000_000, escalationTokens: 0, retryCount: 0, tool: 'ollama', model: 'qwen-local' },
+        { taskId: taskId('T002'), taskTitle: 'paid task', method: 'local', implementerTokens: 1_000_000, escalationTokens: 0, retryCount: 0, tool: 'deepseek', model: 'deepseek-chat' },
+      ],
+    });
+
+    expect(result.actualImplementerCost).toBeCloseTo(0.35, 10);
+    const deepseek = result.providerCosts?.['deepseek'];
+    if (!deepseek) throw new Error('expected deepseek provider costs');
+    expect(deepseek.inputTokens).toBeCloseTo(500_000, 10);
+    expect(deepseek.outputTokens).toBeCloseTo(500_000, 10);
+    expect(deepseek.cost).toBeCloseTo(0.35, 10);
+    expect(result.hasPricedUsage).toBe(true);
+    expect(result.hasUnpricedUsage).toBe(true);
+  });
+
+  it('does not price unknown per-task implementer usage with the fallback implementer model', () => {
+    const usage = makeUsage({
+      implementerInput: 1_000_000,
+      implementerOutput: 1_000_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
+      taskBreakdowns: [
+        { taskId: taskId('T001'), taskTitle: 'unknown task', method: 'local', implementerTokens: 2_000_000, escalationTokens: 0, retryCount: 0, tool: 'custom-agent', model: 'private-model' },
+      ],
+    });
+
+    expect(result.actualImplementerCost).toBe(0);
+    expect(result.providerCosts).toBeUndefined();
+    expect(result.hasPricedUsage).toBe(false);
+    expect(result.hasUnpricedUsage).toBe(true);
+  });
+
+  it('resolves task-level auto models against the recorded task tool', () => {
+    const usage = makeUsage({
+      implementerInput: 500_000,
+      implementerOutput: 500_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+      implementerModel: 'qwen-local',
+      taskBreakdowns: [
+        { taskId: taskId('T001'), taskTitle: 'paid auto task', method: 'local', implementerTokens: 1_000_000, escalationTokens: 0, retryCount: 0, tool: 'deepseek', model: 'auto' },
+      ],
+    });
+
+    expect(result.actualImplementerCost).toBeCloseTo(0.35, 10);
+    expect(result.providerCosts?.['deepseek']?.cost).toBeCloseTo(0.35, 10);
   });
 });
 

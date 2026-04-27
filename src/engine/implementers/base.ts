@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Implementer, ImplementerOptions, RetryOptions } from './types.js';
 import type { Task } from '../../core/schemas/task.js';
@@ -17,11 +18,27 @@ import { getChangedFiles } from '../../lib/git.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
 import { publishImplementerGenerateRunning, publishImplementerGenerateDone, publishImplementerGenerateFailed } from '../orchestrator/events.js';
 
+export function extractedCodeApprovalRaceError(file: string): string {
+  return `write blocked because ${file} changed during approval`;
+}
+
+export function isExtractedCodeApprovalRaceError(file: string, error?: string): boolean {
+  return error === extractedCodeApprovalRaceError(file);
+}
+
+async function readFileSnapshot(filePath: string): Promise<string | null> {
+  try {
+    return await readFile(filePath, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
 async function processImplementerOutput(
   text: string,
   task: Task,
   projectDir: string,
-  oldContent: string,
+  approvedBaselineContent: string | null,
   approveWrite?: ((file: string) => Promise<{ allow: boolean; reason?: string | undefined }>) | undefined,
 ): Promise<{ success: true; diff: string; linesAdded: number; linesRemoved: number } | { success: false; error: string }> {
   const extractResult = extractCode(text);
@@ -35,15 +52,23 @@ async function processImplementerOutput(
     return { success: false, error: approval.reason ?? 'write denied by approval gate' };
   }
 
+  const filePath = join(projectDir, task.file);
+  const currentContent = await readFileSnapshot(filePath);
+  if (currentContent !== approvedBaselineContent) {
+    return {
+      success: false,
+      error: extractedCodeApprovalRaceError(task.file),
+    };
+  }
+
   const applyResult = await applyCode(extractResult.code, task, projectDir);
 
   if (!applyResult.success) {
     return { success: false, error: applyResult.error ?? 'Failed to apply code' };
   }
 
-  const filePath = join(projectDir, task.file);
   const newContent = await readFileOrEmpty(filePath);
-  const { diff, linesAdded, linesRemoved } = computeDiff(oldContent, newContent);
+  const { diff, linesAdded, linesRemoved } = computeDiff(approvedBaselineContent ?? '', newContent);
 
   return { success: true, diff, linesAdded, linesRemoved };
 }
@@ -87,9 +112,9 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     const prompt = prependSystemPreamble ? SYSTEM_PREAMBLE + '\n\n' + rawPrompt : rawPrompt;
     const { task, projectDir, config, onOutput, sessionId, bus, phase } = opts;
 
-    let oldContent = '';
+    let oldContent: string | null = null;
     if (baseConfig.extractsCode) {
-      oldContent = await readFileOrEmpty(join(projectDir, task.file));
+      oldContent = await readFileSnapshot(join(projectDir, task.file));
     }
 
     let filesBefore: string[] = [];

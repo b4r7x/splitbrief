@@ -16,6 +16,8 @@ Core value: **same planning quality, lower execution cost** by offloading mechan
 - **NOT a multi-agent coordinator** — exactly 2 roles (planner + implementer), clear hierarchy
 - **NOT a generic orchestration framework** — opinionated workflow centered on Task Briefs, with specs only when the work needs more structure
 
+An implementer pool, when enabled, is profile selection inside the single implementer role. It chooses the cheapest capable worker for a Task Brief; it is not dynamic agent count, agent racing, or same-checkout parallel writing.
+
 ## USP — Why This Exists
 
 | Tool | What it does | Why diptych is different |
@@ -47,7 +49,7 @@ Small models (7B-27B) can't reliably produce tool call format. Current pipeline 
 
 ### 5. Don't wrap agents in agents
 
-If the implementer IS a file-writing coding agent, there's a conflict of control. diptych owns file writing, validation, retry, escalation, and git. The implementer returns code, nothing more.
+If the implementer IS a file-writing coding agent, there's a conflict of control. diptych owns the task boundary, validation, retry, escalation, evidence, and checkpoint policy. The implementer executes only the current Task Brief.
 
 ### 6. OpenCode-inspired TUI (v0.5 — 2026-03-31)
 
@@ -110,7 +112,7 @@ See `.specify/memory/constitution.md` for the 6 constitutional principles (v1.3.
 2. **Spec-Driven Development** — Task Briefs first; specs only for larger or riskier work
 3. **Local-First Implementation** — Default to Ollama/LM Studio ($0); cloud is opt-in
 4. **Functional Purity** — Zero classes, pure functions, ESM, no unnecessary comments
-5. **Validate Before Commit** — tsc → lint → test per task; final Opus review
+5. **Validate Before Checkpoint** — tsc → lint → test per task; optional product commits only when configured; final Opus review
 6. **Identity & Anti-Goals** — Not a multi-agent coordinator; beautiful orchestration UX is product identity, not scope creep
 
 ## Version History

@@ -7,6 +7,8 @@ import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { EventBus, EngineEvent } from '../events/types.js';
 import type { EmittedChain } from '../../core/schemas/drift-chain.js';
+import type { UserEditConflict, UserEditConflictAction } from './user-edit-conflicts.js';
+import type { CurrentCodeContextMode, TaskContextFit } from './context-routing.js';
 
 const EMPTY_STAGES: ValidationStages = { tsc: false, lint: false, test: false };
 
@@ -36,7 +38,7 @@ export function publishPlannerStatus(
 
 export function publishTaskStart(
   bus: EventBus, phase: Phase,
-  opts: { taskId: TaskId; title: string; index: number; total: number; file: string; action: 'create' | 'modify'; tool?: string; model?: string },
+  opts: { taskId: TaskId; title: string; index: number; total: number; file: string; action: 'create' | 'modify'; tool?: string; model?: string; implementerProfile?: string; contextFit?: TaskContextFit; estimatedTokens?: number; untruncatedEstimatedTokens?: number; contextLength?: number; currentCodeTruncated?: boolean; currentCodeContextMode?: CurrentCodeContextMode; costPosture?: string; routingReason?: string },
 ): void {
   bus.publish({ type: 'task_started', ts: Date.now(), phase, ...opts });
 }
@@ -50,7 +52,7 @@ export function publishTaskSkipped(
 
 export function publishTaskComplete(
   bus: EventBus, phase: Phase,
-  opts: { taskId: TaskId; title: string; method: TaskCompletionMethod; retries: number; duration: number; tool?: string; model?: string },
+  opts: { taskId: TaskId; title: string; method: TaskCompletionMethod; retries: number; duration: number; tool?: string; model?: string; implementerProfile?: string },
 ): void {
   bus.publish({ type: 'task_completed', ts: Date.now(), phase, ...opts });
 }
@@ -147,6 +149,21 @@ export function publishWarning(bus: EventBus, phase: Phase, message: string): vo
 
 export function publishUserMessage(bus: EventBus, phase: Phase, text: string): void {
   bus.publish({ type: 'user_message', ts: Date.now(), phase, text });
+}
+
+export function publishUserEditConflict(
+  bus: EventBus,
+  phase: Phase,
+  conflict: UserEditConflict,
+  selectedAction?: UserEditConflictAction,
+): void {
+  bus.publish({
+    type: 'paused_external_changes',
+    ts: Date.now(),
+    phase,
+    conflict,
+    ...(selectedAction !== undefined && { selectedAction }),
+  });
 }
 
 export function publishWorkflowConfig(bus: EventBus, phase: Phase, opts: {

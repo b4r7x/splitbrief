@@ -152,6 +152,46 @@ describe('config loading', () => {
       expect((written.palette as Record<string, unknown>).custom_actions).toBeDefined();
     });
 
+    it('loads and writes implementer profiles without changing the legacy implementer', () => {
+      const dir = join(TMP, 'implementer-profiles');
+      writeConfigYaml(dir, {
+        implementer: { model: 'legacy-local' },
+        implementer_profiles: {
+          default: 'local-qwen',
+          profiles: {
+            'local-qwen': {
+              kind: 'api',
+              provider: 'ollama',
+              api_base: 'http://localhost:11434/v1',
+              model: 'qwen2.5-coder:7b',
+              context_length: 32768,
+              cost_tier: 'local',
+            },
+            'agent-cli': {
+              kind: 'cli',
+              tool: 'codex',
+              model: 'gpt-5.4-mini',
+              context_length: 200000,
+              label: 'Codex CLI',
+              cost_tier: 'standard',
+            },
+          },
+        },
+      });
+
+      const { config } = loadConfig(dir);
+      expect(config.implementer.model).toBe('legacy-local');
+      expect(config.implementerProfiles?.default).toBe('local-qwen');
+      expect(config.implementerProfiles?.profiles['agent-cli']?.label).toBe('Codex CLI');
+
+      writeConfig(dir, config);
+      const written = YAML.parse(readFileSync(join(dir, DIPTYCH_DIR, 'config.yaml'), 'utf-8')) as Record<string, unknown>;
+      expect(written.implementer_profiles).toBeDefined();
+      const profiles = written.implementer_profiles as Record<string, unknown>;
+      expect(profiles.default).toBe('local-qwen');
+      expect(profiles.profiles).toBeDefined();
+    });
+
     it('converts snake_case keys to camelCase and migrates commitPerTask', () => {
       const dir = join(TMP, 'snake-case');
       writeConfigYaml(dir, {

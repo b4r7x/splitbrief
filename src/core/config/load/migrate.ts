@@ -123,6 +123,7 @@ function migrateV1ToV2(obj: Record<string, unknown>): unknown {
     snapshots: obj.snapshots,
     palette: obj.palette,
     approval: obj.approval,
+    implementerProfiles: obj.implementerProfiles,
   };
 }
 

@@ -199,7 +199,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 3. If the changes are wrong, revert via the snapshot system: `diptych snapshot restore <snapshot-id>`.
 4. For repeat offenders, raise the implementer model or tighten the brief's scope language.
 
-**Prevention:** Always check the drift report before approving the per-task commit. Treat unexpected out-of-bounds files as a planning bug, not implementation noise.
+**Prevention:** Always check the drift report before accepting a task or making any manual commit. Treat unexpected out-of-bounds files as a planning bug, not implementation noise.
 
 **See also:** [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md), [docs/WORKFLOW.md](./WORKFLOW.md), `src/engine/orchestrator/final-review.ts`.
 
@@ -236,9 +236,9 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ---
 
-### Symptom: Code does not typecheck after a task; commit blocked
+### Symptom: Code does not typecheck after a task; workflow blocked
 
-**Likely cause:** The validation step (typecheck / lint / test) ran against the implementer's output and failed. The orchestrator refuses to advance the task — and refuses to allow a commit — until validation passes.
+**Likely cause:** The validation step (typecheck / lint / test) ran against the implementer's output and failed. The orchestrator refuses to advance the task until validation passes. If optional product-level commits are enabled, those are blocked too.
 
 **Fix:**
 1. Open `evidence.json` for the task; the `validation` section lists the exact failing command and stderr.
@@ -483,15 +483,17 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ## MCP server
 
-### Symptom: `diptych mcp` exits immediately or refuses to bind
+Diptych MCP is a read-only resources server. It exposes session artifacts for external tools to inspect; it does not expose MCP tools, writes, or mutation endpoints. Tool calls remain inside the configured planner or implementer runner.
+
+### Symptom: `diptych mcp serve` exits immediately or refuses to bind
 
 **Likely cause:** The default port is in use, or there is no active session for the server to attach to.
 
 **Fix:**
 1. Pass `--port <n>` with a free port (default may be occupied by another diptych or unrelated service).
-2. Pass `--session <id>` explicitly — `diptych mcp` attaches to a specific session, not "the current workspace".
+2. Pass `--session <id>` explicitly — `diptych mcp serve` attaches to a specific session, not "the current workspace".
 3. Confirm the session exists with `diptych ps`.
-4. Check that no other `diptych mcp` is running for the same session: `pgrep -fa 'diptych mcp'`.
+4. Check that no other `diptych mcp serve` is running for the same session: `pgrep -fa 'diptych mcp serve'`.
 
 **Prevention:** Always pass `--port` and `--session` explicitly in scripts; never rely on defaults for production usage.
 
@@ -501,15 +503,15 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: MCP client reports "auth token rejected"
 
-**Likely cause:** The token is mistyped or stale. `diptych mcp` prints a fresh token on startup; clients must use that exact value.
+**Likely cause:** The token is mistyped or stale. `diptych mcp serve` prints a fresh token on startup; clients must use that exact value.
 
 **Fix:**
 1. Re-read the startup banner — the token is printed once at server start.
 2. Copy it verbatim (no surrounding whitespace, no quotes) into your client config.
-3. If you lost the banner, restart the server: `diptych mcp --port <p> --session <s>` and capture the new token.
-4. For long-lived setups, configure the token explicitly via env var so you control its value.
+3. If you lost the banner, restart the server: `diptych mcp serve --port <p> --session <s>` and capture the new token.
+4. Update the client config with the new bearer token.
 
-**Prevention:** Capture the token into a shell variable at startup time, or pin it via env.
+**Prevention:** Start MCP from a wrapper script that captures the startup banner and writes the generated token into your client config. The token is generated in memory for each server run and is not pinned by environment variable.
 
 **See also:** [docs/API-KEYS.md](./API-KEYS.md), [docs/CONFIG.md](./CONFIG.md).
 
@@ -517,13 +519,13 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: Expected MCP resources are missing or empty
 
-**Likely cause:** Resources are synthesized from the live session's artifacts. If the session has not produced briefs, evidence, or summary yet, those resources will be empty.
+**Likely cause:** Resources are synthesized from the live session's artifacts. If the session has not produced briefs, evidence, or summary yet, those resources will be empty. This is read-only by design; there is no MCP tool call that can create the missing artifacts.
 
 **Fix:**
 1. Confirm the session is past the planning phase: `diptych status <session>` should show artifacts present.
 2. If the session is still planning, wait for the artifacts to materialize.
 3. Inspect the session directory directly (`.diptych/sessions/<id>/`) to confirm what exists.
-4. If artifacts exist but the MCP server does not expose them, restart `diptych mcp` to re-scan.
+4. If artifacts exist but the MCP server does not expose them, restart `diptych mcp serve` to re-scan.
 
 **Prevention:** Start MCP after the session has produced at least its first brief.
 
@@ -555,7 +557,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 2. Copy the token exactly — no surrounding quotes or whitespace.
 3. Update your MCP client config with the new token value.
 
-**Prevention:** Automate token capture: `TOKEN=$(diptych mcp serve --port 4321 2>&1 | grep 'Token:' | awk '{print $2}')`.
+**Prevention:** Keep the terminal that started `diptych mcp serve` visible, or have a wrapper script tee the startup banner to a file before handing the token to your client config.
 
 **See also:** [docs/API-KEYS.md](./API-KEYS.md), [docs/CONFIG.md](./CONFIG.md).
 
@@ -858,13 +860,13 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: `git commit` is blocked when running under diptych
 
-**Likely cause:** This is intentional. diptych never creates commits — the user reviews and commits all changes manually. A pre-tool-use hook (`.claude/hooks/block-git-commits.sh`) enforces this.
+**Likely cause:** This repository's agent workflow blocks staging and commits so the human owner reviews the final diff manually. Product-level `commitStrategy` settings may create checkpoints in user projects, but agents working in this repo must not stage or commit. A pre-tool-use hook (`.claude/hooks/block-git-commits.sh`) enforces the repo rule.
 
 **Fix:**
 1. Exit the diptych session.
 2. Review the changes (`git status`, `git diff`).
-3. Stage and commit yourself (`git add ...`, `git commit -m "..."`).
-4. If you need diptych to coexist with auto-commit tooling, run the auto-commit step outside the diptych session.
+3. If you are the human owner, stage and commit yourself (`git add ...`, `git commit -m "..."`). Agents working in this repository must not stage or commit.
+4. If you need diptych to coexist with auto-commit tooling, run the auto-commit step outside this repository's agent session.
 
 **Prevention:** Treat the post-session commit step as a manual review checkpoint, not a chore to automate away.
 
@@ -887,7 +889,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ---
 
-### Symptom: Want to skip per-task validation (and the implicit pre-commit gate)
+### Symptom: Want to skip per-task validation
 
 **Likely cause:** Per-task validation is mandatory by design — it is the contract that makes briefs trustworthy. Skipping it weakens the entire workflow.
 

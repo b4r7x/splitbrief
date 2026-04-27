@@ -30,7 +30,7 @@ diptych start --mode speckit "redesign auth subsystem"
 | `standard` (default) | 4 | spec | Ordinary feature work — research → spec → plan → tasks |
 | `speckit` | 6–7 | spec + plan + constitution + analyze | Risky, large, or externally visible work |
 
-**Configuration.** `workflow.mode`, `workflow.approve` (`none|spec|plan|all|default`), `workflow.maxRetries`. See [CONFIGURATION.md §workflow](./CONFIGURATION.md#3-workflow).
+**Configuration.** `workflow.mode`, `workflow.approve` (`none|spec|plan|all|default`), `workflow.maxRetries`. See [CONFIGURATION.md §workflow](./CONFIGURATION.md#5-workflow).
 
 ### Runner kinds (cli / api / shell / agent / agent-sdk)
 
@@ -58,20 +58,22 @@ implementer:
   contextLength: 32768
 ```
 
-Full schema: [CONFIGURATION.md §planner / §implementer](./CONFIGURATION.md#1-planner--2-implementer). Capability matrix per backend: [ARCHITECTURE.md §Capability matrix](./ARCHITECTURE.md).
+Full schema: [CONFIGURATION.md §planner](./CONFIGURATION.md#2-planner) and [CONFIGURATION.md §implementer](./CONFIGURATION.md#3-implementer). Capability matrix per backend: [ARCHITECTURE.md §Capability matrix](./ARCHITECTURE.md).
 
-### Per-task git commits + validation pipeline
+### Validation pipeline + checkpoints
 
-**What it does.** After every implementer task, diptych runs `tsc --noEmit` → Biome lint → tests (in that order, stop on first failure). On success it can commit per task or per checkpoint.
+**What it does.** After every implementer task, diptych runs `tsc --noEmit` → Biome lint → tests (in that order, stop on first failure). On success it records evidence and can create checkpoints. Product-level git commits are optional when explicitly configured; checkpoint safety does not depend on commits.
 
 **How to use.** Set `validation.{typecheck,lint,test,testCommand}` and `workflow.git.commitStrategy: none|checkpoint|per-task`. Optionally auto-create a branch with `workflow.git.createBranch: true` (writes to `diptych/<slug>`).
 
-**When to use.** `per-task` for clean-blame history; `checkpoint` for one commit at run end; `none` if you commit manually.
+**When to use.** `none` for manual review and commits. `checkpoint` and `per-task` are optional product behaviors for teams that want diptych to create git history as part of the run.
+
+In this repository, implementation agents must never stage or commit. Leave `workflow.git.commitStrategy: none` while working on diptych itself.
 
 ```yaml
 validation: { typecheck: true, lint: true, test: true, testCommand: "npm test" }
 workflow:
-  git: { commitStrategy: per-task, createBranch: true }
+  git: { commitStrategy: none, createBranch: false }
 ```
 
 Events: `validate`, `git_commit`, `git_checkpoint`, `git_branch_created`.
@@ -249,7 +251,7 @@ Or in the TUI: `/approval list` / `/approval clear`. Headless mode fails fast at
 
 **Events.** `approval_prompted`, `approval_granted`, `approval_rejected`, `approval_sticky_recorded`. Rejections are also written to the evidence ledger with a reason string.
 
-### Snapshots (`diptych snapshot create / list / restore / diff`)
+### Snapshots (`diptych snapshot create / list / restore / diff`) (advanced run safety)
 
 **What it does.** Content-addressed working-tree snapshots with a baseline + delta layout under `.diptych/sessions/<id>/snapshots/`. Restore is hash-guarded — files modified after the snapshot was taken are reported as conflicts and skipped unless `--force` is passed.
 
@@ -313,11 +315,11 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 
 ---
 
-## Handoff and interop
+## Advanced handoff and interop
 
-### External agent handoff packs
+### External agent handoff packs (advanced)
 
-**What it does.** Renders the compiled Task Brief into a self-contained folder another tool can consume. Four built-in targets:
+**What it does.** Renders the compiled Task Brief into a self-contained folder another tool can consume. This is an advanced escape hatch for manual handoff; it is not the primary execution path and diptych never spawns an external agent for you. Four built-in targets:
 
 | Target | Consumed by |
 |---|---|
@@ -326,7 +328,7 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 | `claude-code` | Claude Code CLI prompt + commands |
 | `copilot-issue` | GitHub Copilot Workspace issue body |
 
-Each pack is an inert artifact — diptych never spawns an external agent for you.
+Each pack is an inert artifact.
 
 **How to use.**
 
@@ -341,7 +343,7 @@ In the TUI: `/handoff <target> [task-id]` writes to `.diptych/sessions/<id>/hand
 
 **Pack shape.** `manifest.json` (with `briefHash`), `spec.md`, `plan.md`, `constitution.md` (when present), `tasks/T001.md`, `tasks/T002.md`, …, `README.md`.
 
-### Custom handoff renderers
+### Custom handoff renderers (advanced)
 
 **What it does.** Drop a TypeScript or JavaScript file at `.diptych/handoff-renderers/<name>.ts` exporting a default function. `diptych handoff <name>` then dispatches to it via `renderHandoffWithCustom`.
 
@@ -360,9 +362,11 @@ diptych handoff jira
 
 **When to use.** When you need to push the brief into a tool diptych does not ship a renderer for.
 
-### MCP resources server
+### MCP resources server (advanced, read-only)
 
 **What it does.** A localhost-only HTTP MCP server exposing supported read-only session resources via standard `resources/list` / `resources/read`: the sessions index, `manifest.json` when canonical `summary.json` and `state.json` exist, `summary.json`, `state.json`, `spec.md`, `plan.md`, `tasks`, individual `tasks/<id>` blocks, `evidence.json`, and `drift-report.json` when present. Missing concrete resources return resource-not-found; unavailable manifests are not advertised. Bound to `127.0.0.1`, Bearer-token authenticated (one-shot token printed at startup).
+
+MCP itself can expose model-controlled tools; the official spec treats those as sensitive operations that need visible, confirmable user control. Diptych's MCP surface deliberately avoids that category. It declares no tools, performs no writes, and never dispatches implementation work. Tool calls belong to the selected planner or implementer runner, while this server is only a live resource window into session artifacts.
 
 **Transport.** Implements the MCP Streamable HTTP transport (`2025-11-25`). Accepts `POST /mcp` for requests and notifications. `GET /mcp` returns `405 Method Not Allowed` with an `Allow: POST` header (SSE not implemented). Non-local browser `Origin` headers are rejected with `403`. The server supports `MCP-Protocol-Version: 2025-11-25`; when the request header is missing, the server defaults to that current supported version and echoes it in the response header. Unsupported protocol-version headers return `400` with a JSON-RPC error. Notifications receive `202 Accepted` (no body); requests receive `200` with a JSON-RPC response body.
 
@@ -375,11 +379,11 @@ diptych mcp serve --all-sessions               # expose every session in the pro
 
 External MCP-aware tools (Claude Code, Codex, Cursor) configure the URL plus the printed token. URI scheme is forward-compatible with the handoff pack v1 paths. The bearer token is a one-shot random value generated in-memory at server startup (`src/engine/mcp/auth-token.ts` — `generateToken()`); it is never persisted to disk. Every `manifest.json` exposed by the server includes `briefHash`.
 
-**When to use.** Live mode for external agents that need to read diptych state without a copied handoff pack.
+**When to use.** Live read-only mode for external agents that need to inspect diptych state without a copied handoff pack. MCP exposes resources only: no tools, no writes, no mutation endpoints. Tool execution remains inside the configured planner or implementer runner; MCP does not become diptych's write path.
 
 ---
 
-## Worktrees and parallel sessions
+## Advanced worktrees and parallel sessions
 
 ### `diptych start --worktree [name]`
 
@@ -396,7 +400,7 @@ diptych start --worktree feature-b "refactor billing"
 
 The source worktree must be clean before creation. `--detach` combination validation (missing feature, `--json` conflict, Windows) runs **before** the worktree is created so a failed validation never leaves behind a `.trees/<slug>` directory or a `diptych/<slug>` branch. With `--detach --worktree`, worktree selection happens before the detached server is spawned.
 
-**When to use.** Run unrelated features in parallel; A/B-test two implementer model configs against the same brief; keep a long planner exploration alive while making quick edits elsewhere.
+**When to use.** Isolate unrelated sessions in separate working directories; A/B-test two implementer model configs against the same brief; keep a long planner exploration alive while making quick edits elsewhere. This is not same-directory parallel writing, and same-checkout fan-out is out of scope.
 
 **Caveat.** Filesystem and diptych-state are isolated; **runtime** isolation (ports, environment) is the user's responsibility. See [WORKTREES.md](./WORKTREES.md) for the isolation gap and mitigations.
 
@@ -412,11 +416,11 @@ diptych worktree switch <name>                     # print cd instructions for t
 diptych worktree remove <name> [--force] [--delete-branch]
 ```
 
-`remove` refuses if the worktree has uncommitted changes or a live session, unless `--force` is passed. Forced removal prints specific warnings with the live session id when known and the uncommitted file count when known. Parallel `--parallel N` fan-out is deferred to v3.
+`remove` refuses if the worktree has uncommitted changes or a live session, unless `--force` is passed. Forced removal prints specific warnings with the live session id when known and the uncommitted file count when known. Parallel `--parallel N` fan-out is deferred until isolated ownership boundaries are specified; same-directory parallel writes remain out of scope.
 
 ---
 
-## Server-client architecture
+## Advanced server-client architecture
 
 ### `diptych start --detach`
 
@@ -532,6 +536,8 @@ palette:
 
 **What it does.** Browses past sessions backed by `.diptych/sessions/`. Open via `/sessions` or from the home screen. Each row shows session id, mode, feature, status, cost, and elapsed time.
 
+Sessions are execution records, not a plan archive or project-management database. Plan Review v2 is scoped to the current session's Task Briefs, routing, context fit, checkpoints, and conflict posture before execution.
+
 ### Settings overlay
 
 **What it does.** Edits planner / implementer / model / workflow defaults from inside the TUI. Open via `/settings` (Ctrl+,) or `/config`. Writes back to `.diptych/config.yaml`.
@@ -570,8 +576,8 @@ palette:
 | `post_task` | After each successful task |
 | `pre_validation` | Before tsc/lint/test |
 | `post_validation` | After validation finishes |
-| `pre_commit` | Before per-task git commit |
-| `post_commit` | After per-task git commit |
+| `pre_commit` | Before optional product-level commit |
+| `post_commit` | After optional product-level commit |
 | `pre_escalation` | Before planner escalation |
 | `pre_compact` | Reserved (FUTURE) |
 | `on_error` | Any unrecoverable engine error |
@@ -596,7 +602,7 @@ hooks:
 Two built-ins ship, both off by default:
 
 - `prettier-on-change` — runs `npx prettier --write ${event.file}` on `post_task`.
-- `block-secrets` — scans `event.file` on `pre_commit` for AWS / GitHub PAT / OpenAI / Anthropic key patterns.
+- `block-secrets` — scans `event.file` on `pre_commit` for AWS / GitHub PAT / OpenAI / Anthropic key patterns when optional commit hooks are in use.
 
 ```yaml
 hooks:

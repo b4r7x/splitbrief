@@ -19,6 +19,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { WorkflowContext, WorkflowSinks } from './types.js';
 import type { ImplementerOptions } from '../implementers/types.js';
+import { createImplementerBase } from '../implementers/base.js';
 import { createValidator } from './validation.js';
 import { retryAndRecord, runSingleTask } from './task-step.js';
 import { readEvidenceLedger } from './evidence.js';
@@ -750,9 +751,100 @@ describe('runSingleTask — happy path', () => {
     expect(readFileSync(join(projectDir, 'src/other.ts'), 'utf-8')).toBe(concurrentUserEdit);
     expect(runValidation).not.toHaveBeenCalled();
     expect(result.currentTaskIndex).toBe(0);
+    expect(events.find((event) => event.type === 'paused_external_changes' && event.conflict?.kind === 'changed-during-approval-promotion')).toMatchObject({
+      type: 'paused_external_changes',
+      selectedAction: 'pause',
+      conflict: {
+        kind: 'changed-during-approval-promotion',
+        files: ['src/other.ts'],
+        affectedTaskIds: ['T001'],
+        safeToContinue: false,
+      },
+    });
     expect(events.find((event) => event.type === 'error')).toMatchObject({
       type: 'error',
       message: expect.stringContaining('promotion blocked'),
+    });
+  });
+
+  it('extracted-code approval races ask for user-edit resolution instead of retrying', async () => {
+    const { projectDir, sessionId } = setupProject();
+
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/race.ts'), 'export const value = "before";\n');
+
+    const task = makeTask({
+      id: 'T001',
+      action: 'modify',
+      file: 'src/race.ts',
+      scope: { inBounds: ['src/race.ts'] },
+    });
+    const state = implementingState([task]);
+
+    const implementer = createImplementerBase({
+      extractsCode: true,
+      invoke: vi.fn().mockResolvedValue({
+        text: '```ts\nexport const value = "implementer";\n```',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
+    });
+    const retry = vi.spyOn(implementer, 'retry');
+    const userEdit = 'export const value = "user";\n';
+    const onUserEditConflict = vi.fn().mockResolvedValue('pause');
+    let approvalCalls = 0;
+    const callbacks = {
+      ...makeCallbacks().callbacks,
+      onTieredApproval: vi.fn().mockImplementation(async () => {
+        approvalCalls++;
+        if (approvalCalls === 2) {
+          writeFileSync(join(projectDir, 'src/race.ts'), userEdit);
+        }
+        return { decision: 'allow', scope: 'once' };
+      }),
+      onUserEditConflict,
+    };
+    const runValidation = vi.fn().mockResolvedValue([]);
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runSingleTask({
+      wctx: makeWorkflowContext({
+        projectDir,
+        sessionId,
+        callbacks,
+        implementer,
+        bus,
+        config: makeConfig({
+          approval: { enabled: true, feedRejectionsToPlanner: false, tiers: { write_in_scope: 'sticky' } },
+          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          workflow: { commitStrategy: 'none', maxRetries: 2 },
+        }),
+        validator: { ...createValidator(), runValidation },
+      }),
+      task,
+      index: 0,
+      totalTasks: 1,
+      state,
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(readFileSync(join(projectDir, 'src/race.ts'), 'utf-8')).toBe(userEdit);
+    expect(retry).not.toHaveBeenCalled();
+    expect(runValidation).not.toHaveBeenCalled();
+    expect(result.currentTaskIndex).toBe(0);
+    expect(onUserEditConflict).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'changed-during-approval-promotion',
+      files: ['src/race.ts'],
+      affectedTaskIds: ['T001'],
+    }));
+    expect(events.find((event) => event.type === 'paused_external_changes')).toMatchObject({
+      type: 'paused_external_changes',
+      selectedAction: 'pause',
+      conflict: {
+        kind: 'changed-during-approval-promotion',
+        files: ['src/race.ts'],
+      },
     });
   });
 

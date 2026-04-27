@@ -69,7 +69,7 @@ export type RunTasksAndReviewOptions = {
   setCurrentTask: (t: Pick<Task, 'file' | 'action'> | undefined) => void;
 };
 
-export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise<Summary> {
+export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise<{ summary: Summary; completed: boolean }> {
   const { wctx, phaseTimings, setTrackedState, setCurrentTask } = opts;
   let { summaryBase } = opts;
   let { state } = opts;
@@ -98,13 +98,24 @@ export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise
   phaseTimings.implementing = Date.now() - phaseStart;
 
   if (wctx.signal?.aborted) {
-    return buildSummary({ ...summaryBase, state, taskBreakdowns: taskResult.taskBreakdowns, phaseTimings });
+    return {
+      summary: buildSummary({ ...summaryBase, state, taskBreakdowns: taskResult.taskBreakdowns, phaseTimings }),
+      completed: false,
+    };
   }
 
-  return runFinalReviewPhase(
+  if (taskResult.status !== 'complete') {
+    return {
+      summary: buildSummary({ ...summaryBase, state, taskBreakdowns: taskResult.taskBreakdowns, phaseTimings }),
+      completed: false,
+    };
+  }
+
+  const summary = await runFinalReviewPhase(
     { projectDir: wctx.projectDir, sessionId: wctx.sessionId, config: wctx.config, callbacks, bus: wctx.bus, state, planner: wctx.planner, metadata: wctx.metadata },
     summaryBase,
     taskResult.taskBreakdowns,
     phaseTimings,
   );
+  return { summary, completed: true };
 }

@@ -24,6 +24,9 @@ Top-level shape:
 version: 3
 planner:        { kind: cli|api|shell|agent|agent-sdk, ... }
 implementer:    { kind: cli|api|shell|agent|agent-sdk, ... }
+implementerProfiles:
+  default: local-qwen
+  profiles: { local-qwen: { kind: api, ... }, cheap-cloud: { kind: api, ... } }
 validation:     { typecheck, lint, test, testCommand }
 workflow:       { mode, approve, maxRetries, git, maxBudget, ... }
 theme:          terminal | mono
@@ -259,6 +262,56 @@ implementer:
 
 **See also:** §2 `planner`, §6 `escalation` (for mid-tier fallback), [REPOMAP.md](./REPOMAP.md) (codebase context the implementer never sees, only the planner).
 
+### Optional `implementerProfiles`
+
+`implementer` remains required for backwards compatibility and existing configs do not need to change. New configs may also define named implementer profiles so task routing can choose a cheap capable worker per Task Brief.
+
+An implementer pool is still one product role. Diptych selects one capable profile for a Task Brief; it does not run a swarm, race workers against each other, or parallel-write the same checkout. Same-directory parallel writes are out of scope unless a future worktree-isolated design explicitly adds them.
+
+Profile names must be stable event-safe identifiers: lowercase letters, numbers, and hyphens, starting with a letter, up to 64 characters.
+
+```yaml
+implementer:
+  kind: api
+  provider: ollama
+  apiBase: http://localhost:11434/v1
+  model: qwen2.5-coder:7b
+
+implementerProfiles:
+  default: local-qwen
+  profiles:
+    local-qwen:
+      kind: api
+      provider: ollama
+      apiBase: http://localhost:11434/v1
+      model: qwen2.5-coder:7b
+      contextLength: 32768
+      label: Local Qwen
+      costTier: local
+      capabilities:
+        writesFiles: extracted-code
+    cheap-cloud:
+      kind: api
+      provider: openrouter
+      apiBase: https://openrouter.ai/api/v1
+      model: qwen/qwen3-coder
+      contextLength: 131072
+      label: Cheap cloud
+      costTier: cheap
+      capabilities:
+        writesFiles: extracted-code
+```
+
+`implementerProfiles.profiles.*` uses the same runner schema as `implementer`, plus:
+
+| Field | Type | Description |
+|---|---|---|
+| `label` | string | Optional display label for TUI/events. |
+| `costTier` | `local\|cheap\|standard\|frontier\|unknown` | Optional routing hint. Defaults to `unknown` in accessors when omitted. |
+| `capabilities.writesFiles` | `extracted-code\|direct` | Optional routing metadata. Defaults from runner kind: `api`/`shell` extract one file from stdout; `cli`/`agent`/`agent-sdk` write directly. Explicit values must match the runner kind. |
+
+If `implementerProfiles.default` is omitted, diptych resolves the default profile deterministically from the first profile name in sorted order. If `default` is set, it must name an existing profile.
+
 ---
 
 ## 4. `validation`
@@ -354,7 +407,7 @@ workflow: {
 | `autoApprovePlan` | boolean | `false` | **Deprecated v2** — read by legacy code paths only. Use `approve`. |
 | `maxRetries` | int >= 0 | `3` | Per-task local retries before escalation kicks in |
 | `commitStrategy` | enum | — | **Deprecated v2** — use `git.commitStrategy`. |
-| `git.commitStrategy` | enum | `none` | `none` (no commits — user reviews everything), `checkpoint` (one commit at end), `per-task` (one commit per task). |
+| `git.commitStrategy` | enum | `none` | Optional product-level git behavior: `none` (no commits — user reviews everything), `checkpoint` (one commit at end), `per-task` (one commit per task). Checkpoint safety does not require git commits. |
 | `git.createBranch` | boolean | `false` | Auto-create `diptych/<slug>` branch at workflow start. |
 | `briefReview` | enum | `simple` | `simple` (read-only review) \| `rich` (interactive plan editor). Press `e` from the simple view to opt into rich for the current session. |
 | `maxBudget` | number > 0 | unset | USD ceiling. Workflow prompts when exceeded; if `budgetPauseThreshold` is set, also pauses earlier. |
@@ -384,7 +437,7 @@ workflow:
   maxRetries: 3
 ```
 
-Speckit with budget and per-task commits:
+Speckit with budget and manual commits:
 
 ```yaml
 workflow:
@@ -396,8 +449,8 @@ workflow:
   budgetPauseThreshold: 0.8
   driftChainThreshold: 0.6
   git:
-    commitStrategy: per-task
-    createBranch: true
+    commitStrategy: none
+    createBranch: false
   speckit:
     minCoverage: 0.8
   persistTranscript: true
@@ -416,6 +469,7 @@ workflow:
 
 **When to use what:**
 - `git.createBranch: true` — when running diptych in CI or against `main` and you don't want the changes landing on the current branch.
+- `git.commitStrategy: none` — the default and recommended setting for manual review. In this repository, implementation agents must keep this behavior and must never stage or commit.
 - `maxBudget` — always set this for API-billed runs. It's your stop-loss.
 - `budgetPauseThreshold` — set for unattended runs so you can intervene before the hard ceiling.
 - `briefReview: rich` — when you want to edit the brief in-place before implementation; otherwise stick with `simple` for speed.
@@ -651,7 +705,7 @@ snapshots:
 
 Manual snapshots are always available via `diptych snapshot create`.
 
-**When to use:** running unattended jobs where you want a `git stash`-like rollback point at every checkpoint, independent of `git.commitStrategy`.
+**When to use:** running unattended jobs where you want a rollback point at every checkpoint, independent of `git.commitStrategy`.
 
 ---
 
@@ -905,7 +959,7 @@ validation:
   test: true
   testCommand: npm test -- --run --reporter=dot
 
-# ---------- Workflow: speckit, all gates, per-task commits, budget cap ----------
+# ---------- Workflow: speckit, all gates, manual commits, budget cap ----------
 workflow:
   mode: speckit
   approve: all
@@ -916,8 +970,8 @@ workflow:
   driftChainThreshold: 0.6
   persistTranscript: true
   git:
-    commitStrategy: per-task
-    createBranch: true
+    commitStrategy: none
+    createBranch: false
   speckit:
     minCoverage: 0.8
 

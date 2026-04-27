@@ -70,6 +70,18 @@ Test support files that import `vitest` (or any other dev-only dependency) MUST 
 
 **Hook tests follow behavior, not wiring.** Trivial hooks (≤30 LOC, no branching, thin selector wrappers) are covered transitively through their consumer's integration test — see [`HOOKS.md`](./HOOKS.md). Only behavior-bearing hooks (state machines, async race / cancellation, promise-based resolvers like `useInputMode`) get a dedicated colocated test, and that test asserts the observable contract: inputs, effects, and returned state. Do not test internal `useState` / `useEffect` calls.
 
+## Current workflow policy
+
+Cost-aware implementer routing, user-edit conflict handling, and Plan Review v2 follow the same rule: test the decision contract, not the private call graph.
+
+**Routing and context fit.** Public pure helpers are valid unit-test targets when they encode product policy. Examples: context-window classification, prompt-size estimation, profile ordering, cheapest-capable selection, and no-capable-profile failure. These tests should assert the returned decision object, selected profile, rejection reasons, and fit status. Do not spy on internal sort helpers or duplicate the full prompt formatter in the test.
+
+**User-edit conflicts.** Conflict tests should set up real task/file ownership data and assert the public classification or emitted event: conflict kind, affected task ids, `safeToContinue`, and available actions. Do not assert that a particular detector function was called. Orchestrator-level coverage belongs at the task-loop or `runWorkflow()` seam when the behavior is "pause before overwriting the user" or "continue on unrelated external edits."
+
+**Plan Review v2.** Keep pure editor reducers/actions colocated with the store or hook module when they have branching behavior. Component tests should render the Plan Review surface and assert visible markers the user depends on: selected worker, context fit or overflow, dirty state, save error, and conflict labels. Avoid micro-tests for keybinding passthrough unless the helper is exported as a pure public parser; prefer grouping key maps with `it.each` when adding more cases.
+
+**Hooks and wrappers.** No new `renderHook` tests for trivial wrappers, selector hooks, or `useState` / `useEffect` plumbing. Extract behavior-bearing logic into a public pure helper and test that helper, or cover the hook through the feature/component that uses it. Thin wrappers that only call an already-tested helper should not receive dedicated tests.
+
 ## How to add an integration test
 
 Integration tests live under `testing/integration/<layer>/`. One file per user-observable flow. Longer files with more assertions beat many short files (TkDodo: fewer, longer tests).
@@ -293,6 +305,14 @@ Why: real stores, real Ink render, observable output + observable store state.
 - Discriminated-union accessors enforced by `assertNever` — the compiler already enforces exhaustiveness.
 - Styling-only components with no conditional logic.
 - Library internals (`Array.prototype.filter`, `fzf.find`, Zod `.strict()`).
+
+## Low-value test audit
+
+For the cost-aware implementer pool and Plan Review v2 work, the audit target is narrow:
+
+- Delete or rewrite tests that only prove a wrapper calls another helper, a hook stores React state, a schema accepts a literal already type-checked by TypeScript, or a component "does not crash."
+- Keep tests that encode routing policy, context overflow behavior, conflict classification, save/round-trip behavior, visible Plan Review markers, or user-facing CLI wording.
+- Prefer rewriting many one-key or one-getter cases into a table or a single lifecycle test over deleting behavior coverage.
 
 ## Convention cross-reference
 

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { Config } from '../../core/schemas/config.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { getSkippedTaskIds } from '../../core/state/selectors.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -223,16 +224,23 @@ describe('runTaskLoop', () => {
     }
   });
 
-  it('external changes detected on disk: onExternalChanges callback consulted, workflow cancelled on decline', async () => {
+  it('unrelated dirty file present before the loop starts does not emit a user-edit conflict', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
     const state = makeImplState([task]);
 
-    // Write a real file to the real repo so `hasExternalChanges` returns true naturally.
     writeFileSync(join(projectDir, 'external-change.txt'), 'external edit');
 
     const onExternalChanges = vi.fn().mockResolvedValue(false);
     const { callbacks } = makeCallbacks({ onExternalChanges });
+    const { bus, events } = makeBusRecorder();
+    const implementer = makeImplementer({
+      implement: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'code',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
+    });
 
     const result = await runTaskLoop({
       wctx: {
@@ -242,7 +250,421 @@ describe('runTaskLoop', () => {
         callbacks,
         context: defaultContext,
         planner: makePlanner(),
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+      },
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(onExternalChanges).not.toHaveBeenCalled();
+    expect(implementer.implement).toHaveBeenCalled();
+    expect(result.state.currentTaskIndex).toBe(1);
+    expect(events.find((event) => event.type === 'paused_external_changes')).toBeUndefined();
+  });
+
+  it('current task dirty file present before the loop starts is treated as baseline worktree state', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', file: 'src/current.ts' });
+    const state = makeImplState([task]);
+
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/current.ts'), 'user edit');
+
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const implementer = makeImplementer();
+
+    const result = await runTaskLoop({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+      },
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(implementer.implement).toHaveBeenCalled();
+    expect(result.state.currentTaskIndex).toBe(1);
+    expect(events.find((event) => event.type === 'paused_external_changes')).toBeUndefined();
+  });
+
+  it('future task dirty file present before the loop starts is checkpointed and does not block later tasks', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const currentTask = makeTask({ id: 'T001', file: 'src/current.ts' });
+    const futureTask = makeTask({ id: 'T002', file: 'src/future.ts' });
+    const state = makeImplState([currentTask, futureTask]);
+
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/future.ts'), 'user edit');
+
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        writeFileSync(join(projectDir, 'src/current.ts'), 'implementation');
+        return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+
+    const result = await runTaskLoop({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+      },
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(implementer.implement).toHaveBeenCalledTimes(2);
+    expect(result.state.currentTaskIndex).toBe(2);
+    expect(events.find((event) => event.type === 'paused_external_changes')).toBeUndefined();
+  });
+
+  it('routes a task to the selected profile and publishes profile/tool/model metadata', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = makeImplState([task]);
+    const config: Config = {
+      ...makeNoValidationConfig({ workflow: defaultWorkflow }),
+      implementerProfiles: {
+        default: 'local-small',
+        profiles: {
+          'cheap-large': {
+            kind: 'api',
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
+            model: 'qwen-large',
+            costTier: 'cheap',
+            contextLength: 32768,
+          },
+          'local-small': {
+            kind: 'api',
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
+            model: 'qwen-small',
+            costTier: 'local',
+            contextLength: 100,
+          },
+        },
+      },
+    };
+    const selectedImplementer = makeImplementer({
+      implement: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'code',
+        usage: { inputTokens: 20, outputTokens: 10 },
+      }),
+    });
+    const defaultImplementer = makeImplementer({ implement: vi.fn() });
+    const createProfileImplementer = vi.fn().mockReturnValue(selectedImplementer);
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTaskLoop({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer: defaultImplementer,
+        createImplementer: createProfileImplementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+      },
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(defaultImplementer.implement).not.toHaveBeenCalled();
+    expect(selectedImplementer.implement).toHaveBeenCalledTimes(1);
+    expect(createProfileImplementer).toHaveBeenCalledWith(expect.objectContaining({
+      implementer: expect.objectContaining({ model: 'qwen-large' }),
+    }));
+    expect(events.find((event) => event.type === 'task_started')).toMatchObject({
+      type: 'task_started',
+      taskId: 'T001',
+      implementerProfile: 'cheap-large',
+      tool: 'ollama',
+      model: 'qwen-large',
+      contextFit: expect.stringMatching(/fits|tight/),
+      estimatedTokens: expect.any(Number),
+      contextLength: 32768,
+      routingReason: expect.stringContaining('Selected cheapest capable profile cheap-large'),
+    });
+    expect(events.find((event) => event.type === 'task_tokens')).toMatchObject({
+      type: 'task_tokens',
+      taskId: 'T001',
+      implementerProfile: 'cheap-large',
+      tool: 'ollama',
+      model: 'qwen-large',
+      contextFit: expect.stringMatching(/fits|tight/),
+      estimatedTokens: expect.any(Number),
+      contextLength: 32768,
+      currentCodeContextMode: 'none',
+      routingReason: expect.stringContaining('Selected cheapest capable profile cheap-large'),
+    });
+    expect(events.find((event) => event.type === 'task_completed')).toMatchObject({
+      type: 'task_completed',
+      taskId: 'T001',
+      implementerProfile: 'cheap-large',
+      tool: 'ollama',
+      model: 'qwen-large',
+    });
+    expect(result.taskBreakdowns[0]).toMatchObject({
+      taskId: 'T001',
+      implementerProfile: 'cheap-large',
+      tool: 'ollama',
+      model: 'qwen-large',
+      currentCodeContextMode: 'none',
+      routingReason: expect.stringContaining('Selected cheapest capable profile cheap-large'),
+    });
+  });
+
+  it('routes modify tasks using current code refreshed from disk before dispatch', async () => {
+    const { projectDir, sessionId } = setupProject();
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    const currentCode = Array.from({ length: 1600 }, (_, i) => `export const value${i} = ${i};`).join('\n');
+    writeFileSync(join(projectDir, 'src/target.ts'), currentCode);
+
+    const task = makeTask({ id: 'T001', action: 'modify', file: 'src/target.ts' });
+    const state = makeImplState([task]);
+    const config: Config = {
+      ...makeNoValidationConfig({ workflow: defaultWorkflow }),
+      implementerProfiles: {
+        default: 'local-small',
+        profiles: {
+          'cheap-large': {
+            kind: 'api',
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
+            model: 'qwen-large',
+            costTier: 'cheap',
+            contextLength: 80_000,
+          },
+          'local-small': {
+            kind: 'api',
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
+            model: 'qwen-small',
+            costTier: 'local',
+            contextLength: 10_000,
+          },
+        },
+      },
+    };
+    const selectedImplementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async ({ task: dispatchedTask }: { task: ReturnType<typeof makeTask> }) => {
+        expect(dispatchedTask.currentCode).toBe(currentCode);
+        return { success: true, output: 'code', usage: { inputTokens: 20, outputTokens: 10 } };
+      }),
+    });
+    const defaultImplementer = makeImplementer({ implement: vi.fn() });
+    const createProfileImplementer = vi.fn().mockReturnValue(selectedImplementer);
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    await runTaskLoop({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer: defaultImplementer,
+        createImplementer: createProfileImplementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+      },
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(defaultImplementer.implement).not.toHaveBeenCalled();
+    expect(selectedImplementer.implement).toHaveBeenCalledTimes(1);
+    expect(createProfileImplementer).toHaveBeenCalledWith(expect.objectContaining({
+      implementer: expect.objectContaining({ model: 'qwen-large' }),
+    }));
+    expect(events.find((event) => event.type === 'task_started')).toMatchObject({
+      type: 'task_started',
+      taskId: 'T001',
+      implementerProfile: 'cheap-large',
+      currentCodeContextMode: 'whole-file',
+    });
+  });
+
+  it('clears stale currentCode before routing and dispatch when the target file is missing', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({
+      id: 'T001',
+      action: 'modify',
+      file: 'src/missing.ts',
+      currentCode: 'export const stale = true;\n',
+    });
+    const state = makeImplState([task]);
+    const config: Config = {
+      ...makeNoValidationConfig({ workflow: defaultWorkflow }),
+      implementerProfiles: {
+        default: 'local-small',
+        profiles: {
+          'local-small': {
+            kind: 'api',
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
+            model: 'qwen-small',
+            costTier: 'local',
+            contextLength: 10_000,
+          },
+        },
+      },
+    };
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async ({ task: dispatchedTask }: { task: ReturnType<typeof makeTask> }) => {
+        expect(dispatchedTask.currentCode).toBeUndefined();
+        return { success: true, output: 'code', usage: { inputTokens: 20, outputTokens: 10 } };
+      }),
+    });
+    const createProfileImplementer = vi.fn().mockReturnValue(implementer);
+    const setTrackedState = vi.fn();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    await runTaskLoop({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
         implementer: makeImplementer(),
+        createImplementer: createProfileImplementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+      },
+      initialState: state,
+      setTrackedState,
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(implementer.implement).toHaveBeenCalledTimes(1);
+    expect(setTrackedState).toHaveBeenCalledWith(expect.objectContaining({
+      tasks: [expect.not.objectContaining({ currentCode: expect.any(String) })],
+    }));
+    expect(events.find((event) => event.type === 'task_started')).toMatchObject({
+      type: 'task_started',
+      taskId: 'T001',
+      currentCodeContextMode: 'none',
+    });
+  });
+
+  it('blocks before implementer dispatch when every profile overflows the task prompt', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = makeImplState([task]);
+    const config: Config = {
+      ...makeNoValidationConfig({ workflow: defaultWorkflow }),
+      implementerProfiles: {
+        default: 'tiny-local',
+        profiles: {
+          'tiny-cloud': {
+            kind: 'api',
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
+            model: 'tiny-cloud',
+            costTier: 'cheap',
+            contextLength: 10,
+          },
+          'tiny-local': {
+            kind: 'api',
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
+            model: 'tiny-local',
+            costTier: 'local',
+            contextLength: 10,
+          },
+        },
+      },
+    };
+    const implementer = makeImplementer({ implement: vi.fn() });
+    const createProfileImplementer = vi.fn();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTaskLoop({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer,
+        createImplementer: createProfileImplementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+      },
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(implementer.implement).not.toHaveBeenCalled();
+    expect(createProfileImplementer).not.toHaveBeenCalled();
+    expect(result.state.phase).toBe('idle');
+    expect(result.state.currentTaskIndex).toBe(0);
+    expect(events.find((event) => event.type === 'error')).toMatchObject({
+      type: 'error',
+      message: expect.stringContaining('Ask the planner to split the task'),
+    });
+  });
+
+  it('dispatches each task as a separate implementer call without prior task continuation text', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const first = makeTask({ id: 'T001', file: 'src/first.ts' });
+    const second = makeTask({ id: 'T002', file: 'src/second.ts' });
+    const state = makeImplState([first, second]);
+    const implementer = makeImplementer({
+      implement: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'code',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
+    });
+    const { callbacks } = makeCallbacks();
+
+    const result = await runTaskLoop({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer,
         metadata: TEST_METADATA,
         sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus: makeBusRecorder().bus,
       },
@@ -251,8 +673,167 @@ describe('runTaskLoop', () => {
       setCurrentTask: vi.fn(),
     });
 
-    expect(onExternalChanges).toHaveBeenCalled();
-    // When external changes detected and user declines, phase transitions away from implementing.
-    expect(result.state.phase).not.toBe('implementing');
+    expect(implementer.implement).toHaveBeenCalledTimes(2);
+    expect(implementer.implement).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      task: expect.objectContaining({ id: 'T001' }),
+      continuationPrompt: undefined,
+    }));
+    expect(implementer.implement).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      task: expect.objectContaining({ id: 'T002' }),
+      continuationPrompt: undefined,
+    }));
+    expect(result.state.currentTaskIndex).toBe(2);
+  });
+
+  it('does not classify previous task output as a user edit in sequential commitStrategy none runs', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const first = makeTask({ id: 'T001', file: 'src/first.ts' });
+    const second = makeTask({ id: 'T002', file: 'src/second.ts' });
+    const state = makeImplState([first, second]);
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async ({ task }: { task: ReturnType<typeof makeTask> }) => {
+        mkdirSync(join(projectDir, 'src'), { recursive: true });
+        writeFileSync(join(projectDir, task.file), `implementation for ${task.id}`);
+        return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTaskLoop({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+      },
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(implementer.implement).toHaveBeenCalledTimes(2);
+    expect(result.state.currentTaskIndex).toBe(2);
+    expect(events.find((event) => event.type === 'paused_external_changes')).toBeUndefined();
+  });
+
+  it('asks about a future task edit before it becomes a current-task conflict', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const first = makeTask({ id: 'T001', file: 'src/current.ts' });
+    const second = makeTask({ id: 'T002', action: 'modify', file: 'src/future.ts' });
+    const state = makeImplState([first, second]);
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+
+    const implementer = makeImplementer({
+      capabilities: { writesFiles: 'direct' },
+      implement: vi.fn().mockImplementation(async ({ task, projectDir: runDir }: { task: ReturnType<typeof makeTask>; projectDir: string }) => {
+        mkdirSync(join(runDir, 'src'), { recursive: true });
+        if (task.id === 'T001') {
+          writeFileSync(join(runDir, 'src/current.ts'), 'export const current = true;\n');
+          writeFileSync(join(projectDir, 'src/future.ts'), 'export const userEdit = true;\n');
+        } else {
+          writeFileSync(join(runDir, 'src/future.ts'), 'export const future = true;\n');
+        }
+        return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+    const onUserEditConflict = vi.fn().mockResolvedValue('continue-unrelated');
+    const { callbacks } = makeCallbacks({ onUserEditConflict });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTaskLoop({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+      },
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(implementer.implement).toHaveBeenCalledTimes(2);
+    expect(result.state.currentTaskIndex).toBe(2);
+    expect(onUserEditConflict).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'future-task-stale-input',
+      files: ['src/future.ts'],
+      affectedTaskIds: ['T002'],
+      currentTaskId: 'T001',
+    }));
+    expect(events.find((event) => event.type === 'paused_external_changes')).toMatchObject({
+      type: 'paused_external_changes',
+      selectedAction: 'continue-unrelated',
+      conflict: {
+        kind: 'future-task-stale-input',
+        files: ['src/future.ts'],
+        affectedTaskIds: ['T002'],
+        currentTaskId: 'T001',
+      },
+    });
+  });
+
+  it('pauses explicitly when the user chooses regenerate-rebase for a future stale edit', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const first = makeTask({ id: 'T001', file: 'src/current.ts' });
+    const second = makeTask({ id: 'T002', action: 'modify', file: 'src/future.ts' });
+    const state = makeImplState([first, second]);
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+
+    const implementer = makeImplementer({
+      capabilities: { writesFiles: 'direct' },
+      implement: vi.fn().mockImplementation(async ({ task, projectDir: runDir }: { task: ReturnType<typeof makeTask>; projectDir: string }) => {
+        mkdirSync(join(runDir, 'src'), { recursive: true });
+        if (task.id === 'T001') {
+          writeFileSync(join(runDir, 'src/current.ts'), 'export const current = true;\n');
+          writeFileSync(join(projectDir, 'src/future.ts'), 'export const userEdit = true;\n');
+        } else {
+          writeFileSync(join(runDir, 'src/future.ts'), 'export const future = true;\n');
+        }
+        return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+    const onUserEditConflict = vi.fn().mockResolvedValue('regenerate-rebase');
+    const { callbacks } = makeCallbacks({ onUserEditConflict });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTaskLoop({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+      },
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(implementer.implement).toHaveBeenCalledTimes(1);
+    expect(result.state.phase).toBe('idle');
+    expect(events.find((event) => event.type === 'paused_external_changes')).toMatchObject({
+      type: 'paused_external_changes',
+      selectedAction: 'regenerate-rebase',
+      conflict: { kind: 'future-task-stale-input', files: ['src/future.ts'], affectedTaskIds: ['T002'] },
+    });
+    expect(events.find((event) => event.type === 'warning')).toMatchObject({
+      type: 'warning',
+      message: expect.stringContaining('regenerate/rebase'),
+    });
   });
 });

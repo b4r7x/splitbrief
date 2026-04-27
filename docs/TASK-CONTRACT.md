@@ -1,11 +1,11 @@
 # Task Contract
 
 > **Status:** stable as of diptych v0.7 (config v3).
-> **Audience:** external tool authors reading `state.json` to render Kanban boards, export to Jira/Linear/GitHub Issues, generate reports, or drive custom UIs.
+> **Audience:** implementer runners, reviewers, and advanced read-only integrations inspecting Task Brief state.
 
 ## Task Brief v1: the semantic contract
 
-A `Task` is the persisted, transport-stable form of a **Product Task Brief v1** — the durable contract the planner writes for the implementer. The brief is the meaning; `tasks.md` is the markdown rendering used to hand work between phases; `state.json` is the stable external JSON that downstream tools consume.
+A `Task` is the persisted, transport-stable form of a **Product Task Brief v1** — the durable contract the planner writes for the implementer. The brief is the meaning; `tasks.md` is the markdown rendering used to hand work between phases; `state.json` is the stable JSON that diptych and advanced read-only integrations consume.
 
 Every Task Brief v1 covers nine semantic sections, even when a section is brief. Each section maps onto existing `Task` schema fields so external tools do not need a new shape:
 
@@ -21,7 +21,7 @@ Every Task Brief v1 covers nine semantic sections, even when a section is brief.
 | 8 | **Escalation** | optional `escalation` | When the implementer must stop and ask instead of guessing. |
 | 9 | **Evidence** | optional `evidence` | Final reviewable proof preserved after the task completes. |
 
-`tasks.md` is the markdown transport: one task block per brief, frontmatter for identity and dependencies, `### …` headings for each semantic section. The implementer prompt may reformat a brief but must not change its meaning. `state.json` is the stable external JSON; consume that for machine-readable workflows.
+`tasks.md` is the markdown transport: one task block per brief, frontmatter for identity and dependencies, `### …` headings for each semantic section. The implementer prompt may reformat a brief but must not change its meaning. `state.json` is the stable external JSON; consume that for machine-readable read-only workflows.
 
 ## Where tasks live on disk
 
@@ -88,9 +88,11 @@ The retry counter lives at **`state.attempt`** (top-level on `WorkflowState`), n
 - **ID stability**: a task's `id` never changes once assigned. Subsequent regenerations keep the same ID if the title/file match, or drop the old ID and emit a fresh one.
 - **Terminal states**: `done | escalated | failed | skipped` — once set, the status does not move backwards within a session. `RESET_TASK` explicitly transitions to `pending` and is the only way out of a terminal state.
 
-## Consumer examples
+## Advanced read-only consumer examples
 
-### Kanban (read-only)
+These examples are side-channel integrations. They do not make diptych a project-management system, plan archive, or cross-plan dependency tracker, and they must not mutate the Task Brief contract while a run is active.
+
+### Status board (read-only)
 
 Watch `.diptych/sessions/<id>/state.json` for changes. Group tasks by status:
 
@@ -102,11 +104,11 @@ Watch `.diptych/sessions/<id>/state.json` for changes. Group tasks by status:
 
 The current task (the one the implementer is working on right now) is `tasks[state.currentTaskIndex]`.
 
-### Jira / Linear export
+### Issue tracker export
 
 Recommended mapping:
 
-| Task field | Jira / Linear field |
+| Task field | Issue tracker field |
 |---|---|
 | `id` | External key (prefix with session id: `<session>-<id>`) |
 | `title` | Summary / Title |
@@ -130,7 +132,7 @@ External tools may attach their own metadata in `state.external` under a namespa
 {
   "tasks": [...],
   "external": {
-    "my-kanban": { "lanes": { "T001": "in-review" } }
+    "my-board": { "lanes": { "T001": "in-review" } }
   }
 }
 ```
@@ -290,10 +292,10 @@ Strings appended to `observedEvidence` are stable. UI and tests may match on the
 
 | String | When it is appended |
 |---|---|
-| `task reached done` | Task transitions to `done` (local commit or escalation success) |
+| `task reached done` | Task transitions to `done` (local implementation or escalation success) |
 | `task reached escalated` | Task transitions to `escalated` |
 | `tsc passed` / `lint passed` / `test passed` | Validation stage reported `passed: true` |
-| `diff written for <file>` | Task committed at least one changed file |
+| `diff written for <file>` | Task produced at least one changed file |
 | `final review written` | Final review succeeded; appended to every completed task |
 | `skipped: <reason>` | `pre_task` hook denied the task |
 | `skipped: dependency failed: ...` | `handleSkippedTask(...)` skipped the task because a dependency was already failed or skipped |

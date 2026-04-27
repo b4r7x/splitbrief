@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Box, Text } from "ink";
-import type { EngineEvent } from '../../../../engine/events/types.js';
+import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
 import { useTheme } from "../../../../components/theme.js";
 import { MarkdownBlock } from "../../../../components/markdown.js";
 import { formatCost } from "../../../../core/formatting.js";
@@ -19,6 +19,45 @@ import { UserMessageCard } from "./user-message-card.js";
 interface EventCardProps {
   event: EngineEvent;
   diffExpanded?: boolean;
+}
+
+function formatExternalChangesValue(event: EngineEventOf<"paused_external_changes">): string {
+  if (!event.conflict) {
+    return event.selectedAction
+      ? `External changes detected · ${event.selectedAction}`
+      : "External changes detected";
+  }
+
+  const files = event.conflict.files.slice(0, 3).join(", ");
+  const hiddenCount = event.conflict.files.length - 3;
+  const filesLabel = hiddenCount > 0
+    ? `${files}, +${hiddenCount} more`
+    : files || "no files";
+  const tasksLabel = event.conflict.affectedTaskIds.length > 0
+    ? ` · tasks ${event.conflict.affectedTaskIds.join(", ")}`
+    : "";
+  const actionLabel = event.selectedAction ? ` · ${event.selectedAction}` : "";
+
+  return `${event.conflict.kind} · ${filesLabel}${tasksLabel}${actionLabel}`;
+}
+
+function formatTaskStartedValue(event: EngineEventOf<"task_started">): string {
+  const parts = [`${event.file} (${event.action})`];
+  const toolLabel = formatToolModel(event.tool, event.model);
+  if (toolLabel) parts.push(toolLabel);
+  if (event.implementerProfile) parts.push(`profile ${event.implementerProfile}`);
+  if (event.contextFit) {
+    const tokenLabel = event.contextLength === undefined
+      ? `${event.estimatedTokens ?? "?"} tok`
+      : `${event.estimatedTokens ?? "?"}/${event.contextLength} tok`;
+    parts.push(`fit ${event.contextFit} ${tokenLabel}`);
+  }
+  if (event.currentCodeContextMode && event.currentCodeContextMode !== "none") {
+    parts.push(`code ${event.currentCodeContextMode}`);
+  }
+  if (event.costPosture) parts.push(`cost ${event.costPosture}`);
+
+  return parts.join(" · ");
 }
 
 function getGutterRole(event: EngineEvent): "planner" | "implementer" | null {
@@ -80,10 +119,6 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
       content = <MarkdownBlock text={event.text} />;
       break;
     case "task_started": {
-      const toolLabel = formatToolModel(event.tool, event.model);
-      const value = toolLabel
-        ? `${event.file} (${event.action}) · ${toolLabel}`
-        : `${event.file} (${event.action})`;
       content = (
         <Card
           label={
@@ -92,7 +127,7 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
             </Text>
           }
           labelColor={t.text}
-          value={value}
+          value={formatTaskStartedValue(event)}
           valueColor={t.textDim}
         />
       );
@@ -331,10 +366,19 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
         <Text color={t.warning}>This looks trivial. Consider --mode {event.suggestedMode} instead of --mode {event.currentMode}.</Text>
       );
       break;
+    case "paused_external_changes":
+      content = (
+        <Card
+          label="user edits"
+          labelColor={event.conflict?.safeToContinue ? t.warning : t.error}
+          value={formatExternalChangesValue(event)}
+          valueColor={event.conflict?.safeToContinue ? t.textDim : t.error}
+        />
+      );
+      break;
     case "workflow_started":
     case "workflow_resumed":
     case "workflow_complete":
-    case "paused_external_changes":
     case "research_done":
     case "spec_done":
     case "spec_approved":

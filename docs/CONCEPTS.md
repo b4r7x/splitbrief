@@ -11,7 +11,7 @@ diptych is a CLI that splits AI coding work across two roles:
 - A **planner** — an expensive, high-quality model (Claude Code, Codex, GPT-4-class, …) does the *thinking*: researches the codebase and compiles the request into a Task Brief, with optional supporting spec/plan artifacts when the work needs more structure.
 - An **implementer** — a cheap or local model (Ollama, LM Studio, DeepSeek, …) does the *typing*: turns each task from the list into code, one task at a time.
 
-The orchestrator in the middle owns the workflow: it runs the planner, persists the Task Brief transport and supporting artifacts, walks through tasks, validates each one (`tsc → lint → tests`), commits, and escalates back to the planner when the implementer gets stuck.
+The orchestrator in the middle owns the workflow: it runs the planner, persists the Task Brief transport and supporting artifacts, walks through tasks, validates each one (`tsc → lint → tests`), records evidence and checkpoint boundaries, and escalates back to the planner when the implementer gets stuck. Product-level git commit strategies are optional; agents working in this repository must never stage or commit.
 
 The goal is *same planning quality, lower total cost*. Typical split: ~350K planner tokens per feature, ~$0 implementer tokens when running locally.
 
@@ -49,7 +49,7 @@ The middle layer. Zero React, zero Ink — pure logic in `src/engine/orchestrato
 - The state machine (see `docs/WORKFLOW.md`).
 - Disk writes (`tasks.md` as Task Brief transport, optional `spec.md` / `plan.md`, `sessions/<id>/state.json`, `sessions/<id>/session.jsonl`).
 - Validation pipeline (`tsc → lint → tests`).
-- Git commits (one per task).
+- Optional git checkpoint/commit strategy when explicitly configured.
 - Event emission to the TUI.
 
 ---
@@ -254,7 +254,7 @@ The engine publishes every observable step as an `EngineEvent` on a single `Even
 - **EventSink** — any subscriber that matches `(event: EngineEvent) => void`. Synchronous by contract (so ordering is preserved and one slow sink cannot starve another). Four are shipped: `tuiSink` (workflow store), `jsonlSink` (session log), `stdoutJsonSink` (NDJSON on stdout for `--json`), `otelSink` (OpenTelemetry spans). The workflow hook system attaches its own sink for `post_*`/`on_*` events.
 - **Phase** — `'idle' | 'researching' | 'specifying' | 'reviewing-spec' | 'clarifying' | 'constitution-check' | 'planning' | 'reviewing-plan' | 'analyzing' | 'implementing' | 'validating-task' | 'escalating' | 'final-review' | 'complete'` (`src/core/schemas/enums.ts`). Every `EngineEvent` carries the current `phase` so sinks (OTel span hierarchy, hook dispatcher, TUI router) can filter and group without having to reconstruct workflow position from event type alone.
 
-Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`, `onBudgetExceeded`, `onExternalChanges`, `onComplete`) are a **separate** mechanism — they are discrete `await`-able request/response pairs supplied by the workflow host. Use the bus for broadcast; use callbacks for gates.
+Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`, `onBudgetExceeded`, `onUserEditConflict`, `onComplete`) are a **separate** mechanism — they are discrete `await`-able request/response pairs supplied by the workflow host. Use the bus for broadcast; use callbacks for gates. `onExternalChanges` is legacy compatibility; file-aware edit handling now flows through `onUserEditConflict`.
 
 ## Headless mode
 
@@ -262,11 +262,11 @@ Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`,
 
 ## Hooks (workflow)
 
-Workflow lifecycle hooks let users run custom commands or in-process modules at well-known moments (pre/post task, pre/post commit, etc.). Built on top of the EventBus — `post_*`/`on_*` are a fire-and-forget sink; `pre_*` hooks run sequentially at the orchestrator call site and a `deny` outcome short-circuits the upcoming action. Hooks are declared under `hooks:` in `.diptych/config.yml`. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — **not** to be confused with React hooks ([HOOKS.md](./HOOKS.md)).
+Workflow lifecycle hooks let users run custom commands or in-process modules at well-known moments (pre/post task, pre/post commit, etc.). Built on top of the EventBus — `post_*`/`on_*` are a fire-and-forget sink; `pre_*` hooks run sequentially at the orchestrator call site and a `deny` outcome short-circuits the upcoming action. Hooks are declared under `hooks:` in `.diptych/config.yaml`. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — **not** to be confused with React hooks ([HOOKS.md](./HOOKS.md)).
 
 - **HookEvent** — the lifecycle trigger keys (`src/core/schemas/hooks.ts`): `'pre_planning' | 'post_planning' | 'pre_task' | 'post_task' | 'pre_validation' | 'post_validation' | 'pre_commit' | 'post_commit' | 'pre_escalation' | 'pre_compact' | 'on_error' | 'on_complete'`. `pre_*` hooks block the upcoming action (a `deny` outcome short-circuits it); `post_*` and `on_*` hooks are fire-and-forget through the EventBus sink.
 - **HookEntry** — one configured hook: discriminated on `kind: 'command' | 'module'`. `command` entries carry `{ command, args, timeout_ms, on_failure }`; `module` entries carry `{ path, timeout_ms, on_failure }`. `on_failure` is one of `'block' | 'warn' | 'ignore'`. `timeout_ms` is bounded at 300_000 ms with a 30_000 ms default.
-- **HooksConfig** — the `hooks:` section of `.diptych/config.yml`: a map from `HookEvent` to `HookEntry[]`, plus an optional `builtin: Record<string, boolean>` toggles block for shipped hooks (e.g. `prettier-on-change`, `block-secrets`).
+- **HooksConfig** — the `hooks:` section of `.diptych/config.yaml`: a map from `HookEvent` to `HookEntry[]`, plus an optional `builtin: Record<string, boolean>` toggles block for shipped hooks (e.g. `prettier-on-change`, `block-secrets`).
 
 ## Hook trust
 
@@ -286,7 +286,7 @@ All workflow state lives under `.diptych/` in the target project. Each session g
 
 ```
 .diptych/
-├── config.yml                              # user config (version: 2)
+├── config.yaml                             # user config (version: 3)
 ├── active                                  # plain text: session-id of the currently-active run (or absent)
 └── sessions/
     ├── 2026-04-14-add-email-validator/
@@ -337,10 +337,10 @@ Typed event schema: `src/core/types/events.ts`. Reader API (async iterables for 
 
 ## Two-layer config
 
-`.diptych/config.yml` has **`version: 2`**. Two top-level blocks matter:
+`.diptych/config.yaml` has **`version: 3`** in current configs. `version: 2` is accepted and migrated for backwards compatibility, but new examples should use v3. Two top-level role blocks matter:
 
 ```yaml
-version: 2
+version: 3
 planner:     # discriminated union on `kind` — cli | api | shell | agent | agent-sdk
   kind: cli
   tool: claude-code
@@ -353,4 +353,4 @@ implementer: # same five kinds
   apiBase: http://localhost:11434/v1
 ```
 
-Schemas: `src/core/schemas/planner-config.ts`, `src/core/schemas/implementer-config.ts`. `version: 1` configs are migrated automatically by `src/core/config/load/migrate.ts`.
+Optional `implementerProfiles` add named cheap/local/fallback implementer configs for routing while preserving the same single implementer role. Schemas: `src/core/schemas/planner-config.ts`, `src/core/schemas/implementer-config.ts`. `version: 1` and `version: 2` configs are migrated automatically by `src/core/config/load/migrate.ts`.

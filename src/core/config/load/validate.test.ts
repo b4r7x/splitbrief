@@ -132,6 +132,33 @@ describe('validateConfig', () => {
     expect(validateConfig(config).errors.filter(e => e.path === 'implementer.apiKey')).toEqual([]);
   });
 
+  it('validates API key requirements for implementer profiles', () => {
+    const orig = process.env['OPENROUTER_API_KEY'];
+    delete process.env['OPENROUTER_API_KEY'];
+    try {
+      const config = {
+        ...validConfig,
+        implementerProfiles: {
+          profiles: {
+            'cheap-cloud': {
+              kind: 'api',
+              provider: 'openrouter',
+              model: 'm',
+              apiBase: 'https://openrouter.ai/api/v1',
+            },
+          },
+        },
+      };
+
+      const { errors } = validateConfig(config);
+
+      expect(errors.find(e => e.path === 'implementerProfiles.profiles.cheap-cloud.apiKey')).toBeTruthy();
+    } finally {
+      if (orig === undefined) delete process.env['OPENROUTER_API_KEY'];
+      else process.env['OPENROUTER_API_KEY'] = orig;
+    }
+  });
+
   it.each([
     { provider: 'anthropic', envKey: 'ANTHROPIC_API_KEY', apiKey: 'sk-ant-key' },
     { provider: 'openrouter', envKey: 'OPENROUTER_API_KEY', apiKey: 'sk-or-key' },

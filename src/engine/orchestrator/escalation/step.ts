@@ -4,7 +4,7 @@ import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import { formatValidationError } from '../validation.js';
 import type { WorkflowContext } from '../types.js';
-import { refreshAndPersistCode, addUsageAndSave } from '../state-ops.js';
+import { refreshAndPersistCode, addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { validateCommitAndAdvance } from '../task-commit.js';
 import type { UsageCategory } from '../tokens.js';
 import {
@@ -17,7 +17,7 @@ import {
   type ChangedFilesSnapshot,
   type GateDecision,
 } from '../tiered-approval.js';
-import { publishError } from '../events.js';
+import { publishError, publishTaskSkipped, publishUserEditConflict, publishWarning } from '../events.js';
 import {
   createEvidenceLedger,
   readEvidenceLedger,
@@ -26,6 +26,7 @@ import {
   writeEvidenceLedger,
 } from '../evidence.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
+import { createApprovalPromotionConflict, normalizeUserEditConflictAction } from '../user-edit-conflicts.js';
 
 export const MAX_HINT_ERROR_LENGTH = 4000;
 
@@ -63,6 +64,49 @@ export type RetryStepOpts = {
   invokeRetry: (args: { task: Task; lastError: string; attempts: number; projectDir: string }) => Promise<{ success: boolean; error?: string | undefined; usage?: TokenDelta | null | undefined }>;
   onValidationAfterRetryFail?: ((validationError: string) => void) | undefined;
 };
+
+async function handleApprovalTimeUserEditConflict(opts: {
+  ctx: EscalationContext;
+  state: WorkflowState;
+  task: Task;
+  files: string[];
+}): Promise<WorkflowState> {
+  const conflict = createApprovalPromotionConflict({
+    files: opts.files,
+    currentTaskId: opts.task.id,
+  });
+  const selectedAction = normalizeUserEditConflictAction(
+    conflict,
+    opts.ctx.callbacks.onUserEditConflict
+      ? await opts.ctx.callbacks.onUserEditConflict(conflict)
+      : 'pause',
+  );
+  publishUserEditConflict(opts.ctx.bus, opts.state.phase, conflict, selectedAction);
+
+  if (selectedAction === 'regenerate-rebase') {
+    publishWarning(
+      opts.ctx.bus,
+      opts.state.phase,
+      'User edit conflict needs regenerate/rebase; workflow paused so the plan or task can be revised against the current files.',
+    );
+    return opts.state;
+  }
+
+  if (selectedAction === 'abort-workflow') {
+    return transitionAndSave(opts.ctx.projectDir, opts.ctx.sessionId, opts.state, { type: 'CANCEL' });
+  }
+
+  if (selectedAction === 'skip-current-task') {
+    publishTaskSkipped(opts.ctx.bus, opts.state.phase, {
+      taskId: opts.task.id,
+      title: opts.task.title,
+      reason: 'skipped due to user edit conflict',
+    });
+    return transitionAndSave(opts.ctx.projectDir, opts.ctx.sessionId, opts.state, { type: 'SKIP_TASK', taskId: opts.task.id });
+  }
+
+  return opts.state;
+}
 
 export async function validateAndCommit(
   ctx: EscalationContext, task: Task, state: WorkflowState,
@@ -102,6 +146,7 @@ export async function validateAndCommit(
     if (!changedFilesGate.allow) {
       const files = changedFilesGate.changedFiles.join(', ');
       const reason = changedFilesGate.reason ?? 'denied';
+      let nextState = state;
       try {
         const restoreResult = await restoreDirtyFilesFromSnapshot(
           ctx.projectDir,
@@ -110,19 +155,25 @@ export async function validateAndCommit(
           preApprovalChangedFileContents,
         );
         if (restoreResult.conflictedFiles.length > 0) {
+          nextState = await handleApprovalTimeUserEditConflict({
+            ctx,
+            state,
+            task,
+            files: restoreResult.conflictedFiles,
+          });
           publishError(
             ctx.bus,
-            state.phase,
+            nextState.phase,
             `Denied retry rollback skipped files changed during approval: ${restoreResult.conflictedFiles.join(', ')}`,
           );
         }
       } catch (err) {
         publishError(ctx.bus, state.phase, `Failed to discard denied retry changes: ${err instanceof Error ? err.message : String(err)}`);
       }
-      publishError(ctx.bus, state.phase, `Retry changed files blocked by approval gate: ${reason} (${files})`);
-      persistRetryRejectionEvidence(ctx, state, task, changedFilesGate);
+      publishError(ctx.bus, nextState.phase, `Retry changed files blocked by approval gate: ${reason} (${files})`);
+      persistRetryRejectionEvidence(ctx, nextState, task, changedFilesGate);
       return {
-        state,
+        state: nextState,
         completed: false,
         validationResults: [],
         blockedReason: reason,
@@ -137,6 +188,7 @@ export async function validateAndCommit(
     config: ctx.config, bus: ctx.bus,
     state, method, transitionType, commitSuffix,
     taskStartTime: ctx.taskStartTime, retryCount,
+    implementerProfile: ctx.implementerProfile,
     results: validationResults,
   });
   return { ...result, validationResults };
@@ -249,19 +301,28 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   if (!changedFilesGate.allow) {
     const files = changedFilesGate.changedFiles.join(', ');
     const reason = changedFilesGate.reason ?? 'denied';
+    let nextState = state;
     if (stagedChangedFiles.length === 0 && actualChangedFiles.length > 0) {
-      await restoreDirtyFilesFromSnapshot(
+      const restoreResult = await restoreDirtyFilesFromSnapshot(
         ctx.projectDir,
         ctx.taskStartSnapshot,
         actualChangedFiles,
         preApprovalChangedFileContents,
       );
+      if (restoreResult.conflictedFiles.length > 0) {
+        nextState = await handleApprovalTimeUserEditConflict({
+          ctx,
+          state,
+          task,
+          files: restoreResult.conflictedFiles,
+        });
+      }
     }
-    publishError(ctx.bus, state.phase, `Retry changed files blocked by approval gate: ${reason} (${files})`);
-    persistRetryRejectionEvidence(ctx, state, task, changedFilesGate);
+    publishError(ctx.bus, nextState.phase, `Retry changed files blocked by approval gate: ${reason} (${files})`);
+    persistRetryRejectionEvidence(ctx, nextState, task, changedFilesGate);
     staged.cleanup();
     return {
-      state,
+      state: nextState,
       task,
       lastError: reason,
       attempts,
@@ -273,6 +334,12 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   if (stagedChangedFiles.length > 0) {
     const promoted = promoteStagedChanges(ctx.projectDir, staged.projectDir, stagedChangedFiles, preApprovalChangedFileContents);
     if (promoted.conflictedFiles.length > 0) {
+      state = await handleApprovalTimeUserEditConflict({
+        ctx,
+        state,
+        task,
+        files: promoted.conflictedFiles,
+      });
       const reason = `Approved retry promotion blocked because files changed during approval: ${promoted.conflictedFiles.join(', ')}`;
       publishError(
         ctx.bus,

@@ -71,6 +71,7 @@ function mergeWithDefaults(migrated: Record<string, unknown>): Record<string, un
       narrowRecord(migrated['implementer']),
       implementerDefaults,
     ),
+    ...(migrated['implementerProfiles'] !== undefined && { implementerProfiles: migrated['implementerProfiles'] }),
     validation: narrowRecord(migrated['validation'])
       ? { ...defaults.validation, ...narrowRecord(migrated['validation']) }
       : defaults.validation,

@@ -5,7 +5,8 @@
 // When absent, cacheReadSavings is 0 and cache columns render 'n/a' in TUI.
 
 import { API_PROVIDER_IDS } from '../../core/schemas/enums.js';
-import type { TokenUsage } from '../../core/schemas/tokens.js';
+import { resolveAutoModel } from '../../core/providers/model-selection.js';
+import type { TaskTokenUsage, TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostBreakdown } from '../../core/schemas/summary.js';
 import { parseModelId } from './model-parsing.js';
 import { resolvePricing, isApiPricedProvider, type ResolvedPricing } from './pricing-resolver.js';
@@ -62,9 +63,18 @@ type CostBreakdownOptions = {
   implementerTool: string;
   plannerModel?: string | undefined;
   implementerModel?: string | undefined;
+  taskBreakdowns?: TaskTokenUsage[] | undefined;
 };
 
 type ProviderCostEntry = { inputTokens: number; outputTokens: number; cost: number };
+type TokenSplit = { inputTokens: number; outputTokens: number };
+type ImplementerCostAccounting = {
+  actualImplementerCost: number;
+  hasPricedUsage: boolean;
+  hasUnpricedUsage: boolean;
+  providerCosts: Record<string, ProviderCostEntry>;
+  cacheReadSavings: number;
+};
 
 function recordProviderCost(
   providerCosts: Record<string, ProviderCostEntry>,
@@ -83,10 +93,214 @@ function recordProviderCost(
   providerCosts[tool] = { inputTokens, outputTokens, cost };
 }
 
+function splitTokens(tokens: number, inputTotal: number, outputTotal: number): TokenSplit {
+  const total = inputTotal + outputTotal;
+  if (tokens <= 0 || total <= 0) return { inputTokens: 0, outputTokens: 0 };
+  const inputTokens = tokens * (inputTotal / total);
+  return { inputTokens, outputTokens: tokens - inputTokens };
+}
+
+function allocatedCacheTokens(cacheTokens: number | undefined, tokens: number, totalTokens: number): number {
+  if (cacheTokens === undefined || cacheTokens <= 0 || tokens <= 0 || totalTokens <= 0) return 0;
+  return cacheTokens * (tokens / totalTokens);
+}
+
+function calculateCacheReadSavings(cacheReadTokens: number, pricing: ResolvedPricing): number {
+  if (!pricing.isPriced || pricing.cacheReadPer1M === undefined || cacheReadTokens <= 0) return 0;
+  return (cacheReadTokens / 1_000_000) * (pricing.inputPer1M - pricing.cacheReadPer1M);
+}
+
+function recordPricedUsage(
+  providerCosts: Record<string, ProviderCostEntry>,
+  tool: string,
+  inputTokens: number,
+  outputTokens: number,
+  cost: number,
+  pricing: ResolvedPricing,
+): void {
+  if (!pricing.isPriced) return;
+  if (cost <= 0 && inputTokens <= 0 && outputTokens <= 0) return;
+  recordProviderCost(providerCosts, tool, inputTokens, outputTokens, cost);
+}
+
+function resolveTaskPricingModel(
+  taskTool: string,
+  fallbackTool: string,
+  taskModel?: string | undefined,
+  fallbackModel?: string | undefined,
+): string | undefined {
+  const trimmed = taskModel?.trim();
+  if (trimmed) return resolveAutoModel(trimmed, taskTool) ?? trimmed;
+  return taskTool === fallbackTool ? fallbackModel : undefined;
+}
+
+function applyImplementerUsageCost(
+  accounting: ImplementerCostAccounting,
+  opts: {
+    tool: string;
+    model?: string | undefined;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreateTokens: number;
+  },
+  cache?: ModelCacheAccessor,
+): void {
+  const pricing = resolvePricing(opts.tool, cache, opts.model);
+  const cost = calculateUsageCost(
+    opts.inputTokens,
+    opts.outputTokens,
+    opts.cacheReadTokens,
+    opts.cacheCreateTokens,
+    pricing,
+  );
+
+  accounting.actualImplementerCost += cost;
+  accounting.cacheReadSavings += calculateCacheReadSavings(opts.cacheReadTokens, pricing);
+  if (pricing.isPriced) {
+    accounting.hasPricedUsage = true;
+  } else {
+    accounting.hasUnpricedUsage = true;
+  }
+  recordPricedUsage(
+    accounting.providerCosts,
+    opts.tool,
+    opts.inputTokens,
+    opts.outputTokens,
+    cost,
+    pricing,
+  );
+}
+
+function calculateAggregateImplementerCost(opts: CostBreakdownOptions, pricing: ResolvedPricing): ImplementerCostAccounting {
+  const { tokenUsage, implementerTool } = opts;
+  const actualImplementerCost = calculateUsageCost(
+    tokenUsage.implementerInput,
+    tokenUsage.implementerOutput,
+    tokenUsage.implementerCacheRead ?? 0,
+    tokenUsage.implementerCacheCreate ?? 0,
+    pricing,
+  );
+  const providerCosts: Record<string, ProviderCostEntry> = {};
+  recordPricedUsage(
+    providerCosts,
+    implementerTool,
+    tokenUsage.implementerInput,
+    tokenUsage.implementerOutput,
+    actualImplementerCost,
+    pricing,
+  );
+
+  return {
+    actualImplementerCost,
+    hasPricedUsage: pricing.isPriced,
+    hasUnpricedUsage: !pricing.isPriced,
+    providerCosts,
+    cacheReadSavings: calculateCacheReadSavings(tokenUsage.implementerCacheRead ?? 0, pricing),
+  };
+}
+
+function calculateTaskAwareImplementerCost(opts: CostBreakdownOptions, cache?: ModelCacheAccessor): ImplementerCostAccounting | undefined {
+  const { taskBreakdowns, tokenUsage, implementerTool, implementerModel } = opts;
+  if (taskBreakdowns === undefined) return undefined;
+
+  const totalImplementerTokens = tokenUsage.implementerInput + tokenUsage.implementerOutput;
+  const accounting: ImplementerCostAccounting = {
+    actualImplementerCost: 0,
+    hasPricedUsage: false,
+    hasUnpricedUsage: false,
+    providerCosts: {},
+    cacheReadSavings: 0,
+  };
+  let accountedTokens = 0;
+
+  for (const task of taskBreakdowns) {
+    if (task.implementerTokens <= 0) continue;
+    const tool = task.tool ?? implementerTool;
+    const { inputTokens, outputTokens } = splitTokens(
+      task.implementerTokens,
+      tokenUsage.implementerInput,
+      tokenUsage.implementerOutput,
+    );
+    applyImplementerUsageCost(accounting, {
+      tool,
+      model: resolveTaskPricingModel(tool, implementerTool, task.model, implementerModel),
+      inputTokens,
+      outputTokens,
+      cacheReadTokens: allocatedCacheTokens(tokenUsage.implementerCacheRead, task.implementerTokens, totalImplementerTokens),
+      cacheCreateTokens: allocatedCacheTokens(tokenUsage.implementerCacheCreate, task.implementerTokens, totalImplementerTokens),
+    }, cache);
+    accountedTokens += task.implementerTokens;
+  }
+
+  const residualTokens = Math.max(0, totalImplementerTokens - accountedTokens);
+  if (residualTokens > 0) {
+    const { inputTokens, outputTokens } = splitTokens(
+      residualTokens,
+      tokenUsage.implementerInput,
+      tokenUsage.implementerOutput,
+    );
+    applyImplementerUsageCost(accounting, {
+      tool: implementerTool,
+      model: implementerModel,
+      inputTokens,
+      outputTokens,
+      cacheReadTokens: allocatedCacheTokens(tokenUsage.implementerCacheRead, residualTokens, totalImplementerTokens),
+      cacheCreateTokens: allocatedCacheTokens(tokenUsage.implementerCacheCreate, residualTokens, totalImplementerTokens),
+    }, cache);
+  }
+
+  return accounting;
+}
+
+export type TaskCostTokenUsage = Pick<TokenUsage,
+  | 'implementerInput'
+  | 'implementerOutput'
+  | 'escalationInput'
+  | 'escalationOutput'
+  | 'implementerCacheRead'
+  | 'implementerCacheCreate'
+>;
+
+export function calculateTaskUsageCost(
+  task: TaskTokenUsage,
+  tokenUsage: TaskCostTokenUsage,
+  implementerTool: string,
+  plannerTool: string,
+  implementerModel?: string | undefined,
+  plannerModel?: string | undefined,
+  cache?: ModelCacheAccessor,
+): number {
+  const totalImplementerTokens = tokenUsage.implementerInput + tokenUsage.implementerOutput;
+  const implementerSplit = splitTokens(task.implementerTokens, tokenUsage.implementerInput, tokenUsage.implementerOutput);
+  const taskTool = task.tool ?? implementerTool;
+  const implementerPricing = resolvePricing(
+    taskTool,
+    cache,
+    resolveTaskPricingModel(taskTool, implementerTool, task.model, implementerModel),
+  );
+  const implementerCost = calculateUsageCost(
+    implementerSplit.inputTokens,
+    implementerSplit.outputTokens,
+    allocatedCacheTokens(tokenUsage.implementerCacheRead, task.implementerTokens, totalImplementerTokens),
+    allocatedCacheTokens(tokenUsage.implementerCacheCreate, task.implementerTokens, totalImplementerTokens),
+    implementerPricing,
+  );
+
+  const escalationSplit = splitTokens(task.escalationTokens, tokenUsage.escalationInput, tokenUsage.escalationOutput);
+  const escalationCost = calculateCost(
+    escalationSplit.inputTokens,
+    escalationSplit.outputTokens,
+    resolvePricing(plannerTool, cache, plannerModel),
+  );
+
+  return implementerCost + escalationCost;
+}
+
 export function calculateCostBreakdown(opts: CostBreakdownOptions, cache?: ModelCacheAccessor): CostBreakdown {
-  const { tokenUsage, totalTasks, escalatedCount, plannerTool, implementerTool, plannerModel, implementerModel } = opts;
+  const { tokenUsage, totalTasks, escalatedCount, plannerTool, plannerModel } = opts;
   const plannerPricing = resolvePricing(plannerTool, cache, plannerModel);
-  const implementerPricing = resolvePricing(implementerTool, cache, implementerModel);
+  const implementerPricing = resolvePricing(opts.implementerTool, cache, opts.implementerModel);
 
   const hypotheticalImplementerCost = plannerPricing.isPriced
     ? calculateCost(tokenUsage.implementerInput, tokenUsage.implementerOutput, plannerPricing)
@@ -103,32 +317,24 @@ export function calculateCostBreakdown(opts: CostBreakdownOptions, cache?: Model
     plannerPricing,
   );
 
-  const actualImplementerCost = calculateUsageCost(
-    tokenUsage.implementerInput,
-    tokenUsage.implementerOutput,
-    tokenUsage.implementerCacheRead ?? 0,
-    tokenUsage.implementerCacheCreate ?? 0,
-    implementerPricing,
-  );
+  const implementerAccounting = calculateTaskAwareImplementerCost(opts, cache)
+    ?? calculateAggregateImplementerCost(opts, implementerPricing);
+  const actualImplementerCost = implementerAccounting.actualImplementerCost;
 
   const totalActualCost = actualPlannerCost + actualImplementerCost;
   const hasSavingsEstimate = plannerPricing.isPriced;
   const savingsAmount = hasSavingsEstimate ? hypotheticalImplementerCost - actualImplementerCost : 0;
   const savingsPercentage = hasSavingsEstimate && hypotheticalImplementerCost > 0 ? (savingsAmount / hypotheticalImplementerCost) * 100 : 0;
   const localCompletionRate = totalTasks > 0 ? (totalTasks - escalatedCount) / totalTasks : 0;
-  const hasPricedUsage = plannerPricing.isPriced || implementerPricing.isPriced;
-  const hasUnpricedUsage = !plannerPricing.isPriced || !implementerPricing.isPriced;
+  const hasPricedUsage = plannerPricing.isPriced || implementerAccounting.hasPricedUsage;
+  const hasUnpricedUsage = !plannerPricing.isPriced || implementerAccounting.hasUnpricedUsage;
 
   const providerCosts: Record<string, ProviderCostEntry> = {};
   if (plannerPricing.isPriced && (actualPlannerCost > 0 || plannerInputTotal > 0 || plannerOutputTotal > 0)) {
     recordProviderCost(providerCosts, plannerTool, plannerInputTotal, plannerOutputTotal, actualPlannerCost);
   }
-  if (plannerTool !== implementerTool) {
-    if (implementerPricing.isPriced && (actualImplementerCost > 0 || tokenUsage.implementerInput > 0 || tokenUsage.implementerOutput > 0)) {
-      recordProviderCost(providerCosts, implementerTool, tokenUsage.implementerInput, tokenUsage.implementerOutput, actualImplementerCost);
-    }
-  } else if (plannerPricing.isPriced || implementerPricing.isPriced) {
-    recordProviderCost(providerCosts, plannerTool, tokenUsage.implementerInput, tokenUsage.implementerOutput, actualImplementerCost);
+  for (const [tool, entry] of Object.entries(implementerAccounting.providerCosts)) {
+    recordProviderCost(providerCosts, tool, entry.inputTokens, entry.outputTokens, entry.cost);
   }
 
   const cacheReadTokens =
@@ -141,16 +347,8 @@ export function calculateCostBreakdown(opts: CostBreakdownOptions, cache?: Model
   // separately). Savings = what would have been paid at input rate minus what was actually paid.
   let cacheReadSavings = 0;
   if (cacheReadTokens > 0) {
-    if ((tokenUsage.plannerCacheRead ?? 0) > 0 && plannerPricing.cacheReadPer1M !== undefined) {
-      cacheReadSavings +=
-        ((tokenUsage.plannerCacheRead ?? 0) / 1_000_000) *
-        (plannerPricing.inputPer1M - plannerPricing.cacheReadPer1M);
-    }
-    if ((tokenUsage.implementerCacheRead ?? 0) > 0 && implementerPricing.cacheReadPer1M !== undefined) {
-      cacheReadSavings +=
-        ((tokenUsage.implementerCacheRead ?? 0) / 1_000_000) *
-        (implementerPricing.inputPer1M - implementerPricing.cacheReadPer1M);
-    }
+    cacheReadSavings += calculateCacheReadSavings(tokenUsage.plannerCacheRead ?? 0, plannerPricing);
+    cacheReadSavings += implementerAccounting.cacheReadSavings;
   }
 
   return {

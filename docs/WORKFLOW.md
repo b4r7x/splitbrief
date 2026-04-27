@@ -1,6 +1,6 @@
 # diptych — Workflow
 
-The workflow is the heart of diptych: a deterministic state machine that moves a feature from a one-line description to committed, validated code, while staying interactive — the user can observe, steer, and interrupt at any point without losing work.
+The workflow is the heart of diptych: a deterministic state machine that moves a feature from a one-line description to validated code, while staying interactive — the user can observe, steer, and interrupt at any point without losing work.
 
 This document has three parts:
 
@@ -129,7 +129,7 @@ The `/mode` slash command and `--mode` CLI flag both write into `config.workflow
         └─ apply code to disk
         └─ phase: validating-task
               ├─ tsc → lint → tests (stop on first fail)
-              ├─ pass → VALIDATION_PASS → git commit → next task
+              ├─ pass → VALIDATION_PASS → checkpoint/evidence → next task
               └─ fail → retry up to maxRetries
       phase: escalating (only on repeated failure):
         └─ hint escalation (if capability)
@@ -145,7 +145,7 @@ The `/mode` slash command and `--mode` CLI flag both write into `config.workflow
 1. Single `planner.instantPlan()` call (or falls back to `planner.quickPlan` / `planner.plan` if the backend doesn't implement it).
 2. Parse `tasks.md` from the response.
 3. Dispatch `START_INSTANT` with the tasks → phase becomes `implementing`.
-4. Task loop runs identically to other modes (per-task validation, retry, escalation, git commit per `workflow.git.commitStrategy`).
+4. Task loop runs identically to other modes (per-task validation, retry, escalation, checkpoint/evidence recording, and optional product-level git behavior per `workflow.git.commitStrategy`).
 5. Final review still runs (no spec to compare against, but the existing review path is shared).
 
 Persisted artifacts: `tasks.md` transport, `session.jsonl`, `summary.json`. No supporting `spec.md`, `plan.md`, or `research.md`.
@@ -174,7 +174,7 @@ Persisted artifacts: `research.md`, supporting `spec.md`, `clarifications.md`, `
 | End of `clarifying` phase *(speckit)* | Write marker file | `sessions/<id>/clarifications.md` |
 | End of `constitution-check` phase *(speckit)* | Write check result | `sessions/<id>/constitution-check.json` |
 | End of `analyzing` phase *(speckit)* | Write coverage metrics | `sessions/<id>/analyze.json` |
-| Successful task (per-task commits on) | `git commit` | Git history |
+| Successful task | Task status, evidence, optional checkpoint/commit metadata | `state.json`, `evidence.json`, optional git history |
 | Single Ctrl-C during cancellable phase | Save state with `awaitingContinue: true`, append `kind: event, type: turn_aborted` | `state.json` + `session.jsonl` |
 | Double Ctrl-C | Save state, clear `.diptych/active` | `state.json` + `.diptych/active` |
 | End of run (any outcome) | `summary.json`, clear `.diptych/active` | `sessions/<id>/summary.json` |

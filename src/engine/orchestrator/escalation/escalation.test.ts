@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
@@ -144,6 +144,76 @@ describe('handleRetryAndEscalation', () => {
     expect(result.completed).toBe(true);
     expect(result.method).toBe('escalated-hint');
     expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 1)).toBeDefined();
+  });
+
+  it('retry promotion conflicts ask for user-edit resolution and do not escalate', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({
+      id: 'T001',
+      file: 'src/main.ts',
+      action: 'modify',
+      scope: { inBounds: ['src/main.ts'] },
+    });
+    const state: WorkflowState = { ...makeValidatingState(), tasks: [task] };
+    const onUserEditConflict = vi.fn().mockResolvedValue('pause');
+    const { callbacks } = makeCallbacks({
+      onTieredApproval: vi.fn().mockImplementation(async () => {
+        mkdirSync(join(projectDir, 'src'), { recursive: true });
+        writeFileSync(join(projectDir, 'src/other.ts'), 'export const value = "user";\n');
+        return { decision: 'allow', scope: 'once' };
+      }),
+      onUserEditConflict,
+    });
+    const { bus, events: busEvents } = makeBusRecorder();
+
+    const implementer = makeImplementer({
+      retry: vi.fn().mockImplementation(async ({ projectDir: runDir }: { projectDir: string }) => {
+        mkdirSync(join(runDir, 'src'), { recursive: true });
+        writeFileSync(join(runDir, 'src/other.ts'), 'export const value = "retry";\n');
+        return { success: true, output: 'fixed', usage: { inputTokens: 20, outputTokens: 10 } };
+      }),
+    });
+    const planner = makePlanner({
+      escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'hint', code: null, usage: null }),
+    });
+
+    const { result } = await handleRetryAndEscalation({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({
+          workflow: { maxRetries: 1, commitStrategy: 'none' },
+          approval: { enabled: true, feedRejectionsToPlanner: false },
+        }),
+        context: defaultContext,
+        planner,
+        callbacks,
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: TEST_VALIDATOR,
+        bus,
+      },
+      task,
+      initialError: 'validation failed',
+      currentState: state,
+    });
+
+    expect(result.completed).toBe(false);
+    expect(planner.escalateHint).not.toHaveBeenCalled();
+    expect(onUserEditConflict).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'changed-during-approval-promotion',
+      files: ['src/other.ts'],
+      affectedTaskIds: ['T001'],
+    }));
+    expect(busEvents.find((event) => event.type === 'paused_external_changes')).toMatchObject({
+      type: 'paused_external_changes',
+      selectedAction: 'pause',
+      conflict: {
+        kind: 'changed-during-approval-promotion',
+        files: ['src/other.ts'],
+      },
+    });
   });
 
   it('Tier 2 full escalation: planner.escalateFull succeeds → completed with method=escalated-full', async () => {

@@ -2,6 +2,7 @@ import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TokenUsage, TokenDelta, TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { EventBus } from '../events/types.js';
+import type { RoutingDecision } from './context-routing.js';
 import { publishEvent } from './events.js';
 
 export type UsageCategory = 'planner' | 'implementer' | 'escalation';
@@ -74,6 +75,17 @@ export function emitTaskTokens(bus: EventBus, state: WorkflowState, id: TaskId, 
     implementerTokens: usage.implementerTokens,
     escalationTokens: usage.escalationTokens,
     retryCount: usage.retryCount,
+    ...(usage.tool !== undefined && { tool: usage.tool }),
+    ...(usage.model !== undefined && { model: usage.model }),
+    ...(usage.implementerProfile !== undefined && { implementerProfile: usage.implementerProfile }),
+    ...(usage.contextFit !== undefined && { contextFit: usage.contextFit }),
+    ...(usage.estimatedTokens !== undefined && { estimatedTokens: usage.estimatedTokens }),
+    ...(usage.untruncatedEstimatedTokens !== undefined && { untruncatedEstimatedTokens: usage.untruncatedEstimatedTokens }),
+    ...(usage.contextLength !== undefined && { contextLength: usage.contextLength }),
+    ...(usage.currentCodeTruncated !== undefined && { currentCodeTruncated: usage.currentCodeTruncated }),
+    ...(usage.currentCodeContextMode !== undefined && { currentCodeContextMode: usage.currentCodeContextMode }),
+    ...(usage.costPosture !== undefined && { costPosture: usage.costPosture }),
+    ...(usage.routingReason !== undefined && { routingReason: usage.routingReason }),
   });
 }
 
@@ -88,10 +100,12 @@ type RecordTaskUsageOptions = {
   retryCount?: number;
   tool?: string;
   model?: string;
+  implementerProfile?: string;
+  routingDecision?: RoutingDecision;
 };
 
 export function recordTaskUsage(opts: RecordTaskUsageOptions): void {
-  const { task, method, tokensBefore, currentUsage, bus, state, taskBreakdowns, retryCount, tool, model } = opts;
+  const { task, method, tokensBefore, currentUsage, bus, state, taskBreakdowns, retryCount, tool, model, implementerProfile, routingDecision } = opts;
   const delta = tokenDelta(tokensBefore, currentUsage);
   const usage: TaskTokenUsage = {
     taskId: task.id, taskTitle: task.title, method,
@@ -99,6 +113,17 @@ export function recordTaskUsage(opts: RecordTaskUsageOptions): void {
     retryCount: retryCount ?? 0,
     ...(tool !== undefined && { tool }),
     ...(model !== undefined && { model }),
+    ...(implementerProfile !== undefined && { implementerProfile }),
+    ...(routingDecision !== undefined && {
+      contextFit: routingDecision.fit,
+      estimatedTokens: routingDecision.estimatedTokens,
+      untruncatedEstimatedTokens: routingDecision.untruncatedEstimatedTokens,
+      ...(routingDecision.contextLength !== undefined && { contextLength: routingDecision.contextLength }),
+      currentCodeTruncated: routingDecision.currentCodeTruncated,
+      currentCodeContextMode: routingDecision.currentCodeContextMode,
+      costPosture: routingDecision.costPosture,
+      routingReason: routingDecision.reason,
+    }),
   };
   taskBreakdowns.push(usage);
   emitTaskTokens(bus, state, task.id, usage);

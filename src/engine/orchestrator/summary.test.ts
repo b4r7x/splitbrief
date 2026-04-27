@@ -684,4 +684,34 @@ describe('buildSummary task costs', () => {
     expect(first.cost).toBeCloseTo(summary.costBreakdown.actualPlannerCost, 6);
     expect(first.cost).toBeCloseTo(1.75, 6);
   });
+
+  it('prices mixed profile task breakdowns by recorded task tool and model', () => {
+    const usage = makeUsage({
+      implementerInput: 1_000_000,
+      implementerOutput: 1_000_000,
+    });
+    const breakdowns = [
+      { taskId: taskId('T001'), taskTitle: 'local task', method: 'local' as const, implementerTokens: 1_000_000, escalationTokens: 0, retryCount: 0, tool: 'ollama', model: 'qwen-local', implementerProfile: 'local-small' },
+      { taskId: taskId('T002'), taskTitle: 'paid task', method: 'local' as const, implementerTokens: 1_000_000, escalationTokens: 0, retryCount: 0, tool: 'deepseek', model: 'deepseek-chat', implementerProfile: 'cheap-cloud' },
+    ];
+
+    const summary = buildSummary({
+      feature: 'mixed-profile-costs',
+      state: makeState({ tokenUsage: usage }),
+      startTime: Date.now(),
+      taskBreakdowns: breakdowns,
+      plannerTool: 'claude-code',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
+    });
+
+    const first = summary.taskBreakdown?.[0];
+    const second = summary.taskBreakdown?.[1];
+    if (!first || !second || !summary.costBreakdown) throw new Error('expected task and cost breakdown');
+    expect(first.cost).toBe(0);
+    expect(second.cost).toBeCloseTo(0.35, 10);
+    expect(summary.costBreakdown.actualImplementerCost).toBeCloseTo(0.35, 10);
+    expect((first.cost ?? 0) + (second.cost ?? 0)).toBeCloseTo(summary.costBreakdown.actualImplementerCost, 10);
+    expect(summary.costBreakdown.hasUnpricedUsage).toBe(true);
+  });
 });

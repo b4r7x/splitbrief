@@ -155,6 +155,13 @@ async function main() {
         );
         return response.proceed;
       },
+      onUserEditConflict: async (conflict) => {
+        const response = assertPromptResponse(
+          await ipcServer.requestClientPrompt({ kind: 'user_edit_conflict', conflict }),
+          'user_edit_conflict',
+        );
+        return response.selectedAction;
+      },
       onQuestionAsked: async (question, num, total) => {
         const response = assertPromptResponse(
           await ipcServer.requestClientPrompt({ kind: 'question_asked', question, num, total }),

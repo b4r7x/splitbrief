@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { WorkflowModeSchema, CommitStrategySchema, ApproveLevelSchema, ThemeModeSchema, ShikiThemeSchema } from './enums.js';
 import { PlannerConfigSchema } from './planner-config.js';
-import { ImplementerConfigSchema } from './implementer-config.js';
+import { ImplementerConfigSchema, ImplementerProfilesConfigSchema } from './implementer-config.js';
 import { CodebaseConfigSchema } from './codebase.js';
 import { HooksConfigSchema } from './hooks.js';
 import { OtelConfigSchema } from './otel.js';
@@ -77,6 +77,7 @@ export const ConfigSchema = z.object({
   version: z.union([z.literal(2), z.literal(3)]),
   planner: PlannerConfigSchema,
   implementer: ImplementerConfigSchema,
+  implementerProfiles: ImplementerProfilesConfigSchema.optional(),
   validation: z.object({
     typecheck: z.boolean(),
     lint: z.boolean(),
