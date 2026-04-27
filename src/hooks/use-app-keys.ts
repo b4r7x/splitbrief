@@ -30,7 +30,8 @@ function applyAction(action: AppKeyAction, exit: () => void) {
 }
 
 export function useAppKeys({ exit }: { exit: () => void }) {
-  const [{ screen }, overlay] = useStores(routerStore, overlayStore);
+  const [route, overlay] = useStores(routerStore, overlayStore);
+  const { screen } = route;
   const { active: overlayActive, exclusive: overlayExclusive } = overlay;
   const isOpen = overlayActive !== 'none';
   const overlayHasStack = overlay.stack.length > 0;
@@ -38,6 +39,10 @@ export function useAppKeys({ exit }: { exit: () => void }) {
 
   useInput((input, key) => {
     if (!(key.ctrl && input === 'c')) return;
+    if (route.screen === 'workflow' && route.attach) {
+      exit();
+      return;
+    }
     if (Date.now() - lastCtrlCRef.current < DOUBLE_PRESS_WINDOW_MS) {
       exit();
       return;

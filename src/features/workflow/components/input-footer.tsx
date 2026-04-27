@@ -13,10 +13,12 @@ import {
   subscribeAdvisory,
 } from '../../../engine/orchestrator/planning/mode-advisor.js';
 import { configStore } from '../../../stores/project/config.js';
+import { routerStore } from '../../../stores/navigation/router.js';
 
 export function InputFooter() {
   const t = useTheme();
   const [{ scrollOffset }, { queueDepth }] = useStores(conversationScrollStore, lifecycleStore);
+  const isAttachedClient = routerStore.use(s => s.screen === 'workflow' && s.attach !== undefined);
   const { currentTask, totalTasks, taskCompletionTimes } = useCostStats();
   const etaText = computeEta(taskCompletionTimes, currentTask, totalTasks);
   const advisory = useSyncExternalStore(subscribeAdvisory, getAdvisory, getAdvisory);
@@ -30,9 +32,15 @@ export function InputFooter() {
   return (
     <Box width="100%" paddingX={1} justifyContent="space-between" height={1} flexShrink={0}>
       <Box gap={1}>
-        <Text color={t.textDim}>^C abort</Text>
-        <Text color={t.textDim}>^C^C exit</Text>
-        {advisory?.shouldAdvise && (
+        {isAttachedClient ? (
+          <Text color={t.textDim}>^D detach</Text>
+        ) : (
+          <>
+            <Text color={t.textDim}>^C abort</Text>
+            <Text color={t.textDim}>^C^C exit</Text>
+          </>
+        )}
+        {advisory !== null && advisory.kind !== 'none' && (
           <Text color={t.warning}>{formatAdvisoryText(advisory)}</Text>
         )}
       </Box>

@@ -5,6 +5,8 @@ import { getShortcutKey } from './keybindings.js';
 import { includes } from '../../utils/type-guards.js';
 import type { Phase } from '../schemas/enums.js';
 import { PHASES } from '../schemas/enums.js';
+import { HANDOFF_TARGETS } from '../../engine/handoff/types.js';
+import type { HandoffTarget } from '../../engine/handoff/types.js';
 
 export function phaseOrder(phase: Phase): number {
   return PHASES.indexOf(phase);
@@ -241,6 +243,30 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
     },
     {
       kind: 'arg',
+      name: '/handoff',
+      label: 'Handoff',
+      description: 'Export Handoff Pack for an external agent →',
+      validScreens: ['workflow', 'summary'],
+      handler: (args) => {
+        if (!args) {
+          ctx.setFeedbackError('Usage: /handoff <target> [task-id]');
+          return;
+        }
+        const [target, taskId] = args.trim().split(/\s+/);
+        if (!target || !HANDOFF_TARGETS.includes(target as HandoffTarget)) {
+          ctx.setFeedbackError(`Unknown target "${target}". Valid: ${HANDOFF_TARGETS.join(', ')}`);
+          return;
+        }
+        ctx
+          .writeHandoff(target as HandoffTarget, taskId)
+          .then(({ outputDir }) => ctx.setFeedbackMessage(`Handoff written to: ${outputDir}`))
+          .catch((err: unknown) =>
+            ctx.setFeedbackError(err instanceof Error ? err.message : String(err)),
+          );
+      },
+    },
+    {
+      kind: 'arg',
       name: '/repomap',
       label: 'Repomap',
       description: 'Manage the repo-map cache',
@@ -305,6 +331,86 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
         } else {
           ctx.setFeedbackError(`No attachment matched: ${value}`);
         }
+      },
+    },
+    {
+      kind: 'arg',
+      name: '/approval',
+      label: 'Approval',
+      description: 'List or clear sticky approval grants',
+      validScreens: ['workflow', 'summary'],
+      handler: (args) => {
+        const sub = args?.trim().toLowerCase();
+        if (!sub || sub === 'list') {
+          const grants = ctx.listApprovals();
+          if (grants.length === 0) {
+            ctx.setFeedbackMessage('No sticky approvals on record.');
+          } else {
+            const summary = grants.map((g) => `${g.pattern} (${g.class}, ${g.scope})`).join(', ');
+            ctx.setFeedbackMessage(`Approvals: ${summary}`);
+          }
+          return;
+        }
+        if (sub === 'clear') {
+          const count = ctx.clearApprovals();
+          ctx.setFeedbackMessage(`Cleared ${count} approval grant(s).`);
+          return;
+        }
+        ctx.setFeedbackError(`Unknown approval command: ${sub}. Use: /approval list or /approval clear`);
+      },
+    },
+    {
+      kind: 'noarg',
+      name: '/accept-run',
+      label: 'Accept Run',
+      description: 'Accept current run changes and prevent run rejection',
+      validScreens: ['workflow', 'summary'],
+      handler: () => {
+        ctx.acceptRunSnapshot()
+          .then((result) => ctx.setFeedbackMessage(`Run accepted at snapshot ${result.snapshotId}`))
+          .catch((err: unknown) =>
+            ctx.setFeedbackError(err instanceof Error ? err.message : String(err)),
+          );
+      },
+    },
+    {
+      kind: 'arg',
+      name: '/reject-run',
+      label: 'Reject Run',
+      description: 'Restore diptych-written files from the run baseline',
+      validScreens: ['workflow', 'summary'],
+      handler: (args) => {
+        if (args?.trim().toLowerCase() !== 'confirm') {
+          ctx.setFeedbackError('Usage: /reject-run confirm');
+          return;
+        }
+        ctx.rejectRunSnapshot()
+          .then((result) => {
+            if (result.status === 'empty') {
+              ctx.setFeedbackError('No run snapshot to reject.');
+              return;
+            }
+            if (result.status === 'accepted') {
+              ctx.setFeedbackError(`Run already accepted at snapshot ${result.snapshotId}.`);
+              return;
+            }
+            const changedCount = result.restoredPaths.length + result.deletedPaths.length;
+            const conflictText = result.conflictedPaths.length > 0
+              ? `, ${result.conflictedPaths.length} conflict(s)`
+              : '';
+            const missingText = result.missingSnapshotFiles.length > 0
+              ? `, ${result.missingSnapshotFiles.length} missing snapshot file(s)`
+              : '';
+            const message = `Run rejected from snapshot ${result.snapshotId}: ${changedCount} file(s) restored/deleted${conflictText}${missingText}.`;
+            if (result.conflictedPaths.length > 0 || result.missingSnapshotFiles.length > 0) {
+              ctx.setFeedbackError(message);
+            } else {
+              ctx.setFeedbackMessage(message);
+            }
+          })
+          .catch((err: unknown) =>
+            ctx.setFeedbackError(err instanceof Error ? err.message : String(err)),
+          );
       },
     },
     {

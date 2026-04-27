@@ -58,7 +58,7 @@ export * from './bar.js';
 export type { Baz } from './baz.js';
 ```
 
-A file that **contains real code** and happens to be named `index.ts` is NOT a barrel. Example: `src/components/input-bar/index.tsx` is the component implementation — that stays. The "index = folder module" convention for single-component folders is fine.
+A file that **contains real code** and happens to be named `index.ts` is not a barrel by content, but the project now avoids `index.ts` / `index.tsx` names in `src/` entirely so filename checks stay unambiguous.
 
 ### Disguised barrels — name is not the test
 
@@ -72,9 +72,9 @@ The principle allows one exception: **public API surfaces of published libraries
 
 Shared type re-exports are not an exception. If `src/types/index.ts` re-exports from 10 sibling type files, those type-only re-exports still inflate the build graph and still slow down tsc/tsserver; inline imports are preferred.
 
-## Current inventory (updated 2026-04-17 after restructure)
+## Current inventory (updated after input-bar rename)
 
-**All application barrels have been removed.** `find src -name 'index.ts'` returns zero results. The three `index.tsx` files left are component implementations (not barrels).
+**All application barrels have been removed.** `find src -name 'index.ts' -o -name 'index.tsx'` returns zero results.
 
 ### Previously removed (historical record)
 
@@ -96,15 +96,7 @@ Shared type re-exports are not an exception. If `src/types/index.ts` re-exports 
 | `src/stores/discovery/model-cache.ts` line 5 | Batch 1A (2026-04) | `export type { DetectedModel } from '../../core/types/config-options.js'` — one-liner type re-export. Consumers now import `DetectedModel` from `core/types/config-options.ts` directly. |
 | `src/features/tool-picker/picker-model-catalog.ts` + `catalog-adapter.ts` | Batch 1C (2026-04) | **Disguised barrels**: even if a file isn't named `index.ts`, if its content is mostly re-exports (like `picker-model-catalog.ts`, which re-exported the contents of `model-sorting.ts` + `picker-options.ts` plus one own function, and `catalog-adapter.ts`, a 12-line wrapper injecting the `modelCacheStore`), it IS a barrel and must be eliminated. Dissolved into the deep module `src/features/tool-picker/model-catalog.ts`. |
 
-### Not barrels (keep as-is)
-
-| Path | Role |
-|---|---|
-| `src/components/input-bar/index.tsx` | Component file. Folder has many related helpers; `index.tsx` IS the component. |
-| `src/components/overlays/sessions-picker/index.tsx` | Component file, same pattern. |
-| `src/components/overlays/settings-overlay/index.tsx` | Component file, same pattern. |
-
-Rule: if the `index.{ts,tsx}` is the primary implementation and other files in the folder are its helpers, it's not a barrel.
+Rule: if an `index.{ts,tsx}` contains primary implementation instead of re-exports, it is not a barrel by content; rename it anyway to keep the codebase's zero-index invariant simple.
 
 ## Rollout plan
 

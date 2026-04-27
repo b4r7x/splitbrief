@@ -5,6 +5,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
 import { sessionDir, REVIEW_FILE, SPEC_FILE } from '../../core/paths.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
@@ -78,7 +79,7 @@ describe('runFinalReviewPhase', () => {
     const phaseTimings: Record<string, number> = {};
 
     const summary = await runFinalReviewPhase(
-      { projectDir, sessionId, callbacks, bus, state, planner, metadata: TEST_METADATA },
+      { projectDir, sessionId, config: makeNoValidationConfig(), callbacks, bus, state, planner, metadata: TEST_METADATA },
       SUMMARY_BASE,
       [] satisfies TaskTokenUsage[],
       phaseTimings,
@@ -124,7 +125,7 @@ describe('runFinalReviewPhase', () => {
     const phaseTimings: Record<string, number> = {};
 
     const summary = await runFinalReviewPhase(
-      { projectDir, sessionId, callbacks, bus, state, planner, metadata: TEST_METADATA },
+      { projectDir, sessionId, config: makeNoValidationConfig(), callbacks, bus, state, planner, metadata: TEST_METADATA },
       SUMMARY_BASE,
       [],
       phaseTimings,
@@ -159,7 +160,7 @@ describe('runFinalReviewPhase', () => {
     const state = allTasksDoneState([]);
 
     const result: Summary = await runFinalReviewPhase(
-      { projectDir, sessionId, callbacks, bus, state, planner },
+      { projectDir, sessionId, config: makeNoValidationConfig(), callbacks, bus, state, planner },
       SUMMARY_BASE,
       [],
     );

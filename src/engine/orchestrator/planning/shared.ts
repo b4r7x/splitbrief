@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { OrchestratorCallbacks, PlannerCallbacksContext } from '../types.js';
@@ -12,8 +15,13 @@ import { labelError } from '../../../utils/format-errors.js';
 import type { Planner, PlanResult, PlannerCallbacks, PriorMessage } from '../../planners/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { SkillMeta } from '../../skills/discovery.js';
-import type { ApproveLevel } from '../../../core/schemas/enums.js';
+import type { ApproveLevel, Phase } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
+import { BRIEF_QUALITY_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
+import { evaluateBriefQuality } from '../../spec/brief-quality.js';
+import { formatTasks } from '../../spec/formatter.js';
+import { parseTasks } from '../../spec/parser.js';
+import type { BriefQualityReport } from '../../spec/brief-quality.js';
 import { drainQueue, formatDrainedMessages } from '../queue.js';
 import { regenerateFromFeedback } from '../continuation.js';
 
@@ -29,6 +37,7 @@ export type PlanningPhaseOptions = {
   codebaseContext?: string | undefined;
   approveLevel?: ApproveLevel | undefined;
   attachments?: Attachment[] | undefined;
+  deferBriefGate?: boolean | undefined;
 };
 
 export type PlanningPhaseResult = { state: WorkflowState; tasks: Task[]; cancelled: boolean };
@@ -55,6 +64,25 @@ export function handlePlanningFailure(
 ): { state: WorkflowState; tasks: Task[]; cancelled: true } {
   publishError(wctx.bus, state.phase, labelError('Planning failed', err));
   return { state: transitionAndSave(projectDir, sessionId, state, { type: 'CANCEL' }), tasks: [], cancelled: true };
+}
+
+export function runBriefQualityGate(
+  tasks: Task[],
+  projectDir: string,
+  sessionId: string,
+  bus: EventBus,
+  phase: Phase,
+): { report: BriefQualityReport; ok: boolean } {
+  const report = evaluateBriefQuality(tasks);
+  writeSpecFile(projectDir, sessionId, BRIEF_QUALITY_FILE, JSON.stringify(report, null, 2), null);
+  const errorCount = report.issues.filter(i => i.severity === 'error').length;
+  const warningCount = report.issues.filter(i => i.severity === 'warning').length;
+  if (report.passed) {
+    bus.publish({ type: 'brief_quality_passed', ts: Date.now(), phase, score: report.score, warningCount });
+  } else {
+    bus.publish({ type: 'brief_quality_failed', ts: Date.now(), phase, score: report.score, errorCount, warningCount });
+  }
+  return { report, ok: report.passed };
 }
 
 export async function regenerateTasks(
@@ -176,4 +204,88 @@ export async function runPlannerCallInContinuationLoop(
 
   state = loop.state;
   return { state, result: loop.value };
+}
+
+export type BriefsApprovalLoopOptions = {
+  tasks: Task[];
+  planner: Planner;
+  projectDir: string;
+  sessionId: string;
+  callbacks: OrchestratorCallbacks;
+  bus: EventBus;
+  state: WorkflowState;
+  metadata: SpecMetadata;
+  signal?: AbortSignal | undefined;
+};
+
+export type BriefsApprovalLoopResult = {
+  state: WorkflowState;
+  tasks: Task[];
+  rejected: boolean;
+};
+
+export async function runBriefsApprovalLoop(opts: BriefsApprovalLoopOptions): Promise<BriefsApprovalLoopResult> {
+  const { planner, projectDir, sessionId, callbacks, bus, metadata, signal } = opts;
+  let { state, tasks } = opts;
+
+  const tasksFilePath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
+
+  try {
+    await readFile(tasksFilePath, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT' && tasks.length > 0) {
+      writeSpecFile(projectDir, sessionId, TASKS_FILE, formatTasks(tasks), metadata);
+    }
+  }
+
+  state = transitionAndSave(projectDir, sessionId, state, { type: 'BRIEFS_READY', tasks });
+
+  while (true) {
+    if (signal?.aborted) return { state, tasks, rejected: false };
+    const result = await callbacks.onApprovalNeeded('briefs', tasksFilePath);
+    if (signal?.aborted) return { state, tasks, rejected: false };
+
+    if (!result.approved && !result.comment) {
+      state = transitionAndSave(projectDir, sessionId, state, { type: 'REJECT_BRIEFS' });
+      return { state, tasks, rejected: true };
+    }
+
+    if (!result.comment) {
+      try {
+        const editedText = await readFile(tasksFilePath, 'utf8');
+        const editedTasks = parseTasks(editedText);
+        if (editedTasks.length === 0) {
+          publishError(bus, state.phase, `Approved Task Brief file has no parseable tasks: ${tasksFilePath}`);
+          continue;
+        }
+        tasks = editedTasks;
+      } catch (err) {
+        publishError(bus, state.phase, labelError('Failed to read approved Task Briefs', err));
+        continue;
+      }
+      state = transitionAndSave(projectDir, sessionId, state, { type: 'APPROVE_BRIEFS' });
+      return { state, tasks, rejected: false };
+    }
+
+    const message = {
+      id: randomUUID(),
+      text: result.comment,
+      queuedAt: new Date().toISOString(),
+      phase: state.phase as Phase,
+      deliveredViaNative: false as const,
+    };
+    state = transitionAndSave(projectDir, sessionId, state, { type: 'ENQUEUE_USER_MSG', message });
+
+    const regen = await regenerateTasks(projectDir, sessionId, planner, callbacks, bus, state, metadata);
+    state = regen.state;
+    tasks = regen.tasks;
+
+    const { report, ok } = runBriefQualityGate(tasks, projectDir, sessionId, bus, state.phase);
+    if (!ok) {
+      const firstError = report.issues.find(i => i.severity === 'error');
+      createBusTextHandler(bus, state.phase)(`\n[Brief quality gate failed after regeneration: ${firstError?.message ?? 'unknown error'}. Please review and try again.]\n`);
+    }
+
+    state = transitionAndSave(projectDir, sessionId, state, { type: 'BRIEFS_READY', tasks });
+  }
 }

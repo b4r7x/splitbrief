@@ -60,15 +60,17 @@ export function appendMessage(
 }
 
 export function appendEngineEvent(projectDir: string, sessionId: string, event: EngineEvent): void {
-  const { type, ts, phase, ...rest } = event;
+  const { type, ts, ...rest } = event;
+  const phase = 'phase' in event ? (event as { phase: unknown }).phase : undefined;
   const taskId = 'taskId' in event ? (event as { taskId?: unknown }).taskId : undefined;
   const data = { ...rest };
+  if ('phase' in data) delete (data as Record<string, unknown>)['phase'];
   if ('taskId' in data) delete (data as Record<string, unknown>)['taskId'];
   const entry = {
     kind: 'event' as const,
     ts: new Date(ts).toISOString(),
     type,
-    phase,
+    ...(phase !== undefined && { phase }),
     ...(taskId !== undefined && { taskId }),
     data,
   };

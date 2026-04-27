@@ -74,12 +74,16 @@ Full reference: `docs/SLASH-COMMANDS.md`.
 
 ### 1.2 Mode dispatch
 
-Mode selection happens in `src/engine/orchestrator/planning/run.ts`:
+Mode selection happens in `src/engine/orchestrator/planning/run.ts`.
+
+Before dispatching, `adviseMode()` (`src/engine/orchestrator/planning/mode-advisor.ts`) runs a deterministic keyword/pattern classifier (no LLM) and produces a `ModeAdviceKind`: `none`, `downgrade`, `upgrade`, or `missing-context`. Risk tiers are `trivial → instant`, `small → quick`, `normal → standard`, `high → speckit`. Upgrade and downgrade advice fire only when `confidence >= 0.65`; missing-context can fire below that threshold when the prompt is obviously vague. The advisor **never auto-switches the mode** — it only publishes a `mode_advice` event and stores the result for the footer to display. On downgrade it additionally publishes the legacy `mode_downgrade_advised` event for backward compatibility.
 
 - `instant` — one planner call. Produces a Task Brief plus `tasks.md` transport for a trivial change, with no supporting spec/plan artifacts and no approval gates. `START_INSTANT` transitions straight into the task loop.
 - `quick` — one planner call (`planner.quickPlan(...)`) that produces the Task Brief transport only. No supporting spec / plan files, no approval gates. `START_QUICK` transitions straight into the task loop.
 - `standard` — four planner calls: research → supporting spec → plan → Task Brief transport. One approval gate on the supporting spec by default (`approve: spec`); the plan gate (`reviewing-plan`) is entered but auto-advanced.
 - `speckit` — seven planner calls: research → supporting spec → clarify → constitution-check → plan → analyze → Task Brief transport. Both gates active by default (`approve: all`). Fast-fails on constitution-check violations.
+
+All four modes run the **brief quality gate** (`src/engine/spec/brief-quality.ts`) after the Task Brief is produced and before the workflow enters `implementing`. The gate writes `brief-quality.json` to the session directory (mode 0o600) and publishes a `brief_quality_passed` or `brief_quality_failed` event. If any task has an error-level issue the gate blocks the transition to `implementing`. See `docs/TASK-CONTRACT.md §Brief quality gate` for the full rule set.
 
 `full` is a legacy alias for `speckit` at the CLI/config boundary.
 
@@ -222,6 +226,80 @@ No change from today. See `src/engine/orchestrator/escalation.ts`.
 2. If the planner has `supportsHintEscalation`: call `planner.escalateHint(...)` → short hint → implementer retries once with hint → success or fall through.
 3. Otherwise or after hint failure: `planner.escalateFull(...)` → planner writes the code directly. Task marked `escalated` (successful) or `failed`.
 4. Task loop advances either way. Escalation tokens accounted separately (`escalationInput`, `escalationOutput`).
+
+### 1.9 Evidence ledger
+
+Every run produces a per-session evidence ledger at
+`.diptych/sessions/<id>/evidence.json` (constant `EVIDENCE_FILE`, mode `0o600`).
+The orchestrator appends to the ledger when each task reaches a terminal state
+(`done`, `escalated`, `failed`, or `skipped` via `pre_task` hook denial), and
+once more after the final review writes (or fails to write). The ledger captures
+expected evidence (from `task.evidence` ++ `task.tests`) alongside observed
+evidence strings produced by the orchestrator (`tsc passed`, `lint passed`,
+`test passed`, `diff written for <file>`, `task reached done`,
+`task reached escalated`, `final review written`, `skipped: <reason>`).
+
+`Summary.evidenceSummary` carries a compact rollup (path, totals, escalated
+count, failed count) so the summary screen can render counts without re-reading
+the ledger; per-task detail is read from disk by UI that needs it. Full schema
+and observed-evidence vocabulary live in `docs/TASK-CONTRACT.md`.
+
+### 1.10 Deterministic drift report
+
+Before the final planner review runs, the orchestrator computes a deterministic
+drift report at `.diptych/sessions/<id>/drift-report.json`. It compares the Task
+Brief against the actual git diff and the evidence ledger and emits findings for
+out-of-scope file edits, missing target files, orphan diffs, out-of-bounds
+matches, missing observed evidence, and failed tasks that nevertheless left
+changes. The same report is rendered into the final-review prompt under
+`## Deterministic Drift Report` so the planner reviewer sees the deterministic
+signal alongside the diff. Out-of-bounds matching is literal substring matching
+against changed file paths and the raw diff text, not regex or semantic
+matching. A `drift_report` event publishes the result
+(`passed`, `score`, `errorCount`, `warningCount`) for the workflow log. Detection
+rules and severity weights live in `docs/TASK-CONTRACT.md`.
+
+### 1.11 Cost/risk posture in the workflow TUI
+
+The workflow screen surfaces the cost-aware compiler model through two complementary lines:
+
+**Top status line** (`CostStatusLine`): `mode · spent · proj · budget · plan% · cache%` — high-level session-wide spend and projection, updated on every `cost_update` event.
+
+**Footer** (`CostFooter`): `Task N/M · mode <mode> · risk <level> · $X.XX expected` — per-task progress, current risk tier (from the advisor classifier), and the pre-flight cost prediction. When the implementer is unpriced (local/subscription), `local` replaces the dollar amount — no fake savings are shown.
+
+Advisor signal: `formatAdvisoryText()` renders below the main footer line when the advisor recommends a mode change (e.g. `advisor: consider quick · trivial edit` or `advisor: no done criteria · standard may drift`). The advisor never auto-switches the mode.
+
+**Summary screen**: After the run, the summary header reads:
+`Planner compiled N Task Briefs · Implementer completed M locally · K escalated`
+
+The summary also shows:
+- `Brief quality` row: `quality <score>` (errors/warnings count) or `quality n/a` for old sessions
+- `Drift` row: drift score and warning/error counts (only present when `drift-report.json` was written)
+- `Evidence` section: `N/M validated` from the evidence ledger
+
+`Summary.briefQuality`, `Summary.driftSummary`, and `Summary.costPrediction` carry these rollups so the screen renders without re-reading artifact files (backward-compatible — all optional).
+
+## Auto-snapshots
+
+Users can enable automatic snapshots at key orchestrator boundaries via the `snapshots.auto` config keys:
+
+- `snapshots.auto.preTask: true` — snapshot before each task starts
+- `snapshots.auto.postTask: true` — snapshot after each task completes successfully (failed tasks do not trigger this)
+- `snapshots.auto.preFinalReview: true` — snapshot before the final planner review runs
+
+All auto-triggers are off by default. Manual snapshots are always available via `diptych snapshot create` regardless of config. Auto-snapshot failures emit a `warning` event and do not abort the run. Full config reference: [CONFIG.md §snapshots](./CONFIG.md#snapshots).
+
+## Parallel Worktrees
+
+Run multiple diptych sessions simultaneously using git worktrees:
+
+```bash
+diptych start --worktree feature-a "add user auth"
+diptych start --worktree feature-b "refactor billing"
+diptych worktree list
+```
+
+Each worktree is fully isolated at the filesystem and diptych-state level. Runtime isolation (ports, environment) is the user's responsibility. See [docs/WORKTREES.md](./WORKTREES.md) for the complete guide including the isolation gap and mitigations.
 
 ---
 

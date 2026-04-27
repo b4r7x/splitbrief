@@ -8,16 +8,39 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import { sessionDir, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../../core/paths.js';
+import { sessionDir, SPEC_FILE, PLAN_FILE, TASKS_FILE, BRIEF_QUALITY_FILE } from '../../../core/paths.js';
 import { runPlanningPhase } from './run.js';
 import { extractJsonBlock } from './speckit.js';
 import type { Planner, PlanResult } from '../../planners/types.js';
+import type { OrchestratorCallbacks } from '../types.js';
 
 const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'speckit' };
 
 const SAMPLE_SPEC = '# Spec\n\n- requirement A\n';
 const SAMPLE_PLAN = '# Plan\n\n1. step A\n';
-const SAMPLE_TASKS = '---\nid: T001\ntitle: do A\naction: create\nfile: src/a.ts\n---\n';
+const SAMPLE_TASKS_WITH_SECTIONS = `---
+id: T001
+title: do A
+action: create
+file: src/a.ts
+---
+
+### Description
+Do A.
+
+### Tests
+- passes tsc
+
+### Implementation Steps
+1. Create src/a.ts.
+
+### Scope
+- In bounds: src/a.ts
+- Out of bounds: unrelated files
+
+### Evidence
+- brief-quality.json records a passing gate
+`;
 
 let dirs: string[] = [];
 afterEach(() => {
@@ -38,7 +61,7 @@ function setupProject(opts?: { withConstitution?: string }): { projectDir: strin
   const dir = sessionDir(projectDir, sessionId);
   writeFileSync(join(dir, SPEC_FILE), SAMPLE_SPEC, 'utf8');
   writeFileSync(join(dir, PLAN_FILE), SAMPLE_PLAN, 'utf8');
-  writeFileSync(join(dir, TASKS_FILE), SAMPLE_TASKS, 'utf8');
+  writeFileSync(join(dir, TASKS_FILE), SAMPLE_TASKS_WITH_SECTIONS, 'utf8');
   return { projectDir, sessionId };
 }
 
@@ -46,16 +69,42 @@ function planResult(): PlanResult {
   return {
     spec: SAMPLE_SPEC,
     plan: SAMPLE_PLAN,
-    tasks: [makeTask({ id: 'T001' })],
+    tasks: [makeTask({
+      id: 'T001',
+      scope: { inBounds: ['src/a.ts'], outOfBounds: ['other files'] },
+      evidence: ['brief-quality.json recorded a passing gate'],
+      typeDefs: 'type TaskA = { path: string }',
+    })],
     usage: { inputTokens: 10, outputTokens: 5 },
     phases: [],
   };
+}
+
+function invalidPlanResult(): PlanResult {
+  return {
+    spec: SAMPLE_SPEC,
+    plan: SAMPLE_PLAN,
+    tasks: [makeTask({ id: 'T-BAD', tests: [], implementationSteps: [] })],
+    usage: { inputTokens: 10, outputTokens: 5 },
+    phases: [],
+  };
+}
+
+function expectBriefQualityBlocked(result: Awaited<ReturnType<typeof runPlanningPhase>>, projectDir: string, sessionId: string, events: ReturnType<typeof makeBusRecorder>['events']) {
+  expect(result.cancelled).toBe(true);
+  expect(result.state.phase).not.toBe('implementing');
+  const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE);
+  expect(existsSync(reportPath)).toBe(true);
+  const persisted = JSON.parse(readFileSync(reportPath, 'utf8'));
+  expect(persisted.passed).toBe(false);
+  expect(events.find(e => e.type === 'brief_quality_failed')).toBeDefined();
 }
 
 interface RunOpts {
   withConstitution?: string;
   reviewText?: (prompt: string) => string;
   plannerOverrides?: Partial<Planner>;
+  callbacksOverride?: Partial<OrchestratorCallbacks>;
 }
 
 async function runSpeckit(opts: RunOpts = {}) {
@@ -68,7 +117,7 @@ async function runSpeckit(opts: RunOpts = {}) {
     review: vi.fn().mockImplementation(async (prompt: string) => ({ text: reviewFn(prompt), usage: null })),
     ...opts.plannerOverrides,
   });
-  const { callbacks } = makeCallbacks();
+  const { callbacks } = makeCallbacks(opts.callbacksOverride);
   const config = makeConfig({ workflow: { mode: 'speckit', autoApproveSpec: true, autoApprovePlan: true } });
   const { bus, events } = makeBusRecorder();
   const initial = createInitialState('add login');
@@ -176,5 +225,17 @@ describe('runSpeckitPlanning', () => {
     const idxAnalyze = phasesInOrder.indexOf('analyzing');
     expect(idxClarify).toBeLessThan(idxConst);
     expect(idxConst).toBeLessThan(idxAnalyze);
+  });
+
+  it('enters reviewing-briefs for invalid briefs; user rejection cancels the workflow', async () => {
+    const onApprovalNeeded = vi.fn<OrchestratorCallbacks['onApprovalNeeded']>()
+      .mockResolvedValueOnce({ approved: true })
+      .mockResolvedValueOnce({ approved: true })
+      .mockResolvedValue({ approved: false });
+    const { result, projectDir, sessionId, events } = await runSpeckit({
+      plannerOverrides: { plan: vi.fn().mockResolvedValue(invalidPlanResult()) },
+      callbacksOverride: { onApprovalNeeded },
+    });
+    expectBriefQualityBlocked(result, projectDir, sessionId, events);
   });
 });

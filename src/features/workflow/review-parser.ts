@@ -2,11 +2,13 @@ import { spawn } from 'node:child_process';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { planEditorStore } from '../../stores/workflow/plan-editor.js';
 import { requestEnqueue } from './handlers.js';
 import { isLivePhase, isImplementerPhase } from '../../core/phases.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 
 export const REVIEW_HINT = 'approve / edit / comment <text> / quit';
+export const BRIEFS_REVIEW_HINT = 'approve | e/edit | comment <text> | reject';
 
 const APPROVE_ALIASES = new Set(['approve', 'yes', 'y', 'ok', 'lgtm', 'continue']);
 const QUIT_ALIASES = new Set(['quit', 'reject', 'no', 'n']);
@@ -21,7 +23,7 @@ export function parseReviewCommand(text: string): ReviewAction {
   const cmd = text.toLowerCase().trim();
   if (APPROVE_ALIASES.has(cmd)) return { action: 'approve' };
   if (QUIT_ALIASES.has(cmd)) return { action: 'quit' };
-  if (cmd === 'edit') return { action: 'edit' };
+  if (cmd === 'edit' || cmd === 'e') return { action: 'edit' };
   if (cmd.startsWith('comment ')) {
     const trimmed = text.trim();
     return { action: 'approve', comment: trimmed.slice(8).trim() };
@@ -72,6 +74,12 @@ export function createReviewInputHandler(inputMode: UseInputModeResult): ReviewI
       } else if (parsed.action === 'quit') {
         inputMode.resolve({ approved: false });
       } else if (parsed.action === 'edit') {
+        const phase = lifecycleStore.get().phase;
+        if (phase === 'reviewing-briefs') {
+          planEditorStore.setRuntimeRichMode(true);
+          feedbackStore.setMessage('Opened rich task editor');
+          return;
+        }
         const filePath = reviewStore.get().filePath;
         if (filePath) {
           await openInEditor(filePath).catch((err) =>

@@ -17,7 +17,7 @@ import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { createStdoutJsonSink } from '../../events/sinks/stdout-json.js';
 import { createOtelSink } from '../../events/sinks/otel.js';
 import { createTuiSink } from '../../events/sinks/tui.js';
-import type { EventSink } from '../../events/types.js';
+import type { EventBus, EventSink } from '../../events/types.js';
 import { createHookSink } from '../../hooks/sink.js';
 import { runPreHooks } from '../../hooks/run-pre-hook.js';
 import { createBranch } from '../../../lib/git.js';
@@ -42,6 +42,8 @@ export type RunWorkflowOptions = {
   signal?: AbortSignal | undefined;
   /** Headless mode: emit events as NDJSON to stdout. TUI render is skipped at the CLI layer. */
   headless?: boolean | undefined;
+  /** Optional externally-owned bus, used by the detached IPC server/client path. */
+  eventBus?: EventBus | undefined;
   /** Test-only: subscribe an extra sink to the bus (used by integration tests for recording). */
   _eventSink?: EventSink | undefined;
   /** Test-only: inject a pre-built planner (avoids spawning real subprocesses in tests). */
@@ -65,7 +67,7 @@ export async function initializeWorkflow(
   ensureDiptychDir(projectDir);
   ensureSessionDir(projectDir, sessionId);
 
-  const bus = createEventBus();
+  const bus = opts.eventBus ?? createEventBus();
   if (!opts.headless) bus.subscribe(createTuiSink());
   bus.subscribe(createJsonlSink(projectDir, sessionId, config.workflow.persistTranscript));
   if (opts.headless) bus.subscribe(createStdoutJsonSink());

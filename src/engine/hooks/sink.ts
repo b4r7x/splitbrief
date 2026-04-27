@@ -1,4 +1,5 @@
 import type { HookEvent, HookEntry, HooksConfig } from '../../core/schemas/hooks.js';
+import type { Phase } from '../../core/schemas/enums.js';
 import type { EngineEvent, EventBus, EventSink } from '../events/types.js';
 import { runHook } from './dispatch.js';
 import type { HookContext } from './types.js';
@@ -23,18 +24,19 @@ async function runBuiltinsAndEntriesAndReport(
   ctx: HookContext,
   bus: EventBus,
 ): Promise<void> {
+  const phase = ('phase' in event ? (event as { phase: unknown }).phase : 'implementing') as Phase;
   for (const builtin of builtins) {
     try {
       const outcome = await builtin.run(event, ctx);
       if (outcome.kind === 'crash') {
-        bus.publish({ type: 'warning', ts: Date.now(), phase: event.phase, message: `[builtin ${builtin.name}] crashed: ${outcome.message}` });
+        bus.publish({ type: 'warning', ts: Date.now(), phase, message: `[builtin ${builtin.name}] crashed: ${outcome.message}` });
       } else if (outcome.kind === 'warn' && outcome.message) {
-        bus.publish({ type: 'warning', ts: Date.now(), phase: event.phase, message: `[builtin ${builtin.name}] ${outcome.message}` });
+        bus.publish({ type: 'warning', ts: Date.now(), phase, message: `[builtin ${builtin.name}] ${outcome.message}` });
       } else if (outcome.kind === 'deny') {
-        bus.publish({ type: 'warning', ts: Date.now(), phase: event.phase, message: `[builtin ${builtin.name}] denied (post-hook deny is informational only): ${outcome.message ?? ''}` });
+        bus.publish({ type: 'warning', ts: Date.now(), phase, message: `[builtin ${builtin.name}] denied (post-hook deny is informational only): ${outcome.message ?? ''}` });
       }
     } catch (err) {
-      bus.publish({ type: 'warning', ts: Date.now(), phase: event.phase, message: `[builtin ${builtin.name}] crashed: ${err instanceof Error ? err.message : String(err)}` });
+      bus.publish({ type: 'warning', ts: Date.now(), phase, message: `[builtin ${builtin.name}] crashed: ${err instanceof Error ? err.message : String(err)}` });
     }
   }
   for (const entry of entries) {
@@ -42,14 +44,14 @@ async function runBuiltinsAndEntriesAndReport(
       const outcome = await runHook(entry, event, ctx);
       const label = entry.name ?? (entry.kind === 'module' ? entry.path : entry.command);
       if (outcome.kind === 'crash') {
-        bus.publish({ type: 'warning', ts: Date.now(), phase: event.phase, message: `[hook ${hookEvent} ${label}] crashed: ${outcome.message}` });
+        bus.publish({ type: 'warning', ts: Date.now(), phase, message: `[hook ${hookEvent} ${label}] crashed: ${outcome.message}` });
       } else if (outcome.kind === 'warn' && outcome.message) {
-        bus.publish({ type: 'warning', ts: Date.now(), phase: event.phase, message: `[hook ${hookEvent} ${label}] ${outcome.message}` });
+        bus.publish({ type: 'warning', ts: Date.now(), phase, message: `[hook ${hookEvent} ${label}] ${outcome.message}` });
       } else if (outcome.kind === 'deny') {
-        bus.publish({ type: 'warning', ts: Date.now(), phase: event.phase, message: `[hook ${hookEvent} ${label}] denied (post-hook deny is informational only): ${outcome.message ?? ''}` });
+        bus.publish({ type: 'warning', ts: Date.now(), phase, message: `[hook ${hookEvent} ${label}] denied (post-hook deny is informational only): ${outcome.message ?? ''}` });
       }
     } catch (err) {
-      bus.publish({ type: 'warning', ts: Date.now(), phase: event.phase, message: `[hook ${hookEvent}] crashed: ${err instanceof Error ? err.message : String(err)}` });
+      bus.publish({ type: 'warning', ts: Date.now(), phase, message: `[hook ${hookEvent}] crashed: ${err instanceof Error ? err.message : String(err)}` });
     }
   }
 }

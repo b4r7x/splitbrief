@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
@@ -13,6 +13,7 @@ import { ensureSessionDir } from '../../core/paths-io.js';
 import { runTaskLoop } from './task-loop.js';
 import type { WorkflowSinks } from './types.js';
 import { createValidator } from './validation.js';
+import { readEvidenceLedger } from './evidence.js';
 
 const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' };
 
@@ -90,6 +91,9 @@ describe('runTaskLoop', () => {
     expect(skipEvent).toBeDefined();
     expect(skipEvent).toMatchObject({ taskId: 'T002' });
     expect(getSkippedTaskIds(result.state)).toContain('T002');
+
+    const ledger = readEvidenceLedger(projectDir, sessionId);
+    expect(ledger?.tasks.find((t) => t.id === t2.id)?.observedEvidence).toContain('skipped: dependency failed: T001');
   });
 
   it('happy path: implement → validate pass → commit when commit strategy is per-task', async () => {
@@ -101,7 +105,8 @@ describe('runTaskLoop', () => {
     // The implementer produces a file on disk so per-task commit has something to commit.
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async () => {
-        writeFileSync(join(projectDir, 'out.txt'), 'implementation');
+        mkdirSync(join(projectDir, 'src'), { recursive: true });
+        writeFileSync(join(projectDir, task.file), 'implementation');
         return { success: true, output: 'code', usage: { inputTokens: 100, outputTokens: 50 } };
       }),
     });
@@ -170,6 +175,44 @@ describe('runTaskLoop', () => {
 
     expect(result.state.tokenUsage.implementerInput).toBe(500);
     expect(result.state.tokenUsage.implementerOutput).toBe(200);
+  });
+
+  it('auto.postTask=true causes snapshot_created event after successful task', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = makeImplState([task]);
+
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        mkdirSync(join(projectDir, 'src'), { recursive: true });
+        writeFileSync(join(projectDir, task.file), 'implementation');
+        return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    await runTaskLoop({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: { ...makeNoValidationConfig({ workflow: defaultWorkflow }), snapshots: { auto: { postTask: true } } },
+        callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+      },
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    const snapshotEvent = events.find((e) => e.type === 'snapshot_created');
+    expect(snapshotEvent).toBeDefined();
+    expect(snapshotEvent).toMatchObject({ type: 'snapshot_created', taskIndex: 0 });
   });
 
   it('external changes detected on disk: onExternalChanges callback consulted, workflow cancelled on decline', async () => {

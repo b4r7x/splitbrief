@@ -5,6 +5,7 @@ import {
   drainAndFormat,
   handlePlanningFailure,
   persistPhases,
+  runBriefQualityGate,
   type PlanningPhaseOptions,
   type PlanningPhaseResult,
 } from './shared.js';
@@ -81,6 +82,15 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
     phase: state.phase,
     taskCount: planResult.tasks.length,
   });
+
+  const { report: qualityReport, ok: qualityOk } = runBriefQualityGate(planResult.tasks, projectDir, sessionId, wctx.bus, state.phase);
+  if (!qualityOk) {
+    const firstError = qualityReport.issues.find(i => i.severity === 'error');
+    return handlePlanningFailure(
+      new Error(`brief quality gate failed: ${firstError?.code ?? 'unknown'} in ${String(firstError?.taskId ?? 'unknown')}`),
+      projectDir, sessionId, state, wctx,
+    );
+  }
 
   state = transitionAndSave(projectDir, sessionId, state, { type: 'START_INSTANT', tasks: planResult.tasks });
   publishPlannerStatus(wctx.bus, state, 'done');

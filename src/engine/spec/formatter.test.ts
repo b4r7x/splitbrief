@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { formatTaskPrompt, formatRetryPrompt } from './formatter.js';
+import { formatTaskPrompt, formatRetryPrompt, formatTasks } from './formatter.js';
+import { parseTasks } from './parser.js';
 import { estimateTokens, truncateMiddle, computeTokenBudget } from './token-budget.js';
 import { makeTask as makeBaseTask } from '#testing/helpers/factories/task.js';
 import { defaultContext } from '#testing/helpers/factories/config.js';
@@ -326,4 +327,122 @@ describe('computeTokenBudget', () => {
     expect(budget.remaining).toBeLessThan(0);
   });
 
+});
+
+describe('formatTasks', () => {
+  it('empty array returns empty string', () => {
+    expect(formatTasks([])).toBe('');
+  });
+
+  it('empty string parses to empty array (round-trip boundary)', () => {
+    expect(parseTasks('')).toEqual([]);
+  });
+
+  it('single task round-trips: id is preserved', () => {
+    const task = makeTask({ implementationSteps: ['step one'], tests: ['returns x'], constraints: ['pure'] });
+    const markdown = formatTasks([task]);
+    const parsed = parseTasks(markdown);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.id).toBe(task.id);
+  });
+
+  it('single task round-trips: title, action, file are preserved', () => {
+    const task = makeTask({ title: 'My Task', action: 'modify', file: 'src/foo.ts', implementationSteps: ['do it'], tests: ['works'] });
+    const parsed = parseTasks(formatTasks([task]));
+    expect(parsed[0]?.title).toBe('My Task');
+    expect(parsed[0]?.action).toBe('modify');
+    expect(parsed[0]?.file).toBe('src/foo.ts');
+  });
+
+  it('two tasks round-trip: both tasks are returned', () => {
+    const t1 = makeTask({ title: 'First', implementationSteps: ['step 1'], tests: ['test A'] });
+    const t2 = makeBaseTask({ id: 'T002', title: 'Second', file: 'src/bar.ts', description: 'Do bar', implementationSteps: ['step 2'], tests: ['test B'] });
+    const markdown = formatTasks([t1, t2]);
+    const parsed = parseTasks(markdown);
+    expect(parsed).toHaveLength(2);
+  });
+
+  it('depends_on round-trips', () => {
+    const t1 = makeTask({ implementationSteps: ['step 1'], tests: ['test A'] });
+    const t2 = makeBaseTask({ id: 'T002', title: 'Second', file: 'src/bar.ts', description: 'Do bar', dependsOn: [t1.id], implementationSteps: ['step 2'], tests: ['test B'] });
+    const parsed = parseTasks(formatTasks([t1, t2]));
+    expect(parsed[1]?.dependsOn).toContain(t1.id);
+  });
+
+  it('implementationSteps and tests round-trip', () => {
+    const task = makeTask({
+      implementationSteps: ['first step', 'second step'],
+      tests: ['assertion one', 'assertion two'],
+    });
+    const parsed = parseTasks(formatTasks([task]));
+    expect(parsed[0]?.implementationSteps).toEqual(['first step', 'second step']);
+    expect(parsed[0]?.tests).toEqual(['assertion one', 'assertion two']);
+  });
+
+  it('constraints round-trip', () => {
+    const task = makeTask({ implementationSteps: ['step'], tests: ['test'], constraints: ['no side effects', 'pure function'] });
+    const parsed = parseTasks(formatTasks([task]));
+    expect(parsed[0]?.constraints).toEqual(['no side effects', 'pure function']);
+  });
+
+  it('escalation and evidence round-trip', () => {
+    const task = makeTask({
+      implementationSteps: ['step'],
+      tests: ['test'],
+      escalation: ['stop on ambiguity'],
+      evidence: ['npm test passes'],
+    });
+    const parsed = parseTasks(formatTasks([task]));
+    expect(parsed[0]?.escalation).toEqual(['stop on ambiguity']);
+    expect(parsed[0]?.evidence).toEqual(['npm test passes']);
+  });
+
+  it('scope with inBounds and outOfBounds round-trips', () => {
+    const task = makeTask({
+      implementationSteps: ['step'],
+      tests: ['test'],
+      scope: { inBounds: ['only foo.ts'], outOfBounds: ['do not touch bar.ts'] },
+    });
+    const parsed = parseTasks(formatTasks([task]));
+    expect(parsed[0]?.scope?.inBounds).toEqual(['only foo.ts']);
+    expect(parsed[0]?.scope?.outOfBounds).toEqual(['do not touch bar.ts']);
+  });
+
+  it('typeDefs round-trips', () => {
+    const task = makeTask({
+      implementationSteps: ['step'],
+      tests: ['test'],
+      typeDefs: 'export type Foo = { bar: string };',
+    });
+    const parsed = parseTasks(formatTasks([task]));
+    expect(parsed[0]?.typeDefs).toBe('export type Foo = { bar: string };');
+  });
+
+  it('description round-trips', () => {
+    const task = makeTask({
+      description: 'Implement the helper function for string trimming.',
+      implementationSteps: ['step'],
+      tests: ['test'],
+    });
+    const parsed = parseTasks(formatTasks([task]));
+    expect(parsed[0]?.description).toBe('Implement the helper function for string trimming.');
+  });
+
+  it('signature round-trips', () => {
+    const task = makeTask({ signature: 'export function greet(name: string): string' });
+    const parsed = parseTasks(formatTasks([task]));
+    expect(parsed[0]?.signature).toBe(task.signature);
+  });
+
+  it('currentCode round-trips', () => {
+    const task = makeTask({ action: 'modify', currentCode: 'export function old(): void {}' });
+    const parsed = parseTasks(formatTasks([task]));
+    expect(parsed[0]?.currentCode).toBe(task.currentCode);
+  });
+
+  it('pattern round-trips', () => {
+    const task = makeTask({ pattern: 'Follow the existing parseConfig(raw) guard shape.' });
+    const parsed = parseTasks(formatTasks([task]));
+    expect(parsed[0]?.pattern).toBe(task.pattern);
+  });
 });

@@ -120,6 +120,29 @@ Rewind-family commands (`/revise-spec`, `/revise-plan`, `/redo-task`) additional
 - **Example**: `/queue show`, `/queue clear`, `/queue`.
 - **Implementation**: `src/core/slash-commands/catalog.ts`; depth from `lifecycleStore.get().queueDepth`; clear via `requestClearQueue()` in `src/features/workflow/handlers.ts`. Queue semantics: `docs/WORKFLOW.md` §1.6–1.7.
 
+### `/accept-run`
+
+- **Purpose**: accept the current run state by writing an accepted run snapshot. A later `/reject-run confirm` refuses to roll back past that accepted snapshot.
+- **Screens**: `workflow`, `summary`.
+- **Example**: `/accept-run`
+- **Implementation**: `src/core/slash-commands/catalog.ts`; context wiring calls `acceptRunSnapshot()` in `src/engine/snapshots/run.ts`.
+
+### `/reject-run confirm`
+
+- **Purpose**: reject the latest run snapshot and restore files to the baseline only when the current hash still matches the latest diptych-written hash.
+- **Screens**: `workflow`, `summary`.
+- **Args**: the literal `confirm` is required. Calling `/reject-run` without it prints a usage error.
+- **Example**: `/reject-run confirm`
+- **Implementation**: `src/core/slash-commands/catalog.ts`; context wiring calls `rejectRunSnapshot()` in `src/engine/snapshots/run.ts`. Conflicts preserve user edits and are reported in the feedback line.
+
+### `/handoff <target> [task-id]`
+
+- **Purpose**: export a Handoff Pack for the active session to `.diptych/sessions/<id>/handoffs/<target>/`.
+- **Screens**: `workflow`, `summary`.
+- **Args**: `<target>` is one of `spec-kit`, `agents-md`, `claude-code`, `copilot-issue` (required). `[task-id]` is an optional task ID to export a single-task pack (e.g. `T003`).
+- **Example**: `/handoff spec-kit`, `/handoff claude-code T003`
+- **Implementation**: `src/core/slash-commands/catalog.ts`; calls `ctx.writeHandoff` wired in `src/core/slash-commands/context.ts` → `writeHandoffPack` in `src/engine/handoff/write.ts`.
+
 ### `/repomap rebuild`
 
 - **Purpose**: clear the repo-map cache so the next planner phase re-parses from scratch.

@@ -5,6 +5,7 @@ import {
   drainAndFormat,
   handlePlanningFailure,
   persistPhases,
+  runBriefQualityGate,
   runPlannerCallInContinuationLoop,
   type PlanningPhaseOptions,
   type PlanningPhaseResult,
@@ -42,6 +43,15 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
 
   persistPhases(projectDir, sessionId, planResult.phases, metadata);
   state = addUsageAndSave(projectDir, sessionId, state, 'planner', planResult.usage, wctx.bus);
+
+  const { report: qualityReport, ok: qualityOk } = runBriefQualityGate(planResult.tasks, projectDir, sessionId, wctx.bus, state.phase);
+  if (!qualityOk) {
+    const firstError = qualityReport.issues.find(i => i.severity === 'error');
+    return handlePlanningFailure(
+      new Error(`brief quality gate failed: ${firstError?.code ?? 'unknown'} in ${String(firstError?.taskId ?? 'unknown')}`),
+      projectDir, sessionId, state, wctx,
+    );
+  }
 
   state = transitionAndSave(projectDir, sessionId, state, { type: 'START_QUICK', tasks: planResult.tasks });
   publishPlannerStatus(wctx.bus, state, 'running');

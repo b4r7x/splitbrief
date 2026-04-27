@@ -82,6 +82,15 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
     case 'REJECT_PLAN':
       return { ...state, phase: 'idle' };
 
+    case 'BRIEFS_READY':
+      return { ...state, phase: 'reviewing-briefs', tasks: action.tasks, currentTaskIndex: 0, attempt: 0 };
+
+    case 'APPROVE_BRIEFS':
+      return { ...state, phase: 'implementing', currentTaskIndex: 0, attempt: 0 };
+
+    case 'REJECT_BRIEFS':
+      return { ...state, phase: 'idle' };
+
     case 'SPEC_CLARIFY_START':
       return { ...state, phase: 'clarifying' };
 

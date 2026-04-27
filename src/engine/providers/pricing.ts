@@ -1,3 +1,9 @@
+// Cache token population by runner kind:
+// - api / agent-sdk: populated from API response when SDK exposes cache_read_input_tokens
+// - cli (claude-code): best-effort; populated when tool stream includes cache fields
+// - cli (other), shell, agent: not available; cache fields absent in TokenUsage
+// When absent, cacheReadSavings is 0 and cache columns render 'n/a' in TUI.
+
 import { API_PROVIDER_IDS } from '../../core/schemas/enums.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostBreakdown } from '../../core/schemas/summary.js';
@@ -97,6 +103,28 @@ export function calculateCostBreakdown(opts: CostBreakdownOptions, cache?: Model
     recordProviderCost(providerCosts, plannerTool, tokenUsage.implementerInput, tokenUsage.implementerOutput, actualImplementerCost);
   }
 
+  const cacheReadTokens =
+    (tokenUsage.plannerCacheRead ?? 0) + (tokenUsage.implementerCacheRead ?? 0);
+  const cacheWriteTokens =
+    (tokenUsage.plannerCacheCreate ?? 0) + (tokenUsage.implementerCacheCreate ?? 0);
+
+  // Cache read savings: per-token saving vs. charging those tokens at the full input rate.
+  // plannerInput / implementerInput already excludes cache_read_input_tokens (API returns them
+  // separately). Savings = what would have been paid at input rate minus what was actually paid.
+  let cacheReadSavings = 0;
+  if (cacheReadTokens > 0) {
+    if ((tokenUsage.plannerCacheRead ?? 0) > 0 && plannerPricing.cacheReadPer1M !== undefined) {
+      cacheReadSavings +=
+        ((tokenUsage.plannerCacheRead ?? 0) / 1_000_000) *
+        (plannerPricing.inputPer1M - plannerPricing.cacheReadPer1M);
+    }
+    if ((tokenUsage.implementerCacheRead ?? 0) > 0 && implementerPricing.cacheReadPer1M !== undefined) {
+      cacheReadSavings +=
+        ((tokenUsage.implementerCacheRead ?? 0) / 1_000_000) *
+        (implementerPricing.inputPer1M - implementerPricing.cacheReadPer1M);
+    }
+  }
+
   return {
     hypotheticalCost: hypotheticalImplementerCost,
     actualPlannerCost,
@@ -109,5 +137,8 @@ export function calculateCostBreakdown(opts: CostBreakdownOptions, cache?: Model
     hasUnpricedUsage,
     hasSavingsEstimate,
     providerCosts: Object.keys(providerCosts).length > 0 ? providerCosts : undefined,
+    ...(cacheReadSavings > 0 && { cacheReadSavings }),
+    ...(cacheReadTokens > 0 && { cacheReadTokens }),
+    ...(cacheWriteTokens > 0 && { cacheWriteTokens }),
   };
 }

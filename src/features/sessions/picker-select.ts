@@ -11,7 +11,7 @@ export function handleSelect(session: Session) {
   }
   if (session.summary) {
     overlayStore.close();
-    routerStore.navigate({ to: 'summary', summary: session.summary });
+    routerStore.navigate({ to: 'summary', summary: session.summary, sessionId: session.id });
     return;
   }
   feedbackStore.setMessage(`Session "${session.feature}" failed without a summary to display`);

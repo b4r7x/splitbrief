@@ -6,6 +6,7 @@ import type { ValidationResult } from '../../core/types/summary.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { EventBus, EngineEvent } from '../events/types.js';
+import type { EmittedChain } from '../../core/schemas/drift-chain.js';
 
 const EMPTY_STAGES: ValidationStages = { tsc: false, lint: false, test: false };
 
@@ -128,6 +129,10 @@ export function publishBudgetWarning(bus: EventBus, phase: Phase, currentCost: n
   bus.publish({ type: 'budget_warning', ts: Date.now(), phase, currentCost, maxBudget });
 }
 
+export function publishBudgetPaused(bus: EventBus, phase: Phase, currentCost: number, maxBudget: number, threshold: number): void {
+  bus.publish({ type: 'budget_paused', ts: Date.now(), phase, currentCost, maxBudget, threshold });
+}
+
 export function publishBudgetExceeded(bus: EventBus, phase: Phase, currentCost: number, maxBudget: number): void {
   bus.publish({ type: 'budget_exceeded', ts: Date.now(), phase, currentCost, maxBudget });
 }
@@ -171,6 +176,24 @@ export function publishImplementerGenerateDone(bus: EventBus, phase: Phase, opts
 
 export function publishImplementerGenerateFailed(bus: EventBus, phase: Phase, taskId: TaskId, model: string): void {
   bus.publish({ type: 'implementer_generate_failed', ts: Date.now(), phase, taskId, model });
+}
+
+export function publishDriftChainDetected(
+  bus: EventBus,
+  phase: Phase,
+  chain: EmittedChain,
+  threshold: number,
+): void {
+  bus.publish({
+    type: 'drift_chain_detected',
+    ts: Date.now(),
+    phase,
+    chainLength: chain.chainLength,
+    score: chain.score,
+    threshold,
+    uniqueOutOfBoundsFiles: chain.uniqueOutOfBoundsFiles,
+    representativePath: chain.representativePath,
+  });
 }
 
 /** Low-level publish for sites that don't fit a typed helper. Prefer the publish* helpers above when one applies. */

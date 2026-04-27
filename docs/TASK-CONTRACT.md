@@ -202,3 +202,169 @@ The output must match the shape above.
 - `src/core/types/state-actions.ts` — state-machine actions that mutate tasks.
 - `docs/WORKFLOW.md` §1.1 — full phase-transition table.
 - `docs/CONCEPTS.md` — session folder structure.
+
+## Brief quality gate
+
+After each planning phase produces its Task Brief, the orchestrator runs a quality gate before transitioning to `implementing`. The gate is implemented in `src/engine/spec/brief-quality.ts` and produces `brief-quality.json` in the session directory.
+
+### Errors (gate blocks when any error is present)
+
+| Code | Condition |
+|---|---|
+| `missing_validation` | `task.tests` is empty |
+| `empty_task_list` | The planner returned zero parseable Task Briefs |
+| `vague_validation` | every test matches a known vague pattern ("works", "validate", …) |
+| `missing_implementation_steps` | `task.implementationSteps` is empty |
+| `multi_file_task` | description/steps mention ≥ 2 distinct file paths |
+| `missing_code_context` | `action === 'modify'` with no `currentCode`, `signature`, or `pattern` |
+| `missing_escalation` | description/steps contain risk keywords (auth, token, secret, …) and `escalation` is absent |
+
+### Warnings (reported but do not block)
+
+| Code | Condition |
+|---|---|
+| `missing_scope` | `task.scope` absent or empty |
+| `missing_evidence` | `task.evidence` absent or empty |
+| `non_atomic_task` | `task.typeDefs` is empty |
+
+`multi_file_task` only fires when the brief names 2+ distinct project-relative file paths. Count literal path mentions in prose, bullets, code fences, and examples; repeating the same path does not count.
+
+### Artifact
+
+`brief-quality.json` shape (written with mode 0o600):
+
+```json
+{
+  "version": 1,
+  "passed": true,
+  "score": 0.85,
+  "issues": [
+    { "taskId": "T001", "severity": "warning", "code": "missing_scope", "message": "..." }
+  ]
+}
+```
+
+`score` ranges from 0–1: `1 - (errorCount × 0.2) - (warningCount × 0.05)`, clamped to `[0, 1]`.
+
+## Evidence ledger
+
+Every run writes a per-session evidence ledger to `.diptych/sessions/<id>/evidence.json`
+(constant `EVIDENCE_FILE`, file mode `0o600`). The ledger is the durable record
+of what each task was supposed to prove and what was actually observed. It is
+written incrementally as tasks reach a terminal state and amended once the
+final review completes.
+
+### Shape
+
+```ts
+type EvidenceLedger = {
+  version: 1;
+  sessionId: string;
+  feature: string;
+  mode?: 'instant' | 'quick' | 'standard' | 'speckit';
+  generatedAt: string;
+  tasks: Array<{
+    id: string;
+    title: string;
+    file: string;
+    status: 'pending' | 'in_progress' | 'done' | 'escalated' | 'failed' | 'skipped';
+    method?: 'local' | 'escalated-hint' | 'escalated-intermediate' | 'escalated-full' | 'failed' | 'skipped';
+    retries: number;
+    durationMs?: number;
+    changedFiles: string[];
+    validation: Array<{ stage: 'tsc' | 'lint' | 'test'; passed: boolean; errorSummary?: string }>;
+    expectedEvidence: string[];   // task.evidence ++ task.tests
+    observedEvidence: string[];   // produced by orchestrator
+    escalated: boolean;
+    briefHash?: string | null;  // absent on sessions written before this spec; readers must treat absent and `null` identically.
+  }>;
+  validationSummary: { passed: number; failed: number; skipped: number; escalated: number };
+  finalReview?: { path: string; status: 'written' | 'failed' | 'skipped' };
+  briefHash?: string | null;  // absent on sessions written before this spec; readers must treat absent and `null` identically.
+};
+```
+
+### Observed evidence vocabulary
+
+Strings appended to `observedEvidence` are stable. UI and tests may match on them.
+
+| String | When it is appended |
+|---|---|
+| `task reached done` | Task transitions to `done` (local commit or escalation success) |
+| `task reached escalated` | Task transitions to `escalated` |
+| `tsc passed` / `lint passed` / `test passed` | Validation stage reported `passed: true` |
+| `diff written for <file>` | Task committed at least one changed file |
+| `final review written` | Final review succeeded; appended to every completed task |
+| `skipped: <reason>` | `pre_task` hook denied the task |
+| `skipped: dependency failed: ...` | `handleSkippedTask(...)` skipped the task because a dependency was already failed or skipped |
+
+### Summary rollup
+
+`Summary.evidenceSummary` (optional, additive) carries a compact rollup so the
+summary screen can render counts without re-reading the ledger:
+
+```ts
+{
+  path: 'evidence.json',
+  totalTasks: number,
+  tasksWithValidationEvidence: number,
+  escalatedTasks: number,
+  failedTasks: number,
+}
+```
+
+The full ledger is read directly from disk by UI that needs per-task detail.
+
+
+## Deterministic drift report
+
+Before the final planner review runs, the orchestrator computes a deterministic
+drift report comparing the Task Brief against the actual git diff and the
+evidence ledger. The report is persisted as `drift-report.json` in the session
+directory and is also injected as a section into the final-review prompt.
+
+### Shape
+
+```ts
+type DriftReport = {
+  version: 1;
+  passed: boolean;       // true when no error-severity findings
+  score: number;         // 1 - 0.25*errors - 0.08*warnings, clamped to [0,1]
+  changedFiles: string[];
+  expectedFiles: string[];
+  findings: Array<{
+    severity: 'info' | 'warning' | 'error';
+    code:
+      | 'out_of_scope_file'
+      | 'missing_expected_file'
+      | 'orphan_diff'
+      | 'out_of_bounds_text_match'
+      | 'missing_evidence'
+      | 'failed_task_with_diff';
+    taskId?: string;
+    file?: string;
+    message: string;
+  }>;
+  briefHash?: string | null;  // absent on sessions written before this spec; readers must treat absent and `null` identically.
+};
+```
+
+### Detection rules
+
+| Code | Severity | Trigger |
+|---|---|---|
+| `out_of_scope_file` | warning (or error if any task declares `outOfBounds`) | Changed file is not the target of any task. |
+| `missing_expected_file` | warning | Task is `done` / `escalated` but its target file is not in the diff. |
+| `failed_task_with_diff` | error | Task is `failed` but its target file appears in the diff. |
+| `orphan_diff` | error | Diff contains files but every task is `failed` or `skipped`. |
+| `out_of_bounds_text_match` | error | A `task.scope.outOfBounds` pattern matches a changed-file path or appears in the raw diff text. Match literally as a substring; do not use regex or semantic matching. |
+| `missing_evidence` | warning | Task `done`/`escalated` declared expected evidence but observed evidence is empty in the ledger. |
+
+### Event
+
+The orchestrator publishes a `drift_report` event:
+
+```ts
+{ type: 'drift_report'; ts: number; phase: Phase; passed: boolean;
+  score: number; errorCount: number; warningCount: number }
+```

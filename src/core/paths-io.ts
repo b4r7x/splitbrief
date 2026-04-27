@@ -24,7 +24,7 @@ function readPackageVersion(): string {
   }
 }
 
-function getDiptychVersion(): string {
+export function getDiptychVersion(): string {
   if (cachedVersion !== null) return cachedVersion;
   cachedVersion = readPackageVersion();
   return cachedVersion;

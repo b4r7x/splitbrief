@@ -231,7 +231,7 @@ function basenameShort(p: string): string {
 }
 ```
 
-File: `src/components/input-bar/index.tsx` — render `<AttachmentChips />` above or beside the input box. Pass `onDrop` through to `multiline-input.tsx`.
+File: `src/components/input-bar/input-bar.tsx` — render `<AttachmentChips />` above or beside the input box. Pass `onDrop` through to `multiline-input.tsx`.
 
 ### 6. Workflow handlers wiring
 

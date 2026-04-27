@@ -54,6 +54,13 @@ export async function runHeadless(
       onExternalChanges: async () => true,
       onQuestionAsked: async () => '',
       onBudgetExceeded: async () => true,
+      onBudgetPaused: async (currentCost, maxBudget) => {
+        const pauseThreshold = config.workflow.budgetPauseThreshold ?? 0.85;
+        process.stdout.write(
+          JSON.stringify({ type: 'budget_paused', currentCost, maxBudget, threshold: pauseThreshold }) + '\n',
+        );
+        process.exit(1);
+      },
       onContinuationNeeded: async () => '',
       onComplete: () => undefined,
     },

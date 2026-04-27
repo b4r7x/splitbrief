@@ -28,6 +28,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   const startTime = Date.now();
   const plannerModel = getRunnerModelName(config.planner);
   const implementerModel = resolveAutoModel(config.implementer.model, getRunnerDisplayName(config.implementer));
+  const sessionId = opts.sessionId ?? generateSessionId(projectDir, feature);
   const summaryBase: SummaryBase = {
     feature, startTime,
     plannerTool: getRunnerDisplayName(config.planner),
@@ -35,6 +36,8 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     implementerTool: getRunnerDisplayName(config.implementer),
     ...(implementerModel !== undefined && { implementerModel }),
     mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+    projectDir,
+    sessionId,
   };
 
   const metadata: SpecMetadata = {
@@ -44,8 +47,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     implementerModel: summaryBase.implementerModel,
     mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
   };
-
-  const sessionId = opts.sessionId ?? generateSessionId(projectDir, feature);
 
   let trackedState: WorkflowState | undefined;
   let currentTask: Pick<Task, 'file' | 'action'> | undefined;

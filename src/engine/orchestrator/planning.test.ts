@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -6,6 +8,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
+import { BRIEF_QUALITY_FILE, sessionDir } from '../../core/paths.js';
 import { runPlanningPhase } from './planning/run.js';
 import type { WorkflowSinks } from './types.js';
 import type { Planner } from '../planners/types.js';
@@ -28,6 +31,19 @@ Add JWT-based authentication.
 ### Tests
 
 - passes tsc
+
+### Implementation Steps
+
+1. Implement the authentication module.
+
+### Scope
+
+- In bounds: authentication plumbing in src/auth.ts
+- Out of bounds: unrelated UI or persistence changes
+
+### Evidence
+
+- brief-quality.json records a passing gate
 `;
 
 let dirs: string[] = [];
@@ -61,6 +77,38 @@ function prepareState(phase?: 'specifying' | 'planning', rewindPending?: Workflo
   const initial = createInitialState('test-feature');
   if (phase) return { ...initial, phase, rewindPending };
   return transition(initial, { type: 'START', feature: 'test-feature' });
+}
+
+function makePassingTask(id = 'T001') {
+  return makeTask({
+    id,
+    scope: { inBounds: ['auth flow'], outOfBounds: ['unrelated UI'] },
+    evidence: ['brief-quality.json confirms the task brief is complete'],
+    typeDefs: 'type AuthTask = { userId: string }',
+  });
+}
+
+function makeBriefQualityFailureTask() {
+  return makeTask({
+    tests: [],
+    implementationSteps: [],
+  });
+}
+
+function expectBriefQualityBlocked(
+  result: { cancelled: boolean; state: WorkflowState },
+  projectDir: string,
+  sessionId: string,
+  events: ReturnType<typeof makeBusRecorder>['events'],
+) {
+  expect(result.cancelled).toBe(true);
+  expect(result.state.phase).not.toBe('implementing');
+  const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE);
+  expect(existsSync(reportPath)).toBe(true);
+  const persisted = JSON.parse(readFileSync(reportPath, 'utf8'));
+  expect(persisted.passed).toBe(false);
+  const failed = events.find(e => e.type === 'brief_quality_failed');
+  expect(failed).toBeDefined();
 }
 
 function sequencedApproval(responses: Array<{ approved: boolean; comment?: string }>): OrchestratorCallbacks['onApprovalNeeded'] {
@@ -110,8 +158,8 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     { name: 'manual approval (default mode)', workflow: manual() },
     { name: 'auto-approve both completes without user interaction', workflow: auto() },
     { name: 'quick mode skips approval and uses quickPlan', workflow: manual('quick'), useQuickPlan: true },
-    { name: 'standard mode uses single approval gate', workflow: manual('standard'), approvals: [{ approved: true }] },
-    { name: 'speckit mode requires two approvals (spec + plan)', workflow: manual('speckit'), approvals: [{ approved: true }, { approved: true }] },
+    { name: 'standard mode uses spec + briefs approval gates', workflow: manual('standard'), approvals: [{ approved: true }, { approved: true }] },
+    { name: 'speckit mode requires spec + plan + briefs approvals', workflow: manual('speckit'), approvals: [{ approved: true }, { approved: true }, { approved: true }] },
   ];
 
   it.each(happyCases)('$name', async ({ workflow, approvals, useQuickPlan }) => {
@@ -122,7 +170,7 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     const quickPlan = useQuickPlan
       ? async () => {
           quickPlanCalls++;
-          return { spec: '', plan: '', tasks: [makeTask({ id: 'T-QUICK' })], usage: { inputTokens: 50, outputTokens: 25 } };
+          return { spec: '', plan: '', tasks: [makePassingTask('T-QUICK')], usage: { inputTokens: 50, outputTokens: 25 } };
         }
       : undefined;
     const planner = makePlanner(quickPlan ? { quickPlan } : undefined);
@@ -168,6 +216,109 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     expect(regenArgs[0]?.prompt).toContain('add auth section');
     expect(regenArgs[0]?.target).toBe('spec');
   });
+
+  it('enters reviewing-briefs phase for invalid briefs in standard mode (user can reject)', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const planner = makePlanner({
+      plan: vi.fn().mockResolvedValue({
+        spec: '# Spec',
+        plan: '# Plan',
+        tasks: [makeBriefQualityFailureTask()],
+        usage: { inputTokens: 100, outputTokens: 50 },
+      }),
+    });
+    const onApprovalNeeded = sequencedApproval([
+      { approved: true },
+      { approved: false },
+    ]);
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus, events } = makeBusRecorder();
+    const config = makeConfig({ workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true } });
+    const initial = createInitialState('feature');
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...initial, phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expect(result.cancelled).toBe(true);
+    expect(result.state.phase).toBe('idle');
+    const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE);
+    expect(existsSync(reportPath)).toBe(true);
+    const persisted = JSON.parse(readFileSync(reportPath, 'utf8'));
+    expect(persisted.passed).toBe(false);
+    const failed = events.find(e => e.type === 'brief_quality_failed');
+    expect(failed).toBeDefined();
+  });
+
+  it('blocks invalid briefs before implementing in quick mode', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const planner = makePlanner({
+      quickPlan: vi.fn().mockResolvedValue({
+        spec: '# Spec',
+        plan: '# Plan',
+        tasks: [makeBriefQualityFailureTask()],
+        usage: { inputTokens: 50, outputTokens: 25 },
+      }),
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const config = makeConfig({ workflow: { mode: 'quick', autoApproveSpec: true, autoApprovePlan: true } });
+    const initial = createInitialState('feature');
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...initial, phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expectBriefQualityBlocked(result, projectDir, sessionId, events);
+  });
+
+  it('briefs comment → tasks regenerated via planner.review, loop continues, user then approves', async () => {
+    const { projectDir, sessionId } = setupProject();
+    // First plan returns a passing task; after the comment the planner.review returns REAL_TASKS_MD
+    const reviewFn = vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null });
+    const planner = makePlanner({ review: reviewFn });
+    // Sequence: approve spec, comment on briefs, then approve regenerated briefs
+    const onApprovalNeeded = sequencedApproval([
+      { approved: true },
+      { approved: false, comment: 'add scope definitions to all tasks' },
+      { approved: true },
+    ]);
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus } = makeBusRecorder();
+    const config = makeConfig({ workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true } });
+    const initial = createInitialState('feature');
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...initial, phase: 'idle' },
+      feature: 'feature',
+    });
+
+    // The comment branch enqueues the message and calls regenerateTasks → planner.review
+    expect(reviewFn).toHaveBeenCalledTimes(1);
+    const reviewPrompt = reviewFn.mock.calls[0]?.[0] as string;
+    expect(reviewPrompt).toContain('add scope definitions to all tasks');
+    // After regeneration the loop continues and user approves → workflow reaches implementing
+    expect(result.cancelled).toBe(false);
+    expect(result.state.phase).toBe('implementing');
+    expect(result.tasks).toHaveLength(1);
+  });
 });
 
 describe('runPlanningPhase — rejection paths', () => {
@@ -204,7 +355,7 @@ describe('runPlanningPhase — persistence', () => {
     const plan = vi.fn().mockResolvedValue({
       spec: artifactSpec,
       plan: artifactPlan,
-      tasks: [makeTask()],
+      tasks: [makePassingTask()],
       usage: { inputTokens: 100, outputTokens: 50 },
       phases: [
         { text: artifactSpec, filename: 'spec.md', rawOutput: 'raw planner noise for spec' },
@@ -238,7 +389,7 @@ describe('runPlanningPhase — onQuestion wiring', () => {
     let captured: unknown;
     const plan = vi.fn().mockImplementation(async (_feature, _dir, cbs) => {
       captured = cbs.onQuestion;
-      return { spec: '', plan: '', tasks: [makeTask()], usage: null };
+      return { spec: '', plan: '', tasks: [makePassingTask()], usage: null };
     });
     const planner = makePlanner({
       plan,
@@ -280,8 +431,8 @@ describe('runPlanningPhase — abort + continuation', () => {
       expect(feature).toContain(partialText);
       expect(feature).toContain(continuationText);
       return fnKey === 'quickPlan'
-        ? { spec: '', plan: '', tasks: [makeTask()], usage: { inputTokens: 50, outputTokens: 25 } }
-        : { spec: '# Full Spec', plan: '# Full Plan', tasks: [makeTask()], usage: { inputTokens: 100, outputTokens: 50 } };
+        ? { spec: '', plan: '', tasks: [makePassingTask()], usage: { inputTokens: 50, outputTokens: 25 } }
+        : { spec: '# Full Spec', plan: '# Full Plan', tasks: [makePassingTask()], usage: { inputTokens: 100, outputTokens: 50 } };
     };
 
     const continuationPrompts: string[] = [];
@@ -337,7 +488,7 @@ describe('runPlanningPhase — rewindPending', () => {
       },
       plan: async () => {
         planCalls++;
-        return { spec: '# Spec', plan: '# Plan', tasks: [makeTask()], usage: { inputTokens: 100, outputTokens: 50 } };
+        return { spec: '# Spec', plan: '# Plan', tasks: [makePassingTask()], usage: { inputTokens: 100, outputTokens: 50 } };
       },
     });
     const { result } = await runPhase({
@@ -365,7 +516,7 @@ describe('runPlanningPhase — rewindPending', () => {
     const planner = makePlanner({
       plan: async () => {
         planCalls++;
-        return { spec: '# Spec', plan: '# Plan', tasks: [makeTask()], usage: { inputTokens: 100, outputTokens: 50 } };
+        return { spec: '# Spec', plan: '# Plan', tasks: [makePassingTask()], usage: { inputTokens: 100, outputTokens: 50 } };
       },
     });
 
@@ -394,7 +545,7 @@ describe('runPlanningPhase — rewindPending', () => {
       },
       plan: async () => {
         planCalls++;
-        return { spec: '# Spec', plan: '# Plan', tasks: [makeTask()], usage: { inputTokens: 100, outputTokens: 50 } };
+        return { spec: '# Spec', plan: '# Plan', tasks: [makePassingTask()], usage: { inputTokens: 100, outputTokens: 50 } };
       },
     });
 
@@ -431,7 +582,7 @@ describe('runPlanningPhase — rewindPending', () => {
         // Distinctive task id proves these tasks came from plan(), not a stale
         // path. If plan() were called more than once, the result would come
         // from the last call but we assert the counter directly.
-        return { spec: '# Spec', plan: '# Plan', tasks: [makeTask({ id: 'T-FROMPLAN' })], usage: { inputTokens: 100, outputTokens: 50 } };
+        return { spec: '# Spec', plan: '# Plan', tasks: [makePassingTask('T-FROMPLAN')], usage: { inputTokens: 100, outputTokens: 50 } };
       },
       regenerate: async () => {
         regenCalls++;

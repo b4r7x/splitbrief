@@ -6,6 +6,8 @@ export interface KnownModel {
   contextLength?: number;
   pricingInput?: number;
   pricingOutput?: number;
+  pricingCacheRead?: number;
+  pricingCacheWrite?: number;
   isFree?: boolean;
   aliases?: string[];
   catalogProvider?: ProviderId;
@@ -111,16 +113,20 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       contextLength: 1_000_000,
       pricingInput: 3,
       pricingOutput: 15,
+      pricingCacheRead: 0.30,
+      pricingCacheWrite: 3.75,
       catalogProvider: 'anthropic',
-      provenance: 'Anthropic Claude 4.6 fallback (2026-04)',
+      provenance: 'Anthropic Claude 4.6 fallback (2026-04); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26',
     },
     {
       name: 'claude-opus-4-6',
       contextLength: 1_000_000,
       pricingInput: 5,
       pricingOutput: 25,
+      pricingCacheRead: 0.50,
+      pricingCacheWrite: 6.25,
       catalogProvider: 'anthropic',
-      provenance: 'Anthropic Claude 4.6 fallback (2026-04)',
+      provenance: 'Anthropic Claude 4.6 fallback (2026-04); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26',
     },
   ],
   anthropic: [
@@ -130,14 +136,22 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       contextLength: 1_000_000,
       pricingInput: 3,
       pricingOutput: 15,
-      provenance: 'Anthropic Claude 4.6 fallback (2026-04)',
+      // Cache prices: verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26
+      // Cache read = $0.30/MTok (0.1x base input). Cache write = $3.75/MTok (1.25x, 5-minute TTL).
+      pricingCacheRead: 0.30,
+      pricingCacheWrite: 3.75,
+      provenance: 'Anthropic Claude 4.6 fallback (2026-04); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26',
     },
     {
       name: 'claude-opus-4-6',
       contextLength: 1_000_000,
       pricingInput: 5,
       pricingOutput: 25,
-      provenance: 'Anthropic Claude 4.6 fallback (2026-04)',
+      // Cache prices: verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26
+      // Cache read = $0.50/MTok (0.1x base input). Cache write = $6.25/MTok (1.25x, 5-minute TTL).
+      pricingCacheRead: 0.50,
+      pricingCacheWrite: 6.25,
+      provenance: 'Anthropic Claude 4.6 fallback (2026-04); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26',
     },
   ],
   openrouter: [

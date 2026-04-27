@@ -4,7 +4,9 @@ import type { Theme } from '../../../components/theme.js';
 import type { TaskStatus } from '../../../core/schemas/enums.js';
 import { truncateWithEllipsis } from '../../../utils/truncate.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { useAdvisory } from '../hooks/use-advisory.js';
 import { CostDisplay } from './cost-display.js';
 
 export interface SidebarTask {
@@ -47,8 +49,13 @@ function statusColor(status: SidebarTask['status'], t: Theme): string {
 export function Sidebar({ width }: SidebarProps) {
   const t = useTheme();
   const tasks = tasksStore.use(s => s.tasks);
+  const mode = configStore.use(s => s.config?.workflow?.mode);
+  const advisory = useAdvisory();
   const doneCount = tasks.filter((tk) => tk.status === 'done').length;
   const labelWidth = Math.max(10, width - 4);
+
+  const escalatedCount = tasks.filter(tk => tk.status === 'escalated').length;
+  const localCount = doneCount;
 
   return (
     <Box flexDirection="column" width={width} borderStyle="single" borderLeft borderTop={false} borderBottom={false} borderRight={false} borderColor={t.border}>
@@ -69,6 +76,13 @@ export function Sidebar({ width }: SidebarProps) {
       </Box>
 
       <Box flexDirection="column" paddingX={1}>
+        {mode && <Text color={t.textDim}>mode {mode}</Text>}
+        {advisory && advisory.kind !== 'none' && (
+          <Text color={t.warning}>risk {advisory.risk}</Text>
+        )}
+        {escalatedCount > 0 && (
+          <Text color={t.textDim}>{localCount} local · {escalatedCount} escalated</Text>
+        )}
         <Text bold color={t.text}>Cost</Text>
         <CostDisplay />
       </Box>

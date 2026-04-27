@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -7,6 +8,10 @@ import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { requestRewind, requestClearQueue, requestAttach, requestDetach, type RewindTarget } from '../../features/workflow/handlers.js';
 import { refreshDetection } from '../../engine/detection/service.js';
 import { rebuildRepomap as doRebuildRepomap } from '../../engine/codebase/rebuild.js';
+import { readActive } from '../sessions/lifecycle.js';
+import { writeHandoffPack } from '../../engine/handoff/write.js';
+import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from '../../engine/orchestrator/approvals-store.js';
+import { acceptRunSnapshot, rejectRunSnapshot } from '../../engine/snapshots/run.js';
 import type { CommandContext } from './types.js';
 
 export function buildCommandContext({ exit }: { exit: () => void }): CommandContext {
@@ -70,5 +75,44 @@ export function buildCommandContext({ exit }: { exit: () => void }): CommandCont
       return requestDetach(idOrIndex);
     },
     listAttachments: () => attachmentsStore.peek().map(a => ({ id: a.id, path: a.path })),
+    writeHandoff: async (target, taskId) => {
+      const projectDir = configStore.get().projectDir;
+      const sessionId = readActive(projectDir);
+      if (!sessionId) throw new Error('No active session for handoff');
+      const outDir = join(
+        projectDir, '.diptych', 'sessions', sessionId, 'handoffs', target,
+      );
+      return writeHandoffPack({
+        projectDir,
+        sessionId,
+        target,
+        outDir,
+        ...(taskId !== undefined && { selectedTaskIds: [taskId] }),
+        mode: 'overwrite',
+      });
+    },
+    listApprovals: () => {
+      const projectDir = configStore.get().projectDir;
+      return readApprovalsStore(projectDir).grants;
+    },
+    clearApprovals: (scope = 'all') => {
+      const projectDir = configStore.get().projectDir;
+      const before = readApprovalsStore(projectDir);
+      const after = clearGrantsByScope(before, scope);
+      writeApprovalsStore(projectDir, after);
+      return before.grants.length - after.grants.length;
+    },
+    acceptRunSnapshot: async () => {
+      const projectDir = configStore.get().projectDir;
+      const sessionId = readActive(projectDir);
+      if (!sessionId) throw new Error('No active session for /accept-run');
+      return acceptRunSnapshot(projectDir, sessionId);
+    },
+    rejectRunSnapshot: async () => {
+      const projectDir = configStore.get().projectDir;
+      const sessionId = readActive(projectDir);
+      if (!sessionId) throw new Error('No active session for /reject-run');
+      return rejectRunSnapshot(projectDir, sessionId);
+    },
   };
 }

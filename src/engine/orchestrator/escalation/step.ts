@@ -7,6 +7,20 @@ import type { WorkflowContext } from '../types.js';
 import { refreshAndPersistCode, addUsageAndSave } from '../state-ops.js';
 import { validateCommitAndAdvance } from '../task-commit.js';
 import type { UsageCategory } from '../tokens.js';
+import {
+  gateChangedFiles,
+  getChangedFilesSinceSnapshot,
+  type ChangedFilesSnapshot,
+  type GateDecision,
+} from '../tiered-approval.js';
+import { publishError } from '../events.js';
+import {
+  createEvidenceLedger,
+  readEvidenceLedger,
+  recordRejectionEvidence,
+  writeEvidenceLedger,
+} from '../evidence.js';
+import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 
 export const MAX_HINT_ERROR_LENGTH = 4000;
 
@@ -14,7 +28,11 @@ export type RetryResult =
   | { completed: true; method: Exclude<TaskCompletionMethod, 'failed' | 'skipped'>; attempts: number }
   | { completed: false; method: 'failed'; attempts: number };
 
-export type EscalationContext = WorkflowContext & { taskStartTime?: number | undefined };
+export type EscalationContext = WorkflowContext & {
+  taskStartTime?: number | undefined;
+  taskStartSnapshot: ChangedFilesSnapshot;
+  dependsOnFiles: string[];
+};
 
 export type RetryStepOutcome = {
   state: WorkflowState;
@@ -48,6 +66,32 @@ export async function validateAndCommit(
   retryCount: number,
   commitSuffix?: string,
 ) {
+  const changedFiles = getChangedFilesSinceSnapshot(ctx.projectDir, ctx.taskStartSnapshot);
+  const changedFilesGate = await gateChangedFiles({
+    changedFiles,
+    task,
+    dependsOnFiles: ctx.dependsOnFiles,
+    projectDir: ctx.projectDir,
+    sessionId: ctx.sessionId,
+    phase: state.phase,
+    taskId: task.id,
+    bus: ctx.bus,
+    callbacks: ctx.callbacks,
+    config: ctx.config,
+  });
+  if (!changedFilesGate.allow) {
+    const files = changedFilesGate.changedFiles.join(', ');
+    const reason = changedFilesGate.reason ?? 'denied';
+    publishError(ctx.bus, state.phase, `Retry changed files blocked by approval gate: ${reason} (${files})`);
+    persistRetryRejectionEvidence(ctx, state, task, changedFilesGate);
+    return {
+      state,
+      completed: false,
+      validationResults: [],
+      blockedReason: reason,
+    };
+  }
+
   const validationResults = await ctx.validator.runValidation(task, ctx.projectDir, ctx.config, ctx.bus, state.phase, task.id);
   const result = await validateCommitAndAdvance({
     task, projectDir: ctx.projectDir, sessionId: ctx.sessionId,
@@ -57,6 +101,36 @@ export async function validateAndCommit(
     results: validationResults,
   });
   return { ...result, validationResults };
+}
+
+function persistRetryRejectionEvidence(
+  ctx: EscalationContext,
+  state: WorkflowState,
+  task: Task,
+  decision: GateDecision,
+): void {
+  const rejectedTier = decision.tier;
+  if (!rejectedTier || rejectedTier === 'auto' || !decision.actionClass || !decision.actionDescription) return;
+  try {
+    const existing = readEvidenceLedger(ctx.projectDir, ctx.sessionId);
+    const ledger = existing ?? createEvidenceLedger({
+      sessionId: ctx.sessionId,
+      feature: state.feature,
+      mode: ctx.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+      tasks: state.tasks,
+    });
+    const updated = recordRejectionEvidence({
+      ledger,
+      tier: rejectedTier,
+      actionClass: decision.actionClass,
+      actionDescription: decision.actionDescription,
+      taskId: task.id,
+      reason: decision.reason ?? 'denied',
+    });
+    writeEvidenceLedger(ctx.projectDir, ctx.sessionId, updated);
+  } catch {
+    // Rejection evidence is best-effort; the approval decision already blocked the task.
+  }
 }
 
 /**
@@ -78,6 +152,15 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   }
 
   const commitResult = await validateAndCommit(ctx, task, state, method, transitionType, attempts, commitSuffix);
+  if ('blockedReason' in commitResult) {
+    return {
+      state: commitResult.state,
+      task,
+      lastError: commitResult.blockedReason,
+      attempts,
+      result: { completed: false, method: 'failed', attempts },
+    };
+  }
   if (commitResult.completed) {
     return {
       state: commitResult.state,

@@ -14,6 +14,10 @@ export const TokenUsageSchema = z.object({
   implementerOutput: z.number(),
   escalationInput: z.number(),
   escalationOutput: z.number(),
+  plannerCacheRead: z.number().nonnegative().optional(),
+  plannerCacheCreate: z.number().nonnegative().optional(),
+  implementerCacheRead: z.number().nonnegative().optional(),
+  implementerCacheCreate: z.number().nonnegative().optional(),
 });
 
 export const TaskTokenUsageSchema = z.object({

@@ -51,16 +51,15 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 ---
 
-## **[Could]** Cursor-style per-run code snapshot undo
+## **[Could]** Git-backed per-run code snapshot undo
 
-**Why we want it.** Cursor Composer snapshots the working-tree state at the start of each agent run and lets the user "accept" or "reject" the whole diff at the end. If rejected, the working tree reverts. This is more fine-grained than git-commit-per-task — it lets you try a whole feature and throw it away without polluting git history.
+**Why we want it.** File-level run accept/reject now exists through `/accept-run` and `/reject-run confirm`, using hash-guarded snapshots. A future git-backed variant could additionally manage per-task commit history for workflows that opt into git commits.
 
 **What it would look like.**
 
-- Before the first `implementing` phase begins (after `APPROVE_PLAN`), snapshot the working tree: either as a `git stash` tagged with the session-id, or as a file-level copy under `sessions/<id>/snapshot/`.
-- During the run, every per-task commit still happens (for the granular retry/escalation behaviour we already rely on).
-- At end-of-run or on user request (`/reject-run`), revert the working tree to the snapshot and squash-delete the session's commits from the branch history.
-- `/accept-run` (default at session end) does nothing — commits stay.
+- During the run, every per-task commit still happens when commit strategy enables it.
+- At end-of-run or on user request, a git-backed reject could squash-delete the session's commits from branch history after the file-level safety check passes.
+- Accept would keep the current branch history.
 
 **Why deferred.**
 
@@ -70,8 +69,7 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 **Where to start when we do it.**
 
-- Hook into the workflow at `APPROVE_PLAN` to take the snapshot.
-- Add `/accept-run` / `/reject-run` slash commands.
+- Build on the existing `/accept-run` / `/reject-run confirm` command path.
 - Extend `summary.json` with `snapshot: { method: 'stash' | 'copy', ref: string }`.
 
 ---

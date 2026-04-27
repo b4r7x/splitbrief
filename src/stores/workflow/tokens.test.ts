@@ -1,10 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tokensStore } from './tokens.js';
+import { tokensStore, updateTokens } from './tokens.js';
+import type { TokensState } from './tokens.js';
 import { addEvent, resetWorkflow } from './actions.js';
 import {
   makeTaskComplete,
   makeCostUpdate,
+  makeTaskStart,
 } from '#testing/helpers/events.js';
+import { TokenUsageSchema } from '../../core/schemas/tokens.js';
+import type { EngineEvent } from '../../engine/events/types.js';
+import { taskId } from '../../core/schemas/task.js';
 
 describe('tokensStore — cost-update', () => {
   beforeEach(() => resetWorkflow());
@@ -54,5 +59,219 @@ describe('tokensStore — task-complete counters', () => {
     const s = tokensStore.get();
     expect(s.localCount).toBe(0);
     expect(s.escalatedCount).toBe(0);
+  });
+});
+
+// Helper: build a minimal initial TokensState for pure reducer tests
+function makeInitialState(overrides?: Partial<TokensState>): TokensState {
+  return {
+    localCount: 0,
+    escalatedCount: 0,
+    tokenUsage: null,
+    perPhase: {},
+    perTask: {},
+    prediction: null,
+    completedTaskCount: 0,
+    ...overrides,
+  };
+}
+
+describe('updateTokens — perPhase cache delta accumulation', () => {
+  it('accumulates cache delta into perPhase on planning phase', () => {
+    const state = makeInitialState();
+    const usage = {
+      plannerInput: 100, plannerOutput: 50,
+      implementerInput: 0, implementerOutput: 0,
+      escalationInput: 0, escalationOutput: 0,
+      plannerCacheRead: 30,
+    };
+    const event: EngineEvent = { type: 'cost_update', ts: Date.now(), phase: 'planning', tokenUsage: usage };
+    const next = updateTokens(state, event);
+    expect(next.perPhase['planning']?.cacheReadTokens).toBe(30);
+    expect(next.perPhase['planning']?.inputTokens).toBe(100);
+    expect(next.perPhase['planning']?.outputTokens).toBe(50);
+  });
+
+  it('accumulates implementer cache delta into implementing phase', () => {
+    const state = makeInitialState();
+    const usage = {
+      plannerInput: 0, plannerOutput: 0,
+      implementerInput: 200, implementerOutput: 100,
+      escalationInput: 0, escalationOutput: 0,
+      implementerCacheRead: 50,
+    };
+    const event: EngineEvent = { type: 'cost_update', ts: Date.now(), phase: 'implementing', tokenUsage: usage };
+    const next = updateTokens(state, event);
+    expect(next.perPhase['implementing']?.cacheReadTokens).toBe(50);
+    expect(next.perPhase['implementing']?.inputTokens).toBe(200);
+  });
+
+  it('two consecutive cost_update events same phase accumulate delta not full snapshot', () => {
+    const state = makeInitialState();
+    const firstUsage = {
+      plannerInput: 100, plannerOutput: 50,
+      implementerInput: 0, implementerOutput: 0,
+      escalationInput: 0, escalationOutput: 0,
+      plannerCacheRead: 20,
+    };
+    const secondUsage = {
+      plannerInput: 150, plannerOutput: 80,
+      implementerInput: 0, implementerOutput: 0,
+      escalationInput: 0, escalationOutput: 0,
+      plannerCacheRead: 35,
+    };
+    const first: EngineEvent = { type: 'cost_update', ts: Date.now(), phase: 'planning', tokenUsage: firstUsage };
+    const second: EngineEvent = { type: 'cost_update', ts: Date.now(), phase: 'planning', tokenUsage: secondUsage };
+    const afterFirst = updateTokens(state, first);
+    const afterSecond = updateTokens(afterFirst, second);
+    // inputTokens should be 100 (first delta) + 50 (second delta) = 150
+    expect(afterSecond.perPhase['planning']?.inputTokens).toBe(150);
+    // cacheReadTokens should be 20 (first delta) + 15 (second delta) = 35
+    expect(afterSecond.perPhase['planning']?.cacheReadTokens).toBe(35);
+  });
+
+  it('cost_update with plannerCacheRead absent leaves cacheReadTokens at 0', () => {
+    const state = makeInitialState();
+    const usage = {
+      plannerInput: 100, plannerOutput: 50,
+      implementerInput: 0, implementerOutput: 0,
+      escalationInput: 0, escalationOutput: 0,
+    };
+    const event: EngineEvent = { type: 'cost_update', ts: Date.now(), phase: 'planning', tokenUsage: usage };
+    const next = updateTokens(state, event);
+    expect(next.perPhase['planning']?.cacheReadTokens).toBe(0);
+  });
+});
+
+describe('updateTokens — cost_prediction', () => {
+  it('sets prediction from cost_prediction event', () => {
+    const state = makeInitialState();
+    const prediction = {
+      estimatedTasks: 10,
+      lowCost: 0.5,
+      expectedCost: 1.0,
+      highCost: 2.0,
+      plannerTool: 'claude-code',
+      implementerTool: 'claude-code',
+    };
+    const event: EngineEvent = { type: 'cost_prediction', ts: Date.now(), phase: 'planning', prediction };
+    const next = updateTokens(state, event);
+    expect(next.prediction).toEqual(prediction);
+  });
+});
+
+describe('updateTokens — task_completed completedTaskCount', () => {
+  it('increments completedTaskCount on every task_completed regardless of method', () => {
+    let state = makeInitialState();
+    state = updateTokens(state, makeTaskComplete({ method: 'local' }));
+    state = updateTokens(state, makeTaskComplete({ method: 'escalated-full' }));
+    state = updateTokens(state, makeTaskComplete({ method: 'failed' }));
+    state = updateTokens(state, makeTaskComplete({ method: 'skipped' }));
+    expect(state.completedTaskCount).toBe(4);
+  });
+});
+
+describe('updateTokens — task_started populates perTask title', () => {
+  it('sets perTask[taskId].title from task_started event', () => {
+    const state = makeInitialState();
+    const event = makeTaskStart({ taskId: taskId('T002'), title: 'My Task' });
+    const next = updateTokens(state, event);
+    expect(next.perTask['T002']?.title).toBe('My Task');
+  });
+});
+
+describe('updateTokens — task_tokens populates perTask totalTokens', () => {
+  it('sets totalTokens as implementerTokens + escalationTokens', () => {
+    const state = makeInitialState();
+    const event: EngineEvent = {
+      type: 'task_tokens',
+      ts: Date.now(),
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      method: 'local',
+      implementerTokens: 300,
+      escalationTokens: 50,
+      retryCount: 0,
+    };
+    const next = updateTokens(state, event);
+    expect(next.perTask['T001']?.totalTokens).toBe(350);
+  });
+
+  it('second task_tokens for same task overwrites totalTokens', () => {
+    let state = makeInitialState();
+    const first: EngineEvent = {
+      type: 'task_tokens',
+      ts: Date.now(),
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      method: 'local',
+      implementerTokens: 300,
+      escalationTokens: 0,
+      retryCount: 0,
+    };
+    const second: EngineEvent = {
+      type: 'task_tokens',
+      ts: Date.now(),
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      method: 'escalated-full',
+      implementerTokens: 500,
+      escalationTokens: 100,
+      retryCount: 1,
+    };
+    state = updateTokens(state, first);
+    state = updateTokens(state, second);
+    expect(state.perTask['T001']?.totalTokens).toBe(600);
+  });
+});
+
+describe('TokenUsage schema — backward compatibility', () => {
+  it('accepts existing shape without cache fields', () => {
+    const result = TokenUsageSchema.safeParse({
+      plannerInput: 100,
+      plannerOutput: 50,
+      implementerInput: 200,
+      implementerOutput: 100,
+      escalationInput: 0,
+      escalationOutput: 0,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts shape with optional cache fields', () => {
+    const result = TokenUsageSchema.safeParse({
+      plannerInput: 100,
+      plannerOutput: 50,
+      implementerInput: 200,
+      implementerOutput: 100,
+      escalationInput: 0,
+      escalationOutput: 0,
+      plannerCacheRead: 30,
+      plannerCacheCreate: 10,
+      implementerCacheRead: 50,
+      implementerCacheCreate: 20,
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('EngineEvent — budget_paused', () => {
+  it('budget_paused is a valid EngineEvent that type narrows correctly', () => {
+    const event: EngineEvent = {
+      type: 'budget_paused',
+      ts: Date.now(),
+      phase: 'implementing',
+      currentCost: 8.5,
+      maxBudget: 10.0,
+      threshold: 0.85,
+    };
+    // Type narrowing
+    if (event.type === 'budget_paused') {
+      expect(event.threshold).toBe(0.85);
+      expect(event.currentCost).toBe(8.5);
+      expect(event.maxBudget).toBe(10.0);
+    } else {
+      throw new Error('Should have narrowed to budget_paused');
+    }
   });
 });

@@ -8,6 +8,7 @@ import { runTier2Full } from './full.js';
 import type { EscalationContext, RetryResult } from './step.js';
 import { runPreHooks } from '../../hooks/run-pre-hook.js';
 import { publishWarning } from '../events.js';
+import { getChangedFilesSnapshot, type ChangedFilesSnapshot } from '../tiered-approval.js';
 
 export type { EscalationContext, RetryResult } from './step.js';
 
@@ -17,11 +18,18 @@ type HandleRetryOptions = {
   initialError: string;
   currentState: WorkflowState;
   taskStartTime?: number;
+  taskStartSnapshot?: ChangedFilesSnapshot;
+  dependsOnFiles?: string[];
 };
 
 export async function handleRetryAndEscalation(opts: HandleRetryOptions): Promise<{ state: WorkflowState; result: RetryResult }> {
   const { wctx, task, initialError, currentState, taskStartTime } = opts;
-  const ctx: EscalationContext = { ...wctx, taskStartTime };
+  const ctx: EscalationContext = {
+    ...wctx,
+    taskStartTime,
+    taskStartSnapshot: opts.taskStartSnapshot ?? getChangedFilesSnapshot(wctx.projectDir),
+    dependsOnFiles: opts.dependsOnFiles ?? [],
+  };
 
   const retries = await runLocalRetries(ctx, task, currentState, initialError);
   if (retries.result) return { state: retries.state, result: retries.result };

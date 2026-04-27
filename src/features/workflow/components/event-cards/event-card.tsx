@@ -30,7 +30,7 @@ function getGutterRole(event: EngineEvent): "planner" | "implementer" | null {
     case "git_commit": case "git_checkpoint": case "git_branch_created": case "task_retry": return "implementer";
     case "warning": case "error": case "task_completed": case "task_skipped":
     case "cost_update": case "cost_prediction": case "budget_warning":
-    case "budget_exceeded": case "workflow_cancelled": case "workflow_config":
+    case "budget_paused": case "budget_exceeded": case "workflow_cancelled": case "workflow_config":
     case "rewind_to_spec": case "rewind_to_plan": case "task_reset":
     case "message_queued": case "message_injected_native":
     case "queue_drained": case "queue_cleared":
@@ -43,8 +43,27 @@ function getGutterRole(event: EngineEvent): "planner" | "implementer" | null {
     case "plan_regenerated": case "all_tasks_done":
     case "task_failed": case "task_escalating": case "task_full_fail":
     case "task_tokens": case "hint_failed":
-    case "mode_resolved": case "mode_downgrade_advised": case "instant_plan_received":
-    case "clarifications_collected": case "clarification_answered": return null;
+    case "mode_resolved": case "mode_downgrade_advised": case "mode_advice": case "instant_plan_received":
+    case "clarifications_collected": case "clarification_answered":
+    case "brief_quality_passed": case "brief_quality_failed":
+    case "drift_report":
+    case "drift_chain_detected":
+    case "snapshot_created":
+    case "snapshot_restored":
+    case "snapshot_restore_conflict":
+    case "approval_prompted":
+    case "approval_granted":
+    case "approval_rejected":
+    case "approval_sticky_recorded":
+    case "ipc_server_started":
+    case "ipc_client_attached":
+    case "ipc_client_detached":
+    case "ipc_reconnect_attempt":
+    case "ipc_reconnect_failed":
+    case "server_crash_detected":
+    case "server_post_mortem_shown":
+    case "replay_started":
+    case "replay_complete": return null;
     default: return assertNever(event);
   }
 }
@@ -175,6 +194,16 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
           label="budget"
           labelColor={t.warning}
           value={`80% reached: ${formatCost(event.currentCost)} of ${formatCost(event.maxBudget)} limit`}
+          valueColor={t.warning}
+        />
+      );
+      break;
+    case "budget_paused":
+      content = (
+        <Card
+          label="budget"
+          labelColor={t.warning}
+          value={`Paused: ${formatCost(event.currentCost)} of ${formatCost(event.maxBudget)} limit`}
           valueColor={t.warning}
         />
       );
@@ -322,9 +351,61 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
     case "task_tokens":
     case "hint_failed":
     case "mode_resolved":
+    case "mode_advice":
     case "instant_plan_received":
     case "clarifications_collected":
     case "clarification_answered":
+      content = null;
+      break;
+    case "snapshot_created":
+    case "snapshot_restored":
+    case "snapshot_restore_conflict":
+    case "approval_prompted":
+    case "approval_granted":
+    case "approval_rejected":
+    case "approval_sticky_recorded":
+    case "ipc_server_started":
+    case "ipc_client_attached":
+    case "ipc_client_detached":
+    case "ipc_reconnect_attempt":
+    case "ipc_reconnect_failed":
+    case "server_crash_detected":
+    case "server_post_mortem_shown":
+    case "replay_started":
+    case "replay_complete":
+      content = null;
+      break;
+    case "brief_quality_passed":
+      content = (
+        <Card
+          label="brief quality"
+          labelColor={t.success}
+          value={`score ${event.score.toFixed(2)} · ${event.warningCount} warning${event.warningCount === 1 ? '' : 's'}`}
+          valueColor={t.textDim}
+        />
+      );
+      break;
+    case "brief_quality_failed":
+      content = (
+        <Card
+          label="brief quality"
+          labelColor={t.error}
+          value={`score ${event.score.toFixed(2)} · ${event.errorCount} error${event.errorCount === 1 ? '' : 's'} · ${event.warningCount} warning${event.warningCount === 1 ? '' : 's'}`}
+          valueColor={t.error}
+        />
+      );
+      break;
+    case "drift_report":
+      content = (
+        <Card
+          label="drift"
+          labelColor={event.passed ? t.success : t.warning}
+          value={`score ${event.score.toFixed(2)} · ${event.errorCount} error${event.errorCount === 1 ? '' : 's'} · ${event.warningCount} warning${event.warningCount === 1 ? '' : 's'}`}
+          valueColor={event.passed ? t.textDim : t.warning}
+        />
+      );
+      break;
+    case "drift_chain_detected":
       content = null;
       break;
     default:

@@ -18,15 +18,29 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
   const approveLevel = resolveApproveLevel({ mode, configApprove: config.workflow.approve });
 
   const advisory = adviseMode(opts.feature, mode);
-  setAdvisory(advisory.shouldAdvise ? advisory : null);
-  if (advisory.shouldAdvise) {
-    wctx.bus.publish({
-      type: 'mode_downgrade_advised',
+  setAdvisory(advisory.kind !== 'none' ? advisory : null);
+  if (advisory.kind !== 'none') {
+    publishEvent(wctx.bus, {
+      type: 'mode_advice',
       ts: Date.now(),
       phase: opts.state.phase,
+      kind: advisory.kind,
+      risk: advisory.risk,
       currentMode: advisory.currentMode,
       suggestedMode: advisory.suggestedMode,
+      confidence: advisory.confidence,
+      factors: advisory.factors,
+      missing: advisory.missing,
     });
+    if (advisory.kind === 'downgrade') {
+      wctx.bus.publish({
+        type: 'mode_downgrade_advised',
+        ts: Date.now(),
+        phase: opts.state.phase,
+        currentMode: advisory.currentMode,
+        suggestedMode: advisory.suggestedMode,
+      });
+    }
   }
 
   publishEvent(wctx.bus, {

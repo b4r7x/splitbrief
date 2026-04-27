@@ -3,13 +3,14 @@ import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { useTheme } from '../../components/theme.js';
 import { formatTime } from '../../utils/format-time.js';
 import { formatToolModel } from '../../core/model-display.js';
-import { InputBar } from '../../components/input-bar/index.js';
+import { InputBar } from '../../components/input-bar/input-bar.js';
 import { LabeledRow } from '../../components/labeled-row.js';
 import { ScreenShell } from '../../components/screen-shell.js';
 import { SummaryProgress } from './components/summary-progress.js';
 import { SummaryCostBreakdown } from './components/summary-cost-breakdown.js';
 import { SummaryTaskTable } from './components/summary-task-table.js';
 import { SummaryPhaseTiming } from './components/summary-phase-timing.js';
+import { SummaryEvidence } from './components/summary-evidence.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { routerStore } from '../../stores/navigation/router.js';
 
@@ -23,6 +24,7 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
   const isSmall = terminalSizeStore.use(s => s.isSmall);
 
   const summary = routerStore.use(s => s.screen === 'summary' ? s.summary : null);
+  const sessionId = routerStore.use(s => s.screen === 'summary' ? s.sessionId : undefined);
   if (!summary) return null;
 
   const onDone = () => routerStore.navigate({ to: 'home' });
@@ -36,6 +38,15 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
   const localCount = summary.completedByLocal;
   const escalatedCount = summary.escalatedToPlanner;
 
+  const bq = summary.briefQuality;
+  const drift = summary.driftSummary;
+  const briefQualityText = bq
+    ? `quality ${bq.score.toFixed(2)}${bq.errorCount > 0 ? ` · ${bq.errorCount} error${bq.errorCount === 1 ? '' : 's'}` : ''}${bq.warningCount > 0 ? ` · ${bq.warningCount} warning${bq.warningCount === 1 ? '' : 's'}` : ''}`
+    : 'quality n/a';
+  const driftText = drift
+    ? `score ${drift.score.toFixed(2)}${drift.warningCount > 0 ? ` · ${drift.warningCount} warning${drift.warningCount === 1 ? '' : 's'}` : ''}${drift.errorCount > 0 ? ` · ${drift.errorCount} error${drift.errorCount === 1 ? '' : 's'}` : ''}`
+    : null;
+
   return (
     <ScreenShell padding={1}>
       <Box justifyContent="center" width="100%">
@@ -43,7 +54,7 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
       </Box>
       <Box justifyContent="center" width="100%">
         <Text color={theme.textDim}>
-          Planner compiled {compiledByPlannerCount} {compiledByPlannerCount === 1 ? 'brief' : 'briefs'} · Implementer executed {localCount} locally · {escalatedCount} escalated
+          Planner compiled {compiledByPlannerCount} Task {compiledByPlannerCount === 1 ? 'Brief' : 'Briefs'} · Implementer completed {localCount} locally{escalatedCount > 0 ? ` · ${escalatedCount} escalated` : ''}
         </Text>
       </Box>
 
@@ -53,6 +64,20 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
         {summary.plannerTool && <LabeledRow label="Planner" labelWidth={labelWidth}><Text>{formatToolModel(summary.plannerTool, summary.plannerModel)}</Text></LabeledRow>}
         {summary.implementerTool && <LabeledRow label="Implementer" labelWidth={labelWidth}><Text>{formatToolModel(summary.implementerTool, summary.implementerModel)}</Text></LabeledRow>}
         {mode && <LabeledRow label="Mode" labelWidth={labelWidth}><Text>{mode}</Text></LabeledRow>}
+        <LabeledRow label="Brief quality" labelWidth={labelWidth}><Text color={bq && !bq.passed ? theme.warning : theme.textDim}>{briefQualityText}</Text></LabeledRow>
+        {driftText && <LabeledRow label="Drift" labelWidth={labelWidth}><Text color={drift && !drift.passed ? theme.warning : theme.textDim}>{driftText}</Text></LabeledRow>}
+        {summary.chainDriftSummary && (
+          <Box marginTop={1}>
+            <Text color={theme.textDim}>
+              Drift chain: {summary.chainDriftSummary.chainLength} tasks writing to{' '}
+              {summary.chainDriftSummary.representativePath}, score{' '}
+              {summary.chainDriftSummary.score.toFixed(2)}
+              {summary.chainDriftSummary.emittedChainCount > 1
+                ? ` (${summary.chainDriftSummary.emittedChainCount} chains total)`
+                : ''}
+            </Text>
+          </Box>
+        )}
         {(summary.costBreakdown?.hasSavingsEstimate ?? true) && (
           <LabeledRow label="Savings" labelWidth={labelWidth}><Text bold color={theme.success}>{summary.estimatedCostSavings}</Text></LabeledRow>
         )}
@@ -82,6 +107,8 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
           truncateLength={truncateLength}
         />
       )}
+
+      {summary.evidenceSummary && <SummaryEvidence summary={summary} {...(sessionId !== undefined && { sessionId })} />}
 
       {summary.phaseTimings && (
         <SummaryPhaseTiming

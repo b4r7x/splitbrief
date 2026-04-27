@@ -1,32 +1,42 @@
-import { Box } from 'ink';
+import { useEffect } from 'react';
+import { Box, useApp, useInput } from 'ink';
+import { dirname } from 'node:path';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { InputMode } from '../../stores/navigation/router.js';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';
+import { ApprovalPrompt } from './components/approval-prompt.js';
 import { Header } from './components/header.js';
 import { AgentStatusRow } from './components/agent-status-row.js';
+import { CostStatusLine } from './components/cost-status-line.js';
 import { ConfigLine } from './components/config-line.js';
 import { ConversationFlow } from './components/conversation-flow/flow.js';
 import { FeedbackRow } from './components/feedback-row.js';
-import { InputBar } from '../../components/input-bar/index.js';
+import { InputBar } from '../../components/input-bar/input-bar.js';
 import { InputFooter } from './components/input-footer.js';
 import { ScreenShell } from '../../components/screen-shell.js';
 import { ReviewView } from './components/review-view.js';
+import { BriefReviewView } from './components/brief-review-view.js';
+import { PlanEditorComponent } from './components/plan-editor.js';
 import { Sidebar } from './components/sidebar.js';
 import { useInputMode } from './hooks/use-input-mode.js';
 import { useWorkflowRunner } from './hooks/use-workflow-runner.js';
+import { useIpcClient, type IpcClientStatus } from './hooks/use-ipc-client.js';
 import { useWorkflowKeys } from './hooks/use-workflow-keys.js';
-import { REVIEW_HINT, createReviewInputHandler } from './review-parser.js';
+import { REVIEW_HINT, BRIEFS_REVIEW_HINT, createReviewInputHandler } from './review-parser.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { configStore } from '../../stores/project/config.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { eventsStore } from '../../stores/workflow/events.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
-import { useSections } from '../../stores/workflow/actions.js';
+import { addEvent, resetWorkflow, useSections } from '../../stores/workflow/actions.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { reviewStore } from '../../stores/workflow/review.js';
+import { planEditorStore } from '../../stores/workflow/plan-editor.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
+import { conversationScrollStore } from '../../stores/workflow/conversation-scroll.js';
 import { useStores } from '../../stores/use-stores.js';
 import {
   getWorkflowContentWidth,
@@ -40,15 +50,24 @@ interface WorkflowScreenProps {
   onSlashCommand: (command: string) => void;
 }
 
-function resolveInputHint(cancelled: boolean, inputHint: string, inputMode: InputMode): string {
+function resolveInputHint(cancelled: boolean, inputHint: string, inputMode: InputMode, phase: string): string {
   if (cancelled) return 'Enter to resume, ESC for home, /quit to exit';
   if (inputHint) return inputHint;
-  if (inputMode === 'review') return REVIEW_HINT;
+  if (inputMode === 'review') return phase === 'reviewing-briefs' ? BRIEFS_REVIEW_HINT : REVIEW_HINT;
   return '';
 }
 
+function resolveAttachInputHint(status: IpcClientStatus): string {
+  if (status === 'connected') return 'queue message to running workflow';
+  if (status === 'readonly') return 'attached read-only';
+  if (status === 'reconnecting') return 'reconnecting to server...';
+  if (status === 'failed') return 'server connection failed';
+  if (status === 'detached') return 'detached';
+  return 'connecting to server...';
+}
+
 export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps) {
-  useWorkflowKeys();
+  const { exit } = useApp();
   const config = configStore.useConfig();
   const projectDir = configStore.use(s => s.projectDir);
   const [skills, input, terminal] = useStores(
@@ -61,11 +80,13 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
   const feature = routerStore.use(s => s.screen === 'workflow' ? s.feature : '');
   const resumeState = routerStore.use(s => s.screen === 'workflow' ? s.resumeState : undefined);
   const sessionId = routerStore.use(s => s.screen === 'workflow' ? s.sessionId : undefined);
+  const attach = routerStore.use(s => s.screen === 'workflow' ? s.attach : undefined);
+  const isAttachedClient = attach !== undefined;
   const { cols, rows, isSmall } = terminal;
   const inputRows = input.rows;
 
   const onComplete = (summary: Summary) =>
-    routerStore.navigate({ to: 'summary', summary });
+    routerStore.navigate({ to: 'summary', summary, sessionId });
 
   const inputMode = useInputMode();
   const runner = useWorkflowRunner({
@@ -77,10 +98,16 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
     selectedSkills: selectedSkillMetas,
     sessionId,
     inputMode,
+    enabled: !isAttachedClient,
   });
   const review = createReviewInputHandler(inputMode);
+  const [ipcState, ipcActions] = useIpcClient({
+    sockPath: attach?.sockPath ?? '',
+    enabled: isAttachedClient,
+    onEvent: addEvent,
+  });
 
-  const [{ cancelled }, { filePath: reviewFilePath }] = useStores(lifecycleStore, reviewStore);
+  const [{ cancelled, phase }, { filePath: reviewFilePath }] = useStores(lifecycleStore, reviewStore);
   const sections = useSections();
   const sidebarVisible = controlsStore.use(s => s.sidebarVisible);
 
@@ -91,6 +118,42 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
   const contentHeight = getWorkflowViewportHeight(rows, inputRows, hasConfig);
   const contentWidth = getWorkflowContentWidth(cols, sidebarVisible, isSmall);
 
+  const briefReview = config.workflow.briefReview ?? 'simple';
+  const runtimeRichMode = planEditorStore.use(s => s.runtimeRichMode);
+  const useRichEditor = briefReview === 'rich' || runtimeRichMode;
+
+  const useRichEditorActive = phase === 'reviewing-briefs' && useRichEditor;
+  useWorkflowKeys(!useRichEditorActive);
+
+  useEffect(() => {
+    if (!isAttachedClient) return;
+    resetWorkflow();
+    conversationScrollStore.reset();
+  }, [isAttachedClient, attach?.sockPath]);
+
+  useInput(
+    (input, key) => {
+      if (!(key.ctrl && input === 'd')) return;
+      ipcActions.detach();
+      exit();
+    },
+    { isActive: isAttachedClient && !hasOverlay },
+  );
+
+  const handleInput = isAttachedClient
+    ? (text: string) => {
+        if (ipcState.status !== 'connected') {
+          feedbackStore.setError('Cannot send input: not connected to server.');
+          return;
+        }
+        ipcActions.sendUserInput(text);
+      }
+    : cancelled ? runner.handleResume : review.handleInput;
+
+  const inputHint = isAttachedClient
+    ? resolveAttachInputHint(ipcState.status)
+    : resolveInputHint(cancelled, inputMode.hint, inputMode.mode, phase);
+
   return (
     <ScreenShell
       header={
@@ -98,6 +161,7 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
           <Header startedAt={runner.startedAt} />
           <ConfigLine />
           <AgentStatusRow />
+          <CostStatusLine />
           <Box height={1} flexShrink={0} />
         </>
       }
@@ -105,13 +169,13 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
         <>
           <FeedbackRow />
           <InputBar
-            onSubmit={cancelled ? runner.handleResume : review.handleInput}
+            onSubmit={handleInput}
             onSlashCommand={onSlashCommand}
             commands={commands}
             mode={inputMode.mode}
-            hint={resolveInputHint(cancelled, inputMode.hint, inputMode.mode)}
+            hint={inputHint}
             currentScreen="workflow"
-            disabled={hasOverlay}
+            disabled={hasOverlay || (isAttachedClient && ipcState.status !== 'connected')}
           />
           <InputFooter />
         </>
@@ -121,12 +185,23 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
         {showSidebar && (
           <Sidebar width={sidebarWidth} />
         )}
-        {inputMode.mode === 'review' && reviewFilePath ? (
+        {inputMode.mode === 'review' && reviewFilePath && phase === 'reviewing-briefs' && useRichEditor ? (
+          <PlanEditorComponent
+            filePath={reviewFilePath}
+            height={contentHeight}
+            width={contentWidth}
+            sessionDirPath={dirname(reviewFilePath)}
+            onApprove={() => inputMode.resolve({ approved: true })}
+          />
+        ) : inputMode.mode === 'review' && reviewFilePath && phase === 'reviewing-briefs' ? (
+          <BriefReviewView filePath={reviewFilePath} height={contentHeight} width={contentWidth} />
+        ) : inputMode.mode === 'review' && reviewFilePath ? (
           <ReviewView height={contentHeight} width={contentWidth} />
         ) : (
           <ConversationFlow sections={sections} height={contentHeight} width={contentWidth} />
         )}
       </Box>
+      <ApprovalPrompt />
     </ScreenShell>
   );
 }

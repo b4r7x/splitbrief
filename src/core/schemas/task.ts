@@ -58,6 +58,7 @@ export const TaskSchema = z.object({
     .object({
       inBounds: z.array(z.string()).optional(),
       outOfBounds: z.array(z.string()).optional(),
+      approvedOutOfBounds: z.array(z.string()).optional(),
     })
     .optional(),
   /**

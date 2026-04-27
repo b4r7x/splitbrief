@@ -1,4 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
@@ -17,6 +19,7 @@ import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { WorkflowContext, WorkflowSinks } from './types.js';
 import { createValidator } from './validation.js';
 import { retryAndRecord, runSingleTask } from './task-step.js';
+import { readEvidenceLedger } from './evidence.js';
 
 let dirs: string[] = [];
 
@@ -156,6 +159,126 @@ describe('runSingleTask — happy path', () => {
     // Task was not advanced.
     expect(result.currentTaskIndex).toBe(state.currentTaskIndex);
     expect(result.tasks[0]?.status).toBe('pending');
+  });
+
+  it('blocks actual out-of-scope changed files before validation', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({
+      id: 'T001',
+      action: 'create',
+      file: 'src/hello.ts',
+      scope: { inBounds: ['src/hello.ts'] },
+    });
+    const state = implementingState([task]);
+
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        mkdirSync(join(projectDir, 'src'), { recursive: true });
+        writeFileSync(join(projectDir, 'src/unrelated.ts'), 'export const unrelated = true;\n');
+        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+    const runValidation = vi.fn().mockResolvedValue([]);
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runSingleTask({
+      wctx: makeWorkflowContext({
+        projectDir,
+        sessionId,
+        callbacks,
+        implementer,
+        bus,
+        config: makeConfig({
+          approval: { enabled: true, headless: true, feedRejectionsToPlanner: true },
+          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          workflow: { commitStrategy: 'none', maxRetries: 2 },
+        }),
+        validator: { ...createValidator(), runValidation },
+      }),
+      task,
+      index: 0,
+      totalTasks: 1,
+      state,
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(runValidation).not.toHaveBeenCalled();
+    expect(result.currentTaskIndex).toBe(0);
+    expect(result.tasks[0]?.status).toBe('in_progress');
+    expect(events.find((e) => e.type === 'task_completed')).toBeUndefined();
+
+    const rejected = events.find((e) => e.type === 'approval_rejected');
+    expect(rejected).toMatchObject({
+      type: 'approval_rejected',
+      taskId: 'T001',
+      actionClass: 'write_out_of_scope',
+      reason: 'APPROVAL_REQUIRED',
+    });
+
+    const ledger = readEvidenceLedger(projectDir, sessionId);
+    expect(ledger?.rejections?.[0]).toMatchObject({
+      taskId: 'T001',
+      actionClass: 'write_out_of_scope',
+      actionDescription: 'write src/unrelated.ts',
+      reason: 'APPROVAL_REQUIRED',
+    });
+  });
+
+  it('allows actual in-scope changed files to proceed', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({
+      id: 'T001',
+      action: 'create',
+      file: 'src/hello.ts',
+      scope: { inBounds: ['src/hello.ts'] },
+    });
+    const state = implementingState([task]);
+
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        mkdirSync(join(projectDir, 'src'), { recursive: true });
+        writeFileSync(join(projectDir, 'src/hello.ts'), 'export const hello = "world";\n');
+        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runSingleTask({
+      wctx: makeWorkflowContext({
+        projectDir,
+        sessionId,
+        callbacks,
+        implementer,
+        bus,
+        config: makeConfig({
+          approval: { enabled: true, headless: true, feedRejectionsToPlanner: true },
+          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          workflow: { commitStrategy: 'none', maxRetries: 2 },
+        }),
+      }),
+      task,
+      index: 0,
+      totalTasks: 1,
+      state,
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.currentTaskIndex).toBe(1);
+    expect(result.tasks[0]?.status).toBe('done');
+    expect(events.find((e) => e.type === 'approval_rejected')).toBeUndefined();
+    expect(events.find((e) => e.type === 'task_completed')).toMatchObject({
+      type: 'task_completed',
+      taskId: 'T001',
+    });
+
+    const ledger = readEvidenceLedger(projectDir, sessionId);
+    expect(ledger?.tasks.find((entry) => entry.id === 'T001')?.changedFiles).toContain('src/hello.ts');
   });
 });
 

@@ -14,7 +14,7 @@ function getStageIndex(phase: Phase): number {
     case 'idle': return -1;
     case 'researching': return 0;
     case 'specifying': case 'reviewing-spec': case 'clarifying': case 'constitution-check': return 1;
-    case 'planning': case 'reviewing-plan': case 'analyzing': return 2;
+    case 'planning': case 'reviewing-plan': case 'reviewing-briefs': case 'analyzing': return 2;
     case 'implementing': case 'validating-task': case 'escalating': return 3;
     case 'final-review': return 4;
     case 'complete': return 5;

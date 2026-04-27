@@ -19,10 +19,14 @@ const TaskFrontmatterSchema = z.object({
 type TaskFrontmatter = z.infer<typeof TaskFrontmatterSchema>;
 
 export function parseTasks(tasksMarkdown: string): Task[] {
-  const stripped = stripFileFrontmatter(tasksMarkdown);
+  const stripped = normalizeTaskSeparators(stripFileFrontmatter(tasksMarkdown));
   const blocks = splitTaskBlocks(stripped);
   const tasks = blocks.map(parseTaskBlock).filter((t): t is Task => t !== null);
   return topoSort(tasks);
+}
+
+function normalizeTaskSeparators(content: string): string {
+  return content.replace(/([^\r\n])---(\r?\n(?=id:\s*))/g, '$1\n---$2');
 }
 
 export function stripFileFrontmatter(content: string): string {

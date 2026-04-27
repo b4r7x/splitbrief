@@ -3,6 +3,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks } from './types.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { EventBus } from '../events/types.js';
+import type { Phase } from '../../core/schemas/enums.js';
 import { hasExternalChanges } from '../../lib/git.js';
 import { labelError } from '../../utils/format-errors.js';
 import { getFailedTaskIds, getSkippedTaskIds, getEscalatedTaskIds } from '../../core/state/selectors.js';
@@ -14,6 +15,40 @@ import { emitTaskTokens } from './tokens.js';
 import { transitionAndSave } from './state-ops.js';
 import { enforceBudget } from './budget.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
+import { DEFAULT_WORKFLOW_MODE } from '../../core/schemas/config.js';
+import {
+  createEvidenceLedger,
+  readEvidenceLedger,
+  recordSkippedTaskEvidence,
+  writeEvidenceLedger,
+} from './evidence.js';
+import { createSnapshot } from '../snapshots/store.js';
+
+async function maybeAutoSnapshot(opts: {
+  projectDir: string;
+  sessionId: string;
+  config: WorkflowContext['config'];
+  bus: EventBus;
+  phase: Phase;
+  enabled: boolean;
+  taskIndex?: number;
+  label: string;
+}): Promise<void> {
+  if (!opts.enabled) return;
+  try {
+    await createSnapshot({
+      projectDir: opts.projectDir,
+      sessionId: opts.sessionId,
+      phase: 'manual',
+      name: opts.label,
+      ...(opts.taskIndex !== undefined && { taskIndex: opts.taskIndex }),
+      bus: opts.bus,
+      eventPhase: opts.phase,
+    });
+  } catch (err) {
+    publishWarning(opts.bus, opts.phase, labelError(`auto-snapshot (${opts.label}) failed`, err));
+  }
+}
 
 function hasDependencyFailed(task: Task, failedTasks: TaskId[], skippedTasks: TaskId[]): boolean {
   const blocked = new Set<string>([...failedTasks, ...skippedTasks]);
@@ -44,6 +79,7 @@ type HandleSkippedTaskOptions = {
   state: WorkflowState;
   projectDir: string;
   sessionId: string;
+  config: WorkflowContext['config'];
   bus: EventBus;
   taskBreakdowns: TaskTokenUsage[];
 };
@@ -57,6 +93,18 @@ function handleSkippedTask(opts: HandleSkippedTaskOptions): WorkflowState {
   const skipReason = `dependency failed: ${task.dependsOn.filter((d) => blockedBy.has(d)).join(', ')}`;
   const state = transitionAndSave(projectDir, sessionId, opts.state, { type: 'SKIP_TASK', taskId: task.id });
   publishTaskSkipped(bus, state.phase, { taskId: task.id, title: task.title, reason: skipReason });
+  try {
+    const ledger = readEvidenceLedger(projectDir, sessionId) ?? createEvidenceLedger({
+      sessionId,
+      feature: state.feature,
+      mode: opts.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+      tasks: state.tasks,
+    });
+    const updated = recordSkippedTaskEvidence({ ledger, task, reason: skipReason });
+    writeEvidenceLedger(projectDir, sessionId, updated);
+  } catch (err) {
+    publishWarning(bus, state.phase, labelError('failed to persist evidence ledger', err));
+  }
   const usage: TaskTokenUsage = { taskId: task.id, taskTitle: task.title, method: 'skipped', implementerTokens: 0, escalationTokens: 0, retryCount: 0 };
   taskBreakdowns.push(usage);
   emitTaskTokens(bus, state, task.id, usage);
@@ -77,7 +125,10 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: Wo
   const totalTasks = state.tasks.length;
   const taskBreakdowns: TaskTokenUsage[] = [];
   let budgetWarningEmitted = false;
+  let budgetPauseEmitted = false;
 
+  // Budget pause fires only at task boundaries. A long-running planner call
+  // will not be interrupted mid-stream; the pause applies to the next task start.
   for (let i = state.currentTaskIndex; i < totalTasks; i++) {
     if (wctx.signal?.aborted) return { state, taskBreakdowns };
 
@@ -88,11 +139,40 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: Wo
     if (cancelledState) return { state: cancelledState, taskBreakdowns };
 
     if (hasDependencyFailed(task, getFailedTaskIds(state), getSkippedTaskIds(state))) {
-      state = handleSkippedTask({ task, state, projectDir, sessionId, bus: wctx.bus, taskBreakdowns });
+      state = handleSkippedTask({ task, state, projectDir, sessionId, config, bus: wctx.bus, taskBreakdowns });
       continue;
     }
 
+    await maybeAutoSnapshot({
+      projectDir,
+      sessionId,
+      config,
+      bus: wctx.bus,
+      phase: state.phase,
+      enabled: config.snapshots?.auto?.preTask === true,
+      taskIndex: i,
+      label: `pre-task-${i}`,
+    });
+
     state = await runSingleTask({ wctx, task, index: i, totalTasks, state, taskBreakdowns, setTrackedState, setCurrentTask });
+
+    const completedTask = state.tasks[i];
+    const succeeded = completedTask?.status === 'done';
+    if (state.currentTaskIndex <= i) {
+      setCurrentTask(undefined);
+      return { state, taskBreakdowns };
+    }
+
+    await maybeAutoSnapshot({
+      projectDir,
+      sessionId,
+      config,
+      bus: wctx.bus,
+      phase: state.phase,
+      enabled: succeeded && config.snapshots?.auto?.postTask === true,
+      taskIndex: i,
+      label: `post-task-${i}`,
+    });
 
     if (config.workflow.maxBudget !== undefined) {
       const budgetResult = await enforceBudget({
@@ -105,8 +185,11 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: Wo
         callbacks,
         bus: wctx.bus,
         warningEmitted: budgetWarningEmitted,
+        pauseEmitted: budgetPauseEmitted,
+        pauseThreshold: config.workflow.budgetPauseThreshold,
       });
       budgetWarningEmitted = budgetResult.warningEmitted;
+      budgetPauseEmitted = budgetResult.pauseEmitted;
       if (budgetResult.stop) {
         setCurrentTask(undefined);
         const cancelled = transitionAndSave(projectDir, sessionId, state, { type: 'CANCEL' });
