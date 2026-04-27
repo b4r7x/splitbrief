@@ -18,10 +18,10 @@ ${TASK_FORMAT_EXAMPLE}`),
         body: `- One brief per file. Self-contained with all context inlined.
 - Dependency-ordered. Use \`depends_on\` for sequencing.
 - No spec or plan document needed — Task Briefs are the artifact.
-- Required sections per brief: Description (Intent), Implementation Steps, Tests (Validation), Constraints, Type Definitions.
-- Add \`### Scope\` with \`**In bounds:**\` / \`**Out of bounds:**\` bullets whenever the change touches an area where drift is plausible.
-- Add \`### Escalation\` bullets whenever the request is ambiguous or could be interpreted more than one way.
-- Add \`### Evidence\` bullets when the brief should leave behind specific reviewable proof (passing tests, typecheck, changed files).`,
+- Required sections per brief: Description (Intent), Scope, Implementation Steps, Tests (Validation), Constraints, Escalation, Evidence, and Type Definitions.
+- \`### Scope\` must include \`**In bounds:**\` / \`**Out of bounds:**\` bullets, even when the boundary is short.
+- \`### Escalation\` must state when the implementer should stop instead of guessing.
+- \`### Evidence\` must state the reviewable proof expected from the task (passing tests, typecheck, changed files, or equivalent).`,
       },
     ],
     output: 'Write the complete tasks.md content.',

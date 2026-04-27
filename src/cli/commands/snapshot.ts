@@ -34,6 +34,29 @@ export function registerSnapshotCommand(program: Command): void {
           ...(opts.name !== undefined && { name: opts.name }),
         });
 
+        // The first call into `createSnapshot` always materializes the
+        // baseline as id "baseline" and reports `isFirstSnapshot: true`.
+        // The user has no way to refer to a baseline (it is filtered out
+        // of `snapshot list`), so on the very first invocation we follow
+        // up with a second snapshot so the user-requested label becomes a
+        // listable, restorable entry.
+        if (result.isFirstSnapshot) {
+          const followup = await createSnapshot({
+            projectDir,
+            sessionId,
+            phase: 'manual',
+            ...(opts.name !== undefined && { name: opts.name }),
+          });
+          console.log('Initialized snapshot baseline.');
+          console.log(`Snapshot created: ${followup.manifest.id}`);
+          if (opts.name) {
+            console.log(`  Name: ${opts.name}`);
+          }
+          console.log(`  Files: ${followup.manifest.trackedFileCount}`);
+          console.log(`  Location: ${followup.snapshotDir}`);
+          return;
+        }
+
         console.log(`Snapshot created: ${result.manifest.id}`);
         if (opts.name) {
           console.log(`  Name: ${opts.name}`);

@@ -13,6 +13,8 @@ import {
   discardTaskChanges,
   branchExists,
   createBranch,
+  createGitCommandError,
+  isGitCommandError,
 } from './git.js';
 import { simpleGit } from 'simple-git';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -235,6 +237,32 @@ describe('git utils', () => {
       writeFileSync(join(dir, 'created.txt'), 'new file');
       await discardTaskChanges(dir, 'created.txt', 'create');
       expect(existsSync(join(dir, 'created.txt'))).toBe(false);
+    });
+  });
+
+  describe('createGitCommandError / isGitCommandError', () => {
+    it('creates an Error with intent and causeMessage fields', () => {
+      const err = createGitCommandError('rev-parse HEAD', 'not a git repository');
+      expect(err).toBeInstanceOf(Error);
+      expect(err.message).toContain('rev-parse HEAD');
+      expect(err.message).toContain('not a git repository');
+      expect(err.intent).toBe('rev-parse HEAD');
+      expect(err.causeMessage).toBe('not a git repository');
+    });
+
+    it('isGitCommandError returns true for created errors', () => {
+      const err = createGitCommandError('status --porcelain', 'fatal: error');
+      expect(isGitCommandError(err)).toBe(true);
+    });
+
+    it('isGitCommandError returns false for plain Error', () => {
+      expect(isGitCommandError(new Error('plain'))).toBe(false);
+    });
+
+    it('isGitCommandError returns false for non-Error values', () => {
+      expect(isGitCommandError('string')).toBe(false);
+      expect(isGitCommandError(null)).toBe(false);
+      expect(isGitCommandError(42)).toBe(false);
     });
   });
 });

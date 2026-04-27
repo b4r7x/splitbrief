@@ -24,6 +24,7 @@ import { parseTasks } from '../../spec/parser.js';
 import type { BriefQualityReport } from '../../spec/brief-quality.js';
 import { drainQueue, formatDrainedMessages } from '../queue.js';
 import { regenerateFromFeedback } from '../continuation.js';
+import { buildRejectionContext, readEvidenceLedger } from '../evidence.js';
 
 export const MAX_CLARIFICATION_QUESTIONS = 5;
 
@@ -168,7 +169,24 @@ export async function runPlannerCallInContinuationLoop(
     state,
     onStateChange: (s) => { state = s; },
     body: async ({ continuationPrompt, recordOutput }) => {
-      const prompt = continuationPrompt ?? feature;
+      let prompt = continuationPrompt ?? feature;
+
+      // Inject prior approval rejection context so the planner can adapt and avoid
+      // re-proposing actions the user has already declined.
+      if (config.approval?.feedRejectionsToPlanner !== false) {
+        try {
+          const ledger = readEvidenceLedger(projectDir, sessionId);
+          if (ledger) {
+            const rejectionCtx = buildRejectionContext(ledger);
+            if (rejectionCtx.length > 0) {
+              prompt = `${rejectionCtx}\n${prompt}`;
+            }
+          }
+        } catch {
+          // Best-effort: never fail the planner call because the ledger is unreadable.
+        }
+      }
+
       const callAttachments = !attachmentsConsumed && attachments && attachments.length > 0 ? attachments : undefined;
       attachmentsConsumed = true;
       const plannerCallbacks: PlannerCallbacks = {
@@ -224,6 +242,56 @@ export type BriefsApprovalLoopResult = {
   rejected: boolean;
 };
 
+type PersistedTasksResult =
+  | { ok: true; tasks: Task[] }
+  | { ok: false; reason: 'missing' | 'unreadable' | 'parse' | 'empty'; message: string };
+
+async function readPersistedTasks(tasksFilePath: string): Promise<PersistedTasksResult> {
+  let text: string;
+  try {
+    text = await readFile(tasksFilePath, 'utf8');
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      return { ok: false, reason: 'missing', message: `Task Brief file is missing: ${tasksFilePath}` };
+    }
+    return { ok: false, reason: 'unreadable', message: labelError('Failed to read Task Brief file', err) };
+  }
+
+  if (text.trim() === '') {
+    return { ok: false, reason: 'empty', message: `Task Brief file is empty: ${tasksFilePath}` };
+  }
+
+  try {
+    const parsed = parseTasks(text);
+    if (parsed.length === 0) {
+      return { ok: false, reason: 'empty', message: `Task Brief file has no parseable tasks: ${tasksFilePath}` };
+    }
+    return { ok: true, tasks: parsed };
+  } catch (err) {
+    return { ok: false, reason: 'parse', message: labelError('Failed to parse Task Brief file', err) };
+  }
+}
+
+async function readTasksForApproval(
+  tasksFilePath: string,
+  currentTasks: Task[],
+  projectDir: string,
+  sessionId: string,
+  metadata: SpecMetadata,
+): Promise<PersistedTasksResult> {
+  const first = await readPersistedTasks(tasksFilePath);
+  if (first.ok || first.reason !== 'missing') return first;
+  if (currentTasks.length === 0) return first;
+  writeSpecFile(projectDir, sessionId, TASKS_FILE, formatTasks(currentTasks), metadata);
+  return readPersistedTasks(tasksFilePath);
+}
+
+function publishBriefQualityFailure(bus: EventBus, phase: Phase, report: BriefQualityReport): void {
+  const firstError = report.issues.find(i => i.severity === 'error');
+  publishError(bus, phase, `Task Brief quality gate failed: ${firstError?.message ?? 'unknown error'}`);
+}
+
 export async function runBriefsApprovalLoop(opts: BriefsApprovalLoopOptions): Promise<BriefsApprovalLoopResult> {
   const { planner, projectDir, sessionId, callbacks, bus, metadata, signal } = opts;
   let { state, tasks } = opts;
@@ -245,24 +313,40 @@ export async function runBriefsApprovalLoop(opts: BriefsApprovalLoopOptions): Pr
     const result = await callbacks.onApprovalNeeded('briefs', tasksFilePath);
     if (signal?.aborted) return { state, tasks, rejected: false };
 
+    if (result.action === 'edit') {
+      const edited = await readPersistedTasks(tasksFilePath);
+      if (!edited.ok) {
+        publishError(bus, state.phase, edited.message);
+        continue;
+      }
+      const { report, ok } = runBriefQualityGate(edited.tasks, projectDir, sessionId, bus, state.phase);
+      if (!ok) {
+        publishBriefQualityFailure(bus, state.phase, report);
+        continue;
+      }
+      tasks = edited.tasks;
+      state = transitionAndSave(projectDir, sessionId, state, { type: 'BRIEFS_READY', tasks });
+      continue;
+    }
+
     if (!result.approved && !result.comment) {
       state = transitionAndSave(projectDir, sessionId, state, { type: 'REJECT_BRIEFS' });
       return { state, tasks, rejected: true };
     }
 
     if (!result.comment) {
-      try {
-        const editedText = await readFile(tasksFilePath, 'utf8');
-        const editedTasks = parseTasks(editedText);
-        if (editedTasks.length === 0) {
-          publishError(bus, state.phase, `Approved Task Brief file has no parseable tasks: ${tasksFilePath}`);
-          continue;
-        }
-        tasks = editedTasks;
-      } catch (err) {
-        publishError(bus, state.phase, labelError('Failed to read approved Task Briefs', err));
+      const approved = await readTasksForApproval(tasksFilePath, tasks, projectDir, sessionId, metadata);
+      if (!approved.ok) {
+        publishError(bus, state.phase, approved.message);
         continue;
       }
+      const { report, ok } = runBriefQualityGate(approved.tasks, projectDir, sessionId, bus, state.phase);
+      if (!ok) {
+        publishBriefQualityFailure(bus, state.phase, report);
+        continue;
+      }
+      tasks = approved.tasks;
+      state = transitionAndSave(projectDir, sessionId, state, { type: 'BRIEFS_READY', tasks });
       state = transitionAndSave(projectDir, sessionId, state, { type: 'APPROVE_BRIEFS' });
       return { state, tasks, rejected: false };
     }

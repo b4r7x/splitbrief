@@ -57,6 +57,72 @@ describe('createWorktree', () => {
       createWorktree({ projectDir: repoDir, slug: 'feat-c', git }),
     ).rejects.toThrow('Branch diptych/feat-c already exists');
   });
+
+  it('refuses to create a worktree when the source working tree is dirty', async () => {
+    await writeFile(join(repoDir, 'dirty.txt'), 'uncommitted');
+
+    await expect(
+      createWorktree({ projectDir: repoDir, slug: 'feat-dirty', git }),
+    ).rejects.toThrow('Source working tree is dirty (1 uncommitted file(s))');
+
+    expect(existsSync(join(repoDir, TREES_DIR, 'feat-dirty'))).toBe(false);
+  });
+
+  it('does not count files inside .trees/ as dirty when creating another worktree', async () => {
+    await createWorktree({ projectDir: repoDir, slug: 'feat-pre', git });
+    // Re-stat: the existing worktree adds untracked entries under .trees/
+    // that should be ignored by the dirty check.
+    await expect(
+      createWorktree({ projectDir: repoDir, slug: 'feat-second', git }),
+    ).resolves.toBeDefined();
+    expect(existsSync(join(repoDir, TREES_DIR, 'feat-second'))).toBe(true);
+  });
+
+  it.each([
+    ['empty string', ''],
+    ['leading dot', '.hidden'],
+    ['leading dash', '-flag'],
+    ['exactly ..', '..'],
+    ['containing slash', 'feat/x'],
+    ['containing backslash', 'feat\\x'],
+    ['containing path traversal', '../escape'],
+    ['containing space', 'feat x'],
+    ['containing semicolon', 'feat;rm'],
+    ['containing pipe', 'feat|x'],
+    ['containing ampersand', 'feat&x'],
+    ['containing dollar', 'feat$x'],
+    ['containing backtick', 'feat`x'],
+    ['containing newline', 'feat\nx'],
+    ['containing null byte', 'feat\x00x'],
+    ['containing glob', 'feat*x'],
+    ['containing question mark', 'feat?x'],
+    ['containing tilde', 'feat~x'],
+    ['containing parentheses', 'feat(x)'],
+    ['exceeding length limit', 'a'.repeat(65)],
+  ])('rejects an invalid worktree name (%s)', async (_label, slug) => {
+    await expect(
+      createWorktree({ projectDir: repoDir, slug, git }),
+    ).rejects.toThrow();
+    // No branch should ever be created for an invalid name. (We skip the
+    // .trees/<slug> existence check for path-traversal slugs like "..",
+    // which trivially resolve to existing directories.)
+    const branches = await git.branch();
+    expect(branches.all).not.toContain(`diptych/${slug}`);
+  });
+
+  it.each([
+    'feat-x',
+    'feature_42',
+    'a.b.c',
+    'X1',
+    '_internal',
+    'a',
+  ])('accepts a valid worktree name "%s"', async (slug) => {
+    await expect(
+      createWorktree({ projectDir: repoDir, slug, git }),
+    ).resolves.toBeDefined();
+    expect(existsSync(join(repoDir, TREES_DIR, slug))).toBe(true);
+  });
 });
 
 describe('listWorktrees', () => {
@@ -96,6 +162,8 @@ describe('listWorktrees', () => {
     const entry = result[0]!;
     expect(entry.status).toBe('active');
     expect(entry.sessionId).toBe(sessionId);
+    expect(entry.phase).toBe('implementing');
+    expect(entry.lastUpdated).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
   it('reports status "idle" when state is complete', async () => {
@@ -112,6 +180,8 @@ describe('listWorktrees', () => {
     const entry = result[0]!;
     expect(entry.status).toBe('idle');
     expect(entry.sessionId).toBe(sessionId);
+    expect(entry.phase).toBe('complete');
+    expect(entry.lastUpdated).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 });
 
@@ -175,8 +245,8 @@ describe('removeWorktree', () => {
     await removeWorktree({ projectDir: repoDir, slug: 'feat-k', git, force: true });
 
     const stderrCalls = stderrSpy.mock.calls.map((c) => String(c[0]));
-    expect(stderrCalls.some((msg) => msg.includes('live session'))).toBe(true);
-    expect(stderrCalls.some((msg) => msg.includes('uncommitted changes'))).toBe(true);
+    expect(stderrCalls.some((msg) => msg.includes(`live session ${sessionId}`))).toBe(true);
+    expect(stderrCalls.some((msg) => msg.includes('2 uncommitted file(s)'))).toBe(true);
     expect(existsSync(wtPath)).toBe(false);
 
     stderrSpy.mockRestore();

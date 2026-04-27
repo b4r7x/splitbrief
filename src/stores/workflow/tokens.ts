@@ -2,11 +2,14 @@ import { createStore, storeBase } from '../create-store.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { EngineEvent } from '../../engine/events/types.js';
+import { calculateUsageCost, getProviderPricing } from '../../engine/providers/pricing.js';
+import { modelCacheStore } from '../discovery/model-cache.js';
 
 export interface PhaseTokens {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
+  cacheCreateTokens: number;
   cost: number;
 }
 
@@ -28,6 +31,14 @@ export interface TokensState {
   perTask: Record<string, PerTaskTokens>;
   prediction: CostPrediction | null;
   completedTaskCount: number;
+  pricingContext: PricingContext | null;
+}
+
+interface PricingContext {
+  plannerTool: string;
+  implementerTool: string;
+  plannerModel?: string | undefined;
+  implementerModel?: string | undefined;
 }
 
 const initial: TokensState = {
@@ -38,6 +49,7 @@ const initial: TokensState = {
   perTask: {},
   prediction: null,
   completedTaskCount: 0,
+  pricingContext: null,
 };
 
 const store = createStore<TokensState>(initial);
@@ -56,44 +68,127 @@ export const tokensStore = {
   __testReset,
 };
 
+const EMPTY_USAGE: TokenUsage = {
+  plannerInput: 0,
+  plannerOutput: 0,
+  implementerInput: 0,
+  implementerOutput: 0,
+  escalationInput: 0,
+  escalationOutput: 0,
+};
+
+function makeEmptyPhaseTokens(): PhaseTokens {
+  return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0 };
+}
+
+function clampDelta(value: number): number {
+  return Math.max(0, value);
+}
+
+function isPlannerPhase(phase: string): boolean {
+  return phase === 'planning' ||
+    phase === 'researching' ||
+    phase === 'specifying' ||
+    phase === 'reviewing-spec' ||
+    phase === 'clarifying' ||
+    phase === 'constitution-check' ||
+    phase === 'reviewing-plan' ||
+    phase === 'reviewing-briefs';
+}
+
+function isImplementerPhase(phase: string): boolean {
+  return phase === 'implementing' ||
+    phase === 'validating-task' ||
+    phase === 'escalating' ||
+    phase === 'final-review';
+}
+
+function calculatePhaseCostDelta(
+  context: PricingContext | null,
+  planner: { input: number; output: number; cacheRead: number; cacheCreate: number },
+  implementer: { input: number; output: number; cacheRead: number; cacheCreate: number },
+): number {
+  if (context === null) return 0;
+  // Pass modelCacheStore so phase-cost math sees the same models-dev/runtime catalogs as
+  // calculateCostBreakdown in useCostStats — a single source of truth for pricing.
+  const plannerPricing = getProviderPricing(context.plannerTool, context.plannerModel, modelCacheStore);
+  const implementerPricing = getProviderPricing(context.implementerTool, context.implementerModel, modelCacheStore);
+  return calculateUsageCost(
+    planner.input,
+    planner.output,
+    planner.cacheRead,
+    planner.cacheCreate,
+    plannerPricing,
+  ) + calculateUsageCost(
+    implementer.input,
+    implementer.output,
+    implementer.cacheRead,
+    implementer.cacheCreate,
+    implementerPricing,
+  );
+}
+
 export function updateTokens(state: TokensState, event: EngineEvent): TokensState {
-  if (event.type === 'cost_update') {
-    const prev = state.tokenUsage ?? {
-      plannerInput: 0, plannerOutput: 0,
-      implementerInput: 0, implementerOutput: 0,
-      escalationInput: 0, escalationOutput: 0,
+  if (event.type === 'workflow_config') {
+    return {
+      ...state,
+      pricingContext: {
+        plannerTool: event.plannerTool,
+        implementerTool: event.implementerTool,
+        plannerModel: event.plannerModel,
+        implementerModel: event.implementerModel,
+      },
     };
+  }
+
+  if (event.type === 'cost_update') {
+    const prev = state.tokenUsage ?? EMPTY_USAGE;
     const curr = event.tokenUsage;
     const phase = event.phase;
 
-    // Derive token deltas by diffing against previous snapshot.
-    // For planning phases: accumulate planner input/output and planner cache tokens.
-    // For implementing phases: accumulate implementer+escalation input/output and implementer cache tokens.
-    const existingPhase = state.perPhase[phase] ?? { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cost: 0 };
+    const existingPhase = state.perPhase[phase] ?? makeEmptyPhaseTokens();
 
-    let inputDelta: number;
-    let outputDelta: number;
-    let cacheReadDelta: number;
+    const plannerDelta = {
+      input: clampDelta(curr.plannerInput - prev.plannerInput + curr.escalationInput - prev.escalationInput),
+      output: clampDelta(curr.plannerOutput - prev.plannerOutput + curr.escalationOutput - prev.escalationOutput),
+      cacheRead: clampDelta((curr.plannerCacheRead ?? 0) - (prev.plannerCacheRead ?? 0)),
+      cacheCreate: clampDelta((curr.plannerCacheCreate ?? 0) - (prev.plannerCacheCreate ?? 0)),
+    };
+    const implementerDelta = {
+      input: clampDelta(curr.implementerInput - prev.implementerInput),
+      output: clampDelta(curr.implementerOutput - prev.implementerOutput),
+      cacheRead: clampDelta((curr.implementerCacheRead ?? 0) - (prev.implementerCacheRead ?? 0)),
+      cacheCreate: clampDelta((curr.implementerCacheCreate ?? 0) - (prev.implementerCacheCreate ?? 0)),
+    };
 
-    if (phase.includes('planning') || phase.includes('researching') || phase.includes('specifying') || phase.includes('reviewing-spec') || phase.includes('clarifying') || phase.includes('constitution-check') || phase.includes('reviewing-plan') || phase === 'reviewing-briefs') {
-      inputDelta = (curr.plannerInput - prev.plannerInput);
-      outputDelta = (curr.plannerOutput - prev.plannerOutput);
-      cacheReadDelta = ((curr.plannerCacheRead ?? 0) - (prev.plannerCacheRead ?? 0));
-    } else if (phase.includes('implementing') || phase.includes('validating-task') || phase.includes('escalating') || phase.includes('final-review')) {
-      inputDelta = (curr.implementerInput - prev.implementerInput) + (curr.escalationInput - prev.escalationInput);
-      outputDelta = (curr.implementerOutput - prev.implementerOutput) + (curr.escalationOutput - prev.escalationOutput);
-      cacheReadDelta = ((curr.implementerCacheRead ?? 0) - (prev.implementerCacheRead ?? 0));
-    } else {
-      inputDelta = 0;
-      outputDelta = 0;
-      cacheReadDelta = 0;
+    let inputDelta = 0;
+    let outputDelta = 0;
+    let cacheReadDelta = 0;
+    let cacheCreateDelta = 0;
+    let costDelta = 0;
+
+    if (isPlannerPhase(phase)) {
+      inputDelta = plannerDelta.input;
+      outputDelta = plannerDelta.output;
+      cacheReadDelta = plannerDelta.cacheRead;
+      cacheCreateDelta = plannerDelta.cacheCreate;
+      costDelta = calculatePhaseCostDelta(state.pricingContext, plannerDelta, {
+        input: 0, output: 0, cacheRead: 0, cacheCreate: 0,
+      });
+    } else if (isImplementerPhase(phase)) {
+      inputDelta = implementerDelta.input + plannerDelta.input;
+      outputDelta = implementerDelta.output + plannerDelta.output;
+      cacheReadDelta = implementerDelta.cacheRead + plannerDelta.cacheRead;
+      cacheCreateDelta = implementerDelta.cacheCreate + plannerDelta.cacheCreate;
+      costDelta = calculatePhaseCostDelta(state.pricingContext, plannerDelta, implementerDelta);
     }
 
     const updatedPhase: PhaseTokens = {
-      inputTokens: existingPhase.inputTokens + Math.max(0, inputDelta),
-      outputTokens: existingPhase.outputTokens + Math.max(0, outputDelta),
-      cacheReadTokens: existingPhase.cacheReadTokens + Math.max(0, cacheReadDelta),
-      cost: existingPhase.cost,
+      inputTokens: existingPhase.inputTokens + inputDelta,
+      outputTokens: existingPhase.outputTokens + outputDelta,
+      cacheReadTokens: existingPhase.cacheReadTokens + cacheReadDelta,
+      cacheCreateTokens: existingPhase.cacheCreateTokens + cacheCreateDelta,
+      cost: existingPhase.cost + costDelta,
     };
 
     return {

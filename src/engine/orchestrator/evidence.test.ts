@@ -8,6 +8,7 @@ import {
   createEvidenceLedger,
   evidenceLedgerPath,
   readEvidenceLedger,
+  recordApprovalEvidence,
   recordFinalReviewEvidence,
   recordLocalTaskEvidence,
   recordRejectionEvidence,
@@ -102,6 +103,33 @@ describe('recordRetryOrEscalationEvidence', () => {
     expect(entry?.observedEvidence).toContain('task reached escalated');
     expect(entry?.observedEvidence).toContain('diff written for src/world.ts');
     expect(ledger.validationSummary.escalated).toBe(1);
+  });
+
+  it('retains failed validation details when retry later escalates', () => {
+    const task = makeTask({ id: 'T002', file: 'src/world.ts' });
+    let ledger = createEvidenceLedger({ sessionId: 's1', feature: 'f', tasks: [task] });
+    ledger = recordRetryOrEscalationEvidence({
+      ledger,
+      task,
+      status: 'escalated',
+      method: 'escalated-full',
+      retries: 2,
+      escalated: true,
+      validation: [failing('test', 'first failure\nsecond line')],
+      validationRetryState: 'initial-failure',
+      changedFiles: ['src/world.ts'],
+    });
+    const entry = ledger.tasks.find(t => t.id === 'T002');
+    expect(entry?.status).toBe('escalated');
+    expect(entry?.validation).toEqual([
+      {
+        stage: 'test',
+        passed: false,
+        errorSummary: 'first failure\nsecond line',
+        retryState: 'initial-failure',
+        changedFiles: ['src/world.ts'],
+      },
+    ]);
   });
 });
 
@@ -369,6 +397,33 @@ describe('recordRejectionEvidence', () => {
     });
     expect(ledger.rejections).toBe(originalRejections);
     expect(ledger.rejections).toBeUndefined();
+  });
+});
+
+describe('recordApprovalEvidence', () => {
+  it('persists confirm approval reasons without changing rejection evidence', () => {
+    const task = makeTask({ id: 'T001' });
+    const ledger = createEvidenceLedger({ sessionId: 's1', feature: 'f', tasks: [task] });
+    const updated = recordApprovalEvidence({
+      ledger,
+      tier: 'confirm',
+      actionClass: 'write_in_scope',
+      actionDescription: 'write src/hello.ts',
+      taskId: task.id,
+      reason: 'needed to update task file',
+    });
+
+    expect(updated.approvals).toEqual([
+      expect.objectContaining({
+        tier: 'confirm',
+        actionClass: 'write_in_scope',
+        actionDescription: 'write src/hello.ts',
+        taskId: 'T001',
+        reason: 'needed to update task file',
+      }),
+    ]);
+    expect(updated.rejections).toBeUndefined();
+    expect(ledger.approvals).toBeUndefined();
   });
 });
 

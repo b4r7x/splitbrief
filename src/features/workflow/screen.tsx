@@ -5,6 +5,7 @@ import type { Summary } from '../../core/schemas/summary.js';
 import type { InputMode } from '../../stores/navigation/router.js';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { ApprovalPrompt } from './components/approval-prompt.js';
+import { openApprovalPrompt } from '../../stores/approval-prompt/actions.js';
 import { Header } from './components/header.js';
 import { AgentStatusRow } from './components/agent-status-row.js';
 import { CostStatusLine } from './components/cost-status-line.js';
@@ -21,6 +22,7 @@ import { Sidebar } from './components/sidebar.js';
 import { useInputMode } from './hooks/use-input-mode.js';
 import { useWorkflowRunner } from './hooks/use-workflow-runner.js';
 import { useIpcClient, type IpcClientStatus } from './hooks/use-ipc-client.js';
+import type { IpcPromptRequest, IpcPromptResponse } from '../../engine/ipc/protocol.js';
 import { useWorkflowKeys } from './hooks/use-workflow-keys.js';
 import { REVIEW_HINT, BRIEFS_REVIEW_HINT, createReviewInputHandler } from './review-parser.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -101,10 +103,57 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
     enabled: !isAttachedClient,
   });
   const review = createReviewInputHandler(inputMode);
+  const handleIpcPrompt = async (request: IpcPromptRequest): Promise<IpcPromptResponse> => {
+    if (request.kind === 'approval_needed') {
+      reviewStore.setReviewFile(request.filePath);
+      const hint = request.approvalType === 'briefs' ? BRIEFS_REVIEW_HINT : REVIEW_HINT;
+      const result = await inputMode.setReviewMode(hint);
+      reviewStore.clearReview();
+      return {
+        kind: 'approval_needed',
+        approved: result.approved,
+        ...(result.comment !== undefined && { comment: result.comment }),
+        ...(result.action !== undefined && { action: result.action }),
+      };
+    }
+
+    if (request.kind === 'external_changes') {
+      const result = await inputMode.setReviewMode('External changes detected. continue / quit');
+      return { kind: 'external_changes', proceed: result.approved };
+    }
+
+    if (request.kind === 'question_asked') {
+      const answer = await inputMode.setQuestionMode(`Question ${request.num}/${request.total}: ${request.question.text}`);
+      return { kind: 'question_asked', answer };
+    }
+
+    if (request.kind === 'budget_exceeded') {
+      const result = await inputMode.setReviewMode(
+        `Budget exceeded: $${request.currentCost.toFixed(2)} of $${request.maxBudget.toFixed(2)}. continue / quit`,
+      );
+      return { kind: 'budget_exceeded', proceed: result.approved };
+    }
+
+    if (request.kind === 'budget_paused') {
+      const result = await inputMode.setReviewMode(
+        `Budget ${Math.round((request.currentCost / request.maxBudget) * 100)}% reached: ${request.currentCost.toFixed(2)} of ${request.maxBudget.toFixed(2)}. continue / abort`,
+      );
+      return { kind: 'budget_paused', decision: result.approved ? 'continue' : 'abort' };
+    }
+
+    if (request.kind === 'continuation_needed') {
+      const text = await inputMode.setQuestionMode('Task interrupted. Enter instructions to continue (or press Enter to retry):');
+      return { kind: 'continuation_needed', text };
+    }
+
+    const response = await openApprovalPrompt(request.request);
+    return { kind: 'tiered_approval', response };
+  };
   const [ipcState, ipcActions] = useIpcClient({
     sockPath: attach?.sockPath ?? '',
     enabled: isAttachedClient,
     onEvent: addEvent,
+    onPromptRequest: handleIpcPrompt,
   });
 
   const [{ cancelled, phase }, { filePath: reviewFilePath }] = useStores(lifecycleStore, reviewStore);

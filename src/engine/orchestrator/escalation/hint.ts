@@ -32,9 +32,9 @@ export async function runTier1Hint(
     commitSuffix: 'with hints',
     usageCategory: 'implementer',
     retryFailureFallback: 'Tier-1 hint retry failed to produce valid code',
-    invokeRetry: async ({ task: t, lastError: err, attempts: a }) =>
+    invokeRetry: async ({ task: t, lastError: err, attempts: a, projectDir }) =>
       ctx.implementer.retry({
-        task: t, projectDir: ctx.projectDir, config: ctx.config, context: ctx.context,
+        task: t, projectDir, config: ctx.config, context: ctx.context,
         error: err, attempt: a, kind: 'hint',
         onOutput: textHandler,
         bus: ctx.bus,

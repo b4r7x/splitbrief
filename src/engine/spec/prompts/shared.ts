@@ -7,9 +7,9 @@ export const ESM_CONVENTION = 'ESM imports with .js extensions, pure functions, 
 //   ### Implementation Steps= Implementation Plan
 //   ### Tests               = Validation
 //   ### Constraints         = Constraints
-//   ### Scope (optional)    = Scope (in/out of bounds)
-//   ### Escalation (opt)    = Escalation (when to stop and ask)
-//   ### Evidence (optional) = Evidence (proof to leave behind)
+//   ### Scope               = Scope (in/out of bounds)
+//   ### Escalation          = Escalation (when to stop and ask)
+//   ### Evidence            = Evidence (proof to leave behind)
 export const TASK_FORMAT_EXAMPLE = `\`\`\`markdown
 ---
 id: T001

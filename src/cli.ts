@@ -15,6 +15,7 @@ import { registerApprovalCommand } from './cli/commands/approval.js';
 import { registerMcpCommand } from './cli/commands/mcp.js';
 import { registerWorktreeCommand } from './cli/commands/worktree.js';
 import { registerAttachCommand } from './cli/commands/attach.js';
+import { registerDetachCommand } from './cli/commands/detach.js';
 import { registerPsCommand } from './cli/commands/ps.js';
 import { isCliError } from './cli/errors.js';
 import { toErrorMessage } from './utils/format-errors.js';
@@ -40,6 +41,7 @@ registerApprovalCommand(program);
 registerMcpCommand(program);
 registerWorktreeCommand(program);
 registerAttachCommand(program);
+registerDetachCommand(program);
 registerPsCommand(program);
 
 program.parseAsync().catch((err) => {

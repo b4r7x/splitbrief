@@ -8,7 +8,7 @@ import { useState, useEffect } from 'react';
 import { Text } from 'ink';
 import { useIpcClient, type IpcClientStatus } from './use-ipc-client.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import type { ServerMessage } from '../../../engine/ipc/protocol.js';
+import type { IpcPromptRequest, IpcPromptResponse, ServerMessage } from '../../../engine/ipc/protocol.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -88,9 +88,11 @@ interface CapturedState {
 function Harness({
   sockPath,
   capture,
+  onPromptRequest,
 }: {
   sockPath: string;
   capture: { current: CapturedState | null };
+  onPromptRequest?: ((request: IpcPromptRequest) => Promise<IpcPromptResponse>) | undefined;
 }) {
   const [events, setEvents] = useState<EngineEvent[]>([]);
   const [state, actions] = useIpcClient({
@@ -98,6 +100,7 @@ function Harness({
     onEvent(event) {
       setEvents((prev) => [...prev, event]);
     },
+    onPromptRequest,
   });
   useEffect(() => {
     capture.current = { ...state, events, ...actions };
@@ -211,6 +214,135 @@ describe('useIpcClient', () => {
     const payloadEvents = capture.current?.events.filter(e => e.type === 'workflow_started') ?? [];
     expect(payloadEvents.length).toBeGreaterThan(0);
     expect(payloadEvents[0]?.type).toBe('workflow_started');
+    ui.unmount();
+    await tick(20);
+  });
+
+  it('handles prompt_request and writes prompt_response', async () => {
+    const dir = makeTmpDir();
+    tmpDirs.push(dir);
+    const sockPath = join(dir, 'test.sock');
+
+    const received: string[] = [];
+    let connectedSocket: Socket | null = null;
+    const server = createServer();
+    servers.push(server);
+    server.on('connection', (socket: Socket) => {
+      connectedSocket = socket;
+      send(socket, {
+        kind: 'session_meta',
+        sessionId: 'sess',
+        startedAt: 1,
+        mode: 'standard',
+        feature: 'f',
+        readonly: false,
+      });
+      let buf = '';
+      socket.on('data', (chunk: Buffer) => {
+        buf += chunk.toString('utf8');
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const line of lines) {
+          if (line.trim()) received.push(line.trim());
+        }
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(sockPath, resolve));
+
+    const capture: { current: CapturedState | null } = { current: null };
+    const ui = render(
+      <Harness
+        sockPath={sockPath}
+        capture={capture}
+        onPromptRequest={async () => ({ kind: 'external_changes', proceed: true })}
+      />,
+    );
+    await tick(100);
+
+    if (connectedSocket) {
+      const msg: ServerMessage = {
+        kind: 'prompt_request',
+        request: { requestId: 'prompt-1', kind: 'external_changes' },
+      };
+      send(connectedSocket, msg);
+    }
+    await tick(50);
+
+    const response = received.map(line => JSON.parse(line) as { kind: string; requestId?: string; response?: unknown })
+      .find(msg => msg.kind === 'prompt_response');
+    expect(response).toMatchObject({
+      kind: 'prompt_response',
+      requestId: 'prompt-1',
+      response: { kind: 'external_changes', proceed: true },
+    });
+
+    ui.unmount();
+    await tick(20);
+  });
+
+  it('writes approval edit action prompt_response from prompt handler', async () => {
+    const dir = makeTmpDir();
+    tmpDirs.push(dir);
+    const sockPath = join(dir, 'test.sock');
+
+    const received: string[] = [];
+    let connectedSocket: Socket | null = null;
+    const server = createServer();
+    servers.push(server);
+    server.on('connection', (socket: Socket) => {
+      connectedSocket = socket;
+      send(socket, {
+        kind: 'session_meta',
+        sessionId: 'sess',
+        startedAt: 1,
+        mode: 'standard',
+        feature: 'f',
+        readonly: false,
+      });
+      let buf = '';
+      socket.on('data', (chunk: Buffer) => {
+        buf += chunk.toString('utf8');
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const line of lines) {
+          if (line.trim()) received.push(line.trim());
+        }
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(sockPath, resolve));
+
+    const capture: { current: CapturedState | null } = { current: null };
+    const ui = render(
+      <Harness
+        sockPath={sockPath}
+        capture={capture}
+        onPromptRequest={async () => ({ kind: 'approval_needed', approved: false, action: 'edit' })}
+      />,
+    );
+    await tick(100);
+
+    if (connectedSocket) {
+      const msg: ServerMessage = {
+        kind: 'prompt_request',
+        request: {
+          requestId: 'prompt-1',
+          kind: 'approval_needed',
+          approvalType: 'briefs',
+          filePath: '/tmp/tasks.md',
+        },
+      };
+      send(connectedSocket, msg);
+    }
+    await tick(50);
+
+    const response = received.map(line => JSON.parse(line) as { kind: string; requestId?: string; response?: unknown })
+      .find(msg => msg.kind === 'prompt_response');
+    expect(response).toMatchObject({
+      kind: 'prompt_response',
+      requestId: 'prompt-1',
+      response: { kind: 'approval_needed', approved: false, action: 'edit' },
+    });
+
     ui.unmount();
     await tick(20);
   });

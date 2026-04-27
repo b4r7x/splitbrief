@@ -18,7 +18,27 @@ import { spawnServer } from '../../engine/ipc/spawn-server.js';
 import { configPath } from '../../core/config/load/load.js';
 import { sessionDir } from '../../core/paths.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
+import { assertNotWindows } from '../platform.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
+import type { CLIOverrides } from '../../core/config/runtime/overrides.js';
+
+async function applyWorktreeOption(feature: string | undefined, opts: WorkflowOpts): Promise<void> {
+  if (opts.worktree === undefined) return;
+
+  const slug =
+    typeof opts.worktree === 'string' && opts.worktree.length > 0
+      ? opts.worktree
+      : slugify(feature ?? 'session');
+  const baseProjectDir = resolveProjectDir(opts.project);
+  const git = simpleGit(baseProjectDir);
+  try {
+    const wtPath = await createWorktree({ projectDir: baseProjectDir, slug, git });
+    console.log(`Starting session in worktree .trees/${slug} (branch diptych/${slug})`);
+    opts.project = wtPath;
+  } catch (err) {
+    throw cliError(err instanceof Error ? err.message : String(err), 1);
+  }
+}
 
 export function registerStartCommand(program: Command): void {
   addWorkflowOptions(
@@ -27,10 +47,19 @@ export function registerStartCommand(program: Command): void {
       .description('Full workflow: plan with Claude, implement with local model')
       .option('--detach', 'spawn workflow as background server and exit', false),
   ).action(async (feature: string | undefined, opts: WorkflowOpts) => {
+    // Validate flag combinations BEFORE creating any worktree. A failed
+    // validation must not leave behind a `.trees/<slug>` directory or a
+    // `diptych/<slug>` branch.
     if (opts.detach) {
+      assertNotWindows();
       if (!feature) throw cliError('--detach requires a feature argument');
       if (opts.json) throw cliError('--detach and --json cannot be combined');
+    }
 
+    await applyWorktreeOption(feature, opts);
+
+    if (opts.detach) {
+      if (!feature) throw cliError('--detach requires a feature argument');
       const projectDir = resolveProjectDir(opts.project);
       await maybeMigrate(projectDir);
       await ensureGitAndConfig(projectDir);
@@ -40,6 +69,24 @@ export function registerStartCommand(program: Command): void {
       const sessDir = sessionDir(projectDir, sessId);
       ensureSessionDir(projectDir, sessId);
 
+      const overrides: CLIOverrides = {
+        planner: {
+          tool: opts.planner,
+          model: opts.plannerModel,
+          command: opts.plannerCommand,
+        },
+        implementer: {
+          tool: opts.implementer ?? opts.provider,
+          model: opts.implementerModel ?? opts.model,
+          command: opts.implementerCommand,
+        },
+        autoApprove: opts.auto,
+        approve: opts.approve,
+        mode,
+        budget: opts.budget,
+        plannerEffort: opts.plannerEffort,
+      };
+
       const result = await spawnServer({
         sessionDir: sessDir,
         sessionId: sessId,
@@ -47,6 +94,7 @@ export function registerStartCommand(program: Command): void {
         feature,
         mode,
         configPath: configPath(projectDir),
+        overrides,
       });
 
       if (!result.ok) {
@@ -55,24 +103,8 @@ export function registerStartCommand(program: Command): void {
       }
 
       console.log(`Session ${result.sessionId} started (pid ${result.pid}).`);
-      console.log(`Run: diptych attach ${result.sessionId}`);
+      console.log(`Run: cd ${projectDir} && diptych attach ${result.sessionId}`);
       return;
-    }
-
-    if (opts.worktree !== undefined) {
-      const slug =
-        typeof opts.worktree === 'string' && opts.worktree.length > 0
-          ? opts.worktree
-          : slugify(feature ?? 'session');
-      const baseProjectDir = resolveProjectDir(opts.project);
-      const git = simpleGit(baseProjectDir);
-      try {
-        const wtPath = await createWorktree({ projectDir: baseProjectDir, slug, git });
-        console.log(`Starting session in worktree .trees/${slug} (branch diptych/${slug})`);
-        opts.project = wtPath;
-      } catch (err) {
-        throw cliError(err instanceof Error ? err.message : String(err), 1);
-      }
     }
 
     const projectDir = resolveProjectDir(opts.project);

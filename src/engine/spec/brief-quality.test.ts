@@ -91,7 +91,7 @@ describe('evaluateBriefQuality — pure unit tests', () => {
     expect(issue?.severity).toBe('error');
   });
 
-  it('missing evidence warns but does not block', () => {
+  it('missing evidence blocks', () => {
     const task = makeTask({
       tests: ['validates email format'],
       implementationSteps: ['1. Add function'],
@@ -99,9 +99,9 @@ describe('evaluateBriefQuality — pure unit tests', () => {
       scope: { inBounds: ['foo'] },
     });
     const report = evaluateBriefQuality([task]);
-    expect(report.passed).toBe(true);
+    expect(report.passed).toBe(false);
     const issue = report.issues.find(i => i.code === 'missing_evidence');
-    expect(issue?.severity).toBe('warning');
+    expect(issue?.severity).toBe('error');
   });
 
   it('modify task without code context blocks with missing_code_context error', () => {
@@ -133,6 +133,9 @@ describe('evaluateBriefQuality — pure unit tests', () => {
       description: 'Update src/api.ts and keep src/api.ts aligned with the new helper',
       tests: ['returns expected value'],
       implementationSteps: ['1. Edit src/api.ts', '2. Keep src/api.ts in sync'],
+      typeDefs: 'function updateApi(): void',
+      scope: { inBounds: ['src/api.ts'], outOfBounds: ['src/utils.ts'] },
+      evidence: ['src/api.ts behavior remains covered'],
     });
     const report = evaluateBriefQuality([task]);
     expect(report.passed).toBe(true);
@@ -159,12 +162,12 @@ describe('evaluateBriefQuality — pure unit tests', () => {
     expect(issue?.severity).toBe('error');
   });
 
-  it('missing scope produces a warning', () => {
+  it('missing scope blocks', () => {
     const task = makeFullTask();
     const report = evaluateBriefQuality([{ ...task, scope: undefined }]);
-    expect(report.passed).toBe(true);
+    expect(report.passed).toBe(false);
     const issue = report.issues.find(i => i.code === 'missing_scope');
-    expect(issue?.severity).toBe('warning');
+    expect(issue?.severity).toBe('error');
   });
 
   it('risk words in description trigger escalation check but not title', () => {
@@ -173,6 +176,9 @@ describe('evaluateBriefQuality — pure unit tests', () => {
       description: 'Adds a middleware layer with basic routing logic',
       tests: ['routes correctly'],
       implementationSteps: ['1. Add middleware'],
+      typeDefs: 'type Middleware = unknown',
+      scope: { inBounds: ['middleware routing'], outOfBounds: ['auth token validation'] },
+      evidence: ['routing middleware test passes'],
     });
     const report = evaluateBriefQuality([task]);
     expect(report.issues.find(i => i.code === 'missing_escalation')).toBeUndefined();
@@ -183,6 +189,9 @@ describe('evaluateBriefQuality — pure unit tests', () => {
       description: 'Update the auth middleware to validate permissions',
       tests: ['rejects invalid token'],
       implementationSteps: ['1. Check header'],
+      typeDefs: 'type AuthMiddleware = unknown',
+      scope: { inBounds: ['auth middleware'], outOfBounds: ['database schema'] },
+      evidence: ['invalid token test fails before and passes after'],
       escalation: ['Stop if token format is unexpected'],
     });
     const report = evaluateBriefQuality([task]);
@@ -190,7 +199,12 @@ describe('evaluateBriefQuality — pure unit tests', () => {
   });
 
   it('non-vague single test passes vague_validation check', () => {
-    const task = makeTask({ tests: ['passes tsc', 'validates schema'] });
+    const task = makeTask({
+      tests: ['passes tsc', 'validates schema'],
+      typeDefs: 'type SchemaResult = boolean',
+      scope: { inBounds: ['schema validation'], outOfBounds: ['runtime behavior'] },
+      evidence: ['schema validation test passes'],
+    });
     const report = evaluateBriefQuality([task]);
     expect(report.issues.find(i => i.code === 'vague_validation')).toBeUndefined();
   });
@@ -255,7 +269,7 @@ describe('runBriefQualityGate', () => {
     const sessionId = 'sess-gate-int';
     ensureSessionDir(projectDir, sessionId);
 
-    const badTask = makeTask({ id: 'T001', tests: [], implementationSteps: [] });
+    const badTask = makeTask({ id: 'T001', scope: undefined, evidence: [] });
     const planner = makePlanner({
       instantPlan: vi.fn().mockResolvedValue({
         spec: '',
@@ -287,5 +301,12 @@ describe('runBriefQualityGate', () => {
 
     const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE);
     expect(existsSync(reportPath)).toBe(true);
+    const persisted = JSON.parse(readFileSync(reportPath, 'utf-8'));
+    expect(persisted.issues.map((i: { code: string; severity: string }) => [i.code, i.severity])).toEqual(
+      expect.arrayContaining([
+        ['missing_scope', 'error'],
+        ['missing_evidence', 'error'],
+      ]),
+    );
   });
 });

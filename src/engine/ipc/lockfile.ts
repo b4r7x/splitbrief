@@ -2,22 +2,25 @@ import { writeFile, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { join } from 'node:path';
+import { z } from 'zod';
 import { LOCKFILE } from '../../core/paths.js';
 import { HEARTBEAT_STALENESS_MS } from './heartbeat.js';
 
-export type LockfileData = {
-  version: 1;
-  pid: number;
-  startTimeMs: number;
-  lastAliveMs: number;
-  sessionId: string;
-  mode: string;
-  feature: string;
-  exitedAt?: number;
-  exitCode?: number;
-  signal?: string;
-  cause?: string;
-};
+const LockfileDataSchema = z.object({
+  version: z.literal(1),
+  pid: z.number().int().positive(),
+  startTimeMs: z.number(),
+  lastAliveMs: z.number(),
+  sessionId: z.string(),
+  mode: z.string(),
+  feature: z.string(),
+  exitedAt: z.number().optional(),
+  exitCode: z.number().optional(),
+  signal: z.string().optional(),
+  cause: z.string().optional(),
+});
+
+export type LockfileData = z.infer<typeof LockfileDataSchema>;
 
 export type ServerStatus =
   | { alive: true; data: LockfileData }
@@ -38,6 +41,7 @@ export async function writeLockfile(
 export async function updateHeartbeat(sessionDir: string): Promise<void> {
   const data = await readLockfile(sessionDir);
   if (!data) return;
+  if (data.exitedAt !== undefined) return;
   data.lastAliveMs = Date.now();
   await writeFile(lockfilePath(sessionDir), JSON.stringify(data), { mode: 0o600 });
 }
@@ -59,6 +63,15 @@ export async function markCrashed(
   if (!data) return;
   data.signal = signal;
   if (cause !== undefined) data.cause = cause;
+  if (data.exitedAt === undefined) data.exitedAt = Date.now();
+  await writeFile(lockfilePath(sessionDir), JSON.stringify(data), { mode: 0o600 });
+}
+
+export async function markSignaled(sessionDir: string, signal: string): Promise<void> {
+  const data = await readLockfile(sessionDir);
+  if (!data) return;
+  data.signal = signal;
+  if (data.exitedAt === undefined) data.exitedAt = Date.now();
   await writeFile(lockfilePath(sessionDir), JSON.stringify(data), { mode: 0o600 });
 }
 
@@ -67,7 +80,7 @@ export async function readLockfile(sessionDir: string): Promise<LockfileData | n
   if (!existsSync(p)) return null;
   try {
     const raw = await readFile(p, 'utf-8');
-    return JSON.parse(raw) as LockfileData;
+    return LockfileDataSchema.parse(JSON.parse(raw));
   } catch {
     return null;
   }

@@ -14,9 +14,10 @@ export function addEvent(event: EngineEvent): void {
   // Cancelled gate: dispatcher policy — sub-stores are passive containers.
   if (lifecycleStore.get().cancelled) return;
 
-  // Fast path: cost_update only touches tokenUsage.
+  // Fast path: cost_update only touches token state, but still needs the
+  // reducer so per-phase cost/cache telemetry stays in sync.
   if (event.type === 'cost_update') {
-    _tokensInternal.set(s => ({ ...s, tokenUsage: event.tokenUsage }));
+    _tokensInternal.set(s => updateTokens(s, event));
     return;
   }
 

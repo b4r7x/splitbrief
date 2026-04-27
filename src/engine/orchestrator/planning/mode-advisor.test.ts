@@ -29,8 +29,21 @@ describe('adviseMode — risk classification', () => {
   it('vague prompt emits missing-context', () => {
     const result = adviseMode('improve it', 'standard');
     expect(result.kind).toBe('missing-context');
-    expect(result.missing.length).toBeGreaterThan(0);
+    expect(result.missing).toContain('vague target');
     expect(result.shouldAdvise).toBe(true);
+  });
+
+  it('non-trivial prompt without area/file/module emits missing-context', () => {
+    const result = adviseMode('add a better retry behavior with clearer failure handling and assertions', 'standard');
+    expect(result.kind).toBe('missing-context');
+    expect(result.missing).toContain('no area/file/module');
+  });
+
+  it('flags no validation hint and no done criteria', () => {
+    const result = adviseMode('improve workflow state handling around queued messages for edge cases', 'standard');
+    expect(result.kind).toBe('missing-context');
+    expect(result.missing).toContain('no validation hint');
+    expect(result.missing).toContain('no done criteria');
   });
 
   it('small file-scoped bug suggests quick', () => {

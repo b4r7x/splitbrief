@@ -2,7 +2,6 @@ import { spawn } from 'node:child_process';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
-import { planEditorStore } from '../../stores/workflow/plan-editor.js';
 import { requestEnqueue } from './handlers.js';
 import { isLivePhase, isImplementerPhase } from '../../core/phases.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
@@ -74,17 +73,17 @@ export function createReviewInputHandler(inputMode: UseInputModeResult): ReviewI
       } else if (parsed.action === 'quit') {
         inputMode.resolve({ approved: false });
       } else if (parsed.action === 'edit') {
-        const phase = lifecycleStore.get().phase;
-        if (phase === 'reviewing-briefs') {
-          planEditorStore.setRuntimeRichMode(true);
-          feedbackStore.setMessage('Opened rich task editor');
-          return;
-        }
         const filePath = reviewStore.get().filePath;
         if (filePath) {
-          await openInEditor(filePath).catch((err) =>
-            feedbackStore.setError(`Failed to open editor: ${err instanceof Error ? err.message : String(err)}`),
-          );
+          try {
+            await openInEditor(filePath);
+            const phase = lifecycleStore.get().phase;
+            if (phase === 'reviewing-briefs') {
+              inputMode.resolve({ approved: false, action: 'edit' });
+            }
+          } catch (err) {
+            feedbackStore.setError(`Failed to open editor: ${err instanceof Error ? err.message : String(err)}`);
+          }
         }
       }
       return;

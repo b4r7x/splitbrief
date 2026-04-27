@@ -11,7 +11,7 @@ import type { EventBus } from '../events/types.js';
 import type { TieredApprovalRequest, TieredApprovalResponse } from './tiered-approval.js';
 
 export interface OrchestratorCallbacks {
-  onApprovalNeeded: (type: 'spec' | 'plan' | 'briefs', filePath: string) => Promise<{ approved: boolean; comment?: string | undefined }>;
+  onApprovalNeeded: (type: 'spec' | 'plan' | 'briefs', filePath: string) => Promise<{ approved: boolean; comment?: string | undefined; action?: 'edit' | undefined }>;
   onExternalChanges: () => Promise<boolean>;
   onQuestionAsked?: ((question: ClarificationQuestion, num: number, total: number) => Promise<string>) | undefined;
   onBudgetExceeded?: ((currentCost: number, maxBudget: number) => Promise<boolean>) | undefined;

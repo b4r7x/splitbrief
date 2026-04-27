@@ -2,6 +2,7 @@ import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { OrchestratorCallbacks } from './types.js';
 import type { EventBus } from '../events/types.js';
 import { calculateCostBreakdown } from '../providers/pricing.js';
+import type { ModelCacheAccessor } from '../providers/model-resolution.js';
 import { publishBudgetWarning, publishBudgetExceeded, publishBudgetPaused, publishWarning } from './events.js';
 import { formatCost } from '../../core/formatting.js';
 
@@ -18,6 +19,9 @@ export type BudgetCheckOptions = {
   escalatedCount: number;
   plannerTool: string;
   implementerTool: string;
+  plannerModel?: string | undefined;
+  implementerModel?: string | undefined;
+  pricingCache?: ModelCacheAccessor | undefined;
 };
 
 const BUDGET_WARNING_THRESHOLD = 0.8;
@@ -30,7 +34,9 @@ export function getCurrentCost(opts: Omit<BudgetCheckOptions, 'maxBudget'>): num
     escalatedCount: opts.escalatedCount,
     plannerTool: opts.plannerTool,
     implementerTool: opts.implementerTool,
-  });
+    ...(opts.plannerModel !== undefined && { plannerModel: opts.plannerModel }),
+    ...(opts.implementerModel !== undefined && { implementerModel: opts.implementerModel }),
+  }, opts.pricingCache);
   return breakdown.totalActualCost;
 }
 
@@ -63,6 +69,9 @@ export type EnforceBudgetOptions = {
   escalatedCount: number;
   plannerTool: string;
   implementerTool: string;
+  plannerModel?: string | undefined;
+  implementerModel?: string | undefined;
+  pricingCache?: ModelCacheAccessor | undefined;
   callbacks: OrchestratorCallbacks;
   bus: EventBus;
   warningEmitted: boolean;
@@ -75,15 +84,25 @@ function fmtBudgetRange(currentCost: number, maxBudget: number): string {
 }
 
 export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{ stop: boolean; warningEmitted: boolean; pauseEmitted: boolean }> {
-  const { maxBudget, callbacks, bus, warningEmitted, pauseEmitted } = opts;
+  const { maxBudget, callbacks, bus, pauseEmitted } = opts;
+  let { warningEmitted } = opts;
   const effectivePauseThreshold = opts.pauseThreshold ?? BUDGET_PAUSE_THRESHOLD;
   const currentCost = getCurrentCost(opts);
   const result = checkBudget(currentCost, maxBudget, effectivePauseThreshold);
 
-  if (result.action === 'warning' && !warningEmitted) {
+  // If we cross past 80% directly into the pause/exceeded zone without ever emitting a warning,
+  // still publish budget_warning first so listeners observe the threshold transition in order.
+  if (
+    !warningEmitted &&
+    (result.action === 'warning' || result.action === 'paused' || result.action === 'exceeded') &&
+    currentCost >= maxBudget * BUDGET_WARNING_THRESHOLD
+  ) {
     publishBudgetWarning(bus, 'implementing', currentCost, maxBudget);
     publishWarning(bus, 'implementing', `Budget 80% reached: ${fmtBudgetRange(currentCost, maxBudget)} limit`);
-    return { stop: false, warningEmitted: true, pauseEmitted };
+    warningEmitted = true;
+    if (result.action === 'warning') {
+      return { stop: false, warningEmitted: true, pauseEmitted };
+    }
   }
 
   if (result.action === 'paused' && !pauseEmitted) {

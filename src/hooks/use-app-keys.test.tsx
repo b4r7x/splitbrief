@@ -112,13 +112,11 @@ describe('useAppKeys: keystroke binding', () => {
     await tick(20);
 
     expect(overlayStore.get().active).toBe('none');
-    const openSpy = vi.spyOn(overlayStore, 'open');
 
     ui.stdin.write('\x0b'); // Ctrl+K
     await tick(20);
 
-    expect(openSpy).toHaveBeenCalledWith('command-palette');
-    openSpy.mockRestore();
+    expect(overlayStore.get().active).toBe('command-palette');
     ui.unmount();
   });
 
@@ -131,14 +129,10 @@ describe('useAppKeys: keystroke binding', () => {
     const ui = renderFeature(<Harness exit={exit} />);
     await tick(20);
 
-    const openSpy = vi.spyOn(overlayStore, 'open');
-
     ui.stdin.write('\x0b'); // Ctrl+K
     await tick(20);
 
-    expect(openSpy).not.toHaveBeenCalledWith('command-palette');
     expect(overlayStore.get().active).toBe('settings');
-    openSpy.mockRestore();
     ui.unmount();
   });
 
@@ -149,13 +143,11 @@ describe('useAppKeys: keystroke binding', () => {
     await tick(20);
 
     expect(overlayStore.get().active).toBe('none');
-    const openSpy = vi.spyOn(overlayStore, 'open');
 
     ui.stdin.write('\x1f'); // Ctrl+/
     await tick(20);
 
-    expect(openSpy).toHaveBeenCalledWith('help');
-    openSpy.mockRestore();
+    expect(overlayStore.get().active).toBe('help');
     ui.unmount();
   });
 
@@ -182,14 +174,11 @@ describe('useAppKeys: keystroke binding', () => {
     await tick(20);
 
     expect(overlayStore.get().active).toBe('settings');
-    const closeSpy = vi.spyOn(overlayStore, 'close');
 
     ui.stdin.write('\x1b'); // Escape
     await tick(20);
 
-    expect(closeSpy).toHaveBeenCalled();
     expect(overlayStore.get().active).toBe('none');
-    closeSpy.mockRestore();
     ui.unmount();
   });
 
@@ -204,14 +193,11 @@ describe('useAppKeys: keystroke binding', () => {
     await tick(20);
 
     expect(overlayStore.get().exclusive).toBe(true);
-    const closeSpy = vi.spyOn(overlayStore, 'close');
 
     ui.stdin.write('\x1b'); // Escape
     await tick(20);
 
-    expect(closeSpy).not.toHaveBeenCalled();
     expect(overlayStore.get().active).toBe('settings');
-    closeSpy.mockRestore();
     ui.unmount();
   });
 });

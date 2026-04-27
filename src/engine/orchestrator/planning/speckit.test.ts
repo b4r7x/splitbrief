@@ -11,6 +11,7 @@ import { ensureSessionDir } from '../../../core/paths-io.js';
 import { sessionDir, SPEC_FILE, PLAN_FILE, TASKS_FILE, BRIEF_QUALITY_FILE } from '../../../core/paths.js';
 import { runPlanningPhase } from './run.js';
 import { extractJsonBlock } from './speckit.js';
+import { formatTasks } from '../../spec/formatter.js';
 import type { Planner, PlanResult } from '../../planners/types.js';
 import type { OrchestratorCallbacks } from '../types.js';
 
@@ -35,8 +36,11 @@ Do A.
 1. Create src/a.ts.
 
 ### Scope
-- In bounds: src/a.ts
-- Out of bounds: unrelated files
+**In bounds:**
+- src/a.ts
+
+**Out of bounds:**
+- unrelated files
 
 ### Evidence
 - brief-quality.json records a passing gate
@@ -237,5 +241,25 @@ describe('runSpeckitPlanning', () => {
       callbacksOverride: { onApprovalNeeded },
     });
     expectBriefQualityBlocked(result, projectDir, sessionId, events);
+  });
+
+  it('blocks invalid briefs even when user approves reviewing-briefs', async () => {
+    let tasksPath = '';
+    const onApprovalNeeded = vi.fn<OrchestratorCallbacks['onApprovalNeeded']>()
+      .mockResolvedValueOnce({ approved: true })
+      .mockResolvedValueOnce({ approved: true })
+      .mockImplementationOnce(async (_type, filePath) => {
+        tasksPath = filePath;
+        writeFileSync(filePath, formatTasks(invalidPlanResult().tasks), 'utf8');
+        return { approved: true };
+      })
+      .mockResolvedValue({ approved: false });
+    const { result, projectDir, sessionId, events } = await runSpeckit({
+      plannerOverrides: { plan: vi.fn().mockResolvedValue(invalidPlanResult()) },
+      callbacksOverride: { onApprovalNeeded },
+    });
+    expectBriefQualityBlocked(result, projectDir, sessionId, events);
+    expect(tasksPath.endsWith(TASKS_FILE)).toBe(true);
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(4);
   });
 });

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { createServer, type Server } from 'node:net';
 
 // Mock child_process before importing spawn-server
 vi.mock('node:child_process', async (importOriginal) => {
@@ -40,6 +41,23 @@ function makeChild(pid = 12345) {
 }
 
 let testDir: string;
+let socketServer: Server | null = null;
+
+async function listenOnSocket(sockPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    socketServer = createServer();
+    socketServer.once('error', reject);
+    socketServer.listen(sockPath, resolve);
+  });
+}
+
+function closeSocketServer(): Promise<void> {
+  return new Promise((resolve) => {
+    if (!socketServer) { resolve(); return; }
+    socketServer.close(() => resolve());
+    socketServer = null;
+  });
+}
 
 beforeEach(() => {
   testDir = join(tmpdir(), `spawn-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -47,7 +65,8 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await closeSocketServer();
   if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
   vi.useRealTimers();
 });
@@ -57,6 +76,7 @@ describe('spawnServer', () => {
     const child = makeChild(42);
     mockSpawn.mockReturnValue(child);
 
+    await listenOnSocket(join(testDir, 'ipc.sock'));
     mockCheckServerStatus.mockResolvedValue({
       alive: true,
       data: {
@@ -121,6 +141,7 @@ describe('spawnServer', () => {
     const child = makeChild(77);
     mockSpawn.mockReturnValue(child);
 
+    await listenOnSocket(join(testDir, 'ipc.sock'));
     mockCheckServerStatus.mockResolvedValue({
       alive: true,
       data: {

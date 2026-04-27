@@ -21,11 +21,14 @@ const makeWorktree = (overrides: Partial<WorktreeInfo> = {}): WorktreeInfo => ({
   branch: 'diptych/my-feature',
   status: 'none',
   sessionId: null,
+  phase: null,
+  lastUpdated: null,
   ...overrides,
 });
 
 beforeEach(() => {
   tmp = createTempDir('worktree-command-test');
+  Object.defineProperty(process.stdout, 'columns', { value: 200, configurable: true });
   consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.mocked(listWorktrees).mockReset().mockResolvedValue([]);
   vi.mocked(removeWorktree).mockReset().mockResolvedValue(undefined);
@@ -67,27 +70,41 @@ describe('worktree list — with entries', () => {
 
     const out = captureOutput();
     expect(out).toContain('NAME');
+    expect(out).toContain('PATH');
     expect(out).toContain('BRANCH');
     expect(out).toContain('STATUS');
+    expect(out).toContain('SESSION');
+    expect(out).toContain('PHASE');
+    expect(out).toContain('UPDATED');
     expect(out).toContain('my-feature');
     expect(out).toContain('quick-fix');
+    expect(out).toContain('/project/.trees/my-feature');
     expect(out).toContain('diptych/my-feature');
     expect(out).toContain('diptych/quick-fix');
   });
 
-  it('shows session ID in parentheses for active status', async () => {
+  it('shows session ID, phase, and last-updated for active status', async () => {
     vi.mocked(listWorktrees).mockResolvedValue([
-      makeWorktree({ name: 'active-wt', branch: 'diptych/active-wt', status: 'active', sessionId: 'dip-abc123' }),
+      makeWorktree({
+        name: 'active-wt',
+        branch: 'diptych/active-wt',
+        status: 'active',
+        sessionId: 'dip-abc123',
+        phase: 'implementing',
+        lastUpdated: '2026-04-27T10:00:00.000Z',
+      }),
     ]);
 
     await runWorktree(['list']);
 
     const out = captureOutput();
     expect(out).toContain('active');
-    expect(out).toContain('(dip-abc123)');
+    expect(out).toContain('dip-abc123');
+    expect(out).toContain('implementing');
+    expect(out).toContain('2026-04-27T10:00:00.000Z');
   });
 
-  it('shows session ID in parentheses for idle status', async () => {
+  it('prints unknown for missing session metadata', async () => {
     vi.mocked(listWorktrees).mockResolvedValue([
       makeWorktree({ name: 'idle-wt', branch: 'diptych/idle-wt', status: 'idle', sessionId: 'dip-def456' }),
     ]);
@@ -96,7 +113,8 @@ describe('worktree list — with entries', () => {
 
     const out = captureOutput();
     expect(out).toContain('idle');
-    expect(out).toContain('(dip-def456)');
+    expect(out).toContain('dip-def456');
+    expect(out).toContain('unknown');
   });
 });
 

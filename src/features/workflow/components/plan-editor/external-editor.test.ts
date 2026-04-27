@@ -83,6 +83,34 @@ describe('openExternalEditor — edit mode', () => {
     expect(planEditorStore.get().saveError).toBe('Editor not found. Set $EDITOR.');
   });
 
+  it('does not read or apply the temp file when editor exits non-zero', () => {
+    const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
+    planEditorStore.initEditor([task]);
+
+    vi.mocked(spawnSync).mockReturnValue({
+      status: 42,
+      error: undefined,
+    } as unknown as ReturnType<typeof spawnSync>);
+
+    openExternalEditor(task, 'edit', sessionDir);
+
+    expect(readFileSync).not.toHaveBeenCalled();
+    expect(planEditorStore.get().tasks).toEqual([task]);
+    expect(planEditorStore.get().saveError).toContain('Editor exited with status 42');
+  });
+
+  it('sets saveError when edited task markdown has a parse error', () => {
+    const t1 = makeTask({ id: 'T001', implementationSteps: ['step'], tests: ['test'] });
+    planEditorStore.initEditor([t1]);
+
+    vi.mocked(spawnSync).mockReturnValue({ status: 0, error: undefined } as unknown as ReturnType<typeof spawnSync>);
+    vi.mocked(readFileSync).mockReturnValue(makeValidTaskMarkdown('T001').replace('depends_on: []', 'depends_on: [T001]'));
+
+    openExternalEditor(t1, 'edit', sessionDir);
+
+    expect(planEditorStore.get().saveError).toContain('Edit parse failed');
+  });
+
   it('sets saveError when parsed result is not exactly 1 task', () => {
     const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
     planEditorStore.initEditor([task]);

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { spawn, spawnSync, exec, execFile } from 'node:child_process';
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -16,6 +17,13 @@ vi.mock('./render.js', async (importOriginal) => {
     renderHandoffWithCustom: vi.fn(actual.renderHandoffWithCustom),
   };
 });
+
+vi.mock('node:child_process', () => ({
+  spawn: vi.fn(),
+  spawnSync: vi.fn(),
+  exec: vi.fn(),
+  execFile: vi.fn(),
+}));
 
 let tmp: string;
 
@@ -167,6 +175,31 @@ describe('writeHandoffPack — mode: append', () => {
     expect(result.files).not.toContain('tasks/T001.md');
     expect(result.files).toContain('README.md');
   });
+
+  it('writes a manifest that includes skipped pre-existing task artifacts', async () => {
+    const sessionId = 'test-session';
+    writeSessionState(tmp, sessionId);
+
+    const outDir = join(tmp, 'handoff', 'spec-kit');
+    mkdirSync(join(outDir, 'tasks'), { recursive: true });
+    writeFileSync(join(outDir, 'tasks', 'T001.md'), 'existing content');
+
+    await writeHandoffPack({
+      projectDir: tmp,
+      sessionId,
+      target: 'spec-kit',
+      outDir,
+      mode: 'append',
+    });
+
+    const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf-8'));
+
+    expect(manifest.artifacts.tasks).toEqual([
+      'tasks/T001.md',
+      'tasks/T002.md',
+      'tasks/T003.md',
+    ]);
+  });
 });
 
 describe('writeHandoffPack — mode: overwrite', () => {
@@ -190,6 +223,43 @@ describe('writeHandoffPack — mode: overwrite', () => {
     const newContent = readFileSync(join(outDir, 'tasks', 'T001.md'), 'utf-8');
     expect(newContent).not.toBe(oldContent);
     expect(newContent).toContain('T001');
+  });
+
+  it('removes stale task files when overwriting with a narrower selection', async () => {
+    const sessionId = 'stale-test-session';
+    writeSessionState(tmp, sessionId);
+
+    const outDir = join(tmp, 'handoff', 'stale-overwrite');
+
+    // First pass: write all three tasks
+    await writeHandoffPack({
+      projectDir: tmp,
+      sessionId,
+      target: 'spec-kit',
+      outDir,
+      mode: 'default',
+    });
+
+    expect(existsSync(join(outDir, 'tasks', 'T001.md'))).toBe(true);
+    expect(existsSync(join(outDir, 'tasks', 'T002.md'))).toBe(true);
+    expect(existsSync(join(outDir, 'tasks', 'T003.md'))).toBe(true);
+
+    // Second pass: overwrite with only T001
+    await writeHandoffPack({
+      projectDir: tmp,
+      sessionId,
+      target: 'spec-kit',
+      outDir,
+      mode: 'overwrite',
+      selectedTaskIds: ['T001'],
+    });
+
+    expect(existsSync(join(outDir, 'tasks', 'T001.md'))).toBe(true);
+    expect(existsSync(join(outDir, 'tasks', 'T002.md'))).toBe(false);
+    expect(existsSync(join(outDir, 'tasks', 'T003.md'))).toBe(false);
+
+    const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf-8'));
+    expect(manifest.artifacts.tasks).toEqual(['tasks/T001.md']);
   });
 });
 
@@ -279,5 +349,105 @@ describe('writeHandoffPack — mode resolution', () => {
     });
 
     expect(vi.mocked(renderHandoffWithCustom).mock.calls[0]?.[0].mode).toBe('standard');
+  });
+});
+
+describe('writeHandoffPack — validation metadata', () => {
+  it('includes enabled typecheck, lint, and test commands in manifest.json', async () => {
+    const sessionId = 'validation-session';
+    writeSessionState(tmp, sessionId);
+    mkdirSync(join(tmp, DIPTYCH_DIR), { recursive: true });
+    writeFileSync(
+      join(tmp, DIPTYCH_DIR, 'config.yaml'),
+      [
+        'version: 3',
+        'validation:',
+        '  typecheck: true',
+        '  lint: true',
+        '  test: true',
+        '  test_command: npm run test:unit',
+      ].join('\n'),
+    );
+
+    const outDir = join(tmp, 'handoff', 'validation');
+    await writeHandoffPack({
+      projectDir: tmp,
+      sessionId,
+      target: 'spec-kit',
+      outDir,
+      mode: 'default',
+    });
+
+    const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf-8'));
+
+    expect(manifest.validation).toEqual({
+      typecheck: 'npm run typecheck',
+      lint: 'npm run lint',
+      test: 'npm run test:unit',
+    });
+  });
+});
+
+describe('writeHandoffPack — inert writer', () => {
+  it('does not spawn external commands while rendering artifacts', async () => {
+    const sessionId = 'inert-session';
+    writeSessionState(tmp, sessionId);
+
+    await writeHandoffPack({
+      projectDir: tmp,
+      sessionId,
+      target: 'spec-kit',
+      outDir: join(tmp, 'handoff', 'inert'),
+      mode: 'default',
+    });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(spawnSync).not.toHaveBeenCalled();
+    expect(exec).not.toHaveBeenCalled();
+    expect(execFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('writeHandoffPack — renderer path confinement', () => {
+  it('rejects custom renderer output paths that escape the output directory', async () => {
+    const sessionId = 'unsafe-renderer-session';
+    writeSessionState(tmp, sessionId);
+
+    vi.mocked(renderHandoffWithCustom).mockResolvedValueOnce({
+      files: [
+        { path: '../escape.md', content: 'unsafe' },
+      ],
+    });
+
+    await expect(
+      writeHandoffPack({
+        projectDir: tmp,
+        sessionId,
+        target: 'custom',
+        outDir: join(tmp, 'handoff', 'unsafe-renderer'),
+        mode: 'default',
+      }),
+    ).rejects.toThrow(/unsafe path/);
+  });
+
+  it('rejects custom renderer Windows absolute output paths on POSIX', async () => {
+    const sessionId = 'unsafe-windows-renderer-session';
+    writeSessionState(tmp, sessionId);
+
+    vi.mocked(renderHandoffWithCustom).mockResolvedValueOnce({
+      files: [
+        { path: 'C:\\temp\\escape.md', content: 'unsafe' },
+      ],
+    });
+
+    await expect(
+      writeHandoffPack({
+        projectDir: tmp,
+        sessionId,
+        target: 'custom',
+        outDir: join(tmp, 'handoff', 'unsafe-windows-renderer'),
+        mode: 'default',
+      }),
+    ).rejects.toThrow(/unsafe path/);
   });
 });

@@ -23,7 +23,7 @@ npm test
 | 3 | `rg "useMemo\|useCallback\|React\.memo\|forwardRef\|useImperativeHandle" src/` | 0 matches | Zero memoization, no imperative handles — [STORES.md](./STORES.md), [CLAUDE.md](../CLAUDE.md) |
 | 4 | `rg "throw new Error" src/engine/ src/lib/ src/cli/ \| rg -v "\.test\."` | 0 matches | Errors go through `error()` factory + domain bag — [ERRORS.md](./ERRORS.md) |
 | 5 | `rg "^\s*set:\s*store\.set" src/stores/` | 0 matches | No raw setter on store facade — [STORES.md](./STORES.md) |
-| 6 | `rg "from 'simple-git'" src/ \| rg -v "lib/git"` | 0 matches | `simple-git` imported only in `lib/git.ts` — [LAYERS.md](./LAYERS.md) |
+| 6 | `rg "from 'simple-git'" src/ \| rg -v "(lib/git|engine/git/worktree|cli/commands/worktree)"` | 0 matches | `simple-git` imports stay in the git boundary and worktree CLI path — [LAYERS.md](./LAYERS.md) |
 | 7 | `rg "process\.env\['ANTHROPIC_API_KEY'\]" src/engine/agent-sdk.ts` | 0 matches | Anthropic SDK key scoped via `env:` option, no global mutation — [LAYERS.md](./LAYERS.md) §SOTA provider decisions |
 | 8 | `rg "class\s+\w+\s+extends\s+Error" src/` | 0 matches | Zero classes — errors via factory bags — [ERRORS.md](./ERRORS.md) |
 | 9 | `rg "from '\.\./\.\./features/" src/features/` | 0 matches | No cross-feature imports — [STRUCTURE.md](./STRUCTURE.md) |

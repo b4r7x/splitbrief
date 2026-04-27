@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import type { InputMode } from '../../../stores/navigation/router.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 
-type ReviewResult = { approved: boolean; comment?: string | undefined };
+type ReviewResult = { approved: boolean; comment?: string | undefined; action?: 'edit' | undefined };
 
 export interface UseInputModeResult {
   mode: InputMode;

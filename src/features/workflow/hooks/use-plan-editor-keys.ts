@@ -8,6 +8,7 @@ import {
   moveTaskUp,
 } from '../components/plan-editor/actions.js';
 import { openExternalEditor } from '../components/plan-editor/external-editor.js';
+import type { Task } from '../../../core/schemas/task.js';
 
 export type PlanEditorAction =
   | { type: 'none' }
@@ -42,6 +43,16 @@ export function handlePlanEditorInput(input: string, key: Key): PlanEditorAction
   return { type: 'none' };
 }
 
+function applyTaskResult(
+  beforeTasks: Task[],
+  beforeCursor: number,
+  result: { tasks: Task[]; cursor: number },
+): void {
+  if (result.tasks === beforeTasks && result.cursor === beforeCursor) return;
+  planEditorStore.setTasks(result.tasks);
+  planEditorStore.setCursor(result.cursor);
+}
+
 export function applyPlanEditorAction(
   action: PlanEditorAction,
   onSave: () => Promise<void>,
@@ -54,23 +65,20 @@ export function applyPlanEditorAction(
       const result = action.direction === 'down'
         ? moveTaskDown(tasks, cursor)
         : moveTaskUp(tasks, cursor);
-      planEditorStore.setTasks(result.tasks);
-      planEditorStore.setCursor(result.cursor);
+      applyTaskResult(tasks, cursor, result);
       return;
     }
     case 'delete-task': {
       const { tasks, cursor } = planEditorStore.get();
       const result = deleteTask(tasks, cursor);
-      planEditorStore.setTasks(result.tasks);
-      planEditorStore.setCursor(result.cursor);
+      applyTaskResult(tasks, cursor, result);
       return;
     }
     case 'merge-task': {
       const { tasks, cursor } = planEditorStore.get();
       const result = mergeWithPrevious(tasks, cursor);
       if (result.error) { planEditorStore.setSaveError(result.error); return; }
-      planEditorStore.setTasks(result.tasks);
-      planEditorStore.setCursor(result.cursor);
+      applyTaskResult(tasks, cursor, result);
       return;
     }
     case 'toggle-expand': {

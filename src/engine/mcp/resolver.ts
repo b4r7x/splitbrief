@@ -3,7 +3,10 @@ import { join } from 'node:path';
 import type { McpResourceDescriptor, McpResourceContent } from './types.js';
 import { sessionDir, SPEC_FILE, PLAN_FILE, TASKS_FILE, STATE_FILE, EVIDENCE_FILE, DRIFT_REPORT_FILE } from '../../core/paths.js';
 import { listAllSessions } from '../../core/sessions/io.js';
+import { SessionSchema } from '../../core/schemas/session.js';
+import { WorkflowStateSchema } from '../../core/schemas/workflow.js';
 import { parseTasks } from '../spec/parser.js';
+import { hashTaskBrief } from '../../core/brief-hash.js';
 
 export type McpResolverConfig = {
   projectDir: string;
@@ -17,6 +20,7 @@ export type McpResolver = {
 };
 
 const BASE = 'mcp://diptych';
+const SUMMARY_FILE = 'summary.json';
 
 function sessionsUri(): string {
   return `${BASE}/sessions`;
@@ -29,6 +33,16 @@ function sessionBase(id: string): string {
 function readFileSafe(path: string): string | null {
   try {
     return readFileSync(path, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+function readJsonSafe(path: string): unknown | null {
+  const content = readFileSafe(path);
+  if (!content) return null;
+  try {
+    return JSON.parse(content);
   } catch {
     return null;
   }
@@ -122,50 +136,64 @@ function readGitHead(projectDir: string): string | null {
   return null;
 }
 
+function hasCanonicalManifestArtifacts(projectDir: string, sessionId: string): boolean {
+  const sDir = sessionDir(projectDir, sessionId);
+  const summaryResult = SessionSchema.safeParse(readJsonSafe(join(sDir, SUMMARY_FILE)));
+  const stateResult = WorkflowStateSchema.safeParse(readJsonSafe(join(sDir, STATE_FILE)));
+  return summaryResult.success && summaryResult.data.summary !== null && stateResult.success;
+}
+
 function buildManifest(
   projectDir: string,
   sessionId: string,
   diptychVersion: string,
-): Record<string, unknown> {
+): Record<string, unknown> | null {
   const sDir = sessionDir(projectDir, sessionId);
 
-  const sessions = listAllSessions(projectDir);
-  const session = sessions.find(s => s.id === sessionId);
+  const summaryRaw = readJsonSafe(join(sDir, SUMMARY_FILE));
+  const stateRaw = readJsonSafe(join(sDir, STATE_FILE));
+  const summaryResult = SessionSchema.safeParse(summaryRaw);
+  const stateResult = WorkflowStateSchema.safeParse(stateRaw);
+
+  if (!summaryResult.success || !stateResult.success) {
+    return null;
+  }
+
+  const session = summaryResult.data;
+  const summary = session.summary;
+  if (summary === null) {
+    return null;
+  }
+  const state = stateResult.data;
 
   const specExists = existsSync(join(sDir, SPEC_FILE));
   const planExists = existsSync(join(sDir, PLAN_FILE));
-  const tasksPath = join(sDir, TASKS_FILE);
+  const taskIds = state.tasks.map(t => t.id);
+  const existingTaskFiles = taskIds.map(id => `tasks/${id}.md`);
 
-  let taskIds: string[] = [];
-  let existingTaskFiles: string[] = [];
-
-  if (session?.summary) {
-    const tasksContent = readFileSafe(tasksPath);
-    if (tasksContent) {
-      const tasks = parseTasksSafe(tasksContent);
-      taskIds = tasks.map(t => t.id);
-      existingTaskFiles = tasks.map(t => `tasks/${t.id}.md`);
-    }
-  }
-
-  const briefHash = readBriefHash(projectDir, sessionId);
+  const briefHashFromFile = readBriefHash(projectDir, sessionId);
+  const briefHash = briefHashFromFile ?? hashTaskBrief(state.tasks);
   const sourceCommit = readGitHead(projectDir);
+  const generatedAt = session.completedAt !== null
+    ? new Date(session.completedAt).toISOString()
+    : new Date(session.startedAt).toISOString();
 
   const manifest: Record<string, unknown> = {
     packVersion: '1',
     diptychVersion,
-    generatedAt: new Date().toISOString(),
-    sessionId,
-    ...(briefHash !== null ? { briefHash } : {}),
+    generatedAt,
+    sessionId: session.id,
+    briefHash,
     ...(sourceCommit !== null ? { sourceCommit } : {}),
     target: 'live-mcp',
-    mode: session?.summary?.mode,
+    mode: summary.mode,
     taskIds,
     artifacts: {
       ...(specExists ? { spec: 'spec.md' } : {}),
       ...(planExists ? { plan: 'plan.md' } : {}),
       tasks: existingTaskFiles,
     },
+    validation: {},
   };
 
   return manifest;
@@ -186,11 +214,13 @@ export function createResolver(config: McpResolverConfig): McpResolver {
     for (const id of sessionIds) {
       const sDir = sessionDir(projectDir, id);
 
-      descriptors.push({
-        uri: `${sessionBase(id)}/manifest.json`,
-        name: `Session manifest (${id})`,
-        mimeType: 'application/json',
-      });
+      if (hasCanonicalManifestArtifacts(projectDir, id)) {
+        descriptors.push({
+          uri: `${sessionBase(id)}/manifest.json`,
+          name: `Session manifest (${id})`,
+          mimeType: 'application/json',
+        });
+      }
 
       descriptors.push({
         uri: `${sessionBase(id)}/tasks`,
@@ -204,7 +234,7 @@ export function createResolver(config: McpResolverConfig): McpResolver {
         { file: EVIDENCE_FILE, uri: `${sessionBase(id)}/evidence.json`, name: `Evidence (${id})`, mimeType: 'application/json' },
         { file: DRIFT_REPORT_FILE, uri: `${sessionBase(id)}/drift-report.json`, name: `Drift report (${id})`, mimeType: 'application/json' },
         { file: STATE_FILE, uri: `${sessionBase(id)}/state.json`, name: `Workflow state (${id})`, mimeType: 'application/json' },
-        { file: 'summary.json', uri: `${sessionBase(id)}/summary.json`, name: `Summary (${id})`, mimeType: 'application/json' },
+        { file: SUMMARY_FILE, uri: `${sessionBase(id)}/summary.json`, name: `Summary (${id})`, mimeType: 'application/json' },
       ];
 
       for (const entry of conditionalFiles) {
@@ -262,6 +292,7 @@ export function createResolver(config: McpResolverConfig): McpResolver {
 
       if (resource === 'manifest.json') {
         const manifest = buildManifest(projectDir, id, diptychVersion);
+        if (manifest === null) return null;
         return { uri, mimeType: 'application/json', text: JSON.stringify(manifest, null, 2) };
       }
 
@@ -324,7 +355,7 @@ export function createResolver(config: McpResolverConfig): McpResolver {
       }
 
       if (resource === 'summary.json') {
-        const content = readFileSafe(join(sDir, 'summary.json'));
+        const content = readFileSafe(join(sDir, SUMMARY_FILE));
         if (!content) return null;
         return { uri, mimeType: 'application/json', text: content };
       }

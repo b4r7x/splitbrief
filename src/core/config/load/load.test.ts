@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
-import { createDefaultConfig, loadConfig } from './load.js';
+import { createDefaultConfig, loadConfig, writeConfig } from './load.js';
 import { toYaml } from './transform.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
 import { DIPTYCH_DIR } from '../../paths.js';
@@ -30,6 +30,51 @@ function writeConfigYaml(projectDir: string, obj: Record<string, unknown>) {
   writeFileSync(join(dir, 'config.yaml'), YAML.stringify(obj), 'utf-8');
 }
 
+function optionalSectionsYaml(): Record<string, unknown> {
+  return {
+    codebase: {
+      enabled: true,
+      token_budget: 1234,
+      cache_dir: '.diptych-cache',
+      include: ['src/**'],
+      exclude: ['dist/**'],
+    },
+    hooks: {
+      builtin: { snapshots: false },
+    },
+    otel: {
+      enabled: true,
+      service_name: 'diptych-test',
+    },
+    snapshots: {
+      auto: {
+        pre_task: true,
+        post_task: false,
+        pre_final_review: true,
+      },
+    },
+    palette: {
+      custom_actions: [
+        {
+          id: 'refresh-docs',
+          label: 'Refresh docs',
+          description: 'Refresh documentation',
+          command: '/refresh',
+        },
+      ],
+    },
+    approval: {
+      enabled: true,
+      headless: true,
+      tiers: {
+        read: 'auto',
+        destructive: 'confirm',
+      },
+      feed_rejections_to_planner: false,
+    },
+  };
+}
+
 describe('config loading', () => {
 
   describe('loadConfig', () => {
@@ -51,6 +96,60 @@ describe('config loading', () => {
       const { config } = loadConfig(dir);
       expect(config.implementer.model).toBe('codellama:13b');
       expect(expectCli(config.planner).tool).toBe('claude-code');
+    });
+
+    it('preserves schema-supported optional top-level sections while merging defaults', () => {
+      const dir = join(TMP, 'optional-sections');
+      writeConfigYaml(dir, {
+        implementer: { model: 'codellama:13b' },
+        ...optionalSectionsYaml(),
+      });
+
+      const { config } = loadConfig(dir);
+
+      expect(config.codebase).toMatchObject({
+        enabled: true,
+        tokenBudget: 1234,
+        cacheDir: '.diptych-cache',
+        include: ['src/**'],
+        exclude: ['dist/**'],
+      });
+      expect(config.hooks).toEqual({ builtin: { snapshots: false } });
+      expect(config.otel).toEqual({ enabled: true, serviceName: 'diptych-test' });
+      expect(config.snapshots).toEqual({
+        auto: { preTask: true, postTask: false, preFinalReview: true },
+      });
+      expect(config.palette?.customActions?.[0]).toMatchObject({
+        id: 'refresh-docs',
+        label: 'Refresh docs',
+        command: '/refresh',
+      });
+      expect(config.approval).toEqual({
+        enabled: true,
+        headless: true,
+        tiers: { read: 'auto', destructive: 'confirm' },
+        feedRejectionsToPlanner: false,
+      });
+    });
+
+    it('writes loaded optional top-level sections back to YAML', () => {
+      const dir = join(TMP, 'optional-sections-write');
+      writeConfigYaml(dir, {
+        implementer: { model: 'codellama:13b' },
+        ...optionalSectionsYaml(),
+      });
+
+      const { config } = loadConfig(dir);
+      writeConfig(dir, config);
+
+      const written = YAML.parse(readFileSync(join(dir, DIPTYCH_DIR, 'config.yaml'), 'utf-8')) as Record<string, unknown>;
+      expect(written.codebase).toBeDefined();
+      expect(written.hooks).toBeDefined();
+      expect(written.otel).toBeDefined();
+      expect(written.snapshots).toBeDefined();
+      expect(written.palette).toBeDefined();
+      expect(written.approval).toBeDefined();
+      expect((written.palette as Record<string, unknown>).custom_actions).toBeDefined();
     });
 
     it('converts snake_case keys to camelCase and migrates commitPerTask', () => {

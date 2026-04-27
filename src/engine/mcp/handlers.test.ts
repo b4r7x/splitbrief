@@ -6,6 +6,7 @@ import {
   METHOD_NOT_FOUND,
   INVALID_PARAMS,
   MCP_PROTOCOL_VERSION,
+  SUPPORTED_PROTOCOL_VERSIONS,
 } from './handlers.js';
 import type { McpResolver } from './resolver.js';
 import type { McpResourceDescriptor, McpResourceContent } from './types.js';
@@ -37,7 +38,7 @@ function msg(payload: Record<string, unknown>): string {
 describe('handleMessage', () => {
   it('initialize → correct capabilities, protocolVersion, serverInfo', () => {
     const result = handleMessage(
-      msg({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05' } }),
+      msg({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: MCP_PROTOCOL_VERSION } }),
       makeResolver(),
       SERVER_VERSION,
     );
@@ -170,7 +171,7 @@ describe('handleMessage', () => {
     expect(result.body.error.code).toBe(INVALID_REQUEST);
   });
 
-  it('Missing method field → INVALID_REQUEST -32600', () => {
+  it('Missing method field with id → INVALID_REQUEST -32600', () => {
     const result = handleMessage(
       msg({ jsonrpc: '2.0', id: 11 }),
       makeResolver(),
@@ -179,5 +180,69 @@ describe('handleMessage', () => {
     expect(result.kind).toBe('error');
     if (result.kind !== 'error') return;
     expect(result.body.error.code).toBe(INVALID_REQUEST);
+  });
+
+  it('Missing method field without id → INVALID_REQUEST -32600', () => {
+    const result = handleMessage(
+      msg({ jsonrpc: '2.0' }),
+      makeResolver(),
+      SERVER_VERSION,
+    );
+    expect(result.kind).toBe('error');
+    if (result.kind !== 'error') return;
+    expect(result.body.error.code).toBe(INVALID_REQUEST);
+    expect(result.body.id).toBeNull();
+  });
+
+  it('notification without id (no id field) → kind notification, no response', () => {
+    const result = handleMessage(
+      msg({ jsonrpc: '2.0', method: 'initialize', params: {} }),
+      makeResolver(),
+      SERVER_VERSION,
+    );
+    expect(result.kind).toBe('notification');
+  });
+
+  it('id present as object → INVALID_REQUEST -32600', () => {
+    const result = handleMessage(
+      msg({ jsonrpc: '2.0', id: { nested: true }, method: 'initialize' }),
+      makeResolver(),
+      SERVER_VERSION,
+    );
+    expect(result.kind).toBe('error');
+    if (result.kind !== 'error') return;
+    expect(result.body.error.code).toBe(INVALID_REQUEST);
+  });
+
+  it('id present as boolean → INVALID_REQUEST -32600', () => {
+    const result = handleMessage(
+      msg({ jsonrpc: '2.0', id: true, method: 'initialize' }),
+      makeResolver(),
+      SERVER_VERSION,
+    );
+    expect(result.kind).toBe('error');
+    if (result.kind !== 'error') return;
+    expect(result.body.error.code).toBe(INVALID_REQUEST);
+  });
+
+  it('id present as array → INVALID_REQUEST -32600', () => {
+    const result = handleMessage(
+      msg({ jsonrpc: '2.0', id: [], method: 'initialize' }),
+      makeResolver(),
+      SERVER_VERSION,
+    );
+    expect(result.kind).toBe('error');
+    if (result.kind !== 'error') return;
+    expect(result.body.error.code).toBe(INVALID_REQUEST);
+  });
+
+  it('MCP_PROTOCOL_VERSION is current Streamable HTTP version', () => {
+    expect(MCP_PROTOCOL_VERSION).toBe('2025-11-25');
+  });
+
+  it('SUPPORTED_PROTOCOL_VERSIONS includes only current Streamable HTTP version', () => {
+    expect(SUPPORTED_PROTOCOL_VERSIONS.has(MCP_PROTOCOL_VERSION)).toBe(true);
+    expect(SUPPORTED_PROTOCOL_VERSIONS.has('2024-11-05')).toBe(false);
+    expect(SUPPORTED_PROTOCOL_VERSIONS.has('2025-06-18')).toBe(false);
   });
 });

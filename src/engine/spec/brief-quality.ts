@@ -146,7 +146,7 @@ export function evaluateBriefQuality(tasks: Task[]): BriefQualityReport {
     if (!task.scope || (!task.scope.inBounds?.length && !task.scope.outOfBounds?.length)) {
       issues.push({
         taskId: task.id,
-        severity: 'warning',
+        severity: 'error',
         code: 'missing_scope',
         message: `Task ${task.id} has no scope definition`,
       });
@@ -155,7 +155,7 @@ export function evaluateBriefQuality(tasks: Task[]): BriefQualityReport {
     if (!task.evidence || task.evidence.length === 0) {
       issues.push({
         taskId: task.id,
-        severity: 'warning',
+        severity: 'error',
         code: 'missing_evidence',
         message: `Task ${task.id} has no evidence defined`,
       });

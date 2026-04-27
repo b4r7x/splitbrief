@@ -75,5 +75,25 @@ describe('pricing-resolver', () => {
       expect(result.cacheReadPer1M).toBeUndefined();
       expect(result.cacheWritePer1M).toBeUndefined();
     });
+
+    it('merges bundled cache pricing when runtime catalog provides pricing without cache fields', () => {
+      // Simulate a runtime model cache entry for anthropic/claude-sonnet-4-6 with pricing
+      // but no cache rates (DetectedModel has no cache pricing fields). We expect resolvePricing
+      // to merge the bundled fallback's verified cache rates so cost math stays cache-aware.
+      const fakeCache = {
+        getModelsDevCatalog: () => null,
+        getProviderModels: (provider: string) => {
+          if (provider !== 'anthropic') return null;
+          return [
+            { id: 'claude-sonnet-4-6', pricingInput: 3, pricingOutput: 15 },
+          ];
+        },
+      };
+      const result = resolvePricing('anthropic', fakeCache, 'claude-sonnet-4-6');
+      expect(result.isPriced).toBe(true);
+      expect(result.source).toBe('runtime');
+      expect(result.cacheReadPer1M).toBe(0.30);
+      expect(result.cacheWritePer1M).toBe(3.75);
+    });
   });
 });

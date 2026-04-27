@@ -36,6 +36,11 @@ export function openExternalEditor(task: Task, mode: 'edit' | 'split', sessionDi
     rmSync(tmpPath, { force: true });
     return;
   }
+  if (result.status !== 0) {
+    planEditorStore.setSaveError(`Editor exited with status ${result.status ?? 'unknown'}. Edit cancelled.`);
+    rmSync(tmpPath, { force: true });
+    return;
+  }
 
   let editedContent: string;
   try {
@@ -48,7 +53,13 @@ export function openExternalEditor(task: Task, mode: 'edit' | 'split', sessionDi
   rmSync(tmpPath, { force: true });
 
   if (mode === 'edit') {
-    const parsed = parseTasks(editedContent);
+    let parsed: Task[];
+    try {
+      parsed = parseTasks(editedContent);
+    } catch (err) {
+      planEditorStore.setSaveError(`Edit parse failed: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
     if (parsed.length !== 1) {
       planEditorStore.setSaveError('Edit mode expects exactly 1 task. Use split mode (s) for multiple tasks.');
       return;

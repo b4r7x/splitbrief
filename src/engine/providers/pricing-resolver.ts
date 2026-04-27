@@ -131,25 +131,43 @@ export function resolvePricing(providerId: string, cache: ModelCacheAccessor = N
   const effectiveModelId = getEffectiveModelId(providerId, modelId);
   if (!effectiveModelId) return makeUnpriced(providerId, modelId);
 
+  // models-dev and runtime catalogs do not currently expose cache pricing fields, so when they
+  // produce a priced result we merge cache rates from the bundled fallback for the same
+  // provider/model. This keeps cache-aware cost math consistent regardless of the data source.
+  const bundled = findKnownModel(providerId, effectiveModelId);
+
   const modelsDev = lookupModelsDevModel(providerId, effectiveModelId, cache);
   if (modelsDev?.pricingInput !== undefined && modelsDev.pricingOutput !== undefined) {
-    return makePricedResult(effectiveModelId, modelsDev.pricingInput, modelsDev.pricingOutput, 'models-dev');
+    return makePricedResult(
+      effectiveModelId,
+      modelsDev.pricingInput,
+      modelsDev.pricingOutput,
+      'models-dev',
+      bundled?.pricingCacheRead,
+      bundled?.pricingCacheWrite,
+    );
   }
 
   const runtime = lookupRuntimeModel(providerId, effectiveModelId, cache);
   if (runtime?.pricingInput !== undefined && runtime.pricingOutput !== undefined) {
-    return makePricedResult(effectiveModelId, runtime.pricingInput, runtime.pricingOutput, 'runtime');
-  }
-
-  const fallback = findKnownModel(providerId, effectiveModelId);
-  if (fallback?.pricingInput !== undefined && fallback.pricingOutput !== undefined) {
     return makePricedResult(
       effectiveModelId,
-      fallback.pricingInput,
-      fallback.pricingOutput,
+      runtime.pricingInput,
+      runtime.pricingOutput,
+      'runtime',
+      bundled?.pricingCacheRead,
+      bundled?.pricingCacheWrite,
+    );
+  }
+
+  if (bundled?.pricingInput !== undefined && bundled.pricingOutput !== undefined) {
+    return makePricedResult(
+      effectiveModelId,
+      bundled.pricingInput,
+      bundled.pricingOutput,
       'bundled-fallback',
-      fallback.pricingCacheRead,
-      fallback.pricingCacheWrite,
+      bundled.pricingCacheRead,
+      bundled.pricingCacheWrite,
     );
   }
 

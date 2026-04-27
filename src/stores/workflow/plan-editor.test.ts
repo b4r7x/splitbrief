@@ -66,6 +66,21 @@ describe('planEditorStore', () => {
       expect(planEditorStore.get().tasks).toEqual(tasks);
       expect(planEditorStore.get().dirty).toBe(true);
     });
+
+    it('does not mark dirty when the task list is unchanged', () => {
+      const tasks = [makeTask({ id: 'T001' })];
+      planEditorStore.initEditor(tasks);
+      planEditorStore.setTasks(tasks);
+      expect(planEditorStore.get().dirty).toBe(false);
+    });
+
+    it('clears stale save errors after a successful task edit', () => {
+      const task = makeTask({ id: 'T001' });
+      planEditorStore.initEditor([task]);
+      planEditorStore.setSaveError('old parse error');
+      planEditorStore.setTasks([{ ...task, title: 'Edited title' }]);
+      expect(planEditorStore.get().saveError).toBeNull();
+    });
   });
 
   describe('toggleExpand', () => {

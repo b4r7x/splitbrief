@@ -8,6 +8,7 @@ import {
 } from 'node:fs';
 import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { simpleGit } from 'simple-git';
 import type { SnapshotFileEntry, SnapshotManifest, SnapshotPhase } from '../../core/schemas/snapshot.js';
 import { SnapshotManifestSchema } from '../../core/schemas/snapshot.js';
 import {
@@ -19,17 +20,23 @@ import {
   snapshotsDir,
   SNAPSHOT_BASELINE_ID,
   SNAPSHOT_MANIFEST_FILE,
+  TREES_DIR,
 } from '../../core/paths.js';
 import { ensureSecureDir, SECURE_FILE_MODE } from '../../lib/fs.js';
 import type { EventBus } from '../events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 
 export function encodeSnapshotPath(relativePath: string): string {
-  return relativePath.split('/').map(segment => encodeURIComponent(segment)).join('__');
+  // Collision-free encoding: hex of the UTF-8 bytes of the relative path.
+  // Old `path.replaceAll('/', '__')`-style schemes collided when a path
+  // already contained `__` (for example `a/b.ts` and `a__b.ts` mapped to
+  // the same blob name). Hex is unambiguous, filesystem-safe everywhere,
+  // and trivially reversible without escape semantics.
+  return Buffer.from(relativePath, 'utf8').toString('hex');
 }
 
 export function decodeSnapshotPath(encodedName: string): string {
-  return encodedName.split('__').map(segment => decodeURIComponent(segment)).join('/');
+  return Buffer.from(encodedName, 'hex').toString('utf8');
 }
 
 export function generateSnapshotId(now?: Date): string {
@@ -98,7 +105,7 @@ export async function hashFile(filePath: string): Promise<string | null> {
   });
 }
 
-const ALWAYS_EXCLUDED = ['.git', '.diptych', 'node_modules'];
+const ALWAYS_EXCLUDED = ['.git', '.diptych', 'node_modules', TREES_DIR];
 
 async function readdirRecursive(dir: string, base: string): Promise<string[]> {
   let entries: import('node:fs').Dirent[];
@@ -123,34 +130,19 @@ async function readdirRecursive(dir: string, base: string): Promise<string[]> {
   return results;
 }
 
-function parseGitignorePrefixes(content: string): string[] {
-  return content
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.length > 0 && !line.startsWith('#'));
-}
-
-function isIgnoredByGitignore(rel: string, prefixes: string[]): boolean {
-  for (const prefix of prefixes) {
-    const normalized = prefix.endsWith('/') ? prefix : prefix;
-    if (rel === normalized || rel.startsWith(`${normalized}/`) || rel.startsWith(normalized)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 export async function collectTrackedFiles(projectDir: string): Promise<string[]> {
-  let gitignorePrefixes: string[] = [];
+  const allFiles = await readdirRecursive(projectDir, projectDir);
+  if (allFiles.length === 0) return [];
+
+  let ignoredPaths: string[] = [];
   try {
-    const gitignoreContent = await readFile(join(projectDir, '.gitignore'), 'utf-8');
-    gitignorePrefixes = parseGitignorePrefixes(gitignoreContent);
+    ignoredPaths = await simpleGit(projectDir).checkIgnore(allFiles);
   } catch {
-    // No .gitignore — that's fine
+    ignoredPaths = [];
   }
 
-  const allFiles = await readdirRecursive(projectDir, projectDir);
-  const filtered = allFiles.filter(rel => !isIgnoredByGitignore(rel, gitignorePrefixes));
+  const ignored = new Set(ignoredPaths);
+  const filtered = allFiles.filter(rel => !ignored.has(rel));
   filtered.sort();
   return filtered;
 }

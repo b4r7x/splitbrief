@@ -83,6 +83,12 @@ function mergeWithDefaults(migrated: Record<string, unknown>): Record<string, un
       ? { ...defaults.sessions, ...narrowRecord(migrated['sessions']) }
       : defaults.sessions,
     ...(migrated['escalation'] !== undefined && { escalation: migrated['escalation'] }),
+    ...(migrated['codebase'] !== undefined && { codebase: migrated['codebase'] }),
+    ...(migrated['hooks'] !== undefined && { hooks: migrated['hooks'] }),
+    ...(migrated['otel'] !== undefined && { otel: migrated['otel'] }),
+    ...(migrated['snapshots'] !== undefined && { snapshots: migrated['snapshots'] }),
+    ...(migrated['palette'] !== undefined && { palette: migrated['palette'] }),
+    ...(migrated['approval'] !== undefined && { approval: migrated['approval'] }),
   };
 }
 

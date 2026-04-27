@@ -1,4 +1,5 @@
-export const TOP_FIXED_CHROME_ROWS = 3;
+// Header (1) + AgentStatusRow (1) + CostStatusLine (1) + spacer (1) = 4 rows.
+export const TOP_FIXED_CHROME_ROWS = 4;
 export const CONFIG_CHROME_ROWS = 2;
 export const BOTTOM_FIXED_CHROME_ROWS = 2;
 

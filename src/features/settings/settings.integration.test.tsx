@@ -23,11 +23,11 @@ describe('settings overlay integration', () => {
   it('space toggles a boolean field and saves to disk', async () => {
     expect(configStore.get().config?.validation.typecheck).toBe(true);
 
+    overlayStore.open('settings', 'validation.typecheck');
     const ui = renderFeature(<SettingsOverlay />);
     await tick(20);
-    // Filter narrows to validation.typecheck (label "Type Check").
-    ui.stdin.write('type c');
-    await tick(20);
+    expect(ui.lastFrame()).toContain('Type Check');
+
     ui.stdin.write(' ');
     await tick(20);
 
@@ -36,11 +36,11 @@ describe('settings overlay integration', () => {
   });
 
   it('typing edits a number, Enter commits via validation', async () => {
+    overlayStore.open('settings', 'workflow.maxRetries');
     const ui = renderFeature(<SettingsOverlay />);
     await tick(20);
+    expect(ui.lastFrame()).toContain('Max Retries');
 
-    ui.stdin.write('max retries');
-    await tick(20);
     ui.stdin.write('\r'); // Enter edit mode on the numeric field.
     await tick(20);
     ui.stdin.write('\x7f'); // backspace — clear seeded "3"
@@ -55,11 +55,11 @@ describe('settings overlay integration', () => {
   });
 
   it('Esc cancels an active edit without saving', async () => {
+    overlayStore.open('settings', 'workflow.maxRetries');
     const ui = renderFeature(<SettingsOverlay />);
     await tick(20);
+    expect(ui.lastFrame()).toContain('Max Retries');
 
-    ui.stdin.write('max retries');
-    await tick(20);
     ui.stdin.write('\r');
     await tick(20);
     ui.stdin.write('\x7f');

@@ -3,7 +3,7 @@ import { mkdtempSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from './approvals-store.js';
+import { readApprovalsStore, readApprovalsStoreStrict, writeApprovalsStore, clearGrantsByScope } from './approvals-store.js';
 import type { ApprovalsStore, ApprovalGrant } from '../../core/schemas/approval-store.js';
 import { DIPTYCH_DIR } from '../../core/paths.js';
 
@@ -28,12 +28,18 @@ describe('readApprovalsStore', () => {
     expect(result).toEqual({ version: 1, grants: [] });
   });
 
-  it('returns empty store when file contains corrupted JSON', () => {
+  it('throws when file contains corrupted JSON', () => {
     const diptychDir = join(tmpDir, DIPTYCH_DIR);
     mkdirSync(diptychDir, { recursive: true });
     writeFileSync(join(diptychDir, 'approvals.json'), '{not valid json', 'utf-8');
-    const result = readApprovalsStore(tmpDir);
-    expect(result).toEqual({ version: 1, grants: [] });
+    expect(() => readApprovalsStore(tmpDir)).toThrow(/approval store is corrupt/);
+  });
+
+  it('strict reader also throws when file contains corrupted JSON', () => {
+    const diptychDir = join(tmpDir, DIPTYCH_DIR);
+    mkdirSync(diptychDir, { recursive: true });
+    writeFileSync(join(diptychDir, 'approvals.json'), '{not valid json', 'utf-8');
+    expect(() => readApprovalsStoreStrict(tmpDir)).toThrow(/approval store is corrupt/);
   });
 
   it('returns parsed store when file is valid', () => {

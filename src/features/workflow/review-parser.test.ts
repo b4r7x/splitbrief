@@ -151,18 +151,18 @@ describe('parseReviewCommand', () => {
 });
 
 describe('createReviewInputHandler – brief review edit mode', () => {
-  it.each(['e', 'edit'])('sets runtime rich mode for %s during brief review', async (command) => {
+  it.each(['e', 'edit'])('opens persisted tasks.md and resolves edit for %s during brief review', async (command) => {
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
     reviewStore.setReviewFile('/tmp/tasks.md');
+    vi.stubEnv('EDITOR', 'true');
     const resolve = vi.fn();
     const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
 
     await handleInput(command);
 
-    expect(planEditorStore.get().runtimeRichMode).toBe(true);
-    expect(resolve).not.toHaveBeenCalled();
+    expect(planEditorStore.get().runtimeRichMode).toBe(false);
+    expect(resolve).toHaveBeenCalledWith({ approved: false, action: 'edit' });
     expect(feedbackStore.get().isError).toBe(false);
-    expect(feedbackStore.get().message).toContain('rich task editor');
   });
 
   it('keeps external editor behavior for non-brief reviews', async () => {

@@ -1,30 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { registerStartCommand } from './start.js';
-import { DIPTYCH_DIR, STATE_FILE } from '../../core/paths.js';
+import { CONFIG_FILE, DIPTYCH_DIR, STATE_FILE, worktreePath } from '../../core/paths.js';
 import { isCliError } from '../errors.js';
+import type { SpawnServerOptions } from '../../engine/ipc/spawn-server.js';
 
-vi.mock('../../engine/git/worktree.js', () => ({
-  createWorktree: vi.fn(),
-  detectWorktree: vi.fn().mockResolvedValue(null),
+const spawnServerMock = vi.hoisted(() => vi.fn());
+
+vi.mock('../../engine/ipc/spawn-server.js', () => ({
+  spawnServer: spawnServerMock,
 }));
-
-vi.mock('../../core/migration/executor.js', () => ({
-  maybeMigrate: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('../setup.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../setup.js')>();
-  return {
-    ...actual,
-    setupWorkflow: vi.fn().mockResolvedValue({ useFullscreen: false, useMouse: false }),
-    ensureGitAndConfig: vi.fn().mockResolvedValue(undefined),
-  };
-});
 
 vi.mock('../init-stores.js', () => ({
   initStores: vi.fn().mockResolvedValue(undefined),
@@ -34,32 +23,34 @@ vi.mock('../render.js', () => ({
   renderApp: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../stores/navigation/router.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../stores/navigation/router.js')>();
-  return {
-    ...actual,
-    routerStore: { init: vi.fn() },
-  };
-});
-
-vi.mock('../../core/sessions/lifecycle.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../core/sessions/lifecycle.js')>();
-  return {
-    ...actual,
-    beginSession: vi.fn().mockReturnValue('test-session-id'),
-  };
-});
-
-import { createWorktree, detectWorktree } from '../../engine/git/worktree.js';
-import { setupWorkflow } from '../setup.js';
-import { maybeMigrate } from '../../core/migration/executor.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import { spawnServer } from '../../engine/ipc/spawn-server.js';
+import { renderApp } from '../render.js';
+import { initStores } from '../init-stores.js';
 
 let tmp: string;
 
 beforeEach(() => {
   tmp = createTempDir('start-command-test');
   createTestGitRepo(tmp);
+  routerStore.init({ screen: 'home' });
+  vi.mocked(renderApp).mockClear();
+  vi.mocked(initStores).mockClear();
+  vi.mocked(spawnServer).mockImplementation(async (opts: SpawnServerOptions) => {
+    mkdirSync(opts.sessionDir, { recursive: true });
+    writeFileSync(
+      join(opts.sessionDir, 'server-args.json'),
+      JSON.stringify({
+        sessionId: opts.sessionId,
+        projectDir: opts.projectDir,
+        feature: opts.feature,
+        mode: opts.mode,
+        configPath: opts.configPath,
+        overrides: opts.overrides ?? {},
+      }, null, 2),
+    );
+    return { ok: true, pid: 1234, sessionId: opts.sessionId };
+  });
 });
 
 afterEach(() => {
@@ -79,6 +70,18 @@ function writeLiveSession(projectDir: string, sessionId: string): void {
   );
   mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
   writeFileSync(join(projectDir, DIPTYCH_DIR, 'active'), sessionId + '\n');
+}
+
+function writeConfigMarker(projectDir: string): void {
+  mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+  writeFileSync(join(projectDir, DIPTYCH_DIR, CONFIG_FILE), '# test config marker\n');
+}
+
+function readOnlySessionArtifact(projectDir: string, artifact: string): unknown {
+  const sessionsDir = join(projectDir, DIPTYCH_DIR, 'sessions');
+  const sessionIds = readdirSync(sessionsDir);
+  expect(sessionIds).toHaveLength(1);
+  return JSON.parse(readFileSync(join(sessionsDir, sessionIds[0] ?? '', artifact), 'utf-8'));
 }
 
 async function runStart(args: string[]): Promise<void> {
@@ -109,72 +112,42 @@ describe('start command — concurrency guard', () => {
 });
 
 describe('start command — --worktree flag', () => {
-  beforeEach(() => {
-    vi.mocked(createWorktree).mockReset();
-    vi.mocked(setupWorkflow).mockResolvedValue({ useFullscreen: false, useMouse: false, projectDir: tmp });
-  });
-
-  it('passes explicit slug to createWorktree when --worktree my-feature is given', async () => {
-    vi.mocked(createWorktree).mockResolvedValue(`${tmp}/.trees/my-feature`);
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-
-    await runStart(['--project', tmp, '--worktree', 'my-feature', 'implement X']);
-
-    expect(vi.mocked(createWorktree)).toHaveBeenCalledOnce();
-    const callArg = vi.mocked(createWorktree).mock.calls[0]?.[0];
-    expect(callArg?.slug).toBe('my-feature');
-    expect(callArg?.projectDir).toBe(tmp);
-
+  afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('slugifies feature when --worktree is bare and feature is given', async () => {
-    const wtPath = `${tmp}/.trees/add-auth`;
-    vi.mocked(createWorktree).mockResolvedValue(wtPath);
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+  it('starts in an explicitly named worktree when --worktree my-feature is given', async () => {
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    let capturedSlug: string | undefined;
-    vi.mocked(createWorktree).mockImplementation(async (o) => {
-      capturedSlug = o.slug;
-      return wtPath;
-    });
+    await runStart(['--project', tmp, '--worktree', 'my-feature', 'implement X']);
+
+    expect(existsSync(worktreePath(tmp, 'my-feature'))).toBe(true);
+    expect(routerStore.get()).toMatchObject({ screen: 'setup', feature: 'implement X' });
+    expect(consoleSpy.mock.calls.flat().join(' ')).toContain('.trees/my-feature');
+  });
+
+  it('slugifies feature when --worktree is bare and feature is given', async () => {
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     // Feature before flag so commander parses 'add auth' as positional, --worktree as bare
     await runStart(['--project', tmp, 'add auth', '--worktree']);
 
-    expect(capturedSlug).toBe('add-auth');
-    vi.restoreAllMocks();
+    expect(existsSync(worktreePath(tmp, 'add-auth'))).toBe(true);
+    expect(consoleSpy.mock.calls.flat().join(' ')).toContain('.trees/add-auth');
   });
 
   it('falls back to slug "session" when --worktree is bare and no feature is given', async () => {
-    const wtPath = `${tmp}/.trees/session`;
-    vi.mocked(createWorktree).mockResolvedValue(wtPath);
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    // Simulate bare --worktree (commander sets opts.worktree = true)
-    // We test this by directly invoking the action handler logic through a custom program
-    const program = new Command();
-    program.exitOverride();
-    program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
+    await runStart(['--project', tmp, '--worktree']);
 
-    let capturedSlug: string | undefined;
-    vi.mocked(createWorktree).mockImplementation(async (opts) => {
-      capturedSlug = opts.slug;
-      return wtPath;
-    });
-
-    registerStartCommand(program);
-    // Pass --worktree with no value — commander sets opts.worktree = true (boolean)
-    await program.parseAsync(['node', 'diptych', 'start', '--project', tmp, '--worktree']);
-
-    expect(capturedSlug).toBe('session');
-    vi.restoreAllMocks();
+    expect(existsSync(worktreePath(tmp, 'session'))).toBe(true);
+    expect(consoleSpy.mock.calls.flat().join(' ')).toContain('.trees/session');
   });
 
   it('wraps createWorktree errors as cliError with exitCode 1', async () => {
-    vi.mocked(createWorktree).mockRejectedValue(
-      new Error('Branch diptych/my-feature already exists.'),
-    );
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await runStart(['--project', tmp, '--worktree', 'my-feature', 'implement X']);
 
     let captured: unknown;
     try {
@@ -188,60 +161,136 @@ describe('start command — --worktree flag', () => {
     expect((captured as Error).message).toContain('Branch diptych/my-feature already exists.');
   });
 
-  it('sets opts.project to the returned worktree path after createWorktree succeeds', async () => {
-    const wtPath = `${tmp}/.trees/my-feature`;
-    vi.mocked(createWorktree).mockResolvedValue(wtPath);
-    vi.mocked(maybeMigrate).mockClear();
+  it('creates setup artifacts in the returned worktree path after createWorktree succeeds', async () => {
+    const wtPath = worktreePath(tmp, 'my-feature');
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
     await runStart(['--project', tmp, '--worktree', 'my-feature', 'implement X']);
 
-    // maybeMigrate is called with resolveProjectDir(opts.project) — after the worktree block
-    // sets opts.project = wtPath, so maybeMigrate receives wtPath
-    expect(vi.mocked(maybeMigrate)).toHaveBeenCalledOnce();
-    expect(vi.mocked(maybeMigrate).mock.calls[0]?.[0]).toBe(wtPath);
+    expect(existsSync(join(wtPath, DIPTYCH_DIR, CONFIG_FILE))).toBe(true);
+    expect(existsSync(join(tmp, DIPTYCH_DIR, CONFIG_FILE))).toBe(false);
+  });
 
-    vi.restoreAllMocks();
+  it('applies --worktree before --detach creates detached session artifacts', async () => {
+    const wtPath = worktreePath(tmp, 'detached-feature');
+    vi.mocked(spawnServer).mockClear();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runStart(['--project', tmp, '--worktree', 'detached-feature', '--detach', 'implement X']);
+
+    const artifact = readOnlySessionArtifact(wtPath, 'server-args.json') as { projectDir?: string; configPath?: string };
+    expect(artifact.projectDir).toBe(wtPath);
+    expect(artifact.configPath).toBe(join(wtPath, DIPTYCH_DIR, CONFIG_FILE));
+
+    const output = vi.mocked(console.log).mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(output).toContain(`cd ${wtPath} && diptych attach`);
+  });
+
+  it('persists detached CLI overrides in the server args artifact', async () => {
+    vi.mocked(spawnServer).mockClear();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runStart([
+      '--project', tmp,
+      '--detach',
+      '--planner', 'codex',
+      '--planner-model', 'gpt-5',
+      '--planner-command', 'plan-it',
+      '--implementer', 'openrouter',
+      '--implementer-model', 'qwen/qwen3-coder',
+      '--implementer-command', 'build-it',
+      '--model', 'alias-model',
+      '--provider', 'deepseek',
+      '--approve', 'all',
+      '--budget', '4.25',
+      '--planner-effort', 'high',
+      '--mode', 'quick',
+      '--auto',
+      'implement X',
+    ]);
+
+    const artifact = readOnlySessionArtifact(tmp, 'server-args.json') as {
+      mode?: string;
+      configPath?: string;
+      overrides?: unknown;
+    };
+    expect(artifact).toMatchObject({
+      mode: 'quick',
+      configPath: join(tmp, DIPTYCH_DIR, CONFIG_FILE),
+      overrides: {
+        planner: { tool: 'codex', model: 'gpt-5', command: 'plan-it' },
+        implementer: { tool: 'openrouter', model: 'qwen/qwen3-coder', command: 'build-it' },
+        autoApprove: true,
+        approve: 'all',
+        mode: 'quick',
+        budget: 4.25,
+        plannerEffort: 'high',
+      },
+    });
+  });
+
+  it('rejects --detach without a feature argument before creating any worktree', async () => {
+    vi.mocked(spawnServer).mockClear();
+
+    let captured: unknown;
+    try {
+      await runStart(['--project', tmp, '--worktree', 'orphan', '--detach']);
+      throw new Error('expected start to throw');
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    expect((captured as Error).message).toContain('--detach requires a feature');
+    expect(existsSync(worktreePath(tmp, 'orphan'))).toBe(false);
+    expect(vi.mocked(spawnServer)).not.toHaveBeenCalled();
+  });
+
+  it('rejects --detach + --json before creating any worktree', async () => {
+    vi.mocked(spawnServer).mockClear();
+
+    let captured: unknown;
+    try {
+      await runStart([
+        '--project', tmp,
+        '--worktree', 'combo',
+        '--detach',
+        '--json',
+        'implement X',
+      ]);
+      throw new Error('expected start to throw');
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    expect((captured as Error).message).toContain('--detach and --json cannot be combined');
+    expect(existsSync(worktreePath(tmp, 'combo'))).toBe(false);
+    expect(vi.mocked(spawnServer)).not.toHaveBeenCalled();
   });
 });
 
 describe('start command — worktree indicator passthrough', () => {
-  beforeEach(() => {
-    vi.mocked(setupWorkflow).mockResolvedValue({ useFullscreen: false, useMouse: false, projectDir: tmp });
-    vi.mocked(detectWorktree).mockReset();
-  });
-
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('passes worktreeName=slug to routerStore.init when detectWorktree resolves to a slug', async () => {
-    vi.mocked(detectWorktree).mockResolvedValue('my-feature');
+  it('routes workflow with worktreeName=slug when started inside a git worktree', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await runStart(['--project', tmp, '--worktree', 'my-feature', 'prepare branch']);
+    const wtPath = worktreePath(tmp, 'my-feature');
+    routerStore.init({ screen: 'home' });
 
-    await runStart(['--project', tmp, 'implement X']);
+    await runStart(['--project', wtPath, 'implement X']);
 
-    expect(vi.mocked(routerStore.init)).toHaveBeenCalledWith(
-      expect.objectContaining({ screen: 'workflow', worktreeName: 'my-feature' }),
-    );
+    expect(routerStore.get()).toMatchObject({ screen: 'workflow', worktreeName: 'my-feature' });
   });
 
-  it('passes worktreeName=undefined to routerStore.init when detectWorktree rejects', async () => {
-    vi.mocked(detectWorktree).mockRejectedValue(new Error('git error'));
+  it('routes workflow without worktreeName when started in the base repository', async () => {
+    writeConfigMarker(tmp);
 
     await runStart(['--project', tmp, 'implement X']);
 
-    expect(vi.mocked(routerStore.init)).toHaveBeenCalledWith(
-      expect.objectContaining({ screen: 'workflow', worktreeName: undefined }),
-    );
-  });
-
-  it('passes worktreeName=undefined to routerStore.init when detectWorktree returns null', async () => {
-    vi.mocked(detectWorktree).mockResolvedValue(null);
-
-    await runStart(['--project', tmp, 'implement X']);
-
-    expect(vi.mocked(routerStore.init)).toHaveBeenCalledWith(
-      expect.objectContaining({ screen: 'workflow', worktreeName: undefined }),
-    );
+    expect(routerStore.get()).toMatchObject({ screen: 'workflow', worktreeName: undefined });
   });
 });

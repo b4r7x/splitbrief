@@ -4,7 +4,7 @@ import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { configStore } from '../../../stores/project/config.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { formatCost } from '../../../core/formatting.js';
-import { useCostStats } from '../hooks/use-cost-stats.js';
+import { formatSpentText, useCostStats, type CostPricingState } from '../hooks/use-cost-stats.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
 
 export function formatSpent(cost: number): string {
@@ -16,7 +16,9 @@ export function formatProjected(
   totalActualCost: number,
   prediction: CostPrediction | null,
   totalTasks: number,
+  pricingState: CostPricingState = 'priced',
 ): string {
+  if (pricingState !== 'priced' && pricingState !== 'mixed') return 'proj n/a';
   if (completedCount > 0) {
     const projected = (totalActualCost / completedCount) * totalTasks;
     return `proj ${formatCost(projected)}`;
@@ -55,7 +57,7 @@ export function CostStatusLine() {
   const tokens = tokensStore.use(s => s);
   const mode = configStore.use(s => s.config?.workflow?.mode);
   const maxBudget = configStore.use(s => s.config?.workflow?.maxBudget);
-  const { costBreakdown, totalTasks } = useCostStats();
+  const { costBreakdown, pricingState, totalTasks } = useCostStats();
 
   const totalCacheRead = Object.values(tokens.perPhase).reduce(
     (sum, p) => sum + p.cacheReadTokens,
@@ -65,12 +67,13 @@ export function CostStatusLine() {
   const implementerInput = tokens.tokenUsage?.implementerInput ?? 0;
   const totalInput = plannerInput + implementerInput;
 
-  const spentText = formatSpent(costBreakdown?.totalActualCost ?? 0);
+  const spentText = formatSpentText(costBreakdown, pricingState);
   const projText = formatProjected(
     tokens.completedTaskCount,
     costBreakdown?.totalActualCost ?? 0,
     tokens.prediction,
     totalTasks,
+    pricingState,
   );
   const budgetText = formatBudget(maxBudget);
   const planPct = totalInput > 0 ? formatPlanPct(plannerInput, totalInput) : null;

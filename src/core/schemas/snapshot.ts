@@ -29,3 +29,18 @@ export const SnapshotManifestSchema = z.object({
   trackedFileCount: z.number().nonnegative(),
 });
 export type SnapshotManifest = z.infer<typeof SnapshotManifestSchema>;
+
+export const RunSnapshotLedgerSchema = z.object({
+  version: z.literal(1),
+  sessionId: z.string(),
+  taskId: z.string().optional(),
+  taskIndex: z.number().int().nonnegative().optional(),
+  runSnapshotIds: z.array(z.string()),
+  accepted: z.boolean(),
+  rejected: z.boolean(),
+  beforeHash: z.string().nullable(),
+  lastDiptychHash: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type RunSnapshotLedger = z.infer<typeof RunSnapshotLedgerSchema>;

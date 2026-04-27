@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { HandoffTarget } from './types.js';
 // target is widened to string to support custom renderers alongside built-in HandoffTarget values
@@ -12,6 +12,7 @@ import { readSpecFile, getDiptychVersion } from '../../core/paths-io.js';
 import { loadConfig } from '../../core/config/load/load.js';
 import { hashTaskBrief } from '../../core/brief-hash.js';
 import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../core/paths.js';
+import { assertHandoffPathSafe } from '../../lib/handoff-path-safe.js';
 
 export type WriteHandoffOptions = {
   projectDir: string;
@@ -27,6 +28,21 @@ export type WriteHandoffResult = {
   files: string[];
 };
 
+function resolveValidationCommands(projectDir: string): {
+  validation: { typecheck?: string; lint?: string; test?: string };
+  configMode?: WorkflowMode;
+} {
+  const { config } = loadConfig(projectDir);
+  return {
+    validation: {
+      ...(config.validation.typecheck ? { typecheck: 'npm run typecheck' } : {}),
+      ...(config.validation.lint ? { lint: 'npm run lint' } : {}),
+      ...(config.validation.test ? { test: config.validation.testCommand } : {}),
+    },
+    ...(config.workflow.mode !== undefined ? { configMode: config.workflow.mode } : {}),
+  };
+}
+
 export async function writeHandoffPack(options: WriteHandoffOptions): Promise<WriteHandoffResult> {
   const { projectDir, sessionId, target, outDir, selectedTaskIds, mode } = options;
 
@@ -41,11 +57,9 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
   let validation: { typecheck?: string; lint?: string; test?: string } = {};
   let configMode: WorkflowMode | undefined;
   try {
-    const { config } = loadConfig(projectDir);
-    if (config.validation.test && config.validation.testCommand) {
-      validation = { ...validation, test: config.validation.testCommand };
-    }
-    configMode = config.workflow.mode;
+    const resolved = resolveValidationCommands(projectDir);
+    validation = resolved.validation;
+    configMode = resolved.configMode;
   } catch {
     // config absent or invalid — use empty validation
   }
@@ -101,11 +115,19 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
     );
   }
 
+  if (mode === 'overwrite' && existsSync(outDir)) {
+    // Remove stale files from previous pack before writing the new one.
+    // Deletion is confined to outDir itself (caller-controlled, not renderer-provided).
+    rmSync(outDir, { recursive: true, force: true });
+  }
+
   mkdirSync(outDir, { recursive: true, mode: 0o700 });
 
   const writtenFiles: string[] = [];
 
   for (const file of pack.files) {
+    assertHandoffPathSafe(file.path, outDir);
+
     const filePath = join(outDir, file.path);
     const fileDir = join(filePath, '..');
     mkdirSync(fileDir, { recursive: true, mode: 0o700 });
@@ -122,6 +144,10 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
     writtenFiles.push(relative(outDir, filePath));
   }
 
+  const manifestPackFiles = pack.files
+    .map(file => file.path)
+    .filter(path => existsSync(join(outDir, path)));
+
   const sourceCommit = tryReadGitHead(projectDir);
   const manifest = buildManifest({
     sessionId,
@@ -129,7 +155,7 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
     target,
     mode: resolvedMode,
     tasks: filteredTasks,
-    packFiles: writtenFiles,
+    packFiles: manifestPackFiles,
     spec: specContent ?? null,
     plan: planContent ?? null,
     constitution: constitutionContent ?? null,

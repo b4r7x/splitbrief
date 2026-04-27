@@ -22,11 +22,17 @@ async function processImplementerOutput(
   task: Task,
   projectDir: string,
   oldContent: string,
+  approveWrite?: ((file: string) => Promise<{ allow: boolean; reason?: string | undefined }>) | undefined,
 ): Promise<{ success: true; diff: string; linesAdded: number; linesRemoved: number } | { success: false; error: string }> {
   const extractResult = extractCode(text);
 
   if ('error' in extractResult) {
     return { success: false, error: extractResult.error };
+  }
+
+  const approval = approveWrite ? await approveWrite(task.file) : { allow: true };
+  if (!approval.allow) {
+    return { success: false, error: approval.reason ?? 'write denied by approval gate' };
   }
 
   const applyResult = await applyCode(extractResult.code, task, projectDir);
@@ -133,7 +139,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
 
     try {
       if (baseConfig.extractsCode) {
-        const result = await processImplementerOutput(invokeResult.text, task, projectDir, oldContent);
+        const result = await processImplementerOutput(invokeResult.text, task, projectDir, oldContent, opts.approveWrite);
         if (!result.success) {
           if (bus && phase) {
             publishImplementerGenerateFailed(bus, phase, task.id, config.implementer.model);
@@ -190,6 +196,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     },
 
     ...DEFAULT_AVAILABILITY,
+    capabilities: { writesFiles: baseConfig.extractsCode ? 'extracted-code' : 'direct' },
     ...(baseConfig.isAvailable && { isAvailable: baseConfig.isAvailable }),
   };
 }

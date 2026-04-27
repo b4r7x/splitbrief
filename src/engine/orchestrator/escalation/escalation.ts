@@ -24,10 +24,19 @@ type HandleRetryOptions = {
 
 export async function handleRetryAndEscalation(opts: HandleRetryOptions): Promise<{ state: WorkflowState; result: RetryResult }> {
   const { wctx, task, initialError, currentState, taskStartTime } = opts;
+  let taskStartSnapshot = opts.taskStartSnapshot;
+  if (!taskStartSnapshot) {
+    try {
+      taskStartSnapshot = await getChangedFilesSnapshot(wctx.projectDir);
+    } catch (err) {
+      publishWarning(wctx.bus, currentState.phase, `retry approval snapshot failed: ${err instanceof Error ? err.message : String(err)}`);
+      return { state: currentState, result: { completed: false, method: 'failed', attempts: 0 } };
+    }
+  }
   const ctx: EscalationContext = {
     ...wctx,
     taskStartTime,
-    taskStartSnapshot: opts.taskStartSnapshot ?? getChangedFilesSnapshot(wctx.projectDir),
+    taskStartSnapshot,
     dependsOnFiles: opts.dependsOnFiles ?? [],
   };
 

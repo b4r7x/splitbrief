@@ -5,12 +5,47 @@ import { DIPTYCH_DIR, ACTIVE_FILE, STATE_FILE, SESSIONS_DIR, TREES_DIR, worktree
 
 export type WorktreeStatus = 'active' | 'idle' | 'none';
 
+// Strict whitelist for worktree slugs. The slug is interpolated into a
+// filesystem path under `.trees/<slug>` and into a git branch name
+// `diptych/<slug>`, so it must be safe in BOTH contexts. We deliberately
+// reject anything that is not [A-Za-z0-9._-], anything that begins with
+// `.` or `-` (which would shadow shell flags or hidden files), and any
+// name that would normalize away from the simple slug form (e.g. `..`,
+// names containing path separators, or names that resolve outside the
+// trees directory).
+const WORKTREE_NAME_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$/;
+
+export function validateWorktreeName(name: string): void {
+  if (typeof name !== 'string' || name.length === 0) {
+    throw new Error('Worktree name is required.');
+  }
+  if (name.length > 64) {
+    throw new Error(`Worktree name "${name}" is too long (max 64 characters).`);
+  }
+  if (name.startsWith('.') || name.startsWith('-')) {
+    throw new Error(`Worktree name "${name}" must not start with "." or "-".`);
+  }
+  if (name === '.' || name === '..') {
+    throw new Error(`Worktree name "${name}" is reserved.`);
+  }
+  if (name.includes('/') || name.includes('\\') || name.includes(sep)) {
+    throw new Error(`Worktree name "${name}" must not contain path separators.`);
+  }
+  if (!WORKTREE_NAME_RE.test(name)) {
+    throw new Error(
+      `Worktree name "${name}" contains invalid characters. Allowed: letters, digits, "_", "-", "." (after the first character).`,
+    );
+  }
+}
+
 export type WorktreeInfo = {
   name: string;
   path: string;
   branch: string;
   status: WorktreeStatus;
   sessionId: string | null;
+  phase: string | null;
+  lastUpdated: string | null;
 };
 
 export type CreateWorktreeOptions = {
@@ -26,17 +61,23 @@ export type RemoveWorktreeOptions = {
   force?: boolean;
 };
 
-function readSessionPhase(worktreeDir: string, sessionId: string): string | null {
+function readSessionState(worktreeDir: string, sessionId: string): { phase: string | null; lastUpdated: string | null } {
   const stateFile = join(worktreeDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId, STATE_FILE);
-  if (!existsSync(stateFile)) return null;
+  if (!existsSync(stateFile)) return { phase: null, lastUpdated: null };
+  let lastUpdated: string | null = null;
+  try {
+    lastUpdated = statSync(stateFile).mtime.toISOString();
+  } catch {
+    lastUpdated = null;
+  }
   try {
     const raw = JSON.parse(readFileSync(stateFile, 'utf-8'));
     if (raw && typeof raw === 'object' && typeof raw.phase === 'string') {
-      return raw.phase;
+      return { phase: raw.phase, lastUpdated };
     }
-    return null;
+    return { phase: null, lastUpdated };
   } catch {
-    return null;
+    return { phase: null, lastUpdated };
   }
 }
 
@@ -56,8 +97,20 @@ function resolveWorktreeBranch(wtDir: string): string {
 
 export async function createWorktree(opts: CreateWorktreeOptions): Promise<string> {
   const { projectDir, slug, git } = opts;
+  validateWorktreeName(slug);
   const branch = `diptych/${slug}`;
   const wtPath = worktreePath(projectDir, slug);
+
+  const status = await git.status();
+  const dirtyFiles = status.files.filter((file) => {
+    const path = file.path;
+    return path !== TREES_DIR && !path.startsWith(`${TREES_DIR}/`);
+  });
+  if (dirtyFiles.length > 0) {
+    throw new Error(
+      `Source working tree is dirty (${dirtyFiles.length} uncommitted file(s)). Commit, stash, or clean changes before using --worktree.`,
+    );
+  }
 
   const branches = await git.branch();
   if (branches.all.includes(branch)) {
@@ -95,13 +148,17 @@ export async function listWorktrees(projectDir: string, _git: SimpleGit): Promis
     const activeFilePath = join(wtDir, DIPTYCH_DIR, ACTIVE_FILE);
     let sessionId: string | null = null;
     let status: WorktreeStatus = 'none';
+    let phase: string | null = null;
+    let lastUpdated: string | null = null;
 
     if (existsSync(activeFilePath)) {
       const content = readFileSync(activeFilePath, 'utf-8').trim();
       sessionId = content || null;
 
       if (sessionId) {
-        const phase = readSessionPhase(wtDir, sessionId);
+        const state = readSessionState(wtDir, sessionId);
+        phase = state.phase;
+        lastUpdated = state.lastUpdated;
         if (phase === 'complete' || phase === 'idle') {
           status = 'idle';
         } else {
@@ -116,6 +173,8 @@ export async function listWorktrees(projectDir: string, _git: SimpleGit): Promis
       branch,
       status,
       sessionId,
+      phase,
+      lastUpdated,
     });
   }
 
@@ -126,6 +185,7 @@ export async function removeWorktree(
   opts: RemoveWorktreeOptions & { deleteBranch?: boolean },
 ): Promise<void> {
   const { projectDir, slug, git, force = false, deleteBranch = false } = opts;
+  validateWorktreeName(slug);
   const wtPath = worktreePath(projectDir, slug);
   const branch = `diptych/${slug}`;
 
@@ -135,12 +195,14 @@ export async function removeWorktree(
 
   let liveSessionBypassed = false;
   let uncommittedBypassed = false;
+  let liveSessionId: string | null = null;
+  let uncommittedFileCount = 0;
 
   const activeFilePath = join(wtPath, DIPTYCH_DIR, ACTIVE_FILE);
   if (existsSync(activeFilePath)) {
     const sessionId = readFileSync(activeFilePath, 'utf-8').trim() || null;
     if (sessionId) {
-      const phase = readSessionPhase(wtPath, sessionId);
+      const { phase } = readSessionState(wtPath, sessionId);
       const isLive = phase !== null && phase !== 'complete' && phase !== 'idle';
       if (isLive) {
         if (!force) {
@@ -149,12 +211,14 @@ export async function removeWorktree(
           );
         }
         liveSessionBypassed = true;
+        liveSessionId = sessionId;
       }
     }
   }
 
   const porcelain = await git.raw(['-C', wtPath, 'status', '--porcelain']);
   if (porcelain.trim()) {
+    uncommittedFileCount = porcelain.trim().split('\n').filter(Boolean).length;
     if (!force) {
       throw new Error(
         `Worktree ".trees/${slug}" has uncommitted changes. Commit or stash them, or use --force.`,
@@ -165,12 +229,12 @@ export async function removeWorktree(
 
   if (liveSessionBypassed) {
     process.stderr.write(
-      `Warning: force-removing ".trees/${slug}" despite live session.\n`,
+      `Warning: forcing removal of worktree ".trees/${slug}" with live session ${liveSessionId ?? 'unknown'}.\n`,
     );
   }
   if (uncommittedBypassed) {
     process.stderr.write(
-      `Warning: force-removing ".trees/${slug}" despite uncommitted changes.\n`,
+      `Warning: forcing removal of worktree ".trees/${slug}" with ${uncommittedFileCount} uncommitted file(s).\n`,
     );
   }
 

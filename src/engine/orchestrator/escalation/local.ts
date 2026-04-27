@@ -25,9 +25,9 @@ export async function runLocalRetries(
       method: 'local', transitionType: 'VALIDATION_PASS',
       usageCategory: 'implementer',
       retryFailureFallback: 'Retry failed to produce valid code',
-      invokeRetry: async ({ task: t, lastError: err, attempts: a }) =>
+      invokeRetry: async ({ task: t, lastError: err, attempts: a, projectDir }) =>
         ctx.implementer.retry({
-          task: t, projectDir: ctx.projectDir, config: ctx.config, context: ctx.context,
+          task: t, projectDir, config: ctx.config, context: ctx.context,
           error: err, attempt: a, kind: 'local',
           onOutput: textHandler,
           bus: ctx.bus,

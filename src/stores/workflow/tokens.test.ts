@@ -72,11 +72,45 @@ function makeInitialState(overrides?: Partial<TokensState>): TokensState {
     perTask: {},
     prediction: null,
     completedTaskCount: 0,
+    pricingContext: null,
+    ...overrides,
+  };
+}
+
+function makeWorkflowConfig(overrides?: Partial<Extract<EngineEvent, { type: 'workflow_config' }>>): Extract<EngineEvent, { type: 'workflow_config' }> {
+  return {
+    type: 'workflow_config',
+    ts: Date.now(),
+    phase: 'idle',
+    mode: 'standard',
+    plannerTool: 'anthropic',
+    plannerModel: 'claude-sonnet-4-6',
+    implementerTool: 'deepseek',
+    implementerModel: 'deepseek-chat',
     ...overrides,
   };
 }
 
 describe('updateTokens — perPhase cache delta accumulation', () => {
+  it('addEvent cost_update updates perPhase through the production dispatcher path', () => {
+    addEvent(makeCostUpdate({
+      phase: 'planning',
+      tokenUsage: {
+        plannerInput: 100,
+        plannerOutput: 50,
+        implementerInput: 0,
+        implementerOutput: 0,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
+    }));
+
+    expect(tokensStore.get().perPhase['planning']).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 50,
+    });
+  });
+
   it('accumulates cache delta into perPhase on planning phase', () => {
     const state = makeInitialState();
     const usage = {
@@ -88,21 +122,42 @@ describe('updateTokens — perPhase cache delta accumulation', () => {
     const event: EngineEvent = { type: 'cost_update', ts: Date.now(), phase: 'planning', tokenUsage: usage };
     const next = updateTokens(state, event);
     expect(next.perPhase['planning']?.cacheReadTokens).toBe(30);
+    expect(next.perPhase['planning']?.cacheCreateTokens).toBe(0);
     expect(next.perPhase['planning']?.inputTokens).toBe(100);
     expect(next.perPhase['planning']?.outputTokens).toBe(50);
   });
 
-  it('accumulates implementer cache delta into implementing phase', () => {
+  it('aggregates escalation cache deltas into implementing phase cache totals', () => {
+    const state = makeInitialState();
+    const usage = {
+      plannerInput: 0, plannerOutput: 0,
+      implementerInput: 200, implementerOutput: 100,
+      escalationInput: 500, escalationOutput: 250,
+      plannerCacheRead: 80,
+      plannerCacheCreate: 40,
+    };
+    const event: EngineEvent = { type: 'cost_update', ts: Date.now(), phase: 'implementing', tokenUsage: usage };
+    const next = updateTokens(state, event);
+
+    expect(next.perPhase['implementing']?.inputTokens).toBe(700);
+    expect(next.perPhase['implementing']?.outputTokens).toBe(350);
+    expect(next.perPhase['implementing']?.cacheReadTokens).toBe(80);
+    expect(next.perPhase['implementing']?.cacheCreateTokens).toBe(40);
+  });
+
+  it('accumulates implementer cache deltas into implementing phase', () => {
     const state = makeInitialState();
     const usage = {
       plannerInput: 0, plannerOutput: 0,
       implementerInput: 200, implementerOutput: 100,
       escalationInput: 0, escalationOutput: 0,
       implementerCacheRead: 50,
+      implementerCacheCreate: 25,
     };
     const event: EngineEvent = { type: 'cost_update', ts: Date.now(), phase: 'implementing', tokenUsage: usage };
     const next = updateTokens(state, event);
     expect(next.perPhase['implementing']?.cacheReadTokens).toBe(50);
+    expect(next.perPhase['implementing']?.cacheCreateTokens).toBe(25);
     expect(next.perPhase['implementing']?.inputTokens).toBe(200);
   });
 
@@ -140,6 +195,39 @@ describe('updateTokens — perPhase cache delta accumulation', () => {
     const event: EngineEvent = { type: 'cost_update', ts: Date.now(), phase: 'planning', tokenUsage: usage };
     const next = updateTokens(state, event);
     expect(next.perPhase['planning']?.cacheReadTokens).toBe(0);
+  });
+
+  it('computes non-zero per-phase cost when pricing metadata is known', () => {
+    const withConfig = updateTokens(makeInitialState(), makeWorkflowConfig());
+    const usage = {
+      plannerInput: 1_000_000,
+      plannerOutput: 1_000_000,
+      implementerInput: 0,
+      implementerOutput: 0,
+      escalationInput: 0,
+      escalationOutput: 0,
+      plannerCacheRead: 1_000_000,
+      plannerCacheCreate: 500_000,
+    };
+    const next = updateTokens(withConfig, { type: 'cost_update', ts: Date.now(), phase: 'planning', tokenUsage: usage });
+    expect(next.perPhase['planning']?.cost).toBeCloseTo(20.175, 10);
+  });
+
+  it('keeps per-phase cost at zero when pricing metadata is unknown', () => {
+    const withConfig = updateTokens(makeInitialState(), makeWorkflowConfig({
+      plannerTool: 'unknown-tool',
+      plannerModel: 'unknown-model',
+    }));
+    const usage = {
+      plannerInput: 1_000_000,
+      plannerOutput: 1_000_000,
+      implementerInput: 0,
+      implementerOutput: 0,
+      escalationInput: 0,
+      escalationOutput: 0,
+    };
+    const next = updateTokens(withConfig, { type: 'cost_update', ts: Date.now(), phase: 'planning', tokenUsage: usage });
+    expect(next.perPhase['planning']?.cost).toBe(0);
   });
 });
 

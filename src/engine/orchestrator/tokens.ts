@@ -6,12 +6,25 @@ import { publishEvent } from './events.js';
 
 export type UsageCategory = 'planner' | 'implementer' | 'escalation';
 
-type CoreTokenKey = 'plannerInput' | 'plannerOutput' | 'implementerInput' | 'implementerOutput' | 'escalationInput' | 'escalationOutput';
+type CoreTokenKey =
+  | 'plannerInput'
+  | 'plannerOutput'
+  | 'implementerInput'
+  | 'implementerOutput'
+  | 'escalationInput'
+  | 'escalationOutput';
+type CacheTokenKey =
+  | 'plannerCacheRead'
+  | 'plannerCacheCreate'
+  | 'implementerCacheRead'
+  | 'implementerCacheCreate';
 
-const categoryFields: Record<UsageCategory, { input: CoreTokenKey; output: CoreTokenKey }> = {
-  planner: { input: 'plannerInput', output: 'plannerOutput' },
-  implementer: { input: 'implementerInput', output: 'implementerOutput' },
-  escalation: { input: 'escalationInput', output: 'escalationOutput' },
+// escalation cache tokens are routed into the planner cache buckets because the escalator
+// always uses the planner runner; this preserves cache savings without adding new schema fields.
+const categoryFields: Record<UsageCategory, { input: CoreTokenKey; output: CoreTokenKey; cacheRead?: CacheTokenKey; cacheCreate?: CacheTokenKey }> = {
+  planner: { input: 'plannerInput', output: 'plannerOutput', cacheRead: 'plannerCacheRead', cacheCreate: 'plannerCacheCreate' },
+  implementer: { input: 'implementerInput', output: 'implementerOutput', cacheRead: 'implementerCacheRead', cacheCreate: 'implementerCacheCreate' },
+  escalation: { input: 'escalationInput', output: 'escalationOutput', cacheRead: 'plannerCacheRead', cacheCreate: 'plannerCacheCreate' },
 };
 
 export function addUsage(
@@ -23,13 +36,20 @@ export function addUsage(
   const input = usage.inputTokens;
   const output = usage.outputTokens;
   const fields = categoryFields[category];
+  const nextUsage = {
+    ...state.tokenUsage,
+    [fields.input]: state.tokenUsage[fields.input] + input,
+    [fields.output]: state.tokenUsage[fields.output] + output,
+  };
+  if (fields.cacheRead !== undefined && usage.cacheReadTokens !== undefined) {
+    nextUsage[fields.cacheRead] = (state.tokenUsage[fields.cacheRead] ?? 0) + usage.cacheReadTokens;
+  }
+  if (fields.cacheCreate !== undefined && usage.cacheCreateTokens !== undefined) {
+    nextUsage[fields.cacheCreate] = (state.tokenUsage[fields.cacheCreate] ?? 0) + usage.cacheCreateTokens;
+  }
   return {
     ...state,
-    tokenUsage: {
-      ...state.tokenUsage,
-      [fields.input]: state.tokenUsage[fields.input] + input,
-      [fields.output]: state.tokenUsage[fields.output] + output,
-    },
+    tokenUsage: nextUsage,
   };
 }
 

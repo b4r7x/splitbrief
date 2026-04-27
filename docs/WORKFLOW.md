@@ -34,8 +34,11 @@ All phases and transitions live in `src/core/state/machine.ts`. The primary stat
 | `constitution-check` *(speckit)* | `CONSTITUTION_CHECK_PASS` | `planning` | Writes `constitution-check.json`; planning proceeds |
 | `constitution-check` *(speckit)* | `CONSTITUTION_CHECK_FAIL` | `idle` | Hard violation; workflow aborts. Reason persisted in `constitution-check.json` and emitted as a `warning` event |
 | `planning` | `PLAN_DONE` | `reviewing-plan` | Tasks attached to action |
-| `reviewing-plan` | `APPROVE_PLAN` | `implementing` | In `standard` mode, auto-dispatched |
+| `reviewing-plan` | `APPROVE_PLAN` | `reviewing-briefs` | In `standard` mode, the plan gate is auto-dispatched before brief review |
 | `reviewing-plan` | `REJECT_PLAN` | `idle` | |
+| `implementing` | `BRIEFS_READY` | `reviewing-briefs` | Task Brief transport parsed and quality-gated before implementation |
+| `reviewing-briefs` | `APPROVE_BRIEFS` | `implementing` | Approval reads and validates persisted `tasks.md`; parse or quality errors keep the gate open |
+| `reviewing-briefs` | `REJECT_BRIEFS` | `idle` | Workflow ends before any implementer write |
 | `implementing` *(speckit)* | `ANALYZE_START` | `analyzing` | Speckit-only post-planning audit |
 | `analyzing` *(speckit)* | `ANALYZE_DONE` | `implementing` | Writes `analyze.json`; coverage below `workflow.speckit.minCoverage` (default `0.9`) emits a `warning` event but does not block |
 | `implementing` | `START_TASK` | `implementing` | Sets task `in_progress`, resets attempt counter |
@@ -80,14 +83,14 @@ Before dispatching, `adviseMode()` (`src/engine/orchestrator/planning/mode-advis
 
 - `instant` — one planner call. Produces a Task Brief plus `tasks.md` transport for a trivial change, with no supporting spec/plan artifacts and no approval gates. `START_INSTANT` transitions straight into the task loop.
 - `quick` — one planner call (`planner.quickPlan(...)`) that produces the Task Brief transport only. No supporting spec / plan files, no approval gates. `START_QUICK` transitions straight into the task loop.
-- `standard` — four planner calls: research → supporting spec → plan → Task Brief transport. One approval gate on the supporting spec by default (`approve: spec`); the plan gate (`reviewing-plan`) is entered but auto-advanced.
-- `speckit` — seven planner calls: research → supporting spec → clarify → constitution-check → plan → analyze → Task Brief transport. Both gates active by default (`approve: all`). Fast-fails on constitution-check violations.
+- `standard` — four planner calls: research → supporting spec → plan → Task Brief transport. One approval gate on the supporting spec by default (`approve: spec`); the plan gate (`reviewing-plan`) is entered but auto-advanced. Standard then enters `reviewing-briefs` before implementation.
+- `speckit` — seven planner calls: research → supporting spec → clarify → constitution-check → plan → analyze → Task Brief transport. Both document gates are active by default (`approve: all`), followed by `reviewing-briefs`. Fast-fails on constitution-check violations.
 
-All four modes run the **brief quality gate** (`src/engine/spec/brief-quality.ts`) after the Task Brief is produced and before the workflow enters `implementing`. The gate writes `brief-quality.json` to the session directory (mode 0o600) and publishes a `brief_quality_passed` or `brief_quality_failed` event. If any task has an error-level issue the gate blocks the transition to `implementing`. See `docs/TASK-CONTRACT.md §Brief quality gate` for the full rule set.
+All four modes run the **brief quality gate** (`src/engine/spec/brief-quality.ts`) after the Task Brief is produced and before the workflow enters `implementing`. The gate writes `brief-quality.json` to the session directory (mode 0o600) and publishes a `brief_quality_passed` or `brief_quality_failed` event. If any task has an error-level issue the gate blocks the transition to `implementing`. In standard and speckit, the `reviewing-briefs` gate approves the persisted `.diptych/sessions/<id>/tasks.md` file, not stale in-memory tasks; missing `tasks.md` is rewritten once from current tasks and reparsed, while parse, empty-list, or quality errors keep the review gate open. See `docs/TASK-CONTRACT.md §Brief quality gate` for the full rule set.
 
 `full` is a legacy alias for `speckit` at the CLI/config boundary.
 
-Approval gates are governed by `workflow.approve` (`none` | `spec` | `plan` | `all` | `default`). Each mode has a default (instant/quick → `none`, standard → `spec`, speckit → `all`); `default` follows that mode default. Override via `--approve <level>` on the CLI or `/approve` at runtime. The legacy `--auto` flag is now a synonym for `--approve none`. Resolution flows through the single `resolveApproveLevel()` helper in `src/core/config/runtime/resolve.ts` (per spec invariant §2: gate decisions never read `config.workflow.autoApprove*` directly).
+Approval gates are governed by `workflow.approve` (`none` | `spec` | `plan` | `all` | `default`). Each mode has a default (instant/quick → `none`, standard → `spec`, speckit → `all`); `default` follows that mode default. Override via `--approve <level>` on the CLI or `workflow.approve` in config. The legacy `--auto` flag is now a synonym for `--approve none`. Resolution flows through the single `resolveApproveLevel()` helper in `src/core/config/runtime/resolve.ts` (per spec invariant §2: gate decisions never read `config.workflow.autoApprove*` directly).
 
 The `/mode` slash command and `--mode` CLI flag both write into `config.workflow.mode`.
 
@@ -117,6 +120,9 @@ The `/mode` slash command and `--mode` CLI flag both write into `config.workflow
            └─ reject    → REJECT_SPEC, workflow ends
       phase: planning     → planner compiles the Task Brief and writes tasks.md transport
       phase: reviewing-plan (speckit mode only blocks by default)
+      phase: reviewing-briefs
+        └─ callbacks.onApprovalNeeded('briefs', tasksPath)
+        └─ approve reads tasks.md, parses it, and re-runs the quality gate
       phase: implementing (per task):
         └─ START_TASK
         └─ implementer.implement(taskPrompt) → code
@@ -177,7 +183,7 @@ Persisted artifacts: `research.md`, supporting `spec.md`, `clarifications.md`, `
 
 `diptych resume` reads `.diptych/active` to find the target session folder, then loads `state.json`. If either is missing, version-mismatched, or `state.phase` is not in `RESUMABLE_PHASES`, resume refuses with a clear error.
 
-**Resumable phases:** `reviewing-spec`, `reviewing-plan`, `implementing`, `validating-task`, `escalating`, `final-review`. Plus any phase with `awaitingContinue: true` — these are always resumable regardless of phase because the user explicitly aborted and is expected to return.
+**Resumable phases:** `reviewing-spec`, `reviewing-plan`, `reviewing-briefs`, `implementing`, `validating-task`, `escalating`, `final-review`. Plus any phase with `awaitingContinue: true` — these are always resumable regardless of phase because the user explicitly aborted and is expected to return.
 
 **Non-resumable phases:** `researching`, `specifying`, `planning` *without* `awaitingContinue`. If a cold crash wiped the process mid-generation, the stream is lost and the only safe behaviour is to restart the feature.
 
@@ -265,7 +271,7 @@ The workflow screen surfaces the cost-aware compiler model through two complemen
 
 **Top status line** (`CostStatusLine`): `mode · spent · proj · budget · plan% · cache%` — high-level session-wide spend and projection, updated on every `cost_update` event.
 
-**Footer** (`CostFooter`): `Task N/M · mode <mode> · risk <level> · $X.XX expected` — per-task progress, current risk tier (from the advisor classifier), and the pre-flight cost prediction. When the implementer is unpriced (local/subscription), `local` replaces the dollar amount — no fake savings are shown.
+**Footer** (`InputFooter`): `Task N/M · mode <mode> · risk <level> · $X.XX expected` — per-task progress, current risk tier (from the advisor classifier), and the pre-flight cost prediction. When the implementer is unpriced (local/subscription), `local` replaces the dollar amount — no fake savings are shown.
 
 Advisor signal: `formatAdvisoryText()` renders below the main footer line when the advisor recommends a mode change (e.g. `advisor: consider quick · trivial edit` or `advisor: no done criteria · standard may drift`). The advisor never auto-switches the mode.
 
@@ -287,7 +293,7 @@ Users can enable automatic snapshots at key orchestrator boundaries via the `sna
 - `snapshots.auto.postTask: true` — snapshot after each task completes successfully (failed tasks do not trigger this)
 - `snapshots.auto.preFinalReview: true` — snapshot before the final planner review runs
 
-All auto-triggers are off by default. Manual snapshots are always available via `diptych snapshot create` regardless of config. Auto-snapshot failures emit a `warning` event and do not abort the run. Full config reference: [CONFIG.md §snapshots](./CONFIG.md#snapshots).
+All auto-triggers are off by default. Manual snapshots are always available via `diptych snapshot create` regardless of config. Auto-snapshot failures emit a `warning` event and do not abort the run. Full config reference: [CONFIGURATION.md §snapshots](./CONFIGURATION.md#10-snapshots).
 
 ## Parallel Worktrees
 

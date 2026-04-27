@@ -6,6 +6,12 @@ import type { RunnerRuntime } from '../runners/types.js';
 import type { EventBus } from '../events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 
+export type ImplementerWriteMode = 'extracted-code' | 'direct';
+
+export type ImplementerCapabilities = {
+  writesFiles: ImplementerWriteMode;
+};
+
 export interface ImplementerOptions {
   task: Task;
   projectDir: string;
@@ -17,6 +23,7 @@ export interface ImplementerOptions {
   continuationPrompt?: string | undefined;
   bus?: EventBus | undefined;
   phase?: Phase | undefined;
+  approveWrite?: ((file: string) => Promise<{ allow: boolean; reason?: string | undefined }>) | undefined;
 }
 
 export interface RetryOptions extends ImplementerOptions {
@@ -28,4 +35,5 @@ export interface RetryOptions extends ImplementerOptions {
 export interface Implementer extends RunnerRuntime {
   implement(opts: ImplementerOptions): Promise<ImplementerResult>;
   retry(opts: RetryOptions): Promise<ImplementerResult>;
+  capabilities?: ImplementerCapabilities | undefined;
 }

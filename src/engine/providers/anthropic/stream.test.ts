@@ -43,6 +43,32 @@ describe('streamAnthropicCompletion', () => {
     expect(chunks).toEqual(['Hello ', 'world']);
   });
 
+  it('parses Anthropic cache usage fields', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeSseResponse([
+        'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":42,"cache_creation_input_tokens":10,"cache_read_input_tokens":30}}}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","usage":{"output_tokens":17,"cache_read_input_tokens":50}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      ]),
+    );
+
+    const result = await streamAnthropicCompletion({
+      apiKey: 'sk-test',
+      apiBase: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'hello' }],
+      temperature: 0.3,
+      onProgress: () => {},
+    });
+
+    expect(result.usage).toEqual({
+      inputTokens: 42,
+      outputTokens: 17,
+      cacheReadTokens: 50,
+      cacheCreateTokens: 10,
+    });
+  });
+
   it('forwards thinking.budget_tokens when effort is set', async () => {
     const fetchMock = vi.mocked(globalThis.fetch);
     fetchMock.mockResolvedValue(

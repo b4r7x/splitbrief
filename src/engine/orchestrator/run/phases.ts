@@ -1,6 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
+import type { CostPrediction } from '../../../core/schemas/summary.js';
 import type { WorkflowContext } from '../types.js';
 import type { SkillMeta } from '../../skills/discovery.js';
 import type { EventBus } from '../../events/types.js';
@@ -69,18 +70,20 @@ export type RunTasksAndReviewOptions = {
 };
 
 export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise<Summary> {
-  const { wctx, summaryBase, phaseTimings, setTrackedState, setCurrentTask } = opts;
+  const { wctx, phaseTimings, setTrackedState, setCurrentTask } = opts;
+  let { summaryBase } = opts;
   let { state } = opts;
   const { callbacks } = wctx;
 
   if (state.tasks.length > 0) {
-    const prediction = predictCost({
+    const prediction: CostPrediction = predictCost({
       taskCount: state.tasks.length,
       plannerTool: state.plannerTool ?? '',
       implementerTool: state.implementerTool ?? '',
       tokenUsage: state.tokenUsage,
     });
     publishCostPrediction(wctx.bus, state.phase, prediction);
+    summaryBase = { ...summaryBase, costPrediction: prediction };
   }
 
   const phaseStart = Date.now();
