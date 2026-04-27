@@ -293,6 +293,57 @@ describe('psCommand', () => {
     expect(body[0]).toContain('crashed');
   });
 
+  it('ELAPSED column is not 0s for crashed session when lastAliveMs is after start', async () => {
+    const sessionsRoot = join(testDir, '.diptych', 'sessions');
+    const sessDir = join(sessionsRoot, 'elapsed-crashed');
+    mkdirSync(sessDir, { recursive: true });
+
+    const startMs = Date.now() - 120000; // 2 minutes ago
+    const lastAliveMs = startMs + 90000; // 90 seconds after start
+
+    mockReadLockfile.mockResolvedValueOnce({
+      version: 1,
+      pid: 777,
+      startTimeMs: startMs,
+      lastAliveMs,
+      sessionId: 'elapsed-crashed',
+      mode: 'standard',
+      feature: 'elapsed feature',
+      signal: 'SIGTERM',
+    });
+
+    mockCheckServerStatus.mockResolvedValueOnce({
+      alive: false,
+      crashed: true,
+      data: {
+        version: 1,
+        pid: 777,
+        startTimeMs: startMs,
+        lastAliveMs,
+        sessionId: 'elapsed-crashed',
+        mode: 'standard',
+        feature: 'elapsed feature',
+        signal: 'SIGTERM',
+      },
+    });
+
+    const lines: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((line: string) => {
+      lines.push(line);
+    });
+
+    await psCommand({ projectDir: testDir });
+
+    logSpy.mockRestore();
+
+    const body = lines.slice(1);
+    expect(body.length).toBe(1);
+    // elapsed should be ~1m 30s, definitely not a zero elapsed (which would show just "0s")
+    expect(body[0]).toMatch(/1m\s+\d+s/);
+    expect(body[0]).not.toMatch(/^\s*0s\s/);
+    expect(body[0]).toContain('1m');
+  });
+
   it('throws cliError with exit code 1 on Windows', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
 

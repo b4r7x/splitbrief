@@ -117,6 +117,12 @@ function migrateV1ToV2(obj: Record<string, unknown>): unknown {
     shikiTheme: obj.shikiTheme,
     sessions: obj.sessions,
     escalation: obj.escalation,
+    codebase: obj.codebase,
+    hooks: obj.hooks,
+    otel: obj.otel,
+    snapshots: obj.snapshots,
+    palette: obj.palette,
+    approval: obj.approval,
   };
 }
 

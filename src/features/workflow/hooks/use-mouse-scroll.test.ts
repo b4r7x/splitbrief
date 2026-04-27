@@ -58,7 +58,7 @@ describe('wireMouseScroll', () => {
 
     const mock = createMockFilteredStdin();
     const dispose = wireMouseScroll(mock.filtered);
-    mock.emit('wheel-down', 2, 4);
+    mock.emit('wheel-down', 2, 5);
     expect(reviewStore.get().scrollOffset).toBe(1);
     dispose();
   });
@@ -86,7 +86,7 @@ describe('wireMouseScroll', () => {
 
     const mock = createMockFilteredStdin();
     const dispose = wireMouseScroll(mock.filtered);
-    mock.emit('wheel-up', 2, 4);
+    mock.emit('wheel-up', 2, 5);
     expect(conversationScrollStore.get().scrollOffset).toBe(1);
     dispose();
   });

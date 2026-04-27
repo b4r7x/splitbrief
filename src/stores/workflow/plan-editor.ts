@@ -68,8 +68,17 @@ function moveCursor(direction: 'up' | 'down'): void {
   });
 }
 
+function sameTasks(a: Task[], b: Task[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 function setTasks(tasks: Task[]): void {
-  store.set(s => ({ ...s, tasks, dirty: true }));
+  store.set(s => {
+    if (sameTasks(s.tasks, tasks)) return s;
+    return { ...s, tasks, dirty: true, saveError: null };
+  });
 }
 
 function toggleExpand(taskId: string): void {

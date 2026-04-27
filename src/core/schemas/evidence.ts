@@ -15,6 +15,19 @@ export const EvidenceRejectionSchema = z.object({
 });
 export type EvidenceRejection = z.infer<typeof EvidenceRejectionSchema>;
 
+export const EvidenceApprovalSchema = z.object({
+  ts: z.string(),
+  tier: z.literal('confirm'),
+  actionClass: z.enum([
+    'read', 'write_in_scope', 'validation',
+    'write_out_of_scope', 'destructive', 'network', 'package_change',
+  ]),
+  actionDescription: z.string(),
+  taskId: TaskIdSchema.optional(),
+  reason: z.string(),
+});
+export type EvidenceApproval = z.infer<typeof EvidenceApprovalSchema>;
+
 export const EvidenceValidationStageSchema = z.enum(['tsc', 'lint', 'test']);
 export type EvidenceValidationStage = z.infer<typeof EvidenceValidationStageSchema>;
 
@@ -22,6 +35,8 @@ export const EvidenceValidationEntrySchema = z.object({
   stage: EvidenceValidationStageSchema,
   passed: z.boolean(),
   errorSummary: z.string().optional(),
+  retryState: z.enum(['initial-failure', 'retry', 'escalated', 'failed']).optional(),
+  changedFiles: z.array(z.string()).optional(),
 });
 export type EvidenceValidationEntry = z.infer<typeof EvidenceValidationEntrySchema>;
 
@@ -69,6 +84,7 @@ export const EvidenceLedgerSchema = z.object({
   validationSummary: EvidenceValidationSummarySchema,
   finalReview: EvidenceFinalReviewSchema.optional(),
   briefHash: z.string().nullable().optional(),
+  approvals: z.array(EvidenceApprovalSchema).optional(),
   rejections: z.array(EvidenceRejectionSchema).optional(),
 });
 export type EvidenceLedger = z.infer<typeof EvidenceLedgerSchema>;

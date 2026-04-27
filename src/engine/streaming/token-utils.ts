@@ -4,10 +4,14 @@ import type { TokenDelta } from '../../core/schemas/tokens.js';
 export const TokenUsageLikeSchema = z.looseObject({
   input_tokens: z.number().optional(),
   output_tokens: z.number().optional(),
+  cache_read_input_tokens: z.number().optional(),
+  cache_creation_input_tokens: z.number().optional(),
   prompt_tokens: z.number().optional(),
   completion_tokens: z.number().optional(),
   inputTokens: z.number().optional(),
   outputTokens: z.number().optional(),
+  cacheReadTokens: z.number().optional(),
+  cacheCreateTokens: z.number().optional(),
 });
 
 export type TokenUsageLike = z.infer<typeof TokenUsageLikeSchema>;
@@ -22,12 +26,16 @@ export function toTokenDelta(raw: unknown): TokenDelta | null {
 
   const input = r.input_tokens ?? r.prompt_tokens ?? r.inputTokens;
   const output = r.output_tokens ?? r.completion_tokens ?? r.outputTokens;
+  const cacheRead = r.cache_read_input_tokens ?? r.cacheReadTokens;
+  const cacheCreate = r.cache_creation_input_tokens ?? r.cacheCreateTokens;
 
-  if (input == null && output == null) return null;
+  if (input == null && output == null && cacheRead == null && cacheCreate == null) return null;
 
   return {
     inputTokens: input ?? 0,
     outputTokens: output ?? 0,
+    ...(cacheRead !== undefined && { cacheReadTokens: cacheRead }),
+    ...(cacheCreate !== undefined && { cacheCreateTokens: cacheCreate }),
   };
 }
 
@@ -39,6 +47,12 @@ export function accumulateUsage(
     return {
       inputTokens: current.inputTokens + delta.inputTokens,
       outputTokens: current.outputTokens + delta.outputTokens,
+      ...((current.cacheReadTokens !== undefined || delta.cacheReadTokens !== undefined) && {
+        cacheReadTokens: (current.cacheReadTokens ?? 0) + (delta.cacheReadTokens ?? 0),
+      }),
+      ...((current.cacheCreateTokens !== undefined || delta.cacheCreateTokens !== undefined) && {
+        cacheCreateTokens: (current.cacheCreateTokens ?? 0) + (delta.cacheCreateTokens ?? 0),
+      }),
     };
   }
   return { ...delta };

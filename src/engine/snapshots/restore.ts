@@ -90,12 +90,14 @@ export async function restoreSnapshot(opts: RestoreOptions): Promise<RestoreResu
       const absPath = join(projectDir, path);
 
       let sourceFilePath: string;
+      let expectedBlobHash: string;
       if (snapshotFileSet.has(path)) {
         const entry = manifest.fileEntries.find(e => e.path === path)!;
         sourceFilePath = join(
           snapshotFilesDir(projectDir, sessionId, manifest.id),
           entry.encodedName,
         );
+        expectedBlobHash = entry.hash;
       } else {
         const baselineEntry = baselineManifest.fileEntries.find(e => e.path === path);
         if (!baselineEntry) {
@@ -106,10 +108,20 @@ export async function restoreSnapshot(opts: RestoreOptions): Promise<RestoreResu
           snapshotFilesDir(projectDir, sessionId, SNAPSHOT_BASELINE_ID),
           baselineEntry.encodedName,
         );
+        expectedBlobHash = baselineEntry.hash;
       }
 
       const sourceHash = await hashFile(sourceFilePath);
       if (sourceHash === null) {
+        missingSnapshotFiles.push(path);
+        continue;
+      }
+
+      // Refuse to write a blob whose stored bytes do not match the manifest
+      // hash recorded when the snapshot was captured. A mismatch means the
+      // backing blob was corrupted or replaced after capture, so writing it
+      // would silently install wrong content and call it a restore.
+      if (sourceHash !== expectedBlobHash) {
         missingSnapshotFiles.push(path);
         continue;
       }

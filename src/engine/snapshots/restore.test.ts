@@ -1,8 +1,9 @@
-import { mkdtemp, rm, writeFile, unlink } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, unlink, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { EngineEvent, EventBus } from '../events/types.js';
+import { snapshotFilesDir } from '../../core/paths.js';
 import { createSnapshot } from './store.js';
 import { resolveSnapshot, restoreSnapshot } from './restore.js';
 
@@ -328,5 +329,39 @@ describe('restoreSnapshot — event emission', () => {
 
     const conflictEvt = events.find(e => e.type === 'snapshot_restore_conflict');
     expect(conflictEvt).toBeUndefined();
+  });
+
+  it('refuses to restore a path whose stored blob has been corrupted, surfaces it as missingSnapshotFiles, and leaves disk untouched', async () => {
+    await writeFile(join(tmp, 'foo.ts'), 'original-content');
+    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+
+    await writeFile(join(tmp, 'foo.ts'), 'modified-by-diptych');
+    const snap = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'snap-corrupt',
+    });
+
+    // User accidentally overwrites the file on disk before restore.
+    await writeFile(join(tmp, 'foo.ts'), 'user-edit-after-snapshot');
+
+    // Tamper with the stored blob to simulate disk corruption.
+    const filesDir = snapshotFilesDir(tmp, 'sess-01', snap.manifest.id);
+    const blobs = await readdir(filesDir);
+    expect(blobs.length).toBeGreaterThan(0);
+    const blobPath = join(filesDir, blobs[0]!);
+    await writeFile(blobPath, 'CORRUPTED-BYTES');
+
+    const result = await restoreSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      idOrName: snap.manifest.id,
+      force: true, // Even with force, a hash mismatch must NOT overwrite.
+    });
+
+    expect(result.missingSnapshotFiles).toContain('foo.ts');
+    expect(result.restoredPaths).not.toContain('foo.ts');
+    await expect(readFile(join(tmp, 'foo.ts'), 'utf-8')).resolves.toBe('user-edit-after-snapshot');
   });
 });

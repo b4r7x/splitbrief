@@ -1,6 +1,7 @@
 import { parseTasks } from '../../../../engine/spec/parser.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import { taskId } from '../../../../core/schemas/task.js';
+import { topoSort } from '../../../../core/state/topo-sort.js';
 
 export function renumberTasks(tasks: Task[]): Task[] {
   const idMap = new Map<TaskId, TaskId>();
@@ -42,7 +43,7 @@ export function deleteTask(
   if (!deletedTask) return { tasks, cursor };
   const remaining = tasks.filter((_, i) => i !== cursor);
   const relinked = relinkAfterDelete(remaining, deletedTask.id, deletedTask.dependsOn);
-  const result = renumberTasks(relinked);
+  const result = renumberTasks(topoSort(relinked));
   const clampedCursor = result.length === 0 ? 0 : Math.min(cursor, result.length - 1);
   return { tasks: result, cursor: clampedCursor };
 }
@@ -87,7 +88,7 @@ export function mergeWithPrevious(
 
   const dependsOn = Array.from(
     new Set([...prev.dependsOn, ...curr.dependsOn]),
-  ).filter(dep => dep !== curr.id);
+  ).filter(dep => dep !== curr.id && dep !== prev.id);
 
   const merged: Task = {
     id: prev.id,
@@ -118,8 +119,8 @@ export function mergeWithPrevious(
     merged,
     ...tasks.slice(cursor + 1),
   ];
-  const relinked = relinkAfterDelete(updated, curr.id, []);
-  const result = renumberTasks(relinked);
+  const relinked = relinkAfterDelete(updated, curr.id, [prev.id]);
+  const result = renumberTasks(topoSort(relinked));
   return { tasks: result, cursor: cursor - 1 };
 }
 
@@ -159,7 +160,12 @@ export function parseSplitResult(
   markdown: string,
   _originalTask: Task,
 ): Task[] | { error: string } {
-  const parsed = parseTasks(markdown);
+  let parsed: Task[];
+  try {
+    parsed = parseTasks(markdown);
+  } catch (err) {
+    return { error: `split parse failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
   if (parsed.length === 0) {
     return { error: 'split produced no tasks' };
   }

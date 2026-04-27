@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { handleMessage } from './handlers.js';
+import { INVALID_REQUEST, SUPPORTED_PROTOCOL_VERSIONS, MCP_PROTOCOL_VERSION } from './handlers.js';
 import type { McpResolver } from './resolver.js';
 
 export type McpServerConfig = {
@@ -19,6 +20,26 @@ export type McpServerHandle = {
 };
 
 const MAX_BODY_BYTES = 1024 * 1024; // 1 MB
+
+// Local origins allowed for browser-initiated requests; missing = non-browser CLI client.
+const LOCAL_ORIGIN_PREFIXES = [
+  'http://localhost', 'https://localhost',
+  'http://127.0.0.1', 'https://127.0.0.1',
+];
+
+function isLocalOrigin(origin: string | undefined): boolean {
+  if (origin === undefined) return true;
+  if (origin === 'null') return false;
+  return LOCAL_ORIGIN_PREFIXES.some(p => origin === p || origin.startsWith(`${p}:`));
+}
+
+function negotiateProtocolVersion(clientHeader: string | string[] | undefined): string | null {
+  if (clientHeader === undefined) return MCP_PROTOCOL_VERSION;
+  if (typeof clientHeader === 'string' && SUPPORTED_PROTOCOL_VERSIONS.has(clientHeader)) {
+    return clientHeader;
+  }
+  return null;
+}
 
 async function readBody(req: IncomingMessage, res: ServerResponse): Promise<string | null> {
   return new Promise((resolve) => {
@@ -67,14 +88,34 @@ function send401(res: ServerResponse): void {
   res.end();
 }
 
-function send404(res: ServerResponse): void {
-  res.writeHead(404);
+function send403(res: ServerResponse): void {
+  res.writeHead(403);
+  res.end();
+}
+
+function send405(res: ServerResponse): void {
+  res.writeHead(405, { Allow: 'POST' });
   res.end();
 }
 
 function send500(res: ServerResponse): void {
   res.writeHead(500);
   res.end();
+}
+
+function sendProtocolVersionError(res: ServerResponse): void {
+  res.writeHead(400, {
+    'Content-Type': 'application/json',
+    'MCP-Protocol-Version': MCP_PROTOCOL_VERSION,
+  });
+  res.end(JSON.stringify({
+    jsonrpc: '2.0',
+    id: null,
+    error: {
+      code: INVALID_REQUEST,
+      message: `Unsupported MCP-Protocol-Version. Supported versions: ${[...SUPPORTED_PROTOCOL_VERSIONS].join(', ')}`,
+    },
+  }));
 }
 
 export function startMcpServer(config: McpServerConfig): Promise<McpServerHandle> {
@@ -89,14 +130,34 @@ export function startMcpServer(config: McpServerConfig): Promise<McpServerHandle
         return;
       }
 
+      // Origin validation: reject non-local browser origins
+      const origin = req.headers['origin'] as string | undefined;
+      if (!isLocalOrigin(origin)) {
+        send403(res);
+        return;
+      }
+
       // Auth check for all other routes
       if (!isAuthorized(req, token)) {
         send401(res);
         return;
       }
 
+      // GET /mcp — SSE not implemented; return 405 per Streamable HTTP spec
+      if (req.method === 'GET' && req.url === '/mcp') {
+        send405(res);
+        return;
+      }
+
       // POST /mcp
       if (req.method === 'POST' && req.url === '/mcp') {
+        const clientVersion = req.headers['mcp-protocol-version'];
+        const negotiatedVersion = negotiateProtocolVersion(clientVersion);
+        if (negotiatedVersion === null) {
+          sendProtocolVersionError(res);
+          return;
+        }
+
         const body = await readBody(req, res);
         if (body === null) return; // 413 or error already sent
 
@@ -109,18 +170,23 @@ export function startMcpServer(config: McpServerConfig): Promise<McpServerHandle
         }
 
         if (result.kind === 'notification') {
-          res.writeHead(204);
+          // Accepted: server received the notification; no response body per JSON-RPC
+          res.writeHead(202, { 'MCP-Protocol-Version': negotiatedVersion });
           res.end();
           return;
         }
 
         // kind === 'response' | 'error'
-        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'MCP-Protocol-Version': negotiatedVersion,
+        });
         res.end(JSON.stringify(result.body));
         return;
       }
 
-      send404(res);
+      res.writeHead(404);
+      res.end();
     });
 
     server.on('error', reject);

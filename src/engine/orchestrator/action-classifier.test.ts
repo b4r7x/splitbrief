@@ -29,6 +29,11 @@ describe('classifyAction — destructive', () => {
     const result = classifyAction(make('git push --force origin main'));
     expect(result).toEqual({ actionClass: 'destructive', tier: 'confirm' });
   });
+
+  it('knex migrate → destructive/confirm', () => {
+    const result = classifyAction(make('knex migrate'));
+    expect(result).toEqual({ actionClass: 'destructive', tier: 'confirm' });
+  });
 });
 
 describe('classifyAction — network', () => {

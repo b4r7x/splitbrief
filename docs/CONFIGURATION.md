@@ -731,13 +731,13 @@ YAML:
 ```yaml
 palette:
   customActions:
-    - id: my-snapshot
-      label: "Take snapshot"
-      description: "Stash current state for rollback"
-      command: /snapshot
-    - id: ship
-      label: "Ship to staging"
-      command: /run ./scripts/ship-staging.sh
+    - id: accept-run
+      label: "Accept current run"
+      description: "Mark the current run state as accepted"
+      command: /accept-run
+    - id: handoff-claude
+      label: "Write Claude handoff"
+      command: /handoff claude-code
 ```
 
 **When to use:** surfacing project-specific runbook actions inside diptych's TUI without leaving the session.
@@ -991,12 +991,12 @@ approval:
 # ---------- Custom palette actions ----------
 palette:
   customActions:
-    - id: ship-staging
-      label: "Ship to staging"
-      command: /run ./scripts/ship-staging.sh
-    - id: rollback
-      label: "Rollback to last snapshot"
-      command: /snapshot restore latest
+    - id: handoff-claude
+      label: "Write Claude handoff"
+      command: /handoff claude-code
+    - id: accept-run
+      label: "Accept current run"
+      command: /accept-run
 
 # ---------- Theme + sessions ----------
 theme: terminal

@@ -14,8 +14,9 @@ import { runSingleTask } from './task-step.js';
 import { emitTaskTokens } from './tokens.js';
 import { transitionAndSave } from './state-ops.js';
 import { enforceBudget } from './budget.js';
-import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
+import { getRunnerDisplayName, getRunnerModelName } from '../../core/config/accessors/runner-config.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../core/schemas/config.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import {
   createEvidenceLedger,
   readEvidenceLedger,
@@ -23,6 +24,8 @@ import {
   writeEvidenceLedger,
 } from './evidence.js';
 import { createSnapshot } from '../snapshots/store.js';
+import { recordRunSnapshot } from '../snapshots/run.js';
+import { hashTaskBrief } from '../../core/brief-hash.js';
 
 async function maybeAutoSnapshot(opts: {
   projectDir: string;
@@ -33,10 +36,11 @@ async function maybeAutoSnapshot(opts: {
   enabled: boolean;
   taskIndex?: number;
   label: string;
+  recordInRunLedger?: boolean;
 }): Promise<void> {
   if (!opts.enabled) return;
   try {
-    await createSnapshot({
+    const result = await createSnapshot({
       projectDir: opts.projectDir,
       sessionId: opts.sessionId,
       phase: 'manual',
@@ -45,6 +49,9 @@ async function maybeAutoSnapshot(opts: {
       bus: opts.bus,
       eventPhase: opts.phase,
     });
+    if (opts.recordInRunLedger) {
+      await recordRunSnapshot(opts.projectDir, opts.sessionId, result.manifest);
+    }
   } catch (err) {
     publishWarning(opts.bus, opts.phase, labelError(`auto-snapshot (${opts.label}) failed`, err));
   }
@@ -94,13 +101,15 @@ function handleSkippedTask(opts: HandleSkippedTaskOptions): WorkflowState {
   const state = transitionAndSave(projectDir, sessionId, opts.state, { type: 'SKIP_TASK', taskId: task.id });
   publishTaskSkipped(bus, state.phase, { taskId: task.id, title: task.title, reason: skipReason });
   try {
+    const briefHash = hashTaskBrief(state.tasks);
     const ledger = readEvidenceLedger(projectDir, sessionId) ?? createEvidenceLedger({
       sessionId,
       feature: state.feature,
       mode: opts.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
       tasks: state.tasks,
+      briefHash,
     });
-    const updated = recordSkippedTaskEvidence({ ledger, task, reason: skipReason });
+    const updated = recordSkippedTaskEvidence({ ledger, task, reason: skipReason, briefHash });
     writeEvidenceLedger(projectDir, sessionId, updated);
   } catch (err) {
     publishWarning(bus, state.phase, labelError('failed to persist evidence ledger', err));
@@ -172,9 +181,12 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: Wo
       enabled: succeeded && config.snapshots?.auto?.postTask === true,
       taskIndex: i,
       label: `post-task-${i}`,
+      recordInRunLedger: true,
     });
 
     if (config.workflow.maxBudget !== undefined) {
+      const plannerModel = state.plannerModel ?? getRunnerModelName(config.planner);
+      const implementerModel = state.implementerModel ?? getRunnerModelName(config.implementer);
       const budgetResult = await enforceBudget({
         tokenUsage: state.tokenUsage,
         maxBudget: config.workflow.maxBudget,
@@ -182,6 +194,9 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<{ state: Wo
         escalatedCount: getEscalatedTaskIds(state).length,
         plannerTool: state.plannerTool ?? getRunnerDisplayName(config.planner),
         implementerTool: getRunnerDisplayName(config.implementer),
+        ...(plannerModel !== undefined && { plannerModel }),
+        ...(implementerModel !== undefined && { implementerModel }),
+        pricingCache: modelCacheStore,
         callbacks,
         bus: wctx.bus,
         warningEmitted: budgetWarningEmitted,

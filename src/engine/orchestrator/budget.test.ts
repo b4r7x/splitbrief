@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { OrchestratorCallbacks } from './types.js';
+import type { ModelCacheAccessor } from '../providers/model-resolution.js';
 import { checkBudget, getCurrentCost, enforceBudget } from './budget.js';
 import { makeCallbacks as makeSharedCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 
@@ -8,6 +9,11 @@ const zeroUsage: TokenUsage = {
   plannerInput: 0, plannerOutput: 0,
   implementerInput: 0, implementerOutput: 0,
   escalationInput: 0, escalationOutput: 0,
+};
+
+const emptyPricingCache: ModelCacheAccessor = {
+  getModelsDevCatalog: () => null,
+  getProviderModels: () => null,
 };
 
 function makeCallbacks(overrides?: Partial<OrchestratorCallbacks>): OrchestratorCallbacks {
@@ -113,6 +119,45 @@ describe('getCurrentCost', () => {
       implementerTool: 'ollama',
     });
     expect(cost).toBeGreaterThan(0);
+  });
+
+  it('uses runtime-only model cache pricing when calculating current cost', () => {
+    const pricingCache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: (providerId) => providerId === 'anthropic'
+        ? [{
+            id: 'claude-runtime-budget-only',
+            pricingInput: 10,
+            pricingOutput: 30,
+          }]
+        : null,
+    };
+    const usage: TokenUsage = {
+      ...zeroUsage,
+      plannerInput: 1_000_000,
+      plannerOutput: 1_000_000,
+    };
+
+    const withoutCache = getCurrentCost({
+      tokenUsage: usage,
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-runtime-budget-only',
+      implementerTool: 'ollama',
+    });
+    const withCache = getCurrentCost({
+      tokenUsage: usage,
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-runtime-budget-only',
+      implementerTool: 'ollama',
+      pricingCache,
+    });
+
+    expect(withoutCache).toBe(0);
+    expect(withCache).toBe(40);
   });
 });
 
@@ -494,5 +539,150 @@ describe('enforceBudget', () => {
     expect(result.stop).toBe(false);
     expect(result.pauseEmitted).toBe(true);
     expect(events.some(e => e.type === 'warning')).toBe(true);
+  });
+
+  it('emits budget_warning before budget_paused when crossing past 80% straight into pause zone', async () => {
+    const onBudgetPaused = async () => 'continue' as const;
+    const callbacks = makeCallbacks({ onBudgetPaused });
+    const { bus, events } = makeBusRecorder();
+    const usage: TokenUsage = {
+      ...zeroUsage,
+      plannerInput: 200_000,
+      plannerOutput: 20_000,
+    };
+    const cost = getCurrentCost({ ...baseOpts, tokenUsage: usage, plannerTool: 'anthropic' });
+    const budget = cost / 0.9; // 90% of budget — past warning, deep into pause zone
+
+    await enforceBudget({
+      ...baseOpts,
+      plannerTool: 'anthropic',
+      tokenUsage: usage,
+      maxBudget: budget,
+      callbacks,
+      bus,
+      warningEmitted: false,
+      pauseEmitted: false,
+    });
+
+    const warningIdx = events.findIndex(e => e.type === 'budget_warning');
+    const pausedIdx = events.findIndex(e => e.type === 'budget_paused');
+    expect(warningIdx).toBeGreaterThanOrEqual(0);
+    expect(pausedIdx).toBeGreaterThanOrEqual(0);
+    expect(warningIdx).toBeLessThan(pausedIdx);
+  });
+
+  it('emits budget_warning before budget_exceeded when crossing past 80% straight into exceeded zone', async () => {
+    const callbacks = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const usage: TokenUsage = {
+      ...zeroUsage,
+      plannerInput: 1_000_000,
+      plannerOutput: 100_000,
+    };
+    const cost = getCurrentCost({ ...baseOpts, tokenUsage: usage, plannerTool: 'anthropic' });
+    const budget = cost * 0.5;
+
+    await enforceBudget({
+      ...baseOpts,
+      plannerTool: 'anthropic',
+      tokenUsage: usage,
+      maxBudget: budget,
+      callbacks,
+      bus,
+      warningEmitted: false,
+      pauseEmitted: false,
+    });
+
+    const warningIdx = events.findIndex(e => e.type === 'budget_warning');
+    const exceededIdx = events.findIndex(e => e.type === 'budget_exceeded');
+    expect(warningIdx).toBeGreaterThanOrEqual(0);
+    expect(exceededIdx).toBeGreaterThanOrEqual(0);
+    expect(warningIdx).toBeLessThan(exceededIdx);
+  });
+
+  it('uses plannerModel pricing in cost calculation (cheaper model => lower cost => no pause)', async () => {
+    const callbacks = makeCallbacks();
+    const { bus: busSonnet, events: eSonnet } = makeBusRecorder();
+    const { bus: busHaiku, events: eHaiku } = makeBusRecorder();
+    const usage: TokenUsage = {
+      ...zeroUsage,
+      plannerInput: 200_000,
+      plannerOutput: 20_000,
+    };
+    // Same anthropic provider; sonnet ($3/$15) vs haiku-style cheaper unknown model => 0 cost.
+    const sonnetCost = getCurrentCost({
+      ...baseOpts, tokenUsage: usage, plannerTool: 'anthropic', plannerModel: 'claude-sonnet-4-6',
+    });
+    const unknownCost = getCurrentCost({
+      ...baseOpts, tokenUsage: usage, plannerTool: 'anthropic', plannerModel: 'definitely-not-a-real-model-xyz',
+    });
+    expect(sonnetCost).toBeGreaterThan(0);
+    // The unknown model resolves to unpriced — its cost is 0, so a tiny budget should not trip pause.
+    expect(unknownCost).toBe(0);
+
+    const sonnetResult = await enforceBudget({
+      ...baseOpts,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      tokenUsage: usage,
+      maxBudget: sonnetCost / 0.9,
+      callbacks,
+      bus: busSonnet,
+      warningEmitted: false,
+      pauseEmitted: false,
+    });
+    const unknownResult = await enforceBudget({
+      ...baseOpts,
+      plannerTool: 'anthropic',
+      plannerModel: 'definitely-not-a-real-model-xyz',
+      tokenUsage: usage,
+      maxBudget: sonnetCost / 0.9, // same budget
+      callbacks,
+      bus: busHaiku,
+      warningEmitted: false,
+      pauseEmitted: false,
+    });
+
+    expect(sonnetResult.pauseEmitted).toBe(true);
+    expect(eSonnet.some(e => e.type === 'budget_paused')).toBe(true);
+    expect(unknownResult.pauseEmitted).toBe(false);
+    expect(eHaiku.some(e => e.type === 'budget_paused')).toBe(false);
+  });
+
+  it('pauses for a priced runtime-only selected model from the pricing cache', async () => {
+    const callbacks = makeCallbacks({ onBudgetPaused: async () => 'abort' as const });
+    const { bus, events } = makeBusRecorder();
+    const pricingCache: ModelCacheAccessor = {
+      ...emptyPricingCache,
+      getProviderModels: (providerId) => providerId === 'anthropic'
+        ? [{
+            id: 'claude-runtime-budget-only',
+            pricingInput: 10,
+            pricingOutput: 30,
+          }]
+        : null,
+    };
+    const usage: TokenUsage = {
+      ...zeroUsage,
+      plannerInput: 1_000_000,
+      plannerOutput: 1_000_000,
+    };
+
+    const result = await enforceBudget({
+      ...baseOpts,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-runtime-budget-only',
+      tokenUsage: usage,
+      maxBudget: 40 / 0.9,
+      pricingCache,
+      callbacks,
+      bus,
+      warningEmitted: false,
+      pauseEmitted: false,
+    });
+
+    expect(result.stop).toBe(true);
+    expect(result.pauseEmitted).toBe(true);
+    expect(events.map(e => e.type)).toEqual(expect.arrayContaining(['budget_warning', 'budget_paused']));
   });
 });

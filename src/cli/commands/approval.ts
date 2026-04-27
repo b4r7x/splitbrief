@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import ansis from 'ansis';
 import { resolveProjectDir } from '../setup.js';
-import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from '../../engine/orchestrator/approvals-store.js';
+import { readApprovalsStoreStrict, writeApprovalsStore, clearGrantsByScope } from '../../engine/orchestrator/approvals-store.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { cliError } from '../errors.js';
 
@@ -20,7 +20,7 @@ export function registerApprovalCommand(program: Command): void {
     .action((opts: { project?: string }) => {
       try {
         const projectDir = resolveProjectDir(opts.project);
-        const store = readApprovalsStore(projectDir);
+        const store = readApprovalsStoreStrict(projectDir);
 
         if (store.grants.length === 0) {
           console.log('No sticky approvals on record.');
@@ -81,7 +81,7 @@ export function registerApprovalCommand(program: Command): void {
           );
         }
 
-        const before = readApprovalsStore(projectDir);
+        const before = readApprovalsStoreStrict(projectDir);
         const after = clearGrantsByScope(before, scope);
         writeApprovalsStore(projectDir, after);
         const count = before.grants.length - after.grants.length;

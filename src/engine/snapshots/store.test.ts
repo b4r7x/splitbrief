@@ -4,6 +4,7 @@ import { openSync, closeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { simpleGit } from 'simple-git';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
 import type { EventBus, EngineEvent } from '../events/types.js';
 import {
@@ -44,6 +45,10 @@ function makeManifest(id: string): SnapshotManifest {
   };
 }
 
+async function initGitRepo(dir: string): Promise<void> {
+  await simpleGit(dir).init();
+}
+
 describe('generateSnapshotId', () => {
   it('produces a valid ISO slug with hyphens not colons', () => {
     const id = generateSnapshotId(new Date('2026-04-26T14:30:00.000Z'));
@@ -64,10 +69,22 @@ describe('encodeSnapshotPath / decodeSnapshotPath', () => {
     expect(decodeSnapshotPath(encodeSnapshotPath(original))).toBe(original);
   });
 
-  it('encodes slashes as double underscore', () => {
+  it('encodes paths to a filesystem-safe form without slashes', () => {
     const encoded = encodeSnapshotPath('a/b/c.ts');
-    expect(encoded).toContain('__');
     expect(encoded).not.toContain('/');
+    expect(encoded).not.toContain('\\');
+    expect(encoded).toMatch(/^[a-f0-9]+$/);
+  });
+
+  it('produces distinct encodings for paths whose legacy double-underscore form would collide', () => {
+    // The legacy encoding split on '/' and joined with '__', so 'a/b.ts'
+    // and a single segment literally containing '__' could collide. Verify
+    // the new encoding keeps them apart.
+    const a = encodeSnapshotPath('a/b.ts');
+    const b = encodeSnapshotPath('a__b.ts');
+    expect(a).not.toBe(b);
+    expect(decodeSnapshotPath(a)).toBe('a/b.ts');
+    expect(decodeSnapshotPath(b)).toBe('a__b.ts');
   });
 });
 
@@ -141,7 +158,8 @@ describe('collectTrackedFiles', () => {
     expect(files).toContain('src.ts');
   });
 
-  it('excludes paths matched by .gitignore prefix (e.g. dist/)', async () => {
+  it('excludes paths matched by .gitignore directory patterns', async () => {
+    await initGitRepo(tmp);
     await writeFile(join(tmp, '.gitignore'), 'dist/\nbuild/\n');
     await mkdir(join(tmp, 'dist'), { recursive: true });
     await mkdir(join(tmp, 'src'), { recursive: true });
@@ -152,6 +170,23 @@ describe('collectTrackedFiles', () => {
     expect(files.some(f => f.startsWith('dist/'))).toBe(false);
     expect(files).toContain('src/index.ts');
     expect(files).toContain('.gitignore');
+  });
+
+  it('uses git-compatible .gitignore matching for globs and negation', async () => {
+    await initGitRepo(tmp);
+    await writeFile(join(tmp, '.gitignore'), '*.log\ncoverage/**\n!important.log\n');
+    await mkdir(join(tmp, 'coverage', 'nested'), { recursive: true });
+    await writeFile(join(tmp, 'debug.log'), 'ignored');
+    await writeFile(join(tmp, 'important.log'), 'kept');
+    await writeFile(join(tmp, 'coverage', 'nested', 'report.json'), '{}');
+    await writeFile(join(tmp, 'src.ts'), 'export {}');
+
+    const files = await collectTrackedFiles(tmp);
+
+    expect(files).not.toContain('debug.log');
+    expect(files).not.toContain('coverage/nested/report.json');
+    expect(files).toContain('important.log');
+    expect(files).toContain('src.ts');
   });
 });
 
@@ -261,6 +296,38 @@ describe('createSnapshot — first call (baseline)', () => {
 
     expect(result.manifest.fileEntries.every(e => !e.path.startsWith('.diptych/'))).toBe(true);
     expect(result.manifest.fileHashes).not.toHaveProperty('.diptych/active');
+  });
+
+  it('excludes .trees/ from tracked files so worktree clones never end up inside their parent snapshot', async () => {
+    await writeFile(join(tmp, 'src.ts'), 'export {}');
+    await mkdir(join(tmp, '.trees', 'feat-x', 'src'), { recursive: true });
+    await writeFile(join(tmp, '.trees', 'feat-x', 'src', 'leaked.ts'), 'leaked');
+
+    const result = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+
+    expect(result.manifest.fileEntries.every(e => !e.path.startsWith('.trees/'))).toBe(true);
+    expect(Object.keys(result.manifest.fileHashes).every(p => !p.startsWith('.trees/'))).toBe(true);
+  });
+
+  it('round-trips two paths whose legacy encodings would have collided without losing data', async () => {
+    // Regression for the collision-free encoding: snapshot, modify both,
+    // then re-snapshot and verify both files appear with distinct entries
+    // and distinct stored blobs.
+    await writeFile(join(tmp, 'a__b.ts'), 'literal underscores');
+    await mkdir(join(tmp, 'a'), { recursive: true });
+    await writeFile(join(tmp, 'a', 'b.ts'), 'nested path');
+
+    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    await writeFile(join(tmp, 'a__b.ts'), 'literal underscores v2');
+    await writeFile(join(tmp, 'a', 'b.ts'), 'nested path v2');
+    const result = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+
+    const entries = result.manifest.fileEntries.filter(
+      e => e.path === 'a__b.ts' || e.path === 'a/b.ts',
+    );
+    expect(entries).toHaveLength(2);
+    const encodedNames = new Set(entries.map(e => e.encodedName));
+    expect(encodedNames.size).toBe(2);
   });
 
   it('emits snapshot_created when mock bus provided, with correct fileCount', async () => {

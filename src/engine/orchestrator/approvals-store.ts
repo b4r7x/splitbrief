@@ -12,8 +12,32 @@ export function readApprovalsStore(projectDir: string): ApprovalsStore {
   try {
     const raw = readFileSync(filePath, 'utf-8');
     return ApprovalsStoreSchema.parse(JSON.parse(raw));
-  } catch {
-    return { ...EMPTY_STORE, grants: [] };
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { ...EMPTY_STORE, grants: [] };
+    }
+    throw new Error(
+      `approval store is corrupt and cannot be read: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+/**
+ * Like `readApprovalsStore` but throws when the store file exists and is corrupt,
+ * rather than silently returning an empty store. Use for CLI/user-facing paths.
+ */
+export function readApprovalsStoreStrict(projectDir: string): ApprovalsStore {
+  const filePath = approvalsFile(projectDir);
+  try {
+    const raw = readFileSync(filePath, 'utf-8');
+    return ApprovalsStoreSchema.parse(JSON.parse(raw));
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { ...EMPTY_STORE, grants: [] };
+    }
+    throw new Error(
+      `approval store is corrupt and cannot be read: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 

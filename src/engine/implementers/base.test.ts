@@ -118,6 +118,30 @@ describe('createImplementerBase — extractsCode pipeline success', () => {
     const written = readFileSync(join(projectDir, 'src/hello.ts'), 'utf-8');
     expect(written).toContain('export const hello');
   });
+
+  it('asks for approval before applying extracted code and leaves disk untouched when denied', async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      text: '```ts\nexport const denied = true;\n```',
+      usage: { inputTokens: 10, outputTokens: 20 },
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ invoke }));
+    const approveWrite = vi.fn().mockResolvedValue({ allow: false, reason: 'approval denied' });
+    const task = makeTask({ id: 'T001', file: 'src/denied.ts', action: 'create' });
+
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      approveWrite,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('approval denied');
+    expect(approveWrite).toHaveBeenCalledWith('src/denied.ts');
+    expect(existsSync(join(projectDir, 'src/denied.ts'))).toBe(false);
+  });
 });
 
 describe('createImplementerBase — non-extracting backends (detectChanges)', () => {
@@ -226,4 +250,3 @@ describe('createImplementerBase — retry', () => {
     expect(call?.temperature).toBe(0.2);
   });
 });
-

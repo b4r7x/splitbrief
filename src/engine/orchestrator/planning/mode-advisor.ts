@@ -55,6 +55,8 @@ const SMALL_PATTERNS: readonly string[] = [
 ];
 
 const FILE_PATH_RE = /(?:src\/|lib\/|\.ts|\.tsx|\.js|\.jsx|\.py|\.go|\.rs)\b/i;
+const AREA_OR_MODULE_RE = /\b(area|module|component|page|screen|route|endpoint|api|service|store|hook|cli|config|docs?|tests?|auth|login|database|schema|ui|workflow|orchestrator|planner|implementer)\b/i;
+const VALIDATION_HINT_RE = /\b(test(s|ed|ing)?|verify|validate|validation|typecheck|lint|passing|assert|expect|acceptance|criteria|done when|done if|should)\b/i;
 const VAGUE_RE = /^(improve|fix|make better|make it better|make it work|update|enhance)\s*(it|this|that)?\s*$/i;
 
 const MODE_ORDER: readonly WorkflowMode[] = ['instant', 'quick', 'standard', 'speckit'];
@@ -132,24 +134,23 @@ function detectMissing(prompt: string, lower: string, wordCount: number): string
   if (wordCount === 0) return missing;
 
   if (VAGUE_RE.test(prompt.trim())) {
-    missing.push('no target specified');
+    missing.push('vague target');
     return missing;
+  }
+
+  if (wordCount > 5 && !FILE_PATH_RE.test(lower) && !AREA_OR_MODULE_RE.test(lower)) {
+    missing.push('no area/file/module');
+  }
+
+  if (wordCount > 5 && !VALIDATION_HINT_RE.test(lower)) {
+    missing.push('no validation hint');
   }
 
   if (
     wordCount > 8 &&
+    !VALIDATION_HINT_RE.test(lower) &&
     !lower.includes('when') &&
-    !lower.includes('should') &&
-    !lower.includes('expect') &&
-    !lower.includes('so that') &&
-    !lower.includes('done when') &&
-    !lower.includes('done if') &&
-    !lower.includes('acceptance') &&
-    !lower.includes('criteria') &&
-    !/\btest(s|ed|ing)?\b/.test(lower) &&
-    !lower.includes('verify') &&
-    !lower.includes('passing') &&
-    !lower.includes('passing')
+    !lower.includes('so that')
   ) {
     missing.push('no done criteria');
   }
@@ -179,7 +180,15 @@ export function adviseMode(prompt: string, currentMode: WorkflowMode): AdvisorRe
   const missing = detectMissing(prompt, lower, wordCount);
 
   // Missing-context takes priority over mode matching — emit even when modes match
-  if (missing.length > 0 && wordCount <= 5) {
+  if (
+    missing.length > 0 &&
+    (
+      wordCount <= 5 ||
+      missing.includes('vague target') ||
+      missing.includes('no area/file/module') ||
+      (risk === 'normal' && (missing.includes('no validation hint') || missing.includes('no done criteria')))
+    )
+  ) {
     return {
       kind: 'missing-context',
       risk,

@@ -7,18 +7,26 @@ import { listWorktrees, removeWorktree } from '../../engine/git/worktree.js';
 import type { WorktreeInfo } from '../../engine/git/worktree.js';
 
 function statusCell(info: WorktreeInfo): string {
-  if (info.status === 'none' || info.sessionId === null) return info.status;
-  return `${info.status}  (${info.sessionId})`;
+  return info.status;
+}
+
+function valueOrUnknown(value: string | null): string {
+  return value ?? 'unknown';
 }
 
 function renderList(worktrees: WorktreeInfo[]): void {
   const terminalWidth = process.stdout.columns ?? 80;
 
-  const NAME_MIN = 15;
-  const BRANCH_MIN = 25;
+  const NAME_MIN = 12;
+  const PATH_MIN = 18;
+  const BRANCH_MIN = 18;
   const STATUS_MIN = 10;
+  const SESSION_MIN = 12;
+  const PHASE_MIN = 10;
+  const UPDATED_MIN = 12;
 
   const nameNatural = Math.max(NAME_MIN, 'NAME'.length, ...worktrees.map((w) => w.name.length));
+  const pathNatural = Math.max(PATH_MIN, 'PATH'.length, ...worktrees.map((w) => w.path.length));
   const branchNatural = Math.max(
     BRANCH_MIN,
     'BRANCH'.length,
@@ -29,34 +37,78 @@ function renderList(worktrees: WorktreeInfo[]): void {
     'STATUS'.length,
     ...worktrees.map((w) => statusCell(w).length),
   );
+  const sessionNatural = Math.max(
+    SESSION_MIN,
+    'SESSION'.length,
+    ...worktrees.map((w) => valueOrUnknown(w.sessionId).length),
+  );
+  const phaseNatural = Math.max(
+    PHASE_MIN,
+    'PHASE'.length,
+    ...worktrees.map((w) => valueOrUnknown(w.phase).length),
+  );
+  const updatedNatural = Math.max(
+    UPDATED_MIN,
+    'UPDATED'.length,
+    ...worktrees.map((w) => valueOrUnknown(w.lastUpdated).length),
+  );
 
   const GAP = 2;
-  const totalNatural = nameNatural + GAP + branchNatural + GAP + statusNatural;
+  const totalNatural =
+    nameNatural +
+    GAP +
+    pathNatural +
+    GAP +
+    branchNatural +
+    GAP +
+    statusNatural +
+    GAP +
+    sessionNatural +
+    GAP +
+    phaseNatural +
+    GAP +
+    updatedNatural;
 
   let nameW = nameNatural;
+  let pathW = pathNatural;
   let branchW = branchNatural;
   const statusW = statusNatural;
+  const sessionW = sessionNatural;
+  const phaseW = phaseNatural;
+  const updatedW = updatedNatural;
 
   if (totalNatural > terminalWidth) {
     const overflow = totalNatural - terminalWidth;
-    branchW = Math.max(BRANCH_MIN, branchNatural - overflow);
-    if (nameW + GAP + branchW + GAP + statusW > terminalWidth) {
-      nameW = Math.max(NAME_MIN, terminalWidth - GAP - branchW - GAP - statusW);
+    pathW = Math.max(PATH_MIN, pathNatural - overflow);
+    const afterPath = nameW + GAP + pathW + GAP + branchW + GAP + statusW + GAP + sessionW + GAP + phaseW + GAP + updatedW;
+    if (afterPath > terminalWidth) {
+      branchW = Math.max(BRANCH_MIN, branchNatural - (afterPath - terminalWidth));
+    }
+    if (nameW + GAP + pathW + GAP + branchW + GAP + statusW + GAP + sessionW + GAP + phaseW + GAP + updatedW > terminalWidth) {
+      nameW = Math.max(NAME_MIN, terminalWidth - GAP - pathW - GAP - branchW - GAP - statusW - GAP - sessionW - GAP - phaseW - GAP - updatedW);
     }
   }
 
   const header = [
     'NAME'.padEnd(nameW),
+    'PATH'.padEnd(pathW),
     'BRANCH'.padEnd(branchW),
     'STATUS'.padEnd(statusW),
+    'SESSION'.padEnd(sessionW),
+    'PHASE'.padEnd(phaseW),
+    'UPDATED'.padEnd(updatedW),
   ].join('  ');
   console.log(header);
 
   for (const w of worktrees) {
     const name = w.name.length > nameW ? w.name.slice(0, nameW) : w.name.padEnd(nameW);
+    const path = w.path.length > pathW ? w.path.slice(0, pathW) : w.path.padEnd(pathW);
     const branch = w.branch.length > branchW ? w.branch.slice(0, branchW) : w.branch.padEnd(branchW);
     const status = statusCell(w);
-    console.log([name, branch, status].join('  '));
+    const session = valueOrUnknown(w.sessionId);
+    const phase = valueOrUnknown(w.phase);
+    const updated = valueOrUnknown(w.lastUpdated);
+    console.log([name, path, branch, status, session, phase, updated].join('  '));
   }
 }
 

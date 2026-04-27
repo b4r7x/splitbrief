@@ -20,7 +20,7 @@ import type { BriefQualityReport } from '../spec/brief-quality.js';
 
 export type BuildSummaryState = Pick<WorkflowState, 'tasks' | 'tokenUsage'>;
 
-export type SummaryBase = { feature: string; startTime: number; plannerTool: string; plannerModel?: string; implementerTool: string; implementerModel?: string; mode?: WorkflowMode; projectDir?: string; sessionId?: string };
+export type SummaryBase = { feature: string; startTime: number; plannerTool: string; plannerModel?: string; implementerTool: string; implementerModel?: string; mode?: WorkflowMode; projectDir?: string; sessionId?: string; costPrediction?: CostPrediction | undefined };
 
 type BuildSummaryOptions = {
   feature: string;

@@ -120,20 +120,23 @@ export function formatCrashDiagnostic(diag: CrashDiagnostic): string {
 
   lines.push('');
   lines.push('  Options:');
-  lines.push('    [1] Start a new workflow for the same feature');
+  lines.push('    [1] Exit and run `diptych start` for a new workflow');
   lines.push('    [2] Exit and inspect logs manually');
 
   return lines.join('\n');
 }
 
-async function waitForKey(): Promise<string> {
+export async function waitForCrashDiagnosticOption(): Promise<string> {
+  if (!process.stdin.isTTY) {
+    return '2';
+  }
   return new Promise((resolve) => {
     const stdin = process.stdin;
     const wasRaw = stdin.isRaw;
-    if (stdin.isTTY) stdin.setRawMode(true);
+    stdin.setRawMode(true);
     stdin.resume();
     stdin.once('data', (chunk: Buffer) => {
-      if (stdin.isTTY) stdin.setRawMode(wasRaw);
+      stdin.setRawMode(wasRaw);
       stdin.pause();
       resolve(chunk.toString('utf-8'));
     });
@@ -143,7 +146,7 @@ async function waitForKey(): Promise<string> {
 export async function showCrashDiagnostic(
   sessionDir: string,
   status: ServerStatus,
-  _waitForKey: () => Promise<string> = waitForKey,
+  _waitForKey: () => Promise<string> = waitForCrashDiagnosticOption,
 ): Promise<void> {
   const diag = await buildCrashDiagnostic(sessionDir, status);
   const formatted = formatCrashDiagnostic(diag);
@@ -151,8 +154,10 @@ export async function showCrashDiagnostic(
 
   const key = await _waitForKey();
   if (key === '1') {
-    process.stdout.write('Starting new workflow...\n');
-    return;
+    process.stdout.write(
+      'Exiting. Run `diptych start` to begin a new workflow.\n',
+    );
+    process.exit(0);
   }
   process.exit(0);
 }

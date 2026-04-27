@@ -1,10 +1,12 @@
 import { spawn } from 'node:child_process';
-import { openSync } from 'node:fs';
+import { openSync, writeFileSync } from 'node:fs';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SERVER_LOG_FILE } from '../../core/paths.js';
+import { createConnection } from 'node:net';
+import { SERVER_LOG_FILE, IPC_SOCK_FILE } from '../../core/paths.js';
 import { checkServerStatus } from './lockfile.js';
+import type { CLIOverrides } from '../../core/config/runtime/overrides.js';
 
 export type SpawnServerOptions = {
   sessionDir: string;
@@ -13,6 +15,7 @@ export type SpawnServerOptions = {
   feature: string;
   mode: string;
   configPath: string;
+  overrides?: CLIOverrides;
 };
 
 export type SpawnServerResult =
@@ -20,7 +23,9 @@ export type SpawnServerResult =
   | { ok: false; reason: string };
 
 const POLL_INTERVAL_MS = 200;
-const STARTUP_TIMEOUT_MS = 3000;
+const STARTUP_TIMEOUT_MS = 5000;
+
+const SERVER_ARGS_FILE = 'server-args.json';
 
 function resolveEntryPoint(): { command: string; args: string[] } {
   const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -32,8 +37,22 @@ function resolveEntryPoint(): { command: string; args: string[] } {
 
   // Dev mode: use tsx to run TypeScript directly
   const srcEntry = join(projectRoot, 'src', 'engine', 'ipc', 'server-entry.ts');
-  // TODO(SCD-dev): Try resolving tsx via node_modules/.bin/tsx first
   return { command: 'npx', args: ['tsx', srcEntry] };
+}
+
+function tryConnect(sockPath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = createConnection(sockPath);
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      try { socket.destroy(); } catch { /* ignore */ }
+      resolve(ok);
+    };
+    socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
+  });
 }
 
 export async function spawnServer(opts: SpawnServerOptions): Promise<SpawnServerResult> {
@@ -41,6 +60,21 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<SpawnServer
 
   const logPath = join(opts.sessionDir, SERVER_LOG_FILE);
   const logFd = openSync(logPath, 'a');
+
+  // Write CLI overrides to a JSON file so we don't depend on argv length / quoting
+  // for the (potentially many) per-session options.
+  const argsFile = join(opts.sessionDir, SERVER_ARGS_FILE);
+  writeFileSync(
+    argsFile,
+    JSON.stringify({
+      sessionId: opts.sessionId,
+      projectDir: opts.projectDir,
+      feature: opts.feature,
+      mode: opts.mode,
+      configPath: opts.configPath,
+      overrides: opts.overrides ?? {},
+    }, null, 2),
+  );
 
   const argv = [
     ...entryArgs,
@@ -57,17 +91,23 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<SpawnServer
   });
   child.unref();
 
+  const sockPath = join(opts.sessionDir, IPC_SOCK_FILE);
+
   return new Promise<SpawnServerResult>((resolve) => {
     const deadline = Date.now() + STARTUP_TIMEOUT_MS;
 
     const poll = async () => {
       const status = await checkServerStatus(opts.sessionDir);
       if (status.alive) {
-        resolve({ ok: true, pid: status.data.pid, sessionId: opts.sessionId });
-        return;
+        // Lockfile is alive but the IPC socket may not have been bound yet.
+        // Confirm we can actually connect before declaring readiness.
+        if (existsSync(sockPath) && (await tryConnect(sockPath))) {
+          resolve({ ok: true, pid: status.data.pid, sessionId: opts.sessionId });
+          return;
+        }
       }
       if (Date.now() >= deadline) {
-        resolve({ ok: false, reason: 'timeout waiting for server to start' });
+        resolve({ ok: false, reason: 'timeout waiting for server to accept connections' });
         return;
       }
       setTimeout(() => void poll(), POLL_INTERVAL_MS);

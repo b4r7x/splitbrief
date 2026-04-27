@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import { MCP_PROTOCOL_VERSION } from './handlers.js';
 import { startMcpServer } from './server.js';
 import type { McpServerHandle } from './server.js';
 import type { McpResolver } from './resolver.js';
@@ -54,7 +55,7 @@ describe('POST /mcp — valid auth', () => {
     expect((result['serverInfo'] as Record<string, unknown>)['version']).toBe(SERVER_VERSION);
   });
 
-  it('returns 204 for notifications/initialized', async () => {
+  it('returns 202 for notifications/initialized', async () => {
     const h = await startServer();
     const body = JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' });
     const res = await fetch(`${baseUrl(h.port)}/mcp`, {
@@ -62,9 +63,22 @@ describe('POST /mcp — valid auth', () => {
       headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
       body,
     });
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(202);
     const text = await res.text();
     expect(text).toBe('');
+  });
+
+  it('returns JSON-RPC invalid request for a no-id message without method', async () => {
+    const h = await startServer();
+    const res = await fetch(`${baseUrl(h.port)}/mcp`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0' }),
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json() as { id: unknown; error?: { code: number } };
+    expect(json.id).toBeNull();
+    expect(json.error?.code).toBe(-32600);
   });
 });
 
@@ -101,13 +115,14 @@ describe('Auth rejection', () => {
 });
 
 describe('Routing — wrong method/path', () => {
-  it('returns 404 for GET /mcp', async () => {
+  it('returns 405 with Allow: POST for GET /mcp', async () => {
     const h = await startServer();
     const res = await fetch(`${baseUrl(h.port)}/mcp`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${TOKEN}` },
     });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(405);
+    expect(res.headers.get('allow')).toBe('POST');
   });
 
   it('returns 404 for POST /unknown-path', async () => {
@@ -149,6 +164,151 @@ describe('Body limit', () => {
       status = 413;
     }
     expect(status).toBe(413);
+  });
+});
+
+describe('Origin validation', () => {
+  it('returns 403 when Origin header is a non-local domain', async () => {
+    const h = await startServer();
+    const res = await fetch(`${baseUrl(h.port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+        Origin: 'https://evil.example.com',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 403 when Origin header is a non-local IP', async () => {
+    const h = await startServer();
+    const res = await fetch(`${baseUrl(h.port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+        Origin: 'http://192.168.1.1',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 403 when Origin header is null', async () => {
+    const h = await startServer();
+    const res = await fetch(`${baseUrl(h.port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+        Origin: 'null',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('accepts request without Origin for non-browser CLI clients', async () => {
+    const h = await startServer();
+    const res = await fetch(`${baseUrl(h.port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('accepts request with localhost Origin', async () => {
+    const h = await startServer();
+    const res = await fetch(`${baseUrl(h.port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+        Origin: 'http://localhost:3000',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('accepts request with 127.0.0.1 Origin', async () => {
+    const h = await startServer();
+    const res = await fetch(`${baseUrl(h.port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+        Origin: 'http://127.0.0.1:5173',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
+    });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('MCP-Protocol-Version header', () => {
+  it('response includes MCP-Protocol-Version header', async () => {
+    const h = await startServer();
+    const res = await fetch(`${baseUrl(h.port)}/mcp`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('mcp-protocol-version')).toBe(MCP_PROTOCOL_VERSION);
+  });
+
+  it('keeps response header and initialize body on the current protocol version', async () => {
+    const h = await startServer();
+    const res = await fetch(`${baseUrl(h.port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+        'MCP-Protocol-Version': MCP_PROTOCOL_VERSION,
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('mcp-protocol-version')).toBe(MCP_PROTOCOL_VERSION);
+    const json = await res.json() as { result?: { protocolVersion?: string } };
+    expect(json.result?.protocolVersion).toBe(MCP_PROTOCOL_VERSION);
+  });
+
+  it('returns 400 JSON-RPC error when client sends an unknown version', async () => {
+    const h = await startServer();
+    const res = await fetch(`${baseUrl(h.port)}/mcp`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+        'MCP-Protocol-Version': '1999-01-01',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
+    });
+    expect(res.status).toBe(400);
+    expect(res.headers.get('mcp-protocol-version')).toBe(MCP_PROTOCOL_VERSION);
+    const json = await res.json() as { id: unknown; error?: { code: number; message: string } };
+    expect(json.id).toBeNull();
+    expect(json.error?.code).toBe(-32600);
+    expect(json.error?.message).toContain('Unsupported MCP-Protocol-Version');
+  });
+
+  it('notification response (202) also carries MCP-Protocol-Version header', async () => {
+    const h = await startServer();
+    const res = await fetch(`${baseUrl(h.port)}/mcp`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+    });
+    expect(res.status).toBe(202);
+    expect(res.headers.get('mcp-protocol-version')).toBe(MCP_PROTOCOL_VERSION);
   });
 });
 

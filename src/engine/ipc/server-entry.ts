@@ -1,22 +1,64 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from '../../core/config/load/load.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../core/paths.js';
-import { writeLockfile, markExited, markCrashed } from './lockfile.js';
+import { writeLockfile, markExited, markCrashed, markSignaled } from './lockfile.js';
 import { startHeartbeat } from './heartbeat.js';
 import { runWorkflow } from '../orchestrator/run/run.js';
 import { startIpcServer } from './server.js';
 import { createEventBus } from '../events/bus.js';
 import { normalizeLegacyMode } from '../../core/schemas/enums.js';
 import { createIpcWorkflowBridge } from './workflow-bridge.js';
+import type { IpcPromptResponse } from './protocol.js';
+import { applyCLIOverrides, type CLIOverrides } from '../../core/config/runtime/overrides.js';
 
-function getArgv(): { sessionId: string; projectDir: string; feature: string; mode: string; configPath: string } {
+const SERVER_ARGS_FILE = 'server-args.json';
+
+function assertPromptResponse<T extends IpcPromptResponse['kind']>(
+  response: IpcPromptResponse,
+  kind: T,
+): Extract<IpcPromptResponse, { kind: T }> {
+  if (response.kind !== kind) {
+    throw new Error(`IPC prompt response kind mismatch: expected ${kind}, got ${response.kind}`);
+  }
+  return response as Extract<IpcPromptResponse, { kind: T }>;
+}
+
+type ServerArgs = {
+  sessionId: string;
+  projectDir: string;
+  feature: string;
+  mode: string;
+  configPath: string;
+  overrides: CLIOverrides;
+};
+
+function getArgv(): ServerArgs {
   const [, , sessionId, projectDir, feature, mode, configPath] = process.argv;
   if (!sessionId || !projectDir || !feature || !mode || !configPath) {
     process.stderr.write('server-entry: missing required argv\n');
     process.exit(1);
   }
-  return { sessionId, projectDir, feature, mode, configPath };
+
+  // Try to load richer args (with CLI overrides) from server-args.json beside the lockfile.
+  const argsFile = join(sessionDir(projectDir, sessionId), SERVER_ARGS_FILE);
+  if (existsSync(argsFile)) {
+    try {
+      const parsed = JSON.parse(readFileSync(argsFile, 'utf8')) as Partial<ServerArgs>;
+      return {
+        sessionId,
+        projectDir,
+        feature,
+        mode,
+        configPath,
+        overrides: (parsed.overrides && typeof parsed.overrides === 'object') ? parsed.overrides as CLIOverrides : {},
+      };
+    } catch {
+      // Fall through to argv-only mode.
+    }
+  }
+
+  return { sessionId, projectDir, feature, mode, configPath, overrides: {} };
 }
 
 const argv = getArgv();
@@ -40,6 +82,8 @@ async function main() {
   const ipcBus = createEventBus();
   const ipcBridge = createIpcWorkflowBridge(ipcBus);
   const mode = normalizeLegacyMode(argv.mode) ?? 'standard';
+  const { config: rawConfig } = loadConfig(argv.projectDir);
+  const config = applyCLIOverrides(rawConfig, argv.overrides);
   const ipcServer = await startIpcServer({
     sessionId: argv.sessionId,
     sessionDir: dir,
@@ -49,6 +93,7 @@ async function main() {
     bus: ipcBus,
     onUserInput: ipcBridge.onUserInput,
     sessionJsonlPath: join(dir, SESSION_LOG_FILE),
+    noClientPromptBehavior: config.approval?.headless === true ? 'fail-closed' : 'wait',
   });
 
   const onCleanup = async (exitCode: number) => {
@@ -59,11 +104,19 @@ async function main() {
   };
 
   process.on('SIGTERM', () => {
-    void onCleanup(0).then(() => process.exit(0));
+    void (async () => {
+      await markSignaled(dir, 'SIGTERM');
+      await onCleanup(0);
+      process.exit(0);
+    })();
   });
 
   process.on('SIGINT', () => {
-    void onCleanup(0).then(() => process.exit(0));
+    void (async () => {
+      await markSignaled(dir, 'SIGINT');
+      await onCleanup(0);
+      process.exit(0);
+    })();
   });
 
   process.on('unhandledRejection', (reason) => {
@@ -75,8 +128,6 @@ async function main() {
     void markCrashed(dir, 'uncaught', err.message).then(() => process.exit(1));
   });
 
-  const { config } = loadConfig(argv.projectDir);
-
   await runWorkflow({
     feature: argv.feature,
     projectDir: argv.projectDir,
@@ -86,14 +137,59 @@ async function main() {
     eventBus: ipcBus,
     sinks: ipcBridge.sinks,
     callbacks: {
-      onApprovalNeeded: async () => ({ approved: true }),
-      onExternalChanges: async () => true,
-      onQuestionAsked: async () => '',
-      onBudgetExceeded: async () => true,
-      onBudgetPaused: async () => {
-        process.exit(1);
+      onApprovalNeeded: async (approvalType, filePath) => {
+        const response = assertPromptResponse(
+          await ipcServer.requestClientPrompt({ kind: 'approval_needed', approvalType, filePath }),
+          'approval_needed',
+        );
+        return {
+          approved: response.approved,
+          ...(response.comment !== undefined && { comment: response.comment }),
+          ...(response.action !== undefined && { action: response.action }),
+        };
       },
-      onContinuationNeeded: async () => '',
+      onExternalChanges: async () => {
+        const response = assertPromptResponse(
+          await ipcServer.requestClientPrompt({ kind: 'external_changes' }),
+          'external_changes',
+        );
+        return response.proceed;
+      },
+      onQuestionAsked: async (question, num, total) => {
+        const response = assertPromptResponse(
+          await ipcServer.requestClientPrompt({ kind: 'question_asked', question, num, total }),
+          'question_asked',
+        );
+        return response.answer;
+      },
+      onBudgetExceeded: async (currentCost, maxBudget) => {
+        const response = assertPromptResponse(
+          await ipcServer.requestClientPrompt({ kind: 'budget_exceeded', currentCost, maxBudget }),
+          'budget_exceeded',
+        );
+        return response.proceed;
+      },
+      onBudgetPaused: async (currentCost, maxBudget) => {
+        const response = assertPromptResponse(
+          await ipcServer.requestClientPrompt({ kind: 'budget_paused', currentCost, maxBudget }),
+          'budget_paused',
+        );
+        return response.decision;
+      },
+      onContinuationNeeded: async (partialResponse) => {
+        const response = assertPromptResponse(
+          await ipcServer.requestClientPrompt({ kind: 'continuation_needed', partialResponse }),
+          'continuation_needed',
+        );
+        return response.text;
+      },
+      onTieredApproval: async (request) => {
+        const response = assertPromptResponse(
+          await ipcServer.requestClientPrompt({ kind: 'tiered_approval', request }),
+          'tiered_approval',
+        );
+        return response.response;
+      },
       onComplete: () => undefined,
     },
   });

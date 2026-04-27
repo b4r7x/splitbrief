@@ -6,6 +6,7 @@ import type { Summary } from '../../core/schemas/summary.js';
 import type { ValidationResult } from '../../core/types/summary.js';
 import type {
   EvidenceFinalReviewStatus,
+  EvidenceApproval,
   EvidenceLedger,
   EvidenceRejection,
   EvidenceTask,
@@ -31,12 +32,13 @@ function clone(ledger: EvidenceLedger): EvidenceLedger {
     tasks: ledger.tasks.map(t => ({
       ...t,
       changedFiles: [...t.changedFiles],
-      validation: t.validation.map(v => ({ ...v })),
+      validation: t.validation.map(v => ({ ...v, ...(v.changedFiles ? { changedFiles: [...v.changedFiles] } : {}) })),
       expectedEvidence: [...t.expectedEvidence],
       observedEvidence: [...t.observedEvidence],
     })),
     validationSummary: { ...ledger.validationSummary },
     ...(ledger.finalReview && { finalReview: { ...ledger.finalReview } }),
+    ...(ledger.approvals && { approvals: ledger.approvals.map(a => ({ ...a })) }),
     ...(ledger.rejections && { rejections: ledger.rejections.map(r => ({ ...r })) }),
   };
 }
@@ -109,7 +111,7 @@ function findOrSeed(ledger: EvidenceLedger, task: Task, briefHash?: string | nul
       title: task.title,
       file: task.file,
       changedFiles: [...existing.changedFiles],
-      validation: existing.validation.map(v => ({ ...v })),
+      validation: existing.validation.map(v => ({ ...v, ...(v.changedFiles ? { changedFiles: [...v.changedFiles] } : {}) })),
       expectedEvidence: existing.expectedEvidence.length > 0
         ? [...existing.expectedEvidence]
         : buildExpectedEvidence(task),
@@ -124,12 +126,25 @@ function uniquePush(arr: string[], value: string): void {
   if (!arr.includes(value)) arr.push(value);
 }
 
-function validationEntries(results: ValidationResult[]): EvidenceValidationEntry[] {
+function validationEntries(
+  results: ValidationResult[],
+  metadata?: { retryState?: EvidenceValidationEntry['retryState']; changedFiles?: string[] | undefined } | undefined,
+): EvidenceValidationEntry[] {
   return results.map(r => {
     const entry: EvidenceValidationEntry = { stage: r.stage, passed: r.passed };
     if (r.error && !r.passed) entry.errorSummary = r.error.split('\n').slice(0, 5).join('\n');
+    if (!r.passed && metadata?.retryState) entry.retryState = metadata.retryState;
+    if (!r.passed && metadata?.changedFiles && metadata.changedFiles.length > 0) {
+      entry.changedFiles = [...metadata.changedFiles];
+    }
     return entry;
   });
+}
+
+function appendValidationEntries(target: EvidenceValidationEntry[], entries: EvidenceValidationEntry[]): void {
+  for (const entry of entries) {
+    target.push({ ...entry, ...(entry.changedFiles ? { changedFiles: [...entry.changedFiles] } : {}) });
+  }
 }
 
 export type CreateEvidenceLedgerInput = {
@@ -166,6 +181,7 @@ export type RecordLocalTaskEvidenceInput = {
   validation: ValidationResult[];
   changedFiles?: string[] | undefined;
   briefHash?: string | null;
+  validationRetryState?: EvidenceValidationEntry['retryState'] | undefined;
 };
 
 export function recordLocalTaskEvidence(input: RecordLocalTaskEvidenceInput): EvidenceLedger {
@@ -175,10 +191,13 @@ export function recordLocalTaskEvidence(input: RecordLocalTaskEvidenceInput): Ev
   if (input.method) next.method = input.method;
   if (typeof input.retries === 'number') next.retries = input.retries;
   if (typeof input.durationMs === 'number') next.durationMs = input.durationMs;
-  next.validation = validationEntries(input.validation);
   for (const file of input.changedFiles ?? [input.task.file]) {
     if (file) uniquePush(next.changedFiles, file);
   }
+  next.validation = validationEntries(input.validation, {
+    retryState: input.validationRetryState,
+    changedFiles: input.changedFiles,
+  });
   if (input.status === 'done') uniquePush(next.observedEvidence, 'task reached done');
   for (const r of input.validation) {
     if (r.passed) uniquePush(next.observedEvidence, VALIDATION_PASSED_LABEL[r.stage]);
@@ -200,6 +219,7 @@ export type RecordRetryOrEscalationEvidenceInput = {
   changedFiles?: string[] | undefined;
   escalated: boolean;
   briefHash?: string | null;
+  validationRetryState?: EvidenceValidationEntry['retryState'] | undefined;
 };
 
 export function recordRetryOrEscalationEvidence(
@@ -212,9 +232,14 @@ export function recordRetryOrEscalationEvidence(
   if (typeof input.retries === 'number') next.retries = input.retries;
   if (typeof input.durationMs === 'number') next.durationMs = input.durationMs;
   next.escalated = input.escalated || next.escalated;
-  if (input.validation) next.validation = validationEntries(input.validation);
   for (const file of input.changedFiles ?? []) {
     if (file) uniquePush(next.changedFiles, file);
+  }
+  if (input.validation) {
+    appendValidationEntries(next.validation, validationEntries(input.validation, {
+      retryState: input.validationRetryState ?? (input.escalated ? 'escalated' : input.status === 'failed' ? 'failed' : 'retry'),
+      changedFiles: input.changedFiles,
+    }));
   }
   if (input.status === 'done') {
     uniquePush(next.observedEvidence, 'task reached done');
@@ -280,6 +305,34 @@ export type RecordRejectionEvidenceInput = {
   taskId?: TaskId;
   reason: string;
 };
+
+export type RecordApprovalEvidenceInput = {
+  ledger: EvidenceLedger;
+  tier: 'confirm';
+  actionClass: EvidenceApproval['actionClass'];
+  actionDescription: string;
+  taskId?: TaskId;
+  reason: string;
+};
+
+export function recordApprovalEvidence(input: RecordApprovalEvidenceInput): EvidenceLedger {
+  const next = clone(input.ledger);
+  const entry: EvidenceApproval = {
+    ts: new Date().toISOString(),
+    tier: input.tier,
+    actionClass: input.actionClass,
+    actionDescription: input.actionDescription,
+    ...(input.taskId !== undefined && { taskId: input.taskId }),
+    reason: input.reason,
+  };
+  if (next.approvals === undefined) {
+    next.approvals = [entry];
+  } else {
+    next.approvals.push(entry);
+  }
+  next.generatedAt = new Date().toISOString();
+  return next;
+}
 
 export function recordRejectionEvidence(input: RecordRejectionEvidenceInput): EvidenceLedger {
   const next = clone(input.ledger);

@@ -22,8 +22,8 @@ export async function runTier2Full(
     commitSuffix: 'escalated',
     usageCategory: 'escalation',
     retryFailureFallback: 'Tier-2 escalation failed to produce valid code',
-    invokeRetry: async ({ task: t, lastError: err }) =>
-      ctx.planner.escalateFull(t, err, ctx.projectDir, { onOutput: textHandler }),
+    invokeRetry: async ({ task: t, lastError: err, projectDir }) =>
+      ctx.planner.escalateFull(t, err, projectDir, { onOutput: textHandler }),
     onValidationAfterRetryFail: (validationError) => {
       publishWarning(ctx.bus, state.phase, `Tier-2 escalation produced code but validation failed: ${validationError}`);
     },

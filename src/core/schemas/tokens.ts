@@ -5,6 +5,8 @@ import { TaskIdSchema } from './task.js';
 export const TokenDeltaSchema = z.object({
   inputTokens: z.number(),
   outputTokens: z.number(),
+  cacheReadTokens: z.number().nonnegative().optional(),
+  cacheCreateTokens: z.number().nonnegative().optional(),
 });
 
 export const TokenUsageSchema = z.object({

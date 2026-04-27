@@ -122,4 +122,26 @@ describe('applyPlanEditorAction', () => {
       saveError: null,
     });
   });
+
+  it('boundary move does not mark the editor dirty', () => {
+    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
+    planEditorStore.initEditor(tasks);
+    planEditorStore.setCursor(1);
+
+    applyPlanEditorAction({ type: 'move-task', direction: 'down' }, () => Promise.resolve());
+
+    expect(planEditorStore.get().dirty).toBe(false);
+    expect(planEditorStore.get().tasks).toEqual(tasks);
+  });
+
+  it('out-of-range delete does not mark the editor dirty or clamp cursor as a side effect', () => {
+    const tasks = [makeTask({ id: 'T001' })];
+    planEditorStore.__testReset({ tasks, cursor: 5 });
+
+    applyPlanEditorAction({ type: 'delete-task' }, () => Promise.resolve());
+
+    expect(planEditorStore.get().dirty).toBe(false);
+    expect(planEditorStore.get().cursor).toBe(5);
+    expect(planEditorStore.get().tasks).toEqual(tasks);
+  });
 });

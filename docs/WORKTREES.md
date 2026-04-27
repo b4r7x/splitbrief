@@ -6,8 +6,8 @@ Git worktrees let you run multiple diptych sessions in parallel, each on a separ
 
 - **Filesystem isolation.** Each worktree is a separate directory. Files edited in `.trees/my-feature` do not affect the main tree and vice versa.
 - **Branch isolation.** Each worktree checks out its own branch. Implementer commits go to that branch, not to `main`.
-- **Diptych state isolation.** Each worktree has its own `.diptych/` directory, its own `.diptych/active` lockfile, and its own session history. Running two diptych sessions in two worktrees is safe — the lockfiles cannot collide.
-- **Snapshot isolation.** When `snapshots-undo` is installed, each worktree's snapshots are stored under its own `.diptych/sessions/`. Snapshots from one session do not appear in another.
+- **Diptych state isolation.** Each worktree has its own `.diptych/` directory, its own `.diptych/active` pointer, and its own session history. Running two diptych sessions in two worktrees is safe because the session state lives inside each worktree.
+- **Snapshot isolation.** Each worktree's snapshots and run accept/reject ledger are stored under its own `.diptych/sessions/`. Snapshots from one session do not appear in another.
 
 ## What worktrees do NOT isolate
 
@@ -87,7 +87,13 @@ Add `.trees/` to the project `.gitignore` to prevent the main tree from showing 
 .trees/
 ```
 
-Diptych does not write this automatically. Run the addition once after your first `diptych start --worktree`.
+Diptych does not write this automatically. Run the addition once before your first `diptych start --worktree`; the source working tree must be clean before diptych creates/selects a worktree.
+
+## Command behavior
+
+`diptych start --worktree <name> "<feature>"` creates `.trees/<name>` on branch `diptych/<name>` and continues the workflow inside that worktree. Older docs described a v1 flow that only printed a follow-up `cd .trees/<name>; diptych start ...` command; current diptych does the directory selection for the run. `diptych start --detach --worktree <name> "<feature>"` applies the same ordering before spawning the detached server, so the server's project root is the worktree.
+
+`diptych worktree list` prints `NAME`, `PATH`, `BRANCH`, `STATUS`, `SESSION`, `PHASE`, and `UPDATED`. Missing session data renders as `unknown`. `diptych worktree switch <name>` prints shell instructions because a child process cannot change your parent shell's current directory. `diptych worktree remove <name>` refuses live sessions and uncommitted changes unless `--force` is passed; forced removal warns with the live session id and uncommitted file count when known.
 
 ## Quick-start checklist
 

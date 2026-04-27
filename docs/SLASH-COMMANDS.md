@@ -91,7 +91,7 @@ Rewind-family commands (`/revise-spec`, `/revise-plan`, `/redo-task`) additional
 
 - **Purpose**: rewind to the spec-support phase. With a comment, the next planning run regenerates the supporting spec and Task Brief using the comment as feedback. Without a comment, the workflow jumps to the spec approval gate without regenerating.
 - **Screens**: `workflow`.
-- **Phase guard**: `canReviseSpec` — allowed from `reviewing-spec` onward (`reviewing-spec`, `planning`, `reviewing-plan`, `implementing`, `validating-task`, `escalating`, `final-review`). Denied in `idle`, `researching`, `specifying`, `complete`.
+- **Phase guard**: `canReviseSpec` — allowed from `reviewing-spec` onward (`reviewing-spec`, `clarifying`, `constitution-check`, `planning`, `reviewing-plan`, `reviewing-briefs`, `analyzing`, `implementing`, `validating-task`, `escalating`, `final-review`). Denied in `idle`, `researching`, `specifying`, `complete`.
 - **Example**: `/revise-spec the validator should also strip whitespace`
 - **Implementation**: `src/core/slash-commands/catalog.ts` dispatches `REWIND_TO_SPEC` via `requestRewind('spec', comment)` in `src/features/workflow/handlers.ts`. Fast-path regeneration lives in `src/engine/orchestrator/planning.ts`. See `docs/WORKFLOW.md` §1.1.
 
@@ -99,7 +99,7 @@ Rewind-family commands (`/revise-spec`, `/revise-plan`, `/redo-task`) additional
 
 - **Purpose**: rewind to the plan-support phase (spec is preserved). With a comment, the Task Brief transport and dependent plan artifacts are regenerated using the comment; without a comment, the workflow jumps to the plan approval gate.
 - **Screens**: `workflow`.
-- **Phase guard**: `canRevisePlan` — allowed from `reviewing-plan` onward.
+- **Phase guard**: `canRevisePlan` — allowed from `reviewing-plan` onward, including `reviewing-briefs`.
 - **Example**: `/revise-plan split task T003 into smaller steps`
 - **Implementation**: `src/core/slash-commands/catalog.ts` dispatches `REWIND_TO_PLAN` via `requestRewind('plan', comment)`. See `docs/WORKFLOW.md` §1.1.
 

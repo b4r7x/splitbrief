@@ -7,7 +7,9 @@ export const METHOD_NOT_FOUND = -32601;
 export const INVALID_PARAMS = -32602;
 export const INTERNAL_ERROR = -32603;
 
-export const MCP_PROTOCOL_VERSION = '2024-11-05';
+// Current Streamable HTTP MCP version.
+export const MCP_PROTOCOL_VERSION = '2025-11-25';
+export const SUPPORTED_PROTOCOL_VERSIONS = new Set([MCP_PROTOCOL_VERSION]);
 
 export type HandleResult =
   | { kind: 'response'; body: McpResponse }
@@ -36,12 +38,25 @@ export function handleMessage(rawBody: string, resolver: McpResolver, serverVers
     return { kind: 'error', body: jsonRpcError(INVALID_REQUEST, 'Invalid Request', null) };
   }
 
-  const id = (typeof msg['id'] === 'string' || typeof msg['id'] === 'number') ? msg['id'] : null;
-
   if (typeof msg['method'] !== 'string') {
-    return { kind: 'error', body: jsonRpcError(INVALID_REQUEST, 'Invalid Request', id) };
+    return { kind: 'error', body: jsonRpcError(INVALID_REQUEST, 'Invalid Request', null) };
   }
 
+  // Distinguish notifications (no id), valid requests (string/number id), and invalid ids.
+  const hasId = 'id' in msg;
+  const rawId = msg['id'];
+
+  if (!hasId) {
+    // JSON-RPC notification: server MUST NOT reply.
+    return { kind: 'notification' };
+  }
+
+  if (typeof rawId !== 'string' && typeof rawId !== 'number') {
+    // id present but invalid type (object, array, boolean, etc.).
+    return { kind: 'error', body: jsonRpcError(INVALID_REQUEST, 'Invalid Request', null) };
+  }
+
+  const id = rawId;
   const method = msg['method'];
   const params = (msg['params'] !== undefined && msg['params'] !== null && typeof msg['params'] === 'object')
     ? msg['params'] as Record<string, unknown>
@@ -52,7 +67,7 @@ export function handleMessage(rawBody: string, resolver: McpResolver, serverVers
       kind: 'response',
       body: {
         jsonrpc: '2.0',
-        id: id as string | number,
+        id,
         result: {
           protocolVersion: MCP_PROTOCOL_VERSION,
           capabilities: { resources: {} },
@@ -62,16 +77,12 @@ export function handleMessage(rawBody: string, resolver: McpResolver, serverVers
     };
   }
 
-  if (method === 'notifications/initialized') {
-    return { kind: 'notification' };
-  }
-
   if (method === 'resources/list') {
     return {
       kind: 'response',
       body: {
         jsonrpc: '2.0',
-        id: id as string | number,
+        id,
         result: { resources: resolver.listResources() },
       },
     };
@@ -90,7 +101,7 @@ export function handleMessage(rawBody: string, resolver: McpResolver, serverVers
       kind: 'response',
       body: {
         jsonrpc: '2.0',
-        id: id as string | number,
+        id,
         result: {
           contents: [
             {

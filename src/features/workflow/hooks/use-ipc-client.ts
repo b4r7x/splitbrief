@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createConnection, type Socket } from 'node:net';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import type { ServerMessage } from '../../../engine/ipc/protocol.js';
+import type { IpcPromptRequest, IpcPromptResponse, ServerMessage } from '../../../engine/ipc/protocol.js';
 
 export type IpcClientStatus =
   | 'connecting'
@@ -33,6 +33,7 @@ function backoffDelay(attempt: number): number {
 export function useIpcClient(opts: {
   sockPath: string;
   onEvent: (event: EngineEvent) => void;
+  onPromptRequest?: ((request: IpcPromptRequest) => Promise<IpcPromptResponse>) | undefined;
   enabled?: boolean | undefined;
 }): [IpcClientState, IpcClientActions] {
   const enabled = opts.enabled ?? true;
@@ -50,6 +51,8 @@ export function useIpcClient(opts: {
   const isUnmountedRef = useRef(false);
   const onEventRef = useRef(opts.onEvent);
   onEventRef.current = opts.onEvent;
+  const onPromptRequestRef = useRef(opts.onPromptRequest);
+  onPromptRequestRef.current = opts.onPromptRequest;
   const sockPathRef = useRef(opts.sockPath);
   sockPathRef.current = opts.sockPath;
 
@@ -107,6 +110,34 @@ export function useIpcClient(opts: {
             attemptRef.current = 0;
           } else if (msg.kind === 'event') {
             onEventRef.current(msg.payload);
+          } else if (msg.kind === 'prompt_request') {
+            const handler = onPromptRequestRef.current;
+            if (!handler) {
+              onEventRef.current({
+                type: 'warning',
+                ts: Date.now(),
+                phase: 'idle',
+                message: `IPC: no prompt handler for ${msg.request.kind}`,
+              });
+              continue;
+            }
+            void handler(msg.request)
+              .then((response) => {
+                if (socket.destroyed) return;
+                socket.write(JSON.stringify({
+                  kind: 'prompt_response',
+                  requestId: msg.request.requestId,
+                  response,
+                }) + '\n');
+              })
+              .catch((err) => {
+                onEventRef.current({
+                  type: 'warning',
+                  ts: Date.now(),
+                  phase: 'idle',
+                  message: `IPC: prompt handler failed: ${err instanceof Error ? err.message : String(err)}`,
+                });
+              });
           } else if (msg.kind === 'error') {
             isDetachedRef.current = true;
             setState(prev => ({ ...prev, status: 'failed' }));

@@ -472,7 +472,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Fix:**
 1. Run `diptych handoff --list` to enumerate known targets.
 2. If the name is a typo, correct it.
-3. If you want a new target, add a custom renderer at `.diptych/renderers/<target>.ts` — the loader picks it up automatically.
+3. If you want a new target, add a custom renderer at `.diptych/handoff-renderers/<target>.ts` — the loader picks it up automatically.
 4. Verify with `diptych handoff --list` that the new target now appears.
 
 **Prevention:** Define custom renderers as soon as you adopt a new downstream consumer, and document the available targets in your team handbook.

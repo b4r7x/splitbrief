@@ -145,6 +145,26 @@ describe('buildSummary', () => {
     expect(breakdowns[0]).not.toHaveProperty('cost');
   });
 
+  it('includes available cost prediction data', () => {
+    const prediction = {
+      estimatedTasks: 2,
+      lowCost: 0.01,
+      expectedCost: 0.02,
+      highCost: 0.04,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    };
+    const summary = buildSummary({
+      feature: 'cost prediction',
+      state: { tasks: [], tokenUsage: makeUsage() },
+      startTime: Date.now(),
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+      costPrediction: prediction,
+    });
+    expect(summary.costPrediction).toEqual(prediction);
+  });
+
   it('includes model fields when provided', () => {
     const summary = buildSummary({
       feature: 'models',

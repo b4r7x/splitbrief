@@ -2,8 +2,11 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { saveSummary } from '../../core/sessions/io.js';
+import { saveState } from '../../core/state/persistence.js';
+import { createInitialState, CURRENT_STATE_VERSION } from '../../core/state/machine.js';
 import { createResolver } from './resolver.js';
 
 const SESSION_STUB = {
@@ -16,6 +19,47 @@ const SESSION_STUB = {
   status: 'interrupted' as const,
   summary: null,
 };
+
+const taskOne = makeTask({ id: 'T001', title: 'Create something' });
+const taskTwo = makeTask({ id: 'T002', title: 'Modify something', dependsOn: ['T001'] });
+
+function makeCompleteSession(id: string) {
+  return {
+    ...SESSION_STUB,
+    id,
+    completedAt: 1700000005000,
+    status: 'complete' as const,
+    summary: {
+      feature: 'test feature',
+      totalTasks: 2,
+      completedByLocal: 2,
+      escalatedToPlanner: 0,
+      skipped: 0,
+      failed: 0,
+      totalTime: 5000,
+      tokenUsage: {
+        plannerInput: 0,
+        plannerOutput: 0,
+        implementerInput: 0,
+        implementerOutput: 0,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
+      estimatedCostSavings: '$0.00',
+      escalationRate: 0,
+      mode: 'speckit' as const,
+    },
+  };
+}
+
+function writeCanonicalArtifacts(projectDir: string, sessionId: string): void {
+  saveSummary(projectDir, sessionId, makeCompleteSession(sessionId));
+  saveState(projectDir, sessionId, {
+    ...createInitialState('test feature'),
+    stateVersion: CURRENT_STATE_VERSION,
+    tasks: [taskOne, taskTwo],
+  });
+}
 
 const TASKS_MD = `---
 id: T001
@@ -61,17 +105,30 @@ function sessionPath(projectDir: string, sessionId: string): string {
 }
 
 describe('listResources', () => {
-  it('always includes /sessions and /manifest.json URIs', () => {
+  it('includes /sessions and available /manifest.json URIs', () => {
     const projectDir = makeProject();
     const id = 'sess-1';
     ensureSessionDir(projectDir, id);
-    saveSummary(projectDir, id, { ...SESSION_STUB, id });
+    writeCanonicalArtifacts(projectDir, id);
 
     const resolver = makeResolver(projectDir, id);
     const uris = resolver.listResources().map(r => r.uri);
 
     expect(uris).toContain('mcp://diptych/sessions');
     expect(uris).toContain(`mcp://diptych/sessions/${id}/manifest.json`);
+  });
+
+  it('does not advertise manifest.json when canonical summary/state artifacts are unavailable', () => {
+    const projectDir = makeProject();
+    const id = 'sess-without-state';
+    ensureSessionDir(projectDir, id);
+    saveSummary(projectDir, id, makeCompleteSession(id));
+
+    const resolver = makeResolver(projectDir, id);
+    const uris = resolver.listResources().map(r => r.uri);
+
+    expect(uris).toContain('mcp://diptych/sessions');
+    expect(uris).not.toContain(`mcp://diptych/sessions/${id}/manifest.json`);
   });
 
   it('always includes /tasks URI', () => {
@@ -160,11 +217,12 @@ describe('readResource - /sessions', () => {
 });
 
 describe('readResource - /manifest.json', () => {
-  it('returns synthesized manifest with target=live-mcp', () => {
+  it('returns synthesized manifest from canonical summary.json and state.json', () => {
     const projectDir = makeProject();
     const id = 'sess-b';
     ensureSessionDir(projectDir, id);
-    saveSummary(projectDir, id, { ...SESSION_STUB, id });
+    writeCanonicalArtifacts(projectDir, id);
+    writeFileSync(join(sessionPath(projectDir, id), 'tasks.md'), TASKS_MD.replaceAll('T002', 'T999'));
 
     const resolver = makeResolver(projectDir, id);
     const result = resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
@@ -176,28 +234,60 @@ describe('readResource - /manifest.json', () => {
     expect(manifest.sessionId).toBe(id);
     expect(manifest.packVersion).toBe('1');
     expect(manifest.diptychVersion).toBe('1.2.3');
-    expect(typeof manifest.generatedAt).toBe('string');
-    expect(Array.isArray(manifest.taskIds)).toBe(true);
+    expect(manifest.generatedAt).toBe(new Date(1700000005000).toISOString());
+    expect(manifest.mode).toBe('speckit');
+    expect(manifest.taskIds).toEqual(['T001', 'T002']);
+    expect(manifest.artifacts.tasks).toEqual(['tasks/T001.md', 'tasks/T002.md']);
   });
 
-  it('omits briefHash when brief-hash.json is absent', () => {
+  it('returns null when summary.json is missing', () => {
+    const projectDir = makeProject();
+    const id = 'sess-missing-summary';
+    ensureSessionDir(projectDir, id);
+    saveState(projectDir, id, {
+      ...createInitialState('test feature'),
+      stateVersion: CURRENT_STATE_VERSION,
+      tasks: [taskOne],
+    });
+
+    const resolver = makeResolver(projectDir, id);
+    const result = resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null when state.json is missing', () => {
+    const projectDir = makeProject();
+    const id = 'sess-missing-state';
+    ensureSessionDir(projectDir, id);
+    saveSummary(projectDir, id, makeCompleteSession(id));
+
+    const resolver = makeResolver(projectDir, id);
+    const result = resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
+
+    expect(result).toBeNull();
+  });
+
+  it('computes briefHash from state tasks when brief-hash.json is absent', () => {
     const projectDir = makeProject();
     const id = 'sess-c';
     ensureSessionDir(projectDir, id);
-    saveSummary(projectDir, id, { ...SESSION_STUB, id });
+    writeCanonicalArtifacts(projectDir, id);
 
     const resolver = makeResolver(projectDir, id);
     const result = resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
     const manifest = JSON.parse(result!.text!);
 
-    expect('briefHash' in manifest).toBe(false);
+    expect('briefHash' in manifest).toBe(true);
+    expect(typeof manifest.briefHash).toBe('string');
+    expect(manifest.briefHash).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it('includes briefHash when brief-hash.json is present', () => {
     const projectDir = makeProject();
     const id = 'sess-d';
     ensureSessionDir(projectDir, id);
-    saveSummary(projectDir, id, { ...SESSION_STUB, id });
+    writeCanonicalArtifacts(projectDir, id);
     writeFileSync(
       join(sessionPath(projectDir, id), 'brief-hash.json'),
       JSON.stringify({ hash: 'abc123' }),
@@ -236,6 +326,33 @@ describe('readResource - file resources', () => {
     const result = resolver.readResource(`mcp://diptych/sessions/${id}/evidence.json`);
 
     expect(result).toBeNull();
+  });
+
+  it('returns concrete summary.json and state.json when present', () => {
+    const projectDir = makeProject();
+    const id = 'sess-concrete';
+    ensureSessionDir(projectDir, id);
+    writeCanonicalArtifacts(projectDir, id);
+
+    const resolver = makeResolver(projectDir, id);
+    const summary = resolver.readResource(`mcp://diptych/sessions/${id}/summary.json`);
+    const state = resolver.readResource(`mcp://diptych/sessions/${id}/state.json`);
+
+    expect(summary?.mimeType).toBe('application/json');
+    expect(JSON.parse(summary!.text!).id).toBe(id);
+    expect(state?.mimeType).toBe('application/json');
+    expect(JSON.parse(state!.text!).tasks.map((task: { id: string }) => task.id)).toEqual(['T001', 'T002']);
+  });
+
+  it('returns null for missing concrete summary.json and state.json', () => {
+    const projectDir = makeProject();
+    const id = 'sess-missing-concrete';
+    ensureSessionDir(projectDir, id);
+
+    const resolver = makeResolver(projectDir, id);
+
+    expect(resolver.readResource(`mcp://diptych/sessions/${id}/summary.json`)).toBeNull();
+    expect(resolver.readResource(`mcp://diptych/sessions/${id}/state.json`)).toBeNull();
   });
 });
 

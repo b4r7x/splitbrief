@@ -27,6 +27,44 @@ function makeBaseConfig(): Config {
   };
 }
 
+function makeConfigWithOptionalSections(): Config {
+  return {
+    ...makeBaseConfig(),
+    codebase: {
+      enabled: true,
+      tokenBudget: 1234,
+      cacheDir: '.diptych-cache',
+      include: ['src/**'],
+      exclude: ['dist/**'],
+    },
+    hooks: {
+      builtin: { snapshots: false },
+    },
+    otel: {
+      enabled: true,
+      serviceName: 'diptych-test',
+    },
+    snapshots: {
+      auto: {
+        preTask: true,
+        postTask: false,
+        preFinalReview: true,
+      },
+    },
+    palette: {
+      customActions: [
+        { id: 'refresh-docs', label: 'Refresh docs', description: 'Refresh documentation', command: '/refresh' },
+      ],
+    },
+    approval: {
+      enabled: true,
+      headless: true,
+      tiers: { read: 'auto', destructive: 'confirm' },
+      feedRejectionsToPlanner: false,
+    },
+  };
+}
+
 describe('commitCustomCommand', () => {
   it('preserves kind: shell for shell selection', () => {
     const config = makeBaseConfig();
@@ -126,6 +164,28 @@ describe('runner selection commits', () => {
       expect(updated.planner.provider).toBe('anthropic');
       expect(updated.planner.apiBase).toBe('https://api.anthropic.com/v1');
     }
+  });
+
+  it('preserves optional top-level config sections when committing picker selections', () => {
+    const config = makeConfigWithOptionalSections();
+    const updated = commitPlannerSelection(
+      config,
+      {
+        id: 'anthropic',
+        displayName: 'Anthropic',
+        kind: 'api',
+        available: true,
+        badge: 'API',
+      },
+      { id: 'claude-sonnet-4-6' },
+    );
+
+    expect(updated.codebase).toEqual(config.codebase);
+    expect(updated.hooks).toEqual(config.hooks);
+    expect(updated.otel).toEqual(config.otel);
+    expect(updated.snapshots).toEqual(config.snapshots);
+    expect(updated.palette).toEqual(config.palette);
+    expect(updated.approval).toEqual(config.approval);
   });
 });
 

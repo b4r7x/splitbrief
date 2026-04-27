@@ -35,6 +35,22 @@ const DESTRUCTIVE_PATTERNS = [
   'git push --force',
   'git push -f',
   'git branch -d',
+  // database migration commands — irreversible side effects on persistent data
+  'prisma migrate deploy',
+  'prisma migrate reset',
+  'prisma db push',
+  'drizzle-kit push',
+  'drizzle-kit migrate',
+  'knex migrate',
+  'knex migrate:latest',
+  'knex migrate:up',
+  'knex migrate:rollback',
+  'sequelize db:migrate',
+  'sequelize-cli db:migrate',
+  'alembic upgrade',
+  'alembic downgrade',
+  'rails db:migrate',
+  'rake db:migrate',
 ];
 
 const NETWORK_PATTERNS = [
@@ -49,13 +65,26 @@ const NETWORK_PATTERNS = [
 const PACKAGE_CHANGE_PATTERNS = [
   'npm install',
   'npm uninstall',
+  'npm remove',
+  'npm rm',
+  'npm update',
   'npm i ',
   'pip install',
   'pip uninstall',
   'yarn add',
+  'yarn install',
+  'yarn upgrade',
   'yarn remove',
   'pnpm add',
+  'pnpm install',
+  'pnpm i ',
   'pnpm remove',
+  'pnpm rm',
+  'pnpm update',
+  'pnpm up',
+  'bun add',
+  'bun install',
+  'bun remove',
 ];
 
 const PACKAGE_MANIFEST_FILES = new Set([
@@ -193,6 +222,16 @@ function isInScope(filePath: string, input: ClassifyInput): boolean {
   if (normalized === normalizeProjectPath(input.taskFile, input.projectDir)) return true;
   if (input.dependsOnFiles.map((file) => normalizeProjectPath(file, input.projectDir)).includes(normalized)) return true;
   return input.taskInBounds.some((glob) => matchesGlob(normalized, normalizeProjectPath(glob, input.projectDir)));
+}
+
+export function extractActionPattern(input: ClassifyInput): string {
+  const path = extractPath(input.actionDescription, input);
+  return path ?? input.actionDescription;
+}
+
+export function matchesActionPattern(filePathOrAction: string, pattern: string): boolean {
+  if (pattern === filePathOrAction) return true;
+  return matchesGlob(filePathOrAction, pattern);
 }
 
 export function classifyAction(input: ClassifyInput, tierOverrides?: TierMap): ClassifyResult {

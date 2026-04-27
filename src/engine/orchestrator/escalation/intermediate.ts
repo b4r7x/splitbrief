@@ -68,9 +68,9 @@ export async function runTier0Intermediate(
     commitSuffix: 'intermediate',
     usageCategory: 'implementer',
     retryFailureFallback: 'Intermediate escalation failed',
-    invokeRetry: async ({ task: t, lastError: err, attempts: a }) =>
+    invokeRetry: async ({ task: t, lastError: err, attempts: a, projectDir }) =>
       intermediateImplementer.retry({
-        task: t, projectDir: ctx.projectDir, config: intermediateConfig, context: ctx.context,
+        task: t, projectDir, config: intermediateConfig, context: ctx.context,
         error: err, attempt: a, kind: 'local',
         onOutput: textHandler,
         bus: ctx.bus,

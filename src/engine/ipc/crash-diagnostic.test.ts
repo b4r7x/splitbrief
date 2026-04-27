@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeFile, mkdir, rm } from 'node:fs/promises';
 import type { ServerStatus } from './lockfile.js';
-import { buildCrashDiagnostic, formatCrashDiagnostic, showCrashDiagnostic } from './crash-diagnostic.js';
+import { buildCrashDiagnostic, formatCrashDiagnostic, showCrashDiagnostic, waitForCrashDiagnosticOption } from './crash-diagnostic.js';
 
 const BASE_STATUS_CRASHED: ServerStatus = {
   alive: false,
@@ -183,8 +183,9 @@ describe('formatCrashDiagnostic', () => {
   it('shows options footer', () => {
     const out = formatCrashDiagnostic(crashedDiag);
     expect(out).toContain('Options:');
-    expect(out).toContain('[1]');
+    expect(out).toContain('[1] Exit and run `diptych start` for a new workflow');
     expect(out).toContain('[2]');
+    expect(out).not.toContain('Start a new workflow for the same feature');
   });
 });
 
@@ -221,7 +222,7 @@ describe('showCrashDiagnostic', () => {
     expect(exitCode).toBe(0);
   });
 
-  it('returns (does not exit) and writes "Starting new workflow..." when key "1" is pressed', async () => {
+  it('exits with 0 and writes accurate new-workflow instructions when key "1" is pressed', async () => {
     const written: string[] = [];
     const origWrite = process.stdout.write.bind(process.stdout);
     process.stdout.write = (data: unknown) => { written.push(String(data)); return true; };
@@ -237,7 +238,41 @@ describe('showCrashDiagnostic', () => {
       process.exit = origExit;
     }
 
-    expect(written.join('')).toContain('Starting new workflow...');
-    expect(exitCode).toBeUndefined();
+    expect(written.join('')).toContain('Exiting. Run `diptych start`');
+    expect(written.join('')).not.toContain('Starting new workflow');
+    expect(exitCode).toBe(0);
+  });
+
+  it('non-TTY default path exits without waiting for interactive input', async () => {
+    const written: string[] = [];
+    const origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (data: unknown) => { written.push(String(data)); return true; };
+
+    let exitCode: number | undefined;
+    const origExit = process.exit.bind(process);
+    process.exit = ((code?: number) => { exitCode = code; }) as typeof process.exit;
+
+    try {
+      await showCrashDiagnostic(tmpDir2, BASE_STATUS_CRASHED, async () => '2');
+    } finally {
+      process.stdout.write = origWrite;
+      process.exit = origExit;
+    }
+
+    expect(written.join('')).toContain('[2] Exit and inspect logs manually');
+    expect(exitCode).toBe(0);
+  });
+});
+
+describe('waitForCrashDiagnosticOption', () => {
+  it('returns the manual-inspection option immediately when stdin is non-TTY', async () => {
+    const original = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: false });
+
+    try {
+      await expect(waitForCrashDiagnosticOption()).resolves.toBe('2');
+    } finally {
+      Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: original });
+    }
   });
 });

@@ -36,6 +36,24 @@ export function calculateCost(inputTokens: number, outputTokens: number, pricing
          (outputTokens / 1_000_000) * pricing.outputPer1M;
 }
 
+export function calculateUsageCost(
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadTokens: number,
+  cacheCreateTokens: number,
+  pricing: ResolvedPricing,
+): number {
+  const baseCost = calculateCost(inputTokens, outputTokens, pricing);
+  if (!pricing.isPriced) return baseCost;
+  const cacheReadCost = pricing.cacheReadPer1M === undefined
+    ? 0
+    : (cacheReadTokens / 1_000_000) * pricing.cacheReadPer1M;
+  const cacheCreateCost = pricing.cacheWritePer1M === undefined
+    ? 0
+    : (cacheCreateTokens / 1_000_000) * pricing.cacheWritePer1M;
+  return baseCost + cacheReadCost + cacheCreateCost;
+}
+
 type CostBreakdownOptions = {
   tokenUsage: TokenUsage;
   totalTasks: number;
@@ -77,10 +95,20 @@ export function calculateCostBreakdown(opts: CostBreakdownOptions, cache?: Model
   const plannerInputTotal = tokenUsage.plannerInput + tokenUsage.escalationInput;
   const plannerOutputTotal = tokenUsage.plannerOutput + tokenUsage.escalationOutput;
 
-  const actualPlannerCost = calculateCost(plannerInputTotal, plannerOutputTotal, plannerPricing);
+  const actualPlannerCost = calculateUsageCost(
+    plannerInputTotal,
+    plannerOutputTotal,
+    tokenUsage.plannerCacheRead ?? 0,
+    tokenUsage.plannerCacheCreate ?? 0,
+    plannerPricing,
+  );
 
-  const actualImplementerCost = calculateCost(
-    tokenUsage.implementerInput, tokenUsage.implementerOutput, implementerPricing,
+  const actualImplementerCost = calculateUsageCost(
+    tokenUsage.implementerInput,
+    tokenUsage.implementerOutput,
+    tokenUsage.implementerCacheRead ?? 0,
+    tokenUsage.implementerCacheCreate ?? 0,
+    implementerPricing,
   );
 
   const totalActualCost = actualPlannerCost + actualImplementerCost;

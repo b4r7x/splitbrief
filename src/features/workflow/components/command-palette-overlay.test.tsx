@@ -233,6 +233,32 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
+  it('executes a custom palette slash command from config', async () => {
+    const baseConfig = makeConfig();
+    configStore.__testReset({
+      config: {
+        ...baseConfig,
+        palette: {
+          customActions: [
+            { id: 'open-settings-custom', label: 'Open Settings Custom Action', command: '/settings' },
+          ],
+        },
+      },
+      projectDir: '/fake',
+    });
+
+    const instance = render(<CommandPaletteOverlay />);
+    await tick();
+
+    write(instance, 'Open Settings Custom Action');
+    await tick();
+    write(instance, ENTER);
+    await tick();
+
+    expect(overlayStore.get().active).toBe('settings');
+    instance.unmount();
+  });
+
   it('task items appear only in implementing/validating-task/escalating phase', async () => {
     tasksStore.__testReset({ tasks: [{ id: 'T001', title: 'uniquetasktitle123', status: 'in_progress' }] });
 

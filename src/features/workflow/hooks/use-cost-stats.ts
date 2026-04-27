@@ -4,13 +4,17 @@ import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { calculateCostBreakdown } from '../../../engine/providers/pricing.js';
+import { resolvePricing, type PricingMode } from '../../../engine/providers/pricing-resolver.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../../../core/config/accessors/runner-config.js';
 import { formatCost } from '../../../core/formatting.js';
 import type { CostBreakdown } from '../../../core/schemas/summary.js';
 
+export type CostPricingState = 'priced' | 'mixed' | 'local' | 'unpriced' | 'n/a';
+
 interface CostStats {
   localRate: number;
   costBreakdown: CostBreakdown | null;
+  pricingState: CostPricingState;
   currentTask: number;
   totalTasks: number;
   taskCompletionTimes: number[];
@@ -24,15 +28,35 @@ interface CostDisplay {
   spentText: string;
 }
 
+export function resolvePricingState(
+  costBreakdown: CostBreakdown | null,
+  plannerMode?: PricingMode | undefined,
+  implementerMode?: PricingMode | undefined,
+): CostPricingState {
+  if (costBreakdown === null) return 'n/a';
+  if (costBreakdown.hasPricedUsage && costBreakdown.hasUnpricedUsage) return 'mixed';
+  if (costBreakdown.hasPricedUsage) return 'priced';
+  if (plannerMode === 'unpriced-local' && implementerMode === 'unpriced-local') return 'local';
+  if (plannerMode === 'unpriced-unknown' || implementerMode === 'unpriced-unknown') return 'n/a';
+  return 'unpriced';
+}
+
+export function formatSpentText(costBreakdown: CostBreakdown | null, pricingState: CostPricingState): string {
+  if (pricingState === 'priced') return formatCost(costBreakdown?.totalActualCost ?? 0);
+  if (pricingState === 'mixed') return `${formatCost(costBreakdown?.totalActualCost ?? 0)} + unpriced`;
+  return pricingState;
+}
+
 export function formatCostDisplay(localRate: number, costBreakdown: CostBreakdown | null): CostDisplay {
   const showSavings = costBreakdown?.hasSavingsEstimate ?? false;
   const hasPricedUsage = costBreakdown?.hasPricedUsage ?? false;
+  const pricingState = resolvePricingState(costBreakdown);
   return {
     localRatePct: `${Math.round(localRate)}%`,
     showSavings,
     savingsText: `~${formatCost(costBreakdown?.savingsAmount ?? 0)}`,
     hasPricedUsage,
-    spentText: formatCost(costBreakdown?.totalActualCost ?? 0),
+    spentText: formatSpentText(costBreakdown, pricingState),
   };
 }
 
@@ -47,17 +71,29 @@ export function useCostStats(): CostStats {
     ? (localCount / (localCount + escalatedCount)) * 100
     : 0;
 
+  const plannerTool = getRunnerDisplayName(config.planner);
+  const implementerTool = getRunnerDisplayName(config.implementer);
+  const plannerModel = getRunnerModelName(config.planner);
+  const implementerModel = getRunnerModelName(config.implementer);
+
   const costBreakdown = tokenUsage
     ? calculateCostBreakdown({
         tokenUsage,
         totalTasks,
         escalatedCount,
-        plannerTool: getRunnerDisplayName(config.planner),
-        implementerTool: getRunnerDisplayName(config.implementer),
-        plannerModel: getRunnerModelName(config.planner),
-        implementerModel: getRunnerModelName(config.implementer),
+        plannerTool,
+        implementerTool,
+        plannerModel,
+        implementerModel,
       }, modelCacheStore)
     : null;
+  const plannerPricing = resolvePricing(plannerTool, modelCacheStore, plannerModel);
+  const implementerPricing = resolvePricing(implementerTool, modelCacheStore, implementerModel);
+  const pricingState = resolvePricingState(
+    costBreakdown,
+    plannerPricing.pricingMode,
+    implementerPricing.pricingMode,
+  );
 
-  return { localRate, costBreakdown, currentTask, totalTasks, taskCompletionTimes };
+  return { localRate, costBreakdown, pricingState, currentTask, totalTasks, taskCompletionTimes };
 }

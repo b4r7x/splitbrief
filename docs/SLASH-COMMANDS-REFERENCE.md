@@ -16,12 +16,12 @@ Each command declares `validScreens`. The four screens are `home`, `workflow`, `
 Three rewind-family commands also enforce a `phaseGuard`. The guards are the single source of truth for when a rewind can run:
 
 - `canReviseSpec(phase)` — `src/core/slash-commands/catalog.ts:17` — true once the spec is written (`reviewing-spec` and later, except `idle`/`complete`).
-- `canRevisePlan(phase)` — `src/core/slash-commands/catalog.ts:21` — true once the plan is written (`reviewing-plan` and later).
+- `canRevisePlan(phase)` — `src/core/slash-commands/catalog.ts:21` — true once the plan is written (`reviewing-plan`, `reviewing-briefs`, and later).
 - `canRedoTask(phase)` — `src/core/slash-commands/catalog.ts:25` — true only during `implementing`, `validating-task`, or `escalating`.
 
 Handlers reach the engine and stores through the `CommandContext` interface (`src/core/slash-commands/types.ts:21`), wired up in `src/core/slash-commands/context.ts`. The catalog itself never imports stores directly; this keeps the command list testable in isolation (see `src/core/slash-commands/catalog.test.ts`).
 
-There are 23 slash commands in total. Six open overlays only, seven mutate workflow/run state, four manage runtime artifacts (queue, repomap, attachments, approvals), three change configuration (`mode`, `effort`, `refresh`), two are rewind/redo, and one is `/quit`. They are grouped below by purpose.
+There are 24 slash commands in total. They cover overlays, workflow mode/tool selection, rewind/redo, queue and artifact actions, attachments, approvals, run accept/reject, and quitting. They are grouped below by purpose.
 
 ---
 
@@ -33,7 +33,7 @@ Commands that mutate the active workflow: rewind to an earlier phase, re-run a t
 
 - **Purpose**: Rewind the workflow to the spec phase. With a comment, the next planner pass regenerates the supporting spec and Task Brief using the comment as feedback. Without a comment, the workflow jumps back to the spec approval gate so you can re-read it.
 - **Screens**: `workflow`.
-- **Phase guard**: `canReviseSpec` — allowed in `reviewing-spec`, `planning`, `reviewing-plan`, `implementing`, `validating-task`, `escalating`, `final-review`. Denied in `idle`, `researching`, `specifying`, `complete`.
+- **Phase guard**: `canReviseSpec` — allowed in `reviewing-spec`, `clarifying`, `constitution-check`, `planning`, `reviewing-plan`, `reviewing-briefs`, `analyzing`, `implementing`, `validating-task`, `escalating`, `final-review`. Denied in `idle`, `researching`, `specifying`, `complete`.
 - **Args**: optional free-form comment. The remainder of the line after `/revise-spec ` is passed verbatim, trimmed.
 - **Example**: `/revise-spec the validator should also strip whitespace`
 - **Behavior**: If the phase guard fails, the feedback line shows `"/revise-spec is only available after the spec is written."`. Otherwise `requestRewind('spec', comment)` is dispatched through `src/features/workflow/handlers.ts`, the lifecycle store transitions, and the orchestrator picks up the rewind on its next tick.
@@ -44,7 +44,7 @@ Commands that mutate the active workflow: rewind to an earlier phase, re-run a t
 
 - **Purpose**: Rewind to the plan phase while preserving the spec. With a comment, the Task Brief and dependent plan artifacts are regenerated using the comment; without a comment, the workflow jumps to the plan approval gate.
 - **Screens**: `workflow`.
-- **Phase guard**: `canRevisePlan` — allowed from `reviewing-plan` onward (`reviewing-plan`, `implementing`, `validating-task`, `escalating`, `final-review`).
+- **Phase guard**: `canRevisePlan` — allowed from `reviewing-plan` onward (`reviewing-plan`, `reviewing-briefs`, `analyzing`, `implementing`, `validating-task`, `escalating`, `final-review`).
 - **Args**: optional free-form comment, same parsing as `/revise-spec`.
 - **Example**: `/revise-plan split task T003 into smaller steps`
 - **Behavior**: If the phase guard fails the feedback line shows `"/revise-plan is only available after the plan is written."`. Otherwise `requestRewind('plan', comment)` runs and the orchestrator regenerates downstream artifacts.

@@ -76,20 +76,39 @@ function parseUsage(value: unknown): Partial<TokenDelta> {
 
   const inputTokens = typeof usage.input_tokens === 'number' ? usage.input_tokens : undefined;
   const outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : undefined;
+  const cacheReadTokens = typeof usage.cache_read_input_tokens === 'number'
+    ? usage.cache_read_input_tokens
+    : undefined;
+  const cacheCreateTokens = typeof usage.cache_creation_input_tokens === 'number'
+    ? usage.cache_creation_input_tokens
+    : undefined;
 
   return {
     ...(inputTokens !== undefined && { inputTokens }),
     ...(outputTokens !== undefined && { outputTokens }),
+    ...(cacheReadTokens !== undefined && { cacheReadTokens }),
+    ...(cacheCreateTokens !== undefined && { cacheCreateTokens }),
   };
 }
 
 function mergeUsage(current: TokenDelta | null, next: Partial<TokenDelta>): TokenDelta | null {
   const inputTokens = next.inputTokens ?? current?.inputTokens;
   const outputTokens = next.outputTokens ?? current?.outputTokens;
-  if (inputTokens === undefined && outputTokens === undefined) return current;
+  const cacheReadTokens = next.cacheReadTokens ?? current?.cacheReadTokens;
+  const cacheCreateTokens = next.cacheCreateTokens ?? current?.cacheCreateTokens;
+  if (
+    inputTokens === undefined &&
+    outputTokens === undefined &&
+    cacheReadTokens === undefined &&
+    cacheCreateTokens === undefined
+  ) {
+    return current;
+  }
   return {
     inputTokens: inputTokens ?? 0,
     outputTokens: outputTokens ?? 0,
+    ...(cacheReadTokens !== undefined && { cacheReadTokens }),
+    ...(cacheCreateTokens !== undefined && { cacheCreateTokens }),
   };
 }
 

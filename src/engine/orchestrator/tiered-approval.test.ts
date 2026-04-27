@@ -386,7 +386,95 @@ describe('gateAction', () => {
     expect(prompted?.tier).toBe('confirm');
   });
 
-  it('grant persistence: upsert replaces session grant, leaves always grant intact', async () => {
+  it('confirm tier, callback returns decision:allow → reject invalid_confirm_response', async () => {
+    const { bus, events } = makeEventBus();
+    const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
+    const input = makeInput({
+      bus,
+      config,
+      actionDescription: 'rm -rf /tmp/foo',
+      callbacks: {
+        onApprovalNeeded: async () => ({ approved: true }),
+        onExternalChanges: async () => false,
+        onComplete: () => {},
+        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({ decision: 'allow', scope: 'once' }),
+      },
+    });
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+    const result = await gateAction(input);
+    expect(result.allow).toBe(false);
+    expect(result.reason).toBe('invalid_confirm_response');
+    const rejected = events.find(e => e.type === 'approval_rejected') as Extract<EngineEvent, { type: 'approval_rejected' }> | undefined;
+    expect(rejected?.reason).toBe('invalid_confirm_response');
+    const granted = events.find(e => e.type === 'approval_granted');
+    expect(granted).toBeUndefined();
+  });
+
+  it('confirm tier, valid confirm → approval_granted event records confirmReason', async () => {
+    const { bus, events } = makeEventBus();
+    const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
+    const input = makeInput({
+      bus,
+      config,
+      actionDescription: 'rm -rf /tmp/foo',
+      callbacks: {
+        onApprovalNeeded: async () => ({ approved: true }),
+        onExternalChanges: async () => false,
+        onComplete: () => {},
+        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({ decision: 'confirm', phrase: 'I confirm', reason: 'cleaning stale fixtures' }),
+      },
+    });
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+    const result = await gateAction(input);
+    expect(result.allow).toBe(true);
+    expect(result.confirmReason).toBe('cleaning stale fixtures');
+    const granted = events.find(e => e.type === 'approval_granted') as Extract<EngineEvent, { type: 'approval_granted' }> | undefined;
+    expect(granted).toBeDefined();
+    expect(granted?.confirmReason).toBe('cleaning stale fixtures');
+  });
+
+  it('sticky tier, session grant matches a different action description on same file (pattern match)', async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'diptych-test-'));
+    mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+
+    // Pre-existing session grant keyed by file path (not full action description)
+    const store = {
+      version: 1,
+      grants: [
+        { pattern: '/tmp/outside-project/file.ts', class: 'write_out_of_scope', scope: 'session', sessionId: 'sess-X', grantedAt: new Date().toISOString() },
+      ],
+    };
+    writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
+
+    const { bus, events } = makeEventBus();
+    let prompted = false;
+    const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
+    const input = makeInput({
+      bus,
+      config,
+      projectDir,
+      sessionId: 'sess-X',
+      // A different verb against the same file should still match the existing grant
+      actionDescription: 'modify /tmp/outside-project/file.ts',
+      callbacks: {
+        onApprovalNeeded: async () => ({ approved: true }),
+        onExternalChanges: async () => false,
+        onComplete: () => {},
+        onTieredApproval: async (): Promise<TieredApprovalResponse> => {
+          prompted = true;
+          return { decision: 'deny', reason: 'should not be called' };
+        },
+      },
+    });
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+    const result = await gateAction(input);
+    expect(result.allow).toBe(true);
+    expect(prompted).toBe(false);
+    const granted = events.find(e => e.type === 'approval_granted') as Extract<EngineEvent, { type: 'approval_granted' }> | undefined;
+    expect(granted?.scope).toBe('session');
+  });
+
+  it('sticky tier, session grant is replaced when same pattern already has a session grant for a different session', async () => {
     const projectDir = mkdtempSync(join(tmpdir(), 'diptych-test-'));
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
 
@@ -394,8 +482,8 @@ describe('gateAction', () => {
     const store = {
       version: 1,
       grants: [
-        { pattern: 'write /tmp/outside-project/file.ts', class: 'write_out_of_scope', scope: 'session', sessionId: 'sess-OLD', grantedAt: new Date().toISOString() },
-        { pattern: 'write /tmp/other/file.ts', class: 'write_out_of_scope', scope: 'always', grantedAt: new Date().toISOString() },
+        { pattern: '/tmp/outside-project/file.ts', class: 'write_out_of_scope', scope: 'session', sessionId: 'sess-OLD', grantedAt: new Date().toISOString() },
+        { pattern: '/tmp/other/file.ts', class: 'write_out_of_scope', scope: 'always', grantedAt: new Date().toISOString() },
       ],
     };
     writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
@@ -420,10 +508,10 @@ describe('gateAction', () => {
 
     const updated = JSON.parse(readFileSync(approvalsFile(projectDir), 'utf-8'));
     // Should still have the always grant for the other pattern
-    const alwaysGrant = updated.grants.find((g: { pattern: string; scope: string }) => g.pattern === 'write /tmp/other/file.ts' && g.scope === 'always');
+    const alwaysGrant = updated.grants.find((g: { pattern: string; scope: string }) => g.pattern === '/tmp/other/file.ts' && g.scope === 'always');
     expect(alwaysGrant).toBeDefined();
-    // Should have replaced the old session grant with new one
-    const sessionGrants = updated.grants.filter((g: { pattern: string; scope: string }) => g.pattern === 'write /tmp/outside-project/file.ts' && g.scope === 'session');
+    // Should have replaced the old session grant with new one (keyed by extracted file path)
+    const sessionGrants = updated.grants.filter((g: { pattern: string; scope: string }) => g.pattern === '/tmp/outside-project/file.ts' && g.scope === 'session');
     expect(sessionGrants).toHaveLength(1);
     expect(sessionGrants[0].sessionId).toBe('sess-NEW');
   });

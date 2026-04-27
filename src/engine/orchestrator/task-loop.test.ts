@@ -14,6 +14,7 @@ import { runTaskLoop } from './task-loop.js';
 import type { WorkflowSinks } from './types.js';
 import { createValidator } from './validation.js';
 import { readEvidenceLedger } from './evidence.js';
+import { readRunSnapshotLedger } from '../snapshots/run.js';
 
 const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' };
 
@@ -213,6 +214,13 @@ describe('runTaskLoop', () => {
     const snapshotEvent = events.find((e) => e.type === 'snapshot_created');
     expect(snapshotEvent).toBeDefined();
     expect(snapshotEvent).toMatchObject({ type: 'snapshot_created', taskIndex: 0 });
+
+    const ledger = await readRunSnapshotLedger(projectDir, sessionId);
+    expect(ledger?.accepted).toBe(false);
+    expect(ledger?.rejected).toBe(false);
+    if (snapshotEvent?.type === 'snapshot_created') {
+      expect(ledger?.runSnapshotIds).toContain(snapshotEvent.snapshotId);
+    }
   });
 
   it('external changes detected on disk: onExternalChanges callback consulted, workflow cancelled on decline', async () => {

@@ -1,11 +1,18 @@
 import { describe, it, expect } from 'vitest';
+import { createElement } from 'react';
+import { render } from 'ink-testing-library';
+import { tokensStore } from '../../../stores/workflow/tokens.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import {
   buildPhaseRows,
   buildTaskRows,
+  CostDrilldownOverlay,
   renderBar,
   formatCacheHitPct,
+  formatCacheCreateTokens,
   formatInputOutputSplit,
   formatTotalTokens,
+  formatPhaseCost,
 } from './cost-drilldown-overlay.js';
 
 describe('buildPhaseRows', () => {
@@ -15,11 +22,73 @@ describe('buildPhaseRows', () => {
 
   it('sorts by cost descending', () => {
     const rows = buildPhaseRows({
-      planning: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cost: 0.01 },
-      implementing: { inputTokens: 500, outputTokens: 200, cacheReadTokens: 100, cost: 0.05 },
-      validating: { inputTokens: 50, outputTokens: 20, cacheReadTokens: 0, cost: 0.003 },
+      planning: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0.01 },
+      implementing: { inputTokens: 500, outputTokens: 200, cacheReadTokens: 100, cacheCreateTokens: 0, cost: 0.05 },
+      validating: { inputTokens: 50, outputTokens: 20, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0.003 },
     });
     expect(rows.map(r => r.phase)).toEqual(['implementing', 'planning', 'validating']);
+  });
+});
+
+describe('CostDrilldownOverlay', () => {
+  it('renders real phase cost and cache data from the store', () => {
+    tokensStore.__testReset({
+      perPhase: {
+        planning: {
+          inputTokens: 1000,
+          outputTokens: 500,
+          cacheReadTokens: 250,
+          cacheCreateTokens: 125,
+          cost: 0.03,
+        },
+      },
+    });
+    terminalSizeStore.__testReset({ cols: 100 });
+
+    const ui = render(createElement(CostDrilldownOverlay));
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('planning');
+    expect(frame).toContain('$0.03');
+    expect(frame).toContain('cache 20%');
+    expect(frame).toContain('create 125');
+    ui.unmount();
+  });
+
+  it('renders local/unpriced/n/a labels instead of fake zero costs for unpriced phases', () => {
+    tokensStore.__testReset({
+      pricingContext: {
+        plannerTool: 'ollama',
+        plannerModel: 'qwen2.5',
+        implementerTool: 'unknown-tool',
+        implementerModel: 'unknown-model',
+      },
+      perPhase: {
+        planning: {
+          inputTokens: 1000,
+          outputTokens: 500,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
+          cost: 0,
+        },
+        implementing: {
+          inputTokens: 2000,
+          outputTokens: 1000,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
+          cost: 0,
+        },
+      },
+    });
+    terminalSizeStore.__testReset({ cols: 100 });
+
+    const ui = render(createElement(CostDrilldownOverlay));
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('local');
+    expect(frame).toContain('n/a');
+    expect(frame).not.toContain('$0.00');
+    ui.unmount();
   });
 });
 
@@ -70,11 +139,11 @@ describe('formatCacheHitPct', () => {
 
   it('returns correct percentage', () => {
     // cacheRead / (cacheRead + input) — 200 / (200 + 800) = 20%
-    expect(formatCacheHitPct(200, 800)).toBe('20%');
+    expect(formatCacheHitPct(200, 800)).toBe('cache 20%');
   });
 
   it('returns 50% for equal cacheRead and input', () => {
-    expect(formatCacheHitPct(500, 500)).toBe('50%');
+    expect(formatCacheHitPct(500, 500)).toBe('cache 50%');
   });
 });
 
@@ -85,6 +154,16 @@ describe('formatInputOutputSplit', () => {
 
   it('scales to k when total > 1000', () => {
     expect(formatInputOutputSplit(1500, 500)).toBe('in: 1.5k / out: 0.5k');
+  });
+});
+
+describe('formatCacheCreateTokens', () => {
+  it('returns empty string when cache creation is unsupported or absent', () => {
+    expect(formatCacheCreateTokens(0)).toBe('');
+  });
+
+  it('scales cache creation tokens', () => {
+    expect(formatCacheCreateTokens(1500)).toBe('create 1.5k');
   });
 });
 
@@ -99,5 +178,15 @@ describe('formatTotalTokens', () => {
 
   it('scales to k when > 1000', () => {
     expect(formatTotalTokens(2500)).toBe('2.5k tokens (total)');
+  });
+});
+
+describe('formatPhaseCost', () => {
+  it('labels zero-cost unpriced phases explicitly', () => {
+    expect(formatPhaseCost(0, false, 'unpriced-local')).toBe('local');
+    expect(formatPhaseCost(0, false, 'unpriced-cli')).toBe('unpriced');
+    expect(formatPhaseCost(0, false, 'unpriced-meta')).toBe('unpriced');
+    expect(formatPhaseCost(0, false, 'unpriced-unknown')).toBe('n/a');
+    expect(formatPhaseCost(0, false, null)).toBe('n/a');
   });
 });

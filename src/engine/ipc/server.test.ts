@@ -210,6 +210,163 @@ describe('startIpcServer', () => {
     expect(onUserInput).toHaveBeenCalledWith('hello world');
   });
 
+  it('sends pending prompt requests when a client attaches and resolves prompt_response', async () => {
+    const { srv, bus } = await makeServer();
+
+    const waiting = waitForEvent(bus, 'warning');
+    let settled = false;
+    const promptPromise = srv.requestClientPrompt({
+      kind: 'external_changes',
+    });
+    promptPromise.finally(() => {
+      settled = true;
+    }).catch(() => undefined);
+    await waiting;
+    await tick();
+    expect(settled).toBe(false);
+
+    const socket = await connectClient(srv.sockPath);
+    sockets.push(socket);
+    const msgs = await readLines(socket, 2);
+    const prompt = msgs.find((msg) => msg.kind === 'prompt_request');
+
+    expect(prompt).toBeDefined();
+    if (prompt?.kind !== 'prompt_request') throw new Error('missing prompt_request');
+    expect(prompt.request.kind).toBe('external_changes');
+
+    socket.write(JSON.stringify({
+      kind: 'prompt_response',
+      requestId: prompt.request.requestId,
+      response: { kind: 'external_changes', proceed: true },
+    }) + '\n');
+
+    await expect(promptPromise).resolves.toEqual({ kind: 'external_changes', proceed: true });
+  });
+
+  it('fails closed for no-client prompts when configured for explicit headless mode', async () => {
+    const { srv } = await makeServer({ noClientPromptBehavior: 'fail-closed' });
+
+    await expect(srv.requestClientPrompt({
+      kind: 'approval_needed',
+      approvalType: 'briefs',
+      filePath: '/tmp/briefs.md',
+    })).rejects.toMatchObject({
+      code: 'ipc_prompt_no_client_headless',
+      promptKind: 'approval_needed',
+      message: 'IPC prompt cannot be answered in explicit headless mode without an attached client: approval_needed',
+    });
+  });
+
+  it('sends prompt requests immediately to an attached client', async () => {
+    const { srv } = await makeServer();
+    const socket = await connectClient(srv.sockPath);
+    sockets.push(socket);
+    await readLines(socket, 1);
+
+    const promptPromise = srv.requestClientPrompt({
+      kind: 'budget_paused',
+      currentCost: 8.5,
+      maxBudget: 10,
+    });
+    const msgs = await readLines(socket, 1);
+    const msg = msgs[0]!;
+
+    expect(msg.kind).toBe('prompt_request');
+    if (msg.kind !== 'prompt_request') throw new Error('missing prompt_request');
+    expect(msg.request).toMatchObject({ kind: 'budget_paused', currentCost: 8.5, maxBudget: 10 });
+
+    socket.write(JSON.stringify({
+      kind: 'prompt_response',
+      requestId: msg.request.requestId,
+      response: { kind: 'budget_paused', decision: 'continue' },
+    }) + '\n');
+
+    await expect(promptPromise).resolves.toEqual({ kind: 'budget_paused', decision: 'continue' });
+  });
+
+  it('round-trips tiered approval prompts through an attached client', async () => {
+    const { srv } = await makeServer();
+    const socket = await connectClient(srv.sockPath);
+    sockets.push(socket);
+    await readLines(socket, 1);
+
+    const promptPromise = srv.requestClientPrompt({
+      kind: 'tiered_approval',
+      request: {
+        tier: 'confirm',
+        actionClass: 'destructive',
+        actionDescription: 'knex migrate',
+        phase: 'implementing',
+      },
+    });
+    const msgs = await readLines(socket, 1);
+    const msg = msgs[0]!;
+
+    expect(msg.kind).toBe('prompt_request');
+    if (msg.kind !== 'prompt_request') throw new Error('missing prompt_request');
+    expect(msg.request).toMatchObject({
+      kind: 'tiered_approval',
+      request: {
+        tier: 'confirm',
+        actionClass: 'destructive',
+        actionDescription: 'knex migrate',
+      },
+    });
+
+    socket.write(JSON.stringify({
+      kind: 'prompt_response',
+      requestId: msg.request.requestId,
+      response: {
+        kind: 'tiered_approval',
+        response: { decision: 'confirm', phrase: 'I confirm', reason: 'running migration' },
+      },
+    }) + '\n');
+
+    await expect(promptPromise).resolves.toEqual({
+      kind: 'tiered_approval',
+      response: { decision: 'confirm', phrase: 'I confirm', reason: 'running migration' },
+    });
+  });
+
+  it('round-trips approval edit actions through an attached client', async () => {
+    const { srv } = await makeServer();
+    const socket = await connectClient(srv.sockPath);
+    sockets.push(socket);
+    await readLines(socket, 1);
+
+    const promptPromise = srv.requestClientPrompt({
+      kind: 'approval_needed',
+      approvalType: 'briefs',
+      filePath: '/tmp/tasks.md',
+    });
+    const msgs = await readLines(socket, 1);
+    const msg = msgs[0]!;
+
+    expect(msg.kind).toBe('prompt_request');
+    if (msg.kind !== 'prompt_request') throw new Error('missing prompt_request');
+    expect(msg.request).toMatchObject({
+      kind: 'approval_needed',
+      approvalType: 'briefs',
+      filePath: '/tmp/tasks.md',
+    });
+
+    socket.write(JSON.stringify({
+      kind: 'prompt_response',
+      requestId: msg.request.requestId,
+      response: {
+        kind: 'approval_needed',
+        approved: false,
+        action: 'edit',
+      },
+    }) + '\n');
+
+    await expect(promptPromise).resolves.toEqual({
+      kind: 'approval_needed',
+      approved: false,
+      action: 'edit',
+    });
+  });
+
   it('handles detach: closes client socket, server stays up', async () => {
     const { srv } = await makeServer();
 

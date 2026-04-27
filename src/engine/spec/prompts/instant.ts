@@ -14,8 +14,8 @@ export function buildInstantPrompt(
 1. Output ONLY a tasks list. No spec, no plan document.
 2. A single Task Brief is fine; do not over-engineer. 1-5 briefs max.
 3. Each brief MUST be self-contained so a small local model can execute it without additional context.
-4. Required per brief: Description (Intent), Implementation Steps, Tests (Validation), Constraints, Type Definitions.
-5. \`### Scope\`, \`### Escalation\`, and \`### Evidence\` are optional in instant mode — include them when even a "trivial" step has a risky edge (ambiguous behavior, multiple plausible interpretations, irreversible change).
+4. Required per brief: Description (Intent), Scope, Implementation Steps, Tests (Validation), Constraints, Escalation, Evidence, and Type Definitions.
+5. Keep Scope, Escalation, and Evidence concise for trivial work, but do not omit them; every Task Brief v1 must preserve those contract sections.
 
 Each brief must be rendered in this exact markdown shape:
 

@@ -314,6 +314,22 @@ describe('mergeWithPrevious', () => {
     const { tasks } = mergeWithPrevious([prev, curr], 1);
     expect(tasks[0]?.typeDefs).toBe('type Bar = number');
   });
+
+  it('does not create a self-dependency when current task depends on previous task', () => {
+    const prev = makeTask('T001');
+    const curr = makeTask('T002', { dependsOn: [taskId('T001')] });
+    const { tasks } = mergeWithPrevious([prev, curr], 1);
+    expect(tasks[0]?.dependsOn).toEqual([]);
+  });
+
+  it('relinks downstream tasks to the merged task when current task is absorbed', () => {
+    const prev = makeTask('T001');
+    const curr = makeTask('T002', { dependsOn: [taskId('T001')] });
+    const downstream = makeTask('T003', { dependsOn: [taskId('T002')] });
+    const { tasks } = mergeWithPrevious([prev, curr, downstream], 1);
+    expect(tasks).toHaveLength(2);
+    expect(tasks[1]?.dependsOn).toEqual(['T001']);
+  });
 });
 
 describe('moveTaskDown', () => {

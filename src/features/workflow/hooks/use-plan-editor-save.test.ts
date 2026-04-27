@@ -70,6 +70,30 @@ describe('createSaveHandler', () => {
     expect(planEditorStore.get().saveError).not.toBeNull();
   });
 
+  it('catches parse errors and surfaces them as saveError', async () => {
+    const t1 = makeTask({ id: 'T001', implementationSteps: ['s1'], tests: ['t1'], dependsOn: ['T002'] });
+    const t2 = makeTask({ id: 'T002', title: 'B', file: 'src/b.ts', description: 'B desc', implementationSteps: ['s2'], tests: ['t2'], dependsOn: ['T001'] });
+    planEditorStore.initEditor([t1, t2]);
+
+    const onApprove = vi.fn();
+    await createSaveHandler(tmpDir, onApprove)();
+
+    expect(onApprove).not.toHaveBeenCalled();
+    expect(planEditorStore.get().saveError).toContain('Round-trip parse failed');
+  });
+
+  it('accepts reordered parser output when the task ID set is unchanged', async () => {
+    const t1 = makeTask({ id: 'T001', title: 'A', file: 'src/a.ts', description: 'A desc', implementationSteps: ['s1'], tests: ['t1'] });
+    const t2 = makeTask({ id: 'T002', title: 'B', file: 'src/b.ts', description: 'B desc', implementationSteps: ['s2'], tests: ['t2'], dependsOn: ['T001'] });
+    planEditorStore.initEditor([t2, t1]);
+
+    const onApprove = vi.fn();
+    await createSaveHandler(tmpDir, onApprove)();
+
+    expect(onApprove).toHaveBeenCalledOnce();
+    expect(planEditorStore.get().saveError).toBeNull();
+  });
+
   it('markSaved is called on success (dirty becomes false)', async () => {
     const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
     planEditorStore.initEditor([task]);

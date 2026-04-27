@@ -2,7 +2,7 @@
 
 Comprehensive catalog of every user-facing capability shipped in diptych today. For each feature: what it does, how to invoke it, when to reach for it, the relevant config, and the on-screen output where applicable. This is the "what can diptych do?" reference; deeper rationale lives in the linked specs and design docs.
 
-> **Cross-references.** Workflow phases: [WORKFLOW.md](./WORKFLOW.md). Config schema: [CONFIG.md](./CONFIG.md). Slash commands: [SLASH-COMMANDS.md](./SLASH-COMMANDS.md). Architecture inventory: [ARCHITECTURE.md#part-2--current-state-the-what](./ARCHITECTURE.md#part-2--current-state-the-what). Hooks: [HOOKS-CONFIG.md](./HOOKS-CONFIG.md). Worktrees: [WORKTREES.md](./WORKTREES.md).
+> **Cross-references.** Workflow phases: [WORKFLOW.md](./WORKFLOW.md). Config schema: [CONFIGURATION.md](./CONFIGURATION.md). Slash commands: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md). Architecture inventory: [ARCHITECTURE.md#part-2--current-state-the-what](./ARCHITECTURE.md#part-2--current-state-the-what). Hooks: [HOOKS-CONFIG.md](./HOOKS-CONFIG.md). Worktrees: [WORKTREES.md](./WORKTREES.md).
 
 ---
 
@@ -30,7 +30,7 @@ diptych start --mode speckit "redesign auth subsystem"
 | `standard` (default) | 4 | spec | Ordinary feature work — research → spec → plan → tasks |
 | `speckit` | 6–7 | spec + plan + constitution + analyze | Risky, large, or externally visible work |
 
-**Configuration.** `workflow.mode`, `workflow.approve` (`none|spec|plan|all|default`), `workflow.maxRetries`. See [CONFIG.md §workflow](./CONFIG.md#workflow).
+**Configuration.** `workflow.mode`, `workflow.approve` (`none|spec|plan|all|default`), `workflow.maxRetries`. See [CONFIGURATION.md §workflow](./CONFIGURATION.md#3-workflow).
 
 ### Runner kinds (cli / api / shell / agent / agent-sdk)
 
@@ -58,7 +58,7 @@ implementer:
   contextLength: 32768
 ```
 
-Full schema: [CONFIG.md §planner / §implementer](./CONFIG.md#planner). Capability matrix per backend: [ARCHITECTURE.md §Capability matrix](./ARCHITECTURE.md).
+Full schema: [CONFIGURATION.md §planner / §implementer](./CONFIGURATION.md#1-planner--2-implementer). Capability matrix per backend: [ARCHITECTURE.md §Capability matrix](./ARCHITECTURE.md).
 
 ### Per-task git commits + validation pipeline
 
@@ -110,7 +110,7 @@ Outcome events: `task_retry`, `task_escalating`, `hint_failed`, `task_full_fail`
 
 **What it does.** The Task Brief is a single-file, self-contained executable contract with nine semantic sections: Identity, Intent, Scope, Code Context, Implementation Plan, Validation, Constraints, Escalation, Evidence. Persisted as `Task[]` in `state.json`; transported as `tasks.md`.
 
-**How to use.** Briefs are written by the planner in every mode. External tools consume them by reading `.diptych/sessions/<id>/state.json`. Each task carries a `briefHash` (sha256 of the status-stripped canonical-JSON brief) so consumers can detect when a brief mutated mid-run.
+**How to use.** Briefs are written by the planner in every mode. External tools consume the active brief by reading `.diptych/sessions/<id>/tasks.md` or the task list in `.diptych/sessions/<id>/state.json`. Brief hash metadata is recorded in evidence, drift, and handoff/MCP artifacts when available; `state.json` task objects do not carry `briefHash`.
 
 **Example (truncated `tasks.md`):**
 
@@ -163,7 +163,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 **What it does.** After Task Briefs are compiled, standard and speckit enter a `reviewing-briefs` phase. The user can approve, comment (sends feedback for regeneration), reject (workflow ends), or edit the briefs. Quick and instant skip this gate.
 
-**How to use.** Driven by `workflow.briefReview: simple | rich`. The simple view exposes approve/comment/reject/edit text commands; pressing `e` activates the rich plan editor for the current session.
+**How to use.** Driven by `workflow.briefReview: simple | rich`. The simple view exposes approve/comment/reject/edit text commands. Approve reads `.diptych/sessions/<id>/tasks.md`, parses it, and re-runs the brief quality gate before implementation. Pressing `e` edits the persisted `tasks.md` contract and returns to the gate on parse or quality errors; rich review opens the plan editor for the current session.
 
 ```yaml
 workflow:
@@ -236,7 +236,7 @@ Events: `budget_warning` (80%), `budget_paused` (configured threshold), `budget_
 
 ### Tiered approval gates (auto / sticky / confirm)
 
-**What it does.** Every implementer write is classified into one of three tiers and gated before application: `auto` (proceed silently), `sticky` (prompt once per session per pattern; persisted to `.diptych/approvals.json`), `confirm` (always require typed confirmation phrase). Action classes: `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, `network`, `package_mutation`. Composes orthogonally with the document-level approval loop.
+**What it does.** Every implementer write is classified into one of three tiers and gated before application: `auto` (proceed silently), `sticky` (prompt once per session per pattern; persisted to `.diptych/approvals.json`), `confirm` (always require typed confirmation phrase). Action classes: `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, `network`, `package_change`. Composes orthogonally with the document-level approval loop.
 
 **How to use.** Defaults are deterministic; override via `approval:` config block. Inspect or clear sticky grants:
 
@@ -266,7 +266,7 @@ Manual snapshots require the CLI command above; there is no `/snapshot` slash co
 
 **When to use.** Bookmark known-good states before risky refactors; recover from a planner that wandered. Layered on top of git — never replaces it.
 
-**Excluded paths.** `.git/`, `.diptych/`, `node_modules/` are non-negotiably excluded (`ALWAYS_EXCLUDED` invariant in `engine/snapshots/store.ts`). Including them would cause exponential snapshot growth.
+**Excluded paths.** `.git/`, `.diptych/`, `node_modules/`, `.trees/` are non-negotiably excluded (`ALWAYS_EXCLUDED` invariant in `engine/snapshots/store.ts`). Including them would cause exponential snapshot growth. `.trees/` exclusion also prevents worktree directories from leaking into cross-worktree snapshots.
 
 ### Auto-snapshots
 
@@ -282,7 +282,7 @@ snapshots:
     preFinalReview: true       # before the final-review planner call
 ```
 
-Auto-snapshot failures emit a `warning` event and do not abort the run. See [CONFIG.md §snapshots](./CONFIG.md#snapshots).
+Auto-snapshot failures emit a `warning` event and do not abort the run. See [CONFIGURATION.md §snapshots](./CONFIGURATION.md#10-snapshots).
 
 ### Drift detection (per-task)
 
@@ -350,7 +350,7 @@ In the TUI: `/handoff <target> [task-id]` writes to `.diptych/sessions/<id>/hand
 ```ts
 // .diptych/handoff-renderers/jira.ts
 export default async function render(input) {
-  return { files: [{ path: 'JIRA.md', contents: '...' }] };
+  return { files: [{ path: 'JIRA.md', content: '...' }] };
 }
 ```
 
@@ -362,7 +362,9 @@ diptych handoff jira
 
 ### MCP resources server
 
-**What it does.** A localhost-only HTTP MCP server exposing read-only session resources (state, evidence, drift, briefs, snapshots, spec, plan, tasks) via standard `resources/list` / `resources/read`. Bound to `127.0.0.1`, Bearer-token authenticated (one-shot token printed at startup).
+**What it does.** A localhost-only HTTP MCP server exposing supported read-only session resources via standard `resources/list` / `resources/read`: the sessions index, `manifest.json` when canonical `summary.json` and `state.json` exist, `summary.json`, `state.json`, `spec.md`, `plan.md`, `tasks`, individual `tasks/<id>` blocks, `evidence.json`, and `drift-report.json` when present. Missing concrete resources return resource-not-found; unavailable manifests are not advertised. Bound to `127.0.0.1`, Bearer-token authenticated (one-shot token printed at startup).
+
+**Transport.** Implements the MCP Streamable HTTP transport (`2025-11-25`). Accepts `POST /mcp` for requests and notifications. `GET /mcp` returns `405 Method Not Allowed` with an `Allow: POST` header (SSE not implemented). Non-local browser `Origin` headers are rejected with `403`. The server supports `MCP-Protocol-Version: 2025-11-25`; when the request header is missing, the server defaults to that current supported version and echoes it in the response header. Unsupported protocol-version headers return `400` with a JSON-RPC error. Notifications receive `202 Accepted` (no body); requests receive `200` with a JSON-RPC response body.
 
 **How to use.**
 
@@ -371,7 +373,7 @@ diptych mcp serve --port 4321 --session <id>
 diptych mcp serve --all-sessions               # expose every session in the project
 ```
 
-External MCP-aware tools (Claude Code, Codex, Cursor) configure the URL plus the printed token. URI scheme is forward-compatible with the handoff pack v1 paths. The bearer token is a one-shot random value generated in-memory at server startup (`src/engine/mcp/auth-token.ts` — `generateToken()`); it is never persisted to disk.
+External MCP-aware tools (Claude Code, Codex, Cursor) configure the URL plus the printed token. URI scheme is forward-compatible with the handoff pack v1 paths. The bearer token is a one-shot random value generated in-memory at server startup (`src/engine/mcp/auth-token.ts` — `generateToken()`); it is never persisted to disk. Every `manifest.json` exposed by the server includes `briefHash`.
 
 **When to use.** Live mode for external agents that need to read diptych state without a copied handoff pack.
 
@@ -381,7 +383,9 @@ External MCP-aware tools (Claude Code, Codex, Cursor) configure the URL plus the
 
 ### `diptych start --worktree [name]`
 
-**What it does.** Creates an isolated git worktree at `.trees/<slug>` on a fresh `diptych/<slug>` branch and runs the session inside it. Each worktree has its own `.diptych/active` lockfile, so sessions cannot conflict at the diptych level.
+**What it does.** Creates an isolated git worktree at `.trees/<slug>` on a fresh `diptych/<slug>` branch and runs the session inside it. Each worktree has its own `.diptych/active` pointer and session directory, so sessions cannot conflict at the diptych level.
+
+**Name restrictions.** The `<name>` argument is validated before any worktree or branch is created. Names must match `[A-Za-z0-9_][A-Za-z0-9._-]{0,63}` — no `/`, `\`, `..`, no leading `.` or `-`, and no shell-sensitive characters. Invalid names (including names that contain path separators or would navigate outside `.trees/`) are rejected immediately with a descriptive error.
 
 **How to use.**
 
@@ -389,6 +393,8 @@ External MCP-aware tools (Claude Code, Codex, Cursor) configure the URL plus the
 diptych start --worktree feature-a "add user auth"
 diptych start --worktree feature-b "refactor billing"
 ```
+
+The source worktree must be clean before creation. `--detach` combination validation (missing feature, `--json` conflict, Windows) runs **before** the worktree is created so a failed validation never leaves behind a `.trees/<slug>` directory or a `diptych/<slug>` branch. With `--detach --worktree`, worktree selection happens before the detached server is spawned.
 
 **When to use.** Run unrelated features in parallel; A/B-test two implementer model configs against the same brief; keep a long planner exploration alive while making quick edits elsewhere.
 
@@ -401,12 +407,12 @@ diptych start --worktree feature-b "refactor billing"
 **How to use.**
 
 ```bash
-diptych worktree list                              # all worktrees + active/idle/none
-diptych worktree switch <name>                     # cd into the worktree
+diptych worktree list                              # path, branch, status, session, phase, updated
+diptych worktree switch <name>                     # print cd instructions for the worktree
 diptych worktree remove <name> [--force] [--delete-branch]
 ```
 
-`remove` refuses if the worktree has uncommitted changes or a live session, unless `--force` is passed (which logs each bypassed guard). Parallel `--parallel N` fan-out is deferred to v3.
+`remove` refuses if the worktree has uncommitted changes or a live session, unless `--force` is passed. Forced removal prints specific warnings with the live session id when known and the uncommitted file count when known. Parallel `--parallel N` fan-out is deferred to v3.
 
 ---
 
@@ -439,7 +445,18 @@ diptych attach <id>           # explicit
 
 (Not supported on Windows in v1.)
 
-There is no separate `detach` CLI command; closing the attach client (Ctrl+C) disconnects without stopping the server. Reattach with `diptych attach`.
+### `diptych detach [session-id]`
+
+**What it does.** Sends the same detach request as the TUI Ctrl-D path, disconnecting an attached client without stopping the background server. If `session-id` is omitted, it targets the unique running session in the project and errors when there are zero or multiple running sessions.
+
+**How to use.**
+
+```bash
+diptych detach
+diptych detach <id>
+```
+
+Reattach with `diptych attach <id>`. The server remains visible in `diptych ps`.
 
 ### `diptych ps`
 
@@ -459,7 +476,7 @@ If a session crashed, `diptych attach` shows a crash diagnostic with last-alive 
 
 ## TUI features
 
-### Slash commands palette (21 commands)
+### Slash commands palette (24 commands)
 
 **What it does.** Every runtime command is a slash command. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match.
 
@@ -485,9 +502,11 @@ If a session crashed, `diptych attach` shows a crash diagnostic with last-alive 
 | `/attach <path>` | Attach an image for the next planner call |
 | `/detach <index-or-id>` | Remove a pending image attachment |
 | `/approval [list\|clear]` | List or clear sticky approval grants |
+| `/accept-run` | Accept current run changes and prevent run rejection |
+| `/reject-run confirm` | Restore diptych-written files from the run baseline |
 | `/quit` | Exit application (Ctrl+Q) |
 
-Full reference: [SLASH-COMMANDS.md](./SLASH-COMMANDS.md).
+Full reference: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
 ### Command palette overlay (Ctrl+K)
 
@@ -500,8 +519,9 @@ Full reference: [SLASH-COMMANDS.md](./SLASH-COMMANDS.md).
 ```yaml
 palette:
   customActions:
-    - label: "Open .env"
-      command: "$EDITOR .env"
+    - id: write-handoff
+      label: "Write Claude handoff"
+      command: /handoff claude-code
 ```
 
 ### Help overlay (`?`)
@@ -520,7 +540,7 @@ palette:
 
 **What it does.** Two-column pickers for workflow mode (`/mode` no-arg), planner backend (`/planner`), and implementer backend (`/implementer`). Filtered to detected/available tools.
 
-### Cost footer
+### Input footer
 
 **What it does.** Per-task progress and risk posture below the always-visible status line.
 
@@ -709,8 +729,8 @@ Or per-run: `--otel-exporter console`. Full details: [OTEL.md](./OTEL.md).
 
 - [WORKFLOW.md](./WORKFLOW.md) — phase state machine, abort/queue/continue, resume semantics.
 - [TASK-CONTRACT.md](./TASK-CONTRACT.md) — Task Brief v1, evidence ledger, drift report.
-- [CONFIG.md](./CONFIG.md) — every config field, default, and validation rule.
-- [SLASH-COMMANDS.md](./SLASH-COMMANDS.md) — slash command reference, dispatch, phase guards.
+- [CONFIGURATION.md](./CONFIGURATION.md) — every config field, default, and validation rule.
+- [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — slash command reference, dispatch, phase guards.
 - [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — workflow hooks: events, schemas, trust, security.
 - [WORKTREES.md](./WORKTREES.md) — git worktree usage and the runtime isolation gap.
 - [ARCHITECTURE.md#part-2--current-state-the-what](./ARCHITECTURE.md#part-2--current-state-the-what) — code-level inventory, event union, persistence layout.

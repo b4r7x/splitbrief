@@ -52,9 +52,26 @@ describe('snapshot create', () => {
 
     const out = captureOutput();
     expect(out).toMatch(/Snapshot created:/);
-    expect(out).toMatch(/baseline/);
     expect(out).toMatch(/Files:/);
     expect(out).toMatch(/Location:/);
+    // The very first snapshot must NOT print just "baseline" — that is an
+    // internal identifier the user can never list or restore by name. The
+    // CLI follows up with a real, listable snapshot.
+    expect(out).toMatch(/Initialized snapshot baseline/);
+    expect(out).not.toMatch(/Snapshot created: baseline$/m);
+  });
+
+  it('first invocation produces a snapshot that subsequently appears in list output', async () => {
+    await writeFile(join(tmp, 'src.ts'), 'v1');
+
+    await runSnapshot(['create', '--project', tmp, '--session', 'first-sess', '--name', 'kickoff']);
+    consoleSpy.mockClear();
+
+    await runSnapshot(['list', '--project', tmp, '--session', 'first-sess']);
+    const out = captureOutput();
+    expect(out).not.toMatch(/No snapshots found/);
+    expect(out).toMatch(/kickoff/);
+    expect(out).toMatch(/files=/);
   });
 
   it('prints the name when --name is provided', async () => {

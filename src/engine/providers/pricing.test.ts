@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { calculateCost, calculateCostBreakdown, getModelPricing, getProviderPricing } from './pricing.js';
+import { calculateCost, calculateCostBreakdown, calculateUsageCost, getModelPricing, getProviderPricing } from './pricing.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { CostBreakdownSchema } from '../../core/schemas/summary.js';
+import type { ModelCacheAccessor } from './model-resolution.js';
 
 describe('calculateCost', () => {
   it('returns 0 for unpriced providers', () => {
@@ -13,6 +14,18 @@ describe('calculateCost', () => {
   it('calculates priced API usage', () => {
     const pricing = getProviderPricing('anthropic', 'claude-sonnet-4-6');
     expect(calculateCost(1_000_000, 1_000_000, pricing)).toBe(18);
+  });
+});
+
+describe('calculateUsageCost', () => {
+  it('includes cache read and create costs when known', () => {
+    const pricing = getProviderPricing('anthropic', 'claude-sonnet-4-6');
+    expect(calculateUsageCost(1_000_000, 1_000_000, 1_000_000, 1_000_000, pricing)).toBeCloseTo(22.05, 10);
+  });
+
+  it('returns zero for unknown models with unpriced fallback', () => {
+    const pricing = getProviderPricing('unknown-provider', 'totally-unknown-model');
+    expect(calculateUsageCost(1_000_000, 1_000_000, 1_000_000, 1_000_000, pricing)).toBe(0);
   });
 });
 
@@ -230,6 +243,26 @@ describe('getProviderPricing', () => {
 });
 
 describe('cache pricing', () => {
+  it('merges bundled Anthropic cache rates into runtime model-cache pricing', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: (providerId) => providerId === 'anthropic'
+        ? [{
+            id: 'claude-sonnet-4-6',
+            pricingInput: 4,
+            pricingOutput: 20,
+          }]
+        : null,
+    };
+    const pricing = getProviderPricing('anthropic', 'claude-sonnet-4-6', cache);
+
+    expect(pricing.source).toBe('runtime');
+    expect(pricing.inputPer1M).toBe(4);
+    expect(pricing.outputPer1M).toBe(20);
+    expect(pricing.cacheReadPer1M).toBe(0.3);
+    expect(pricing.cacheWritePer1M).toBe(3.75);
+  });
+
   it('calculateCostBreakdown with cacheRead tokens + priced provider returns correct cacheReadSavings', () => {
     // Sonnet 4.6: input=$3/MTok, cacheRead=$0.30/MTok => savings=$2.70/MTok of cache reads
     const usage = makeUsage({

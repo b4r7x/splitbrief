@@ -7,6 +7,7 @@ import {
   updateHeartbeat,
   markExited,
   markCrashed,
+  markSignaled,
   readLockfile,
   checkServerStatus,
 } from './lockfile.js';
@@ -63,6 +64,26 @@ describe('updateHeartbeat', () => {
     expect(data!.pid).toBe(1234);
     expect(data!.startTimeMs).toBe(1000);
   });
+
+  it('does not overwrite exitedAt after markExited', async () => {
+    await writeLockfile(testDir, {
+      pid: 1234,
+      startTimeMs: 1000,
+      lastAliveMs: 1000,
+      sessionId: 'test-session',
+      mode: 'standard',
+      feature: 'test feature',
+    });
+    await markExited(testDir, 0);
+    const before = await readLockfile(testDir);
+    const exitedAtBefore = before!.exitedAt;
+
+    await updateHeartbeat(testDir);
+
+    const after = await readLockfile(testDir);
+    expect(after!.exitedAt).toBe(exitedAtBefore);
+    expect(after!.lastAliveMs).toBe(1000);
+  });
 });
 
 describe('markExited', () => {
@@ -101,10 +122,92 @@ describe('markCrashed', () => {
     expect(data!.signal).toBe('uncaught');
     expect(data!.cause).toBe('Something went wrong');
   });
+
+  it('sets exitedAt so heartbeat will not race-overwrite', async () => {
+    await writeLockfile(testDir, {
+      pid: 1234,
+      startTimeMs: 1000,
+      lastAliveMs: 1000,
+      sessionId: 'test-session',
+      mode: 'standard',
+      feature: 'test feature',
+    });
+
+    await markCrashed(testDir, 'uncaught', 'boom');
+    const before = await readLockfile(testDir);
+    expect(before!.exitedAt).toBeDefined();
+
+    await updateHeartbeat(testDir);
+    const after = await readLockfile(testDir);
+    expect(after!.exitedAt).toBe(before!.exitedAt);
+    expect(after!.lastAliveMs).toBe(1000);
+  });
+});
+
+describe('markSignaled', () => {
+  it('records signal name and exitedAt for SIGTERM/SIGINT shutdown', async () => {
+    await writeLockfile(testDir, {
+      pid: 1234,
+      startTimeMs: 1000,
+      lastAliveMs: 1000,
+      sessionId: 'test-session',
+      mode: 'standard',
+      feature: 'test feature',
+    });
+
+    await markSignaled(testDir, 'SIGTERM');
+    const data = await readLockfile(testDir);
+    expect(data!.signal).toBe('SIGTERM');
+    expect(data!.exitedAt).toBeDefined();
+  });
+
+  it('does not overwrite exitedAt if already set', async () => {
+    await writeLockfile(testDir, {
+      pid: 1234,
+      startTimeMs: 1000,
+      lastAliveMs: 1000,
+      sessionId: 'test-session',
+      mode: 'standard',
+      feature: 'test feature',
+    });
+
+    await markExited(testDir, 0);
+    const before = await readLockfile(testDir);
+    await markSignaled(testDir, 'SIGINT');
+    const after = await readLockfile(testDir);
+    expect(after!.exitedAt).toBe(before!.exitedAt);
+    expect(after!.signal).toBe('SIGINT');
+  });
 });
 
 describe('readLockfile', () => {
   it('returns null when file does not exist', async () => {
+    const result = await readLockfile(testDir);
+    expect(result).toBeNull();
+  });
+
+  it('returns null for corrupt JSON', async () => {
+    const { writeFileSync } = await import('node:fs');
+    const { join: pathJoin } = await import('node:path');
+    writeFileSync(pathJoin(testDir, 'lockfile.json'), 'not-json{{{');
+    const result = await readLockfile(testDir);
+    expect(result).toBeNull();
+  });
+
+  it('returns null when required fields are missing (pid missing)', async () => {
+    const { writeFileSync } = await import('node:fs');
+    const { join: pathJoin } = await import('node:path');
+    const bad = { version: 1, startTimeMs: 1000, lastAliveMs: 1000, sessionId: 'x', mode: 'standard', feature: 'f' };
+    writeFileSync(pathJoin(testDir, 'lockfile.json'), JSON.stringify(bad));
+    const result = await readLockfile(testDir);
+    expect(result).toBeNull();
+  });
+
+  it('returns null when pid is not a positive integer', async () => {
+    const { writeFileSync } = await import('node:fs');
+    const { join: pathJoin } = await import('node:path');
+    const bad = { version: 1, pid: -1, startTimeMs: 1000, lastAliveMs: 1000, sessionId: 'x', mode: 'standard', feature: 'f' };
+    writeFileSync(pathJoin(testDir, 'lockfile.json'), JSON.stringify(bad));
     const result = await readLockfile(testDir);
     expect(result).toBeNull();
   });

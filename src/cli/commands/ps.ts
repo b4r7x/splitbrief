@@ -14,6 +14,7 @@ type SessionRow = {
   mode: string;
   startTimeMs: number;
   endTimeMs: number | null;
+  lastAliveMs: number | null;
   feature: string;
 };
 
@@ -38,6 +39,7 @@ async function buildRow(sessDir: string, sessionId: string): Promise<SessionRow>
       mode: '-',
       startTimeMs: 0,
       endTimeMs: null,
+      lastAliveMs: null,
       feature: '-',
     };
   }
@@ -60,6 +62,7 @@ async function buildRow(sessDir: string, sessionId: string): Promise<SessionRow>
     mode: data.mode,
     startTimeMs: data.startTimeMs,
     endTimeMs: data.exitedAt ?? null,
+    lastAliveMs: data.lastAliveMs,
     feature: data.feature,
   };
 }
@@ -107,7 +110,7 @@ export async function psCommand(opts: { projectDir: string }): Promise<void> {
   console.log(header);
 
   for (const row of rows) {
-    const endMs = row.endTimeMs ?? (row.status === 'running' ? now : row.startTimeMs);
+    const endMs = row.endTimeMs ?? (row.status === 'running' ? now : (row.lastAliveMs ?? row.startTimeMs));
     const elapsed = row.startTimeMs > 0 ? formatElapsed(row.startTimeMs, endMs) : '-';
     const line = [
       row.sessionId.padEnd(SID_W),

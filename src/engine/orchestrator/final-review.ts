@@ -22,6 +22,8 @@ import { publishEvent, publishError, publishPlannerStatus, publishWarning } from
 import { transitionAndSave } from './state-ops.js';
 import { runPlannerReview } from './planner-review.js';
 import { createSnapshot } from '../snapshots/store.js';
+import { recordRunSnapshot } from '../snapshots/run.js';
+import { hashTaskBrief } from '../../core/brief-hash.js';
 
 export async function runFinalReviewPhase(
   opts: { projectDir: string; sessionId: string; config: Config; callbacks: OrchestratorCallbacks; bus: EventBus; state: WorkflowState; planner: Planner; metadata?: SpecMetadata | null },
@@ -36,7 +38,7 @@ export async function runFinalReviewPhase(
 
   if (config.snapshots?.auto?.preFinalReview === true) {
     try {
-      await createSnapshot({
+      const result = await createSnapshot({
         projectDir,
         sessionId,
         phase: 'manual',
@@ -44,6 +46,7 @@ export async function runFinalReviewPhase(
         bus,
         eventPhase: state.phase,
       });
+      await recordRunSnapshot(projectDir, sessionId, result.manifest);
     } catch (err) {
       publishWarning(bus, state.phase, labelError('auto-snapshot (pre-final-review) failed', err));
     }
@@ -62,7 +65,7 @@ export async function runFinalReviewPhase(
     try {
       const changedFiles = await getChangedFiles(projectDir);
       const ledger = readEvidenceLedger(projectDir, sessionId);
-      const driftReport = analyzeBriefDrift({ tasks: state.tasks, changedFiles, diff, ledger });
+      const driftReport = analyzeBriefDrift({ tasks: state.tasks, changedFiles, diff, ledger, briefHash: hashTaskBrief(state.tasks) });
       writeDriftReport(projectDir, sessionId, driftReport);
       publishDriftReport(bus, state.phase, driftReport);
       driftPromptSection = formatDriftReportForPrompt(driftReport);
