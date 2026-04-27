@@ -1,0 +1,102 @@
+# diptych — Worktrees
+
+Git worktrees let you run multiple diptych sessions in parallel, each on a separate branch and in a separate directory. This document covers what worktrees isolate, what they do not, and how to close the gaps.
+
+## What worktrees give you
+
+- **Filesystem isolation.** Each worktree is a separate directory. Files edited in `.trees/my-feature` do not affect the main tree and vice versa.
+- **Branch isolation.** Each worktree checks out its own branch. Implementer commits go to that branch, not to `main`.
+- **Diptych state isolation.** Each worktree has its own `.diptych/` directory, its own `.diptych/active` lockfile, and its own session history. Running two diptych sessions in two worktrees is safe — the lockfiles cannot collide.
+- **Snapshot isolation.** When `snapshots-undo` is installed, each worktree's snapshots are stored under its own `.diptych/sessions/`. Snapshots from one session do not appear in another.
+
+## What worktrees do NOT isolate
+
+Worktrees do not isolate runtime state. The gaps below are silent — git reports no conflict, but your processes interfere at runtime.
+
+| Gap | Failure scenario |
+|---|---|
+| Dev server ports | `npm run dev` in both worktrees defaults to port 3000 — one will fail or shadow the other. |
+| `node_modules` | npm/yarn often hoist to workspace root; installing a package in one worktree may break the other if versions conflict. |
+| Environment variables | Shell env vars set in one terminal session bleed into any process started from that session. `.env` files are per-directory but only re-read if the framework reloads them on startup. |
+| Database / file-system state | Both worktrees connecting to the same local database or writing to the same output directory will conflict. |
+| Lock files | Tools like `@prisma/client` generate or cache files in shared locations. Two simultaneous generates will race. |
+
+## Recommended mitigations
+
+### Port management (simplest)
+
+Set `PORT` (or the equivalent env var for your framework) per worktree before starting the dev server:
+
+```bash
+PORT=3001 npm run dev   # in .trees/my-feature
+PORT=3000 npm run dev   # in main tree
+```
+
+### direnv for per-worktree environment
+
+Create a `.envrc` in each worktree with the overrides. `direnv` applies it automatically when you `cd` into the directory:
+
+```bash
+export PORT=3001
+export DATABASE_URL=postgresql://localhost/myapp_my_feature
+```
+
+Install direnv once (`brew install direnv` / `apt install direnv`), then run `direnv allow` inside each worktree.
+
+### Separate databases per worktree
+
+Use a dedicated database or schema name per worktree. Name it after the feature:
+
+```bash
+createdb myapp_my_feature
+# set DATABASE_URL=postgresql://localhost/myapp_my_feature in .envrc
+```
+
+Most local Postgres and SQLite setups allow creating additional databases at zero cost.
+
+### Docker Compose per worktree (intermediate)
+
+Add a `docker-compose.override.yml` in each worktree with unique port mappings and volume names, then run `docker compose up` separately per worktree:
+
+```yaml
+# .trees/my-feature/docker-compose.override.yml
+services:
+  db:
+    ports:
+      - "5433:5432"
+    volumes:
+      - my_feature_pgdata:/var/lib/postgresql/data
+volumes:
+  my_feature_pgdata:
+```
+
+### devcontainer per worktree (full isolation)
+
+VS Code devcontainers can be configured per directory. Open each worktree as a separate VS Code window — each window spins up its own container with full port and filesystem isolation. See the [VS Code Dev Containers documentation](https://code.visualstudio.com/docs/devcontainers/containers) for per-folder configuration.
+
+### microVM (advanced)
+
+Tools like Firecracker or Lima allow creating lightweight VMs per worktree, providing full process, port, and filesystem isolation. This is out of scope for a typical local workflow but is a natural fit for CI-style parallel runs.
+
+## .gitignore advice
+
+Add `.trees/` to the project `.gitignore` to prevent the main tree from showing worktree directories in `git status`:
+
+```
+# diptych worktrees
+.trees/
+```
+
+Diptych does not write this automatically. Run the addition once after your first `diptych start --worktree`.
+
+## Quick-start checklist
+
+Follow these steps to run two diptych sessions in parallel safely:
+
+1. Add `.trees/` to `.gitignore`.
+2. Pick distinct ports for each worktree's dev server, or set up `direnv` with per-worktree `.envrc` files.
+3. Use a separate database or schema per worktree if your project uses a local database.
+4. Open each worktree in a separate terminal window or VS Code window.
+5. Run `diptych start --worktree <name> "<feature>"` in each window.
+6. Use `diptych worktree list` from the main tree to see all active sessions.
+7. When done, merge the branch you prefer and run `diptych worktree remove <name> --delete-branch` to clean up.

@@ -1,0 +1,76 @@
+import { Box, Text } from 'ink';
+import { useTheme } from '../../../components/theme.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { configStore } from '../../../stores/project/config.js';
+import { readEvidenceLedger } from '../../../engine/orchestrator/evidence.js';
+import type { EvidenceLedger, EvidenceTask } from '../../../core/schemas/evidence.js';
+import type { Summary } from '../../../core/schemas/summary.js';
+import { truncateWithEllipsis } from '../../../utils/truncate.js';
+
+interface SummaryEvidenceProps {
+  summary: Summary;
+  ledger?: EvidenceLedger | null;
+  sessionId?: string;
+}
+
+function statusGlyph(task: EvidenceTask): string {
+  if (task.status === 'done' && task.escalated === false) return '✔';
+  if (task.status === 'escalated' || task.escalated) return '↑';
+  if (task.status === 'failed') return '✗';
+  if (task.status === 'skipped') return '–';
+  return '·';
+}
+
+export function SummaryEvidence({ summary, ledger, sessionId }: SummaryEvidenceProps) {
+  const theme = useTheme();
+  const isSmall = terminalSizeStore.use(s => s.isSmall);
+  const projectDir = configStore.use(s => s.projectDir);
+  if (!summary.evidenceSummary) return null;
+
+  let resolved: EvidenceLedger | null = ledger ?? null;
+  if (!resolved && projectDir && sessionId) {
+    resolved = readEvidenceLedger(projectDir, sessionId);
+  }
+
+  const truncate = isSmall ? 28 : 60;
+  const titleWidth = isSmall ? 18 : 26;
+
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Text bold color={theme.text}>Evidence</Text>
+      <Text color={theme.textDim}>
+        ledger: {summary.evidenceSummary.path} · {summary.evidenceSummary.tasksWithValidationEvidence}/{summary.evidenceSummary.totalTasks} validated · {summary.evidenceSummary.escalatedTasks} escalated · {summary.evidenceSummary.failedTasks} failed
+      </Text>
+
+      {resolved?.tasks.map(task => {
+        const passed = task.validation.filter(v => v.passed).map(v => v.stage).join(',') || '—';
+        const expected = task.expectedEvidence.length > 0
+          ? truncateWithEllipsis(task.expectedEvidence.join('; '), truncate)
+          : '—';
+        const observed = task.observedEvidence.length > 0
+          ? truncateWithEllipsis(task.observedEvidence.join('; '), truncate)
+          : '—';
+        return (
+          <Box key={task.id} flexDirection={isSmall ? 'column' : 'row'} marginTop={isSmall ? 1 : 0}>
+            <Box width={isSmall ? undefined : titleWidth}>
+              <Text color={theme.textDim}>{statusGlyph(task)} {task.id}</Text>
+              <Text> </Text>
+              <Text>{truncateWithEllipsis(task.title, isSmall ? 24 : titleWidth - 6)}</Text>
+            </Box>
+            <Box flexDirection="column">
+              <Text color={theme.textDim}>passed: {passed}</Text>
+              <Text color={theme.textDim}>expected: {expected}</Text>
+              <Text color={theme.textDim}>observed: {observed}</Text>
+            </Box>
+          </Box>
+        );
+      })}
+
+      {resolved?.finalReview && (
+        <Box marginTop={1}>
+          <Text color={theme.textDim}>final review: {resolved.finalReview.status} ({resolved.finalReview.path})</Text>
+        </Box>
+      )}
+    </Box>
+  );
+}
