@@ -11,11 +11,12 @@ import { configStore } from '../../../stores/project/config.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { routeTaskToImplementerProfile } from '../../../engine/orchestrator/context-routing.js';
 import { isENOENT } from '../../../lib/process/errors.js';
+import { buildPlanReviewScorecard, type PlanReviewScorecardEntry } from '../plan-review-scorecard.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ProjectContext } from '../../../core/types/state-actions.js';
 
 const COST_TIER_ORDER: PlanReviewCostTier[] = ['local', 'cheap', 'standard', 'frontier', 'unknown'];
-const SIMPLE_REVIEW_CHROME_ROWS = 6;
+const SIMPLE_REVIEW_CHROME_ROWS = 7;
 const SIMPLE_TASK_ROW_HEIGHT = 3;
 
 export function formatQualityDisplay(quality: BriefQualityReport | null): string {
@@ -166,6 +167,31 @@ export function formatPlanReviewSummary(
   return `context ${context} · ${cost} · ${tokens} · ${workerText}`;
 }
 
+function getScorecardColor(entries: PlanReviewScorecardEntry[], theme: ReturnType<typeof useTheme>): string {
+  if (entries.some(entry => entry.count > 0 && (entry.bucket === 'splitOverflow' || entry.bucket === 'staleConflict'))) return theme.error;
+  if (entries.some(entry => entry.count > 0 && entry.bucket !== 'ready')) return theme.warning;
+  if (entries.some(entry => entry.count > 0 && entry.bucket === 'ready')) return theme.success;
+  return theme.textDim;
+}
+
+export function PlanReviewScorecardLine({
+  tasks,
+  quality,
+  metadata,
+}: {
+  tasks: Task[];
+  quality: BriefQualityReport | null;
+  metadata: ReadonlyMap<string, PlanTaskReviewMetadata>;
+}) {
+  const t = useTheme();
+  const scorecard = buildPlanReviewScorecard(tasks, quality, metadata);
+  const text = scorecard.buckets.map(entry => entry.label).join(' · ');
+
+  return (
+    <Text color={getScorecardColor(scorecard.buckets, t)} wrap="truncate">{text}</Text>
+  );
+}
+
 export function buildRoutingPreviewMetadata(
   tasks: Task[],
   opts: { config: Config; projectDir: string },
@@ -209,7 +235,7 @@ export function buildRoutingPreviewMetadata(
   }));
 }
 
-async function refreshTaskForRoutingPreview(
+export async function refreshTaskForRoutingPreview(
   task: Task,
   projectDir: string,
 ): Promise<{ task: Task; estimateStatus?: PlanReviewEstimateStatus | undefined }> {
@@ -380,6 +406,7 @@ export function BriefReviewView({ filePath, height, width }: BriefReviewViewProp
         <Text color={qualityColor}>{qualityDisplay}</Text>
       </Box>
       <Text color={t.textDim}>{formatPlanReviewSummary(tasks, reviewMetadata)}</Text>
+      <PlanReviewScorecardLine tasks={tasks} quality={quality} metadata={reviewMetadata} />
       <Text color={t.textDim}>{filePath}</Text>
       <Box height={1} />
       <Box flexDirection="column" height={taskRowBudget} overflow="hidden">

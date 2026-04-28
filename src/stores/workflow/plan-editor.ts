@@ -160,7 +160,7 @@ function setReviewMetadata(metadata: PlanTaskReviewMetadata[]): void {
   store.set(s => {
     const next = new Map(s.reviewMetadata);
     for (const item of metadata) {
-      next.set(item.taskId, mergeReviewMetadata(next.get(item.taskId), item));
+      next.set(item.taskId, item);
     }
     if (sameReviewMetadata(s.reviewMetadata, next)) return s;
     return { ...s, reviewMetadata: next };

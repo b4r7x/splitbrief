@@ -184,6 +184,8 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 **What it does.** After Task Briefs are compiled, standard and speckit enter a `reviewing-briefs` phase. The user can approve, comment (sends feedback for regeneration), reject (workflow ends), or edit the briefs. Quick and instant skip this gate.
 
+The review surface includes a compact execution-readiness scorecard: `ready`, `routing pending`, `split/overflow`, `risky/tight`, `stale/conflict`, and `missing checks`. Unknown, stale, pending, or missing routing/context fit does not count as ready.
+
 **How to use.** Driven by `workflow.briefReview: simple | rich`. The simple view exposes approve/comment/reject/edit text commands. Approve reads `.diptych/sessions/<id>/tasks.md`, parses it, and re-runs the brief quality gate before implementation. Pressing `e` edits the persisted `tasks.md` contract and returns to the gate on parse or quality errors; rich review opens the plan editor for the current session.
 
 ```yaml
@@ -195,7 +197,9 @@ workflow:
 
 **What it does.** A first-class interactive editor for sculpting Task Briefs before any implementer token is spent. Cursor navigation, delete, merge, split, reorder, external editor, atomic save with brief-quality re-validation.
 
-**How to use.** Activated when `workflow.briefReview: rich` (or `e` from the simple view). Operates in-memory until you save with `Y`.
+Rich review also has a read-only Worker Packet Preview for the selected task. The preview uses the same task formatter and review routing metadata that dispatch relies on, and shows worker/cost/write mode, fit/tokens/context, current-code reduction mode, system preamble, task prompt, and redaction/truncation notices. For modify tasks it refreshes current code from disk for preview; if the target file is missing or unreadable, stale Task Brief `currentCode` is omitted and the preview shows the missing/unavailable estimate state.
+
+**How to use.** Activated when `workflow.briefReview: rich` (or `e` from the simple view). Operates in-memory until you save with `Y`. Press `p` to toggle the selected-task packet preview.
 
 | Key | Action |
 |---|---|
@@ -203,6 +207,7 @@ workflow:
 | `d` | Delete task |
 | `m` | Merge with previous task |
 | `s` | Split task |
+| `p` | Toggle Worker Packet Preview |
 | `e` | Open task in `$EDITOR` |
 | `Ctrl+J` / `Ctrl+K` | Reorder down / up |
 | `Y` | Save: write `tasks.md`, re-run quality gate, dispatch `APPROVE_BRIEFS` |
