@@ -3,7 +3,7 @@
 > Historical note (2026-04-28): this brief was used during implementation. The current status is recorded in `../README.md`, `../tasks.md`, `../verification.md`, and `docs/COST-AWARE-IMPLEMENTER-HANDOFF.md`.
 > Original fresh-context brief retained for audit; do not implement as pending work unless intentionally re-running this spec.
 > For the spawned worker assigned this brief: GPT-5.5, medium reasoning.
-> Never stage or commit.
+> Do not run `git add`, `git stage`, `git commit`, or `git stash`.
 
 ## Identity
 
@@ -57,3 +57,13 @@ Manually inspect hits. Historical rejected non-goals are allowed if the wording 
 - Docs explain the agreed direction without needing this conversation.
 - Docs do not instruct agents to stage or commit.
 - Config examples touched by this work match current schema.
+
+## Expected Final Report
+
+Include:
+
+- files changed;
+- tests or checks run and results;
+- validation skipped, with explicit reason;
+- remaining risks or follow-up work;
+- confirmation that you did not run `git add`, `git stage`, `git commit`, or `git stash`.

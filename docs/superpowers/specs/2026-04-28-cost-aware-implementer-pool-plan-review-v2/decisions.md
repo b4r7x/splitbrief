@@ -64,7 +64,7 @@ Every Task Brief executes in a fresh worker call. Retry prompts may include prio
 
 ### Context
 
-Parallel same-directory writes create unclear ownership and conflict risk.
+Parallel same-checkout writes create unclear ownership and conflict risk.
 
 ### Decision
 

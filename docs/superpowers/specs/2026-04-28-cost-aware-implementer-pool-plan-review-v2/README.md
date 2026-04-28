@@ -2,7 +2,7 @@
 
 > **Status:** implemented and verified with targeted validation.
 > **Scope:** keep diptych focused as an expensive-planner to cheap-implementer orchestrator; add implementer-pool planning, context-aware task routing, stronger plan review, user-edit conflict handling, durable session artifacts, and cleanup guidance.
-> **Out of scope:** separate plan archive/plan-management system, kanban, cross-plan dependencies, same-directory or same-checkout parallel writes, MCP write tools, generic agent swarms, automatic git staging/commits.
+> **Out of scope:** separate plan archive/plan-management system, kanban, cross-plan dependencies, same-checkout parallel writes, MCP write tools, generic agent swarms, automatic git staging/commits.
 
 ## Current State
 
@@ -84,7 +84,7 @@ reasoning: medium
 
 Each agent brief repeated this assignment so it survived copy/paste into a fresh context. The `medium` reasoning level applied only to those spawned implementation agents, not to the main coordinator context.
 
-If the environment provided a `parallel-agents` or equivalent superpowers skill, it was suitable for dispatch planning: split work only across independent briefs, keep file ownership disjoint, and synthesize results in the coordinator.
+If the environment provided a `parallel-agents` or equivalent superpowers skill, it was suitable for dispatch planning. Same-checkout dispatch must remain sequential. Parallel agents may be used only for isolated-worktree execution or for read-only/dispatch planning; synthesize results in the coordinator.
 
 ## Historical Dependencies
 

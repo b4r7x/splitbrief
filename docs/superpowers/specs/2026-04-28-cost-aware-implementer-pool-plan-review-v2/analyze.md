@@ -16,7 +16,7 @@ Named plans, plan archive, clone, search, kanban, and cross-plan dependencies wo
 
 Multiple implementers can be interpreted as multi-agent orchestration.
 
-**Fix applied:** The pool is defined as profile selection/fallback inside one implementer role. Same-directory parallel writes are explicitly out of scope.
+**Fix applied:** The pool is defined as profile selection/fallback inside one implementer role. Same-checkout parallel writes are explicitly out of scope; future parallel execution requires isolated worktrees or equivalent sandboxes.
 
 ### Finding 3 - Context overflow is the real problem
 
@@ -55,7 +55,7 @@ The plan was adjusted as follows:
 - Removed long-lived plan system from scope.
 - Removed visual kanban from scope.
 - Removed cross-plan orchestration from scope.
-- Removed same-directory parallel fan-out from scope.
+- Removed same-checkout parallel fan-out from scope.
 - Kept implementer pool, but only as routing/fallback.
 - Added user-edit conflict flow as P1.
 - Added tool/MCP boundary as explicit requirement.

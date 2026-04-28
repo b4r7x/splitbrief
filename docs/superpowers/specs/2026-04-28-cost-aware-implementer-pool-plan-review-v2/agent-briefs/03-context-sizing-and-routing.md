@@ -3,7 +3,7 @@
 > Historical note (2026-04-28): this brief was used during implementation. The current status is recorded in `../README.md`, `../tasks.md`, `../verification.md`, and `docs/COST-AWARE-IMPLEMENTER-HANDOFF.md`.
 > Original fresh-context brief retained for audit; do not implement as pending work unless intentionally re-running this spec.
 > For the spawned worker assigned this brief: GPT-5.5, medium reasoning.
-> Never stage or commit.
+> Do not run `git add`, `git stage`, `git commit`, or `git stash`.
 
 ## Identity
 
@@ -82,3 +82,13 @@ npm run lint
 
 - Pure routing helpers exist and are tested.
 - No orchestrator dispatch behavior is changed in this brief unless explicitly coordinated.
+
+## Expected Final Report
+
+Include:
+
+- files changed;
+- tests run and results;
+- validation skipped, with explicit reason;
+- remaining risks or follow-up work;
+- confirmation that you did not run `git add`, `git stage`, `git commit`, or `git stash`.
