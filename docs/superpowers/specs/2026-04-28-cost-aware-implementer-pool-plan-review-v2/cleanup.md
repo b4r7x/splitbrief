@@ -97,7 +97,7 @@ Snapshots are adjacent to undo/versioning, but checkpoint safety is important to
 
 ### Worktrees
 
-Worktrees can become the safe boundary for future isolated parallel execution. Demote from primary product story if needed, but do not delete just because same-directory parallelism is out of scope. Do not describe same-checkout parallel writes as acceptable or near-term.
+Worktrees can become the safe boundary for future isolated parallel execution. Demote from primary product story if needed, but do not delete just because same-checkout parallel writes are out of scope. Do not describe same-checkout parallel writes as acceptable or near-term.
 
 ### Handoff packs
 

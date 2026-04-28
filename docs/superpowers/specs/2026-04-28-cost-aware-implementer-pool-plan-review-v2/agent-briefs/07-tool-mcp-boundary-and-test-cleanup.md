@@ -3,7 +3,7 @@
 > Historical note (2026-04-28): this brief was used during implementation. The current status is recorded in `../README.md`, `../tasks.md`, `../verification.md`, and `docs/COST-AWARE-IMPLEMENTER-HANDOFF.md`.
 > Original fresh-context brief retained for audit; do not implement as pending work unless intentionally re-running this spec.
 > For the spawned worker assigned this brief: GPT-5.5, medium reasoning.
-> Never stage or commit.
+> Do not run `git add`, `git stage`, `git commit`, or `git stash`.
 
 ## Identity
 
@@ -34,7 +34,7 @@ Ensure the repo says the right product story and remove low-value tests introduc
 - Tool calls belong to underlying runners.
 - Diptych MCP is read-only resources.
 - Implementer pool is not a swarm.
-- Same-directory parallel writes are out of scope.
+- Same-checkout parallel writes are out of scope; parallel execution requires isolated worktrees or equivalent sandboxes with explicit ownership.
 - Checkpoints protect users; commits are not part of this repo's agent workflow.
 - Plan Review v2 is session-scoped execution review, not plan archive.
 
@@ -73,3 +73,13 @@ Then run the docs grep from `verification.md` and inspect every hit.
 - Docs and tests match implemented behavior.
 - No new low-value hook tests were added.
 - Core product story is clear to a fresh reader.
+
+## Expected Final Report
+
+Include:
+
+- files changed;
+- tests run and results;
+- validation skipped, with explicit reason;
+- remaining risks or follow-up work;
+- confirmation that you did not run `git add`, `git stage`, `git commit`, or `git stash`.

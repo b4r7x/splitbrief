@@ -108,7 +108,7 @@ A user runs Claude Code, Codex, OpenCode, Kilo, or Agent SDK as planner/implemen
 - **FR-005:** The system MUST record per-task routing decisions in state, events, evidence, or summary artifacts.
 - **FR-006:** The system MUST execute each task with a fresh implementer context.
 - **FR-007:** The system MUST block or re-route tasks that do not fit the selected implementer's context budget.
-- **FR-008:** The system MUST keep same-directory task execution sequential in this implementation.
+- **FR-008:** The system MUST keep same-checkout task execution sequential in this implementation.
 - **FR-009:** The system MUST detect user edits by file and map them to current, future, or unrelated tasks.
 - **FR-010:** The system MUST prevent implementer output from overwriting user edits made after the relevant checkpoint.
 - **FR-011:** The TUI MUST show current task, selected worker, context fit, checkpoint state, and conflict status.
@@ -141,6 +141,6 @@ A user runs Claude Code, Codex, OpenCode, Kilo, or Agent SDK as planner/implemen
 - Token estimation remains approximate; use safety margins rather than pretending exact tokenization.
 - Existing cost telemetry and pricing helpers are extended, not replaced.
 - Existing Task Brief quality gate remains the first defense against oversized or vague tasks.
-- Same-directory parallelism stays out of scope for this implementation.
+- Same-checkout parallelism stays out of scope for this implementation.
 - Any future parallel execution uses isolated worktrees or sandboxes, not writes in one checkout, and is not near-term scope.
 - The implementation briefs were dispatched in separate AI contexts.

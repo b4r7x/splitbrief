@@ -103,7 +103,7 @@ Document the direction and update docs so future agents do not implement the wro
 - cost-aware planner-to-implementer orchestration,
 - implementer pool as selection/fallback,
 - no plan archive/kanban/cross-plan system,
-- no same-directory parallel writes,
+- no same-checkout parallel writes,
 - runner-owned tools,
 - read-only diptych MCP,
 - checkpoints over commits in this repo.
@@ -204,7 +204,7 @@ Update docs and tests:
 - Plan archive/search.
 - Visual kanban.
 - Cross-plan orchestration.
-- Same-directory parallel writes.
+- Same-checkout parallel writes.
 - Automatic merge across workers.
 - MCP write tools.
 - Broad cleanup/removal of snapshots, worktrees, handoff, or detached sessions without separate decisions.
