@@ -32,6 +32,15 @@ export const TaskTokenUsageSchema = z.object({
   cost: z.number().nonnegative().optional(),
   tool: z.string().optional(),
   model: z.string().optional(),
+  implementerProfile: z.string().optional(),
+  contextFit: z.enum(['fits', 'tight', 'overflow']).optional(),
+  estimatedTokens: z.number().nonnegative().optional(),
+  untruncatedEstimatedTokens: z.number().nonnegative().optional(),
+  contextLength: z.number().nonnegative().optional(),
+  currentCodeTruncated: z.boolean().optional(),
+  currentCodeContextMode: z.enum(['none', 'whole-file', 'function-level', 'truncated']).optional(),
+  costPosture: z.string().optional(),
+  routingReason: z.string().optional(),
 });
 
 export type TokenDelta = z.infer<typeof TokenDeltaSchema>;

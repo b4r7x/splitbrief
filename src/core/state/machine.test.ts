@@ -205,6 +205,23 @@ describe('transition', () => {
     expect(next.tasks[0]?.status).toBe('in_progress');
   });
 
+  it('CLEAR_TASK_CODE removes stale currentCode from the selected task only', () => {
+    const tasks = [
+      makeTask({ id: 't1', currentCode: 'stale code' }),
+      makeTask({ id: 't2', currentCode: 'keep code' }),
+    ];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks,
+    };
+
+    const next = transition(state, { type: 'CLEAR_TASK_CODE', taskId: tasks[0]!.id });
+
+    expect(next.tasks[0]?.currentCode).toBeUndefined();
+    expect(next.tasks[1]?.currentCode).toBe('keep code');
+  });
+
   it('HINT_SUCCESS resets attempt to 0', () => {
     const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
     const state: WorkflowState = {

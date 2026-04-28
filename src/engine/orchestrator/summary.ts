@@ -4,7 +4,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { Summary, CostPrediction } from '../../core/schemas/summary.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
-import { calculateCostBreakdown, getProviderPricing, calculateCost } from '../providers/pricing.js';
+import { calculateCostBreakdown, calculateTaskUsageCost, type TaskCostTokenUsage } from '../providers/pricing.js';
 import { formatCost } from '../../core/formatting.js';
 import {
   getCompletedTaskIds,
@@ -50,26 +50,20 @@ function readBriefQualityReport(projectDir: string, sessionId: string): BriefQua
 
 export function calculateTaskCost(
   task: TaskTokenUsage,
-  globalUsage: { implementerInput: number; implementerOutput: number; escalationInput: number; escalationOutput: number },
+  globalUsage: TaskCostTokenUsage,
   implementerTool: string,
   plannerTool: string,
   implementerModel?: string | undefined,
   plannerModel?: string | undefined,
 ): number {
-  const implementerPricing = getProviderPricing(implementerTool, implementerModel);
-  const plannerPricing = getProviderPricing(plannerTool, plannerModel);
-
-  const totalImplementerTokens = globalUsage.implementerInput + globalUsage.implementerOutput;
-  const implementerCostPerToken = totalImplementerTokens > 0
-    ? calculateCost(globalUsage.implementerInput, globalUsage.implementerOutput, implementerPricing) / totalImplementerTokens
-    : 0;
-
-  const totalEscalationTokens = globalUsage.escalationInput + globalUsage.escalationOutput;
-  const escalationCostPerToken = totalEscalationTokens > 0
-    ? calculateCost(globalUsage.escalationInput, globalUsage.escalationOutput, plannerPricing) / totalEscalationTokens
-    : 0;
-
-  return task.implementerTokens * implementerCostPerToken + task.escalationTokens * escalationCostPerToken;
+  return calculateTaskUsageCost(
+    task,
+    globalUsage,
+    implementerTool,
+    plannerTool,
+    implementerModel,
+    plannerModel,
+  );
 }
 
 export function buildSummary(opts: BuildSummaryOptions): Summary {
@@ -90,6 +84,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     implementerTool,
     plannerModel,
     implementerModel,
+    taskBreakdowns,
   });
   const estimatedCostSavings = formatCost(costBreakdown.savingsAmount);
 

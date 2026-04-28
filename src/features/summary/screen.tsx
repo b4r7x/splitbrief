@@ -3,6 +3,7 @@ import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { useTheme } from '../../components/theme.js';
 import { formatTime } from '../../utils/format-time.js';
 import { formatToolModel } from '../../core/model-display.js';
+import type { Summary } from '../../core/schemas/summary.js';
 import { InputBar } from '../../components/input-bar/input-bar.js';
 import { LabeledRow } from '../../components/labeled-row.js';
 import { ScreenShell } from '../../components/screen-shell.js';
@@ -17,6 +18,28 @@ import { routerStore } from '../../stores/navigation/router.js';
 interface SummaryScreenProps {
   commands: SlashCommandDef[];
   onSlashCommand: (command: string) => void;
+}
+
+function formatImplementerSummary(summary: Summary): string | null {
+  if (!summary.implementerTool) return null;
+
+  const taskImplementers = summary.taskBreakdown
+    ?.filter(task => task.tool !== undefined || task.model !== undefined || task.implementerProfile !== undefined)
+    .map(task => `${task.implementerProfile ?? ''}\u0000${task.tool ?? ''}\u0000${task.model ?? ''}`);
+
+  const uniqueTaskImplementers = new Set(taskImplementers ?? []);
+  if (uniqueTaskImplementers.size > 1) {
+    const profiles = Array.from(new Set(
+      summary.taskBreakdown
+        ?.map(task => task.implementerProfile)
+        .filter((profile): profile is string => profile !== undefined) ?? [],
+    )).sort();
+    return profiles.length > 0
+      ? `mixed profiles (${profiles.join(', ')})`
+      : 'mixed implementers';
+  }
+
+  return formatToolModel(summary.implementerTool, summary.implementerModel);
 }
 
 export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) {
@@ -46,6 +69,7 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
   const driftText = drift
     ? `score ${drift.score.toFixed(2)}${drift.warningCount > 0 ? ` · ${drift.warningCount} warning${drift.warningCount === 1 ? '' : 's'}` : ''}${drift.errorCount > 0 ? ` · ${drift.errorCount} error${drift.errorCount === 1 ? '' : 's'}` : ''}`
     : null;
+  const implementerSummary = formatImplementerSummary(summary);
 
   return (
     <ScreenShell padding={1}>
@@ -62,7 +86,7 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
         <LabeledRow label="Feature" labelWidth={labelWidth}><Text bold>{summary.feature}</Text></LabeledRow>
         <LabeledRow label="Time" labelWidth={labelWidth}><Text>{formatTime(summary.totalTime)}</Text></LabeledRow>
         {summary.plannerTool && <LabeledRow label="Planner" labelWidth={labelWidth}><Text>{formatToolModel(summary.plannerTool, summary.plannerModel)}</Text></LabeledRow>}
-        {summary.implementerTool && <LabeledRow label="Implementer" labelWidth={labelWidth}><Text>{formatToolModel(summary.implementerTool, summary.implementerModel)}</Text></LabeledRow>}
+        {implementerSummary && <LabeledRow label="Implementer" labelWidth={labelWidth}><Text>{implementerSummary}</Text></LabeledRow>}
         {mode && <LabeledRow label="Mode" labelWidth={labelWidth}><Text>{mode}</Text></LabeledRow>}
         <LabeledRow label="Brief quality" labelWidth={labelWidth}><Text color={bq && !bq.passed ? theme.warning : theme.textDim}>{briefQualityText}</Text></LabeledRow>
         {driftText && <LabeledRow label="Drift" labelWidth={labelWidth}><Text color={drift && !drift.passed ? theme.warning : theme.textDim}>{driftText}</Text></LabeledRow>}

@@ -1,8 +1,8 @@
 <!--
 Sync Impact Report
-- Version change: 1.3.0 → 1.3.1
-- Modified principles: none
-- Updated sections: Technical Constraints (TUI: Ink 6.x + Shiki 4.x)
+- Version change: 1.3.1 → 1.3.2
+- Modified principles: V. Validate Before Commit → Validate Before Checkpoint
+- Updated sections: Core Principles, Development Workflow
 - Removed sections: none
 - Templates requiring updates:
   - .specify/templates/plan-template.md ✅ compatible (generic Constitution Check gate)
@@ -74,17 +74,21 @@ handle them. No defensive try/catch in interior modules.
 No unnecessary comments. Code MUST be self-explanatory. Comments
 are permitted only where the logic is genuinely non-obvious.
 
-### V. Validate Before Commit
+### V. Validate Before Checkpoint
 
 Every task implementation MUST pass the validation pipeline before
-being committed. The pipeline runs in order of speed and cost:
+being accepted as complete. The pipeline runs in order of speed and cost:
 1. TypeScript typecheck (`tsc --noEmit`)
 2. Lint (ESLint or Biome, auto-detected)
 3. Affected tests (matched by file naming convention)
 
 Validation MUST stop on first failure. Failed tasks MUST NOT be
-committed. Retry prompts MUST include the exact error message,
-line number, and relevant code context.
+accepted, checkpointed, or committed. Retry prompts MUST include the
+exact error message, line number, and relevant code context.
+
+Product-level git commit strategies are optional run-safety and review
+features. Agents working in this repository MUST NOT stage or commit;
+the owner reviews and commits manually.
 
 After all tasks complete, a final Opus review MUST compare the
 full diff against the original specification before the workflow
@@ -120,7 +124,7 @@ Explicit anti-goals that MUST NOT be implemented:
 **Permitted exceptions**:
 1. File write delegation to the implementer is allowed when diptych
    retains ownership of validation (tsc/lint/test), retry, escalation,
-   git commits, and the overall workflow. This enables agent-mode
+   checkpoints, and the overall workflow. This enables agent-mode
    implementers while preserving the two-role architecture.
 2. Rich visualization of the two-role orchestration (structured event
    cards, diff views, pipeline progress, cost tracking) is encouraged
@@ -145,9 +149,10 @@ Explicit anti-goals that MUST NOT be implemented:
   `/speckit.plan` → `/speckit.tasks` → `/speckit.implement`)
 - Tasks MUST be organized by user story, not by technical layer,
   to enable incremental delivery and independent testing
-- Each commit MUST correspond to one completed task
-- Git worktrees for parallel execution are deferred to v0.2;
-  v0.1 executes tasks sequentially
+- When product-level commits are enabled, each commit MUST correspond
+  to one completed task or checkpoint
+- Git worktrees provide isolated working directories for advanced
+  parallel sessions; same-directory parallel writes remain out of scope
 - Tests are written alongside or after implementation (not TDD)
   unless explicitly requested for a specific feature
 
@@ -172,4 +177,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 1.3.1 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-03-31
+**Version**: 1.3.2 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-04-28

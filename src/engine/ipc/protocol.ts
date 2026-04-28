@@ -2,10 +2,12 @@ import type { EngineEvent } from '../events/types.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { TieredApprovalRequest, TieredApprovalResponse } from '../orchestrator/tiered-approval.js';
+import type { UserEditConflict, UserEditConflictAction } from '../orchestrator/user-edit-conflicts.js';
 
 export type IpcPromptRequest =
   | { requestId: string; kind: 'approval_needed'; approvalType: 'spec' | 'plan' | 'briefs'; filePath: string }
   | { requestId: string; kind: 'external_changes' }
+  | { requestId: string; kind: 'user_edit_conflict'; conflict: UserEditConflict }
   | { requestId: string; kind: 'question_asked'; question: ClarificationQuestion; num: number; total: number }
   | { requestId: string; kind: 'budget_exceeded'; currentCost: number; maxBudget: number }
   | { requestId: string; kind: 'budget_paused'; currentCost: number; maxBudget: number }
@@ -15,6 +17,7 @@ export type IpcPromptRequest =
 export type IpcPromptRequestInput =
   | Omit<Extract<IpcPromptRequest, { kind: 'approval_needed' }>, 'requestId'>
   | Omit<Extract<IpcPromptRequest, { kind: 'external_changes' }>, 'requestId'>
+  | Omit<Extract<IpcPromptRequest, { kind: 'user_edit_conflict' }>, 'requestId'>
   | Omit<Extract<IpcPromptRequest, { kind: 'question_asked' }>, 'requestId'>
   | Omit<Extract<IpcPromptRequest, { kind: 'budget_exceeded' }>, 'requestId'>
   | Omit<Extract<IpcPromptRequest, { kind: 'budget_paused' }>, 'requestId'>
@@ -24,6 +27,7 @@ export type IpcPromptRequestInput =
 export type IpcPromptResponse =
   | { kind: 'approval_needed'; approved: boolean; comment?: string | undefined; action?: 'edit' | undefined }
   | { kind: 'external_changes'; proceed: boolean }
+  | { kind: 'user_edit_conflict'; selectedAction: UserEditConflictAction }
   | { kind: 'question_asked'; answer: string }
   | { kind: 'budget_exceeded'; proceed: boolean }
   | { kind: 'budget_paused'; decision: 'continue' | 'abort' | 'raise' }

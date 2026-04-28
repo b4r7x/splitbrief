@@ -2,7 +2,7 @@
 
 > **Different from `docs/HOOKS.md`!** That doc covers React hooks. This doc covers user-extensible **workflow lifecycle hooks** — shell commands or built-in scanners that fire at well-known moments during a diptych workflow. Lifecycle hooks are not React hooks.
 
-User-extensible hook system inspired by Claude Agent SDK. Declare commands in `.diptych/config.yml` to fire at workflow events (pre/post task, pre/post validation, pre/post commit, etc.). Used for `prettier --write` after each task, secret scanning before commit, Slack notifications, custom validators — anything you can run from a script.
+User-extensible hook system inspired by Claude Agent SDK. Declare commands in `.diptych/config.yml` to fire at workflow events (pre/post task, pre/post validation, optional pre/post commit, etc.). Used for `prettier --write` after each task, secret scanning when product-level commit hooks are enabled, Slack notifications, custom validators — anything you can run from a script.
 
 ## Quick start
 
@@ -37,8 +37,8 @@ The first time you run with hooks defined, diptych prompts to trust them. Use `-
 | `post_task`      | After each implementer task succeeds        | `taskId`, `title`, `method`, `file`, `retries`, `duration`           |
 | `pre_validation` | Before tsc/lint/test runs                   | `taskId`, `file`                                                     |
 | `post_validation`| After validation finishes                   | `taskId`, `passed`, `stages` (`{tsc,lint,test}`), `error?`           |
-| `pre_commit`     | Before per-task git commit                  | `taskId`, `file`                                                     |
-| `post_commit`    | After per-task git commit succeeds          | `taskId`, `message`                                                  |
+| `pre_commit`     | Before optional product-level git commit    | `taskId`, `file`                                                     |
+| `post_commit`    | After optional product-level git commit succeeds | `taskId`, `message`                                             |
 | `pre_escalation` | Before planner escalation runs              | `taskId`                                                             |
 | `pre_compact`    | Reserved for transcript compaction (FUTURE) | (none)                                                               |
 | `on_error`       | Any unrecoverable engine error              | `message`                                                            |
@@ -274,7 +274,7 @@ If a `pre_*` hook returns `decision: "deny"` (or fails with `on_failure: block`)
 
 | `on_failure`       | On non-zero exit / timeout / `decision: deny` | Effect on workflow                                        |
 |--------------------|------------------------------------------------|-----------------------------------------------------------|
-| `block`            | Treated as failure                             | Aborts the upcoming action (skip task, skip commit, etc.) |
+| `block`            | Treated as failure                             | Aborts the upcoming action (skip task, skip optional commit, etc.) |
 | `warn` (default)   | Logs a warning event                           | Workflow continues                                        |
 | `ignore`           | Treated as success                             | No log                                                    |
 
@@ -306,7 +306,7 @@ Because of that authority, diptych layers several guardrails:
 1. **No inline shell.** Schema rejects `command: "sh"` / `"bash"` (and absolute variants) with `args` containing `-c`. Substitution never uses `shell: true`, so event-field values cannot be injected as shell syntax. If you need a pipeline, put it in a script file and invoke the script.
 2. **Mandatory timeout.** `timeout_ms` has a default (30000 ms) and a hard ceiling (300000 ms). A hung hook cannot stall the workflow indefinitely.
 3. **Same-cwd trust boundary.** Hooks run in `cwd: projectDir` — the same filesystem scope as the implementer subprocess. They cannot silently escape into other projects.
-4. **Transitive hook coverage.** Any shell spawned from a diptych hook is still subject to `block-git-commits.sh` (the PreToolUse hook wired through Claude Code). Hooks inherit the same prohibition against `git commit` / `git add` from inside a diptych run.
+4. **Transitive hook coverage.** Any shell spawned from a diptych hook is still subject to `block-git-commits.sh` (the PreToolUse hook wired through Claude Code). In this repository, hooks inherit the same prohibition against `git commit` / `git add` from inside a diptych run. Product-level commit hooks may exist for downstream users, but they are not this repo's agent workflow.
 
 ### Trust model
 
@@ -335,14 +335,14 @@ hooks:
 
 ### `block-secrets`
 
-Scans `event.file` on `pre_commit` for known credential patterns:
+Scans `event.file` on `pre_commit` for known credential patterns when optional product-level commit hooks are in use:
 
 - AWS access keys (`AKIA[0-9A-Z]{16}`)
 - GitHub PATs (`ghp_[A-Za-z0-9]{36}`)
 - OpenAI keys (`sk-[A-Za-z0-9]{48}`)
 - Anthropic keys (`sk-ant-[A-Za-z0-9-]{40,}`)
 
-Match returns `deny` — commit skipped. Built-ins always have effective `on_failure: block` for `pre_*` events.
+Match returns `deny` — the optional commit step is skipped. Built-ins always have effective `on_failure: block` for `pre_*` events.
 
 ```yaml
 hooks:
@@ -400,6 +400,6 @@ Schema: `src/core/schemas/hooks.ts`.
 Alternatives that were considered and rejected when the hook system was designed:
 
 - **JS modules only (no shell).** Type-safe and in-process, but excludes users who want to wire up `prettier`, a secret scanner, or a Slack notifier without writing TypeScript against a not-yet-public SDK. Shell / script hooks cover the common case today; `kind: module` was added later as a complement, not a replacement.
-- **Reuse Claude Code's hooks file format.** Their schema (`~/.claude/settings.json`, `PreToolUse(tool_name)` matchers) is shaped around tool-call lifecycles, not a workflow lifecycle. Forcing the same shape would lie about what diptych exposes — our events are workflow-shaped (`pre_task`, `post_validation`, `pre_commit`). Close enough to feel familiar, different enough to be honest.
+- **Reuse Claude Code's hooks file format.** Their schema (`~/.claude/settings.json`, `PreToolUse(tool_name)` matchers) is shaped around tool-call lifecycles, not a workflow lifecycle. Forcing the same shape would lie about what diptych exposes — our events are workflow-shaped (`pre_task`, `post_validation`, optional `pre_commit`). Tool calls belong to the configured planner or implementer runner, while diptych hooks stay at deterministic workflow boundaries.
 - **Auto-trust hook config (no `--allow-hooks` prompt).** Simpler UX, but a malicious diff that adds a hook becomes RCE on the next `diptych start`. Unacceptable. Explicit trust (hash + prompt) is the cost of safety.
 - **Parallel / async fan-out within an event.** Lower latency, but `modify` patches are order-dependent — hook B observing hook A's changes only makes sense under sequential execution. The latency win is hypothetical; five hooks on one event is already pathological.

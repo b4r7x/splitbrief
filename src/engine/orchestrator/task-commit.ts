@@ -23,10 +23,11 @@ type ValidateCommitOptions = {
   commitSuffix?: string | undefined;
   taskStartTime?: number | undefined;
   retryCount?: number | undefined;
+  implementerProfile?: string | undefined;
 };
 
 export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Promise<{ state: WorkflowState; completed: boolean }> {
-  const { task, results, projectDir, sessionId, config, bus, method, transitionType, commitSuffix, taskStartTime, state, retryCount } = opts;
+  const { task, results, projectDir, sessionId, config, bus, method, transitionType, commitSuffix, taskStartTime, state, retryCount, implementerProfile } = opts;
   if (!results.every((r) => r.passed)) {
     return { state, completed: false };
   }
@@ -50,6 +51,7 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
           duration: taskStartTime ? Date.now() - taskStartTime : 0,
           ...(state.implementerTool !== undefined && { tool: state.implementerTool }),
           ...(state.implementerModel !== undefined && { model: state.implementerModel }),
+          ...(implementerProfile !== undefined && { implementerProfile }),
         });
         return { state: nextState, completed: true };
       }
@@ -80,6 +82,7 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
     duration: taskStartTime ? Date.now() - taskStartTime : 0,
     ...(state.implementerTool !== undefined && { tool: state.implementerTool }),
     ...(state.implementerModel !== undefined && { model: state.implementerModel }),
+    ...(implementerProfile !== undefined && { implementerProfile }),
   });
 
   return { state: nextState, completed: true };

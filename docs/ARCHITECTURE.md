@@ -333,7 +333,7 @@ The engine emits **EngineEvent** values through a single `EventBus` port. Sinks 
 - **`otelSink`** (opt-in, `config.otel.enabled: true`) maps `EngineEvent` → OpenTelemetry spans — see [OTEL.md](./OTEL.md) §Design decisions.
 - **Event sinks are synchronous.** Each `publish()` runs all subscribed sinks in registration order, inline. A throw inside one sink is caught per-sink and does not break fan-out to the others.
 
-Events and gating callbacks are separate mechanisms. `bus.publish` is pub/sub (broadcast, fire-and-forget, no return value). `callbacks.onApprovalNeeded` / `onQuestionAsked` / `onContinuationNeeded` / `onBudgetExceeded` / `onExternalChanges` / `onComplete` stay as discrete `await`-able request/response pairs supplied by the workflow host — CLI TUI for interactive runs, stubs from `runHeadless` for `--json`.
+Events and gating callbacks are separate mechanisms. `bus.publish` is pub/sub (broadcast, fire-and-forget, no return value). `callbacks.onApprovalNeeded` / `onQuestionAsked` / `onContinuationNeeded` / `onBudgetExceeded` / `onUserEditConflict` / `onComplete` stay as discrete `await`-able request/response pairs supplied by the workflow host — CLI TUI for interactive runs, stubs from `runHeadless` for `--json`. `onExternalChanges` remains as a legacy compatibility callback; new file-aware edit conflicts use `onUserEditConflict`.
 
 ### Design decisions — Why EventBus
 
@@ -410,7 +410,7 @@ The repository layers many supporting subsystems on top of that core loop:
 - **Quality gates** — every mode runs a brief-quality scoring pass before tasks start; standard and speckit additionally enter a `reviewing-briefs` phase for human approval. A drift-report fires per task, and a chained-drift detector scores cross-task scope creep.
 - **Snapshots** (`src/engine/snapshots/`) — content-addressed working-tree snapshots stored under `.diptych/sessions/<id>/snapshots/` with a baseline + delta layout. Auto-snapshots fire on user-configured triggers (`preTask` / `postTask` / `preFinalReview`); manual ones via `diptych snapshot create` (CLI-only; no `/snapshot` slash command).
 - **Handoff packs** (`src/engine/handoff/`) — render the compiled brief into formats other agents consume (`spec-kit`, `agents-md`, `claude-code`, `copilot-issue`) plus user-supplied custom renderers under `.diptych/handoff-renderers/`.
-- **MCP server** (`src/engine/mcp/`) — exposes session artifacts (state, evidence, drift, briefs, snapshots) as MCP resources for external clients.
+- **MCP server** (`src/engine/mcp/`) — exposes session artifacts (state, evidence, drift, briefs, snapshots) as read-only MCP resources for external clients. It declares no MCP tools and is not an execution path.
 - **IPC server** (`src/engine/ipc/`) — UNIX-domain socket per session so a `diptych attach` TUI client can re-bind to a long-running background workflow; `diptych ps` lists status.
 - **Worktree management** (`src/engine/git/worktree.ts`) — `diptych worktree list / switch / remove` for isolated parallel sessions under `.trees/<name>/`.
 - **Tiered approval** (`src/engine/orchestrator/tiered-approval.ts`) — every implementer write goes through `auto` / `sticky` / `confirm` tiers per action class, with sticky grants persisted at `.diptych/approvals.json` and managed via `diptych approval list / clear`.
@@ -1093,7 +1093,7 @@ Registered in `src/cli.ts` (verified). All accept `--project <dir>` (default cwd
 | `diptych handoff [target]` | — | Export Handoff Pack. Flags: `--session`, `--out`, `--task <ids>`, `--mode default\|append\|overwrite`, `--list`. Default target `spec-kit`. |
 | `diptych snapshot` | `create`, `list`, `restore <id-or-name>`, `diff <id-or-name>` | Working-tree snapshots. `restore` supports `--force` to overwrite conflicts. `diff` exits non-zero when changes detected. |
 | `diptych approval` | `list`, `clear --scope session\|always\|all` | Manage sticky approval grants in `.diptych/approvals.json`. |
-| `diptych mcp` | `serve` | Start MCP HTTP server (default port 4321) exposing session resources. Generates one-shot bearer token; supports `--session` or `--all-sessions`. |
+| `diptych mcp` | `serve` | Start read-only MCP HTTP resource server (default port 4321) exposing session resources. Generates one-shot bearer token; supports `--session` or `--all-sessions`; exposes no MCP tools. |
 | `diptych worktree` | `list`, `switch <name>`, `remove <name>` | Manage `.trees/<name>/` git worktrees. `remove` supports `--force` and `--delete-branch`. |
 | `diptych attach [session-id]` | — | Connect TUI client to a running background session via `ipc.sock`. Auto-resolves the session-id if exactly one is running. (Not supported on Windows.) |
 | `diptych ps` | — | List sessions with status (`running` / `exited` / `crashed` / `unknown`), pid, mode, elapsed time, feature. Sorted newest-first. (Not supported on Windows.) |

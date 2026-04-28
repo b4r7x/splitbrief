@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { planEditorStore } from './plan-editor.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { taskId } from '../../core/schemas/task.js';
 
 describe('planEditorStore', () => {
   beforeEach(() => planEditorStore.__testReset());
@@ -80,6 +81,33 @@ describe('planEditorStore', () => {
       planEditorStore.setSaveError('old parse error');
       planEditorStore.setTasks([{ ...task, title: 'Edited title' }]);
       expect(planEditorStore.get().saveError).toBeNull();
+    });
+
+    it('clears review metadata when an edit changes a task with the same ID', () => {
+      const task = makeTask({ id: 'T001', title: 'Original title' });
+      planEditorStore.initEditor([task]);
+      planEditorStore.setReviewMetadata([{ taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' }]);
+
+      planEditorStore.setTasks([{ ...task, title: 'Edited title' }]);
+
+      expect(planEditorStore.get().reviewMetadata.size).toBe(0);
+    });
+
+    it('clears review metadata when renumbered tasks reuse IDs for different work', () => {
+      const first = makeTask({ id: 'T001', title: 'First task', file: 'src/first.ts' });
+      const second = makeTask({ id: 'T002', title: 'Second task', file: 'src/second.ts' });
+      planEditorStore.initEditor([first, second]);
+      planEditorStore.setReviewMetadata([
+        { taskId: 'T001', workerProfile: 'local-qwen', contextFit: 'fits' },
+        { taskId: 'T002', workerProfile: 'frontier', contextFit: 'tight' },
+      ]);
+
+      planEditorStore.setTasks([
+        { ...second, id: taskId('T001') },
+        { ...first, id: taskId('T002') },
+      ]);
+
+      expect(planEditorStore.get().reviewMetadata.size).toBe(0);
     });
   });
 
@@ -164,6 +192,119 @@ describe('planEditorStore', () => {
     });
   });
 
+  describe('review metadata', () => {
+    it('stores routing and conflict metadata without marking the editor dirty', () => {
+      const task = makeTask({ id: 'T001' });
+      planEditorStore.initEditor([task]);
+
+      planEditorStore.setReviewMetadata([
+        {
+          taskId: 'T001',
+          workerProfile: 'local-qwen',
+          selectedCostTier: 'local',
+          costPosture: 'Selected local cost tier via cheapest-capable routing',
+          contextFit: 'overflow',
+          estimatedTokens: 9000,
+          contextLength: 8192,
+          risk: 'high',
+          conflict: { kind: 'current-task-conflict', files: ['src/hello.ts'], affectedTaskIds: ['T001'] },
+        },
+      ]);
+
+      const metadata = planEditorStore.get().reviewMetadata.get('T001');
+      expect(metadata).toMatchObject({
+        workerProfile: 'local-qwen',
+        selectedCostTier: 'local',
+        costPosture: 'Selected local cost tier via cheapest-capable routing',
+        contextFit: 'overflow',
+        conflict: { files: ['src/hello.ts'] },
+      });
+      expect(planEditorStore.get().dirty).toBe(false);
+    });
+
+    it('preserves review metadata when the same tasks are reloaded into the editor', () => {
+      const tasks = [makeTask({ id: 'T001' })];
+      planEditorStore.initEditor(tasks);
+      planEditorStore.setReviewMetadata([{ taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' }]);
+      planEditorStore.initEditor(tasks);
+      expect(planEditorStore.get().reviewMetadata.get('T001')?.workerProfile).toBe('cheap-cloud');
+    });
+
+    it('clears review metadata when loaded tasks differ from the reviewed plan', () => {
+      const reviewed = makeTask({ id: 'T001', title: 'Reviewed title' });
+      planEditorStore.initEditor([reviewed]);
+      planEditorStore.setReviewMetadata([{ taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' }]);
+
+      planEditorStore.initEditor([{ ...reviewed, title: 'Externally edited title' }]);
+
+      expect(planEditorStore.get().reviewMetadata.size).toBe(0);
+    });
+
+    it('patches routing metadata without dropping conflict or checkpoint fields', () => {
+      planEditorStore.setReviewMetadata([
+        {
+          taskId: 'T001',
+          workerProfile: 'cheap-cloud',
+          selectedCostTier: 'cheap',
+          costPosture: 'Selected cheap cost tier via cheapest-capable routing',
+          contextFit: 'overflow',
+          conflict: { kind: 'current-task-conflict', files: ['src/a.ts'] },
+          checkpoint: 'pre-task T001',
+          stale: true,
+          validationStatus: 'warn',
+        },
+      ]);
+
+      planEditorStore.setReviewMetadata([
+        {
+          taskId: 'T001',
+          workerProfile: 'local-qwen',
+          selectedCostTier: 'local',
+          costPosture: 'Selected local cost tier via cheapest-capable routing',
+          contextFit: 'fits',
+          estimatedTokens: 1200,
+          contextLength: 32768,
+          routingReason: 'rerouted to local-qwen',
+          risk: 'low',
+        },
+      ]);
+
+      expect(planEditorStore.get().reviewMetadata.get('T001')).toMatchObject({
+        workerProfile: 'local-qwen',
+        selectedCostTier: 'local',
+        costPosture: 'Selected local cost tier via cheapest-capable routing',
+        contextFit: 'fits',
+        estimatedTokens: 1200,
+        contextLength: 32768,
+        routingReason: 'rerouted to local-qwen',
+        risk: 'low',
+        conflict: { files: ['src/a.ts'] },
+        checkpoint: 'pre-task T001',
+        stale: true,
+        validationStatus: 'warn',
+      });
+    });
+
+    it('upserts one task review without removing metadata for another task', () => {
+      planEditorStore.setReviewMetadata([
+        { taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' },
+        { taskId: 'T002', workerProfile: 'frontier', contextFit: 'tight' },
+      ]);
+
+      planEditorStore.upsertTaskReviewMetadata({ taskId: 'T001', contextFit: 'overflow', risk: 'high' });
+
+      expect(planEditorStore.get().reviewMetadata.get('T001')).toMatchObject({
+        workerProfile: 'cheap-cloud',
+        contextFit: 'overflow',
+        risk: 'high',
+      });
+      expect(planEditorStore.get().reviewMetadata.get('T002')).toMatchObject({
+        workerProfile: 'frontier',
+        contextFit: 'tight',
+      });
+    });
+  });
+
   describe('__testReset', () => {
     it('returns store to initial state', () => {
       const tasks = [makeTask({ id: 'T001' })];
@@ -181,6 +322,7 @@ describe('planEditorStore', () => {
         saveError: null,
       });
       expect(planEditorStore.get().expandedIds.size).toBe(0);
+      expect(planEditorStore.get().reviewMetadata.size).toBe(0);
     });
   });
 });

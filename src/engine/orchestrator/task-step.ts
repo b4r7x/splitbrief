@@ -6,7 +6,7 @@ import { formatValidationError } from './validation.js';
 import type { WorkflowContext } from './types.js';
 import { recordTaskUsage } from './tokens.js';
 import { toErrorMessage, labelError } from '../../utils/format-errors.js';
-import { createBusTextHandler, publishDriftChainDetected, publishError, publishEvent, publishTaskStart, publishTaskSkipped, publishWarning } from './events.js';
+import { createBusTextHandler, publishDriftChainDetected, publishError, publishEvent, publishTaskStart, publishTaskSkipped, publishUserEditConflict, publishWarning } from './events.js';
 import { runPreHooks } from '../hooks/run-pre-hook.js';
 import { handleRetryAndEscalation } from './escalation/escalation.js';
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave } from './state-ops.js';
@@ -47,6 +47,8 @@ import {
   initialDriftChainState,
 } from './drift-chain-state.js';
 import { computePerTaskOutOfBounds, analyzeDriftChain } from './drift-chain.js';
+import { createApprovalPromotionConflict, normalizeUserEditConflictAction } from './user-edit-conflicts.js';
+import { isExtractedCodeApprovalRaceError } from '../implementers/base.js';
 
 export function resolveDependsOnFiles(tasks: Task[], task: Task): string[] {
   return task.dependsOn.flatMap((id: TaskId) => {
@@ -235,6 +237,67 @@ function recordApprovalDenial(
   }
 }
 
+async function handleApprovalTimeUserEditConflict(opts: {
+  wctx: WorkflowContext;
+  state: WorkflowState;
+  task: Task;
+  files: string[];
+  taskBreakdowns?: TaskTokenUsage[] | undefined;
+  setTrackedState?: ((s: WorkflowState) => void) | undefined;
+}): Promise<WorkflowState> {
+  const conflict = createApprovalPromotionConflict({
+    files: opts.files,
+    currentTaskId: opts.task.id,
+  });
+  const selectedAction = normalizeUserEditConflictAction(
+    conflict,
+    opts.wctx.callbacks.onUserEditConflict
+      ? await opts.wctx.callbacks.onUserEditConflict(conflict)
+      : 'pause',
+  );
+  publishUserEditConflict(opts.wctx.bus, opts.state.phase, conflict, selectedAction);
+
+  if (selectedAction === 'regenerate-rebase') {
+    publishWarning(
+      opts.wctx.bus,
+      opts.state.phase,
+      'User edit conflict needs regenerate/rebase; workflow paused so the plan or task can be revised against the current files.',
+    );
+    return opts.state;
+  }
+
+  if (selectedAction === 'abort-workflow') {
+    const cancelled = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, opts.state, { type: 'CANCEL' });
+    opts.setTrackedState?.(cancelled);
+    return cancelled;
+  }
+
+  if (selectedAction === 'skip-current-task') {
+    publishTaskSkipped(opts.wctx.bus, opts.state.phase, {
+      taskId: opts.task.id,
+      title: opts.task.title,
+      reason: 'skipped due to user edit conflict',
+    });
+    const skipped = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, opts.state, { type: 'SKIP_TASK', taskId: opts.task.id });
+    opts.setTrackedState?.(skipped);
+    persistTaskEvidence(opts.wctx, skipped, opts.task, 'skipped', {
+      status: 'skipped',
+      reason: 'skipped due to user edit conflict',
+    });
+    opts.taskBreakdowns?.push({
+      taskId: opts.task.id,
+      taskTitle: opts.task.title,
+      method: 'skipped',
+      implementerTokens: 0,
+      escalationTokens: 0,
+      retryCount: 0,
+    });
+    return skipped;
+  }
+
+  return opts.state;
+}
+
 type RetryAndRecordOptions = {
   wctx: WorkflowContext;
   task: Task;
@@ -266,7 +329,20 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
     dependsOnFiles: resolveDependsOnFiles(opts.state.tasks, task),
   });
   setTrackedState(state);
-  recordTaskUsage({ task, method: result.method, tokensBefore, currentUsage: state.tokenUsage, bus: wctx.bus, state, taskBreakdowns, retryCount: result.attempts, tool: getRunnerDisplayName(wctx.config.implementer), model: wctx.config.implementer.model });
+  recordTaskUsage({
+    task,
+    method: result.method,
+    tokensBefore,
+    currentUsage: state.tokenUsage,
+    bus: wctx.bus,
+    state,
+    taskBreakdowns,
+    retryCount: result.attempts,
+    tool: getRunnerDisplayName(wctx.config.implementer),
+    model: wctx.config.implementer.model,
+    ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
+    ...(wctx.routingDecision !== undefined && { routingDecision: wctx.routingDecision }),
+  });
   if (!result.completed) publishEvent(wctx.bus, { type: 'task_failed', ts: Date.now(), phase: state.phase, taskId: task.id });
   const escalated = result.completed && result.method !== 'local';
   const status: TaskStatus = result.completed ? (escalated ? 'escalated' : 'done') : 'failed';
@@ -285,12 +361,14 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
 type RunSingleTaskOptions = {
   wctx: WorkflowContext;
   task: Task;
+  taskCodeRefreshed?: boolean;
   index: number;
   totalTasks: number;
   state: WorkflowState;
   taskBreakdowns: TaskTokenUsage[];
   setTrackedState: (s: WorkflowState) => void;
   setCurrentTask: (t: Pick<Task, 'file' | 'action'> | undefined) => void;
+  onTaskAcceptedFiles?: ((files: string[]) => void) | undefined;
 };
 
 export async function runSingleTask(opts: RunSingleTaskOptions): Promise<WorkflowState> {
@@ -303,9 +381,11 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   state = transitionAndSave(projectDir, sessionId, state, { type: 'START_TASK', taskId: opts.task.id });
   setTrackedState(state);
 
-  let task: Task;
-  ({ task, state } = await refreshAndPersistCode(opts.task, projectDir, sessionId, state));
-  setTrackedState(state);
+  let task = opts.task;
+  if (opts.taskCodeRefreshed !== true) {
+    ({ task, state } = await refreshAndPersistCode(opts.task, projectDir, sessionId, state));
+    setTrackedState(state);
+  }
 
   setCurrentTask(task);
   const taskStartTime = Date.now();
@@ -339,6 +419,17 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       type: 'task_started', ts: Date.now(), phase: state.phase,
       taskId: task.id, title: task.title, index, total: totalTasks,
       file: task.file, action: task.action,
+      ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
+      ...(wctx.routingDecision !== undefined && {
+        contextFit: wctx.routingDecision.fit,
+        estimatedTokens: wctx.routingDecision.estimatedTokens,
+        untruncatedEstimatedTokens: wctx.routingDecision.untruncatedEstimatedTokens,
+        ...(wctx.routingDecision.contextLength !== undefined && { contextLength: wctx.routingDecision.contextLength }),
+        currentCodeTruncated: wctx.routingDecision.currentCodeTruncated,
+        currentCodeContextMode: wctx.routingDecision.currentCodeContextMode,
+        costPosture: wctx.routingDecision.costPosture,
+        routingReason: wctx.routingDecision.reason,
+      }),
     };
     const pre = await runPreHooks(wctx.config.hooks, 'pre_task', preTaskPayload, { projectDir, sessionId });
     if (!pre.allow) {
@@ -354,6 +445,17 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   publishTaskStart(wctx.bus, state.phase, {
     taskId: task.id, title: task.title, index, total: totalTasks, file: task.file, action: task.action,
     tool: getRunnerDisplayName(config.implementer), model: config.implementer.model,
+    ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
+    ...(wctx.routingDecision !== undefined && {
+      contextFit: wctx.routingDecision.fit,
+      estimatedTokens: wctx.routingDecision.estimatedTokens,
+      untruncatedEstimatedTokens: wctx.routingDecision.untruncatedEstimatedTokens,
+      ...(wctx.routingDecision.contextLength !== undefined && { contextLength: wctx.routingDecision.contextLength }),
+      currentCodeTruncated: wctx.routingDecision.currentCodeTruncated,
+      currentCodeContextMode: wctx.routingDecision.currentCodeContextMode,
+      costPosture: wctx.routingDecision.costPosture,
+      routingReason: wctx.routingDecision.reason,
+    }),
   });
 
   let taskStartSnapshot: ChangedFilesSnapshot;
@@ -444,6 +546,17 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     if (preApplyApprovalDenied) {
       return state;
     }
+    if (isExtractedCodeApprovalRaceError(task.file, implResult.error)) {
+      state = await handleApprovalTimeUserEditConflict({
+        wctx,
+        state,
+        task,
+        files: [task.file],
+        taskBreakdowns,
+        setTrackedState,
+      });
+      return state;
+    }
     const retry = await retryAndRecord({
       wctx, task, initialError: implResult.error ?? 'Implementation failed to produce valid code',
       state, taskStartTime, taskStartSnapshot, tokensBefore, taskBreakdowns, setTrackedState,
@@ -494,6 +607,14 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
           preApprovalChangedFileContents,
         );
         if (restoreResult.conflictedFiles.length > 0) {
+          state = await handleApprovalTimeUserEditConflict({
+            wctx,
+            state,
+            task,
+            files: restoreResult.conflictedFiles,
+            taskBreakdowns,
+            setTrackedState,
+          });
           publishWarning(
             wctx.bus,
             state.phase,
@@ -522,6 +643,14 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     const promoteResult = promoteStagedChanges(projectDir, staged.projectDir, taskChangedFiles, preApprovalChangedFileContents);
     staged.cleanup();
     if (promoteResult.conflictedFiles.length > 0) {
+      state = await handleApprovalTimeUserEditConflict({
+        wctx,
+        state,
+        task,
+        files: promoteResult.conflictedFiles,
+        taskBreakdowns,
+        setTrackedState,
+      });
       publishError(
         wctx.bus,
         state.phase,
@@ -554,11 +683,25 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     task, projectDir, sessionId, config, bus: wctx.bus, state,
     method: 'local', transitionType: 'VALIDATION_PASS', taskStartTime,
     results: validationResults,
+    implementerProfile: wctx.implementerProfile,
   });
   if (commitResult.completed) {
     state = commitResult.state;
     setTrackedState(state);
-    recordTaskUsage({ task, method: 'local', tokensBefore, currentUsage: state.tokenUsage, bus: wctx.bus, state, taskBreakdowns, tool: getRunnerDisplayName(config.implementer), model: config.implementer.model });
+    opts.onTaskAcceptedFiles?.(taskChangedFiles);
+    recordTaskUsage({
+      task,
+      method: 'local',
+      tokensBefore,
+      currentUsage: state.tokenUsage,
+      bus: wctx.bus,
+      state,
+      taskBreakdowns,
+      tool: getRunnerDisplayName(config.implementer),
+      model: config.implementer.model,
+      ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
+      ...(wctx.routingDecision !== undefined && { routingDecision: wctx.routingDecision }),
+    });
     persistTaskEvidence(wctx, state, task, 'local', {
       status: 'done', method: 'local', retries: 0,
       durationMs: Date.now() - taskStartTime,

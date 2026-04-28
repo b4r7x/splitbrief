@@ -32,6 +32,7 @@ export type StateAction =
   | { type: 'FULL_FAIL' }
   | { type: 'SKIP_TASK'; taskId: TaskId }
   | { type: 'UPDATE_TASK_CODE'; taskId: TaskId; code: string }
+  | { type: 'CLEAR_TASK_CODE'; taskId: TaskId }
   | { type: 'ALL_DONE' }
   | { type: 'REVIEW_DONE' }
   | { type: 'CANCEL' }

@@ -126,6 +126,8 @@ describe('mcp serve — startup announcement', () => {
 
     const output = writes.join('');
     expect(output).toContain('diptych MCP server ready');
+    expect(output).toContain('Read-only');
+    expect(output).toContain('no MCP tools or writes');
     expect(output).toContain('http://127.0.0.1:4321/mcp');
     expect(output).toContain('test-token-abc123');
     expect(output).toContain('Sessions: 2026-04-26-test-session');

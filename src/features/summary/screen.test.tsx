@@ -54,6 +54,49 @@ describe('SummaryScreen', () => {
     ui.unmount();
   });
 
+  it('labels mixed-profile implementer runs without implying one global implementer', () => {
+    routerStore.init({
+      screen: 'summary',
+      summary: makeSummary({
+        implementerTool: 'ollama',
+        implementerModel: 'qwen-small',
+        taskBreakdown: [
+          {
+            taskId: 'T001' as never,
+            taskTitle: 'Local task',
+            method: 'local',
+            implementerTokens: 100,
+            escalationTokens: 0,
+            retryCount: 0,
+            tool: 'ollama',
+            model: 'qwen-small',
+            implementerProfile: 'local-qwen',
+          },
+          {
+            taskId: 'T002' as never,
+            taskTitle: 'Cloud task',
+            method: 'local',
+            implementerTokens: 100,
+            escalationTokens: 0,
+            retryCount: 0,
+            tool: 'openrouter',
+            model: 'deepseek',
+            implementerProfile: 'cheap-cloud',
+          },
+        ],
+      }),
+    });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onSlashCommand={() => {}} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('mixed profiles');
+    expect(frame).toContain('cheap-cloud');
+    expect(frame).toContain('local-qwen');
+
+    ui.unmount();
+  });
+
   it('renders "quality n/a" when no briefQuality present', () => {
     routerStore.init({ screen: 'summary', summary: makeSummary() });
 

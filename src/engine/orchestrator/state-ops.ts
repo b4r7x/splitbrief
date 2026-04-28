@@ -29,7 +29,10 @@ export async function refreshCurrentCode(task: Task, projectDir: string): Promis
     const currentCode = await readFile(filePath, 'utf-8');
     return { ...task, currentCode };
   } catch (err) {
-    if (isENOENT(err)) return task;
+    if (isENOENT(err)) {
+      const { currentCode: _staleCurrentCode, ...taskWithoutCurrentCode } = task;
+      return taskWithoutCurrentCode;
+    }
     throw err;
   }
 }
@@ -40,6 +43,8 @@ export async function refreshAndPersistCode(
   const refreshed = await refreshCurrentCode(task, projectDir);
   if (refreshed.currentCode !== undefined) {
     state = transitionAndSave(projectDir, sessionId, state, { type: 'UPDATE_TASK_CODE', taskId: refreshed.id, code: refreshed.currentCode });
+  } else if (task.currentCode !== undefined) {
+    state = transitionAndSave(projectDir, sessionId, state, { type: 'CLEAR_TASK_CODE', taskId: refreshed.id });
   }
   return { task: refreshed, state };
 }

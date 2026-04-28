@@ -1,12 +1,18 @@
 import { describe, it, expect } from 'vitest';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import {
+  buildRoutingPreviewMetadata,
   formatQualityDisplay,
+  formatTaskReviewLine,
   getTaskStatusSymbol,
   buildTaskDetailParts,
   formatTaskCount,
 } from './brief-review-view.js';
 import type { BriefQualityReport, BriefQualityIssue } from '../../../engine/spec/brief-quality.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { taskId } from '../../../core/schemas/task.js';
 
 describe('formatQualityDisplay', () => {
@@ -130,5 +136,95 @@ describe('buildTaskDetailParts', () => {
     });
     const detail = buildTaskDetailParts(task);
     expect(detail).toContain('scope: missing');
+  });
+});
+
+describe('buildRoutingPreviewMetadata', () => {
+  it('routes using currentCode refreshed from disk when available', async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-routing-test-'));
+    try {
+      await writeFile(
+        join(projectDir, 'target.ts'),
+        Array.from({ length: 1200 }, (_, i) => `export const value${i} = ${i};`).join('\n'),
+        'utf-8',
+      );
+      const config = {
+        ...makeConfig(),
+        implementerProfiles: {
+          profiles: {
+            'local-small': {
+              kind: 'api' as const,
+              provider: 'ollama',
+              apiBase: 'http://localhost:11434/v1',
+              model: 'small',
+              contextLength: 2000,
+              costTier: 'local' as const,
+            },
+            'cheap-large': {
+              kind: 'api' as const,
+              provider: 'ollama',
+              apiBase: 'http://localhost:11434/v1',
+              model: 'large',
+              contextLength: 40_000,
+              costTier: 'cheap' as const,
+            },
+          },
+        },
+      };
+      const task = makeTask({ action: 'modify', file: 'target.ts' });
+
+      const metadata = await buildRoutingPreviewMetadata([task], { config, projectDir });
+
+      expect(metadata[0]).toMatchObject({
+        taskId: task.id,
+        workerProfile: 'cheap-large',
+        selectedCostTier: 'cheap',
+        estimateStatus: 'refreshed-current-code',
+      });
+    } finally {
+      await rm(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('labels modify-task estimates when currentCode is missing at review time', async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-missing-code-test-'));
+    try {
+      const task = makeTask({ action: 'modify', file: 'missing.ts' });
+
+      const metadata = await buildRoutingPreviewMetadata([task], { config: makeConfig(), projectDir });
+
+      expect(metadata[0]).toMatchObject({
+        taskId: task.id,
+        estimateStatus: 'missing-current-code',
+        validationStatus: 'warn',
+        risk: 'high',
+      });
+      expect(formatTaskReviewLine(task, [], metadata[0])).toContain('estimate missing-current-code');
+    } finally {
+      await rm(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not reuse stale brief currentCode when the target file is missing', async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-stale-code-test-'));
+    try {
+      const task = makeTask({
+        action: 'modify',
+        file: 'missing.ts',
+        currentCode: 'export const stale = true;\n',
+      });
+
+      const metadata = await buildRoutingPreviewMetadata([task], { config: makeConfig(), projectDir });
+
+      expect(metadata[0]).toMatchObject({
+        taskId: task.id,
+        estimateStatus: 'missing-current-code',
+        validationStatus: 'warn',
+        risk: 'high',
+      });
+      expect(metadata[0]?.routingReason).toContain('missing current code');
+    } finally {
+      await rm(projectDir, { recursive: true, force: true });
+    }
   });
 });

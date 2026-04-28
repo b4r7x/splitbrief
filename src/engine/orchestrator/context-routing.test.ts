@@ -1,0 +1,339 @@
+import { describe, expect, it } from 'vitest';
+import type { ResolvedImplementerProfile } from '../../core/config/accessors/implementer-profiles.js';
+import type { ImplementerCostTier } from '../../core/schemas/implementer-config.js';
+import type { ProjectContext } from '../../core/types/state-actions.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import {
+  classifyContextFit,
+  estimateFormattedTaskPromptTokens,
+  routeTaskToImplementerProfile,
+} from './context-routing.js';
+import { formatTaskPrompt, SYSTEM_PREAMBLE } from '../spec/formatter.js';
+import { estimateTokens } from '../spec/token-budget.js';
+
+const context: ProjectContext = {
+  name: 'test-project',
+  dir: '/repo',
+  runtime: 'Node.js 22',
+  testCommand: 'npm test',
+};
+
+function profile(
+  name: string,
+  costTier: ImplementerCostTier,
+  contextLength?: number,
+): ResolvedImplementerProfile {
+  return {
+    name,
+    costTier,
+    config: {
+      kind: 'api',
+      provider: 'ollama',
+      apiBase: 'http://localhost:11434/v1',
+      model: name,
+      ...(contextLength !== undefined ? { contextLength } : {}),
+    },
+    capabilities: { writesFiles: 'extracted-code' },
+    isDefault: false,
+  };
+}
+
+function directProfile(
+  name: string,
+  costTier: ImplementerCostTier,
+  contextLength?: number,
+): ResolvedImplementerProfile {
+  return {
+    name,
+    costTier,
+    config: {
+      kind: 'agent',
+      command: name,
+      model: name,
+      ...(contextLength !== undefined ? { contextLength } : {}),
+    },
+    capabilities: { writesFiles: 'direct' },
+    isDefault: false,
+  };
+}
+
+describe('classifyContextFit', () => {
+  it('classifies fits, tight, and overflow after applying the safety margin', () => {
+    const opts = { safetyMargin: 0.1, tightThreshold: 0.8 };
+
+    expect(classifyContextFit(700, 1000, opts)).toBe('fits');
+    expect(classifyContextFit(750, 1000, opts)).toBe('tight');
+    expect(classifyContextFit(920, 1000, opts)).toBe('overflow');
+  });
+});
+
+describe('estimateFormattedTaskPromptTokens', () => {
+  it('includes the system preamble in the formatted task prompt estimate', () => {
+    const task = makeTask();
+
+    const estimatedTokens = estimateFormattedTaskPromptTokens({ task, context, contextLength: 10_000 });
+    const promptOnlyTokens = estimateTokens(formatTaskPrompt(task, context, 10_000));
+
+    expect(estimatedTokens).toBe(promptOnlyTokens + estimateTokens(SYSTEM_PREAMBLE));
+  });
+});
+
+describe('routeTaskToImplementerProfile', () => {
+  it('chooses the smallest fitting profile within the same cost tier', () => {
+    const task = makeTask();
+
+    const decision = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [
+        profile('local-large', 'local', 20_000),
+        profile('local-small', 'local', 10_000),
+      ],
+    });
+
+    expect(decision.selectedProfile).toBe('local-small');
+    expect(decision.selectedCostTier).toBe('local');
+    expect(decision.costPosture).toContain('Selected local cost tier');
+    expect(decision.fit).toBe('fits');
+    expect(decision.rejected.map(rejected => rejected.profile)).toEqual(['local-large']);
+  });
+
+  it('sorts local and cheap tiers before more expensive capable profiles', () => {
+    const task = makeTask();
+
+    const decision = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [
+        profile('frontier-big', 'frontier', 200_000),
+        profile('standard-big', 'standard', 80_000),
+        profile('cheap-big', 'cheap', 40_000),
+      ],
+    });
+
+    expect(decision.selectedProfile).toBe('cheap-big');
+    expect(decision.rejected.map(rejected => rejected.profile)).toEqual(['standard-big', 'frontier-big']);
+  });
+
+  it('handles unknown cost tiers deterministically by profile name', () => {
+    const task = makeTask();
+
+    const first = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [
+        profile('zeta-worker', 'unknown', 10_000),
+        profile('alpha-worker', 'unknown', 10_000),
+      ],
+    });
+    const second = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [
+        profile('alpha-worker', 'unknown', 10_000),
+        profile('zeta-worker', 'unknown', 10_000),
+      ],
+    });
+
+    expect(first.selectedProfile).toBe('alpha-worker');
+    expect(second).toEqual(first);
+  });
+
+  it('rejects overflow profiles and selects the next capable profile', () => {
+    const task = makeTask();
+
+    const decision = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [
+        profile('local-too-small', 'local', 100),
+        profile('cheap-capable', 'cheap', 10_000),
+      ],
+    });
+
+    expect(decision.selectedProfile).toBe('cheap-capable');
+    expect(decision.rejected).toMatchObject([
+      {
+        profile: 'local-too-small',
+        fit: 'overflow',
+      },
+    ]);
+  });
+
+  it('rejects extracted-code profiles when task scope requires direct file writes', () => {
+    const task = makeTask({
+      file: 'src/main.ts',
+      scope: { inBounds: ['src/main.ts', 'src/sidecar.ts'] },
+    });
+
+    const decision = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [
+        profile('local-api', 'local', 20_000),
+        directProfile('agent-worker', 'standard', 20_000),
+      ],
+    });
+
+    expect(decision.selectedProfile).toBe('agent-worker');
+    expect(decision.requiredWriteMode).toBe('direct');
+    expect(decision.selectedWriteMode).toBe('direct');
+    expect(decision.rejected).toMatchObject([
+      {
+        profile: 'local-api',
+        profileWriteMode: 'extracted-code',
+        requiredWriteMode: 'direct',
+      },
+    ]);
+    expect(decision.rejected[0]?.reason).toContain('requires direct file writes');
+  });
+
+  it('treats root-level additional files as direct-write scope', () => {
+    const task = makeTask({
+      file: 'src/main.ts',
+      scope: { inBounds: ['src/main.ts', 'package.json'] },
+    });
+
+    const decision = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [
+        profile('local-api', 'local', 20_000),
+        directProfile('agent-worker', 'standard', 20_000),
+      ],
+    });
+
+    expect(decision.selectedProfile).toBe('agent-worker');
+    expect(decision.requiredWriteMode).toBe('direct');
+    expect(decision.rejected[0]?.reason).toContain('requires direct file writes');
+  });
+
+  it('treats nested paths with spaces as direct-write scope', () => {
+    const task = makeTask({
+      file: 'src/main.ts',
+      scope: { inBounds: ['src/main.ts', 'docs/User Guide.md'] },
+    });
+
+    const decision = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [
+        profile('local-api', 'local', 20_000),
+        directProfile('agent-worker', 'standard', 20_000),
+      ],
+    });
+
+    expect(decision.selectedProfile).toBe('agent-worker');
+    expect(decision.requiredWriteMode).toBe('direct');
+  });
+
+  it('does not treat prose scope entries as direct-write file scope', () => {
+    const task = makeTask({
+      file: 'src/main.ts',
+      scope: { inBounds: ['email validation', 'only touch helpers.ts'] },
+    });
+
+    const decision = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [
+        profile('local-api', 'local', 20_000),
+        directProfile('agent-worker', 'standard', 20_000),
+      ],
+    });
+
+    expect(decision.selectedProfile).toBe('local-api');
+    expect(decision.requiredWriteMode).toBe('extracted-code');
+  });
+
+  it('returns a clear no-capable-profile result when every profile overflows', () => {
+    const task = makeTask();
+
+    const decision = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [
+        profile('local-too-small', 'local', 100),
+        profile('cheap-too-small', 'cheap', 150),
+      ],
+    });
+
+    expect(decision.selectedProfile).toBeUndefined();
+    expect(decision.fit).toBe('overflow');
+    expect(decision.reason).toContain('No capable implementer profile');
+    expect(decision.rejected.map(rejected => rejected.fit)).toEqual(['overflow', 'overflow']);
+  });
+
+  it('uses a conservative fallback when a profile has no declared context length', () => {
+    const task = makeTask();
+
+    const decision = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [profile('legacy-default', 'unknown')],
+      conservativeContextLength: 10_000,
+    });
+
+    expect(decision.selectedProfile).toBe('legacy-default');
+    expect(decision.contextLength).toBe(10_000);
+    expect(decision.reason).toContain('conservative context-length fallback');
+  });
+
+  it('rejects profiles that only fit after unsafe currentCode truncation', () => {
+    const task = makeTask({
+      action: 'modify',
+      currentCode: Array.from({ length: 1200 }, (_, i) => `export const value${i} = ${i};`).join('\n'),
+    });
+
+    const decision = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [
+        profile('small-local', 'local', 2000),
+        profile('larger-cheap', 'cheap', 40_000),
+      ],
+    });
+
+    expect(decision.selectedProfile).toBe('larger-cheap');
+    expect(decision.fit).toBe('fits');
+    expect(decision.currentCodeTruncated).toBe(false);
+    expect(decision.rejected).toMatchObject([
+      {
+        profile: 'small-local',
+        fit: 'overflow',
+        currentCodeTruncated: true,
+      },
+    ]);
+    expect(decision.rejected[0]?.untruncatedEstimatedTokens).toBeGreaterThan(decision.rejected[0]?.estimatedTokens ?? 0);
+    expect(decision.rejected[0]?.reason).toContain('current code truncated');
+  });
+
+  it('marks function-level currentCode fallback in routing metadata', () => {
+    const task = makeTask({
+      action: 'modify',
+      signature: 'export function target(input: string): string',
+      currentCode: [
+        'import { normalize } from "./normalize.js";',
+        '',
+        'export function target(input: string): string {',
+        '  return normalize(input);',
+        '}',
+        '',
+        ...Array.from({ length: 900 }, (_, i) => `export const value${i} = ${i};`),
+      ].join('\n'),
+    });
+
+    const decision = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [profile('function-context-worker', 'local', 6000)],
+    });
+
+    expect(decision.selectedProfile).toBe('function-context-worker');
+    expect(decision.currentCodeContextMode).toBe('function-level');
+    expect(decision.currentCodeTruncated).toBe(false);
+    expect(decision.fit).toBe('tight');
+    expect(decision.estimatedTokens).toBeLessThan(decision.untruncatedEstimatedTokens);
+    expect(decision.reason).toContain('function-level context');
+  });
+});

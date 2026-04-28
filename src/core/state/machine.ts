@@ -153,6 +153,16 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
         tasks: state.tasks.map(t => t.id === action.taskId ? { ...t, currentCode: action.code } : t),
       };
 
+    case 'CLEAR_TASK_CODE':
+      return {
+        ...state,
+        tasks: state.tasks.map(t => {
+          if (t.id !== action.taskId) return t;
+          const { currentCode: _currentCode, ...task } = t;
+          return task;
+        }),
+      };
+
     case 'ALL_DONE':
       return { ...state, phase: 'final-review' };
 

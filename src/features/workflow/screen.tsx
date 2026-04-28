@@ -25,6 +25,7 @@ import { useIpcClient, type IpcClientStatus } from './hooks/use-ipc-client.js';
 import type { IpcPromptRequest, IpcPromptResponse } from '../../engine/ipc/protocol.js';
 import { useWorkflowKeys } from './hooks/use-workflow-keys.js';
 import { REVIEW_HINT, BRIEFS_REVIEW_HINT, createReviewInputHandler } from './review-parser.js';
+import { formatUserEditConflictPrompt, parseUserEditConflictAnswer } from './user-edit-conflict-prompt.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { configStore } from '../../stores/project/config.js';
 import { skillsStore } from '../../stores/project/skills.js';
@@ -120,6 +121,14 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
     if (request.kind === 'external_changes') {
       const result = await inputMode.setReviewMode('External changes detected. continue / quit');
       return { kind: 'external_changes', proceed: result.approved };
+    }
+
+    if (request.kind === 'user_edit_conflict') {
+      const answer = await inputMode.setQuestionMode(formatUserEditConflictPrompt(request.conflict));
+      return {
+        kind: 'user_edit_conflict',
+        selectedAction: parseUserEditConflictAnswer(answer, request.conflict.availableActions),
+      };
     }
 
     if (request.kind === 'question_asked') {

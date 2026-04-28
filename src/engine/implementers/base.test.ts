@@ -142,6 +142,35 @@ describe('createImplementerBase — extractsCode pipeline success', () => {
     expect(approveWrite).toHaveBeenCalledWith('src/denied.ts');
     expect(existsSync(join(projectDir, 'src/denied.ts'))).toBe(false);
   });
+
+  it('blocks extracted-code writes when the target changes while approval is pending', async () => {
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/race.ts'), 'export const value = "before";\n');
+
+    const invoke = vi.fn().mockResolvedValue({
+      text: '```ts\nexport const value = "implementer";\n```',
+      usage: { inputTokens: 10, outputTokens: 20 },
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ invoke }));
+    const approveWrite = vi.fn().mockImplementation(async () => {
+      writeFileSync(join(projectDir, 'src/race.ts'), 'export const value = "user";\n');
+      return { allow: true };
+    });
+    const task = makeTask({ id: 'T001', file: 'src/race.ts', action: 'modify' });
+
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      approveWrite,
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error).toContain('changed during approval');
+    expect(readFileSync(join(projectDir, 'src/race.ts'), 'utf-8')).toBe('export const value = "user";\n');
+  });
 });
 
 describe('createImplementerBase — non-extracting backends (detectChanges)', () => {

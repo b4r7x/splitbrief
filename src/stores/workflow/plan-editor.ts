@@ -1,5 +1,39 @@
 import { createStore, storeBase } from '../create-store.js';
 import type { Task } from '../../core/schemas/task.js';
+import type { ImplementerCostTier } from '../../core/schemas/implementer-config.js';
+
+export type PlanReviewRisk = 'low' | 'medium' | 'high';
+export type PlanReviewContextFit = 'fits' | 'tight' | 'overflow';
+export type PlanReviewCostTier = ImplementerCostTier;
+export type PlanReviewEstimateStatus =
+  | 'refreshed-current-code'
+  | 'brief-current-code'
+  | 'missing-current-code'
+  | 'current-code-unavailable';
+
+export interface PlanReviewConflictMetadata {
+  kind: string;
+  files: string[];
+  affectedTaskIds?: string[] | undefined;
+  note?: string | undefined;
+}
+
+export interface PlanTaskReviewMetadata {
+  taskId: string;
+  workerProfile?: string | undefined;
+  selectedCostTier?: PlanReviewCostTier | undefined;
+  costPosture?: string | undefined;
+  contextFit?: PlanReviewContextFit | undefined;
+  estimatedTokens?: number | undefined;
+  contextLength?: number | undefined;
+  estimateStatus?: PlanReviewEstimateStatus | undefined;
+  routingReason?: string | undefined;
+  validationStatus?: 'pending' | 'pass' | 'warn' | 'fail' | undefined;
+  risk?: PlanReviewRisk | undefined;
+  stale?: boolean | undefined;
+  conflict?: PlanReviewConflictMetadata | undefined;
+  checkpoint?: string | undefined;
+}
 
 export interface PlanEditorState {
   /** Current mutable task list. Empty until the editor is initialized. */
@@ -23,6 +57,11 @@ export interface PlanEditorState {
    * Cleared on the next edit operation or on successful save.
    */
   saveError: string | null;
+  /**
+   * Optional review-time execution metadata keyed by task ID. Routing decisions
+   * are produced elsewhere; the editor only renders whatever metadata is known.
+   */
+  reviewMetadata: ReadonlyMap<string, PlanTaskReviewMetadata>;
 }
 
 const store = createStore<PlanEditorState>(() => ({
@@ -32,14 +71,15 @@ const store = createStore<PlanEditorState>(() => ({
   dirty: false,
   runtimeRichMode: false,
   saveError: null,
+  reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
 }));
 
 // Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
 function __testReset(next?: Partial<PlanEditorState>): void {
   store.set(
     next
-      ? { tasks: [], cursor: 0, expandedIds: new Set<string>(), dirty: false, runtimeRichMode: false, saveError: null, ...next }
-      : { tasks: [], cursor: 0, expandedIds: new Set<string>(), dirty: false, runtimeRichMode: false, saveError: null },
+      ? { tasks: [], cursor: 0, expandedIds: new Set<string>(), dirty: false, runtimeRichMode: false, saveError: null, reviewMetadata: new Map<string, PlanTaskReviewMetadata>(), ...next }
+      : { tasks: [], cursor: 0, expandedIds: new Set<string>(), dirty: false, runtimeRichMode: false, saveError: null, reviewMetadata: new Map<string, PlanTaskReviewMetadata>() },
   );
 }
 
@@ -54,6 +94,7 @@ function initEditor(tasks: Task[]): void {
     expandedIds: new Set<string>(),
     dirty: false,
     saveError: null,
+    reviewMetadata: sameTasks(s.tasks, tasks) ? s.reviewMetadata : new Map<string, PlanTaskReviewMetadata>(),
   }));
 }
 
@@ -77,7 +118,13 @@ function sameTasks(a: Task[], b: Task[]): boolean {
 function setTasks(tasks: Task[]): void {
   store.set(s => {
     if (sameTasks(s.tasks, tasks)) return s;
-    return { ...s, tasks, dirty: true, saveError: null };
+    return {
+      ...s,
+      tasks,
+      dirty: true,
+      saveError: null,
+      reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
+    };
   });
 }
 
@@ -109,6 +156,48 @@ function setSaveError(message: string | null): void {
   store.set(s => (s.saveError === message ? s : { ...s, saveError: message }));
 }
 
+function setReviewMetadata(metadata: PlanTaskReviewMetadata[]): void {
+  store.set(s => {
+    const next = new Map(s.reviewMetadata);
+    for (const item of metadata) {
+      next.set(item.taskId, mergeReviewMetadata(next.get(item.taskId), item));
+    }
+    if (sameReviewMetadata(s.reviewMetadata, next)) return s;
+    return { ...s, reviewMetadata: next };
+  });
+}
+
+function upsertTaskReviewMetadata(metadata: PlanTaskReviewMetadata): void {
+  store.set(s => {
+    const current = s.reviewMetadata.get(metadata.taskId);
+    const merged = mergeReviewMetadata(current, metadata);
+    if (current && JSON.stringify(current) === JSON.stringify(merged)) return s;
+    const next = new Map(s.reviewMetadata);
+    next.set(metadata.taskId, merged);
+    return { ...s, reviewMetadata: next };
+  });
+}
+
+function mergeReviewMetadata(
+  current: PlanTaskReviewMetadata | undefined,
+  patch: PlanTaskReviewMetadata,
+): PlanTaskReviewMetadata {
+  return current ? { ...current, ...patch, taskId: patch.taskId } : patch;
+}
+
+function sameReviewMetadata(
+  a: ReadonlyMap<string, PlanTaskReviewMetadata>,
+  b: ReadonlyMap<string, PlanTaskReviewMetadata>,
+): boolean {
+  if (a === b) return true;
+  if (a.size !== b.size) return false;
+  for (const [taskId, value] of a) {
+    const other = b.get(taskId);
+    if (!other || JSON.stringify(value) !== JSON.stringify(other)) return false;
+  }
+  return true;
+}
+
 function markSaved(): void {
   store.set(s => {
     if (!s.dirty && s.saveError === null) return s;
@@ -126,5 +215,7 @@ export const planEditorStore = {
   toggleExpand,
   setRuntimeRichMode,
   setSaveError,
+  setReviewMetadata,
+  upsertTaskReviewMetadata,
   markSaved,
 };

@@ -27,6 +27,7 @@ import { REVIEW_HINT } from '../review-parser.js';
 import { formatCost } from '../../../core/formatting.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 import { buildRewindAction } from './build-rewind-action.js';
+import { formatUserEditConflictPrompt, parseUserEditConflictAnswer } from '../user-edit-conflict-prompt.js';
 
 interface UseWorkflowRunnerOptions {
   feature: string;
@@ -111,6 +112,10 @@ export function useWorkflowRunner({
         },
         onExternalChanges: async () =>
           (await inputMode.setReviewMode('External changes detected. continue / quit')).approved,
+        onUserEditConflict: async (conflict) => {
+          const answer = await inputMode.setQuestionMode(formatUserEditConflictPrompt(conflict));
+          return parseUserEditConflictAnswer(answer, conflict.availableActions);
+        },
         onBudgetExceeded: async (currentCost, maxBudget) =>
           (await inputMode.setReviewMode(`Budget exceeded: $${currentCost.toFixed(2)} of $${maxBudget.toFixed(2)}. continue / quit`)).approved,
         onBudgetPaused: async (currentCost, maxBudget) => {

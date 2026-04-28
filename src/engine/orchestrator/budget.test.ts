@@ -4,6 +4,7 @@ import type { OrchestratorCallbacks } from './types.js';
 import type { ModelCacheAccessor } from '../providers/model-resolution.js';
 import { checkBudget, getCurrentCost, enforceBudget } from './budget.js';
 import { makeCallbacks as makeSharedCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import { taskId } from '../../core/schemas/task.js';
 
 const zeroUsage: TokenUsage = {
   plannerInput: 0, plannerOutput: 0,
@@ -158,6 +159,50 @@ describe('getCurrentCost', () => {
 
     expect(withoutCache).toBe(0);
     expect(withCache).toBe(40);
+  });
+
+  it('uses per-task metadata so paid profile tokens count even when the default implementer is local', () => {
+    const usage: TokenUsage = {
+      ...zeroUsage,
+      implementerInput: 1_000_000,
+      implementerOutput: 1_000_000,
+    };
+
+    const cost = getCurrentCost({
+      tokenUsage: usage,
+      totalTasks: 2,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+      taskBreakdowns: [
+        { taskId: taskId('T001'), taskTitle: 'local task', method: 'local', implementerTokens: 1_000_000, escalationTokens: 0, retryCount: 0, tool: 'ollama', model: 'qwen-local' },
+        { taskId: taskId('T002'), taskTitle: 'paid task', method: 'local', implementerTokens: 1_000_000, escalationTokens: 0, retryCount: 0, tool: 'deepseek', model: 'deepseek-chat' },
+      ],
+    });
+
+    expect(cost).toBeCloseTo(0.35, 10);
+  });
+
+  it('does not charge local profile tokens at the global paid implementer rate', () => {
+    const usage: TokenUsage = {
+      ...zeroUsage,
+      implementerInput: 500_000,
+      implementerOutput: 500_000,
+    };
+
+    const cost = getCurrentCost({
+      tokenUsage: usage,
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
+      taskBreakdowns: [
+        { taskId: taskId('T001'), taskTitle: 'local task', method: 'local', implementerTokens: 1_000_000, escalationTokens: 0, retryCount: 0, tool: 'ollama', model: 'qwen-local' },
+      ],
+    });
+
+    expect(cost).toBe(0);
   });
 });
 

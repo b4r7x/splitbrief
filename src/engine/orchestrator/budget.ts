@@ -1,4 +1,4 @@
-import type { TokenUsage } from '../../core/schemas/tokens.js';
+import type { TaskTokenUsage, TokenUsage } from '../../core/schemas/tokens.js';
 import type { OrchestratorCallbacks } from './types.js';
 import type { EventBus } from '../events/types.js';
 import { calculateCostBreakdown } from '../providers/pricing.js';
@@ -21,6 +21,7 @@ export type BudgetCheckOptions = {
   implementerTool: string;
   plannerModel?: string | undefined;
   implementerModel?: string | undefined;
+  taskBreakdowns?: TaskTokenUsage[] | undefined;
   pricingCache?: ModelCacheAccessor | undefined;
 };
 
@@ -36,6 +37,7 @@ export function getCurrentCost(opts: Omit<BudgetCheckOptions, 'maxBudget'>): num
     implementerTool: opts.implementerTool,
     ...(opts.plannerModel !== undefined && { plannerModel: opts.plannerModel }),
     ...(opts.implementerModel !== undefined && { implementerModel: opts.implementerModel }),
+    ...(opts.taskBreakdowns !== undefined && { taskBreakdowns: opts.taskBreakdowns }),
   }, opts.pricingCache);
   return breakdown.totalActualCost;
 }
@@ -71,6 +73,7 @@ export type EnforceBudgetOptions = {
   implementerTool: string;
   plannerModel?: string | undefined;
   implementerModel?: string | undefined;
+  taskBreakdowns?: TaskTokenUsage[] | undefined;
   pricingCache?: ModelCacheAccessor | undefined;
   callbacks: OrchestratorCallbacks;
   bus: EventBus;

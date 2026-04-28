@@ -53,18 +53,18 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 ## **[Could]** Git-backed per-run code snapshot undo
 
-**Why we want it.** File-level run accept/reject now exists through `/accept-run` and `/reject-run confirm`, using hash-guarded snapshots. A future git-backed variant could additionally manage per-task commit history for workflows that opt into git commits.
+**Why we want it.** File-level run accept/reject now exists through `/accept-run` and `/reject-run confirm`, using hash-guarded snapshots. A future git-backed variant could additionally manage optional commit history for workflows whose human owner explicitly opts into git commits.
 
 **What it would look like.**
 
-- During the run, every per-task commit still happens when commit strategy enables it.
+- During the run, commits happen only when commit strategy explicitly enables them.
 - At end-of-run or on user request, a git-backed reject could squash-delete the session's commits from branch history after the file-level safety check passes.
 - Accept would keep the current branch history.
 
 **Why deferred.**
 
-- Git semantics here are dangerous if the user has pushed the per-task commits. Need careful UX to detect pushed state and refuse revert.
-- Our per-task commits are load-bearing for escalation (planner can see the diff of each task). Snapshot-revert has to preserve the ability to inspect individual task commits before throwing them away.
+- Git semantics here are dangerous if the user has pushed generated commits. Need careful UX to detect pushed state and refuse revert.
+- Escalation must not depend on commits. Snapshot-revert has to preserve evidence, diffs, and task artifacts even when `git.commitStrategy` is `none`.
 - Non-git projects (we don't support them today, but might) can't use git stash; would need file-copy fallback.
 
 **Where to start when we do it.**

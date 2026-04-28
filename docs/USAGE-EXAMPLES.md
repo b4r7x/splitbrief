@@ -976,7 +976,9 @@ Press Ctrl+C to stop.
 
 The bearer token is generated per invocation and only printed once. Restart the server to rotate.
 
-**Variations:** `--session <id>` serves a specific session (otherwise the active session). Default port is 4321; pass `--port 0` to let the OS pick.
+This endpoint is read-only. It lets MCP-aware clients inspect session artifacts through resources, but it does not expose MCP tools, run shell commands, write files, or execute tasks.
+
+**Variations:** `--session <id>` serves a specific session (otherwise the active session). Default port is 4321; choose a concrete port with `--port <number>` when 4321 is unavailable.
 
 **See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §1 MCP server.
 
@@ -999,7 +1001,7 @@ diptych MCP server ready
   Sessions: all
 ```
 
-The MCP resource list now includes every session's `state.json`, `tasks.md`, `evidence.json`, `drift-report.json`, and snapshot manifests.
+The MCP resource list now includes every session's `state.json`, `tasks.md`, `evidence.json`, `drift-report.json`, and snapshot manifests. It remains a read-only resource list, not a multi-session execution or mutation surface.
 
 **Variations:** `--session` and `--all-sessions` are mutually exclusive.
 

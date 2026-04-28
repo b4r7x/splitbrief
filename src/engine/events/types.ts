@@ -4,6 +4,8 @@ import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { ActionClass } from '../../core/schemas/approval-store.js';
 import type { ApprovalTier } from '../orchestrator/action-classifier.js';
+import type { UserEditConflict, UserEditConflictAction } from '../orchestrator/user-edit-conflicts.js';
+import type { CurrentCodeContextMode, TaskContextFit } from '../orchestrator/context-routing.js';
 
 export type ValidationStages = { tsc: boolean; lint: boolean; test: boolean };
 
@@ -14,7 +16,7 @@ export type EngineEvent =
   | { type: 'workflow_complete'; ts: number; phase: Phase }
   | { type: 'workflow_cancelled'; ts: number; phase: Phase }
   | { type: 'workflow_config'; ts: number; phase: Phase; mode: WorkflowMode; plannerTool: string; plannerModel?: string; implementerTool: string; implementerModel?: string }
-  | { type: 'paused_external_changes'; ts: number; phase: Phase }
+  | { type: 'paused_external_changes'; ts: number; phase: Phase; conflict?: UserEditConflict; selectedAction?: UserEditConflictAction }
   // Planner stream
   | { type: 'planner_status'; ts: number; phase: Phase; status: 'running' | 'done'; tool?: string; model?: string; duration?: number; summary?: string }
   | { type: 'planner_text'; ts: number; phase: Phase; text: string }
@@ -43,15 +45,15 @@ export type EngineEvent =
   | { type: 'mode_advice'; ts: number; phase: Phase; kind: 'none' | 'downgrade' | 'upgrade' | 'missing-context'; risk: 'trivial' | 'small' | 'normal' | 'high'; currentMode: WorkflowMode; suggestedMode: WorkflowMode; confidence: number; factors: string[]; missing: string[] }
   | { type: 'instant_plan_received'; ts: number; phase: Phase; taskCount: number }
   // Task lifecycle
-  | { type: 'task_started'; ts: number; phase: Phase; taskId: TaskId; title: string; index: number; total: number; file: string; action: 'create' | 'modify'; tool?: string; model?: string }
-  | { type: 'task_completed'; ts: number; phase: Phase; taskId: TaskId; title: string; method: TaskCompletionMethod; retries: number; duration: number; tool?: string; model?: string }
+  | { type: 'task_started'; ts: number; phase: Phase; taskId: TaskId; title: string; index: number; total: number; file: string; action: 'create' | 'modify'; tool?: string; model?: string; implementerProfile?: string; contextFit?: TaskContextFit; estimatedTokens?: number; untruncatedEstimatedTokens?: number; contextLength?: number; currentCodeTruncated?: boolean; currentCodeContextMode?: CurrentCodeContextMode; costPosture?: string; routingReason?: string }
+  | { type: 'task_completed'; ts: number; phase: Phase; taskId: TaskId; title: string; method: TaskCompletionMethod; retries: number; duration: number; tool?: string; model?: string; implementerProfile?: string }
   | { type: 'task_failed'; ts: number; phase: Phase; taskId: TaskId }
   | { type: 'task_skipped'; ts: number; phase: Phase; taskId: TaskId; title: string; reason: string }
   | { type: 'task_retry'; ts: number; phase: Phase; taskId: TaskId; attempt: number; maxRetries: number; error: string }
   | { type: 'task_escalating'; ts: number; phase: Phase; taskId: TaskId }
   | { type: 'task_full_fail'; ts: number; phase: Phase; taskId: TaskId }
   | { type: 'task_reset'; ts: number; phase: Phase; taskId: TaskId }
-  | { type: 'task_tokens'; ts: number; phase: Phase; taskId: TaskId; method: TaskCompletionMethod; implementerTokens: number; escalationTokens: number; retryCount: number }
+  | { type: 'task_tokens'; ts: number; phase: Phase; taskId: TaskId; method: TaskCompletionMethod; implementerTokens: number; escalationTokens: number; retryCount: number; tool?: string; model?: string; implementerProfile?: string; contextFit?: TaskContextFit; estimatedTokens?: number; untruncatedEstimatedTokens?: number; contextLength?: number; currentCodeTruncated?: boolean; currentCodeContextMode?: CurrentCodeContextMode; costPosture?: string; routingReason?: string }
   | { type: 'hint_failed'; ts: number; phase: Phase; taskId: TaskId }
   // Implementer
   | { type: 'implementer_generate_running'; ts: number; phase: Phase; taskId: TaskId; file?: string }

@@ -1,6 +1,6 @@
 # Getting started with diptych
 
-> You installed it. Now what? This page gets you from `npm install` to a committed feature in under five minutes. If you only read one diptych doc, read this one.
+> You installed it. Now what? This page gets you from `npm install` to a validated feature in under five minutes. If you only read one diptych doc, read this one.
 
 ---
 
@@ -13,7 +13,7 @@ It splits the work an AI normally does in one shot into two roles:
 - A **planner** — an expensive, smart model (Claude Opus, GPT-5, Codex, Claude Code via your existing subscription) that *thinks*: it reads your repo, asks clarifying questions, and compiles your request into a structured **Task Brief**.
 - An **implementer** — a cheap or local model (LM Studio, Ollama, DeepSeek, Sonnet, Haiku) that *types*: it executes one task at a time against the brief, with a `tsc → lint → test` gate after each.
 
-The orchestrator in the middle owns persistence, validation, retries, escalation, and per-task git commits. You never lose work, you can interrupt at any point, and the brief is durable on disk.
+The orchestrator in the middle owns persistence, validation, retries, escalation, checkpoints, and final review. You never lose work, you can interrupt at any point, and the brief is durable on disk.
 
 The economic story is simple: a typical feature costs ~350K planner tokens (one Opus session) and ~$0 implementer tokens (a 7B model running on your laptop). Compared to running the full feature through Claude Code Opus, you save roughly **10× on tokens** for the same end result — because the mechanical typing happens locally.
 
@@ -27,7 +27,7 @@ Today's AI coding workflow has four sharp edges that diptych is designed to file
 |---|---|---|
 | **Token burn** | Opus writes the boilerplate the same way Haiku would, but at 60× the price. | Opus writes the brief. Haiku writes the code. |
 | **Plan drift** | The agent forgets the plan halfway and starts inventing. | The brief is on disk, the planner reviews the final diff against it. |
-| **Destructive actions** | A bad rename or migration trashes the working tree, no undo. | Per-task commits, file-level snapshots, hash-guarded restore. |
+| **Destructive actions** | A bad rename or migration trashes the working tree, no undo. | Checkpoints, file-level snapshots, hash-guarded restore. |
 | **Vendor lock-in** | Switching from Claude → Codex means re-learning the tool. | Five interchangeable runner kinds (`cli`, `api`, `shell`, `agent`, `agent-sdk`) on both sides. |
 
 diptych is **not** a multi-agent orchestrator. There are exactly two roles, in a clear hierarchy. It is **not** a "universal AI connector". It is opinionated about one thing: cost-optimal coding work that doesn't go off the rails.
@@ -72,7 +72,7 @@ Here is what happens, step by step:
 2. `diptych start` opens a fullscreen TUI. The planner thinks for a few seconds, looks at your repo, and writes a Task Brief to `.diptych/sessions/<date>-fix-the-typo/tasks.md`.
 3. The brief is **scored for quality** automatically. Weak briefs (missing scope, missing validation, vague tests) are blocked before any code is written.
 4. The implementer picks up the first task, generates code, and the orchestrator runs `tsc → lint → tests`. On failure, it retries up to 3 times, then escalates back to the planner.
-5. Each successful task gets its own git commit (if `git.commitStrategy: per-task` is set) — but **diptych never commits on its own outside the workflow loop**. You review and squash/push when you are ready.
+5. Each successful task records evidence and can create a checkpoint. Product-level git commits are optional when `workflow.git.commitStrategy` is explicitly configured; in this repository, agents must never stage or commit.
 6. After all tasks complete, the planner does a final review: it diffs the actual changes against the brief and writes `review.md`. A deterministic drift report flags anything the agent touched outside the planned scope.
 
 Hit `q` to quit at any point. State is on disk. Resume later with `diptych resume`. Press `Ctrl+K` inside the TUI at any time to open the command palette — a searchable list of all 21 slash commands.
@@ -105,7 +105,7 @@ Hit `q` to quit at any point. State is on disk. Resume later with `diptych resum
                   │  ORCHESTRATOR (diptych itself)      │
                   │                                     │
                   │  state machine · validation · retry │
-                  │  · escalation · git · events        │
+                  │  · escalation · checkpoints · events│
                   └─────────────────────────────────────┘
                                           │
                                   one task at a time
@@ -155,7 +155,7 @@ Full workflow-mode semantics: [docs/WORKFLOW.md](./WORKFLOW.md).
 `.diptych/config.yaml` (created by `diptych init`). The minimum useful config:
 
 ```yaml
-version: 2
+version: 3
 
 planner:
   kind: cli
@@ -181,8 +181,10 @@ workflow:
   maxRetries: 3
   maxBudget: 2.00             # dollars; the gate fires at 85%
   git:
-    commitStrategy: per-task  # one commit per successful task
+    commitStrategy: none      # manual review and commits
 ```
+
+`version: 2` configs still load for backwards compatibility and are migrated to v3; new configs should use `version: 3`.
 
 A few common alternatives:
 
@@ -220,9 +222,9 @@ Local/subscription runners that don't expose pricing data show `local` instead o
 
 ## 9. Safety
 
-**diptych never commits on its own outside the per-task loop.**
+**Checkpoints protect your work; commits are optional.**
 
-The orchestrator can make per-task git commits (when `workflow.git.commitStrategy: per-task` is set) so each task is atomic and easy to review. But the squash, the rebase, the push to remote — all you. There is no `auto-push`, no `auto-merge`, no surprise branches.
+The orchestrator records evidence and can create hash-guarded snapshots around risky boundaries. Product-level git commits are available only when `workflow.git.commitStrategy` is explicitly configured; they are not required for safety. In the diptych repository itself, implementation agents must never run `git add`, `git stage`, or `git commit`; the user reviews and commits manually. There is no `auto-push`, no `auto-merge`, no surprise branches.
 
 Three additional safety nets:
 
@@ -230,7 +232,7 @@ Three additional safety nets:
 2. **Drift detection.** Before the final planner review, the orchestrator computes a deterministic drift report comparing the actual diff to the Task Brief. Out-of-scope file edits, missing target files, orphan diffs, and missing observed evidence all show up. The planner reviewer sees this report alongside the diff so it cannot rubber-stamp a runaway agent.
 3. **Tiered approval.** Every implementer write goes through an `auto` / `sticky` / `confirm` gate per action class: `auto` proceeds silently for safe reads and in-scope writes; `sticky` prompts once per session and persists the grant for out-of-scope writes; `confirm` always requires a typed phrase for destructive, network, or package-mutation actions. Sticky grants persist in `.diptych/approvals.json` and are managed via `diptych approval list / clear`.
 
-For parallel work without stepping on yourself, use git worktrees:
+For isolated parallel work without stepping on yourself, use git worktrees:
 
 ```bash
 diptych start --worktree feature-a "add user auth"
@@ -240,13 +242,15 @@ diptych worktree list
 
 Each worktree gets its own `.diptych/` directory and is filesystem-isolated. See [docs/WORKTREES.md](./WORKTREES.md).
 
+Same-directory parallel writes are out of scope. A future implementer pool may choose the cheapest capable worker for each Task Brief, but it is still one implementer role running safely against one checkout unless worktree isolation is used.
+
 ---
 
 ## 10. What it doesn't do
 
 Explicit non-goals, so you don't go looking:
 
-- **Not a multi-agent orchestrator.** Two roles, one workflow. If you want N parallel Claude Code sessions, use Claude Squad or Composio's Agent Orchestrator.
+- **Not a swarm or generic multi-agent manager.** Two roles, one workflow. An implementer pool selects one capable worker per Task Brief; it does not fan out competing agents over the same checkout.
 - **Not Windows-supported in v1.** macOS and Linux only. The IPC server (`diptych attach` / `diptych ps`) and the snapshot path encoding need POSIX semantics. Windows support is planned but not v1.
 - **TypeScript/JavaScript validator pipeline only.** The `tsc → lint → test` gate assumes Node tooling. Python / Go / Rust support means swapping the validator backend; that is on the roadmap, not in v1.
 - **No tool-call format for implementers.** Small models (7B–27B) cannot reliably produce tool-call JSON. The implementer pipeline is `prompt → text → extract code → write file`. This is deliberate — see [docs/VISION.md §Strategic decisions](./VISION.md).
@@ -261,7 +265,7 @@ These features shipped in Phase 6 and are all active by default unless noted:
 - **Command palette (Ctrl+K)** — searchable overlay listing all 21 slash commands with descriptions. See [FEATURES.md §Command palette overlay](./FEATURES.md#command-palette-overlay-ctrlk).
 - **Rich plan editor** — lazygit-style inline editor for the Task Brief. Set `briefReview: rich` in config or press `e` from the simple review view. See [FEATURES.md §Plan editor screen](./FEATURES.md#plan-editor-screen-lazygit-style).
 - **Tiered approval gates** — `auto` / `sticky` / `confirm` per action class, composing with the document-level approval loop. See [FEATURES.md §Tiered approval gates](./FEATURES.md#tiered-approval-gates-auto--sticky--confirm).
-- **MCP resources server** — exposes sessions, specs, plans, tasks, and events to MCP-aware clients (Claude Code, Cursor). Start with `diptych mcp serve`. See [FEATURES.md §MCP resources server](./FEATURES.md#mcp-resources-server).
+- **MCP resources server** — exposes read-only session artifacts such as specs, plans, tasks, state, evidence, and drift reports to MCP-aware clients (Claude Code, Cursor). It has no tool calls or mutation API. Start with `diptych mcp serve`. See [FEATURES.md §MCP resources server](./FEATURES.md#mcp-resources-server).
 - **Parallel worktrees** — run multiple sessions in isolation with `diptych start --worktree <name>`. See [FEATURES.md §diptych start --worktree](./FEATURES.md#diptych-start---worktree-name) and [WORKTREES.md](./WORKTREES.md).
 - **Detached sessions** — background a long session with `diptych start --detach`, list with `diptych ps`, reattach with `diptych attach`. See [FEATURES.md §diptych start --detach](./FEATURES.md#diptych-start---detach).
 - **Event replay on attach** — reattaching reads `session.jsonl` to rebuild full TUI state; no LLM call needed. See [FEATURES.md §Event replay on attach](./FEATURES.md#event-replay-on-attach).

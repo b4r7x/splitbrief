@@ -786,7 +786,7 @@ diptych approval clear --scope always       # only persistent grants
 diptych mcp serve [options]
 ```
 
-Start an MCP (Model Context Protocol) HTTP server that exposes supported diptych session resources to MCP-aware clients (Claude Code, Cursor, etc.). Currently exposes a single subcommand: `serve`.
+Start an MCP (Model Context Protocol) HTTP server that exposes supported diptych session resources to MCP-aware clients (Claude Code, Cursor, etc.). This is a read-only resources surface: it supports resource discovery and resource reads only, and it does not expose MCP tools, prompts, mutation endpoints, shell access, or implementer execution. Currently exposes a single subcommand: `serve`.
 
 ### Usage
 
@@ -833,12 +833,14 @@ After binding, prints the URL, generated bearer token, listed sessions, and a re
 ### See also
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — MCP integration in the engine.
-- Anthropic MCP docs — protocol spec.
+- [Model Context Protocol specification](https://modelcontextprotocol.io/specification/draft) — protocol overview and safety guidance.
+- [MCP tools specification](https://modelcontextprotocol.io/specification/draft/server/tools) — tool surfaces are model-controlled and require explicit safety treatment; diptych intentionally does not expose one here.
 
 ### Behavior notes
 
 - The bearer token is regenerated every run via `generateToken()`. Keep it private; treat the output as a credential.
 - The server binds to `127.0.0.1` only — it is not accessible over the network without your own proxy.
+- `tools/list` is not a supported capability for this server. Tool execution stays inside the configured planner or implementer runner, where the user can review the runner's own tool UI and approval prompts.
 - `--port 0` is rejected (the validator requires `>= 1`); a free random port cannot be requested via this CLI.
 - MCP Streamable HTTP uses protocol version `2025-11-25`. Missing `MCP-Protocol-Version` request headers default to that version; unsupported versions return `400`.
 - `resources/list` always includes the sessions index and conditionally lists session resources that exist: `manifest.json` only when canonical `summary.json` and `state.json` are valid, plus `summary.json`, `state.json`, `spec.md`, `plan.md`, `tasks`, individual `tasks/<id>` blocks, `evidence.json`, and `drift-report.json`.
