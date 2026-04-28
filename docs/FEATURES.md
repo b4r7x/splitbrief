@@ -244,7 +244,7 @@ If the saved tasks fail brief-quality validation, the editor stays open with the
 
 ### Budget pause gate
 
-**What it does.** At 80% of `workflow.maxBudget` a warning event fires; at the configurable pause threshold (default 0.85) the task loop pauses and prompts the user to continue or abort; at 100% the workflow stops with `budget_exceeded`. Headless `--json` mode fails fast at the pause threshold instead of blocking.
+**What it does.** At 80% of `workflow.maxBudget` a warning event fires. At the configurable pause threshold (default 0.85), the task loop persists a `budget-paused` recovery issue and prompts with filtered actions. Below max budget the user can continue, pause, or abort. At 100%, the workflow persists `budget-exceeded`; ordinary continue is not offered.
 
 **How to use.**
 
@@ -254,11 +254,29 @@ workflow:
   budgetPauseThreshold: 0.85   # 0.0–1.0; default 0.85
 ```
 
-Events: `budget_warning` (80%), `budget_paused` (configured threshold), `budget_exceeded` (100%). Distinct events — UI must not collapse them.
+Events: `budget_warning` (80%), `budget_paused` (configured threshold), `budget_exceeded` (100%), followed by `recovery_prompted` when a persisted recovery decision is required. Headless `--json` mode emits `recovery_required` with available actions and exits non-zero instead of blocking.
 
 ---
 
 ## Safety and control
+
+### Recovery stops
+
+**What it does.** When diptych cannot safely continue, it writes a durable `pendingRecovery` issue to `state.json`, appends recovery events to `session.jsonl`, and shows one compact decision prompt. Triggers include context overflow before worker dispatch, retry exhaustion, dependency-blocked tasks, user-edit or approval-promotion conflicts, budget pause, and budget exceeded.
+
+**Actions.** Available actions are filtered per issue:
+
+| Action | Current behavior |
+|---|---|
+| `retry-same-worker` | Resets only the current task and reruns it in a fresh worker context. |
+| `continue` | Allowed only for budget pause below max budget or safe unrelated user edits; never for `budget-exceeded`. |
+| `skip-current-task` | Marks the task skipped, records evidence, and leaves dependents for normal blocked-dependency recovery. |
+| `pause-run` | Leaves the active session resumable with the issue intact. |
+| `abort-workflow` | Ends through the normal intentional shutdown path without staging or committing. |
+| `route-bigger-worker` | Typed/deferred: currently returns `route-bigger-not-ready` and preserves the pending issue. |
+| `planner-split-rebase` | Typed/deferred: currently returns `planner-proposal-required` and preserves the pending issue. |
+
+**Resume/headless.** `diptych resume` shows pending recovery before any planner or implementer call. Headless JSON runs emit `recovery_required` with reason, task/files, available actions, and recommendation, then exit non-zero.
 
 ### Tiered approval gates (auto / sticky / confirm)
 

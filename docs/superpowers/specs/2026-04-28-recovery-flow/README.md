@@ -1,7 +1,7 @@
 # Recovery Flow - 2026-04-28
 
-> **Status:** implementation specification only. No source code changes are included in this pack.
-> **Owned scope for this pack:** `docs/superpowers/specs/2026-04-28-recovery-flow/**`.
+> **Status:** v1 implemented as of 2026-04-29. This pack now records the shipped behavior, validation policy, and deferred execution paths.
+> **Owned scope for this pack:** source implementation plus `docs/superpowers/specs/2026-04-28-recovery-flow/**`.
 > **Product scope:** clear recovery decisions for failed, blocked, conflicted, context-overflowed, validation-failed, budget-paused, and budget-exceeded runs.
 
 ## Problem
@@ -40,10 +40,10 @@ Same-checkout source writes must be sequential. Parallel implementation is allow
 | Step | File | Purpose |
 |---|---|---|
 | 1 | [`spec.md`](./spec.md) | Product behavior, recovery states, UX copy shape, acceptance criteria. |
-| 2 | [`implementation-plan.md`](./implementation-plan.md) | Phased source plan for future implementation. |
+| 2 | [`implementation-plan.md`](./implementation-plan.md) | Phased source plan and implementation status. |
 | 3 | [`decisions.md`](./decisions.md) | Explicit tradeoffs and product boundary decisions. |
-| 4 | [`tasks.md`](./tasks.md) | Ordered future implementation checklist. |
-| 5 | [`verification.md`](./verification.md) | Future validation scenarios and commands. |
+| 4 | [`tasks.md`](./tasks.md) | Implementation checklist, shipped items, and deferred items. |
+| 5 | [`verification.md`](./verification.md) | Current validation scenarios and commands. |
 | 6 | [`agent-briefs/00-coordinator.md`](./agent-briefs/00-coordinator.md) | Coordinator prompt for a fresh AI context. |
 | 7 | [`agent-briefs/01-recovery-state.md`](./agent-briefs/01-recovery-state.md) | Source brief for schema and durable state. |
 | 8 | [`agent-briefs/02-issue-builders.md`](./agent-briefs/02-issue-builders.md) | Source brief for pure recovery issue builders. |
@@ -52,6 +52,8 @@ Same-checkout source writes must be sequential. Parallel implementation is allow
 | 11 | [`agent-briefs/05-tui-actions.md`](./agent-briefs/05-tui-actions.md) | Source brief for TUI prompts and user actions. |
 | 12 | [`agent-briefs/06-tests-and-validation.md`](./agent-briefs/06-tests-and-validation.md) | Source brief for test coverage, docs sync, and verification. |
 | 13 | [`execute-prompt.md`](./execute-prompt.md) | Copy/paste prompt for handing this pack to a fresh implementation context. |
+
+The agent briefs and execute prompt are historical implementation handoff files. For the current product truth, read `tasks.md` and `verification.md` first; they document the v1 deferred paths.
 
 ## Core Direction
 

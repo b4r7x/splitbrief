@@ -12,6 +12,13 @@ export type BudgetCheckResult =
   | { action: 'paused' }
   | { action: 'exceeded'; shouldStop: boolean };
 
+export type BudgetRecoveryBoundary = {
+  reason: 'budget-paused' | 'budget-exceeded';
+  currentCost: number;
+  maxBudget: number;
+  threshold?: number | undefined;
+};
+
 export type BudgetCheckOptions = {
   tokenUsage: TokenUsage;
   maxBudget: number;
@@ -86,8 +93,13 @@ function fmtBudgetRange(currentCost: number, maxBudget: number): string {
   return `${formatCost(currentCost)} of ${formatCost(maxBudget)}`;
 }
 
-export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{ stop: boolean; warningEmitted: boolean; pauseEmitted: boolean }> {
-  const { maxBudget, callbacks, bus, pauseEmitted } = opts;
+export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{
+  stop: boolean;
+  warningEmitted: boolean;
+  pauseEmitted: boolean;
+  recovery?: BudgetRecoveryBoundary | undefined;
+}> {
+  const { maxBudget, bus, pauseEmitted } = opts;
   let { warningEmitted } = opts;
   const effectivePauseThreshold = opts.pauseThreshold ?? BUDGET_PAUSE_THRESHOLD;
   const currentCost = getCurrentCost(opts);
@@ -110,33 +122,33 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{ stop:
 
   if (result.action === 'paused' && !pauseEmitted) {
     publishBudgetPaused(bus, 'implementing', currentCost, maxBudget, effectivePauseThreshold);
-
-    if (callbacks.onBudgetPaused) {
-      const response = await callbacks.onBudgetPaused(currentCost, maxBudget);
-      if (response === 'raise') {
-        // 'raise' is reserved for future budget-editing UX; treat as 'continue' for now
-        publishWarning(bus, 'implementing', "Budget 'raise' not yet implemented — continuing");
-        return { stop: false, warningEmitted: true, pauseEmitted: true };
-      }
-      const stop = response === 'abort';
-      return { stop, warningEmitted: true, pauseEmitted: true };
-    }
-
-    // No callback — default to abort (safe for unattended runs)
-    publishWarning(bus, 'implementing', `Budget ${Math.round(effectivePauseThreshold * 100)}% reached: ${fmtBudgetRange(currentCost, maxBudget)} limit — stopping workflow`);
-    return { stop: true, warningEmitted: true, pauseEmitted: true };
+    publishWarning(bus, 'implementing', `Budget ${Math.round(effectivePauseThreshold * 100)}% reached: ${fmtBudgetRange(currentCost, maxBudget)} limit — recovery decision required`);
+    return {
+      stop: true,
+      warningEmitted: true,
+      pauseEmitted: true,
+      recovery: {
+        reason: 'budget-paused',
+        currentCost,
+        maxBudget,
+        threshold: effectivePauseThreshold,
+      },
+    };
   }
 
   if (result.action === 'exceeded') {
     publishBudgetExceeded(bus, 'implementing', currentCost, maxBudget);
-
-    if (callbacks.onBudgetExceeded) {
-      const shouldContinue = await callbacks.onBudgetExceeded(currentCost, maxBudget);
-      return { stop: !shouldContinue, warningEmitted: true, pauseEmitted };
-    }
-
-    publishWarning(bus, 'implementing', `Budget exceeded: ${fmtBudgetRange(currentCost, maxBudget)} limit — stopping workflow`);
-    return { stop: true, warningEmitted: true, pauseEmitted };
+    publishWarning(bus, 'implementing', `Budget exceeded: ${fmtBudgetRange(currentCost, maxBudget)} limit — recovery decision required`);
+    return {
+      stop: true,
+      warningEmitted: true,
+      pauseEmitted,
+      recovery: {
+        reason: 'budget-exceeded',
+        currentCost,
+        maxBudget,
+      },
+    };
   }
 
   return { stop: false, warningEmitted, pauseEmitted };

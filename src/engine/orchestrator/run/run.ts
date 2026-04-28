@@ -48,7 +48,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
   };
 
-  let trackedState: WorkflowState | undefined;
+  let trackedState: WorkflowState | undefined = savedState;
   let currentTask: Pick<Task, 'file' | 'action'> | undefined;
   let result: Summary | undefined;
   let sessionStatus: Session['status'] = 'interrupted';
@@ -114,11 +114,27 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   if (!result) {
     if (cancelled) {
       const summary = buildSummary({ ...summaryBase, state: trackedState ?? createInitialState(feature) });
-      saveFinalSession({ projectDir, sessionId, feature, startTime, status: sessionStatus, summary });
+      saveFinalSession({
+        projectDir,
+        sessionId,
+        feature,
+        startTime,
+        status: sessionStatus,
+        summary,
+        preserveActive: trackedState?.pendingRecovery !== undefined,
+      });
       return summary;
     }
     throw error('workflow-no-summary', 'Unreachable: workflow did not produce a summary');
   }
-  saveFinalSession({ projectDir, sessionId, feature, startTime, status: sessionStatus, summary: result });
+  saveFinalSession({
+    projectDir,
+    sessionId,
+    feature,
+    startTime,
+    status: sessionStatus,
+    summary: result,
+    preserveActive: trackedState?.pendingRecovery !== undefined,
+  });
   return result;
 }

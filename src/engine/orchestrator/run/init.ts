@@ -78,16 +78,21 @@ export async function initializeWorkflow(
     bus.subscribe(createOtelSink({ provider: trace.getTracerProvider(), serviceName: config.otel.serviceName }));
   }
 
+  if (savedState) setTrackedState(savedState);
+  const hasPendingRecovery = savedState?.pendingRecovery !== undefined;
+
   // Stateless backends receive priorMessages instead of plannerSessionId.
   const initialSessionId = savedState?.plannerSessionId ?? null;
   const planner = opts._planner ?? createPlanner(config, initialSessionId);
-  if (savedState && !planner.capabilities.supportsSessionResume) {
+  if (savedState && !hasPendingRecovery && !planner.capabilities.supportsSessionResume) {
     await applyRebuiltContext({ projectDir, sessionId, callbacks, bus, config, resumeHolder, requireNonEmpty: true });
   }
-  const available = await planner.isAvailable();
-  if (!available) {
-    publishError(bus, 'idle', `Planner '${getRunnerDisplayName(config.planner)}' is not available. Make sure it's installed.`);
-    return { ok: false, summary: buildSummary({ ...summaryBase, state: createInitialState(feature) }) };
+  if (!hasPendingRecovery) {
+    const available = await planner.isAvailable();
+    if (!available) {
+      publishError(bus, 'idle', `Planner '${getRunnerDisplayName(config.planner)}' is not available. Make sure it's installed.`);
+      return { ok: false, summary: buildSummary({ ...summaryBase, state: savedState ?? createInitialState(feature) }) };
+    }
   }
 
   const implementer = createImplementer(config);

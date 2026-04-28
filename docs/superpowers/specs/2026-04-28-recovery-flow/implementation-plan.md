@@ -1,7 +1,7 @@
 # Implementation Plan: Recovery Flow
 
 **Date:** 2026-04-28
-**Status:** Spec only. Do not implement from this pack in the current docs-only task.
+**Status:** v1 implemented as of 2026-04-29. This plan now documents shipped behavior plus deferred route-bigger and planner split/rebase execution.
 **Spec:** [`spec.md`](./spec.md)
 
 ## Summary
@@ -22,9 +22,9 @@ This is not a replacement for retry, escalation, budget checks, validation, appr
 - User-edit conflict model in `src/engine/orchestrator/user-edit-conflicts.ts`.
 - TUI callbacks in `src/features/workflow/hooks/use-workflow-runner.ts`.
 
-## Expected Source Touch Areas
+## Source Touch Areas
 
-Future implementation should expect to touch these modules:
+The v1 implementation touches these modules:
 
 ```text
 src/core/schemas/
@@ -124,9 +124,9 @@ Verification:
 
 Implement deterministic action handlers:
 
-- `retry-same-worker`: rerun the current task in a fresh context with same selected profile.
-- `route-bigger-worker`: select the cheapest larger capable profile and rerun current task.
-- `planner-split-rebase`: call planner at a safe point, parse and quality-gate updated Task Briefs, then produce a proposed Task Brief diff or summary.
+- `retry-same-worker`: rerun only the current task in a fresh worker context. With unchanged routing/config this uses the same selected profile; strict profile pinning across config changes is not part of v1.
+- `route-bigger-worker`: deferred in v1. It is typed and can be offered, but selecting it returns `route-bigger-not-ready` and preserves `pendingRecovery`.
+- `planner-split-rebase`: deferred in v1. It is typed and labelled as proposal-gated, but proposal generation, parse/quality gates, diff/summary review, approve/edit/reject, and resume-after-proposal are not implemented yet.
 - `continue`: clear only a safe budget pause below max or unrelated-edit issue and continue.
 - `skip-current-task`: mark skipped and record evidence.
 - `pause-run`: persist issue and stop without clearing active session.

@@ -2,6 +2,8 @@ import type { WorkflowOpts } from '../core/types/config-options.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import { loadConfig } from '../core/config/load/load.js';
 import { applyCLIOverrides } from '../core/config/runtime/overrides.js';
+import { loadState } from '../core/state/persistence.js';
+import { readActive } from '../core/sessions/lifecycle.js';
 import { warnStderr } from '../lib/warn.js';
 import { runWorkflow } from '../engine/orchestrator/run/run.js';
 import { cliError } from './errors.js';
@@ -12,6 +14,26 @@ function buildNoopSinks() {
     setAbortHandler: () => undefined,
     setQueueHandler: () => undefined,
   };
+}
+
+function emitRecoveryAndFailIfPending(projectDir: string, sessionId: string | undefined): void {
+  const recoverySessionId = sessionId ?? readActive(projectDir);
+  if (!recoverySessionId) return;
+  const state = loadState(projectDir, recoverySessionId);
+  const issue = state?.pendingRecovery;
+  if (!issue) return;
+  process.stdout.write(JSON.stringify({
+    type: 'recovery_required',
+    sessionId: recoverySessionId,
+    reason: issue.reason,
+    message: issue.message,
+    taskId: issue.taskId,
+    files: issue.files,
+    affectedTaskIds: issue.affectedTaskIds,
+    availableActions: issue.availableActions,
+    recommendedAction: issue.recommendedAction,
+  }) + '\n');
+  throw cliError(`Recovery required: ${issue.message}`, 1);
 }
 
 export async function runHeadless(
@@ -70,4 +92,6 @@ export async function runHeadless(
       onComplete: () => undefined,
     },
   });
+
+  emitRecoveryAndFailIfPending(projectDir, sessionId);
 }

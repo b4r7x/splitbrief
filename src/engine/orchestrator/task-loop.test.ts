@@ -4,18 +4,18 @@ import { join } from 'node:path';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Config } from '../../core/schemas/config.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
-import { getSkippedTaskIds } from '../../core/state/selectors.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeCallbacks, makePlanner, makeImplementer, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
+import { loadState } from '../../core/state/persistence.js';
 import { runTaskLoop } from './task-loop.js';
 import type { WorkflowSinks } from './types.js';
 import { createValidator } from './validation.js';
-import { readEvidenceLedger } from './evidence.js';
 import { readRunSnapshotLedger } from '../snapshots/run.js';
+import { buildContextOverflowRecoveryIssue } from './recovery.js';
 
 const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' };
 
@@ -42,6 +42,14 @@ function setupProject(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
+function setupSessionOnly(): { projectDir: string; sessionId: string } {
+  const projectDir = createTempDir('task-loop-test');
+  dirs.push(projectDir);
+  const sessionId = 'sess-loop';
+  ensureSessionDir(projectDir, sessionId);
+  return { projectDir, sessionId };
+}
+
 function makeImplState(tasks: ReturnType<typeof makeTask>[]): WorkflowState {
   let state = createInitialState('feat');
   state = transition(state, { type: 'START', feature: 'feat' });
@@ -57,7 +65,7 @@ function makeImplState(tasks: ReturnType<typeof makeTask>[]): WorkflowState {
 const defaultWorkflow = { commitStrategy: 'none' as const, maxRetries: 2 };
 
 describe('runTaskLoop', () => {
-  it('task with failed dependency is skipped and emits task-skipped event', async () => {
+  it('task with failed dependency creates dependency-blocked recovery instead of auto-skipping', async () => {
     const { projectDir, sessionId } = setupProject();
     const t1 = makeTask({ id: 'T001', status: 'failed' });
     const t2 = makeTask({ id: 'T002', dependsOn: ['T001'] });
@@ -89,13 +97,19 @@ describe('runTaskLoop', () => {
       setCurrentTask: vi.fn(),
     });
 
-    const skipEvent = events.find((e) => e.type === 'task_skipped');
-    expect(skipEvent).toBeDefined();
-    expect(skipEvent).toMatchObject({ taskId: 'T002' });
-    expect(getSkippedTaskIds(result.state)).toContain('T002');
-
-    const ledger = readEvidenceLedger(projectDir, sessionId);
-    expect(ledger?.tasks.find((t) => t.id === t2.id)?.observedEvidence).toContain('skipped: dependency failed: T001');
+    expect(events.find((e) => e.type === 'task_skipped')).toBeUndefined();
+    expect(result.state.tasks.find((t) => t.id === 'T002')?.status).toBe('pending');
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'dependency-blocked',
+      taskId: 'T002',
+      affectedTaskIds: ['T001', 'T002'],
+      availableActions: ['planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
+    });
+    expect(events.find((e) => e.type === 'recovery_prompted')).toMatchObject({
+      type: 'recovery_prompted',
+      reason: 'dependency-blocked',
+      taskId: 'T002',
+    });
   });
 
   it('happy path: implement → validate pass → commit when commit strategy is per-task', async () => {
@@ -634,8 +648,17 @@ describe('runTaskLoop', () => {
 
     expect(implementer.implement).not.toHaveBeenCalled();
     expect(createProfileImplementer).not.toHaveBeenCalled();
-    expect(result.state.phase).toBe('idle');
+    expect(result.state.phase).toBe('implementing');
     expect(result.state.currentTaskIndex).toBe(0);
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'context-overflow',
+      taskId: 'T001',
+      availableActions: ['planner-split-rebase', 'pause-run', 'abort-workflow'],
+    });
+    expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
+      reason: 'context-overflow',
+      taskId: 'T001',
+    });
     expect(events.find((event) => event.type === 'error')).toMatchObject({
       type: 'error',
       message: expect.stringContaining('Ask the planner to split the task'),
@@ -825,7 +848,16 @@ describe('runTaskLoop', () => {
     });
 
     expect(implementer.implement).toHaveBeenCalledTimes(1);
-    expect(result.state.phase).toBe('idle');
+    expect(result.state.phase).toBe('implementing');
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'user-edit-conflict',
+      taskId: 'T001',
+      affectedTaskIds: ['T001', 'T002'],
+    });
+    expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
+      reason: 'user-edit-conflict',
+      taskId: 'T001',
+    });
     expect(events.find((event) => event.type === 'paused_external_changes')).toMatchObject({
       type: 'paused_external_changes',
       selectedAction: 'regenerate-rebase',
@@ -835,5 +867,128 @@ describe('runTaskLoop', () => {
       type: 'warning',
       message: expect.stringContaining('regenerate/rebase'),
     });
+  });
+
+  it('stops immediately on resume when pending recovery already exists', async () => {
+    const { projectDir, sessionId } = setupSessionOnly();
+    const task = makeTask({ id: 'T001' });
+    const state = {
+      ...makeImplState([task]),
+      pendingRecovery: buildContextOverflowRecoveryIssue({
+        task,
+        phase: 'implementing',
+        createdAt: '2026-04-28T12:00:00.000Z',
+      }),
+    };
+    const implementer = makeImplementer({ implement: vi.fn() });
+
+    const result = await runTaskLoop({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks: makeCallbacks().callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: TEST_VALIDATOR,
+        bus: makeBusRecorder().bus,
+      },
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.status).toBe('stopped');
+    expect(implementer.implement).not.toHaveBeenCalled();
+    expect(result.state.pendingRecovery).toEqual(state.pendingRecovery);
+  });
+
+  it('persists budget pause recovery after a task boundary', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = makeImplState([task]);
+    const implementer = makeImplementer({
+      implement: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'code',
+        usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+      }),
+    });
+
+    const result = await runTaskLoop({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({
+          implementer: { provider: 'deepseek', model: 'deepseek-chat' },
+          workflow: { ...defaultWorkflow, maxBudget: 1.5, budgetPauseThreshold: 0.3 },
+        }),
+        callbacks: makeCallbacks().callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: TEST_VALIDATOR,
+        bus: makeBusRecorder().bus,
+      },
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.status).toBe('stopped');
+    expect(result.state.tasks[0]?.status).toBe('done');
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'budget-paused',
+      availableActions: ['continue', 'pause-run', 'abort-workflow'],
+    });
+    expect(loadState(projectDir, sessionId)?.pendingRecovery?.reason).toBe('budget-paused');
+  });
+
+  it('persists budget exceeded recovery without ordinary continue', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = makeImplState([task]);
+    const implementer = makeImplementer({
+      implement: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'code',
+        usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+      }),
+    });
+
+    const result = await runTaskLoop({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({
+          implementer: { provider: 'deepseek', model: 'deepseek-chat' },
+          workflow: { ...defaultWorkflow, maxBudget: 0.1 },
+        }),
+        callbacks: makeCallbacks().callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: TEST_VALIDATOR,
+        bus: makeBusRecorder().bus,
+      },
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.status).toBe('stopped');
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'budget-exceeded',
+      availableActions: ['pause-run', 'abort-workflow'],
+    });
+    expect(result.state.pendingRecovery?.availableActions).not.toContain('continue');
+    expect(loadState(projectDir, sessionId)?.pendingRecovery?.reason).toBe('budget-exceeded');
   });
 });

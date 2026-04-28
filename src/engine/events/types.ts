@@ -1,5 +1,5 @@
 import type { TaskId } from '../../core/schemas/task.js';
-import type { ApproveLevel, Phase, TaskCompletionMethod, WorkflowMode } from '../../core/schemas/enums.js';
+import type { ApproveLevel, Phase, RecoveryAction, RecoveryReason, TaskCompletionMethod, WorkflowMode } from '../../core/schemas/enums.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { ActionClass } from '../../core/schemas/approval-store.js';
@@ -17,6 +17,11 @@ export type EngineEvent =
   | { type: 'workflow_cancelled'; ts: number; phase: Phase }
   | { type: 'workflow_config'; ts: number; phase: Phase; mode: WorkflowMode; plannerTool: string; plannerModel?: string; implementerTool: string; implementerModel?: string }
   | { type: 'paused_external_changes'; ts: number; phase: Phase; conflict?: UserEditConflict; selectedAction?: UserEditConflictAction }
+  // Recovery flow
+  | { type: 'recovery_prompted'; ts: number; phase: Phase; issueId: string; reason: RecoveryReason; taskId?: TaskId; files: string[]; affectedTaskIds: TaskId[]; availableActions: RecoveryAction[]; recommendedAction: RecoveryAction }
+  | { type: 'recovery_action_selected'; ts: number; phase: Phase; issueId: string; reason: RecoveryReason; action: RecoveryAction }
+  | { type: 'recovery_action_failed'; ts: number; phase: Phase; issueId: string; reason: RecoveryReason; action: RecoveryAction; message: string }
+  | { type: 'recovery_resolved'; ts: number; phase: Phase; issueId: string; reason: RecoveryReason; action: RecoveryAction; outcome: 'continued' | 'retry-current-task' | 'skipped-current-task' | 'aborted'; implementerProfile?: string }
   // Planner stream
   | { type: 'planner_status'; ts: number; phase: Phase; status: 'running' | 'done'; tool?: string; model?: string; duration?: number; summary?: string }
   | { type: 'planner_text'; ts: number; phase: Phase; text: string }

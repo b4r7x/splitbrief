@@ -1,6 +1,7 @@
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TaskId } from '../../core/schemas/task.js';
-import type { Phase, TaskCompletionMethod, WorkflowMode } from '../../core/schemas/enums.js';
+import type { Phase, RecoveryAction, TaskCompletionMethod, WorkflowMode } from '../../core/schemas/enums.js';
+import type { RecoveryIssue } from '../../core/schemas/recovery.js';
 import type { ValidationStages } from '../events/types.js';
 import type { ValidationResult } from '../../core/types/summary.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
@@ -163,6 +164,72 @@ export function publishUserEditConflict(
     phase,
     conflict,
     ...(selectedAction !== undefined && { selectedAction }),
+  });
+}
+
+export function publishRecoveryPrompted(bus: EventBus, issue: RecoveryIssue): void {
+  bus.publish({
+    type: 'recovery_prompted',
+    ts: Date.now(),
+    phase: issue.phase,
+    issueId: issue.id,
+    reason: issue.reason,
+    ...(issue.taskId !== undefined && { taskId: issue.taskId }),
+    files: issue.files,
+    affectedTaskIds: issue.affectedTaskIds,
+    availableActions: issue.availableActions,
+    recommendedAction: issue.recommendedAction,
+  });
+}
+
+export function publishRecoveryActionSelected(
+  bus: EventBus,
+  issue: RecoveryIssue,
+  action: RecoveryAction,
+): void {
+  bus.publish({
+    type: 'recovery_action_selected',
+    ts: Date.now(),
+    phase: issue.phase,
+    issueId: issue.id,
+    reason: issue.reason,
+    action,
+  });
+}
+
+export function publishRecoveryActionFailed(
+  bus: EventBus,
+  issue: RecoveryIssue,
+  action: RecoveryAction,
+  message: string,
+): void {
+  bus.publish({
+    type: 'recovery_action_failed',
+    ts: Date.now(),
+    phase: issue.phase,
+    issueId: issue.id,
+    reason: issue.reason,
+    action,
+    message,
+  });
+}
+
+export function publishRecoveryResolved(
+  bus: EventBus,
+  issue: RecoveryIssue,
+  action: RecoveryAction,
+  outcome: 'continued' | 'retry-current-task' | 'skipped-current-task' | 'aborted',
+  implementerProfile?: string | undefined,
+): void {
+  bus.publish({
+    type: 'recovery_resolved',
+    ts: Date.now(),
+    phase: issue.phase,
+    issueId: issue.id,
+    reason: issue.reason,
+    action,
+    outcome,
+    ...(implementerProfile !== undefined && { implementerProfile }),
   });
 }
 

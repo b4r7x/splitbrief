@@ -12,33 +12,30 @@ import { labelError } from '../../utils/format-errors.js';
 import { getFailedTaskIds, getSkippedTaskIds, getEscalatedTaskIds } from '../../core/state/selectors.js';
 
 import type { WorkflowContext } from './types.js';
-import { publishError, publishUserEditConflict, publishWarning, publishTaskSkipped } from './events.js';
+import { publishError, publishRecoveryPrompted, publishUserEditConflict, publishWarning } from './events.js';
 import { runSingleTask } from './task-step.js';
-import { emitTaskTokens } from './tokens.js';
 import { refreshAndPersistCode, transitionAndSave } from './state-ops.js';
 import { enforceBudget } from './budget.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../../core/config/accessors/runner-config.js';
 import { resolveImplementerProfiles, type ResolvedImplementerProfile } from '../../core/config/accessors/implementer-profiles.js';
 import { routeTaskToImplementerProfile, type RoutingDecision } from './context-routing.js';
 import { createImplementer } from '../runners/factory.js';
-import { DEFAULT_WORKFLOW_MODE } from '../../core/schemas/config.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
-import {
-  createEvidenceLedger,
-  readEvidenceLedger,
-  recordSkippedTaskEvidence,
-  writeEvidenceLedger,
-} from './evidence.js';
 import { createSnapshot } from '../snapshots/store.js';
 import { recordRunSnapshot } from '../snapshots/run.js';
-import { hashTaskBrief } from '../../core/brief-hash.js';
 import {
   classifyUserEditConflict,
   normalizeUserEditConflictAction,
-  type UserEditConflictAction,
 } from './user-edit-conflicts.js';
 import type { Implementer } from '../implementers/types.js';
 import { matchesActionPattern } from './action-classifier.js';
+import {
+  buildBudgetExceededRecoveryIssue,
+  buildBudgetPausedRecoveryIssue,
+  buildContextOverflowRecoveryIssue,
+  buildDependencyBlockedRecoveryIssue,
+  buildUserEditConflictRecoveryIssue,
+} from './recovery.js';
 
 async function maybeAutoSnapshot(opts: {
   projectDir: string;
@@ -140,6 +137,7 @@ async function inferTaskAcceptedChangedFiles(projectDir: string, task: Task): Pr
 
 async function checkUserEditConflicts(opts: {
   projectDir: string;
+  sessionId: string;
   callbacks: OrchestratorCallbacks;
   bus: EventBus;
   state: WorkflowState;
@@ -147,11 +145,13 @@ async function checkUserEditConflicts(opts: {
   taskIndex: number;
   baseline: ChangedFilesBaseline;
   acknowledgedUserEditFiles: Set<string>;
-}): Promise<UserEditConflictAction | null> {
-  const { projectDir, callbacks, bus, state, task, taskIndex, baseline, acknowledgedUserEditFiles } = opts;
+  setTrackedState: (s: WorkflowState) => void;
+}): Promise<{ state: WorkflowState; stopped: boolean }> {
+  const { projectDir, sessionId, callbacks, bus, task, taskIndex, baseline, acknowledgedUserEditFiles, setTrackedState } = opts;
+  let { state } = opts;
   try {
     const changedFiles = await changedFilesSinceBaseline(projectDir, baseline);
-    if (changedFiles.length === 0) return null;
+    if (changedFiles.length === 0) return { state, stopped: false };
 
     const conflict = classifyUserEditConflict({
       files: changedFiles,
@@ -165,16 +165,18 @@ async function checkUserEditConflicts(opts: {
         acknowledgedUserEditFiles.add(fileConflict.file);
       }
       publishUserEditConflict(bus, state.phase, conflict, 'continue-unrelated');
-      return null;
+      return { state, stopped: false };
     }
 
-    const selectedAction = normalizeUserEditConflictAction(
-      conflict,
-      callbacks.onUserEditConflict
-        ? await callbacks.onUserEditConflict(conflict)
-        : conflict.safeToContinue ? 'continue-unrelated' : 'pause',
-      conflict.safeToContinue ? 'continue-unrelated' : 'pause',
-    );
+    const selectedAction = conflict.safeToContinue
+      ? normalizeUserEditConflictAction(
+          conflict,
+          callbacks.onUserEditConflict
+            ? await callbacks.onUserEditConflict(conflict)
+            : 'continue-unrelated',
+          'continue-unrelated',
+        )
+      : 'pause';
     publishUserEditConflict(bus, state.phase, conflict, selectedAction);
 
     if (selectedAction === 'continue-unrelated' && conflict.safeToContinue) {
@@ -183,11 +185,7 @@ async function checkUserEditConflicts(opts: {
           acknowledgedUserEditFiles.add(fileConflict.file);
         }
       }
-      return null;
-    }
-
-    if (selectedAction === 'skip-current-task' || selectedAction === 'abort-workflow') {
-      return selectedAction;
+      return { state, stopped: false };
     }
 
     if (selectedAction === 'regenerate-rebase') {
@@ -196,52 +194,39 @@ async function checkUserEditConflicts(opts: {
         state.phase,
         'User edit conflict needs regenerate/rebase; workflow paused so the plan or task can be revised against the current files.',
       );
-      return selectedAction;
     }
+
+    const issue = buildUserEditConflictRecoveryIssue({
+      conflict,
+      currentTask: task,
+      phase: state.phase,
+      createdAt: new Date().toISOString(),
+    });
+    state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });
+    publishRecoveryPrompted(bus, issue);
+    setTrackedState(state);
+    return { state, stopped: true };
   } catch (err) {
     publishWarning(bus, state.phase, labelError('Failed to check user edit conflicts', err));
   }
-  return 'pause';
-}
-
-type HandleSkippedTaskOptions = {
-  task: Task;
-  state: WorkflowState;
-  projectDir: string;
-  sessionId: string;
-  config: WorkflowContext['config'];
-  bus: EventBus;
-  taskBreakdowns: TaskTokenUsage[];
-  reason?: string;
-};
-
-function handleSkippedTask(opts: HandleSkippedTaskOptions): WorkflowState {
-  const { task, projectDir, sessionId, bus, taskBreakdowns } = opts;
-  const blockedBy = new Set<string>([
-    ...getFailedTaskIds(opts.state),
-    ...getSkippedTaskIds(opts.state),
-  ]);
-  const skipReason = opts.reason ?? `dependency failed: ${task.dependsOn.filter((d) => blockedBy.has(d)).join(', ')}`;
-  const state = transitionAndSave(projectDir, sessionId, opts.state, { type: 'SKIP_TASK', taskId: task.id });
-  publishTaskSkipped(bus, state.phase, { taskId: task.id, title: task.title, reason: skipReason });
-  try {
-    const briefHash = hashTaskBrief(state.tasks);
-    const ledger = readEvidenceLedger(projectDir, sessionId) ?? createEvidenceLedger({
-      sessionId,
-      feature: state.feature,
-      mode: opts.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
-      tasks: state.tasks,
-      briefHash,
-    });
-    const updated = recordSkippedTaskEvidence({ ledger, task, reason: skipReason, briefHash });
-    writeEvidenceLedger(projectDir, sessionId, updated);
-  } catch (err) {
-    publishWarning(bus, state.phase, labelError('failed to persist evidence ledger', err));
-  }
-  const usage: TaskTokenUsage = { taskId: task.id, taskTitle: task.title, method: 'skipped', implementerTokens: 0, escalationTokens: 0, retryCount: 0 };
-  taskBreakdowns.push(usage);
-  emitTaskTokens(bus, state, task.id, usage);
-  return state;
+  const issue = buildUserEditConflictRecoveryIssue({
+    conflict: {
+      kind: 'current-task-conflict',
+      files: [],
+      affectedTaskIds: [task.id],
+      currentTaskId: task.id,
+      fileConflicts: [],
+      safeToContinue: false,
+      availableActions: ['regenerate-rebase', 'pause', 'skip-current-task', 'abort-workflow'],
+    },
+    currentTask: task,
+    phase: state.phase,
+    createdAt: new Date().toISOString(),
+  });
+  state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });
+  publishRecoveryPrompted(bus, issue);
+  setTrackedState(state);
+  return { state, stopped: true };
 }
 
 type RunTaskLoopOptions = {
@@ -301,6 +286,9 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
   const singleImplementerMode = config.implementerProfiles === undefined;
   let budgetWarningEmitted = false;
   let budgetPauseEmitted = false;
+  if (state.pendingRecovery) {
+    return { state, taskBreakdowns, status: 'stopped' };
+  }
   let changedFilesBaseline = await captureChangedFilesBaseline(projectDir);
   const acknowledgedUserEditFiles = new Set<string>();
 
@@ -312,13 +300,29 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     const task = state.tasks[i];
     if (!task) continue;
 
-    if (hasDependencyFailed(task, getFailedTaskIds(state), getSkippedTaskIds(state))) {
-      state = handleSkippedTask({ task, state, projectDir, sessionId, config, bus: wctx.bus, taskBreakdowns });
-      continue;
+    const failedTaskIds = getFailedTaskIds(state);
+    const skippedTaskIds = getSkippedTaskIds(state);
+    if (hasDependencyFailed(task, failedTaskIds, skippedTaskIds)) {
+      const blockedByTaskIds = task.dependsOn.filter((id) =>
+        failedTaskIds.includes(id) || skippedTaskIds.includes(id)
+      );
+      const blockedByTasks = state.tasks.filter((candidate) => blockedByTaskIds.includes(candidate.id));
+      const issue = buildDependencyBlockedRecoveryIssue({
+        task,
+        blockedByTaskIds,
+        blockedByTasks,
+        phase: state.phase,
+        createdAt: new Date().toISOString(),
+      });
+      state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });
+      publishRecoveryPrompted(wctx.bus, issue);
+      setTrackedState(state);
+      return { state, taskBreakdowns, status: 'stopped' };
     }
 
     const conflictAction = await checkUserEditConflicts({
       projectDir,
+      sessionId,
       callbacks,
       bus: wctx.bus,
       state,
@@ -326,14 +330,11 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       taskIndex: i,
       baseline: changedFilesBaseline,
       acknowledgedUserEditFiles,
+      setTrackedState,
     });
-    if (conflictAction === 'skip-current-task') {
-      state = handleSkippedTask({ task, state, projectDir, sessionId, config, bus: wctx.bus, taskBreakdowns, reason: 'skipped due to user edit conflict' });
-      continue;
-    }
-    if (conflictAction) {
-      const cancelled = transitionAndSave(projectDir, sessionId, state, { type: 'CANCEL' });
-      return { state: cancelled, taskBreakdowns, status: 'stopped' };
+    state = conflictAction.state;
+    if (conflictAction.stopped) {
+      return { state, taskBreakdowns, status: 'stopped' };
     }
 
     let refreshedTask = task;
@@ -350,8 +351,16 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     if (!selectedProfile) {
       const message = routingBlockMessage(routingDecision);
       publishError(wctx.bus, state.phase, message);
-      const cancelled = transitionAndSave(projectDir, sessionId, state, { type: 'CANCEL' });
-      return { state: cancelled, taskBreakdowns, status: 'stopped' };
+      const issue = buildContextOverflowRecoveryIssue({
+        task: refreshedTask,
+        phase: state.phase,
+        routingDecision,
+        createdAt: new Date().toISOString(),
+      });
+      state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });
+      publishRecoveryPrompted(wctx.bus, issue);
+      setTrackedState(state);
+      return { state, taskBreakdowns, status: 'stopped' };
     }
     const selectedTaskConfig = taskConfigForProfile(config, selectedProfile);
 
@@ -422,6 +431,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
 
     const postTaskConflictAction = await checkUserEditConflicts({
       projectDir,
+      sessionId,
       callbacks,
       bus: wctx.bus,
       state,
@@ -429,11 +439,12 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       taskIndex: i,
       baseline: changedFilesBaseline,
       acknowledgedUserEditFiles,
+      setTrackedState,
     });
-    if (postTaskConflictAction) {
+    state = postTaskConflictAction.state;
+    if (postTaskConflictAction.stopped) {
       setCurrentTask(undefined);
-      const cancelled = transitionAndSave(projectDir, sessionId, state, { type: 'CANCEL' });
-      return { state: cancelled, taskBreakdowns, status: 'stopped' };
+      return { state, taskBreakdowns, status: 'stopped' };
     }
     if (acknowledgedUserEditFiles.size > 0) {
       changedFilesBaseline = await refreshChangedFilesBaseline({
@@ -483,8 +494,32 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       budgetPauseEmitted = budgetResult.pauseEmitted;
       if (budgetResult.stop) {
         setCurrentTask(undefined);
-        const cancelled = transitionAndSave(projectDir, sessionId, state, { type: 'CANCEL' });
-        return { state: cancelled, taskBreakdowns, status: 'stopped' };
+        if (budgetResult.recovery) {
+          const nextTask = state.tasks[state.currentTaskIndex];
+          const blockedStep = nextTask ? `before ${nextTask.id}` : 'before final review';
+          const issue = budgetResult.recovery.reason === 'budget-paused'
+            ? buildBudgetPausedRecoveryIssue({
+                currentCost: budgetResult.recovery.currentCost,
+                maxBudget: budgetResult.recovery.maxBudget,
+                phase: state.phase,
+                threshold: budgetResult.recovery.threshold,
+                blockedStep,
+                nextTask,
+                createdAt: new Date().toISOString(),
+              })
+            : buildBudgetExceededRecoveryIssue({
+                currentCost: budgetResult.recovery.currentCost,
+                maxBudget: budgetResult.recovery.maxBudget,
+                phase: state.phase,
+                blockedStep,
+                nextTask,
+                createdAt: new Date().toISOString(),
+              });
+          state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });
+          publishRecoveryPrompted(wctx.bus, issue);
+          setTrackedState(state);
+        }
+        return { state, taskBreakdowns, status: 'stopped' };
       }
     }
   }

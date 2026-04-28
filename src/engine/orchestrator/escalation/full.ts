@@ -1,9 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { discardTaskChanges } from '../../../lib/git.js';
 import { createBusTextHandler, publishWarning, publishEscalate, publishEvent } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
-import { warnOnFailure } from '../signals.js';
 import { runRetryStep, type EscalationContext, type RetryResult } from './step.js';
 
 export async function runTier2Full(
@@ -33,10 +31,6 @@ export async function runTier2Full(
     return { state: outcome.state, result: outcome.result };
   }
 
-  state = transitionAndSave(ctx.projectDir, ctx.sessionId, outcome.state, { type: 'FULL_FAIL' });
-  publishEvent(ctx.bus, { type: 'task_full_fail', ts: Date.now(), phase: state.phase, taskId: outcome.task.id });
-  await warnOnFailure(ctx.bus, state.phase, `discard changes for ${outcome.task.file}`, () =>
-    discardTaskChanges(ctx.projectDir, outcome.task.file, outcome.task.action),
-  );
-  return { state, result: { completed: false, method: 'failed', attempts } };
+  publishEvent(ctx.bus, { type: 'task_full_fail', ts: Date.now(), phase: outcome.state.phase, taskId: outcome.task.id });
+  return { state: outcome.state, result: { completed: false, method: 'failed', attempts } };
 }

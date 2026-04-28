@@ -319,15 +319,16 @@ describe('enforceBudget', () => {
 
     expect(result.stop).toBe(true);
     expect(result.warningEmitted).toBe(true);
+    expect(result.recovery?.reason).toBe('budget-exceeded');
     expect(events.some(e => e.type === 'budget_exceeded')).toBe(true);
   });
 
-  it('asks onBudgetExceeded callback when provided and continues if true', async () => {
+  it('does not continue past budget exceeded even when legacy callback would allow it', async () => {
     const budgetPromptArgs: Array<{ current: number; max: number }> = [];
-    const onBudgetExceeded = async (current: number, max: number) => {
+    const onBudgetExceeded = vi.fn().mockImplementation(async (current: number, max: number) => {
       budgetPromptArgs.push({ current, max });
       return true;
-    };
+    });
     const callbacks = makeCallbacks({ onBudgetExceeded });
     const { bus } = makeBusRecorder();
     const usage: TokenUsage = {
@@ -353,20 +354,21 @@ describe('enforceBudget', () => {
       pauseEmitted: false,
     });
 
-    // Observable: the prompt was delivered to the user callback with the
-    // realised cost/budget, and the user's "continue" answer propagated.
-    expect(budgetPromptArgs).toHaveLength(1);
-    expect(budgetPromptArgs[0]?.current).toBeGreaterThan(budget);
-    expect(budgetPromptArgs[0]?.max).toBe(budget);
-    expect(result.stop).toBe(false);
+    expect(onBudgetExceeded).not.toHaveBeenCalled();
+    expect(budgetPromptArgs).toHaveLength(0);
+    expect(result.stop).toBe(true);
+    expect(result.recovery).toMatchObject({
+      reason: 'budget-exceeded',
+      maxBudget: budget,
+    });
   });
 
-  it('stops when onBudgetExceeded callback returns false', async () => {
+  it('stops with budget exceeded recovery when legacy callback would abort', async () => {
     const budgetPromptArgs: Array<{ current: number; max: number }> = [];
-    const onBudgetExceeded = async (current: number, max: number) => {
+    const onBudgetExceeded = vi.fn().mockImplementation(async (current: number, max: number) => {
       budgetPromptArgs.push({ current, max });
       return false;
-    };
+    });
     const callbacks = makeCallbacks({ onBudgetExceeded });
     const { bus } = makeBusRecorder();
     const usage: TokenUsage = {
@@ -392,8 +394,10 @@ describe('enforceBudget', () => {
       pauseEmitted: false,
     });
 
-    expect(budgetPromptArgs).toHaveLength(1);
+    expect(onBudgetExceeded).not.toHaveBeenCalled();
+    expect(budgetPromptArgs).toHaveLength(0);
     expect(result.stop).toBe(true);
+    expect(result.recovery?.reason).toBe('budget-exceeded');
   });
 
   it('stops workflow when paused and no onBudgetPaused callback', async () => {
@@ -424,11 +428,12 @@ describe('enforceBudget', () => {
 
     expect(result.stop).toBe(true);
     expect(result.pauseEmitted).toBe(true);
+    expect(result.recovery?.reason).toBe('budget-paused');
     expect(events.some(e => e.type === 'budget_paused')).toBe(true);
   });
 
-  it('does not stop when paused and onBudgetPaused returns continue', async () => {
-    const onBudgetPaused = async () => 'continue' as const;
+  it('stops with budget pause recovery instead of invoking legacy continue callback', async () => {
+    const onBudgetPaused = vi.fn().mockResolvedValue('continue' as const);
     const callbacks = makeCallbacks({ onBudgetPaused });
     const { bus, events } = makeBusRecorder();
     const usage: TokenUsage = {
@@ -454,13 +459,15 @@ describe('enforceBudget', () => {
       pauseEmitted: false,
     });
 
-    expect(result.stop).toBe(false);
+    expect(onBudgetPaused).not.toHaveBeenCalled();
+    expect(result.stop).toBe(true);
     expect(result.pauseEmitted).toBe(true);
+    expect(result.recovery).toMatchObject({ reason: 'budget-paused', threshold: 0.85 });
     expect(events.some(e => e.type === 'budget_paused')).toBe(true);
   });
 
-  it('stops when paused and onBudgetPaused returns abort', async () => {
-    const onBudgetPaused = async () => 'abort' as const;
+  it('stops with budget pause recovery when legacy callback would abort', async () => {
+    const onBudgetPaused = vi.fn().mockResolvedValue('abort' as const);
     const callbacks = makeCallbacks({ onBudgetPaused });
     const { bus } = makeBusRecorder();
     const usage: TokenUsage = {
@@ -486,8 +493,10 @@ describe('enforceBudget', () => {
       pauseEmitted: false,
     });
 
+    expect(onBudgetPaused).not.toHaveBeenCalled();
     expect(result.stop).toBe(true);
     expect(result.pauseEmitted).toBe(true);
+    expect(result.recovery?.reason).toBe('budget-paused');
   });
 
   it('does not re-pause when pauseEmitted is true', async () => {
@@ -523,7 +532,7 @@ describe('enforceBudget', () => {
   });
 
   it('publishes budget_paused event on first pause trigger', async () => {
-    const onBudgetPaused = async () => 'continue' as const;
+    const onBudgetPaused = vi.fn().mockResolvedValue('continue' as const);
     const callbacks = makeCallbacks({ onBudgetPaused });
     const { bus, events } = makeBusRecorder();
     const usage: TokenUsage = {
@@ -550,12 +559,13 @@ describe('enforceBudget', () => {
     });
 
     const pauseEvent = events.find(e => e.type === 'budget_paused');
+    expect(onBudgetPaused).not.toHaveBeenCalled();
     expect(pauseEvent).toBeDefined();
     expect(pauseEvent?.type === 'budget_paused' && pauseEvent.threshold).toBe(0.85);
   });
 
-  it('treats raise response as continue and warns', async () => {
-    const onBudgetPaused = async () => 'raise' as const;
+  it('stops for budget pause instead of treating legacy raise response as continue', async () => {
+    const onBudgetPaused = vi.fn().mockResolvedValue('raise' as const);
     const callbacks = makeCallbacks({ onBudgetPaused });
     const { bus, events } = makeBusRecorder();
     const usage: TokenUsage = {
@@ -581,13 +591,15 @@ describe('enforceBudget', () => {
       pauseEmitted: false,
     });
 
-    expect(result.stop).toBe(false);
+    expect(onBudgetPaused).not.toHaveBeenCalled();
+    expect(result.stop).toBe(true);
     expect(result.pauseEmitted).toBe(true);
+    expect(result.recovery?.reason).toBe('budget-paused');
     expect(events.some(e => e.type === 'warning')).toBe(true);
   });
 
   it('emits budget_warning before budget_paused when crossing past 80% straight into pause zone', async () => {
-    const onBudgetPaused = async () => 'continue' as const;
+    const onBudgetPaused = vi.fn().mockResolvedValue('continue' as const);
     const callbacks = makeCallbacks({ onBudgetPaused });
     const { bus, events } = makeBusRecorder();
     const usage: TokenUsage = {
@@ -614,6 +626,7 @@ describe('enforceBudget', () => {
     expect(warningIdx).toBeGreaterThanOrEqual(0);
     expect(pausedIdx).toBeGreaterThanOrEqual(0);
     expect(warningIdx).toBeLessThan(pausedIdx);
+    expect(onBudgetPaused).not.toHaveBeenCalled();
   });
 
   it('emits budget_warning before budget_exceeded when crossing past 80% straight into exceeded zone', async () => {

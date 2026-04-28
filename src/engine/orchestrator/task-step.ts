@@ -6,7 +6,7 @@ import { formatValidationError } from './validation.js';
 import type { WorkflowContext } from './types.js';
 import { recordTaskUsage } from './tokens.js';
 import { toErrorMessage, labelError } from '../../utils/format-errors.js';
-import { createBusTextHandler, publishDriftChainDetected, publishError, publishEvent, publishTaskStart, publishTaskSkipped, publishUserEditConflict, publishWarning } from './events.js';
+import { createBusTextHandler, publishDriftChainDetected, publishError, publishRecoveryPrompted, publishTaskStart, publishTaskSkipped, publishUserEditConflict, publishWarning } from './events.js';
 import { runPreHooks } from '../hooks/run-pre-hook.js';
 import { handleRetryAndEscalation } from './escalation/escalation.js';
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave } from './state-ops.js';
@@ -47,8 +47,11 @@ import {
   initialDriftChainState,
 } from './drift-chain-state.js';
 import { computePerTaskOutOfBounds, analyzeDriftChain } from './drift-chain.js';
-import { createApprovalPromotionConflict, normalizeUserEditConflictAction } from './user-edit-conflicts.js';
+import { createApprovalPromotionConflict } from './user-edit-conflicts.js';
 import { isExtractedCodeApprovalRaceError } from '../implementers/base.js';
+import { buildApprovalPromotionConflictRecoveryIssue, buildRetryExhaustedRecoveryIssue } from './recovery.js';
+import type { RoutingDecision } from './context-routing.js';
+import { loadState } from '../../core/state/persistence.js';
 
 export function resolveDependsOnFiles(tasks: Task[], task: Task): string[] {
   return task.dependsOn.flatMap((id: TaskId) => {
@@ -249,53 +252,26 @@ async function handleApprovalTimeUserEditConflict(opts: {
     files: opts.files,
     currentTaskId: opts.task.id,
   });
-  const selectedAction = normalizeUserEditConflictAction(
+  publishUserEditConflict(opts.wctx.bus, opts.state.phase, conflict, 'pause');
+  const issue = buildApprovalPromotionConflictRecoveryIssue({
     conflict,
-    opts.wctx.callbacks.onUserEditConflict
-      ? await opts.wctx.callbacks.onUserEditConflict(conflict)
-      : 'pause',
+    currentTask: opts.task,
+    phase: opts.state.phase,
+    createdAt: new Date().toISOString(),
+  });
+  const next = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, opts.state, { type: 'SET_PENDING_RECOVERY', issue });
+  publishRecoveryPrompted(opts.wctx.bus, issue);
+  opts.setTrackedState?.(next);
+  return next;
+}
+
+function routeBiggerProfileFromDecision(decision: RoutingDecision | undefined): string | undefined {
+  if (!decision?.selectedProfile) return undefined;
+  const candidate = decision.rejected.find(profile =>
+    profile.fit !== 'overflow'
+    && (profile.requiredWriteMode !== 'direct' || profile.profileWriteMode === 'direct')
   );
-  publishUserEditConflict(opts.wctx.bus, opts.state.phase, conflict, selectedAction);
-
-  if (selectedAction === 'regenerate-rebase') {
-    publishWarning(
-      opts.wctx.bus,
-      opts.state.phase,
-      'User edit conflict needs regenerate/rebase; workflow paused so the plan or task can be revised against the current files.',
-    );
-    return opts.state;
-  }
-
-  if (selectedAction === 'abort-workflow') {
-    const cancelled = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, opts.state, { type: 'CANCEL' });
-    opts.setTrackedState?.(cancelled);
-    return cancelled;
-  }
-
-  if (selectedAction === 'skip-current-task') {
-    publishTaskSkipped(opts.wctx.bus, opts.state.phase, {
-      taskId: opts.task.id,
-      title: opts.task.title,
-      reason: 'skipped due to user edit conflict',
-    });
-    const skipped = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, opts.state, { type: 'SKIP_TASK', taskId: opts.task.id });
-    opts.setTrackedState?.(skipped);
-    persistTaskEvidence(opts.wctx, skipped, opts.task, 'skipped', {
-      status: 'skipped',
-      reason: 'skipped due to user edit conflict',
-    });
-    opts.taskBreakdowns?.push({
-      taskId: opts.task.id,
-      taskTitle: opts.task.title,
-      method: 'skipped',
-      implementerTokens: 0,
-      escalationTokens: 0,
-      retryCount: 0,
-    });
-    return skipped;
-  }
-
-  return opts.state;
+  return candidate?.profile;
 }
 
 type RetryAndRecordOptions = {
@@ -323,19 +299,71 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
       return { state: opts.state, completed: false };
     }
   }
-  const { state, result } = await handleRetryAndEscalation({
-    wctx, task, initialError, currentState: opts.state, taskStartTime,
-    taskStartSnapshot,
-    dependsOnFiles: resolveDependsOnFiles(opts.state.tasks, task),
-  });
-  setTrackedState(state);
+  let state: WorkflowState;
+  let result: Awaited<ReturnType<typeof handleRetryAndEscalation>>['result'];
+  try {
+    ({ state, result } = await handleRetryAndEscalation({
+      wctx, task, initialError, currentState: opts.state, taskStartTime,
+      taskStartSnapshot,
+      dependsOnFiles: resolveDependsOnFiles(opts.state.tasks, task),
+    }));
+  } catch (err) {
+    const message = labelError('Retry/escalation failed', err);
+    publishError(wctx.bus, opts.state.phase, message);
+    const recoveryBaseState = loadState(wctx.projectDir, wctx.sessionId) ?? opts.state;
+    if (recoveryBaseState.pendingRecovery) {
+      setTrackedState(recoveryBaseState);
+      return { state: recoveryBaseState, completed: false };
+    }
+    const issue = buildRetryExhaustedRecoveryIssue({
+      task,
+      phase: recoveryBaseState.phase,
+      validationResults: opts.initialValidation,
+      validationSummary: message,
+      attempts: recoveryBaseState.attempt,
+      maxAttempts: wctx.config.workflow.maxRetries,
+      allowRetryOverride: true,
+      selectedImplementerProfile: wctx.implementerProfile,
+      routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
+      createdAt: new Date().toISOString(),
+    });
+    const nextState = transitionAndSave(wctx.projectDir, wctx.sessionId, recoveryBaseState, { type: 'SET_PENDING_RECOVERY', issue });
+    publishRecoveryPrompted(wctx.bus, issue);
+    setTrackedState(nextState);
+    return { state: nextState, completed: false };
+  }
+  let nextState = state;
+  setTrackedState(nextState);
+  if (!result.completed) {
+    if (wctx.signal?.aborted) {
+      return { state: nextState, completed: false };
+    }
+    if (!nextState.pendingRecovery) {
+      const issue = buildRetryExhaustedRecoveryIssue({
+        task,
+        phase: nextState.phase,
+        validationResults: opts.initialValidation,
+        validationSummary: opts.initialValidation ? undefined : initialError,
+        attempts: result.attempts,
+        maxAttempts: wctx.config.workflow.maxRetries,
+        allowRetryOverride: true,
+        selectedImplementerProfile: wctx.implementerProfile,
+        routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
+        createdAt: new Date().toISOString(),
+      });
+      nextState = transitionAndSave(wctx.projectDir, wctx.sessionId, nextState, { type: 'SET_PENDING_RECOVERY', issue });
+      publishRecoveryPrompted(wctx.bus, issue);
+      setTrackedState(nextState);
+    }
+    return { state: nextState, completed: false };
+  }
   recordTaskUsage({
     task,
     method: result.method,
     tokensBefore,
-    currentUsage: state.tokenUsage,
+    currentUsage: nextState.tokenUsage,
     bus: wctx.bus,
-    state,
+    state: nextState,
     taskBreakdowns,
     retryCount: result.attempts,
     tool: getRunnerDisplayName(wctx.config.implementer),
@@ -343,10 +371,9 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
     ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
     ...(wctx.routingDecision !== undefined && { routingDecision: wctx.routingDecision }),
   });
-  if (!result.completed) publishEvent(wctx.bus, { type: 'task_failed', ts: Date.now(), phase: state.phase, taskId: task.id });
-  const escalated = result.completed && result.method !== 'local';
-  const status: TaskStatus = result.completed ? (escalated ? 'escalated' : 'done') : 'failed';
-  persistTaskEvidence(wctx, state, task, 'retry', {
+  const escalated = result.method !== 'local';
+  const status: TaskStatus = escalated ? 'escalated' : 'done';
+  persistTaskEvidence(wctx, nextState, task, 'retry', {
     status,
     method: result.method,
     retries: result.attempts,
@@ -355,7 +382,7 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
     validation: opts.initialValidation,
     changedFiles: opts.initialChangedFiles,
   });
-  return { state, completed: result.completed };
+  return { state: nextState, completed: true };
 }
 
 type RunSingleTaskOptions = {
@@ -376,7 +403,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   const { projectDir, sessionId, config, callbacks, context } = wctx;
   let state = opts.state;
 
-  if (wctx.signal?.aborted) return state;
+  if (state.pendingRecovery || wctx.signal?.aborted) return state;
 
   state = transitionAndSave(projectDir, sessionId, state, { type: 'START_TASK', taskId: opts.task.id });
   setTrackedState(state);

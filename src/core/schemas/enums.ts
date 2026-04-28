@@ -64,6 +64,36 @@ export const TASK_COMPLETION_METHODS = ['local', 'escalated-intermediate', 'esca
 export const TaskCompletionMethodSchema = z.enum(TASK_COMPLETION_METHODS);
 export type TaskCompletionMethod = z.infer<typeof TaskCompletionMethodSchema>;
 
+export const RECOVERY_REASONS = [
+  'implementation-error',
+  'validation-failed',
+  'retry-exhausted',
+  'context-overflow',
+  'user-edit-conflict',
+  'approval-promotion-conflict',
+  'budget-paused',
+  'budget-exceeded',
+  'dependency-blocked',
+] as const;
+export const RecoveryReasonSchema = z.enum(RECOVERY_REASONS);
+export type RecoveryReason = z.infer<typeof RecoveryReasonSchema>;
+
+export const RECOVERY_ACTIONS = [
+  'retry-same-worker',
+  'route-bigger-worker',
+  'planner-split-rebase',
+  'continue',
+  'skip-current-task',
+  'pause-run',
+  'abort-workflow',
+] as const;
+export const RecoveryActionSchema = z.enum(RECOVERY_ACTIONS);
+export type RecoveryAction = z.infer<typeof RecoveryActionSchema>;
+
+export const RECOVERY_STATUSES = ['awaiting-user', 'paused', 'applying'] as const;
+export const RecoveryStatusSchema = z.enum(RECOVERY_STATUSES);
+export type RecoveryStatus = z.infer<typeof RecoveryStatusSchema>;
+
 export const WORKFLOW_MODES = ['instant', 'quick', 'standard', 'speckit'] as const;
 export const WorkflowModeSchema = z.enum(WORKFLOW_MODES);
 export type WorkflowMode = z.infer<typeof WorkflowModeSchema>;
@@ -127,4 +157,3 @@ const ANTHROPIC_EFFORT_BUDGET: Record<EffortLevel, number> = {
 export function effortToAnthropicBudget(level: EffortLevel): number {
   return ANTHROPIC_EFFORT_BUDGET[level];
 }
-
