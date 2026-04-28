@@ -68,7 +68,7 @@ Parallel same-directory writes create unclear ownership and conflict risk.
 
 ### Decision
 
-The first implementation keeps task execution sequential inside one checkout. Parallel work is deferred to isolated worktrees or staging boundaries in a later spec.
+The first implementation keeps task execution sequential inside one checkout. Parallel work is not near-term scope; if it is revisited, it must use isolated worktrees or sandbox boundaries in a separate spec.
 
 ### Consequences
 
@@ -152,7 +152,28 @@ Plan Review v2 shows execution-relevant data: task scope, files, context fit, wo
 - Existing plan editor work can be reused.
 - Long-lived plan management remains out of scope.
 
-## ADR-009 - Cleanup is scoped, not destructive
+## ADR-009 - Session history is core, plan archive is not
+
+**Status:** accepted
+**Date:** 2026-04-28
+
+### Context
+
+Users need durable workflow sessions like other coding tools: resume, session history, previous-session browsing/filtering/search, and artifacts for review and audit. That can be confused with a separate plan archive or project-management system.
+
+### Decision
+
+Treat sessions as execution records and core product surface. A session may contain `spec.md`, `plan.md`, `tasks.md`, `summary.json`, `review.md`, evidence, drift, checkpoints, and transcript/state files.
+
+Do not add a separate saved-plan archive, plan-management system, kanban, cross-plan orchestration, or plan cloning workflow.
+
+### Consequences
+
+- Resume and session history remain first-class.
+- Plan Review stays scoped to the current session's Task Briefs and execution readiness.
+- Historical artifacts support audit, handoff, and final review without turning diptych into project management software.
+
+## ADR-010 - Cleanup is scoped, not destructive
 
 **Status:** accepted
 **Date:** 2026-04-28

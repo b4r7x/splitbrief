@@ -7,7 +7,7 @@ This document is the source of truth for cost-aware implementer work. Other docs
 
 ## Purpose
 
-Diptych is not becoming a plan archive, kanban board, session manager, or generic multi-agent platform. The core product direction is narrower:
+Diptych is not becoming a plan archive, kanban board, generic multi-agent platform, or same-checkout parallel write scheduler. The core product direction is narrower:
 
 ```text
 expensive planner thinks clearly
@@ -25,18 +25,21 @@ Diptych is a cost-aware planner-to-implementer orchestrator.
 It owns:
 
 - planning workflow,
+- durable workflow sessions,
 - Task Brief quality,
 - task sizing and routing,
 - checkpoint boundaries,
 - conflict detection,
 - validation,
 - retry and escalation,
+- session artifacts,
 - evidence and drift reporting,
 - TUI visibility.
 
 It does not own:
 
 - a long-lived project-management database,
+- a separate plan archive or plan-management system,
 - kanban workflows,
 - cross-plan dependency management,
 - arbitrary agent swarms,
@@ -46,6 +49,14 @@ It does not own:
 The core sentence is:
 
 > Diptych pays a strong planner to decide what should happen, then feeds cheap workers small safe chunks and stops before overwriting the user.
+
+## Sessions, Not Plan Archives
+
+Durable workflow sessions are core product surface. Users should be able to resume work, inspect session history, browse/filter/search previous sessions, and review the artifacts a run produced.
+
+A session is an execution record for one workflow. It may contain `spec.md`, `plan.md`, `tasks.md`, `summary.json`, `review.md`, evidence, drift reports, checkpoints, and runner transcripts. These artifacts support resume, review, audit, handoff, and final validation.
+
+A session history is not a plan archive. Diptych should not add named saved-plan libraries, cross-plan dependency tracking, kanban boards, plan cloning, or a separate plan-management system. Plan Review is scoped to the current session's Task Briefs and execution readiness.
 
 ## Planner Role
 
@@ -158,20 +169,21 @@ The implemented behavior is:
 
 Parallelism is not the first goal. The first goal is reliable cheap execution.
 
-Allowed now:
+Allowed in this direction:
 
 - sequential task execution with fresh context,
 - optional fallback to stronger implementer profiles,
-- future parallel execution only when ownership is isolated.
+- future parallel execution only when ownership is isolated in worktrees or equivalent sandboxes.
 
 Not allowed in the first implementation:
 
 - multiple workers writing the same working tree at once,
+- multiple workers writing the same checkout at once,
 - hidden background task fan-out,
 - best-of-N workers racing on the same files,
 - automatic merge of overlapping changes.
 
-If parallel execution is later added, it should use worktrees or an equivalent isolated staging boundary, and only for tasks with non-overlapping file ownership.
+If parallel execution is later considered, it should be a separate design using worktrees or equivalent isolated sandboxes, and only for tasks with non-overlapping file ownership. Do not frame parallel writes as near-term work.
 
 ## User Edits
 
@@ -260,7 +272,8 @@ Existing implementation has valuable pieces, but docs and product surface should
 
 High-confidence cleanup:
 
-- Update product docs that frame diptych as broad external-agent interop, kanban, archive, or session-management product.
+- Update product docs that frame diptych as broad external-agent interop, kanban, archive, or plan-management product.
+- Preserve session history/resume/browse/filter/search as core workflow surfaces, but distinguish them from a plan archive.
 - Make the no-commit rule explicit for this repository, and separate it from optional product-level commit strategies.
 - Update stale config examples that use old snake_case or old config keys.
 - Reword Task Contract docs so external Kanban/Jira usage is not presented as the main purpose.

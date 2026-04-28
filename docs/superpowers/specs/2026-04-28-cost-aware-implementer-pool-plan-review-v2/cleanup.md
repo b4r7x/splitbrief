@@ -12,7 +12,7 @@ Update docs that make diptych sound like:
 
 - a plan archive,
 - a kanban tool,
-- a session manager,
+- a separate plan-management system,
 - a generic interop hub,
 - a multi-agent coordinator.
 
@@ -24,7 +24,10 @@ Replace with:
 - checkpoints,
 - validation,
 - drift/evidence,
+- durable workflow sessions,
 - escalation.
+
+Session history is core: resume, previous-session browsing/filtering/search, and artifacts such as `spec.md`, `plan.md`, `tasks.md`, `summary.json`, `review.md`, evidence, and drift. That history must be framed as workflow records, not as a plan archive, kanban board, or cross-plan orchestration system.
 
 ### Config drift
 
@@ -94,7 +97,7 @@ Snapshots are adjacent to undo/versioning, but checkpoint safety is important to
 
 ### Worktrees
 
-Worktrees can become the safe boundary for future isolated parallel execution. Demote from primary product story if needed, but do not delete just because same-directory parallelism is out of scope.
+Worktrees can become the safe boundary for future isolated parallel execution. Demote from primary product story if needed, but do not delete just because same-directory parallelism is out of scope. Do not describe same-checkout parallel writes as acceptable or near-term.
 
 ### Handoff packs
 
@@ -121,5 +124,6 @@ The plan editor is complex, but it supports the key user need: manual changes be
 
 - A new reader understands the product from docs without reading historical spec packs.
 - Advanced features are labeled as advanced or experimental when they are not part of the core loop.
+- Session history is preserved as core workflow surface and distinguished from a plan archive.
 - No docs tell implementation agents to stage or commit.
 - Test count may go down if low-value tests are removed, but confidence around routing/conflict/plan-save behavior goes up.

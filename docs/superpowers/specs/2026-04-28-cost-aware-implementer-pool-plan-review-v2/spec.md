@@ -6,9 +6,11 @@
 
 ## Implementation Status
 
-The implemented scope covers the required v2 behavior: implementer profile schema/resolution/routing, cheapest-capable per-task routing with context-fit and write-capability checks, sequential fresh-context task dispatch, user-edit conflict classification/actions, stale `currentCode` cleanup, stopped-loop status handling, task-aware cost accounting, Plan Review/TUI routing/context/cost/stale/conflict/runtime metadata, and read-only MCP boundaries.
+The implemented scope covers the required v2 behavior: implementer profile schema/resolution/routing, cheapest-capable per-task routing with context-fit and write-capability checks, sequential fresh-context task dispatch, user-edit conflict classification/actions, stale `currentCode` cleanup, stopped-loop status handling, task-aware cost accounting, durable session artifacts, Plan Review/TUI routing/context/cost/stale/conflict/runtime metadata, and read-only MCP boundaries.
 
-Same-checkout parallel writes, long-lived plan archives, kanban, cross-plan orchestration, generic agent swarms, and write-capable MCP tools remain out of scope. Future expansion in those areas would require a separate spec.
+Same-checkout parallel writes, separate plan archives or plan-management systems, kanban, cross-plan orchestration, generic agent swarms, and write-capable MCP tools remain out of scope. Future expansion in those areas would require a separate spec.
+
+Session history is intentionally in scope. Users should be able to resume runs, browse/filter/search previous sessions, and inspect session artifacts such as `spec.md`, `plan.md`, `tasks.md`, `summary.json`, `review.md`, evidence, and drift. These are workflow records, not a saved-plan archive.
 
 ## User Scenarios & Testing
 
@@ -112,7 +114,8 @@ A user runs Claude Code, Codex, OpenCode, Kilo, or Agent SDK as planner/implemen
 - **FR-011:** The TUI MUST show current task, selected worker, context fit, checkpoint state, and conflict status.
 - **FR-012:** Plan Review v2 MUST let users edit the task plan before implementation and save through the existing parse + quality gate path.
 - **FR-013:** Tool-call and MCP docs MUST state that runner tools execute inside the runner, while diptych owns deterministic guardrails.
-- **FR-014:** Tests MUST target behavior and artifacts, not private helper wiring.
+- **FR-014:** The system MUST preserve durable workflow sessions for resume, session history, previous-session browse/filter/search, and artifact inspection.
+- **FR-015:** Tests MUST target behavior and artifacts, not private helper wiring.
 
 ### Key Entities
 
@@ -122,6 +125,7 @@ A user runs Claude Code, Codex, OpenCode, Kilo, or Agent SDK as planner/implemen
 - **ExecutionCheckpoint:** File snapshot or hash boundary used to protect user edits.
 - **UserEditConflict:** External change classification with affected files and affected tasks.
 - **PlanReviewState:** TUI state for editable tasks plus routing/context metadata.
+- **WorkflowSession:** Durable execution record containing run state, artifacts, evidence, drift, checkpoints, and review output.
 
 ## Success Criteria
 
@@ -130,7 +134,7 @@ A user runs Claude Code, Codex, OpenCode, Kilo, or Agent SDK as planner/implemen
 - **SC-003:** A task too large for every cheap worker is blocked before implementation with a clear escalation/split path.
 - **SC-004:** Manual edits to task files are not overwritten.
 - **SC-005:** Plan Review v2 makes context-fit and worker choice visible before execution.
-- **SC-006:** The final docs no longer present diptych as a plan archive, kanban, or generic multi-agent manager.
+- **SC-006:** The final docs clearly distinguish core session history from out-of-scope plan archives, kanban, and generic multi-agent management.
 
 ## Assumptions
 
@@ -138,4 +142,5 @@ A user runs Claude Code, Codex, OpenCode, Kilo, or Agent SDK as planner/implemen
 - Existing cost telemetry and pricing helpers are extended, not replaced.
 - Existing Task Brief quality gate remains the first defense against oversized or vague tasks.
 - Same-directory parallelism stays out of scope for this implementation.
+- Any future parallel execution uses isolated worktrees or sandboxes, not writes in one checkout, and is not near-term scope.
 - The implementation briefs were dispatched in separate AI contexts.

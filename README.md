@@ -97,6 +97,8 @@ After `diptych init`, diptych creates a `.diptych/` folder in your project:
 
 Needs **Node.js 22+** and **git** in the project.
 
+Sessions are durable workflow records for resume, history, filtering/search, and artifact review. They are not a separate plan archive, kanban board, or cross-plan management system.
+
 If using Ollama, bump the context window — the default 2048 tokens is too small:
 
 ```bash
