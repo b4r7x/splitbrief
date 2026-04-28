@@ -1,10 +1,10 @@
 # Plan Review Trust: Scorecard + Worker Packet Preview - 2026-04-28
 
-> **Status:** planned.
+> **Status:** implemented and verified.
 > **Scope:** improve pre-implementation trust in the current-session Plan Review surface by adding a compact readiness scorecard and an optional read-only Worker Packet Preview for the selected task.
-> **Out of scope:** kanban, plan archive, MCP write tools, full multi-agent manager, same-checkout parallel writes, and runtime implementation during this documentation-authoring pass.
+> **Out of scope:** kanban, plan archive, MCP write tools, full multi-agent manager, and same-checkout parallel writes.
 
-The `agent-briefs/` files are handoff material for a future source implementation pass. Do not execute them during docs-only pack maintenance.
+The `agent-briefs/` files are retained as implementation handoff history and reference material. Do not re-execute them during maintenance unless a new implementation loop is explicitly started.
 
 ## Product Boundary
 
@@ -49,6 +49,7 @@ Paths without a leading directory in this table are relative to `docs/superpower
 - The scorecard is derived from existing Task Brief, brief-quality, and fresh routing metadata; it does not create a new project-management state model.
 - Tasks with missing, stale, pending, or unknown routing/context fit metadata are not counted as ready.
 - The selected task can show a read-only Worker Packet Preview that matches the implementer prompt shape: system preamble, task prompt sections, context-fit estimate, worker profile, context length, and current-code reduction mode.
+- Modify-task preview refreshes current code from disk with the existing routing-preview policy; missing or unreadable files omit stale Task Brief `currentCode` and show the missing/unavailable estimate state.
 - Preview content is redacted/truncated for terminal readability and marked as preview-only when any truncation/redaction occurs.
 - Existing approval/edit/comment/reject flow remains intact.
 - No MCP writes, no same-checkout parallel execution, no runtime code changes during this documentation-authoring pass.

@@ -240,7 +240,7 @@ describe('planEditorStore', () => {
       expect(planEditorStore.get().reviewMetadata.size).toBe(0);
     });
 
-    it('patches routing metadata without dropping conflict or checkpoint fields', () => {
+    it('replaces stale warning fields on full review metadata refresh', () => {
       planEditorStore.setReviewMetadata([
         {
           taskId: 'T001',
@@ -278,6 +278,8 @@ describe('planEditorStore', () => {
         contextLength: 32768,
         routingReason: 'rerouted to local-qwen',
         risk: 'low',
+      });
+      expect(planEditorStore.get().reviewMetadata.get('T001')).not.toMatchObject({
         conflict: { files: ['src/a.ts'] },
         checkpoint: 'pre-task T001',
         stale: true,

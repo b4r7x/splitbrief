@@ -10,6 +10,7 @@ const HELP_ROWS: Array<[string, string]> = [
   ['<c-k> / <c-p>', 'Move task up'],
   ['d', 'Delete task'],
   ['m', 'Merge with previous task'],
+  ['p', 'Toggle worker packet preview'],
   ['s', 'Split task (opens $EDITOR)'],
   ['e', 'Edit task in $EDITOR'],
   ['<enter>', 'Expand / collapse task body'],

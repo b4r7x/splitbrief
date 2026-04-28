@@ -48,6 +48,7 @@ describe('handlePlanEditorInput', () => {
     { label: 'ctrl+p', input: 'p', key: { ctrl: true }, expected: { type: 'move-task', direction: 'up' } },
     { label: 'd', input: 'd', expected: { type: 'delete-task' } },
     { label: 'm', input: 'm', expected: { type: 'merge-task' } },
+    { label: 'p', input: 'p', expected: { type: 'toggle-packet-preview' } },
     { label: 's', input: 's', expected: { type: 'open-editor', mode: 'split' } },
     { label: 'e', input: 'e', expected: { type: 'open-editor', mode: 'edit' } },
     { label: 'return', input: '', key: { return: true }, expected: { type: 'toggle-expand' } },

@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
+import { configStore } from '../../../stores/project/config.js';
 import { readFile } from 'node:fs/promises';
 import { parseTasks } from '../../../engine/spec/parser.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { BriefQualityIssue, BriefQualityReport } from '../../../engine/spec/brief-quality.js';
+import type { ProjectContext } from '../../../core/types/state-actions.js';
 import { dirname, join } from 'node:path';
 import {
   buildTaskDetailParts,
@@ -17,11 +19,17 @@ import {
   getTaskStatusSymbol,
   getReviewMetadataForTask,
   hasTaskReviewWarning,
+  PlanReviewScorecardLine,
   refreshPlanReviewMetadata,
+  refreshTaskForRoutingPreview,
 } from './brief-review-view.js';
 import { usePlanEditorKeys } from '../hooks/use-plan-editor-keys.js';
 import { createSaveHandler } from '../hooks/use-plan-editor-save.js';
-import type { PlanTaskReviewMetadata } from '../../../stores/workflow/plan-editor.js';
+import type { PlanReviewEstimateStatus, PlanTaskReviewMetadata } from '../../../stores/workflow/plan-editor.js';
+import { buildWorkerPacketPreview, type WorkerPacketPreview } from '../worker-packet-preview.js';
+import type { RoutingDecision } from '../../../engine/orchestrator/context-routing.js';
+import { routeTaskToImplementerProfile } from '../../../engine/orchestrator/context-routing.js';
+import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 
 interface PlanEditorComponentProps {
   filePath: string;
@@ -83,6 +91,79 @@ function TaskEditorDetail({ task, metadata }: { task: Task; metadata?: PlanTaskR
       <DetailList label="tests" items={task.tests} />
       <DetailList label="escalation" items={task.escalation ?? []} />
       <DetailList label="routing" items={routingItems} />
+    </Box>
+  );
+}
+
+function compactValue(value: string | number | undefined): string {
+  return value === undefined || value === '' ? 'pending' : String(value);
+}
+
+function compactExcerpt(text: string): string {
+  return text.split('\n').map(line => line.trim()).filter(Boolean).join(' / ');
+}
+
+function taskWithoutCurrentCode(task: Task): Task {
+  const { currentCode: _currentCode, ...withoutCurrentCode } = task;
+  return withoutCurrentCode;
+}
+
+interface PacketPreviewRefresh {
+  sourceTask: Task;
+  projectDir: string;
+  task: Task;
+  estimateStatus?: PlanReviewEstimateStatus | undefined;
+  routingDecision?: RoutingDecision | undefined;
+}
+
+function buildPreviewNoticeLine(preview: WorkerPacketPreview): string {
+  const notices = [
+    preview.redacted ? 'redacted' : null,
+    preview.truncated ? 'truncated' : null,
+    preview.routingPending ? 'routing pending' : null,
+    preview.refreshRequired ? 'refresh required' : null,
+  ].filter((notice): notice is string => notice !== null);
+  return notices.length > 0 ? notices.join(' · ') : 'ready';
+}
+
+function WorkerPacketPreviewPanel({
+  preview,
+  rows,
+}: {
+  preview: WorkerPacketPreview | null;
+  rows: number;
+}) {
+  const t = useTheme();
+  if (!preview || rows <= 0) return null;
+  if (rows < 7) {
+    return (
+      <Text color={t.textDim} wrap="truncate">
+        packet preview collapsed; resize for selected-task packet
+      </Text>
+    );
+  }
+
+  const writeMode = preview.selectedWriteMode ?? preview.requiredWriteMode;
+  const systemExcerpt = compactExcerpt(preview.visibleSystemPreamble);
+  const promptExcerpt = compactExcerpt(preview.visibleTaskPrompt);
+
+  return (
+    <Box flexDirection="column" height={rows} overflow="hidden">
+      <Text bold color={t.accent}>Packet Preview {preview.taskId}</Text>
+      <Text color={t.textDim} wrap="truncate">
+        worker {compactValue(preview.workerProfile)} · cost {compactValue(preview.costTier)} · write {compactValue(writeMode)}
+      </Text>
+      <Text color={t.textDim} wrap="truncate">
+        fit {compactValue(preview.contextFit)} · tokens {compactValue(preview.estimatedTokens)} · context {compactValue(preview.contextLength)}
+      </Text>
+      <Text color={preview.refreshRequired ? t.warning : t.textDim} wrap="truncate">
+        current-code {preview.currentCodeContextMode} · estimate {compactValue(preview.estimateStatus)}{preview.stale ? ' · stale' : ''}{preview.refreshRequired ? ' · refresh required' : ''}
+      </Text>
+      <Text color={preview.routingPending || preview.refreshRequired ? t.warning : t.textDim} wrap="truncate">
+        notice {buildPreviewNoticeLine(preview)}
+      </Text>
+      <Text color={t.textDim} wrap="truncate">system {systemExcerpt}</Text>
+      <Text color={t.textDim} wrap="truncate">task {promptExcerpt}</Text>
     </Box>
   );
 }
@@ -201,8 +282,10 @@ export function PlanEditorComponent({ filePath, height, width, sessionDirPath: s
   const t = useTheme();
   const sessionDirPath = sessionDirProp ?? dirname(filePath);
   const save = createSaveHandler(sessionDirPath, onApprove);
-  usePlanEditorKeys(true, save, sessionDirPath);
+  const [isPacketPreviewOpen, setIsPacketPreviewOpen] = useState(false);
+  usePlanEditorKeys(true, save, sessionDirPath, () => setIsPacketPreviewOpen(open => !open));
   const [quality, setQuality] = useState<BriefQualityReport | null>(null);
+  const [packetPreviewRefresh, setPacketPreviewRefresh] = useState<PacketPreviewRefresh | null>(null);
 
   const tasks = planEditorStore.use(s => s.tasks);
   const cursor = planEditorStore.use(s => s.cursor);
@@ -210,6 +293,7 @@ export function PlanEditorComponent({ filePath, height, width, sessionDirPath: s
   const dirty = planEditorStore.use(s => s.dirty);
   const saveError = planEditorStore.use(s => s.saveError);
   const reviewMetadata = planEditorStore.use(s => s.reviewMetadata);
+  const configState = configStore.use(s => s);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -253,10 +337,115 @@ export function PlanEditorComponent({ filePath, height, width, sessionDirPath: s
       ? t.success
       : t.error;
 
-  const chromeRows = 7 + (dirty ? 1 : 0) + (saveError !== null ? 1 : 0);
+  const selectedTask = tasks[cursor];
+  const projectDir = configState.projectDir || sessionDirPath;
+  const testCommand = configState.config?.validation.testCommand ?? 'npm test';
+
+  useEffect(() => {
+    if (!isPacketPreviewOpen || !selectedTask) {
+      setPacketPreviewRefresh(null);
+      return;
+    }
+
+    const previewSourceTask = selectedTask;
+
+    if (previewSourceTask.action !== 'modify') {
+      setPacketPreviewRefresh({
+        sourceTask: previewSourceTask,
+        projectDir,
+        task: previewSourceTask,
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    setPacketPreviewRefresh({
+      sourceTask: previewSourceTask,
+      projectDir,
+      task: taskWithoutCurrentCode(previewSourceTask),
+    });
+
+    async function refreshPacketPreviewTask() {
+      const { task, estimateStatus } = await refreshTaskForRoutingPreview(previewSourceTask, projectDir);
+      if (controller.signal.aborted) return;
+
+      let routingDecision: RoutingDecision | undefined;
+      if (configState.config) {
+        const profiles = resolveImplementerProfiles(configState.config).profiles;
+        const context: ProjectContext = {
+          name: 'unknown',
+          dir: projectDir,
+          runtime: 'node',
+          testCommand,
+        };
+        routingDecision = routeTaskToImplementerProfile({ task, context, profiles });
+      }
+
+      if (controller.signal.aborted) return;
+      setPacketPreviewRefresh({
+        sourceTask: previewSourceTask,
+        projectDir,
+        task,
+        estimateStatus,
+        ...(routingDecision !== undefined ? { routingDecision } : {}),
+      });
+    }
+
+    refreshPacketPreviewTask().catch(() => {
+      if (controller.signal.aborted) return;
+      setPacketPreviewRefresh({
+        sourceTask: previewSourceTask,
+        projectDir,
+        task: taskWithoutCurrentCode(previewSourceTask),
+        estimateStatus: 'current-code-unavailable',
+      });
+    });
+
+    return () => { controller.abort(); };
+  }, [isPacketPreviewOpen, selectedTask, projectDir, configState.config, testCommand]);
+
+  const previewRows = isPacketPreviewOpen
+    ? (height ?? 24) < 18
+      ? 1
+      : Math.min(8, Math.max(7, Math.floor((height ?? 24) / 3)))
+    : 0;
+  const chromeRows = 8 + previewRows + (dirty ? 1 : 0) + (saveError !== null ? 1 : 0);
   const taskRowBudget = Math.max(1, (height ?? 24) - chromeRows);
   const { scrollOffset, visibleTasks } = getVisibleTaskWindow(tasks, cursor, expandedIds, reviewMetadata, taskRowBudget);
   const isNarrow = (width ?? 80) < 70;
+  const projectContext: ProjectContext = {
+    name: 'unknown',
+    dir: projectDir,
+    runtime: 'node',
+    testCommand,
+  };
+  const selectedTaskMetadata = selectedTask ? getReviewMetadataForTask(reviewMetadata, selectedTask) : undefined;
+  const hasPreviewRefresh = packetPreviewRefresh !== null
+    && packetPreviewRefresh.sourceTask === selectedTask
+    && packetPreviewRefresh.projectDir === projectDir;
+  const previewTask = selectedTask?.action === 'modify'
+    ? hasPreviewRefresh
+      ? packetPreviewRefresh.task
+      : taskWithoutCurrentCode(selectedTask)
+    : selectedTask;
+  const previewMetadata = hasPreviewRefresh && packetPreviewRefresh.estimateStatus !== undefined
+    ? { ...selectedTaskMetadata, taskId: packetPreviewRefresh.task.id, estimateStatus: packetPreviewRefresh.estimateStatus }
+    : selectedTaskMetadata;
+  const packetPreview = isPacketPreviewOpen
+    ? buildWorkerPacketPreview({
+      task: previewTask,
+      context: projectContext,
+      ...(previewMetadata !== undefined ? { metadata: previewMetadata } : {}),
+      ...(hasPreviewRefresh && packetPreviewRefresh.routingDecision !== undefined ? { routingDecision: packetPreviewRefresh.routingDecision } : {}),
+      ...(previewMetadata?.contextLength !== undefined ? { contextLength: previewMetadata.contextLength } : {}),
+      display: {
+        maxSystemChars: Math.max(80, (width ?? 80) * 2),
+        maxPromptChars: Math.max(120, (width ?? 80) * 3),
+        maxSystemLines: 2,
+      },
+    })
+    : null;
+  const isCollapsedPacketPreview = isPacketPreviewOpen && previewRows <= 1;
 
   return (
     <Box flexDirection="column" height={height} width={width} overflow="hidden">
@@ -266,8 +455,11 @@ export function PlanEditorComponent({ filePath, height, width, sessionDirPath: s
         <Text color={qualityColor}>{qualityDisplay}</Text>
       </Box>
       <Text color={t.textDim}>{formatPlanReviewSummary(tasks, reviewMetadata)}</Text>
+      <PlanReviewScorecardLine tasks={tasks} quality={quality} metadata={reviewMetadata} />
       <Text color={t.textDim}>{filePath}</Text>
-      <Box height={1} />
+      {isCollapsedPacketPreview
+        ? <WorkerPacketPreviewPanel preview={packetPreview} rows={previewRows} />
+        : <Box height={1} />}
       <Box flexDirection="column" height={taskRowBudget} overflow="hidden">
         {visibleTasks.map((task, i) => {
           const absoluteIndex = scrollOffset + i;
@@ -283,6 +475,7 @@ export function PlanEditorComponent({ filePath, height, width, sessionDirPath: s
           );
         })}
       </Box>
+      {!isCollapsedPacketPreview && <WorkerPacketPreviewPanel preview={packetPreview} rows={previewRows} />}
       {dirty && (
         <Text color={t.warning}>unsaved changes</Text>
       )}
@@ -292,13 +485,17 @@ export function PlanEditorComponent({ filePath, height, width, sessionDirPath: s
       <Box height={1} />
       {isNarrow ? (
         <>
-          <Text color={t.textDim}>j/k nav · d del · m merge · e edit</Text>
-          <Text color={t.textDim}>{'s split · ^j/^k move · Y save · q quit · ?'}</Text>
+          <Text color={t.textDim} wrap="truncate">{isCollapsedPacketPreview ? 'packet preview collapsed · j/k nav · p preview' : 'j/k nav · p preview · d del · m merge'}</Text>
+          <Text color={t.textDim} wrap="truncate">{'e edit · s split · ^j/^k move · Y save · q quit · ?'}</Text>
         </>
       ) : (
         <>
-          <Text color={t.textDim}>j/k navigate · d delete · m merge · e edit · s split</Text>
-          <Text color={t.textDim}>{'<c-j>/<c-k> reorder · Y save · q discard · ? help'}</Text>
+          <Text color={t.textDim} wrap="truncate">
+            {isCollapsedPacketPreview
+              ? 'packet preview collapsed · j/k navigate · p packet preview'
+              : 'j/k navigate · p packet preview · d delete · m merge · e edit · s split'}
+          </Text>
+          <Text color={t.textDim} wrap="truncate">{'<c-j>/<c-k> reorder · Y save · q discard · ? help'}</Text>
         </>
       )}
     </Box>

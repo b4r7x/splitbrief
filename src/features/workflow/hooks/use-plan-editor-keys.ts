@@ -17,6 +17,7 @@ export type PlanEditorAction =
   | { type: 'delete-task' }
   | { type: 'merge-task' }
   | { type: 'toggle-expand' }
+  | { type: 'toggle-packet-preview' }
   | { type: 'open-help' }
   | { type: 'open-editor'; mode: 'edit' | 'split' }
   | { type: 'save' }
@@ -35,6 +36,7 @@ export function handlePlanEditorInput(input: string, key: Key): PlanEditorAction
   if (input === 'k') return { type: 'move-cursor', direction: 'up' };
   if (input === 'd') return { type: 'delete-task' };
   if (input === 'm') return { type: 'merge-task' };
+  if (input === 'p') return { type: 'toggle-packet-preview' };
   if (input === 's') return { type: 'open-editor', mode: 'split' };
   if (input === 'e') return { type: 'open-editor', mode: 'edit' };
   if (input === '?') return { type: 'open-help' };
@@ -56,6 +58,7 @@ function applyTaskResult(
 export function applyPlanEditorAction(
   action: PlanEditorAction,
   onSave: () => Promise<void>,
+  onTogglePacketPreview?: (() => void) | undefined,
 ): void {
   switch (action.type) {
     case 'none': return;
@@ -87,6 +90,7 @@ export function applyPlanEditorAction(
       if (task) planEditorStore.toggleExpand(task.id);
       return;
     }
+    case 'toggle-packet-preview': onTogglePacketPreview?.(); return;
     case 'open-help': overlayStore.open('plan-editor-help'); return;
     case 'open-editor': return;
     case 'save': void onSave(); return;
@@ -102,6 +106,7 @@ export function usePlanEditorKeys(
   isActive: boolean,
   onSave: () => Promise<void>,
   sessionDir: string,
+  onTogglePacketPreview?: (() => void) | undefined,
 ): void {
   const isOverlayOpen = overlayStore.use(s => s.active !== 'none');
 
@@ -120,7 +125,7 @@ export function usePlanEditorKeys(
         openExternalEditor(task, action.mode, sessionDir);
         return;
       }
-      applyPlanEditorAction(action, onSave);
+      applyPlanEditorAction(action, onSave, onTogglePacketPreview);
     },
     { isActive: isActive && !isOverlayOpen },
   );
