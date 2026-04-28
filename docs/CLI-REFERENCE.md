@@ -36,6 +36,7 @@ diptych — Cost-optimized AI coding orchestrator (v0.1.0)
 | 12 | `diptych attach` | Attach a TUI client to a detached background session. |
 | 13 | `diptych detach` | Detach a TUI client without stopping the background server. |
 | 14 | `diptych ps` | List sessions in the current project with status. |
+| 15 | `diptych doctor` | Check run readiness without creating a workflow session. |
 
 ---
 
@@ -120,7 +121,7 @@ diptych start --worktree migration "Postgres 17 upgrade"
 ### Files affected
 
 - **Reads:** `.diptych/config.yaml`, `.diptych/sessions/<id>/state.json` (if resuming), repo files supplied to the planner.
-- **Writes:** `.diptych/sessions/<id>/{spec.md,plan.md,tasks.md,state.json,session.jsonl}`, working-tree changes by the implementer, `.diptych/sessions/<id>/lockfile.json` and `ipc.sock` when detached, `.trees/<slug>/` when `--worktree` is used.
+- **Writes:** `.diptych/sessions/<id>/{readiness.json,spec.md,plan.md,tasks.md,state.json,session.jsonl}`, working-tree changes by the implementer, `.diptych/sessions/<id>/lockfile.json` and `ipc.sock` when detached, `.trees/<slug>/` when `--worktree` is used.
 
 ### See also
 
@@ -133,6 +134,9 @@ diptych start --worktree migration "Postgres 17 upgrade"
 
 - `--detach` and `--json` cannot be combined; `--detach` requires a feature; both checks throw `1`.
 - The startup pipeline calls `maybeMigrate(projectDir)` first, so a stale pre-v3 state is migrated on the fly.
+- Before planner or implementer calls, `start` computes Run Readiness. Blockers stop the run; warnings are shown in the TUI or emitted as JSON. The compact session artifact is `.diptych/sessions/<id>/readiness.json`.
+- Readiness inspects validation configuration and package-script posture only. It does not run `typecheck`, lint, tests, model calls, or network probes.
+- With `--json`, the first readiness line is `{ "type": "readiness_report", "report": ... }` before model-backed workflow events.
 - `clearStaleSession()` runs before a new session begins, so leftover lockfiles from crashed runs do not block a fresh start.
 - When `--worktree` is passed, the source working tree must be clean. The project directory is reassigned to the newly created worktree path before any state is written. With `--detach --worktree`, worktree selection happens before the detached server is spawned. If worktree creation fails, the command exits `1` with the underlying message.
 - The `setupWorkflow()` step may show an interactive setup screen if config is incomplete; pass `--allow-hooks` in CI to skip the hook-trust prompt.
@@ -198,6 +202,55 @@ diptych spec --auto --allow-hooks "tighten zod schemas"
 - `clearStaleSession()` runs before `beginSession()` — a crashed prior run will not block this one.
 - Session id is generated from the feature; the final summary prints the absolute paths to the three artifacts.
 - The number of generated tasks is reported as `... (N tasks)` after the run.
+
+---
+
+## diptych doctor
+
+**Synopsis**
+
+```
+diptych doctor [--project <dir>] [--json]
+```
+
+Check whether the current repository and diptych configuration are ready for a safe run. `doctor` is read-only: it does not create `.diptych/active`, session folders, worktrees, snapshots, migrations, config rewrites, validation subprocesses, planner calls, or implementer calls.
+
+### Usage
+
+```
+diptych doctor [--project <dir>] [--json]
+```
+
+### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--project <dir>` | path | cwd | Project directory. |
+| `--json` | boolean | `false` | Emit a stable JSON readiness report for automation. |
+
+### Examples
+
+```bash
+diptych doctor
+diptych doctor --project ../service-a
+diptych doctor --json
+```
+
+### Exit codes
+
+- `0` — ready or ready with warnings.
+- `1` — blocked by a hard local precondition such as no git repo, invalid config, missing config, or a live same-checkout session.
+
+### Files affected
+
+- **Reads:** git status, `.diptych/config.yaml` when present, `.diptych/active` when present, `package.json` when present.
+- **Writes:** none.
+
+### Behavior notes
+
+- Missing config reports `diptych init`; legacy config warnings report `diptych migrate` or reconfigure, but `doctor` does not run either command.
+- Validation readiness is posture only. It reports disabled checks or missing npm scripts without running validation commands.
+- Runner availability is conservative. Network/API and CLI auth probes are not required for a ready result.
 
 ---
 

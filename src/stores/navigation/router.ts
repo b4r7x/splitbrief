@@ -2,6 +2,7 @@ import { createStore, storeBase } from '../create-store.js';
 import { feedbackStore } from '../ui/feedback.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Summary } from '../../core/schemas/summary.js';
+import type { ReadinessReport } from '../../core/readiness/types.js';
 
 export type Screen = 'home' | 'workflow' | 'summary' | 'setup';
 
@@ -28,7 +29,7 @@ export type OverlayType =
 
 export type RouteData =
   | { screen: 'home' }
-  | { screen: 'workflow'; feature: string; resumeState?: WorkflowState | undefined; sessionId?: string | undefined; worktreeName?: string | undefined; attach?: WorkflowAttach | undefined }
+  | { screen: 'workflow'; feature: string; resumeState?: WorkflowState | undefined; sessionId?: string | undefined; worktreeName?: string | undefined; attach?: WorkflowAttach | undefined; readiness?: ReadinessReport | undefined }
   | { screen: 'summary'; summary: Summary; sessionId?: string | undefined }
   | { screen: 'setup'; onComplete?: 'home' | 'workflow' | undefined; feature?: string | undefined };
 
@@ -45,7 +46,7 @@ const store = createStore<RouteData>(initial);
 
 export type NavigateArgs =
   | { to: 'home' }
-  | { to: 'workflow'; feature: string; resumeState?: WorkflowState | undefined; sessionId?: string | undefined; attach?: WorkflowAttach | undefined }
+  | { to: 'workflow'; feature: string; resumeState?: WorkflowState | undefined; sessionId?: string | undefined; attach?: WorkflowAttach | undefined; readiness?: ReadinessReport | undefined }
   | { to: 'summary'; summary: Summary; sessionId?: string | undefined }
   | { to: 'setup'; onComplete?: 'home' | 'workflow' | undefined; feature?: string | undefined };
 
@@ -68,6 +69,7 @@ function navigate(args: NavigateArgs) {
         resumeState: args.resumeState,
         sessionId: args.sessionId,
         attach: args.attach,
+        readiness: args.readiness,
       });
       return;
     case 'summary':

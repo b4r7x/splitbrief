@@ -55,6 +55,52 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ---
 
+### Symptom: `diptych doctor` or `diptych start` says Run Readiness is `blocked`
+
+**Likely cause:** A hard local precondition failed before model calls: missing/invalid `.diptych/config.yaml`, not a git repository, a live `.diptych/active` session in the same checkout, or a dirty source checkout for an operation that requires a clean worktree.
+
+**Fix:**
+1. Read the `Next action` line. It points to `diptych init`, config repair, or cleaning/isolating the repo.
+2. For missing config, run `diptych init` or `diptych init --reconfigure`.
+3. For invalid config, fix `.diptych/config.yaml` and re-run `diptych doctor --json` to verify.
+4. For active-session blockers, run `diptych status`, then `diptych resume` or `diptych attach <session-id>` if the run is still live.
+
+**Prevention:** Run `diptych doctor` after changing runner config or before CI starts a headless run.
+
+**See also:** [CLI-REFERENCE.md](./CLI-REFERENCE.md#diptych-doctor), [CONFIGURATION.md](./CONFIGURATION.md).
+
+---
+
+### Symptom: Run Readiness warns about validation, but tests were not run
+
+**Likely cause:** Readiness is a pre-run posture check, not CI. It inspects `validation.typecheck`, `validation.lint`, `validation.test`, `validation.testCommand`, and obvious package-script availability without executing validation commands.
+
+**Fix:**
+1. If checks are disabled intentionally, continue and run your validation manually.
+2. If `testCommand` references a missing npm script, add the script or update `.diptych/config.yaml`.
+3. To verify the project now, run your real commands directly, such as `npm run typecheck`, `npm run lint`, and `npm test`.
+
+**Prevention:** Keep validation commands cheap and reliable so warnings remain rare.
+
+**See also:** [FEATURES.md](./FEATURES.md#run-readiness--doctor), [WORKFLOW.md](./WORKFLOW.md).
+
+---
+
+### Symptom: Run Readiness warns that the working tree is dirty
+
+**Likely cause:** Files are modified or untracked before Task Briefs exist. Readiness cannot know yet whether those files overlap the future task scope, so ordinary dirty state is a warning rather than a blocker.
+
+**Fix:**
+1. Run `git status` and decide whether the local edits should be part of this run.
+2. Continue if the edits are intentional and unlikely to overlap.
+3. Use `diptych start --worktree <name> "..."` from a clean source checkout when you want isolation.
+
+**Prevention:** Start substantial runs from a clean checkout or a dedicated worktree.
+
+**See also:** [FEATURES.md](./FEATURES.md#diptych-start---worktree-name), [WORKFLOW.md](./WORKFLOW.md).
+
+---
+
 ## Cost and billing
 
 ### Symptom: Anthropic / OpenAI bill spiked after a single run

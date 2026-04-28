@@ -4,6 +4,7 @@ import { bootstrapOtel } from './cli/otel-bootstrap.js';
 import { Command } from 'commander';
 import ansis from 'ansis';
 import { registerStartCommand } from './cli/commands/start.js';
+import { registerDoctorCommand } from './cli/commands/doctor.js';
 import { registerSpecCommand } from './cli/commands/spec.js';
 import { registerInitCommand } from './cli/commands/init.js';
 import { registerStatusCommand } from './cli/commands/status.js';
@@ -30,6 +31,7 @@ program
   .description('Cost-optimized AI coding orchestrator');
 
 registerStartCommand(program);
+registerDoctorCommand(program);
 registerSpecCommand(program);
 registerInitCommand(program);
 registerStatusCommand(program);
