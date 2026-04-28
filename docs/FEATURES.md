@@ -60,6 +60,25 @@ implementer:
 
 Full schema: [CONFIGURATION.md §planner](./CONFIGURATION.md#2-planner) and [CONFIGURATION.md §implementer](./CONFIGURATION.md#3-implementer). Capability matrix per backend: [ARCHITECTURE.md §Capability matrix](./ARCHITECTURE.md).
 
+### Run Readiness / Doctor
+
+**What it does.** Before `diptych start` spends planner or implementer tokens, diptych checks config, mode/approval resolution, runner posture, context length, validation settings, git status, active-session conflicts, and budget posture. Blockers stop the run; warnings can continue.
+
+**How to use.**
+
+```bash
+diptych doctor
+diptych doctor --json
+diptych start "add profile settings"
+diptych start --json "fix parser edge case"
+```
+
+`diptych doctor` is strictly read-only and writes no config, migrations, sessions, worktrees, snapshots, model calls, validation runs, or network probes. `diptych start` writes a compact `.diptych/sessions/<id>/readiness.json` record inside the active execution session before model calls. In headless mode the readiness report is emitted as the first structured JSON line.
+
+**When to use.** Run `doctor` while setting up a repo, before CI automation, or when a start run is blocked by config/repo posture. Use the pre-start report to decide whether to continue through warnings such as dirty files, missing context length, disabled validation, or unset budget.
+
+**Events/output.** Human output groups checks into config, runners, context, validation, repository, and cost. JSON output uses `{ type: "readiness_report", report: ... }`. Readiness never runs the validation commands themselves; it only inspects the configured posture.
+
 ### Validation pipeline + checkpoints
 
 **What it does.** After every implementer task, diptych runs `tsc --noEmit` → Biome lint → tests (in that order, stop on first failure). On success it records evidence and can create checkpoints. Product-level git commits are optional when explicitly configured; checkpoint safety does not depend on commits.
@@ -632,7 +651,7 @@ Return shape: `{ kind: 'allow' | 'deny' | 'warn' | 'crash', message?: string }`.
 
 ### `diptych start --json`
 
-**What it does.** Skips Ink, replaces the TUI sink with NDJSON-on-stdout, and stubs interactive callbacks (auto-accept/reject per config, empty answers to questions). The JSONL session log is byte-identical to an interactive run.
+**What it does.** Skips Ink, emits a readiness report first, replaces the TUI sink with NDJSON-on-stdout, and stubs interactive callbacks (auto-accept/reject per config, empty answers to questions). The JSONL session log is byte-identical to an interactive run after the pre-run readiness line.
 
 **How to use.**
 
@@ -648,7 +667,7 @@ diptych start --json --allow-hooks --mode quick "add lint rule for empty catch" 
 - Sticky / confirm-tier approvals fail fast.
 - All other behavior matches an interactive run.
 
-Sink: `stdoutJsonSink` in `src/engine/events/sinks/stdout-json.ts`. Each line is a single `EngineEvent` JSON object.
+The first line is `{ type: "readiness_report", report: ... }`. After that, `stdoutJsonSink` in `src/engine/events/sinks/stdout-json.ts` emits one `EngineEvent` JSON object per line.
 
 ---
 
@@ -661,6 +680,7 @@ Sink: `stdoutJsonSink` in `src/engine/events/sinks/stdout-json.ts`. Each line is
 ```bash
 diptych init [--reconfigure]
 diptych status [--history]
+diptych doctor [--json]
 ```
 
 ### `diptych resume`

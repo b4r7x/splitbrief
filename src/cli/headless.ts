@@ -5,6 +5,7 @@ import { applyCLIOverrides } from '../core/config/runtime/overrides.js';
 import { warnStderr } from '../lib/warn.js';
 import { runWorkflow } from '../engine/orchestrator/run/run.js';
 import { cliError } from './errors.js';
+import type { CollectedReadiness } from '../core/readiness/collect.js';
 
 function buildNoopSinks() {
   return {
@@ -19,8 +20,12 @@ export async function runHeadless(
   opts: WorkflowOpts,
   savedState?: WorkflowState | undefined,
   sessionId?: string | undefined,
+  readiness?: CollectedReadiness | undefined,
 ): Promise<void> {
-  const { config: loaded, warnings } = loadConfig(projectDir);
+  const loadedResult = readiness?.config
+    ? { config: readiness.config, warnings: readiness.warnings }
+    : loadConfig(projectDir);
+  const { config: loaded, warnings } = loadedResult;
   for (const w of warnings) warnStderr(`⚠ ${w}`);
 
   const config = applyCLIOverrides(loaded, {

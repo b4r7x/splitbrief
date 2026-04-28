@@ -51,6 +51,7 @@ Same-checkout source writes must be sequential. Parallel implementation is allow
 | 10 | [`agent-briefs/04-action-handlers.md`](./agent-briefs/04-action-handlers.md) | Source brief for recovery action handlers. |
 | 11 | [`agent-briefs/05-tui-actions.md`](./agent-briefs/05-tui-actions.md) | Source brief for TUI prompts and user actions. |
 | 12 | [`agent-briefs/06-tests-and-validation.md`](./agent-briefs/06-tests-and-validation.md) | Source brief for test coverage, docs sync, and verification. |
+| 13 | [`execute-prompt.md`](./execute-prompt.md) | Copy/paste prompt for handing this pack to a fresh implementation context. |
 
 ## Core Direction
 

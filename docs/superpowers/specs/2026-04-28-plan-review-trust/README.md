@@ -33,6 +33,7 @@ Paths without a leading directory in this table are relative to `docs/superpower
 | 7 | `verification.md` | Targeted validation and manual TUI checks. |
 | 8 | `agent-briefs/00-coordinator.md` | Coordinator instructions for implementation. |
 | 9 | `agent-briefs/01-*.md` through `04-*.md` | Fresh-context worker briefs. |
+| 10 | `execute-prompt.md` | Copy/paste prompt for handing this pack to a fresh implementation context. |
 
 ## Implementation Slices
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { chmodSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -10,9 +10,14 @@ import { isCliError } from '../errors.js';
 import type { SpawnServerOptions } from '../../engine/ipc/spawn-server.js';
 
 const spawnServerMock = vi.hoisted(() => vi.fn());
+const runHeadlessMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../engine/ipc/spawn-server.js', () => ({
   spawnServer: spawnServerMock,
+}));
+
+vi.mock('../headless.js', () => ({
+  runHeadless: runHeadlessMock,
 }));
 
 vi.mock('../init-stores.js', () => ({
@@ -36,6 +41,7 @@ beforeEach(() => {
   routerStore.init({ screen: 'home' });
   vi.mocked(renderApp).mockClear();
   vi.mocked(initStores).mockClear();
+  runHeadlessMock.mockClear();
   vi.mocked(spawnServer).mockImplementation(async (opts: SpawnServerOptions) => {
     mkdirSync(opts.sessionDir, { recursive: true });
     writeFileSync(
@@ -51,6 +57,7 @@ beforeEach(() => {
     );
     return { ok: true, pid: 1234, sessionId: opts.sessionId };
   });
+  runHeadlessMock.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -75,6 +82,39 @@ function writeLiveSession(projectDir: string, sessionId: string): void {
 function writeConfigMarker(projectDir: string): void {
   mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
   writeFileSync(join(projectDir, DIPTYCH_DIR, CONFIG_FILE), '# test config marker\n');
+}
+
+function writeReadyReadinessFixtures(projectDir: string): void {
+  mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+  writeFileSync(join(projectDir, '.git', 'info', 'exclude'), '.diptych/\npackage.json\n');
+  const configPath = join(projectDir, DIPTYCH_DIR, CONFIG_FILE);
+  writeFileSync(configPath, [
+    'version: 3',
+    'planner:',
+    '  kind: api',
+    '  provider: ollama',
+    '  apiBase: http://localhost:11434/v1',
+    '  model: qwen2.5-coder:7b',
+    '  contextLength: 32768',
+    'implementer:',
+    '  kind: api',
+    '  provider: ollama',
+    '  apiBase: http://localhost:11434/v1',
+    '  model: qwen2.5-coder:7b',
+    '  contextLength: 32768',
+    'validation:',
+    '  typecheck: true',
+    '  lint: true',
+    '  test: true',
+    '  testCommand: npm test',
+    'workflow:',
+    '  approve: default',
+    '  maxRetries: 3',
+    '  persistTranscript: true',
+    '  mode: standard',
+  ].join('\n'));
+  chmodSync(configPath, 0o600);
+  writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run' } }, null, 2));
 }
 
 function readOnlySessionArtifact(projectDir: string, artifact: string): unknown {
@@ -292,5 +332,69 @@ describe('start command — worktree indicator passthrough', () => {
     await runStart(['--project', tmp, 'implement X']);
 
     expect(routerStore.get()).toMatchObject({ screen: 'workflow', worktreeName: undefined });
+  });
+});
+
+describe('start command — readiness', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('emits readiness before headless workflow execution and persists compact session evidence', async () => {
+    writeReadyReadinessFixtures(tmp);
+    const stdoutChunks: string[] = [];
+    let writesBeforeWorkflow = 0;
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      stdoutChunks.push(String(chunk));
+      return true;
+    });
+    runHeadlessMock.mockImplementation(async () => {
+      writesBeforeWorkflow = stdoutChunks.length;
+    });
+
+    await runStart(['--project', tmp, '--json', 'implement X']);
+
+    expect(writesBeforeWorkflow).toBeGreaterThan(0);
+    const firstLine = JSON.parse(stdoutChunks[0]?.trim() ?? '{}') as {
+      type?: string;
+      report?: { status?: string; nextAction?: { kind?: string } };
+    };
+    expect(firstLine.type).toBe('readiness_report');
+    expect(firstLine.report?.status).toBe('ready');
+    expect(runHeadlessMock).toHaveBeenCalledTimes(1);
+
+    const readinessRecord = readOnlySessionArtifact(tmp, 'readiness.json') as {
+      type?: string;
+      status?: string;
+      warningCount?: number;
+    };
+    expect(readinessRecord.type).toBe('start-readiness');
+    expect(readinessRecord.status).toBe('ready');
+    expect(readinessRecord.warningCount).toBe(0);
+  });
+
+  it('blocks headless start before workflow execution when readiness has a blocker', async () => {
+    writeConfigMarker(tmp);
+    writeLiveSession(tmp, '2026-04-28-live');
+    const stdoutChunks: string[] = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      stdoutChunks.push(String(chunk));
+      return true;
+    });
+
+    let captured: unknown;
+    try {
+      await runStart(['--project', tmp, '--json', 'implement X']);
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    expect(runHeadlessMock).not.toHaveBeenCalled();
+    const firstLine = JSON.parse(stdoutChunks[0]?.trim() ?? '{}') as {
+      report?: { status?: string; sections?: Array<{ checks: Array<{ id: string }> }> };
+    };
+    expect(firstLine.report?.status).toBe('blocked');
+    expect(firstLine.report?.sections?.flatMap(section => section.checks.map(check => check.id))).toContain('repo.active-session-live');
   });
 });

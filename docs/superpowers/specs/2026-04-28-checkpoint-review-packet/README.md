@@ -52,6 +52,7 @@ This is session UX. It is not a saved plan library or project-management system.
 | 9 | `agent-briefs/02-review-packet-model.md` | Review packet artifact/model worker brief. |
 | 10 | `agent-briefs/03-summary-tui.md` | Summary screen rendering worker brief. |
 | 11 | `agent-briefs/04-tests-and-validation.md` | Final validation and test-hardening worker brief. |
+| 12 | `execute-prompt.md` | Copy/paste prompt for handing this pack to a fresh implementation context. |
 
 ## Non-Goals
 

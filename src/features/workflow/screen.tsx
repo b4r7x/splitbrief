@@ -1,10 +1,11 @@
-import { useEffect } from 'react';
-import { Box, useApp, useInput } from 'ink';
+import { useEffect, useState } from 'react';
+import { Box, Text, useApp, useInput } from 'ink';
 import { dirname } from 'node:path';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { InputMode } from '../../stores/navigation/router.js';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { ApprovalPrompt } from './components/approval-prompt.js';
+import { ReadinessPanel } from './components/readiness-panel.js';
 import { openApprovalPrompt } from '../../stores/approval-prompt/actions.js';
 import { Header } from './components/header.js';
 import { AgentStatusRow } from './components/agent-status-row.js';
@@ -47,6 +48,8 @@ import {
   getWorkflowViewportHeight,
   hasWorkflowConfig,
 } from '../../core/layout/workflow-rect.js';
+import { collectReadiness } from '../../core/readiness/collect.js';
+import type { ReadinessReport } from '../../core/readiness/types.js';
 
 interface WorkflowScreenProps {
   commands: SlashCommandDef[];
@@ -83,8 +86,15 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
   const feature = routerStore.use(s => s.screen === 'workflow' ? s.feature : '');
   const resumeState = routerStore.use(s => s.screen === 'workflow' ? s.resumeState : undefined);
   const sessionId = routerStore.use(s => s.screen === 'workflow' ? s.sessionId : undefined);
+  const routeReadiness = routerStore.use(s => s.screen === 'workflow' ? s.readiness : undefined);
   const attach = routerStore.use(s => s.screen === 'workflow' ? s.attach : undefined);
   const isAttachedClient = attach !== undefined;
+  const [computedReadiness, setComputedReadiness] = useState<ReadinessReport | undefined>(routeReadiness);
+  const [readinessAccepted, setReadinessAccepted] = useState(false);
+  const readiness = routeReadiness ?? computedReadiness;
+  const readinessLoaded = isAttachedClient || readiness !== undefined;
+  const readinessNeedsGate = !isAttachedClient && readiness !== undefined && readiness.status !== 'ready' && !readinessAccepted;
+  const readinessBlocked = !isAttachedClient && readiness?.status === 'blocked';
   const { cols, rows, isSmall } = terminal;
   const inputRows = input.rows;
 
@@ -101,7 +111,7 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
     selectedSkills: selectedSkillMetas,
     sessionId,
     inputMode,
-    enabled: !isAttachedClient,
+    enabled: !isAttachedClient && readinessLoaded && !readinessNeedsGate && !readinessBlocked,
   });
   const review = createReviewInputHandler(inputMode);
   const handleIpcPrompt = async (request: IpcPromptRequest): Promise<IpcPromptResponse> => {
@@ -189,6 +199,21 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
     conversationScrollStore.reset();
   }, [isAttachedClient, attach?.sockPath]);
 
+  useEffect(() => {
+    if (isAttachedClient || routeReadiness || !projectDir) return undefined;
+    let cancelled = false;
+    collectReadiness({ projectDir, config })
+      .then(({ report }) => {
+        if (!cancelled) setComputedReadiness(report);
+      })
+      .catch((err) => {
+        if (!cancelled) feedbackStore.setError(`Readiness check failed: ${String(err)}`);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAttachedClient, routeReadiness, projectDir, config]);
+
   useInput(
     (input, key) => {
       if (!(key.ctrl && input === 'd')) return;
@@ -211,6 +236,23 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
   const inputHint = isAttachedClient
     ? resolveAttachInputHint(ipcState.status)
     : resolveInputHint(cancelled, inputMode.hint, inputMode.mode, phase);
+
+  if (!isAttachedClient && !readinessLoaded) {
+    return (
+      <ScreenShell justifyContent="center" alignItems="center">
+        <Text>Checking run readiness...</Text>
+      </ScreenShell>
+    );
+  }
+
+  if (!isAttachedClient && readiness !== undefined && (readinessNeedsGate || readinessBlocked)) {
+    return (
+      <ReadinessPanel
+        report={readiness}
+        onContinue={() => setReadinessAccepted(true)}
+      />
+    );
+  }
 
   return (
     <ScreenShell

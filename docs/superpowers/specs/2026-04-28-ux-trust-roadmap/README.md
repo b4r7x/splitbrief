@@ -41,6 +41,7 @@ Each child pack owns its own requirements, implementation plan, detailed task br
 | 7 | `tasks.md` | High-level implementation sequence across child packs. |
 | 8 | `verification.md` | Coordinator verification checklist. |
 | 9 | `agent-briefs/00-coordinator.md` | Prompt for a future coordinator agent. |
+| 10 | `execution-order.md` | Exact order and loop for executing the implementation packs. |
 
 ## Execution Order
 

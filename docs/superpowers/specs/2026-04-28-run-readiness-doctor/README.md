@@ -42,6 +42,7 @@ Paths in this table are relative to `docs/superpowers/specs/2026-04-28-run-readi
 | 7 | `verification.md` | Targeted commands and manual checks. |
 | 8 | `agent-briefs/00-coordinator.md` | Coordinator prompt for a future implementation pass. |
 | 9 | `agent-briefs/01-*.md` through `04-*.md` | Bounded worker prompts for fresh AI contexts. |
+| 10 | `execute-prompt.md` | Copy/paste prompt for handing this pack to a fresh implementation context. |
 
 ## Implementation Slices
 

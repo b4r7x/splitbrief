@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { createElement } from 'react';
+import { join } from 'node:path';
 import { simpleGit } from 'simple-git';
 import { App } from '../../app.js';
 import { renderApp } from '../render.js';
@@ -19,8 +20,16 @@ import { configPath } from '../../core/config/load/load.js';
 import { sessionDir } from '../../core/paths.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { assertNotWindows } from '../platform.js';
+import { writeSecureFile } from '../../lib/fs.js';
+import { collectReadiness } from '../../core/readiness/collect.js';
+import {
+  createStartReadinessRecord,
+  formatReadinessReport,
+  readinessBlockerMessage,
+} from '../../core/readiness/format.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides.js';
+import type { ReadinessReport } from '../../core/readiness/types.js';
 
 async function applyWorktreeOption(feature: string | undefined, opts: WorkflowOpts): Promise<void> {
   if (opts.worktree === undefined) return;
@@ -38,6 +47,40 @@ async function applyWorktreeOption(feature: string | undefined, opts: WorkflowOp
   } catch (err) {
     throw cliError(err instanceof Error ? err.message : String(err), 1);
   }
+}
+
+function persistStartReadiness(projectDir: string, sessionId: string, report: ReadinessReport): void {
+  const record = createStartReadinessRecord(report);
+  writeSecureFile(
+    join(sessionDir(projectDir, sessionId), 'readiness.json'),
+    JSON.stringify(record, null, 2) + '\n',
+  );
+}
+
+function buildCLIOverrides(opts: WorkflowOpts, mode: WorkflowOpts['mode']): CLIOverrides {
+  return {
+    planner: {
+      tool: opts.planner,
+      model: opts.plannerModel,
+      command: opts.plannerCommand,
+    },
+    implementer: {
+      tool: opts.implementer ?? opts.provider,
+      model: opts.implementerModel ?? opts.model,
+      command: opts.implementerCommand,
+    },
+    autoApprove: opts.auto,
+    approve: opts.approve,
+    mode,
+    budget: opts.budget,
+    plannerEffort: opts.plannerEffort,
+  };
+}
+
+function assertReadinessCanStart(report: ReadinessReport, json: boolean | undefined): void {
+  if (report.status !== 'blocked') return;
+  if (!json) console.log(formatReadinessReport(report));
+  throw cliError(readinessBlockerMessage(report), 1);
 }
 
 export function registerStartCommand(program: Command): void {
@@ -63,29 +106,17 @@ export function registerStartCommand(program: Command): void {
       const projectDir = resolveProjectDir(opts.project);
       await maybeMigrate(projectDir);
       await ensureGitAndConfig(projectDir);
+      const readiness = await collectReadiness({ projectDir, opts });
+      assertReadinessCanStart(readiness.report, opts.json);
+      console.log(formatReadinessReport(readiness.report));
 
       const mode = opts.mode ?? 'standard';
       const sessId = generateSessionId(projectDir, feature);
       const sessDir = sessionDir(projectDir, sessId);
       ensureSessionDir(projectDir, sessId);
+      persistStartReadiness(projectDir, sessId, readiness.report);
 
-      const overrides: CLIOverrides = {
-        planner: {
-          tool: opts.planner,
-          model: opts.plannerModel,
-          command: opts.plannerCommand,
-        },
-        implementer: {
-          tool: opts.implementer ?? opts.provider,
-          model: opts.implementerModel ?? opts.model,
-          command: opts.implementerCommand,
-        },
-        autoApprove: opts.auto,
-        approve: opts.approve,
-        mode,
-        budget: opts.budget,
-        plannerEffort: opts.plannerEffort,
-      };
+      const overrides = buildCLIOverrides(opts, mode);
 
       const result = await spawnServer({
         sessionDir: sessDir,
@@ -113,17 +144,27 @@ export function registerStartCommand(program: Command): void {
     if (opts.json) {
       if (!feature) throw cliError('--json requires a feature argument');
       await ensureGitAndConfig(projectDir);
+      const readiness = await collectReadiness({ projectDir, opts, defaultAutoApprove: true });
+      process.stdout.write(JSON.stringify({ type: 'readiness_report', report: readiness.report }) + '\n');
+      assertReadinessCanStart(readiness.report, true);
       clearStaleSession(projectDir);
       const sessionId = beginSession(projectDir, feature);
-      await runHeadless(feature, projectDir, opts, undefined, sessionId);
+      persistStartReadiness(projectDir, sessionId, readiness.report);
+      await runHeadless(feature, projectDir, opts, undefined, sessionId, readiness);
       return;
     }
 
     const { useFullscreen, useMouse, needsSetup } = await setupWorkflow(opts);
 
+    const readiness = feature && !needsSetup
+      ? await collectReadiness({ projectDir, opts })
+      : undefined;
+    if (readiness) assertReadinessCanStart(readiness.report, false);
+
     clearStaleSession(projectDir);
 
     const sessionId = feature ? beginSession(projectDir, feature) : undefined;
+    if (feature && sessionId && readiness) persistStartReadiness(projectDir, sessionId, readiness.report);
 
     await initStores(projectDir, opts);
     let worktreeName: string | null = null;
@@ -135,7 +176,13 @@ export function registerStartCommand(program: Command): void {
     if (needsSetup) {
       routerStore.init({ screen: 'setup', onComplete: feature ? 'workflow' : 'home', feature });
     } else if (feature) {
-      routerStore.init({ screen: 'workflow', feature, sessionId, worktreeName: worktreeName ?? undefined });
+      routerStore.init({
+        screen: 'workflow',
+        feature,
+        sessionId,
+        worktreeName: worktreeName ?? undefined,
+        readiness: readiness?.report,
+      });
     }
 
     await renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useMouse });
