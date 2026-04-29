@@ -9,6 +9,7 @@ import type { Config } from '../core/schemas/config.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { Implementer } from '../engine/implementers/types.js';
 import type { Planner } from '../engine/planners/types.js';
+import { beginSession } from '../core/sessions/lifecycle.js';
 
 const runnerMocks = vi.hoisted(() => ({
   planner: undefined as Planner | undefined,
@@ -144,15 +145,28 @@ describe('runHeadless — budget pause behavior', () => {
 
   it('emits budget_paused JSON and fails fast through the public headless workflow path', async () => {
     const projectDir = setupProject();
+    const sessionId = beginSession(projectDir, 'fix budget behavior');
 
-    await runHeadless('fix budget behavior', projectDir, {}, makeBudgetState());
+    await expect(
+      runHeadless('fix budget behavior', projectDir, {}, makeBudgetState(), sessionId),
+    ).rejects.toMatchObject({
+      exitCode: 1,
+      message: expect.stringContaining('Recovery required'),
+    });
 
     const output = stdoutChunks.join('');
     const jsonLines = output
       .trim()
       .split('\n')
       .filter((line) => line.trim().startsWith('{'))
-      .map((line) => JSON.parse(line) as { type?: string; currentCost?: number; maxBudget?: number; threshold?: number });
+      .map((line) => JSON.parse(line) as {
+        type?: string;
+        currentCost?: number;
+        maxBudget?: number;
+        threshold?: number;
+        reason?: string;
+        sessionId?: string;
+      });
     const paused = jsonLines.find((line) => line.type === 'budget_paused');
 
     expect(runnerMocks.implementer?.implement).toHaveBeenCalled();
@@ -160,7 +174,12 @@ describe('runHeadless — budget pause behavior', () => {
     expect(paused?.currentCost).toBeGreaterThan(17);
     expect(paused?.maxBudget).toBe(20);
     expect(paused?.threshold).toBe(0.85);
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(jsonLines).toContainEqual(expect.objectContaining({
+      type: 'recovery_required',
+      sessionId,
+      reason: 'budget-paused',
+    }));
+    expect(exitSpy).not.toHaveBeenCalled();
   });
 
   it('uses the configured budgetPauseThreshold in the JSON output', async () => {

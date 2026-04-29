@@ -1,8 +1,8 @@
 # 00 - Coordinator
 
-> Fresh-context coordinator brief for implementing `Checkpoint / Restore UX + Post-run Review Packet`.
-> Use this only for a future source implementation pass; do not execute it during docs-only spec-pack maintenance.
-> Use this only when coordinating the full implementation. If assigned one worker brief, implement only that brief.
+> Historical fresh-context coordinator brief used for implementing `Checkpoint / Restore UX + Post-run Review Packet`.
+> Do not re-run this brief unless intentionally changing or re-implementing this pack.
+> If reused, coordinate the full implementation. If assigned one worker brief, implement only that brief.
 > Do not run `git add`, `git stage`, `git commit`, or `git stash`.
 
 ## Project Context

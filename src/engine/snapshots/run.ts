@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { RunSnapshotLedger, SnapshotManifest } from '../../core/schemas/snapshot.js';
+import type { RunSnapshotKind, RunSnapshotLedger, SnapshotManifest } from '../../core/schemas/snapshot.js';
 import { RunSnapshotLedgerSchema } from '../../core/schemas/snapshot.js';
 import {
   SNAPSHOT_BASELINE_ID,
@@ -77,6 +77,7 @@ async function createRunLedger(opts: {
   projectDir: string;
   sessionId: string;
   runSnapshot: SnapshotManifest;
+  runSnapshotKind?: RunSnapshotKind;
   accepted: boolean;
   rejected: boolean;
 }): Promise<RunSnapshotLedger> {
@@ -92,12 +93,17 @@ async function createRunLedger(opts: {
     ...(previous?.runSnapshotIds ?? []),
     opts.runSnapshot.id,
   ].filter((id, index, ids) => ids.indexOf(id) === index);
+  const runSnapshotKinds = {
+    ...(previous?.runSnapshotKinds ?? {}),
+    ...(opts.runSnapshotKind !== undefined && { [opts.runSnapshot.id]: opts.runSnapshotKind }),
+  };
   const now = new Date().toISOString();
 
   return {
     version: 1,
     sessionId: opts.sessionId,
     runSnapshotIds,
+    ...(Object.keys(runSnapshotKinds).length > 0 && { runSnapshotKinds }),
     accepted: opts.accepted,
     rejected: opts.rejected,
     beforeHash,
@@ -125,6 +131,7 @@ export async function recordRunSnapshot(
   projectDir: string,
   sessionId: string,
   snapshot: SnapshotManifest,
+  kind?: RunSnapshotKind,
 ): Promise<void> {
   const previous = await readRunLedger(projectDir, sessionId);
   if (previous?.accepted || previous?.rejected) return;
@@ -132,6 +139,7 @@ export async function recordRunSnapshot(
     projectDir,
     sessionId,
     runSnapshot: snapshot,
+    ...(kind !== undefined && { runSnapshotKind: kind }),
     accepted: false,
     rejected: false,
   });
@@ -198,6 +206,7 @@ export async function acceptRunSnapshot(
     projectDir,
     sessionId,
     runSnapshot: result.manifest,
+    runSnapshotKind: 'accepted-run',
     accepted: true,
     rejected: false,
   });

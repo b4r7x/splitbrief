@@ -1,7 +1,7 @@
 # 04 - Tests And Validation
 
-> Fresh-context worker brief.
-> Use this only for a future source implementation pass; do not execute it during docs-only spec-pack maintenance.
+> Historical fresh-context worker brief.
+> Do not re-run this brief unless intentionally changing or re-implementing this pack.
 > Run after briefs 01, 02, and 03 are complete in the same checkout.
 > Do not run `git add`, `git stage`, `git commit`, or `git stash`.
 

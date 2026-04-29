@@ -1,6 +1,6 @@
 # Coordinator Brief - UX Trust Roadmap
 
-Guard: use this only for roadmap coordination or future implementation planning; do not execute source implementation during docs-only pack maintenance.
+Guard: historical roadmap coordination prompt. Do not re-run it unless intentionally changing or re-planning the roadmap.
 
 You are coordinating the UX/trust roadmap under:
 

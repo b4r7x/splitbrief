@@ -60,7 +60,7 @@ async function maybeAutoSnapshot(opts: {
       eventPhase: opts.phase,
     });
     if (opts.recordInRunLedger) {
-      await recordRunSnapshot(opts.projectDir, opts.sessionId, result.manifest);
+      await recordRunSnapshot(opts.projectDir, opts.sessionId, result.manifest, 'post-task');
     }
   } catch (err) {
     publishWarning(opts.bus, opts.phase, labelError(`auto-snapshot (${opts.label}) failed`, err));

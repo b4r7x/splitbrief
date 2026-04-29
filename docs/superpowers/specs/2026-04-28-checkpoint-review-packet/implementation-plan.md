@@ -1,6 +1,6 @@
 # Implementation Plan
 
-> This is a future implementation plan. Do not implement code as part of this documentation-only pack.
+> Status: v1 implemented as of 2026-04-29. This document now records shipped source areas, validation focus, and deferred polish.
 
 ## Technical Context
 
@@ -23,7 +23,7 @@ Repository constraints for implementation:
 
 ## Phase 1 - Checkpoint Display Model
 
-Add a read-only checkpoint display helper that derives user-facing checkpoint metadata from existing snapshot storage.
+Implemented: a read-only checkpoint display helper derives user-facing checkpoint metadata from existing snapshot storage.
 
 Expected source files:
 
@@ -32,14 +32,14 @@ src/engine/snapshots/checkpoint-summary.ts
 src/engine/snapshots/checkpoint-summary.test.ts
 ```
 
-Possible touched files:
+Not changed in v1:
 
 ```text
 src/cli/commands/snapshot.ts
 src/cli/commands/snapshot.test.ts
 ```
 
-Responsibilities:
+Implemented responsibilities:
 
 - Read `listSnapshots()`.
 - Read `readRunSnapshotLedger()`.
@@ -53,9 +53,9 @@ Responsibilities:
 
 ## Phase 2 - Review Packet Model And Writer
 
-Add a versioned review packet schema and writer. Generate JSON and Markdown at run completion.
+Implemented: a versioned review packet schema and writer generate JSON and Markdown at run completion.
 
-Expected source files:
+Implemented source files:
 
 ```text
 src/core/schemas/review-packet.ts
@@ -63,24 +63,29 @@ src/engine/orchestrator/review-packet.ts
 src/engine/orchestrator/review-packet.test.ts
 ```
 
-Expected modified files:
+Implemented modified files:
 
 ```text
 src/core/paths.ts
 src/core/schemas/summary.ts
 src/engine/orchestrator/final-review.ts
 src/engine/orchestrator/summary.ts
+```
+
+Deferred from the original possible touch list:
+
+```text
 src/engine/events/types.ts
 ```
 
-Responsibilities:
+Implemented responsibilities:
 
 - Add constants for `review-packet.json` and `review-packet.md`.
 - Build packet data from summary, state, evidence, drift, brief quality, snapshots, run ledger, final review status, recovery decisions, and relevant session events.
 - Write JSON as canonical data.
 - Render Markdown as human review artifact.
 - Extend `SummarySchema` with compact packet/checkpoint rollups for TUI rendering.
-- Publish a `review_packet_written` event if useful for logs and tests.
+- Keep packet generation failure non-destructive and visible through the existing warning path.
 
 Generation timing:
 
@@ -94,9 +99,9 @@ If final planner review fails, still write a packet with `finalReview.status: "f
 
 ## Phase 3 - Summary TUI
 
-Expose the packet and checkpoint summary in the existing summary screen.
+Implemented: the packet and checkpoint summary are exposed in the existing summary screen.
 
-Expected source files:
+Implemented source files:
 
 ```text
 src/features/summary/components/summary-checkpoints.tsx
@@ -105,7 +110,7 @@ src/features/summary/components/summary-checkpoints.test.tsx
 src/features/summary/components/summary-review-packet.test.tsx
 ```
 
-Expected modified files:
+Implemented modified files:
 
 ```text
 src/features/summary/screen.tsx
@@ -113,7 +118,7 @@ src/features/summary/screen.test.tsx
 src/features/summary/components/summary-components.test.tsx
 ```
 
-Responsibilities:
+Implemented responsibilities:
 
 - Render a compact checkpoint section when checkpoint data exists.
 - Render review packet paths and high-signal statuses.
@@ -123,9 +128,9 @@ Responsibilities:
 
 ## Phase 4 - CLI And Artifact UX Polish
 
-If Phase 1 touches the CLI, improve `diptych snapshot list` output without changing restore semantics.
+Deferred: `diptych snapshot list` output was not changed in v1. Existing snapshot create/list/restore/diff semantics remain unchanged.
 
-Expected behavior:
+Deferred expected behavior:
 
 - Display checkpoint kind/name when available.
 - Display phase and task index.
@@ -136,7 +141,7 @@ No new dependency is expected.
 
 ## Phase 5 - Tests And Validation
 
-Add behavior-focused coverage:
+Implemented with behavior-focused coverage for:
 
 - checkpoint kind derivation
 - run-ledger marker behavior
@@ -148,7 +153,7 @@ Add behavior-focused coverage:
 - summary TUI renders packet/checkpoint sections
 - snapshot restore copy communicates conflict behavior
 
-Recommended validation commands:
+Recommended shared-checkout validation commands:
 
 ```bash
 npm test -- src/engine/snapshots/checkpoint-summary.test.ts src/engine/orchestrator/review-packet.test.ts
@@ -158,7 +163,7 @@ npm run lint
 git diff --check
 ```
 
-Run broader tests when the implementation is stable:
+Run broader tests only in an isolated checkout when suites may exercise git staging/commit fixtures:
 
 ```bash
 npm test

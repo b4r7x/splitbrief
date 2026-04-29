@@ -12,6 +12,8 @@ import { SummaryCostBreakdown } from './components/summary-cost-breakdown.js';
 import { SummaryTaskTable } from './components/summary-task-table.js';
 import { SummaryPhaseTiming } from './components/summary-phase-timing.js';
 import { SummaryEvidence } from './components/summary-evidence.js';
+import { SummaryCheckpoints } from './components/summary-checkpoints.js';
+import { SummaryReviewPacket } from './components/summary-review-packet.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { routerStore } from '../../stores/navigation/router.js';
 
@@ -133,6 +135,10 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
       )}
 
       {summary.evidenceSummary && <SummaryEvidence summary={summary} {...(sessionId !== undefined && { sessionId })} />}
+
+      <SummaryCheckpoints checkpointSummary={summary.checkpointSummary} />
+
+      <SummaryReviewPacket summary={summary} sessionId={sessionId} />
 
       {summary.phaseTimings && (
         <SummaryPhaseTiming

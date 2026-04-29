@@ -1,7 +1,7 @@
 # 02 - Review Packet Model
 
-> Fresh-context worker brief.
-> Use this only for a future source implementation pass; do not execute it during docs-only spec-pack maintenance.
+> Historical fresh-context worker brief.
+> Do not re-run this brief unless intentionally changing or re-implementing this pack.
 > Implement only this brief after `01-checkpoint-ux.md` is complete.
 > Do not run `git add`, `git stage`, `git commit`, or `git stash`.
 

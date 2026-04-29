@@ -24,6 +24,7 @@ import { runPlannerReview } from './planner-review.js';
 import { createSnapshot } from '../snapshots/store.js';
 import { recordRunSnapshot } from '../snapshots/run.js';
 import { hashTaskBrief } from '../../core/brief-hash.js';
+import { writeReviewPacket } from './review-packet.js';
 
 export async function runFinalReviewPhase(
   opts: { projectDir: string; sessionId: string; config: Config; callbacks: OrchestratorCallbacks; bus: EventBus; state: WorkflowState; planner: Planner; metadata?: SpecMetadata | null },
@@ -46,7 +47,7 @@ export async function runFinalReviewPhase(
         bus,
         eventPhase: state.phase,
       });
-      await recordRunSnapshot(projectDir, sessionId, result.manifest);
+      await recordRunSnapshot(projectDir, sessionId, result.manifest, 'pre-final-review');
     } catch (err) {
       publishWarning(bus, state.phase, labelError('auto-snapshot (pre-final-review) failed', err));
     }
@@ -102,11 +103,37 @@ export async function runFinalReviewPhase(
   publishPlannerStatus(bus, state, 'done', { duration: Date.now() - finalReviewStart });
   publishEvent(bus, { type: 'workflow_complete', ts: Date.now(), phase: state.phase });
 
-  if (phaseTimings) {
-    phaseTimings.review = Date.now() - finalReviewStart;
+  if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
+
+  let summary = buildSummary({
+    ...summaryBase,
+    projectDir,
+    sessionId,
+    state,
+    taskBreakdowns,
+    ...(phaseTimings && { phaseTimings }),
+  });
+  try {
+    await writeReviewPacket({
+      projectDir,
+      sessionId,
+      summary,
+      state,
+      finalReviewStatus: reviewStatus,
+    });
+  } catch (err) {
+    publishWarning(bus, state.phase, labelError('Review packet generation failed', err));
   }
 
-  const summary = buildSummary({ ...summaryBase, state, taskBreakdowns, ...(phaseTimings && { phaseTimings }) });
+  if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
+  summary = buildSummary({
+    ...summaryBase,
+    projectDir,
+    sessionId,
+    state,
+    taskBreakdowns,
+    ...(phaseTimings && { phaseTimings }),
+  });
   callbacks.onComplete(summary);
   return summary;
 }

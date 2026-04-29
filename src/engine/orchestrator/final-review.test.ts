@@ -7,7 +7,14 @@ import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/or
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
-import { sessionDir, REVIEW_FILE, SPEC_FILE, DRIFT_REPORT_FILE } from '../../core/paths.js';
+import {
+  sessionDir,
+  REVIEW_FILE,
+  SPEC_FILE,
+  DRIFT_REPORT_FILE,
+  REVIEW_PACKET_JSON_FILE,
+  REVIEW_PACKET_MARKDOWN_FILE,
+} from '../../core/paths.js';
 import { hashTaskBrief } from '../../core/brief-hash.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { runFinalReviewPhase, shutdownWorkflow } from './final-review.js';
@@ -15,6 +22,7 @@ import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { Summary } from '../../core/schemas/summary.js';
+import { ReviewPacketSchema } from '../../core/schemas/review-packet.js';
 import { readRunSnapshotLedger } from '../snapshots/run.js';
 
 let dirs: string[] = [];
@@ -108,6 +116,16 @@ describe('runFinalReviewPhase', () => {
     // Summary shape + phase timing were set.
     expect(summary.feature).toBe('test feature');
     expect(phaseTimings.review).toBeGreaterThanOrEqual(0);
+    expect(summary.reviewPacket).toMatchObject({
+      jsonPath: REVIEW_PACKET_JSON_FILE,
+      markdownPath: REVIEW_PACKET_MARKDOWN_FILE,
+      finalReviewStatus: 'written',
+    });
+    const packetPath = join(sessionDir(projectDir, sessionId), REVIEW_PACKET_JSON_FILE);
+    expect(existsSync(packetPath)).toBe(true);
+    const packet = ReviewPacketSchema.parse(JSON.parse(readFileSync(packetPath, 'utf-8')));
+    expect(packet.finalReview.status).toBe('written');
+    expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_PACKET_MARKDOWN_FILE))).toBe(true);
   });
 
   it('still advances to complete, records phase timing, and calls onComplete even when the planner review throws', async () => {
@@ -148,6 +166,11 @@ describe('runFinalReviewPhase', () => {
     expect(phaseTimings.review).toBeGreaterThanOrEqual(0);
     // The state passed to onComplete is internal; the returned summary is the observable.
     expect(summary).toBeDefined();
+    expect(summary.reviewPacket?.finalReviewStatus).toBe('failed');
+    const packetPath = join(sessionDir(projectDir, sessionId), REVIEW_PACKET_JSON_FILE);
+    expect(existsSync(packetPath)).toBe(true);
+    const packet = ReviewPacketSchema.parse(JSON.parse(readFileSync(packetPath, 'utf-8')));
+    expect(packet.finalReview.status).toBe('failed');
   });
 
   it('works without a phaseTimings map (metadata argument remains optional)', async () => {
