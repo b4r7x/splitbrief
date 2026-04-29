@@ -56,8 +56,8 @@ export const CLI_TOOLS: Record<CliToolId, CliToolEntry> = {
     },
     implementer: {
       buildArgs: ({ prompt, model }) => {
-        const args: string[] = ['--quiet', '--full-auto', '-p', prompt];
-        if (model) args.push('--model', model);
+        const args: string[] = ['exec', '--json', '--full-auto', prompt];
+        if (model) args.unshift('--model', model);
         return args;
       },
     },
