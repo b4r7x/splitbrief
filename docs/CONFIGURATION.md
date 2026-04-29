@@ -226,6 +226,8 @@ Source: `src/core/providers/catalog.ts`.
 
 **See also:** §3 `implementer`, §11 environment variables, [API-KEYS.md](./API-KEYS.md).
 
+Custom OpenAI-compatible API providers are allowed when `apiBase` is set. Because diptych cannot infer a safe environment variable name for unknown providers, custom providers must set `apiKey` explicitly unless a future auth configuration declares otherwise.
+
 ---
 
 ## 3. `implementer`

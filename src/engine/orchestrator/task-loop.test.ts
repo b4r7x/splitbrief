@@ -923,7 +923,12 @@ describe('runTaskLoop', () => {
         projectDir,
         sessionId,
         config: makeNoValidationConfig({
-          implementer: { provider: 'deepseek', model: 'deepseek-chat' },
+          implementer: {
+            provider: 'deepseek',
+            apiBase: 'https://api.deepseek.com/v1',
+            apiKey: 'test-key',
+            model: 'deepseek-chat',
+          },
           workflow: { ...defaultWorkflow, maxBudget: 1.5, budgetPauseThreshold: 0.3 },
         }),
         callbacks: makeCallbacks().callbacks,
@@ -966,7 +971,12 @@ describe('runTaskLoop', () => {
         projectDir,
         sessionId,
         config: makeNoValidationConfig({
-          implementer: { provider: 'deepseek', model: 'deepseek-chat' },
+          implementer: {
+            provider: 'deepseek',
+            apiBase: 'https://api.deepseek.com/v1',
+            apiKey: 'test-key',
+            model: 'deepseek-chat',
+          },
           workflow: { ...defaultWorkflow, maxBudget: 0.1 },
         }),
         callbacks: makeCallbacks().callbacks,

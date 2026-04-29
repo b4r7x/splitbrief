@@ -52,12 +52,14 @@ function makeBudgetConfig(pauseThreshold = 0.85): Config {
       provider: 'anthropic',
       model: 'claude-sonnet-4-6',
       apiBase: 'https://api.anthropic.com/v1',
+      apiKey: 'test-key',
     },
     implementer: {
       kind: 'api',
       provider: 'anthropic',
       model: 'claude-sonnet-4-6',
       apiBase: 'https://api.anthropic.com/v1',
+      apiKey: 'test-key',
     },
     validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
     workflow: {

@@ -159,6 +159,104 @@ describe('validateConfig', () => {
     }
   });
 
+  it('treats unused implementer profile credentials as warnings instead of errors', () => {
+    const orig = process.env['OPENROUTER_API_KEY'];
+    delete process.env['OPENROUTER_API_KEY'];
+    try {
+      const config = {
+        ...validConfig,
+        implementerProfiles: {
+          default: 'local-qwen',
+          profiles: {
+            'cheap-cloud': {
+              kind: 'api',
+              provider: 'openrouter',
+              model: 'm',
+              apiBase: 'https://openrouter.ai/api/v1',
+            },
+            'local-qwen': {
+              kind: 'api',
+              provider: 'ollama',
+              model: 'qwen2.5-coder:7b',
+              apiBase: 'http://localhost:11434/v1',
+            },
+          },
+        },
+      };
+
+      const { errors, warnings } = validateConfig(config);
+
+      expect(errors.find(e => e.path === 'implementerProfiles.profiles.cheap-cloud.apiKey')).toBeUndefined();
+      expect(warnings.some(w => w.includes('Unused implementer profile cheap-cloud is missing credentials'))).toBe(true);
+    } finally {
+      if (orig === undefined) delete process.env['OPENROUTER_API_KEY'];
+      else process.env['OPENROUTER_API_KEY'] = orig;
+    }
+  });
+
+  it('blocks when the selected implementer profile is missing required credentials', () => {
+    const orig = process.env['OPENROUTER_API_KEY'];
+    delete process.env['OPENROUTER_API_KEY'];
+    try {
+      const config = {
+        ...validConfig,
+        implementerProfiles: {
+          default: 'cheap-cloud',
+          profiles: {
+            'cheap-cloud': {
+              kind: 'api',
+              provider: 'openrouter',
+              model: 'm',
+              apiBase: 'https://openrouter.ai/api/v1',
+            },
+          },
+        },
+      };
+
+      const { errors } = validateConfig(config);
+
+      expect(errors.find(e => e.path === 'implementerProfiles.profiles.cheap-cloud.apiKey')).toBeTruthy();
+    } finally {
+      if (orig === undefined) delete process.env['OPENROUTER_API_KEY'];
+      else process.env['OPENROUTER_API_KEY'] = orig;
+    }
+  });
+
+  it('allows a selected profile credential warning when another implementer profile can run', () => {
+    const orig = process.env['OPENROUTER_API_KEY'];
+    delete process.env['OPENROUTER_API_KEY'];
+    try {
+      const config = {
+        ...validConfig,
+        implementerProfiles: {
+          default: 'cheap-cloud',
+          profiles: {
+            'cheap-cloud': {
+              kind: 'api',
+              provider: 'openrouter',
+              model: 'm',
+              apiBase: 'https://openrouter.ai/api/v1',
+            },
+            'local-qwen': {
+              kind: 'api',
+              provider: 'ollama',
+              model: 'qwen2.5-coder:7b',
+              apiBase: 'http://localhost:11434/v1',
+            },
+          },
+        },
+      };
+
+      const { errors, warnings } = validateConfig(config);
+
+      expect(errors.find(e => e.path === 'implementerProfiles.profiles.cheap-cloud.apiKey')).toBeUndefined();
+      expect(warnings.some(w => w.includes('Default implementer profile cheap-cloud is missing credentials'))).toBe(true);
+    } finally {
+      if (orig === undefined) delete process.env['OPENROUTER_API_KEY'];
+      else process.env['OPENROUTER_API_KEY'] = orig;
+    }
+  });
+
   it.each([
     { provider: 'anthropic', envKey: 'ANTHROPIC_API_KEY', apiKey: 'sk-ant-key' },
     { provider: 'openrouter', envKey: 'OPENROUTER_API_KEY', apiKey: 'sk-or-key' },
@@ -212,8 +310,16 @@ describe('validateConfig', () => {
     expect(paths).toContain('implementer.contextLength');
   });
 
-  it('accepts unknown provider when apiBase is set', () => {
+  it('rejects unknown provider without explicit apiKey even when apiBase is set', () => {
     const config = { ...validConfig, implementer: { kind: 'api', provider: 'custom-ollama', model: 'some-model', apiBase: 'http://my-server:11434/v1' } };
+    const { errors } = validateConfig(config);
+    expect(errors.find(e => e.path === 'implementer.apiKey')).toMatchObject({
+      message: 'Custom provider custom-ollama implementer requires implementer.apiKey',
+    });
+  });
+
+  it('accepts unknown provider when apiBase and apiKey are set', () => {
+    const config = { ...validConfig, implementer: { kind: 'api', provider: 'custom-ollama', model: 'some-model', apiBase: 'http://my-server:11434/v1', apiKey: 'custom-key' } };
     expect(validateConfig(config).errors).toEqual([]);
   });
 

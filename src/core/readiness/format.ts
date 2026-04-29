@@ -1,4 +1,4 @@
-import type { ReadinessCheck, ReadinessReport, StartReadinessRecord } from './types.js';
+import type { ReadinessCheck, ReadinessReport, ReadinessSection, StartReadinessRecord } from './types.js';
 
 const SEVERITY_LABELS: Record<ReadinessCheck['severity'], string> = {
   ok: 'ok',
@@ -36,12 +36,58 @@ export function formatReadinessReport(report: ReadinessReport): string {
   return lines.join('\n');
 }
 
+export function formatReadinessBlockers(report: ReadinessReport): string {
+  const blockerOnly = createBlockerOnlyReadinessReport(report);
+  const lines: string[] = [];
+  lines.push(`Run readiness: blocked (${blockerOnly.counts.blocker} blockers)`);
+  lines.push(`Required action: ${blockerOnly.nextAction.label}${blockerOnly.nextAction.command ? ` (${blockerOnly.nextAction.command})` : ''}`);
+  lines.push('');
+
+  for (const section of blockerOnly.sections) {
+    lines.push(`${section.title}:`);
+    for (const check of section.checks) {
+      lines.push(`  ${SEVERITY_LABELS[check.severity]} ${check.id}: ${check.summary}`);
+      for (const detail of check.details ?? []) {
+        lines.push(`    ${detail}`);
+      }
+      if (check.fix) {
+        lines.push(`    Fix: ${check.fix}`);
+      }
+    }
+  }
+
+  return lines.join('\n');
+}
+
+export function createBlockerOnlyReadinessReport(report: ReadinessReport): ReadinessReport {
+  const sections = report.sections
+    .map(blockerOnlySection)
+    .filter((section): section is ReadinessSection => section !== null);
+
+  return {
+    ...report,
+    counts: {
+      ok: 0,
+      info: 0,
+      warning: 0,
+      blocker: report.counts.blocker,
+    },
+    sections,
+  };
+}
+
 export function readinessBlockerMessage(report: ReadinessReport): string {
   const blockers = report.sections.flatMap(section =>
     section.checks.filter(check => check.severity === 'blocker'),
   );
   if (blockers.length === 0) return 'Readiness blocked.';
   return blockers.map(check => `${check.id}: ${check.summary}`).join('\n');
+}
+
+function blockerOnlySection(section: ReadinessSection): ReadinessSection | null {
+  const checks = section.checks.filter(check => check.severity === 'blocker');
+  if (checks.length === 0) return null;
+  return { ...section, checks };
 }
 
 export function createStartReadinessRecord(report: ReadinessReport): StartReadinessRecord {

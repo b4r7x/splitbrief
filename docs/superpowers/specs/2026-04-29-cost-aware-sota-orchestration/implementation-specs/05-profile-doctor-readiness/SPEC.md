@@ -90,6 +90,8 @@ These are blockers:
 - only usable implementer is missing required credentials,
 - config is invalid enough that routing cannot choose any implementer.
 
+Unknown custom API providers without catalog env-var metadata must be deterministic too. If a custom API provider has no explicit `apiKey`, classify it as credential-missing unless a future explicit config such as `auth: none` or `apiKeyEnv` exists.
+
 ### PDR-005 - No Network By Default
 
 Doctor/readiness should not call providers or probe models by default.

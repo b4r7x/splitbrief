@@ -76,9 +76,31 @@ describe('doctor command', () => {
     expect(output).toContain('Run readiness:');
     expect(output).toContain('Config:');
     expect(output).toContain('Repository:');
+    expect(output).toContain('warning validation.disabled');
     expect(readFileSync(configFile, 'utf-8')).toBe(beforeConfig);
     expect(existsSync(join(tmp, DIPTYCH_DIR, 'active'))).toBe(false);
     expect(existsSync(join(tmp, DIPTYCH_DIR, 'sessions'))).toBe(false);
+  });
+
+  it('emits JSON with warning and info severities', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp);
+    const writes: string[] = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+
+    await runDoctor(['--project', tmp, '--json']);
+
+    const parsed = JSON.parse(writes.join('').trim()) as {
+      type?: string;
+      report?: { sections?: Array<{ checks: Array<{ severity: string }> }> };
+    };
+    const severities = parsed.report?.sections?.flatMap(section => section.checks.map(check => check.severity)) ?? [];
+    expect(parsed.type).toBe('readiness_report');
+    expect(severities).toContain('warning');
+    expect(severities).toContain('info');
   });
 
   it('emits JSON and exits non-zero for missing config without writing setup files', async () => {

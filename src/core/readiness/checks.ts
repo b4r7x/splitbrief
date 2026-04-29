@@ -230,6 +230,7 @@ function buildRunnerChecks(config: Config): ReadinessCheck[] {
         writeMode: defaultProfile.capabilities.writesFiles,
       },
     });
+    checks.push(...buildImplementerProfileMetadataChecks(config, resolved.profiles));
   } catch (err) {
     checks.push({
       id: 'runners.implementer.profiles-invalid',
@@ -251,6 +252,41 @@ function buildRunnerChecks(config: Config): ReadinessCheck[] {
   });
 
   return checks;
+}
+
+function buildImplementerProfileMetadataChecks(
+  config: Config,
+  profiles: ReturnType<typeof resolveImplementerProfiles>['profiles'],
+): ReadinessCheck[] {
+  const configuredProfiles = config.implementerProfiles?.profiles;
+  if (!configuredProfiles) return [];
+
+  return profiles.flatMap(profile => {
+    const configured = configuredProfiles[profile.name];
+    if (!configured) return [];
+
+    const checks: ReadinessCheck[] = [];
+    if (configured.costTier === undefined) {
+      checks.push({
+        id: 'runners.implementer.profile-cost-tier-missing',
+        severity: 'info',
+        summary: `Implementer profile ${profile.name} has no costTier; routing treats it as unknown.`,
+        metadata: { profile: profile.name, costTier: null },
+      });
+    }
+
+    if (configured.capabilities?.writesFiles === undefined) {
+      checks.push({
+        id: 'runners.implementer.profile-writes-files-inferred',
+        severity: 'info',
+        summary: `Implementer profile ${profile.name} write mode inferred from runner kind.`,
+        details: [`Write mode: ${profile.capabilities.writesFiles}`],
+        metadata: { profile: profile.name, writesFiles: profile.capabilities.writesFiles },
+      });
+    }
+
+    return checks;
+  });
 }
 
 function runnerCheck(role: 'planner' | 'implementer', runner: Config['planner'] | Config['implementer']): ReadinessCheck {

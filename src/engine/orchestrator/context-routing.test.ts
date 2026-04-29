@@ -38,6 +38,48 @@ function profile(
   };
 }
 
+function openRouterProfile(
+  name: string,
+  costTier: ImplementerCostTier,
+  contextLength?: number,
+): ResolvedImplementerProfile {
+  return {
+    name,
+    costTier,
+    config: {
+      kind: 'api',
+      provider: 'openrouter',
+      apiBase: 'https://openrouter.ai/api/v1',
+      model: name,
+      ...(contextLength !== undefined ? { contextLength } : {}),
+    },
+    capabilities: { writesFiles: 'extracted-code' },
+    isDefault: false,
+  };
+}
+
+function customApiProfile(
+  name: string,
+  costTier: ImplementerCostTier,
+  contextLength?: number,
+  apiKey?: string,
+): ResolvedImplementerProfile {
+  return {
+    name,
+    costTier,
+    config: {
+      kind: 'api',
+      provider: 'custom-cloud',
+      apiBase: 'https://custom.example/v1',
+      model: name,
+      ...(apiKey !== undefined ? { apiKey } : {}),
+      ...(contextLength !== undefined ? { contextLength } : {}),
+    },
+    capabilities: { writesFiles: 'extracted-code' },
+    isDefault: false,
+  };
+}
+
 function directProfile(
   name: string,
   costTier: ImplementerCostTier,
@@ -158,6 +200,74 @@ describe('routeTaskToImplementerProfile', () => {
         fit: 'overflow',
       },
     ]);
+  });
+
+  it('skips credential-missing profiles and selects a usable fallback', () => {
+    const originalKey = process.env['OPENROUTER_API_KEY'];
+    delete process.env['OPENROUTER_API_KEY'];
+    try {
+      const task = makeTask();
+
+      const decision = routeTaskToImplementerProfile({
+        task,
+        context,
+        profiles: [
+          openRouterProfile('cheap-cloud', 'cheap', 20_000),
+          profile('standard-local', 'standard', 20_000),
+        ],
+      });
+
+      expect(decision.selectedProfile).toBe('standard-local');
+      expect(decision.rejected).toMatchObject([
+        {
+          profile: 'cheap-cloud',
+          reason: expect.stringContaining('credentials are missing'),
+        },
+      ]);
+    } finally {
+      if (originalKey === undefined) delete process.env['OPENROUTER_API_KEY'];
+      else process.env['OPENROUTER_API_KEY'] = originalKey;
+    }
+  });
+
+  it('skips custom API profiles without explicit apiKey and selects a usable fallback', () => {
+    const task = makeTask();
+
+    const decision = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [
+        customApiProfile('cheap-custom', 'cheap', 20_000),
+        profile('standard-local', 'standard', 20_000),
+      ],
+    });
+
+    expect(decision.selectedProfile).toBe('standard-local');
+    expect(decision.rejected[0]).toMatchObject({
+      profile: 'cheap-custom',
+      reason: 'Custom provider custom-cloud credentials are missing; set profile apiKey',
+    });
+  });
+
+  it('returns no selected profile when every otherwise capable profile is missing credentials', () => {
+    const originalKey = process.env['OPENROUTER_API_KEY'];
+    delete process.env['OPENROUTER_API_KEY'];
+    try {
+      const task = makeTask();
+
+      const decision = routeTaskToImplementerProfile({
+        task,
+        context,
+        profiles: [openRouterProfile('cheap-cloud', 'cheap', 20_000)],
+      });
+
+      expect(decision.selectedProfile).toBeUndefined();
+      expect(decision.reason).toContain('No credential-usable implementer profile');
+      expect(decision.rejected[0]?.reason).toContain('OPENROUTER_API_KEY');
+    } finally {
+      if (originalKey === undefined) delete process.env['OPENROUTER_API_KEY'];
+      else process.env['OPENROUTER_API_KEY'] = originalKey;
+    }
   });
 
   it('rejects extracted-code profiles when task scope requires direct file writes', () => {
