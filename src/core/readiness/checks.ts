@@ -460,10 +460,9 @@ function buildCostChecks(config: Config): ReadinessCheck[] {
   if (priced) {
     return [{
       id: 'cost.budget-missing',
-      severity: 'warning',
-      summary: 'No budget cap is set for priced or unknown runners.',
-      fix: 'Set workflow.maxBudget or pass --budget for this run.',
-      nextAction: 'set-budget',
+      severity: 'info',
+      summary: 'Budget cap is off for priced or unknown runners.',
+      details: ['Set workflow.maxBudget or pass --budget if you want this run to pause at a cost cap.'],
     }];
   }
 

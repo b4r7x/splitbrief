@@ -81,7 +81,7 @@ describe('readiness checks', () => {
     })).toContain('config.missing');
   });
 
-  it('warns for missing context length', () => {
+  it('warns for missing context length without blocking start', () => {
     const configWithDefaults = makeConfig({
       planner: { kind: 'cli', tool: 'claude-code' },
     });
@@ -92,10 +92,36 @@ describe('readiness checks', () => {
     const report = buildReadinessReport(baseInput({ config }));
 
     expect(report.status).toBe('ready-with-warnings');
+    expect(report.nextAction.kind).toBe('continue');
     expect(allCheckIds(baseInput({ config }))).toEqual(expect.arrayContaining([
       'context.planner.missing',
       'context.implementer.missing',
     ]));
+  });
+
+  it('treats missing budget as an advisory note, not a run action', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'openai',
+        apiBase: 'https://api.openai.com/v1',
+        model: 'gpt-5',
+        contextLength: 128_000,
+      },
+      implementer: { contextLength: 32_768 },
+    });
+
+    const report = buildReadinessReport(baseInput({ config }));
+    const budget = report.sections
+      .flatMap(section => section.checks)
+      .find(check => check.id === 'cost.budget-missing');
+
+    expect(budget).toMatchObject({
+      severity: 'info',
+      summary: 'Budget cap is off for priced or unknown runners.',
+    });
+    expect(budget?.nextAction).toBeUndefined();
+    expect(report.nextAction.kind).toBe('continue');
   });
 
   it('warns when validation is disabled and the npm test script is missing', () => {

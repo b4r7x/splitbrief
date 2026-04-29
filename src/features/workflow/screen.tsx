@@ -90,10 +90,8 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
   const attach = routerStore.use(s => s.screen === 'workflow' ? s.attach : undefined);
   const isAttachedClient = attach !== undefined;
   const [computedReadiness, setComputedReadiness] = useState<ReadinessReport | undefined>(routeReadiness);
-  const [readinessAccepted, setReadinessAccepted] = useState(false);
   const readiness = routeReadiness ?? computedReadiness;
   const readinessLoaded = isAttachedClient || readiness !== undefined;
-  const readinessNeedsGate = !isAttachedClient && readiness !== undefined && readiness.status !== 'ready' && !readinessAccepted;
   const readinessBlocked = !isAttachedClient && readiness?.status === 'blocked';
   const { cols, rows, isSmall } = terminal;
   const inputRows = input.rows;
@@ -111,7 +109,7 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
     selectedSkills: selectedSkillMetas,
     sessionId,
     inputMode,
-    enabled: !isAttachedClient && readinessLoaded && !readinessNeedsGate && !readinessBlocked,
+    enabled: !isAttachedClient && readinessLoaded && !readinessBlocked,
   });
   const review = createReviewInputHandler(inputMode);
   const handleIpcPrompt = async (request: IpcPromptRequest): Promise<IpcPromptResponse> => {
@@ -245,11 +243,10 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
     );
   }
 
-  if (!isAttachedClient && readiness !== undefined && (readinessNeedsGate || readinessBlocked)) {
+  if (!isAttachedClient && readinessBlocked && readiness !== undefined) {
     return (
       <ReadinessPanel
         report={readiness}
-        onContinue={() => setReadinessAccepted(true)}
       />
     );
   }

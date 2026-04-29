@@ -44,4 +44,17 @@ describe('readiness status', () => {
       reason: 'No readiness blockers found.',
     });
   });
+
+  it('ignores advisory next actions for ready-with-warnings reports', () => {
+    const checks: ReadinessCheck[] = [
+      { id: 'context', severity: 'warning', summary: 'small context', nextAction: 'raise-context' },
+      { id: 'budget', severity: 'warning', summary: 'no budget', nextAction: 'set-budget' },
+    ];
+
+    expect(selectNextAction(checks, 'ready-with-warnings')).toMatchObject({
+      kind: 'continue',
+      label: 'Continue',
+      reason: 'Only warnings were found.',
+    });
+  });
 });

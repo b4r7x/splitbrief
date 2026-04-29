@@ -132,7 +132,7 @@ Pass-through per backend:
 | Backend | Mechanism | Prompt prefix | Extra argv | Body field |
 |---|---|---|:---:|---|
 | `cli` claude-code | prompt prefix | `/effort {level}\n\n` | — | — |
-| `cli` codex | argv | — | `--reasoning-effort {level}` | — |
+| `cli` codex | no-op | — | dropped; current Codex CLI has no stable reasoning flag | — |
 | `cli` opencode/aider/copilot/kilo-code | no-op | — | — | — |
 | `api` anthropic | body | — | — | `thinking: { type: 'enabled', budget_tokens: mapEffortToBudget(level) }` |
 | `api` openai-compat | body | — | — | `reasoning_effort: level` (or model-specific alias) |

@@ -34,6 +34,8 @@ describe('readiness formatting', () => {
     const record = createStartReadinessRecord(report);
 
     expect(human).toContain('Run readiness:');
+    expect(human).toContain('Advisory:');
+    expect(human).not.toContain('Next action:');
     expect(human).toContain('validation.disabled');
     expect(human).not.toContain('apiKey');
     expect(record).toMatchObject({
@@ -66,5 +68,6 @@ describe('readiness formatting', () => {
 
     expect(readinessBlockerMessage(report)).toContain('config.invalid');
     expect(readinessBlockerMessage(report)).toContain('repo.not-git');
+    expect(formatReadinessReport(report)).toContain('Required action:');
   });
 });

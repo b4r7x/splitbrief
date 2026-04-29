@@ -53,10 +53,18 @@ export function aggregateReadinessStatus(counts: ReadinessCounts): ReadinessStat
 }
 
 export function selectNextAction(checks: ReadinessCheck[], status: ReadinessStatus): ReadinessNextAction {
-  const actionableChecks = checks.filter(check => check.nextAction !== undefined);
+  if (status !== 'blocked') {
+    return {
+      kind: 'continue',
+      label: NEXT_ACTION_LABELS.continue.label,
+      reason: defaultReason('continue', status),
+    };
+  }
+
+  const actionableChecks = checks.filter(check => check.severity === 'blocker' && check.nextAction !== undefined);
   const selectedKind = NEXT_ACTION_PRIORITY.find(kind =>
     actionableChecks.some(check => check.nextAction === kind),
-  ) ?? (status === 'blocked' ? 'exit' : 'continue');
+  ) ?? 'exit';
 
   const selectedCheck = actionableChecks.find(check => check.nextAction === selectedKind);
   const label = NEXT_ACTION_LABELS[selectedKind];
