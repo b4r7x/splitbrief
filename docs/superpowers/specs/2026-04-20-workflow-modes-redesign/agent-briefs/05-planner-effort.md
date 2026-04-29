@@ -4,7 +4,7 @@
 
 ## Goal
 
-Add a `--planner-effort <low|medium|high|xhigh>` CLI flag and a `planner.effort` config key. Plumb the value per backend: prompt-prefix injection for Claude Code CLI, `--reasoning-effort` argv for Codex, `thinking.budget_tokens` for Anthropic API, `reasoning_effort` body field for OpenAI-compat API, SDK option for Agent SDK. Unsupported backends no-op and log.
+Add a `--planner-effort <low|medium|high|xhigh>` CLI flag and a `planner.effort` config key. Plumb the value per backend: prompt-prefix injection for Claude Code CLI, no-op for current Codex CLI builds, `thinking.budget_tokens` for Anthropic API, `reasoning_effort` body field for OpenAI-compat API, SDK option for Agent SDK. Unsupported backends no-op and log.
 
 ## Dependencies
 
@@ -327,7 +327,8 @@ In the codex `buildArgs` (line ~40-50):
 export function buildCodexArgs(params: CodexArgs): string[] {
   // ... existing args ...
   if (params.effort) {
-    args.push('--reasoning-effort', params.effort);
+    // Current Codex CLI builds do not expose a stable reasoning flag.
+    // Keep supportsEffort false unless local `codex --help` proves otherwise.
   }
   return args;
 }
@@ -470,7 +471,7 @@ File: `src/core/settings/catalog.ts`
 Add to each backend's existing test file (if any) or create colocated tests:
 
 - `src/engine/claude-runner.test.ts` — effort prefix in prompt.
-- `src/engine/cli-tools.test.ts` — codex `--reasoning-effort` argv.
+- `src/engine/cli-tools.table.test.ts` — codex drops planner effort when unsupported.
 - `src/engine/providers/anthropic/stream.test.ts` — `thinking` field in body.
 - `src/engine/providers/openai-stream.test.ts` — `reasoning_effort` field in body.
 - `src/engine/providers/capability-inference.test.ts` — model-name pattern matching.

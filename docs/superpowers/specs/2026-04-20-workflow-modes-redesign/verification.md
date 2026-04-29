@@ -92,7 +92,7 @@ Briefs are independently revertable. If brief N breaks the build, revert just th
 - `diptych start --planner-effort high "x"` with Claude Code CLI planner prepends `/effort high\n\n` to the first prompt.
 - With `api` Anthropic backend, the request body contains `thinking: { type: 'enabled', budget_tokens: 24000 }`.
 - With `api` OpenAI-compat backend, the request body contains `reasoning_effort: 'high'`.
-- With Codex CLI, argv contains `--reasoning-effort high`.
+- With Codex CLI, argv does not contain `--reasoning-effort`; planner effort is dropped as unsupported.
 - With a backend that does not support effort (e.g., opencode CLI), one `planner_effort_unsupported` event is emitted and the effort is dropped.
 
 **Negative:**

@@ -5,13 +5,13 @@ import type { ReadinessCheck, ReadinessReport } from '../../../core/readiness/ty
 
 interface ReadinessPanelProps {
   report: ReadinessReport;
-  onContinue: () => void;
+  onContinue?: () => void;
 }
 
 export function ReadinessPanel({ report, onContinue }: ReadinessPanelProps) {
   const t = useTheme();
   const { exit } = useApp();
-  const canContinue = report.status !== 'blocked';
+  const canContinue = report.status !== 'blocked' && onContinue !== undefined;
   const notableChecks = report.sections
     .flatMap(section => section.checks)
     .filter(check => check.severity === 'blocker' || check.severity === 'warning')
@@ -19,7 +19,7 @@ export function ReadinessPanel({ report, onContinue }: ReadinessPanelProps) {
 
   useInput((input, key) => {
     if ((key.return || input === ' ') && canContinue) {
-      onContinue();
+      onContinue?.();
       return;
     }
     if (key.escape || input === 'q') {
@@ -38,7 +38,11 @@ export function ReadinessPanel({ report, onContinue }: ReadinessPanelProps) {
           <Text color={statusColor(report.status, t)} bold>
             {report.status} · {report.counts.blocker} blockers · {report.counts.warning} warnings
           </Text>
-          <Text color={t.textDim}>Next: {report.nextAction.label} — {report.nextAction.reason}</Text>
+          <Text color={t.textDim}>
+            {report.status === 'blocked'
+              ? `Required: ${report.nextAction.label} — ${report.nextAction.reason}`
+              : `${report.counts.warning} advisory note${report.counts.warning === 1 ? '' : 's'}; start can continue.`}
+          </Text>
         </Box>
         {notableChecks.length > 0 ? (
           <Box flexDirection="column">

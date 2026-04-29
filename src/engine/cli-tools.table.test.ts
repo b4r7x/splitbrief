@@ -99,6 +99,31 @@ describe('codex planner — session resume (CLI contract)', () => {
     expect(codex.supportsSessionResume).toBe(true);
   });
 
+  it('drops planner effort because the current Codex CLI has no stable reasoning flag', () => {
+    expect(codex.supportsEffort).toBe(false);
+    const args = codex.buildArgs({
+      prompt: 'new feature',
+      model: 'gpt-5',
+      projectDir: '/tmp/proj',
+      mode: 'plan',
+      effort: 'high',
+    });
+    expect(args).not.toContain('--reasoning-effort');
+  });
+
+  it('also drops planner effort on resumed Codex sessions', () => {
+    const args = codex.buildArgs({
+      prompt: 'continue',
+      model: 'gpt-5',
+      projectDir: '/tmp/proj',
+      mode: 'plan',
+      sessionId: 'abc-123',
+      effort: 'high',
+    });
+    expect(args).toEqual(['exec', 'resume', '--model', 'gpt-5', '--json', 'abc-123', 'continue']);
+    expect(args).not.toContain('--reasoning-effort');
+  });
+
   it('uses `exec resume --model <m> --json <id> <prompt>` in plan mode with sessionId', () => {
     const args = codex.buildArgs({ prompt: 'continue', model: 'gpt-5', projectDir: '/tmp/proj', mode: 'plan', sessionId: 'abc-123' });
     expect(args).toEqual(['exec', 'resume', '--model', 'gpt-5', '--json', 'abc-123', 'continue']);

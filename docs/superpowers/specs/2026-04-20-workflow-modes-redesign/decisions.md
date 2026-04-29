@@ -204,7 +204,7 @@ Detect image attachments by a regex on the incoming input buffer: `/^\S*\.(jpe?g
 
 ### Context
 
-Not every planner backend supports controlling reasoning effort. Claude Code CLI does via `/effort` (slash command). Codex CLI does via `--reasoning-effort`. OpenAI API does via `reasoning_effort`. Anthropic API does via `thinking`. Local models (Ollama, LM Studio) generally do not. Shell/agent backends are user-configured.
+Not every planner backend supports controlling reasoning effort. Claude Code CLI does via `/effort` (slash command). Current Codex CLI builds do not expose a stable reasoning flag, so diptych drops planner effort for Codex CLI. OpenAI API does via `reasoning_effort`. Anthropic API does via `thinking`. Local models (Ollama, LM Studio) generally do not. Shell/agent backends are user-configured.
 
 ### Decision
 

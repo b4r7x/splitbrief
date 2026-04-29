@@ -10,7 +10,13 @@ const SEVERITY_LABELS: Record<ReadinessCheck['severity'], string> = {
 export function formatReadinessReport(report: ReadinessReport): string {
   const lines: string[] = [];
   lines.push(`Run readiness: ${report.status} (${report.counts.blocker} blockers, ${report.counts.warning} warnings)`);
-  lines.push(`Next action: ${report.nextAction.label}${report.nextAction.command ? ` (${report.nextAction.command})` : ''}`);
+  if (report.status === 'blocked') {
+    lines.push(`Required action: ${report.nextAction.label}${report.nextAction.command ? ` (${report.nextAction.command})` : ''}`);
+  } else if (report.counts.warning > 0) {
+    lines.push(`Advisory: ${report.counts.warning} warning${report.counts.warning === 1 ? '' : 's'}; start can continue.`);
+  } else {
+    lines.push('Ready: no blockers or warnings.');
+  }
   lines.push('');
 
   for (const section of report.sections) {
