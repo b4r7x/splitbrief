@@ -45,6 +45,8 @@ export function makeConfig(overrides?: Omit<Partial<Config>, 'implementer' | 'pl
   if (overrides?.codebase !== undefined) base.codebase = overrides.codebase;
   if (overrides?.hooks !== undefined) base.hooks = overrides.hooks;
   if (overrides?.approval !== undefined) base.approval = overrides.approval;
+  if (overrides?.plannerEstimateReview !== undefined) base.plannerEstimateReview = overrides.plannerEstimateReview;
+  if (overrides?.autoSplitOverflow !== undefined) base.autoSplitOverflow = overrides.autoSplitOverflow;
   return base;
 }
 

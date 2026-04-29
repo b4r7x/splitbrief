@@ -196,13 +196,20 @@ describe('config loading', () => {
       const dir = join(TMP, 'snake-case');
       writeConfigYaml(dir, {
         planner_estimate_review: true,
+        auto_split_overflow: true,
         workflow: { max_retries: 5, commit_per_task: false },
       });
 
       const { config } = loadConfig(dir);
       expect(config.plannerEstimateReview).toBe(true);
+      expect(config.autoSplitOverflow).toBe(true);
       expect(config.workflow.maxRetries).toBe(5);
       expect(config.workflow.commitStrategy).toBe('none');
+
+      writeConfig(dir, config);
+      const written = YAML.parse(readFileSync(join(dir, DIPTYCH_DIR, 'config.yaml'), 'utf-8')) as Record<string, unknown>;
+      expect(written.planner_estimate_review).toBe(true);
+      expect(written.auto_split_overflow).toBe(true);
     });
 
     it('deep merges nested objects', () => {

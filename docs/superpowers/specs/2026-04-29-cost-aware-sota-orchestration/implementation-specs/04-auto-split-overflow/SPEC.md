@@ -90,15 +90,30 @@ User must see split output before implementation starts.
 
 No silent plan rewrite.
 
-### ASO-005 - Reject Bad Splits
+### ASO-005 - Skip Bad Splits With Trace
 
-Reject or require user review if splitting would:
+Skip the automatic split and inform the user if splitting would:
 
 - create too many tiny tasks,
 - remove acceptance criteria,
 - lose dependencies,
 - produce empty child tasks,
 - duplicate the same file ownership across many children.
+
+This must not be treated as rejecting the original task. The original task should continue unless normal routing/recovery later requires a different action.
+
+The skipped split must leave a trace:
+
+- user-visible warning/info before implementation continues,
+- task id,
+- reason,
+- statement that the original task is still being kept,
+- session event or artifact metadata suitable for later trace/explain output.
+
+If some tasks are split and other targeted tasks are skipped, the user must see both:
+
+- the split task preview before execution,
+- the skipped-split notices before execution.
 
 ## Split Heuristics
 
@@ -130,7 +145,8 @@ Required behavior tests:
 - fitting task is not split,
 - acceptance criteria survive,
 - dependencies survive or are explicitly rewritten,
-- unsafe split is rejected,
+- unsafe split is skipped with a visible non-blocking reason,
+- partial success reports both split previews and skipped split notices,
 - split output is reviewable before execution.
 
 Do not add tests for private string helpers if public behavior covers them.
@@ -154,6 +170,8 @@ Before finishing:
 - no hidden planner call,
 - no silly tiny child tasks,
 - no lost acceptance criteria,
+- no silent skipped split,
+- no blocking merely because deterministic auto-split was unsafe,
 - no worktree implementation,
 - no broad plan editor refactor.
 

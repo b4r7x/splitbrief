@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
@@ -7,15 +9,22 @@ import type { SkillMeta } from '../../skills/discovery.js';
 import type { EventBus } from '../../events/types.js';
 
 import { buildSummary, type SummaryBase } from '../summary.js';
-import { publishCostPrediction } from '../events.js';
+import { publishCostPrediction, publishError, publishWarning } from '../events.js';
 import { predictCost } from '../cost-prediction.js';
 import { estimateDeterministicCost } from '../estimate.js';
 import { reviewPlannerEstimate, runningPlannerEstimateReview } from '../planner-estimate-review.js';
+import { autoSplitOverflowTasks, type AutoSplitOverflowSkippedSplit } from '../auto-split-overflow.js';
 import { runPlanningPhase } from '../planning/run.js';
+import { runBriefQualityGate } from '../planning/shared.js';
 import { runTaskLoop } from '../task-loop.js';
 import { runFinalReviewPhase } from '../final-review.js';
 import { drainQueue } from '../queue.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
+import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
+import { writeSpecFile } from '../../../core/paths-io.js';
+import { formatTasks } from '../../spec/formatter.js';
+import { parseTasks } from '../../spec/parser.js';
+import { transitionAndSave } from '../state-ops.js';
 
 export function applyPostPlanDrain(
   projectDir: string,
@@ -72,6 +81,92 @@ export type RunTasksAndReviewOptions = {
   setCurrentTask: (t: Pick<Task, 'file' | 'action'> | undefined) => void;
 };
 
+function predictTasksCost(opts: {
+  tasks: Task[];
+  summaryBase: SummaryBase;
+  wctx: WorkflowContext;
+  state: WorkflowState;
+  plannerEstimateReview?: CostPrediction['plannerEstimateReview'] | undefined;
+}): CostPrediction {
+  return {
+    ...predictCost({
+      taskCount: opts.tasks.length,
+      plannerTool: opts.summaryBase.plannerTool,
+      implementerTool: opts.summaryBase.implementerTool,
+      plannerModel: opts.summaryBase.plannerModel,
+      implementerModel: opts.summaryBase.implementerModel,
+      tokenUsage: opts.state.tokenUsage,
+    }),
+    deterministic: estimateDeterministicCost({
+      tasks: opts.tasks,
+      context: opts.wctx.context,
+      config: opts.wctx.config,
+      pricingCache: modelCacheStore,
+    }),
+    ...(opts.plannerEstimateReview !== undefined && { plannerEstimateReview: opts.plannerEstimateReview }),
+  };
+}
+
+async function readApprovedSplitTasks(tasksFilePath: string): Promise<Task[] | null> {
+  try {
+    const text = await readFile(tasksFilePath, 'utf8');
+    const tasks = parseTasks(text);
+    return tasks.length > 0 ? tasks : null;
+  } catch {
+    return null;
+  }
+}
+
+async function reviewAutoSplitOutput(opts: {
+  wctx: WorkflowContext;
+  state: WorkflowState;
+  tasks: Task[];
+  setTrackedState: (s: WorkflowState) => void;
+}): Promise<{ state: WorkflowState; tasks: Task[]; approved: boolean }> {
+  const tasksFilePath = join(sessionDir(opts.wctx.projectDir, opts.wctx.sessionId), TASKS_FILE);
+  writeSpecFile(opts.wctx.projectDir, opts.wctx.sessionId, TASKS_FILE, formatTasks(opts.tasks), opts.wctx.metadata);
+  publishWarning(opts.wctx.bus, opts.state.phase, `Auto-split overflow produced ${opts.tasks.length} Task Briefs. Review ${TASKS_FILE} before implementation.`);
+
+  let state = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, opts.state, { type: 'BRIEFS_READY', tasks: opts.tasks });
+  opts.setTrackedState(state);
+
+  const result = await opts.wctx.callbacks.onApprovalNeeded('briefs', tasksFilePath);
+  if (!result.approved && result.action !== 'edit') {
+    publishError(opts.wctx.bus, state.phase, result.comment ? `Auto-split overflow rejected: ${result.comment}` : 'Auto-split overflow rejected before implementation.');
+    state = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, state, { type: 'REJECT_BRIEFS' });
+    opts.setTrackedState(state);
+    return { state, tasks: opts.tasks, approved: false };
+  }
+
+  const approvedTasks = await readApprovedSplitTasks(tasksFilePath);
+  if (!approvedTasks) {
+    publishError(opts.wctx.bus, state.phase, `Auto-split overflow review failed: ${tasksFilePath} has no parseable Task Briefs.`);
+    return { state, tasks: opts.tasks, approved: false };
+  }
+
+  const { ok, report } = runBriefQualityGate(approvedTasks, opts.wctx.projectDir, opts.wctx.sessionId, opts.wctx.bus, state.phase);
+  if (!ok) {
+    const firstError = report.issues.find(issue => issue.severity === 'error');
+    publishError(opts.wctx.bus, state.phase, `Auto-split overflow review failed quality gate: ${firstError?.message ?? 'unknown error'}`);
+    return { state, tasks: approvedTasks, approved: false };
+  }
+
+  state = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, state, { type: 'BRIEFS_READY', tasks: approvedTasks });
+  state = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, state, { type: 'APPROVE_BRIEFS' });
+  opts.setTrackedState(state);
+  return { state, tasks: approvedTasks, approved: true };
+}
+
+function formatSkippedSplitNotice(skippedSplits: AutoSplitOverflowSkippedSplit[]): string {
+  return skippedSplits
+    .map(skipped => {
+      const reason = skipped.reason.trim();
+      const punctuatedReason = /[.!?]$/.test(reason) ? reason : `${reason}.`;
+      return `Auto-split overflow skipped ${skipped.taskId}: ${punctuatedReason} Original task will continue unless routing/recovery requires a different action.`;
+    })
+    .join('; ');
+}
+
 export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise<{ summary: Summary; completed: boolean }> {
   const { wctx, phaseTimings, setTrackedState, setCurrentTask } = opts;
   let { summaryBase } = opts;
@@ -79,23 +174,7 @@ export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise
   const { callbacks } = wctx;
 
   if (state.tasks.length > 0) {
-    const heuristic = predictCost({
-      taskCount: state.tasks.length,
-      plannerTool: summaryBase.plannerTool,
-      implementerTool: summaryBase.implementerTool,
-      plannerModel: summaryBase.plannerModel,
-      implementerModel: summaryBase.implementerModel,
-      tokenUsage: state.tokenUsage,
-    });
-    let prediction: CostPrediction = {
-      ...heuristic,
-      deterministic: estimateDeterministicCost({
-        tasks: state.tasks,
-        context: wctx.context,
-        config: wctx.config,
-        pricingCache: modelCacheStore,
-      }),
-    };
+    let prediction: CostPrediction = predictTasksCost({ tasks: state.tasks, summaryBase, wctx, state });
     if (wctx.config.plannerEstimateReview) {
       prediction.plannerEstimateReview = runningPlannerEstimateReview();
     }
@@ -117,6 +196,36 @@ export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise
       setTrackedState(state);
       prediction = { ...prediction, plannerEstimateReview: reviewed.review };
       publishCostPrediction(wctx.bus, state.phase, prediction);
+    }
+
+    if (prediction.deterministic) {
+      const split = autoSplitOverflowTasks({
+        enabled: wctx.config.autoSplitOverflow,
+        tasks: state.tasks,
+        estimate: prediction.deterministic,
+        plannerReview: prediction.plannerEstimateReview,
+      });
+      if (split.skippedSplits.length > 0) {
+        publishWarning(wctx.bus, state.phase, formatSkippedSplitNotice(split.skippedSplits));
+      }
+      if (split.changed) {
+        const reviewed = await reviewAutoSplitOutput({ wctx, state, tasks: split.tasks, setTrackedState });
+        state = reviewed.state;
+        if (!reviewed.approved) {
+          return {
+            summary: buildSummary({ ...summaryBase, state, phaseTimings }),
+            completed: false,
+          };
+        }
+        prediction = predictTasksCost({
+          tasks: state.tasks,
+          summaryBase,
+          wctx,
+          state,
+          plannerEstimateReview: prediction.plannerEstimateReview,
+        });
+        publishCostPrediction(wctx.bus, state.phase, prediction);
+      }
     }
     summaryBase = { ...summaryBase, costPrediction: prediction };
   }

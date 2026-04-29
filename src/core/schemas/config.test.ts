@@ -221,3 +221,15 @@ describe('ConfigSchema planner estimate review', () => {
     expect(result.plannerEstimateReview).toBe(true);
   });
 });
+
+describe('ConfigSchema auto split overflow', () => {
+  it('keeps autoSplitOverflow off in the default config', () => {
+    expect(createDefaultConfig().autoSplitOverflow).toBe(false);
+  });
+
+  it('preserves autoSplitOverflow opt-in', () => {
+    const result = ConfigSchema.parse({ ...validConfig, autoSplitOverflow: true });
+
+    expect(result.autoSplitOverflow).toBe(true);
+  });
+});
