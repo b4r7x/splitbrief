@@ -45,6 +45,7 @@ export function createDefaultConfig(): Config {
     theme: 'terminal',
     shikiTheme: 'github-dark',
     sessions: { scope: 'project' },
+    plannerEstimateReview: false,
   };
 }
 
@@ -90,6 +91,7 @@ function mergeWithDefaults(migrated: Record<string, unknown>): Record<string, un
     ...(migrated['snapshots'] !== undefined && { snapshots: migrated['snapshots'] }),
     ...(migrated['palette'] !== undefined && { palette: migrated['palette'] }),
     ...(migrated['approval'] !== undefined && { approval: migrated['approval'] }),
+    plannerEstimateReview: migrated['plannerEstimateReview'] ?? defaults.plannerEstimateReview,
   };
 }
 

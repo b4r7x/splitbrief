@@ -124,6 +124,7 @@ function migrateV1ToV2(obj: Record<string, unknown>): unknown {
     palette: obj.palette,
     approval: obj.approval,
     implementerProfiles: obj.implementerProfiles,
+    plannerEstimateReview: obj.plannerEstimateReview,
   };
 }
 

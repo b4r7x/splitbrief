@@ -53,6 +53,18 @@ export const CostBreakdownSchema = z.object({
   cacheWriteTokens: z.number().nonnegative().optional(),
 });
 
+export const PlannerEstimateReviewClassificationSchema = z.enum(['ok', 'split-suggested', 'risk', 'needs-user-decision']);
+
+export const PlannerEstimateReviewSchema = z.object({
+  extraPlannerCall: z.boolean(),
+  status: z.enum(['running', 'completed', 'unavailable']),
+  classification: PlannerEstimateReviewClassificationSchema.nullable(),
+  affectedTaskIds: z.array(z.string()),
+  reason: z.string().nullable(),
+  recommendedUserDecision: z.string().nullable(),
+  error: z.string().optional(),
+});
+
 export const CostPredictionSchema = z.object({
   estimatedTasks: z.number().nonnegative(),
   lowCost: z.number().nonnegative(),
@@ -108,6 +120,7 @@ export const CostPredictionSchema = z.object({
       ])),
     }),
   }).optional(),
+  plannerEstimateReview: PlannerEstimateReviewSchema.optional(),
 });
 
 export const CheckpointSummaryRollupSchema = z.object({
@@ -208,5 +221,7 @@ export type DriftSummary = z.infer<typeof DriftSummarySchema>;
 export type CostBreakdown = z.infer<typeof CostBreakdownSchema>;
 export type Summary = z.infer<typeof SummarySchema>;
 export type CostPrediction = z.infer<typeof CostPredictionSchema>;
+export type PlannerEstimateReviewClassification = z.infer<typeof PlannerEstimateReviewClassificationSchema>;
+export type PlannerEstimateReview = z.infer<typeof PlannerEstimateReviewSchema>;
 export type CheckpointSummaryRollup = z.infer<typeof CheckpointSummaryRollupSchema>;
 export type ReviewPacketSummary = z.infer<typeof ReviewPacketSummarySchema>;

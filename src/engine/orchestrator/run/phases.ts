@@ -10,6 +10,7 @@ import { buildSummary, type SummaryBase } from '../summary.js';
 import { publishCostPrediction } from '../events.js';
 import { predictCost } from '../cost-prediction.js';
 import { estimateDeterministicCost } from '../estimate.js';
+import { reviewPlannerEstimate, runningPlannerEstimateReview } from '../planner-estimate-review.js';
 import { runPlanningPhase } from '../planning/run.js';
 import { runTaskLoop } from '../task-loop.js';
 import { runFinalReviewPhase } from '../final-review.js';
@@ -86,7 +87,7 @@ export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise
       implementerModel: summaryBase.implementerModel,
       tokenUsage: state.tokenUsage,
     });
-    const prediction: CostPrediction = {
+    let prediction: CostPrediction = {
       ...heuristic,
       deterministic: estimateDeterministicCost({
         tasks: state.tasks,
@@ -95,7 +96,28 @@ export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise
         pricingCache: modelCacheStore,
       }),
     };
+    if (wctx.config.plannerEstimateReview) {
+      prediction.plannerEstimateReview = runningPlannerEstimateReview();
+    }
     publishCostPrediction(wctx.bus, state.phase, prediction);
+
+    if (wctx.config.plannerEstimateReview && prediction.deterministic) {
+      const reviewed = await reviewPlannerEstimate({
+        planner: wctx.planner,
+        projectDir: wctx.projectDir,
+        sessionId: wctx.sessionId,
+        bus: wctx.bus,
+        state,
+        config: wctx.config,
+        estimate: prediction.deterministic,
+        metadata: wctx.metadata,
+        forcedProfileId: wctx.implementerProfile,
+      });
+      state = reviewed.state;
+      setTrackedState(state);
+      prediction = { ...prediction, plannerEstimateReview: reviewed.review };
+      publishCostPrediction(wctx.bus, state.phase, prediction);
+    }
     summaryBase = { ...summaryBase, costPrediction: prediction };
   }
 
