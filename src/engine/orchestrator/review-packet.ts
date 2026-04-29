@@ -696,6 +696,8 @@ function buildCost(summary: Summary, events: PacketEvent[]): ReviewPacket['cost'
         ...(summary.costBreakdown.hasPricedUsage !== undefined && { hasPricedUsage: summary.costBreakdown.hasPricedUsage }),
         ...(summary.costBreakdown.hasUnpricedUsage !== undefined && { hasUnpricedUsage: summary.costBreakdown.hasUnpricedUsage }),
         ...(summary.costBreakdown.hasSavingsEstimate !== undefined && { hasSavingsEstimate: summary.costBreakdown.hasSavingsEstimate }),
+        ...(summary.costBreakdown.isTotalActualCostKnown !== undefined && { isTotalActualCostKnown: summary.costBreakdown.isTotalActualCostKnown }),
+        ...(summary.costBreakdown.isAllPlannerBaselineKnown !== undefined && { isAllPlannerBaselineKnown: summary.costBreakdown.isAllPlannerBaselineKnown }),
       }
       : null,
     estimatedCostSavings: summary.costBreakdown?.hasSavingsEstimate === false
@@ -709,6 +711,16 @@ function buildCost(summary: Summary, events: PacketEvent[]): ReviewPacket['cost'
       event.type === 'task_tokens'
     ).filter((event) => event.message !== undefined || event.outcome === 'tight' || event.outcome === 'overflow'),
   };
+}
+
+function formatReviewPacketActualCost(costBreakdown: ReviewPacket['cost']['costBreakdown']): string {
+  if (!costBreakdown) return 'unavailable';
+  if (costBreakdown.isTotalActualCostKnown === false) {
+    return costBreakdown.totalActualCost > 0
+      ? `$${costBreakdown.totalActualCost.toFixed(4)} + unknown`
+      : 'unavailable';
+  }
+  return `$${costBreakdown.totalActualCost.toFixed(4)}`;
 }
 
 function stripFrontmatter(text: string): string {
@@ -905,7 +917,7 @@ export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
     ...packet.recoveryDecisions.unresolvedRisks.map((risk) => `- Risk: ${risk}`),
     '',
     '## Cost And Routing',
-    `- Actual cost: ${packet.cost.costBreakdown ? `$${packet.cost.costBreakdown.totalActualCost.toFixed(4)}` : 'unavailable'}`,
+    `- Actual cost: ${formatReviewPacketActualCost(packet.cost.costBreakdown)}`,
     `- Estimated savings: ${packet.cost.estimatedCostSavings ?? 'unavailable'}`,
     `- Per-task routing entries: ${packet.cost.taskRouting.length}`,
     '',

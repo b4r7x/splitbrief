@@ -6,7 +6,12 @@ import type { Summary, CostPrediction } from '../../core/schemas/summary.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import type { ReviewPacketCheckpoint } from '../../core/schemas/review-packet.js';
 import { ReviewPacketSchema } from '../../core/schemas/review-packet.js';
-import { calculateCostBreakdown, calculateTaskUsageCost, type TaskCostTokenUsage } from '../providers/pricing.js';
+import {
+  calculateCostBreakdown,
+  calculateTaskUsageCost,
+  isTaskUsageCostKnown,
+  type TaskCostTokenUsage,
+} from '../providers/pricing.js';
 import { formatCost } from '../../core/formatting.js';
 import {
   getCompletedTaskIds,
@@ -135,12 +140,21 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     implementerModel,
     taskBreakdowns,
   });
-  const estimatedCostSavings = formatCost(costBreakdown.savingsAmount);
+  const estimatedCostSavings = costBreakdown.hasSavingsEstimate
+    ? formatCost(costBreakdown.savingsAmount)
+    : 'unavailable';
 
-  const costedBreakdowns = taskBreakdowns?.map(task => ({
-    ...task,
-    cost: calculateTaskCost(task, state.tokenUsage, implementerTool, plannerTool, implementerModel, plannerModel),
-  }));
+  const costedBreakdowns = taskBreakdowns?.map(task => {
+    const isCostKnown = isTaskUsageCostKnown(task, implementerTool, plannerTool, implementerModel, plannerModel);
+    const taskWithoutCost = { ...task };
+    delete taskWithoutCost.cost;
+    return {
+      ...taskWithoutCost,
+      ...(isCostKnown
+        ? { cost: calculateTaskCost(task, state.tokenUsage, implementerTool, plannerTool, implementerModel, plannerModel) }
+        : { costPosture: task.costPosture ?? 'unknown-price' }),
+    };
+  });
 
   let evidenceSummary: Summary['evidenceSummary'];
   let briefQuality: Summary['briefQuality'];

@@ -313,6 +313,8 @@ export const ReviewPacketCostSchema = z.object({
     hasPricedUsage: z.boolean().optional(),
     hasUnpricedUsage: z.boolean().optional(),
     hasSavingsEstimate: z.boolean().optional(),
+    isTotalActualCostKnown: z.boolean().optional(),
+    isAllPlannerBaselineKnown: z.boolean().optional(),
   }).nullable(),
   estimatedCostSavings: z.string().nullable(),
   taskRouting: z.array(TaskTokenUsageSchema),

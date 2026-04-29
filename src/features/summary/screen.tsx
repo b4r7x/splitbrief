@@ -104,8 +104,8 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
             </Text>
           </Box>
         )}
-        {(summary.costBreakdown?.hasSavingsEstimate ?? true) && (
-          <LabeledRow label="Savings" labelWidth={labelWidth}><Text bold color={theme.success}>{summary.estimatedCostSavings}</Text></LabeledRow>
+        {!summary.costBreakdown && summary.estimatedCostSavings !== 'unavailable' && (
+          <LabeledRow label="Saved" labelWidth={labelWidth}><Text bold color={theme.success}>{summary.estimatedCostSavings}</Text></LabeledRow>
         )}
       </Box>
 
