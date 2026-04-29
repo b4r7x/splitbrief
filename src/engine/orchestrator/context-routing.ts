@@ -1,7 +1,9 @@
 import type { ResolvedImplementerProfile } from '../../core/config/accessors/implementer-profiles.js';
 import type { ImplementerCostTier, ImplementerWriteMode } from '../../core/schemas/implementer-config.js';
+import { isProviderId } from '../../core/schemas/enums.js';
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { ProjectContext } from '../../core/types/state-actions.js';
+import { findKnownModel, getEffectiveModelId, lookupModelsDevModel, lookupRuntimeModel, type ModelCacheAccessor } from '../providers/model-resolution.js';
 import { formatTaskPrompt, SYSTEM_PREAMBLE } from '../spec/formatter.js';
 import { estimateTokens } from '../spec/token-budget.js';
 
@@ -24,6 +26,7 @@ export interface RouteTaskOptions extends ContextFitOptions {
   context: ProjectContext;
   profiles: ResolvedImplementerProfile[];
   conservativeContextLength?: number | undefined;
+  contextCache?: ModelCacheAccessor | undefined;
 }
 
 export interface RejectedImplementerProfile {
@@ -68,6 +71,14 @@ interface ProfileFit {
   usedConservativeContextLength: boolean;
   requiredWriteMode: ImplementerWriteMode;
   capabilityFailure?: string | undefined;
+}
+
+export type ContextLengthSource = 'explicit' | 'models-dev' | 'runtime' | 'known-catalog' | 'conservative-fallback';
+
+export interface ResolvedProfileContextLength {
+  contextLength: number;
+  source: ContextLengthSource;
+  usedConservativeContextLength: boolean;
 }
 
 const DEFAULT_SAFETY_MARGIN = 0.15;
@@ -146,13 +157,53 @@ export function classifyContextFit(
   return 'fits';
 }
 
-function effectiveContextLength(
+function profileProviderId(profile: ResolvedImplementerProfile): string {
+  const { config } = profile;
+  switch (config.kind) {
+    case 'api':       return config.provider;
+    case 'cli':       return config.tool;
+    case 'shell':     return 'shell';
+    case 'agent':     return 'agent';
+    case 'agent-sdk': return 'agent-sdk';
+  }
+}
+
+export function resolveProfileContextLength(
   profile: ResolvedImplementerProfile,
   conservativeContextLength: number,
-): { contextLength: number; usedConservativeContextLength: boolean } {
+  cache?: ModelCacheAccessor | undefined,
+): ResolvedProfileContextLength {
   const contextLength = profile.config.contextLength;
-  if (contextLength !== undefined) return { contextLength, usedConservativeContextLength: false };
-  return { contextLength: conservativeContextLength, usedConservativeContextLength: true };
+  if (contextLength !== undefined) {
+    return { contextLength, source: 'explicit', usedConservativeContextLength: false };
+  }
+
+  const providerId = profileProviderId(profile);
+  if (!isProviderId(providerId)) {
+    return { contextLength: conservativeContextLength, source: 'conservative-fallback', usedConservativeContextLength: true };
+  }
+
+  const modelId = getEffectiveModelId(providerId, profile.config.model);
+  if (cache && modelId) {
+    const modelsDev = lookupModelsDevModel(providerId, modelId, cache);
+    if (modelsDev?.contextLength !== undefined) {
+      return { contextLength: modelsDev.contextLength, source: 'models-dev', usedConservativeContextLength: false };
+    }
+
+    const runtime = lookupRuntimeModel(providerId, modelId, cache);
+    if (runtime?.contextLength !== undefined) {
+      return { contextLength: runtime.contextLength, source: 'runtime', usedConservativeContextLength: false };
+    }
+  }
+
+  if (modelId) {
+    const known = findKnownModel(providerId, modelId);
+    if (known?.contextLength !== undefined) {
+      return { contextLength: known.contextLength, source: 'known-catalog', usedConservativeContextLength: false };
+    }
+  }
+
+  return { contextLength: conservativeContextLength, source: 'conservative-fallback', usedConservativeContextLength: true };
 }
 
 function currentCodeContextMode(task: Task, prompt: string): CurrentCodeContextMode {
@@ -165,7 +216,11 @@ function currentCodeContextMode(task: Task, prompt: string): CurrentCodeContextM
 
 function assessProfile(opts: RouteTaskOptions, profile: ResolvedImplementerProfile): ProfileFit {
   const conservativeContextLength = opts.conservativeContextLength ?? DEFAULT_CONSERVATIVE_CONTEXT_LENGTH;
-  const { contextLength, usedConservativeContextLength } = effectiveContextLength(profile, conservativeContextLength);
+  const { contextLength, usedConservativeContextLength } = resolveProfileContextLength(
+    profile,
+    conservativeContextLength,
+    opts.contextCache,
+  );
   const untruncatedEstimatedTokens = estimateFormattedTaskPromptTokens({ task: opts.task, context: opts.context });
   const prompt = formatTaskPrompt(opts.task, opts.context, contextLength);
   const estimatedTokens = estimateTokens(SYSTEM_PREAMBLE) + estimateTokens(prompt);

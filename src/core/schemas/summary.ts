@@ -60,6 +60,54 @@ export const CostPredictionSchema = z.object({
   highCost: z.number().nonnegative(),
   plannerTool: z.string(),
   implementerTool: z.string(),
+  deterministic: z.object({
+    taskCount: z.number().int().nonnegative(),
+    taskFitCounts: z.object({
+      fits: z.number().int().nonnegative(),
+      tight: z.number().int().nonnegative(),
+      overflow: z.number().int().nonnegative(),
+      unknown: z.number().int().nonnegative(),
+    }),
+    contextConfidenceCounts: z.object({
+      contextExplicit: z.number().int().nonnegative(),
+      contextKnownCatalog: z.number().int().nonnegative(),
+      contextCachedProvider: z.number().int().nonnegative(),
+      contextConservativeFallback: z.number().int().nonnegative(),
+      profileUnavailable: z.number().int().nonnegative(),
+    }),
+    priceConfidenceCounts: z.object({
+      priceKnown: z.number().int().nonnegative(),
+      priceUnknown: z.number().int().nonnegative(),
+      profileUnavailable: z.number().int().nonnegative(),
+    }),
+    tasks: z.array(z.object({
+      taskId: z.string(),
+      title: z.string(),
+      estimatedPromptTokens: z.number().int().nonnegative(),
+      selectedProfileId: z.string().nullable(),
+      contextFit: z.enum(['fits', 'tight', 'overflow', 'unknown']),
+      contextConfidence: z.enum([
+        'context-explicit',
+        'context-known-catalog',
+        'context-cached-provider',
+        'context-conservative-fallback',
+        'profile-unavailable',
+      ]),
+      priceConfidence: z.enum(['price-known', 'price-unknown', 'profile-unavailable']),
+      estimatedImplementerCost: z.number().nonnegative().nullable(),
+      hypotheticalPlannerCost: z.number().nonnegative().nullable(),
+    })),
+    totals: z.object({
+      knownActualEstimate: z.number().nonnegative().nullable(),
+      hypotheticalAllPlanner: z.number().nonnegative().nullable(),
+      estimatedSavings: z.number().nullable(),
+      unknownCostReason: z.array(z.enum([
+        'implementer-price-unknown',
+        'planner-price-unknown',
+        'profile-unavailable',
+      ])),
+    }),
+  }).optional(),
 });
 
 export const CheckpointSummaryRollupSchema = z.object({
