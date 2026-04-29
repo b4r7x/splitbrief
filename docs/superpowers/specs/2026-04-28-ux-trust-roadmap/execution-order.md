@@ -1,5 +1,7 @@
 # Execution Order
 
+Status: executed as of 2026-04-29.
+
 Use GPT-5.5 with reasoning `xhigh` for each pack coordinator.
 
 ## Order
@@ -27,7 +29,7 @@ Use GPT-5.5 with reasoning `xhigh` for each pack coordinator.
 
 ## Required Loop
 
-For each pack:
+This was the required loop for each pack:
 
 1. Paste the pack's `execute-prompt.md` into a fresh implementation context.
 2. Coordinator reads the required docs and dispatches the first bounded worker brief.

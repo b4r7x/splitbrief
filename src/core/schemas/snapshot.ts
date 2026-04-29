@@ -30,12 +30,21 @@ export const SnapshotManifestSchema = z.object({
 });
 export type SnapshotManifest = z.infer<typeof SnapshotManifestSchema>;
 
+export const RunSnapshotKindSchema = z.enum([
+  'pre-task',
+  'post-task',
+  'pre-final-review',
+  'accepted-run',
+]);
+export type RunSnapshotKind = z.infer<typeof RunSnapshotKindSchema>;
+
 export const RunSnapshotLedgerSchema = z.object({
   version: z.literal(1),
   sessionId: z.string(),
   taskId: z.string().optional(),
   taskIndex: z.number().int().nonnegative().optional(),
   runSnapshotIds: z.array(z.string()),
+  runSnapshotKinds: z.record(z.string(), RunSnapshotKindSchema).optional(),
   accepted: z.boolean(),
   rejected: z.boolean(),
   beforeHash: z.string().nullable(),

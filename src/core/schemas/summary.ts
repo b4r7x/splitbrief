@@ -58,6 +58,30 @@ export const CostPredictionSchema = z.object({
   implementerTool: z.string(),
 });
 
+export const CheckpointSummaryRollupSchema = z.object({
+  count: z.number().int().nonnegative(),
+  latestId: z.string().nullable(),
+  latestName: z.string().nullable(),
+  latestKind: z.string().nullable(),
+  latestRunCheckpointId: z.string().nullable(),
+  preFinalReviewId: z.string().nullable(),
+  accepted: z.boolean().nullable(),
+  rejected: z.boolean().nullable(),
+  diffCommand: z.string().nullable(),
+  restoreCommand: z.string().nullable(),
+});
+
+export const ReviewPacketSummarySchema = z.object({
+  jsonPath: z.string(),
+  markdownPath: z.string(),
+  generatedAt: z.string(),
+  finalReviewStatus: z.enum(['written', 'failed', 'missing', 'skipped']),
+  driftPassed: z.boolean().nullable(),
+  evidenceValidatedTasks: z.number().int().nonnegative(),
+  evidenceTotalTasks: z.number().int().nonnegative(),
+  missingArtifactCount: z.number().int().nonnegative(),
+});
+
 export const SummarySchema = z.object({
   feature: z.string(),
   totalTasks: z.number().nonnegative(),
@@ -115,6 +139,16 @@ export const SummarySchema = z.object({
    * in instant/quick modes that skip prediction or in old sessions.
    */
   costPrediction: CostPredictionSchema.optional(),
+  /**
+   * Compact checkpoint rollup derived from the review packet for the summary
+   * screen. Optional for sessions created before review packets existed.
+   */
+  checkpointSummary: CheckpointSummaryRollupSchema.optional(),
+  /**
+   * Compact review-packet rollup for summary rendering. The canonical packet
+   * remains `review-packet.json`.
+   */
+  reviewPacket: ReviewPacketSummarySchema.optional(),
 });
 
 export type BriefQualitySummary = z.infer<typeof BriefQualitySummarySchema>;
@@ -122,3 +156,5 @@ export type DriftSummary = z.infer<typeof DriftSummarySchema>;
 export type CostBreakdown = z.infer<typeof CostBreakdownSchema>;
 export type Summary = z.infer<typeof SummarySchema>;
 export type CostPrediction = z.infer<typeof CostPredictionSchema>;
+export type CheckpointSummaryRollup = z.infer<typeof CheckpointSummaryRollupSchema>;
+export type ReviewPacketSummary = z.infer<typeof ReviewPacketSummarySchema>;

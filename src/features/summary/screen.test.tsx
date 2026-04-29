@@ -5,6 +5,7 @@ import { makeSummary } from '../../../testing/helpers/factories/summary.js';
 import { resetAllStores } from '../../../testing/helpers/stores.js';
 import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { SummaryScreen } from './screen.js';
 
 describe('SummaryScreen', () => {
@@ -57,6 +58,7 @@ describe('SummaryScreen', () => {
   it('labels mixed-profile implementer runs without implying one global implementer', () => {
     routerStore.init({
       screen: 'summary',
+      sessionId: 'summary-session',
       summary: makeSummary({
         implementerTool: 'ollama',
         implementerModel: 'qwen-small',
@@ -128,6 +130,99 @@ describe('SummaryScreen', () => {
 
     expect(frame).toContain('Drift');
     expect(frame).toContain('1 warning');
+
+    ui.unmount();
+  });
+
+  it('renders checkpoint and review packet rollups from the summary', () => {
+    terminalSizeStore.__testReset({ cols: 160, rows: 60, isSmall: false });
+    routerStore.init({
+      screen: 'summary',
+      sessionId: 'summary-session',
+      summary: makeSummary({
+        checkpointSummary: {
+          count: 2,
+          latestId: 'snap-post-1',
+          latestName: 'post-task-1',
+          latestKind: 'post-task',
+          latestRunCheckpointId: 'snap-post-1',
+          preFinalReviewId: 'snap-pre-final',
+          accepted: true,
+          rejected: false,
+          diffCommand: 'diptych snapshot diff snap-post-1',
+          restoreCommand: 'diptych snapshot restore snap-post-1',
+        },
+        reviewPacket: {
+          markdownPath: 'review-packet.md',
+          jsonPath: 'review-packet.json',
+          generatedAt: '2026-04-28T10:00:00.000Z',
+          finalReviewStatus: 'written',
+          driftPassed: true,
+          evidenceValidatedTasks: 2,
+          evidenceTotalTasks: 2,
+          missingArtifactCount: 0,
+        },
+      }),
+    });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onSlashCommand={() => {}} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('Checkpoints');
+    expect(frame).toContain('2 checkpoints');
+    expect(frame).toContain('snap-pre-final');
+    expect(frame).toContain('diptych snapshot diff snap-post-1');
+    expect(frame).toContain('Review packet');
+    expect(frame).toContain('.diptych/sessions/summary-session/review-packet.md');
+    expect(frame).toContain('final review: written');
+    expect(frame).toContain('evidence: 2/2');
+
+    ui.unmount();
+  });
+
+  it('keeps checkpoint and packet details readable on narrow terminals', () => {
+    terminalSizeStore.__testReset({ cols: 48, rows: 60, isSmall: true });
+    const longName = `post-task-${'very-long-name-'.repeat(8)}`;
+    routerStore.init({
+      screen: 'summary',
+      sessionId: 'small-summary-session',
+      summary: makeSummary({
+        checkpointSummary: {
+          count: 12,
+          latestId: 'snap-post-very-long-id',
+          latestName: longName,
+          latestKind: 'post-task',
+          latestRunCheckpointId: 'snap-post-very-long-id',
+          preFinalReviewId: 'snap-pre-final',
+          accepted: null,
+          rejected: null,
+          diffCommand: 'diptych snapshot diff snap-post-very-long-id',
+          restoreCommand: 'diptych snapshot restore snap-post-very-long-id',
+        },
+        reviewPacket: {
+          markdownPath: 'review-packet.md',
+          jsonPath: 'review-packet.json',
+          generatedAt: '2026-04-28T10:00:00.000Z',
+          finalReviewStatus: 'failed',
+          driftPassed: false,
+          evidenceValidatedTasks: 1,
+          evidenceTotalTasks: 3,
+          missingArtifactCount: 2,
+        },
+      }),
+    });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onSlashCommand={() => {}} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('12 ckpts');
+    expect(frame).toContain('latest: snap-post-very-long-id');
+    expect(frame).toContain('pre: snap-pre-final');
+    expect(frame).not.toContain(longName);
+    expect(frame).toContain('review-packet.md');
+    expect(frame).toContain('review-packet.json');
+    expect(frame).toContain('final review: failed');
+    expect(frame).toContain('missing: 2');
 
     ui.unmount();
   });

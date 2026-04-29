@@ -17,7 +17,7 @@ import { createWorktree, detectWorktree } from '../../engine/git/worktree.js';
 import { slugify } from '../../utils/slugify.js';
 import { spawnServer } from '../../engine/ipc/spawn-server.js';
 import { configPath } from '../../core/config/load/load.js';
-import { sessionDir } from '../../core/paths.js';
+import { READINESS_FILE, sessionDir } from '../../core/paths.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { assertNotWindows } from '../platform.js';
 import { writeSecureFile } from '../../lib/fs.js';
@@ -52,7 +52,7 @@ async function applyWorktreeOption(feature: string | undefined, opts: WorkflowOp
 function persistStartReadiness(projectDir: string, sessionId: string, report: ReadinessReport): void {
   const record = createStartReadinessRecord(report);
   writeSecureFile(
-    join(sessionDir(projectDir, sessionId), 'readiness.json'),
+    join(sessionDir(projectDir, sessionId), READINESS_FILE),
     JSON.stringify(record, null, 2) + '\n',
   );
 }

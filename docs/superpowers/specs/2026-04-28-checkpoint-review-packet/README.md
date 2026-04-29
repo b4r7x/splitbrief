@@ -1,9 +1,9 @@
 # Checkpoint / Restore UX + Post-run Review Packet - 2026-04-28
 
-> **Status:** planned / spec only.
-> **Scope:** documentation-only specification for checkpoint visibility, restore trust, and a final post-run review packet.
-> **Write scope for this pack:** `docs/superpowers/specs/2026-04-28-checkpoint-review-packet/**`.
-> **Out of scope:** kanban, plan archive, MCP write tools, full multi-agent manager, same-checkout parallel writes, and any source implementation in this pass.
+> **Status:** v1 implemented as of 2026-04-29.
+> **Scope:** checkpoint visibility, restore trust copy, and a session-local post-run review packet.
+> **Write scope for this pack:** source implementation plus `docs/superpowers/specs/2026-04-28-checkpoint-review-packet/**`.
+> **Out of scope:** kanban, plan archive, MCP write tools, full multi-agent manager, same-checkout parallel writes, automatic restore, and PR-provider integrations.
 
 ## Problem
 
@@ -44,10 +44,10 @@ This is session UX. It is not a saved plan library or project-management system.
 | 1 | `README.md` | Problem, scope, non-goals, and pack map. |
 | 2 | `spec.md` | Product behavior and acceptance criteria. |
 | 3 | `decisions.md` | ADR-style product and architecture decisions. |
-| 4 | `implementation-plan.md` | Phased future implementation plan and expected source touch areas. |
-| 5 | `tasks.md` | Ordered implementation checklist. |
-| 6 | `verification.md` | Future validation plan. |
-| 7 | `agent-briefs/00-coordinator.md` | Coordinator prompt for future execution. |
+| 4 | `implementation-plan.md` | Implemented source areas, validation focus, and deferred polish. |
+| 5 | `tasks.md` | v1 implementation checklist and remaining deferred items. |
+| 6 | `verification.md` | Current validation guide and shared-checkout test limits. |
+| 7 | `agent-briefs/00-coordinator.md` | Historical coordinator prompt for fresh implementation contexts. |
 | 8 | `agent-briefs/01-checkpoint-ux.md` | Checkpoint visibility and restore trust worker brief. |
 | 9 | `agent-briefs/02-review-packet-model.md` | Review packet artifact/model worker brief. |
 | 10 | `agent-briefs/03-summary-tui.md` | Summary screen rendering worker brief. |
@@ -64,9 +64,13 @@ This is session UX. It is not a saved plan library or project-management system.
 - Do not replace git, final planner review, evidence, or drift detection.
 - Do not make restore automatic or silent.
 
-## Done Criteria For This Pack
+## Current v1 Behavior
 
-- Future implementers can tell which source areas to change and in which order.
-- The product behavior distinguishes user-facing checkpoints from internal snapshot storage.
-- The review packet contents are concrete enough to implement as artifacts and TUI sections.
-- Agent briefs are self-contained, include exact write ownership, forbid staging/committing, and avoid same-checkout parallel writes.
+- User-facing checkpoint summaries are built from snapshot manifests and the run ledger.
+- Baseline snapshots stay hidden from normal checkpoint UX.
+- Restore and diff commands use snapshot IDs.
+- Name-derived checkpoint labels are shown as inferred, not as proof that a snapshot belongs to the run ledger.
+- The run writes `review-packet.json` and `review-packet.md` under the current session directory.
+- The summary screen shows compact checkpoint and review packet rollups.
+- Missing artifacts are recorded explicitly in the packet.
+- Restore stays explicit and hash-guarded; no automatic restore was added.

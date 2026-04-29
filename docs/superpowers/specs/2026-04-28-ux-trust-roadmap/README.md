@@ -1,7 +1,7 @@
 # UX Trust Roadmap - 2026-04-28
 
-> **Status:** planned.
-> **Scope:** roadmap-level coordination for the next UX and trust work across four child spec packs.
+> **Status:** implemented through four child packs as of 2026-04-29.
+> **Scope:** roadmap-level coordination for UX and trust work across four child spec packs.
 > **Out of scope:** runtime implementation details, file-level task briefs, kanban, plan archive or plan management, MCP write tools, generic multi-agent management, same-checkout parallel writes.
 
 ## Purpose
@@ -12,7 +12,7 @@ This roadmap keeps the next UX/trust work aligned with diptych's core product id
 expensive planner -> self-contained Task Briefs -> cheap/local implementer per task -> checkpoints/validation/evidence/escalation
 ```
 
-The child packs should improve confidence before, during, and after implementation without turning diptych into project management software or a general agent platform.
+The child packs improve confidence before, during, and after implementation without turning diptych into project management software or a general agent platform.
 
 ## Scope
 
@@ -50,7 +50,7 @@ Each child pack owns its own requirements, implementation plan, detailed task br
 3. `2026-04-28-recovery-flow`
 4. `2026-04-28-checkpoint-review-packet`
 
-The order is intentional: first make readiness visible, then improve approval trust, then make recovery understandable, then package the final review/checkpoint evidence.
+This order has now been executed. It was intentional: first make readiness visible, then improve approval trust, then make recovery understandable, then package the final review/checkpoint evidence.
 
 ## Non-Goals
 

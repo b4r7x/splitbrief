@@ -1,32 +1,40 @@
 # Verification
 
-This guide is for future implementers of this spec.
+This guide documents the v1 validation path for checkpoint-review-packet.
 
-## Static Validation
+## Latest Review Pass
 
-Run after source changes:
+Validated on 2026-04-29:
 
 ```bash
+npx vitest run src/engine/snapshots/checkpoint-summary.test.ts src/engine/orchestrator/review-packet.test.ts src/features/summary/components/summary-checkpoints.test.tsx src/features/summary/components/summary-review-packet.test.tsx src/features/summary/components/summary-components.test.tsx src/features/summary/screen.test.tsx
 npm run typecheck
 npm run lint
 git diff --check
 ```
 
-## Targeted Tests
+Result:
 
-Expected targeted suites:
+- 6 Vitest files passed.
+- 39 focused tests passed.
+- Typecheck passed.
+- Biome lint passed.
+- `git diff --check` passed.
+
+Full broad `npm test` was not run in the shared checkout. Run it only in an isolated checkout when suites may exercise git staging/commit fixtures.
+
+## Shared-checkout Validation
+
+Use this set for normal review in a developer checkout:
 
 ```bash
-npm test -- src/engine/snapshots/checkpoint-summary.test.ts
-npm test -- src/engine/orchestrator/review-packet.test.ts
-npm test -- src/features/summary/screen.test.tsx src/features/summary/components/summary-components.test.tsx
+npx vitest run src/engine/snapshots/checkpoint-summary.test.ts src/engine/orchestrator/review-packet.test.ts src/features/summary/components/summary-checkpoints.test.tsx src/features/summary/components/summary-review-packet.test.tsx src/features/summary/components/summary-components.test.tsx src/features/summary/screen.test.tsx
+npm run typecheck
+npm run lint
+git diff --check
 ```
 
-Run broader tests when the implementation is stable:
-
-```bash
-npm test
-```
+Do not run broad suites in this checkout if they touch helper flows that stage or commit fixture repositories. Use an isolated disposable checkout for that.
 
 ## Behavior Scenarios
 
@@ -36,7 +44,7 @@ Verify:
 
 - baseline snapshot is not shown as a normal checkpoint
 - manual snapshots are shown as manual checkpoints
-- `pre-task-*`, `post-task-*`, `pre-final-review`, and `accepted-run` names produce the expected kind
+- `pre-task-*`, `post-task-*`, `pre-final-review`, and `accepted-run` names produce the expected inferred kind when ledger classification is unavailable
 - run-ledger snapshots are marked as run checkpoints
 - manual snapshots named like auto checkpoints are not marked as run checkpoints unless their snapshot ID appears in `run-ledger.json`
 - missing ledger data uses `inferredKind` for display fallback without setting `isRunCheckpoint` from the name
@@ -57,7 +65,7 @@ Do not test by asserting private helper names. Assert rendered command text, ret
 
 ### Review Packet Artifact
 
-Create fixture session data for:
+Fixture session data should cover:
 
 - complete artifacts: summary, review, evidence, drift, brief quality, snapshots
 - missing optional artifacts
@@ -90,26 +98,6 @@ Verify rendered output includes:
 - sensible output on narrow terminal settings
 
 Avoid tests that only assert components do not crash.
-
-## Fixture Smoke Validation
-
-After automated tests pass, validate against a disposable fixture session. This must not call real planner or implementer models, must not use network access, and must not mutate the developer checkout outside the fixture directory.
-
-```bash
-SESSION_FIXTURE_DIR=/tmp/diptych-review-packet-fixture
-npm test -- src/engine/orchestrator/review-packet.test.ts
-```
-
-Optional manual inspection may copy or generate fixture artifacts under a disposable directory and point the packet builder at that directory. Use variables instead of editing real session paths:
-
-```bash
-SESSION_ID=fixture-session
-export SESSION_DIR=/tmp/diptych-review-packet-fixture/.diptych/sessions/$SESSION_ID
-ls "$SESSION_DIR"
-node -e "const fs = require('node:fs'); JSON.parse(fs.readFileSync(process.env.SESSION_DIR + '/review-packet.json', 'utf8')); console.log('ok')"
-```
-
-Manual smoke is optional. If used, it must run with stubbed/no-real-model providers, no network, a disposable working directory, and explicit cleanup of only that disposable directory.
 
 ## Regression Guardrails
 

@@ -4,6 +4,8 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { Summary, CostPrediction } from '../../core/schemas/summary.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
+import type { ReviewPacketCheckpoint } from '../../core/schemas/review-packet.js';
+import { ReviewPacketSchema } from '../../core/schemas/review-packet.js';
 import { calculateCostBreakdown, calculateTaskUsageCost, type TaskCostTokenUsage } from '../providers/pricing.js';
 import { formatCost } from '../../core/formatting.js';
 import {
@@ -15,7 +17,7 @@ import {
 import { buildEvidenceSummary, readEvidenceLedger } from './evidence.js';
 import { readDriftReport } from './drift.js';
 import { readDriftChainState } from './drift-chain-state.js';
-import { BRIEF_QUALITY_FILE, sessionDir } from '../../core/paths.js';
+import { BRIEF_QUALITY_FILE, REVIEW_PACKET_JSON_FILE, REVIEW_PACKET_MARKDOWN_FILE, reviewPacketJsonPath, sessionDir } from '../../core/paths.js';
 import type { BriefQualityReport } from '../spec/brief-quality.js';
 
 export type BuildSummaryState = Pick<WorkflowState, 'tasks' | 'tokenUsage'>;
@@ -46,6 +48,53 @@ function readBriefQualityReport(projectDir: string, sessionId: string): BriefQua
   } catch {
     return null;
   }
+}
+
+function readReviewPacketRollups(
+  projectDir: string,
+  sessionId: string,
+): { checkpointSummary?: Summary['checkpointSummary']; reviewPacket?: Summary['reviewPacket'] } {
+  const target = reviewPacketJsonPath(projectDir, sessionId);
+  if (!existsSync(target)) return {};
+  try {
+    const parsed = ReviewPacketSchema.safeParse(JSON.parse(readFileSync(target, 'utf8')));
+    if (!parsed.success) return {};
+    const packet = parsed.data;
+    const latest = packet.checkpoints.latestRunCheckpoint ?? packet.checkpoints.items.at(-1) ?? null;
+    return {
+      checkpointSummary: {
+        count: packet.checkpoints.items.length,
+        latestId: latest?.id ?? null,
+        latestName: latest?.name ?? null,
+        latestKind: checkpointKindLabel(latest),
+        latestRunCheckpointId: packet.checkpoints.latestRunCheckpoint?.id ?? null,
+        preFinalReviewId: packet.checkpoints.preFinalReview?.id ?? null,
+        accepted: packet.checkpoints.runLedger.accepted,
+        rejected: packet.checkpoints.runLedger.rejected,
+        diffCommand: latest?.diffCommand ?? null,
+        restoreCommand: latest?.restoreCommand ?? null,
+      },
+      reviewPacket: {
+        jsonPath: REVIEW_PACKET_JSON_FILE,
+        markdownPath: REVIEW_PACKET_MARKDOWN_FILE,
+        generatedAt: packet.generatedAt,
+        finalReviewStatus: packet.finalReview.status,
+        driftPassed: packet.drift.passed,
+        evidenceValidatedTasks: packet.validation.summary.passed,
+        evidenceTotalTasks: packet.run.totalTasks,
+        missingArtifactCount: packet.missingArtifacts.length,
+      },
+    };
+  } catch {
+    return {};
+  }
+}
+
+function checkpointKindLabel(checkpoint: ReviewPacketCheckpoint | null): string | null {
+  if (!checkpoint) return null;
+  return checkpoint.inferredKind
+    ? `${checkpoint.kind} (inferred ${checkpoint.inferredKind})`
+    : checkpoint.kind;
 }
 
 export function calculateTaskCost(
@@ -97,6 +146,8 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
   let briefQuality: Summary['briefQuality'];
   let driftSummary: Summary['driftSummary'];
   let chainDriftSummary: Summary['chainDriftSummary'];
+  let checkpointSummary: Summary['checkpointSummary'];
+  let reviewPacket: Summary['reviewPacket'];
   if (projectDir && sessionId) {
     const ledger = readEvidenceLedger(projectDir, sessionId);
     if (ledger) evidenceSummary = buildEvidenceSummary(ledger);
@@ -132,6 +183,10 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
         emittedChainCount: chainState.emittedChains.length,
       };
     }
+
+    const packetRollups = readReviewPacketRollups(projectDir, sessionId);
+    checkpointSummary = packetRollups.checkpointSummary;
+    reviewPacket = packetRollups.reviewPacket;
   }
 
   return {
@@ -158,5 +213,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     ...(driftSummary && { driftSummary }),
     ...(chainDriftSummary && { chainDriftSummary }),
     ...(costPrediction !== undefined && { costPrediction }),
+    ...(checkpointSummary && { checkpointSummary }),
+    ...(reviewPacket && { reviewPacket }),
   };
 }

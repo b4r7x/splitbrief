@@ -18,6 +18,12 @@ export const sessionsRoot = (projectDir: string): string =>
 export const sessionDir = (projectDir: string, sessionId: string): string =>
   join(projectDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
 
+export const reviewPacketJsonPath = (projectDir: string, sessionId: string): string =>
+  join(sessionDir(projectDir, sessionId), REVIEW_PACKET_JSON_FILE);
+
+export const reviewPacketMarkdownPath = (projectDir: string, sessionId: string): string =>
+  join(sessionDir(projectDir, sessionId), REVIEW_PACKET_MARKDOWN_FILE);
+
 export const getDiptychPath = (projectDir: string, ...parts: string[]): string =>
   join(projectDir, DIPTYCH_DIR, ...parts);
 
@@ -41,6 +47,9 @@ export const EVIDENCE_FILE = 'evidence.json';
 export const DRIFT_REPORT_FILE = 'drift-report.json';
 export const DRIFT_CHAINS_FILE = 'drift-chains.json';
 export const BRIEF_QUALITY_FILE = 'brief-quality.json';
+export const READINESS_FILE = 'readiness.json';
+export const REVIEW_PACKET_JSON_FILE = 'review-packet.json';
+export const REVIEW_PACKET_MARKDOWN_FILE = 'review-packet.md';
 export const HANDOFF_MANIFEST_FILE = 'manifest.json';
 export const LOCKFILE = 'lockfile.json';
 export const SERVER_LOG_FILE = 'server.log';
