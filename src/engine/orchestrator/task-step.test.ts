@@ -13,6 +13,7 @@ import {
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
+import { loadState } from '../../core/state/persistence.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
@@ -121,6 +122,7 @@ describe('runSingleTask — happy path', () => {
     // Completed task → advanced past it.
     expect(result.currentTaskIndex).toBe(1);
     expect(result.tasks[0]?.status).toBe('done');
+    expect(result.pendingRecovery).toBeUndefined();
 
     // Token usage accumulated on state.
     expect(result.tokenUsage.implementerInput).toBe(300);
@@ -833,11 +835,17 @@ describe('runSingleTask — happy path', () => {
     expect(retry).not.toHaveBeenCalled();
     expect(runValidation).not.toHaveBeenCalled();
     expect(result.currentTaskIndex).toBe(0);
-    expect(onUserEditConflict).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'changed-during-approval-promotion',
+    expect(onUserEditConflict).not.toHaveBeenCalled();
+    expect(result.pendingRecovery).toMatchObject({
+      reason: 'approval-promotion-conflict',
+      taskId: 'T001',
       files: ['src/race.ts'],
-      affectedTaskIds: ['T001'],
-    }));
+      availableActions: ['planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
+    });
+    expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
+      reason: 'approval-promotion-conflict',
+      taskId: 'T001',
+    });
     expect(events.find((event) => event.type === 'paused_external_changes')).toMatchObject({
       type: 'paused_external_changes',
       selectedAction: 'pause',
@@ -952,9 +960,11 @@ describe('retryAndRecord — retry budget', () => {
     expect(taskBreakdowns[0]?.method).toBe('local');
   });
 
-  it('exhausts local retry budget and escalates — emits task_failed when escalation also fails', async () => {
+  it('exhausts local retry budget and persists recovery when escalation also fails', async () => {
     const task = makeTask({ id: 'T001' });
-    const state = implementingState([task]);
+    let state = implementingState([task]);
+    state = transition(state, { type: 'START_TASK', taskId: task.id });
+    state = transition(state, { type: 'TASK_SENT' });
 
     const { callbacks } = makeCallbacks();
     const { bus, events: busEvents } = makeBusRecorder();
@@ -999,13 +1009,21 @@ describe('retryAndRecord — retry budget', () => {
     expect(res.completed).toBe(false);
     // retry is called maxRetries times (local) plus once on the hint tier before giving up.
     expect(retry.mock.calls.length).toBeGreaterThanOrEqual(2);
-    // Final task status recorded as failed.
-    expect(res.state.tasks[0]?.status).toBe('failed');
+    expect(res.state.tasks[0]?.status).toBe('in_progress');
+    expect(res.state.currentTaskIndex).toBe(0);
+    expect(res.state.pendingRecovery).toMatchObject({
+      reason: 'retry-exhausted',
+      taskId: 'T001',
+      availableActions: ['retry-same-worker', 'planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
+    });
+    expect(loadState(wctx.projectDir, wctx.sessionId)?.pendingRecovery).toMatchObject({
+      reason: 'retry-exhausted',
+      taskId: 'T001',
+    });
 
-    // Retry events and task_failed session-log event fan-out happens.
-    // The observable failure signal is the lack of task_completed AND the retry events.
     const complete = busEvents.find((e) => e.type === 'task_completed');
     expect(complete).toBeUndefined();
+    expect(busEvents.find((e) => e.type === 'task_failed')).toBeUndefined();
 
     const retryEvents = busEvents.filter((e) => e.type === 'task_retry');
     // At least as many retry events as local attempts.

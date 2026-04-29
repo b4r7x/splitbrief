@@ -7,8 +7,38 @@ import {
   getSkippedTaskIds,
 } from './selectors.js';
 import type { WorkflowState } from '../schemas/workflow.js';
+import type { RecoveryIssue } from '../schemas/recovery.js';
 import { taskId } from '../schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+
+function makeRecoveryIssue(overrides: Partial<RecoveryIssue> = {}): RecoveryIssue {
+  return {
+    id: 'rec_2026_04_28_001',
+    reason: 'validation-failed',
+    phase: 'validating-task',
+    status: 'awaiting-user',
+    taskId: taskId('T001'),
+    taskTitle: 'Fix login validation',
+    files: ['src/auth/session.ts'],
+    affectedTaskIds: [taskId('T001')],
+    message: 'T001 validation failed after 3 attempts',
+    details: ['npm test failed in src/auth/session.test.ts'],
+    attempts: 3,
+    maxAttempts: 3,
+    selectedImplementerProfile: 'local-qwen',
+    availableActions: [
+      'retry-same-worker',
+      'route-bigger-worker',
+      'planner-split-rebase',
+      'skip-current-task',
+      'pause-run',
+      'abort-workflow',
+    ],
+    recommendedAction: 'retry-same-worker',
+    createdAt: '2026-04-28T12:00:00.000Z',
+    ...overrides,
+  };
+}
 
 describe('createInitialState', () => {
   it('returns idle phase with feature set and empty tasks', () => {
@@ -530,5 +560,73 @@ describe('transition', () => {
     const state: WorkflowState = { ...createInitialState('feat'), phase: 'implementing' };
     const next = transition(state, { type: 'BRIEFS_READY', tasks });
     expect(next.phase).toBe('reviewing-briefs');
+  });
+
+  it('SET_PENDING_RECOVERY stores recovery overlay without changing phase', () => {
+    const issue = makeRecoveryIssue();
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'validating-task' };
+
+    const next = transition(state, { type: 'SET_PENDING_RECOVERY', issue });
+
+    expect(next.phase).toBe('validating-task');
+    expect(next.pendingRecovery).toEqual(issue);
+  });
+
+  it('PAUSE_PENDING_RECOVERY marks pending recovery as paused', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'validating-task',
+      pendingRecovery: makeRecoveryIssue(),
+    };
+
+    const next = transition(state, { type: 'PAUSE_PENDING_RECOVERY' });
+
+    expect(next.phase).toBe('validating-task');
+    expect(next.pendingRecovery?.status).toBe('paused');
+  });
+
+  it('MARK_RECOVERY_APPLYING records selected action while keeping recovery pending', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'validating-task',
+      pendingRecovery: makeRecoveryIssue(),
+    };
+
+    const next = transition(state, {
+      type: 'MARK_RECOVERY_APPLYING',
+      action: 'route-bigger-worker',
+      selectedAt: '2026-04-28T12:05:00.000Z',
+    });
+
+    expect(next.phase).toBe('validating-task');
+    expect(next.pendingRecovery?.status).toBe('applying');
+    expect(next.pendingRecovery?.selectedAction).toBe('route-bigger-worker');
+    expect(next.pendingRecovery?.selectedAt).toBe('2026-04-28T12:05:00.000Z');
+  });
+
+  it('CLEAR_PENDING_RECOVERY removes pending recovery without changing phase', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'validating-task',
+      pendingRecovery: makeRecoveryIssue({ status: 'paused' }),
+    };
+
+    const next = transition(state, { type: 'CLEAR_PENDING_RECOVERY' });
+
+    expect(next.phase).toBe('validating-task');
+    expect(next.pendingRecovery).toBeUndefined();
+  });
+
+  it('RESOLVE_PENDING_RECOVERY clears pending recovery after a selected action succeeds', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'validating-task',
+      pendingRecovery: makeRecoveryIssue({ status: 'applying', selectedAction: 'retry-same-worker' }),
+    };
+
+    const next = transition(state, { type: 'RESOLVE_PENDING_RECOVERY', action: 'retry-same-worker' });
+
+    expect(next.phase).toBe('validating-task');
+    expect(next.pendingRecovery).toBeUndefined();
   });
 });

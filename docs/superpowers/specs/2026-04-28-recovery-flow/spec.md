@@ -1,7 +1,7 @@
 # Feature Specification: Recovery Flow
 
 **Created:** 2026-04-28
-**Status:** Spec only
+**Status:** v1 implemented as of 2026-04-29; full route-bigger execution and planner split/rebase proposal execution remain deferred.
 **Input:** Design a simple recovery flow for failed or blocked diptych runs.
 
 ## Summary
@@ -9,6 +9,8 @@
 Recovery Flow gives users one consistent decision surface when a workflow cannot safely continue. It converts low-level stops such as validation failure, context overflow, user-edit conflict, apply/promotion conflict, retry exhaustion, and budget pause into a durable `RecoveryIssue` with a small set of valid actions.
 
 The flow must preserve diptych's product identity: one planner role, one implementer role with optional routing/escalation, sequential writes in one checkout, durable execution sessions, and no project-management layer.
+
+Current v1 product behavior implements the durable issue, safe stop points, prompt/parser, events, resume, headless JSON failure, skip/pause/abort/continue/retry handling, and focused tests. `route-bigger-worker` and `planner-split-rebase` are typed and visible only when relevant, but selecting them currently blocks safely and preserves `pendingRecovery`.
 
 ## Current Product Context
 
@@ -114,9 +116,9 @@ The exact field names may change during implementation, but the persisted artifa
 
 | Action | Meaning | Allowed when |
 |---|---|---|
-| `retry-same-worker` | Rerun the current task in a fresh context with the same implementer profile. | Implementation error, validation failure, retry exhaustion if retry budget allows or user explicitly overrides. |
-| `route-bigger-worker` | Rerun the current task with the cheapest larger capable implementer profile. | Context overflow, validation failure, implementation error, retry exhaustion. Disabled when no larger capable profile exists. |
-| `planner-split-rebase` | Ask the planner to split the task, rebase it against user edits, or rewrite affected remaining tasks, then present the proposed Task Brief diff or summary for review. | Context overflow, user-edit conflict, dependency-blocked, retry exhaustion, validation failure. |
+| `retry-same-worker` | Rerun only the current task in a fresh worker context. With unchanged routing/config this uses the same selected profile; strict profile pinning across config changes is not part of v1. | Implementation error, validation failure, retry exhaustion if retry budget allows or user explicitly overrides. |
+| `route-bigger-worker` | Target behavior: rerun the current task with the cheapest larger capable implementer profile. Current v1: returns `route-bigger-not-ready` and keeps `pendingRecovery`. | Context overflow, validation failure, implementation error, retry exhaustion. Disabled when no larger capable profile exists. |
+| `planner-split-rebase` | Target behavior: ask the planner to split/rebase and present a proposed Task Brief diff or summary for review. Current v1: returns `planner-proposal-required` and keeps `pendingRecovery`. | Context overflow, user-edit conflict, dependency-blocked, retry exhaustion, validation failure. |
 | `continue` | Continue intentionally without changing the task. | Budget pause below max budget, unrelated user edits, future-task stale input that does not block current task. Not valid for `budget-exceeded`. |
 | `skip-current-task` | Mark current task skipped with evidence and advance dependency handling. | Current task failure, conflict, dependency-blocked, retry exhaustion. |
 | `pause-run` | Persist the issue and stop without clearing active session. | Any recoverable issue. |

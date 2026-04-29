@@ -77,6 +77,10 @@ function getGutterRole(event: EngineEvent): "planner" | "implementer" | null {
     case "planner_attachment_added": case "planner_attachments_dropped":
     case "workflow_started": case "workflow_resumed": case "workflow_complete":
     case "paused_external_changes":
+    case "recovery_prompted":
+    case "recovery_action_selected":
+    case "recovery_action_failed":
+    case "recovery_resolved":
     case "research_done": case "spec_done": case "spec_approved": case "spec_rejected":
     case "spec_regenerated": case "plan_done": case "plan_approved": case "plan_rejected":
     case "plan_regenerated": case "all_tasks_done":
@@ -373,6 +377,46 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
           labelColor={event.conflict?.safeToContinue ? t.warning : t.error}
           value={formatExternalChangesValue(event)}
           valueColor={event.conflict?.safeToContinue ? t.textDim : t.error}
+        />
+      );
+      break;
+    case "recovery_prompted":
+      content = (
+        <Card
+          label="recovery"
+          labelColor={t.warning}
+          value={`${event.reason}${event.taskId ? ` · ${event.taskId}` : ""} · recommended ${event.recommendedAction}`}
+          valueColor={t.warning}
+        />
+      );
+      break;
+    case "recovery_action_selected":
+      content = (
+        <Card
+          label="recovery"
+          labelColor={t.info}
+          value={`selected ${event.action} for ${event.reason}`}
+          valueColor={t.textDim}
+        />
+      );
+      break;
+    case "recovery_action_failed":
+      content = (
+        <Card
+          label="recovery"
+          labelColor={t.error}
+          value={`${event.action} blocked: ${event.message}`}
+          valueColor={t.error}
+        />
+      );
+      break;
+    case "recovery_resolved":
+      content = (
+        <Card
+          label="recovery"
+          labelColor={t.success}
+          value={`${event.outcome} via ${event.action}${event.implementerProfile ? ` · ${event.implementerProfile}` : ""}`}
+          valueColor={t.textDim}
         />
       );
       break;

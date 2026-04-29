@@ -21,6 +21,7 @@ export type SaveFinalSessionOpts = {
   startTime: number;
   status: Session['status'];
   summary: Summary;
+  preserveActive?: boolean | undefined;
 };
 
 export function saveFinalSession(opts: SaveFinalSessionOpts): void {
@@ -36,7 +37,7 @@ export function saveFinalSession(opts: SaveFinalSessionOpts): void {
       summary: opts.summary,
     };
     saveSummary(opts.projectDir, opts.sessionId, session);
-    clearActive(opts.projectDir);
+    if (!opts.preserveActive) clearActive(opts.projectDir);
   } catch (err) {
     warnError('Failed to save final session', err);
   }

@@ -1,5 +1,7 @@
 import type { Task, TaskId } from '../schemas/task.js';
 import type { QueuedMessage } from '../schemas/workflow.js';
+import type { RecoveryAction } from '../schemas/enums.js';
+import type { RecoveryIssue } from '../schemas/recovery.js';
 
 export type StateAction =
   | { type: 'START'; feature: string }
@@ -46,7 +48,12 @@ export type StateAction =
   | { type: 'ENQUEUE_USER_MSG'; message: QueuedMessage }
   | { type: 'MARK_DELIVERED_NATIVE'; id: string }
   | { type: 'DRAIN_QUEUE' }
-  | { type: 'CLEAR_QUEUE' };
+  | { type: 'CLEAR_QUEUE' }
+  | { type: 'SET_PENDING_RECOVERY'; issue: RecoveryIssue }
+  | { type: 'PAUSE_PENDING_RECOVERY' }
+  | { type: 'MARK_RECOVERY_APPLYING'; action: RecoveryAction; selectedAt?: string }
+  | { type: 'CLEAR_PENDING_RECOVERY' }
+  | { type: 'RESOLVE_PENDING_RECOVERY'; action: RecoveryAction };
 
 export interface TokenBudget {
   system: number;

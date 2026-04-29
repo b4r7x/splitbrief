@@ -82,6 +82,27 @@ Cost-aware implementer routing, user-edit conflict handling, and Plan Review v2 
 
 **Hooks and wrappers.** No new `renderHook` tests for trivial wrappers, selector hooks, or `useState` / `useEffect` plumbing. Extract behavior-bearing logic into a public pure helper and test that helper, or cover the hook through the feature/component that uses it. Thin wrappers that only call an already-tested helper should not receive dedicated tests.
 
+**Recovery flow.** Recovery tests should assert persisted `pendingRecovery`, emitted recovery events, headless JSON, prompt text/parser behavior, and file/evidence effects. In a dirty or shared checkout, do not run broad orchestration suites that exercise product git behavior (`git add`/commit/checkpoint helpers). Prefer the focused recovery files:
+
+```bash
+npm test -- src/core/schemas/recovery.test.ts
+npm test -- src/core/schemas/workflow.test.ts
+npm test -- src/core/schemas/enums.test.ts
+npm test -- src/core/state/machine.test.ts
+npm test -- src/core/state/persistence.test.ts
+npm test -- src/engine/orchestrator/recovery.test.ts
+npm test -- src/engine/orchestrator/budget.test.ts
+npm test -- src/engine/orchestrator/task-loop.recovery.test.ts
+npm test -- src/engine/orchestrator/task-step.recovery.test.ts
+npm test -- src/engine/orchestrator/run/run.recovery.test.ts
+npm test -- src/engine/orchestrator/session-lifecycle.test.ts
+npm test -- src/cli/headless.recovery.test.ts
+npm test -- src/features/workflow/recovery-prompt.test.ts
+npm test -- src/features/workflow/user-edit-conflict-prompt.test.ts
+```
+
+Full `npm test` is appropriate only when it is safe for the checkout and the validation owner accepts suites that may create git history in temporary repos.
+
 ## How to add an integration test
 
 Integration tests live under `testing/integration/<layer>/`. One file per user-observable flow. Longer files with more assertions beat many short files (TkDodo: fewer, longer tests).

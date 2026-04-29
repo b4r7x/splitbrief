@@ -58,6 +58,10 @@ All phases and transitions live in `src/core/state/machine.ts`. The primary stat
 | *(any)* | `SET_PLANNER_SESSION_ID` | *(same)* | Captures backend session handle for resume |
 | *(any)* | `ENQUEUE_USER_MSG` | *(same)* | Appends to `messageQueue` |
 | *(any)* | `DRAIN_QUEUE` | *(same)* | Clears `messageQueue` after it's folded into next prompt |
+| *(any)* | `SET_PENDING_RECOVERY` | *(same)* | Adds a durable recovery overlay; phase remains where the stop occurred |
+| *(any)* | `MARK_RECOVERY_APPLYING` | *(same)* | Records the selected recovery action and timestamp |
+| *(any)* | `PAUSE_PENDING_RECOVERY` | *(same)* | Keeps the issue pending and resumable with `status: paused` |
+| *(any)* | `CLEAR_PENDING_RECOVERY` / `RESOLVE_PENDING_RECOVERY` | *(same)* | Removes the recovery overlay after a safe action succeeds |
 
 `maxRetries` defaults to 3 and is configurable via `workflow.maxRetries`.
 
@@ -175,6 +179,8 @@ Persisted artifacts: `research.md`, supporting `spec.md`, `clarifications.md`, `
 | End of `constitution-check` phase *(speckit)* | Write check result | `sessions/<id>/constitution-check.json` |
 | End of `analyzing` phase *(speckit)* | Write coverage metrics | `sessions/<id>/analyze.json` |
 | Successful task | Task status, evidence, optional checkpoint/commit metadata | `state.json`, `evidence.json`, optional git history |
+| Recoverable stop | `pendingRecovery` issue, `recovery_prompted` event | `state.json` + `session.jsonl` |
+| Recovery action | Selected action, action failure or resolution event | `state.json` + `session.jsonl`; skip also writes `evidence.json` |
 | Single Ctrl-C during cancellable phase | Save state with `awaitingContinue: true`, append `kind: event, type: turn_aborted` | `state.json` + `session.jsonl` |
 | Double Ctrl-C | Save state, clear `.diptych/active` | `state.json` + `.diptych/active` |
 | End of run (any outcome) | `summary.json`, clear `.diptych/active` | `sessions/<id>/summary.json` |
@@ -182,6 +188,8 @@ Persisted artifacts: `research.md`, supporting `spec.md`, `clarifications.md`, `
 ### 1.5 Resume behaviour
 
 `diptych resume` reads `.diptych/active` to find the target session folder, then loads `state.json`. If either is missing, version-mismatched, or `state.phase` is not in `RESUMABLE_PHASES`, resume refuses with a clear error.
+
+If the saved state has `pendingRecovery`, resume shows that recovery issue before checking planner availability or dispatching any new worker. Selecting pause keeps `.diptych/active` intact so the same decision appears on the next resume.
 
 **Resumable phases:** `reviewing-spec`, `reviewing-plan`, `reviewing-briefs`, `implementing`, `validating-task`, `escalating`, `final-review`. Plus any phase with `awaitingContinue: true` — these are always resumable regardless of phase because the user explicitly aborted and is expected to return.
 
@@ -224,14 +232,29 @@ Four user actions during a live phase, each with a distinct effect:
 
 **Clarification answers go through the same queue.** When the planner asks a question via `<!-- Q:{...} -->` and the user answers, the answer is (a) stored in the `## Clarifications` section of `spec.md` when a supporting spec exists, and (b) pushed through the same queue so it reaches the planner's live session immediately on capable backends. This closes the pre-existing gap where clarification answers only affected the *next* planner call. Clarification answers are also routed through the queue (see Queue & Interjection in CONCEPTS.md); on Claude Code, the answer arrives mid-stream; on stateless backends, at the next phase boundary.
 
-### 1.8 Escalation flow
-
-No change from today. See `src/engine/orchestrator/escalation.ts`.
+### 1.8 Escalation and recovery stops
 
 1. Task fails validation `maxRetries` times.
 2. If the planner has `supportsHintEscalation`: call `planner.escalateHint(...)` → short hint → implementer retries once with hint → success or fall through.
-3. Otherwise or after hint failure: `planner.escalateFull(...)` → planner writes the code directly. Task marked `escalated` (successful) or `failed`.
-4. Task loop advances either way. Escalation tokens accounted separately (`escalationInput`, `escalationOutput`).
+3. Otherwise or after hint failure: `planner.escalateFull(...)` → planner writes the code directly. A passing full escalation marks the task `escalated`.
+4. If retry/escalation cannot produce a passing task, the task loop persists `pendingRecovery` instead of marking the task failed and silently advancing.
+
+Recovery is a persisted overlay on the current workflow phase. It is created when diptych cannot safely proceed: no implementer profile fits the task context, retries/escalation are exhausted or throw, a user edit blocks apply/promotion/rollback, a dependency was failed or skipped, or a budget pause/exceeded boundary is reached.
+
+Implemented recovery actions:
+
+- `retry-same-worker` clears recovery, resets only the current task to `pending`, resets attempts, and reruns it in a fresh worker context.
+- `continue` is allowed only for budget pause below max budget or safe unrelated user edits. It is never allowed for `budget-exceeded`.
+- `skip-current-task` records skip evidence, marks the task `skipped`, advances the index, and lets dependency checks stop later tasks safely.
+- `pause-run` keeps the issue pending and the active session resumable.
+- `abort-workflow` exits through the normal intentional shutdown path without staging or committing.
+
+Deferred recovery actions:
+
+- `route-bigger-worker` is typed and can be offered when the issue names a larger profile, but execution is currently blocked with `route-bigger-not-ready`; the original `pendingRecovery` remains intact.
+- `planner-split-rebase` is typed and shown as requiring approve/edit/reject of a proposal, but proposal generation/execution is currently blocked with `planner-proposal-required`; the original `pendingRecovery` remains intact.
+
+Headless/JSON runs do not block for input. If the run leaves `pendingRecovery`, the CLI emits one machine-readable `recovery_required` JSON line with available actions and exits non-zero.
 
 ### 1.9 Evidence ledger
 

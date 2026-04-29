@@ -3,6 +3,7 @@ import { PhaseSchema } from './enums.js';
 import { TaskSchema } from './task.js';
 import { TokenUsageSchema } from './tokens.js';
 import { AnalyzeResultSchema } from './analyze.js';
+import { RecoveryIssueSchema } from './recovery.js';
 
 export const QueuedMessageSchema = z.object({
   id: z.string(),
@@ -43,6 +44,7 @@ export const WorkflowStateSchema = z.object({
   })).optional(),
   constitutionFailureReason: z.string().optional(),
   analysisResult: AnalyzeResultSchema.optional(),
+  pendingRecovery: RecoveryIssueSchema.optional(),
 });
 
 export type WorkflowState = z.infer<typeof WorkflowStateSchema>;

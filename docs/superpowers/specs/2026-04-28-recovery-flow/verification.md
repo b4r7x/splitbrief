@@ -1,113 +1,76 @@
 # Verification: Recovery Flow
 
-This file describes how future implementers should validate the recovery flow after source changes are made. It is not evidence that this docs-only pack changed runtime behavior.
+Status updated: 2026-04-29.
 
-## Required Commands
+This file records the current validation policy and observed coverage for Recovery Flow. Recovery is implemented as a durable `pendingRecovery` overlay with focused tests. Two execution paths remain intentionally deferred:
 
-Run these before final handoff:
+- `route-bigger-worker` is typed and can be offered, but selecting it returns `route-bigger-not-ready` and preserves the pending issue.
+- `planner-split-rebase` is typed and labelled as proposal-gated, but proposal generation, diff/summary review, approve/edit/reject, and resume-after-proposal are deferred.
+
+## Latest Validation
+
+Run in `/Users/voitz/Projects/tiny-spec` on 2026-04-29:
+
+```bash
+npx vitest run src/engine/orchestrator/session-lifecycle.test.ts src/engine/orchestrator/run/run.recovery.test.ts src/engine/orchestrator/recovery.test.ts src/engine/orchestrator/budget.test.ts src/engine/orchestrator/task-step.recovery.test.ts src/engine/orchestrator/task-loop.recovery.test.ts src/features/workflow/recovery-prompt.test.ts src/core/state/machine.test.ts src/features/workflow/user-edit-conflict-prompt.test.ts src/core/state/persistence.test.ts src/core/schemas/enums.test.ts src/core/schemas/workflow.test.ts src/core/schemas/recovery.test.ts src/cli/headless.recovery.test.ts
+```
+
+Outcome: 14 files passed, 155 tests passed.
 
 ```bash
 npm run typecheck
-npm run lint
-npm test
 ```
 
-Use targeted tests during development:
+Outcome: passed (`typecheck:src` and `typecheck:test`).
+
+```bash
+npm run lint
+```
+
+Outcome: passed (`biome check .`, 803 files checked).
+
+Full `npm test` was intentionally skipped in this shared checkout. Broad existing suites such as `src/engine/orchestrator/task-loop.test.ts`, `src/engine/orchestrator/task-step.test.ts`, `src/engine/orchestrator/escalation/escalation.test.ts`, and helpers under `testing/helpers/git.ts` can exercise product git staging/commit behavior. Run full-suite validation only in an isolated checkout where those side effects are acceptable.
+
+## Focused Recovery Commands
+
+Use these for future recovery-only validation:
 
 ```bash
 npm test -- src/core/schemas/recovery.test.ts
+npm test -- src/core/schemas/workflow.test.ts
+npm test -- src/core/schemas/enums.test.ts
 npm test -- src/core/state/machine.test.ts
+npm test -- src/core/state/persistence.test.ts
 npm test -- src/engine/orchestrator/recovery.test.ts
-npm test -- src/engine/orchestrator/task-loop.test.ts
-npm test -- src/engine/orchestrator/task-step.test.ts
+npm test -- src/engine/orchestrator/budget.test.ts
+npm test -- src/engine/orchestrator/task-loop.recovery.test.ts
+npm test -- src/engine/orchestrator/task-step.recovery.test.ts
+npm test -- src/engine/orchestrator/run/run.recovery.test.ts
+npm test -- src/engine/orchestrator/session-lifecycle.test.ts
+npm test -- src/cli/headless.recovery.test.ts
 npm test -- src/features/workflow/recovery-prompt.test.ts
+npm test -- src/features/workflow/user-edit-conflict-prompt.test.ts
+npm run typecheck
+npm run lint
 ```
 
-If exact test filenames differ, keep the same coverage areas and report the actual commands run.
+## Verified Scenarios
 
-## Safe Scenario Rules
+- Schema/state persistence: `RecoveryIssue` invariants, state transitions, old-state loading, and `pendingRecovery` round-trip.
+- Context overflow: task loop stops before `task_started` and before implementer dispatch, persists `context-overflow`, and emits `recovery_prompted`.
+- Retry exhaustion: retry/escalation failures persist `retry-exhausted` against the latest saved state.
+- Dependency blocked: failed/skipped dependencies produce `dependency-blocked` without auto-skipping the blocked task.
+- Budget pause/exceeded: budget enforcer returns recovery stops; issue builders and prompt parser prevent ordinary continue at max budget.
+- Headless recovery JSON: headless mode emits `recovery_required` with available actions and exits non-zero.
+- Action handlers: continue, pause, abort, skip, retry, and blocked route-bigger/planner-split actions preserve state correctly.
+- TUI prompt/parser: prompt shows task/files/details/actions and parses only allowed answers.
+- Recovery events: prompted, action selected, action failed, resolved, and skipped-task events are covered by focused tests and JSONL sinks.
+- Resume active preservation: saved pending recovery stops before planner availability checks and keeps the active session intact.
 
-All behavior scenarios below must run only as automated tests or disposable fixture runs. Use stubbed planner and implementer runners, no real model credentials, no network, no token spend, and writes confined to the temporary fixture or isolated test checkout. Do not run these scenarios against the user's working checkout.
+## Deferred/Risk Items
 
-## Behavior Scenarios
-
-### Context Overflow
-
-- Configure a task estimate larger than every implementer profile.
-- Verify no implementer call is made.
-- Verify `state.json` contains a pending recovery issue with reason `context-overflow`.
-- Verify available actions include planner split/rebase and pause/abort.
-- Verify route bigger appears only when a capable larger profile exists.
-
-### Validation Failure
-
-- Force validation to fail after worker output.
-- Verify existing retry budget is respected.
-- Verify retry exhaustion creates a pending recovery issue instead of silently advancing.
-- Select retry same worker and verify only the current task reruns in a fresh context.
-- Select skip and verify evidence records the skip reason.
-
-### User-Edit Conflict
-
-- Start a task, then change the same target file outside diptych before apply or promotion.
-- Verify recovery blocks overwrite.
-- Verify the prompt lists affected files and tasks.
-- Verify unsafe continuation is not offered.
-- Verify planner split/rebase or pause leaves user edits intact.
-
-### Budget Pause
-
-- Set a low `workflow.maxBudget` and a pause threshold.
-- Cross the pause threshold below max budget at a task boundary.
-- Verify the prompt shows current spend, max budget, and percentage.
-- Select continue and verify the workflow proceeds.
-- Repeat in headless mode and verify it exits non-zero with machine-readable available actions.
-
-### Budget Exceeded
-
-- Set a max budget that is reached or exceeded at a task boundary.
-- Verify the prompt shows current spend, max budget, and the blocked next step.
-- Verify ordinary `continue` is not available.
-- Verify valid v1 actions are pause and abort unless a separately implemented raise-budget policy exists.
-- Repeat in headless mode and verify it exits non-zero with machine-readable available actions.
-
-### Pause And Resume
-
-- Trigger any recovery issue.
-- Select pause.
-- Verify the active session remains resumable.
-- Run resume.
-- Verify the same recovery issue appears before any new planner or implementer call.
-
-### Planner Split/Rebase
-
-- Trigger context overflow or user-edit conflict.
-- Select planner split/rebase.
-- Verify planner output is parsed through the existing Task Brief transport.
-- Verify brief quality failures keep the recovery issue pending.
-- Verify successful parse and quality gates produce a proposed Task Brief diff or summary.
-- In interactive mode, verify approve/edit/reject is required before execution resumes.
-- In headless mode, verify the process exits non-zero unless an explicit proposal policy exists.
-- Verify approved or edited split/rebase clears recovery and resumes at the correct task.
-
-## Regression Checks
-
-- Successful workflows do not show recovery prompts.
-- Existing approval gates still work.
-- Existing user-edit conflict classification remains file/task-aware.
-- Existing budget warning, pause, and exceeded events remain distinct.
-- Existing summary/evidence files still write.
-- No test relies on private helper call order when a user-visible artifact can be asserted.
-- No implementation agent uses git staging, commits, or stash operations.
-
-## Final Report Template
-
-Future implementers should report:
-
-- source files changed,
-- tests added or updated,
-- commands run and outcomes,
-- skipped validation and why,
-- recovery scenarios manually or automatically verified,
-- any deferred edge cases or known risks,
-- confirmation that no staging, commits, or stash operations were run.
+- Route-bigger execution still needs one-shot implementer profile override plumbing before it can rerun the current task.
+- Planner split/rebase still needs planner proposal generation, Task Brief parse/quality validation, diff or summary review, approve/edit/reject handling, and headless policy.
+- Strict `retry-same-worker` profile pinning across config/routing changes is not implemented; current retry resets the current task and reruns through the normal routing path, which preserves the selected profile when config and task context are unchanged.
+- Summary/final-review recovery rollups are partial; skip evidence is recorded, but broader recovery outcome summaries remain deferred.
+- Full-suite validation remains unrun in this checkout for the git side-effect reason above.

@@ -50,6 +50,19 @@ function advanceTask(state: WorkflowState, status: TaskStatus): WorkflowState {
   };
 }
 
+function markRecoveryApplying(state: WorkflowState, action: Extract<StateAction, { type: 'MARK_RECOVERY_APPLYING' }>): WorkflowState {
+  if (!state.pendingRecovery) return state;
+  return {
+    ...state,
+    pendingRecovery: {
+      ...state.pendingRecovery,
+      status: 'applying',
+      selectedAction: action.action,
+      selectedAt: action.selectedAt ?? new Date().toISOString(),
+    },
+  };
+}
+
 export function transition(state: WorkflowState, action: StateAction, maxRetries: number = 3): WorkflowState {
   switch (action.type) {
     case 'START':
@@ -239,6 +252,28 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
 
     case 'CLEAR_QUEUE':
       return { ...state, messageQueue: state.messageQueue.filter(m => m.drainedAt) };
+
+    case 'SET_PENDING_RECOVERY':
+      return { ...state, pendingRecovery: action.issue };
+
+    case 'PAUSE_PENDING_RECOVERY':
+      if (!state.pendingRecovery) return state;
+      return {
+        ...state,
+        pendingRecovery: {
+          ...state.pendingRecovery,
+          status: 'paused',
+        },
+      };
+
+    case 'MARK_RECOVERY_APPLYING':
+      return markRecoveryApplying(state, action);
+
+    case 'CLEAR_PENDING_RECOVERY':
+      return { ...state, pendingRecovery: undefined };
+
+    case 'RESOLVE_PENDING_RECOVERY':
+      return { ...state, pendingRecovery: undefined };
 
     default:
       return assertNever(action);

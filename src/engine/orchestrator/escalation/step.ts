@@ -17,7 +17,7 @@ import {
   type ChangedFilesSnapshot,
   type GateDecision,
 } from '../tiered-approval.js';
-import { publishError, publishTaskSkipped, publishUserEditConflict, publishWarning } from '../events.js';
+import { publishError, publishRecoveryPrompted, publishUserEditConflict } from '../events.js';
 import {
   createEvidenceLedger,
   readEvidenceLedger,
@@ -26,7 +26,8 @@ import {
   writeEvidenceLedger,
 } from '../evidence.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
-import { createApprovalPromotionConflict, normalizeUserEditConflictAction } from '../user-edit-conflicts.js';
+import { createApprovalPromotionConflict } from '../user-edit-conflicts.js';
+import { buildApprovalPromotionConflictRecoveryIssue } from '../recovery.js';
 
 export const MAX_HINT_ERROR_LENGTH = 4000;
 
@@ -75,37 +76,16 @@ async function handleApprovalTimeUserEditConflict(opts: {
     files: opts.files,
     currentTaskId: opts.task.id,
   });
-  const selectedAction = normalizeUserEditConflictAction(
+  publishUserEditConflict(opts.ctx.bus, opts.state.phase, conflict, 'pause');
+  const issue = buildApprovalPromotionConflictRecoveryIssue({
     conflict,
-    opts.ctx.callbacks.onUserEditConflict
-      ? await opts.ctx.callbacks.onUserEditConflict(conflict)
-      : 'pause',
-  );
-  publishUserEditConflict(opts.ctx.bus, opts.state.phase, conflict, selectedAction);
-
-  if (selectedAction === 'regenerate-rebase') {
-    publishWarning(
-      opts.ctx.bus,
-      opts.state.phase,
-      'User edit conflict needs regenerate/rebase; workflow paused so the plan or task can be revised against the current files.',
-    );
-    return opts.state;
-  }
-
-  if (selectedAction === 'abort-workflow') {
-    return transitionAndSave(opts.ctx.projectDir, opts.ctx.sessionId, opts.state, { type: 'CANCEL' });
-  }
-
-  if (selectedAction === 'skip-current-task') {
-    publishTaskSkipped(opts.ctx.bus, opts.state.phase, {
-      taskId: opts.task.id,
-      title: opts.task.title,
-      reason: 'skipped due to user edit conflict',
-    });
-    return transitionAndSave(opts.ctx.projectDir, opts.ctx.sessionId, opts.state, { type: 'SKIP_TASK', taskId: opts.task.id });
-  }
-
-  return opts.state;
+    currentTask: opts.task,
+    phase: opts.state.phase,
+    createdAt: new Date().toISOString(),
+  });
+  const next = transitionAndSave(opts.ctx.projectDir, opts.ctx.sessionId, opts.state, { type: 'SET_PENDING_RECOVERY', issue });
+  publishRecoveryPrompted(opts.ctx.bus, issue);
+  return next;
 }
 
 export async function validateAndCommit(

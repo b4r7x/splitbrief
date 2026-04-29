@@ -177,7 +177,7 @@ describe('handleRetryAndEscalation', () => {
       escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'hint', code: null, usage: null }),
     });
 
-    const { result } = await handleRetryAndEscalation({
+    const { result, state: finalState } = await handleRetryAndEscalation({
       wctx: {
         projectDir,
         sessionId,
@@ -201,11 +201,12 @@ describe('handleRetryAndEscalation', () => {
 
     expect(result.completed).toBe(false);
     expect(planner.escalateHint).not.toHaveBeenCalled();
-    expect(onUserEditConflict).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'changed-during-approval-promotion',
+    expect(onUserEditConflict).not.toHaveBeenCalled();
+    expect(finalState.pendingRecovery).toMatchObject({
+      reason: 'approval-promotion-conflict',
+      taskId: 'T001',
       files: ['src/other.ts'],
-      affectedTaskIds: ['T001'],
-    }));
+    });
     expect(busEvents.find((event) => event.type === 'paused_external_changes')).toMatchObject({
       type: 'paused_external_changes',
       selectedAction: 'pause',
@@ -247,9 +248,9 @@ describe('handleRetryAndEscalation', () => {
     expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 2)).toBeDefined();
   });
 
-  it('full escalation fails → task failed, discardTaskChanges performed on real git repo', async () => {
+  it('full escalation fails without advancing the task in the retry pipeline', async () => {
     const { projectDir, sessionId } = setupProject();
-    // Create a dirty file so discardTaskChanges has something to clean.
+    // Create a dirty file so a failed full escalation has real worktree state to leave untouched.
     writeFileSync(join(projectDir, 'task-file.ts'), 'pending content');
     const task = makeTask({ file: 'task-file.ts', action: 'create' });
     const state = makeValidatingState();
@@ -281,7 +282,8 @@ describe('handleRetryAndEscalation', () => {
 
     expect(result.completed).toBe(false);
     expect(result.method).toBe('failed');
-    expect(finalState.phase).toBeDefined();
+    expect(finalState.currentTaskIndex).toBe(0);
+    expect(finalState.tasks[0]?.status).toBe('pending');
   });
 });
 
