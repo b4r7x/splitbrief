@@ -67,6 +67,9 @@ export async function runHeadless(
   });
 
   if (!config) throw cliError('Failed to load config');
+  if ((config.workflow.taskReview ?? 'none') !== 'none') {
+    throw cliError('workflow.taskReview requires an interactive TUI run. Set workflow.taskReview: none for headless mode.');
+  }
 
   await runWorkflow({
     feature,

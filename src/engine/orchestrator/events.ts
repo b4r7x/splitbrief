@@ -10,6 +10,7 @@ import type { EventBus, EngineEvent } from '../events/types.js';
 import type { EmittedChain } from '../../core/schemas/drift-chain.js';
 import type { UserEditConflict, UserEditConflictAction } from './user-edit-conflicts.js';
 import type { CurrentCodeContextMode, TaskContextFit } from './context-routing.js';
+import type { TaskReviewRequest } from './task-review.js';
 
 const EMPTY_STAGES: ValidationStages = { tsc: false, lint: false, test: false };
 
@@ -180,6 +181,10 @@ export function publishRecoveryPrompted(bus: EventBus, issue: RecoveryIssue): vo
     availableActions: issue.availableActions,
     recommendedAction: issue.recommendedAction,
   });
+}
+
+export function publishTaskReviewNeeded(bus: EventBus, phase: Phase, request: TaskReviewRequest): void {
+  bus.publish({ type: 'task_review_needed', ts: Date.now(), phase, ...request });
 }
 
 export function publishRecoveryActionSelected(

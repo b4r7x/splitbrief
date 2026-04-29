@@ -11,7 +11,7 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
-import { runWorkflow } from '../../../engine/orchestrator/run/run.js';
+import { runWorkflow, WORKFLOW_REWIND_ABORT_REASON } from '../../../engine/orchestrator/run/run.js';
 import type { WorkflowSinks } from '../../../engine/orchestrator/types.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { createJsonlSink } from '../../../engine/events/sinks/jsonl.js';
@@ -26,6 +26,8 @@ import {
   setQueueHandler,
   setRewindHandler,
   clearAllHandlers,
+  requestCancel,
+  requestRewind,
 } from '../handlers.js';
 import { killAllProcesses } from '../../../lib/process/registry.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
@@ -40,6 +42,7 @@ import type { UseInputModeResult } from './use-input-mode.js';
 import { buildRewindAction } from './build-rewind-action.js';
 import { formatUserEditConflictPrompt, parseUserEditConflictAnswer } from '../user-edit-conflict-prompt.js';
 import { formatRecoveryPrompt, parseRecoveryActionAnswer } from '../recovery-prompt.js';
+import { formatTaskReviewPrompt, parseTaskReviewAnswer } from '../task-review-prompt.js';
 
 interface UseWorkflowRunnerOptions {
   feature: string;
@@ -230,7 +233,7 @@ export function useWorkflowRunner({
       const next = transition(current, action);
       saveState(projectDir, activeSessionId, next);
       pendingRewindEventRef.current = event;
-      controller.abort();
+      controller.abort(WORKFLOW_REWIND_ABORT_REASON);
       setInlineResume(next);
       setRunId(id => id + 1);
     });
@@ -286,6 +289,22 @@ export function useWorkflowRunner({
             onContinuationNeeded: async (_partial) =>
               inputMode.setQuestionMode('Task interrupted. Enter instructions to continue (or press Enter to retry):'),
             onTieredApproval: (request) => openApprovalPrompt(request),
+            onTaskReviewNeeded: async (request) => {
+              const answer = await inputMode.setQuestionMode(formatTaskReviewPrompt(request));
+              const decision = parseTaskReviewAnswer(answer);
+              if (decision.action === 'redo-task') {
+                if (!requestRewind({ target: 'task', taskId: request.taskId })) {
+                  feedbackStore.setError('Cannot redo task: no active workflow.');
+                }
+              } else if (decision.action === 'revise-plan') {
+                if (!requestRewind({ target: 'plan', ...(decision.notes ? { comment: decision.notes } : {}) })) {
+                  feedbackStore.setError('Cannot revise plan: no active workflow.');
+                }
+              } else if (decision.action === 'abort') {
+                requestCancel();
+              }
+              return decision;
+            },
             onQuestionAsked: (question, num, total) =>
               inputMode.setQuestionMode(`Question ${num}/${total}: ${question.text}`),
             onComplete: (summary) => {

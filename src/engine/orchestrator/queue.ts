@@ -11,6 +11,35 @@ import { warnError } from '../../lib/warn.js';
 
 export const MAX_QUEUE_SIZE = 50;
 
+export function enqueueUserMessage(
+  projectDir: string,
+  sessionId: string,
+  state: WorkflowState,
+  text: string,
+  phase: Phase,
+  bus: EventBus,
+  persistTranscript: boolean,
+): { state: WorkflowState; queued: boolean; message?: QueuedMessage | undefined } {
+  const pending = state.messageQueue.filter(m => !m.drainedAt);
+  if (pending.length >= MAX_QUEUE_SIZE) {
+    publishWarning(bus, phase, `Queue full (${MAX_QUEUE_SIZE} messages). Wait for the current phase to complete.`);
+    return { state, queued: false };
+  }
+
+  const message: QueuedMessage = {
+    id: randomUUID(),
+    text,
+    queuedAt: new Date().toISOString(),
+    phase,
+    deliveredViaNative: false,
+  };
+
+  const next = transitionAndSave(projectDir, sessionId, state, { type: 'ENQUEUE_USER_MSG', message });
+  appendMessage(projectDir, sessionId, { role: 'user', phase, text, queuedAt: message.queuedAt }, persistTranscript);
+  publishEvent(bus, { type: 'message_queued', ts: Date.now(), phase: next.phase, id: message.id });
+  return { state: next, queued: true, message };
+}
+
 export function createQueueHandler(
   projectDir: string,
   sessionId: string,
@@ -24,26 +53,18 @@ export function createQueueHandler(
     const state = getState();
     if (!state) return;
 
-    const pending = state.messageQueue.filter(m => !m.drainedAt);
-    if (pending.length >= MAX_QUEUE_SIZE) {
-      publishWarning(bus, phase, `Queue full (${MAX_QUEUE_SIZE} messages). Wait for the current phase to complete.`);
-      return;
-    }
-
-    const message: QueuedMessage = {
-      id: randomUUID(),
+    const result = enqueueUserMessage(
+      projectDir,
+      sessionId,
+      state,
       text,
-      queuedAt: new Date().toISOString(),
       phase,
-      deliveredViaNative: false,
-    };
-
-    const next = transitionAndSave(projectDir, sessionId, state, { type: 'ENQUEUE_USER_MSG', message });
-    setState(next);
-    appendMessage(projectDir, sessionId, { role: 'user', text, queuedAt: message.queuedAt }, persistTranscript);
-
-    publishEvent(bus, { type: 'message_queued', ts: Date.now(), phase: next.phase, id: message.id });
-    dispatchNativeInjection(message, planner, projectDir, sessionId, next, setState, bus)
+      bus,
+      persistTranscript,
+    );
+    setState(result.state);
+    if (!result.message) return;
+    dispatchNativeInjection(result.message, planner, projectDir, sessionId, result.state, setState, bus)
       .catch(err => warnError('native-injection failed', err));
   };
 }

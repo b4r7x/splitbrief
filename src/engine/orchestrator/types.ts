@@ -11,6 +11,7 @@ import type { EventBus } from '../events/types.js';
 import type { TieredApprovalRequest, TieredApprovalResponse } from './tiered-approval.js';
 import type { UserEditConflict, UserEditConflictAction } from './user-edit-conflicts.js';
 import type { RoutingDecision } from './context-routing.js';
+import type { TaskReviewRequest, TaskReviewResponse } from './task-review.js';
 
 export interface OrchestratorCallbacks {
   onApprovalNeeded: (type: 'spec' | 'plan' | 'briefs', filePath: string) => Promise<{ approved: boolean; comment?: string | undefined; action?: 'edit' | undefined }>;
@@ -22,6 +23,7 @@ export interface OrchestratorCallbacks {
   onBudgetPaused?: ((currentCost: number, maxBudget: number) => Promise<'continue' | 'abort' | 'raise'>) | undefined;
   onContinuationNeeded?: ((partialResponse: string) => Promise<string>) | undefined;
   onTieredApproval?: ((request: TieredApprovalRequest) => Promise<TieredApprovalResponse>) | undefined;
+  onTaskReviewNeeded?: ((request: TaskReviewRequest) => Promise<TaskReviewResponse>) | undefined;
   onComplete: (summary: Summary) => void;
 }
 

@@ -71,6 +71,7 @@ function getGutterRole(event: EngineEvent): "planner" | "implementer" | null {
     case "cost_update": case "cost_prediction": case "budget_warning":
     case "budget_paused": case "budget_exceeded": case "workflow_cancelled": case "workflow_config":
     case "rewind_to_spec": case "rewind_to_plan": case "task_reset":
+    case "task_review_needed":
     case "message_queued": case "message_injected_native":
     case "queue_drained": case "queue_cleared":
     case "user_message":
@@ -437,6 +438,7 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
     case "task_escalating":
     case "task_full_fail":
     case "task_tokens":
+    case "task_review_needed":
     case "hint_failed":
     case "mode_resolved":
     case "mode_advice":

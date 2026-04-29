@@ -6,6 +6,7 @@ import type { ActionClass } from '../../core/schemas/approval-store.js';
 import type { ApprovalTier } from '../orchestrator/action-classifier.js';
 import type { UserEditConflict, UserEditConflictAction } from '../orchestrator/user-edit-conflicts.js';
 import type { CurrentCodeContextMode, TaskContextFit } from '../orchestrator/context-routing.js';
+import type { TaskReviewRequest } from '../orchestrator/task-review.js';
 
 export type ValidationStages = { tsc: boolean; lint: boolean; test: boolean };
 
@@ -59,6 +60,7 @@ export type EngineEvent =
   | { type: 'task_full_fail'; ts: number; phase: Phase; taskId: TaskId }
   | { type: 'task_reset'; ts: number; phase: Phase; taskId: TaskId }
   | { type: 'task_tokens'; ts: number; phase: Phase; taskId: TaskId; method: TaskCompletionMethod; implementerTokens: number; escalationTokens: number; retryCount: number; tool?: string; model?: string; implementerProfile?: string; contextFit?: TaskContextFit; estimatedTokens?: number; untruncatedEstimatedTokens?: number; contextLength?: number; currentCodeTruncated?: boolean; currentCodeContextMode?: CurrentCodeContextMode; costPosture?: string; routingReason?: string }
+  | ({ type: 'task_review_needed'; ts: number; phase: Phase } & TaskReviewRequest)
   | { type: 'hint_failed'; ts: number; phase: Phase; taskId: TaskId }
   // Implementer
   | { type: 'implementer_generate_running'; ts: number; phase: Phase; taskId: TaskId; file?: string }

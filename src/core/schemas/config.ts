@@ -41,6 +41,9 @@ export const GitWorkflowConfigSchema = z.object({
   createBranch: z.boolean().optional(),
 });
 
+export const TaskReviewModeSchema = z.enum(['none', 'failed', 'every']);
+export type TaskReviewMode = z.infer<typeof TaskReviewModeSchema>;
+
 export const SpeckitWorkflowConfigSchema = z.object({
   minCoverage: z.number().min(0).max(1).optional(),
 });
@@ -94,6 +97,7 @@ export const ConfigSchema = z.object({
     speckit: SpeckitWorkflowConfigSchema.optional(),
     mode: WorkflowModeSchema.optional(),
     briefReview: z.enum(['simple', 'rich']).optional(),
+    taskReview: TaskReviewModeSchema.optional(),
     maxBudget: z.number().positive().optional(),
     budgetPauseThreshold: z.number().min(0).max(1).optional(),
     driftChainThreshold: z.number().min(0).max(1).optional(),
