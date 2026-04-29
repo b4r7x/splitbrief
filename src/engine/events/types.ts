@@ -97,6 +97,7 @@ export type EngineEvent =
   | { type: 'approval_granted'; ts: number; phase: Phase; tier: ApprovalTier; actionClass: ActionClass; taskId?: TaskId; scope: 'once' | 'session' | 'always'; confirmReason?: string }
   | { type: 'approval_rejected'; ts: number; phase: Phase; tier: ApprovalTier; actionClass: ActionClass; taskId?: TaskId; reason: string }
   | { type: 'approval_sticky_recorded'; ts: number; phase: Phase; pattern: string; scope: 'session' | 'always'; actionClass: ActionClass }
+  | { type: 'approval_mode_changed'; ts: number; mode: 'yolo' | 'normal' }
   // IPC
   | { type: 'ipc_server_started'; ts: number; phase: Phase; sockPath: string }
   | { type: 'ipc_client_attached'; ts: number; phase: Phase }

@@ -37,6 +37,7 @@ export interface WorkflowOpts {
   // If the flag is passed with no value, the feature argument is slugified.
   worktree?: string;
   detach?: boolean;
+  yolo?: boolean;
 }
 
 export interface PlannerDetection {

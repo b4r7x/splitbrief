@@ -102,6 +102,15 @@ export function buildCommandContext({ exit }: { exit: () => void }): CommandCont
       writeApprovalsStore(projectDir, after);
       return before.grants.length - after.grants.length;
     },
+    getApprovalEnabled: () => {
+      const config = configStore.get().config;
+      return config?.approval?.enabled !== false;
+    },
+    setApprovalEnabled: (enabled) => {
+      const current = configStore.get().config;
+      if (!current) return;
+      configStore.setApprovalEnabled(enabled);
+    },
     acceptRunSnapshot: async () => {
       const projectDir = configStore.get().projectDir;
       const sessionId = readActive(projectDir);

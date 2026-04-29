@@ -55,6 +55,7 @@ function loadProjectState(projectDir: string, opts: WorkflowOpts): void {
     mode: normalizedMode,
     budget: opts.budget,
     ...(opts.plannerEffort !== undefined ? { plannerEffort: opts.plannerEffort } : {}),
+    yolo: opts.yolo,
   });
   const storeConfig = configStore.get().config;
   if (!storeConfig) throw cliError('configStore.load did not populate config');

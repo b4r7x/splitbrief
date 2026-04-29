@@ -24,6 +24,7 @@ export interface CLIOverrides {
   mode?: WorkflowMode | undefined;
   budget?: number | undefined;
   plannerEffort?: string | undefined;
+  yolo?: boolean | undefined;
 }
 
 export interface RunnerOverrides {
@@ -146,6 +147,13 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Conf
       );
     }
     next = applyPlannerEffort(next, parsed.data);
+  }
+  if (overrides.yolo) {
+    const approval = next.approval ?? { enabled: true, feedRejectionsToPlanner: true };
+    next = {
+      ...next,
+      approval: { ...approval, enabled: false },
+    };
   }
   return next;
 }

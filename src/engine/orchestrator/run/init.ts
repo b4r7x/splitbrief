@@ -77,6 +77,9 @@ export async function initializeWorkflow(
     const { trace } = await import('@opentelemetry/api');
     bus.subscribe(createOtelSink({ provider: trace.getTracerProvider(), serviceName: config.otel.serviceName }));
   }
+  if (config.approval?.enabled === false) {
+    bus.publish({ type: 'approval_mode_changed', ts: Date.now(), mode: 'yolo' });
+  }
 
   if (savedState) setTrackedState(savedState);
   const hasPendingRecovery = savedState?.pendingRecovery !== undefined;

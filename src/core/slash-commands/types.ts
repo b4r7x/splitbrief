@@ -40,6 +40,8 @@ export interface CommandContext {
   writeHandoff: (target: HandoffTarget, taskId?: string) => Promise<{ outputDir: string }>;
   listApprovals: () => ApprovalGrant[];
   clearApprovals: (scope?: 'session' | 'always' | 'all') => number;
+  getApprovalEnabled: () => boolean;
+  setApprovalEnabled: (enabled: boolean) => void;
   acceptRunSnapshot: () => Promise<AcceptRunSnapshotResult>;
   rejectRunSnapshot: () => Promise<RejectRunSnapshotResult>;
 }

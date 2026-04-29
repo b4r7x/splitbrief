@@ -61,9 +61,25 @@ function setContextLength(contextLength: number) {
   });
 }
 
+function setApprovalEnabled(enabled: boolean) {
+  store.set(s => {
+    if (!s.config) return s;
+    const currentEnabled = s.config.approval?.enabled !== false;
+    if (currentEnabled === enabled) return s;
+    const base = s.config.approval ?? { enabled: true, feedRejectionsToPlanner: true };
+    return {
+      ...s,
+      config: {
+        ...s.config,
+        approval: { ...base, enabled },
+      },
+    };
+  });
+}
+
 // Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
 function __testReset(next?: Partial<ConfigState>): void {
   store.set(next ? { ...initial, ...next } : initial);
 }
 
-export const configStore = { ...storeBase(store), load, save, useConfig, setContextLength, __testReset };
+export const configStore = { ...storeBase(store), load, save, useConfig, setContextLength, setApprovalEnabled, __testReset };

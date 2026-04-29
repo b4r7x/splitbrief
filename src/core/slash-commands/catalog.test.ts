@@ -31,6 +31,8 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
     writeHandoff: async () => ({ outputDir: '/fake' }),
     listApprovals: () => [],
     clearApprovals: () => 0,
+    getApprovalEnabled: () => true,
+    setApprovalEnabled: noop,
     acceptRunSnapshot: async () => ({ snapshotId: 'snap-accepted', isFirstSnapshot: false }),
     rejectRunSnapshot: async () => ({
       status: 'rejected',
@@ -464,6 +466,30 @@ describe('/handoff command', () => {
     executeSlashCommand(commands, '/handoff spec-kit', 'workflow', noop);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(error).toContain('No active session for handoff');
+  });
+});
+
+describe('/yolo command', () => {
+  it('/yolo toggles approval enabled state', () => {
+    let approvalEnabled = true;
+    let feedback: string | undefined;
+    const ctx = makeCtx({
+      getApprovalEnabled: () => approvalEnabled,
+      setApprovalEnabled: (value) => { approvalEnabled = value; },
+      setFeedbackMessage: (message) => { feedback = message; },
+    });
+    const commands = createCommands(ctx);
+    const yolo = commands.find((command) => command.name === '/yolo');
+    if (!yolo) throw new Error('Expected /yolo command');
+    if (yolo.kind !== 'noarg') throw new Error('Expected /yolo to be a noarg command');
+
+    yolo.handler();
+    expect(approvalEnabled).toBe(false);
+    expect(feedback).toBe('YOLO mode ON — all approval gates disabled');
+
+    yolo.handler();
+    expect(approvalEnabled).toBe(true);
+    expect(feedback).toBe('YOLO mode OFF — approval gates restored');
   });
 });
 
