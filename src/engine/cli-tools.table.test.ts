@@ -30,6 +30,11 @@ type ImplementerScenario = {
 
 const IMPLEMENTER_SCENARIOS: ImplementerScenario[] = [
   {
+    tool: 'codex',
+    implementerBare: ['exec', '--json', '--full-auto', 'prompt'],
+    implementerWithModel: ['--model', 'gpt-5.2', 'exec', '--json', '--full-auto', 'prompt'],
+  },
+  {
     tool: 'copilot',
     implementerBare: ['-p', 'prompt', '--allow-all'],
     implementerWithModel: ['--model', 'claude-sonnet-4-6', '-p', 'prompt', '--allow-all'],
