@@ -66,6 +66,7 @@ export const ApprovalConfigSchema = z.object({
   headless: z.boolean().optional(),
   tiers: TierMapSchema.optional(),
   feedRejectionsToPlanner: z.boolean().default(true),
+  allowedPaths: z.array(z.string().min(1)).optional(),
 });
 export type ApprovalConfig = z.infer<typeof ApprovalConfigSchema>;
 

@@ -743,6 +743,27 @@ type ApprovalTier = 'auto' | 'sticky' | 'confirm';
 | `tiers.<op>` | enum | per-op default | `auto` (no prompt), `sticky` (prompt once, remember), `confirm` (prompt every time) |
 | `feedRejectionsToPlanner` | boolean | `true` | When the user rejects an op, send the rejection back to the planner so it can adapt. |
 
+### approval.allowedPaths
+
+Type: `string[]` (optional)
+Default: not set (no paths pre-approved)
+
+Glob patterns for paths that are always treated as in-scope for writes. Writes to matching files are classified as `write_in_scope` (auto-approved by default) regardless of the current task's `inBounds`.
+
+```yaml
+approval:
+  allowedPaths:
+    - 'src/**'        # all files under src/
+    - 'tests/**'      # all files under tests/
+    - '*.md'          # all markdown files at any depth
+```
+
+This is a **union** with task-level `scope.inBounds` — either match is sufficient for in-scope classification. `allowedPaths` widens scope, never narrows it.
+
+Supported glob patterns: exact match (`src/config.ts`), recursive directory (`src/**`), single-level directory (`src/*`), extension wildcard (`*.ts`), and simple star (`src/utils/*`).
+
+Note: `allowedPaths` only affects the action *class* (`write_in_scope` vs `write_out_of_scope`), not the *tier*. If you override `approval.tiers.write_in_scope: 'sticky'`, writes to allowed paths will still prompt once per session.
+
 **Operation tiers:** `read`, `write_in_scope` (writing files inside the brief's scope), `validation` (running tsc/lint/test), `write_out_of_scope`, `destructive` (rm/git reset), `network` (curl/fetch), `package_change` (npm install / package.json edits).
 
 YAML — strict:

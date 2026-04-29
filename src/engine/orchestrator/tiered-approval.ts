@@ -301,6 +301,7 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
       taskInBounds: taskScopePatterns(task),
       dependsOnFiles,
       projectDir,
+      allowedPaths: config.approval?.allowedPaths,
     },
     tierOverrides,
   );
