@@ -1,0 +1,19 @@
+version: 3
+planner:
+  kind: api
+  baseUrl: https://api.anthropic.com/v1
+  model: claude-sonnet-4-6
+  apiKey: ${ANTHROPIC_API_KEY}
+implementer:
+  kind: api
+  baseUrl: https://api.anthropic.com/v1
+  model: claude-haiku-4-5-20251001
+  apiKey: ${ANTHROPIC_API_KEY}
+validation:
+  typecheck: true
+  lint: false
+  test: true
+  testCommand: npm test
+workflow:
+  maxRetries: 1
+  mode: quick

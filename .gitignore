@@ -11,6 +11,14 @@ dist/
 # Runtime state (diptych working directory)
 .diptych/
 testing/fixtures/**/.diptych/
+!evals/fixtures/**/.diptych/
+!evals/fixtures/**/.diptych/config.yaml
+
+# Eval generated artifacts
+evals/cassettes/*
+!evals/cassettes/.gitkeep
+evals/results/*
+!evals/results/.gitkeep
 
 # SpecKit — only constitution and specs are tracked
 .specify/scripts/
