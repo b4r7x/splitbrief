@@ -123,6 +123,22 @@ Outcome events: `task_retry`, `task_escalating`, `hint_failed`, `task_full_fail`
 
 **When to use.** No opt-out — final review is the closing safety check before the workflow is marked complete. Pre-final-review snapshots can be enabled (see Snapshots below).
 
+### Run explain
+
+**What it does.** Reads existing session artifacts and explains routing choices, selected profiles, context fit and fallback, cost confidence, unknown pricing, retries, escalations, task review gates, final review status, and readiness warnings. It is artifact-only: no planner, implementer, provider, validation, or network calls.
+
+**How to use.**
+
+```bash
+diptych explain                         # active in-progress session
+diptych explain --session <id>          # completed or inactive session
+diptych explain --session <id> --json   # machine-readable
+```
+
+**When to use.** After a run, or while a run is paused, when you want to know why diptych picked a worker, why cost is partial or unknown, what retries/escalations happened, and which artifacts to inspect next.
+
+**Output.** Human output is compact and references artifact paths such as `summary.json`, `review-packet.json`, `readiness.json`, and `session.jsonl`. It does not embed full plans, Task Briefs, logs, diffs, or source code. JSON output is a single `{ type: "run_explain", explain: ... }` object.
+
 ---
 
 ## Planning and specs

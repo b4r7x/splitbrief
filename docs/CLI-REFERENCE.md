@@ -26,17 +26,18 @@ diptych — Cost-optimized AI coding orchestrator (v0.1.0)
 | 2 | `diptych spec` | Run the planner only — produce spec/plan/tasks, no implementation. |
 | 3 | `diptych init` | Create `.diptych/config.yaml` with detected models. |
 | 4 | `diptych status` | Show the active session and optional cost history. |
-| 5 | `diptych resume` | Resume the most recent interrupted workflow. |
-| 6 | `diptych migrate` | Migrate pre-v3 `.diptych/current/` state to per-session folders. |
-| 7 | `diptych handoff` | Export a Handoff Pack for an external coding agent. |
-| 8 | `diptych snapshot` | Create / list / restore / diff working-tree snapshots. |
-| 9 | `diptych approval` | List or clear sticky approval grants. |
-| 10 | `diptych mcp` | Run the MCP resource server. |
-| 11 | `diptych worktree` | List / switch / remove `.trees/<slug>` git worktrees. |
-| 12 | `diptych attach` | Attach a TUI client to a detached background session. |
-| 13 | `diptych detach` | Detach a TUI client without stopping the background server. |
-| 14 | `diptych ps` | List sessions in the current project with status. |
-| 15 | `diptych doctor` | Check run readiness without creating a workflow session. |
+| 5 | `diptych explain` | Explain routing, cost, review, and warnings from session artifacts. |
+| 6 | `diptych resume` | Resume the most recent interrupted workflow. |
+| 7 | `diptych migrate` | Migrate pre-v3 `.diptych/current/` state to per-session folders. |
+| 8 | `diptych handoff` | Export a Handoff Pack for an external coding agent. |
+| 9 | `diptych snapshot` | Create / list / restore / diff working-tree snapshots. |
+| 10 | `diptych approval` | List or clear sticky approval grants. |
+| 11 | `diptych mcp` | Run the MCP resource server. |
+| 12 | `diptych worktree` | List / switch / remove `.trees/<slug>` git worktrees. |
+| 13 | `diptych attach` | Attach a TUI client to a detached background session. |
+| 14 | `diptych detach` | Detach a TUI client without stopping the background server. |
+| 15 | `diptych ps` | List sessions in the current project with status. |
+| 16 | `diptych doctor` | Check run readiness without creating a workflow session. |
 
 ---
 
@@ -367,6 +368,69 @@ diptych status --project ../other-repo --history
 - The `(awaiting continue)` suffix on the phase line means the run paused at an approval gate and is waiting for user input.
 - Cost history loads via `aggregateSessionCosts(listSessions(...))`. If a state file fails to load, the whole history block prints the labeled error and continues.
 - `Done`, `Escalated`, `Failed` lines only appear when the corresponding count is non-zero.
+
+---
+
+## diptych explain
+
+**Synopsis**
+
+```
+diptych explain [--session <id>] [--project <dir>] [--json]
+```
+
+Read existing session artifacts and print a compact explanation of why routing, cost, review, and warning decisions happened. It never calls the planner, implementer, or provider APIs, and it does not rewrite session artifacts.
+
+### Usage
+
+```
+diptych explain [--session <id>] [--project <dir>] [--json]
+```
+
+### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--session <id>` | string | active session | Session to explain. Required when `.diptych/active` is absent, which is typical after completed runs. |
+| `--project <dir>` | path | cwd | Project directory. |
+| `--json` | boolean | `false` | Emit one JSON object: `{ "type": "run_explain", "explain": ... }`. |
+
+### Examples
+
+```bash
+# Explain the active in-progress run
+diptych explain
+
+# Explain a completed session
+diptych explain --session 2026-04-29-add-auth
+
+# Machine-readable output
+diptych explain --session 2026-04-29-add-auth --json
+```
+
+### Exit codes
+
+- `0` — explanation was printed.
+- `1` — no active session and no `--session`, invalid session id, missing session directory, or unreadable required filesystem state.
+
+### Files affected
+
+- **Reads:** `.diptych/active`, `.diptych/sessions/<id>/{summary.json,state.json,session.jsonl,readiness.json,review.md,review-packet.json,review-packet.md,evidence.json,drift-report.json}` when present.
+- **Writes:** none.
+
+### See also
+
+- `diptych status` — live phase/task posture.
+- `diptych doctor` — pre-run readiness diagnostics.
+- `diptych mcp serve` — read-only artifact access for MCP clients.
+
+### Behavior notes
+
+- Output is intentionally compact: task routes are summarized and artifact paths are referenced instead of embedding full plans, Task Briefs, logs, diffs, or source code.
+- Cost confidence is marked `partial` when pricing is unknown, a profile is unavailable, usage is unpriced, or the all-planner baseline cannot be fully priced.
+- Context fallback is shown from deterministic estimate metadata when available, and from routing reasons on completed task artifacts.
+- Task review gates are inferred from `task_review_needed` events in `session.jsonl`; final review status comes from `review-packet.json` or `review.md`.
+- Missing optional artifacts are reported as missing instead of causing a model call or artifact regeneration.
 
 ---
 
@@ -1204,10 +1268,10 @@ Columns (whitespace-aligned): `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPSED`, 
 |---|---|---|---|
 | `--project <dir>` | most | cwd | Project directory. |
 | `-p, --project <dir>` | `migrate` | `.` | The only command with the `-p` short alias. |
-| `--session <id>` | `handoff`, `snapshot *`, `mcp serve` | active session | When omitted, the active session is read from `.diptych/active`. |
+| `--session <id>` | `explain`, `handoff`, `snapshot *`, `mcp serve` | active session | When omitted, the active session is read from `.diptych/active`. |
 | `--auto` | `start`, `resume`, `spec` | `false` | Skip approval gates. On `start` / `resume` it aliases `--approve none`. |
 | `--allow-hooks` | `start`, `resume`, `spec` | `false` | Skip the hook-trust prompt. CI flag. |
-| `--json` | `start`, `resume` | `false` | NDJSON event stream on stdout instead of TUI. |
+| `--json` | `start`, `resume`, `doctor`, `explain` | `false` | NDJSON event stream for `start` / `resume`; single JSON object for `doctor` / `explain`. |
 
 ### Where state lives
 

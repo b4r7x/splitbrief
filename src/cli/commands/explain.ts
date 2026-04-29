@@ -1,0 +1,40 @@
+import { Command } from 'commander';
+import { readActive } from '../../core/sessions/lifecycle.js';
+import { buildRunExplain } from '../../engine/orchestrator/explain.js';
+import { formatRunExplain } from '../../engine/orchestrator/explain-format.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
+import { cliError } from '../errors.js';
+import { resolveProjectDir } from '../setup.js';
+
+interface ExplainOpts {
+  project?: string | undefined;
+  session?: string | undefined;
+  json?: boolean | undefined;
+}
+
+export function registerExplainCommand(program: Command): void {
+  program
+    .command('explain')
+    .description('Explain routing, cost, review, and warning decisions from session artifacts')
+    .option('--session <id>', 'Session ID (default: active session)')
+    .option('--project <dir>', 'Project directory (default: cwd)')
+    .option('--json', 'Emit explanation as JSON', false)
+    .action(async (opts: ExplainOpts) => {
+      const projectDir = resolveProjectDir(opts.project);
+      const sessionId = opts.session ?? readActive(projectDir);
+      if (!sessionId) {
+        throw cliError('No session specified and no active session found. Use --session <id>.', 1);
+      }
+
+      try {
+        const explain = await buildRunExplain({ projectDir, sessionId });
+        if (opts.json) {
+          process.stdout.write(JSON.stringify({ type: 'run_explain', explain }, null, 2) + '\n');
+          return;
+        }
+        console.log(formatRunExplain(explain));
+      } catch (err) {
+        throw cliError(toErrorMessage(err), 1);
+      }
+    });
+}
