@@ -5,7 +5,7 @@ Copy the prompt below into a fresh Claude Code session. Replace `{SPEC_FOLDER}` 
 ---
 
 ```
-Implement the spec at `docs/superpowers/specs/2026-04-30-real-e2e-tests/spec.md`.
+Implement the spec at `docs/superpowers/specs/2026-04-30-mcp-write-tools/spec.md`.
 
 ## How to work
 

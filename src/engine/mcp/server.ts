@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { handleMessage } from './handlers.js';
 import { INVALID_REQUEST, SUPPORTED_PROTOCOL_VERSIONS, MCP_PROTOCOL_VERSION } from './handlers.js';
 import type { McpResolver } from './resolver.js';
+import type { McpToolHandler } from './tool-handler.js';
 
 export type McpServerConfig = {
   port: number;
@@ -11,6 +12,7 @@ export type McpServerConfig = {
   token: string;
   resolver: McpResolver;
   serverVersion: string;
+  toolHandler?: McpToolHandler;
 };
 
 export type McpServerHandle = {
@@ -119,7 +121,7 @@ function sendProtocolVersionError(res: ServerResponse): void {
 }
 
 export function startMcpServer(config: McpServerConfig): Promise<McpServerHandle> {
-  const { port, host, token, resolver, serverVersion } = config;
+  const { port, host, token, resolver, serverVersion, toolHandler } = config;
 
   return new Promise((resolve, reject) => {
     const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -163,7 +165,7 @@ export function startMcpServer(config: McpServerConfig): Promise<McpServerHandle
 
         let result: ReturnType<typeof handleMessage>;
         try {
-          result = handleMessage(body, resolver, serverVersion);
+          result = handleMessage(body, resolver, serverVersion, toolHandler);
         } catch {
           send500(res);
           return;

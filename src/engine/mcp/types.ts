@@ -36,3 +36,9 @@ export type McpResourceContent = {
   text?: string;
   blob?: string;
 };
+
+export type McpToolDefinition = {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+};

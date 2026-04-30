@@ -4,6 +4,7 @@ import { resolveSessionIds } from '../../engine/mcp/discovery.js';
 import { generateToken } from '../../engine/mcp/auth-token.js';
 import { createResolver } from '../../engine/mcp/resolver.js';
 import { startMcpServer } from '../../engine/mcp/server.js';
+import { createToolHandler } from '../../engine/mcp/tool-handler.js';
 import { getDiptychVersion } from '../../core/paths-io.js';
 import { cliError } from '../errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -13,11 +14,11 @@ const DEFAULT_PORT = 4321;
 export function registerMcpCommand(program: Command): void {
   const mcp = program
     .command('mcp')
-    .description('MCP read-only resource server commands');
+    .description('MCP resource and write-tool server commands');
 
   mcp
     .command('serve')
-    .description('Start a read-only MCP resource server for the current project')
+    .description('Start an MCP server for project resources and write tools')
     .option('--port <number>', 'Port to listen on', String(DEFAULT_PORT))
     .option('--session <id>', 'Serve only this session')
     .option('--all-sessions', 'Serve all sessions in the project')
@@ -52,6 +53,7 @@ export function registerMcpCommand(program: Command): void {
         const token = generateToken();
         const diptychVersion = getDiptychVersion();
         const resolver = createResolver({ projectDir, sessionIds, diptychVersion });
+        const toolHandler = createToolHandler(projectDir);
 
         let handle: Awaited<ReturnType<typeof startMcpServer>>;
         try {
@@ -61,6 +63,7 @@ export function registerMcpCommand(program: Command): void {
             token,
             resolver,
             serverVersion: diptychVersion,
+            toolHandler,
           });
         } catch (err) {
           process.stderr.write(`Error: ${toErrorMessage(err)}\n`);
@@ -73,7 +76,7 @@ export function registerMcpCommand(program: Command): void {
         process.stdout.write(
           [
             'diptych MCP server ready',
-            '  Read-only: exposes session resources only; no MCP tools or writes.',
+            '  Exposes session resources and write tools.',
             '',
             `  URL:    http://127.0.0.1:${actualPort}/mcp`,
             `  Token:  ${token}`,

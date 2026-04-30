@@ -126,11 +126,25 @@ describe('mcp serve — startup announcement', () => {
 
     const output = writes.join('');
     expect(output).toContain('diptych MCP server ready');
-    expect(output).toContain('Read-only');
-    expect(output).toContain('no MCP tools or writes');
+    expect(output).toMatch(/resources/i);
+    expect(output).toMatch(/write tools/i);
     expect(output).toContain('http://127.0.0.1:4321/mcp');
     expect(output).toContain('test-token-abc123');
     expect(output).toContain('Sessions: 2026-04-26-test-session');
+  });
+
+  it('passes a five-tool write handler to the MCP server', async () => {
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    await runMcpServe(['--session', '2026-04-26-test-session']);
+
+    const call = vi.mocked(startMcpServer).mock.calls.at(0);
+    expect(call).toBeDefined();
+    if (call === undefined) return;
+    const [config] = call;
+    expect(config.toolHandler).toBeDefined();
+    if (config.toolHandler === undefined) return;
+    expect(config.toolHandler.listTools()).toHaveLength(5);
   });
 
   it('shows "all" in Sessions when --all-sessions is provided', async () => {
