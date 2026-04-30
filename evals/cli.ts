@@ -17,11 +17,12 @@ const ALL_SCENARIOS = [
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
-  const plannerModel = getArg(args, '--planner-model') ?? 'claude-sonnet-4-6';
+  const plannerModel = getArg(args, '--planner-model') ?? 'gpt-4o';
   const baselineModel = getArg(args, '--baseline-model') ?? plannerModel;
-  const routedModel = getArg(args, '--routed-model') ?? 'claude-haiku-4-5-20251001';
-  const baseUrl = getArg(args, '--base-url') ?? 'https://api.anthropic.com/v1';
-  const apiKey = getArg(args, '--api-key') ?? process.env['ANTHROPIC_API_KEY'] ?? '';
+  const routedModel = getArg(args, '--routed-model') ?? 'gpt-4o-mini';
+  const baseUrl = getArg(args, '--base-url') ?? process.env['DIPTYCH_EVAL_API_BASE'] ?? '';
+  const apiKey = getArg(args, '--api-key') ?? process.env['DIPTYCH_EVAL_API_KEY'] ?? '';
+  const provider = getArg(args, '--provider') ?? 'openai';
   const scenarioFilter = getArg(args, '--scenario');
   const record = args.includes('--record');
   const replay = args.includes('--replay');
@@ -32,7 +33,12 @@ async function main(): Promise<void> {
   }
 
   if (!apiKey && !replay) {
-    console.error('Error: --api-key or ANTHROPIC_API_KEY required unless --replay is used');
+    console.error('Error: --api-key or DIPTYCH_EVAL_API_KEY required unless --replay is used');
+    process.exit(1);
+  }
+
+  if (!baseUrl && !replay) {
+    console.error('Error: --base-url or DIPTYCH_EVAL_API_BASE required unless --replay is used');
     process.exit(1);
   }
 
@@ -55,6 +61,7 @@ async function main(): Promise<void> {
     plannerModel,
     baselineImplementerModel: baselineModel,
     routedImplementerModel: routedModel,
+    provider,
     baseUrl,
     apiKey,
     cassetteDir: resolve(import.meta.dirname, 'cassettes'),

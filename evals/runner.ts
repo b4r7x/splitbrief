@@ -18,6 +18,7 @@ export type EvalRunOptions = {
   plannerModel: string;
   baselineImplementerModel: string;
   routedImplementerModel: string;
+  provider: string;
   baseUrl: string;
   apiKey: string;
   cassetteDir: string;
@@ -125,6 +126,7 @@ export async function runEvalSuite(opts: EvalRunOptions): Promise<EvalReport> {
     plannerModel: opts.plannerModel,
     baselineImplementerModel: opts.baselineImplementerModel,
     routedImplementerModel: opts.routedImplementerModel,
+    provider: opts.provider,
     baseUrl: opts.baseUrl,
     apiKey: opts.apiKey,
   };
@@ -183,6 +185,7 @@ type ModelPair = {
   plannerModel: string;
   baselineImplementerModel: string;
   routedImplementerModel: string;
+  provider: string;
   baseUrl: string;
   apiKey: string;
 };
@@ -196,14 +199,14 @@ export function buildEvalConfig(pair: ModelPair, mode: EvalMode): Config {
     version: 3,
     planner: {
       kind: 'api',
-      provider: 'anthropic',
+      provider: pair.provider,
       apiBase: pair.baseUrl,
       model: pair.plannerModel,
       apiKey: pair.apiKey,
     },
     implementer: {
       kind: 'api',
-      provider: 'anthropic',
+      provider: pair.provider,
       apiBase: pair.baseUrl,
       model: implementerModel,
       apiKey: pair.apiKey,

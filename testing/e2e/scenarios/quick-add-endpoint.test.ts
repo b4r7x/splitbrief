@@ -4,10 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { SESSION_LOG_FILE, sessionsRoot } from '../../../src/core/paths.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/e2e-harness.js';
 
-const anthropicApiBase = 'https://api.anthropic.com/v1';
+const e2eApiBase = process.env.DIPTYCH_E2E_API_BASE ?? 'http://localhost:11434/v1';
 const replayApiKey = process.env.DIPTYCH_E2E_RECORD === '1'
   ? undefined
-  : 'sk-ant-e2e-placeholder';
+  : 'e2e-placeholder';
 
 const scenario = {
   name: 'quick mode - add endpoint',
@@ -18,17 +18,17 @@ const scenario = {
     version: 2,
     planner: {
       kind: 'api',
-      provider: 'anthropic',
-      apiBase: anthropicApiBase,
+      provider: 'openai',
+      apiBase: e2eApiBase,
       ...(replayApiKey ? { apiKey: replayApiKey } : {}),
-      model: 'claude-sonnet-4-6',
+      model: 'gpt-4o',
     },
     implementer: {
       kind: 'api',
-      provider: 'anthropic',
-      apiBase: anthropicApiBase,
+      provider: 'openai',
+      apiBase: e2eApiBase,
       ...(replayApiKey ? { apiKey: replayApiKey } : {}),
-      model: 'claude-haiku-4-5-20251001',
+      model: 'gpt-4o-mini',
     },
     workflow: {
       mode: 'quick',

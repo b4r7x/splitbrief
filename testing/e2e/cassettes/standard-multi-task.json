@@ -8,9 +8,9 @@
       "recordedAt": "2026-04-30T12:10:00.000Z",
       "request": {
         "method": "GET",
-        "url": "https://api.anthropic.com/v1/models",
+        "url": "http://localhost:11434/v1/models",
         "headers": {
-          "x-api-key": "***",
+          "authorization": "***",
           "anthropic-version": "2023-06-01"
         },
         "body": null
@@ -30,9 +30,9 @@
       "recordedAt": "2026-04-30T12:10:01.000Z",
       "request": {
         "method": "POST",
-        "url": "https://api.anthropic.com/v1/messages",
+        "url": "http://localhost:11434/v1/messages",
         "headers": {
-          "x-api-key": "***",
+          "authorization": "***",
           "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
@@ -53,9 +53,9 @@
       "recordedAt": "2026-04-30T12:10:02.000Z",
       "request": {
         "method": "POST",
-        "url": "https://api.anthropic.com/v1/messages",
+        "url": "http://localhost:11434/v1/messages",
         "headers": {
-          "x-api-key": "***",
+          "authorization": "***",
           "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
@@ -76,9 +76,9 @@
       "recordedAt": "2026-04-30T12:10:03.000Z",
       "request": {
         "method": "POST",
-        "url": "https://api.anthropic.com/v1/messages",
+        "url": "http://localhost:11434/v1/messages",
         "headers": {
-          "x-api-key": "***",
+          "authorization": "***",
           "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
@@ -99,9 +99,9 @@
       "recordedAt": "2026-04-30T12:10:04.000Z",
       "request": {
         "method": "POST",
-        "url": "https://api.anthropic.com/v1/messages",
+        "url": "http://localhost:11434/v1/messages",
         "headers": {
-          "x-api-key": "***",
+          "authorization": "***",
           "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
@@ -122,9 +122,9 @@
       "recordedAt": "2026-04-30T12:10:05.000Z",
       "request": {
         "method": "POST",
-        "url": "https://api.anthropic.com/v1/messages",
+        "url": "http://localhost:11434/v1/messages",
         "headers": {
-          "x-api-key": "***",
+          "authorization": "***",
           "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
@@ -145,9 +145,9 @@
       "recordedAt": "2026-04-30T12:10:06.000Z",
       "request": {
         "method": "POST",
-        "url": "https://api.anthropic.com/v1/messages",
+        "url": "http://localhost:11434/v1/messages",
         "headers": {
-          "x-api-key": "***",
+          "authorization": "***",
           "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
@@ -168,9 +168,9 @@
       "recordedAt": "2026-04-30T12:10:07.000Z",
       "request": {
         "method": "POST",
-        "url": "https://api.anthropic.com/v1/messages",
+        "url": "http://localhost:11434/v1/messages",
         "headers": {
-          "x-api-key": "***",
+          "authorization": "***",
           "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
@@ -189,9 +189,9 @@
   ],
   "meta": {
     "mode": "standard",
-    "plannerProvider": "anthropic",
-    "plannerModel": "claude-sonnet-4-6",
-    "implementerProvider": "anthropic",
-    "implementerModel": "claude-haiku-4-5-20251001"
+    "plannerProvider": "openai",
+    "plannerModel": "gpt-4o",
+    "implementerProvider": "openai",
+    "implementerModel": "gpt-4o-mini"
   }
 }

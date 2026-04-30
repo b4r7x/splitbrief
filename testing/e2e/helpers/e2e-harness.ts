@@ -31,7 +31,7 @@ export interface E2eContext {
 }
 
 const CASSETTE_DIR = join(import.meta.dirname, '..', 'cassettes');
-const CASSETTE_ANTHROPIC_API_KEY = 'sk-ant-cassette-replay';
+const CASSETTE_REPLAY_API_KEY = 'e2e-cassette-replay';
 const isRecording = process.env.DIPTYCH_E2E_RECORD === '1';
 
 export function setupE2eScenario(scenario: E2eScenario): E2eContext {
@@ -41,17 +41,17 @@ export function setupE2eScenario(scenario: E2eScenario): E2eContext {
     replayer: null,
     recorder: null,
   };
-  let originalAnthropicApiKey: string | undefined;
+  let originalApiKey: string | undefined;
 
   beforeEach(() => {
     resetAllStores();
     ctx.events = [];
     ctx.replayer = null;
     ctx.recorder = null;
-    originalAnthropicApiKey = process.env.ANTHROPIC_API_KEY;
+    originalApiKey = process.env.DIPTYCH_E2E_API_KEY;
 
-    if (!isRecording && originalAnthropicApiKey === undefined) {
-      process.env.ANTHROPIC_API_KEY = CASSETTE_ANTHROPIC_API_KEY;
+    if (!isRecording && originalApiKey === undefined) {
+      process.env.DIPTYCH_E2E_API_KEY = CASSETTE_REPLAY_API_KEY;
     }
 
     ctx.projectDir = createTempDir(`e2e-${scenario.cassetteName}`);
@@ -85,10 +85,10 @@ export function setupE2eScenario(scenario: E2eScenario): E2eContext {
       if (ctx.recorder) ctx.recorder.uninstall();
       if (ctx.replayer) ctx.replayer.uninstall();
       if (ctx.projectDir) cleanupTempDir(ctx.projectDir);
-      if (originalAnthropicApiKey === undefined) {
-        delete process.env.ANTHROPIC_API_KEY;
+      if (originalApiKey === undefined) {
+        delete process.env.DIPTYCH_E2E_API_KEY;
       } else {
-        process.env.ANTHROPIC_API_KEY = originalAnthropicApiKey;
+        process.env.DIPTYCH_E2E_API_KEY = originalApiKey;
       }
       ctx.projectDir = '';
       ctx.recorder = null;

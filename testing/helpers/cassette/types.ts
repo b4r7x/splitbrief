@@ -1,4 +1,4 @@
-import { z } from 'zod/v4';
+import { z } from 'zod';
 
 export const CassetteEntrySchema = z.object({
   index: z.number(),
