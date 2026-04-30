@@ -93,10 +93,52 @@ describe('readiness checks', () => {
 
     expect(report.status).toBe('ready-with-warnings');
     expect(report.nextAction.kind).toBe('continue');
+    expect(report.sections
+      .flatMap(section => section.checks)
+      .find(check => check.id === 'context.implementer.missing')?.severity).toBe('warning');
     expect(allCheckIds(baseInput({ config }))).toEqual(expect.arrayContaining([
       'context.planner.missing',
       'context.implementer.missing',
     ]));
+  });
+
+  it('reports missing profile cost tier and inferred write mode as non-blocking info', () => {
+    const config: Config = {
+      ...makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'qwen2.5-coder:7b',
+          contextLength: 32768,
+        },
+      }),
+      implementerProfiles: {
+        default: 'local-qwen',
+        profiles: {
+          'local-qwen': {
+            kind: 'api',
+            provider: 'ollama',
+            model: 'qwen2.5-coder:7b',
+            apiBase: 'http://localhost:11434/v1',
+            contextLength: 32768,
+          },
+        },
+      },
+    };
+
+    const report = buildReadinessReport(baseInput({ config }));
+    const checks = report.sections.flatMap(section => section.checks);
+
+    expect(report.status).toBe('ready');
+    expect(checks.find(check => check.id === 'runners.implementer.profile-cost-tier-missing')).toMatchObject({
+      severity: 'info',
+      metadata: { profile: 'local-qwen', costTier: null },
+    });
+    expect(checks.find(check => check.id === 'runners.implementer.profile-writes-files-inferred')).toMatchObject({
+      severity: 'info',
+      metadata: { profile: 'local-qwen', writesFiles: 'extracted-code' },
+    });
   });
 
   it('treats missing budget as an advisory note, not a run action', () => {

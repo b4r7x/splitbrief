@@ -340,6 +340,27 @@ describe('start command — readiness', () => {
     vi.restoreAllMocks();
   });
 
+  it('prints blockers only during normal start readiness failures', async () => {
+    writeReadyReadinessFixtures(tmp);
+    writeLiveSession(tmp, '2026-04-28-live');
+    writeFileSync(join(tmp, 'scratch.txt'), 'local edit');
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    let captured: unknown;
+    try {
+      await runStart(['--project', tmp, 'implement X']);
+    } catch (err) {
+      captured = err;
+    }
+
+    const output = consoleSpy.mock.calls.map(call => call.join(' ')).join('\n');
+    expect(isCliError(captured)).toBe(true);
+    expect(output).toContain('repo.active-session-live');
+    expect(output).not.toContain('repo.dirty-worktree');
+    expect(output).not.toContain('scratch.txt');
+    expect(renderApp).not.toHaveBeenCalled();
+  });
+
   it('emits readiness before headless workflow execution and persists compact session evidence', async () => {
     writeReadyReadinessFixtures(tmp);
     const stdoutChunks: string[] = [];

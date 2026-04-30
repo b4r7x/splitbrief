@@ -1,4 +1,5 @@
 import type { ResolvedImplementerProfile } from '../../core/config/accessors/implementer-profiles.js';
+import { missingRunnerCredential } from '../../core/config/accessors/runner-credentials.js';
 import type { ImplementerCostTier, ImplementerWriteMode } from '../../core/schemas/implementer-config.js';
 import { isProviderId } from '../../core/schemas/enums.js';
 import type { Task, TaskId } from '../../core/schemas/task.js';
@@ -70,6 +71,7 @@ interface ProfileFit {
   currentCodeContextMode: CurrentCodeContextMode;
   usedConservativeContextLength: boolean;
   requiredWriteMode: ImplementerWriteMode;
+  credentialFailure?: string | undefined;
   capabilityFailure?: string | undefined;
 }
 
@@ -234,6 +236,7 @@ function assessProfile(opts: RouteTaskOptions, profile: ResolvedImplementerProfi
       ? 'tight'
       : formattedFit;
   const requiredWriteMode = requiredWriteModeForTask(opts.task);
+  const credentialFailure = credentialFailureReason(profile);
   const capabilityFailure = requiredWriteMode === 'direct' && profile.capabilities.writesFiles !== 'direct'
     ? `Task scope requires direct file writes; profile writes via ${profile.capabilities.writesFiles}`
     : undefined;
@@ -247,9 +250,17 @@ function assessProfile(opts: RouteTaskOptions, profile: ResolvedImplementerProfi
     currentCodeContextMode: mode,
     usedConservativeContextLength,
     requiredWriteMode,
+    credentialFailure,
     capabilityFailure,
     fit,
   };
+}
+
+function credentialFailureReason(profile: ResolvedImplementerProfile): string | undefined {
+  const missing = missingRunnerCredential(profile.config);
+  if (!missing) return undefined;
+  const credentialTarget = missing.envVar ? `profile apiKey or ${missing.envVar}` : 'profile apiKey';
+  return `${missing.providerDisplayName} credentials are missing; set ${credentialTarget}`;
 }
 
 function compareProfileRouteRank(left: ProfileFit, right: ProfileFit): number {
@@ -263,6 +274,10 @@ function compareProfileRouteRank(left: ProfileFit, right: ProfileFit): number {
 }
 
 function rejectionReason(profileFit: ProfileFit, selected?: ProfileFit): string {
+  if (profileFit.credentialFailure) {
+    return profileFit.credentialFailure;
+  }
+
   if (profileFit.capabilityFailure) {
     return profileFit.capabilityFailure;
   }
@@ -312,7 +327,7 @@ function costPosture(selected: ProfileFit | undefined, rejected: ProfileFit[]): 
 export function routeTaskToImplementerProfile(opts: RouteTaskOptions): RoutingDecision {
   const profileFits = opts.profiles.map(profile => assessProfile(opts, profile));
   const capable = profileFits
-    .filter(profileFit => profileFit.fit !== 'overflow' && !profileFit.capabilityFailure)
+    .filter(profileFit => profileFit.fit !== 'overflow' && !profileFit.credentialFailure && !profileFit.capabilityFailure)
     .toSorted(compareProfileRouteRank);
   const selected = capable.at(0);
 
@@ -344,6 +359,7 @@ export function routeTaskToImplementerProfile(opts: RouteTaskOptions): RoutingDe
       .toSorted((left, right) => right.contextLength - left.contextLength || left.profile.localeCompare(right.profile))
       .at(0);
     const hasCapabilityFailure = profileFits.some(profileFit => profileFit.capabilityFailure !== undefined);
+    const hasCredentialFailure = profileFits.some(profileFit => profileFit.credentialFailure !== undefined);
 
     return {
       taskId: opts.task.id,
@@ -355,7 +371,9 @@ export function routeTaskToImplementerProfile(opts: RouteTaskOptions): RoutingDe
       currentCodeTruncated: representative?.currentCodeTruncated ?? largestOverflow?.currentCodeTruncated ?? false,
       currentCodeContextMode: representative?.currentCodeContextMode ?? largestOverflow?.currentCodeContextMode ?? 'none',
       costPosture: costPosture(undefined, profileFits),
-      reason: hasCapabilityFailure
+      reason: hasCredentialFailure
+        ? 'No credential-usable implementer profile satisfies this task capability and context requirements'
+        : hasCapabilityFailure
         ? 'No capable implementer profile satisfies this task capability and context requirements'
         : 'No capable implementer profile can fit this task prompt',
       rejected,

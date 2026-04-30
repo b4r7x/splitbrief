@@ -23,8 +23,9 @@ import { assertNotWindows } from '../platform.js';
 import { writeSecureFile } from '../../lib/fs.js';
 import { collectReadiness } from '../../core/readiness/collect.js';
 import {
+  createBlockerOnlyReadinessReport,
   createStartReadinessRecord,
-  formatReadinessReport,
+  formatReadinessBlockers,
   readinessBlockerMessage,
 } from '../../core/readiness/format.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
@@ -79,8 +80,12 @@ function buildCLIOverrides(opts: WorkflowOpts, mode: WorkflowOpts['mode']): CLIO
 
 function assertReadinessCanStart(report: ReadinessReport, json: boolean | undefined): void {
   if (report.status !== 'blocked') return;
-  if (!json) console.log(formatReadinessReport(report));
+  if (!json) console.log(formatReadinessBlockers(report));
   throw cliError(readinessBlockerMessage(report), 1);
+}
+
+function readinessForInteractiveStart(report: ReadinessReport): ReadinessReport {
+  return report.status === 'blocked' ? createBlockerOnlyReadinessReport(report) : report;
 }
 
 export function registerStartCommand(program: Command): void {
@@ -108,7 +113,6 @@ export function registerStartCommand(program: Command): void {
       await ensureGitAndConfig(projectDir);
       const readiness = await collectReadiness({ projectDir, opts });
       assertReadinessCanStart(readiness.report, opts.json);
-      console.log(formatReadinessReport(readiness.report));
 
       const mode = opts.mode ?? 'standard';
       const sessId = generateSessionId(projectDir, feature);
@@ -181,7 +185,7 @@ export function registerStartCommand(program: Command): void {
         feature,
         sessionId,
         worktreeName: worktreeName ?? undefined,
-        readiness: readiness?.report,
+        readiness: readiness ? readinessForInteractiveStart(readiness.report) : undefined,
       });
     }
 

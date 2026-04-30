@@ -4,6 +4,7 @@ import { isProviderId } from '../../schemas/enums.js';
 import type { Config } from '../../schemas/config.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
 import type { ImplementerConfig } from '../../schemas/implementer-config.js';
+import { missingRunnerCredential } from '../accessors/runner-credentials.js';
 import { getRunnerDisplayName, getRunnerApiKey } from '../accessors/runner-config.js';
 
 export interface ConfigError {
@@ -31,34 +32,55 @@ function checkApiKey(opts: {
   errors: ConfigError[];
 }): void {
   const { role, path, config, errors } = opts;
+  const error = missingApiKeyError({ role, path, config });
+  if (error) errors.push(error);
+}
+
+function missingApiKeyError(opts: {
+  role: 'planner' | 'implementer';
+  path: string;
+  config: PlannerConfig | ImplementerConfig;
+}): ConfigError | undefined {
+  const { role, path, config } = opts;
+  const missing = missingRunnerCredential(config);
+  if (!missing) return undefined;
+  const credentialTarget = missing.envVar ? `${path}.apiKey or ${missing.envVar} env var` : `${path}.apiKey`;
+
   if (config.kind === 'agent-sdk') {
-    const envVar = PROVIDER_CATALOG['agent-sdk']?.apiKeyEnv ?? 'ANTHROPIC_API_KEY';
-    if (!config.apiKey && !process.env[envVar]) {
-      errors.push({ path: `${path}.apiKey`, message: `Agent SDK requires ${path}.apiKey or ${envVar} env var` });
-    }
+    return { path: `${path}.apiKey`, message: `Agent SDK requires ${credentialTarget}` };
   }
 
-  if (config.kind === 'api' && isProviderId(config.provider)) {
-    const info = PROVIDER_CATALOG[config.provider];
-    if (info.apiKeyEnv && !config.apiKey && !process.env[info.apiKeyEnv]) {
-      errors.push({ path: `${path}.apiKey`, message: `${info.displayName} ${role} requires ${path}.apiKey or ${info.apiKeyEnv} env var` });
-    }
-  }
+  return { path: `${path}.apiKey`, message: `${missing.providerDisplayName} ${role} requires ${credentialTarget}` };
 }
 
 function apiKeyErrors(config: Config): ConfigError[] {
   const errors: ConfigError[] = [];
   checkApiKey({ role: 'planner', path: 'planner', config: config.planner, errors });
-  checkApiKey({ role: 'implementer', path: 'implementer', config: config.implementer, errors });
-  for (const [name, profile] of Object.entries(config.implementerProfiles?.profiles ?? {})) {
-    checkApiKey({
+  if (!config.implementerProfiles) {
+    checkApiKey({ role: 'implementer', path: 'implementer', config: config.implementer, errors });
+    return errors;
+  }
+
+  const profileCredentialErrors = Object.entries(config.implementerProfiles.profiles).flatMap(([name, profile]) => {
+    const error = missingApiKeyError({
       role: 'implementer',
       path: `implementerProfiles.profiles.${name}`,
       config: profile,
-      errors,
     });
+    return error ? [error] : [];
+  });
+
+  if (profileCredentialErrors.length === Object.keys(config.implementerProfiles.profiles).length) {
+    errors.push(...profileCredentialErrors);
   }
+
   return errors;
+}
+
+function selectedImplementerProfileName(config: Config): string | undefined {
+  const profiles = config.implementerProfiles?.profiles;
+  if (!profiles) return undefined;
+  return config.implementerProfiles?.default ?? Object.keys(profiles).sort()[0];
 }
 
 function keyFormatWarnings(provider: string, key: string): string[] {
@@ -123,7 +145,27 @@ export function securityWarnings(config: Config): string[] {
     }
   }
 
+  warnings.push(...profileCredentialWarnings(config));
+
   return warnings;
+}
+
+function profileCredentialWarnings(config: Config): string[] {
+  const defaultName = selectedImplementerProfileName(config);
+  if (defaultName === undefined) return [];
+
+  return Object.entries(config.implementerProfiles?.profiles ?? {})
+    .flatMap(([name, profile]) => {
+      const error = missingApiKeyError({
+        role: 'implementer',
+        path: `implementerProfiles.profiles.${name}`,
+        config: profile,
+      });
+      if (!error) return [];
+
+      const prefix = name === defaultName ? 'Default' : 'Unused';
+      return [`${prefix} implementer profile ${name} is missing credentials: ${error.message}.`];
+    });
 }
 
 export function validateConfig(config: Record<string, unknown>): ConfigValidation {
