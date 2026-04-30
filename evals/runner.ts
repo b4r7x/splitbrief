@@ -5,9 +5,8 @@ import { ConfigSchema, type Config } from '../src/core/schemas/config.js';
 import { createEventBus } from '../src/engine/events/bus.js';
 import type { EngineEvent } from '../src/engine/events/types.js';
 import { runWorkflow } from '../src/engine/orchestrator/run/run.js';
-import { saveCassette, startRecording, stopRecording } from './cassette/recorder.js';
-import { startReplay, stopReplay } from './cassette/replayer.js';
-import type { Cassette } from './cassette/types.js';
+import { createCassetteRecorder } from '../testing/helpers/cassette/recorder.js';
+import { createCassetteReplayer, loadCassette } from '../testing/helpers/cassette/replayer.js';
 import { collectRunMetrics, compareScenario, type EvalReport, type RunMetrics } from './metrics.js';
 import { generateReport } from './report.js';
 import type { EvalScenario, QualityCheckResult } from './scenarios/types.js';
@@ -51,12 +50,24 @@ async function runSingleEval(
   bus.subscribe((event) => events.push(event));
 
   const cassetteFile = join(opts.cassetteDir, `${scenario.id}-${mode}.json`);
-  let recorderState: ReturnType<typeof startRecording> | null = null;
-  let replayerState: ReturnType<typeof startReplay> | null = null;
+  let recorder: ReturnType<typeof createCassetteRecorder> | null = null;
+  let replayer: ReturnType<typeof createCassetteReplayer> | null = null;
 
   try {
-    if (opts.record) recorderState = startRecording();
-    if (opts.replay) replayerState = startReplay(cassetteFile);
+    if (opts.record) {
+      recorder = createCassetteRecorder(cassetteFile, `${scenario.id}-${mode}`, {
+        scenarioId: scenario.id,
+        mode,
+        plannerModel: config.planner.kind === 'api' ? config.planner.model ?? 'unknown' : 'unknown',
+        implementerModel: config.implementer.kind === 'api' ? config.implementer.model ?? 'unknown' : 'unknown',
+      });
+      recorder.install();
+    }
+    if (opts.replay) {
+      const cassette = loadCassette(cassetteFile);
+      replayer = createCassetteReplayer(cassette);
+      replayer.install();
+    }
 
     const startMs = Date.now();
     const summary = await runWorkflow({
@@ -78,15 +89,14 @@ async function runSingleEval(
     });
     const durationMs = Date.now() - startMs;
 
-    if (recorderState) {
-      const state = recorderState;
-      recorderState = null;
-      saveRecording(state, scenario.id, mode, config, opts.cassetteDir);
+    if (recorder) {
+      recorder.save();
+      recorder.uninstall();
+      recorder = null;
     }
-    if (replayerState) {
-      const state = replayerState;
-      replayerState = null;
-      stopReplay(state);
+    if (replayer) {
+      replayer.uninstall();
+      replayer = null;
     }
 
     const qualityResults: QualityCheckResult[] = [];
@@ -97,8 +107,8 @@ async function runSingleEval(
     return collectRunMetrics(scenario.id, mode, summary, events, qualityResults, durationMs);
   } finally {
     try {
-      if (recorderState) saveRecording(recorderState, scenario.id, mode, config, opts.cassetteDir);
-      if (replayerState) stopReplay(replayerState);
+      if (recorder) { recorder.save(); recorder.uninstall(); }
+      if (replayer) replayer.uninstall();
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -212,24 +222,3 @@ export function buildEvalConfig(pair: ModelPair, mode: EvalMode): Config {
   });
 }
 
-function saveRecording(
-  recorderState: ReturnType<typeof startRecording>,
-  scenarioId: string,
-  mode: EvalMode,
-  config: Config,
-  cassetteDir: string,
-): void {
-  const entries = stopRecording(recorderState);
-  const plannerModel = config.planner.kind === 'api' ? config.planner.model ?? 'unknown' : 'unknown';
-  const implementerModel = config.implementer.kind === 'api' ? config.implementer.model ?? 'unknown' : 'unknown';
-  const cassette: Cassette = {
-    version: 1,
-    scenarioId,
-    mode,
-    plannerModel,
-    implementerModel,
-    recordedAt: new Date().toISOString(),
-    entries,
-  };
-  saveCassette(cassette, cassetteDir);
-}

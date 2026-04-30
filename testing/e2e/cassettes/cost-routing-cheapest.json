@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "name": "cost routing - cheapest capable profile",
+  "recordedAt": "2026-04-30T12:20:00.000Z",
+  "entries": [
+    {
+      "index": 0,
+      "recordedAt": "2026-04-30T12:20:00.000Z",
+      "request": {
+        "method": "GET",
+        "url": "https://api.anthropic.com/v1/models",
+        "headers": {
+          "x-api-key": "***",
+          "anthropic-version": "2023-06-01"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
+      },
+      "provider": "anthropic",
+      "durationMs": 40
+    },
+    {
+      "index": 1,
+      "recordedAt": "2026-04-30T12:20:01.000Z",
+      "request": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "x-api-key": "***",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        "body": "{\"purpose\":\"planner quick task briefs\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_cost_plan\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":365,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"---\\nid: T001\\ntitle: Create title case utility\\naction: create\\nfile: src/utility.ts\\ndepends_on: []\\n---\\n### Description\\nCreate src/utility.ts with a toTitleCase helper.\\n\\n### Implementation Steps\\n1. Split the input into words and normalize each word.\\n2. Export toTitleCase as a deterministic string helper.\\n\\n### Tests\\n- Verify toTitleCase converts a lowercase phrase into title case.\\n\\n### Scope\\n**In bounds:**\\n- src/utility.ts\\n**Out of bounds:**\\n- Locale-specific casing rules or CLI commands.\\n\\n### Escalation\\n- Stop if utility behavior needs locale or product policy decisions.\\n\\n### Evidence\\n- The helper returns predictable title-cased output.\\n\\n### Type Definitions\\n```ts\\nexport type TitleCaseInput = string;\\n```\\n\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":178}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      },
+      "provider": "anthropic",
+      "durationMs": 1360
+    },
+    {
+      "index": 2,
+      "recordedAt": "2026-04-30T12:20:02.000Z",
+      "request": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "x-api-key": "***",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        "body": "{\"purpose\":\"implementer utility code\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_cost_impl\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-haiku-4-5-20251001\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":455,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"```typescript\\nexport function toTitleCase(value: string): string {\\n  return value\\n    .split(' ')\\n    .filter(part => part.length > 0)\\n    .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())\\n    .join(' ');\\n}\\n```\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":62}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      },
+      "provider": "anthropic",
+      "durationMs": 820
+    },
+    {
+      "index": 3,
+      "recordedAt": "2026-04-30T12:20:03.000Z",
+      "request": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "x-api-key": "***",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        "body": "{\"purpose\":\"planner final review\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_cost_review\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":285,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Review complete. The workflow changes match the task briefs.\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":14}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      },
+      "provider": "anthropic",
+      "durationMs": 620
+    }
+  ],
+  "meta": {
+    "mode": "quick",
+    "plannerProvider": "anthropic",
+    "plannerModel": "claude-sonnet-4-6",
+    "implementerProvider": "anthropic",
+    "implementerModel": "claude-haiku-4-5-20251001"
+  }
+}

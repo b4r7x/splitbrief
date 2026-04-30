@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "name": "quick mode - add endpoint",
+  "recordedAt": "2026-04-30T12:05:00.000Z",
+  "entries": [
+    {
+      "index": 0,
+      "recordedAt": "2026-04-30T12:05:00.000Z",
+      "request": {
+        "method": "GET",
+        "url": "https://api.anthropic.com/v1/models",
+        "headers": {
+          "x-api-key": "***",
+          "anthropic-version": "2023-06-01"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
+      },
+      "provider": "anthropic",
+      "durationMs": 39
+    },
+    {
+      "index": 1,
+      "recordedAt": "2026-04-30T12:05:01.000Z",
+      "request": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "x-api-key": "***",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        "body": "{\"purpose\":\"planner quick task briefs\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_quick_plan\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":360,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"---\\nid: T001\\ntitle: Create health helper\\naction: create\\nfile: src/health.ts\\ndepends_on: []\\n---\\n### Description\\nCreate src/health.ts with a getHealth helper.\\n\\n### Implementation Steps\\n1. Add a getHealth function that returns a stable ok status.\\n2. Export the function from the file.\\n\\n### Tests\\n- Verify getHealth returns an object with status equal to ok.\\n\\n### Scope\\n**In bounds:**\\n- src/health.ts\\n**Out of bounds:**\\n- HTTP server routing or package metadata.\\n\\n### Escalation\\n- Stop if endpoint wiring is required outside the target helper.\\n\\n### Evidence\\n- The helper exposes deterministic health data.\\n\\n### Type Definitions\\n```ts\\nexport type HealthResult = { status: 'ok' };\\n```\\n\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":172}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      },
+      "provider": "anthropic",
+      "durationMs": 1450
+    },
+    {
+      "index": 2,
+      "recordedAt": "2026-04-30T12:05:02.000Z",
+      "request": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "x-api-key": "***",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        "body": "{\"purpose\":\"implementer health code\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_quick_impl\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-haiku-4-5-20251001\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":460,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"```typescript\\nexport function getHealth() {\\n  return { status: 'ok' };\\n}\\n```\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":28}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      },
+      "provider": "anthropic",
+      "durationMs": 780
+    },
+    {
+      "index": 3,
+      "recordedAt": "2026-04-30T12:05:03.000Z",
+      "request": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "x-api-key": "***",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        "body": "{\"purpose\":\"planner final review\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_quick_review\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":280,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Review complete. The workflow changes match the task briefs.\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":14}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      },
+      "provider": "anthropic",
+      "durationMs": 610
+    }
+  ],
+  "meta": {
+    "mode": "quick",
+    "plannerProvider": "anthropic",
+    "plannerModel": "claude-sonnet-4-6",
+    "implementerProvider": "anthropic",
+    "implementerModel": "claude-haiku-4-5-20251001"
+  }
+}

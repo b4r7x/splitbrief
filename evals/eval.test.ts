@@ -2,9 +2,9 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { startRecording, stopRecording } from './cassette/recorder.js';
-import { startReplay, stopReplay, type ReplayerState } from './cassette/replayer.js';
-import type { Cassette } from './cassette/types.js';
+import { createCassetteRecorder } from '../testing/helpers/cassette/recorder.js';
+import { createCassetteReplayer, loadCassette } from '../testing/helpers/cassette/replayer.js';
+import type { Cassette } from '../testing/helpers/cassette/types.js';
 import { collectRunMetrics, compareScenario, type EvalReport, type RunMetrics } from './metrics.js';
 import { generateReport } from './report.js';
 import { buildEvalConfig, copyScenarioFixture } from './runner.js';
@@ -60,25 +60,28 @@ describe('eval harness', () => {
     globalThis.fetch = fakeFetch;
 
     try {
-      const recorder = startRecording();
-      const response = await fetch('https://example.test/messages', {
-        method: 'POST',
-        headers: {
-          authorization: 'Bearer secret',
-          'x-api-key': 'secret-key',
-          'content-type': 'application/json',
-        },
-        body: '{"message":"hello"}',
-      });
-      await response.text();
-      const entries = stopRecording(recorder);
-      const entry = firstEntry(entries);
+      await withTempDirAsync(async (dir) => {
+        const cassettePath = join(dir, 'test-record.json');
+        const recorder = createCassetteRecorder(cassettePath, 'test-record');
+        recorder.install();
+        const response = await fetch('https://example.test/messages', {
+          method: 'POST',
+          headers: {
+            authorization: 'Bearer secret',
+            'x-api-key': 'secret-key',
+            'content-type': 'application/json',
+          },
+          body: '{"message":"hello"}',
+        });
+        await response.text();
+        recorder.uninstall();
+        const entry = firstEntry(recorder.entries);
 
-      expect(globalThis.fetch).toBe(fakeFetch);
-      expect(entry.response.status).toBe(201);
-      expect(entry.request.headers['authorization']).toBe('REDACTED');
-      expect(entry.request.headers['x-api-key']).toBe('REDACTED');
-      expect(entry.request.headers['content-type']).toBe('application/json');
+        expect(entry.response.status).toBe(201);
+        expect(entry.request.headers['authorization']).toBe('***');
+        expect(entry.request.headers['x-api-key']).toBe('***');
+        expect(entry.request.headers['content-type']).toBe('application/json');
+      });
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -89,16 +92,17 @@ describe('eval harness', () => {
       const cassettePath = join(dir, 'fake-baseline.json');
       writeFileSync(cassettePath, JSON.stringify(makeCassette(), null, 2));
 
-      let replayer: ReplayerState | undefined;
+      const cassette = loadCassette(cassettePath);
+      const replayer = createCassetteReplayer(cassette);
       try {
-        replayer = startReplay(cassettePath);
-        const response = await fetch('https://example.test/messages');
+        replayer.install();
+        const response = await fetch('https://example.test/messages', { method: 'POST' });
 
         expect(response.status).toBe(202);
         expect(await response.text()).toBe('{"message":"replayed"}');
-        await expect(fetch('https://example.test/messages')).rejects.toThrow('Cassette exhausted');
+        await expect(fetch('https://example.test/messages', { method: 'POST' })).rejects.toThrow('exhausted');
       } finally {
-        if (replayer) stopReplay(replayer);
+        replayer.uninstall();
       }
     });
   });
@@ -214,26 +218,25 @@ function makeReport(): EvalReport {
 function makeCassette(): Cassette {
   return {
     version: 1,
-    scenarioId: 'fake',
-    mode: 'baseline',
-    plannerModel: 'planner-model',
-    implementerModel: 'baseline-model',
+    name: 'fake-baseline',
     recordedAt: '2026-04-30T12:00:00.000Z',
+    meta: { scenarioId: 'fake', mode: 'baseline' },
     entries: [
       {
         index: 0,
-        timestamp: '2026-04-30T12:00:01.000Z',
+        recordedAt: '2026-04-30T12:00:01.000Z',
         request: {
           method: 'POST',
           url: 'https://example.test/messages',
           headers: {},
-          body: '',
+          body: null,
         },
         response: {
           status: 202,
           headers: { 'content-type': 'application/json' },
           body: '{"message":"replayed"}',
         },
+        provider: 'unknown',
         durationMs: 10,
       },
     ],

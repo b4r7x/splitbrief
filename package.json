@@ -20,6 +20,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "vitest run --config testing/e2e/vitest.e2e.config.ts",
+    "test:e2e:record": "DIPTYCH_E2E_RECORD=1 vitest run --config testing/e2e/vitest.e2e.config.ts",
     "eval": "tsx evals/cli.ts",
     "eval:record": "tsx evals/cli.ts --record",
     "eval:replay": "tsx evals/cli.ts --replay",
