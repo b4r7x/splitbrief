@@ -1,5 +1,6 @@
 import type { McpResponse, McpError } from './types.js';
 import type { McpResolver } from './resolver.js';
+import type { McpToolHandler } from './tool-handler.js';
 
 export const PARSE_ERROR = -32700;
 export const INVALID_REQUEST = -32600;
@@ -20,7 +21,12 @@ function jsonRpcError(code: number, message: string, id: string | number | null)
   return { jsonrpc: '2.0', id, error: { code, message } };
 }
 
-export function handleMessage(rawBody: string, resolver: McpResolver, serverVersion: string): HandleResult {
+export function handleMessage(
+  rawBody: string,
+  resolver: McpResolver,
+  serverVersion: string,
+  toolHandler?: McpToolHandler,
+): HandleResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawBody);
@@ -70,7 +76,10 @@ export function handleMessage(rawBody: string, resolver: McpResolver, serverVers
         id,
         result: {
           protocolVersion: MCP_PROTOCOL_VERSION,
-          capabilities: { resources: {} },
+          capabilities: {
+            resources: {},
+            ...(toolHandler ? { tools: {} } : {}),
+          },
           serverInfo: { name: 'diptych', version: serverVersion },
         },
       },
@@ -111,6 +120,61 @@ export function handleMessage(rawBody: string, resolver: McpResolver, serverVers
               ...(content.blob !== undefined ? { blob: content.blob } : {}),
             },
           ],
+        },
+      },
+    };
+  }
+
+  if (method === 'tools/list') {
+    if (!toolHandler) {
+      return { kind: 'error', body: jsonRpcError(METHOD_NOT_FOUND, 'Tools not available', id) };
+    }
+    return {
+      kind: 'response',
+      body: {
+        jsonrpc: '2.0',
+        id,
+        result: { tools: toolHandler.listTools() },
+      },
+    };
+  }
+
+  if (method === 'tools/call') {
+    if (!toolHandler) {
+      return { kind: 'error', body: jsonRpcError(METHOD_NOT_FOUND, 'Tools not available', id) };
+    }
+    const name = params['name'];
+    if (typeof name !== 'string') {
+      return { kind: 'error', body: jsonRpcError(INVALID_PARAMS, 'Missing tool name', id) };
+    }
+    const toolArgs = (params['arguments'] !== undefined && typeof params['arguments'] === 'object' && params['arguments'] !== null)
+      ? params['arguments'] as Record<string, unknown>
+      : {};
+
+    const result = toolHandler.callTool(name, toolArgs);
+
+    if (result.ok) {
+      return {
+        kind: 'response',
+        body: {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [{ type: 'text', text: result.content }],
+            isError: false,
+          },
+        },
+      };
+    }
+
+    return {
+      kind: 'response',
+      body: {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          content: [{ type: 'text', text: result.error }],
+          isError: true,
         },
       },
     };

@@ -10,6 +10,7 @@ import {
 } from './handlers.js';
 import type { McpResolver } from './resolver.js';
 import type { McpResourceDescriptor, McpResourceContent } from './types.js';
+import type { McpToolHandler } from './tool-handler.js';
 
 const SERVER_VERSION = '1.2.3';
 
@@ -21,6 +22,16 @@ const stubContent: McpResourceContent = {
   uri: 'mcp://diptych/sessions',
   mimeType: 'application/json',
   text: '[]',
+};
+
+const stubToolHandler: McpToolHandler = {
+  listTools: () => [
+    { name: 'report_evidence', description: 'Report evidence', inputSchema: { type: 'object' } },
+  ],
+  callTool: (name) => {
+    if (name === 'report_evidence') return { ok: true, content: 'Evidence recorded' };
+    return { ok: false, error: `Unknown tool: ${name}` };
+  },
 };
 
 function makeResolver(overrides?: Partial<McpResolver>): McpResolver {
@@ -108,9 +119,9 @@ describe('handleMessage', () => {
     expect(result.body.id).toBe(5);
   });
 
-  it('tools/list → METHOD_NOT_FOUND -32601', () => {
+  it('tools/list → METHOD_NOT_FOUND when no handler', () => {
     const result = handleMessage(
-      msg({ jsonrpc: '2.0', id: 6, method: 'tools/list' }),
+      msg({ jsonrpc: '2.0', id: 21, method: 'tools/list' }),
       makeResolver(),
       SERVER_VERSION,
     );
@@ -119,7 +130,7 @@ describe('handleMessage', () => {
     expect(result.body.error.code).toBe(METHOD_NOT_FOUND);
   });
 
-  it('tools/call → METHOD_NOT_FOUND', () => {
+  it('tools/call → METHOD_NOT_FOUND when no handler', () => {
     const result = handleMessage(
       msg({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'foo' } }),
       makeResolver(),
@@ -128,6 +139,84 @@ describe('handleMessage', () => {
     expect(result.kind).toBe('error');
     if (result.kind !== 'error') return;
     expect(result.body.error.code).toBe(METHOD_NOT_FOUND);
+  });
+
+  it('tools/list → returns tool definitions when handler present', () => {
+    const result = handleMessage(
+      msg({ jsonrpc: '2.0', id: 20, method: 'tools/list' }),
+      makeResolver(),
+      SERVER_VERSION,
+      stubToolHandler,
+    );
+    expect(result.kind).toBe('response');
+    if (result.kind !== 'response') return;
+    const r = result.body.result as { tools: unknown[] };
+    expect(r.tools).toHaveLength(1);
+    expect(r.tools[0]).toMatchObject({ name: 'report_evidence' });
+  });
+
+  it('tools/call with valid tool → success response', () => {
+    const result = handleMessage(
+      msg({ jsonrpc: '2.0', id: 22, method: 'tools/call', params: { name: 'report_evidence', arguments: {} } }),
+      makeResolver(),
+      SERVER_VERSION,
+      stubToolHandler,
+    );
+    expect(result.kind).toBe('response');
+    if (result.kind !== 'response') return;
+    const r = result.body.result as { content: Array<{ type: string; text: string }>; isError: boolean };
+    expect(r.isError).toBe(false);
+    expect(r.content).toEqual([{ type: 'text', text: 'Evidence recorded' }]);
+  });
+
+  it('tools/call with unknown tool → isError response', () => {
+    const result = handleMessage(
+      msg({ jsonrpc: '2.0', id: 23, method: 'tools/call', params: { name: 'unknown', arguments: {} } }),
+      makeResolver(),
+      SERVER_VERSION,
+      stubToolHandler,
+    );
+    expect(result.kind).toBe('response');
+    if (result.kind !== 'response') return;
+    const r = result.body.result as { isError: boolean };
+    expect(r.isError).toBe(true);
+  });
+
+  it('tools/call without name param → INVALID_PARAMS', () => {
+    const result = handleMessage(
+      msg({ jsonrpc: '2.0', id: 24, method: 'tools/call', params: {} }),
+      makeResolver(),
+      SERVER_VERSION,
+      stubToolHandler,
+    );
+    expect(result.kind).toBe('error');
+    if (result.kind !== 'error') return;
+    expect(result.body.error.code).toBe(INVALID_PARAMS);
+  });
+
+  it('initialize advertises tools capability when handler present', () => {
+    const result = handleMessage(
+      msg({ jsonrpc: '2.0', id: 25, method: 'initialize' }),
+      makeResolver(),
+      SERVER_VERSION,
+      stubToolHandler,
+    );
+    expect(result.kind).toBe('response');
+    if (result.kind !== 'response') return;
+    const r = result.body.result as { capabilities: { tools?: object } };
+    expect(r.capabilities.tools).toEqual({});
+  });
+
+  it('initialize omits tools capability when no handler', () => {
+    const result = handleMessage(
+      msg({ jsonrpc: '2.0', id: 26, method: 'initialize' }),
+      makeResolver(),
+      SERVER_VERSION,
+    );
+    expect(result.kind).toBe('response');
+    if (result.kind !== 'response') return;
+    const r = result.body.result as { capabilities: Record<string, unknown> };
+    expect(r.capabilities).not.toHaveProperty('tools');
   });
 
   it('prompts/list → METHOD_NOT_FOUND', () => {

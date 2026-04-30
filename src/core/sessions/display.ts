@@ -24,6 +24,7 @@ export function getMethodDisplay(
     case 'escalated-full': return { text: 'escalated', color: theme.error };
     case 'failed': return { text: 'fail', color: theme.error };
     case 'skipped': return { text: 'skip', color: theme.textDim };
+    case 'mcp-tool': return { text: 'mcp', color: theme.success };
     default: return assertNever(method);
   }
 }
