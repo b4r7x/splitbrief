@@ -135,3 +135,74 @@ describe('classifyAction — order check', () => {
     expect(result).toEqual({ actionClass: 'package_change', tier: 'confirm' });
   });
 });
+
+describe('classifyAction — allowedPaths', () => {
+  it('write to file matching allowedPaths → write_in_scope/auto', () => {
+    const result = classifyAction(make('edit src/components/button.ts', {
+      taskInBounds: ['src/feature/**'],
+      allowedPaths: ['src/**'],
+    }));
+    expect(result).toEqual({ actionClass: 'write_in_scope', tier: 'auto' });
+  });
+
+  it('write to file NOT matching allowedPaths → write_out_of_scope/sticky', () => {
+    const result = classifyAction(make('edit scripts/deploy.sh', {
+      taskInBounds: ['src/feature/**'],
+      allowedPaths: ['src/**'],
+    }));
+    expect(result).toEqual({ actionClass: 'write_out_of_scope', tier: 'sticky' });
+  });
+
+  it('no allowedPaths → existing behavior unchanged', () => {
+    const result = classifyAction(make('edit src/unrelated/other.ts'));
+    expect(result).toEqual({ actionClass: 'write_out_of_scope', tier: 'sticky' });
+  });
+
+  it('allowedPaths undefined → existing behavior unchanged', () => {
+    const result = classifyAction(make('edit src/unrelated/other.ts', {
+      allowedPaths: undefined,
+    }));
+    expect(result).toEqual({ actionClass: 'write_out_of_scope', tier: 'sticky' });
+  });
+
+  it('allowedPaths empty array → existing behavior unchanged', () => {
+    const result = classifyAction(make('edit src/unrelated/other.ts', {
+      allowedPaths: [],
+    }));
+    expect(result).toEqual({ actionClass: 'write_out_of_scope', tier: 'sticky' });
+  });
+
+  it('allowedPaths + taskInBounds union: either match = in-scope', () => {
+    const result = classifyAction(make('edit tests/unit/foo.test.ts', {
+      taskInBounds: ['src/feature/**'],
+      allowedPaths: ['tests/**'],
+    }));
+    expect(result).toEqual({ actionClass: 'write_in_scope', tier: 'auto' });
+  });
+
+  it('allowedPaths with extension wildcard', () => {
+    const result = classifyAction(make('create docs/guide.md', {
+      taskInBounds: ['src/**'],
+      allowedPaths: ['*.md'],
+    }));
+    expect(result).toEqual({ actionClass: 'write_in_scope', tier: 'auto' });
+  });
+
+  it('allowedPaths respects tier overrides on write_in_scope', () => {
+    const result = classifyAction(
+      make('edit src/components/button.ts', {
+        taskInBounds: [],
+        allowedPaths: ['src/**'],
+      }),
+      { write_in_scope: 'sticky' },
+    );
+    expect(result).toEqual({ actionClass: 'write_in_scope', tier: 'sticky' });
+  });
+
+  it('destructive action in allowed path still classified as destructive', () => {
+    const result = classifyAction(make('rm -rf src/old/', {
+      allowedPaths: ['src/**'],
+    }));
+    expect(result).toEqual({ actionClass: 'destructive', tier: 'confirm' });
+  });
+});

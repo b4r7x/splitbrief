@@ -10,6 +10,7 @@ export type ClassifyInput = {
   taskInBounds: string[];
   dependsOnFiles: string[];
   projectDir: string;
+  allowedPaths?: string[] | undefined;
 };
 
 export type ClassifyResult = {
@@ -221,7 +222,9 @@ function isInScope(filePath: string, input: ClassifyInput): boolean {
   const normalized = normalizeProjectPath(filePath, input.projectDir);
   if (normalized === normalizeProjectPath(input.taskFile, input.projectDir)) return true;
   if (input.dependsOnFiles.map((file) => normalizeProjectPath(file, input.projectDir)).includes(normalized)) return true;
-  return input.taskInBounds.some((glob) => matchesGlob(normalized, normalizeProjectPath(glob, input.projectDir)));
+  if (input.taskInBounds.some((glob) => matchesGlob(normalized, normalizeProjectPath(glob, input.projectDir)))) return true;
+  if (input.allowedPaths?.some((glob) => matchesGlob(normalized, glob))) return true;
+  return false;
 }
 
 export function extractActionPattern(input: ClassifyInput): string {
