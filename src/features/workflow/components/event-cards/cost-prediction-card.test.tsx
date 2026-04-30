@@ -106,6 +106,131 @@ describe('CostPredictionCard', () => {
     ui.unmount();
   });
 
+  it('renders opt-in planner estimate review metadata as an extra planner call', () => {
+    const event: EngineEventOf<'cost_prediction'> = {
+      type: 'cost_prediction',
+      ts: Date.now(),
+      phase: 'planning',
+      prediction: {
+        estimatedTasks: 1,
+        lowCost: 0,
+        expectedCost: 0,
+        highCost: 0,
+        plannerTool: 'anthropic',
+        implementerTool: 'deepseek',
+        deterministic: {
+          taskCount: 1,
+          taskFitCounts: { fits: 0, tight: 1, overflow: 0, unknown: 0 },
+          contextConfidenceCounts: {
+            contextExplicit: 1,
+            contextKnownCatalog: 0,
+            contextCachedProvider: 0,
+            contextConservativeFallback: 0,
+            profileUnavailable: 0,
+          },
+          priceConfidenceCounts: {
+            priceKnown: 1,
+            priceUnknown: 0,
+            profileUnavailable: 0,
+          },
+          tasks: [
+            {
+              taskId: 'T001',
+              title: 'Risky task',
+              estimatedPromptTokens: 8000,
+              selectedProfileId: 'cheap-worker',
+              contextFit: 'tight',
+              contextConfidence: 'context-explicit',
+              priceConfidence: 'price-known',
+              estimatedImplementerCost: 0.01,
+              hypotheticalPlannerCost: 0.08,
+            },
+          ],
+          totals: {
+            knownActualEstimate: 0.01,
+            hypotheticalAllPlanner: 0.08,
+            estimatedSavings: 0.07,
+            unknownCostReason: [],
+          },
+        },
+        plannerEstimateReview: {
+          extraPlannerCall: true,
+          status: 'completed',
+          classification: 'risk',
+          affectedTaskIds: ['T001'],
+          reason: 'Task is tight.',
+          recommendedUserDecision: 'Confirm before spending.',
+        },
+      },
+    };
+
+    const ui = renderFeature(<CostPredictionCard event={event} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('Planner estimate review');
+    expect(frame).toContain('extra planner call completed');
+    expect(frame).toContain('risk');
+
+    ui.unmount();
+  });
+
+  it('renders planner estimate review failure without hiding the deterministic estimate', () => {
+    const event: EngineEventOf<'cost_prediction'> = {
+      type: 'cost_prediction',
+      ts: Date.now(),
+      phase: 'planning',
+      prediction: {
+        estimatedTasks: 1,
+        lowCost: 0,
+        expectedCost: 0,
+        highCost: 0,
+        plannerTool: 'anthropic',
+        implementerTool: 'deepseek',
+        deterministic: {
+          taskCount: 1,
+          taskFitCounts: { fits: 1, tight: 0, overflow: 0, unknown: 0 },
+          contextConfidenceCounts: {
+            contextExplicit: 1,
+            contextKnownCatalog: 0,
+            contextCachedProvider: 0,
+            contextConservativeFallback: 0,
+            profileUnavailable: 0,
+          },
+          priceConfidenceCounts: {
+            priceKnown: 1,
+            priceUnknown: 0,
+            profileUnavailable: 0,
+          },
+          tasks: [],
+          totals: {
+            knownActualEstimate: 0.01,
+            hypotheticalAllPlanner: 0.08,
+            estimatedSavings: 0.07,
+            unknownCostReason: [],
+          },
+        },
+        plannerEstimateReview: {
+          extraPlannerCall: true,
+          status: 'unavailable',
+          classification: null,
+          affectedTaskIds: [],
+          reason: 'Planner estimate review unavailable; deterministic estimate remains usable.',
+          recommendedUserDecision: 'Continue with the deterministic estimate or rerun after fixing the planner.',
+          error: 'planner offline',
+        },
+      },
+    };
+
+    const ui = renderFeature(<CostPredictionCard event={event} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('Deterministic estimate');
+    expect(frame).toContain('Planner estimate review: unavailable');
+    expect(frame).toContain('deterministic estimate remains usable');
+
+    ui.unmount();
+  });
+
   it('renders "prediction n/a" when estimatedTasks and expectedCost are zero', () => {
     const event: EngineEventOf<'cost_prediction'> = {
       type: 'cost_prediction',

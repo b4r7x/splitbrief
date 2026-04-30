@@ -209,3 +209,15 @@ describe('ConfigSchema implementer profiles extension', () => {
     ).toThrow(/Define at least one implementer profile/);
   });
 });
+
+describe('ConfigSchema planner estimate review', () => {
+  it('keeps plannerEstimateReview off in the default config', () => {
+    expect(createDefaultConfig().plannerEstimateReview).toBe(false);
+  });
+
+  it('preserves plannerEstimateReview opt-in', () => {
+    const result = ConfigSchema.parse({ ...validConfig, plannerEstimateReview: true });
+
+    expect(result.plannerEstimateReview).toBe(true);
+  });
+});

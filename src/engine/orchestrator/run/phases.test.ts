@@ -136,6 +136,241 @@ describe('runTasksAndReview', () => {
     }
   });
 
+  it('runs opt-in planner estimate review before implementation and publishes the result', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const hugeTaskBody = 'source body that must not be in the estimate review '.repeat(100);
+    const task = makeTask({
+      id: 'T001',
+      title: 'Large task',
+      description: hugeTaskBody,
+      currentCode: hugeTaskBody,
+    });
+    const state = makeImplState([task]);
+    const review = vi.fn()
+      .mockResolvedValueOnce({
+        text: JSON.stringify({
+          classification: 'split-suggested',
+          affectedTaskIds: ['T001'],
+          reason: 'The task is large for the selected worker.',
+          recommendedUserDecision: 'Split T001 before spending on implementation.',
+        }),
+        usage: { inputTokens: 10, outputTokens: 5 },
+      })
+      .mockResolvedValue({ text: '### Verdict\npass', usage: null });
+    const planner = makePlanner({ review });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const config = {
+      ...makeNoValidationConfig({
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          apiBase: 'https://api.anthropic.com/v1',
+          model: 'claude-opus-4-6',
+        },
+        workflow: { commitStrategy: 'none' },
+      }),
+      plannerEstimateReview: true,
+      implementerProfiles: {
+        default: 'cheap-worker',
+        profiles: {
+          'cheap-worker': {
+            kind: 'api' as const,
+            provider: 'deepseek',
+            apiBase: 'https://api.deepseek.com/v1',
+            model: 'deepseek-chat',
+            contextLength: 20_000,
+            costTier: 'cheap' as const,
+          },
+        },
+      },
+    };
+
+    const result = await runTasksAndReview({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: { plannerTool: 'anthropic', plannerModel: 'claude-opus-4-6', implementerTool: 'deepseek', implementerModel: 'deepseek-chat', mode: 'standard' },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state,
+      summaryBase: {
+        feature: 'feat',
+        startTime: Date.now(),
+        plannerTool: 'anthropic',
+        plannerModel: 'claude-opus-4-6',
+        implementerTool: 'deepseek',
+        implementerModel: 'deepseek-chat',
+      },
+      phaseTimings: {},
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    const firstPrompt = review.mock.calls[0]?.[0] as string | undefined;
+    const predictions = events.filter(event => event.type === 'cost_prediction');
+    const completedPredictionIndex = events.findIndex(event =>
+      event.type === 'cost_prediction' && event.prediction.plannerEstimateReview?.status === 'completed'
+    );
+    const taskStartIndex = events.findIndex(event => event.type === 'task_started');
+
+    expect(firstPrompt).toContain('Planner Estimate Review');
+    expect(firstPrompt).toContain('"taskId": "T001"');
+    expect(firstPrompt).toContain('"title": "Large task"');
+    expect(firstPrompt).not.toContain(hugeTaskBody);
+    expect(predictions[0]?.prediction.plannerEstimateReview).toMatchObject({
+      status: 'running',
+      extraPlannerCall: true,
+    });
+    expect(predictions[1]?.prediction.plannerEstimateReview).toMatchObject({
+      status: 'completed',
+      classification: 'split-suggested',
+      affectedTaskIds: ['T001'],
+      recommendedUserDecision: 'Split T001 before spending on implementation.',
+    });
+    expect(completedPredictionIndex).toBeGreaterThanOrEqual(0);
+    expect(taskStartIndex).toBeGreaterThan(completedPredictionIndex);
+    expect(result.summary.costPrediction?.plannerEstimateReview?.status).toBe('completed');
+  });
+
+  it('falls back to the deterministic estimate when opt-in planner estimate review fails', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = makeImplState([task]);
+    const planner = makePlanner({
+      review: vi.fn()
+        .mockRejectedValueOnce(new Error('planner offline'))
+        .mockResolvedValue({ text: '### Verdict\npass', usage: null }),
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const config = {
+      ...makeNoValidationConfig({ workflow: { commitStrategy: 'none' } }),
+      plannerEstimateReview: true,
+    };
+
+    const result = await runTasksAndReview({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state,
+      summaryBase: {
+        feature: 'feat',
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+      },
+      phaseTimings: {},
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    const unavailablePrediction = events.find(event =>
+      event.type === 'cost_prediction' && event.prediction.plannerEstimateReview?.status === 'unavailable'
+    );
+
+    expect(result.completed).toBe(true);
+    expect(unavailablePrediction).toMatchObject({
+      type: 'cost_prediction',
+      prediction: {
+        deterministic: { taskCount: 1 },
+        plannerEstimateReview: {
+          extraPlannerCall: true,
+          status: 'unavailable',
+          classification: null,
+        },
+      },
+    });
+    expect(events.find(event => event.type === 'task_started')).toBeDefined();
+    expect(events.find(event => event.type === 'warning' && event.message.includes('Planner estimate review failed'))).toBeDefined();
+  });
+
+  it('treats incomplete planner estimate review JSON as unavailable without blocking execution', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = makeImplState([task]);
+    const planner = makePlanner({
+      review: vi.fn()
+        .mockResolvedValueOnce({
+          text: JSON.stringify({
+            classification: 'risk',
+            affectedTaskIds: [],
+            reason: 'Task is risky.',
+          }),
+          usage: { inputTokens: 10, outputTokens: 5 },
+        })
+        .mockResolvedValue({ text: '### Verdict\npass', usage: null }),
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const config = {
+      ...makeNoValidationConfig({ workflow: { commitStrategy: 'none' } }),
+      plannerEstimateReview: true,
+    };
+
+    const result = await runTasksAndReview({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state,
+      summaryBase: {
+        feature: 'feat',
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+      },
+      phaseTimings: {},
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    const unavailablePrediction = events.find(event =>
+      event.type === 'cost_prediction' && event.prediction.plannerEstimateReview?.status === 'unavailable'
+    );
+
+    expect(result.completed).toBe(true);
+    expect(unavailablePrediction).toMatchObject({
+      type: 'cost_prediction',
+      prediction: {
+        deterministic: { taskCount: 1 },
+        plannerEstimateReview: {
+          extraPlannerCall: true,
+          status: 'unavailable',
+          classification: null,
+          reason: 'Planner estimate review unavailable; deterministic estimate remains usable.',
+        },
+      },
+    });
+    expect(events.find(event => event.type === 'task_started')).toBeDefined();
+  });
+
   it('does not run final review when the task loop stops before completion', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', file: 'src/too-large.ts' });
@@ -189,6 +424,9 @@ describe('runTasksAndReview', () => {
     expect(callbacks.onComplete).not.toHaveBeenCalled();
     expect(events.find(event => event.type === 'all_tasks_done')).toBeUndefined();
     expect(events.find(event => event.type === 'workflow_complete')).toBeUndefined();
+    expect(events.find(event =>
+      event.type === 'cost_prediction' && event.prediction.plannerEstimateReview !== undefined
+    )).toBeUndefined();
     expect(result.summary.totalTasks).toBe(1);
   });
 });

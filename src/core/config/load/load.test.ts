@@ -195,10 +195,12 @@ describe('config loading', () => {
     it('converts snake_case keys to camelCase and migrates commitPerTask', () => {
       const dir = join(TMP, 'snake-case');
       writeConfigYaml(dir, {
+        planner_estimate_review: true,
         workflow: { max_retries: 5, commit_per_task: false },
       });
 
       const { config } = loadConfig(dir);
+      expect(config.plannerEstimateReview).toBe(true);
       expect(config.workflow.maxRetries).toBe(5);
       expect(config.workflow.commitStrategy).toBe('none');
     });

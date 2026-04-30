@@ -111,6 +111,7 @@ export const ConfigSchema = z.object({
   snapshots: SnapshotsConfigSchema.optional(),
   palette: PaletteConfigSchema.optional(),
   approval: ApprovalConfigSchema.optional(),
+  plannerEstimateReview: z.boolean().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

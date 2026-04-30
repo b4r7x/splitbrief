@@ -15,10 +15,19 @@ function formatUnknownReasons(reasons: string[]): string {
   return `Unknown: ${reasons.join(', ')}`;
 }
 
+function plannerEstimateReviewLine(event: CostPredictionEvent): string | null {
+  const review = event.prediction.plannerEstimateReview;
+  if (!review) return null;
+  if (review.status === 'running') return 'Planner estimate review: extra planner call running';
+  if (review.status === 'unavailable') return 'Planner estimate review: unavailable; deterministic estimate remains usable';
+  return `Planner estimate review: extra planner call completed (${review.classification ?? 'unclassified'})`;
+}
+
 export function CostPredictionCard({ event }: { event: CostPredictionEvent }) {
   const t = useTheme();
   const deterministic = event.prediction.deterministic;
   const hasPrediction = event.prediction.estimatedTasks > 0 || event.prediction.expectedCost > 0 || (deterministic?.taskCount ?? 0) > 0;
+  const reviewLine = plannerEstimateReviewLine(event);
 
   if (!hasPrediction) {
     return (
@@ -72,6 +81,11 @@ export function CostPredictionCard({ event }: { event: CostPredictionEvent }) {
           <Text color={t.textDim}> Implementer: </Text>
           <Text color={t.implementer}>{getProviderDisplayName(event.prediction.implementerTool)}</Text>
         </Box>
+        {reviewLine && (
+          <Box marginLeft={3}>
+            <Text color={event.prediction.plannerEstimateReview?.status === 'unavailable' ? t.warning : t.planner}>{reviewLine}</Text>
+          </Box>
+        )}
       </Box>
     );
   }
@@ -96,6 +110,11 @@ export function CostPredictionCard({ event }: { event: CostPredictionEvent }) {
         <Text color={t.implementer}>{getProviderDisplayName(event.prediction.implementerTool)}</Text>
         <Text color={t.textDim}> ({event.prediction.estimatedTasks} tasks)</Text>
       </Box>
+      {reviewLine && (
+        <Box marginLeft={3}>
+          <Text color={event.prediction.plannerEstimateReview?.status === 'unavailable' ? t.warning : t.planner}>{reviewLine}</Text>
+        </Box>
+      )}
     </Box>
   );
 }
