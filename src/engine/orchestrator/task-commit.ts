@@ -4,7 +4,7 @@ import type { Config } from '../../core/schemas/config.js';
 import type { ValidationResult } from '../../core/types/summary.js';
 import type { TaskCompletionMethod } from '../../core/schemas/enums.js';
 import type { EventBus } from '../events/types.js';
-import { commitChanges, createCheckpoint, stageAll } from '../../lib/git.js';
+import { commitChanges, createTaggedStash, stageAll } from '../../lib/git.js';
 import { labelError } from '../../utils/format-errors.js';
 import { publishWarning, publishGitCommit, publishGitCheckpoint, publishTaskComplete } from './events.js';
 import { transitionAndSave } from './state-ops.js';
@@ -66,7 +66,7 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
     }
   } else if (strategy === 'checkpoint') {
     try {
-      const tag = await createCheckpoint(projectDir, task.id);
+      const tag = await createTaggedStash(projectDir, `diptych checkpoint: ${task.id}`, `diptych/${task.id}`);
       if (tag) {
         publishGitCheckpoint(bus, state.phase, task.id, tag);
       }

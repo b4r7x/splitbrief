@@ -318,7 +318,7 @@ export function PlanEditorComponent({ filePath, height, width, sessionDirPath: s
       planEditorStore.initEditor(parsed);
       const metadata = await refreshPlanReviewMetadata(parsed);
       if (signal.aborted) return;
-      planEditorStore.setReviewMetadata(metadata);
+      if (metadata !== null) planEditorStore.setReviewMetadata(metadata);
       setLoadError(null);
 
       let q: BriefQualityReport | null = null;

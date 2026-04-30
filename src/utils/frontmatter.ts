@@ -1,13 +1,10 @@
 import YAML from 'yaml';
+import { isRecord } from './type-guards.js';
 
 type FrontmatterRecord = Record<string, unknown>;
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 const FRONTMATTER_WITH_TRAILER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
-
-function isRecord(value: unknown): value is FrontmatterRecord {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 
 export function parseSimpleYamlFrontmatter(raw: string): FrontmatterRecord | null {
   const match = raw.match(FRONTMATTER_RE);

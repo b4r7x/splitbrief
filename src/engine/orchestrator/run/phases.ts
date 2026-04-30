@@ -5,7 +5,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
 import type { WorkflowContext } from '../types.js';
-import type { SkillMeta } from '../../skills/discovery.js';
+import type { SkillMeta } from '../../../core/skills/types.js';
 import type { EventBus } from '../../events/types.js';
 
 import { buildSummary, type SummaryBase } from '../summary.js';

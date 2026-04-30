@@ -338,7 +338,7 @@ validation: {
 | `typecheck` | boolean | `true` | Runs `npm run typecheck` (or `tsc --noEmit` fallback) after each task |
 | `lint` | boolean | `true` | Runs `npm run lint` after each task (Biome by default in this project's stack) |
 | `test` | boolean | `true` | Runs the test command after each task |
-| `testCommand` | string | `npm test` | Full shell command. Replace if you use Jest/Vitest/Playwright with non-default invocation. |
+| `testCommand` | string | `npm test` | Argv-style test runner command. Diptych appends `-- <test-file>` for the affected test, so shell operators and environment expansion are not interpreted here. |
 
 YAML:
 

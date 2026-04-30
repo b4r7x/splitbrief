@@ -7,8 +7,9 @@ import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
 import { formatCost } from '../../../core/formatting.js';
 import { formatCacheHitPct } from '../../../core/features/cost-chrome.js';
 import { useStores } from '../../../stores/use-stores.js';
-import { resolvePricing } from '../../../engine/providers/pricing-resolver.js';
-import { isPlannerCostPhase } from '../../../core/phases.js';
+import { calculateUsageCost } from '../../../engine/providers/pricing.js';
+import { resolvePricing, type ResolvedPricing } from '../../../engine/providers/pricing-resolver.js';
+import { phaseCostRole } from '../../../core/phases.js';
 
 export { formatCacheHitPct } from '../../../core/features/cost-chrome.js';
 
@@ -18,6 +19,14 @@ export type PhaseRow = {
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreateTokens: number;
+  plannerInputTokens?: number | undefined;
+  plannerOutputTokens?: number | undefined;
+  plannerCacheReadTokens?: number | undefined;
+  plannerCacheCreateTokens?: number | undefined;
+  implementerInputTokens?: number | undefined;
+  implementerOutputTokens?: number | undefined;
+  implementerCacheReadTokens?: number | undefined;
+  implementerCacheCreateTokens?: number | undefined;
   cost: number;
 };
 
@@ -33,11 +42,23 @@ export function buildPhaseRows(
     outputTokens: number;
     cacheReadTokens: number;
     cacheCreateTokens: number;
+    plannerInputTokens?: number | undefined;
+    plannerOutputTokens?: number | undefined;
+    plannerCacheReadTokens?: number | undefined;
+    plannerCacheCreateTokens?: number | undefined;
+    implementerInputTokens?: number | undefined;
+    implementerOutputTokens?: number | undefined;
+    implementerCacheReadTokens?: number | undefined;
+    implementerCacheCreateTokens?: number | undefined;
     cost: number;
   }>,
+  costForRow: (row: PhaseRow) => number = row => row.cost,
 ): PhaseRow[] {
   return Object.entries(perPhase)
-    .map(([phase, data]) => ({ phase, ...data }))
+    .map(([phase, data]) => {
+      const row = { phase, ...data };
+      return { ...row, cost: costForRow(row) };
+    })
     .sort((a, b) => b.cost - a.cost);
 }
 
@@ -85,15 +106,73 @@ export function formatPhaseCost(cost: number, isPhasePriced: boolean, pricingMod
   return 'n/a';
 }
 
+function hasRoleSplit(row: PhaseRow): boolean {
+  return row.plannerInputTokens !== undefined
+    || row.plannerOutputTokens !== undefined
+    || row.plannerCacheReadTokens !== undefined
+    || row.plannerCacheCreateTokens !== undefined
+    || row.implementerInputTokens !== undefined
+    || row.implementerOutputTokens !== undefined
+    || row.implementerCacheReadTokens !== undefined
+    || row.implementerCacheCreateTokens !== undefined;
+}
+
+export function calculatePhaseRowCost(
+  row: PhaseRow,
+  plannerPricing: ResolvedPricing | null,
+  implementerPricing: ResolvedPricing | null,
+): number {
+  if (row.cost > 0) return row.cost;
+  const role = phaseCostRole(row.phase);
+  const split = hasRoleSplit(row);
+  const plannerTokens = {
+    input: split ? (row.plannerInputTokens ?? 0) : role === 'planner' ? row.inputTokens : 0,
+    output: split ? (row.plannerOutputTokens ?? 0) : role === 'planner' ? row.outputTokens : 0,
+    cacheRead: split ? (row.plannerCacheReadTokens ?? 0) : role === 'planner' ? row.cacheReadTokens : 0,
+    cacheCreate: split ? (row.plannerCacheCreateTokens ?? 0) : role === 'planner' ? row.cacheCreateTokens : 0,
+  };
+  const implementerTokens = {
+    input: split ? (row.implementerInputTokens ?? 0) : role === 'implementer' ? row.inputTokens : 0,
+    output: split ? (row.implementerOutputTokens ?? 0) : role === 'implementer' ? row.outputTokens : 0,
+    cacheRead: split ? (row.implementerCacheReadTokens ?? 0) : role === 'implementer' ? row.cacheReadTokens : 0,
+    cacheCreate: split ? (row.implementerCacheCreateTokens ?? 0) : role === 'implementer' ? row.cacheCreateTokens : 0,
+  };
+  const plannerCost = plannerPricing
+    ? calculateUsageCost(
+        plannerTokens.input,
+        plannerTokens.output,
+        plannerTokens.cacheRead,
+        plannerTokens.cacheCreate,
+        plannerPricing,
+      )
+    : 0;
+  const implementerCost = implementerPricing
+    ? calculateUsageCost(
+        implementerTokens.input,
+        implementerTokens.output,
+        implementerTokens.cacheRead,
+        implementerTokens.cacheCreate,
+        implementerPricing,
+      )
+    : 0;
+  return plannerCost + implementerCost;
+}
+
+function pricingForPhase(
+  phase: string,
+  plannerPricing: ResolvedPricing | null,
+  implementerPricing: ResolvedPricing | null,
+): ResolvedPricing | null {
+  const role = phaseCostRole(phase);
+  if (role === 'planner') return plannerPricing;
+  if (role === 'implementer') return implementerPricing;
+  return null;
+}
+
 export function CostDrilldownOverlay() {
   const t = useTheme();
   const [tokens, { cols }] = useStores(tokensStore, terminalSizeStore);
   const { perPhase, perTask, pricingContext } = tokens;
-  const phaseRows = buildPhaseRows(perPhase);
-  const taskRows = buildTaskRows(perTask);
-  const maxCost = phaseRows[0]?.cost ?? 0;
-  const maxTaskTokens = taskRows[0]?.totalTokens ?? 0;
-  const barWidth = Math.max(10, Math.min(30, cols - 40));
 
   const plannerPricing = pricingContext
     ? resolvePricing(pricingContext.plannerTool, modelCacheStore, pricingContext.plannerModel)
@@ -101,13 +180,19 @@ export function CostDrilldownOverlay() {
   const implementerPricing = pricingContext
     ? resolvePricing(pricingContext.implementerTool, modelCacheStore, pricingContext.implementerModel)
     : null;
+  const phaseRows = buildPhaseRows(perPhase, row =>
+    calculatePhaseRowCost(row, plannerPricing, implementerPricing));
+  const taskRows = buildTaskRows(perTask);
+  const maxCost = phaseRows[0]?.cost ?? 0;
+  const maxTaskTokens = taskRows[0]?.totalTokens ?? 0;
+  const barWidth = Math.max(10, Math.min(30, cols - 40));
 
   return (
     <OverlayPanel title="Cost Breakdown" hint="press any key to dismiss" width="auto">
       <Box flexDirection="column">
         <Text color={t.textDim}>— by phase —</Text>
         {phaseRows.map(row => {
-          const pricing = isPlannerCostPhase(row.phase) ? plannerPricing : implementerPricing;
+          const pricing = pricingForPhase(row.phase, plannerPricing, implementerPricing);
           const isPriced = pricing?.isPriced ?? false;
           const costLabel = formatPhaseCost(row.cost, isPriced, pricing?.pricingMode ?? null);
           return (

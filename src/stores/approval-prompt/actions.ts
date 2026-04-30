@@ -17,6 +17,10 @@ export function openApprovalPrompt(request: TieredApprovalRequest): Promise<Tier
   });
 }
 
-export function closeApprovalPrompt(): void {
+export function closeApprovalPrompt(response?: TieredApprovalResponse): void {
+  const current = _approvalPromptInternal.get();
   _approvalPromptInternal.set({ status: 'idle' });
+  if (current.status === 'pending') {
+    current.resolve(response ?? { decision: 'deny', reason: 'user_cancelled' });
+  }
 }

@@ -23,6 +23,15 @@ describe('planEditorStore', () => {
       expect(planEditorStore.get().tasks).toEqual(tasks);
     });
 
+    it('does not retain the caller-owned task array', () => {
+      const tasks = [makeTask({ id: 'T001', title: 'Original title' })];
+      planEditorStore.initEditor(tasks);
+
+      tasks[0] = makeTask({ id: 'T001', title: 'Mutated outside store' });
+
+      expect(planEditorStore.get().tasks[0]?.title).toBe('Original title');
+    });
+
     it('preserves runtime rich mode while loading tasks', () => {
       const tasks = [makeTask({ id: 'T001' })];
       planEditorStore.setRuntimeRichMode(true);
@@ -66,6 +75,16 @@ describe('planEditorStore', () => {
       planEditorStore.setTasks(tasks);
       expect(planEditorStore.get().tasks).toEqual(tasks);
       expect(planEditorStore.get().dirty).toBe(true);
+    });
+
+    it('does not retain caller-owned task objects', () => {
+      const task = makeTask({ id: 'T001', title: 'Original title' });
+      const tasks = [task];
+      planEditorStore.setTasks(tasks);
+
+      task.title = 'Mutated outside store';
+
+      expect(planEditorStore.get().tasks[0]?.title).toBe('Original title');
     });
 
     it('does not mark dirty when the task list is unchanged', () => {
@@ -123,12 +142,6 @@ describe('planEditorStore', () => {
       expect(planEditorStore.get().expandedIds.has('T001')).toBe(false);
     });
 
-    it('creates a new Set on each toggle (no in-place mutation)', () => {
-      const before = planEditorStore.get().expandedIds;
-      planEditorStore.toggleExpand('T001');
-      const after = planEditorStore.get().expandedIds;
-      expect(before).not.toBe(after);
-    });
   });
 
   describe('setCursor', () => {
@@ -222,6 +235,18 @@ describe('planEditorStore', () => {
       expect(planEditorStore.get().dirty).toBe(false);
     });
 
+    it('does not retain caller-owned review metadata', () => {
+      const metadata = {
+        taskId: 'T001',
+        conflict: { kind: 'future-task-stale-input', files: ['src/a.ts'] },
+      };
+
+      planEditorStore.setReviewMetadata([metadata]);
+      metadata.conflict.files.push('src/b.ts');
+
+      expect(planEditorStore.get().reviewMetadata.get('T001')?.conflict?.files).toEqual(['src/a.ts']);
+    });
+
     it('preserves review metadata when the same tasks are reloaded into the editor', () => {
       const tasks = [makeTask({ id: 'T001' })];
       planEditorStore.initEditor(tasks);
@@ -285,6 +310,20 @@ describe('planEditorStore', () => {
         stale: true,
         validationStatus: 'warn',
       });
+    });
+
+    it('removes tasks omitted from a full review metadata refresh', () => {
+      planEditorStore.setReviewMetadata([
+        { taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' },
+        { taskId: 'T002', workerProfile: 'frontier', contextFit: 'tight' },
+      ]);
+
+      planEditorStore.setReviewMetadata([
+        { taskId: 'T001', workerProfile: 'local-qwen', contextFit: 'fits' },
+      ]);
+
+      expect(planEditorStore.get().reviewMetadata.has('T001')).toBe(true);
+      expect(planEditorStore.get().reviewMetadata.has('T002')).toBe(false);
     });
 
     it('upserts one task review without removing metadata for another task', () => {

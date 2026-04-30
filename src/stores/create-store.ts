@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useRef, useSyncExternalStore } from 'react';
 
 type Listener = () => void;
 type Updater<T> = T | ((prev: T) => T);
@@ -10,9 +10,6 @@ export interface Store<T> {
   use: <S>(selector: (state: T) => S) => S;
   reset: () => void;
 }
-
-const isDev = typeof process !== 'undefined' && process.env?.['NODE_ENV'] === 'development';
-const checkedSelectors = new WeakSet<(s: unknown) => unknown>();
 
 export function createStore<T>(initialOrFactory: T | (() => T)): Store<T> {
   const getInitial = (): T =>
@@ -42,19 +39,21 @@ export function createStore<T>(initialOrFactory: T | (() => T)): Store<T> {
   };
 
   const use = <S>(selector: (s: T) => S): S => {
-    if (isDev && !checkedSelectors.has(selector as (s: unknown) => unknown)) {
-      checkedSelectors.add(selector as (s: unknown) => unknown);
-      const a = selector(state);
-      const b = selector(state);
-      if (!Object.is(a, b)) {
-        console.warn(
-          '[store] Unstable selector detected: returns different object on consecutive calls with same state. ' +
-          'This will cause infinite re-renders. Selector:',
-          selector.toString().slice(0, 100),
-        );
+    const selectedRef = useRef<{ state: T; selector: (s: T) => S; selected: S } | null>(null);
+
+    const getSnapshot = () => {
+      const current = get();
+      const cached = selectedRef.current;
+      if (cached && Object.is(cached.state, current) && cached.selector === selector) {
+        return cached.selected;
       }
-    }
-    return useSyncExternalStore(subscribe, () => selector(get()));
+
+      const selected = selector(current);
+      selectedRef.current = { state: current, selector, selected };
+      return selected;
+    };
+
+    return useSyncExternalStore(subscribe, getSnapshot);
   };
 
   const reset = () => set(getInitial());

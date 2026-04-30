@@ -4,7 +4,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import type { SkillMeta } from '../../../engine/skills/discovery.js';
+import type { SkillMeta } from '../../../core/skills/types.js';
 import { addEvent, resetWorkflow } from '../../../stores/workflow/actions.js';
 import { openApprovalPrompt } from '../../../stores/approval-prompt/actions.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';

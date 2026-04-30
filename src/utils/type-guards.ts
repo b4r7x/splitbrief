@@ -7,7 +7,7 @@ export function assertNever(value: never): never {
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
-  return value != null && typeof value === 'object';
+  return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 
 export function narrowRecord(val: unknown): Record<string, unknown> | null {
@@ -17,4 +17,3 @@ export function narrowRecord(val: unknown): Record<string, unknown> | null {
 export function typedEntries<K extends string, V>(obj: Record<K, V>): [K, V][] {
   return Object.entries(obj) as [K, V][];
 }
-

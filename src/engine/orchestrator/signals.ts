@@ -4,14 +4,15 @@ import { labelError } from '../../utils/format-errors.js';
 import { publishWarning } from './events.js';
 
 export async function withSignalHandlers(
-  handler: () => void,
+  handler: () => void | Promise<void>,
   fn: () => Promise<void>,
 ): Promise<{ cancelled: boolean }> {
   let receivedSignal = false;
+  let pendingShutdown: Promise<void> | null = null;
 
   const onSignal = () => {
     receivedSignal = true;
-    handler();
+    pendingShutdown = Promise.resolve(handler());
   };
 
   process.on('SIGINT', onSignal);
@@ -22,6 +23,7 @@ export async function withSignalHandlers(
   } finally {
     process.removeListener('SIGINT', onSignal);
     process.removeListener('SIGTERM', onSignal);
+    await pendingShutdown;
   }
 }
 

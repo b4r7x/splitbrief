@@ -1,6 +1,7 @@
 import type { ActionClass } from '../../core/schemas/approval-store.js';
+import type { ApprovalTier } from '../../core/schemas/config.js';
 
-export type ApprovalTier = 'auto' | 'sticky' | 'confirm';
+export type { ApprovalTier };
 
 export type TierMap = Partial<Record<ActionClass, ApprovalTier>>;
 

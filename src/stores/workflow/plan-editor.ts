@@ -74,27 +74,46 @@ const store = createStore<PlanEditorState>(() => ({
   reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
 }));
 
-// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
-function __testReset(next?: Partial<PlanEditorState>): void {
-  store.set(
-    next
-      ? { tasks: [], cursor: 0, expandedIds: new Set<string>(), dirty: false, runtimeRichMode: false, saveError: null, reviewMetadata: new Map<string, PlanTaskReviewMetadata>(), ...next }
-      : { tasks: [], cursor: 0, expandedIds: new Set<string>(), dirty: false, runtimeRichMode: false, saveError: null, reviewMetadata: new Map<string, PlanTaskReviewMetadata>() },
-  );
+function cloneTasks(tasks: Task[]): Task[] {
+  return structuredClone(tasks);
+}
+
+function cloneReviewMetadata(metadata: PlanTaskReviewMetadata): PlanTaskReviewMetadata {
+  return structuredClone(metadata);
+}
+
+function cloneReviewMetadataMap(
+  metadata: ReadonlyMap<string, PlanTaskReviewMetadata>,
+): Map<string, PlanTaskReviewMetadata> {
+  return new Map(Array.from(metadata, ([taskId, value]) => [taskId, cloneReviewMetadata(value)]));
 }
 
 // Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
-export const _planEditorInternal = { set: store.set };
+function __testReset(next?: Partial<PlanEditorState>): void {
+  const base = { tasks: [], cursor: 0, expandedIds: new Set<string>(), dirty: false, runtimeRichMode: false, saveError: null, reviewMetadata: new Map<string, PlanTaskReviewMetadata>() };
+  if (!next) {
+    store.set(base);
+    return;
+  }
+  store.set({
+    ...base,
+    ...next,
+    tasks: next.tasks ? cloneTasks(next.tasks) : base.tasks,
+    expandedIds: next.expandedIds ? new Set(next.expandedIds) : base.expandedIds,
+    reviewMetadata: next.reviewMetadata ? cloneReviewMetadataMap(next.reviewMetadata) : base.reviewMetadata,
+  });
+}
 
 function initEditor(tasks: Task[]): void {
+  const nextTasks = cloneTasks(tasks);
   store.set(s => ({
     ...s,
-    tasks,
+    tasks: nextTasks,
     cursor: 0,
     expandedIds: new Set<string>(),
     dirty: false,
     saveError: null,
-    reviewMetadata: sameTasks(s.tasks, tasks) ? s.reviewMetadata : new Map<string, PlanTaskReviewMetadata>(),
+    reviewMetadata: sameTasks(s.tasks, nextTasks) ? s.reviewMetadata : new Map<string, PlanTaskReviewMetadata>(),
   }));
 }
 
@@ -116,11 +135,12 @@ function sameTasks(a: Task[], b: Task[]): boolean {
 }
 
 function setTasks(tasks: Task[]): void {
+  const nextTasks = cloneTasks(tasks);
   store.set(s => {
-    if (sameTasks(s.tasks, tasks)) return s;
+    if (sameTasks(s.tasks, nextTasks)) return s;
     return {
       ...s,
-      tasks,
+      tasks: nextTasks,
       dirty: true,
       saveError: null,
       reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
@@ -158,9 +178,9 @@ function setSaveError(message: string | null): void {
 
 function setReviewMetadata(metadata: PlanTaskReviewMetadata[]): void {
   store.set(s => {
-    const next = new Map(s.reviewMetadata);
+    const next = new Map<string, PlanTaskReviewMetadata>();
     for (const item of metadata) {
-      next.set(item.taskId, item);
+      next.set(item.taskId, cloneReviewMetadata(item));
     }
     if (sameReviewMetadata(s.reviewMetadata, next)) return s;
     return { ...s, reviewMetadata: next };
@@ -170,7 +190,7 @@ function setReviewMetadata(metadata: PlanTaskReviewMetadata[]): void {
 function upsertTaskReviewMetadata(metadata: PlanTaskReviewMetadata): void {
   store.set(s => {
     const current = s.reviewMetadata.get(metadata.taskId);
-    const merged = mergeReviewMetadata(current, metadata);
+    const merged = cloneReviewMetadata(mergeReviewMetadata(current, metadata));
     if (current && JSON.stringify(current) === JSON.stringify(merged)) return s;
     const next = new Map(s.reviewMetadata);
     next.set(metadata.taskId, merged);

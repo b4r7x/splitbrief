@@ -70,17 +70,16 @@ Why: shared intra-folder contract. Folder name provides the naming context (`sla
 **Place the type with its producer** — the file that creates values of this type. Consumers `import type` from there.
 
 ```ts
-// src/engine/skills/discovery.ts — produces SkillMeta
+// src/core/skills/types.ts — shared SkillMeta contract
 export interface SkillMeta { id: string; title: string; ... }
-export async function discoverSkills(dir: string): Promise<SkillMeta[]> { ... }
 ```
 
 ```ts
-// src/stores/project/skills.ts — consumes SkillMeta
-import type { SkillMeta } from '../../engine/skills/discovery.js';
+// src/engine/skills/discovery.ts — produces SkillMeta values
+import type { SkillMeta } from '../../core/skills/types.js';
 ```
 
-Why: the producer defines the contract; consumers conform. Putting the type anywhere else creates orphaned contracts.
+Why: if producers and stores/features both consume the type, place the contract in `core/` so lower layers do not import from `engine/`.
 
 ### Exception — genuinely cross-cutting types
 
@@ -110,7 +109,7 @@ Types should live where their domain meaning is created — not in a central `ty
 | `EngineEvent` | n/a (new) | `engine/events/types.ts` | Single source of truth for every engine event; workflow sub-stores and all sinks consume it directly |
 | `EventBus`, `EventSink` | n/a (new) | `engine/events/types.ts` | Declared alongside `EngineEvent`; ports for `createEventBus()` and sink subscribers |
 | `RunnerRuntime`, `ToolUseInfo`, `ParsedLine`, `InvokeResult` | `core/types/runner.ts` | `engine/runners/types.ts` | Created by the runner factory — runner-domain |
-| `SkillMeta` | `core/types/app.ts` | `engine/skills/discovery.ts` (inline) | Produced by `discoverSkills`, consumed everywhere |
+| `SkillMeta` | `core/types/app.ts` | `core/skills/types.ts` | Produced by `engine/skills/discovery.ts`, consumed by stores/features without importing `engine/` |
 | `ThemeColors` | `core/types/theme.ts` | `components/theme.tsx` (inline) | Only used by the theme component |
 | `SidebarTask` | `core/types/app.ts` | `features/workflow/components/sidebar.tsx` (inline) | Single consumer |
 | `Screen`, `InputMode`, `OverlayType` | `core/types/app.ts` | `stores/navigation/router.ts` (inline) | Single consumer |
@@ -185,10 +184,10 @@ For types that cross module boundaries, prefer `import type` so the import is er
 
 ```ts
 // ✅ type-only import — does not pull the module into the runtime graph
-import type { SkillMeta } from '../../engine/skills/discovery.js';
+import type { SkillMeta } from '../../core/skills/types.js';
 
-// ❌ value import — loads discovery.ts at runtime even if you only need the type
-import { SkillMeta } from '../../engine/skills/discovery.js';
+// ❌ value import — loads a runtime module even if you only need the type
+import { SkillMeta } from '../../core/skills/types.js';
 ```
 
 This matters in this project because:

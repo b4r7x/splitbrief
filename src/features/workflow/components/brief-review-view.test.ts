@@ -152,6 +152,7 @@ describe('buildRoutingPreviewMetadata', () => {
 
       const metadata = await refreshPlanReviewMetadata([task]);
 
+      if (metadata === null) throw new Error('expected routing metadata');
       expect(metadata).toHaveLength(1);
       expect(metadata[0]).toMatchObject({
         taskId: task.id,

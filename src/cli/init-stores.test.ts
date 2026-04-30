@@ -8,6 +8,7 @@ import { sessionsStore } from '../stores/project/sessions.js';
 import { skillsStore } from '../stores/project/skills.js';
 import { inputHistoryStore } from '../stores/ui/input-history.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
+import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { DIPTYCH_DIR } from '../core/paths.js';
 import { toYaml } from '../core/config/load/transform.js';
 import { createDefaultConfig } from '../core/config/load/load.js';
@@ -41,9 +42,11 @@ beforeEach(() => {
   skillsStore.reset();
   inputHistoryStore.reset();
   feedbackStore.reset();
+  terminalSizeStore.reset();
 });
 
 afterEach(() => {
+  terminalSizeStore.reset();
   if (tmp) cleanupTempDir(tmp);
 });
 
@@ -196,6 +199,21 @@ describe('initStores', () => {
     expect(configStore.get().config).not.toBeNull();
     expect(sessionsStore.get().sessions).toBeDefined();
     expect(skillsStore.get().available).toBeDefined();
+  }, 15_000);
+
+  it('repeated bootstrap does not accumulate resize listeners', async () => {
+    const dir = makeProjectDir();
+    writeConfigYaml(dir, toYaml({
+      ...createDefaultConfig(),
+      planner: { kind: 'cli', tool: 'claude-code' },
+      implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
+    }));
+    const before = process.stdout.listenerCount('resize');
+
+    await initStores(dir);
+    await initStores(dir);
+
+    expect(process.stdout.listenerCount('resize')).toBe(before + 1);
   }, 15_000);
 
   it('throws a CLI error when config loading yields no config state', async () => {

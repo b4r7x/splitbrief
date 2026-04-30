@@ -1,12 +1,14 @@
 export function parseShellCommand(input: string): string[] {
   const tokens: string[] = [];
   let current = '';
+  let tokenStarted = false;
   let quote: string | null = null;
   let escaped = false;
 
   for (const ch of input) {
     if (escaped) {
       current += ch;
+      tokenStarted = true;
       escaped = false;
       continue;
     }
@@ -19,13 +21,22 @@ export function parseShellCommand(input: string): string[] {
       current += ch;
       continue;
     }
-    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      tokenStarted = true;
+      continue;
+    }
     if (/\s/.test(ch)) {
-      if (current) { tokens.push(current); current = ''; }
+      if (tokenStarted) {
+        tokens.push(current);
+        current = '';
+        tokenStarted = false;
+      }
       continue;
     }
     current += ch;
+    tokenStarted = true;
   }
-  if (current) tokens.push(current);
+  if (tokenStarted) tokens.push(current);
   return tokens;
 }

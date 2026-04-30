@@ -68,4 +68,20 @@ describe('terminalSizeStore', () => {
 
     expect(terminalSizeStore.get().cols).toBe(150);
   });
+
+  it('subscribeToResize is idempotent until cleaned up', async () => {
+    const { terminalSizeStore } = await import('./terminal-size.js');
+    const before = process.stdout.listenerCount('resize');
+
+    const unsubscribeA = terminalSizeStore.subscribeToResize();
+    const unsubscribeB = terminalSizeStore.subscribeToResize();
+
+    expect(process.stdout.listenerCount('resize')).toBe(before + 1);
+
+    unsubscribeA();
+    expect(process.stdout.listenerCount('resize')).toBe(before);
+
+    unsubscribeB();
+    expect(process.stdout.listenerCount('resize')).toBe(before);
+  });
 });

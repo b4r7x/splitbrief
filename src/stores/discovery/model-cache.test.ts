@@ -91,4 +91,33 @@ describe('modelCacheStore', () => {
     expect(modelCacheStore.getProviderModels('ollama')).toBeNull();
     expect(modelCacheStore.getModelsDevCatalog()).toEqual(catalog);
   });
+
+  it('clones provider models on write and read', () => {
+    const models: DetectedModel[] = [{ id: 'mutable', capabilities: ['tools'] }];
+    modelCacheStore.setProviderModels('ollama', models);
+
+    models[0]?.capabilities?.push('mutated input');
+    expect(modelCacheStore.getProviderModels('ollama')).toEqual([{ id: 'mutable', capabilities: ['tools'] }]);
+
+    const cached = modelCacheStore.getProviderModels('ollama');
+    cached?.[0]?.capabilities?.push('mutated output');
+
+    expect(modelCacheStore.getProviderModels('ollama')).toEqual([{ id: 'mutable', capabilities: ['tools'] }]);
+  });
+
+  it('clones Models.dev catalogs on write and read', () => {
+    const mutableCatalog: ModelsDevCatalog = {
+      openai: { id: 'openai', models: { 'gpt-4o': { id: 'gpt-4o', limit: { context: 128000 } } } },
+    };
+
+    modelCacheStore.setModelsDevCatalog(mutableCatalog);
+    mutableCatalog.openai!.models['gpt-4o']!.limit = { context: 1 };
+
+    expect(modelCacheStore.getModelsDevCatalog()?.openai?.models['gpt-4o']?.limit?.context).toBe(128000);
+
+    const cached = modelCacheStore.getModelsDevCatalog();
+    if (cached) cached.openai!.models['gpt-4o']!.limit = { context: 2 };
+
+    expect(modelCacheStore.getModelsDevCatalog()?.openai?.models['gpt-4o']?.limit?.context).toBe(128000);
+  });
 });

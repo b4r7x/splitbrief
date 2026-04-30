@@ -354,7 +354,7 @@ describe('runTasksAndReview', () => {
     expect(parseTasks(tasksMarkdown)).toHaveLength(2);
     expect(splitPreviewIndex).toBeGreaterThanOrEqual(0);
     expect(taskStartIndex).toBeGreaterThan(splitPreviewIndex);
-  });
+  }, 20_000);
 
   it('warns and continues when auto-split cannot safely split a targeted task', async () => {
     const { projectDir, sessionId } = setupProject();

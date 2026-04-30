@@ -1,26 +1,18 @@
 import { simpleGit, type SimpleGit } from 'simple-git';
+import { error, matches } from '../utils/error.js';
 
 const getGit = (dir: string): SimpleGit => simpleGit(dir);
 
-export type GitCommandError = Error & { readonly intent: string; readonly causeMessage: string };
+export const gitError = {
+  commandFailed: (intent: string, causeMessage: string, cause?: unknown) =>
+    error('git-command-failed', `git ${intent} failed: ${causeMessage}`, { intent, causeMessage }, cause),
+  isCommandFailed: matches('git-command-failed'),
+} as const;
 
-export function createGitCommandError(intent: string, causeMessage: string): GitCommandError {
-  const err = new Error(`git ${intent} failed: ${causeMessage}`) as GitCommandError;
-  (err as { intent: string }).intent = intent;
-  (err as { causeMessage: string }).causeMessage = causeMessage;
-  return err;
-}
-
-export function isGitCommandError(err: unknown): err is GitCommandError {
-  return (
-    err instanceof Error &&
-    typeof (err as unknown as Record<string, unknown>)['intent'] === 'string' &&
-    typeof (err as unknown as Record<string, unknown>)['causeMessage'] === 'string'
-  );
-}
+export type GitCommandError = ReturnType<typeof gitError.commandFailed>;
 
 function toGitCommandError(intent: string, err: unknown): GitCommandError {
-  return createGitCommandError(intent, err instanceof Error ? err.message : String(err));
+  return gitError.commandFailed(intent, err instanceof Error ? err.message : String(err), err);
 }
 
 function getStatusPaths(status: Awaited<ReturnType<SimpleGit['status']>>): string[] {
@@ -97,12 +89,11 @@ export async function getCommittedFilesSince(dir: string, baseRef: string): Prom
   }
 }
 
-export async function createCheckpoint(dir: string, label: string): Promise<string> {
+export async function createTaggedStash(dir: string, message: string, tagName: string): Promise<string> {
   await stageAll(dir);
   const git = getGit(dir);
-  const stashSha = (await git.raw(['stash', 'create', `diptych checkpoint: ${label}`])).trim();
+  const stashSha = (await git.raw(['stash', 'create', message])).trim();
   if (!stashSha) return '';
-  const tagName = `diptych/${label}`;
   await git.tag([tagName, stashSha]);
   await git.reset();
   return tagName;
@@ -134,16 +125,16 @@ export async function createBranch(dir: string, desiredName: string): Promise<st
   return name;
 }
 
-export async function discardTaskChanges(
+export async function discardFileChange(
   dir: string,
-  taskFile: string,
-  action: 'create' | 'modify',
+  file: string,
+  mode: 'tracked' | 'untracked',
 ): Promise<void> {
   const git = getGit(dir);
-  if (action === 'modify') {
-    await git.checkout(['--', taskFile]);
+  if (mode === 'tracked') {
+    await git.checkout(['--', file]);
   } else {
-    await git.clean('f', ['--', taskFile]);
+    await git.clean('f', ['--', file]);
   }
 }
 

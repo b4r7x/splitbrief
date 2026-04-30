@@ -27,27 +27,23 @@ export function ApprovalPrompt() {
   useInput(
     (input, key) => {
       if (state.status !== 'pending') return;
-      const { request, resolve } = state;
+      const { request } = state;
 
       if (request.tier === 'sticky') {
         if (input === 'a' || input === 'A') {
-          closeApprovalPrompt();
-          resolve({ decision: 'allow', scope: 'once' });
+          closeApprovalPrompt({ decision: 'allow', scope: 'once' });
           return;
         }
         if (input === 's' || input === 'S') {
-          closeApprovalPrompt();
-          resolve({ decision: 'allow', scope: 'session' });
+          closeApprovalPrompt({ decision: 'allow', scope: 'session' });
           return;
         }
         if (input === 'w' || input === 'W') {
-          closeApprovalPrompt();
-          resolve({ decision: 'allow', scope: 'always' });
+          closeApprovalPrompt({ decision: 'allow', scope: 'always' });
           return;
         }
         if (input === 'x' || input === 'X' || key.escape) {
           closeApprovalPrompt();
-          resolve({ decision: 'deny', reason: 'user_cancelled' });
           return;
         }
         return;
@@ -61,7 +57,6 @@ export function ApprovalPrompt() {
             setReasonInput('');
             setConfirmStep('phrase');
             setPhraseError('');
-            resolve({ decision: 'deny', reason: 'user_cancelled' });
             return;
           }
           if (key.return) {
@@ -92,18 +87,16 @@ export function ApprovalPrompt() {
             setReasonInput('');
             setConfirmStep('phrase');
             setPhraseError('');
-            resolve({ decision: 'deny', reason: 'user_cancelled' });
             return;
           }
           if (key.return) {
             if (reasonInput.trim()) {
               const reason = reasonInput.trim();
-              closeApprovalPrompt();
+              closeApprovalPrompt({ decision: 'confirm', phrase: 'I confirm', reason });
               setPhraseInput('');
               setReasonInput('');
               setConfirmStep('phrase');
               setPhraseError('');
-              resolve({ decision: 'confirm', phrase: 'I confirm', reason });
             }
             return;
           }

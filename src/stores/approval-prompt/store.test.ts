@@ -42,23 +42,19 @@ describe('approvalPromptStore + actions', () => {
     expect(result).toEqual({ decision: 'allow', scope: 'once' });
   });
 
-  it('closeApprovalPrompt resets state to idle', () => {
-    openApprovalPrompt(makeRequest());
+  it('closeApprovalPrompt resets state to idle and settles as cancelled', async () => {
+    const promise = openApprovalPrompt(makeRequest());
     expect(approvalPromptStore.get().status).toBe('pending');
     closeApprovalPrompt();
     expect(approvalPromptStore.get().status).toBe('idle');
+    await expect(promise).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
   });
 
-  it('closeApprovalPrompt does not reject the pending promise', async () => {
-    const p = openApprovalPrompt(makeRequest());
-    // Resolve before close to avoid dangling promise
-    const state = approvalPromptStore.get();
-    if (state.status === 'pending') {
-      state.resolve({ decision: 'deny', reason: 'test' });
-    }
-    closeApprovalPrompt();
+  it('closeApprovalPrompt can settle with an explicit response', async () => {
+    const promise = openApprovalPrompt(makeRequest());
+    closeApprovalPrompt({ decision: 'allow', scope: 'once' });
     expect(approvalPromptStore.get().status).toBe('idle');
-    await p;
+    await expect(promise).resolves.toEqual({ decision: 'allow', scope: 'once' });
   });
 
   it('openApprovalPrompt while pending: previous promise resolves with superseded; new pending is set', async () => {

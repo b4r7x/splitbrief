@@ -1,4 +1,4 @@
-import { writeFileSync, mkdirSync, statSync, existsSync, readFileSync, appendFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync, statSync, existsSync, readFileSync, appendFileSync, chmodSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { error, matches } from '../utils/error.js';
@@ -23,6 +23,7 @@ export function ensureSecureDir(dir: string): void {
 export function writeSecureFile(filePath: string, content: string): void {
   ensureSecureDir(dirname(filePath));
   writeFileSync(filePath, content, { mode: SECURE_FILE_MODE });
+  chmodSync(filePath, SECURE_FILE_MODE);
 }
 
 export function checkConfigPermissions(filePath: string): boolean {
@@ -38,9 +39,14 @@ export function checkConfigPermissions(filePath: string): boolean {
 export async function readFileOrEmpty(filePath: string): Promise<string> {
   try {
     return await readFile(filePath, 'utf-8');
-  } catch {
-    return '';
+  } catch (err) {
+    if (isENOENT(err)) return '';
+    throw err;
   }
+}
+
+function isENOENT(err: unknown): err is Error & { code: unknown } {
+  return err instanceof Error && 'code' in err && err.code === 'ENOENT';
 }
 
 export function ensureGitignore(projectDir: string, entry: string): void {

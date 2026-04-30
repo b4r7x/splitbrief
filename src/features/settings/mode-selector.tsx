@@ -33,7 +33,7 @@ export function ModeSelector() {
     initialIndex: currentIdx,
     onSelect: (item) => {
       const updated = { ...config, workflow: { ...config.workflow, mode: item.mode } };
-      const result = configStore.save(updated);
+      const result = configStore.save(updated, { changedPaths: ['workflow.mode'] });
       if (result.ok) {
         feedbackStore.setMessage(`Mode set to: ${item.mode}`);
         overlayStore.close();

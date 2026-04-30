@@ -28,6 +28,15 @@ describe('attachmentsStore', () => {
     expect(attachmentsStore.peek().map(a => a.id)).toEqual(['a', 'b']);
   });
 
+  it('does not retain caller-owned attachments', () => {
+    const attachment = makeAttachment('a');
+    attachmentsStore.add(attachment);
+
+    attachment.path = '/tmp/mutated.png';
+
+    expect(attachmentsStore.peek()[0]?.path).toBe('/tmp/a.png');
+  });
+
   it('removes by id', () => {
     attachmentsStore.add(makeAttachment('a'));
     attachmentsStore.add(makeAttachment('b'));
@@ -40,6 +49,18 @@ describe('attachmentsStore', () => {
     attachmentsStore.add(makeAttachment('b'));
     const drained = attachmentsStore.drain();
     expect(drained.map(a => a.id)).toEqual(['a', 'b']);
+    expect(attachmentsStore.peek()).toEqual([]);
+  });
+
+  it('peek and drain return copies', () => {
+    attachmentsStore.add(makeAttachment('a'));
+
+    const peeked = attachmentsStore.peek();
+    peeked[0] = makeAttachment('mutated');
+    expect(attachmentsStore.peek().map(a => a.id)).toEqual(['a']);
+
+    const drained = attachmentsStore.drain();
+    drained[0] = makeAttachment('mutated-again');
     expect(attachmentsStore.peek()).toEqual([]);
   });
 

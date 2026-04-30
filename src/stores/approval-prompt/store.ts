@@ -1,5 +1,5 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { TieredApprovalRequest, TieredApprovalResponse } from '../../engine/orchestrator/tiered-approval.js';
+import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
 
 export type { TieredApprovalRequest, TieredApprovalResponse };
 

@@ -4,8 +4,6 @@ import { overlayStore } from '../stores/ui/overlay.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
-// engine bridge: abortTurn fires through the handler registry, not a feature-internal function
-import { abortTurn } from '../features/workflow/handlers.js';
 import { abortStore } from '../stores/workflow/abort.js';
 import { killAllProcesses } from '../lib/process/registry.js';
 import { isLivePhase } from '../core/phases.js';
@@ -20,6 +18,12 @@ type AppKeyAction =
   | { type: 'open-overlay'; overlay: OverlayType };
 
 const NONE: AppKeyAction = { type: 'none' };
+const noop = () => {};
+
+interface UseAppKeysOptions {
+  exit: () => void;
+  abortWorkflow?: (() => void) | undefined;
+}
 
 function applyAction(action: AppKeyAction, exit: () => void) {
   switch (action.type) {
@@ -29,9 +33,8 @@ function applyAction(action: AppKeyAction, exit: () => void) {
   }
 }
 
-export function useAppKeys({ exit }: { exit: () => void }) {
+export function useAppKeys({ exit, abortWorkflow = noop }: UseAppKeysOptions) {
   const [route, overlay] = useStores(routerStore, overlayStore);
-  const { screen } = route;
   const { active: overlayActive, exclusive: overlayExclusive } = overlay;
   const isOpen = overlayActive !== 'none';
   const overlayHasStack = overlay.stack.length > 0;
@@ -39,20 +42,21 @@ export function useAppKeys({ exit }: { exit: () => void }) {
 
   useInput((input, key) => {
     if (!(key.ctrl && input === 'c')) return;
-    if (route.screen === 'workflow' && route.attach) {
+    const currentScreen = route.screen;
+    if (currentScreen === 'workflow' && route.attach) {
       exit();
       return;
     }
-    if (Date.now() - lastCtrlCRef.current < DOUBLE_PRESS_WINDOW_MS) {
+    if (lastCtrlCRef.current > 0 && Date.now() - lastCtrlCRef.current < DOUBLE_PRESS_WINDOW_MS) {
       exit();
       return;
     }
-    if (screen === 'workflow') {
+    if (currentScreen === 'workflow') {
       const { phase, cancelled } = lifecycleStore.get();
       if (!cancelled && isLivePhase(phase)) {
         lastCtrlCRef.current = Date.now();
         abortStore.markPending();
-        abortTurn();
+        abortWorkflow();
         killAllProcesses();
         feedbackStore.setMessage('Aborting… Ctrl+C again to exit');
       } else {
@@ -72,7 +76,7 @@ export function useAppKeys({ exit }: { exit: () => void }) {
 
   useInput(
     (input, key) => {
-      const shortcut = handleShortcutKeys(input, key, screen);
+      const shortcut = handleShortcutKeys(input, key, route.screen);
       if (shortcut.type !== 'none') { applyAction(shortcut, exit); return; }
     },
     { isActive: !isOpen },

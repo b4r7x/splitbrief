@@ -19,14 +19,29 @@ interface SpawnPipeOptions<T> {
   onSpawned?: ((proc: ChildProcess) => void) | undefined;
 }
 
+function abortError(): DOMException {
+  return new DOMException('The operation was aborted.', 'AbortError');
+}
+
 function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     if (opts.signal?.aborted) {
-      reject(new DOMException('The operation was aborted.', 'AbortError'));
+      reject(abortError());
       return;
     }
 
     let proc: ChildProcess;
+    let settled = false;
+    const fail = (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+    const done = (value: T) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
     try {
       proc = spawn(opts.command, opts.args, {
         cwd: opts.cwd,
@@ -34,7 +49,7 @@ function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
         detached: opts.detached ?? false,
       });
     } catch (err: unknown) {
-      reject(err);
+      fail(err);
       return;
     }
 
@@ -42,12 +57,13 @@ function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     opts.onSpawned?.(proc);
 
     if (opts.signal) {
-      abortProcess(proc, opts.signal);
+      abortProcess(proc, opts.signal, { group: opts.detached ?? false });
     }
 
     const { stdout, stderr, stdin } = proc;
     if (!stdout || !stderr || !stdin) {
-      reject(new Error('Process streams not available'));
+      unregisterProcess(proc);
+      fail(new Error('Process streams not available'));
       return;
     }
 
@@ -57,22 +73,26 @@ function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     proc.on('error', (err: NodeJS.ErrnoException) => {
       unregisterProcess(proc);
       const mapped = opts.onError?.(err);
-      reject(mapped ?? err);
+      fail(mapped ?? err);
     });
 
     proc.on('close', (code, signal) => {
       unregisterProcess(proc);
+      if (opts.signal?.aborted) {
+        fail(abortError());
+        return;
+      }
       try {
-        Promise.resolve(opts.onClose(code, signal)).then(resolve, reject);
+        Promise.resolve(opts.onClose(code, signal)).then(done, fail);
       } catch (err: unknown) {
-        reject(err);
+        fail(err);
       }
     });
 
     stdin.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'EPIPE') return;
       unregisterProcess(proc);
-      reject(err);
+      fail(err);
     });
 
     if (opts.stdin !== undefined) {
@@ -135,6 +155,21 @@ export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
   let stderrOutput = '';
   let timedOut = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let cleanupAbortTimer: (() => void) | null = null;
+
+  const clearTimer = () => {
+    if (timer === null) return;
+    clearTimeout(timer);
+    timer = null;
+  };
+  const clearProcessGuards = () => {
+    clearTimer();
+    cleanupAbortTimer?.();
+    cleanupAbortTimer = null;
+  };
+  const clearTimerOnAbort = () => {
+    clearTimer();
+  };
 
   return spawnPipe({
     command: opts.command,
@@ -148,6 +183,12 @@ export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
         timedOut = true;
         killProcess(proc, { group: true });
       }, opts.timeout);
+      if (opts.signal?.aborted) {
+        clearTimer();
+        return;
+      }
+      opts.signal?.addEventListener('abort', clearTimerOnAbort, { once: true });
+      cleanupAbortTimer = () => opts.signal?.removeEventListener('abort', clearTimerOnAbort);
     },
     onStdout: (chunk) => {
       output += chunk;
@@ -157,11 +198,11 @@ export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
       stderrOutput += chunk;
     },
     onClose: (code) => {
-      if (timer !== null) clearTimeout(timer);
+      clearProcessGuards();
       return { output, code: code ?? 1, timedOut, stderr: stderrOutput };
     },
     onError: (err) => {
-      if (timer !== null) clearTimeout(timer);
+      clearProcessGuards();
       if (opts.notFoundMessage && isENOENT(err)) return processError.notFound(opts.command, opts.notFoundMessage);
       return null;
     },
@@ -218,11 +259,12 @@ export async function spawnWithStdin(opts: {
         throw processError.notFound(opts.command, opts.notFoundMessage);
       }
 
-      if (code !== 0 && !rawText) {
+      if (code !== 0) {
         throw processError.exitCode({
           command: opts.command,
           code,
           stderr: stderrOutput,
+          output: rawText,
         });
       }
 

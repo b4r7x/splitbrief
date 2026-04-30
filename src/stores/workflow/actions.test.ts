@@ -1,15 +1,17 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { addEvent, markCancelled, resetWorkflow, getSections } from './actions.js';
-import { eventsStore } from './events.js';
+import { eventsStore, MAX_EVENTS } from './events.js';
 import { tasksStore } from './tasks.js';
 import { tokensStore } from './tokens.js';
 import { lifecycleStore } from './lifecycle.js';
 import { abortStore } from './abort.js';
+import { taskId } from '../../core/schemas/task.js';
 import {
   makePlannerStatus,
   makeRetry,
   makeTaskStart,
   makeTaskComplete,
+  makeCostUpdate,
 } from '#testing/helpers/events.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 
@@ -55,6 +57,19 @@ describe('markCancelled', () => {
   it('returns true on first call and false on subsequent calls', () => {
     expect(markCancelled()).toBe(true);
     expect(markCancelled()).toBe(false);
+  });
+
+  it('appends cancellation through the bounded event stream', () => {
+    for (let i = 0; i < MAX_EVENTS; i += 1) {
+      addEvent(makeRetry({ taskId: taskId(`T${i}`) }));
+    }
+
+    markCancelled();
+
+    const events = eventsStore.get().events;
+    expect(events).toHaveLength(MAX_EVENTS);
+    expect((events[0] as { taskId: string }).taskId).toBe('T1');
+    expect(events[events.length - 1]?.type).toBe('workflow_cancelled');
   });
 });
 
@@ -115,7 +130,7 @@ describe('resetWorkflow', () => {
     expect(lifecycleStore.get().queueDepth).toBe(0);
   });
 
-  it('applies resume state to lifecycle and tasks', () => {
+  it('restores observable workflow state from a persisted resume snapshot', () => {
     resetWorkflow({
       stateVersion: 1,
       phase: 'implementing',
@@ -130,30 +145,89 @@ describe('resetWorkflow', () => {
       plannerSessionId: null,
       startedAt: new Date().toISOString(),
       tokenUsage: { plannerInput: 0, plannerOutput: 0, implementerInput: 0, implementerOutput: 0, escalationInput: 0, escalationOutput: 0 },
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
+      awaitingContinue: false,
+      messageQueue: [
+        {
+          id: 'q1',
+          text: 'queued',
+          queuedAt: new Date().toISOString(),
+          phase: 'implementing',
+          deliveredViaNative: false,
+        },
+      ],
+    });
+    expect(lifecycleStore.get().phase).toBe('implementing');
+    expect(lifecycleStore.get().queueDepth).toBe(1);
+    expect(tasksStore.get().currentTask).toBe(3);
+    expect(tasksStore.get().totalTasks).toBe(3);
+    expect(tasksStore.get().tasks.map(task => [task.id, task.status])).toEqual([
+      ['T1', 'done'],
+      ['T2', 'done'],
+      ['T3', 'pending'],
+    ]);
+    expect(tasksStore.get().taskMap.get('T2')?.status).toBe('done');
+    expect(tokensStore.get().tokenUsage).toEqual({
+      plannerInput: 0,
+      plannerOutput: 0,
+      implementerInput: 0,
+      implementerOutput: 0,
+      escalationInput: 0,
+      escalationOutput: 0,
+    });
+    expect(tokensStore.get().localCount).toBe(2);
+    expect(tokensStore.get().escalatedCount).toBe(0);
+    expect(tokensStore.get().completedTaskCount).toBe(2);
+    expect(tokensStore.get().pricingContext).toEqual({
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
+    });
+  });
+
+  it('uses resumed token usage as the baseline for the next cumulative cost update', () => {
+    resetWorkflow({
+      stateVersion: 1,
+      phase: 'planning',
+      feature: 'f',
+      currentTaskIndex: 0,
+      attempt: 0,
+      tasks: [makeTask({ id: 'T1', status: 'pending' })],
+      plannerSessionId: null,
+      startedAt: new Date().toISOString(),
+      tokenUsage: { plannerInput: 100, plannerOutput: 50, implementerInput: 0, implementerOutput: 0, escalationInput: 0, escalationOutput: 0 },
       awaitingContinue: false,
       messageQueue: [],
     });
-    expect(lifecycleStore.get().phase).toBe('implementing');
-    expect(tasksStore.get().currentTask).toBe(2);
-    expect(tasksStore.get().totalTasks).toBe(3);
+
+    addEvent(makeCostUpdate({
+      phase: 'planning',
+      tokenUsage: { plannerInput: 150, plannerOutput: 75, implementerInput: 0, implementerOutput: 0, escalationInput: 0, escalationOutput: 0 },
+    }));
+
+    expect(tokensStore.get().perPhase['planning']).toMatchObject({
+      inputTokens: 50,
+      outputTokens: 25,
+    });
   });
 });
 
-describe('getSections memoization', () => {
+describe('getSections', () => {
   beforeEach(() => resetWorkflow());
 
-  it('returns the same section array when events reference unchanged', () => {
+  it('reflects the current event stream', () => {
     addEvent(makeRetry());
-    const first = getSections();
-    const second = getSections();
-    expect(second).toBe(first);
+    expect(getSections()).toHaveLength(1);
   });
 
-  it('invalidates cached sections when new events arrive', () => {
+  it('clears derived sections after workflow reset', () => {
     addEvent(makeRetry());
-    const first = getSections();
-    addEvent(makeRetry());
-    const second = getSections();
-    expect(second).not.toBe(first);
+    expect(getSections()).toHaveLength(1);
+    resetWorkflow();
+    expect(getSections()).toEqual([]);
   });
 });

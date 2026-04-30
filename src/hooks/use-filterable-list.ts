@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useInput, type Key } from 'ink';
-import { navigateIndex } from './navigate-index.js';
+import { clampIndex, navigateIndex } from './navigate-index.js';
 
 interface UseFilterableListOptions<T> {
   items: T[];
@@ -34,7 +34,7 @@ export function useFilterableList<T>({
 
   const filtered = filter ? items.filter((item) => filterFn(item, filter)) : items;
 
-  const effectiveIndex = Math.min(selectedIndex, Math.max(0, filtered.length - 1));
+  const effectiveIndex = clampIndex(selectedIndex, filtered.length);
 
   useInput(
     (input, key) => {

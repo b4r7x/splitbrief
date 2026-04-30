@@ -103,7 +103,7 @@ CLI (commander parses args)
   → initStores(projectDir, opts)
       1. configStore.load(projectDir, overrides)
       2. sessionsStore.load(scope, projectDir)
-      3. skillsStore.discover(plannerTool, projectDir)
+      3. discoverSkills(plannerTool, projectDir) → skillsStore.setAvailable(skills)
   → routerStore.init(route)           // set initial screen
   → render(<App />)                   // React starts here
 ```
@@ -181,7 +181,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `routerStore` | `navigation/router.ts` | `RouteData` (discriminated union on `screen`) | `navigate()`, `init()` — with transition guards |
 | `configStore` | `project/config.ts` | `{ config: Config \| null, projectDir, overrides }` | `load()`, `save()`, `useConfig()` |
 | `sessionsStore` | `project/sessions.ts` | `{ sessions, allSessions }` | `load()`, `loadAll()` |
-| `skillsStore` | `project/skills.ts` | `{ available: SkillMeta[], selected: Set<string> }` | `discover()`, `setSelected()` |
+| `skillsStore` | `project/skills.ts` | `{ available: SkillMeta[], selected: Set<string> }` | `setAvailable()`, `setSelected()` |
 | `detectionStore` | `project/detection.ts` | `{ planners, implementers }` | `setDetection()` |
 | `modelCacheStore` | `discovery/model-cache.ts` | `{ providers: Map, modelsDevCatalog, ... }` | `setProviderModels()`, `invalidateAll()` |
 

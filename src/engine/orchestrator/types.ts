@@ -8,7 +8,7 @@ import type { Summary } from '../../core/schemas/summary.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { Validator } from './validation.js';
 import type { EventBus } from '../events/types.js';
-import type { TieredApprovalRequest, TieredApprovalResponse } from './tiered-approval.js';
+import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
 import type { UserEditConflict, UserEditConflictAction } from './user-edit-conflicts.js';
 import type { RoutingDecision } from './context-routing.js';
 import type { TaskReviewRequest, TaskReviewResponse } from './task-review.js';

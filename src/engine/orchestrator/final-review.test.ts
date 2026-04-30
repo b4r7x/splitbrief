@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -245,7 +245,7 @@ describe('runFinalReviewPhase', () => {
 });
 
 describe('shutdownWorkflow', () => {
-  it('persists tracked state to disk when one is available', () => {
+  it('persists tracked state to disk when one is available', async () => {
     const { projectDir, sessionId } = setupProject();
 
     const trackedState: WorkflowState = {
@@ -253,7 +253,7 @@ describe('shutdownWorkflow', () => {
       feature: 'shutdown-test',
     };
 
-    shutdownWorkflow(
+    await shutdownWorkflow(
       projectDir,
       sessionId,
       () => trackedState,
@@ -266,10 +266,27 @@ describe('shutdownWorkflow', () => {
     expect(persisted.feature).toBe('shutdown-test');
   });
 
-  it('is safe when there is no tracked state and no current task', () => {
+  it('is safe when there is no tracked state and no current task', async () => {
     const { projectDir, sessionId } = setupProject();
-    expect(() =>
+    await expect(
       shutdownWorkflow(projectDir, sessionId, () => undefined, () => undefined),
-    ).not.toThrow();
+    ).resolves.toBeUndefined();
+  });
+
+  it('waits for current task rollback during shutdown', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const file = 'src/generated.ts';
+    const filePath = join(projectDir, file);
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(filePath, 'export const generated = true;\n');
+
+    await shutdownWorkflow(
+      projectDir,
+      sessionId,
+      () => undefined,
+      () => ({ file, action: 'create' }),
+    );
+
+    expect(existsSync(filePath)).toBe(false);
   });
 });

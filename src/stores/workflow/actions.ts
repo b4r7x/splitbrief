@@ -4,7 +4,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { abortStore } from './abort.js';
 import { _eventsInternal, eventsStore, mergeEvent, type EventsState } from './events.js';
-import { _tasksInternal, tasksStore, updateTaskCounts, updateTaskMap, type TasksState } from './tasks.js';
+import { _tasksInternal, tasksStore, updateTaskCounts, updateTaskMap, type TasksState, type WorkflowTask } from './tasks.js';
 import { _tokensInternal, tokensStore, updateTokens, type TokensState } from './tokens.js';
 import { _lifecycleInternal, lifecycleStore, updatePhase, updateQueueDepth, type LifecycleState } from './lifecycle.js';
 
@@ -62,7 +62,7 @@ export function markCancelled(): boolean {
         ? { ...ev, status: 'done' as const }
         : ev,
     );
-    return { events: [...rewritten, { type: 'workflow_cancelled' as const, ts: now, phase }] };
+    return { events: mergeEvent(rewritten, { type: 'workflow_cancelled' as const, ts: now, phase }) };
   });
   _lifecycleInternal.set(s => ({ ...s, cancelled: true }));
   return true;
@@ -78,13 +78,56 @@ export function resetWorkflow(resume?: WorkflowState): void {
   cachedEvents = null;
   cachedSections = [];
   if (resume) {
-    _lifecycleInternal.set(s => ({ ...s, phase: resume.phase }));
-    _tasksInternal.set(s => ({
-      ...s,
-      currentTask: resume.currentTaskIndex ?? 0,
-      totalTasks: resume.tasks?.length ?? 0,
-    }));
+    _lifecycleInternal.set(s => ({ ...s, phase: resume.phase, queueDepth: resume.messageQueue.length }));
+    _tasksInternal.set(s => ({ ...s, ...tasksStateFromResume(resume) }));
+    _tokensInternal.set(s => ({ ...s, ...tokensStateFromResume(resume) }));
   }
+}
+
+function tasksStateFromResume(
+  resume: WorkflowState,
+): Pick<TasksState, 'currentTask' | 'totalTasks' | 'taskMap' | 'tasks'> {
+  const totalTasks = resume.tasks.length;
+  const currentTask = totalTasks === 0
+    ? 0
+    : Math.min(Math.max(0, resume.currentTaskIndex) + 1, totalTasks);
+  const tasks = resume.tasks.map<WorkflowTask>(task => ({
+    id: task.id,
+    title: task.title,
+    status: task.status,
+  }));
+  const taskMap = new Map<string, WorkflowTask>();
+  for (const task of tasks) {
+    taskMap.set(task.id, task);
+  }
+  return {
+    currentTask,
+    totalTasks,
+    taskMap,
+    tasks,
+  };
+}
+
+function tokensStateFromResume(
+  resume: WorkflowState,
+): Pick<TokensState, 'localCount' | 'escalatedCount' | 'completedTaskCount' | 'tokenUsage' | 'pricingContext'> {
+  return {
+    localCount: resume.tasks.filter(task => task.status === 'done').length,
+    escalatedCount: resume.tasks.filter(task => task.status === 'escalated').length,
+    completedTaskCount: resume.tasks.filter(task => task.status !== 'pending' && task.status !== 'in_progress').length,
+    tokenUsage: resume.tokenUsage,
+    pricingContext: pricingContextFromResume(resume),
+  };
+}
+
+function pricingContextFromResume(resume: WorkflowState): TokensState['pricingContext'] {
+  if (!resume.plannerTool || !resume.implementerTool) return null;
+  return {
+    plannerTool: resume.plannerTool,
+    implementerTool: resume.implementerTool,
+    plannerModel: resume.plannerModel,
+    implementerModel: resume.implementerModel,
+  };
 }
 
 let cachedEvents: EngineEvent[] | null = null;
