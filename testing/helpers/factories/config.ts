@@ -35,6 +35,7 @@ export function makeConfig(overrides?: Omit<Partial<Config>, 'implementer' | 'pl
       commitStrategy: 'none',
       persistTranscript: true,
       mode: 'standard',
+      taskReview: 'none',
       ...overrides?.workflow,
     },
   };

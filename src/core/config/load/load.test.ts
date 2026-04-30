@@ -85,6 +85,7 @@ describe('config loading', () => {
       const { config } = loadConfig(dir);
       const defaults = createDefaultConfig();
       expect(config).toEqual(defaults);
+      expect(config.workflow.taskReview).toBe('none');
     });
 
     it('loads YAML config and merges with defaults', () => {
@@ -96,6 +97,16 @@ describe('config loading', () => {
       const { config } = loadConfig(dir);
       expect(config.implementer.model).toBe('codellama:13b');
       expect(expectCli(config.planner).tool).toBe('claude-code');
+    });
+
+    it('loads workflow.taskReview from YAML', () => {
+      const dir = join(TMP, 'task-review-config');
+      writeConfigYaml(dir, {
+        workflow: { task_review: 'failed' },
+      });
+
+      const { config } = loadConfig(dir);
+      expect(config.workflow.taskReview).toBe('failed');
     });
 
     it('preserves schema-supported optional top-level sections while merging defaults', () => {

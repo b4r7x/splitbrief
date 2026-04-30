@@ -12,7 +12,7 @@ import { labelError } from '../../utils/format-errors.js';
 import { getFailedTaskIds, getSkippedTaskIds, getEscalatedTaskIds } from '../../core/state/selectors.js';
 
 import type { WorkflowContext } from './types.js';
-import { publishError, publishRecoveryPrompted, publishUserEditConflict, publishWarning } from './events.js';
+import { publishError, publishRecoveryPrompted, publishTaskReviewNeeded, publishUserEditConflict, publishWarning } from './events.js';
 import { runSingleTask } from './task-step.js';
 import { refreshAndPersistCode, transitionAndSave } from './state-ops.js';
 import { enforceBudget } from './budget.js';
@@ -36,6 +36,8 @@ import {
   buildDependencyBlockedRecoveryIssue,
   buildUserEditConflictRecoveryIssue,
 } from './recovery.js';
+import { buildTaskReviewRequest, shouldReviewTask, type TaskReviewRequest } from './task-review.js';
+import { enqueueUserMessage } from './queue.js';
 
 async function maybeAutoSnapshot(opts: {
   projectDir: string;
@@ -265,6 +267,64 @@ function createTaskImplementer(opts: {
   return factory(opts.taskConfig);
 }
 
+async function reviewTaskIfNeeded(opts: {
+  wctx: WorkflowContext;
+  state: WorkflowState;
+  setTrackedState: (s: WorkflowState) => void;
+  task: Task;
+  taskIndex: number;
+  filesTouched: string[];
+  taskBreakdowns: TaskTokenUsage[];
+  routingDecision?: RoutingDecision | undefined;
+  implementerProfile?: string | undefined;
+}): Promise<{ state: WorkflowState; decision: 'continue' | 'stop' }> {
+  if ((opts.wctx.config.workflow.taskReview ?? 'none') === 'none') {
+    return { state: opts.state, decision: 'continue' };
+  }
+  const request = buildTaskReviewRequest({
+    projectDir: opts.wctx.projectDir,
+    sessionId: opts.wctx.sessionId,
+    task: opts.task,
+    state: opts.state,
+    filesTouched: opts.filesTouched,
+    taskBreakdowns: opts.taskBreakdowns,
+    routingDecision: opts.routingDecision,
+    implementerProfile: opts.implementerProfile,
+  });
+  if (!shouldReviewTask({
+    mode: opts.wctx.config.workflow.taskReview,
+    request,
+    taskIndex: opts.taskIndex,
+    currentTaskIndex: opts.state.currentTaskIndex,
+  })) {
+    return { state: opts.state, decision: 'continue' };
+  }
+  publishTaskReviewNeeded(opts.wctx.bus, opts.state.phase, request);
+  const response = opts.wctx.callbacks.onTaskReviewNeeded
+    ? await opts.wctx.callbacks.onTaskReviewNeeded(request)
+    : { action: 'abort' as const };
+  if (response.action !== 'continue') return { state: opts.state, decision: 'stop' };
+
+  const notes = response.notes?.trim();
+  if (!notes) return { state: opts.state, decision: 'continue' };
+
+  const queued = enqueueUserMessage(
+    opts.wctx.projectDir,
+    opts.wctx.sessionId,
+    opts.state,
+    formatTaskReviewNotes(request, notes),
+    opts.state.phase,
+    opts.wctx.bus,
+    opts.wctx.config.workflow.persistTranscript,
+  );
+  opts.setTrackedState(queued.state);
+  return { state: queued.state, decision: 'continue' };
+}
+
+function formatTaskReviewNotes(request: TaskReviewRequest, notes: string): string {
+  return `Task review note for ${request.taskId} - ${request.taskTitle}:\n${notes}`;
+}
+
 function routingBlockMessage(decision: RoutingDecision): string {
   const context = decision.contextLength === undefined
     ? `${decision.estimatedTokens} estimated tokens`
@@ -317,6 +377,16 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });
       publishRecoveryPrompted(wctx.bus, issue);
       setTrackedState(state);
+      const review = await reviewTaskIfNeeded({
+        wctx,
+        state,
+        setTrackedState,
+        task,
+        taskIndex: i,
+        filesTouched: issue.files,
+        taskBreakdowns,
+      });
+      state = review.state;
       return { state, taskBreakdowns, status: 'stopped' };
     }
 
@@ -334,6 +404,16 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     });
     state = conflictAction.state;
     if (conflictAction.stopped) {
+      const review = await reviewTaskIfNeeded({
+        wctx,
+        state,
+        setTrackedState,
+        task,
+        taskIndex: i,
+        filesTouched: state.pendingRecovery?.files ?? [],
+        taskBreakdowns,
+      });
+      state = review.state;
       return { state, taskBreakdowns, status: 'stopped' };
     }
 
@@ -360,6 +440,17 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });
       publishRecoveryPrompted(wctx.bus, issue);
       setTrackedState(state);
+      const review = await reviewTaskIfNeeded({
+        wctx,
+        state,
+        setTrackedState,
+        task: refreshedTask,
+        taskIndex: i,
+        filesTouched: issue.files,
+        taskBreakdowns,
+        routingDecision,
+      });
+      state = review.state;
       return { state, taskBreakdowns, status: 'stopped' };
     }
     const selectedTaskConfig = taskConfigForProfile(config, selectedProfile);
@@ -424,6 +515,23 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     });
     acknowledgedUserEditFiles.clear();
 
+    const reviewDecision = await reviewTaskIfNeeded({
+      wctx: taskWorkflowContext,
+      state,
+      setTrackedState,
+      task: completedTask ?? refreshedTask,
+      taskIndex: i,
+      filesTouched: [...taskAcceptedFiles],
+      taskBreakdowns,
+      routingDecision,
+      implementerProfile: selectedProfile.name,
+    });
+    state = reviewDecision.state;
+    if (reviewDecision.decision === 'stop' || wctx.signal?.aborted) {
+      setCurrentTask(undefined);
+      return { state, taskBreakdowns, status: 'stopped' };
+    }
+
     if (state.currentTaskIndex <= i) {
       setCurrentTask(undefined);
       return { state, taskBreakdowns, status: 'stopped' };
@@ -443,6 +551,18 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     });
     state = postTaskConflictAction.state;
     if (postTaskConflictAction.stopped) {
+      const review = await reviewTaskIfNeeded({
+        wctx: taskWorkflowContext,
+        state,
+        setTrackedState,
+        task: refreshedTask,
+        taskIndex: i,
+        filesTouched: state.pendingRecovery?.files ?? [],
+        taskBreakdowns,
+        routingDecision,
+        implementerProfile: selectedProfile.name,
+      });
+      state = review.state;
       setCurrentTask(undefined);
       return { state, taskBreakdowns, status: 'stopped' };
     }

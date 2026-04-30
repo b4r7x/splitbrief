@@ -41,6 +41,7 @@ export function createDefaultConfig(): Config {
       git: { commitStrategy: 'none' },
       persistTranscript: true,
       mode: 'standard',
+      taskReview: 'none',
     },
     theme: 'terminal',
     shikiTheme: 'github-dark',

@@ -201,4 +201,23 @@ describe('runHeadless — budget pause behavior', () => {
     const parsed = JSON.parse(pausedLine ?? '{}') as { threshold?: number };
     expect(parsed.threshold).toBe(0.75);
   });
+
+  it('rejects interactive task review modes before starting a headless run', async () => {
+    const projectDir = setupProject();
+    const config = makeBudgetConfig();
+    const reviewConfig: Config = {
+      ...config,
+      workflow: { ...config.workflow, taskReview: 'every' },
+    };
+    mockLoadConfig.mockReturnValue({ config: reviewConfig, warnings: [] });
+    mockApplyCLIOverrides.mockReturnValue(reviewConfig);
+
+    await expect(
+      runHeadless('fix budget behavior', projectDir, {}, makeBudgetState()),
+    ).rejects.toMatchObject({
+      exitCode: 1,
+      message: expect.stringContaining('workflow.taskReview requires an interactive TUI run'),
+    });
+    expect(runnerMocks.implementer?.implement).not.toHaveBeenCalled();
+  });
 });

@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
   makeBusRecorder,
@@ -16,6 +18,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { createValidator } from './validation.js';
 import type { WorkflowContext, WorkflowSinks } from './types.js';
 import { runTaskLoop } from './task-loop.js';
+import { getCurrentChangedFiles } from '../../lib/git.js';
 
 vi.mock('../../lib/git.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/git.js')>();
@@ -60,8 +63,9 @@ function makeWorkflowContext(
   implementer = makeImplementer(),
   bus = makeBusRecorder().bus,
   configOverrides: Parameters<typeof makeConfig>[0] = {},
+  callbackOverrides: Parameters<typeof makeCallbacks>[0] = {},
 ): WorkflowContext {
-  const { callbacks } = makeCallbacks();
+  const { callbacks } = makeCallbacks(callbackOverrides);
   return {
     projectDir,
     sessionId,
@@ -133,6 +137,85 @@ describe('runTaskLoop recovery stop points', () => {
       availableActions: ['planner-split-rebase', 'pause-run', 'abort-workflow'],
       recommendedAction: 'planner-split-rebase',
     }));
+  });
+
+  it('taskReview failed emits a recovery-required review gate with task metadata', async () => {
+    const projectDir = createTempDir('task-loop-recovery');
+    dirs.push(projectDir);
+    const sessionId = 'sess-task-loop-recovery';
+    ensureSessionDir(projectDir, sessionId);
+
+    const task = makeTask({ id: 'T003', title: 'Split large task', file: 'src/large.ts' });
+    const state = implementingState([task]);
+    const implementer = makeImplementer({ implement: vi.fn() });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTaskLoop({
+      wctx: makeWorkflowContext(projectDir, sessionId, implementer, bus, {
+        implementer: { contextLength: 1 },
+        workflow: { taskReview: 'failed' },
+      }, {
+        onTaskReviewNeeded: async () => ({ action: 'continue' }),
+      }),
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.status).toBe('stopped');
+    expect(events.find(event => event.type === 'task_review_needed')).toMatchObject({
+      type: 'task_review_needed',
+      taskId: 'T003',
+      taskTitle: 'Split large task',
+      status: 'recovery-required',
+      validation: expect.objectContaining({ passed: false }),
+      recovery: expect.objectContaining({ reason: 'context-overflow' }),
+      availableCommands: ['continue', 'redo', 'edit-notes', 'revise-plan', 'abort'],
+    });
+  });
+
+  it('taskReview failed reviews task-affecting user edit recovery stop points', async () => {
+    const projectDir = createTempDir('task-loop-recovery');
+    dirs.push(projectDir);
+    const sessionId = 'sess-task-loop-recovery';
+    ensureSessionDir(projectDir, sessionId);
+
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/conflict.ts'), 'user edit');
+    vi.mocked(getCurrentChangedFiles)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(['src/conflict.ts']);
+
+    const task = makeTask({ id: 'T004', title: 'Respect edits', file: 'src/conflict.ts' });
+    const state = implementingState([task]);
+    const implementer = makeImplementer({ implement: vi.fn() });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTaskLoop({
+      wctx: makeWorkflowContext(projectDir, sessionId, implementer, bus, {
+        workflow: { taskReview: 'failed' },
+      }, {
+        onTaskReviewNeeded: async () => ({ action: 'continue' }),
+      }),
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.status).toBe('stopped');
+    expect(implementer.implement).not.toHaveBeenCalled();
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'user-edit-conflict',
+      taskId: 'T004',
+    });
+    expect(events.find(event => event.type === 'task_review_needed')).toMatchObject({
+      type: 'task_review_needed',
+      taskId: 'T004',
+      taskTitle: 'Respect edits',
+      status: 'recovery-required',
+      filesTouched: expect.arrayContaining(['src/conflict.ts']),
+      recovery: expect.objectContaining({ reason: 'user-edit-conflict' }),
+    });
   });
 
   it('creates a durable dependency-blocked recovery issue instead of auto-skipping', async () => {

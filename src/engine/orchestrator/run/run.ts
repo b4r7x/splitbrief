@@ -23,6 +23,12 @@ import { runPlanningPhases, runTasksAndReview, applyPostPlanDrain } from './phas
 
 export type { RunWorkflowOptions } from './init.js';
 
+export const WORKFLOW_REWIND_ABORT_REASON = 'workflow-rewind';
+
+function shouldPreserveActiveSession(state: WorkflowState | undefined, signal: AbortSignal | undefined): boolean {
+  return state?.pendingRecovery !== undefined || signal?.reason === WORKFLOW_REWIND_ABORT_REASON;
+}
+
 export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   const { feature, projectDir, config, savedState, selectedSkills } = opts;
   const startTime = Date.now();
@@ -121,7 +127,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
         startTime,
         status: sessionStatus,
         summary,
-        preserveActive: trackedState?.pendingRecovery !== undefined,
+        preserveActive: shouldPreserveActiveSession(trackedState, opts.signal),
       });
       return summary;
     }
@@ -134,7 +140,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     startTime,
     status: sessionStatus,
     summary: result,
-    preserveActive: trackedState?.pendingRecovery !== undefined,
+    preserveActive: shouldPreserveActiveSession(trackedState, opts.signal),
   });
   return result;
 }

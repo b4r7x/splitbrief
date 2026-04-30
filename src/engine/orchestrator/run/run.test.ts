@@ -6,8 +6,9 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { createEventBus } from '../../../engine/events/bus.js';
+import { readActive, writeActive } from '../../../core/sessions/lifecycle.js';
 import { simpleGit } from 'simple-git';
-import { runWorkflow } from './run.js';
+import { runWorkflow, WORKFLOW_REWIND_ABORT_REASON } from './run.js';
 
 let dirs: string[] = [];
 
@@ -166,6 +167,70 @@ describe('runWorkflow — smoke', () => {
 
     expect(summary).toBeDefined();
     expect(summary.feature).toBe('aborted-before-start');
+  });
+
+  it('preserves the active session when a rewind-triggered abort finishes the old run', async () => {
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const sessionId = 'explicit-rewind-sid';
+    const config = makeConfig({
+      planner: { kind: 'agent', command: 'echo', args: ['done'] },
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: {
+        autoApproveSpec: true,
+        autoApprovePlan: true,
+        commitStrategy: 'none',
+        mode: 'quick',
+        persistTranscript: false,
+      },
+    });
+    const controller = new AbortController();
+    controller.abort(WORKFLOW_REWIND_ABORT_REASON);
+    writeActive(projectDir, sessionId);
+
+    await runWorkflow({
+      feature: 'rewind-active',
+      projectDir,
+      config,
+      callbacks,
+      sessionId,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      signal: controller.signal,
+    });
+
+    expect(readActive(projectDir)).toBe(sessionId);
+  });
+
+  it('clears the active session for a normal aborted run', async () => {
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const sessionId = 'explicit-normal-abort-sid';
+    const config = makeConfig({
+      planner: { kind: 'agent', command: 'echo', args: ['done'] },
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: {
+        autoApproveSpec: true,
+        autoApprovePlan: true,
+        commitStrategy: 'none',
+        mode: 'quick',
+        persistTranscript: false,
+      },
+    });
+    const controller = new AbortController();
+    controller.abort();
+    writeActive(projectDir, sessionId);
+
+    await runWorkflow({
+      feature: 'normal-abort-active',
+      projectDir,
+      config,
+      callbacks,
+      sessionId,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      signal: controller.signal,
+    });
+
+    expect(readActive(projectDir)).toBeNull();
   });
 });
 
