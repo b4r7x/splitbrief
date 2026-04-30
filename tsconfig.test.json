@@ -16,7 +16,6 @@
     "testing/**/*",
     "testing/integration/**/*",
     "evals/*.ts",
-    "evals/cassette/**/*.ts",
     "evals/scenarios/**/*.ts"
   ],
   "exclude": ["node_modules", "dist"]

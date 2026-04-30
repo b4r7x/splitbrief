@@ -1,0 +1,197 @@
+{
+  "version": 1,
+  "name": "standard mode - multi-task feature",
+  "recordedAt": "2026-04-30T12:10:00.000Z",
+  "entries": [
+    {
+      "index": 0,
+      "recordedAt": "2026-04-30T12:10:00.000Z",
+      "request": {
+        "method": "GET",
+        "url": "https://api.anthropic.com/v1/models",
+        "headers": {
+          "x-api-key": "***",
+          "anthropic-version": "2023-06-01"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
+      },
+      "provider": "anthropic",
+      "durationMs": 44
+    },
+    {
+      "index": 1,
+      "recordedAt": "2026-04-30T12:10:01.000Z",
+      "request": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "x-api-key": "***",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        "body": "{\"purpose\":\"planner research text\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_standard_research\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":520,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"# Research\\n\\nThe fixture can be implemented with isolated TypeScript helpers and no external dependencies.\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":22}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      },
+      "provider": "anthropic",
+      "durationMs": 920
+    },
+    {
+      "index": 2,
+      "recordedAt": "2026-04-30T12:10:02.000Z",
+      "request": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "x-api-key": "***",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        "body": "{\"purpose\":\"planner spec text\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_standard_spec\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":610,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"# Specification\\n\\nBuild a static profile helper and a colocated Vitest test for the fixture project.\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":21}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      },
+      "provider": "anthropic",
+      "durationMs": 990
+    },
+    {
+      "index": 3,
+      "recordedAt": "2026-04-30T12:10:03.000Z",
+      "request": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "x-api-key": "***",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        "body": "{\"purpose\":\"planner plan text\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_standard_plan\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":680,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"# Implementation Plan\\n\\n1. Create the profile helper.\\n2. Add the test coverage.\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":20}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      },
+      "provider": "anthropic",
+      "durationMs": 1010
+    },
+    {
+      "index": 4,
+      "recordedAt": "2026-04-30T12:10:04.000Z",
+      "request": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "x-api-key": "***",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        "body": "{\"purpose\":\"planner standard task briefs\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_standard_tasks\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":740,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"---\\nid: T001\\ntitle: Create profile helper\\naction: create\\nfile: src/profile.ts\\ndepends_on: []\\n---\\n### Description\\nCreate src/profile.ts with a getUserProfile helper for a static user profile.\\n\\n### Implementation Steps\\n1. Define a UserProfile type and a getUserProfile function.\\n2. Return deterministic id, name, and role fields.\\n\\n### Tests\\n- Verify getUserProfile returns id, name, and role values for the fixture user.\\n\\n### Scope\\n**In bounds:**\\n- src/profile.ts\\n**Out of bounds:**\\n- UI rendering or persistence.\\n\\n### Escalation\\n- Stop if profile data must come from a database or external service.\\n\\n### Evidence\\n- The helper returns a deterministic profile object.\\n\\n### Type Definitions\\n```ts\\nexport type UserProfile = { id: string; name: string; role: string };\\n```\\n---\\nid: T002\\ntitle: Create profile helper test\\naction: create\\nfile: src/profile.test.ts\\ndepends_on: T001\\n---\\n### Description\\nCreate src/profile.test.ts with a Vitest assertion for the profile helper.\\n\\n### Implementation Steps\\n1. Import the profile helper from the production module.\\n2. Assert the returned profile name and role.\\n\\n### Tests\\n- Verify the Vitest test file asserts the fixture profile shape.\\n\\n### Scope\\n**In bounds:**\\n- src/profile.test.ts\\n**Out of bounds:**\\n- Changing production behavior.\\n\\n### Escalation\\n- Stop if additional test setup or runtime configuration is required.\\n\\n### Evidence\\n- The test exercises the exported profile helper.\\n\\n### Type Definitions\\n```ts\\ntype ProfileTestCase = { expectedName: string; expectedRole: string };\\n```\\n\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":354}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      },
+      "provider": "anthropic",
+      "durationMs": 1720
+    },
+    {
+      "index": 5,
+      "recordedAt": "2026-04-30T12:10:05.000Z",
+      "request": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "x-api-key": "***",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        "body": "{\"purpose\":\"implementer profile code\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_standard_impl_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-haiku-4-5-20251001\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":500,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"```typescript\\nexport type UserProfile = {\\n  id: string;\\n  name: string;\\n  role: string;\\n};\\n\\nexport function getUserProfile(): UserProfile {\\n  return {\\n    id: 'user-1',\\n    name: 'Ada Lovelace',\\n    role: 'admin',\\n  };\\n}\\n```\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":66}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      },
+      "provider": "anthropic",
+      "durationMs": 870
+    },
+    {
+      "index": 6,
+      "recordedAt": "2026-04-30T12:10:06.000Z",
+      "request": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "x-api-key": "***",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        "body": "{\"purpose\":\"implementer profile test code\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_standard_impl_2\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-haiku-4-5-20251001\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":520,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"```typescript\\nimport { describe, expect, it } from 'vitest';\\nimport { getUserProfile } from './profile.js';\\n\\ndescribe('getUserProfile', () => {\\n  it('returns the fixture profile', () => {\\n    expect(getUserProfile()).toEqual({\\n      id: 'user-1',\\n      name: 'Ada Lovelace',\\n      role: 'admin',\\n    });\\n  });\\n});\\n```\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":86}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      },
+      "provider": "anthropic",
+      "durationMs": 910
+    },
+    {
+      "index": 7,
+      "recordedAt": "2026-04-30T12:10:07.000Z",
+      "request": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headers": {
+          "x-api-key": "***",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        "body": "{\"purpose\":\"planner final review\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_standard_review\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":340,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Review complete. The workflow changes match the task briefs.\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":14}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      },
+      "provider": "anthropic",
+      "durationMs": 650
+    }
+  ],
+  "meta": {
+    "mode": "standard",
+    "plannerProvider": "anthropic",
+    "plannerModel": "claude-sonnet-4-6",
+    "implementerProvider": "anthropic",
+    "implementerModel": "claude-haiku-4-5-20251001"
+  }
+}
