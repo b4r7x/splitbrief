@@ -10,16 +10,16 @@ import type { WorkflowMode } from '../../core/schemas/enums.js';
 
 interface ModeDef {
   mode: WorkflowMode;
-  calls: number;
+  callLabel: string;
   approvals: number;
   size: string;
 }
 
 const MODES: readonly ModeDef[] = [
-  { mode: 'instant', calls: 0, approvals: 0, size: 'trivial edits' },
-  { mode: 'quick', calls: 1, approvals: 0, size: 'small fixes' },
-  { mode: 'standard', calls: 4, approvals: 1, size: 'features' },
-  { mode: 'speckit', calls: 4, approvals: 2, size: 'large scope' },
+  { mode: 'instant', callLabel: '1 call', approvals: 0, size: 'trivial edits' },
+  { mode: 'quick', callLabel: '1 call', approvals: 0, size: 'small fixes' },
+  { mode: 'standard', callLabel: '4 calls', approvals: 1, size: 'features' },
+  { mode: 'speckit', callLabel: '6-7 calls', approvals: 2, size: 'large scope' },
 ];
 
 export function ModeSelector() {
@@ -63,7 +63,7 @@ export function ModeSelector() {
             </Box>
             <Box width={9}>
               <Text color={t.textDim}>
-                {m.calls} call{m.calls === 1 ? '' : 's'}
+                {m.callLabel}
               </Text>
             </Box>
             <Box width={13}>

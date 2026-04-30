@@ -6,7 +6,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { readFile } from 'node:fs/promises';
 import { parseTasks } from '../../../engine/spec/parser.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { BriefQualityIssue, BriefQualityReport } from '../../../engine/spec/brief-quality.js';
+import { isBriefQualityReport, type BriefQualityIssue, type BriefQualityReport } from '../../../engine/spec/brief-quality.js';
 import type { ProjectContext } from '../../../core/types/state-actions.js';
 import { dirname, join } from 'node:path';
 import {
@@ -281,7 +281,15 @@ function TaskEditorRow({ task, isCursor, isExpanded, issues }: {
 export function PlanEditorComponent({ filePath, height, width, sessionDirPath: sessionDirProp, onApprove }: PlanEditorComponentProps) {
   const t = useTheme();
   const sessionDirPath = sessionDirProp ?? dirname(filePath);
-  const save = createSaveHandler(sessionDirPath, onApprove);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const rawSave = createSaveHandler(sessionDirPath, onApprove);
+  const save = async () => {
+    if (loadError !== null) {
+      planEditorStore.setSaveError(loadError);
+      return;
+    }
+    await rawSave();
+  };
   const [isPacketPreviewOpen, setIsPacketPreviewOpen] = useState(false);
   usePlanEditorKeys(true, save, sessionDirPath, () => setIsPacketPreviewOpen(open => !open));
   const [quality, setQuality] = useState<BriefQualityReport | null>(null);
@@ -301,20 +309,23 @@ export function PlanEditorComponent({ filePath, height, width, sessionDirPath: s
 
     async function load() {
       const [tasksText, qualityText] = await Promise.all([
-        readFile(filePath, { encoding: 'utf8', signal }).catch(() => ''),
+        readFile(filePath, { encoding: 'utf8', signal }),
         readFile(join(dirname(filePath), 'brief-quality.json'), { encoding: 'utf8', signal }).catch(() => null),
       ]);
       if (signal.aborted) return;
 
       const parsed = parseTasks(tasksText);
       planEditorStore.initEditor(parsed);
-      await refreshPlanReviewMetadata(parsed);
+      const metadata = await refreshPlanReviewMetadata(parsed);
       if (signal.aborted) return;
+      planEditorStore.setReviewMetadata(metadata);
+      setLoadError(null);
 
       let q: BriefQualityReport | null = null;
       if (qualityText) {
         try {
-          q = JSON.parse(qualityText) as BriefQualityReport;
+          const parsedQuality = JSON.parse(qualityText) as unknown;
+          q = isBriefQualityReport(parsedQuality) ? parsedQuality : null;
         } catch {
           q = null;
         }
@@ -324,7 +335,9 @@ export function PlanEditorComponent({ filePath, height, width, sessionDirPath: s
 
     load().catch((err) => {
       if (!signal.aborted) {
-        planEditorStore.setSaveError(`Failed to load Task Briefs: ${err instanceof Error ? err.message : String(err)}`);
+        const message = `Failed to load Task Briefs: ${err instanceof Error ? err.message : String(err)}`;
+        setLoadError(message);
+        planEditorStore.setSaveError(message);
       }
     });
     return () => { controller.abort(); };
@@ -480,7 +493,7 @@ export function PlanEditorComponent({ filePath, height, width, sessionDirPath: s
         <Text color={t.warning}>unsaved changes</Text>
       )}
       {saveError !== null && (
-        <Text color={t.error}>{saveError}</Text>
+        <Text color={t.error} wrap="truncate">{saveError}</Text>
       )}
       <Box height={1} />
       {isNarrow ? (

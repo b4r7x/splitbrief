@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { addEvent, resetWorkflow } from '../../stores/workflow/actions.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
@@ -9,17 +12,37 @@ import { createReviewInputHandler, parseReviewCommand } from './review-parser.js
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import type { Phase } from '../../core/schemas/enums.js';
 
-function makeInputMode(mode: 'normal' | 'review' | 'question', resolve = vi.fn()): UseInputModeResult {
-  if (mode === 'review') return { mode, resolve } as unknown as UseInputModeResult;
-  if (mode === 'question') return { mode, resolve } as unknown as UseInputModeResult;
-  return { mode: 'normal' } as unknown as UseInputModeResult;
+let tmpDir: string;
+
+async function writeFakeEditor(exitCode: number): Promise<string> {
+  const editorPath = join(tmpDir, `editor-${exitCode}.js`);
+  await writeFile(editorPath, `#!/usr/bin/env node
+process.exit(${exitCode});
+`, 'utf-8');
+  await chmod(editorPath, 0o700);
+  return editorPath;
+}
+
+function makeInputMode(
+  mode: 'normal' | 'review' | 'question',
+  resolve: UseInputModeResult['resolve'] = vi.fn(),
+): UseInputModeResult {
+  return {
+    mode,
+    hint: '',
+    setReviewMode: vi.fn<UseInputModeResult['setReviewMode']>(),
+    setQuestionMode: vi.fn<UseInputModeResult['setQuestionMode']>(),
+    resolve,
+    resetMode: vi.fn(),
+  };
 }
 
 function setPhase(phase: Phase) {
   addEvent({ type: 'planner_status', ts: Date.now(), phase, status: 'running' });
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), 'review-parser-test-'));
   resetWorkflow();
   feedbackStore.reset();
   clearAllHandlers();
@@ -29,9 +52,10 @@ beforeEach(() => {
   planEditorStore.__testReset();
 });
 
-afterEach(() => {
+afterEach(async () => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
+  await rm(tmpDir, { recursive: true, force: true });
 });
 
 describe('createReviewInputHandler – implementer-phase guard (Bug #5)', () => {
@@ -176,5 +200,19 @@ describe('createReviewInputHandler – brief review edit mode', () => {
     expect(planEditorStore.get().runtimeRichMode).toBe(false);
     expect(feedbackStore.get().isError).toBe(true);
     expect(feedbackStore.get().message).toContain('Failed to open editor');
+  });
+
+  it('surfaces non-zero editor exit status and keeps brief review unresolved', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+    reviewStore.setReviewFile('/tmp/tasks.md');
+    vi.stubEnv('EDITOR', await writeFakeEditor(42));
+    const resolve = vi.fn();
+    const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
+
+    await handleInput('edit');
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().message).toContain('Editor exited with status 42');
   });
 });

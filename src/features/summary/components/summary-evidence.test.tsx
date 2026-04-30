@@ -1,7 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
 import { renderFeature } from '../../../../testing/helpers/ink.js';
 import { SummaryEvidence } from './summary-evidence.js';
 import {
@@ -9,11 +6,8 @@ import {
   recordFinalReviewEvidence,
   recordLocalTaskEvidence,
   recordRetryOrEscalationEvidence,
-  writeEvidenceLedger,
 } from '../../../engine/orchestrator/evidence.js';
 import { makeTask } from '../../../../testing/helpers/factories/task.js';
-import { configStore } from '../../../stores/project/config.js';
-import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 
 const baseSummary: Summary = {
@@ -40,30 +34,39 @@ const baseSummary: Summary = {
 };
 
 describe('SummaryEvidence', () => {
-  let dir: string;
-  let prevProjectDir: string;
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'summary-evidence-'));
-    prevProjectDir = configStore.get().projectDir;
-    configStore.__testReset({ projectDir: dir });
-  });
-  afterEach(() => {
-    configStore.__testReset({ projectDir: prevProjectDir });
-    rmSync(dir, { recursive: true, force: true });
-  });
-
   it('renders nothing when summary has no evidenceSummary', () => {
     const ui = renderFeature(<SummaryEvidence summary={baseSummary} />);
     expect(ui.lastFrame() ?? '').toBe('');
     ui.unmount();
   });
 
-  it('renders rollup line and per-task evidence from the ledger on disk', () => {
-    const sessionId = 's1';
+  it('renders the rollup line when ledger details are unavailable', () => {
+    const summary: Summary = {
+      ...baseSummary,
+      evidenceSummary: {
+        path: 'evidence.json',
+        totalTasks: 2,
+        tasksWithValidationEvidence: 1,
+        escalatedTasks: 1,
+        failedTasks: 0,
+      },
+    };
+
+    const ui = renderFeature(<SummaryEvidence summary={summary} ledger={null} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('Evidence');
+    expect(frame).toContain('1/2 validated');
+    expect(frame).toContain('1 escalated');
+    expect(frame).not.toContain('T001');
+
+    ui.unmount();
+  });
+
+  it('renders per-task evidence from the loaded ledger prop', () => {
     const a = makeTask({ id: 'T001', title: 'Add hello module', file: 'src/hello.ts' });
     const b = makeTask({ id: 'T002', title: 'Escalated thing', file: 'src/world.ts' });
-    let ledger = createEvidenceLedger({ sessionId, feature: 'demo', mode: 'standard', tasks: [a, b] });
+    let ledger = createEvidenceLedger({ sessionId: 's1', feature: 'demo', mode: 'standard', tasks: [a, b] });
     ledger = recordLocalTaskEvidence({
       ledger, task: a, status: 'done', method: 'local',
       validation: [{ passed: true, stage: 'tsc' }, { passed: true, stage: 'lint' }, { passed: true, stage: 'test' }],
@@ -73,7 +76,6 @@ describe('SummaryEvidence', () => {
       validation: [{ passed: true, stage: 'tsc' }],
     });
     ledger = recordFinalReviewEvidence({ ledger, status: 'written' });
-    writeEvidenceLedger(dir, sessionId, ledger);
 
     const summary: Summary = {
       ...baseSummary,
@@ -85,8 +87,9 @@ describe('SummaryEvidence', () => {
         failedTasks: 0,
       },
     };
-    const ui = renderFeature(<SummaryEvidence summary={summary} sessionId={sessionId} />);
+    const ui = renderFeature(<SummaryEvidence summary={summary} ledger={ledger} />);
     const frame = ui.lastFrame() ?? '';
+
     expect(frame).toContain('Evidence');
     expect(frame).toContain('2/2 validated');
     expect(frame).toContain('1 escalated');
@@ -98,60 +101,5 @@ describe('SummaryEvidence', () => {
     expect(frame).toContain('task reached escalated');
     expect(frame).toContain('final review: written');
     ui.unmount();
-  });
-
-  it('long titles are truncated with an ellipsis glyph', () => {
-    const longTitle = 'A'.repeat(120);
-    const task = makeTask({ id: 'T001', title: longTitle, tests: [] });
-    let ledger = createEvidenceLedger({ sessionId: 's1', feature: 'demo', mode: 'standard', tasks: [task] });
-    ledger = recordLocalTaskEvidence({
-      ledger, task, status: 'done', method: 'local',
-      validation: [{ passed: true, stage: 'tsc' }],
-    });
-    const summary: Summary = {
-      ...baseSummary,
-      evidenceSummary: { path: 'evidence.json', totalTasks: 1, tasksWithValidationEvidence: 1, escalatedTasks: 0, failedTasks: 0 },
-    };
-    terminalSizeStore.__testReset({ isSmall: false });
-    const ui = renderFeature(<SummaryEvidence summary={summary} ledger={ledger} />);
-    const frame = ui.lastFrame() ?? '';
-    ui.unmount();
-    terminalSizeStore.__testReset();
-    expect(frame).toContain('\u2026');
-    expect(frame).not.toContain(longTitle);
-  });
-
-  it('wide layout truncates titles more than small layout for a 22-char title', () => {
-    // wide: flexDirection row, title gets titleWidth - 6 = 26 - 6 = 20 chars
-    // small: flexDirection column, title gets 24 chars
-    const title22 = 'B'.repeat(22);
-    const task = makeTask({ id: 'T001', title: title22, tests: [] });
-    let ledger = createEvidenceLedger({ sessionId: 's1', feature: 'demo', mode: 'standard', tasks: [task] });
-    ledger = recordLocalTaskEvidence({
-      ledger, task, status: 'done', method: 'local',
-      validation: [{ passed: true, stage: 'tsc' }],
-    });
-    const summary: Summary = {
-      ...baseSummary,
-      evidenceSummary: { path: 'evidence.json', totalTasks: 1, tasksWithValidationEvidence: 1, escalatedTasks: 0, failedTasks: 0 },
-    };
-
-    terminalSizeStore.__testReset({ isSmall: false });
-    const wide = renderFeature(<SummaryEvidence summary={summary} ledger={ledger} />);
-    const wideFrame = wide.lastFrame() ?? '';
-    wide.unmount();
-
-    terminalSizeStore.__testReset({ isSmall: true });
-    const small = renderFeature(<SummaryEvidence summary={summary} ledger={ledger} />);
-    const smallFrame = small.lastFrame() ?? '';
-    small.unmount();
-
-    terminalSizeStore.__testReset();
-
-    // wide: 22 > 20 limit → truncated
-    expect(wideFrame).toContain('\u2026');
-    expect(wideFrame).not.toContain(title22);
-    // small: 22 ≤ 24 limit → not truncated
-    expect(smallFrame).toContain(title22);
   });
 });

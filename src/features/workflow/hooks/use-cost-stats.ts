@@ -5,6 +5,7 @@ import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { calculateCostBreakdown } from '../../../engine/providers/pricing.js';
 import { resolvePricing, type PricingMode } from '../../../engine/providers/pricing-resolver.js';
+import type { ModelCacheAccessor } from '../../../engine/providers/model-resolution.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../../../core/config/accessors/runner-config.js';
 import { formatCost } from '../../../core/formatting.js';
 import type { CostBreakdown } from '../../../core/schemas/summary.js';
@@ -26,6 +27,19 @@ interface CostDisplay {
   savingsText: string;
   hasPricedUsage: boolean;
   spentText: string;
+}
+
+function asReactiveModelCache(snapshot: ReturnType<typeof modelCacheStore.get>): ModelCacheAccessor {
+  return {
+    getModelsDevCatalog: () => {
+      if (snapshot.modelsDevCatalog === null || snapshot.modelsDevFetchedAt === null) return null;
+      return modelCacheStore.getModelsDevCatalog();
+    },
+    getProviderModels: (providerId) => {
+      if (!snapshot.providers[providerId]) return null;
+      return modelCacheStore.getProviderModels(providerId);
+    },
+  };
 }
 
 export function resolvePricingState(
@@ -62,6 +76,7 @@ export function formatCostDisplay(localRate: number, costBreakdown: CostBreakdow
 
 export function useCostStats(): CostStats {
   const config = configStore.useConfig();
+  const modelCache = asReactiveModelCache(modelCacheStore.use(state => state));
   const [
     { tokenUsage, localCount, escalatedCount },
     { currentTask, totalTasks, taskCompletionTimes },
@@ -85,10 +100,10 @@ export function useCostStats(): CostStats {
         implementerTool,
         plannerModel,
         implementerModel,
-      }, modelCacheStore)
+      }, modelCache)
     : null;
-  const plannerPricing = resolvePricing(plannerTool, modelCacheStore, plannerModel);
-  const implementerPricing = resolvePricing(implementerTool, modelCacheStore, implementerModel);
+  const plannerPricing = resolvePricing(plannerTool, modelCache, plannerModel);
+  const implementerPricing = resolvePricing(implementerTool, modelCache, implementerModel);
   const pricingState = resolvePricingState(
     costBreakdown,
     plannerPricing.pricingMode,

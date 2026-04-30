@@ -1,8 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { renderFeature } from '../../../testing/helpers/ink.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { renderFeature, tick } from '../../../testing/helpers/ink.js';
 import { makeConfig } from '../../../testing/helpers/factories/config.js';
 import { makeSummary } from '../../../testing/helpers/factories/summary.js';
+import { makeTask } from '../../../testing/helpers/factories/task.js';
 import { resetAllStores } from '../../../testing/helpers/stores.js';
+import {
+  createEvidenceLedger,
+  recordFinalReviewEvidence,
+  recordLocalTaskEvidence,
+  writeEvidenceLedger,
+} from '../../engine/orchestrator/evidence.js';
 import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -178,6 +188,56 @@ describe('SummaryScreen', () => {
     expect(frame).toContain('evidence: 2/2');
 
     ui.unmount();
+  });
+
+  it('loads the evidence ledger at the screen boundary and renders task evidence', async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'summary-screen-evidence-'));
+    const sessionId = 'summary-evidence-session';
+    try {
+      const task = makeTask({ id: 'T001', title: 'Evidence detail', file: 'src/evidence.ts' });
+      let ledger = createEvidenceLedger({ sessionId, feature: 'demo', mode: 'standard', tasks: [task] });
+      ledger = recordLocalTaskEvidence({
+        ledger,
+        task,
+        status: 'done',
+        method: 'local',
+        validation: [{ passed: true, stage: 'test' }],
+      });
+      ledger = recordFinalReviewEvidence({ ledger, status: 'written' });
+      writeEvidenceLedger(projectDir, sessionId, ledger);
+
+      terminalSizeStore.__testReset({ cols: 160, rows: 80, isSmall: false });
+      configStore.__testReset({ projectDir });
+      routerStore.init({
+        screen: 'summary',
+        sessionId,
+        summary: makeSummary({
+          evidenceSummary: {
+            path: 'evidence.json',
+            totalTasks: 1,
+            tasksWithValidationEvidence: 1,
+            escalatedTasks: 0,
+            failedTasks: 0,
+          },
+        }),
+      });
+
+      const ui = renderFeature(<SummaryScreen commands={[]} onSlashCommand={() => {}} />);
+      await tick();
+      const frame = ui.lastFrame() ?? '';
+
+      expect(frame).toContain('Evidence');
+      expect(frame).toContain('1/1 validated');
+      expect(frame).toContain('T001');
+      expect(frame).toContain('Evidence detail');
+      expect(frame).toContain('passed: test');
+      expect(frame).toContain('task reached done');
+      expect(frame).toContain('final review: written');
+
+      ui.unmount();
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
   });
 
   it('keeps checkpoint and packet details readable on narrow terminals', () => {

@@ -125,6 +125,28 @@ describe('buildWorkerPacketPreview', () => {
     expect(preview?.notices.join(' ')).toContain('Using review metadata');
   });
 
+  it('does not mark overflow no-capable metadata as routing pending when review routing is complete', () => {
+    const task = makeTask({
+      file: 'src/large.ts',
+      currentCode: 'export const large = true;',
+      action: 'modify',
+    });
+    const metadata: PlanTaskReviewMetadata = {
+      taskId: task.id,
+      contextFit: 'overflow',
+      estimatedTokens: 45_000,
+      contextLength: 32_768,
+      routingReason: 'No capable implementer profile can fit this task prompt',
+    };
+
+    const preview = buildWorkerPacketPreview({ task, context: defaultContext, metadata });
+
+    expect(preview?.workerProfile).toBeUndefined();
+    expect(preview?.contextFit).toBe('overflow');
+    expect(preview?.routingPending).toBe(false);
+    expect(preview?.notices.join(' ')).not.toContain('Routing metadata is pending');
+  });
+
   it('prefers routing-decision current-code mode and token fields when provided', () => {
     const task = makeTask({
       id: 'T099',

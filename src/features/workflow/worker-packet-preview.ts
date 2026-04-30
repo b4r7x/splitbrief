@@ -13,6 +13,7 @@ import {
 import { formatTaskPrompt, SYSTEM_PREAMBLE } from '../../engine/spec/formatter.js';
 import { estimateTokens } from '../../engine/spec/token-budget.js';
 import type { PlanTaskReviewMetadata } from '../../stores/workflow/plan-editor.js';
+import { redactSecretsWithMetadata } from '../../utils/redact.js';
 
 export interface WorkerPacketPreviewDisplayOptions {
   maxSystemChars?: number | undefined;
@@ -102,34 +103,6 @@ function inferCurrentCodeContextMode(
   return prompt.includes(task.currentCode) ? 'whole-file' : 'truncated';
 }
 
-function redactSecrets(text: string): { text: string; redacted: boolean } {
-  let redacted = false;
-  let result = text;
-
-  function replace(pattern: RegExp, replacement: string | ((substring: string, ...args: string[]) => string)): void {
-    result = result.replace(pattern, (...args) => {
-      redacted = true;
-      return typeof replacement === 'string' ? replacement : replacement(args[0], ...args.slice(1));
-    });
-  }
-
-  replace(
-    /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
-    `-----BEGIN PRIVATE KEY-----\n${SECRET_REDACTION_MARKER}\n-----END PRIVATE KEY-----`,
-  );
-  replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, `Bearer ${SECRET_REDACTION_MARKER}`);
-  replace(/\b([a-z][a-z0-9+.-]*:\/\/)([^/\s:@]+):([^@\s/]+)@/gi, `$1${SECRET_REDACTION_MARKER}@`);
-  replace(
-    /\b([A-Z0-9_.-]*(?:API[_-]?KEY|TOKEN|PASSWORD|PASSWD|SECRET|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN)[A-Z0-9_.-]*)\s*([:=])\s*(['"]?)[^\s'"]+\3/gi,
-    (_match, name: string, operator: string, quote: string) => `${name}${operator}${quote}${SECRET_REDACTION_MARKER}${quote}`,
-  );
-  replace(/\b(?:sk|ghp|xox[baprs])[-_][A-Za-z0-9_=-]{8,}\b/g, SECRET_REDACTION_MARKER);
-  replace(/\bgithub_pat_[A-Za-z0-9_]{12,}\b/g, SECRET_REDACTION_MARKER);
-  replace(/\bAKIA[0-9A-Z]{16}\b/g, SECRET_REDACTION_MARKER);
-
-  return { text: result, redacted };
-}
-
 function truncateByLines(text: string, maxLines: number | undefined): { text: string; truncated: boolean } {
   if (maxLines === undefined) return { text, truncated: false };
   const lines = text.split('\n');
@@ -152,7 +125,7 @@ function makeVisiblePreview(
   text: string,
   limits: { maxChars?: number | undefined; maxLines?: number | undefined },
 ): { text: string; redacted: boolean; truncated: boolean } {
-  const redacted = redactSecrets(text);
+  const redacted = redactSecretsWithMetadata(text, { marker: SECRET_REDACTION_MARKER });
   const lineLimited = truncateByLines(redacted.text, limits.maxLines);
   const charLimited = truncateByChars(lineLimited.text, limits.maxChars);
   return {
@@ -210,8 +183,12 @@ function hasPendingRoutingMetadata(
 ): boolean {
   if (decision !== undefined) return false;
   if (metadata === undefined) return true;
+  const noCapableWorker = metadata.workerProfile === undefined
+    && (metadata.contextFit === 'overflow'
+      || (metadata.routingReason?.toLowerCase() ?? '').includes('no capable')
+      || (metadata.routingReason?.toLowerCase() ?? '').includes('overflows'));
   return metadata.contextFit === undefined
-    || metadata.workerProfile === undefined
+    || (metadata.workerProfile === undefined && !noCapableWorker)
     || metadata.estimatedTokens === undefined
     || metadata.validationStatus === 'pending';
 }

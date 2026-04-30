@@ -6,6 +6,8 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { DIPTYCH_DIR } from '../../core/paths.js';
+import { createInitialState } from '../../core/state/machine.js';
+import { saveState } from '../../core/state/persistence.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -86,17 +88,36 @@ describe('SessionsPicker', () => {
  * failed-without-summary) are the user-observable decisions the feature makes.
  */
 describe('SessionsPicker handleSelect (Enter routing)', () => {
-  it('navigates to the workflow screen and closes the overlay for an interrupted session', () => {
+  it('navigates to the workflow screen with saved state for an interrupted session', () => {
     overlayStore.open('sessions');
-    const session = makeSession({ feature: 'add auth', status: 'interrupted', summary: null });
+    const session = makeSession({ id: 'sess-resume', feature: 'add auth', status: 'interrupted', summary: null });
+    const savedState = { ...createInitialState('saved add auth'), phase: 'implementing' as const };
+    saveState(tmp, session.id, savedState);
 
-    handleSelect(session);
+    handleSelect(session, tmp);
 
     expect(overlayStore.get().active).toBe('none');
     const route = routerStore.get();
     expect(route.screen).toBe('workflow');
-    if (route.screen === 'workflow') expect(route.feature).toBe('add auth');
+    if (route.screen === 'workflow') {
+      expect(route.feature).toBe('saved add auth');
+      expect(route.resumeState).toEqual(savedState);
+      expect(route.sessionId).toBe(session.id);
+    }
     expect(feedbackStore.get().message).toBeNull();
+  });
+
+  it('keeps the picker open and surfaces feedback when an interrupted session has no valid state', () => {
+    overlayStore.open('sessions');
+    const session = makeSession({ id: 'sess-missing-state', feature: 'add auth', status: 'interrupted', summary: null });
+
+    handleSelect(session, tmp);
+
+    expect(overlayStore.get().active).toBe('sessions');
+    expect(routerStore.get().screen).toBe('home');
+    const feedback = feedbackStore.get();
+    expect(feedback.isError).toBe(true);
+    expect(feedback.message ?? '').toContain('saved workflow state');
   });
 
   it('navigates to the summary screen when the session completed with a summary', () => {
@@ -106,7 +127,7 @@ describe('SessionsPicker handleSelect (Enter routing)', () => {
     const summary = makeSummary({ feature: 'refactor payments' });
     const session = makeSession({ status: 'complete', summary });
 
-    handleSelect(session);
+    handleSelect(session, tmp);
 
     expect(overlayStore.get().active).toBe('none');
     const route = routerStore.get();
@@ -119,7 +140,7 @@ describe('SessionsPicker handleSelect (Enter routing)', () => {
     overlayStore.open('sessions');
     const session = makeSession({ feature: 'add auth', status: 'failed', summary: null });
 
-    handleSelect(session);
+    handleSelect(session, tmp);
 
     // Overlay still open and router unchanged — user stays on the picker.
     expect(overlayStore.get().active).toBe('sessions');

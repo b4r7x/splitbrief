@@ -308,7 +308,7 @@ export function useWorkflowRunner({
             onQuestionAsked: (question, num, total) =>
               inputMode.setQuestionMode(`Question ${num}/${total}: ${question.text}`),
             onComplete: (summary) => {
-              if (!abortedRef.current) onComplete(summary);
+              if (!controller.signal.aborted && !abortedRef.current) onComplete(summary);
             },
           },
           savedState: stateForRun,
@@ -328,7 +328,7 @@ export function useWorkflowRunner({
         recoveryPromptAlreadyPublished = true;
       }
     } catch (err) {
-      if (!abortedRef.current && !lifecycleStore.get().cancelled) {
+      if (!controller.signal.aborted && !abortedRef.current && !lifecycleStore.get().cancelled) {
         addEvent({ type: 'error', ts: Date.now(), phase: lifecycleStore.get().phase, message: String(err) });
       }
     }

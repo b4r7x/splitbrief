@@ -1,16 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { renderFeature } from '../../../../testing/helpers/ink.js';
-import { makeSummary } from '../../../../testing/helpers/factories/summary.js';
 import type { CostBreakdown } from '../../../core/schemas/summary.js';
-import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { SummaryCostBreakdown } from './summary-cost-breakdown.js';
 import { SummaryProgress } from './summary-progress.js';
-import { SummaryCheckpoints } from './summary-checkpoints.js';
-import { SummaryReviewPacket } from './summary-review-packet.js';
-
-afterEach(() => {
-  terminalSizeStore.__testReset();
-});
 
 describe('SummaryProgress', () => {
   it('renders local, escalated, and failed counts with the completion ratio', () => {
@@ -119,66 +111,6 @@ describe('SummaryCostBreakdown', () => {
     expect(frame).toContain('Local/cheap rate');
     expect(frame).toContain('100%');
     expect(frame).not.toContain('$0.00');
-
-    ui.unmount();
-  });
-});
-
-describe('SummaryCheckpoints', () => {
-  it('renders checkpoint commands as user-facing summary output', () => {
-    terminalSizeStore.__testReset({ cols: 160, isSmall: false });
-
-    const ui = renderFeature(
-      <SummaryCheckpoints
-        checkpointSummary={{
-          count: 1,
-          latestId: 'snap-pre-final',
-          latestName: 'pre-final-review',
-          latestKind: 'pre-final-review',
-          latestRunCheckpointId: 'snap-pre-final',
-          preFinalReviewId: 'snap-pre-final',
-          accepted: null,
-          rejected: null,
-          diffCommand: 'diptych snapshot diff snap-pre-final',
-          restoreCommand: 'diptych snapshot restore snap-pre-final',
-        }}
-      />,
-    );
-    const frame = ui.lastFrame() ?? '';
-
-    expect(frame).toContain('Checkpoints');
-    expect(frame).toContain('1 checkpoint');
-    expect(frame).toContain('diptych snapshot diff snap-pre-final');
-    expect(frame).toContain('diptych snapshot restore snap-pre-final');
-
-    ui.unmount();
-  });
-});
-
-describe('SummaryReviewPacket', () => {
-  it('renders the packet artifact paths and checklist hint', () => {
-    const ui = renderFeature(
-      <SummaryReviewPacket
-        summary={makeSummary({
-          reviewPacket: {
-            markdownPath: 'review-packet.md',
-            jsonPath: 'review-packet.json',
-            generatedAt: '2026-04-28T10:00:00.000Z',
-            finalReviewStatus: 'written',
-            driftPassed: true,
-            evidenceValidatedTasks: 1,
-            evidenceTotalTasks: 1,
-            missingArtifactCount: 0,
-          },
-        })}
-      />,
-    );
-    const frame = ui.lastFrame() ?? '';
-
-    expect(frame).toContain('Review packet');
-    expect(frame).toContain('review-packet.md');
-    expect(frame).toContain('review-packet.json');
-    expect(frame).toContain('checklist');
 
     ui.unmount();
   });

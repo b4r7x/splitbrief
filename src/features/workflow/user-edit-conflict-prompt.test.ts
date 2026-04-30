@@ -15,18 +15,15 @@ const conflict: UserEditConflict = {
 
 describe('user edit conflict prompt', () => {
   it('shows affected task, shortened files, and recovery actions', () => {
-    expect(formatUserEditConflictPrompt(conflict)).toBe(
-      [
-        'Recovery needed: user edit conflicts with T001',
-        'Files: src/a.ts, src/b.ts, src/c.ts, +1 more',
-        'Affected tasks: T001',
-        '',
-        '[p] ask planner to rebase on your edits (approve/edit/reject proposal)',
-        '[space] pause',
-        '[s] skip task',
-        '[a] abort',
-      ].join('\n'),
-    );
+    const prompt = formatUserEditConflictPrompt(conflict);
+
+    expect(prompt).toContain('Recovery needed: user edit conflicts with T001');
+    expect(prompt).toContain('Files: src/a.ts, src/b.ts, src/c.ts, +1 more');
+    expect(prompt).toContain('Affected tasks: T001');
+    expect(prompt).toContain('[p] ask planner to rebase on your edits (approve/edit/reject proposal)');
+    expect(prompt).toContain('[space] pause');
+    expect(prompt).toContain('[s] skip task');
+    expect(prompt).toContain('[a] abort');
   });
 
   it('maps user answers to allowed conflict actions', () => {

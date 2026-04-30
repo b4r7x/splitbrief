@@ -64,6 +64,61 @@ async function writeTasksFile() {
 }
 
 describe('PlanEditorComponent review metadata', () => {
+  it('surfaces tasks.md read failures in the rich editor instead of loading an empty plan', async () => {
+    const missingPath = join(tmpDir, TASKS_FILE);
+
+    const ui = renderComponent(createElement(PlanEditorComponent, {
+      filePath: missingPath,
+      sessionDirPath: tmpDir,
+      height: 24,
+      width: 120,
+    }));
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('Failed to load Task Briefs');
+    expect(planEditorStore.get().tasks).toEqual([]);
+
+    ui.stdin.write('Y');
+    await tick(20);
+
+    await expect(readFile(missingPath, 'utf-8')).rejects.toThrow();
+  });
+
+  it('surfaces tasks.md read failures in simple review mode instead of loading an empty plan', async () => {
+    const missingPath = join(tmpDir, TASKS_FILE);
+
+    const ui = renderComponent(createElement(BriefReviewView, {
+      filePath: missingPath,
+      height: 24,
+      width: 120,
+    }));
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('Failed to load Task Briefs');
+  });
+
+  it('ignores invalid brief-quality.json instead of trusting its shape', async () => {
+    await writeTasksFile();
+    await writeFile(join(tmpDir, 'brief-quality.json'), JSON.stringify({
+      version: 1,
+      passed: true,
+      score: '1.00',
+      issues: [],
+    }), 'utf-8');
+
+    const ui = renderComponent(createElement(PlanEditorComponent, {
+      filePath: join(tmpDir, TASKS_FILE),
+      sessionDirPath: tmpDir,
+      height: 24,
+      width: 120,
+    }));
+    await tick(20);
+
+    expect(ui.lastFrame() ?? '').toContain('quality n/a');
+  });
+
   it('renders the plan review scorecard in the rich editor', async () => {
     const tasks = [
       completeTask('T001', 'src/a.ts'),

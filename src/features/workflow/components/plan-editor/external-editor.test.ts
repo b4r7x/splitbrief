@@ -1,28 +1,18 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { planEditorStore } from '../../../../stores/workflow/plan-editor.js';
-
-vi.mock('node:child_process', () => ({
-  spawnSync: vi.fn(),
-}));
-
-vi.mock('node:fs', () => ({
-  writeFileSync: vi.fn(),
-  readFileSync: vi.fn(),
-  rmSync: vi.fn(),
-}));
-
-import { spawnSync } from 'node:child_process';
-import { writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { openExternalEditor } from './external-editor.js';
 
-const sessionDir = '/tmp/test-session';
+let sessionDir: string;
+let editorPath: string;
 
-function makeValidTaskMarkdown(id = 'T001'): string {
+function makeValidTaskMarkdown(id = 'T001', title = 'Test task'): string {
   return `---
 id: ${id}
-title: Test task
+title: ${title}
 action: create
 file: src/foo.ts
 depends_on: []
@@ -42,155 +32,164 @@ Do something useful
 `;
 }
 
-beforeEach(() => {
+async function writeFakeEditor(): Promise<string> {
+  const scriptPath = join(sessionDir, 'fake-editor.js');
+  await writeFile(scriptPath, `#!/usr/bin/env node
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+
+const filePath = process.argv[2];
+const mode = process.env.FAKE_EDITOR_MODE ?? 'valid-edit';
+
+if (mode === 'exit-42') process.exit(42);
+if (!filePath) process.exit(64);
+if (mode === 'delete-file') {
+  rmSync(filePath, { force: true });
+  process.exit(0);
+}
+if (mode === 'append-marker') {
+  const current = readFileSync(filePath, 'utf-8');
+  if (!current.startsWith('# Edit the task below.')) process.exit(43);
+  writeFileSync(filePath, current + '\\n<!-- touched -->\\n');
+  process.exit(0);
+}
+if (mode === 'invalid-parse') {
+  writeFileSync(filePath, 'not a task brief\\n');
+  process.exit(0);
+}
+if (mode === 'two-tasks') {
+  writeFileSync(filePath, process.env.FAKE_EDITOR_CONTENT + '\\n' + process.env.FAKE_EDITOR_CONTENT_2);
+  process.exit(0);
+}
+writeFileSync(filePath, process.env.FAKE_EDITOR_CONTENT ?? '');
+`, 'utf-8');
+  await chmod(scriptPath, 0o700);
+  return scriptPath;
+}
+
+beforeEach(async () => {
   planEditorStore.__testReset();
   vi.clearAllMocks();
+  sessionDir = await mkdtemp(join(tmpdir(), 'external-editor-test-'));
+  editorPath = await writeFakeEditor();
+  vi.stubEnv('EDITOR', editorPath);
+  vi.stubEnv('FAKE_EDITOR_MODE', 'valid-edit');
+  vi.stubEnv('FAKE_EDITOR_CONTENT', makeValidTaskMarkdown('T001', 'Updated task'));
+  vi.stubEnv('FAKE_EDITOR_CONTENT_2', makeValidTaskMarkdown('T002', 'Second task'));
 });
 
-describe('openExternalEditor — edit mode', () => {
-  it('writes temp file and reads back updated task', () => {
-    const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
-    planEditorStore.initEditor([task]);
+afterEach(async () => {
+  planEditorStore.__testReset();
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+  await rm(sessionDir, { recursive: true, force: true });
+});
 
-    vi.mocked(spawnSync).mockReturnValue({ status: 0, error: undefined } as unknown as ReturnType<typeof spawnSync>);
-    vi.mocked(readFileSync).mockReturnValue(makeValidTaskMarkdown('T001'));
+describe('openExternalEditor edit mode', () => {
+  it('writes a temp file, opens the configured editor, applies the edited task, and cleans up', async () => {
+    const task = makeTask({ id: 'T001', title: 'Original', implementationSteps: ['step'], tests: ['test'] });
+    planEditorStore.initEditor([task]);
 
     openExternalEditor(task, 'edit', sessionDir);
 
-    expect(writeFileSync).toHaveBeenCalledWith(
-      join(sessionDir, `edit-${task.id}.md`),
-      expect.any(String),
-      expect.objectContaining({ mode: 0o600 }),
-    );
-    expect(spawnSync).toHaveBeenCalledWith(
-      expect.any(String),
-      [join(sessionDir, `edit-${task.id}.md`)],
-      { stdio: 'inherit' },
-    );
+    const updatedTasks = planEditorStore.get().tasks;
+    expect(updatedTasks).toHaveLength(1);
+    expect(updatedTasks[0]?.title).toBe('Updated task');
+    expect(planEditorStore.get().saveError).toBeNull();
+    await expect(readFile(join(sessionDir, `edit-${task.id}.md`), 'utf-8')).rejects.toThrow();
   });
 
-  it('sets saveError when spawnSync returns an error', () => {
+  it('surfaces editor startup failures', () => {
     const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
     planEditorStore.initEditor([task]);
-
-    vi.mocked(spawnSync).mockReturnValue({
-      status: null,
-      error: new Error('editor not found'),
-    } as unknown as ReturnType<typeof spawnSync>);
+    vi.stubEnv('EDITOR', join(sessionDir, 'missing-editor'));
 
     openExternalEditor(task, 'edit', sessionDir);
 
-    expect(planEditorStore.get().saveError).toBe('Editor not found. Set $EDITOR.');
+    expect(planEditorStore.get().saveError).toContain('Failed to open editor');
+    expect(planEditorStore.get().saveError).toContain('ENOENT');
   });
 
-  it('does not read or apply the temp file when editor exits non-zero', () => {
-    const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
+  it('surfaces non-zero editor exit status without applying edits', () => {
+    const task = makeTask({ id: 'T001', title: 'Original', implementationSteps: ['step'], tests: ['test'] });
     planEditorStore.initEditor([task]);
-
-    vi.mocked(spawnSync).mockReturnValue({
-      status: 42,
-      error: undefined,
-    } as unknown as ReturnType<typeof spawnSync>);
+    vi.stubEnv('FAKE_EDITOR_MODE', 'exit-42');
 
     openExternalEditor(task, 'edit', sessionDir);
 
-    expect(readFileSync).not.toHaveBeenCalled();
-    expect(planEditorStore.get().tasks).toEqual([task]);
+    expect(planEditorStore.get().tasks[0]?.title).toBe('Original');
     expect(planEditorStore.get().saveError).toContain('Editor exited with status 42');
   });
 
-  it('sets saveError when edited task markdown has a parse error', () => {
-    const t1 = makeTask({ id: 'T001', implementationSteps: ['step'], tests: ['test'] });
-    planEditorStore.initEditor([t1]);
+  it('restores stdin when the editor exits non-zero', () => {
+    const pause = vi.spyOn(process.stdin, 'pause');
+    const resume = vi.spyOn(process.stdin, 'resume');
+    const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
+    planEditorStore.initEditor([task]);
+    vi.stubEnv('FAKE_EDITOR_MODE', 'exit-42');
 
-    vi.mocked(spawnSync).mockReturnValue({ status: 0, error: undefined } as unknown as ReturnType<typeof spawnSync>);
-    vi.mocked(readFileSync).mockReturnValue(makeValidTaskMarkdown('T001').replace('depends_on: []', 'depends_on: [T001]'));
+    openExternalEditor(task, 'edit', sessionDir);
 
-    openExternalEditor(t1, 'edit', sessionDir);
+    expect(pause).toHaveBeenCalledOnce();
+    expect(resume).toHaveBeenCalledOnce();
+  });
+
+  it('surfaces temp file write failures', () => {
+    const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
+    planEditorStore.initEditor([task]);
+
+    openExternalEditor(task, 'edit', join(sessionDir, 'missing-session'));
+
+    expect(planEditorStore.get().saveError).toContain('Failed to write editor file');
+  });
+
+  it('surfaces edited temp file read failures', () => {
+    const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
+    planEditorStore.initEditor([task]);
+    vi.stubEnv('FAKE_EDITOR_MODE', 'delete-file');
+
+    openExternalEditor(task, 'edit', sessionDir);
+
+    expect(planEditorStore.get().saveError).toContain('Failed to read editor file');
+  });
+
+  it('surfaces parse errors from edited task markdown', () => {
+    const task = makeTask({ id: 'T001', implementationSteps: ['step'], tests: ['test'] });
+    planEditorStore.initEditor([task]);
+    vi.stubEnv('FAKE_EDITOR_CONTENT', makeValidTaskMarkdown('T001').replace('depends_on: []', 'depends_on: [T001]'));
+
+    openExternalEditor(task, 'edit', sessionDir);
 
     expect(planEditorStore.get().saveError).toContain('Edit parse failed');
   });
 
-  it('sets saveError when parsed result is not exactly 1 task', () => {
+  it('rejects multiple tasks in edit mode', () => {
     const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
     planEditorStore.initEditor([task]);
-
-    vi.mocked(spawnSync).mockReturnValue({ status: 0, error: undefined } as unknown as ReturnType<typeof spawnSync>);
-    // return two tasks
-    vi.mocked(readFileSync).mockReturnValue(
-      makeValidTaskMarkdown('T001') + '\n' + makeValidTaskMarkdown('T002'),
-    );
+    vi.stubEnv('FAKE_EDITOR_MODE', 'two-tasks');
 
     openExternalEditor(task, 'edit', sessionDir);
 
-    expect(planEditorStore.get().saveError).not.toBeNull();
-  });
-
-  it('replaces task at cursor position after successful edit', () => {
-    const t1 = makeTask({ id: 'T001', title: 'Original', implementationSteps: ['step'], tests: ['test'] });
-    const t2 = makeTask({ id: 'T002', title: 'Second', file: 'src/bar.ts', implementationSteps: ['step2'], tests: ['test2'] });
-    planEditorStore.initEditor([t1, t2]);
-
-    vi.mocked(spawnSync).mockReturnValue({ status: 0, error: undefined } as unknown as ReturnType<typeof spawnSync>);
-    vi.mocked(readFileSync).mockReturnValue(makeValidTaskMarkdown('T001'));
-
-    openExternalEditor(t1, 'edit', sessionDir);
-
-    const updatedTasks = planEditorStore.get().tasks;
-    expect(updatedTasks).toHaveLength(2);
-    expect(updatedTasks[0]?.title).toBe('Test task');
-  });
-
-  it('cleans up temp file', () => {
-    const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
-    planEditorStore.initEditor([task]);
-
-    vi.mocked(spawnSync).mockReturnValue({ status: 0, error: undefined } as unknown as ReturnType<typeof spawnSync>);
-    vi.mocked(readFileSync).mockReturnValue(makeValidTaskMarkdown('T001'));
-
-    openExternalEditor(task, 'edit', sessionDir);
-
-    expect(rmSync).toHaveBeenCalledWith(join(sessionDir, `edit-${task.id}.md`), { force: true });
+    expect(planEditorStore.get().saveError).toContain('expects exactly 1 task');
   });
 });
 
-describe('openExternalEditor — split mode', () => {
-  it('writes temp file with split instruction comment', () => {
+describe('openExternalEditor split mode', () => {
+  it('writes split instructions before opening the editor', async () => {
     const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
     planEditorStore.initEditor([task]);
-
-    vi.mocked(spawnSync).mockReturnValue({ status: 0, error: undefined } as unknown as ReturnType<typeof spawnSync>);
-    vi.mocked(readFileSync).mockReturnValue(makeValidTaskMarkdown('T001'));
+    vi.stubEnv('FAKE_EDITOR_MODE', 'append-marker');
 
     openExternalEditor(task, 'split', sessionDir);
 
-    const writtenContent = vi.mocked(writeFileSync).mock.calls[0]?.[1] as string;
-    expect(writtenContent).toContain('---');
-    expect(writtenContent.startsWith('#')).toBe(true);
+    const leftovers = await readdir(sessionDir);
+    expect(leftovers).not.toContain(`split-${task.id}.md`);
+    expect(planEditorStore.get().saveError).toBeNull();
   });
 
-  it('uses split- prefix for temp filename', () => {
+  it('surfaces split parse failures', () => {
     const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
     planEditorStore.initEditor([task]);
-
-    vi.mocked(spawnSync).mockReturnValue({ status: 0, error: undefined } as unknown as ReturnType<typeof spawnSync>);
-    vi.mocked(readFileSync).mockReturnValue(makeValidTaskMarkdown('T001'));
-
-    openExternalEditor(task, 'split', sessionDir);
-
-    expect(writeFileSync).toHaveBeenCalledWith(
-      join(sessionDir, `split-${task.id}.md`),
-      expect.any(String),
-      expect.anything(),
-    );
-  });
-
-  it('sets saveError when split produces no tasks', () => {
-    const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
-    planEditorStore.initEditor([task]);
-
-    vi.mocked(spawnSync).mockReturnValue({ status: 0, error: undefined } as unknown as ReturnType<typeof spawnSync>);
-    vi.mocked(readFileSync).mockReturnValue('# no tasks here\n');
+    vi.stubEnv('FAKE_EDITOR_MODE', 'invalid-parse');
 
     openExternalEditor(task, 'split', sessionDir);
 

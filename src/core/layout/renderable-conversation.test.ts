@@ -134,4 +134,67 @@ describe('event height rules', () => {
     expect(items.map((item) => item.event.type)).toEqual(['planner_text', 'planner_text']);
     expect(estimateRenderableConversationHeight(items)).toBe(3);
   });
+
+  it('matches cost prediction card rows for heuristic predictions', () => {
+    const event = {
+      type: 'cost_prediction',
+      prediction: {
+        estimatedTasks: 4,
+        lowCost: 0.1,
+        expectedCost: 0.2,
+        highCost: 0.4,
+        plannerTool: 'anthropic',
+        implementerTool: 'deepseek',
+      },
+    } satisfies LayoutEvent;
+
+    expect(estimateEventHeight(event)).toBe(4);
+  });
+
+  it('matches cost prediction card rows for deterministic optional lines', () => {
+    const event = {
+      type: 'cost_prediction',
+      prediction: {
+        estimatedTasks: 1,
+        lowCost: 0,
+        expectedCost: 0,
+        highCost: 0,
+        plannerTool: 'anthropic',
+        implementerTool: 'deepseek',
+        deterministic: {
+          taskCount: 1,
+          taskFitCounts: { fits: 0, tight: 1, overflow: 0, unknown: 0 },
+          contextConfidenceCounts: {
+            contextExplicit: 1,
+            contextKnownCatalog: 0,
+            contextCachedProvider: 0,
+            contextConservativeFallback: 0,
+            profileUnavailable: 0,
+          },
+          priceConfidenceCounts: {
+            priceKnown: 0,
+            priceUnknown: 1,
+            profileUnavailable: 0,
+          },
+          tasks: [],
+          totals: {
+            knownActualEstimate: null,
+            hypotheticalAllPlanner: null,
+            estimatedSavings: null,
+            unknownCostReason: ['implementer-price-unknown'],
+          },
+        },
+        plannerEstimateReview: {
+          extraPlannerCall: true,
+          status: 'completed',
+          classification: 'risk',
+          affectedTaskIds: [],
+          reason: null,
+          recommendedUserDecision: null,
+        },
+      },
+    } satisfies LayoutEvent;
+
+    expect(estimateEventHeight(event)).toBe(9);
+  });
 });

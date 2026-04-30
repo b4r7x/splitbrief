@@ -38,7 +38,7 @@ export function usePickerCatalog(
 
   const [{ planners: plannerDetections, implementers: implementerDetections }] = useStores(detectionStore);
 
-  const [currentItemId, setCurrentItemId] = useState<string | null>(null);
+  const [currentSelection, setCurrentSelection] = useState<{ role: 'planner' | 'implementer'; itemId: string } | null>(null);
 
   const rawItems = isPlanner
     ? buildPlannerPickerOptions({ detections: plannerDetections, implementerDetections })
@@ -58,6 +58,7 @@ export function usePickerCatalog(
   const runnerConfig = isPlanner ? config.planner : config.implementer;
 
   const initialItem = items[initialLeftIdx] ?? items[0];
+  const currentItemId = currentSelection?.role === role ? currentSelection.itemId : null;
   const currentItem = items.find(item => item.id === currentItemId) ?? initialItem;
 
   const rightModels = buildRightModelsForPicker({
@@ -90,6 +91,6 @@ export function usePickerCatalog(
     currentCommand,
     currentCommandKind,
     customModels,
-    setCurrentItem: (item) => setCurrentItemId(item.id),
+    setCurrentItem: (item) => setCurrentSelection({ role, itemId: item.id }),
   };
 }

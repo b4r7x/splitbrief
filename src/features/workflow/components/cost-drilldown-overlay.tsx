@@ -5,8 +5,12 @@ import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
 import { formatCost } from '../../../core/formatting.js';
+import { formatCacheHitPct } from '../../../core/features/cost-chrome.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { resolvePricing } from '../../../engine/providers/pricing-resolver.js';
+import { isPlannerCostPhase } from '../../../core/phases.js';
+
+export { formatCacheHitPct } from '../../../core/features/cost-chrome.js';
 
 export type PhaseRow = {
   phase: string;
@@ -51,12 +55,6 @@ export function renderBar(value: number, max: number, width: number): string {
   return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
 
-export function formatCacheHitPct(cacheRead: number, input: number): string {
-  if (cacheRead === 0 || input === 0) return 'cache n/a';
-  const total = cacheRead + input;
-  return `cache ${Math.round((cacheRead / total) * 100)}%`;
-}
-
 export function formatCacheCreateTokens(cacheCreate: number): string {
   if (cacheCreate === 0) return '';
   if (cacheCreate > 1000) return `create ${(cacheCreate / 1000).toFixed(1)}k`;
@@ -87,14 +85,6 @@ export function formatPhaseCost(cost: number, isPhasePriced: boolean, pricingMod
   return 'n/a';
 }
 
-function isPlannerPhase(phase: string): boolean {
-  return (
-    phase === 'planning' || phase === 'researching' || phase === 'specifying' ||
-    phase === 'reviewing-spec' || phase === 'clarifying' || phase === 'constitution-check' ||
-    phase === 'reviewing-plan' || phase === 'reviewing-briefs'
-  );
-}
-
 export function CostDrilldownOverlay() {
   const t = useTheme();
   const [tokens, { cols }] = useStores(tokensStore, terminalSizeStore);
@@ -117,7 +107,7 @@ export function CostDrilldownOverlay() {
       <Box flexDirection="column">
         <Text color={t.textDim}>— by phase —</Text>
         {phaseRows.map(row => {
-          const pricing = isPlannerPhase(row.phase) ? plannerPricing : implementerPricing;
+          const pricing = isPlannerCostPhase(row.phase) ? plannerPricing : implementerPricing;
           const isPriced = pricing?.isPriced ?? false;
           const costLabel = formatPhaseCost(row.cost, isPriced, pricing?.pricingMode ?? null);
           return (

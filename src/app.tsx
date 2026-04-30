@@ -18,7 +18,7 @@ import { WorkflowScreen } from './features/workflow/screen.js';
 import { SummaryScreen } from './features/summary/screen.js';
 import { SetupScreen } from './features/setup/screen.js';
 import { HelpOverlay } from './components/overlays/help-overlay.js';
-import { CommandPaletteOverlay } from './features/workflow/components/command-palette-overlay.js';
+import { CommandPaletteOverlay, type CommandPaletteOverlayProps } from './features/workflow/components/command-palette-overlay.js';
 import { SkillsPicker } from './features/skills/picker.js';
 import { SessionsPicker } from './features/sessions/picker.js';
 import { SettingsOverlay } from './features/settings/overlay.js';
@@ -49,7 +49,13 @@ export function App() {
     <ThemeProvider theme={theme}>
       <Layout
         screen={renderScreen({ screen, commands, onSlash: handleSlashCommand })}
-        overlay={renderOverlay({ active: overlayActive, screen, commands })}
+        overlay={renderOverlay({
+          active: overlayActive,
+          screen,
+          commands,
+          onSlash: (raw) => handleSlashCommand(raw, screen),
+          onWorkflowMode: ctx.setWorkflowMode,
+        })}
       />
     </ThemeProvider>
   );
@@ -100,10 +106,12 @@ function renderScreen({ screen, commands, onSlash }: {
   }
 }
 
-function renderOverlay({ active, screen, commands }: {
+function renderOverlay({ active, screen, commands, onSlash, onWorkflowMode }: {
   active: OverlayType;
   screen: Screen;
   commands: SlashCommandDef[];
+  onSlash: (raw: string) => void;
+  onWorkflowMode: CommandPaletteOverlayProps['onWorkflowMode'];
 }): ReactNode | null {
   switch (active) {
     case 'none':
@@ -111,7 +119,13 @@ function renderOverlay({ active, screen, commands }: {
     case 'help':
       return <HelpOverlay currentScreen={screen} commands={commands} />;
     case 'command-palette':
-      return <CommandPaletteOverlay />;
+      return (
+        <CommandPaletteOverlay
+          commands={commands}
+          onSlashCommand={onSlash}
+          onWorkflowMode={onWorkflowMode}
+        />
+      );
     case 'skills':
       return <SkillsPicker />;
     case 'settings':

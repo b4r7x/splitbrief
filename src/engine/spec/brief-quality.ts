@@ -27,6 +27,44 @@ export type BriefQualityReport = {
   issues: BriefQualityIssue[];
 };
 
+const BRIEF_QUALITY_ISSUE_CODES: ReadonlySet<string> = new Set([
+  'missing_scope',
+  'missing_validation',
+  'vague_validation',
+  'missing_evidence',
+  'missing_escalation',
+  'missing_code_context',
+  'empty_task_list',
+  'multi_file_task',
+  'non_atomic_task',
+  'missing_implementation_steps',
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isBriefQualityIssue(value: unknown): value is BriefQualityIssue {
+  if (!isRecord(value)) return false;
+  return typeof value.taskId === 'string'
+    && (value.severity === 'error' || value.severity === 'warning')
+    && typeof value.code === 'string'
+    && BRIEF_QUALITY_ISSUE_CODES.has(value.code)
+    && typeof value.message === 'string';
+}
+
+export function isBriefQualityReport(value: unknown): value is BriefQualityReport {
+  if (!isRecord(value)) return false;
+  return value.version === 1
+    && typeof value.passed === 'boolean'
+    && typeof value.score === 'number'
+    && Number.isFinite(value.score)
+    && value.score >= 0
+    && value.score <= 1
+    && Array.isArray(value.issues)
+    && value.issues.every(isBriefQualityIssue);
+}
+
 const VAGUE_PATTERNS = [
   /^works?$/i,
   /^works? correctly$/i,

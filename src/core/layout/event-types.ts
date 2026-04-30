@@ -1,4 +1,5 @@
 import type { TaskCompletionMethod } from '../schemas/enums.js';
+import type { CostPrediction } from '../schemas/summary.js';
 
 type EventOf<TType extends string, TPayload extends object = Record<never, never>> =
   TType extends TType ? { type: TType; ts?: number; phase?: string } & TPayload : never;
@@ -45,7 +46,6 @@ type EmptyLayoutEvent = EventOf<
   | 'planner_attachment_added'
   | 'planner_attachments_dropped'
   | 'cost_update'
-  | 'cost_prediction'
   | 'budget_warning'
   | 'budget_paused'
   | 'budget_exceeded'
@@ -91,4 +91,5 @@ export type LayoutEvent =
   | EventOf<'escalate', { hint?: string | undefined }>
   | EventOf<'user_message', { text: string }>
   | EventOf<'warning', { message: string }>
-  | EventOf<'error', { message: string }>;
+  | EventOf<'error', { message: string }>
+  | EventOf<'cost_prediction', { prediction?: CostPrediction | undefined }>;
