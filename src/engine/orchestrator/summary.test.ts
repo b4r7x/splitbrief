@@ -139,7 +139,7 @@ describe('buildSummary', () => {
     });
 
     expect(summary.taskBreakdown).toEqual([
-      { taskId: taskId('T001'), taskTitle: 'task 1', method: 'local' as const, implementerTokens: 100, escalationTokens: 0, retryCount: 0, cost: 0 },
+      { taskId: taskId('T001'), taskTitle: 'task 1', method: 'local' as const, implementerTokens: 100, escalationTokens: 0, retryCount: 0, costPosture: 'unknown-price' },
     ]);
     // Verify input array was NOT mutated
     expect(breakdowns[0]).not.toHaveProperty('cost');
@@ -413,7 +413,8 @@ describe('calculateCostBreakdown', () => {
       escalatedCount: 0,
       plannerTool: 'anthropic',
       plannerModel: 'claude-sonnet-4-6',
-      implementerTool: 'ollama',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
     });
     expect(result.localCompletionRate).toBe(1);
     expect(result.savingsPercentage).toBeGreaterThan(0);
@@ -483,9 +484,10 @@ describe('calculateCostBreakdown', () => {
       escalatedCount: 0,
       plannerTool: 'anthropic',
       plannerModel: 'claude-sonnet-4-6',
-      implementerTool: 'ollama',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
     });
-    expect(result.savingsAmount).toBeCloseTo(0.00105, 10);
+    expect(result.savingsAmount).toBeCloseTo(0.001001, 10);
     expect(result.savingsPercentage).toBeGreaterThan(0);
   });
 });
@@ -512,9 +514,13 @@ describe('buildSummary estimatedCostSavings', () => {
       startTime: Date.now(),
       plannerTool: 'anthropic',
       plannerModel: 'claude-sonnet-4-6',
-      implementerTool: 'ollama',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
     });
-    expect(summary.estimatedCostSavings).toBe('$18.00');
+    expect(summary.estimatedCostSavings).toBe('$17.30');
+    expect(summary.costBreakdown?.hypotheticalCost).toBe(18);
+    expect(summary.costBreakdown?.actualImplementerCost).toBeCloseTo(0.7, 10);
+    expect(summary.costBreakdown?.hasSavingsEstimate).toBe(true);
   });
 
   it('excludes planner spend from estimated savings', () => {
@@ -530,12 +536,30 @@ describe('buildSummary estimatedCostSavings', () => {
       startTime: Date.now(),
       plannerTool: 'anthropic',
       plannerModel: 'claude-sonnet-4-6',
-      implementerTool: 'ollama',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
     });
-    expect(summary.estimatedCostSavings).toBe('$13.50');
+    expect(summary.estimatedCostSavings).toBe('$12.73');
   });
 
-  it('returns $0.00 when savings would be negative', () => {
+  it('marks savings unavailable when implementer price is unknown', () => {
+    const usage = makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 });
+    const summary = buildSummary({
+      feature: 'f',
+      state: makeState({ tasks: [], tokenUsage: usage }),
+      startTime: Date.now(),
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+    });
+
+    expect(summary.estimatedCostSavings).toBe('unavailable');
+    expect(summary.costBreakdown?.hasSavingsEstimate).toBe(false);
+    expect(summary.costBreakdown?.isActualImplementerCostKnown).toBe(false);
+    expect(summary.costBreakdown?.isTotalActualCostKnown).toBe(false);
+  });
+
+  it('formats tiny known savings as $0.00', () => {
     const usage = makeUsage({
       plannerInput: 10_000_000,
       plannerOutput: 5_000_000,
@@ -548,7 +572,8 @@ describe('buildSummary estimatedCostSavings', () => {
       startTime: Date.now(),
       plannerTool: 'anthropic',
       plannerModel: 'claude-sonnet-4-6',
-      implementerTool: 'ollama',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
     });
     expect(summary.estimatedCostSavings).toBe('$0.00');
   });
@@ -640,7 +665,7 @@ describe('buildSummary task costs', () => {
     expect(first.cost + second.cost).toBeCloseTo(summary.costBreakdown.actualImplementerCost, 6);
   });
 
-  it('task cost is 0 for local implementer', () => {
+  it('marks task cost unknown for unpriced local implementer', () => {
     const usage = makeUsage({ implementerInput: 100_000, implementerOutput: 50_000 });
     const breakdowns = [
       { taskId: taskId('T001'), taskTitle: 'task 1', method: 'local' as const, implementerTokens: 150_000, escalationTokens: 0, retryCount: 0 },
@@ -657,7 +682,8 @@ describe('buildSummary task costs', () => {
 
     const first = summary.taskBreakdown?.[0];
     if (!first) throw new Error('expected a task breakdown entry');
-    expect(first.cost).toBe(0);
+    expect(first.cost).toBeUndefined();
+    expect(first.costPosture).toBe('unknown-price');
   });
 
   it('keeps per-task escalation costs aligned with model-aware summary totals', () => {
@@ -708,10 +734,12 @@ describe('buildSummary task costs', () => {
     const first = summary.taskBreakdown?.[0];
     const second = summary.taskBreakdown?.[1];
     if (!first || !second || !summary.costBreakdown) throw new Error('expected task and cost breakdown');
-    expect(first.cost).toBe(0);
+    expect(first.cost).toBeUndefined();
+    expect(first.costPosture).toBe('unknown-price');
     expect(second.cost).toBeCloseTo(0.35, 10);
     expect(summary.costBreakdown.actualImplementerCost).toBeCloseTo(0.35, 10);
     expect((first.cost ?? 0) + (second.cost ?? 0)).toBeCloseTo(summary.costBreakdown.actualImplementerCost, 10);
     expect(summary.costBreakdown.hasUnpricedUsage).toBe(true);
+    expect(summary.costBreakdown.hasSavingsEstimate).toBe(false);
   });
 });

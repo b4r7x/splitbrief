@@ -297,6 +297,24 @@ export function calculateTaskUsageCost(
   return implementerCost + escalationCost;
 }
 
+export function isTaskUsageCostKnown(
+  task: TaskTokenUsage,
+  implementerTool: string,
+  plannerTool: string,
+  implementerModel?: string | undefined,
+  plannerModel?: string | undefined,
+  cache?: ModelCacheAccessor,
+): boolean {
+  const taskTool = task.tool ?? implementerTool;
+  const implementerKnown = task.implementerTokens <= 0 || resolvePricing(
+    taskTool,
+    cache,
+    resolveTaskPricingModel(taskTool, implementerTool, task.model, implementerModel),
+  ).isPriced;
+  const plannerKnown = task.escalationTokens <= 0 || resolvePricing(plannerTool, cache, plannerModel).isPriced;
+  return implementerKnown && plannerKnown;
+}
+
 export function calculateCostBreakdown(opts: CostBreakdownOptions, cache?: ModelCacheAccessor): CostBreakdown {
   const { tokenUsage, totalTasks, escalatedCount, plannerTool, plannerModel } = opts;
   const plannerPricing = resolvePricing(plannerTool, cache, plannerModel);
@@ -322,7 +340,21 @@ export function calculateCostBreakdown(opts: CostBreakdownOptions, cache?: Model
   const actualImplementerCost = implementerAccounting.actualImplementerCost;
 
   const totalActualCost = actualPlannerCost + actualImplementerCost;
-  const hasSavingsEstimate = plannerPricing.isPriced;
+  const plannerUsageTokens =
+    plannerInputTotal +
+    plannerOutputTotal +
+    (tokenUsage.plannerCacheRead ?? 0) +
+    (tokenUsage.plannerCacheCreate ?? 0);
+  const implementerUsageTokens =
+    tokenUsage.implementerInput +
+    tokenUsage.implementerOutput +
+    (tokenUsage.implementerCacheRead ?? 0) +
+    (tokenUsage.implementerCacheCreate ?? 0);
+  const isActualPlannerCostKnown = plannerUsageTokens <= 0 || plannerPricing.isPriced;
+  const isActualImplementerCostKnown = implementerUsageTokens <= 0 || !implementerAccounting.hasUnpricedUsage;
+  const isTotalActualCostKnown = isActualPlannerCostKnown && isActualImplementerCostKnown;
+  const isAllPlannerBaselineKnown = implementerUsageTokens <= 0 || plannerPricing.isPriced;
+  const hasSavingsEstimate = isAllPlannerBaselineKnown && isActualImplementerCostKnown;
   const savingsAmount = hasSavingsEstimate ? hypotheticalImplementerCost - actualImplementerCost : 0;
   const savingsPercentage = hasSavingsEstimate && hypotheticalImplementerCost > 0 ? (savingsAmount / hypotheticalImplementerCost) * 100 : 0;
   const localCompletionRate = totalTasks > 0 ? (totalTasks - escalatedCount) / totalTasks : 0;
@@ -362,6 +394,10 @@ export function calculateCostBreakdown(opts: CostBreakdownOptions, cache?: Model
     hasPricedUsage,
     hasUnpricedUsage,
     hasSavingsEstimate,
+    isActualPlannerCostKnown,
+    isActualImplementerCostKnown,
+    isTotalActualCostKnown,
+    isAllPlannerBaselineKnown,
     providerCosts: Object.keys(providerCosts).length > 0 ? providerCosts : undefined,
     ...(cacheReadSavings > 0 && { cacheReadSavings }),
     ...(cacheReadTokens > 0 && { cacheReadTokens }),

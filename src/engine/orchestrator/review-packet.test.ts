@@ -711,6 +711,8 @@ describe('review packet writer', () => {
           hasPricedUsage: false,
           hasUnpricedUsage: true,
           hasSavingsEstimate: false,
+          isTotalActualCostKnown: false,
+          isAllPlannerBaselineKnown: false,
         },
       }),
       state,
@@ -719,7 +721,9 @@ describe('review packet writer', () => {
 
     expect(packet.cost.estimatedCostSavings).toBeNull();
     const markdown = readFileSync(reviewPacketMarkdownPath(projectDir, sessionId), 'utf8');
+    expect(markdown).toContain('- Actual cost: unavailable');
     expect(markdown).toContain('- Estimated savings: unavailable');
     expect(markdown).not.toContain('- Estimated savings: $0.00');
+    expect(markdown).not.toContain('- Actual cost: $0.0000');
   });
 });
