@@ -35,7 +35,7 @@ export function SessionsPicker() {
       items={sessions}
       filterFn={filterSession}
       getKey={(session) => session.id}
-      onConfirm={handleSelect}
+      onConfirm={(session) => handleSelect(session, projectDir)}
       title={`Sessions (${sessions.length})`}
       hint={'\u2191\u2193 navigate  Enter resume/view  Esc close'}
       bordered={false}

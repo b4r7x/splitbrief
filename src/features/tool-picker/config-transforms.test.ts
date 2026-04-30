@@ -259,7 +259,7 @@ describe('removeCustomModel', () => {
     expect(updated.implementer.customModels).toEqual([]);
   });
 
-  it('falls back to existing model when last custom model is deleted for implementer', () => {
+  it('falls back to auto when deleting the active last custom implementer model', () => {
     const config: Config = {
       ...makeBaseConfig(),
       implementer: {
@@ -274,7 +274,6 @@ describe('removeCustomModel', () => {
     };
     const updated = removeCustomModel(config, 'implementer', 'the-only-custom');
     expect(updated.implementer.customModels).toEqual([]);
-    // No remaining custom models — keep the old model value (required field)
-    expect(updated.implementer.model).toBe('the-only-custom');
+    expect(updated.implementer.model).toBe('auto');
   });
 });

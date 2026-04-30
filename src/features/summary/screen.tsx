@@ -1,9 +1,11 @@
+import { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { useTheme } from '../../components/theme.js';
 import { formatTime } from '../../utils/format-time.js';
 import { formatToolModel } from '../../core/model-display.js';
 import type { Summary } from '../../core/schemas/summary.js';
+import type { EvidenceLedger } from '../../core/schemas/evidence.js';
 import { InputBar } from '../../components/input-bar/input-bar.js';
 import { LabeledRow } from '../../components/labeled-row.js';
 import { ScreenShell } from '../../components/screen-shell.js';
@@ -16,6 +18,8 @@ import { SummaryCheckpoints } from './components/summary-checkpoints.js';
 import { SummaryReviewPacket } from './components/summary-review-packet.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import { configStore } from '../../stores/project/config.js';
+import { readEvidenceLedger } from '../../engine/orchestrator/evidence.js';
 
 interface SummaryScreenProps {
   commands: SlashCommandDef[];
@@ -44,12 +48,45 @@ function formatImplementerSummary(summary: Summary): string | null {
   return formatToolModel(summary.implementerTool, summary.implementerModel);
 }
 
+interface SummaryEvidenceLedgerState {
+  key: string;
+  ledger: EvidenceLedger | null;
+}
+
+function useSummaryEvidenceLedger(summary: Summary | null, sessionId: string | undefined): EvidenceLedger | null {
+  const projectDir = configStore.use(s => s.projectDir);
+  const evidencePath = summary?.evidenceSummary?.path;
+  const ledgerKey = projectDir && sessionId && evidencePath
+    ? `${projectDir}\u0000${sessionId}\u0000${evidencePath}`
+    : '';
+  const [state, setState] = useState<SummaryEvidenceLedgerState>({ key: '', ledger: null });
+
+  useEffect(() => {
+    if (!projectDir || !sessionId || !evidencePath) {
+      setState(current => current.key === ledgerKey && current.ledger === null
+        ? current
+        : { key: ledgerKey, ledger: null });
+      return;
+    }
+
+    let cancelled = false;
+    const ledger = readEvidenceLedger(projectDir, sessionId);
+    if (!cancelled) setState({ key: ledgerKey, ledger });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectDir, sessionId, evidencePath, ledgerKey]);
+
+  return state.key === ledgerKey ? state.ledger : null;
+}
+
 export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) {
   const theme = useTheme();
   const isSmall = terminalSizeStore.use(s => s.isSmall);
 
   const summary = routerStore.use(s => s.screen === 'summary' ? s.summary : null);
   const sessionId = routerStore.use(s => s.screen === 'summary' ? s.sessionId : undefined);
+  const evidenceLedger = useSummaryEvidenceLedger(summary, sessionId);
   if (!summary) return null;
 
   const onDone = () => routerStore.navigate({ to: 'home' });
@@ -134,7 +171,7 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
         />
       )}
 
-      {summary.evidenceSummary && <SummaryEvidence summary={summary} {...(sessionId !== undefined && { sessionId })} />}
+      {summary.evidenceSummary && <SummaryEvidence summary={summary} ledger={evidenceLedger} />}
 
       <SummaryCheckpoints checkpointSummary={summary.checkpointSummary} />
 

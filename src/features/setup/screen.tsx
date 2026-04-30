@@ -50,7 +50,7 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
 
   if (step === 'no-planners') {
     return (
-      <OverlayPanel title="Setup — Planner" hint="Esc quit">
+      <OverlayPanel title="Setup — Planner" hint="Install a planner, then run init again">
         <Text color={t.warning}>No planner tools detected.</Text>
         <Text color={t.textDim}>Install one of:</Text>
         <Text color={t.text}>  npm i -g @anthropic-ai/claude-code</Text>

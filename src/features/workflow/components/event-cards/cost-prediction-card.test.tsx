@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { renderFeature } from '../../../../../testing/helpers/ink.js';
 import type { EngineEventOf } from '../../../../engine/events/types.js';
+import { getCostPredictionCardRowCount } from '../../../../core/features/cost-chrome.js';
 import { CostPredictionCard } from './cost-prediction-card.js';
+
+function visibleRows(frame: string): number {
+  return frame.split('\n').filter(line => line.trim().length > 0).length;
+}
 
 describe('CostPredictionCard', () => {
   it('renders heuristic-only escalation scenarios without calling the high case an all-planner ceiling', () => {
@@ -25,6 +30,7 @@ describe('CostPredictionCard', () => {
     expect(frame).toContain('Expected: ~15% escalation');
     expect(frame).toContain('High: ~40% escalation');
     expect(frame).not.toContain('all-planner ceiling');
+    expect(visibleRows(frame)).toBe(getCostPredictionCardRowCount(event.prediction));
 
     ui.unmount();
   });
@@ -102,6 +108,7 @@ describe('CostPredictionCard', () => {
     expect(frame).toContain('Price known 0');
     expect(frame).toContain('Unknown: implementer-price-unknown, planner-price-unknown, profile-unavailable');
     expect(frame).not.toContain('$0.00');
+    expect(visibleRows(frame)).toBe(getCostPredictionCardRowCount(event.prediction));
 
     ui.unmount();
   });

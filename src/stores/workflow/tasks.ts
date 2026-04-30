@@ -1,13 +1,20 @@
 import { createStore, storeBase } from '../create-store.js';
 import type { EngineEvent } from '../../engine/events/types.js';
-import type { SidebarTask } from '../../features/workflow/components/sidebar.js';
+import type { TaskCompletionMethod, TaskStatus } from '../../core/schemas/enums.js';
+import { assertNever } from '../../utils/type-guards.js';
+
+export interface WorkflowTask {
+  id: string;
+  title: string;
+  status: TaskStatus;
+}
 
 export interface TasksState {
   currentTask: number;
   totalTasks: number;
   taskCompletionTimes: number[];
-  taskMap: Map<string, SidebarTask>;
-  tasks: SidebarTask[];
+  taskMap: Map<string, WorkflowTask>;
+  tasks: WorkflowTask[];
 }
 
 const initial: TasksState = {
@@ -34,17 +41,43 @@ export const tasksStore = {
   __testReset,
 };
 
+function statusFromCompletionMethod(method: TaskCompletionMethod): TaskStatus {
+  switch (method) {
+    case 'failed':
+      return 'failed';
+    case 'skipped':
+      return 'skipped';
+    case 'escalated-full':
+    case 'escalated-hint':
+    case 'escalated-intermediate':
+      return 'escalated';
+    case 'local':
+    case 'mcp-tool':
+      return 'done';
+    default:
+      return assertNever(method);
+  }
+}
+
 export function updateTaskMap(
-  taskMap: Map<string, SidebarTask>,
+  taskMap: Map<string, WorkflowTask>,
   event: EngineEvent,
-): Map<string, SidebarTask> {
+): Map<string, WorkflowTask> {
   if (event.type === 'task_started') {
     const next = new Map(taskMap);
     next.set(event.taskId, { id: event.taskId, title: event.title, status: 'in_progress' });
     return next;
   }
   if (event.type === 'task_completed' || event.type === 'task_skipped') {
-    const status = event.type === 'task_completed' ? 'done' : 'skipped';
+    const status = event.type === 'task_completed' ? statusFromCompletionMethod(event.method) : 'skipped';
+    const existing = taskMap.get(event.taskId);
+    if (!existing || existing.status === status) return taskMap;
+    const next = new Map(taskMap);
+    next.set(event.taskId, { ...existing, status });
+    return next;
+  }
+  if (event.type === 'task_failed' || event.type === 'task_escalating' || event.type === 'task_full_fail') {
+    const status = event.type === 'task_escalating' ? 'escalated' : 'failed';
     const existing = taskMap.get(event.taskId);
     if (!existing || existing.status === status) return taskMap;
     const next = new Map(taskMap);

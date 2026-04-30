@@ -48,25 +48,39 @@ export function useIpcClient(opts: {
   const bufferRef = useRef('');
   // Use refs for flags that are checked in async callbacks to avoid stale closures
   const isDetachedRef = useRef(false);
-  const isUnmountedRef = useRef(false);
+  const generationRef = useRef(0);
   const onEventRef = useRef(opts.onEvent);
   onEventRef.current = opts.onEvent;
   const onPromptRequestRef = useRef(opts.onPromptRequest);
   onPromptRequestRef.current = opts.onPromptRequest;
-  const sockPathRef = useRef(opts.sockPath);
-  sockPathRef.current = opts.sockPath;
 
   useEffect(() => {
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
+    let disposed = false;
+    const sockets = new Set<Socket>();
+    const reconnectTimers = new Set<ReturnType<typeof setTimeout>>();
+    const ownsEffect = () => generationRef.current === generation && !disposed;
+    const ownsSocket = (socket: Socket) => ownsEffect() && socketRef.current === socket;
+    const canMutate = (socket?: Socket) =>
+      ownsEffect() && !isDetachedRef.current && (socket === undefined || socketRef.current === socket);
+    const clearReconnectTimers = () => {
+      for (const timer of reconnectTimers) clearTimeout(timer);
+      reconnectTimers.clear();
+    };
+
     if (!enabled) {
       setState({
         status: 'detached',
         sessionId: null,
         readonly: false,
       });
-      return undefined;
+      return () => {
+        disposed = true;
+        clearReconnectTimers();
+      };
     }
 
-    isUnmountedRef.current = false;
     isDetachedRef.current = false;
     attemptRef.current = 0;
     setState(prev => ({
@@ -75,13 +89,15 @@ export function useIpcClient(opts: {
     }));
 
     function connect() {
-      if (isUnmountedRef.current || isDetachedRef.current) return;
+      if (!canMutate()) return;
 
       bufferRef.current = '';
-      const socket = createConnection(sockPathRef.current);
+      const socket = createConnection(opts.sockPath);
+      sockets.add(socket);
       socketRef.current = socket;
 
       socket.on('data', (chunk: Buffer) => {
+        if (!canMutate(socket)) return;
         bufferRef.current += chunk.toString('utf8');
         const lines = bufferRef.current.split('\n');
         bufferRef.current = lines.pop() ?? '';
@@ -100,7 +116,7 @@ export function useIpcClient(opts: {
             });
             continue;
           }
-          if (isUnmountedRef.current) return;
+          if (!canMutate(socket)) return;
           if (msg.kind === 'session_meta') {
             setState({
               status: msg.readonly ? 'readonly' : 'connected',
@@ -123,7 +139,7 @@ export function useIpcClient(opts: {
             }
             void handler(msg.request)
               .then((response) => {
-                if (socket.destroyed) return;
+                if (!ownsSocket(socket) || socket.destroyed) return;
                 socket.write(JSON.stringify({
                   kind: 'prompt_response',
                   requestId: msg.request.requestId,
@@ -131,6 +147,7 @@ export function useIpcClient(opts: {
                 }) + '\n');
               })
               .catch((err) => {
+                if (!canMutate(socket)) return;
                 onEventRef.current({
                   type: 'warning',
                   ts: Date.now(),
@@ -153,13 +170,13 @@ export function useIpcClient(opts: {
       });
 
       socket.on('connect', () => {
-        if (isUnmountedRef.current || isDetachedRef.current) return;
+        if (!canMutate(socket)) return;
         // status will be set properly once session_meta arrives;
         // for now just stay in 'connecting' until meta is received
       });
 
       socket.on('timeout', () => {
-        if (isUnmountedRef.current || isDetachedRef.current) return;
+        if (!canMutate(socket)) return;
         socket.destroy();
       });
 
@@ -168,7 +185,9 @@ export function useIpcClient(opts: {
       });
 
       socket.on('close', () => {
-        if (isUnmountedRef.current || isDetachedRef.current) return;
+        sockets.delete(socket);
+        if (!canMutate(socket)) return;
+        if (socketRef.current === socket) socketRef.current = null;
 
         const attempt = attemptRef.current;
         if (attempt >= MAX_ATTEMPTS) {
@@ -192,22 +211,27 @@ export function useIpcClient(opts: {
 
         attemptRef.current = attempt + 1;
         const delay = backoffDelay(attempt);
-        setTimeout(() => {
-          if (isUnmountedRef.current || isDetachedRef.current) return;
+        const timer = setTimeout(() => {
+          reconnectTimers.delete(timer);
+          if (!canMutate()) return;
           connect();
         }, delay);
+        reconnectTimers.add(timer);
       });
     }
 
     connect();
 
     return () => {
-      isUnmountedRef.current = true;
-      const socket = socketRef.current;
-      if (socket) {
-        socketRef.current = null;
+      disposed = true;
+      clearReconnectTimers();
+      for (const socket of sockets) {
+        if (socketRef.current === socket) {
+          socketRef.current = null;
+        }
         socket.destroy();
       }
+      sockets.clear();
     };
   }, [enabled, opts.sockPath]);
 
@@ -223,6 +247,7 @@ export function useIpcClient(opts: {
 
   function detach() {
     isDetachedRef.current = true;
+    generationRef.current += 1;
     setState(prev => ({ ...prev, status: 'detached' }));
     const socket = socketRef.current;
     if (socket && !socket.destroyed) {

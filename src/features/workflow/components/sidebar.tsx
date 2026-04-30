@@ -1,25 +1,19 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import type { Theme } from '../../../components/theme.js';
-import type { TaskStatus } from '../../../core/schemas/enums.js';
 import { truncateWithEllipsis } from '../../../utils/truncate.js';
+import type { WorkflowTask } from '../../../stores/workflow/tasks.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { useAdvisory } from '../hooks/use-advisory.js';
 import { CostDisplay } from './cost-display.js';
 
-export interface SidebarTask {
-  id: string;
-  title: string;
-  status: TaskStatus;
-}
-
 interface SidebarProps {
   width: number;
 }
 
-const statusIcon: Record<SidebarTask['status'], string> = {
+const statusIcon: Record<WorkflowTask['status'], string> = {
   done: '✓',
   failed: '✗',
   escalated: '⚠',
@@ -28,7 +22,7 @@ const statusIcon: Record<SidebarTask['status'], string> = {
   skipped: '○',
 };
 
-function statusColor(status: SidebarTask['status'], t: Theme): string {
+function statusColor(status: WorkflowTask['status'], t: Theme): string {
   switch (status) {
     case 'done':
       return t.success;

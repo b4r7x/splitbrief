@@ -14,7 +14,7 @@ import { useStores } from '../../stores/use-stores.js';
 import type { InputMode, Screen } from '../../stores/navigation/router.js';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { useInputBarHistory } from './use-input-bar-history.js';
-import { requestAttach } from '../../features/workflow/handlers.js';
+import { attachImage } from '../../stores/ui/attachments.js';
 
 function borderColorForMode(mode: InputMode, theme: { planner: string; warning: string; border: string }): string {
   if (mode === 'review') return theme.planner;
@@ -74,9 +74,9 @@ export function InputBar({
 
   const handleFileDrop = (path: string) => {
     const projectDir = configStore.get().projectDir;
-    const result = requestAttach(path, projectDir);
+    const result = attachImage(path, projectDir);
     if (result.ok) {
-      feedbackStore.setMessage(`Attached: ${result.resolvedPath}`);
+      feedbackStore.setMessage(`Attached: ${result.path}`);
     } else {
       feedbackStore.setError(`Cannot attach: ${result.reason}`);
     }

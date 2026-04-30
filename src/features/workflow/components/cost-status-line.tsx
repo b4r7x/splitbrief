@@ -4,8 +4,11 @@ import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { configStore } from '../../../stores/project/config.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { formatCost } from '../../../core/formatting.js';
+import { formatCacheHitPct } from '../../../core/features/cost-chrome.js';
 import { formatSpentText, useCostStats, type CostPricingState } from '../hooks/use-cost-stats.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
+
+export { formatCacheHitPct as formatCachePct } from '../../../core/features/cost-chrome.js';
 
 export function formatSpent(cost: number): string {
   return formatCost(cost);
@@ -39,14 +42,6 @@ export function formatPlanPct(plannerInput: number, totalInput: number): number 
   return Math.round((plannerInput / totalInput) * 100);
 }
 
-export function formatCachePct(cacheRead: number | undefined, input: number): string {
-  if (cacheRead === undefined || (cacheRead === 0 && input === 0)) return 'cache n/a';
-  if (cacheRead === 0) return 'cache n/a';
-  const total = cacheRead + input;
-  if (total === 0) return 'cache n/a';
-  return `cache ${Math.round((cacheRead / total) * 100)}%`;
-}
-
 export function buildStatusLine(parts: string[]): string {
   return parts.filter(p => p.length > 0).join(' · ');
 }
@@ -77,7 +72,7 @@ export function CostStatusLine() {
   );
   const budgetText = formatBudget(maxBudget);
   const planPct = totalInput > 0 ? formatPlanPct(plannerInput, totalInput) : null;
-  const cacheText = formatCachePct(totalCacheRead > 0 ? totalCacheRead : undefined, totalInput);
+  const cacheText = formatCacheHitPct(totalCacheRead > 0 ? totalCacheRead : undefined, totalInput);
 
   const isNarrow = cols < 60;
 

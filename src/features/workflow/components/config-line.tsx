@@ -1,11 +1,12 @@
 import { Box } from 'ink';
 import { eventsStore } from '../../../stores/workflow/events.js';
-import { findLatestEventByType } from '../../../core/layout/event-sections.js';
 import { WorkflowConfigCard } from './event-cards/workflow-config-card.js';
+import { createLatestEventByTypeSelector } from './latest-event-selector.js';
+
+const selectLatestWorkflowConfig = createLatestEventByTypeSelector('workflow_config');
 
 export function ConfigLine() {
-  const events = eventsStore.use(s => s.events);
-  const configEvent = findLatestEventByType(events, 'workflow_config');
+  const configEvent = eventsStore.use(selectLatestWorkflowConfig);
 
   if (!configEvent) return null;
 

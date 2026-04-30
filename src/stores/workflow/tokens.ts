@@ -3,6 +3,7 @@ import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { calculateUsageCost, getProviderPricing } from '../../engine/providers/pricing.js';
+import { phaseCostRole } from '../../core/phases.js';
 import { modelCacheStore } from '../discovery/model-cache.js';
 
 export interface PhaseTokens {
@@ -85,24 +86,6 @@ function clampDelta(value: number): number {
   return Math.max(0, value);
 }
 
-function isPlannerPhase(phase: string): boolean {
-  return phase === 'planning' ||
-    phase === 'researching' ||
-    phase === 'specifying' ||
-    phase === 'reviewing-spec' ||
-    phase === 'clarifying' ||
-    phase === 'constitution-check' ||
-    phase === 'reviewing-plan' ||
-    phase === 'reviewing-briefs';
-}
-
-function isImplementerPhase(phase: string): boolean {
-  return phase === 'implementing' ||
-    phase === 'validating-task' ||
-    phase === 'escalating' ||
-    phase === 'final-review';
-}
-
 function calculatePhaseCostDelta(
   context: PricingContext | null,
   planner: { input: number; output: number; cacheRead: number; cacheCreate: number },
@@ -167,7 +150,9 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     let cacheCreateDelta = 0;
     let costDelta = 0;
 
-    if (isPlannerPhase(phase)) {
+    const costRole = phaseCostRole(phase);
+
+    if (costRole === 'planner') {
       inputDelta = plannerDelta.input;
       outputDelta = plannerDelta.output;
       cacheReadDelta = plannerDelta.cacheRead;
@@ -175,7 +160,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
       costDelta = calculatePhaseCostDelta(state.pricingContext, plannerDelta, {
         input: 0, output: 0, cacheRead: 0, cacheCreate: 0,
       });
-    } else if (isImplementerPhase(phase)) {
+    } else if (costRole === 'implementer') {
       inputDelta = implementerDelta.input + plannerDelta.input;
       outputDelta = implementerDelta.output + plannerDelta.output;
       cacheReadDelta = implementerDelta.cacheRead + plannerDelta.cacheRead;

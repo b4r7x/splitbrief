@@ -526,6 +526,51 @@ describe('useIpcClient', () => {
     await tick(20);
   });
 
+  it('does not let a stale reconnect timer from a previous sockPath open another new socket', async () => {
+    const oldDir = makeTmpDir();
+    const newDir = makeTmpDir();
+    tmpDirs.push(oldDir, newDir);
+    const oldSockPath = join(oldDir, 'old.sock');
+    const newSockPath = join(newDir, 'new.sock');
+
+    let newConnections = 0;
+    const oldServer = await makeRejectingServer(oldSockPath);
+    servers.push(oldServer);
+    const newServer = createServer();
+    servers.push(newServer);
+    newServer.on('connection', (socket: Socket) => {
+      newConnections += 1;
+      send(socket, {
+        kind: 'session_meta',
+        sessionId: 'new-session-id',
+        startedAt: 1,
+        mode: 'standard',
+        feature: 'f',
+        readonly: false,
+      });
+    });
+    await new Promise<void>((resolve) => newServer.listen(newSockPath, resolve));
+
+    const capture: { current: CapturedState | null } = { current: null };
+    const ui = render(<Harness sockPath={oldSockPath} capture={capture} />);
+    await tick(50);
+
+    ui.rerender(<Harness sockPath={newSockPath} capture={capture} />);
+    await tick(100);
+
+    expect(capture.current?.status).toBe('connected');
+    expect(capture.current?.sessionId).toBe('new-session-id');
+    expect(newConnections).toBe(1);
+
+    await waitMs(150);
+
+    expect(capture.current?.status).toBe('connected');
+    expect(capture.current?.sessionId).toBe('new-session-id');
+    expect(newConnections).toBe(1);
+    ui.unmount();
+    await tick(20);
+  });
+
   it('after max reconnect attempts status becomes failed and emits ipc_reconnect_failed', async () => {
     const dir = makeTmpDir();
     tmpDirs.push(dir);

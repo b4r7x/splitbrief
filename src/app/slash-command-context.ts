@@ -4,8 +4,8 @@ import { overlayStore } from '../stores/ui/overlay.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
-import { attachmentsStore } from '../stores/workflow/attachments.js';
-import { requestRewind, requestClearQueue, requestAttach, requestDetach, type RewindTarget } from '../features/workflow/handlers.js';
+import { attachImage, detachImage, listAttachments } from '../stores/ui/attachments.js';
+import { requestRewind, requestClearQueue, type RewindTarget } from '../features/workflow/handlers.js';
 import { refreshDetection } from '../engine/detection/service.js';
 import { rebuildRepomap as doRebuildRepomap } from '../engine/codebase/rebuild.js';
 import { readActive } from '../core/sessions/lifecycle.js';
@@ -59,22 +59,14 @@ export function buildCommandContext({ exit }: { exit: () => void }): CommandCont
     },
     attachImage: (input) => {
       const projectDir = configStore.get().projectDir;
-      const result = requestAttach(input, projectDir);
+      const result = attachImage(input, projectDir);
       if (!result.ok) return { ok: false, reason: result.reason };
-      return { ok: true, path: result.resolvedPath };
+      return { ok: true, path: result.path };
     },
     detachImage: (idOrIndex) => {
-      const pending = attachmentsStore.peek();
-      if (pending.length === 0) return false;
-      const asIndex = Number.parseInt(idOrIndex, 10);
-      if (Number.isFinite(asIndex) && asIndex >= 1 && asIndex <= pending.length) {
-        const target = pending[asIndex - 1]!;
-        attachmentsStore.remove(target.id);
-        return true;
-      }
-      return requestDetach(idOrIndex);
+      return detachImage(idOrIndex);
     },
-    listAttachments: () => attachmentsStore.peek().map(a => ({ id: a.id, path: a.path })),
+    listAttachments,
     writeHandoff: async (target, taskId) => {
       const projectDir = configStore.get().projectDir;
       const sessionId = readActive(projectDir);

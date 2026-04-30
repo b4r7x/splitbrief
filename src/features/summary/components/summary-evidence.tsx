@@ -1,8 +1,6 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { configStore } from '../../../stores/project/config.js';
-import { readEvidenceLedger } from '../../../engine/orchestrator/evidence.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../core/schemas/evidence.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import { truncateWithEllipsis } from '../../../utils/truncate.js';
@@ -10,7 +8,6 @@ import { truncateWithEllipsis } from '../../../utils/truncate.js';
 interface SummaryEvidenceProps {
   summary: Summary;
   ledger?: EvidenceLedger | null;
-  sessionId?: string;
 }
 
 function statusGlyph(task: EvidenceTask): string {
@@ -21,16 +18,10 @@ function statusGlyph(task: EvidenceTask): string {
   return '·';
 }
 
-export function SummaryEvidence({ summary, ledger, sessionId }: SummaryEvidenceProps) {
+export function SummaryEvidence({ summary, ledger }: SummaryEvidenceProps) {
   const theme = useTheme();
   const isSmall = terminalSizeStore.use(s => s.isSmall);
-  const projectDir = configStore.use(s => s.projectDir);
   if (!summary.evidenceSummary) return null;
-
-  let resolved: EvidenceLedger | null = ledger ?? null;
-  if (!resolved && projectDir && sessionId) {
-    resolved = readEvidenceLedger(projectDir, sessionId);
-  }
 
   const truncate = isSmall ? 28 : 60;
   const titleWidth = isSmall ? 18 : 26;
@@ -42,7 +33,7 @@ export function SummaryEvidence({ summary, ledger, sessionId }: SummaryEvidenceP
         ledger: {summary.evidenceSummary.path} · {summary.evidenceSummary.tasksWithValidationEvidence}/{summary.evidenceSummary.totalTasks} validated · {summary.evidenceSummary.escalatedTasks} escalated · {summary.evidenceSummary.failedTasks} failed
       </Text>
 
-      {resolved?.tasks.map(task => {
+      {ledger?.tasks.map(task => {
         const passed = task.validation.filter(v => v.passed).map(v => v.stage).join(',') || '—';
         const expected = task.expectedEvidence.length > 0
           ? truncateWithEllipsis(task.expectedEvidence.join('; '), truncate)
@@ -66,9 +57,9 @@ export function SummaryEvidence({ summary, ledger, sessionId }: SummaryEvidenceP
         );
       })}
 
-      {resolved?.finalReview && (
+      {ledger?.finalReview && (
         <Box marginTop={1}>
-          <Text color={theme.textDim}>final review: {resolved.finalReview.status} ({resolved.finalReview.path})</Text>
+          <Text color={theme.textDim}>final review: {ledger.finalReview.status} ({ledger.finalReview.path})</Text>
         </Box>
       )}
     </Box>

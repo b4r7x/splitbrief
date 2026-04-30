@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { redactSecrets, maskApiKey } from './redact.js';
+import { redactSecrets, redactSecretsWithMetadata, maskApiKey } from './redact.js';
 
 describe('redactSecrets', () => {
   it('redacts Anthropic-style keys', () => {
@@ -47,6 +47,11 @@ describe('redactSecrets', () => {
     expect(redactSecrets(msg)).toBe('aws_key: AKIA***REDACTED***');
   });
 
+  it('redacts Slack-style tokens', () => {
+    const msg = 'slack: xoxb-abcdefghijklmnop';
+    expect(redactSecrets(msg)).toBe('slack: xoxb-***REDACTED***');
+  });
+
   it('handles multiple keys in one string', () => {
     const msg = 'key1=sk-ant-api03-aaaabbbbccccddddeeeefffff key2=sk-proj-xxxxyyyyzzzzaaaabbbbcccc';
     const result = redactSecrets(msg);
@@ -68,6 +73,25 @@ describe('redactSecrets', () => {
   it('does not redact short strings below the redaction threshold', () => {
     const msg = 'Error: key sk-short is invalid';
     expect(redactSecrets(msg)).toBe('Error: key sk-short is invalid');
+  });
+
+  it('returns redaction metadata and supports a custom marker', () => {
+    const result = redactSecretsWithMetadata('password="hunter2"', { marker: '[REDACTED]' });
+
+    expect(result).toEqual({ text: 'password="[REDACTED]"', redacted: true });
+  });
+
+  it('redacts URL credentials and private keys through the shared policy', () => {
+    const result = redactSecretsWithMetadata([
+      'postgres://user:password@example.com/app',
+      '-----BEGIN OPENSSH PRIVATE KEY-----',
+      'secret-key-body',
+      '-----END OPENSSH PRIVATE KEY-----',
+    ].join('\n'));
+
+    expect(result.redacted).toBe(true);
+    expect(result.text).not.toContain('user:password@example.com');
+    expect(result.text).not.toContain('secret-key-body');
   });
 });
 

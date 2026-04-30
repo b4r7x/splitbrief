@@ -1,19 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { resolveAttachment } from './attach-resolver.js';
 
 let projectDir: string;
 let externalDir: string;
 
 beforeEach(() => {
-  // Place project under user's home so that the safe-roots check (cwd OR ~)
-  // accepts the project itself and rejects paths escaping both roots.
-  projectDir = join(homedir(), `.diptych-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  externalDir = join(tmpdir(), `external-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  mkdirSync(projectDir, { recursive: true });
-  mkdirSync(externalDir, { recursive: true });
+  projectDir = mkdtempSync(join(tmpdir(), 'diptych-project-'));
+  externalDir = mkdtempSync(join(tmpdir(), 'diptych-external-'));
 });
 
 afterEach(() => {
@@ -30,7 +26,7 @@ describe('resolveAttachment', () => {
     if (result.ok) {
       expect(result.attachment.mimeType).toBe('image/png');
       expect(result.attachment.kind).toBe('image');
-      expect(result.attachment.path).toBe(p);
+      expect(result.attachment.path).toBe(realpathSync(p));
     }
   });
 

@@ -16,6 +16,62 @@ interface ConversationFlowProps {
   width: number;
 }
 
+const EVENT_KEY_FIELDS = [
+  'taskId',
+  'issueId',
+  'id',
+  'snapshotId',
+  'message',
+  'file',
+  'path',
+  'action',
+  'reason',
+  'scope',
+  'pattern',
+  'sockPath',
+  'sessionId',
+  'attempt',
+  'maxAttempts',
+] as const;
+
+function keyPart(value: unknown): string | null {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    const primitiveValues = value.filter(
+      (item): item is string | number | boolean =>
+        typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean',
+    );
+    return primitiveValues.length > 0 ? primitiveValues.join(',') : null;
+  }
+  return null;
+}
+
+function getEventBaseKey(event: EngineEvent): string {
+  const record = event as Record<string, unknown>;
+  const parts = [`type:${event.type}`, `ts:${event.ts}`];
+  const phase = keyPart(record.phase);
+  if (phase !== null) parts.push(`phase:${phase}`);
+  for (const field of EVENT_KEY_FIELDS) {
+    const value = keyPart(record[field]);
+    if (value !== null) parts.push(`${field}:${value}`);
+  }
+  return parts.join('|');
+}
+
+function buildEventKeys(items: readonly { event: EngineEvent; globalIndex: number }[]): Map<number, string> {
+  const counts = new Map<string, number>();
+  const keys = new Map<number, string>();
+  for (const { event, globalIndex } of items) {
+    const baseKey = getEventBaseKey(event);
+    const count = counts.get(baseKey) ?? 0;
+    counts.set(baseKey, count + 1);
+    keys.set(globalIndex, count === 0 ? baseKey : `${baseKey}|duplicate:${count}`);
+  }
+  return keys;
+}
+
 function computeScrollBannerText(
   linesAbove: number,
   linesBelow: number,
@@ -58,6 +114,7 @@ export function ConversationFlow({ sections, height, width }: ConversationFlowPr
   );
   const { above, below } = computeScrollBannerText(windowState.linesAbove, windowState.linesBelow);
   const { newEventRows, innerHeight } = windowState;
+  const eventKeys = buildEventKeys(renderableItems);
   const { visibleItems, trimTop } = trimRenderableItemsToViewport(
     renderableItems,
     totalDynamicHeight,
@@ -98,7 +155,7 @@ export function ConversationFlow({ sections, height, width }: ConversationFlowPr
             <Text color={t.textDim}>No events yet</Text>
           )}
           {visibleItems.map(({ event, globalIndex, leadingSpacer }) => (
-            <Box key={globalIndex} flexShrink={0} flexDirection="column">
+            <Box key={eventKeys.get(globalIndex) ?? getEventBaseKey(event)} flexShrink={0} flexDirection="column">
               {leadingSpacer && <Box height={1} flexShrink={0} />}
               <EventCard
                 event={event}

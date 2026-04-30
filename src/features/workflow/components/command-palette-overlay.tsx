@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Box, Text, useInput, useApp } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { OverlayPanel } from '../../../components/overlays/overlay-panel.js';
 import { buildPaletteResults } from '../../../engine/palette/aggregate.js';
@@ -12,14 +12,23 @@ import { configStore } from '../../../stores/project/config.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';
-import { createCommands } from '../../../core/slash-commands/catalog.js';
-import { buildCommandContext } from '../../../app/slash-command-context.js';
-import { toPaletteItems, executeSlashCommand } from '../../../core/slash-commands/dispatch.js';
 import { WORKFLOW_MODES } from '../../../core/schemas/enums.js';
+import type { SlashCommandDef } from '../../../core/slash-commands/types.js';
+import type { WorkflowMode } from '../../../core/schemas/enums.js';
 
 const MAX_VISIBLE = 8;
 
-export function CommandPaletteOverlay() {
+export interface CommandPaletteOverlayProps {
+  commands: SlashCommandDef[];
+  onSlashCommand: (raw: string) => unknown;
+  onWorkflowMode: (mode: WorkflowMode) => unknown;
+}
+
+export function CommandPaletteOverlay({
+  commands,
+  onSlashCommand,
+  onWorkflowMode,
+}: CommandPaletteOverlayProps) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
 
@@ -31,22 +40,25 @@ export function CommandPaletteOverlay() {
   const sessions = sessionsStore.use(s => s.sessions);
   const projectDir = configStore.use(s => s.projectDir);
 
-  const { exit } = useApp();
-  const ctx = buildCommandContext({ exit });
-  const commands = createCommands(ctx);
-
   useEffect(() => {
     sessionsStore.load(projectDir);
   }, [projectDir]);
 
-  const slashItems = toPaletteItems(commands, { screen, phase, onError: feedbackStore.setError }).filter(item =>
-    item.availableOn.includes(screen),
-  );
+  const slashItems = commands
+    .filter((cmd): cmd is SlashCommandDef & { label: string } => !!cmd.label)
+    .map(cmd => ({
+      label: cmd.label,
+      description: cmd.description,
+      shortcut: cmd.shortcut ?? null,
+      action: () => { void onSlashCommand(cmd.name); },
+      availableOn: cmd.validScreens,
+    }))
+    .filter(item => item.availableOn.includes(screen));
 
   const modeItems = WORKFLOW_MODES.map(mode => ({
     label: mode,
     description: `Switch to ${mode} mode`,
-    action: () => { ctx.setWorkflowMode(mode); },
+    action: () => { void onWorkflowMode(mode); },
   }));
 
   const pickerItems = [
@@ -102,7 +114,7 @@ export function CommandPaletteOverlay() {
     id: a.id,
     label: a.label,
     description: a.description ?? '',
-    action: () => { void executeSlashCommand(commands, a.command, { screen, phase, onError: feedbackStore.setError }); },
+    action: () => { void onSlashCommand(a.command); },
   }));
 
   const results = buildPaletteResults({

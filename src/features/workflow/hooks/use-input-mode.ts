@@ -20,7 +20,17 @@ export function useInputMode(): UseInputModeResult {
   const reviewResolverRef = useRef<((value: ReviewResult) => void) | null>(null);
   const questionResolverRef = useRef<((value: string) => void) | null>(null);
 
+  const supersedePending = (): void => {
+    const reviewResolver = reviewResolverRef.current;
+    const questionResolver = questionResolverRef.current;
+    reviewResolverRef.current = null;
+    questionResolverRef.current = null;
+    reviewResolver?.({ approved: false });
+    questionResolver?.('');
+  };
+
   const setReviewMode = (h: string): Promise<ReviewResult> => {
+    supersedePending();
     return new Promise((resolve) => {
       reviewResolverRef.current = resolve;
       setModeState({ mode: 'review', hint: h });
@@ -29,6 +39,7 @@ export function useInputMode(): UseInputModeResult {
   };
 
   const setQuestionMode = (h: string): Promise<string> => {
+    supersedePending();
     return new Promise((resolve) => {
       questionResolverRef.current = resolve;
       setModeState({ mode: 'question', hint: h });

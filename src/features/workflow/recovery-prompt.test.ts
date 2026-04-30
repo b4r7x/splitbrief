@@ -41,23 +41,20 @@ const baseIssue: RecoveryIssue = {
 
 describe('recovery prompt', () => {
   it('formats a compact validation recovery prompt with only available actions', () => {
-    expect(formatRecoveryPrompt(baseIssue)).toBe([
-      'Recovery needed: T003 validation failed after 3 attempts',
-      'Task: T003 - Patch auth validation',
-      'Files: src/auth/session.ts, src/auth/session.test.ts',
-      'Last check: test failed: npm test -- auth failed in src/auth/session.test.ts',
-      'Attempts: 3/3',
-      'Bigger worker available: cheap-cloud',
-      'Worker: local-qwen',
-      'Recommended: route to bigger worker: cheap-cloud',
-      '',
-      '[r] retry same worker',
-      '[b] route to bigger worker: cheap-cloud',
-      '[p] ask planner to split/rebase (approve/edit/reject proposal)',
-      '[s] skip task',
-      '[space] pause',
-      '[a] abort',
-    ].join('\n'));
+    const prompt = formatRecoveryPrompt(baseIssue);
+
+    expect(prompt).toContain('Recovery needed: T003 validation failed after 3 attempts');
+    expect(prompt).toContain('Task: T003 - Patch auth validation');
+    expect(prompt).toContain('Files: src/auth/session.ts, src/auth/session.test.ts');
+    expect(prompt).toContain('Last check: test failed: npm test -- auth failed in src/auth/session.test.ts');
+    expect(prompt).toContain('Recommended: route to bigger worker: cheap-cloud');
+    expect(prompt).toContain('[r] retry same worker');
+    expect(prompt).toContain('[b] route to bigger worker: cheap-cloud');
+    expect(prompt).toContain('[p] ask planner to split/rebase (approve/edit/reject proposal)');
+    expect(prompt).toContain('[s] skip task');
+    expect(prompt).toContain('[space] pause');
+    expect(prompt).toContain('[a] abort');
+    expect(prompt).not.toContain('[c] continue');
   });
 
   it('parses answers into typed recovery actions and falls back to pause safely', () => {

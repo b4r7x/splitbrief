@@ -12,6 +12,7 @@ import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
 import { PROVIDER_CATALOG } from '../../core/providers/catalog.js';
 import { isProviderId } from '../../core/schemas/enums.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 
 const CUSTOM_ROW_OFFSET = 1;
 
@@ -64,6 +65,19 @@ function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }
   return <Text color={t.textDim}>No models available. Press Ctrl+R to refresh.</Text>;
 }
 
+export async function refreshPickerDetection(
+  projectDir: string,
+  refresh: (projectDir: string | undefined) => Promise<void> = refreshDetectionStores,
+): Promise<void> {
+  feedbackStore.setMessage('Refreshing models...');
+  try {
+    await refresh(projectDir);
+    feedbackStore.setMessage('Models refreshed');
+  } catch (err) {
+    feedbackStore.setError(`Failed to refresh models: ${toErrorMessage(err)}`);
+  }
+}
+
 export function PickerView({ role, stepLabel, onCancel, catalog, actions }: PickerViewProps) {
   const t = useTheme();
   const projectDir = configStore.use(s => s.projectDir);
@@ -75,8 +89,7 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
   const initialRightIndex = currentModelIdx >= 0 ? currentModelIdx + CUSTOM_ROW_OFFSET : undefined;
 
   const handleRefresh = () => {
-    refreshDetectionStores(projectDir);
-    feedbackStore.setMessage('Refreshing models...');
+    void refreshPickerDetection(projectDir);
   };
 
   return (

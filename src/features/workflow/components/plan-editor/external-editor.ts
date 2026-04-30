@@ -9,6 +9,13 @@ import { renumberTasks, parseSplitResult } from './actions.js';
 
 const SPLIT_INSTRUCTION = '# Edit the task below. Use --- to split into multiple tasks.';
 
+function removeTempFile(tmpPath: string): void {
+  try {
+    rmSync(tmpPath, { force: true });
+  } catch {
+  }
+}
+
 export function openExternalEditor(task: Task, mode: 'edit' | 'split', sessionDirPath: string): void {
   const editor = process.env.EDITOR ?? 'vi';
   const prefix = mode === 'split' ? 'split' : 'edit';
@@ -25,32 +32,47 @@ export function openExternalEditor(task: Task, mode: 'edit' | 'split', sessionDi
     content = formatTasks([task]);
   }
 
-  writeFileSync(tmpPath, content, { encoding: 'utf-8', mode: 0o600 });
+  try {
+    writeFileSync(tmpPath, content, { encoding: 'utf-8', mode: 0o600 });
+  } catch (err) {
+    planEditorStore.setSaveError(`Failed to write editor file: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
 
-  process.stdin.pause();
-  const result = spawnSync(editor, [tmpPath], { stdio: 'inherit' });
-  process.stdin.resume();
+  let result: ReturnType<typeof spawnSync>;
+  try {
+    process.stdin.pause();
+    result = spawnSync(editor, [tmpPath], { stdio: 'inherit' });
+  } catch (err) {
+    planEditorStore.setSaveError(`Failed to open editor: ${err instanceof Error ? err.message : String(err)}`);
+    removeTempFile(tmpPath);
+    return;
+  } finally {
+    process.stdin.resume();
+  }
 
   if (result.error) {
-    planEditorStore.setSaveError('Editor not found. Set $EDITOR.');
-    rmSync(tmpPath, { force: true });
+    planEditorStore.setSaveError(`Failed to open editor: ${result.error.message || 'Set $EDITOR.'}`);
+    removeTempFile(tmpPath);
     return;
   }
   if (result.status !== 0) {
-    planEditorStore.setSaveError(`Editor exited with status ${result.status ?? 'unknown'}. Edit cancelled.`);
-    rmSync(tmpPath, { force: true });
+    const exit = result.signal ? `signal ${result.signal}` : `status ${result.status ?? 'unknown'}`;
+    planEditorStore.setSaveError(`Editor exited with ${exit}. Edit cancelled.`);
+    removeTempFile(tmpPath);
     return;
   }
 
   let editedContent: string;
   try {
     editedContent = readFileSync(tmpPath, 'utf-8');
-  } catch {
-    rmSync(tmpPath, { force: true });
+  } catch (err) {
+    planEditorStore.setSaveError(`Failed to read editor file: ${err instanceof Error ? err.message : String(err)}`);
+    removeTempFile(tmpPath);
     return;
   }
 
-  rmSync(tmpPath, { force: true });
+  removeTempFile(tmpPath);
 
   if (mode === 'edit') {
     let parsed: Task[];

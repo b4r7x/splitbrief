@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { tasksStore, updateTaskMap } from './tasks.js';
 import { addEvent, resetWorkflow } from './actions.js';
 import { taskId } from '../../core/schemas/task.js';
-import type { SidebarTask } from '../../features/workflow/components/sidebar.js';
+import type { EngineEvent } from '../../engine/events/types.js';
+import type { WorkflowTask } from './tasks.js';
 import {
   makeTaskStart,
   makeTaskComplete,
@@ -45,14 +46,53 @@ describe('tasksStore — via addEvent', () => {
     // skipped does not contribute a completion time.
     expect(tasksStore.get().taskCompletionTimes).toEqual([]);
   });
+
+  it('marks completed tasks by completion method instead of treating every completion as done', () => {
+    addEvent(makeTaskStart({ taskId: taskId('T001'), title: 'Failed task' }));
+    addEvent(makeTaskComplete({ taskId: taskId('T001'), method: 'failed' }));
+    expect(tasksStore.get().taskMap.get('T001')!.status).toBe('failed');
+
+    addEvent(makeTaskStart({ taskId: taskId('T002'), title: 'Escalated task' }));
+    addEvent(makeTaskComplete({ taskId: taskId('T002'), method: 'escalated-full' }));
+    expect(tasksStore.get().taskMap.get('T002')!.status).toBe('escalated');
+
+    addEvent(makeTaskStart({ taskId: taskId('T003'), title: 'Tool task' }));
+    addEvent(makeTaskComplete({ taskId: taskId('T003'), method: 'mcp-tool' }));
+    expect(tasksStore.get().taskMap.get('T003')!.status).toBe('done');
+  });
+
+  it('updates task state from failure and escalation lifecycle events', () => {
+    addEvent(makeTaskStart({ taskId: taskId('T001'), title: 'Escalating task' }));
+    addEvent({ type: 'task_escalating', ts: Date.now(), phase: 'escalating', taskId: taskId('T001') });
+    expect(tasksStore.get().taskMap.get('T001')!.status).toBe('escalated');
+
+    addEvent(makeTaskStart({ taskId: taskId('T002'), title: 'Failed task' }));
+    addEvent({ type: 'task_failed', ts: Date.now(), phase: 'implementing', taskId: taskId('T002') });
+    expect(tasksStore.get().taskMap.get('T002')!.status).toBe('failed');
+
+    addEvent(makeTaskStart({ taskId: taskId('T003'), title: 'Full fail task' }));
+    addEvent({ type: 'task_full_fail', ts: Date.now(), phase: 'escalating', taskId: taskId('T003') });
+    expect(tasksStore.get().taskMap.get('T003')!.status).toBe('failed');
+  });
 });
 
 describe('updateTaskMap (pure)', () => {
   it('status unchanged returns original map', () => {
-    const existing = new Map<string, SidebarTask>([
+    const existing = new Map<string, WorkflowTask>([
       ['T003', { id: 'T003', title: 'Already done', status: 'done' }],
     ]);
     const next = updateTaskMap(existing, makeTaskComplete({ taskId: taskId('T003') }));
     expect(next).toBe(existing);
+  });
+
+  it('leaves unknown terminal task events out of the map', () => {
+    const existing = new Map<string, WorkflowTask>();
+    const event = {
+      type: 'task_failed',
+      ts: Date.now(),
+      phase: 'implementing',
+      taskId: taskId('UNKNOWN'),
+    } satisfies EngineEvent;
+    expect(updateTaskMap(existing, event)).toBe(existing);
   });
 });

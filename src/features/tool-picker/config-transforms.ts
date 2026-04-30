@@ -82,7 +82,7 @@ export function removeCustomModel(config: Config, role: 'planner' | 'implementer
   if (config.implementer.model !== modelId) {
     return setImplementer(config, { ...config.implementer, customModels: filtered });
   }
-  const fallbackModel = filtered[0] ?? config.implementer.model;
+  const fallbackModel = filtered[0] ?? 'auto';
   return setImplementer(config, { ...config.implementer, model: fallbackModel, customModels: filtered });
 }
 

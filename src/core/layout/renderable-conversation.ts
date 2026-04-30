@@ -2,6 +2,7 @@ import { assertNever } from '../../utils/type-guards.js';
 import type { DynamicSection } from './event-sections.js';
 import type { LayoutEvent } from './event-types.js';
 import { getMaxVisibleDiffLines } from './diff-height.js';
+import { getCostPredictionCardRowCount } from '../features/cost-chrome.js';
 
 export interface RenderableConversationItem<TEvent extends LayoutEvent = LayoutEvent> {
   event: TEvent;
@@ -111,7 +112,7 @@ function applyHeightRule(event: LayoutEvent, ctx: HeightCtx): number {
     case 'warning': return visualLineCount(`warning  ${event.message}`, cols);
     case 'error': return visualLineCount(`error  ${event.message}`, cols);
     case 'cost_update': return 0;
-    case 'cost_prediction': return 3;
+    case 'cost_prediction': return getCostPredictionCardRowCount(event.prediction);
     case 'budget_warning': return 1;
     case 'budget_paused': return 1;
     case 'budget_exceeded': return 1;

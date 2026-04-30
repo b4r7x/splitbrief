@@ -12,6 +12,10 @@ import { sessionsStore } from '../../../stores/project/sessions.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { paletteMruStore } from '../../../stores/ui/palette-mru.js';
+import { createCommands } from '../../../core/slash-commands/catalog.js';
+import { executeSlashCommand } from '../../../core/slash-commands/dispatch.js';
+import type { CommandContext, SlashCommandDef } from '../../../core/slash-commands/types.js';
+import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import { CommandPaletteOverlay } from './command-palette-overlay.js';
 
 async function tick(): Promise<void> {
@@ -24,6 +28,64 @@ function write(
   chars: string,
 ): void {
   instance.stdin.write(chars);
+}
+
+function setWorkflowModeForTest(mode: WorkflowMode): boolean {
+  const state = configStore.get();
+  if (!state.config) return false;
+  configStore.__testReset({
+    ...state,
+    config: {
+      ...state.config,
+      workflow: { ...state.config.workflow, mode },
+    },
+  });
+  return true;
+}
+
+function createTestCommands(): SlashCommandDef[] {
+  const ctx: CommandContext = {
+    openOverlay: overlayStore.open,
+    navigate: (to) => routerStore.navigate({ to }),
+    quit: () => {},
+    setWorkflowMode: setWorkflowModeForTest,
+    setPlannerEffort: () => true,
+    setFeedbackMessage: feedbackStore.setMessage,
+    setFeedbackError: feedbackStore.setError,
+    refreshDetection: async () => {},
+    getCurrentPhase: () => lifecycleStore.get().phase,
+    requestRewind: () => true,
+    requestTaskRedo: () => true,
+    getQueueDepth: () => lifecycleStore.get().queueDepth,
+    clearQueue: () => 0,
+    rebuildRepomap: async () => ({ deleted: false, files: [] }),
+    attachImage: () => ({ ok: false, reason: 'not implemented in test' }),
+    detachImage: () => false,
+    listAttachments: () => [],
+    writeHandoff: async () => ({ outputDir: '' }),
+    listApprovals: () => [],
+    clearApprovals: () => 0,
+    getApprovalEnabled: () => true,
+    setApprovalEnabled: () => {},
+    acceptRunSnapshot: async () => ({ snapshotId: 'test-snapshot', isFirstSnapshot: false }),
+    rejectRunSnapshot: async () => ({ status: 'empty' }),
+  };
+  return createCommands(ctx);
+}
+
+function renderCommandPalette(): ReturnType<typeof render> {
+  const commands = createTestCommands();
+  return render(
+    <CommandPaletteOverlay
+      commands={commands}
+      onSlashCommand={(raw) => executeSlashCommand(commands, raw, {
+        screen: routerStore.get().screen,
+        phase: lifecycleStore.get().phase,
+        onError: feedbackStore.setError,
+      })}
+      onWorkflowMode={setWorkflowModeForTest}
+    />,
+  );
 }
 
 const DOWN = '[B';
@@ -62,7 +124,7 @@ afterEach(() => {
 
 describe('CommandPaletteOverlay', () => {
   it('renders the palette shell with default command sources', async () => {
-    const instance = render(<CommandPaletteOverlay />);
+    const instance = renderCommandPalette();
     await tick();
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain('Command Palette');
@@ -73,7 +135,7 @@ describe('CommandPaletteOverlay', () => {
   });
 
   it('typing and backspace update the query text shown on screen', async () => {
-    const instance = render(<CommandPaletteOverlay />);
+    const instance = renderCommandPalette();
     await tick();
 
     write(instance, 'hel');
@@ -90,7 +152,7 @@ describe('CommandPaletteOverlay', () => {
   });
 
   it('shows "No matching commands" when query has no matches', async () => {
-    const instance = render(<CommandPaletteOverlay />);
+    const instance = renderCommandPalette();
     await tick();
 
     write(instance, 'xyzzyxyzzy');
@@ -102,7 +164,7 @@ describe('CommandPaletteOverlay', () => {
   });
 
   it('Escape closes the overlay', async () => {
-    const instance = render(<CommandPaletteOverlay />);
+    const instance = renderCommandPalette();
     await tick();
 
     expect(overlayStore.get().active).toBe('command-palette');
@@ -114,7 +176,7 @@ describe('CommandPaletteOverlay', () => {
   });
 
   it('arrow keys move the visible cursor between results', async () => {
-    const instance = render(<CommandPaletteOverlay />);
+    const instance = renderCommandPalette();
     await tick();
 
     const initial = instance.lastFrame() ?? '';
@@ -131,7 +193,7 @@ describe('CommandPaletteOverlay', () => {
   });
 
   it('Enter selects the highlighted command, records MRU, and closes the palette', async () => {
-    const instance = render(<CommandPaletteOverlay />);
+    const instance = renderCommandPalette();
     await tick();
 
     expect(overlayStore.get().active).toBe('command-palette');
@@ -149,7 +211,7 @@ describe('CommandPaletteOverlay', () => {
     const session = makeSession({ id: 'sess-abc', feature: 'add login form', status: 'interrupted', summary: null });
     saveSummary(projectDir, session.id, session);
 
-    const instance = render(<CommandPaletteOverlay />);
+    const instance = renderCommandPalette();
     await tick();
 
     write(instance, 'add login');
@@ -175,7 +237,7 @@ describe('CommandPaletteOverlay', () => {
       projectDir,
     });
 
-    const instance = render(<CommandPaletteOverlay />);
+    const instance = renderCommandPalette();
     await tick();
 
     write(instance, 'SuperUniquePaletteAction');
@@ -201,7 +263,7 @@ describe('CommandPaletteOverlay', () => {
       projectDir,
     });
 
-    const instance = render(<CommandPaletteOverlay />);
+    const instance = renderCommandPalette();
     await tick();
 
     write(instance, 'Open Settings Custom Action');
@@ -222,7 +284,7 @@ describe('CommandPaletteOverlay', () => {
     tasksStore.__testReset({ tasks: [{ id: 'T001', title: 'uniquetasktitle123', status: 'in_progress' }] });
     lifecycleStore.__testReset({ phase });
 
-    const instance = render(<CommandPaletteOverlay />);
+    const instance = renderCommandPalette();
     await tick();
     write(instance, 'uniquetasktitle123');
     await tick();
@@ -237,7 +299,7 @@ describe('CommandPaletteOverlay', () => {
   });
 
   it('mode items are shown in results', async () => {
-    const instance = render(<CommandPaletteOverlay />);
+    const instance = renderCommandPalette();
     await tick();
 
     write(instance, 'standard');
@@ -247,8 +309,22 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
+  it('executes the injected workflow mode action', async () => {
+    const instance = renderCommandPalette();
+    await tick();
+
+    write(instance, 'instant');
+    await tick();
+    write(instance, ENTER);
+    await tick();
+
+    expect(configStore.get().config?.workflow.mode).toBe('instant');
+    expect(overlayStore.get().active).toBe('none');
+    instance.unmount();
+  });
+
   it('picker items are shown in results', async () => {
-    const instance = render(<CommandPaletteOverlay />);
+    const instance = renderCommandPalette();
     await tick();
 
     write(instance, 'Settings');
@@ -267,7 +343,7 @@ describe('CommandPaletteOverlay', () => {
     overlayStore.open('settings');
     overlayStore.open('command-palette');
 
-    const instance = render(<CommandPaletteOverlay />);
+    const instance = renderCommandPalette();
     await tick();
 
     write(instance, uniqueFeature);

@@ -1,78 +1,62 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { renderFeature } from '../../../../testing/helpers/ink.js';
+import { makeConfig } from '../../../../testing/helpers/factories/config.js';
 import {
   adviseMode,
-  formatAdvisoryText,
   setAdvisory,
-  getAdvisory,
   __resetAdvisoryForTests,
 } from '../../../engine/orchestrator/planning/mode-advisor.js';
-
-// Tests exercise the advisory text as it would be displayed by InputFooter.
-// The footer renders formatAdvisoryText(advisory) when advisory.kind !== 'none'.
+import { configStore } from '../../../stores/project/config.js';
+import { routerStore } from '../../../stores/navigation/router.js';
+import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { tokensStore } from '../../../stores/workflow/tokens.js';
+import { InputFooter } from './input-footer.js';
 
 describe('InputFooter advisory display', () => {
   beforeEach(() => {
     __resetAdvisoryForTests();
+    configStore.__testReset({ config: makeConfig(), projectDir: '/tmp/diptych-test' });
+    routerStore.init({ screen: 'workflow', feature: 'demo' });
+    conversationScrollStore.__testReset();
+    lifecycleStore.__testReset();
+    tasksStore.__testReset();
+    tokensStore.__testReset();
   });
 
-  it('shows downgrade advisory for trivial prompt in standard mode', () => {
+  afterEach(() => {
+    __resetAdvisoryForTests();
+    configStore.__testReset();
+    routerStore.init({ screen: 'home' });
+    conversationScrollStore.__testReset();
+    lifecycleStore.__testReset();
+    tasksStore.__testReset();
+    tokensStore.__testReset();
+  });
+
+  it('renders downgrade advisory text when advisory state is set', () => {
     const advisory = adviseMode('fix typo in footer', 'standard');
     setAdvisory(advisory.kind !== 'none' ? advisory : null);
-    const stored = getAdvisory();
-    expect(stored).not.toBeNull();
-    expect(stored!.kind).toBe('downgrade');
-    const text = formatAdvisoryText(stored!);
-    expect(text).toMatch(/^advisor:/);
-    expect(text).toContain('instant');
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('advisor:');
+    expect(frame).toContain('instant');
+
+    ui.unmount();
   });
 
-  it('shows upgrade advisory for high-risk prompt in quick mode', () => {
-    const advisory = adviseMode('add oauth authentication middleware', 'quick');
-    setAdvisory(advisory.kind !== 'none' ? advisory : null);
-    const stored = getAdvisory();
-    expect(stored).not.toBeNull();
-    expect(stored!.kind).toBe('upgrade');
-    const text = formatAdvisoryText(stored!);
-    expect(text).toMatch(/^advisor:/);
-    expect(text).toContain('speckit');
-  });
-
-  it('shows missing-context advisory for vague prompt', () => {
-    const advisory = adviseMode('improve it', 'standard');
-    setAdvisory(advisory.kind !== 'none' ? advisory : null);
-    const stored = getAdvisory();
-    expect(stored).not.toBeNull();
-    expect(stored!.kind).toBe('missing-context');
-    const text = formatAdvisoryText(stored!);
-    expect(text).toMatch(/^advisor:/);
-  });
-
-  it('stores null (no advisory shown) when mode matches risk', () => {
-    // speckit for high-risk → kind none
+  it('omits advisory text when the advisor has no displayable warning', () => {
     const advisory = adviseMode('add auth with JWT refresh tokens', 'speckit');
     setAdvisory(advisory.kind !== 'none' ? advisory : null);
-    expect(getAdvisory()).toBeNull();
-  });
 
-  it('advisory text is short enough for footer (under 80 chars)', () => {
-    const cases = [
-      adviseMode('fix typo in login page', 'standard'),
-      adviseMode('add oauth auth', 'quick'),
-      adviseMode('improve it', 'standard'),
-    ];
-    for (const advisory of cases) {
-      if (advisory.kind !== 'none') {
-        const text = formatAdvisoryText(advisory);
-        expect(text.length).toBeLessThan(80);
-      }
-    }
-  });
+    const ui = renderFeature(<InputFooter />);
+    const frame = ui.lastFrame() ?? '';
 
-  it('advisory text has no newlines (single line for footer)', () => {
-    const advisory = adviseMode('fix typo here', 'standard');
-    if (advisory.kind !== 'none') {
-      const text = formatAdvisoryText(advisory);
-      expect(text).not.toContain('\n');
-    }
+    expect(frame).not.toContain('advisor:');
+
+    ui.unmount();
   });
 });

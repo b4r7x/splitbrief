@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/store.js';
@@ -15,6 +15,14 @@ export function ApprovalPrompt() {
   const t = useTheme();
 
   const isActive = state.status === 'pending';
+  const promptIdentity = state.status === 'pending' ? state.resolve : null;
+
+  useEffect(() => {
+    setPhraseInput('');
+    setReasonInput('');
+    setConfirmStep('phrase');
+    setPhraseError('');
+  }, [promptIdentity]);
 
   useInput(
     (input, key) => {

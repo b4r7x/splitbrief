@@ -9,11 +9,14 @@ import {
   getTaskStatusSymbol,
   buildTaskDetailParts,
   formatTaskCount,
+  refreshPlanReviewMetadata,
 } from './brief-review-view.js';
 import type { BriefQualityReport, BriefQualityIssue } from '../../../engine/spec/brief-quality.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { taskId } from '../../../core/schemas/task.js';
+import { configStore } from '../../../stores/project/config.js';
+import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
 
 describe('formatQualityDisplay', () => {
   it('returns quality score formatted to 2 decimal places when report is present', () => {
@@ -140,6 +143,28 @@ describe('buildTaskDetailParts', () => {
 });
 
 describe('buildRoutingPreviewMetadata', () => {
+  it('returns refreshed metadata without writing it to the plan editor store', async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-refresh-test-'));
+    try {
+      configStore.__testReset({ config: makeConfig(), projectDir });
+      planEditorStore.__testReset();
+      const task = makeTask({ action: 'modify', file: 'missing.ts' });
+
+      const metadata = await refreshPlanReviewMetadata([task]);
+
+      expect(metadata).toHaveLength(1);
+      expect(metadata[0]).toMatchObject({
+        taskId: task.id,
+        estimateStatus: 'missing-current-code',
+      });
+      expect(planEditorStore.get().reviewMetadata.size).toBe(0);
+    } finally {
+      configStore.__testReset();
+      planEditorStore.__testReset();
+      await rm(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it('routes using currentCode refreshed from disk when available', async () => {
     const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-routing-test-'));
     try {

@@ -3,6 +3,11 @@ import type { EngineEvent } from '../../../../engine/events/types.js';
 import { useTheme } from '../../../../components/theme.js';
 import { formatCost } from '../../../../core/formatting.js';
 import { getProviderDisplayName } from '../../../../core/providers/catalog.js';
+import {
+  formatCostPredictionUnknownReasons,
+  hasDisplayableCostPrediction,
+  plannerEstimateReviewLine,
+} from '../../../../core/features/cost-chrome.js';
 
 type CostPredictionEvent = Extract<EngineEvent, { type: 'cost_prediction' }>;
 
@@ -10,24 +15,11 @@ function formatNullableCost(cost: number | null): string {
   return cost === null ? 'n/a' : formatCost(cost);
 }
 
-function formatUnknownReasons(reasons: string[]): string {
-  if (reasons.length === 0) return '';
-  return `Unknown: ${reasons.join(', ')}`;
-}
-
-function plannerEstimateReviewLine(event: CostPredictionEvent): string | null {
-  const review = event.prediction.plannerEstimateReview;
-  if (!review) return null;
-  if (review.status === 'running') return 'Planner estimate review: extra planner call running';
-  if (review.status === 'unavailable') return 'Planner estimate review: unavailable; deterministic estimate remains usable';
-  return `Planner estimate review: extra planner call completed (${review.classification ?? 'unclassified'})`;
-}
-
 export function CostPredictionCard({ event }: { event: CostPredictionEvent }) {
   const t = useTheme();
   const deterministic = event.prediction.deterministic;
-  const hasPrediction = event.prediction.estimatedTasks > 0 || event.prediction.expectedCost > 0 || (deterministic?.taskCount ?? 0) > 0;
-  const reviewLine = plannerEstimateReviewLine(event);
+  const hasPrediction = hasDisplayableCostPrediction(event.prediction);
+  const reviewLine = plannerEstimateReviewLine(event.prediction);
 
   if (!hasPrediction) {
     return (
@@ -38,7 +30,7 @@ export function CostPredictionCard({ event }: { event: CostPredictionEvent }) {
   }
 
   if (deterministic) {
-    const unknownReasons = formatUnknownReasons(deterministic.totals.unknownCostReason);
+    const unknownReasons = formatCostPredictionUnknownReasons(deterministic.totals.unknownCostReason);
     return (
       <Box flexDirection="column">
         <Text color={t.accent} bold>

@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { useTheme } from '../../../components/theme.js';
 import { parseTasks } from '../../../engine/spec/parser.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { BriefQualityIssue, BriefQualityReport } from '../../../engine/spec/brief-quality.js';
+import { isBriefQualityReport, type BriefQualityIssue, type BriefQualityReport } from '../../../engine/spec/brief-quality.js';
 import { planEditorStore, type PlanReviewCostTier, type PlanReviewEstimateStatus, type PlanReviewRisk, type PlanTaskReviewMetadata } from '../../../stores/workflow/plan-editor.js';
 import { configStore } from '../../../stores/project/config.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
@@ -263,10 +263,10 @@ function routingPreviewReason(reason: string, estimateStatus?: PlanReviewEstimat
   return reason;
 }
 
-export async function refreshPlanReviewMetadata(tasks: Task[]): Promise<void> {
+export async function refreshPlanReviewMetadata(tasks: Task[]): Promise<PlanTaskReviewMetadata[]> {
   const { config, projectDir } = configStore.get();
-  if (!config) return;
-  planEditorStore.setReviewMetadata(await buildRoutingPreviewMetadata(tasks, { config, projectDir }));
+  if (!config) return [];
+  return buildRoutingPreviewMetadata(tasks, { config, projectDir });
 }
 
 interface BriefReviewViewProps {
@@ -278,10 +278,11 @@ interface BriefReviewViewProps {
 interface BriefData {
   tasks: Task[];
   quality: BriefQualityReport | null;
+  loadError: string | null;
 }
 
 function useBriefData(filePath: string): BriefData {
-  const [data, setData] = useState<BriefData>({ tasks: [], quality: null });
+  const [data, setData] = useState<BriefData>({ tasks: [], quality: null, loadError: null });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -289,27 +290,32 @@ function useBriefData(filePath: string): BriefData {
 
     async function load() {
       const [tasksText, qualityText] = await Promise.all([
-        readFile(filePath, { encoding: 'utf8', signal }).catch(() => ''),
+        readFile(filePath, { encoding: 'utf8', signal }),
         readFile(join(dirname(filePath), 'brief-quality.json'), { encoding: 'utf8', signal }).catch(() => null),
       ]);
       if (signal.aborted) return;
 
       const tasks = parseTasks(tasksText);
-      await refreshPlanReviewMetadata(tasks);
+      const metadata = await refreshPlanReviewMetadata(tasks);
       if (signal.aborted) return;
+      planEditorStore.setReviewMetadata(metadata);
       let quality: BriefQualityReport | null = null;
       if (qualityText) {
         try {
-          quality = JSON.parse(qualityText) as BriefQualityReport;
+          const parsed = JSON.parse(qualityText) as unknown;
+          quality = isBriefQualityReport(parsed) ? parsed : null;
         } catch {
           quality = null;
         }
       }
-      setData({ tasks, quality });
+      setData({ tasks, quality, loadError: null });
     }
 
-    load().catch(() => {
-      if (!signal.aborted) setData({ tasks: [], quality: null });
+    load().catch((err) => {
+      if (!signal.aborted) {
+        const message = err instanceof Error ? err.message : String(err);
+        setData({ tasks: [], quality: null, loadError: `Failed to load Task Briefs: ${message}` });
+      }
     });
     return () => { controller.abort(); };
   }, [filePath]);
@@ -385,7 +391,7 @@ function getVisibleBriefTaskWindow(
 
 export function BriefReviewView({ filePath, height, width }: BriefReviewViewProps) {
   const t = useTheme();
-  const { tasks, quality } = useBriefData(filePath);
+  const { tasks, quality, loadError } = useBriefData(filePath);
   const reviewMetadata = planEditorStore.use(s => s.reviewMetadata);
 
   const qualityDisplay = formatQualityDisplay(quality);
@@ -408,6 +414,7 @@ export function BriefReviewView({ filePath, height, width }: BriefReviewViewProp
       <Text color={t.textDim}>{formatPlanReviewSummary(tasks, reviewMetadata)}</Text>
       <PlanReviewScorecardLine tasks={tasks} quality={quality} metadata={reviewMetadata} />
       <Text color={t.textDim}>{filePath}</Text>
+      {loadError !== null && <Text color={t.error} wrap="truncate">{loadError}</Text>}
       <Box height={1} />
       <Box flexDirection="column" height={taskRowBudget} overflow="hidden">
         {visibleTasks.map(task => {

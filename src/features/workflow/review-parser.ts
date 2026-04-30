@@ -32,11 +32,25 @@ export function parseReviewCommand(text: string): ReviewAction {
 
 function openInEditor(filePath: string): Promise<void> {
   const editor = process.env.EDITOR || 'vi';
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(editor, [filePath], { stdio: 'inherit' });
-    child.on('close', () => resolve());
-    child.on('error', (err) => reject(err));
-  });
+  return (async () => {
+    process.stdin.pause();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(editor, [filePath], { stdio: 'inherit' });
+        child.once('error', reject);
+        child.once('close', (code, signal) => {
+          if (code === 0) {
+            resolve();
+            return;
+          }
+          const exit = signal ? `signal ${signal}` : `status ${code ?? 'unknown'}`;
+          reject(new Error(`Editor exited with ${exit}`));
+        });
+      });
+    } finally {
+      process.stdin.resume();
+    }
+  })();
 }
 
 export interface ReviewInputHandler {
