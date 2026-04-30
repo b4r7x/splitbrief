@@ -2,6 +2,37 @@ import { error, matches } from '../../utils/error.js';
 
 type Role = 'planner' | 'implementer';
 
+const SENSITIVE_KEY_PATTERN = /(?:api[-_]?key|token|secret|password|credential)/i;
+const REDACTED = '[REDACTED]';
+const CIRCULAR = '[Circular]';
+
+function redactSensitiveKeys(value: unknown, seen = new WeakSet<object>()): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  if (seen.has(value)) return CIRCULAR;
+
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    const redactedArray = value.map(item => redactSensitiveKeys(item, seen));
+    seen.delete(value);
+    return redactedArray;
+  }
+
+  const redacted: Record<string, unknown> = {};
+  for (const [key, nestedValue] of Object.entries(value)) {
+    redacted[key] = SENSITIVE_KEY_PATTERN.test(key)
+      ? REDACTED
+      : redactSensitiveKeys(nestedValue, seen);
+  }
+  seen.delete(value);
+  return redacted;
+}
+
+function stringifyRedacted(value: unknown): string {
+  const json = JSON.stringify(redactSensitiveKeys(value));
+  return json ?? String(value);
+}
+
 export const configError = {
   invalidYaml: (path: string, cause: unknown) =>
     error(
@@ -25,14 +56,14 @@ export const configError = {
   unsupportedVersion: (version: unknown) =>
     error(
       'config-unsupported-version',
-      `Unsupported config version: ${String(version)}. Expected 1 or 2.`,
+      `Unsupported config version: ${String(version)}. Expected 2 or 3.`,
       { version },
     ),
   runnerKindIndeterminate: (role: Role, opts: unknown) =>
     error(
       'config-runner-kind-indeterminate',
-      `Cannot infer runner kind for ${role}: need one of 'kind', 'tool', 'apiBase', 'command', or 'existing' to be provided. Got: ${JSON.stringify(opts)}`,
-      { role, opts },
+      `Cannot infer runner kind for ${role}: need one of 'kind', 'tool', 'apiBase', 'command', or 'existing' to be provided. Got: ${stringifyRedacted(opts)}`,
+      { role, opts: redactSensitiveKeys(opts) },
     ),
   runnerMissingField: (role: Role, kind: string, field: string) =>
     error(

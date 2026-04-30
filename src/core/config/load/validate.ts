@@ -61,17 +61,15 @@ function apiKeyErrors(config: Config): ConfigError[] {
     return errors;
   }
 
-  const profileCredentialErrors = Object.entries(config.implementerProfiles.profiles).flatMap(([name, profile]) => {
+  const selectedName = selectedImplementerProfileName(config);
+  const selectedProfile = selectedName ? config.implementerProfiles.profiles[selectedName] : undefined;
+  if (selectedName && selectedProfile) {
     const error = missingApiKeyError({
       role: 'implementer',
-      path: `implementerProfiles.profiles.${name}`,
-      config: profile,
+      path: `implementerProfiles.profiles.${selectedName}`,
+      config: selectedProfile,
     });
-    return error ? [error] : [];
-  });
-
-  if (profileCredentialErrors.length === Object.keys(config.implementerProfiles.profiles).length) {
-    errors.push(...profileCredentialErrors);
+    if (error) errors.push(error);
   }
 
   return errors;
@@ -162,9 +160,9 @@ function profileCredentialWarnings(config: Config): string[] {
         config: profile,
       });
       if (!error) return [];
+      if (name === defaultName) return [];
 
-      const prefix = name === defaultName ? 'Default' : 'Unused';
-      return [`${prefix} implementer profile ${name} is missing credentials: ${error.message}.`];
+      return [`Unused implementer profile ${name} is missing credentials: ${error.message}.`];
     });
 }
 

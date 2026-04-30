@@ -5,7 +5,7 @@ import { saveState, loadState, appendEngineEvent, appendMessage } from './persis
 import { createInitialState } from './machine.js';
 import { taskId } from '../schemas/task.js';
 import type { RecoveryIssue } from '../schemas/recovery.js';
-import type { EngineEvent } from '../../engine/events/types.js';
+import { SessionLogEventEntrySchema } from '../schemas/session-log.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
 
@@ -126,8 +126,8 @@ describe('loadState', () => {
 describe('appendEngineEvent', () => {
   it('appends JSONL lines to session log file with kind:event and ISO ts', () => {
     const dir = makeTmp();
-    const event1: EngineEvent = { ts: 1000, type: 'task_started', taskId: taskId('T001'), phase: 'implementing', title: 'Task 1', index: 0, total: 1, file: 'src/x.ts', action: 'create' };
-    const event2: EngineEvent = { ts: 2000, type: 'task_completed', taskId: taskId('T001'), phase: 'implementing', title: 'Task 1', method: 'local', retries: 0, duration: 100 };
+    const event1 = { ts: 1000, type: 'task_started', taskId: taskId('T001'), phase: 'implementing' as const, title: 'Task 1', index: 0, total: 1, file: 'src/x.ts', action: 'create' };
+    const event2 = { ts: 2000, type: 'task_completed', taskId: taskId('T001'), phase: 'implementing' as const, title: 'Task 1', method: 'local', retries: 0, duration: 100 };
 
     appendEngineEvent(dir, SESSION_ID, event1);
     appendEngineEvent(dir, SESSION_ID, event2);
@@ -147,9 +147,25 @@ describe('appendEngineEvent', () => {
 
   it('creates directory when it does not exist', () => {
     const dir = makeTmp();
-    const event: EngineEvent = { ts: 1000, type: 'workflow_started', phase: 'idle', feature: 'test-feature' };
+    const event = { ts: 1000, type: 'workflow_started', phase: 'idle' as const, feature: 'test-feature' };
     appendEngineEvent(dir, SESSION_ID, event);
     expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'))).toBe(true);
+  });
+
+  it('persists phase-less events in a schema-valid log entry', () => {
+    const dir = makeTmp();
+    appendEngineEvent(dir, SESSION_ID, {
+      ts: 1000,
+      type: 'approval_mode_changed',
+      mode: 'yolo',
+    });
+
+    const raw = readFileSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'), 'utf-8');
+    const entry = JSON.parse(raw.trim());
+
+    expect(entry.phase).toBeUndefined();
+    expect(entry.data).toEqual({ mode: 'yolo' });
+    expect(SessionLogEventEntrySchema.safeParse(entry).success).toBe(true);
   });
 
   it('warns to stderr and does not throw when write fails on a read-only session dir', () => {
@@ -164,7 +180,7 @@ describe('appendEngineEvent', () => {
 
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
-      const event: EngineEvent = { ts: 1000, type: 'workflow_started', phase: 'idle', feature: 'test-feature' };
+      const event = { ts: 1000, type: 'workflow_started', phase: 'idle' as const, feature: 'test-feature' };
       expect(() => appendEngineEvent(dir, SESSION_ID, event)).not.toThrow();
       const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
       expect(output).toContain('failed to persist log entry');

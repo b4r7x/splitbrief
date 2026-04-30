@@ -1,4 +1,6 @@
 import { join } from 'node:path';
+import { fsError } from '../lib/fs.js';
+import { validateSafeIdentifier } from '../utils/validate-identifier.js';
 
 export const DIPTYCH_DIR = '.diptych';
 export const CODEX_DIR = '.codex';
@@ -15,8 +17,25 @@ export const activeFile = (projectDir: string): string =>
 export const sessionsRoot = (projectDir: string): string =>
   join(projectDir, DIPTYCH_DIR, SESSIONS_DIR);
 
-export const sessionDir = (projectDir: string, sessionId: string): string =>
-  join(projectDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+export function validateSessionId(sessionId: string): void {
+  const result = validateSafeIdentifier(sessionId);
+  if (!result.ok) {
+    throw fsError.invalidId('session id', sessionId, result.reason);
+  }
+  if (sessionId !== sessionId.trim()) {
+    throw fsError.invalidId('session id', sessionId, 'must not start or end with whitespace');
+  }
+  if (!SESSION_ID_PATTERN.test(sessionId)) {
+    throw fsError.invalidId('session id', sessionId, 'must contain only letters, numbers, dots, underscores or hyphens and start with a letter or number');
+  }
+}
+
+export function sessionDir(projectDir: string, sessionId: string): string {
+  validateSessionId(sessionId);
+  return join(projectDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+}
 
 export const reviewPacketJsonPath = (projectDir: string, sessionId: string): string =>
   join(sessionDir(projectDir, sessionId), REVIEW_PACKET_JSON_FILE);

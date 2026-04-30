@@ -43,4 +43,29 @@ describe('getScrollWindowState', () => {
       linesBelow: 8,
     });
   });
+
+  it('clamps negative and oversized offsets to valid window geometry', () => {
+    expect(getScrollWindowState(20, 10, -5, true)).toMatchObject({
+      windowStart: 11,
+      windowEnd: 20,
+      linesAbove: 11,
+      linesBelow: 0,
+      newEventRows: 0,
+    });
+
+    const oversized = getScrollWindowState(20, 10, 999, false);
+    expect(oversized.windowStart).toBe(0);
+    expect(oversized.windowEnd).toBeGreaterThanOrEqual(oversized.windowStart);
+    expect(oversized.linesAbove).toBeGreaterThanOrEqual(0);
+    expect(oversized.linesBelow).toBeGreaterThanOrEqual(0);
+  });
+
+  it('keeps an empty viewport window valid', () => {
+    const state = getScrollWindowState(0, 0, 4, true);
+    expect(state.windowStart).toBe(0);
+    expect(state.windowEnd).toBe(0);
+    expect(state.innerHeight).toBe(0);
+    expect(state.linesAbove).toBe(0);
+    expect(state.linesBelow).toBe(0);
+  });
 });

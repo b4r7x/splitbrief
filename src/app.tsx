@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useApp } from 'ink';
 import { createCommands } from './core/slash-commands/catalog.js';
-import { buildCommandContext } from './core/slash-commands/context.js';
+import { buildCommandContext } from './app/slash-command-context.js';
 import { executeSlashCommand } from './core/slash-commands/dispatch.js';
 import { useAppKeys } from './hooks/use-app-keys.js';
 import { useMouseScroll } from './features/workflow/hooks/use-mouse-scroll.js';
@@ -11,6 +11,7 @@ import { routerStore } from './stores/navigation/router.js';
 import { configStore } from './stores/project/config.js';
 import { overlayStore } from './stores/ui/overlay.js';
 import { feedbackStore } from './stores/ui/feedback.js';
+import { lifecycleStore } from './stores/workflow/lifecycle.js';
 import { useStores } from './stores/use-stores.js';
 import { HomeScreen } from './features/home/screen.js';
 import { WorkflowScreen } from './features/workflow/screen.js';
@@ -30,15 +31,16 @@ import type { OverlayType, Screen } from './stores/navigation/router.js';
 import { assertNever } from './utils/type-guards.js';
 
 export function App() {
-  const [{ screen }, { active: overlayActive }] = useStores(routerStore, overlayStore);
+  const [{ screen }, { active: overlayActive }, { phase }] = useStores(routerStore, overlayStore, lifecycleStore);
   const { exit } = useApp();
   const config = configStore.useConfig();
   const theme = getTheme(config.theme);
 
   const ctx = buildCommandContext({ exit });
   const commands = createCommands(ctx);
-  const handleSlashCommand = (raw: string, from: Screen) =>
-    executeSlashCommand(commands, raw, from, feedbackStore.setError);
+  const handleSlashCommand = (raw: string, from: Screen) => {
+    void executeSlashCommand(commands, raw, { screen: from, phase, onError: feedbackStore.setError });
+  };
 
   useAppKeys({ exit });
   useMouseScroll();

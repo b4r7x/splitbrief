@@ -11,18 +11,11 @@ import {
 describe('hasWorkflowConfig', () => {
   it('returns true when any workflow-config event is present, false otherwise', () => {
     expect(hasWorkflowConfig([])).toBe(false);
-    expect(hasWorkflowConfig([{ type: 'planner_text', ts: 0, phase: 'implementing', text: 'hi' }])).toBe(false);
+    expect(hasWorkflowConfig([{ type: 'planner_text' }])).toBe(false);
     expect(
       hasWorkflowConfig([
-        { type: 'planner_text', ts: 0, phase: 'implementing', text: 'hi' },
-        {
-          type: 'workflow_config',
-          ts: 0,
-          phase: 'implementing',
-          mode: 'standard',
-          plannerTool: 'claude-code',
-          implementerTool: 'ollama',
-        },
+        { type: 'planner_text' },
+        { type: 'workflow_config' },
       ]),
     ).toBe(true);
   });
@@ -97,6 +90,15 @@ describe('getWorkflowContentRect', () => {
     const rect = getWorkflowContentRect(100, 30, 2, true, false, false);
     expect(rect.left).toBe(1);
     expect(rect.width).toBe(100);
+  });
+
+  it('keeps edges non-inverted when the terminal has no usable content area', () => {
+    const rect = getWorkflowContentRect(0, 0, 20, true, true, false);
+
+    expect(rect.width).toBe(0);
+    expect(rect.height).toBe(0);
+    expect(rect.right).toBeGreaterThanOrEqual(rect.left);
+    expect(rect.bottom).toBeGreaterThanOrEqual(rect.top);
   });
 });
 

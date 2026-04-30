@@ -15,7 +15,12 @@ import {
 import { writeActive } from '../sessions/lifecycle.js';
 import { deriveSessionId, migrateState, migrateEvents } from './legacy.js';
 
-export async function migrateCommand(projectDir: string): Promise<void> {
+export type MigrationResult =
+  | { status: 'not-needed' }
+  | { status: 'skipped'; sourceDir: string; warnings: string[] }
+  | { status: 'migrated'; sourceDir: string; sessionId: string; warnings: string[] };
+
+export async function migrateCommand(projectDir: string): Promise<MigrationResult> {
   const legacyCurrent = join(projectDir, DIPTYCH_DIR, 'current');
   const tinySpecCurrent = join(projectDir, '.tiny-spec', 'current');
 
@@ -25,8 +30,7 @@ export async function migrateCommand(projectDir: string): Promise<void> {
   } else if (existsSync(tinySpecCurrent)) {
     sourceDir = tinySpecCurrent;
   } else {
-    console.log('Nothing to migrate.');
-    return;
+    return { status: 'not-needed' };
   }
 
   let oldState: Record<string, unknown>;
@@ -34,14 +38,22 @@ export async function migrateCommand(projectDir: string): Promise<void> {
     const stateRaw = readFileSync(join(sourceDir, STATE_FILE), 'utf-8');
     const parsed = narrowRecord(JSON.parse(stateRaw));
     if (!parsed) {
-      console.warn(`Legacy state at ${sourceDir}/${STATE_FILE} is not an object. Skipping migration.`);
-      return;
+      return {
+        status: 'skipped',
+        sourceDir,
+        warnings: [`Legacy state at ${sourceDir}/${STATE_FILE} is not an object. Skipping migration.`],
+      };
     }
     oldState = parsed;
   } catch (err) {
-    console.warn(`Cannot read legacy state at ${sourceDir}/${STATE_FILE}: ${err instanceof Error ? err.message : String(err)}`);
-    console.warn('Skipping migration. Delete the legacy directory manually if you want to start fresh.');
-    return;
+    return {
+      status: 'skipped',
+      sourceDir,
+      warnings: [
+        `Cannot read legacy state at ${sourceDir}/${STATE_FILE}: ${err instanceof Error ? err.message : String(err)}`,
+        'Skipping migration. Delete the legacy directory manually if you want to start fresh.',
+      ],
+    };
   }
 
   const feature = String(oldState.feature ?? 'unknown');
@@ -50,36 +62,43 @@ export async function migrateCommand(projectDir: string): Promise<void> {
 
   const tempDir = `${sessionDir(projectDir, sessionId)}.tmp`;
   const finalDir = sessionDir(projectDir, sessionId);
+  const warnings: string[] = [];
 
   mkdirSync(sessionsRoot(projectDir), { recursive: true, mode: 0o700 });
 
-  const newState = migrateState(oldState);
-  writeSecureFile(join(tempDir, STATE_FILE), JSON.stringify(newState, null, 2) + '\n');
+  rmSync(tempDir, { recursive: true, force: true });
 
-  const eventsSource = join(sourceDir, 'events.jsonl');
-  if (existsSync(eventsSource)) {
-    migrateEvents(eventsSource, join(tempDir, SESSION_LOG_FILE));
-  }
+  try {
+    const newState = migrateState(oldState);
+    writeSecureFile(join(tempDir, STATE_FILE), JSON.stringify(newState, null, 2) + '\n');
 
-  for (const fname of [SPEC_FILE, PLAN_FILE, TASKS_FILE] as const) {
-    const src = join(sourceDir, fname);
-    if (existsSync(src)) {
-      writeSecureFile(join(tempDir, fname), readFileSync(src, 'utf-8'));
+    const eventsSource = join(sourceDir, 'events.jsonl');
+    if (existsSync(eventsSource)) {
+      warnings.push(...migrateEvents(eventsSource, join(tempDir, SESSION_LOG_FILE)));
     }
-  }
 
-  renameSync(tempDir, finalDir);
+    for (const fname of [SPEC_FILE, PLAN_FILE, TASKS_FILE] as const) {
+      const src = join(sourceDir, fname);
+      if (existsSync(src)) {
+        writeSecureFile(join(tempDir, fname), readFileSync(src, 'utf-8'));
+      }
+    }
+
+    renameSync(tempDir, finalDir);
+  } catch (err) {
+    rmSync(tempDir, { recursive: true, force: true });
+    throw err;
+  }
 
   writeActive(projectDir, sessionId);
-
   rmSync(sourceDir, { recursive: true, force: true });
 
-  console.log(`Migrated ${sessionId}. Run 'diptych resume' to continue.`);
+  return { status: 'migrated', sourceDir, sessionId, warnings };
 }
 
-export async function maybeMigrate(projectDir: string): Promise<void> {
+export async function maybeMigrate(projectDir: string): Promise<MigrationResult> {
   const legacyCurrent = join(projectDir, DIPTYCH_DIR, 'current');
   const tinySpecCurrent = join(projectDir, '.tiny-spec', 'current');
-  if (!existsSync(legacyCurrent) && !existsSync(tinySpecCurrent)) return;
-  await migrateCommand(projectDir);
+  if (!existsSync(legacyCurrent) && !existsSync(tinySpecCurrent)) return { status: 'not-needed' };
+  return migrateCommand(projectDir);
 }

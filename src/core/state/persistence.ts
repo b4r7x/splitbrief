@@ -2,7 +2,8 @@ import { readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkflowState } from '../schemas/workflow.js';
 import type { SessionLogEventEntry, SessionLogMessageEntry } from '../schemas/session-log.js';
-import type { EngineEvent } from '../../engine/events/types.js';
+import type { Phase } from '../schemas/enums.js';
+import type { TaskId } from '../schemas/task.js';
 import { WorkflowStateSchema } from '../schemas/workflow.js';
 import { CURRENT_STATE_VERSION } from './machine.js';
 import { STATE_FILE, SESSION_LOG_FILE, sessionDir } from '../paths.js';
@@ -59,13 +60,12 @@ export function appendMessage(
   appendLine(projectDir, sessionId, entry);
 }
 
-export function appendEngineEvent(projectDir: string, sessionId: string, event: EngineEvent): void {
-  const { type, ts, ...rest } = event;
-  const phase = 'phase' in event ? (event as { phase: unknown }).phase : undefined;
-  const taskId = 'taskId' in event ? (event as { taskId?: unknown }).taskId : undefined;
-  const data = { ...rest };
-  if ('phase' in data) delete (data as Record<string, unknown>)['phase'];
-  if ('taskId' in data) delete (data as Record<string, unknown>)['taskId'];
+export function appendEngineEvent<TEvent extends { type: string; ts: number }>(
+  projectDir: string,
+  sessionId: string,
+  event: TEvent & { phase?: Phase; taskId?: TaskId },
+): void {
+  const { type, ts, phase, taskId, ...data } = event;
   const entry = {
     kind: 'event' as const,
     ts: new Date(ts).toISOString(),

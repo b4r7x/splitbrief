@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createInitialState, transition } from './machine.js';
+import { createInitialState, transition, transitionError } from './machine.js';
 import {
   getCompletedTaskIds,
   getEscalatedTaskIds,
@@ -50,6 +50,24 @@ describe('createInitialState', () => {
 });
 
 describe('transition', () => {
+  it('throws when an action is not valid for the current phase', () => {
+    const state = createInitialState('feat');
+
+    expect(() => transition(state, { type: 'VALIDATION_PASS' })).toThrow('Cannot apply VALIDATION_PASS');
+  });
+
+  it('does not allow plan approval to bypass brief review actions', () => {
+    const tasks = [makeTask({ id: 't1' })];
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-briefs', tasks };
+
+    try {
+      transition(state, { type: 'APPROVE_PLAN' });
+      throw new Error('expected transition to throw');
+    } catch (err) {
+      expect(transitionError.isInvalidActionForPhase(err)).toBe(true);
+    }
+  });
+
   it('START -> researching', () => {
     const state = createInitialState('feat');
     const next = transition(state, { type: 'START', feature: 'feat' });

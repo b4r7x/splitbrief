@@ -181,14 +181,15 @@ async function runPhase(opts: RunOpts = {}) {
   const config = opts.config ?? makeConfig();
   const state = opts.state ?? prepareState();
   const sinks = opts.sinks ?? createTestSinks();
+  const recorder = makeBusRecorder();
   const result = await runPlanningPhase({
-    wctx: { projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, sinks, bus: makeBusRecorder().bus },
+    wctx: { projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, sinks, bus: recorder.bus },
     planner,
     state,
     feature: 'test-feature',
     ...(opts.rewindPending ? { rewindPending: opts.rewindPending } : {}),
   });
-  return { result, projectDir, sessionId };
+  return { result, projectDir, sessionId, events: recorder.events };
 }
 
 describe('runPlanningPhase — happy paths (modes + approval)', () => {
@@ -748,6 +749,7 @@ describe('runPlanningPhase — rewindPending', () => {
     const regenCalls: Array<{ prompt: string; target: string }> = [];
     let planCalls = 0;
     const planner = makePassingPlanner({
+      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
       regenerate: async (prompt: string, t: 'spec' | 'plan') => {
         regenCalls.push({ prompt, target: t });
         return { text: 'regenerated', usage: null };
@@ -828,8 +830,53 @@ describe('runPlanningPhase — rewindPending', () => {
     expect(result.tasks).toHaveLength(1);
   });
 
+  it('rewind plan requires brief approval before implementation', async () => {
+    const onApprovalNeeded = vi.fn().mockResolvedValue({ approved: false });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const planner = makePassingPlanner({
+      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+    });
+
+    const { result } = await runPhase({
+      planner,
+      callbacks,
+      config: makeConfig({ workflow: auto() }),
+      state: prepareState('planning'),
+      rewindPending: { target: 'plan' },
+    });
+
+    expect(result.cancelled).toBe(true);
+    expect(result.state.phase).not.toBe('implementing');
+    expect(result.tasks).toHaveLength(0);
+    expect(onApprovalNeeded).toHaveBeenCalledWith('briefs', expect.stringContaining(TASKS_FILE));
+  });
+
+  it('rewind approval reaches implementation through briefs, not plan approval', async () => {
+    const onApprovalNeeded = vi.fn().mockResolvedValue({ approved: true });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const planner = makePassingPlanner({
+      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+    });
+
+    const { result, events } = await runPhase({
+      planner,
+      callbacks,
+      config: makeConfig({ workflow: auto() }),
+      state: prepareState('planning'),
+      rewindPending: { target: 'plan' },
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(result.state.phase).toBe('implementing');
+    expect(onApprovalNeeded).toHaveBeenCalledWith('briefs', expect.stringContaining(TASKS_FILE));
+    expect(events.some(e => e.type === 'plan_approved' && e.phase === 'implementing')).toBe(true);
+  });
+
   it('rewindPending cleared on resulting state after regeneration', async () => {
     const { result } = await runPhase({
+      planner: makePassingPlanner({
+        review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+      }),
       config: makeConfig({ workflow: auto() }),
       state: { ...prepareState('specifying'), rewindPending: { target: 'spec', comment: 'use JWT' } },
       rewindPending: { target: 'spec', comment: 'use JWT' },

@@ -1,10 +1,15 @@
 import type { SettingDef } from "./catalog.js";
-import type { ThemeColors } from "../../components/theme.js";
+
+export interface SettingsPresentationColors {
+  accent: string;
+  success: string;
+  textDim: string;
+}
 
 export function valueColor(
   def: SettingDef,
   value: unknown,
-  t: ThemeColors,
+  t: SettingsPresentationColors,
 ): string {
   if (def.kind === "boolean") return value ? t.success : t.textDim;
   if (def.kind === "picker") return t.accent;

@@ -1,14 +1,8 @@
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
-
-export type HandoffTarget = 'spec-kit' | 'agents-md' | 'claude-code' | 'copilot-issue';
-
-export const HANDOFF_TARGETS: readonly HandoffTarget[] = [
-  'spec-kit',
-  'agents-md',
-  'claude-code',
-  'copilot-issue',
-];
+import type { HandoffTarget } from '../../core/handoff/targets.js';
+export { HANDOFF_TARGETS, parseHandoffTarget } from '../../core/handoff/targets.js';
+export type { HandoffTarget } from '../../core/handoff/targets.js';
 
 export type HandoffInput = {
   target: HandoffTarget;

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, statSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, statSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { listSessions, listAllSessions, getSessionDir, saveSummary } from './io.js';
@@ -169,6 +169,21 @@ describe('saveSummary', () => {
     tmp = createTempDir('sessions-io-test');
     const invalid = { id: 'bad', feature: 123 };
     expect(() => saveSummary(tmp, 'bad', invalid as never)).toThrow('Invalid session data');
+  });
+
+  it('rejects mismatched path id and summary payload id', () => {
+    tmp = createTempDir('sessions-io-test');
+    const session = makeSession({ id: '2024-01-01-real' });
+    expect(() => saveSummary(tmp, '2024-01-01-other', session)).toThrow(
+      "Cannot save session summary for '2024-01-01-other'",
+    );
+    expect(existsSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-other'))).toBe(false);
+  });
+
+  it('rejects invalid session ids', () => {
+    tmp = createTempDir('sessions-io-test');
+    const session = makeSession({ id: '../outside' });
+    expect(() => saveSummary(tmp, '../outside', session)).toThrow('Invalid session id');
   });
 
   it('round-trips through listSessions', () => {

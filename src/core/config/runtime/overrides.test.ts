@@ -99,6 +99,31 @@ describe('applyCLIOverrides — plannerEffort', () => {
   });
 });
 
+describe('applyCLIOverrides — runner commands', () => {
+  it('uses shell config for planner command override without explicit tool', () => {
+    const result = applyCLIOverrides(baseConfig, {
+      planner: { command: 'custom-planner' },
+    });
+
+    expect(result.planner.kind).toBe('shell');
+    if (result.planner.kind === 'shell') {
+      expect(result.planner.command).toBe('custom-planner');
+    }
+  });
+
+  it('uses shell config for implementer command override without explicit tool', () => {
+    const result = applyCLIOverrides(baseConfig, {
+      implementer: { command: 'custom-implementer' },
+    });
+
+    expect(result.implementer.kind).toBe('shell');
+    if (result.implementer.kind === 'shell') {
+      expect(result.implementer.command).toBe('custom-implementer');
+      expect(result.implementer.model).toBe(baseConfig.implementer.model);
+    }
+  });
+});
+
 describe('applyCLIOverrides — yolo', () => {
   it('yolo override disables approval', () => {
     const result = applyCLIOverrides(baseConfig, { yolo: true });

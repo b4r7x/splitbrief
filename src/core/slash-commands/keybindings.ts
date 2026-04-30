@@ -1,5 +1,5 @@
-import { ALL_SCREENS } from '../../stores/navigation/router.js';
-import type { Screen } from '../../stores/navigation/router.js';
+import { ALL_SCREENS } from '../navigation/types.js';
+import type { Screen } from '../navigation/types.js';
 
 interface ShortcutInfo {
   id: string;

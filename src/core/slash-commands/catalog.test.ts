@@ -1,17 +1,16 @@
-import { beforeEach, describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { createCommands, canReviseSpec, canRevisePlan, canRedoTask } from './catalog.js';
-import { toPaletteItems, executeSlashCommand } from './dispatch.js';
+import { toPaletteItems, executeSlashCommand as runSlashCommand } from './dispatch.js';
 import type { SlashCommandDef, CommandContext } from './types.js';
 import type { Phase } from '../schemas/enums.js';
 import { PHASES } from '../schemas/enums.js';
-import { overlayStore } from '../../stores/ui/overlay.js';
 
 const noop = () => {};
 const noopTrue = () => true;
 
 function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
   return {
-    openOverlay: (type, focus) => overlayStore.open(type, focus),
+    openOverlay: noop,
     navigate: noop,
     quit: noop,
     setWorkflowMode: noopTrue,
@@ -46,15 +45,25 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
   };
 }
 
-beforeEach(() => {
-  overlayStore.reset();
-});
+function executeSlashCommand(
+  commands: SlashCommandDef[],
+  raw: string,
+  screen: 'home' | 'workflow' | 'summary' | 'setup',
+  onError: (msg: string) => void,
+  phase: Phase = 'idle',
+): Promise<void> {
+  return runSlashCommand(commands, raw, { screen, phase, onError });
+}
+
+function toTestPaletteItems(commands: SlashCommandDef[]) {
+  return toPaletteItems(commands, { screen: 'home', phase: 'idle', onError: noop });
+}
 
 describe('toPaletteItems', () => {
   const commands = createCommands(makeCtx());
 
   it('converts commands with labels to palette items', () => {
-    const items = toPaletteItems(commands);
+    const items = toTestPaletteItems(commands);
     expect(items.length).toBeGreaterThan(0);
     for (const item of items) {
       expect(item.label).toBeTruthy();
@@ -69,7 +78,7 @@ describe('toPaletteItems', () => {
       { kind: 'noarg', name: '/no-label', description: 'test', validScreens: ['home'], handler: noop },
       { kind: 'noarg', name: '/with-label', label: 'Labeled', description: 'test', validScreens: ['home'], handler: noop },
     ];
-    const items = toPaletteItems(cmds);
+    const items = toTestPaletteItems(cmds);
     expect(items.length).toBe(1);
     expect(items[0]?.label).toBe('Labeled');
   });
@@ -117,26 +126,64 @@ describe('executeSlashCommand', () => {
     executeSlashCommand(cmds, '/test', 'home', noop);
     expect(receivedArgs).toBeUndefined();
   });
+
+  it('does not execute a command blocked by its phase guard', async () => {
+    let called = false;
+    let errorMsg = '';
+    const cmds: SlashCommandDef[] = [
+      {
+        kind: 'noarg',
+        name: '/guarded',
+        description: 'test',
+        validScreens: ['workflow'],
+        phaseGuard: (phase) => phase === 'implementing',
+        handler: () => { called = true; },
+      },
+    ];
+    await executeSlashCommand(cmds, '/guarded', 'workflow', (msg) => { errorMsg = msg; }, 'planning');
+    expect(called).toBe(false);
+    expect(errorMsg).toContain('planning');
+  });
+
+  it('waits for async command handlers', async () => {
+    let called = false;
+    const cmds: SlashCommandDef[] = [
+      {
+        kind: 'noarg',
+        name: '/async',
+        description: 'test',
+        validScreens: ['home'],
+        handler: async () => { called = true; },
+      },
+    ];
+    await executeSlashCommand(cmds, '/async', 'home', noop);
+    expect(called).toBe(true);
+  });
 });
 
 describe('/mode command', () => {
-  it('opens mode-selector overlay when called without args (observed via overlayStore)', () => {
-    const commands = createCommands(makeCtx());
+  it('opens mode-selector overlay when called without args', () => {
+    let openedOverlay: string | undefined;
+    const commands = createCommands(makeCtx({
+      openOverlay: (type) => { openedOverlay = type; },
+    }));
     executeSlashCommand(commands, '/mode', 'home', noop);
-    expect(overlayStore.get().active).toBe('mode-selector');
+    expect(openedOverlay).toBe('mode-selector');
   });
 
   it('sets mode to quick without opening the overlay', () => {
     let savedMode: string | undefined;
     let feedback: string | undefined;
+    let openedOverlay: string | undefined;
     const commands = createCommands(makeCtx({
+      openOverlay: (type) => { openedOverlay = type; },
       setWorkflowMode: (m) => { savedMode = m; return true; },
       setFeedbackMessage: (m) => { feedback = m; },
     }));
     executeSlashCommand(commands, '/mode quick', 'home', noop);
     expect(savedMode).toBe('quick');
     expect(feedback).toMatch(/quick/);
-    expect(overlayStore.get().active).toBe('none');
+    expect(openedOverlay).toBeUndefined();
   });
 
   it('sets mode to speckit', () => {
@@ -188,10 +235,13 @@ describe('/refresh command', () => {
 });
 
 describe('/planner command', () => {
-  it('opens the planner-picker overlay (observed via overlayStore)', () => {
-    const commands = createCommands(makeCtx());
+  it('opens the planner-picker overlay', () => {
+    let openedOverlay: string | undefined;
+    const commands = createCommands(makeCtx({
+      openOverlay: (type) => { openedOverlay = type; },
+    }));
     executeSlashCommand(commands, '/planner', 'home', noop);
-    expect(overlayStore.get().active).toBe('planner-picker');
+    expect(openedOverlay).toBe('planner-picker');
   });
 });
 
@@ -205,7 +255,7 @@ describe('/revise-spec command', () => {
       requestRewind: (target, comment) => { rewinds.push({ target, comment }); return true; },
       getCurrentPhase: () => 'implementing',
     }));
-    executeSlashCommand(commands, '/revise-spec needs more detail', 'workflow', noop);
+    executeSlashCommand(commands, '/revise-spec needs more detail', 'workflow', noop, 'implementing');
     expect(rewinds).toEqual([{ target: 'spec', comment: 'needs more detail' }]);
   });
 
@@ -215,7 +265,7 @@ describe('/revise-spec command', () => {
       requestRewind: (target, comment) => { rewinds.push({ target, comment }); return true; },
       getCurrentPhase: () => 'implementing',
     }));
-    executeSlashCommand(commands, '/revise-spec', 'workflow', noop);
+    executeSlashCommand(commands, '/revise-spec', 'workflow', noop, 'implementing');
     expect(rewinds).toEqual([{ target: 'spec', comment: undefined }]);
   });
 
@@ -227,7 +277,7 @@ describe('/revise-spec command', () => {
       setFeedbackError: (m) => { error = m; },
       getCurrentPhase: () => 'researching',
     }));
-    executeSlashCommand(commands, '/revise-spec', 'workflow', noop);
+    executeSlashCommand(commands, '/revise-spec', 'workflow', (m) => { error = m; }, 'researching');
     expect(rewinds).toEqual([]);
     expect(error).toMatch(/only available|not available|cannot/i);
   });
@@ -239,7 +289,7 @@ describe('/revise-spec command', () => {
       setFeedbackError: (m) => { error = m; },
       getCurrentPhase: () => 'implementing',
     }));
-    executeSlashCommand(commands, '/revise-spec', 'workflow', noop);
+    executeSlashCommand(commands, '/revise-spec', 'workflow', noop, 'implementing');
     expect(error).toMatch(/cannot rewind|no active/i);
   });
 });
@@ -251,7 +301,7 @@ describe('/revise-plan command', () => {
       requestRewind: (t, c) => { rewinds.push({ target: t, comment: c }); return true; },
       getCurrentPhase: () => 'implementing',
     }));
-    executeSlashCommand(commands, '/revise-plan too many tasks', 'workflow', noop);
+    executeSlashCommand(commands, '/revise-plan too many tasks', 'workflow', noop, 'implementing');
     expect(rewinds).toEqual([{ target: 'plan', comment: 'too many tasks' }]);
   });
 
@@ -263,7 +313,7 @@ describe('/revise-plan command', () => {
       setFeedbackError: (m) => { error = m; },
       getCurrentPhase: () => 'specifying',
     }));
-    executeSlashCommand(commands, '/revise-plan', 'workflow', noop);
+    executeSlashCommand(commands, '/revise-plan', 'workflow', (m) => { error = m; }, 'specifying');
     expect(rewinds).toEqual([]);
     expect(error).toMatch(/only available|not available|cannot/i);
   });
@@ -276,7 +326,7 @@ describe('/redo-task command', () => {
       requestTaskRedo: (id) => { redos.push({ taskId: id }); return true; },
       getCurrentPhase: () => 'implementing',
     }));
-    executeSlashCommand(commands, '/redo-task T001', 'workflow', noop);
+    executeSlashCommand(commands, '/redo-task T001', 'workflow', noop, 'implementing');
     expect(redos).toEqual([{ taskId: 'T001' }]);
   });
 
@@ -288,7 +338,7 @@ describe('/redo-task command', () => {
       setFeedbackError: (m) => { error = m; },
       getCurrentPhase: () => 'implementing',
     }));
-    executeSlashCommand(commands, '/redo-task', 'workflow', noop);
+    executeSlashCommand(commands, '/redo-task', 'workflow', noop, 'implementing');
     expect(redos).toEqual([]);
     expect(error).toMatch(/task id/i);
   });
@@ -301,7 +351,7 @@ describe('/redo-task command', () => {
       setFeedbackError: (m) => { error = m; },
       getCurrentPhase: () => 'planning',
     }));
-    executeSlashCommand(commands, '/redo-task T001', 'workflow', noop);
+    executeSlashCommand(commands, '/redo-task T001', 'workflow', (m) => { error = m; }, 'planning');
     expect(redos).toEqual([]);
     expect(error).toMatch(/only available|not available/i);
   });

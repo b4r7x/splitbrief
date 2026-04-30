@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -32,7 +32,9 @@ describe('migrateCommand', () => {
 
   it('migrates legacy .diptych/current/ to session folder', async () => {
     setupLegacyDir(tmp);
-    await migrateCommand(tmp);
+    const result = await migrateCommand(tmp);
+
+    expect(result).toMatchObject({ status: 'migrated', sessionId: EXPECTED_SESSION_ID });
 
     const sessDir = join(tmp, DIPTYCH_DIR, 'sessions', EXPECTED_SESSION_ID);
     expect(existsSync(sessDir)).toBe(true);
@@ -62,16 +64,8 @@ describe('migrateCommand', () => {
     expect(existsSync(join(tmp, DIPTYCH_DIR, 'current'))).toBe(false);
   });
 
-  it('prints "Nothing to migrate." when no legacy dir exists', async () => {
-    const output: string[] = [];
-    const origLog = console.log;
-    console.log = (msg: string) => output.push(msg);
-    try {
-      await migrateCommand(tmp);
-    } finally {
-      console.log = origLog;
-    }
-    expect(output).toContain('Nothing to migrate.');
+  it('returns not-needed when no legacy dir exists', async () => {
+    await expect(migrateCommand(tmp)).resolves.toEqual({ status: 'not-needed' });
   });
 
   it('handles collision by appending -migrated suffix', async () => {
@@ -86,6 +80,48 @@ describe('migrateCommand', () => {
     const active = readFileSync(join(tmp, DIPTYCH_DIR, 'active'), 'utf-8').trim();
     expect(active).toBe(`${EXPECTED_SESSION_ID}-migrated`);
   });
+
+  it('handles repeated migration collisions', async () => {
+    setupLegacyDir(tmp);
+    mkdirSync(join(tmp, DIPTYCH_DIR, 'sessions', EXPECTED_SESSION_ID), { recursive: true });
+    mkdirSync(join(tmp, DIPTYCH_DIR, 'sessions', `${EXPECTED_SESSION_ID}-migrated`), { recursive: true });
+    mkdirSync(join(tmp, DIPTYCH_DIR, 'sessions', `${EXPECTED_SESSION_ID}-migrated-2`), { recursive: true });
+
+    const result = await migrateCommand(tmp);
+
+    expect(result).toMatchObject({
+      status: 'migrated',
+      sessionId: `${EXPECTED_SESSION_ID}-migrated-3`,
+    });
+    expect(existsSync(join(tmp, DIPTYCH_DIR, 'sessions', `${EXPECTED_SESSION_ID}-migrated-3`))).toBe(true);
+  });
+
+  it('falls back to the current date when legacy startedAt is invalid', async () => {
+    const legacyDir = join(tmp, DIPTYCH_DIR, 'current');
+    mkdirSync(legacyDir, { recursive: true });
+    writeFileSync(join(legacyDir, 'state.json'), JSON.stringify({
+      feature: 'broken date',
+      startedAt: 'not-a-date',
+      sessionId: 'legacy-session-abc',
+    }));
+
+    await migrateCommand(tmp);
+
+    const today = new Date().toISOString().slice(0, 10);
+    expect(existsSync(join(tmp, DIPTYCH_DIR, 'sessions', `${today}-broken-date`))).toBe(true);
+  });
+
+  it('removes temporary artifacts when migration fails after creating temp dir', async () => {
+    setupLegacyDir(tmp);
+    const eventsPath = join(tmp, DIPTYCH_DIR, 'current', 'events.jsonl');
+    rmSync(eventsPath, { force: true });
+    mkdirSync(eventsPath, { recursive: true });
+
+    await expect(migrateCommand(tmp)).rejects.toThrow();
+
+    expect(existsSync(join(tmp, DIPTYCH_DIR, 'sessions', `${EXPECTED_SESSION_ID}.tmp`))).toBe(false);
+    expect(existsSync(join(tmp, DIPTYCH_DIR, 'current'))).toBe(true);
+  });
 });
 
 describe('maybeMigrate', () => {
@@ -94,7 +130,7 @@ describe('maybeMigrate', () => {
   });
 
   it('is a no-op when no legacy dir exists', async () => {
-    await expect(maybeMigrate(tmp)).resolves.toBeUndefined();
+    await expect(maybeMigrate(tmp)).resolves.toEqual({ status: 'not-needed' });
     expect(existsSync(join(tmp, DIPTYCH_DIR, 'sessions'))).toBe(false);
   });
 

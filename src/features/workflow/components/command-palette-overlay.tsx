@@ -13,7 +13,7 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';
 import { createCommands } from '../../../core/slash-commands/catalog.js';
-import { buildCommandContext } from '../../../core/slash-commands/context.js';
+import { buildCommandContext } from '../../../app/slash-command-context.js';
 import { toPaletteItems, executeSlashCommand } from '../../../core/slash-commands/dispatch.js';
 import { WORKFLOW_MODES } from '../../../core/schemas/enums.js';
 
@@ -39,7 +39,7 @@ export function CommandPaletteOverlay() {
     sessionsStore.load(projectDir);
   }, [projectDir]);
 
-  const slashItems = toPaletteItems(commands).filter(item =>
+  const slashItems = toPaletteItems(commands, { screen, phase, onError: feedbackStore.setError }).filter(item =>
     item.availableOn.includes(screen),
   );
 
@@ -102,7 +102,7 @@ export function CommandPaletteOverlay() {
     id: a.id,
     label: a.label,
     description: a.description ?? '',
-    action: () => { executeSlashCommand(commands, a.command, screen, feedbackStore.setError); },
+    action: () => { void executeSlashCommand(commands, a.command, { screen, phase, onError: feedbackStore.setError }); },
   }));
 
   const results = buildPaletteResults({
@@ -127,7 +127,9 @@ export function CommandPaletteOverlay() {
         if (item) {
           paletteMruStore.record(item.id);
           overlayStore.close();
-          item.action();
+          void Promise.resolve(item.action()).catch((err: unknown) => {
+            feedbackStore.setError(err instanceof Error ? err.message : String(err));
+          });
         }
         return;
       }

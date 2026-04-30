@@ -33,6 +33,12 @@ describe('writeActive / readActive round-trip', () => {
     writeActive(dir, '2026-04-14-feature');
     expect(readActive(dir)).toBe('2026-04-14-feature');
   });
+
+  it('rejects invalid session ids', () => {
+    const dir = makeTmp();
+    mkdirSync(join(dir, '.diptych'), { recursive: true });
+    expect(() => writeActive(dir, '../outside')).toThrow('Invalid session id');
+  });
 });
 
 describe('readActive', () => {
@@ -103,6 +109,11 @@ describe('isSessionLive', () => {
     mkdirSync(sDir, { recursive: true });
     writeFileSync(join(sDir, STATE_FILE), '{bad json!!!');
     expect(isSessionLive(dir, '2026-04-14-corrupt')).toBe(false);
+  });
+
+  it('rejects invalid session ids before reading state', () => {
+    const dir = makeTmp();
+    expect(() => isSessionLive(dir, '../outside')).toThrow('Invalid session id');
   });
 });
 

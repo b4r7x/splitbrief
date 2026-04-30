@@ -1,14 +1,11 @@
 import { z } from 'zod';
 import { TaskIdSchema } from './task.js';
-import { TaskStatusSchema, TaskCompletionMethodSchema, WorkflowModeSchema } from './enums.js';
+import { ActionClassSchema, TaskStatusSchema, TaskCompletionMethodSchema, WorkflowModeSchema } from './enums.js';
 
 export const EvidenceRejectionSchema = z.object({
   ts: z.string(),
   tier: z.enum(['sticky', 'confirm']),
-  actionClass: z.enum([
-    'read', 'write_in_scope', 'validation',
-    'write_out_of_scope', 'destructive', 'network', 'package_change',
-  ]),
+  actionClass: ActionClassSchema,
   actionDescription: z.string(),
   taskId: TaskIdSchema.optional(),
   reason: z.string(),
@@ -18,10 +15,7 @@ export type EvidenceRejection = z.infer<typeof EvidenceRejectionSchema>;
 export const EvidenceApprovalSchema = z.object({
   ts: z.string(),
   tier: z.literal('confirm'),
-  actionClass: z.enum([
-    'read', 'write_in_scope', 'validation',
-    'write_out_of_scope', 'destructive', 'network', 'package_change',
-  ]),
+  actionClass: ActionClassSchema,
   actionDescription: z.string(),
   taskId: TaskIdSchema.optional(),
   reason: z.string(),

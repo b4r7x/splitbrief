@@ -88,20 +88,20 @@ export function resetWorkflow(resume?: WorkflowState): void {
 }
 
 let cachedEvents: EngineEvent[] | null = null;
-let cachedSections: Section[] = [];
+let cachedSections: Section<EngineEvent>[] = [];
 
-function computeSections(events: EngineEvent[]): Section[] {
+function computeSections(events: EngineEvent[]): Section<EngineEvent>[] {
   if (cachedEvents === events) return cachedSections;
   cachedEvents = events;
   cachedSections = groupEventsIntoSections(events);
   return cachedSections;
 }
 
-export function getSections(): Section[] {
+export function getSections(): Section<EngineEvent>[] {
   return computeSections(eventsStore.get().events);
 }
 
-export function useSections(): Section[] {
+export function useSections(): Section<EngineEvent>[] {
   const events = eventsStore.use(s => s.events);
   return computeSections(events);
 }

@@ -1,11 +1,23 @@
 import type { StateAction } from '../types/state-actions.js';
 import type { WorkflowState } from '../schemas/workflow.js';
 import type { TaskId } from '../schemas/task.js';
-import type { TaskStatus } from '../schemas/enums.js';
+import type { Phase, TaskStatus } from '../schemas/enums.js';
 import type { TokenUsage } from '../schemas/tokens.js';
 import { assertNever } from '../../utils/type-guards.js';
+import { includes } from '../../utils/type-guards.js';
+import { error, matches } from '../../utils/error.js';
 
 export const CURRENT_STATE_VERSION = 3;
+
+export const transitionError = {
+  invalidActionForPhase: (phase: Phase, action: StateAction['type']) =>
+    error(
+      'state-invalid-action-for-phase',
+      `Cannot apply ${action} while workflow is in ${phase}.`,
+      { phase, action },
+    ),
+  isInvalidActionForPhase: matches('state-invalid-action-for-phase'),
+} as const;
 
 const zeroTokenUsage: TokenUsage = {
   plannerInput: 0,
@@ -15,6 +27,60 @@ const zeroTokenUsage: TokenUsage = {
   escalationInput: 0,
   escalationOutput: 0,
 };
+
+const anytimeActions = [
+  'CANCEL',
+  'ABORT_TURN',
+  'CONTINUE_TURN',
+  'SET_PLANNER_SESSION_ID',
+  'REWIND_TO_SPEC',
+  'REWIND_TO_PLAN',
+  'CLEAR_REWIND_PENDING',
+  'ENQUEUE_USER_MSG',
+  'MARK_DELIVERED_NATIVE',
+  'DRAIN_QUEUE',
+  'CLEAR_QUEUE',
+  'SET_PENDING_RECOVERY',
+  'PAUSE_PENDING_RECOVERY',
+  'MARK_RECOVERY_APPLYING',
+  'CLEAR_PENDING_RECOVERY',
+  'RESOLVE_PENDING_RECOVERY',
+] as const satisfies readonly StateAction['type'][];
+
+const phaseActions = {
+  idle: ['START', 'START_QUICK', 'START_INSTANT', 'RESEARCH_DONE', 'SPEC_CLARIFY_START'],
+  researching: ['RESEARCH_DONE', 'SPEC_CLARIFY_START', 'START_QUICK', 'START_INSTANT'],
+  specifying: ['SPEC_DONE'],
+  'reviewing-spec': ['APPROVE_SPEC', 'REJECT_SPEC', 'SPEC_CLARIFY_START'],
+  clarifying: ['SPEC_CLARIFY_DONE'],
+  'constitution-check': ['CONSTITUTION_CHECK_PASS', 'CONSTITUTION_CHECK_FAIL'],
+  planning: ['RESEARCH_DONE', 'PLAN_DONE', 'SPEC_CLARIFY_START'],
+  'reviewing-plan': ['APPROVE_PLAN', 'REJECT_PLAN', 'PLAN_DONE', 'BRIEFS_READY', 'ANALYZE_START'],
+  'reviewing-briefs': ['BRIEFS_READY', 'APPROVE_BRIEFS', 'REJECT_BRIEFS'],
+  analyzing: ['ANALYZE_DONE'],
+  implementing: [
+    'START_TASK',
+    'UPDATE_TASK_CODE',
+    'CLEAR_TASK_CODE',
+    'TASK_SENT',
+    'VALIDATION_PASS',
+    'VALIDATION_FAIL',
+    'ESCALATE',
+    'SKIP_TASK',
+    'RESET_TASK',
+    'BRIEFS_READY',
+    'ANALYZE_START',
+    'ALL_DONE',
+  ],
+  'validating-task': ['VALIDATION_PASS', 'VALIDATION_FAIL', 'ESCALATE', 'HINT_SUCCESS', 'FULL_SUCCESS', 'SKIP_TASK', 'RESET_TASK'],
+  escalating: ['VALIDATION_PASS', 'UPDATE_TASK_CODE', 'CLEAR_TASK_CODE', 'HINT_SUCCESS', 'HINT_FAIL', 'FULL_SUCCESS', 'FULL_FAIL', 'SKIP_TASK', 'RESET_TASK'],
+  'final-review': ['REVIEW_DONE'],
+  complete: [],
+} as const satisfies Record<Phase, readonly StateAction['type'][]>;
+
+function canApplyAction(phase: Phase, action: StateAction['type']): boolean {
+  return includes(anytimeActions, action) || includes(phaseActions[phase], action);
+}
 
 export function createInitialState(feature: string): WorkflowState {
   return {
@@ -64,6 +130,10 @@ function markRecoveryApplying(state: WorkflowState, action: Extract<StateAction,
 }
 
 export function transition(state: WorkflowState, action: StateAction, maxRetries: number = 3): WorkflowState {
+  if (!canApplyAction(state.phase, action.type)) {
+    throw transitionError.invalidActionForPhase(state.phase, action.type);
+  }
+
   switch (action.type) {
     case 'START':
       return { ...state, phase: 'researching' };

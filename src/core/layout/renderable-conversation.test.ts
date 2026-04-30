@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { Section } from './event-sections.js';
 import { getMaxVisibleDiffLines } from './diff-height.js';
 import {
+  estimateEventHeight,
   estimateRenderableConversationHeight,
   getRenderableConversationItems,
   isChromeEvent,
 } from './renderable-conversation.js';
+import type { LayoutEvent } from './event-types.js';
 import {
   makePlannerText,
   makeImplementerGenerate,
@@ -70,5 +72,66 @@ describe('isChromeEvent', () => {
   it('keeps regular conversation events in the scroll region', () => {
     expect(isChromeEvent('planner_text')).toBe(false);
     expect(isChromeEvent('user_message')).toBe(false);
+  });
+});
+
+describe('event height rules', () => {
+  const visibleAuditEvents = [
+    { type: 'paused_external_changes' },
+    { type: 'recovery_prompted' },
+    { type: 'recovery_action_selected' },
+    { type: 'recovery_action_failed' },
+    { type: 'recovery_resolved' },
+    { type: 'git_branch_created' },
+    { type: 'brief_quality_passed' },
+    { type: 'brief_quality_failed' },
+    { type: 'drift_report' },
+    { type: 'mode_downgrade_advised' },
+    { type: 'budget_paused' },
+    { type: 'approval_mode_changed' },
+  ] satisfies LayoutEvent[];
+
+  const hiddenSystemEvents = [
+    { type: 'workflow_started' },
+    { type: 'workflow_resumed' },
+    { type: 'workflow_complete' },
+    { type: 'cost_update' },
+    { type: 'snapshot_created' },
+    { type: 'snapshot_restored' },
+    { type: 'snapshot_restore_conflict' },
+    { type: 'approval_prompted' },
+    { type: 'ipc_server_started' },
+    { type: 'replay_complete' },
+  ] satisfies LayoutEvent[];
+
+  it('reserves rows for visible audit events', () => {
+    for (const event of visibleAuditEvents) {
+      expect(estimateEventHeight(event), event.type).toBeGreaterThan(0);
+    }
+
+    const section = { type: 'events', items: visibleAuditEvents, startIndex: 0 } satisfies Extract<Section, { type: 'events' }>;
+    const items = getRenderableConversationItems([section], new Set());
+    expect(items).toHaveLength(visibleAuditEvents.length);
+    expect(estimateRenderableConversationHeight(items)).toBeGreaterThanOrEqual(visibleAuditEvents.length);
+  });
+
+  it('does not reserve rows or spacer gaps for hidden system events', () => {
+    for (const event of hiddenSystemEvents) {
+      expect(estimateEventHeight(event), event.type).toBe(0);
+    }
+
+    const section = {
+      type: 'events',
+      items: [
+        makePlannerText({ ts: 0, text: 'before' }),
+        ...hiddenSystemEvents,
+        makePlannerText({ ts: hiddenSystemEvents.length + 1, text: 'after' }),
+      ],
+      startIndex: 0,
+    } satisfies Extract<Section, { type: 'events' }>;
+
+    const items = getRenderableConversationItems([section], new Set());
+    expect(items.map((item) => item.event.type)).toEqual(['planner_text', 'planner_text']);
+    expect(estimateRenderableConversationHeight(items)).toBe(3);
   });
 });

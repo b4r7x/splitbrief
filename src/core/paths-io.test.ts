@@ -16,7 +16,7 @@ import {
   type SpecMetadata,
 } from './paths-io.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { DIPTYCH_DIR, SESSIONS_DIR } from './paths.js';
+import { DIPTYCH_DIR, SESSIONS_DIR, sessionDir } from './paths.js';
 
 let tmp: string;
 const SESSION_ID = '2024-01-01-test-feature';
@@ -57,6 +57,30 @@ describe('ensureSessionDir', () => {
     ensureSessionDir(dir, SESSION_ID);
     ensureSessionDir(dir, SESSION_ID);
     expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID))).toBe(true);
+  });
+
+  it('rejects session ids with path traversal', () => {
+    const dir = makeTmp();
+    expect(() => ensureSessionDir(dir, '../outside')).toThrow('Invalid session id');
+  });
+});
+
+describe('sessionDir', () => {
+  it('rejects empty session ids', () => {
+    const dir = makeTmp();
+    expect(() => sessionDir(dir, '')).toThrow("Invalid session id ''");
+  });
+
+  it('rejects session ids with separators', () => {
+    const dir = makeTmp();
+    expect(() => sessionDir(dir, 'nested/session')).toThrow('Invalid session id');
+    expect(() => sessionDir(dir, 'nested\\session')).toThrow('Invalid session id');
+  });
+
+  it('rejects session ids that resolve to the sessions root or inject active-file lines', () => {
+    const dir = makeTmp();
+    expect(() => sessionDir(dir, '.')).toThrow('Invalid session id');
+    expect(() => sessionDir(dir, 'session\nother')).toThrow('Invalid session id');
   });
 });
 

@@ -1,9 +1,27 @@
 import type { Phase } from '../schemas/enums.js';
 import type { EffortLevel, WorkflowMode } from '../schemas/enums.js';
-import type { OverlayType, Screen } from '../../stores/navigation/router.js';
-import type { HandoffTarget } from '../../engine/handoff/types.js';
+import type { OverlayType, Screen } from '../navigation/types.js';
+import type { HandoffTarget } from '../handoff/targets.js';
 import type { ApprovalGrant } from '../schemas/approval-store.js';
-import type { AcceptRunSnapshotResult, RejectRunSnapshotResult } from '../../engine/snapshots/run.js';
+
+type CommandHandlerResult = void | Promise<void>;
+
+export interface AcceptRunSnapshotResult {
+  snapshotId: string;
+  isFirstSnapshot: boolean;
+}
+
+export type RejectRunSnapshotResult =
+  | { status: 'empty' }
+  | { status: 'accepted'; snapshotId: string }
+  | {
+    status: 'rejected';
+    snapshotId: string;
+    restoredPaths: string[];
+    deletedPaths: string[];
+    conflictedPaths: string[];
+    missingSnapshotFiles: string[];
+  };
 
 interface SlashCommandBase {
   name: string;
@@ -16,8 +34,8 @@ interface SlashCommandBase {
 }
 
 export type SlashCommandDef =
-  | (SlashCommandBase & { kind: 'noarg'; handler: () => void })
-  | (SlashCommandBase & { kind: 'arg'; handler: (args: string | undefined) => void });
+  | (SlashCommandBase & { kind: 'noarg'; handler: () => CommandHandlerResult })
+  | (SlashCommandBase & { kind: 'arg'; handler: (args: string | undefined) => CommandHandlerResult });
 
 export interface CommandContext {
   openOverlay: (type: OverlayType, focus?: string) => void;
@@ -50,6 +68,6 @@ export interface CommandPaletteItem {
   label: string;
   description: string;
   shortcut: string | null;
-  action: () => void;
+  action: () => CommandHandlerResult;
   availableOn: readonly Screen[];
 }

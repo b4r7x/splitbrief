@@ -118,6 +118,18 @@ export const APPROVE_LEVELS = ['none', 'spec', 'plan', 'all', 'default'] as cons
 export const ApproveLevelSchema = z.enum(APPROVE_LEVELS);
 export type ApproveLevel = z.infer<typeof ApproveLevelSchema>;
 
+export const ACTION_CLASSES = [
+  'read',
+  'write_in_scope',
+  'validation',
+  'write_out_of_scope',
+  'destructive',
+  'network',
+  'package_change',
+] as const;
+export const ActionClassSchema = z.enum(ACTION_CLASSES);
+export type ActionClass = z.infer<typeof ActionClassSchema>;
+
 export const COMMIT_STRATEGIES = ['none', 'checkpoint', 'per-task'] as const;
 export const CommitStrategySchema = z.enum(COMMIT_STRATEGIES);
 export type CommitStrategy = z.infer<typeof CommitStrategySchema>;

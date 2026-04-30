@@ -5,7 +5,7 @@ import { clearStaleSession } from './guards.js';
 import { writeActive } from './lifecycle.js';
 import { activeFile, sessionDir, STATE_FILE, DIPTYCH_DIR } from '../paths.js';
 import { createInitialState } from '../state/machine.js';
-import { isCliError } from '../../cli/errors.js';
+import { sessionError } from './errors.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let tmp: string;
@@ -66,7 +66,7 @@ describe('clearStaleSession', () => {
       clearStaleSession(dir);
       throw new Error('expected clearStaleSession to throw');
     } catch (err) {
-      expect(isCliError(err)).toBe(true);
+      expect(sessionError.isStillActive(err)).toBe(true);
       expect((err as Error).message).toContain(sessionId);
     }
 

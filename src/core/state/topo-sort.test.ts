@@ -35,10 +35,18 @@ describe('topoSort', () => {
     expect(sorted.map((t) => t.id)).toEqual([a.id, b.id]);
   });
 
-  test('ignores unknown dependencies (treats as satisfied)', () => {
+  test('throws on unknown dependencies', () => {
     const a = makeTask('a', ['missing']);
-    const sorted = topoSort([a]);
-    expect(sorted.map((t) => t.id)).toEqual([a.id]);
+    try {
+      topoSort([a]);
+      throw new Error('expected throw');
+    } catch (err) {
+      expect(topoError.isUnknownDependency(err)).toBe(true);
+      if (topoError.isUnknownDependency(err)) {
+        expect(err.message).toContain('Task a depends on unknown task missing');
+        expect(err.data).toEqual({ taskId: 'a', dependencyId: 'missing' });
+      }
+    }
   });
 
   test('throws topoError.circularDependency on cycle', () => {
@@ -81,5 +89,15 @@ describe('topoError.isCircularDependency predicate', () => {
     } else {
       throw new Error('predicate should match');
     }
+  });
+});
+
+describe('topoError.unknownDependency factory', () => {
+  test('carries task and dependency IDs in data', () => {
+    const err = topoError.unknownDependency('a', 'missing');
+    expect(err).toBeInstanceOf(Error);
+    expect(err.kind).toBe('topo-unknown-dependency');
+    expect(err.message).toContain('Task a depends on unknown task missing');
+    expect(err.data).toEqual({ taskId: 'a', dependencyId: 'missing' });
   });
 });

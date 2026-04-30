@@ -16,9 +16,13 @@ export function computeScrollMaxOffset(
   viewportHeight: number,
   hasNewEvents: boolean,
 ): number {
-  const overflow = Math.max(0, totalHeight - viewportHeight);
+  const overflow = Math.max(0, Math.max(0, totalHeight) - Math.max(0, viewportHeight));
   if (overflow === 0) return 0;
   return overflow + TOP_OR_BOTTOM_BANNER_ROWS + (hasNewEvents ? NEW_EVENT_BANNER_ROWS : 0);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }
 
 export function getScrollWindowState(
@@ -27,22 +31,29 @@ export function getScrollWindowState(
   scrollOffset: number,
   hasNewEvents: boolean,
 ): ScrollWindowState {
-  const newEventRows = hasNewEvents && scrollOffset > 0 ? NEW_EVENT_BANNER_ROWS : 0;
+  const contentHeight = Math.max(0, totalHeight);
+  const visibleHeight = Math.max(0, viewportHeight);
+  const clampedOffset = clamp(
+    scrollOffset,
+    0,
+    computeScrollMaxOffset(contentHeight, visibleHeight, hasNewEvents),
+  );
+  const newEventRows = hasNewEvents && clampedOffset > 0 ? NEW_EVENT_BANNER_ROWS : 0;
 
-  const firstInner = Math.max(0, viewportHeight - newEventRows);
-  const firstStart = Math.max(0, totalHeight - firstInner - scrollOffset);
-  const firstEnd = Math.min(totalHeight, firstStart + firstInner);
+  const firstInner = Math.max(0, visibleHeight - newEventRows);
+  const firstStart = clamp(contentHeight - firstInner - clampedOffset, 0, contentHeight);
+  const firstEnd = clamp(firstStart + firstInner, firstStart, contentHeight);
   const needsAbove = firstStart > 0;
-  const needsBelow = totalHeight - firstEnd > 0;
+  const needsBelow = contentHeight - firstEnd > 0;
 
   const bannerRows =
     (needsAbove ? TOP_OR_BOTTOM_BANNER_ROWS : 0) +
     (needsBelow ? TOP_OR_BOTTOM_BANNER_ROWS : 0) +
     newEventRows;
 
-  const innerHeight = Math.max(0, viewportHeight - bannerRows);
-  const windowStart = Math.max(0, totalHeight - innerHeight - scrollOffset);
-  const windowEnd = Math.min(totalHeight, windowStart + innerHeight);
+  const innerHeight = Math.max(0, visibleHeight - bannerRows);
+  const windowStart = clamp(contentHeight - innerHeight - clampedOffset, 0, contentHeight);
+  const windowEnd = clamp(windowStart + innerHeight, windowStart, contentHeight);
 
   return {
     bannerRows,
@@ -50,7 +61,7 @@ export function getScrollWindowState(
     windowStart,
     windowEnd,
     linesAbove: windowStart,
-    linesBelow: Math.max(0, totalHeight - windowEnd),
+    linesBelow: Math.max(0, contentHeight - windowEnd),
     newEventRows,
   };
 }

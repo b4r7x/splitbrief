@@ -8,9 +8,10 @@ import { trimRenderableItemsToViewport } from '../../../../core/layout/viewport-
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import type { Section } from '../../../../core/layout/event-sections.js';
+import type { EngineEvent } from '../../../../engine/events/types.js';
 
 interface ConversationFlowProps {
-  sections: Section[];
+  sections: Section<EngineEvent>[];
   height: number;
   width: number;
 }
