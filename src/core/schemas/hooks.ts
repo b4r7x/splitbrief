@@ -46,10 +46,14 @@ const HookModuleEntrySchema = z
   })
   .strict();
 
+function isObjectWithoutKind(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !('kind' in value);
+}
+
 export const HookEntrySchema = z.preprocess(
   (val) =>
-    val !== null && typeof val === 'object' && !('kind' in (val as object))
-      ? { ...(val as object), kind: 'command' }
+    isObjectWithoutKind(val)
+      ? { ...val, kind: 'command' }
       : val,
   z.discriminatedUnion('kind', [HookCommandEntrySchema, HookModuleEntrySchema]),
 );

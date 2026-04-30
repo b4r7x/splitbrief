@@ -2,11 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { trimRenderableItemsToViewport } from './viewport-trimming.js';
 import { getRenderableConversationItems } from './renderable-conversation.js';
 import type { DynamicSection } from './event-sections.js';
-import type { EngineEvent } from '../../engine/events/types.js';
+import type { LayoutEvent } from './event-types.js';
 import { makeImplementerGenerate } from '#testing/helpers/events.js';
 
 function makeEventsSection(count: number, startIndex = 0): DynamicSection {
-  const items: EngineEvent[] = Array.from({ length: count }, (_, i) => ({
+  const items: LayoutEvent[] = Array.from({ length: count }, (_, i) => ({
     type: 'planner_text' as const,
     ts: i,
     phase: 'implementing' as const,
@@ -16,7 +16,7 @@ function makeEventsSection(count: number, startIndex = 0): DynamicSection {
 }
 
 function makeActiveTaskSection(count: number, startIndex = 0): DynamicSection {
-  const items: EngineEvent[] = Array.from({ length: count }, (_, i) => ({
+  const items: LayoutEvent[] = Array.from({ length: count }, (_, i) => ({
     type: 'planner_text' as const,
     ts: i,
     phase: 'implementing' as const,

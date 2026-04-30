@@ -55,7 +55,11 @@ export function applyRunnerOverrides(role: 'planner' | 'implementer', overrides:
 
   const existing = config[role];
   const opts: BuildRunnerOpts = {
-    ...(tool === undefined ? existingToOpts(existing) : { kind: inferKindFromTool(tool), tool }),
+    ...(tool !== undefined
+      ? { kind: inferKindFromTool(tool), tool }
+      : command !== undefined
+        ? { kind: 'shell' }
+        : existingToOpts(existing)),
     ...(model !== undefined && { model }),
     ...(command !== undefined && { command }),
     ...(contextLength !== undefined && { contextLength }),

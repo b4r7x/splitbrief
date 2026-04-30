@@ -38,6 +38,9 @@ export function saveSummary(projectDir: string, id: string, session: Session): v
   if (!result.success) {
     throw sessionError.invalidData(id, result.error.message);
   }
+  if (result.data.id !== id) {
+    throw sessionError.idMismatch(id, result.data.id);
+  }
   const dir = sessionDir(projectDir, id);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const filePath = join(dir, 'summary.json');

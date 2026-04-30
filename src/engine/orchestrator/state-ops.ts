@@ -62,14 +62,11 @@ export function addUsageAndSave(
 }
 
 export type PlanApprovedBusContext = {
-  projectDir: string;
-  sessionId: string;
   bus: EventBus;
 };
 
 export function publishPlanApproved(state: WorkflowState, ctx: PlanApprovedBusContext): WorkflowState {
-  const next = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'APPROVE_PLAN' });
-  publishPlannerStatus(ctx.bus, next, 'running');
-  publishEvent(ctx.bus, { type: 'plan_approved', ts: Date.now(), phase: next.phase });
-  return next;
+  publishPlannerStatus(ctx.bus, state, 'running');
+  publishEvent(ctx.bus, { type: 'plan_approved', ts: Date.now(), phase: state.phase });
+  return state;
 }

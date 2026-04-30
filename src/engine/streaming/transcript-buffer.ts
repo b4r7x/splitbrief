@@ -10,23 +10,24 @@ export function createTranscriptBuffer(
   persistTranscript: boolean,
 ): { append(chunk: string): void; flush(): void; flushInterrupted(): void } {
   let buffer = '';
+  const shouldPersist = persistTranscript && sessionId !== '';
   return {
     append(text: string): void {
-      if (!persistTranscript) return;
+      if (!shouldPersist) return;
       buffer += text;
       if (buffer.length > MAX_BUFFER_BYTES) {
-        appendMessage(projectDir, sessionId, { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer }, persistTranscript);
+        appendMessage(projectDir, sessionId, { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer }, shouldPersist);
         buffer = '';
       }
     },
     flush(): void {
-      if (!persistTranscript || buffer.length === 0) return;
-      appendMessage(projectDir, sessionId, { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer }, persistTranscript);
+      if (!shouldPersist || buffer.length === 0) return;
+      appendMessage(projectDir, sessionId, { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer }, shouldPersist);
       buffer = '';
     },
     flushInterrupted(): void {
-      if (!persistTranscript || buffer.length === 0) return;
-      appendMessage(projectDir, sessionId, { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer, interrupted: true }, persistTranscript);
+      if (!shouldPersist || buffer.length === 0) return;
+      appendMessage(projectDir, sessionId, { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer, interrupted: true }, shouldPersist);
       buffer = '';
     },
   };

@@ -46,6 +46,7 @@ describe('configError factories', () => {
     const err = configError.unsupportedVersion(9);
     expect(err.kind).toBe('config-unsupported-version');
     expect(err.message).toContain('9');
+    expect(err.message).toContain('Expected 2 or 3');
     expect(err.data).toEqual({ version: 9 });
   });
 
@@ -56,6 +57,33 @@ describe('configError factories', () => {
     expect(err.message).toContain('planner');
     expect(err.message).toContain('"foo":"bar"');
     expect(err.data).toEqual({ role: 'planner', opts });
+  });
+
+  test('runnerKindIndeterminate redacts secret-like fields recursively', () => {
+    const err = configError.runnerKindIndeterminate('planner', {
+      apiKey: 'sk-ant-secret',
+      nested: {
+        token: 'session-token',
+        safe: 'visible',
+      },
+      items: [{ clientSecret: 'client-secret' }],
+    });
+
+    expect(err.message).toContain('"apiKey":"[REDACTED]"');
+    expect(err.message).toContain('"token":"[REDACTED]"');
+    expect(err.message).toContain('"clientSecret":"[REDACTED]"');
+    expect(err.message).toContain('"safe":"visible"');
+    expect(err.message).not.toContain('sk-ant-secret');
+    expect(err.message).not.toContain('session-token');
+    expect(err.message).not.toContain('client-secret');
+    expect(err.data).toEqual({
+      role: 'planner',
+      opts: {
+        apiKey: '[REDACTED]',
+        nested: { token: '[REDACTED]', safe: 'visible' },
+        items: [{ clientSecret: '[REDACTED]' }],
+      },
+    });
   });
 
   test('runnerMissingField records role, kind, field', () => {

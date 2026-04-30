@@ -19,7 +19,7 @@ export const SessionLogEventEntrySchema = z.object({
   kind: z.literal('event'),
   type: z.string(),
   taskId: TaskIdSchema.optional(),
-  phase: PhaseSchema,
+  phase: PhaseSchema.optional(),
   data: z.unknown(),
 });
 export type SessionLogEventEntry = z.infer<typeof SessionLogEventEntrySchema>;

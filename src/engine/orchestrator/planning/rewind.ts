@@ -13,6 +13,8 @@ import {
   regenerateTasks,
   regenerateTasksIfNeeded,
   regeneratePlanAndTasks,
+  runBriefQualityGate,
+  runBriefsApprovalLoop,
   type PlanningPhaseOptions,
   type PlanningPhaseResult,
 } from './shared.js';
@@ -76,7 +78,23 @@ export async function handleRewindSpec(
     finalTasks = regen.tasks;
   }
 
-  state = publishPlanApproved(state, { projectDir, sessionId, bus: wctx.bus });
+  runBriefQualityGate(finalTasks, projectDir, sessionId, wctx.bus, state.phase);
+  const briefsLoop = await runBriefsApprovalLoop({
+    tasks: finalTasks,
+    planner,
+    projectDir,
+    sessionId,
+    callbacks,
+    bus: wctx.bus,
+    state,
+    metadata,
+    signal,
+  });
+  state = briefsLoop.state;
+  finalTasks = briefsLoop.tasks;
+  if (briefsLoop.rejected) return { state, tasks: [], cancelled: true };
+
+  state = publishPlanApproved(state, { bus: wctx.bus });
   return { state, tasks: finalTasks, cancelled: false };
 }
 
@@ -124,6 +142,22 @@ export async function handleRewindPlan(
     finalTasks = regen.tasks;
   }
 
-  state = publishPlanApproved(state, { projectDir, sessionId, bus: wctx.bus });
+  runBriefQualityGate(finalTasks, projectDir, sessionId, wctx.bus, state.phase);
+  const briefsLoop = await runBriefsApprovalLoop({
+    tasks: finalTasks,
+    planner,
+    projectDir,
+    sessionId,
+    callbacks,
+    bus: wctx.bus,
+    state,
+    metadata,
+    signal,
+  });
+  state = briefsLoop.state;
+  finalTasks = briefsLoop.tasks;
+  if (briefsLoop.rejected) return { state, tasks: [], cancelled: true };
+
+  state = publishPlanApproved(state, { bus: wctx.bus });
   return { state, tasks: finalTasks, cancelled: false };
 }

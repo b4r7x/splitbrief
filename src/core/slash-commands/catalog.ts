@@ -1,12 +1,11 @@
-import { ALL_SCREENS } from '../../stores/navigation/router.js';
+import { ALL_SCREENS } from '../navigation/types.js';
 import { EFFORT_LEVELS, WORKFLOW_MODES } from '../schemas/enums.js';
 import type { SlashCommandDef, CommandContext } from './types.js';
 import { getShortcutKey } from './keybindings.js';
 import { includes } from '../../utils/type-guards.js';
 import type { Phase } from '../schemas/enums.js';
 import { PHASES } from '../schemas/enums.js';
-import { HANDOFF_TARGETS } from '../../engine/handoff/types.js';
-import type { HandoffTarget } from '../../engine/handoff/types.js';
+import { HANDOFF_TARGETS, parseHandoffTarget } from '../handoff/targets.js';
 
 export function phaseOrder(phase: Phase): number {
   return PHASES.indexOf(phase);
@@ -144,11 +143,14 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
       label: 'Refresh',
       description: 'Re-detect available tools',
       validScreens: ALL_SCREENS,
-      handler: () => {
+      handler: async () => {
         ctx.setFeedbackMessage('Refreshing tool detection…');
-        ctx.refreshDetection()
-          .then(() => ctx.setFeedbackMessage('Tool detection refreshed'))
-          .catch(() => ctx.setFeedbackError('Tool detection failed'));
+        try {
+          await ctx.refreshDetection();
+          ctx.setFeedbackMessage('Tool detection refreshed');
+        } catch {
+          ctx.setFeedbackError('Tool detection failed');
+        }
       },
     },
     {
@@ -247,22 +249,23 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
       label: 'Handoff',
       description: 'Export Handoff Pack for an external agent →',
       validScreens: ['workflow', 'summary'],
-      handler: (args) => {
+      handler: async (args) => {
         if (!args) {
           ctx.setFeedbackError('Usage: /handoff <target> [task-id]');
           return;
         }
         const [target, taskId] = args.trim().split(/\s+/);
-        if (!target || !HANDOFF_TARGETS.includes(target as HandoffTarget)) {
+        const handoffTarget = target ? parseHandoffTarget(target) : null;
+        if (!target || !handoffTarget) {
           ctx.setFeedbackError(`Unknown target "${target}". Valid: ${HANDOFF_TARGETS.join(', ')}`);
           return;
         }
-        ctx
-          .writeHandoff(target as HandoffTarget, taskId)
-          .then(({ outputDir }) => ctx.setFeedbackMessage(`Handoff written to: ${outputDir}`))
-          .catch((err: unknown) =>
-            ctx.setFeedbackError(err instanceof Error ? err.message : String(err)),
-          );
+        try {
+          const { outputDir } = await ctx.writeHandoff(handoffTarget, taskId);
+          ctx.setFeedbackMessage(`Handoff written to: ${outputDir}`);
+        } catch (err) {
+          ctx.setFeedbackError(err instanceof Error ? err.message : String(err));
+        }
       },
     },
     {
@@ -271,18 +274,19 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
       label: 'Repomap',
       description: 'Manage the repo-map cache',
       validScreens: ALL_SCREENS,
-      handler: (args) => {
+      handler: async (args) => {
         const sub = args?.trim().toLowerCase();
         if (sub === 'rebuild') {
-          ctx.rebuildRepomap()
-            .then((result) => {
-              if (result.deleted) {
-                ctx.setFeedbackMessage('Repomap cache cleared. Next planner phase will parse from scratch.');
-              } else {
-                ctx.setFeedbackMessage('Repomap cache was not present.');
-              }
-            })
-            .catch(() => ctx.setFeedbackError('Failed to clear repomap cache.'));
+          try {
+            const result = await ctx.rebuildRepomap();
+            if (result.deleted) {
+              ctx.setFeedbackMessage('Repomap cache cleared. Next planner phase will parse from scratch.');
+            } else {
+              ctx.setFeedbackMessage('Repomap cache was not present.');
+            }
+          } catch {
+            ctx.setFeedbackError('Failed to clear repomap cache.');
+          }
           return;
         }
         ctx.setFeedbackError(`Unknown repomap command: ${sub ?? ''}. Use: /repomap rebuild`);
@@ -365,12 +369,13 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
       label: 'Accept Run',
       description: 'Accept current run changes and prevent run rejection',
       validScreens: ['workflow', 'summary'],
-      handler: () => {
-        ctx.acceptRunSnapshot()
-          .then((result) => ctx.setFeedbackMessage(`Run accepted at snapshot ${result.snapshotId}`))
-          .catch((err: unknown) =>
-            ctx.setFeedbackError(err instanceof Error ? err.message : String(err)),
-          );
+      handler: async () => {
+        try {
+          const result = await ctx.acceptRunSnapshot();
+          ctx.setFeedbackMessage(`Run accepted at snapshot ${result.snapshotId}`);
+        } catch (err) {
+          ctx.setFeedbackError(err instanceof Error ? err.message : String(err));
+        }
       },
     },
     {
@@ -379,38 +384,37 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
       label: 'Reject Run',
       description: 'Restore diptych-written files from the run baseline',
       validScreens: ['workflow', 'summary'],
-      handler: (args) => {
+      handler: async (args) => {
         if (args?.trim().toLowerCase() !== 'confirm') {
           ctx.setFeedbackError('Usage: /reject-run confirm');
           return;
         }
-        ctx.rejectRunSnapshot()
-          .then((result) => {
-            if (result.status === 'empty') {
-              ctx.setFeedbackError('No run snapshot to reject.');
-              return;
-            }
-            if (result.status === 'accepted') {
-              ctx.setFeedbackError(`Run already accepted at snapshot ${result.snapshotId}.`);
-              return;
-            }
-            const changedCount = result.restoredPaths.length + result.deletedPaths.length;
-            const conflictText = result.conflictedPaths.length > 0
-              ? `, ${result.conflictedPaths.length} conflict(s)`
-              : '';
-            const missingText = result.missingSnapshotFiles.length > 0
-              ? `, ${result.missingSnapshotFiles.length} missing snapshot file(s)`
-              : '';
-            const message = `Run rejected from snapshot ${result.snapshotId}: ${changedCount} file(s) restored/deleted${conflictText}${missingText}.`;
-            if (result.conflictedPaths.length > 0 || result.missingSnapshotFiles.length > 0) {
-              ctx.setFeedbackError(message);
-            } else {
-              ctx.setFeedbackMessage(message);
-            }
-          })
-          .catch((err: unknown) =>
-            ctx.setFeedbackError(err instanceof Error ? err.message : String(err)),
-          );
+        try {
+          const result = await ctx.rejectRunSnapshot();
+          if (result.status === 'empty') {
+            ctx.setFeedbackError('No run snapshot to reject.');
+            return;
+          }
+          if (result.status === 'accepted') {
+            ctx.setFeedbackError(`Run already accepted at snapshot ${result.snapshotId}.`);
+            return;
+          }
+          const changedCount = result.restoredPaths.length + result.deletedPaths.length;
+          const conflictText = result.conflictedPaths.length > 0
+            ? `, ${result.conflictedPaths.length} conflict(s)`
+            : '';
+          const missingText = result.missingSnapshotFiles.length > 0
+            ? `, ${result.missingSnapshotFiles.length} missing snapshot file(s)`
+            : '';
+          const message = `Run rejected from snapshot ${result.snapshotId}: ${changedCount} file(s) restored/deleted${conflictText}${missingText}.`;
+          if (result.conflictedPaths.length > 0 || result.missingSnapshotFiles.length > 0) {
+            ctx.setFeedbackError(message);
+          } else {
+            ctx.setFeedbackMessage(message);
+          }
+        } catch (err) {
+          ctx.setFeedbackError(err instanceof Error ? err.message : String(err));
+        }
       },
     },
     {

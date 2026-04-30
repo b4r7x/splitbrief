@@ -1,53 +1,55 @@
-import { Fzf } from 'fzf';
-import type { Screen } from '../../stores/navigation/router.js';
+import type { Phase } from '../schemas/enums.js';
+import type { Screen } from '../navigation/types.js';
 import type { SlashCommandDef, CommandPaletteItem } from './types.js';
+import { lookupCommand } from './fuzzy.js';
 
-function findCommand(commands: SlashCommandDef[], name: string): SlashCommandDef | undefined {
-  const lower = name.toLowerCase();
-  return commands.find((cmd) =>
-    cmd.name.toLowerCase() === lower || cmd.aliases?.some(a => a.toLowerCase() === lower),
-  );
+interface CommandExecutionOptions {
+  screen: Screen;
+  phase: Phase;
+  onError: (msg: string) => void;
 }
 
-export function toPaletteItems(commands: SlashCommandDef[]): CommandPaletteItem[] {
+export function toPaletteItems(
+  commands: SlashCommandDef[],
+  options: CommandExecutionOptions,
+): CommandPaletteItem[] {
   return commands
     .filter((cmd): cmd is SlashCommandDef & { label: string } => !!cmd.label)
     .map(cmd => ({
       label: cmd.label,
       description: cmd.description,
       shortcut: cmd.shortcut ?? null,
-      action: () => { if (cmd.kind === 'arg') cmd.handler(undefined); else cmd.handler(); },
+      action: () => executeSlashCommand(commands, cmd.name, options),
       availableOn: cmd.validScreens,
     }));
 }
 
-function fuzzyFindCommand(commands: SlashCommandDef[], name: string): SlashCommandDef | undefined {
-  const bare = name.startsWith('/') ? name.slice(1) : name;
-  if (!bare) return undefined;
-  const fzf = new Fzf(commands, { selector: (c: SlashCommandDef) => c.name.slice(1) });
-  const results = fzf.find(bare);
-  const top = results[0];
-  return top !== undefined && top.score > 0 ? top.item : undefined;
-}
-
-export function executeSlashCommand(
+export async function executeSlashCommand(
   commands: SlashCommandDef[],
   raw: string,
-  screen: Screen,
-  onError: (msg: string) => void,
-): void {
+  options: CommandExecutionOptions,
+): Promise<void> {
   const parts = raw.split(' ');
   const name = (parts[0] ?? '').toLowerCase();
   const args = parts.slice(1).join(' ').trim() || undefined;
-  const cmd = findCommand(commands, name) ?? fuzzyFindCommand(commands, name);
+  const cmd = lookupCommand(commands, name);
   if (!cmd) {
-    onError(`Unknown command: ${name}. Type /help for available commands.`);
+    options.onError(`Unknown command: ${name}. Type /help for available commands.`);
     return;
   }
-  if (!cmd.validScreens.includes(screen)) {
-    onError(`${cmd.name} is only available on the ${cmd.validScreens.join(', ')} screen.`);
+  if (!cmd.validScreens.includes(options.screen)) {
+    options.onError(`${cmd.name} is only available on the ${cmd.validScreens.join(', ')} screen.`);
     return;
   }
-  if (cmd.kind === 'arg') cmd.handler(args);
-  else cmd.handler();
+  if (cmd.phaseGuard && !cmd.phaseGuard(options.phase)) {
+    options.onError(`${cmd.name} is not available during the ${options.phase} phase.`);
+    return;
+  }
+
+  try {
+    if (cmd.kind === 'arg') await cmd.handler(args);
+    else await cmd.handler();
+  } catch (err) {
+    options.onError(err instanceof Error ? err.message : String(err));
+  }
 }

@@ -3,29 +3,17 @@ import { feedbackStore } from '../ui/feedback.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
+import { ALL_SCREENS } from '../../core/navigation/types.js';
+import type { OverlayType, Screen } from '../../core/navigation/types.js';
 
-export type Screen = 'home' | 'workflow' | 'summary' | 'setup';
-
-export const ALL_SCREENS: readonly Screen[] = ['home', 'workflow', 'summary', 'setup'];
+export { ALL_SCREENS };
+export type { OverlayType, Screen };
 
 export type InputMode = 'normal' | 'review' | 'question';
 
 export type WorkflowAttach = {
   sockPath: string;
 };
-
-export type OverlayType =
-  | 'none'
-  | 'help'
-  | 'command-palette'
-  | 'skills'
-  | 'settings'
-  | 'mode-selector'
-  | 'planner-picker'
-  | 'implementer-picker'
-  | 'sessions'
-  | 'cost-drilldown'
-  | 'plan-editor-help';
 
 export type RouteData =
   | { screen: 'home' }

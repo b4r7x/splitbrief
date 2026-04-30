@@ -15,6 +15,12 @@ describe('hashTaskBrief', () => {
     expect(pending).toBe(done);
   });
 
+  it('excludes currentCode from hash because it is runtime context', () => {
+    const withCode = hashTaskBrief([makeTask({ currentCode: 'runtime snapshot' })]);
+    const withoutCode = hashTaskBrief([makeTask()]);
+    expect(withCode).toBe(withoutCode);
+  });
+
   it('produces different hashes for different titles', () => {
     const a = hashTaskBrief([makeTask({ title: 'Alpha task' })]);
     const b = hashTaskBrief([makeTask({ title: 'Beta task' })]);

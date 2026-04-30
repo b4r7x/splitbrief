@@ -46,15 +46,8 @@ describe('computeConversationScroll', () => {
         startIndex: 0,
         items: [
           { type: 'planner_text', ts: 0, phase: 'implementing', text: 'visible' },
-          { type: 'planner_status', ts: 1, phase: 'planning', status: 'running' },
-          {
-            type: 'workflow_config',
-            ts: 2,
-            phase: 'implementing',
-            mode: 'standard',
-            plannerTool: 'claude-code',
-            implementerTool: 'ollama',
-          },
+          { type: 'planner_status' },
+          { type: 'workflow_config' },
         ],
       },
     ];

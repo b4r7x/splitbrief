@@ -8,7 +8,14 @@ export const topoError = {
       `Circular dependency detected: ${cycle.join(' → ')}`,
       { cycle },
     ),
+  unknownDependency: (taskId: string, dependencyId: string) =>
+    error(
+      'topo-unknown-dependency',
+      `Task ${taskId} depends on unknown task ${dependencyId}`,
+      { taskId, dependencyId },
+    ),
   isCircularDependency: matches('topo-circular-dependency'),
+  isUnknownDependency: matches('topo-unknown-dependency'),
 } as const;
 
 export function topoSort(tasks: Task[]): Task[] {
@@ -27,7 +34,10 @@ export function topoSort(tasks: Task[]): Task[] {
     }
 
     const task = taskMap.get(id);
-    if (!task) return;
+    if (!task) {
+      const taskId = path[path.length - 1] ?? id;
+      throw topoError.unknownDependency(taskId, id);
+    }
 
     visiting.add(id);
     for (const depId of task.dependsOn) {

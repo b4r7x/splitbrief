@@ -27,6 +27,8 @@ function setupProject(): { projectDir: string; sessionId: string; specPath: stri
 function prepareState(): WorkflowState {
   let state = createInitialState('test-feature');
   state = transition(state, { type: 'START', feature: 'test-feature' });
+  state = transition(state, { type: 'RESEARCH_DONE' });
+  state = transition(state, { type: 'SPEC_DONE' });
   return state;
 }
 

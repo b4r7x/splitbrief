@@ -1,7 +1,13 @@
 import type { Session } from '../schemas/session.js';
 import type { TaskCompletionMethod } from '../schemas/enums.js';
-import type { ThemeColors } from '../../components/theme.js';
 import { assertNever } from '../../utils/type-guards.js';
+
+export interface SessionDisplayColors {
+  success: string;
+  warning: string;
+  error: string;
+  textDim: string;
+}
 
 export interface SessionStatusDisplay {
   icon: string;
@@ -15,7 +21,7 @@ export interface MethodDisplay {
 
 export function getMethodDisplay(
   method: TaskCompletionMethod,
-  theme: ThemeColors,
+  theme: SessionDisplayColors,
 ): MethodDisplay {
   switch (method) {
     case 'local': return { text: 'local', color: theme.success };
@@ -31,7 +37,7 @@ export function getMethodDisplay(
 
 export function getSessionStatusDisplay(
   status: Session['status'],
-  theme: ThemeColors,
+  theme: SessionDisplayColors,
 ): SessionStatusDisplay {
   switch (status) {
     case 'complete':

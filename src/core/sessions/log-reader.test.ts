@@ -63,6 +63,11 @@ describe('readSessionLog', () => {
     const entries = await collect(readSessionLog(dir, SESSION_ID));
     expect(entries).toHaveLength(2);
   });
+
+  it('rejects invalid session ids', async () => {
+    const dir = makeTmp();
+    await expect(collect(readSessionLog(dir, '../outside'))).rejects.toThrow('Invalid session id');
+  });
 });
 
 describe('readMessages', () => {

@@ -72,6 +72,20 @@ export function main(argv: string[]): Promise<void>
 Use commander's .command() API.
 `;
 
+function dependencyTaskBlock(id: string): string {
+  return `---
+id: ${id}
+title: "Dependency ${id}"
+action: create
+file: src/${id.toLowerCase()}.ts
+depends_on: []
+---
+
+### Description
+Dependency task.
+`;
+}
+
 describe('parseTasks', () => {
   it('parses a valid tasks.md with 3 tasks in topologically sorted order', () => {
     const tasks = parseTasks(validTasksMd);
@@ -219,9 +233,9 @@ Task with bare depends_on value.
 - None
 `;
 
-    const tasks = parseTasks(input);
-    expect(tasks.length).toBe(1);
-    expect(tasks[0]?.dependsOn).toEqual(['T001']);
+    const tasks = parseTasks(`${dependencyTaskBlock('T001')}\n${input}`);
+    const task = tasks.find(t => t.id === 'T050');
+    expect(task?.dependsOn).toEqual(['T001']);
   });
 
   it('strips double quotes from bare depends_on value', () => {
@@ -243,9 +257,9 @@ Task with double-quoted depends_on value.
 - None
 `;
 
-    const tasks = parseTasks(input);
-    expect(tasks.length).toBe(1);
-    expect(tasks[0]?.dependsOn).toEqual(['T001']);
+    const tasks = parseTasks(`${dependencyTaskBlock('T001')}\n${input}`);
+    const task = tasks.find(t => t.id === 'T060');
+    expect(task?.dependsOn).toEqual(['T001']);
   });
 
   it('strips single quotes from bare depends_on value', () => {
@@ -267,9 +281,9 @@ Task with single-quoted depends_on value.
 - None
 `;
 
-    const tasks = parseTasks(input);
-    expect(tasks.length).toBe(1);
-    expect(tasks[0]?.dependsOn).toEqual(['T001']);
+    const tasks = parseTasks(`${dependencyTaskBlock('T001')}\n${input}`);
+    const task = tasks.find(t => t.id === 'T061');
+    expect(task?.dependsOn).toEqual(['T001']);
   });
 
   it('strips quotes from array depends_on values', () => {
@@ -291,9 +305,9 @@ Task with quoted array depends_on values.
 - None
 `;
 
-    const tasks = parseTasks(input);
-    expect(tasks.length).toBe(1);
-    expect(tasks[0]?.dependsOn).toEqual(['T001', 'T002']);
+    const tasks = parseTasks(`${dependencyTaskBlock('T001')}\n${dependencyTaskBlock('T002')}\n${input}`);
+    const task = tasks.find(t => t.id === 'T062');
+    expect(task?.dependsOn).toEqual(['T001', 'T002']);
   });
 
   it('returns empty array for empty input', () => {

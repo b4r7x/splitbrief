@@ -13,7 +13,21 @@ export const sessionError = {
       `Could not generate unique session-id from base '${base}': all suffixes up to ${attempts} are taken`,
       { base, attempts },
     ),
+  idMismatch: (requestedId: string, sessionId: string) =>
+    error(
+      'session-id-mismatch',
+      `Cannot save session summary for '${requestedId}': session payload id is '${sessionId}'`,
+      { requestedId, sessionId },
+    ),
+  stillActive: (sessionId: string) =>
+    error(
+      'session-still-active',
+      `session '${sessionId}' is still active.\nUse 'diptych resume' to continue it, or delete .diptych/active to discard it.`,
+      { sessionId },
+    ),
 
   isInvalidData: matches('session-invalid-data'),
   isIdCollision: matches('session-id-collision'),
+  isIdMismatch: matches('session-id-mismatch'),
+  isStillActive: matches('session-still-active'),
 } as const;

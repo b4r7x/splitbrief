@@ -12,6 +12,7 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { initStores } from '../init-stores.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { maybeMigrate } from '../../core/migration/executor.js';
+import { printMigrationResult } from './migrate.js';
 import { runHeadless } from '../headless.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
@@ -22,7 +23,8 @@ export function registerResumeCommand(program: Command): void {
       .description('Resume an interrupted workflow'),
   ).action(async (opts: WorkflowOpts) => {
     const projectDir = resolveProjectDir(opts.project);
-    await maybeMigrate(projectDir);
+    const migration = await maybeMigrate(projectDir);
+    if (!opts.json) printMigrationResult(migration);
 
     const sessionId = readActive(projectDir);
     if (!sessionId) {

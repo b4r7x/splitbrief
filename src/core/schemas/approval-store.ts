@@ -1,14 +1,7 @@
 import { z } from 'zod';
+import { ActionClassSchema } from './enums.js';
+export { ActionClassSchema } from './enums.js';
 
-export const ActionClassSchema = z.enum([
-  'read',
-  'write_in_scope',
-  'validation',
-  'write_out_of_scope',
-  'destructive',
-  'network',
-  'package_change',
-]);
 export type ActionClass = z.infer<typeof ActionClassSchema>;
 
 export const ApprovalGrantSchema = z.object({

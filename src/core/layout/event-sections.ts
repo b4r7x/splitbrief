@@ -1,17 +1,17 @@
-import type { EngineEvent } from '../../engine/events/types.js';
 import type { TaskCompletionMethod } from '../schemas/enums.js';
+import type { LayoutEvent } from './event-types.js';
 
-function hasEventType<T extends EngineEvent['type']>(
-  event: EngineEvent,
-  type: T,
-): event is Extract<EngineEvent, { type: T }> {
+function hasEventType<TEvent extends { type: string }, TType extends string>(
+  event: TEvent,
+  type: TType,
+): event is Extract<TEvent, { type: TType }> {
   return event.type === type;
 }
 
-export function findLatestEventByType<T extends EngineEvent['type']>(
-  events: readonly EngineEvent[],
-  type: T,
-): Extract<EngineEvent, { type: T }> | undefined {
+export function findLatestEventByType<TEvent extends { type: string }, TType extends string>(
+  events: readonly TEvent[],
+  type: TType,
+): Extract<TEvent, { type: TType }> | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i];
     if (e && hasEventType(e, type)) return e;
@@ -19,7 +19,7 @@ export function findLatestEventByType<T extends EngineEvent['type']>(
   return undefined;
 }
 
-export function findLatestRenderableDiffEventIndex(sections: Section[]): number | null {
+export function findLatestRenderableDiffEventIndex<TEvent extends LayoutEvent>(sections: Section<TEvent>[]): number | null {
   for (let sectionIndex = sections.length - 1; sectionIndex >= 0; sectionIndex--) {
     const section = sections[sectionIndex];
     if (!section || section.type === 'completed-task') continue;
@@ -34,25 +34,42 @@ export function findLatestRenderableDiffEventIndex(sections: Section[]): number 
   return null;
 }
 
-export type Section =
-  | { type: 'events'; items: EngineEvent[]; startIndex: number }
+export type Section<TEvent extends LayoutEvent = LayoutEvent> =
+  | { type: 'events'; items: TEvent[]; startIndex: number }
   | { type: 'completed-task'; summary: { index: number; title: string; method: TaskCompletionMethod; retries: number; duration: number; file?: string; reason?: string } }
-  | { type: 'active-task'; items: EngineEvent[]; startIndex: number };
+  | { type: 'active-task'; items: TEvent[]; startIndex: number };
 
-export type DynamicSection = Extract<Section, { type: 'events' | 'active-task' }>;
+export type DynamicSection<TEvent extends LayoutEvent = LayoutEvent> = Extract<Section<TEvent>, { type: 'events' | 'active-task' }>;
 
-export function groupEventsIntoSections(events: EngineEvent[]): Section[] {
-  const taskRanges: { taskId: string; startIdx: number; endIdx: number; startEvent: EngineEvent & { type: 'task_started' }; endEvent?: EngineEvent }[] = [];
+type TaskStartedLayoutEvent<TEvent extends LayoutEvent> = Extract<TEvent, { type: 'task_started' }>;
+type TaskEndLayoutEvent<TEvent extends LayoutEvent> = Extract<TEvent, { type: 'task_completed' | 'task_skipped' }>;
+
+function isTaskStartedEvent<TEvent extends LayoutEvent>(event: TEvent): event is TaskStartedLayoutEvent<TEvent> {
+  return event.type === 'task_started';
+}
+
+function isTaskEndEvent<TEvent extends LayoutEvent>(event: TEvent): event is TaskEndLayoutEvent<TEvent> {
+  return event.type === 'task_completed' || event.type === 'task_skipped';
+}
+
+export function groupEventsIntoSections<TEvent extends LayoutEvent>(events: TEvent[]): Section<TEvent>[] {
+  const taskRanges: {
+    taskId: string;
+    startIdx: number;
+    endIdx: number;
+    startEvent: TaskStartedLayoutEvent<TEvent>;
+    endEvent?: TaskEndLayoutEvent<TEvent> | undefined;
+  }[] = [];
   const openTasks = new Map<string, number>();
 
   for (let i = 0; i < events.length; i++) {
     const ev = events[i];
     if (ev === undefined) continue;
-    if (ev.type === 'task_started') {
+    if (isTaskStartedEvent(ev)) {
       const idx = taskRanges.length;
       taskRanges.push({ taskId: ev.taskId, startIdx: i, endIdx: -1, startEvent: ev });
       openTasks.set(ev.taskId, idx);
-    } else if (ev.type === 'task_completed' || ev.type === 'task_skipped') {
+    } else if (isTaskEndEvent(ev)) {
       const rangeIdx = openTasks.get(ev.taskId);
       if (rangeIdx != null) {
         const range = taskRanges[rangeIdx];
@@ -64,7 +81,7 @@ export function groupEventsIntoSections(events: EngineEvent[]): Section[] {
     }
   }
 
-  const sections: Section[] = [];
+  const sections: Section<TEvent>[] = [];
   let cursor = 0;
 
   for (const range of taskRanges) {

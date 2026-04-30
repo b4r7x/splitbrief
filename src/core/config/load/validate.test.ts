@@ -222,7 +222,7 @@ describe('validateConfig', () => {
     }
   });
 
-  it('allows a selected profile credential warning when another implementer profile can run', () => {
+  it('blocks when the selected implementer profile is missing credentials even if another profile can run', () => {
     const orig = process.env['OPENROUTER_API_KEY'];
     delete process.env['OPENROUTER_API_KEY'];
     try {
@@ -249,8 +249,8 @@ describe('validateConfig', () => {
 
       const { errors, warnings } = validateConfig(config);
 
-      expect(errors.find(e => e.path === 'implementerProfiles.profiles.cheap-cloud.apiKey')).toBeUndefined();
-      expect(warnings.some(w => w.includes('Default implementer profile cheap-cloud is missing credentials'))).toBe(true);
+      expect(errors.find(e => e.path === 'implementerProfiles.profiles.cheap-cloud.apiKey')).toBeTruthy();
+      expect(warnings.some(w => w.includes('Default implementer profile cheap-cloud is missing credentials'))).toBe(false);
     } finally {
       if (orig === undefined) delete process.env['OPENROUTER_API_KEY'];
       else process.env['OPENROUTER_API_KEY'] = orig;

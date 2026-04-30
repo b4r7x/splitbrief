@@ -10,7 +10,9 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { initStores } from '../init-stores.js';
 import { clearStaleSession } from '../../core/sessions/guards.js';
 import { beginSession, generateSessionId } from '../../core/sessions/lifecycle.js';
+import { sessionError } from '../../core/sessions/errors.js';
 import { maybeMigrate } from '../../core/migration/executor.js';
+import { printMigrationResult } from './migrate.js';
 import { runHeadless } from '../headless.js';
 import { cliError } from '../errors.js';
 import { createWorktree, detectWorktree } from '../../engine/git/worktree.js';
@@ -85,6 +87,17 @@ function assertReadinessCanStart(report: ReadinessReport, json: boolean | undefi
   throw cliError(readinessBlockerMessage(report), 1);
 }
 
+function clearStaleSessionForCli(projectDir: string): void {
+  try {
+    clearStaleSession(projectDir);
+  } catch (err) {
+    if (sessionError.isStillActive(err)) {
+      throw cliError(err.message, 1);
+    }
+    throw err;
+  }
+}
+
 function readinessForInteractiveStart(report: ReadinessReport): ReadinessReport {
   return report.status === 'blocked' ? createBlockerOnlyReadinessReport(report) : report;
 }
@@ -110,7 +123,7 @@ export function registerStartCommand(program: Command): void {
     if (opts.detach) {
       if (!feature) throw cliError('--detach requires a feature argument');
       const projectDir = resolveProjectDir(opts.project);
-      await maybeMigrate(projectDir);
+      printMigrationResult(await maybeMigrate(projectDir));
       await ensureGitAndConfig(projectDir);
       const readiness = await collectReadiness({ projectDir, opts });
       assertReadinessCanStart(readiness.report, opts.json);
@@ -144,7 +157,8 @@ export function registerStartCommand(program: Command): void {
     }
 
     const projectDir = resolveProjectDir(opts.project);
-    await maybeMigrate(projectDir);
+    const migration = await maybeMigrate(projectDir);
+    if (!opts.json) printMigrationResult(migration);
 
     if (opts.json) {
       if (!feature) throw cliError('--json requires a feature argument');
@@ -152,7 +166,7 @@ export function registerStartCommand(program: Command): void {
       const readiness = await collectReadiness({ projectDir, opts, defaultAutoApprove: true });
       process.stdout.write(JSON.stringify({ type: 'readiness_report', report: readiness.report }) + '\n');
       assertReadinessCanStart(readiness.report, true);
-      clearStaleSession(projectDir);
+      clearStaleSessionForCli(projectDir);
       const sessionId = beginSession(projectDir, feature);
       persistStartReadiness(projectDir, sessionId, readiness.report);
       await runHeadless(feature, projectDir, opts, undefined, sessionId, readiness);
@@ -166,7 +180,7 @@ export function registerStartCommand(program: Command): void {
       : undefined;
     if (readiness) assertReadinessCanStart(readiness.report, false);
 
-    clearStaleSession(projectDir);
+    clearStaleSessionForCli(projectDir);
 
     const sessionId = feature ? beginSession(projectDir, feature) : undefined;
     if (feature && sessionId && readiness) persistStartReadiness(projectDir, sessionId, readiness.report);

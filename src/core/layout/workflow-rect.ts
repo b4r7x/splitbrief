@@ -1,7 +1,6 @@
-import type { EngineEvent } from '../../engine/events/types.js';
 import { getChromeHeight, getContentTopRow } from './chrome-rows.js';
 
-export function hasWorkflowConfig(events: EngineEvent[]): boolean {
+export function hasWorkflowConfig(events: readonly { type: string }[]): boolean {
   return events.some((event) => event.type === 'workflow_config');
 }
 
@@ -10,7 +9,7 @@ export function getWorkflowSidebarWidth(
   sidebarVisible: boolean,
   isSmall: boolean,
 ): number {
-  return sidebarVisible && !isSmall ? Math.floor(cols * 0.25) : 0;
+  return sidebarVisible && !isSmall ? Math.max(0, Math.floor(cols * 0.25)) : 0;
 }
 
 export function getWorkflowContentWidth(
@@ -18,7 +17,7 @@ export function getWorkflowContentWidth(
   sidebarVisible: boolean,
   isSmall: boolean,
 ): number {
-  return cols - getWorkflowSidebarWidth(cols, sidebarVisible, isSmall);
+  return Math.max(0, cols - getWorkflowSidebarWidth(cols, sidebarVisible, isSmall));
 }
 
 export interface WorkflowContentRect {
@@ -54,11 +53,13 @@ export function getWorkflowContentRect(
   const height = getWorkflowViewportHeight(rows, inputRows, hasConfig);
   const left = sidebarWidth > 0 ? sidebarWidth + 1 : 1;
   const top = getContentTopRow(hasConfig);
+  const right = width > 0 ? left + width - 1 : left;
+  const bottom = height > 0 ? top + height - 1 : top;
   return {
     left,
-    right: left + width - 1,
+    right,
     top,
-    bottom: top + height - 1,
+    bottom,
     width,
     height,
   };

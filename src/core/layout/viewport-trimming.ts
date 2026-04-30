@@ -1,23 +1,24 @@
+import type { LayoutEvent } from './event-types.js';
 import type { RenderableConversationItem } from './renderable-conversation.js';
 
-interface ViewportTrimResult {
-  visibleItems: RenderableConversationItem[];
+interface ViewportTrimResult<TEvent extends LayoutEvent = LayoutEvent> {
+  visibleItems: RenderableConversationItem<TEvent>[];
   trimTop: number;
 }
 
-export function trimRenderableItemsToViewport(
-  items: RenderableConversationItem[],
+export function trimRenderableItemsToViewport<TEvent extends LayoutEvent>(
+  items: RenderableConversationItem<TEvent>[],
   totalHeight: number,
   windowStart: number,
   windowEnd: number,
-): ViewportTrimResult {
+): ViewportTrimResult<TEvent> {
   if (items.length === 0) {
     return { visibleItems: [], trimTop: 0 };
   }
   if (windowStart === 0 && windowEnd >= totalHeight) {
     return { visibleItems: items, trimTop: 0 };
   }
-  const visibleItems: RenderableConversationItem[] = [];
+  const visibleItems: RenderableConversationItem<TEvent>[] = [];
   let trimTop = 0;
   let itemTop = 0;
 

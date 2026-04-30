@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { activeFile, sessionDir, sessionsRoot, STATE_FILE } from '../paths.js';
+import { activeFile, sessionDir, sessionsRoot, STATE_FILE, validateSessionId } from '../paths.js';
 import { ensureSessionDir } from '../paths-io.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import { writeSecureFile } from '../../lib/fs.js';
@@ -14,6 +14,7 @@ export function readActive(projectDir: string): string | null {
 }
 
 export function writeActive(projectDir: string, sessionId: string): void {
+  validateSessionId(sessionId);
   writeSecureFile(activeFile(projectDir), sessionId + '\n');
 }
 
