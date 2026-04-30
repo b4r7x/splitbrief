@@ -133,6 +133,7 @@ describe('eval harness', () => {
         plannerModel: 'planner-model',
         baselineImplementerModel: 'baseline-model',
         routedImplementerModel: 'routed-model',
+        provider: 'openai',
         baseUrl: 'https://api.example.test/v1',
         apiKey: 'secret',
       },
@@ -144,7 +145,7 @@ describe('eval harness', () => {
     if (config.planner.kind !== 'api' || config.implementer.kind !== 'api') {
       throw new Error('expected API runners');
     }
-    expect(config.planner.provider).toBe('anthropic');
+    expect(config.planner.provider).toBe('openai');
     expect(config.planner.apiBase).toBe('https://api.example.test/v1');
     expect(config.implementer.model).toBe('routed-model');
     expect(config.workflow.mode).toBe('quick');
