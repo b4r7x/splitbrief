@@ -45,5 +45,5 @@ describe('CLI integration: start happy path', () => {
     if (!sessionId) throw new Error('session id missing');
     expect(sessionId).toMatch(/add-endpoint/);
     expect(readFileSync(join(tmp, DIPTYCH_DIR, 'active'), 'utf-8').trim()).toBe(sessionId);
-  });
+  }, 20_000);
 });

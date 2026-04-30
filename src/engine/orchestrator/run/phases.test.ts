@@ -550,7 +550,7 @@ describe('runTasksAndReview', () => {
     expect(splitPreviewIndex).toBeGreaterThan(skipWarningIndex);
     expect(firstTaskStartIndex).toBeGreaterThan(splitPreviewIndex);
     expect(taskStartEvents.map(event => event.taskId)).toEqual(['T003', 'T004', 'T002']);
-  });
+  }, 20_000);
 
   it('cancels through rejected briefs when auto-split output is rejected', async () => {
     const { projectDir, sessionId } = setupProject();

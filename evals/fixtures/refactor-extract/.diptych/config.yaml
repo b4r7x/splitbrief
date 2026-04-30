@@ -1,0 +1,17 @@
+version: 3
+planner:
+  kind: shell
+  command: "cat"
+implementer:
+  kind: shell
+  command: "cat"
+validation:
+  typecheck: false
+  lint: false
+  test: true
+  testCommand: "npm test"
+workflow:
+  mode: quick
+  maxRetries: 1
+  git:
+    commitStrategy: none

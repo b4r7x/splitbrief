@@ -20,6 +20,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "eval": "tsx evals/cli.ts",
+    "eval:record": "tsx evals/cli.ts --record",
+    "eval:replay": "tsx evals/cli.ts --replay",
     "test-ci": "npm run typecheck && npm run lint && npm test",
     "prepublishOnly": "npm run build"
   },

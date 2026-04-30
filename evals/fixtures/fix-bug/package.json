@@ -1,0 +1,12 @@
+{
+  "name": "fix-bug-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types --loader ./scripts/ts-js-loader.mjs --test \"src/**/*.test.ts\""
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
