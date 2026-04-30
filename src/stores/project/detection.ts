@@ -13,7 +13,20 @@ const initial: DetectionState = {
 
 const store = createStore<DetectionState>(initial);
 
+function cloneDetection(detection: DetectionState): DetectionState {
+  return {
+    planners: detection.planners.map(planner => ({ ...planner })),
+    implementers: detection.implementers.map(implementer => ({
+      ...implementer,
+      ...(implementer.models ? { models: implementer.models.map(model => ({
+        ...model,
+        ...(model.capabilities ? { capabilities: [...model.capabilities] } : {}),
+      })) } : {}),
+    })),
+  };
+}
+
 export const detectionStore = {
   ...storeBase(store),
-  setDetection: (detection: DetectionState) => store.set(detection),
+  setDetection: (detection: DetectionState) => store.set(cloneDetection(detection)),
 };

@@ -1,7 +1,7 @@
 import type { EngineEvent } from '../events/types.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
-import type { TieredApprovalRequest, TieredApprovalResponse } from '../orchestrator/tiered-approval.js';
+import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
 import type { UserEditConflict, UserEditConflictAction } from '../orchestrator/user-edit-conflicts.js';
 
 export type IpcPromptRequest =

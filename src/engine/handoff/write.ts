@@ -12,7 +12,7 @@ import { readSpecFile, getDiptychVersion } from '../../core/paths-io.js';
 import { loadConfig } from '../../core/config/load/load.js';
 import { hashTaskBrief } from '../../core/brief-hash.js';
 import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../core/paths.js';
-import { assertHandoffPathSafe } from '../../lib/handoff-path-safe.js';
+import { assertPathConfined } from '../../lib/path-confinement.js';
 
 export type WriteHandoffOptions = {
   projectDir: string;
@@ -126,7 +126,7 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
   const writtenFiles: string[] = [];
 
   for (const file of pack.files) {
-    assertHandoffPathSafe(file.path, outDir);
+    assertPathConfined(file.path, outDir);
 
     const filePath = join(outDir, file.path);
     const fileDir = join(filePath, '..');

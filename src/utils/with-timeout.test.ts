@@ -90,4 +90,70 @@ describe('withIdleTimeout', () => {
       expect(values).toEqual([1]);
     }
   });
+
+  test('calls iterator.return when the iterator stalls', async () => {
+    let returnCalled = false;
+    const iterator: AsyncIterator<number> = {
+      next: async () => new Promise<IteratorResult<number>>(() => {}),
+      return: async () => {
+        returnCalled = true;
+        return { done: true, value: undefined };
+      },
+    };
+    const iterable: AsyncIterable<number> = {
+      [Symbol.asyncIterator]: () => iterator,
+    };
+
+    await expect((async () => {
+      for await (const value of withIdleTimeout(iterable, 20)) {
+        expect(value).toBeUndefined();
+      }
+    })()).rejects.toSatisfy(timeoutError.isIdle);
+    expect(returnCalled).toBe(true);
+  });
+
+  test('calls iterator.return when the iterator rejects', async () => {
+    const original = new Error('stream failed');
+    let returnCalled = false;
+    const iterator: AsyncIterator<number> = {
+      next: async () => {
+        throw original;
+      },
+      return: async () => {
+        returnCalled = true;
+        return { done: true, value: undefined };
+      },
+    };
+    const iterable: AsyncIterable<number> = {
+      [Symbol.asyncIterator]: () => iterator,
+    };
+
+    await expect((async () => {
+      for await (const value of withIdleTimeout(iterable, 100)) {
+        expect(value).toBeUndefined();
+      }
+    })()).rejects.toBe(original);
+    expect(returnCalled).toBe(true);
+  });
+
+  test('runs generator cleanup after timeout once the pending next call settles', async () => {
+    let cleanedUp = false;
+    async function* cleanupGenerator(): AsyncGenerator<number> {
+      try {
+        yield 1;
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        yield 2;
+      } finally {
+        cleanedUp = true;
+      }
+    }
+
+    await expect((async () => {
+      for await (const value of withIdleTimeout(cleanupGenerator(), 10)) {
+        expect(value).toBe(1);
+      }
+    })()).rejects.toSatisfy(timeoutError.isIdle);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(cleanedUp).toBe(true);
+  });
 });

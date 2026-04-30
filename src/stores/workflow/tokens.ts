@@ -2,15 +2,21 @@ import { createStore, storeBase } from '../create-store.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { EngineEvent } from '../../engine/events/types.js';
-import { calculateUsageCost, getProviderPricing } from '../../engine/providers/pricing.js';
 import { phaseCostRole } from '../../core/phases.js';
-import { modelCacheStore } from '../discovery/model-cache.js';
 
 export interface PhaseTokens {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreateTokens: number;
+  plannerInputTokens?: number | undefined;
+  plannerOutputTokens?: number | undefined;
+  plannerCacheReadTokens?: number | undefined;
+  plannerCacheCreateTokens?: number | undefined;
+  implementerInputTokens?: number | undefined;
+  implementerOutputTokens?: number | undefined;
+  implementerCacheReadTokens?: number | undefined;
+  implementerCacheCreateTokens?: number | undefined;
   cost: number;
 }
 
@@ -79,36 +85,25 @@ const EMPTY_USAGE: TokenUsage = {
 };
 
 function makeEmptyPhaseTokens(): PhaseTokens {
-  return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0 };
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreateTokens: 0,
+    plannerInputTokens: 0,
+    plannerOutputTokens: 0,
+    plannerCacheReadTokens: 0,
+    plannerCacheCreateTokens: 0,
+    implementerInputTokens: 0,
+    implementerOutputTokens: 0,
+    implementerCacheReadTokens: 0,
+    implementerCacheCreateTokens: 0,
+    cost: 0,
+  };
 }
 
 function clampDelta(value: number): number {
   return Math.max(0, value);
-}
-
-function calculatePhaseCostDelta(
-  context: PricingContext | null,
-  planner: { input: number; output: number; cacheRead: number; cacheCreate: number },
-  implementer: { input: number; output: number; cacheRead: number; cacheCreate: number },
-): number {
-  if (context === null) return 0;
-  // Pass modelCacheStore so phase-cost math sees the same models-dev/runtime catalogs as
-  // calculateCostBreakdown in useCostStats — a single source of truth for pricing.
-  const plannerPricing = getProviderPricing(context.plannerTool, context.plannerModel, modelCacheStore);
-  const implementerPricing = getProviderPricing(context.implementerTool, context.implementerModel, modelCacheStore);
-  return calculateUsageCost(
-    planner.input,
-    planner.output,
-    planner.cacheRead,
-    planner.cacheCreate,
-    plannerPricing,
-  ) + calculateUsageCost(
-    implementer.input,
-    implementer.output,
-    implementer.cacheRead,
-    implementer.cacheCreate,
-    implementerPricing,
-  );
 }
 
 export function updateTokens(state: TokensState, event: EngineEvent): TokensState {
@@ -148,8 +143,14 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     let outputDelta = 0;
     let cacheReadDelta = 0;
     let cacheCreateDelta = 0;
-    let costDelta = 0;
-
+    let plannerInputDelta = 0;
+    let plannerOutputDelta = 0;
+    let plannerCacheReadDelta = 0;
+    let plannerCacheCreateDelta = 0;
+    let implementerInputDelta = 0;
+    let implementerOutputDelta = 0;
+    let implementerCacheReadDelta = 0;
+    let implementerCacheCreateDelta = 0;
     const costRole = phaseCostRole(phase);
 
     if (costRole === 'planner') {
@@ -157,15 +158,23 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
       outputDelta = plannerDelta.output;
       cacheReadDelta = plannerDelta.cacheRead;
       cacheCreateDelta = plannerDelta.cacheCreate;
-      costDelta = calculatePhaseCostDelta(state.pricingContext, plannerDelta, {
-        input: 0, output: 0, cacheRead: 0, cacheCreate: 0,
-      });
+      plannerInputDelta = plannerDelta.input;
+      plannerOutputDelta = plannerDelta.output;
+      plannerCacheReadDelta = plannerDelta.cacheRead;
+      plannerCacheCreateDelta = plannerDelta.cacheCreate;
     } else if (costRole === 'implementer') {
       inputDelta = implementerDelta.input + plannerDelta.input;
       outputDelta = implementerDelta.output + plannerDelta.output;
       cacheReadDelta = implementerDelta.cacheRead + plannerDelta.cacheRead;
       cacheCreateDelta = implementerDelta.cacheCreate + plannerDelta.cacheCreate;
-      costDelta = calculatePhaseCostDelta(state.pricingContext, plannerDelta, implementerDelta);
+      plannerInputDelta = plannerDelta.input;
+      plannerOutputDelta = plannerDelta.output;
+      plannerCacheReadDelta = plannerDelta.cacheRead;
+      plannerCacheCreateDelta = plannerDelta.cacheCreate;
+      implementerInputDelta = implementerDelta.input;
+      implementerOutputDelta = implementerDelta.output;
+      implementerCacheReadDelta = implementerDelta.cacheRead;
+      implementerCacheCreateDelta = implementerDelta.cacheCreate;
     }
 
     const updatedPhase: PhaseTokens = {
@@ -173,7 +182,15 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
       outputTokens: existingPhase.outputTokens + outputDelta,
       cacheReadTokens: existingPhase.cacheReadTokens + cacheReadDelta,
       cacheCreateTokens: existingPhase.cacheCreateTokens + cacheCreateDelta,
-      cost: existingPhase.cost + costDelta,
+      plannerInputTokens: (existingPhase.plannerInputTokens ?? 0) + plannerInputDelta,
+      plannerOutputTokens: (existingPhase.plannerOutputTokens ?? 0) + plannerOutputDelta,
+      plannerCacheReadTokens: (existingPhase.plannerCacheReadTokens ?? 0) + plannerCacheReadDelta,
+      plannerCacheCreateTokens: (existingPhase.plannerCacheCreateTokens ?? 0) + plannerCacheCreateDelta,
+      implementerInputTokens: (existingPhase.implementerInputTokens ?? 0) + implementerInputDelta,
+      implementerOutputTokens: (existingPhase.implementerOutputTokens ?? 0) + implementerOutputDelta,
+      implementerCacheReadTokens: (existingPhase.implementerCacheReadTokens ?? 0) + implementerCacheReadDelta,
+      implementerCacheCreateTokens: (existingPhase.implementerCacheCreateTokens ?? 0) + implementerCacheCreateDelta,
+      cost: existingPhase.cost,
     };
 
     return {

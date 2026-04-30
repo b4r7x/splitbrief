@@ -1,7 +1,5 @@
 import { createStore, storeBase } from '../create-store.js';
-import { discoverSkills } from '../../engine/skills/discovery.js';
-import type { PlannerTool } from '../../core/types/config-options.js';
-import type { SkillMeta } from '../../engine/skills/discovery.js';
+import type { SkillMeta } from '../../core/skills/types.js';
 
 interface SkillsState {
   available: SkillMeta[];
@@ -12,17 +10,21 @@ const initial = (): SkillsState => ({ available: [], selected: new Set() });
 
 const store = createStore<SkillsState>(initial);
 
-async function discover(plannerTool: PlannerTool, projectDir: string) {
-  const available = await discoverSkills(plannerTool, projectDir);
+function cloneSkill(skill: SkillMeta): SkillMeta {
+  return { ...skill };
+}
+
+function setAvailable(available: SkillMeta[]) {
+  const cloned = available.map(cloneSkill);
   const availableIds = new Set(available.map(s => s.id));
   store.set(s => ({
-    available,
+    available: cloned,
     selected: new Set([...s.selected].filter(id => availableIds.has(id))),
   }));
 }
 
 function setSelected(ids: Set<string>) {
-  store.set(s => ({ ...s, selected: ids }));
+  store.set(s => ({ ...s, selected: new Set(ids) }));
 }
 
-export const skillsStore = { ...storeBase(store), discover, setSelected };
+export const skillsStore = { ...storeBase(store), setAvailable, setSelected };

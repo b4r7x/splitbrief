@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme, type Theme } from '../../components/theme.js';
-import type { SkillMeta } from '../../engine/skills/discovery.js';
+import type { SkillMeta } from '../../core/skills/types.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getResponsivePanelWidth } from '../../core/layout/terminal-width.js';
 import { filterByFields } from '../../components/pickers/picker-utils.js';

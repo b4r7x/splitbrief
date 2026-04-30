@@ -70,6 +70,19 @@ describe('loadHistoryFromDisk', () => {
     expect(loadHistoryFromDisk()).toEqual([]);
   });
 
+  it('warns and returns empty array when the history path cannot be read as a file', async () => {
+    mkdirSync(historyFile, { recursive: true });
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    try {
+      const { loadHistoryFromDisk } = await loadModules();
+      expect(loadHistoryFromDisk()).toEqual([]);
+      expect(stderr).toHaveBeenCalledWith(expect.stringContaining('input-history: failed to load'));
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
   it('ignores blank lines', async () => {
     seedHistoryFile('first\n\nsecond\n');
     const { loadHistoryFromDisk } = await loadModules();
@@ -162,5 +175,22 @@ describe('installHistoryPersistence', () => {
     inputHistoryStore.push('after-teardown');
     vi.advanceTimersByTime(300);
     expect(existsSync(historyFile)).toBe(false);
+  });
+
+  it('reinstalling cancels prior pending writes and subscriptions', async () => {
+    const { installHistoryPersistence, inputHistoryStore } = await loadModules();
+    const firstStop = installHistoryPersistence();
+
+    inputHistoryStore.push('stale pending');
+    teardown = installHistoryPersistence();
+    vi.advanceTimersByTime(300);
+
+    expect(existsSync(historyFile)).toBe(false);
+
+    firstStop();
+    inputHistoryStore.push('active install');
+    vi.advanceTimersByTime(300);
+
+    expect(readFileSync(historyFile, 'utf-8')).toBe('active install');
   });
 });

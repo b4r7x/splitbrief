@@ -1,5 +1,6 @@
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import { taskId } from '../../core/schemas/task.js';
+import { isRecord } from '../../utils/type-guards.js';
 
 export type BriefQualitySeverity = 'error' | 'warning';
 
@@ -39,10 +40,6 @@ const BRIEF_QUALITY_ISSUE_CODES: ReadonlySet<string> = new Set([
   'non_atomic_task',
   'missing_implementation_steps',
 ]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
 
 function isBriefQualityIssue(value: unknown): value is BriefQualityIssue {
   if (!isRecord(value)) return false;

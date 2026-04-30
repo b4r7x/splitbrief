@@ -9,7 +9,7 @@ import { saveState } from '../../core/state/persistence.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, REVIEW_FILE } from '../../core/paths.js';
 import { killAllProcesses } from '../../lib/process/registry.js';
-import { getCurrentDiff, discardTaskChanges, getChangedFiles } from '../../lib/git.js';
+import { getCurrentDiff, discardFileChange, getChangedFiles } from '../../lib/git.js';
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
@@ -138,12 +138,12 @@ export async function runFinalReviewPhase(
   return summary;
 }
 
-export function shutdownWorkflow(
+export async function shutdownWorkflow(
   projectDir: string,
   sessionId: string,
   getTrackedState: () => WorkflowState | undefined,
   getCurrentTask: () => Pick<Task, 'file' | 'action'> | undefined,
-): void {
+): Promise<void> {
   killAllProcesses();
   const trackedState = getTrackedState();
   if (trackedState) {
@@ -153,7 +153,9 @@ export function shutdownWorkflow(
   }
   const currentTask = getCurrentTask();
   if (currentTask) {
-    try { discardTaskChanges(projectDir, currentTask.file, currentTask.action); } catch (err) {
+    try {
+      await discardFileChange(projectDir, currentTask.file, currentTask.action === 'modify' ? 'tracked' : 'untracked');
+    } catch (err) {
       warnError('Failed to discard changes during shutdown', err);
     }
   }

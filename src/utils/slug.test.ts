@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { slug } from './slug.js';
+import { slugify } from './slugify.js';
 
 describe('slug', () => {
   it('returns empty string for empty input', () => {
@@ -21,5 +22,13 @@ describe('slug', () => {
 
   it('lowercases and collapses multiple non-alphanumeric chars', () => {
     expect(slug('Add   Auth  Feature')).toBe('add-auth-feature');
+  });
+});
+
+describe('slugify', () => {
+  it('uses the same normalization as slug without truncating', () => {
+    const input = `${'Feature '.repeat(10)}Done`;
+    expect(slugify(input)).toBe('feature-feature-feature-feature-feature-feature-feature-feature-feature-feature-done');
+    expect(slug(input)).toBe(slugify(input).slice(0, 40));
   });
 });

@@ -4,6 +4,7 @@ import { createCommands } from './core/slash-commands/catalog.js';
 import { buildCommandContext } from './app/slash-command-context.js';
 import { executeSlashCommand } from './core/slash-commands/dispatch.js';
 import { useAppKeys } from './hooks/use-app-keys.js';
+import { abortTurn } from './features/workflow/handlers.js';
 import { useMouseScroll } from './features/workflow/hooks/use-mouse-scroll.js';
 import { Layout } from './layout.js';
 import { ThemeProvider, getTheme } from './components/theme.js';
@@ -42,7 +43,7 @@ export function App() {
     void executeSlashCommand(commands, raw, { screen: from, phase, onError: feedbackStore.setError });
   };
 
-  useAppKeys({ exit });
+  useAppKeys({ exit, abortWorkflow: abortTurn });
   useMouseScroll();
 
   return (

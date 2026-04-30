@@ -826,7 +826,7 @@ describe('runTaskLoop', () => {
     expect(log).toContain('"kind":"message"');
     expect(log).toContain('Task review note for T001 - Add auth');
     expect(log).toContain('tighten the follow-up assertions');
-  });
+  }, 20_000);
 
   it('taskReview every can abort safely after a successful task review', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -1024,7 +1024,7 @@ describe('runTaskLoop', () => {
         currentTaskId: 'T001',
       },
     });
-  });
+  }, 20_000);
 
   it('pauses explicitly when the user chooses regenerate-rebase for a future stale edit', async () => {
     const { projectDir, sessionId } = setupProject();

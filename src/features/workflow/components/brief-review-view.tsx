@@ -263,9 +263,9 @@ function routingPreviewReason(reason: string, estimateStatus?: PlanReviewEstimat
   return reason;
 }
 
-export async function refreshPlanReviewMetadata(tasks: Task[]): Promise<PlanTaskReviewMetadata[]> {
+export async function refreshPlanReviewMetadata(tasks: Task[]): Promise<PlanTaskReviewMetadata[] | null> {
   const { config, projectDir } = configStore.get();
-  if (!config) return [];
+  if (!config) return null;
   return buildRoutingPreviewMetadata(tasks, { config, projectDir });
 }
 
@@ -298,7 +298,7 @@ function useBriefData(filePath: string): BriefData {
       const tasks = parseTasks(tasksText);
       const metadata = await refreshPlanReviewMetadata(tasks);
       if (signal.aborted) return;
-      planEditorStore.setReviewMetadata(metadata);
+      if (metadata !== null) planEditorStore.setReviewMetadata(metadata);
       let quality: BriefQualityReport | null = null;
       if (qualityText) {
         try {

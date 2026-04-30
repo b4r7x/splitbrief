@@ -9,12 +9,11 @@ import {
   hasExternalChanges,
   getChangedFiles,
   stageAll,
-  createCheckpoint,
-  discardTaskChanges,
+  createTaggedStash,
+  discardFileChange,
   branchExists,
   createBranch,
-  createGitCommandError,
-  isGitCommandError,
+  gitError,
 } from './git.js';
 import { simpleGit } from 'simple-git';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -156,19 +155,19 @@ describe('git utils', () => {
     });
   });
 
-  describe('createCheckpoint', () => {
+  describe('createTaggedStash', () => {
     it('creates a tagged stash sha for dirty working tree and returns its tag', async () => {
       const dir = tracked(setupGitRepo());
       writeFileSync(join(dir, 'init.txt'), 'modified');
-      const tag = await createCheckpoint(dir, 'T001');
-      expect(tag).toBe('diptych/T001');
+      const tag = await createTaggedStash(dir, 'checkpoint: T001', 'checkpoint/T001');
+      expect(tag).toBe('checkpoint/T001');
       const tags = execSync('git tag', { cwd: dir, encoding: 'utf-8' });
-      expect(tags).toContain('diptych/T001');
+      expect(tags).toContain('checkpoint/T001');
     });
 
     it('returns empty string when there is nothing to stash', async () => {
       const dir = tracked(setupGitRepo());
-      const tag = await createCheckpoint(dir, 'T002');
+      const tag = await createTaggedStash(dir, 'checkpoint: T002', 'checkpoint/T002');
       expect(tag).toBe('');
     });
   });
@@ -223,46 +222,46 @@ describe('git utils', () => {
     });
   });
 
-  describe('discardTaskChanges', () => {
-    it('checks out modified file on modify action', async () => {
+  describe('discardFileChange', () => {
+    it('checks out a tracked file', async () => {
       const dir = tracked(setupGitRepo());
       writeFileSync(join(dir, 'init.txt'), 'modified');
-      await discardTaskChanges(dir, 'init.txt', 'modify');
+      await discardFileChange(dir, 'init.txt', 'tracked');
       const content = readFileSync(join(dir, 'init.txt'), 'utf-8');
       expect(content).toBe('init');
     });
 
-    it('cleans created file on create action', async () => {
+    it('cleans an untracked file', async () => {
       const dir = tracked(setupGitRepo());
       writeFileSync(join(dir, 'created.txt'), 'new file');
-      await discardTaskChanges(dir, 'created.txt', 'create');
+      await discardFileChange(dir, 'created.txt', 'untracked');
       expect(existsSync(join(dir, 'created.txt'))).toBe(false);
     });
   });
 
-  describe('createGitCommandError / isGitCommandError', () => {
-    it('creates an Error with intent and causeMessage fields', () => {
-      const err = createGitCommandError('rev-parse HEAD', 'not a git repository');
+  describe('gitError', () => {
+    it('creates a discriminated AppError for failed commands', () => {
+      const err = gitError.commandFailed('rev-parse HEAD', 'not a git repository');
       expect(err).toBeInstanceOf(Error);
+      expect(err.kind).toBe('git-command-failed');
       expect(err.message).toContain('rev-parse HEAD');
       expect(err.message).toContain('not a git repository');
-      expect(err.intent).toBe('rev-parse HEAD');
-      expect(err.causeMessage).toBe('not a git repository');
+      expect(err.data).toEqual({ intent: 'rev-parse HEAD', causeMessage: 'not a git repository' });
     });
 
-    it('isGitCommandError returns true for created errors', () => {
-      const err = createGitCommandError('status --porcelain', 'fatal: error');
-      expect(isGitCommandError(err)).toBe(true);
+    it('narrows created git command errors', () => {
+      const err = gitError.commandFailed('status --porcelain', 'fatal: error');
+      expect(gitError.isCommandFailed(err)).toBe(true);
     });
 
-    it('isGitCommandError returns false for plain Error', () => {
-      expect(isGitCommandError(new Error('plain'))).toBe(false);
+    it('returns false for plain Error', () => {
+      expect(gitError.isCommandFailed(new Error('plain'))).toBe(false);
     });
 
-    it('isGitCommandError returns false for non-Error values', () => {
-      expect(isGitCommandError('string')).toBe(false);
-      expect(isGitCommandError(null)).toBe(false);
-      expect(isGitCommandError(42)).toBe(false);
+    it('returns false for non-Error values', () => {
+      expect(gitError.isCommandFailed('string')).toBe(false);
+      expect(gitError.isCommandFailed(null)).toBe(false);
+      expect(gitError.isCommandFailed(42)).toBe(false);
     });
   });
 });

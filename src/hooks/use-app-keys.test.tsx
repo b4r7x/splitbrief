@@ -7,10 +7,9 @@ import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore, _lifecycleInternal } from '../stores/workflow/lifecycle.js';
 import { abortStore } from '../stores/workflow/abort.js';
 import { overlayStore } from '../stores/ui/overlay.js';
-import { setAbortHandler, clearAllHandlers } from '../features/workflow/handlers.js';
 
-function Harness({ exit }: { exit: () => void }) {
-  useAppKeys({ exit });
+function Harness({ exit, abortWorkflow }: { exit: () => void; abortWorkflow?: () => void }) {
+  useAppKeys({ exit, abortWorkflow });
   return (
     <Box>
       <Text>ready</Text>
@@ -28,79 +27,84 @@ function writeKey(ui: { stdin: { write: (d: string) => void } }, chars: string) 
 
 describe('useAppKeys: Ctrl+C double-press abort flow', () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    vi.setSystemTime(1000);
     resetAllStores();
-    clearAllHandlers();
     routerStore.navigate({ to: 'workflow', feature: 'test' });
     _lifecycleInternal.set({ phase: 'implementing', cancelled: false, queueDepth: 0 });
-    setAbortHandler(() => {});
   });
 
   afterEach(() => {
     abortStore.clear();
-    clearAllHandlers();
+    vi.useRealTimers();
   });
 
   it('single Ctrl+C during a live workflow arms abortStore.pending without exiting', async () => {
     const exit = vi.fn();
-    const ui = renderFeature(<Harness exit={exit} />);
-    await tick(20);
+    const abortWorkflow = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} abortWorkflow={abortWorkflow} />);
+    await tick();
 
     writeCtrlC(ui);
-    await tick(20);
+    await tick();
 
     expect(abortStore.get().pending).toBe(true);
+    expect(abortWorkflow).toHaveBeenCalledTimes(1);
     expect(exit).not.toHaveBeenCalled();
     ui.unmount();
   });
 
   it('second Ctrl+C within the 2s window calls exit()', async () => {
     const exit = vi.fn();
-    const ui = renderFeature(<Harness exit={exit} />);
-    await tick(20);
+    const abortWorkflow = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} abortWorkflow={abortWorkflow} />);
+    await tick();
 
     writeCtrlC(ui);
-    await tick(20);
+    await tick();
     expect(exit).not.toHaveBeenCalled();
 
+    vi.advanceTimersByTime(1000);
     writeCtrlC(ui);
-    await tick(20);
+    await tick();
     expect(exit).toHaveBeenCalledTimes(1);
+    expect(abortWorkflow).toHaveBeenCalledTimes(1);
     ui.unmount();
   });
 
   it('a Ctrl+C that arrives after the 2s window is treated as a fresh first press', async () => {
     const exit = vi.fn();
-    const ui = renderFeature(<Harness exit={exit} />);
-    await tick(20);
+    const abortWorkflow = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} abortWorkflow={abortWorkflow} />);
+    await tick();
 
     writeCtrlC(ui);
-    await tick(20);
+    await tick();
     expect(abortStore.get().pending).toBe(true);
 
-    await tick(2100);
+    vi.advanceTimersByTime(2001);
+    await tick();
 
     expect(abortStore.get().pending).toBe(false);
 
     expect(lifecycleStore.get().phase).toBe('implementing');
     writeCtrlC(ui);
-    await tick(20);
+    await tick();
 
     expect(exit).not.toHaveBeenCalled();
     expect(abortStore.get().pending).toBe(true);
+    expect(abortWorkflow).toHaveBeenCalledTimes(2);
     ui.unmount();
-  }, 10000);
+  });
 });
 
 describe('useAppKeys: keystroke binding', () => {
   beforeEach(() => {
     resetAllStores();
-    clearAllHandlers();
-    setAbortHandler(() => {});
   });
 
   afterEach(() => {
     abortStore.clear();
-    clearAllHandlers();
   });
 
   it.each([

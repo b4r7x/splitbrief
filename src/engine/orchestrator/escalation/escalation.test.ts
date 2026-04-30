@@ -254,7 +254,7 @@ describe('handleRetryAndEscalation', () => {
     writeFileSync(join(projectDir, 'task-file.ts'), 'pending content');
     const task = makeTask({ file: 'task-file.ts', action: 'create' });
     const state = makeValidatingState();
-    // Update task list with the file-matching task so discardTaskChanges finds a real path.
+    // Update task list with the file-matching task so shutdown cleanup finds a real path.
     const stateWithTask: WorkflowState = {
       ...state,
       tasks: [task],

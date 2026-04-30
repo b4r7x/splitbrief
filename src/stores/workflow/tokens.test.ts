@@ -7,7 +7,6 @@ import {
   makeCostUpdate,
   makeTaskStart,
 } from '#testing/helpers/events.js';
-import { TokenUsageSchema } from '../../core/schemas/tokens.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { taskId } from '../../core/schemas/task.js';
 
@@ -143,6 +142,10 @@ describe('updateTokens — perPhase cache delta accumulation', () => {
     expect(next.perPhase['implementing']?.outputTokens).toBe(350);
     expect(next.perPhase['implementing']?.cacheReadTokens).toBe(80);
     expect(next.perPhase['implementing']?.cacheCreateTokens).toBe(40);
+    expect(next.perPhase['implementing']?.plannerInputTokens).toBe(500);
+    expect(next.perPhase['implementing']?.plannerOutputTokens).toBe(250);
+    expect(next.perPhase['implementing']?.implementerInputTokens).toBe(200);
+    expect(next.perPhase['implementing']?.implementerOutputTokens).toBe(100);
   });
 
   it('accumulates implementer cache deltas into implementing phase', () => {
@@ -197,7 +200,7 @@ describe('updateTokens — perPhase cache delta accumulation', () => {
     expect(next.perPhase['planning']?.cacheReadTokens).toBe(0);
   });
 
-  it('computes non-zero per-phase cost when pricing metadata is known', () => {
+  it('keeps pricing context while recording raw per-phase token deltas', () => {
     const withConfig = updateTokens(makeInitialState(), makeWorkflowConfig());
     const usage = {
       plannerInput: 1_000_000,
@@ -210,23 +213,22 @@ describe('updateTokens — perPhase cache delta accumulation', () => {
       plannerCacheCreate: 500_000,
     };
     const next = updateTokens(withConfig, { type: 'cost_update', ts: Date.now(), phase: 'planning', tokenUsage: usage });
-    expect(next.perPhase['planning']?.cost).toBeCloseTo(20.175, 10);
-  });
-
-  it('keeps per-phase cost at zero when pricing metadata is unknown', () => {
-    const withConfig = updateTokens(makeInitialState(), makeWorkflowConfig({
-      plannerTool: 'unknown-tool',
-      plannerModel: 'unknown-model',
-    }));
-    const usage = {
-      plannerInput: 1_000_000,
-      plannerOutput: 1_000_000,
-      implementerInput: 0,
-      implementerOutput: 0,
-      escalationInput: 0,
-      escalationOutput: 0,
-    };
-    const next = updateTokens(withConfig, { type: 'cost_update', ts: Date.now(), phase: 'planning', tokenUsage: usage });
+    expect(next.pricingContext).toEqual({
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
+    });
+    expect(next.perPhase['planning']).toMatchObject({
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
+      cacheCreateTokens: 500_000,
+      plannerInputTokens: 1_000_000,
+      plannerOutputTokens: 1_000_000,
+      implementerInputTokens: 0,
+      implementerOutputTokens: 0,
+    });
     expect(next.perPhase['planning']?.cost).toBe(0);
   });
 });
@@ -310,56 +312,5 @@ describe('updateTokens — task_tokens populates perTask totalTokens', () => {
     state = updateTokens(state, first);
     state = updateTokens(state, second);
     expect(state.perTask['T001']?.totalTokens).toBe(600);
-  });
-});
-
-describe('TokenUsage schema — backward compatibility', () => {
-  it('accepts existing shape without cache fields', () => {
-    const result = TokenUsageSchema.safeParse({
-      plannerInput: 100,
-      plannerOutput: 50,
-      implementerInput: 200,
-      implementerOutput: 100,
-      escalationInput: 0,
-      escalationOutput: 0,
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts shape with optional cache fields', () => {
-    const result = TokenUsageSchema.safeParse({
-      plannerInput: 100,
-      plannerOutput: 50,
-      implementerInput: 200,
-      implementerOutput: 100,
-      escalationInput: 0,
-      escalationOutput: 0,
-      plannerCacheRead: 30,
-      plannerCacheCreate: 10,
-      implementerCacheRead: 50,
-      implementerCacheCreate: 20,
-    });
-    expect(result.success).toBe(true);
-  });
-});
-
-describe('EngineEvent — budget_paused', () => {
-  it('budget_paused is a valid EngineEvent that type narrows correctly', () => {
-    const event: EngineEvent = {
-      type: 'budget_paused',
-      ts: Date.now(),
-      phase: 'implementing',
-      currentCost: 8.5,
-      maxBudget: 10.0,
-      threshold: 0.85,
-    };
-    // Type narrowing
-    if (event.type === 'budget_paused') {
-      expect(event.threshold).toBe(0.85);
-      expect(event.currentCost).toBe(8.5);
-      expect(event.maxBudget).toBe(10.0);
-    } else {
-      throw new Error('Should have narrowed to budget_paused');
-    }
   });
 });

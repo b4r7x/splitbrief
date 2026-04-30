@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { runCommand, spawnWithTimeout, spawnWithStdin } from './spawn.js';
 import { killProcess, getActiveProcessCount } from './registry.js';
-import { isENOENT, processError } from './errors.js';
+import { isENOENT } from './errors.js';
 import { spawn } from 'node:child_process';
 describe('runCommand', () => {
   it('resolves with stdout, stderr, and exit code', async () => {
@@ -134,21 +134,60 @@ describe('spawnWithTimeout', () => {
       }),
     ).rejects.toThrow();
   });
-});
 
-describe('processError.exitCode', () => {
-  it('creates an AppError with output in data', () => {
-    const err = processError.exitCode({
-      command: 'test-cmd',
-      code: 1,
-      stderr: 'something failed',
-      output: 'partial output',
+  it('rejects with AbortError when aborted after output', async () => {
+    const controller = new AbortController();
+    const chunks: string[] = [];
+    let resolveOutput: () => void = () => {};
+    const outputSeen = new Promise<void>(resolve => {
+      resolveOutput = resolve;
     });
-    expect(err).toBeInstanceOf(Error);
-    expect(err.kind).toBe('process-output');
-    expect(err.message).toBe('test-cmd exited with code 1: something failed');
-    expect(err.data.output).toBe('partial output');
-    expect(processError.isExitCode(err)).toBe(true);
+    const promise = spawnWithTimeout({
+      command: 'node',
+      args: ['-e', 'console.log("before abort"); setTimeout(() => {}, 10_000)'],
+      cwd: process.cwd(),
+      timeout: 5_000,
+      onProgress: (text) => {
+        chunks.push(text);
+        resolveOutput();
+      },
+      signal: controller.signal,
+    });
+
+    await outputSeen;
+    controller.abort();
+
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+    expect(chunks.join('')).toContain('before abort');
+  });
+
+  it('clears the command timeout timer when aborted', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    let resolveOutput: () => void = () => {};
+    const outputSeen = new Promise<void>(resolve => {
+      resolveOutput = resolve;
+    });
+
+    try {
+      const promise = spawnWithTimeout({
+        command: 'node',
+        args: ['-e', 'console.log("before abort"); setTimeout(() => {}, 10_000)'],
+        cwd: process.cwd(),
+        timeout: 60_000,
+        onProgress: () => resolveOutput(),
+        signal: controller.signal,
+      });
+
+      await outputSeen;
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+      controller.abort();
+
+      await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -222,17 +261,45 @@ describe('spawnWithStdin', () => {
     ).rejects.toThrow('exited with code 1');
   });
 
-  it('resolves with non-zero exit when stdout has content', async () => {
-    const result = await spawnWithStdin({
+  it('rejects on non-zero exit even when stdout has content', async () => {
+    await expect(
+      spawnWithStdin({
+        command: 'node',
+        args: ['-e', 'process.stdout.write("output"); process.exit(1)'],
+        cwd: '.',
+        notFoundMessage: 'node not found',
+        onLine: () => {},
+      }),
+    ).rejects.toMatchObject({
+      kind: 'process-output',
+      data: expect.objectContaining({ output: 'output' }),
+    });
+  });
+
+  it('rejects with AbortError when aborted after stdout', async () => {
+    const controller = new AbortController();
+    const lines: string[] = [];
+    let resolveLine: () => void = () => {};
+    const lineSeen = new Promise<void>(resolve => {
+      resolveLine = resolve;
+    });
+    const promise = spawnWithStdin({
       command: 'node',
-      args: ['-e', 'process.stdout.write("output"); process.exit(1)'],
+      args: ['-e', 'console.log("before abort"); setTimeout(() => {}, 10_000)'],
       cwd: '.',
       notFoundMessage: 'node not found',
-      onLine: () => {},
+      onLine: (line) => {
+        lines.push(line);
+        resolveLine();
+      },
+      signal: controller.signal,
     });
 
-    expect(result.text).toContain('output');
-    expect(result.code).toBe(1);
+    await lineSeen;
+    controller.abort();
+
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+    expect(lines).toContain('before abort');
   });
 });
 

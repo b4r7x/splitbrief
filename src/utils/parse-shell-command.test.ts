@@ -12,14 +12,27 @@ describe('parseShellCommand', () => {
 
   it('preserves double-quoted arguments', () => {
     expect(parseShellCommand('npm run test -- --grep "foo bar"')).toEqual([
-      'npm', 'run', 'test', '--', '--grep', 'foo bar',
+      'npm',
+      'run',
+      'test',
+      '--',
+      '--grep',
+      'foo bar',
     ]);
   });
 
   it('preserves single-quoted arguments', () => {
     expect(parseShellCommand("npm test -- --grep 'foo bar'")).toEqual([
-      'npm', 'test', '--', '--grep', 'foo bar',
+      'npm',
+      'test',
+      '--',
+      '--grep',
+      'foo bar',
     ]);
+  });
+
+  it('preserves empty quoted arguments', () => {
+    expect(parseShellCommand('cmd "" \'\' " "')).toEqual(['cmd', '', '', ' ']);
   });
 
   it('handles escaped quotes in double-quoted strings', () => {
@@ -32,6 +45,19 @@ describe('parseShellCommand', () => {
 
   it('handles adjacent quoted and unquoted text', () => {
     expect(parseShellCommand('echo "hello"world')).toEqual(['echo', 'helloworld']);
+  });
+
+  it('keeps shell operators literal because this is an argv splitter, not a shell parser', () => {
+    expect(parseShellCommand('echo foo | wc -c && echo "$HOME"')).toEqual([
+      'echo',
+      'foo',
+      '|',
+      'wc',
+      '-c',
+      '&&',
+      'echo',
+      '$HOME',
+    ]);
   });
 
   it('returns empty array for empty input', () => {

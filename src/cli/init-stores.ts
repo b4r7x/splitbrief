@@ -11,6 +11,7 @@ import { detectAll } from '../engine/detection/detect.js';
 import { loadDetectionIntoStores } from '../engine/detection/adapter.js';
 import { fetchModelsDevCatalog } from '../engine/providers/models-dev.js';
 import { discoverAllCliTools } from '../engine/providers/discovery.js';
+import { discoverSkills } from '../engine/skills/discovery.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 import { cliError } from './errors.js';
 import { getPlannerToolId } from '../core/config/accessors/runner-config.js';
@@ -84,7 +85,9 @@ async function loadDiscovery(projectDir: string): Promise<void> {
   }
 
   await Promise.all([
-    skillsStore.discover(getPlannerToolId(storeConfig.planner), projectDir),
+    discoverSkills(getPlannerToolId(storeConfig.planner), projectDir).then(skills => {
+      skillsStore.setAvailable(skills);
+    }),
     loadDetectionIntoStores({ detectAll, fetchModelsDevCatalog, discoverAllCliTools }, projectDir),
   ]);
 }

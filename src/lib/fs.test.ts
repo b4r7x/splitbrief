@@ -42,6 +42,11 @@ describe('readFileOrEmpty', () => {
     const dir = makeTmp();
     expect(await readFileOrEmpty(join(dir, 'nope.txt'))).toBe('');
   });
+
+  it('rethrows non-ENOENT read errors', async () => {
+    const dir = makeTmp();
+    await expect(readFileOrEmpty(dir)).rejects.toThrow();
+  });
 });
 
 describe('checkConfigPermissions', () => {
@@ -139,16 +144,13 @@ describe('writeSecureFile', () => {
     expect(perms).toBe(0o600);
   });
 
-  it('does not relax permissions on overwrite when the existing file was wider', () => {
+  it('chmods existing files to 0o600 when overwriting wider permissions', () => {
     const dir = makeTmp();
     const file = join(dir, 'widened.txt');
     writeFileSync(file, 'orig', { mode: 0o666 });
-    // writeSecureFile writes via writeFileSync which replaces content but Node
-    // does not re-chmod when the file already exists. Document the observable
-    // contract: content is overwritten. Permission preservation for pre-existing
-    // wider files is out of scope of `writeSecureFile` (caller should rotate).
     writeSecureFile(file, 'replaced');
     expect(readFileSync(file, 'utf-8')).toBe('replaced');
+    expect(statSync(file).mode & 0o777).toBe(0o600);
   });
 
   it('writes an empty string successfully', () => {

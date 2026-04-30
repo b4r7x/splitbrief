@@ -34,7 +34,7 @@ export function killProcess(proc: ChildProcess, options?: { group?: boolean; kil
       throw err;
     }
   }
-  setTimeout(() => {
+  const escalationTimer = setTimeout(() => {
     const currentPid = proc.pid;
     if (currentPid === undefined) return;
     try {
@@ -50,12 +50,14 @@ export function killProcess(proc: ChildProcess, options?: { group?: boolean; kil
       }
     }
   }, delay);
+  escalationTimer.unref?.();
+  proc.once('close', () => clearTimeout(escalationTimer));
 }
 
-export function abortProcess(proc: ChildProcess, signal: AbortSignal): void {
+export function abortProcess(proc: ChildProcess, signal: AbortSignal, options?: { group?: boolean }): void {
   if (proc.exitCode !== null || proc.killed) return;
 
-  const onAbort = () => killProcess(proc, { group: true, killDelay: ABORT_KILL_DELAY });
+  const onAbort = () => killProcess(proc, { group: options?.group ?? false, killDelay: ABORT_KILL_DELAY });
 
   if (signal.aborted) {
     onAbort();

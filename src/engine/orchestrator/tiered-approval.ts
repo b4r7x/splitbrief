@@ -5,6 +5,7 @@ import type { Config } from '../../core/schemas/config.js';
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { ActionClass, ApprovalGrant } from '../../core/schemas/approval-store.js';
+import type { TieredApprovalRequest } from '../../core/approval/types.js';
 import type { ApprovalTier, TierMap } from './action-classifier.js';
 import { classifyAction, extractActionPattern, matchesActionPattern } from './action-classifier.js';
 import type { OrchestratorCallbacks } from './types.js';
@@ -18,18 +19,7 @@ import {
   getCurrentCommitSha,
 } from '../../lib/git.js';
 
-export type TieredApprovalRequest = {
-  tier: ApprovalTier;
-  actionClass: ActionClass;
-  actionDescription: string;
-  taskId?: TaskId;
-  phase: Phase;
-};
-
-export type TieredApprovalResponse =
-  | { decision: 'allow'; scope: 'once' | 'session' | 'always' }
-  | { decision: 'deny'; reason: string }
-  | { decision: 'confirm'; phrase: string; reason: string };
+export type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
 
 export type GateActionInput = {
   actionDescription: string;

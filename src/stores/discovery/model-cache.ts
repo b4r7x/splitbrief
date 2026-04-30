@@ -30,15 +30,27 @@ function isStale(fetchedAt: number): boolean {
   return Date.now() - fetchedAt >= TTL_MS;
 }
 
+function cloneModels(models: DetectedModel[]): DetectedModel[] {
+  return models.map(model => ({
+    ...model,
+    ...(model.capabilities ? { capabilities: [...model.capabilities] } : {}),
+  }));
+}
+
+function cloneCatalog(catalog: ModelsDevCatalog): ModelsDevCatalog {
+  return structuredClone(catalog);
+}
+
 export const modelCacheStore = {
   ...storeBase(store),
 
   setProviderModels(provider: ProviderId, models: DetectedModel[]): void {
+    const cloned = cloneModels(models);
     store.set(prev => ({
       ...prev,
       providers: {
         ...prev.providers,
-        [provider]: { models, fetchedAt: Date.now(), isStale: false },
+        [provider]: { models: cloned, fetchedAt: Date.now(), isStale: false },
       },
     }));
   },
@@ -47,7 +59,7 @@ export const modelCacheStore = {
     const cache = store.get().providers[provider];
     if (!cache || cache.isStale) return null;
     if (isStale(cache.fetchedAt)) return null;
-    return cache.models;
+    return cloneModels(cache.models);
   },
 
   // Object.entries is safe here: runs inside store.set(), not inside useStores() Proxy tracking.
@@ -63,13 +75,13 @@ export const modelCacheStore = {
   },
 
   setModelsDevCatalog(catalog: ModelsDevCatalog): void {
-    store.set(prev => ({ ...prev, modelsDevCatalog: catalog, modelsDevFetchedAt: Date.now() }));
+    store.set(prev => ({ ...prev, modelsDevCatalog: cloneCatalog(catalog), modelsDevFetchedAt: Date.now() }));
   },
 
   getModelsDevCatalog(): ModelsDevCatalog | null {
     const { modelsDevCatalog, modelsDevFetchedAt } = store.get();
     if (!modelsDevCatalog || modelsDevFetchedAt === null) return null;
     if (Date.now() - modelsDevFetchedAt >= MODELS_DEV_TTL_MS) return null;
-    return modelsDevCatalog;
+    return cloneCatalog(modelsDevCatalog);
   },
 };

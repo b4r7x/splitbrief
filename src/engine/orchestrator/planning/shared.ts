@@ -14,7 +14,7 @@ import { withContinuationLoop } from '../continuation.js';
 import { labelError } from '../../../utils/format-errors.js';
 import type { Planner, PlanResult, PlannerCallbacks, PriorMessage } from '../../planners/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
-import type { SkillMeta } from '../../skills/discovery.js';
+import type { SkillMeta } from '../../../core/skills/types.js';
 import type { ApproveLevel, Phase } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import { BRIEF_QUALITY_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';

@@ -125,7 +125,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     id: 'validation.testCommand',
     label: 'Test Command',
     section: 'Validation',
-    description: 'Test runner command',
+    description: 'Argv-style test runner command',
     kind: 'string',
   },
   {

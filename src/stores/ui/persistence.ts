@@ -8,6 +8,11 @@ import { inputHistoryStore, MAX_INPUT_HISTORY } from './input-history.js';
 
 const HISTORY_FILE = join(homedir(), DIPTYCH_DIR, 'history');
 const DEBOUNCE_MS = 300;
+let activeTeardown: (() => void) | null = null;
+
+function isNodeError(err: unknown): err is NodeJS.ErrnoException {
+  return err instanceof Error && 'code' in err;
+}
 
 export function loadHistoryFromDisk(): string[] {
   try {
@@ -17,12 +22,16 @@ export function loadHistoryFromDisk(): string[] {
       .map(line => line.trim())
       .filter(line => line.length > 0)
       .slice(0, MAX_INPUT_HISTORY);
-  } catch {
+  } catch (err) {
+    if (isNodeError(err) && err.code === 'ENOENT') return [];
+    warnError('input-history: failed to load', err);
     return [];
   }
 }
 
 export function installHistoryPersistence(): () => void {
+  if (activeTeardown) activeTeardown();
+
   inputHistoryStore.hydrate(loadHistoryFromDisk());
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -43,11 +52,15 @@ export function installHistoryPersistence(): () => void {
     scheduleDebouncedWrite(inputHistoryStore.get().entries);
   });
 
-  return () => {
+  const teardown = () => {
     if (saveTimer !== null) {
       clearTimeout(saveTimer);
       saveTimer = null;
     }
     unsubscribe();
+    if (activeTeardown === teardown) activeTeardown = null;
   };
+
+  activeTeardown = teardown;
+  return teardown;
 }

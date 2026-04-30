@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useInput } from 'ink';
-import { navigateIndex } from './navigate-index.js';
+import { clampIndex, navigateIndex } from './navigate-index.js';
 
 interface UseStaticSelectorOptions<T> {
   items: readonly T[];
@@ -21,7 +21,8 @@ export function useStaticSelector<T>({
   isActive = true,
   initialIndex = 0,
 }: UseStaticSelectorOptions<T>): UseStaticSelectorResult {
-  const [selectedIndex, setSelectedIndex] = useState(Math.max(0, initialIndex));
+  const [selectedIndex, setSelectedIndex] = useState(clampIndex(initialIndex, items.length));
+  const effectiveIndex = clampIndex(selectedIndex, items.length);
 
   useInput(
     (_input, key) => {
@@ -34,8 +35,8 @@ export function useStaticSelector<T>({
         return;
       }
       if (key.return) {
-        const item = items[selectedIndex];
-        if (item !== undefined) onSelect(item, selectedIndex);
+        const item = items[effectiveIndex];
+        if (item !== undefined) onSelect(item, effectiveIndex);
         return;
       }
       if (key.escape) {
@@ -45,5 +46,5 @@ export function useStaticSelector<T>({
     { isActive },
   );
 
-  return { selectedIndex };
+  return { selectedIndex: effectiveIndex };
 }

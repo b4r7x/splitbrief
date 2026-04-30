@@ -4,7 +4,7 @@ import type { ProjectContext } from '../../../core/types/state-actions.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { OrchestratorCallbacks } from '../types.js';
-import type { SkillMeta } from '../../skills/discovery.js';
+import type { SkillMeta } from '../../../core/skills/types.js';
 import type { Planner } from '../../planners/types.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { createInitialState } from '../../../core/state/machine.js';

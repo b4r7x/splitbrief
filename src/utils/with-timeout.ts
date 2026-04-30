@@ -22,20 +22,43 @@ export async function* withIdleTimeout<T>(
   errorMessage = 'Idle timeout',
 ): AsyncGenerator<T> {
   const iterator = iter[Symbol.asyncIterator]();
-  while (true) {
-    let timerId: ReturnType<typeof setTimeout> | null = null;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timerId = setTimeout(() => reject(timeoutError.idle(errorMessage)), ms);
-    });
+  let completed = false;
+  let closePromise: Promise<void> | null = null;
 
-    let result: IteratorResult<T>;
+  function closeIterator(): Promise<void> {
+    if (closePromise !== null) return closePromise;
     try {
-      result = await Promise.race([iterator.next(), timeoutPromise]);
-    } finally {
-      if (timerId !== null) clearTimeout(timerId);
+      closePromise = Promise.resolve(iterator.return?.()).then(() => undefined);
+    } catch (err) {
+      closePromise = Promise.reject(err);
     }
+    return closePromise;
+  }
 
-    if (result.done) return;
-    yield result.value;
+  try {
+    while (true) {
+      let timerId: ReturnType<typeof setTimeout> | null = null;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timerId = setTimeout(() => reject(timeoutError.idle(errorMessage)), ms);
+      });
+
+      let result: IteratorResult<T>;
+      try {
+        result = await Promise.race([iterator.next(), timeoutPromise]);
+      } finally {
+        if (timerId !== null) clearTimeout(timerId);
+      }
+
+      if (result.done) {
+        completed = true;
+        return;
+      }
+      yield result.value;
+    }
+  } catch (err) {
+    void closeIterator().catch(() => undefined);
+    throw err;
+  } finally {
+    if (!completed && closePromise === null) await closeIterator();
   }
 }

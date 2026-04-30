@@ -222,6 +222,80 @@ describe('configStore.save', () => {
     expect(written.theme).toBe('mono');
   });
 
+  it('does not persist an implementer model override when saving an unrelated setting', () => {
+    writeConfigYaml();
+    configStore.load(tmpDir, { implementer: { model: 'cli-override' } });
+    expect(loadedConfig().implementer.model).toBe('cli-override');
+
+    const result = configStore.save(structuredClone({ ...loadedConfig(), theme: 'mono' as const }), {
+      changedPaths: ['theme'],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(loadedConfig().implementer.model).toBe('cli-override');
+    const { config: diskConfig } = loadConfig(tmpDir);
+    expect(diskConfig.theme).toBe('mono');
+    expect(diskConfig.implementer.model).toBe('qwen2.5-coder:7b');
+  });
+
+  it('does not persist an implementer model override when saving a sibling implementer setting', () => {
+    writeConfigYaml();
+    configStore.load(tmpDir, { implementer: { model: 'cli-override' } });
+    expect(loadedConfig().implementer.model).toBe('cli-override');
+
+    const result = configStore.save({
+      ...loadedConfig(),
+      implementer: {
+        ...loadedConfig().implementer,
+        temperature: 0.7,
+      },
+    }, {
+      changedPaths: ['implementer.temperature'],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(loadedConfig().implementer.model).toBe('cli-override');
+    expect(loadedConfig().implementer.temperature).toBe(0.7);
+    const { config: diskConfig } = loadConfig(tmpDir);
+    expect(diskConfig.implementer.model).toBe('qwen2.5-coder:7b');
+    expect(diskConfig.implementer.temperature).toBe(0.7);
+  });
+
+  it('persists an implementer model override when the model field is explicitly saved', () => {
+    writeConfigYaml();
+    configStore.load(tmpDir, { implementer: { model: 'cli-override' } });
+    expect(loadedConfig().implementer.model).toBe('cli-override');
+
+    const result = configStore.save({
+      ...loadedConfig(),
+      implementer: {
+        ...loadedConfig().implementer,
+        model: 'cli-override',
+      },
+    }, {
+      changedPaths: ['implementer.model'],
+    });
+
+    expect(result.ok).toBe(true);
+    const { config: diskConfig } = loadConfig(tmpDir);
+    expect(diskConfig.implementer.model).toBe('cli-override');
+  });
+
+  it('does not persist runtime context length detection when saving an unrelated setting', () => {
+    writeConfigYaml();
+    configStore.load(tmpDir);
+    expect(loadedConfig().implementer.contextLength).toBe(8192);
+    configStore.setContextLength(16384);
+
+    const result = configStore.save({ ...loadedConfig(), theme: 'mono' as const });
+
+    expect(result.ok).toBe(true);
+    expect(loadedConfig().implementer.contextLength).toBe(16384);
+    const { config: diskConfig } = loadConfig(tmpDir);
+    expect(diskConfig.theme).toBe('mono');
+    expect(diskConfig.implementer.contextLength).toBe(8192);
+  });
+
   it('returns error result when write fails', () => {
     writeConfigYaml();
     configStore.load(tmpDir);
