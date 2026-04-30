@@ -125,6 +125,7 @@ function migrateV1ToV2(obj: Record<string, unknown>): unknown {
     approval: obj.approval,
     implementerProfiles: obj.implementerProfiles,
     plannerEstimateReview: obj.plannerEstimateReview,
+    autoSplitOverflow: obj.autoSplitOverflow,
   };
 }
 

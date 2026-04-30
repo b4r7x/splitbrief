@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { createInitialState, transition } from '../../../core/state/machine.js';
+import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
@@ -7,6 +10,9 @@ import { makeBusRecorder, makeCallbacks, makeImplementer, makePlanner } from '#t
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
+import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
+import { loadState } from '../../../core/state/persistence.js';
+import { parseTasks } from '../../spec/parser.js';
 import { createValidator } from '../validation.js';
 import type { WorkflowSinks } from '../types.js';
 import { runTasksAndReview } from './phases.js';
@@ -238,6 +244,401 @@ describe('runTasksAndReview', () => {
     expect(completedPredictionIndex).toBeGreaterThanOrEqual(0);
     expect(taskStartIndex).toBeGreaterThan(completedPredictionIndex);
     expect(result.summary.costPrediction?.plannerEstimateReview?.status).toBe('completed');
+  });
+
+  it('surfaces auto-split output for approval before task execution', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({
+      id: 'T001',
+      title: 'Split parser work',
+      file: 'src/parser.ts',
+      description: 'Update parser behavior in src/parser.ts.',
+      tests: [
+        'src/parser.ts preserves quoted values',
+        'src/parser.ts reports invalid escapes',
+      ],
+      implementationSteps: [
+        `Update src/parser.ts token handling. ${'Preserve the existing parse contract while narrowing the quoted-value branch. '.repeat(12)}`,
+        `Update src/parser.ts error reporting. ${'Keep diagnostics deterministic and avoid changing renderer behavior. '.repeat(12)}`,
+      ],
+      scope: { inBounds: ['src/parser.ts'], outOfBounds: ['src/renderer.ts'] },
+      escalation: ['Stop if parser token handling requires changing public API behavior.'],
+      evidence: ['Parser tests pass.'],
+    });
+    const state = makeImplState([task]);
+    const planner = makePlanner({
+      review: vi.fn()
+        .mockResolvedValueOnce({
+          text: JSON.stringify({
+            classification: 'split-suggested',
+            affectedTaskIds: ['T001'],
+            reason: 'Split before implementation.',
+            recommendedUserDecision: 'Review split output.',
+          }),
+          usage: { inputTokens: 10, outputTokens: 5 },
+        })
+        .mockResolvedValue({ text: '### Verdict\npass', usage: null }),
+    });
+    const approvalCalls: string[] = [];
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi.fn().mockImplementation(async (type: 'spec' | 'plan' | 'briefs', filePath: string) => {
+        approvalCalls.push(type);
+        const reviewedTasks = parseTasks(await readFile(filePath, 'utf8'));
+        expect(reviewedTasks).toHaveLength(2);
+        return { approved: true };
+      }),
+    });
+    const { bus, events } = makeBusRecorder();
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        expect(approvalCalls).toEqual(['briefs']);
+        return { success: true, output: 'code', usage: { inputTokens: 50, outputTokens: 25 } };
+      }),
+    });
+    const config = {
+      ...makeNoValidationConfig({
+        workflow: { commitStrategy: 'none' },
+        autoSplitOverflow: true,
+        plannerEstimateReview: true,
+      }),
+      implementerProfiles: {
+        default: 'tiny-worker',
+        profiles: {
+          'tiny-worker': {
+            kind: 'api' as const,
+            provider: 'deepseek',
+            apiBase: 'https://api.deepseek.com/v1',
+            model: 'deepseek-chat',
+            contextLength: 20_000,
+            costTier: 'cheap' as const,
+          },
+        },
+      },
+    };
+
+    const result = await runTasksAndReview({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        implementer,
+        metadata: { plannerTool: 'claude-code', implementerTool: 'deepseek', implementerModel: 'deepseek-chat', mode: 'standard' },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state,
+      summaryBase: {
+        feature: 'feat',
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'deepseek',
+        implementerModel: 'deepseek-chat',
+      },
+      phaseTimings: {},
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    const tasksMarkdown = await readFile(join(sessionDir(projectDir, sessionId), TASKS_FILE), 'utf8');
+    const splitPreviewIndex = events.findIndex(event => event.type === 'warning' && event.message.includes('Auto-split overflow produced'));
+    const taskStartIndex = events.findIndex(event => event.type === 'task_started');
+
+    expect(result.summary.totalTasks).toBe(2);
+    expect(parseTasks(tasksMarkdown)).toHaveLength(2);
+    expect(splitPreviewIndex).toBeGreaterThanOrEqual(0);
+    expect(taskStartIndex).toBeGreaterThan(splitPreviewIndex);
+  });
+
+  it('warns and continues when auto-split cannot safely split a targeted task', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({
+      id: 'T001',
+      title: 'Keep parser cases together',
+      file: 'src/parser.ts',
+      tests: ['case one', 'case two', 'case three'],
+      implementationSteps: ['Handle case one.', 'Handle case two.', 'Handle case three.'],
+      scope: { inBounds: ['src/parser.ts'] },
+      evidence: ['Parser cases stay covered.'],
+    });
+    const state = makeImplState([task]);
+    const planner = makePlanner({
+      review: vi.fn()
+        .mockResolvedValueOnce({
+          text: JSON.stringify({
+            classification: 'split-suggested',
+            affectedTaskIds: ['T001'],
+            reason: 'Try to split before implementation.',
+            recommendedUserDecision: 'Review split output.',
+          }),
+          usage: { inputTokens: 10, outputTokens: 5 },
+        })
+        .mockResolvedValue({ text: '### Verdict\npass', usage: null }),
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async (request: { task: Task }) => {
+        expect(request.task.id).toBe('T001');
+        expect(events.some(event =>
+          event.type === 'warning'
+          && event.message.includes('Auto-split overflow skipped T001:')
+          && event.message.includes('Original task will continue unless routing/recovery requires a different action.')
+        )).toBe(true);
+        return { success: true, output: 'code', usage: { inputTokens: 50, outputTokens: 25 } };
+      }),
+    });
+    const config = {
+      ...makeNoValidationConfig({
+        workflow: { commitStrategy: 'none' },
+        autoSplitOverflow: true,
+        plannerEstimateReview: true,
+      }),
+    };
+
+    const result = await runTasksAndReview({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        implementer,
+        metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state,
+      summaryBase: {
+        feature: 'feat',
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+      },
+      phaseTimings: {},
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    const skipWarningIndex = events.findIndex(event =>
+      event.type === 'warning'
+      && event.message.includes('Auto-split overflow skipped T001:')
+      && event.message.includes('Original task will continue unless routing/recovery requires a different action.')
+    );
+    const taskStartIndex = events.findIndex(event => event.type === 'task_started');
+
+    expect(result.completed).toBe(true);
+    expect(result.summary.totalTasks).toBe(1);
+    expect(callbacks.onApprovalNeeded).not.toHaveBeenCalled();
+    expect(skipWarningIndex).toBeGreaterThanOrEqual(0);
+    expect(taskStartIndex).toBeGreaterThan(skipWarningIndex);
+  });
+
+  it('surfaces split output and skipped split notices before partial-success implementation', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const splittableTask = makeTask({
+      id: 'T001',
+      title: 'Split parser work',
+      file: 'src/parser.ts',
+      description: 'Update parser behavior in src/parser.ts.',
+      tests: [
+        'src/parser.ts preserves quoted values',
+        'src/parser.ts reports invalid escapes',
+      ],
+      implementationSteps: [
+        'Update src/parser.ts token handling.',
+        'Update src/parser.ts error reporting.',
+      ],
+      scope: { inBounds: ['src/parser.ts'], outOfBounds: ['src/renderer.ts'] },
+      escalation: ['Stop if token handling requires changing public API behavior.'],
+      evidence: ['Parser tests pass.'],
+    });
+    const skippedTask = makeTask({
+      id: 'T002',
+      title: 'Keep parser cases together',
+      file: 'src/parser.ts',
+      tests: ['case one', 'case two', 'case three'],
+      implementationSteps: ['Handle case one.', 'Handle case two.', 'Handle case three.'],
+      scope: { inBounds: ['src/parser.ts'] },
+      evidence: ['Parser cases stay covered.'],
+    });
+    const state = makeImplState([splittableTask, skippedTask]);
+    const planner = makePlanner({
+      review: vi.fn()
+        .mockResolvedValueOnce({
+          text: JSON.stringify({
+            classification: 'split-suggested',
+            affectedTaskIds: ['T001', 'T002'],
+            reason: 'Split what can safely be split before implementation.',
+            recommendedUserDecision: 'Review split output.',
+          }),
+          usage: { inputTokens: 10, outputTokens: 5 },
+        })
+        .mockResolvedValue({ text: '### Verdict\npass', usage: null }),
+    });
+    const approvalCalls: string[] = [];
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi.fn().mockImplementation(async (type: 'spec' | 'plan' | 'briefs', filePath: string) => {
+        approvalCalls.push(type);
+        const reviewedTasks = parseTasks(await readFile(filePath, 'utf8'));
+        expect(reviewedTasks.map(task => task.id)).toEqual(['T003', 'T004', 'T002']);
+        return { approved: true };
+      }),
+    });
+    const { bus, events } = makeBusRecorder();
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        expect(approvalCalls).toEqual(['briefs']);
+        return { success: true, output: 'code', usage: { inputTokens: 50, outputTokens: 25 } };
+      }),
+    });
+    const config = {
+      ...makeNoValidationConfig({
+        workflow: { commitStrategy: 'none' },
+        autoSplitOverflow: true,
+        plannerEstimateReview: true,
+      }),
+    };
+
+    const result = await runTasksAndReview({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        implementer,
+        metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state,
+      summaryBase: {
+        feature: 'feat',
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+      },
+      phaseTimings: {},
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    const skipWarningIndex = events.findIndex(event =>
+      event.type === 'warning'
+      && event.message.includes('Auto-split overflow skipped T002:')
+      && event.message.includes('Original task will continue unless routing/recovery requires a different action.')
+    );
+    const splitPreviewIndex = events.findIndex(event => event.type === 'warning' && event.message.includes('Auto-split overflow produced 3 Task Briefs'));
+    const firstTaskStartIndex = events.findIndex(event => event.type === 'task_started');
+    const taskStartEvents = events.filter(event => event.type === 'task_started');
+
+    expect(result.completed).toBe(true);
+    expect(result.summary.totalTasks).toBe(3);
+    expect(approvalCalls).toEqual(['briefs']);
+    expect(skipWarningIndex).toBeGreaterThanOrEqual(0);
+    expect(splitPreviewIndex).toBeGreaterThan(skipWarningIndex);
+    expect(firstTaskStartIndex).toBeGreaterThan(splitPreviewIndex);
+    expect(taskStartEvents.map(event => event.taskId)).toEqual(['T003', 'T004', 'T002']);
+  });
+
+  it('cancels through rejected briefs when auto-split output is rejected', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({
+      id: 'T001',
+      title: 'Split parser work',
+      file: 'src/parser.ts',
+      description: 'Update parser behavior in src/parser.ts.',
+      tests: [
+        'src/parser.ts preserves quoted values',
+        'src/parser.ts reports invalid escapes',
+      ],
+      implementationSteps: [
+        `Update src/parser.ts token handling. ${'Preserve the existing parse contract while narrowing the quoted-value branch. '.repeat(12)}`,
+        `Update src/parser.ts error reporting. ${'Keep diagnostics deterministic and avoid changing renderer behavior. '.repeat(12)}`,
+      ],
+      scope: { inBounds: ['src/parser.ts'], outOfBounds: ['src/renderer.ts'] },
+      escalation: ['Stop if parser token handling requires changing public API behavior.'],
+      evidence: ['Parser tests pass.'],
+    });
+    const state = makeImplState([task]);
+    const planner = makePlanner({
+      review: vi.fn()
+        .mockResolvedValueOnce({
+          text: JSON.stringify({
+            classification: 'split-suggested',
+            affectedTaskIds: ['T001'],
+            reason: 'Split before implementation.',
+            recommendedUserDecision: 'Review split output.',
+          }),
+          usage: { inputTokens: 10, outputTokens: 5 },
+        })
+        .mockResolvedValue({ text: '### Verdict\npass', usage: null }),
+    });
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false }),
+    });
+    const { bus, events } = makeBusRecorder();
+    const config = {
+      ...makeNoValidationConfig({
+        workflow: { commitStrategy: 'none' },
+        autoSplitOverflow: true,
+        plannerEstimateReview: true,
+      }),
+      implementerProfiles: {
+        default: 'tiny-worker',
+        profiles: {
+          'tiny-worker': {
+            kind: 'api' as const,
+            provider: 'deepseek',
+            apiBase: 'https://api.deepseek.com/v1',
+            model: 'deepseek-chat',
+            contextLength: 20_000,
+            costTier: 'cheap' as const,
+          },
+        },
+      },
+    };
+
+    const result = await runTasksAndReview({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: { plannerTool: 'claude-code', implementerTool: 'deepseek', implementerModel: 'deepseek-chat', mode: 'standard' },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state,
+      summaryBase: {
+        feature: 'feat',
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'deepseek',
+        implementerModel: 'deepseek-chat',
+      },
+      phaseTimings: {},
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.completed).toBe(false);
+    expect(result.summary.totalTasks).toBe(2);
+    expect(loadState(projectDir, sessionId)?.phase).toBe('idle');
+    expect(events.find(event => event.type === 'task_started')).toBeUndefined();
+    expect(events.find(event => event.type === 'error' && event.message.includes('Auto-split overflow rejected'))).toBeDefined();
   });
 
   it('falls back to the deterministic estimate when opt-in planner estimate review fails', async () => {

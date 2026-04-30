@@ -112,6 +112,7 @@ export const ConfigSchema = z.object({
   palette: PaletteConfigSchema.optional(),
   approval: ApprovalConfigSchema.optional(),
   plannerEstimateReview: z.boolean().optional(),
+  autoSplitOverflow: z.boolean().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
