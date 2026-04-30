@@ -1,6 +1,6 @@
 # diptych Cookbook — Usage Examples
 
-A task-oriented reference for "how do I do X?". Every recipe is copy-paste ready against the current CLI surface (13 commands) and slash-command catalog (21 commands). Where a recipe references a config field, the field name matches the zod schema in `src/core/schemas/config.ts`.
+A task-oriented reference for "how do I do X?". Every recipe is copy-paste ready against the current CLI surface and slash-command catalog (21 commands). Where a recipe references a config field, the field name matches the zod schema in `src/core/schemas/config.ts`.
 
 If you're new to diptych, read this in order: recipes 1–5 cover the basic workflow, 6–9 cover cost, 10–15 cover safety, then jump to whatever you need.
 

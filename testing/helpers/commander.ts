@@ -3,6 +3,7 @@ import { registerStartCommand } from '../../src/cli/commands/start.js';
 import { registerSpecCommand } from '../../src/cli/commands/spec.js';
 import { registerInitCommand } from '../../src/cli/commands/init.js';
 import { registerStatusCommand } from '../../src/cli/commands/status.js';
+import { registerExplainCommand } from '../../src/cli/commands/explain.js';
 import { registerResumeCommand } from '../../src/cli/commands/resume.js';
 import { registerMigrateCommand } from '../../src/cli/commands/migrate.js';
 
@@ -29,6 +30,7 @@ export async function runCommand(args: string[]): Promise<RunCommandResult> {
   registerSpecCommand(program);
   registerInitCommand(program);
   registerStatusCommand(program);
+  registerExplainCommand(program);
   registerResumeCommand(program);
   registerMigrateCommand(program);
 
