@@ -21,6 +21,20 @@ describe('buildGraph', () => {
     expect(g.outEdges.get('src/a.tsx')?.has('src/b.tsx')).toBe(true);
   });
 
+  it('resolves extensionless imports', () => {
+    const a = fn('src/a.ts', ['./b']);
+    const b = fn('src/b.ts', []);
+    const g = buildGraph([a, b]);
+    expect(g.outEdges.get('src/a.ts')?.has('src/b.ts')).toBe(true);
+  });
+
+  it('resolves directory imports to index.ts', () => {
+    const a = fn('src/a.ts', ['./b']);
+    const b = fn('src/b/index.ts', []);
+    const g = buildGraph([a, b]);
+    expect(g.outEdges.get('src/a.ts')?.has('src/b/index.ts')).toBe(true);
+  });
+
   it('drops unresolved imports (e.g. node_modules)', () => {
     const a = fn('src/a.ts', ['react']);
     const g = buildGraph([a]);

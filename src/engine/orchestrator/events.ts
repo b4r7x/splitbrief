@@ -7,10 +7,11 @@ import type { ValidationResult } from '../../core/types/summary.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { EventBus, EngineEvent } from '../events/types.js';
+import type { ImplementerPublisher } from '../implementers/types.js';
 import type { EmittedChain } from '../../core/schemas/drift-chain.js';
-import type { UserEditConflict, UserEditConflictAction } from './user-edit-conflicts.js';
+import type { UserEditConflict, UserEditConflictAction } from './user-edit/conflicts.js';
 import type { CurrentCodeContextMode, TaskContextFit } from './context-routing.js';
-import type { TaskReviewRequest } from './task-review.js';
+import type { TaskReviewRequest } from './task/review.js';
 
 const EMPTY_STAGES: ValidationStages = { tsc: false, lint: false, test: false };
 
@@ -259,12 +260,31 @@ export function publishImplementerGenerateRunning(bus: EventBus, phase: Phase, t
   bus.publish({ type: 'implementer_generate_running', ts: Date.now(), phase, taskId, ...(file !== undefined && { file }) });
 }
 
-export function publishImplementerGenerateDone(bus: EventBus, phase: Phase, opts: { taskId: TaskId; file: string; diff?: string; linesAdded: number; linesRemoved: number; duration: number }): void {
-  bus.publish({ type: 'implementer_generate_done', ts: Date.now(), phase, ...opts });
+export function publishImplementerGenerateDone(bus: EventBus, phase: Phase, opts: { taskId: TaskId; file: string; diff?: string | undefined; linesAdded: number; linesRemoved: number; duration: number }): void {
+  const event: EngineEvent = {
+    type: 'implementer_generate_done',
+    ts: Date.now(),
+    phase,
+    taskId: opts.taskId,
+    file: opts.file,
+    linesAdded: opts.linesAdded,
+    linesRemoved: opts.linesRemoved,
+    duration: opts.duration,
+  };
+  if (opts.diff !== undefined) event.diff = opts.diff;
+  bus.publish(event);
 }
 
-export function publishImplementerGenerateFailed(bus: EventBus, phase: Phase, taskId: TaskId, model: string): void {
+function publishImplementerGenerateFailed(bus: EventBus, phase: Phase, taskId: TaskId, model: string): void {
   bus.publish({ type: 'implementer_generate_failed', ts: Date.now(), phase, taskId, model });
+}
+
+export function createImplementerPublisher(bus: EventBus): ImplementerPublisher {
+  return {
+    publishRunning: ({ phase, taskId, file }) => publishImplementerGenerateRunning(bus, phase, taskId, file),
+    publishDone: ({ phase, ...opts }) => publishImplementerGenerateDone(bus, phase, opts),
+    publishFailed: ({ phase, taskId, model }) => publishImplementerGenerateFailed(bus, phase, taskId, model),
+  };
 }
 
 export function publishDriftChainDetected(

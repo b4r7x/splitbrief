@@ -90,20 +90,22 @@ describe('runPreHooks', () => {
     expect(result.reason).toBe('pre_task hook denied');
   });
 
-  it('returns allow when deny but on_failure=warn (not block)', async () => {
+  it('honors deny outcome regardless of on_failure=warn', async () => {
     const entry = denyViaStdout('just a warn');
     entry.on_failure = 'warn';
     const hooks: HooksConfig = { pre_task: [entry] };
     const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, ctx);
-    expect(result.allow).toBe(true);
+    expect(result.allow).toBe(false);
+    expect(result.reason).toBe('just a warn');
   });
 
-  it('returns allow when deny but on_failure=ignore', async () => {
+  it('honors deny outcome regardless of on_failure=ignore', async () => {
     const entry = denyViaStdout('ignored');
     entry.on_failure = 'ignore';
     const hooks: HooksConfig = { pre_task: [entry] };
     const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, ctx);
-    expect(result.allow).toBe(true);
+    expect(result.allow).toBe(false);
+    expect(result.reason).toBe('ignored');
   });
 
   it('returns not-allow when crash+block', async () => {

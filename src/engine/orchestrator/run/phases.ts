@@ -10,16 +10,14 @@ import type { EventBus } from '../../events/types.js';
 
 import { buildSummary, type SummaryBase } from '../summary.js';
 import { publishCostPrediction, publishError, publishWarning } from '../events.js';
-import { predictCost } from '../cost-prediction.js';
-import { estimateDeterministicCost } from '../estimate.js';
+import { predictCost } from '../budget/cost-prediction.js';
+import { estimateDeterministicCost } from '../budget/estimate.js';
 import { reviewPlannerEstimate, runningPlannerEstimateReview } from '../planner-estimate-review.js';
 import { autoSplitOverflowTasks, type AutoSplitOverflowSkippedSplit } from '../auto-split-overflow.js';
-import { runPlanningPhase } from '../planning/run.js';
-import { runBriefQualityGate } from '../planning/shared.js';
-import { runTaskLoop } from '../task-loop.js';
+import { runPlanningPhase, runBriefQualityGate } from '../planning/run.js';
+import { runTaskLoop } from '../task/loop.js';
 import { runFinalReviewPhase } from '../final-review.js';
 import { drainQueue } from '../queue.js';
-import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
 import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
 import { formatTasks } from '../../spec/formatter.js';
@@ -56,7 +54,7 @@ export async function runPlanningPhases(opts: RunPlanningPhasesOptions): Promise
 
   if (!savedState || savedState.rewindPending) {
     const planning = await runPlanningPhase({
-      wctx: { projectDir, sessionId, config, callbacks, bus: wctx.bus, signal: wctx.signal, metadata: wctx.metadata, sinks: wctx.sinks },
+      wctx: { projectDir, sessionId, config, callbacks, bus: wctx.bus, signal: wctx.signal, metadata: wctx.metadata, sinks: wctx.sinks, drainPendingAttachments: wctx.drainPendingAttachments },
       planner,
       state,
       feature: state.feature,
@@ -101,7 +99,7 @@ function predictTasksCost(opts: {
       tasks: opts.tasks,
       context: opts.wctx.context,
       config: opts.wctx.config,
-      pricingCache: modelCacheStore,
+      pricingCache: opts.wctx.modelCache,
     }),
     ...(opts.plannerEstimateReview !== undefined && { plannerEstimateReview: opts.plannerEstimateReview }),
   };

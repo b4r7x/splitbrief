@@ -1,6 +1,6 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { OutputFormat } from '../../core/schemas/enums.js';
-import type { Implementer } from './types.js';
+import type { Implementer, ImplementerFactoryOptions } from './types.js';
 import type { InvokeOpts } from './utils.js';
 import { createImplementerBase } from './base.js';
 import { createCommandAvailability } from '../../lib/availability.js';
@@ -25,11 +25,12 @@ export interface CommandBasedImplementerOpts {
  * Creates a command-based implementer (shared setup for shell + agent kinds).
  * Handles: invoke wiring via invokeCommandBasedRunner, availability, and base implementer construction.
  */
-export function createCommandBasedImplementer(opts: CommandBasedImplementerOpts): Implementer {
+export function createCommandBasedImplementer(opts: CommandBasedImplementerOpts, options?: ImplementerFactoryOptions): Implementer {
   const notFoundMessage = `${opts.label} command not found: ${opts.initialCommand}`;
 
   return createImplementerBase({
     extractsCode: opts.extractsCode,
+    publisher: options?.publisher,
 
     async invoke(invokeOpts: InvokeOpts) {
       const { prompt, projectDir, config, onOutput, signal } = invokeOpts;

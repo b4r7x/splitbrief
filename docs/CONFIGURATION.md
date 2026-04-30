@@ -197,7 +197,7 @@ In-process call into the Anthropic Agent SDK (`@anthropic-ai/claude-agent-sdk`).
 
 | Field | Type | Required | Description |
 |---|---|:---:|---|
-| `apiKey` | string | no | Per-call key. Falls back to `ANTHROPIC_API_KEY`. Never mutates global env (`src/engine/agent-sdk.ts:191`). |
+| `apiKey` | string | no | Per-call key. Falls back to `ANTHROPIC_API_KEY`. Never mutates global env (`src/engine/agent-sdk-backend.ts`). |
 | `model` | string | no | Defaults to `claude-sonnet-4-6` (`DEFAULT_AGENT_SDK_MODEL`). |
 
 ```yaml
@@ -842,7 +842,7 @@ sessions:
 
 ## 14. Environment variables
 
-Source: `src/core/providers/catalog.ts`, `src/cli/setup.ts`, `src/cli/otel-bootstrap.ts`, `src/engine/agent-sdk.ts`, `src/engine/providers/registry.ts`, `src/engine/providers/client.ts`, `src/features/workflow/review-parser.ts`.
+Source: `src/core/providers/catalog.ts`, `src/cli/setup.ts`, `src/cli/otel-bootstrap.ts`, `src/engine/agent-sdk-backend.ts`, `src/engine/providers/registry.ts`, `src/engine/providers/client.ts`, `src/features/workflow/review-parser.ts`.
 
 ### Provider authentication
 

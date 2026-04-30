@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { readFileSafe } from '../../lib/fs.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { InvokeResult } from '../runners/types.js';
 import type { Planner, PlannerCallbacks } from './types.js';
@@ -28,8 +28,7 @@ function isInsideProject(projectDir: string, candidate: string): boolean {
 function readArtifactPath(projectDir: string, filename: string, candidate: string): string | null {
   if (basename(candidate) !== filename) return null;
   if (!isInsideProject(projectDir, candidate)) return null;
-  if (!existsSync(candidate)) return null;
-  return readFileSync(candidate, 'utf8');
+  return readFileSafe(candidate);
 }
 
 function extractMarkdownLinkedArtifact(resultText: string, filename: string): string | null {

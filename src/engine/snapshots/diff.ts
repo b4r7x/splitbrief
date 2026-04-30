@@ -1,7 +1,9 @@
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import ansis from 'ansis';
+import { readFileSafeAsync } from '../../lib/fs.js';
+import { isENOENT } from '../../lib/process/errors.js';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
 import { snapshotFilesDir, SNAPSHOT_BASELINE_ID } from '../../core/paths.js';
 import {
@@ -30,6 +32,8 @@ export type DiffOptions = {
   paths?: string[];
 };
 
+const execFileAsync = promisify(execFile);
+
 function manualTwoPassDiff(snapshotContent: string, currentContent: string, path: string): string {
   const snapshotLines = snapshotContent.split('\n');
   const currentLines = currentContent.split('\n');
@@ -39,47 +43,45 @@ function manualTwoPassDiff(snapshotContent: string, currentContent: string, path
   return `${header}${removed}\n${added}\n`;
 }
 
-function unifiedDiff(snapshotFile: string, currentFile: string, path: string): string {
-  if (process.platform === 'win32') {
-    const snapshotContent = tryReadFileSync(snapshotFile);
-    const currentContent = tryReadFileSync(currentFile);
-    if (snapshotContent === null || currentContent === null) return '';
-    return manualTwoPassDiff(snapshotContent, currentContent, path);
-  }
-
-  const result = spawnSync('diff', [
-    '-u',
-    '--label', `snapshot/${path}`,
-    '--label', `current/${path}`,
-    snapshotFile,
-    currentFile,
+async function readBothFiles(snapshotFile: string, currentFile: string): Promise<[string, string] | null> {
+  const [snapshotContent, currentContent] = await Promise.all([
+    readFileSafeAsync(snapshotFile),
+    readFileSafeAsync(currentFile),
   ]);
-
-  if (result.error) {
-    if ((result.error as NodeJS.ErrnoException).code === 'ENOENT') {
-      const snapshotContent = tryReadFileSync(snapshotFile);
-      const currentContent = tryReadFileSync(currentFile);
-      if (snapshotContent === null || currentContent === null) return '';
-      return manualTwoPassDiff(snapshotContent, currentContent, path);
-    }
-    return '';
-  }
-
-  if (result.status === null || result.status >= 2) {
-    const snapshotContent = tryReadFileSync(snapshotFile);
-    const currentContent = tryReadFileSync(currentFile);
-    if (snapshotContent === null || currentContent === null) return '';
-    return manualTwoPassDiff(snapshotContent, currentContent, path);
-  }
-
-  return result.stdout?.toString() ?? '';
+  if (snapshotContent === null || currentContent === null) return null;
+  return [snapshotContent, currentContent];
 }
 
-function tryReadFileSync(filePath: string): string | null {
+async function fallbackDiff(snapshotFile: string, currentFile: string, path: string): Promise<string> {
+  const pair = await readBothFiles(snapshotFile, currentFile);
+  if (pair === null) return '';
+  return manualTwoPassDiff(pair[0], pair[1], path);
+}
+
+async function unifiedDiff(snapshotFile: string, currentFile: string, path: string): Promise<string> {
+  if (process.platform === 'win32') {
+    return fallbackDiff(snapshotFile, currentFile, path);
+  }
+
   try {
-    return readFileSync(filePath, 'utf-8');
-  } catch {
-    return null;
+    const result = await execFileAsync('diff', [
+      '-u',
+      '--label', `snapshot/${path}`,
+      '--label', `current/${path}`,
+      snapshotFile,
+      currentFile,
+    ]);
+    return result.stdout ?? '';
+  } catch (err: unknown) {
+    if (isENOENT(err)) {
+      return fallbackDiff(snapshotFile, currentFile, path);
+    }
+    // diff exits 1 when files differ (normal), 2+ on error
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: unknown }).code === 1) {
+      const stdout = 'stdout' in err ? (err as { stdout: unknown }).stdout : undefined;
+      return typeof stdout === 'string' ? stdout : '';
+    }
+    return fallbackDiff(snapshotFile, currentFile, path);
   }
 }
 
@@ -136,7 +138,7 @@ export async function computeSnapshotDiff(opts: DiffOptions): Promise<SnapshotDi
     }
 
     const currentFilePath = join(projectDir, path);
-    const diff = unifiedDiff(snapshotFilePath, currentFilePath, path);
+    const diff = await unifiedDiff(snapshotFilePath, currentFilePath, path);
     files.push({ path, status: 'modified', diff });
   }
 

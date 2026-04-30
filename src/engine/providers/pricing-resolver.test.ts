@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { resolvePricing, isApiPricedProvider, getPricingMode } from './pricing-resolver.js';
-import { NULL_CACHE } from './model-resolution.js';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { resolvePricing, isApiPricedProvider, getPricingMode, formatPricing, LOCAL_PRICING } from './pricing-resolver.js';
+import { NULL_CACHE } from './model/resolution.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 
 describe('pricing-resolver', () => {
   describe('agent-sdk classification', () => {
@@ -94,6 +95,89 @@ describe('pricing-resolver', () => {
       expect(result.source).toBe('runtime');
       expect(result.cacheReadPer1M).toBe(0.30);
       expect(result.cacheWritePer1M).toBe(3.75);
+    });
+  });
+
+  describe('formatPricing', () => {
+    it('formats pricing with both values', () => {
+      expect(formatPricing(3, 15)).toBe('$3/$15');
+    });
+
+    it('formats decimal values', () => {
+      expect(formatPricing(0.28, 0.42)).toBe('$0.28/$0.42');
+    });
+
+    it('returns null when both values are undefined', () => {
+      expect(formatPricing(undefined, undefined)).toBeNull();
+    });
+  });
+
+  describe('resolvePricing with model cache', () => {
+    beforeEach(() => {
+      vi.restoreAllMocks();
+      modelCacheStore.reset();
+    });
+
+    it('returns LOCAL_PRICING for local providers', () => {
+      expect(resolvePricing('ollama')).toEqual(LOCAL_PRICING);
+      expect(resolvePricing('lm-studio')).toEqual(LOCAL_PRICING);
+    });
+
+    it('marks CLI tools as unpriced', () => {
+      const pricing = resolvePricing('claude-code', undefined, 'opus');
+      expect(pricing.isPriced).toBe(false);
+      expect(pricing.pricingMode).toBe('unpriced-cli');
+      expect(pricing.inputPer1M).toBe(0);
+      expect(pricing.outputPer1M).toBe(0);
+    });
+
+    it('uses bundled fallback pricing for anthropic', () => {
+      const pricing = resolvePricing('anthropic', undefined, 'claude-opus-4-6');
+      expect(pricing.isPriced).toBe(true);
+      expect(pricing.inputPer1M).toBe(5);
+      expect(pricing.outputPer1M).toBe(25);
+      expect(pricing.source).toBe('bundled-fallback');
+    });
+
+    it('resolves API auto to bundled default model when available', () => {
+      const pricing = resolvePricing('openai', undefined, 'auto');
+      expect(pricing.isPriced).toBe(true);
+      expect(pricing.name).toBe('gpt-5.4');
+      expect(pricing.inputPer1M).toBe(2.5);
+      expect(pricing.outputPer1M).toBe(15);
+    });
+
+    it('prefers models.dev pricing over bundled fallback', () => {
+      modelCacheStore.setModelsDevCatalog({
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-opus-4-6': {
+              id: 'claude-opus-4-6',
+              cost: { input: 99, output: 199 },
+              limit: { context: 1_000_000 },
+            },
+          },
+        },
+      });
+
+      const pricing = resolvePricing('anthropic', modelCacheStore, 'claude-opus-4-6');
+      expect(pricing.isPriced).toBe(true);
+      expect(pricing.inputPer1M).toBe(99);
+      expect(pricing.outputPer1M).toBe(199);
+      expect(pricing.source).toBe('models-dev');
+    });
+
+    it('uses runtime provider metadata when models.dev is unavailable', () => {
+      modelCacheStore.setProviderModels('anthropic', [
+        { id: 'claude-opus-4-6', pricingInput: 77, pricingOutput: 177, contextLength: 1_000_000 },
+      ]);
+
+      const pricing = resolvePricing('anthropic', modelCacheStore, 'claude-opus-4-6');
+      expect(pricing.isPriced).toBe(true);
+      expect(pricing.inputPer1M).toBe(77);
+      expect(pricing.outputPer1M).toBe(177);
+      expect(pricing.source).toBe('runtime');
     });
   });
 });

@@ -3,7 +3,7 @@ import { calculateCost, calculateCostBreakdown, calculateUsageCost, getModelPric
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { CostBreakdownSchema } from '../../core/schemas/summary.js';
 import { taskId } from '../../core/schemas/task.js';
-import type { ModelCacheAccessor } from './model-resolution.js';
+import type { ModelCacheAccessor } from './model/resolution.js';
 
 describe('calculateCost', () => {
   it('returns 0 for unpriced providers', () => {

@@ -1,4 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
@@ -19,11 +18,12 @@ import {
   getFailedTaskIds,
   getSkippedTaskIds,
 } from '../../core/state/selectors.js';
-import { buildEvidenceSummary, readEvidenceLedger } from './evidence.js';
-import { readDriftReport } from './drift.js';
-import { readDriftChainState } from './drift-chain-state.js';
+import { buildEvidenceSummary, readEvidenceLedger } from './evidence/evidence.js';
+import { readDriftReport } from './drift/drift.js';
+import { readDriftChainState } from './drift/chain-state.js';
 import { BRIEF_QUALITY_FILE, REVIEW_PACKET_JSON_FILE, REVIEW_PACKET_MARKDOWN_FILE, reviewPacketJsonPath, sessionDir } from '../../core/paths.js';
-import type { BriefQualityReport } from '../spec/brief-quality.js';
+import { isBriefQualityReport, type BriefQualityReport } from '../spec/brief-quality.js';
+import { readJsonSafe } from '../../lib/fs.js';
 
 export type BuildSummaryState = Pick<WorkflowState, 'tasks' | 'tokenUsage'>;
 
@@ -46,53 +46,45 @@ type BuildSummaryOptions = {
 };
 
 function readBriefQualityReport(projectDir: string, sessionId: string): BriefQualityReport | null {
-  const target = join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE);
-  if (!existsSync(target)) return null;
-  try {
-    return JSON.parse(readFileSync(target, 'utf8')) as BriefQualityReport;
-  } catch {
-    return null;
-  }
+  const raw = readJsonSafe(join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE));
+  if (raw === null) return null;
+  return isBriefQualityReport(raw) ? raw : null;
 }
 
 function readReviewPacketRollups(
   projectDir: string,
   sessionId: string,
 ): { checkpointSummary?: Summary['checkpointSummary']; reviewPacket?: Summary['reviewPacket'] } {
-  const target = reviewPacketJsonPath(projectDir, sessionId);
-  if (!existsSync(target)) return {};
-  try {
-    const parsed = ReviewPacketSchema.safeParse(JSON.parse(readFileSync(target, 'utf8')));
-    if (!parsed.success) return {};
-    const packet = parsed.data;
-    const latest = packet.checkpoints.latestRunCheckpoint ?? packet.checkpoints.items.at(-1) ?? null;
-    return {
-      checkpointSummary: {
-        count: packet.checkpoints.items.length,
-        latestId: latest?.id ?? null,
-        latestName: latest?.name ?? null,
-        latestKind: checkpointKindLabel(latest),
-        latestRunCheckpointId: packet.checkpoints.latestRunCheckpoint?.id ?? null,
-        preFinalReviewId: packet.checkpoints.preFinalReview?.id ?? null,
-        accepted: packet.checkpoints.runLedger.accepted,
-        rejected: packet.checkpoints.runLedger.rejected,
-        diffCommand: latest?.diffCommand ?? null,
-        restoreCommand: latest?.restoreCommand ?? null,
-      },
-      reviewPacket: {
-        jsonPath: REVIEW_PACKET_JSON_FILE,
-        markdownPath: REVIEW_PACKET_MARKDOWN_FILE,
-        generatedAt: packet.generatedAt,
-        finalReviewStatus: packet.finalReview.status,
-        driftPassed: packet.drift.passed,
-        evidenceValidatedTasks: packet.validation.summary.passed,
-        evidenceTotalTasks: packet.run.totalTasks,
-        missingArtifactCount: packet.missingArtifacts.length,
-      },
-    };
-  } catch {
-    return {};
-  }
+  const raw = readJsonSafe(reviewPacketJsonPath(projectDir, sessionId));
+  if (raw === null) return {};
+  const parsed = ReviewPacketSchema.safeParse(raw);
+  if (!parsed.success) return {};
+  const packet = parsed.data;
+  const latest = packet.checkpoints.latestRunCheckpoint ?? packet.checkpoints.items.at(-1) ?? null;
+  return {
+    checkpointSummary: {
+      count: packet.checkpoints.items.length,
+      latestId: latest?.id ?? null,
+      latestName: latest?.name ?? null,
+      latestKind: checkpointKindLabel(latest),
+      latestRunCheckpointId: packet.checkpoints.latestRunCheckpoint?.id ?? null,
+      preFinalReviewId: packet.checkpoints.preFinalReview?.id ?? null,
+      accepted: packet.checkpoints.runLedger.accepted,
+      rejected: packet.checkpoints.runLedger.rejected,
+      diffCommand: latest?.diffCommand ?? null,
+      restoreCommand: latest?.restoreCommand ?? null,
+    },
+    reviewPacket: {
+      jsonPath: REVIEW_PACKET_JSON_FILE,
+      markdownPath: REVIEW_PACKET_MARKDOWN_FILE,
+      generatedAt: packet.generatedAt,
+      finalReviewStatus: packet.finalReview.status,
+      driftPassed: packet.drift.passed,
+      evidenceValidatedTasks: packet.validation.summary.passed,
+      evidenceTotalTasks: packet.run.totalTasks,
+      missingArtifactCount: packet.missingArtifacts.length,
+    },
+  };
 }
 
 function checkpointKindLabel(checkpoint: ReviewPacketCheckpoint | null): string | null {

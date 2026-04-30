@@ -241,7 +241,7 @@ type PlannerCapabilities = {
 | `agent` (default) | ✗ | ✗ | ✗ | ✗ | ✗ |
 | `agent-sdk` | ✓ | ✗ | ✓ | ✓ | ✓ |
 
-Claude Code resumes via `claude --session-id <id>`. Codex resumes via `codex exec resume --json <id> <prompt>` (captured from the `thread.started` JSONL event). Agent SDK resumes via the `options.resume` argument to `query()`; see `src/engine/agent-sdk.ts`. All other backends fall back to transcript rebuild on resume (spec 004; `src/engine/orchestrator/transcript-rebuild.ts`).
+Claude Code resumes via `claude --session-id <id>`. Codex resumes via `codex exec resume --json <id> <prompt>` (captured from the `thread.started` JSONL event). Agent SDK resumes via the `options.resume` argument to `query()`; see `src/engine/agent-sdk-backend.ts`. All other backends fall back to transcript rebuild on resume (spec 004; `src/engine/orchestrator/transcript-rebuild.ts`).
 
 `shell` and `agent` defaults are all-false but can be overridden per-project via config:
 
@@ -492,7 +492,7 @@ src/
 │   └── validation/test-discovery  Test-command auto-detection
 │
 ├── engine/                        Workflow logic — zero React imports
-│   ├── agent-sdk.ts               Anthropic Agent SDK wrapper
+│   ├── agent-sdk-backend.ts       Anthropic Agent SDK wrapper
 │   ├── change-detection.ts        External-change detection (git status)
 │   ├── claude-runner.ts           Claude-Code CLI subprocess driver
 │   ├── cli-tools.ts               CLI-tool spawn helpers

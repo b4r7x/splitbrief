@@ -7,7 +7,7 @@ import { timeoutError, withIdleTimeout } from '../../../utils/with-timeout.js';
 import { stripV1Suffix, ANTHROPIC_API_VERSION } from '../constants.js';
 import { narrowRecord, assertNever } from '../../../utils/type-guards.js';
 import { STREAM_TIMEOUT_MS, streamError, throwMappedError } from '../../streaming/stream-errors.js';
-import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 
 type AnthropicEventType =
   | 'message_start'
@@ -192,19 +192,19 @@ function getApiErrorMessage(payload: Record<string, unknown>): string {
   return JSON.stringify(payload);
 }
 
-function attachImagesToLastUserMessage(
+async function attachImagesToLastUserMessage(
   conversation: AnthropicMessage[],
   images: Attachment[],
-): void {
+): Promise<void> {
   if (images.length === 0) return;
-  const blocks: AnthropicImageBlock[] = images.map(img => ({
-    type: 'image',
+  const blocks: AnthropicImageBlock[] = await Promise.all(images.map(async img => ({
+    type: 'image' as const,
     source: {
-      type: 'base64',
+      type: 'base64' as const,
       media_type: img.mimeType,
-      data: readFileSync(img.path).toString('base64'),
+      data: (await readFile(img.path)).toString('base64'),
     },
-  }));
+  })));
   for (let i = conversation.length - 1; i >= 0; i--) {
     const msg = conversation[i]!;
     if (msg.role !== 'user') continue;
@@ -222,7 +222,7 @@ export async function streamAnthropicCompletion(
 ): Promise<InvokeResult> {
   const { system, conversation } = splitSystemMessages(opts.messages);
   if (opts.images && opts.images.length > 0) {
-    attachImagesToLastUserMessage(conversation, opts.images);
+    await attachImagesToLastUserMessage(conversation, opts.images);
   }
   const url = `${stripV1Suffix(opts.apiBase)}/v1/messages`;
   const endpoint = { provider: 'anthropic', apiBase: opts.apiBase };

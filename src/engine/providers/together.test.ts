@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createTogetherProvider } from './together.js';
-import { setupFetchMock, setupEnvMock } from './__test-helpers__.js';
+import { setupFetchMock, setupEnvMock } from '#testing/helpers/fetch-mock.js';
 
 // Shared contract (listModels / detectContextLength / error paths / overrides) lives in provider-contract.test.ts.
 // This file covers only Together-specific metadata mapping: per-token → per-million pricing + isFree.

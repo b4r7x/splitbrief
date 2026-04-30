@@ -9,7 +9,7 @@ import { ReadinessPanel } from './components/readiness-panel.js';
 import { openApprovalPrompt } from '../../stores/approval-prompt/actions.js';
 import { Header } from './components/header.js';
 import { AgentStatusRow } from './components/agent-status-row.js';
-import { CostStatusLine } from './components/cost-status-line.js';
+import { CostStatusLine } from './components/cost/status-line.js';
 import { ConfigLine } from './components/config-line.js';
 import { ConversationFlow } from './components/conversation-flow/flow.js';
 import { FeedbackRow } from './components/feedback-row.js';

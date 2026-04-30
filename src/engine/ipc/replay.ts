@@ -35,6 +35,7 @@ function entryToEvent(raw: unknown): EngineEvent | null {
     : {};
   const phase = entry['phase'];
   const taskId = entry['taskId'];
+  if (type.length === 0) return null;
   const event: Record<string, unknown> = { type, ts, ...data };
   if (phase !== undefined) event['phase'] = phase;
   if (taskId !== undefined) event['taskId'] = taskId;

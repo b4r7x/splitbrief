@@ -105,57 +105,57 @@ function sessionPath(projectDir: string, sessionId: string): string {
 }
 
 describe('listResources', () => {
-  it('includes /sessions and available /manifest.json URIs', () => {
+  it('includes /sessions and available /manifest.json URIs', async () => {
     const projectDir = makeProject();
     const id = 'sess-1';
     ensureSessionDir(projectDir, id);
     writeCanonicalArtifacts(projectDir, id);
 
     const resolver = makeResolver(projectDir, id);
-    const uris = resolver.listResources().map(r => r.uri);
+    const uris = (await resolver.listResources()).map(r => r.uri);
 
     expect(uris).toContain('mcp://diptych/sessions');
     expect(uris).toContain(`mcp://diptych/sessions/${id}/manifest.json`);
   });
 
-  it('does not advertise manifest.json when canonical summary/state artifacts are unavailable', () => {
+  it('does not advertise manifest.json when canonical summary/state artifacts are unavailable', async () => {
     const projectDir = makeProject();
     const id = 'sess-without-state';
     ensureSessionDir(projectDir, id);
     saveSummary(projectDir, id, makeCompleteSession(id));
 
     const resolver = makeResolver(projectDir, id);
-    const uris = resolver.listResources().map(r => r.uri);
+    const uris = (await resolver.listResources()).map(r => r.uri);
 
     expect(uris).toContain('mcp://diptych/sessions');
     expect(uris).not.toContain(`mcp://diptych/sessions/${id}/manifest.json`);
   });
 
-  it('always includes /tasks URI', () => {
+  it('always includes /tasks URI', async () => {
     const projectDir = makeProject();
     const id = 'sess-2';
     ensureSessionDir(projectDir, id);
     saveSummary(projectDir, id, { ...SESSION_STUB, id });
 
     const resolver = makeResolver(projectDir, id);
-    const uris = resolver.listResources().map(r => r.uri);
+    const uris = (await resolver.listResources()).map(r => r.uri);
 
     expect(uris).toContain(`mcp://diptych/sessions/${id}/tasks`);
   });
 
-  it('omits plan.md URI when no plan.md exists', () => {
+  it('omits plan.md URI when no plan.md exists', async () => {
     const projectDir = makeProject();
     const id = 'sess-3';
     ensureSessionDir(projectDir, id);
     saveSummary(projectDir, id, { ...SESSION_STUB, id });
 
     const resolver = makeResolver(projectDir, id);
-    const uris = resolver.listResources().map(r => r.uri);
+    const uris = (await resolver.listResources()).map(r => r.uri);
 
     expect(uris).not.toContain(`mcp://diptych/sessions/${id}/plan.md`);
   });
 
-  it('includes spec.md URI when file exists', () => {
+  it('includes spec.md URI when file exists', async () => {
     const projectDir = makeProject();
     const id = 'sess-4';
     ensureSessionDir(projectDir, id);
@@ -163,12 +163,12 @@ describe('listResources', () => {
     writeFileSync(join(sessionPath(projectDir, id), 'spec.md'), '# Spec');
 
     const resolver = makeResolver(projectDir, id);
-    const uris = resolver.listResources().map(r => r.uri);
+    const uris = (await resolver.listResources()).map(r => r.uri);
 
     expect(uris).toContain(`mcp://diptych/sessions/${id}/spec.md`);
   });
 
-  it('includes task URIs for tasks found in tasks.md', () => {
+  it('includes task URIs for tasks found in tasks.md', async () => {
     const projectDir = makeProject();
     const id = 'sess-5';
     ensureSessionDir(projectDir, id);
@@ -176,13 +176,13 @@ describe('listResources', () => {
     writeFileSync(join(sessionPath(projectDir, id), 'tasks.md'), TASKS_MD);
 
     const resolver = makeResolver(projectDir, id);
-    const uris = resolver.listResources().map(r => r.uri);
+    const uris = (await resolver.listResources()).map(r => r.uri);
 
     expect(uris).toContain(`mcp://diptych/sessions/${id}/tasks/T001`);
     expect(uris).toContain(`mcp://diptych/sessions/${id}/tasks/T002`);
   });
 
-  it('excludes sessions not in sessionIds', () => {
+  it('excludes sessions not in sessionIds', async () => {
     const projectDir = makeProject();
     const id = 'sess-allowed';
     const otherId = 'sess-other';
@@ -192,21 +192,21 @@ describe('listResources', () => {
     saveSummary(projectDir, otherId, { ...SESSION_STUB, id: otherId });
 
     const resolver = createResolver({ projectDir, sessionIds: [id], diptychVersion: '1.0.0' });
-    const uris = resolver.listResources().map(r => r.uri);
+    const uris = (await resolver.listResources()).map(r => r.uri);
 
     expect(uris).not.toContain(`mcp://diptych/sessions/${otherId}/manifest.json`);
   });
 });
 
 describe('readResource - /sessions', () => {
-  it('returns valid JSON array of session descriptors', () => {
+  it('returns valid JSON array of session descriptors', async () => {
     const projectDir = makeProject();
     const id = 'sess-a';
     ensureSessionDir(projectDir, id);
     saveSummary(projectDir, id, { ...SESSION_STUB, id });
 
     const resolver = makeResolver(projectDir, id);
-    const result = resolver.readResource('mcp://diptych/sessions');
+    const result = await resolver.readResource('mcp://diptych/sessions');
 
     expect(result).not.toBeNull();
     expect(result?.mimeType).toBe('application/json');
@@ -217,7 +217,7 @@ describe('readResource - /sessions', () => {
 });
 
 describe('readResource - /manifest.json', () => {
-  it('returns synthesized manifest from canonical summary.json and state.json', () => {
+  it('returns synthesized manifest from canonical summary.json and state.json', async () => {
     const projectDir = makeProject();
     const id = 'sess-b';
     ensureSessionDir(projectDir, id);
@@ -225,7 +225,7 @@ describe('readResource - /manifest.json', () => {
     writeFileSync(join(sessionPath(projectDir, id), 'tasks.md'), TASKS_MD.replaceAll('T002', 'T999'));
 
     const resolver = makeResolver(projectDir, id);
-    const result = resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
+    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
 
     expect(result).not.toBeNull();
     expect(result?.mimeType).toBe('application/json');
@@ -240,7 +240,7 @@ describe('readResource - /manifest.json', () => {
     expect(manifest.artifacts.tasks).toEqual(['tasks/T001.md', 'tasks/T002.md']);
   });
 
-  it('returns null when summary.json is missing', () => {
+  it('returns null when summary.json is missing', async () => {
     const projectDir = makeProject();
     const id = 'sess-missing-summary';
     ensureSessionDir(projectDir, id);
@@ -251,31 +251,31 @@ describe('readResource - /manifest.json', () => {
     });
 
     const resolver = makeResolver(projectDir, id);
-    const result = resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
+    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
 
     expect(result).toBeNull();
   });
 
-  it('returns null when state.json is missing', () => {
+  it('returns null when state.json is missing', async () => {
     const projectDir = makeProject();
     const id = 'sess-missing-state';
     ensureSessionDir(projectDir, id);
     saveSummary(projectDir, id, makeCompleteSession(id));
 
     const resolver = makeResolver(projectDir, id);
-    const result = resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
+    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
 
     expect(result).toBeNull();
   });
 
-  it('computes briefHash from state tasks when brief-hash.json is absent', () => {
+  it('computes briefHash from state tasks when brief-hash.json is absent', async () => {
     const projectDir = makeProject();
     const id = 'sess-c';
     ensureSessionDir(projectDir, id);
     writeCanonicalArtifacts(projectDir, id);
 
     const resolver = makeResolver(projectDir, id);
-    const result = resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
+    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
     const manifest = JSON.parse(result!.text!);
 
     expect('briefHash' in manifest).toBe(true);
@@ -283,7 +283,7 @@ describe('readResource - /manifest.json', () => {
     expect(manifest.briefHash).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('includes briefHash when brief-hash.json is present', () => {
+  it('includes briefHash when brief-hash.json is present', async () => {
     const projectDir = makeProject();
     const id = 'sess-d';
     ensureSessionDir(projectDir, id);
@@ -294,7 +294,7 @@ describe('readResource - /manifest.json', () => {
     );
 
     const resolver = makeResolver(projectDir, id);
-    const result = resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
+    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
     const manifest = JSON.parse(result!.text!);
 
     expect(manifest.briefHash).toBe('abc123');
@@ -302,7 +302,7 @@ describe('readResource - /manifest.json', () => {
 });
 
 describe('readResource - file resources', () => {
-  it('returns text/markdown and file text for spec.md', () => {
+  it('returns text/markdown and file text for spec.md', async () => {
     const projectDir = makeProject();
     const id = 'sess-e';
     ensureSessionDir(projectDir, id);
@@ -310,33 +310,33 @@ describe('readResource - file resources', () => {
     writeFileSync(join(sessionPath(projectDir, id), 'spec.md'), '# My Spec\nHello');
 
     const resolver = makeResolver(projectDir, id);
-    const result = resolver.readResource(`mcp://diptych/sessions/${id}/spec.md`);
+    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/spec.md`);
 
     expect(result?.mimeType).toBe('text/markdown');
     expect(result?.text).toBe('# My Spec\nHello');
   });
 
-  it('returns null for evidence.json when file does not exist', () => {
+  it('returns null for evidence.json when file does not exist', async () => {
     const projectDir = makeProject();
     const id = 'sess-f';
     ensureSessionDir(projectDir, id);
     saveSummary(projectDir, id, { ...SESSION_STUB, id });
 
     const resolver = makeResolver(projectDir, id);
-    const result = resolver.readResource(`mcp://diptych/sessions/${id}/evidence.json`);
+    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/evidence.json`);
 
     expect(result).toBeNull();
   });
 
-  it('returns concrete summary.json and state.json when present', () => {
+  it('returns concrete summary.json and state.json when present', async () => {
     const projectDir = makeProject();
     const id = 'sess-concrete';
     ensureSessionDir(projectDir, id);
     writeCanonicalArtifacts(projectDir, id);
 
     const resolver = makeResolver(projectDir, id);
-    const summary = resolver.readResource(`mcp://diptych/sessions/${id}/summary.json`);
-    const state = resolver.readResource(`mcp://diptych/sessions/${id}/state.json`);
+    const summary = await resolver.readResource(`mcp://diptych/sessions/${id}/summary.json`);
+    const state = await resolver.readResource(`mcp://diptych/sessions/${id}/state.json`);
 
     expect(summary?.mimeType).toBe('application/json');
     expect(JSON.parse(summary!.text!).id).toBe(id);
@@ -344,20 +344,20 @@ describe('readResource - file resources', () => {
     expect(JSON.parse(state!.text!).tasks.map((task: { id: string }) => task.id)).toEqual(['T001', 'T002']);
   });
 
-  it('returns null for missing concrete summary.json and state.json', () => {
+  it('returns null for missing concrete summary.json and state.json', async () => {
     const projectDir = makeProject();
     const id = 'sess-missing-concrete';
     ensureSessionDir(projectDir, id);
 
     const resolver = makeResolver(projectDir, id);
 
-    expect(resolver.readResource(`mcp://diptych/sessions/${id}/summary.json`)).toBeNull();
-    expect(resolver.readResource(`mcp://diptych/sessions/${id}/state.json`)).toBeNull();
+    expect(await resolver.readResource(`mcp://diptych/sessions/${id}/summary.json`)).toBeNull();
+    expect(await resolver.readResource(`mcp://diptych/sessions/${id}/state.json`)).toBeNull();
   });
 });
 
 describe('readResource - tasks', () => {
-  it('returns markdown for a known task ID', () => {
+  it('returns markdown for a known task ID', async () => {
     const projectDir = makeProject();
     const id = 'sess-g';
     ensureSessionDir(projectDir, id);
@@ -365,14 +365,14 @@ describe('readResource - tasks', () => {
     writeFileSync(join(sessionPath(projectDir, id), 'tasks.md'), TASKS_MD);
 
     const resolver = makeResolver(projectDir, id);
-    const result = resolver.readResource(`mcp://diptych/sessions/${id}/tasks/T001`);
+    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/tasks/T001`);
 
     expect(result).not.toBeNull();
     expect(result?.mimeType).toBe('text/markdown');
     expect(result?.text).toContain('T001');
   });
 
-  it('returns null for a task ID not found', () => {
+  it('returns null for a task ID not found', async () => {
     const projectDir = makeProject();
     const id = 'sess-h';
     ensureSessionDir(projectDir, id);
@@ -380,55 +380,55 @@ describe('readResource - tasks', () => {
     writeFileSync(join(sessionPath(projectDir, id), 'tasks.md'), TASKS_MD);
 
     const resolver = makeResolver(projectDir, id);
-    const result = resolver.readResource(`mcp://diptych/sessions/${id}/tasks/T999`);
+    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/tasks/T999`);
 
     expect(result).toBeNull();
   });
 });
 
 describe('readResource - edge cases', () => {
-  it('returns null for an unknown URI', () => {
+  it('returns null for an unknown URI', async () => {
     const projectDir = makeProject();
     const id = 'sess-i';
     ensureSessionDir(projectDir, id);
     saveSummary(projectDir, id, { ...SESSION_STUB, id });
 
     const resolver = makeResolver(projectDir, id);
-    const result = resolver.readResource('mcp://diptych/unknown/path');
+    const result = await resolver.readResource('mcp://diptych/unknown/path');
 
     expect(result).toBeNull();
   });
 
-  it('does not throw on disk errors — returns null', () => {
+  it('does not throw on disk errors — returns null', async () => {
     const projectDir = makeProject();
     const id = 'sess-j';
 
     const resolver = createResolver({ projectDir, sessionIds: [id], diptychVersion: '1.0.0' });
 
-    expect(() => resolver.readResource(`mcp://diptych/sessions/${id}/spec.md`)).not.toThrow();
-    expect(resolver.readResource(`mcp://diptych/sessions/${id}/spec.md`)).toBeNull();
+    await expect(async () => await resolver.readResource(`mcp://diptych/sessions/${id}/spec.md`)).not.toThrow();
+    expect(await resolver.readResource(`mcp://diptych/sessions/${id}/spec.md`)).toBeNull();
   });
 
-  it('returns null for a session not in sessionIds', () => {
+  it('returns null for a session not in sessionIds', async () => {
     const projectDir = makeProject();
     const id = 'sess-allowed';
     const otherId = 'sess-other';
     ensureSessionDir(projectDir, otherId);
 
     const resolver = createResolver({ projectDir, sessionIds: [id], diptychVersion: '1.0.0' });
-    const result = resolver.readResource(`mcp://diptych/sessions/${otherId}/spec.md`);
+    const result = await resolver.readResource(`mcp://diptych/sessions/${otherId}/spec.md`);
 
     expect(result).toBeNull();
   });
 
-  it('returns empty array for /tasks when tasks.md does not exist', () => {
+  it('returns empty array for /tasks when tasks.md does not exist', async () => {
     const projectDir = makeProject();
     const id = 'sess-k';
     ensureSessionDir(projectDir, id);
     saveSummary(projectDir, id, { ...SESSION_STUB, id });
 
     const resolver = makeResolver(projectDir, id);
-    const result = resolver.readResource(`mcp://diptych/sessions/${id}/tasks`);
+    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/tasks`);
 
     expect(result).not.toBeNull();
     expect(JSON.parse(result!.text!)).toEqual([]);

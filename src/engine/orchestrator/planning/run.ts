@@ -2,14 +2,14 @@ import { buildRepoMap } from '../../codebase/repomap.js';
 import { resolveMode, resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
 import { runQuickPlanning } from './quick.js';
 import { runInstantPlanning } from './instant.js';
-import { runFullPlanning } from './new.js';
+import { runFullPlanning } from './full.js';
 import { runSpeckitPlanning } from './speckit.js';
 import { publishEvent } from '../events.js';
 import { adviseMode, setAdvisory } from './mode-advisor.js';
-import { attachmentsStore } from '../../../stores/workflow/attachments.js';
-import type { PlanningPhaseOptions, PlanningPhaseResult } from './shared.js';
+import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 
-export type { PlanningPhaseOptions } from './shared.js';
+export type { PlanningPhaseOptions } from './types.js';
+export { runBriefQualityGate } from './shared.js';
 
 export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx } = opts;
@@ -60,7 +60,7 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
       })
     : undefined;
 
-  const drainedAttachments = attachmentsStore.drain();
+  const drainedAttachments = wctx.drainPendingAttachments ? wctx.drainPendingAttachments() : [];
   let attachments = drainedAttachments;
   if (drainedAttachments.length > 0 && !opts.planner.capabilities.supportsImages) {
     publishEvent(wctx.bus, {

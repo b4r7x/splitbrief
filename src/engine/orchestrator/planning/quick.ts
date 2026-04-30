@@ -7,9 +7,8 @@ import {
   persistPhases,
   runBriefQualityGate,
   runPlannerCallInContinuationLoop,
-  type PlanningPhaseOptions,
-  type PlanningPhaseResult,
 } from './shared.js';
+import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 
 export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx, planner } = opts;

@@ -1,5 +1,5 @@
-import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { writeSecureFile } from '../../lib/fs.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { HandoffManifest } from '../../core/schemas/handoff-manifest.js';
 import type { HandoffTarget } from './types.js';
@@ -51,5 +51,5 @@ export function buildManifest(options: BuildManifestOptions): HandoffManifest {
 }
 
 export function writeManifest(outDir: string, manifest: HandoffManifest): void {
-  writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2), { mode: 0o600 });
+  writeSecureFile(join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
 }

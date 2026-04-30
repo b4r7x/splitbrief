@@ -11,7 +11,7 @@ import {
   readLockfile,
   checkServerStatus,
 } from './lockfile.js';
-import { HEARTBEAT_STALENESS_MS } from './heartbeat.js';
+import { HEARTBEAT_STALENESS_MS } from './constants.js';
 
 let testDir: string;
 

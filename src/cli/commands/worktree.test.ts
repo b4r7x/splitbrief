@@ -3,14 +3,14 @@ import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { isCliError } from '../errors.js';
 
-vi.mock('../../engine/git/worktree.js', () => ({
+vi.mock('../../engine/worktree.js', () => ({
   listWorktrees: vi.fn(),
   removeWorktree: vi.fn(),
 }));
 
 import { registerWorktreeCommand } from './worktree.js';
-import { listWorktrees, removeWorktree } from '../../engine/git/worktree.js';
-import type { WorktreeInfo } from '../../engine/git/worktree.js';
+import { listWorktrees, removeWorktree } from '../../engine/worktree.js';
+import type { WorktreeInfo } from '../../engine/worktree.js';
 
 let tmp: string;
 let consoleSpy: ReturnType<typeof vi.spyOn>;

@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { handleMessage } from './handlers.js';
 import { INVALID_REQUEST, SUPPORTED_PROTOCOL_VERSIONS, MCP_PROTOCOL_VERSION } from './handlers.js';
 import type { McpResolver } from './resolver.js';
-import type { McpToolHandler } from './tool-handler.js';
+import type { McpToolHandler } from './types.js';
 
 export type McpServerConfig = {
   port: number;
@@ -163,9 +163,9 @@ export function startMcpServer(config: McpServerConfig): Promise<McpServerHandle
         const body = await readBody(req, res);
         if (body === null) return; // 413 or error already sent
 
-        let result: ReturnType<typeof handleMessage>;
+        let result: Awaited<ReturnType<typeof handleMessage>>;
         try {
-          result = handleMessage(body, resolver, serverVersion, toolHandler);
+          result = await handleMessage(body, resolver, serverVersion, toolHandler);
         } catch {
           send500(res);
           return;

@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
-import { mkdirSync, statSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { FileNode } from './types.js';
 
@@ -8,7 +9,7 @@ const PARSE_VERSION = 1;
 export type Metrics = { hits: number; misses: number };
 
 export interface ParseCache {
-  getOrParse(absPath: string, parse: (p: string) => Promise<FileNode>): Promise<FileNode>;
+  getOrParse(absPath: string, parse: (p: string) => Promise<FileNode | null>): Promise<FileNode | null>;
   metrics: Metrics;
 }
 
@@ -34,7 +35,6 @@ export function createParseCache(dbPath: string): ParseCache {
       imports_json TEXT NOT NULL,
       parse_version INTEGER NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_mtime ON files (mtime_ms);
   `);
 
   const select = db.prepare<[string], CacheRow>(
@@ -53,14 +53,14 @@ export function createParseCache(dbPath: string): ParseCache {
 
   const metrics: Metrics = { hits: 0, misses: 0 };
 
-  async function getOrParse(absPath: string, parse: (p: string) => Promise<FileNode>): Promise<FileNode> {
-    const stat = statSync(absPath);
+  async function getOrParse(absPath: string, parse: (p: string) => Promise<FileNode | null>): Promise<FileNode | null> {
+    const fileStat = await stat(absPath);
     const row = select.get(absPath);
 
     if (
       row !== undefined &&
-      row.mtime_ms === stat.mtimeMs &&
-      row.size_bytes === stat.size &&
+      row.mtime_ms === fileStat.mtimeMs &&
+      row.size_bytes === fileStat.size &&
       row.parse_version === PARSE_VERSION
     ) {
       metrics.hits++;
@@ -75,7 +75,8 @@ export function createParseCache(dbPath: string): ParseCache {
 
     metrics.misses++;
     const node = await parse(absPath);
-    upsert.run(absPath, stat.mtimeMs, stat.size, JSON.stringify(node.symbols), JSON.stringify(node.imports), PARSE_VERSION);
+    if (node === null) return null;
+    upsert.run(absPath, fileStat.mtimeMs, fileStat.size, JSON.stringify(node.symbols), JSON.stringify(node.imports), PARSE_VERSION);
     return node;
   }
 

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../core/paths.js';
-import { buildResumeContext, formatMessagesForCli, type ResumeMessage } from './transcript-rebuild.js';
+import { buildResumeContext } from './transcript-rebuild.js';
 
 let dirs: string[] = [];
 
@@ -61,21 +61,3 @@ describe('buildResumeContext', () => {
   });
 });
 
-describe('formatMessagesForCli', () => {
-  it('returns empty string for no messages', () => {
-    expect(formatMessagesForCli([])).toBe('');
-  });
-
-  it('formats messages with role tags and continuation instruction', () => {
-    const messages: ResumeMessage[] = [
-      { role: 'user', content: 'add auth' },
-      { role: 'assistant', content: 'here is the plan' },
-    ];
-    const result = formatMessagesForCli(messages);
-    expect(result).toContain('<!-- prior conversation -->');
-    expect(result).toContain('[user] add auth');
-    expect(result).toContain('[assistant] here is the plan');
-    expect(result).toContain('<!-- /prior conversation -->');
-    expect(result).toContain('continue from where you left off');
-  });
-});

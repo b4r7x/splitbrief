@@ -22,7 +22,7 @@ Concrete usage scenarios showing how users will interact with this feature. Incl
 For each scenario, describe the user action and expected outcome.
 
 ### Acceptance Criteria
-Numbered list of specific, testable criteria that define "done." Each criterion must be verifiable  -  no subjective language like "should be fast" or "should be clean."
+Numbered list of specific, testable criteria that define "done." Each criterion must be verifiable -- no subjective language like "should be fast" or "should be clean."
 
 ### Functional Requirements
 Detailed requirements organized by area:

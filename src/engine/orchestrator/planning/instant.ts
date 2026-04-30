@@ -6,9 +6,8 @@ import {
   handlePlanningFailure,
   persistPhases,
   runBriefQualityGate,
-  type PlanningPhaseOptions,
-  type PlanningPhaseResult,
 } from './shared.js';
+import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 import { createTranscriptBuffer } from '../../streaming/transcript-buffer.js';
 import { createBusTextHandler } from '../events.js';
 import { createSessionExpiredHandler } from '../resume-context.js';

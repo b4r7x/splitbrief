@@ -6,7 +6,7 @@ import { STATE_FILE, sessionDir } from '../../../src/core/paths.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { getCompletedTaskIds } from '../../../src/core/state/selectors.js';
 import { buildSummary } from '../../../src/engine/orchestrator/summary.js';
-import { runTaskLoop } from '../../../src/engine/orchestrator/task-loop.js';
+import { runTaskLoop } from '../../../src/engine/orchestrator/task/loop.js';
 import { createValidator } from '../../../src/engine/orchestrator/validation.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';

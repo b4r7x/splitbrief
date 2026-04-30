@@ -2,7 +2,7 @@ import type { EngineEvent } from '../events/types.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
-import type { UserEditConflict, UserEditConflictAction } from '../orchestrator/user-edit-conflicts.js';
+import type { UserEditConflict, UserEditConflictAction } from '../orchestrator/user-edit/conflicts.js';
 
 export type IpcPromptRequest =
   | { requestId: string; kind: 'approval_needed'; approvalType: 'spec' | 'plan' | 'briefs'; filePath: string }

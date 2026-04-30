@@ -65,7 +65,7 @@ function tokenDelta(before: TokenUsage, after: TokenUsage): { implementerTokens:
   };
 }
 
-export function emitTaskTokens(bus: EventBus, state: WorkflowState, id: TaskId, usage: TaskTokenUsage): void {
+function emitTaskTokens(bus: EventBus, state: WorkflowState, id: TaskId, usage: TaskTokenUsage): void {
   publishEvent(bus, {
     type: 'task_tokens',
     ts: Date.now(),

@@ -11,6 +11,7 @@ import { normalizeLegacyMode } from '../../core/schemas/enums.js';
 import { createIpcWorkflowBridge } from './workflow-bridge.js';
 import type { IpcPromptResponse } from './protocol.js';
 import { applyCLIOverrides, type CLIOverrides } from '../../core/config/runtime/overrides.js';
+import { isRecord } from '../../utils/type-guards.js';
 
 const SERVER_ARGS_FILE = 'server-args.json';
 
@@ -44,14 +45,15 @@ function getArgv(): ServerArgs {
   const argsFile = join(sessionDir(projectDir, sessionId), SERVER_ARGS_FILE);
   if (existsSync(argsFile)) {
     try {
-      const parsed = JSON.parse(readFileSync(argsFile, 'utf8')) as Partial<ServerArgs>;
+      const parsed: unknown = JSON.parse(readFileSync(argsFile, 'utf8'));
+      if (!isRecord(parsed)) throw new Error('invalid server-args.json');
       return {
         sessionId,
         projectDir,
         feature,
         mode,
         configPath,
-        overrides: (parsed.overrides && typeof parsed.overrides === 'object') ? parsed.overrides as CLIOverrides : {},
+        overrides: (isRecord(parsed.overrides)) ? parsed.overrides as CLIOverrides : {},
       };
     } catch {
       // Fall through to argv-only mode.
@@ -147,13 +149,6 @@ async function main() {
           ...(response.comment !== undefined && { comment: response.comment }),
           ...(response.action !== undefined && { action: response.action }),
         };
-      },
-      onExternalChanges: async () => {
-        const response = assertPromptResponse(
-          await ipcServer.requestClientPrompt({ kind: 'external_changes' }),
-          'external_changes',
-        );
-        return response.proceed;
       },
       onUserEditConflict: async (conflict) => {
         const response = assertPromptResponse(

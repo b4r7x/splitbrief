@@ -60,7 +60,7 @@ describe('EventBus end-to-end flow', () => {
     createTestGitRepo(projectDir);
 
     const recorded: EngineEvent[] = [];
-    const { callbacks } = makeCallbacks({ onExternalChanges: async () => true });
+    const { callbacks } = makeCallbacks();
 
     const config = makeConfig({
       planner: {

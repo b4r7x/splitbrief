@@ -2,7 +2,8 @@ import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { InvokeResult, ParsedLine } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { spawnWithStdin } from '../../lib/process/spawn.js';
-import { accumulateUsage, getLineParser } from './output-parsers.js';
+import { getLineParser } from './output-parsers.js';
+import { accumulateUsage } from './token-utils.js';
 
 interface SpawnAndCollectOptions {
   command: string;

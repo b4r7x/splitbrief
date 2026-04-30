@@ -6,10 +6,6 @@ function listOrNone(items: string[] | undefined): string {
   return items.map(s => `- ${s}`).join('\n');
 }
 
-function taskNum(id: string): string {
-  return id.replace(/^T0*/, 'T');
-}
-
 export function formatTaskBrief(task: Task): string {
   const dependsOn = task.dependsOn.length > 0 ? task.dependsOn.join(', ') : 'none';
 
@@ -117,5 +113,3 @@ Run \`claude\`, \`codex exec\`, or \`cursor\` in this folder. Work through the t
 
   return files;
 }
-
-export { taskNum };

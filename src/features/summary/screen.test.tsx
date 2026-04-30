@@ -12,7 +12,7 @@ import {
   recordFinalReviewEvidence,
   recordLocalTaskEvidence,
   writeEvidenceLedger,
-} from '../../engine/orchestrator/evidence.js';
+} from '../../engine/orchestrator/evidence/evidence.js';
 import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';

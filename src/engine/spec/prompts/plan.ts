@@ -11,10 +11,10 @@ export function buildPlanPrompt(
   skillsContext?: string,
 ): string {
   const output = spec.hasClarifications
-    ? `Write the complete plan.md content. Be specific  -  use actual file paths, function names, and type definitions from the project.
+    ? `Write the complete plan.md content. Be specific -- use actual file paths, function names, and type definitions from the project.
 
 Note: The specification contains a Clarifications section with user decisions. Reference these decisions in your plan.`
-    : 'Write the complete plan.md content. Be specific  -  use actual file paths, function names, and type definitions from the project.';
+    : 'Write the complete plan.md content. Be specific -- use actual file paths, function names, and type definitions from the project.';
 
   return buildPrompt({
     title: 'Write Implementation Plan',

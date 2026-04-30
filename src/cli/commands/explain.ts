@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { readActive } from '../../core/sessions/lifecycle.js';
-import { buildRunExplain } from '../../engine/orchestrator/explain.js';
-import { formatRunExplain } from '../../engine/orchestrator/explain-format.js';
+import { buildRunExplain } from '../../engine/orchestrator/explain/explain.js';
+import { formatRunExplain } from '../../engine/orchestrator/explain/format.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { cliError } from '../errors.js';
 import { resolveProjectDir } from '../setup.js';

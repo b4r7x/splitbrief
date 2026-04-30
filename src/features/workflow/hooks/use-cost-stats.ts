@@ -5,7 +5,7 @@ import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { calculateCostBreakdown } from '../../../engine/providers/pricing.js';
 import { resolvePricing, type PricingMode } from '../../../engine/providers/pricing-resolver.js';
-import type { ModelCacheAccessor } from '../../../engine/providers/model-resolution.js';
+import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../../../core/config/accessors/runner-config.js';
 import { formatCost } from '../../../core/formatting.js';
 import type { CostBreakdown } from '../../../core/schemas/summary.js';

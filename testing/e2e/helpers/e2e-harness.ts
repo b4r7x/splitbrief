@@ -115,7 +115,6 @@ export async function runE2eWorkflow(
     _eventSink: (event) => ctx.events.push(event),
     callbacks: {
       onApprovalNeeded: async () => ({ approved: true }),
-      onExternalChanges: async () => true,
       onQuestionAsked: async () => '',
       onBudgetExceeded: async () => true,
       onBudgetPaused: async () => {

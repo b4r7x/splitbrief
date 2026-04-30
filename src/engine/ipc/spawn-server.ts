@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import { openSync, writeFileSync } from 'node:fs';
 import { existsSync } from 'node:fs';
+import { open, writeFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createConnection } from 'node:net';
@@ -59,12 +59,10 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<SpawnServer
   const { command, args: entryArgs } = resolveEntryPoint();
 
   const logPath = join(opts.sessionDir, SERVER_LOG_FILE);
-  const logFd = openSync(logPath, 'a');
+  const logHandle = await open(logPath, 'a');
 
-  // Write CLI overrides to a JSON file so we don't depend on argv length / quoting
-  // for the (potentially many) per-session options.
   const argsFile = join(opts.sessionDir, SERVER_ARGS_FILE);
-  writeFileSync(
+  await writeFile(
     argsFile,
     JSON.stringify({
       sessionId: opts.sessionId,
@@ -87,9 +85,10 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<SpawnServer
 
   const child = spawn(command, argv, {
     detached: true,
-    stdio: ['ignore', 'ignore', logFd],
+    stdio: ['ignore', 'ignore', logHandle.fd],
   });
   child.unref();
+  await logHandle.close();
 
   const sockPath = join(opts.sessionDir, IPC_SOCK_FILE);
 

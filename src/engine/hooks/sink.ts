@@ -24,7 +24,7 @@ async function runBuiltinsAndEntriesAndReport(
   ctx: HookContext,
   bus: EventBus,
 ): Promise<void> {
-  const phase = ('phase' in event ? (event as { phase: unknown }).phase : 'implementing') as Phase;
+  const phase = getEventPhase(event);
   for (const builtin of builtins) {
     try {
       const outcome = await builtin.run(event, ctx);
@@ -54,6 +54,13 @@ async function runBuiltinsAndEntriesAndReport(
       bus.publish({ type: 'warning', ts: Date.now(), phase, message: `[hook ${hookEvent}] crashed: ${err instanceof Error ? err.message : String(err)}` });
     }
   }
+}
+
+function getEventPhase(event: EngineEvent): Phase {
+  if ('phase' in event && typeof (event as { phase: unknown }).phase === 'string') {
+    return (event as { phase: string }).phase as Phase;
+  }
+  return 'implementing';
 }
 
 function eventToHookKey(e: EngineEvent): HookEvent | null {

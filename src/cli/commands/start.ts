@@ -15,7 +15,7 @@ import { maybeMigrate } from '../../core/migration/executor.js';
 import { printMigrationResult } from './migrate.js';
 import { runHeadless } from '../headless.js';
 import { cliError } from '../errors.js';
-import { createWorktree, detectWorktree } from '../../engine/git/worktree.js';
+import { createWorktree, detectWorktree } from '../../engine/worktree.js';
 import { slugify } from '../../utils/slugify.js';
 import { spawnServer } from '../../engine/ipc/spawn-server.js';
 import { configPath } from '../../core/config/load/load.js';

@@ -2,7 +2,7 @@ import { Box, Text } from 'ink';
 import { TwoColumnPicker } from '../../components/pickers/two-column-picker/picker.js';
 import { useTheme } from '../../components/theme.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { refreshDetectionStores } from '../../engine/detection/adapter.js';
+import { refreshDetectionStores } from '../../stores/discovery/detection-adapter.js';
 import { configStore } from '../../stores/project/config.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import type { PickerOption, ModelOption } from './model-catalog.js';

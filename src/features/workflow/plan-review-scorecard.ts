@@ -47,7 +47,7 @@ const BUCKET_LABELS: Record<PlanReviewScorecardBucket, string> = {
 
 const SPLIT_OVERFLOW_ISSUES = new Set<BriefQualityIssue['code']>([
   'multi_file_task',
-  'non_atomic_task',
+  'missing_type_definitions',
 ]);
 
 const MISSING_CHECK_ISSUES = new Set<BriefQualityIssue['code']>([

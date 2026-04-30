@@ -80,7 +80,6 @@ async function runSingleEval(
       sinks: { setAbortHandler: () => undefined, setQueueHandler: () => undefined },
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
-        onExternalChanges: async () => true,
         onQuestionAsked: async () => '',
         onBudgetExceeded: async () => true,
         onBudgetPaused: async () => 'continue',

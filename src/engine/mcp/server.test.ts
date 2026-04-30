@@ -5,8 +5,8 @@ import type { McpServerHandle } from './server.js';
 import type { McpResolver } from './resolver.js';
 
 const stubResolver: McpResolver = {
-  listResources: () => [],
-  readResource: () => null,
+  listResources: async () => [],
+  readResource: async () => null,
 };
 
 const TOKEN = 'test-secret-token';

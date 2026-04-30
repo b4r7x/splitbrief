@@ -3,8 +3,8 @@ import { simpleGit } from 'simple-git';
 import { resolveProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { listWorktrees, removeWorktree } from '../../engine/git/worktree.js';
-import type { WorktreeInfo } from '../../engine/git/worktree.js';
+import { listWorktrees, removeWorktree } from '../../engine/worktree.js';
+import type { WorktreeInfo } from '../../engine/worktree.js';
 
 function statusCell(info: WorktreeInfo): string {
   return info.status;

@@ -7,7 +7,8 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let server: http.Server;
 let port: number;
-let receivedBodies: any[];
+type RequestBody = { model: string; stream: boolean; messages: { role: string; content: string }[] };
+let receivedBodies: RequestBody[];
 let receivedHeaders: http.IncomingHttpHeaders[];
 let projectDir: string;
 
@@ -145,9 +146,9 @@ describe('createApiPlanner', () => {
     expect(collected.join('')).toBe('Hello world');
 
     expect(receivedBodies).toHaveLength(1);
-    expect(receivedBodies[0].model).toBe('test-model');
-    expect(receivedBodies[0].stream).toBe(true);
-    expect(receivedBodies[0].messages[0]).toMatchObject({ role: 'user', content: 'the prompt' });
+    expect(receivedBodies[0]!.model).toBe('test-model');
+    expect(receivedBodies[0]!.stream).toBe(true);
+    expect(receivedBodies[0]!.messages[0]).toMatchObject({ role: 'user', content: 'the prompt' });
   });
 
   it('uses Anthropic messages API for Anthropic planner selections', async () => {
@@ -199,15 +200,15 @@ describe('createApiPlanner', () => {
     });
 
     expect(receivedBodies.length).toBeGreaterThan(0);
-    const firstCall = receivedBodies[0];
+    const firstCall = receivedBodies[0]!;
     // First two messages = prior history; the current prompt is appended last.
     expect(firstCall.messages[0]).toEqual({ role: 'user', content: 'start: add auth' });
     expect(firstCall.messages[1]).toEqual({ role: 'assistant', content: 'we should use JWT' });
-    expect(firstCall.messages[firstCall.messages.length - 1].role).toBe('user');
+    expect(firstCall.messages[firstCall.messages.length - 1]!.role).toBe('user');
 
     // Subsequent phases do NOT repeat priorMessages.
-    const secondCall = receivedBodies[1];
-    expect(secondCall.messages[0].role).toBe('user');
+    const secondCall = receivedBodies[1]!;
+    expect(secondCall.messages[0]!.role).toBe('user');
     // Prior assistant turn should not be present in phase 2+
     const hasAssistantPrior = secondCall.messages.some((m: { role: string; content: string }) => m.role === 'assistant' && m.content === 'we should use JWT');
     expect(hasAssistantPrior).toBe(false);

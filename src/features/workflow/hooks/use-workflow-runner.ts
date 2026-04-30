@@ -11,13 +11,15 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
+import { attachmentsStore } from '../../../stores/workflow/attachments.js';
 import { runWorkflow, WORKFLOW_REWIND_ABORT_REASON } from '../../../engine/orchestrator/run/run.js';
 import type { WorkflowSinks } from '../../../engine/orchestrator/types.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { createJsonlSink } from '../../../engine/events/sinks/jsonl.js';
-import { createTuiSink } from '../../../engine/events/sinks/tui.js';
+import { createTuiSink } from '../tui-sink.js';
 import { publishRecoveryPrompted } from '../../../engine/orchestrator/events.js';
-import { applyRecoveryAction } from '../../../engine/orchestrator/recovery.js';
+import { applyRecoveryAction } from '../../../engine/orchestrator/recovery/recovery.js';
 import { buildSummary } from '../../../engine/orchestrator/summary.js';
 import { saveFinalSession } from '../../../engine/orchestrator/session-lifecycle.js';
 import {
@@ -262,6 +264,9 @@ export function useWorkflowRunner({
           projectDir,
           config,
           sinks,
+          tuiSink: createTuiSink(),
+          modelCache: modelCacheStore,
+          drainPendingAttachments: () => attachmentsStore.drain(),
           signal: controller.signal,
           callbacks: {
             onApprovalNeeded: async (_type, filePath) => {
@@ -270,8 +275,6 @@ export function useWorkflowRunner({
               reviewStore.clearReview();
               return result;
             },
-            onExternalChanges: async () =>
-              (await inputMode.setReviewMode('External changes detected. continue / quit')).approved,
             onUserEditConflict: async (conflict) => {
               const answer = await inputMode.setQuestionMode(formatUserEditConflictPrompt(conflict));
               return parseUserEditConflictAnswer(answer, conflict.availableActions);

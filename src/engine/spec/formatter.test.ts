@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { formatTaskPrompt, formatRetryPrompt, formatTasks } from './formatter.js';
+import { formatTaskPrompt, formatRetryPrompt } from './prompt-formatter.js';
+import { formatTasks } from './formatter.js';
 import { parseTasks } from './parser.js';
 import { estimateTokens, truncateMiddle, computeTokenBudget } from './token-budget.js';
 import { makeTask as makeBaseTask } from '#testing/helpers/factories/task.js';

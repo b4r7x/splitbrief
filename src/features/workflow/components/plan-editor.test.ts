@@ -13,7 +13,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { BriefReviewView } from './brief-review-view.js';
 import { PlanEditorComponent } from './plan-editor.js';
-import { PlanEditorHelpOverlay } from './plan-editor-help-overlay.js';
+import { PlanEditorHelpOverlay } from './plan-editor/help-overlay.js';
 
 let tmpDir: string;
 const rendered: Array<{ unmount: () => void }> = [];

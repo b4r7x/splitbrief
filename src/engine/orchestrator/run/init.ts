@@ -6,6 +6,8 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { Planner } from '../../planners/types.js';
+import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
+import type { Attachment } from '../../../core/schemas/attachment.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { appendMessage } from '../../../core/state/persistence.js';
@@ -16,7 +18,6 @@ import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { createStdoutJsonSink } from '../../events/sinks/stdout-json.js';
 import { createOtelSink } from '../../events/sinks/otel.js';
-import { createTuiSink } from '../../events/sinks/tui.js';
 import type { EventBus, EventSink } from '../../events/types.js';
 import { createHookSink } from '../../hooks/sink.js';
 import { runPreHooks } from '../../hooks/run-pre-hook.js';
@@ -25,7 +26,7 @@ import { slug } from '../../../utils/slug.js';
 
 import type { WorkflowContext, WorkflowSinks, ResumeContextHolder } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary.js';
-import { publishEvent, publishError, publishPlannerStatus, publishWorkflowConfig, publishUserMessage, publishWarning, publishGitBranchCreated } from '../events.js';
+import { createImplementerPublisher, publishEvent, publishError, publishPlannerStatus, publishWorkflowConfig, publishUserMessage, publishWarning, publishGitBranchCreated } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { applyRebuiltContext } from '../resume-context.js';
 import { createValidator } from '../validation.js';
@@ -42,12 +43,18 @@ export type RunWorkflowOptions = {
   signal?: AbortSignal | undefined;
   /** Headless mode: emit events as NDJSON to stdout. TUI render is skipped at the CLI layer. */
   headless?: boolean | undefined;
+  /** Optional TUI event sink — bridges engine events to React stores. Passed from features layer. */
+  tuiSink?: EventSink | undefined;
   /** Optional externally-owned bus, used by the detached IPC server/client path. */
   eventBus?: EventBus | undefined;
   /** Test-only: subscribe an extra sink to the bus (used by integration tests for recording). */
   _eventSink?: EventSink | undefined;
   /** Test-only: inject a pre-built planner (avoids spawning real subprocesses in tests). */
   _planner?: Planner | undefined;
+  /** Model cache accessor for pricing/cost lookups — injected from composition layer. */
+  modelCache?: ModelCacheAccessor | undefined;
+  /** Drains pending attachments from the store — injected from composition layer. */
+  drainPendingAttachments?: (() => Attachment[]) | undefined;
 };
 
 export type InitResult =
@@ -68,7 +75,7 @@ export async function initializeWorkflow(
   ensureSessionDir(projectDir, sessionId);
 
   const bus = opts.eventBus ?? createEventBus();
-  if (!opts.headless) bus.subscribe(createTuiSink());
+  if (opts.tuiSink) bus.subscribe(opts.tuiSink);
   bus.subscribe(createJsonlSink(projectDir, sessionId, config.workflow.persistTranscript));
   if (opts.headless) bus.subscribe(createStdoutJsonSink());
   if (opts._eventSink) bus.subscribe(opts._eventSink);
@@ -98,7 +105,7 @@ export async function initializeWorkflow(
     }
   }
 
-  const implementer = createImplementer(config);
+  const implementer = createImplementer(config, { publisher: createImplementerPublisher(bus) });
 
   let state: WorkflowState;
 
@@ -151,7 +158,12 @@ export async function initializeWorkflow(
   };
 
   const validator = createValidator();
-  const wctx: WorkflowContext = { projectDir, sessionId, config, callbacks, bus, planner, context, implementer, signal: opts.signal, metadata, resumeHolder, sinks, validator };
+  const wctx: WorkflowContext = {
+    projectDir, sessionId, config, callbacks, bus, planner, context, implementer,
+    signal: opts.signal, metadata, resumeHolder, sinks, validator,
+    ...(opts.modelCache !== undefined && { modelCache: opts.modelCache }),
+    ...(opts.drainPendingAttachments !== undefined && { drainPendingAttachments: opts.drainPendingAttachments }),
+  };
 
   if (!savedState && config.hooks) {
     const prePlanPayload: import('../../events/types.js').EngineEvent = { type: 'workflow_started', ts: Date.now(), phase: state.phase, feature };

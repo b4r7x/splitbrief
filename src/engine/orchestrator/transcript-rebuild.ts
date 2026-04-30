@@ -22,8 +22,3 @@ export async function buildResumeContext(
   return { messages };
 }
 
-export function formatMessagesForCli(messages: ResumeMessage[]): string {
-  if (messages.length === 0) return '';
-  const lines = messages.map(m => `[${m.role}] ${m.content}`);
-  return `<!-- prior conversation -->\n${lines.join('\n')}\n<!-- /prior conversation -->\n\nNow continue from where you left off.\n\n`;
-}

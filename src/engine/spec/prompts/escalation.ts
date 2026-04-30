@@ -27,7 +27,7 @@ function constraintsBlock(task: Task): string {
 const HINT_INSTRUCTIONS = `In ~500 tokens or less, provide:
 
 1. **Root cause**: What specifically went wrong? Parse the error message and identify the exact issue.
-2. **Fix approach**: Describe the approach to fix it in plain language. Be specific  -  mention exact function names, types, or patterns to use.
+2. **Fix approach**: Describe the approach to fix it in plain language. Be specific -- mention exact function names, types, or patterns to use.
 3. **Common pitfall**: If this is a common mistake (e.g., missing .js extension, wrong import path, incorrect type), say so explicitly.
 
 Do NOT write code. Only explain the diagnosis and approach.`;
@@ -35,7 +35,7 @@ Do NOT write code. Only explain the diagnosis and approach.`;
 export function buildHintPrompt(task: Task, error: string): string {
   return buildPrompt({
     title: 'Diagnose Implementation Failure',
-    intro: 'An implementer model attempted to implement the task below but the result failed validation. Provide a concise diagnosis and approach hint  -  do NOT write code.',
+    intro: 'An implementer model attempted to implement the task below but the result failed validation. Provide a concise diagnosis and approach hint -- do NOT write code.',
     sections: [
       taskMetaSection(task),
       { heading: 'Constraints', body: constraintsBlock(task) },

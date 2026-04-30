@@ -13,8 +13,8 @@ import { getCurrentDiff, discardFileChange, getChangedFiles } from '../../lib/gi
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
-import { readEvidenceLedger, recordFinalReviewEvidence, writeEvidenceLedger } from './evidence.js';
-import { analyzeBriefDrift, formatDriftReportForPrompt, publishDriftReport, writeDriftReport } from './drift.js';
+import { readEvidenceLedger, recordFinalReviewEvidence, writeEvidenceLedger } from './evidence/evidence.js';
+import { analyzeBriefDrift, formatDriftReportForPrompt, publishDriftReport, writeDriftReport } from './drift/drift.js';
 
 import type { Planner } from '../planners/types.js';
 import { buildSummary, type SummaryBase } from './summary.js';
@@ -24,7 +24,7 @@ import { runPlannerReview } from './planner-review.js';
 import { createSnapshot } from '../snapshots/store.js';
 import { recordRunSnapshot } from '../snapshots/run.js';
 import { hashTaskBrief } from '../../core/brief-hash.js';
-import { writeReviewPacket } from './review-packet.js';
+import { writeReviewPacket } from './evidence/review-packet/review-packet.js';
 
 export async function runFinalReviewPhase(
   opts: { projectDir: string; sessionId: string; config: Config; callbacks: OrchestratorCallbacks; bus: EventBus; state: WorkflowState; planner: Planner; metadata?: SpecMetadata | null },
