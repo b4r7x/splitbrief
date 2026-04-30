@@ -44,6 +44,98 @@ function makeImplState(tasks: ReturnType<typeof makeTask>[]): WorkflowState {
 }
 
 describe('runTasksAndReview', () => {
+  it('publishes deterministic cost prediction before task execution', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = makeImplState([task]);
+    const planner = makePlanner();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        expect(events.some(event => event.type === 'cost_prediction')).toBe(true);
+        return { success: true, output: 'code', usage: { inputTokens: 50, outputTokens: 25 } };
+      }),
+    });
+    const config = {
+      ...makeNoValidationConfig({
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          apiBase: 'https://api.anthropic.com/v1',
+          model: 'claude-opus-4-6',
+        },
+        workflow: { commitStrategy: 'none' },
+      }),
+      implementerProfiles: {
+        default: 'cheap-worker',
+        profiles: {
+          'cheap-worker': {
+            kind: 'api' as const,
+            provider: 'deepseek',
+            apiBase: 'https://api.deepseek.com/v1',
+            model: 'deepseek-chat',
+            contextLength: 20_000,
+            costTier: 'cheap' as const,
+          },
+        },
+      },
+    };
+
+    await runTasksAndReview({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner,
+        context: defaultContext,
+        implementer,
+        metadata: { plannerTool: 'anthropic', plannerModel: 'claude-opus-4-6', implementerTool: 'deepseek', implementerModel: 'deepseek-chat', mode: 'standard' },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state,
+      summaryBase: {
+        feature: 'feat',
+        startTime: Date.now(),
+        plannerTool: 'anthropic',
+        plannerModel: 'claude-opus-4-6',
+        implementerTool: 'deepseek',
+        implementerModel: 'deepseek-chat',
+      },
+      phaseTimings: {},
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    const predictionIndex = events.findIndex(event => event.type === 'cost_prediction');
+    const taskStartIndex = events.findIndex(event => event.type === 'task_started');
+    const prediction = events.find(event => event.type === 'cost_prediction');
+
+    expect(predictionIndex).toBeGreaterThanOrEqual(0);
+    expect(taskStartIndex).toBeGreaterThan(predictionIndex);
+    expect(prediction).toMatchObject({
+      type: 'cost_prediction',
+      prediction: {
+        estimatedTasks: 1,
+        deterministic: {
+          taskCount: 1,
+          taskFitCounts: { fits: 1, tight: 0, overflow: 0, unknown: 0 },
+          totals: {
+            unknownCostReason: [],
+          },
+        },
+      },
+    });
+    if (prediction?.type === 'cost_prediction') {
+      expect(prediction.prediction.deterministic?.totals.knownActualEstimate).toBeGreaterThan(0);
+      expect(prediction.prediction.deterministic?.totals.hypotheticalAllPlanner).toBeGreaterThan(0);
+      expect(prediction.prediction.deterministic?.totals.estimatedSavings).toBeGreaterThan(0);
+    }
+  });
+
   it('does not run final review when the task loop stops before completion', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', file: 'src/too-large.ts' });

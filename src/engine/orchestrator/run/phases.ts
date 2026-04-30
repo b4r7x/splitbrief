@@ -9,10 +9,12 @@ import type { EventBus } from '../../events/types.js';
 import { buildSummary, type SummaryBase } from '../summary.js';
 import { publishCostPrediction } from '../events.js';
 import { predictCost } from '../cost-prediction.js';
+import { estimateDeterministicCost } from '../estimate.js';
 import { runPlanningPhase } from '../planning/run.js';
 import { runTaskLoop } from '../task-loop.js';
 import { runFinalReviewPhase } from '../final-review.js';
 import { drainQueue } from '../queue.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
 
 export function applyPostPlanDrain(
   projectDir: string,
@@ -76,12 +78,23 @@ export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise
   const { callbacks } = wctx;
 
   if (state.tasks.length > 0) {
-    const prediction: CostPrediction = predictCost({
+    const heuristic = predictCost({
       taskCount: state.tasks.length,
-      plannerTool: state.plannerTool ?? '',
-      implementerTool: state.implementerTool ?? '',
+      plannerTool: summaryBase.plannerTool,
+      implementerTool: summaryBase.implementerTool,
+      plannerModel: summaryBase.plannerModel,
+      implementerModel: summaryBase.implementerModel,
       tokenUsage: state.tokenUsage,
     });
+    const prediction: CostPrediction = {
+      ...heuristic,
+      deterministic: estimateDeterministicCost({
+        tasks: state.tasks,
+        context: wctx.context,
+        config: wctx.config,
+        pricingCache: modelCacheStore,
+      }),
+    };
     publishCostPrediction(wctx.bus, state.phase, prediction);
     summaryBase = { ...summaryBase, costPrediction: prediction };
   }
