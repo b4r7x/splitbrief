@@ -75,6 +75,7 @@ function buildCLIOverrides(opts: WorkflowOpts, mode: WorkflowOpts['mode']): CLIO
     mode,
     budget: opts.budget,
     plannerEffort: opts.plannerEffort,
+    yolo: opts.yolo,
   };
 }
 

@@ -64,6 +64,7 @@ export async function runHeadless(
     autoApprove: opts.auto !== undefined ? opts.auto : true,
     mode: opts.mode,
     budget: opts.budget,
+    yolo: opts.yolo,
   });
 
   if (!config) throw cliError('Failed to load config');

@@ -7,7 +7,7 @@ import { feedbackStore } from '../ui/feedback.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { expectApi, expectCli, expectShell } from '#testing/helpers/config-narrowing.js';
 import { DIPTYCH_DIR } from '../../core/paths.js';
-import { createDefaultConfig } from '../../core/config/load/load.js';
+import { createDefaultConfig, loadConfig } from '../../core/config/load/load.js';
 
 let tmpDir: string;
 
@@ -29,6 +29,13 @@ function loadedConfig() {
   const config = configStore.get().config;
   if (!config) throw new Error('Expected config to be loaded');
   return config;
+}
+
+function configWithApproval(enabled: boolean) {
+  return {
+    ...createDefaultConfig(),
+    approval: { enabled, feedRejectionsToPlanner: true },
+  };
 }
 
 describe('configStore.load', () => {
@@ -128,6 +135,61 @@ describe('configStore.load', () => {
     expect(config.workflow.autoApprovePlan).toBe(true);
   });
 
+});
+
+describe('configStore.setApprovalEnabled', () => {
+  beforeEach(() => {
+    tmpDir = createTempDir('config-store-test');
+    configStore.reset();
+    feedbackStore.reset();
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tmpDir);
+    configStore.reset();
+    feedbackStore.reset();
+  });
+
+  it('setApprovalEnabled toggles in-memory config immutably', () => {
+    configStore.__testReset({
+      config: configWithApproval(true),
+      projectDir: '/test',
+      overrides: {},
+    });
+    const before = configStore.get().config;
+
+    configStore.setApprovalEnabled(false);
+    expect(configStore.get().config?.approval?.enabled).toBe(false);
+    expect(configStore.get().config).not.toBe(before);
+
+    const afterDisable = configStore.get().config;
+    configStore.setApprovalEnabled(true);
+    expect(configStore.get().config?.approval?.enabled).toBe(true);
+    expect(configStore.get().config).not.toBe(afterDisable);
+  });
+
+  it('setApprovalEnabled is a no-op when value matches', () => {
+    const initial = configWithApproval(true);
+    configStore.__testReset({
+      config: initial,
+      projectDir: '/test',
+      overrides: {},
+    });
+    const before = configStore.get().config;
+    configStore.setApprovalEnabled(true);
+    expect(configStore.get().config).toBe(before);
+  });
+
+  it('setApprovalEnabled does not write to disk', () => {
+    writeConfigYaml();
+    configStore.load(tmpDir);
+
+    configStore.setApprovalEnabled(false);
+
+    expect(configStore.get().config?.approval?.enabled).toBe(false);
+    const { config: diskConfig } = loadConfig(tmpDir);
+    expect(diskConfig.approval?.enabled).not.toBe(false);
+  });
 });
 
 describe('configStore.save', () => {

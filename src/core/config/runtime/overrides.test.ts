@@ -98,3 +98,31 @@ describe('applyCLIOverrides — plannerEffort', () => {
     expect(result.planner.effort).toBeUndefined();
   });
 });
+
+describe('applyCLIOverrides — yolo', () => {
+  it('yolo override disables approval', () => {
+    const result = applyCLIOverrides(baseConfig, { yolo: true });
+    expect(result.approval?.enabled).toBe(false);
+  });
+
+  it('yolo override preserves other approval fields', () => {
+    const config: Config = {
+      ...baseConfig,
+      approval: {
+        enabled: true,
+        tiers: { destructive: 'confirm' },
+        feedRejectionsToPlanner: true,
+      },
+    };
+    const result = applyCLIOverrides(config, { yolo: true });
+    expect(result.approval?.enabled).toBe(false);
+    expect(result.approval?.tiers?.destructive).toBe('confirm');
+    expect(result.approval?.feedRejectionsToPlanner).toBe(true);
+  });
+
+  it('non-yolo override does not change approval', () => {
+    const config: Config = { ...baseConfig, approval: { enabled: true, feedRejectionsToPlanner: true } };
+    const result = applyCLIOverrides(config, {});
+    expect(result.approval?.enabled).toBe(true);
+  });
+});

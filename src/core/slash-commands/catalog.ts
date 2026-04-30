@@ -415,6 +415,23 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
     },
     {
       kind: 'noarg',
+      name: '/yolo',
+      label: 'YOLO',
+      description: 'Toggle approval gates off/on (skip all confirmations)',
+      validScreens: ALL_SCREENS,
+      handler: () => {
+        const current = ctx.getApprovalEnabled();
+        const next = !current;
+        ctx.setApprovalEnabled(next);
+        if (!next) {
+          ctx.setFeedbackMessage('YOLO mode ON — all approval gates disabled');
+        } else {
+          ctx.setFeedbackMessage('YOLO mode OFF — approval gates restored');
+        }
+      },
+    },
+    {
+      kind: 'noarg',
       name: '/quit',
       label: 'Quit',
       description: 'Exit application',

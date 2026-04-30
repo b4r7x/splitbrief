@@ -99,6 +99,7 @@ function getGutterRole(event: EngineEvent): "planner" | "implementer" | null {
     case "approval_granted":
     case "approval_rejected":
     case "approval_sticky_recorded":
+    case "approval_mode_changed":
     case "ipc_server_started":
     case "ipc_client_attached":
     case "ipc_client_detached":
@@ -446,6 +447,16 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
     case "clarifications_collected":
     case "clarification_answered":
       content = null;
+      break;
+    case "approval_mode_changed":
+      content = (
+        <Card
+          label="approval"
+          labelColor={event.mode === "yolo" ? t.warning : t.textDim}
+          value={event.mode === "yolo" ? "YOLO mode enabled" : "approval gates restored"}
+          valueColor={event.mode === "yolo" ? t.warning : t.textDim}
+        />
+      );
       break;
     case "snapshot_created":
     case "snapshot_restored":
