@@ -102,6 +102,7 @@ export const ConfigSchema = z.object({
     maxBudget: z.number().positive().optional(),
     budgetPauseThreshold: z.number().min(0).max(1).optional(),
     driftChainThreshold: z.number().min(0).max(1).optional(),
+    costGate: z.boolean().optional(),
     persistTranscript: z.boolean().default(true),
   }),
   theme: ThemeModeSchema.optional(),

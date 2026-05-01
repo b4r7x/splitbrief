@@ -16,6 +16,7 @@ import { SummaryPhaseTiming } from './components/phase-timing.js';
 import { SummaryEvidence } from './components/evidence.js';
 import { SummaryCheckpoints } from './components/checkpoints.js';
 import { SummaryReviewPacket } from './components/review-packet.js';
+import { HeroSavings } from './components/hero-savings.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
@@ -120,6 +121,8 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
           Planner compiled {compiledByPlannerCount} Task {compiledByPlannerCount === 1 ? 'Brief' : 'Briefs'} · Implementer completed {localCount} locally{escalatedCount > 0 ? ` · ${escalatedCount} escalated` : ''}
         </Text>
       </Box>
+
+      <HeroSavings costBreakdown={summary.costBreakdown} />
 
       <Box flexDirection="column" marginTop={1} gap={isSmall ? 0 : 1}>
         <LabeledRow label="Feature" labelWidth={labelWidth}><Text bold>{summary.feature}</Text></LabeledRow>

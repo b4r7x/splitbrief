@@ -5,6 +5,7 @@ import type { Summary } from '../../core/schemas/summary.js';
 import type { InputMode } from '../../stores/navigation/router.js';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { ApprovalPrompt } from './components/approval-prompt.js';
+import { CostApprovalPromptConnected } from './components/cost-approval-prompt.js';
 import { ReadinessPanel } from './components/readiness-panel.js';
 import { openApprovalPrompt } from '../../stores/approval-prompt/actions.js';
 import { Header } from './components/header.js';
@@ -299,6 +300,7 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
         )}
       </Box>
       <ApprovalPrompt />
+      <CostApprovalPromptConnected />
     </ScreenShell>
   );
 }

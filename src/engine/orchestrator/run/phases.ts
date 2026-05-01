@@ -10,6 +10,7 @@ import type { EventBus } from '../../events/types.js';
 
 import { buildSummary, type SummaryBase } from '../summary.js';
 import { publishCostPrediction, publishError, publishWarning } from '../events.js';
+import { decideCostGate } from '../cost-gate.js';
 import { predictCost } from '../budget/cost-prediction.js';
 import { estimateDeterministicCost } from '../budget/estimate.js';
 import { reviewPlannerEstimate, runningPlannerEstimateReview } from '../planner-estimate-review.js';
@@ -177,6 +178,21 @@ export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise
       prediction.plannerEstimateReview = runningPlannerEstimateReview();
     }
     publishCostPrediction(wctx.bus, state.phase, prediction);
+
+    const gateDecision = decideCostGate({
+      mode: wctx.config.workflow?.mode,
+      prediction,
+      costGateEnabled: wctx.config.workflow.costGate !== false,
+    });
+    if (gateDecision === 'gate' && wctx.callbacks.onCostApprovalNeeded) {
+      const approved = await wctx.callbacks.onCostApprovalNeeded(prediction);
+      if (!approved) {
+        return {
+          summary: buildSummary({ ...summaryBase, state, phaseTimings }),
+          completed: false,
+        };
+      }
+    }
 
     if (wctx.config.plannerEstimateReview && prediction.deterministic) {
       const reviewed = await reviewPlannerEstimate({

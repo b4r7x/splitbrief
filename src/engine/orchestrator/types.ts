@@ -14,6 +14,7 @@ import type { RoutingDecision } from './context-routing.js';
 import type { TaskReviewRequest, TaskReviewResponse } from './task/review.js';
 import type { ModelCacheAccessor } from '../providers/model/resolution.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
+import type { CostPrediction } from '../../core/schemas/summary.js';
 
 export interface OrchestratorCallbacks {
   onApprovalNeeded: (type: 'spec' | 'plan' | 'briefs', filePath: string) => Promise<{ approved: boolean; comment?: string | undefined; action?: 'edit' | undefined }>;
@@ -21,6 +22,7 @@ export interface OrchestratorCallbacks {
   onQuestionAsked?: ((question: ClarificationQuestion, num: number, total: number) => Promise<string>) | undefined;
   onBudgetExceeded?: ((currentCost: number, maxBudget: number) => Promise<boolean>) | undefined;
   onBudgetPaused?: ((currentCost: number, maxBudget: number) => Promise<'continue' | 'abort' | 'raise'>) | undefined;
+  onCostApprovalNeeded?: ((prediction: CostPrediction) => Promise<boolean>) | undefined;
   onContinuationNeeded?: ((partialResponse: string) => Promise<string>) | undefined;
   onTieredApproval?: ((request: TieredApprovalRequest) => Promise<TieredApprovalResponse>) | undefined;
   onTaskReviewNeeded?: ((request: TaskReviewRequest) => Promise<TaskReviewResponse>) | undefined;
