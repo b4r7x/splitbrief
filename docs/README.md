@@ -31,6 +31,7 @@ This page is the entry point to the `docs/` folder. Pick the row that matches wh
 Read these once to learn the vocabulary; they explain the **why** behind the system.
 
 - **[VISION.md](./VISION.md)** — the cost-aware planner/implementer thesis and product north star.
+- **[DIRECTION.md](./DIRECTION.md)** — UX principles, testing architecture, engineering decisions, competitive advantages.
 - **[CONCEPTS.md](./CONCEPTS.md)** — shared vocabulary: Task Brief, EngineEvent, EventBus, Phase, Hook, RepoMap, Sink, Runner.
 - **[PRINCIPLES.md](./PRINCIPLES.md)** — one-page rule index: zero classes, zero barrels, ESM-only, error at boundaries.
 - **[ARCHITECTURE.md](./ARCHITECTURE.md)** — system design and current inventory: planner/implementer contracts, orchestrator loop, event model, design rationale (Part 1), plus verified file/event/command counts and public API surface (Part 2).
