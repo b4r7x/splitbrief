@@ -418,3 +418,78 @@ describe('start command — readiness', () => {
     expect(firstLine.report?.sections?.flatMap(section => section.checks.map(check => check.id))).toContain('repo.active-session-live');
   });
 });
+
+describe('start command — shorthand invocation', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('routes bare positional feature to start action via default command', async () => {
+    writeConfigMarker(tmp);
+
+    const program = new Command();
+    program.exitOverride();
+    registerStartCommand(program);
+    await program.parseAsync(['node', 'diptych', 'implement auth flow']);
+
+    expect(routerStore.get()).toMatchObject({ screen: 'workflow', feature: 'implement auth flow' });
+  });
+
+  it('does not hijack explicit subcommands registered on the same program', async () => {
+    const program = new Command();
+    program.exitOverride();
+    registerStartCommand(program);
+
+    let specCalled = false;
+    program.command('spec').action(() => { specCalled = true; });
+    await program.parseAsync(['node', 'diptych', 'spec']);
+
+    expect(specCalled).toBe(true);
+    expect(renderApp).not.toHaveBeenCalled();
+  });
+
+  it('passes workflow options through shorthand invocation', async () => {
+    writeConfigMarker(tmp);
+
+    const program = new Command();
+    program.exitOverride();
+    registerStartCommand(program);
+    await program.parseAsync(['node', 'diptych', '--mode', 'quick', 'build feature X', '--project', tmp]);
+
+    expect(routerStore.get()).toMatchObject({ screen: 'workflow', feature: 'build feature X' });
+  });
+});
+
+describe('start command — @file syntax', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('inlines text @file content into workflow feature', async () => {
+    writeConfigMarker(tmp);
+    writeFileSync(join(tmp, 'brief.md'), 'Context about the feature.');
+
+    const program = new Command();
+    program.exitOverride();
+    registerStartCommand(program);
+    await program.parseAsync(['node', 'diptych', 'start', 'build it', '@brief.md', '--project', tmp]);
+
+    expect(routerStore.get()).toMatchObject({ screen: 'workflow' });
+    const featureString = (routerStore.get() as { feature?: string }).feature ?? '';
+    expect(featureString).toContain('build it');
+    expect(featureString).toContain('Context about the feature.');
+  });
+
+  it('warns on stderr for missing @file without aborting', async () => {
+    writeConfigMarker(tmp);
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const program = new Command();
+    program.exitOverride();
+    registerStartCommand(program);
+    await program.parseAsync(['node', 'diptych', 'start', 'build it', '@ghost.md', '--project', tmp]);
+
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('@ghost.md'));
+    expect(routerStore.get().screen).toBe('workflow');
+  });
+});

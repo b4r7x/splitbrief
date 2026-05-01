@@ -20,6 +20,7 @@ import { registerAttachCommand } from './cli/commands/attach.js';
 import { registerDetachCommand } from './cli/commands/detach.js';
 import { registerPsCommand } from './cli/commands/ps.js';
 import { isCliError } from './cli/errors.js';
+import { HELP_EXAMPLES } from './cli/help-examples.js';
 import { toErrorMessage } from './utils/format-errors.js';
 
 bootstrapOtel();
@@ -30,6 +31,8 @@ program
   .name('diptych')
   .version('0.1.0')
   .description('Cost-optimized AI coding orchestrator');
+
+program.addHelpText('after', HELP_EXAMPLES);
 
 registerStartCommand(program);
 registerDoctorCommand(program);
