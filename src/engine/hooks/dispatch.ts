@@ -58,7 +58,7 @@ async function runModuleHook(entry: HookModuleEntry, event: EngineEvent, ctx: Ho
   const loaded = await loadHookModule(entry.path, ctx.projectDir);
   if (!loaded.ok) {
     const reason = loaded.reason.toLowerCase();
-    if (reason.includes('cannot find') || reason.includes('no such file') || reason.includes('enoent') || reason.includes('module not found')) {
+    if (isENOENT(loaded.error) || reason.includes('cannot find') || reason.includes('module not found')) {
       return { kind: 'warn', message: `hook module not found: ${entry.path}` };
     }
     return failureOutcome(entry, `failed to load module: ${loaded.reason}`);
@@ -87,7 +87,7 @@ function validateOutcome(result: unknown): HookOutcome {
       return result as HookOutcome;
     }
   }
-  return { kind: 'allow' };
+  return { kind: 'warn', message: 'hook returned unrecognized outcome shape' };
 }
 
 function tryParseResponse(stdout: string): HookResponse | null {

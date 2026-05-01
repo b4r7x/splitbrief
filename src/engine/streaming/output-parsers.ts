@@ -5,7 +5,6 @@ import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { toTokenDelta } from './token-utils.js';
 import { assertNever, narrowRecord } from '../../utils/type-guards.js';
 import { warnError } from '../../lib/warn.js';
-export { accumulateUsage } from './token-utils.js';
 
 export type { ToolUseInfo };
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { isSessionExpiredError, createSessionResumeState } from './session-expiry.js';
-import { createAgentSdkBackend, processStream } from './agent-sdk.js';
+import { createAgentSdkBackend, processStream } from './agent-sdk-backend.js';
 
 // The agent-sdk loader uses dynamic import(); stub it so createAgentSdkBackend's
 // invoke path can be exercised without the real optional peer dep installed.

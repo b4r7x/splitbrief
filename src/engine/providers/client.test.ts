@@ -8,7 +8,7 @@ import {
   createMetadataProvider,
   createProviderShell,
 } from './client.js';
-import { setupFetchMock } from './__test-helpers__.js';
+import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 
 describe('createProviderShell', () => {
   it('tracks and exposes last error through trackError / getLastError', () => {

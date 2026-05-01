@@ -3,10 +3,10 @@ import type { ApproveLevel, Phase, RecoveryAction, RecoveryReason, TaskCompletio
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { ActionClass } from '../../core/schemas/approval-store.js';
-import type { ApprovalTier } from '../orchestrator/action-classifier.js';
-import type { UserEditConflict, UserEditConflictAction } from '../orchestrator/user-edit-conflicts.js';
-import type { CurrentCodeContextMode, TaskContextFit } from '../orchestrator/context-routing.js';
-import type { TaskReviewRequest } from '../orchestrator/task-review.js';
+import type { ApprovalTier } from '../../core/schemas/config.js';
+import type { UserEditConflict, UserEditConflictAction } from '../../core/types/workflow-events.js';
+import type { CurrentCodeContextMode, TaskContextFit } from '../../core/types/workflow-events.js';
+import type { TaskReviewRequest } from '../../core/types/workflow-events.js';
 
 export type ValidationStages = { tsc: boolean; lint: boolean; test: boolean };
 

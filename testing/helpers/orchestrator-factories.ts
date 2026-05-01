@@ -11,7 +11,6 @@ export function makeCallbacks(overrides?: Partial<OrchestratorCallbacks>): { cal
   return {
     callbacks: {
       onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
-      onExternalChanges: vi.fn().mockResolvedValue(false),
       onComplete: vi.fn(),
       ...overrides,
     },

@@ -7,7 +7,7 @@ import {
   lookupModelsDevModel,
   lookupRuntimeModel,
   type ModelCacheAccessor,
-} from './model-resolution.js';
+} from './model/resolution.js';
 
 export interface ModelPricing {
   input: number | undefined;

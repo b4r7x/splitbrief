@@ -5,18 +5,9 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { writeHandoffPack } from './write.js';
-import { renderHandoffWithCustom } from './render.js';
 import { DIPTYCH_DIR, STATE_FILE } from '../../core/paths.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
-
-vi.mock('./render.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./render.js')>();
-  return {
-    renderHandoff: actual.renderHandoff,
-    renderHandoffWithCustom: vi.fn(actual.renderHandoffWithCustom),
-  };
-});
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -283,15 +274,11 @@ describe('writeHandoffPack — selectedTaskIds', () => {
 });
 
 describe('writeHandoffPack — mode resolution', () => {
-  beforeEach(() => {
-    vi.mocked(renderHandoffWithCustom).mockClear();
-  });
-
   it('uses mode from summary.json when present', async () => {
     const sessionId = 'mode-test-session';
     writeSessionState(tmp, sessionId);
 
-    const sessionDir = join(tmp, DIPTYCH_DIR, 'sessions', sessionId);
+    const sDir = join(tmp, DIPTYCH_DIR, 'sessions', sessionId);
     const session = {
       id: sessionId,
       feature: 'Authentication System',
@@ -321,7 +308,7 @@ describe('writeHandoffPack — mode resolution', () => {
         mode: 'speckit',
       },
     };
-    writeFileSync(join(sessionDir, 'summary.json'), JSON.stringify(session));
+    writeFileSync(join(sDir, 'summary.json'), JSON.stringify(session));
 
     const outDir = join(tmp, 'handoff', 'mode-test');
     await writeHandoffPack({
@@ -332,7 +319,8 @@ describe('writeHandoffPack — mode resolution', () => {
       mode: 'default',
     });
 
-    expect(vi.mocked(renderHandoffWithCustom).mock.calls[0]?.[0].mode).toBe('speckit');
+    const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf-8'));
+    expect(manifest.mode).toBe('speckit');
   });
 
   it('falls back to standard when no summary.json and no config', async () => {
@@ -348,7 +336,8 @@ describe('writeHandoffPack — mode resolution', () => {
       mode: 'default',
     });
 
-    expect(vi.mocked(renderHandoffWithCustom).mock.calls[0]?.[0].mode).toBe('standard');
+    const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf-8'));
+    expect(manifest.mode).toBe('standard');
   });
 });
 
@@ -409,21 +398,25 @@ describe('writeHandoffPack — inert writer', () => {
 });
 
 describe('writeHandoffPack — renderer path confinement', () => {
+  function writeCustomRenderer(projectDir: string, maliciousPath: string): void {
+    const renderersDir = join(projectDir, '.diptych', 'handoff-renderers');
+    mkdirSync(renderersDir, { recursive: true });
+    writeFileSync(
+      join(renderersDir, 'malicious.js'),
+      `export default function render() { return { files: [{ path: ${JSON.stringify(maliciousPath)}, content: 'unsafe' }] }; }`,
+    );
+  }
+
   it('rejects custom renderer output paths that escape the output directory', async () => {
     const sessionId = 'unsafe-renderer-session';
     writeSessionState(tmp, sessionId);
-
-    vi.mocked(renderHandoffWithCustom).mockResolvedValueOnce({
-      files: [
-        { path: '../escape.md', content: 'unsafe' },
-      ],
-    });
+    writeCustomRenderer(tmp, '../escape.md');
 
     await expect(
       writeHandoffPack({
         projectDir: tmp,
         sessionId,
-        target: 'custom',
+        target: 'malicious',
         outDir: join(tmp, 'handoff', 'unsafe-renderer'),
         mode: 'default',
       }),
@@ -433,18 +426,13 @@ describe('writeHandoffPack — renderer path confinement', () => {
   it('rejects custom renderer Windows absolute output paths on POSIX', async () => {
     const sessionId = 'unsafe-windows-renderer-session';
     writeSessionState(tmp, sessionId);
-
-    vi.mocked(renderHandoffWithCustom).mockResolvedValueOnce({
-      files: [
-        { path: 'C:\\temp\\escape.md', content: 'unsafe' },
-      ],
-    });
+    writeCustomRenderer(tmp, 'C:\\temp\\escape.md');
 
     await expect(
       writeHandoffPack({
         projectDir: tmp,
         sessionId,
-        target: 'custom',
+        target: 'malicious',
         outDir: join(tmp, 'handoff', 'unsafe-windows-renderer'),
         mode: 'default',
       }),

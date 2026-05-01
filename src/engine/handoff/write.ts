@@ -1,5 +1,7 @@
-import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { SECURE_FILE_MODE } from '../../lib/fs.js';
 import type { HandoffTarget } from './types.js';
 // target is widened to string to support custom renderers alongside built-in HandoffTarget values
 import type { WorkflowMode } from '../../core/schemas/enums.js';
@@ -68,7 +70,7 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
   try {
     const summaryPath = join(sessionDir(projectDir, sessionId), 'summary.json');
     if (existsSync(summaryPath)) {
-      const raw = readFileSync(summaryPath, 'utf-8');
+      const raw = await readFile(summaryPath, 'utf-8');
       const parsed: unknown = JSON.parse(raw);
       const result = SessionSchema.safeParse(parsed);
       if (result.success) {
@@ -83,7 +85,7 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
 
   const constitutionPath = join(projectDir, 'constitution.md');
   const constitutionContent = existsSync(constitutionPath)
-    ? readFileSync(constitutionPath, 'utf-8')
+    ? await readFile(constitutionPath, 'utf-8')
     : undefined;
 
   const brandedTaskIds = selectedTaskIds?.map(taskId);
@@ -118,10 +120,10 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
   if (mode === 'overwrite' && existsSync(outDir)) {
     // Remove stale files from previous pack before writing the new one.
     // Deletion is confined to outDir itself (caller-controlled, not renderer-provided).
-    rmSync(outDir, { recursive: true, force: true });
+    await rm(outDir, { recursive: true, force: true });
   }
 
-  mkdirSync(outDir, { recursive: true, mode: 0o700 });
+  await mkdir(outDir, { recursive: true, mode: 0o700 });
 
   const writtenFiles: string[] = [];
 
@@ -130,7 +132,7 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
 
     const filePath = join(outDir, file.path);
     const fileDir = join(filePath, '..');
-    mkdirSync(fileDir, { recursive: true, mode: 0o700 });
+    await mkdir(fileDir, { recursive: true, mode: 0o700 });
 
     if (mode === 'append' && existsSync(filePath)) {
       continue;
@@ -140,7 +142,7 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
       ? file.content.replace('<placeholder>', briefHash)
       : file.content;
 
-    writeFileSync(filePath, content, { mode: 0o600 });
+    await writeFile(filePath, content, { mode: SECURE_FILE_MODE });
     writtenFiles.push(relative(outDir, filePath));
   }
 
@@ -148,7 +150,7 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
     .map(file => file.path)
     .filter(path => existsSync(join(outDir, path)));
 
-  const sourceCommit = tryReadGitHead(projectDir);
+  const sourceCommit = await tryReadGitHead(projectDir);
   const manifest = buildManifest({
     sessionId,
     diptychVersion: getDiptychVersion(),
@@ -167,14 +169,14 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
   return { outputDir: outDir, files: writtenFiles };
 }
 
-function tryReadGitHead(projectDir: string): string | undefined {
+async function tryReadGitHead(projectDir: string): Promise<string | undefined> {
   try {
     const headPath = join(projectDir, '.git', 'HEAD');
-    const head = readFileSync(headPath, 'utf-8').trim();
+    const head = (await readFile(headPath, 'utf-8')).trim();
     if (head.startsWith('ref: ')) {
       const ref = head.slice('ref: '.length);
       const refPath = join(projectDir, '.git', ref);
-      return readFileSync(refPath, 'utf-8').trim();
+      return (await readFile(refPath, 'utf-8')).trim();
     }
     return head;
   } catch {

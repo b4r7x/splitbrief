@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createOpenRouterProvider, parsePrice, toDetectedModel } from './openrouter.js';
-import { setupFetchMock, setupEnvMock } from './__test-helpers__.js';
+import { setupFetchMock, setupEnvMock } from '#testing/helpers/fetch-mock.js';
 
 // Shared provider contract (listModels / detectContextLength / error paths / overrides)
 // lives in provider-contract.test.ts. This file covers OpenRouter-specific pure helpers

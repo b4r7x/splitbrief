@@ -202,7 +202,7 @@ describe('buildPlanReviewScorecard', () => {
 
     const scorecard = buildPlanReviewScorecard(
       [nonAtomic],
-      quality([issue(nonAtomic.id, 'non_atomic_task', 'warning')]),
+      quality([issue(nonAtomic.id, 'missing_type_definitions', 'warning')]),
       metadataMap([readyMetadata(nonAtomic.id)]),
     );
 

@@ -6,7 +6,7 @@ import { ensureSessionDir } from '../core/paths-io.js';
 import { createInitialState, transition } from '../core/state/machine.js';
 import { saveState } from '../core/state/persistence.js';
 import { writeActive } from '../core/sessions/lifecycle.js';
-import { buildValidationFailedRecoveryIssue } from '../engine/orchestrator/recovery.js';
+import { buildValidationFailedRecoveryIssue } from '../engine/orchestrator/recovery/recovery.js';
 
 const runWorkflowMock = vi.hoisted(() => vi.fn());
 

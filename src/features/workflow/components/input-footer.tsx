@@ -3,8 +3,8 @@ import { useSyncExternalStore } from 'react';
 import { useTheme } from '../../../components/theme.js';
 import { useCostStats } from '../hooks/use-cost-stats.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
-import { CostDisplay } from './cost-display.js';
-import { computeEta } from './cost-footer.js';
+import { CostDisplay } from './cost/display.js';
+import { computeEta } from './cost/footer.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { useStores } from '../../../stores/use-stores.js';
 import {

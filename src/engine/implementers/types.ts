@@ -5,12 +5,31 @@ import type { ImplementerResult } from '../../core/types/summary.js';
 import type { RunnerRuntime } from '../runners/types.js';
 import type { EventBus } from '../events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
+import type { TaskId } from '../../core/schemas/task.js';
 
 export type ImplementerWriteMode = 'extracted-code' | 'direct';
 
 export type ImplementerCapabilities = {
   writesFiles: ImplementerWriteMode;
 };
+
+export interface ImplementerPublisher {
+  publishRunning(opts: { phase: Phase; taskId: TaskId; file?: string | undefined }): void;
+  publishDone(opts: {
+    phase: Phase;
+    taskId: TaskId;
+    file: string;
+    diff?: string | undefined;
+    linesAdded: number;
+    linesRemoved: number;
+    duration: number;
+  }): void;
+  publishFailed(opts: { phase: Phase; taskId: TaskId; model: string }): void;
+}
+
+export interface ImplementerFactoryOptions {
+  publisher?: ImplementerPublisher | undefined;
+}
 
 export interface ImplementerOptions {
   task: Task;

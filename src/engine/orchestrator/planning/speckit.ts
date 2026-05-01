@@ -1,6 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { runFullPlanning } from './new.js';
+import { runFullPlanning } from './full.js';
 import { transitionAndSave } from '../state-ops.js';
 import { publishPlannerStatus, createBusTextHandler, publishEvent } from '../events.js';
 import {
@@ -12,10 +11,11 @@ import {
   TASKS_FILE,
   sessionDir,
 } from '../../../core/paths.js';
+import { readFileOrEmpty, writeSecureFile } from '../../../lib/fs.js';
 import { buildConstitutionPrompt } from '../../spec/prompts/constitution.js';
 import { buildAnalyzePrompt } from '../../spec/prompts/analyze.js';
 import { runBriefQualityGate, runBriefsApprovalLoop } from './shared.js';
-import type { PlanningPhaseOptions, PlanningPhaseResult } from './shared.js';
+import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 import type { ConstitutionCheckResult, ConstitutionViolation } from '../../../core/schemas/constitution.js';
 import type { AnalyzeResult } from '../../../core/schemas/analyze.js';
 
@@ -98,24 +98,12 @@ function parseAnalyze(text: string): AnalyzeResult {
   };
 }
 
-function readConstitution(projectDir: string): string {
-  const p = join(projectDir, '.specify', 'memory', 'constitution.md');
-  if (!existsSync(p)) return '';
-  try {
-    return readFileSync(p, 'utf8');
-  } catch {
-    return '';
-  }
+async function readConstitution(projectDir: string): Promise<string> {
+  return readFileOrEmpty(join(projectDir, '.specify', 'memory', 'constitution.md'));
 }
 
-function readArtifact(dir: string, file: string): string {
-  const p = join(dir, file);
-  if (!existsSync(p)) return '';
-  try {
-    return readFileSync(p, 'utf8');
-  } catch {
-    return '';
-  }
+async function readArtifact(dir: string, file: string): Promise<string> {
+  return readFileOrEmpty(join(dir, file));
 }
 
 function formatClarificationsPlaceholder(): string {
@@ -123,8 +111,7 @@ function formatClarificationsPlaceholder(): string {
 }
 
 function readSpeckitConfig(opts: PlanningPhaseOptions): { minCoverage: number } {
-  const wf = opts.wctx.config.workflow as { speckit?: { minCoverage?: number } } | undefined;
-  const min = wf?.speckit?.minCoverage;
+  const min = opts.wctx.config.workflow.speckit?.minCoverage;
   return { minCoverage: typeof min === 'number' ? min : DEFAULT_MIN_COVERAGE };
 }
 
@@ -134,11 +121,11 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
   const dir = sessionDir(projectDir, sessionId);
   let { state } = opts;
 
-  const constitutionContent = readConstitution(projectDir);
+  const constitutionContent = await readConstitution(projectDir);
 
   state = transitionAndSave(projectDir, sessionId, state, { type: 'SPEC_CLARIFY_START' });
   publishPlannerStatus(bus, state, 'running');
-  writeFileSync(join(dir, CLARIFICATIONS_FILE), formatClarificationsPlaceholder(), 'utf8');
+  writeSecureFile(join(dir, CLARIFICATIONS_FILE), formatClarificationsPlaceholder());
   state = transitionAndSave(projectDir, sessionId, state, { type: 'SPEC_CLARIFY_DONE' });
   publishPlannerStatus(bus, state, 'done');
 
@@ -152,7 +139,7 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
     const review = await planner.review(prompt, projectDir, { onOutput });
     constitutionResult = parseConstitutionCheck(review.text);
   }
-  writeFileSync(join(dir, CONSTITUTION_CHECK_FILE), JSON.stringify(constitutionResult, null, 2), 'utf8');
+  writeSecureFile(join(dir, CONSTITUTION_CHECK_FILE), JSON.stringify(constitutionResult, null, 2));
 
   const hardViolation = constitutionResult.violations.find(v => v.severity === 'hard');
   if (hardViolation || !constitutionResult.passed) {
@@ -173,14 +160,16 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
   state = transitionAndSave(projectDir, sessionId, state, { type: 'ANALYZE_START' });
   publishPlannerStatus(bus, state, 'running');
 
-  const specText = readArtifact(dir, SPEC_FILE);
-  const planText = readArtifact(dir, PLAN_FILE);
-  const tasksText = readArtifact(dir, TASKS_FILE);
+  const [specText, planText, tasksText] = await Promise.all([
+    readArtifact(dir, SPEC_FILE),
+    readArtifact(dir, PLAN_FILE),
+    readArtifact(dir, TASKS_FILE),
+  ]);
   const analyzePrompt = buildAnalyzePrompt(specText, planText, tasksText);
   const onOutput = createBusTextHandler(bus, state.phase);
   const review = await planner.review(analyzePrompt, projectDir, { onOutput });
   const analysis = parseAnalyze(review.text);
-  writeFileSync(join(dir, ANALYZE_FILE), JSON.stringify(analysis, null, 2), 'utf8');
+  writeSecureFile(join(dir, ANALYZE_FILE), JSON.stringify(analysis, null, 2));
 
   const { minCoverage } = readSpeckitConfig(opts);
   if (analysis.specTaskCoverage < minCoverage || analysis.planTaskCoverage < minCoverage) {

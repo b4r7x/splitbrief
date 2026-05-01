@@ -8,9 +8,9 @@ import { API_PROVIDER_IDS } from '../../core/schemas/enums.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import type { TaskTokenUsage, TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostBreakdown } from '../../core/schemas/summary.js';
-import { parseModelId } from './model-parsing.js';
+import { parseModelId } from './model/parsing.js';
 import { resolvePricing, isApiPricedProvider, type ResolvedPricing } from './pricing-resolver.js';
-import type { ModelCacheAccessor } from './model-resolution.js';
+import type { ModelCacheAccessor } from './model/resolution.js';
 
 export function getModelPricing(model: string, cache?: ModelCacheAccessor): ResolvedPricing | undefined {
   const parsed = parseModelId(model);

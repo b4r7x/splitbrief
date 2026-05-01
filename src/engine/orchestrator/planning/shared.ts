@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { OrchestratorCallbacks, PlannerCallbacksContext } from '../types.js';
+import type { PlannerCallbacksContext } from '../types.js';
 import type { EventBus } from '../../events/types.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
@@ -12,36 +12,27 @@ import { transitionAndSave } from '../state-ops.js';
 import { createSessionExpiredHandler } from '../resume-context.js';
 import { withContinuationLoop } from '../continuation.js';
 import { labelError } from '../../../utils/format-errors.js';
-import type { Planner, PlanResult, PlannerCallbacks, PriorMessage } from '../../planners/types.js';
-import type { ClarificationQuestion } from '../../../core/schemas/question.js';
-import type { SkillMeta } from '../../../core/skills/types.js';
-import type { ApproveLevel, Phase } from '../../../core/schemas/enums.js';
-import type { Attachment } from '../../../core/schemas/attachment.js';
+import { isENOENT } from '../../../lib/process/errors.js';
+import type { PlanResult, PlannerCallbacks } from '../../planners/types.js';
+import type { Phase } from '../../../core/schemas/enums.js';
 import { BRIEF_QUALITY_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import { evaluateBriefQuality } from '../../spec/brief-quality.js';
 import { formatTasks } from '../../spec/formatter.js';
 import { parseTasks } from '../../spec/parser.js';
 import type { BriefQualityReport } from '../../spec/brief-quality.js';
 import { drainQueue, formatDrainedMessages } from '../queue.js';
-import { regenerateFromFeedback } from '../continuation.js';
-import { buildRejectionContext, readEvidenceLedger } from '../evidence.js';
+import { buildRejectionContext, readEvidenceLedger } from '../evidence/evidence.js';
+import { regenerateTasks } from './regen.js';
+import type {
+  PlannerCallRunResult,
+  PlannerCallOptions,
+  BriefsApprovalLoopOptions,
+  BriefsApprovalLoopResult,
+} from './types.js';
+
+export type { PlanningPhaseOptions, PlanningPhaseResult, PlannerCallRunResult, PlannerCallOptions, BriefsApprovalLoopOptions, BriefsApprovalLoopResult } from './types.js';
 
 export const MAX_CLARIFICATION_QUESTIONS = 5;
-
-export type PlanningPhaseOptions = {
-  wctx: PlannerCallbacksContext;
-  planner: Planner;
-  state: WorkflowState;
-  feature: string;
-  selectedSkills?: SkillMeta[] | undefined;
-  rewindPending?: { target: 'spec' | 'plan'; comment?: string | undefined } | undefined;
-  codebaseContext?: string | undefined;
-  approveLevel?: ApproveLevel | undefined;
-  attachments?: Attachment[] | undefined;
-  deferBriefGate?: boolean | undefined;
-};
-
-export type PlanningPhaseResult = { state: WorkflowState; tasks: Task[]; cancelled: boolean };
 
 export function drainAndFormat(
   projectDir: string,
@@ -85,74 +76,6 @@ export function runBriefQualityGate(
   }
   return { report, ok: report.passed };
 }
-
-export async function regenerateTasks(
-  projectDir: string,
-  sessionId: string,
-  planner: Planner,
-  callbacks: OrchestratorCallbacks,
-  bus: EventBus,
-  state: WorkflowState,
-  metadata: SpecMetadata,
-  planOverride?: string,
-): Promise<{ state: WorkflowState; tasks: Task[] }> {
-  const result = await regenerateFromFeedback('tasks', {
-    projectDir, sessionId, planner, callbacks, bus, state, metadata, planOverride,
-  });
-  return { state: result.state, tasks: result.tasks };
-}
-
-export async function regeneratePlanAndTasks(
-  projectDir: string,
-  sessionId: string,
-  planner: Planner,
-  callbacks: OrchestratorCallbacks,
-  bus: EventBus,
-  state: WorkflowState,
-  metadata: SpecMetadata,
-  skillsContext?: string,
-): Promise<{ state: WorkflowState; tasks: Task[] }> {
-  const planRegen = await regenerateFromFeedback('plan', {
-    projectDir, sessionId, planner, callbacks, bus, state, metadata, skillsContext,
-  });
-  const taskRegen = await regenerateFromFeedback('tasks', {
-    projectDir, sessionId, planner, callbacks, bus, state: planRegen.state, metadata, planOverride: planRegen.plan,
-  });
-  return { state: taskRegen.state, tasks: taskRegen.tasks };
-}
-
-export async function regenerateTasksIfNeeded(
-  regenerated: boolean,
-  projectDir: string,
-  sessionId: string,
-  planner: Planner,
-  callbacks: OrchestratorCallbacks,
-  bus: EventBus,
-  state: WorkflowState,
-  tasks: Task[],
-  metadata: SpecMetadata,
-): Promise<{ state: WorkflowState; tasks: Task[] }> {
-  if (!regenerated) return { state, tasks };
-  return regenerateTasks(projectDir, sessionId, planner, callbacks, bus, state, metadata);
-}
-
-export type PlannerCallRunResult = {
-  state: WorkflowState;
-  result: PlanResult;
-};
-
-export type PlannerCallOptions = {
-  wctx: PlannerCallbacksContext;
-  state: WorkflowState;
-  planner: Planner;
-  feature: string;
-  mode: 'quick' | 'speckit';
-  skillsContext?: string | undefined;
-  codebaseContext?: string | undefined;
-  priorMessages?: PriorMessage[] | undefined;
-  collectedQuestions?: ClarificationQuestion[] | undefined;
-  attachments?: Attachment[] | undefined;
-};
 
 export async function runPlannerCallInContinuationLoop(
   opts: PlannerCallOptions,
@@ -224,24 +147,6 @@ export async function runPlannerCallInContinuationLoop(
   return { state, result: loop.value };
 }
 
-export type BriefsApprovalLoopOptions = {
-  tasks: Task[];
-  planner: Planner;
-  projectDir: string;
-  sessionId: string;
-  callbacks: OrchestratorCallbacks;
-  bus: EventBus;
-  state: WorkflowState;
-  metadata: SpecMetadata;
-  signal?: AbortSignal | undefined;
-};
-
-export type BriefsApprovalLoopResult = {
-  state: WorkflowState;
-  tasks: Task[];
-  rejected: boolean;
-};
-
 type PersistedTasksResult =
   | { ok: true; tasks: Task[] }
   | { ok: false; reason: 'missing' | 'unreadable' | 'parse' | 'empty'; message: string };
@@ -251,8 +156,7 @@ async function readPersistedTasks(tasksFilePath: string): Promise<PersistedTasks
   try {
     text = await readFile(tasksFilePath, 'utf8');
   } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') {
+    if (isENOENT(err)) {
       return { ok: false, reason: 'missing', message: `Task Brief file is missing: ${tasksFilePath}` };
     }
     return { ok: false, reason: 'unreadable', message: labelError('Failed to read Task Brief file', err) };
@@ -301,7 +205,7 @@ export async function runBriefsApprovalLoop(opts: BriefsApprovalLoopOptions): Pr
   try {
     await readFile(tasksFilePath, 'utf8');
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT' && tasks.length > 0) {
+    if (isENOENT(err) && tasks.length > 0) {
       writeSpecFile(projectDir, sessionId, TASKS_FILE, formatTasks(tasks), metadata);
     }
   }

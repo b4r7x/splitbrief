@@ -12,8 +12,8 @@ import {
   createEvidenceLedger,
   recordLocalTaskEvidence,
   writeEvidenceLedger,
-} from './evidence.js';
-import { writeDriftChainState } from './drift-chain-state.js';
+} from './evidence/evidence.js';
+import { writeDriftChainState } from './drift/chain-state.js';
 import type { DriftChainState } from '../../core/schemas/drift-chain.js';
 
 beforeEach(() => {

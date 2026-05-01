@@ -16,7 +16,7 @@ export type BriefQualityIssue = {
     | 'missing_code_context'
     | 'empty_task_list'
     | 'multi_file_task'
-    | 'non_atomic_task'
+    | 'missing_type_definitions'
     | 'missing_implementation_steps';
   message: string;
 };
@@ -37,7 +37,7 @@ const BRIEF_QUALITY_ISSUE_CODES: ReadonlySet<string> = new Set([
   'missing_code_context',
   'empty_task_list',
   'multi_file_task',
-  'non_atomic_task',
+  'missing_type_definitions',
   'missing_implementation_steps',
 ]);
 
@@ -200,7 +200,7 @@ export function evaluateBriefQuality(tasks: Task[]): BriefQualityReport {
       issues.push({
         taskId: task.id,
         severity: 'warning',
-        code: 'non_atomic_task',
+        code: 'missing_type_definitions',
         message: `Task ${task.id} has no type definitions`,
       });
     }

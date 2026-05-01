@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { UserEditConflict } from '../../engine/orchestrator/user-edit-conflicts.js';
+import type { UserEditConflict } from '../../engine/orchestrator/user-edit/conflicts.js';
 import { taskId } from '../../core/schemas/task.js';
 import { formatUserEditConflictPrompt, parseUserEditConflictAnswer } from './user-edit-conflict-prompt.js';
 

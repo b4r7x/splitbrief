@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createGroqProvider } from './groq.js';
-import { setupFetchMock, setupEnvMock } from './__test-helpers__.js';
+import { setupFetchMock, setupEnvMock } from '#testing/helpers/fetch-mock.js';
 
 // Shared contract (listModels / detectContextLength / error paths / overrides) lives in provider-contract.test.ts.
 // This file covers only Groq-specific metadata mapping: context_window → contextLength.

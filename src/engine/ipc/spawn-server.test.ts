@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, rmSync, existsSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer, type Server } from 'node:net';
+import { IPC_SOCK_FILE, LOCKFILE } from '../../core/paths.js';
+import { HEARTBEAT_STALENESS_MS } from './constants.js';
+import { writeLockfile } from './lockfile.js';
 
 // Mock child_process before importing spawn-server
 vi.mock('node:child_process', async (importOriginal) => {
@@ -13,21 +17,10 @@ vi.mock('node:child_process', async (importOriginal) => {
   };
 });
 
-// Mock lockfile module to control checkServerStatus
-vi.mock('./lockfile.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./lockfile.js')>();
-  return {
-    ...actual,
-    checkServerStatus: vi.fn(),
-  };
-});
-
 import { spawn } from 'node:child_process';
-import { checkServerStatus } from './lockfile.js';
 import { spawnServer } from './spawn-server.js';
 
 const mockSpawn = vi.mocked(spawn);
-const mockCheckServerStatus = vi.mocked(checkServerStatus);
 
 function makeChild(pid = 12345) {
   return {
@@ -59,6 +52,25 @@ function closeSocketServer(): Promise<void> {
   });
 }
 
+function currentProcessStartTimeMs(): number {
+  const raw = execSync(`ps -o lstart= -p ${process.pid}`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  const parsed = Date.parse(raw);
+  return Number.isNaN(parsed) ? Date.now() : parsed;
+}
+
+async function writeServerLockfile(overrides?: Partial<Parameters<typeof writeLockfile>[1]>): Promise<void> {
+  const now = Date.now();
+  await writeLockfile(testDir, {
+    pid: process.pid,
+    startTimeMs: currentProcessStartTimeMs(),
+    lastAliveMs: now,
+    sessionId: 'test-session',
+    mode: 'standard',
+    feature: 'test feature',
+    ...overrides,
+  });
+}
+
 beforeEach(() => {
   testDir = join(tmpdir(), `spawn-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   mkdirSync(testDir, { recursive: true });
@@ -72,23 +84,12 @@ afterEach(async () => {
 });
 
 describe('spawnServer', () => {
-  it('returns { ok: true } when checkServerStatus returns alive', async () => {
+  it('returns { ok: true } when the real lockfile is alive and the socket accepts connections', async () => {
     const child = makeChild(42);
     mockSpawn.mockReturnValue(child);
 
-    await listenOnSocket(join(testDir, 'ipc.sock'));
-    mockCheckServerStatus.mockResolvedValue({
-      alive: true,
-      data: {
-        version: 1,
-        pid: 42,
-        startTimeMs: Date.now(),
-        lastAliveMs: Date.now(),
-        sessionId: 'test-session',
-        mode: 'standard',
-        feature: 'test feature',
-      },
-    });
+    await writeServerLockfile();
+    await listenOnSocket(join(testDir, IPC_SOCK_FILE));
 
     const result = await spawnServer({
       sessionDir: testDir,
@@ -101,22 +102,18 @@ describe('spawnServer', () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.pid).toBe(42);
+      expect(result.pid).toBe(process.pid);
       expect(result.sessionId).toBe('test-session');
     }
   });
 
   it('returns { ok: false, reason: "timeout..." } when lockfile never appears', async () => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
 
     const child = makeChild(99);
     mockSpawn.mockReturnValue(child);
 
-    mockCheckServerStatus.mockResolvedValue({
-      alive: false,
-      crashed: false,
-      data: null,
-    });
+    rmSync(join(testDir, LOCKFILE), { force: true });
 
     const resultPromise = spawnServer({
       sessionDir: testDir,
@@ -137,23 +134,40 @@ describe('spawnServer', () => {
     }
   });
 
+  it('returns { ok: false, reason: "timeout..." } when the real lockfile heartbeat is stale', async () => {
+    const child = makeChild(88);
+    mockSpawn.mockReturnValue(child);
+
+    await writeServerLockfile({
+      lastAliveMs: Date.now() - HEARTBEAT_STALENESS_MS - 1,
+    });
+
+    const resultPromise = spawnServer({
+      sessionDir: testDir,
+      sessionId: 'test-session',
+      projectDir: '/tmp/project',
+      feature: 'test feature',
+      mode: 'standard',
+      configPath: '/tmp/project/.diptych/config.yaml',
+    });
+
+    const result = await resultPromise;
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain('timeout');
+    }
+  });
+
   it('spawned child has detached: true', async () => {
     const child = makeChild(77);
     mockSpawn.mockReturnValue(child);
 
-    await listenOnSocket(join(testDir, 'ipc.sock'));
-    mockCheckServerStatus.mockResolvedValue({
-      alive: true,
-      data: {
-        version: 1,
-        pid: 77,
-        startTimeMs: Date.now(),
-        lastAliveMs: Date.now(),
-        sessionId: 'session',
-        mode: 'instant',
-        feature: 'feature',
-      },
+    await writeServerLockfile({
+      sessionId: 'session',
+      mode: 'instant',
+      feature: 'feature',
     });
+    await listenOnSocket(join(testDir, IPC_SOCK_FILE));
 
     await spawnServer({
       sessionDir: testDir,

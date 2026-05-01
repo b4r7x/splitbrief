@@ -1,6 +1,6 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { Planner } from '../planners/types.js';
-import type { Implementer } from '../implementers/types.js';
+import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
 import type { RunnerKind } from '../../core/schemas/enums.js';
 import { warnStderr } from '../../lib/warn.js';
 
@@ -34,10 +34,10 @@ const PLANNER_FACTORIES: Record<RunnerKind, (config: Config, initialSessionId?: 
   },
 };
 
-const IMPLEMENTER_FACTORIES: Record<RunnerKind, (config: Config) => Implementer> = {
-  cli: (c) => {
+const IMPLEMENTER_FACTORIES: Record<RunnerKind, (config: Config, options?: ImplementerFactoryOptions) => Implementer> = {
+  cli: (c, options) => {
     if (c.implementer.kind !== 'cli') throw runnerConfigError.kindMismatch('cli', c.implementer.kind, 'implementer');
-    return createCliImplementer(c.implementer);
+    return createCliImplementer(c.implementer, options);
   },
   api: createApiImplementer,
   shell: createShellImplementer,
@@ -55,8 +55,8 @@ export function createPlanner(config: Config, initialSessionId?: string | null):
   return planner;
 }
 
-export function createImplementer(config: Config): Implementer {
+export function createImplementer(config: Config, options?: ImplementerFactoryOptions): Implementer {
   const factory = IMPLEMENTER_FACTORIES[config.implementer.kind];
   if (!factory) throw runnerConfigError.invalidKind(config.implementer.kind, 'implementer');
-  return factory(config);
+  return factory(config, options);
 }

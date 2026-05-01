@@ -27,7 +27,7 @@ export async function runPreHooks(
   const entries = hooks?.[event] ?? [];
   for (const entry of entries) {
     const outcome = await runHook(entry, eventPayload, ctx);
-    if (outcome.kind === 'deny' && entry.on_failure === 'block') {
+    if (outcome.kind === 'deny') {
       return { allow: false, reason: outcome.message ?? `${event} hook denied` };
     }
     if (outcome.kind === 'crash' && entry.on_failure === 'block') {

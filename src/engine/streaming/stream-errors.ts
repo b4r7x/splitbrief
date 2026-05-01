@@ -1,6 +1,6 @@
 import { error } from '../../utils/error.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { formatErrorWithHint } from '../errors/hints.js';
+import { formatErrorWithHint } from '../error-hints.js';
 import { redactSecrets } from '../../utils/redact.js';
 
 export { STREAM_IDLE_TIMEOUT_MS as STREAM_TIMEOUT_MS } from '../constants.js';

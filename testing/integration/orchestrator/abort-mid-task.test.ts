@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
-import { runTaskLoop } from '../../../src/engine/orchestrator/task-loop.js';
+import { runTaskLoop } from '../../../src/engine/orchestrator/task/loop.js';
 import { createValidator } from '../../../src/engine/orchestrator/validation.js';
 import { abortStore } from '../../../src/stores/workflow/abort.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';

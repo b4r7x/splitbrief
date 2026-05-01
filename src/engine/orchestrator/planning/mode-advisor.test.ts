@@ -15,7 +15,7 @@ describe('adviseMode — risk classification', () => {
     expect(result.kind).toBe('downgrade');
     expect(result.suggestedMode).toBe('instant');
     expect(result.risk).toBe('trivial');
-    expect(result.shouldAdvise).toBe(true);
+    expect(result.kind).not.toBe('none');
   });
 
   it('auth/security prompt in quick suggests speckit (upgrade)', () => {
@@ -23,14 +23,14 @@ describe('adviseMode — risk classification', () => {
     expect(result.kind).toBe('upgrade');
     expect(result.suggestedMode).toBe('speckit');
     expect(result.risk).toBe('high');
-    expect(result.shouldAdvise).toBe(true);
+    expect(result.kind).not.toBe('none');
   });
 
   it('vague prompt emits missing-context', () => {
     const result = adviseMode('improve it', 'standard');
     expect(result.kind).toBe('missing-context');
     expect(result.missing).toContain('vague target');
-    expect(result.shouldAdvise).toBe(true);
+    expect(result.kind).not.toBe('none');
   });
 
   it('non-trivial prompt without area/file/module emits missing-context', () => {
@@ -50,13 +50,12 @@ describe('adviseMode — risk classification', () => {
     const result = adviseMode('fix null check in src/utils/parser.ts', 'standard');
     expect(result.kind).toBe('downgrade');
     expect(result.suggestedMode).toBe('quick');
-    expect(result.shouldAdvise).toBe(true);
+    expect(result.kind).not.toBe('none');
   });
 
   it('matching selected mode emits none', () => {
     const result = adviseMode('add oauth login flow with JWT refresh tokens', 'speckit');
     expect(result.kind).toBe('none');
-    expect(result.shouldAdvise).toBe(false);
   });
 
   it('low confidence does NOT upgrade or downgrade', () => {
@@ -80,27 +79,26 @@ describe('adviseMode — trivial patterns', () => {
       'speckit',
     ],
     ['fix typo', 'instant', false, 'instant'],
-  ])('prompt=%s mode=%s → shouldAdvise=%s suggested=%s', (prompt, mode, shouldAdvise, suggested) => {
+  ])('prompt=%s mode=%s → expectAdvice=%s suggested=%s', (prompt, mode, expectAdvice, suggested) => {
     const result = adviseMode(prompt, mode);
-    expect(result.shouldAdvise).toBe(shouldAdvise);
+    expect(result.kind !== 'none').toBe(expectAdvice);
     expect(result.suggestedMode).toBe(suggested);
   });
 
   it('handles empty prompt without advising', () => {
     const result = adviseMode('', 'standard');
     expect(result.kind).toBe('none');
-    expect(result.shouldAdvise).toBe(false);
+    expect(result.kind).toBe('none');
   });
 
   it('handles whitespace-only prompt without advising', () => {
     const result = adviseMode('   \n  ', 'standard');
     expect(result.kind).toBe('none');
-    expect(result.shouldAdvise).toBe(false);
   });
 
   it('matches keywords case-insensitively', () => {
     const result = adviseMode('Fix TYPO here', 'standard');
-    expect(result.shouldAdvise).toBe(true);
+    expect(result.kind).not.toBe('none');
     expect(result.suggestedMode).toBe('instant');
   });
 });

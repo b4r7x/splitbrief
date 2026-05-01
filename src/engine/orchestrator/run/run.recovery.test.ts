@@ -9,7 +9,7 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import { readActive, writeActive } from '../../../core/sessions/lifecycle.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { buildValidationFailedRecoveryIssue } from '../recovery.js';
+import { buildValidationFailedRecoveryIssue } from '../recovery/recovery.js';
 import { runWorkflow } from './run.js';
 
 let dirs: string[] = [];

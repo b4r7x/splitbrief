@@ -1,4 +1,4 @@
-import { readFileSync, statSync } from 'node:fs';
+import { stat, readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { Parser, Language } from 'web-tree-sitter';
 import type { Node } from 'web-tree-sitter';
@@ -97,13 +97,19 @@ function extractImports(source: string): string[] {
   return matches.flatMap(m => (m[1] !== undefined ? [m[1]] : []));
 }
 
-export async function parseFile(absPath: string): Promise<FileNode> {
+export async function parseFile(absPath: string): Promise<FileNode | null> {
   if (!parserInitialized) {
     await initParser();
   }
 
-  const stat = statSync(absPath);
-  const source = readFileSync(absPath, 'utf8');
+  let fileStat: Awaited<ReturnType<typeof stat>>;
+  let source: string;
+  try {
+    fileStat = await stat(absPath);
+    source = await readFile(absPath, 'utf8');
+  } catch {
+    return null;
+  }
 
   const parser = new Parser();
   parser.setLanguage(getLanguage(absPath));
@@ -148,7 +154,7 @@ export async function parseFile(absPath: string): Promise<FileNode> {
     path: absPath,
     symbols,
     imports: extractImports(source),
-    sizeBytes: stat.size,
-    mtimeMs: stat.mtimeMs,
+    sizeBytes: fileStat.size,
+    mtimeMs: fileStat.mtimeMs,
   };
 }

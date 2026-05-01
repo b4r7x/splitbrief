@@ -60,7 +60,7 @@ describe('hooks integration flow', () => {
     createTestGitRepo(projectDir);
 
     const recorded: EngineEvent[] = [];
-    const { callbacks } = makeCallbacks({ onExternalChanges: async () => true });
+    const { callbacks } = makeCallbacks();
 
     const config = makeConfig({
       planner: {
@@ -118,7 +118,7 @@ describe('hooks integration flow', () => {
     createTestGitRepo(projectDir);
 
     const recorded: EngineEvent[] = [];
-    const { callbacks } = makeCallbacks({ onExternalChanges: async () => true });
+    const { callbacks } = makeCallbacks();
 
     const config = makeConfig({
       planner: {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createPlannerBase } from './base.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -88,6 +88,23 @@ A test task.
     expect(result.phases).toHaveLength(1);
     expect(result.phases![0]!.text).toContain('id: t1');
     expect(result.phases![0]!.rawOutput).toBe('raw quick output');
+  });
+
+  it('instantPlan emits the instant-planning phase', async () => {
+    const onPhase = vi.fn();
+    const planner = createPlannerBase({
+      invokePlan: async () => ({ text: '', usage: null }),
+      invokeEscalate: async () => ({ text: '', usage: null }),
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+    });
+    const instantPlan = planner.instantPlan;
+    if (!instantPlan) throw new Error('Expected instantPlan to be implemented');
+
+    await instantPlan('feature', projectDir, { onOutput: () => {}, onPhase });
+
+    expect(onPhase).toHaveBeenCalledWith('instant-planning');
+    expect(onPhase).not.toHaveBeenCalledWith('quick-planning');
   });
 });
 

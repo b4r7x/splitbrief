@@ -6,6 +6,8 @@ import { loadState } from '../core/state/persistence.js';
 import { readActive } from '../core/sessions/lifecycle.js';
 import { warnStderr } from '../lib/warn.js';
 import { runWorkflow } from '../engine/orchestrator/run/run.js';
+import { modelCacheStore } from '../stores/discovery/model-cache.js';
+import { attachmentsStore } from '../stores/workflow/attachments.js';
 import { cliError } from './errors.js';
 import type { CollectedReadiness } from '../core/readiness/collect.js';
 
@@ -78,11 +80,12 @@ export async function runHeadless(
     config,
     headless: true,
     sinks: buildNoopSinks(),
+    modelCache: modelCacheStore,
+    drainPendingAttachments: () => attachmentsStore.drain(),
     savedState,
     sessionId,
     callbacks: {
       onApprovalNeeded: async () => ({ approved: true }),
-      onExternalChanges: async () => true,
       onQuestionAsked: async () => '',
       onBudgetExceeded: async () => true,
       onBudgetPaused: async (currentCost, maxBudget) => {

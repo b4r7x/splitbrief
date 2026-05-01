@@ -1,5 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { readJsonSafeAsync, readFileSafeAsync } from '../../lib/fs.js';
 import type { McpResourceDescriptor, McpResourceContent } from './types.js';
 import { sessionDir, SPEC_FILE, PLAN_FILE, TASKS_FILE, STATE_FILE, EVIDENCE_FILE, DRIFT_REPORT_FILE } from '../../core/paths.js';
 import { listAllSessions } from '../../core/sessions/io.js';
@@ -15,8 +16,8 @@ export type McpResolverConfig = {
 };
 
 export type McpResolver = {
-  listResources(): McpResourceDescriptor[];
-  readResource(uri: string): McpResourceContent | null;
+  listResources(): Promise<McpResourceDescriptor[]>;
+  readResource(uri: string): Promise<McpResourceContent | null>;
 };
 
 const BASE = 'mcp://diptych';
@@ -28,24 +29,6 @@ function sessionsUri(): string {
 
 function sessionBase(id: string): string {
   return `${BASE}/sessions/${id}`;
-}
-
-function readFileSafe(path: string): string | null {
-  try {
-    return readFileSync(path, 'utf-8');
-  } catch {
-    return null;
-  }
-}
-
-function readJsonSafe(path: string): unknown | null {
-  const content = readFileSafe(path);
-  if (!content) return null;
-  try {
-    return JSON.parse(content);
-  } catch {
-    return null;
-  }
 }
 
 function parseTasksSafe(tasksContent: string) {
@@ -112,9 +95,9 @@ function extractIdFromBlock(block: string): string | null {
   return null;
 }
 
-function readBriefHash(projectDir: string, sessionId: string): string | null {
+async function readBriefHash(projectDir: string, sessionId: string): Promise<string | null> {
   const path = join(sessionDir(projectDir, sessionId), 'brief-hash.json');
-  const content = readFileSafe(path);
+  const content = await readFileSafeAsync(path);
   if (!content) return null;
   try {
     const parsed: unknown = JSON.parse(content);
@@ -127,31 +110,31 @@ function readBriefHash(projectDir: string, sessionId: string): string | null {
   }
 }
 
-function readGitHead(projectDir: string): string | null {
+async function readGitHead(projectDir: string): Promise<string | null> {
   const path = join(projectDir, '.git', 'HEAD');
-  const content = readFileSafe(path);
+  const content = await readFileSafeAsync(path);
   if (!content) return null;
   const trimmed = content.trim();
   if (/^[0-9a-f]{40}$/i.test(trimmed)) return trimmed;
   return null;
 }
 
-function hasCanonicalManifestArtifacts(projectDir: string, sessionId: string): boolean {
+async function hasCanonicalManifestArtifacts(projectDir: string, sessionId: string): Promise<boolean> {
   const sDir = sessionDir(projectDir, sessionId);
-  const summaryResult = SessionSchema.safeParse(readJsonSafe(join(sDir, SUMMARY_FILE)));
-  const stateResult = WorkflowStateSchema.safeParse(readJsonSafe(join(sDir, STATE_FILE)));
+  const summaryResult = SessionSchema.safeParse(await readJsonSafeAsync(join(sDir, SUMMARY_FILE)));
+  const stateResult = WorkflowStateSchema.safeParse(await readJsonSafeAsync(join(sDir, STATE_FILE)));
   return summaryResult.success && summaryResult.data.summary !== null && stateResult.success;
 }
 
-function buildManifest(
+async function buildManifest(
   projectDir: string,
   sessionId: string,
   diptychVersion: string,
-): Record<string, unknown> | null {
+): Promise<Record<string, unknown> | null> {
   const sDir = sessionDir(projectDir, sessionId);
 
-  const summaryRaw = readJsonSafe(join(sDir, SUMMARY_FILE));
-  const stateRaw = readJsonSafe(join(sDir, STATE_FILE));
+  const summaryRaw = await readJsonSafeAsync(join(sDir, SUMMARY_FILE));
+  const stateRaw = await readJsonSafeAsync(join(sDir, STATE_FILE));
   const summaryResult = SessionSchema.safeParse(summaryRaw);
   const stateResult = WorkflowStateSchema.safeParse(stateRaw);
 
@@ -171,9 +154,9 @@ function buildManifest(
   const taskIds = state.tasks.map(t => t.id);
   const existingTaskFiles = taskIds.map(id => `tasks/${id}.md`);
 
-  const briefHashFromFile = readBriefHash(projectDir, sessionId);
+  const briefHashFromFile = await readBriefHash(projectDir, sessionId);
   const briefHash = briefHashFromFile ?? hashTaskBrief(state.tasks);
-  const sourceCommit = readGitHead(projectDir);
+  const sourceCommit = await readGitHead(projectDir);
   const generatedAt = session.completedAt !== null
     ? new Date(session.completedAt).toISOString()
     : new Date(session.startedAt).toISOString();
@@ -202,7 +185,7 @@ function buildManifest(
 export function createResolver(config: McpResolverConfig): McpResolver {
   const { projectDir, sessionIds, diptychVersion } = config;
 
-  function listResources(): McpResourceDescriptor[] {
+  async function listResources(): Promise<McpResourceDescriptor[]> {
     const descriptors: McpResourceDescriptor[] = [];
 
     descriptors.push({
@@ -214,7 +197,7 @@ export function createResolver(config: McpResolverConfig): McpResolver {
     for (const id of sessionIds) {
       const sDir = sessionDir(projectDir, id);
 
-      if (hasCanonicalManifestArtifacts(projectDir, id)) {
+      if (await hasCanonicalManifestArtifacts(projectDir, id)) {
         descriptors.push({
           uri: `${sessionBase(id)}/manifest.json`,
           name: `Session manifest (${id})`,
@@ -245,7 +228,7 @@ export function createResolver(config: McpResolverConfig): McpResolver {
 
       const tasksPath = join(sDir, TASKS_FILE);
       if (existsSync(tasksPath)) {
-        const content = readFileSafe(tasksPath);
+        const content = await readFileSafeAsync(tasksPath);
         if (content) {
           const tasks = parseTasksSafe(content);
           for (const task of tasks) {
@@ -262,7 +245,7 @@ export function createResolver(config: McpResolverConfig): McpResolver {
     return descriptors;
   }
 
-  function readResource(uri: string): McpResourceContent | null {
+  async function readResource(uri: string): Promise<McpResourceContent | null> {
     try {
       if (uri === sessionsUri()) {
         const allSessions = listAllSessions(projectDir);
@@ -291,19 +274,19 @@ export function createResolver(config: McpResolverConfig): McpResolver {
       const sDir = sessionDir(projectDir, id);
 
       if (resource === 'manifest.json') {
-        const manifest = buildManifest(projectDir, id, diptychVersion);
+        const manifest = await buildManifest(projectDir, id, diptychVersion);
         if (manifest === null) return null;
         return { uri, mimeType: 'application/json', text: JSON.stringify(manifest, null, 2) };
       }
 
       if (resource === 'spec.md') {
-        const content = readFileSafe(join(sDir, SPEC_FILE));
+        const content = await readFileSafeAsync(join(sDir, SPEC_FILE));
         if (!content) return null;
         return { uri, mimeType: 'text/markdown', text: content };
       }
 
       if (resource === 'plan.md') {
-        const content = readFileSafe(join(sDir, PLAN_FILE));
+        const content = await readFileSafeAsync(join(sDir, PLAN_FILE));
         if (!content) return null;
         return { uri, mimeType: 'text/markdown', text: content };
       }
@@ -313,7 +296,7 @@ export function createResolver(config: McpResolverConfig): McpResolver {
         if (!existsSync(tasksPath)) {
           return { uri, mimeType: 'application/json', text: '[]' };
         }
-        const content = readFileSafe(tasksPath);
+        const content = await readFileSafeAsync(tasksPath);
         if (!content) return { uri, mimeType: 'application/json', text: '[]' };
         const tasks = parseTasksSafe(content);
         const result = tasks.map(t => ({
@@ -329,7 +312,7 @@ export function createResolver(config: McpResolverConfig): McpResolver {
       if (resource.startsWith('tasks/')) {
         const taskId = resource.slice('tasks/'.length);
         const tasksPath = join(sDir, TASKS_FILE);
-        const content = readFileSafe(tasksPath);
+        const content = await readFileSafeAsync(tasksPath);
         if (!content) return null;
         const block = extractTaskBlock(content, taskId);
         if (!block) return null;
@@ -337,25 +320,25 @@ export function createResolver(config: McpResolverConfig): McpResolver {
       }
 
       if (resource === 'evidence.json') {
-        const content = readFileSafe(join(sDir, EVIDENCE_FILE));
+        const content = await readFileSafeAsync(join(sDir, EVIDENCE_FILE));
         if (!content) return null;
         return { uri, mimeType: 'application/json', text: content };
       }
 
       if (resource === 'drift-report.json') {
-        const content = readFileSafe(join(sDir, DRIFT_REPORT_FILE));
+        const content = await readFileSafeAsync(join(sDir, DRIFT_REPORT_FILE));
         if (!content) return null;
         return { uri, mimeType: 'application/json', text: content };
       }
 
       if (resource === 'state.json') {
-        const content = readFileSafe(join(sDir, STATE_FILE));
+        const content = await readFileSafeAsync(join(sDir, STATE_FILE));
         if (!content) return null;
         return { uri, mimeType: 'application/json', text: content };
       }
 
       if (resource === 'summary.json') {
-        const content = readFileSafe(join(sDir, SUMMARY_FILE));
+        const content = await readFileSafeAsync(join(sDir, SUMMARY_FILE));
         if (!content) return null;
         return { uri, mimeType: 'application/json', text: content };
       }

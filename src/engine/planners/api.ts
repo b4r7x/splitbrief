@@ -8,12 +8,12 @@ import { createPlannerBase } from './base.js';
 import { getProvider } from '../providers/registry.js';
 import { createClientFromProvider } from '../providers/client.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
-import { streamCompletion, type StreamClient } from '../providers/openai-stream.js';
-import { streamAnthropicCompletion } from '../providers/anthropic/stream.js';
 import { providerError } from '../providers/errors.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import { isProviderId } from '../../core/schemas/enums.js';
 import { modelSupportsEffort, modelSupportsImages } from '../providers/capability-inference.js';
+import { dispatchStreamCompletion } from '../providers/dispatch-stream.js';
+import type { StreamClient } from '../providers/openai-stream.js';
 import type OpenAI from 'openai';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
@@ -35,28 +35,17 @@ async function invokeApi(
   images?: Attachment[] | undefined,
 ): Promise<InvokeResult> {
   const messages = buildMessages(prompt, priorMessages);
-
-  if (planner.provider === 'anthropic') {
-    return streamAnthropicCompletion({
-      apiKey: planner.apiKey,
-      apiBase: planner.apiBase ?? '',
-      model,
-      messages,
-      temperature: 0.3,
-      onProgress: onOutput,
-      ...(effort !== undefined && { effort }),
-      ...(images && images.length > 0 ? { images } : {}),
-    });
-  }
-
-  if (!client) throw providerError.expectedOpenAIClient(planner.provider);
-
-  return streamCompletion(client as StreamClient, model, messages, {
+  return dispatchStreamCompletion({
+    provider: planner.provider,
+    client: client as StreamClient | null,
+    apiKey: planner.apiKey,
+    apiBase: planner.apiBase ?? '',
+    model,
+    messages,
     temperature: 0.3,
     onProgress: onOutput,
-    endpoint: { provider: planner.provider, apiBase: planner.apiBase },
-    ...(effort !== undefined && { effort }),
-    ...(images && images.length > 0 ? { images } : {}),
+    effort,
+    images,
   });
 }
 

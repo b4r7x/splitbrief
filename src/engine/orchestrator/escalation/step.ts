@@ -5,7 +5,7 @@ import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import { formatValidationError } from '../validation.js';
 import type { WorkflowContext } from '../types.js';
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave } from '../state-ops.js';
-import { validateCommitAndAdvance } from '../task-commit.js';
+import { validateCommitAndAdvance } from '../task/commit.js';
 import type { UsageCategory } from '../tokens.js';
 import {
   captureCurrentFileContents,
@@ -16,7 +16,7 @@ import {
   restoreDirtyFilesFromSnapshot,
   type ChangedFilesSnapshot,
   type GateDecision,
-} from '../tiered-approval.js';
+} from '../approval/tiered-approval.js';
 import { publishError, publishRecoveryPrompted, publishUserEditConflict } from '../events.js';
 import {
   createEvidenceLedger,
@@ -24,10 +24,10 @@ import {
   recordApprovalEvidence,
   recordRejectionEvidence,
   writeEvidenceLedger,
-} from '../evidence.js';
+} from '../evidence/evidence.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
-import { createApprovalPromotionConflict } from '../user-edit-conflicts.js';
-import { buildApprovalPromotionConflictRecoveryIssue } from '../recovery.js';
+import { createApprovalPromotionConflict } from '../user-edit/conflicts.js';
+import { buildApprovalPromotionConflictRecoveryIssue } from '../recovery/recovery.js';
 
 export const MAX_HINT_ERROR_LENGTH = 4000;
 
@@ -110,7 +110,7 @@ export async function validateAndCommit(
     };
   }
   if (preApprovedChangedFiles === undefined) {
-    const preApprovalChangedFileContents = captureCurrentFileContents(ctx.projectDir, changedFiles);
+    const preApprovalChangedFileContents = await captureCurrentFileContents(ctx.projectDir, changedFiles);
     const changedFilesGate = await gateChangedFiles({
       changedFiles,
       task,
@@ -265,7 +265,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   const actualChangedFiles = stagedChangedFiles.length > 0
     ? stagedChangedFiles
     : await getChangedFilesSinceSnapshot(ctx.projectDir, ctx.taskStartSnapshot);
-  const preApprovalChangedFileContents = captureCurrentFileContents(ctx.projectDir, actualChangedFiles);
+  const preApprovalChangedFileContents = await captureCurrentFileContents(ctx.projectDir, actualChangedFiles);
   const changedFilesGate = await gateChangedFiles({
     changedFiles: actualChangedFiles,
     task,
@@ -312,7 +312,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   persistRetryApprovalEvidence(ctx, state, task, changedFilesGate);
 
   if (stagedChangedFiles.length > 0) {
-    const promoted = promoteStagedChanges(ctx.projectDir, staged.projectDir, stagedChangedFiles, preApprovalChangedFileContents);
+    const promoted = await promoteStagedChanges(ctx.projectDir, staged.projectDir, stagedChangedFiles, preApprovalChangedFileContents);
     if (promoted.conflictedFiles.length > 0) {
       state = await handleApprovalTimeUserEditConflict({
         ctx,

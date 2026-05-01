@@ -2,12 +2,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createImplementerBase, type ImplementerBaseConfig } from './base.js';
+import type { ImplementerPublisher } from './types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import type { InvokeResult } from '../runners/types.js';
+
+type PublisherEvent =
+  | { type: 'implementer_generate_running'; phase: string; taskId: string; file?: string | undefined }
+  | { type: 'implementer_generate_done'; phase: string; taskId: string; file: string; duration: number }
+  | { type: 'implementer_generate_failed'; phase: string; taskId: string; model: string };
 
 let projectDir: string;
 
@@ -31,6 +36,14 @@ function makeBaseConfig(overrides?: Partial<ImplementerBaseConfig>): Implementer
   };
 }
 
+function makePublisher(events: PublisherEvent[]): ImplementerPublisher {
+  return {
+    publishRunning: (event) => events.push({ type: 'implementer_generate_running', ...event }),
+    publishDone: (event) => events.push({ type: 'implementer_generate_done', ...event }),
+    publishFailed: (event) => events.push({ type: 'implementer_generate_failed', ...event }),
+  };
+}
+
 describe('createImplementerBase — bus events', () => {
   it('publishes implementer_generate_running then implementer_generate_done on success', async () => {
     mkdirSync(join(projectDir, 'src'), { recursive: true });
@@ -40,13 +53,13 @@ describe('createImplementerBase — bus events', () => {
       text: '```ts\nexport const hello = () => "world";\n```',
       usage: { inputTokens: 10, outputTokens: 20 },
     });
-    const implementer = createImplementerBase(makeBaseConfig({ invoke }));
     const task = makeTask({ id: 'T001', file: 'src/hello.ts', action: 'modify' });
-    const { bus, events } = makeBusRecorder();
+    const events: PublisherEvent[] = [];
+    const implementer = createImplementerBase(makeBaseConfig({ invoke, publisher: makePublisher(events) }));
 
     const result = await implementer.implement({
       task, projectDir, config: makeConfig(), context: defaultContext,
-      onOutput: vi.fn(), bus, phase: 'implementing',
+      onOutput: vi.fn(), phase: 'implementing',
     });
 
     expect(result.success).toBe(true);
@@ -76,13 +89,13 @@ describe('createImplementerBase — bus events', () => {
 
   it('publishes implementer_generate_running then implementer_generate_failed on invoke error', async () => {
     const invoke = vi.fn().mockRejectedValue(new Error('connection refused'));
-    const implementer = createImplementerBase(makeBaseConfig({ invoke }));
     const task = makeTask({ id: 'T002', file: 'src/fail.ts', action: 'create' });
-    const { bus, events } = makeBusRecorder();
+    const events: PublisherEvent[] = [];
+    const implementer = createImplementerBase(makeBaseConfig({ invoke, publisher: makePublisher(events) }));
 
     const result = await implementer.implement({
       task, projectDir, config: makeConfig(), context: defaultContext,
-      onOutput: vi.fn(), bus, phase: 'implementing',
+      onOutput: vi.fn(), phase: 'implementing',
     });
 
     expect(result.success).toBe(false);

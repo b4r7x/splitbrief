@@ -7,7 +7,7 @@ export type HookModuleFunction = (event: EngineEvent, ctx: HookContext) => Promi
 
 export type LoadResult =
   | { ok: true; fn: HookModuleFunction }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; error?: unknown };
 
 /**
  * Dynamically import a hook module by relative or absolute path.
@@ -28,6 +28,6 @@ export async function loadHookModule(modulePath: string, projectDir: string): Pr
     }
     return { ok: true, fn: fn as HookModuleFunction };
   } catch (err) {
-    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+    return { ok: false, reason: err instanceof Error ? err.message : String(err), error: err };
   }
 }

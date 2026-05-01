@@ -5,7 +5,7 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import { timeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
 import { toTokenDelta } from '../streaming/token-utils.js';
 import { STREAM_TIMEOUT_MS, throwMappedError } from '../streaming/stream-errors.js';
-import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 
 interface StreamCompletionOptions {
   temperature: number;
@@ -53,14 +53,14 @@ export interface StreamClient {
   };
 }
 
-function attachImagesToLastUserMessage(messages: ChatMessage[], images: Attachment[]): ChatMessage[] {
+async function attachImagesToLastUserMessage(messages: ChatMessage[], images: Attachment[]): Promise<ChatMessage[]> {
   if (images.length === 0) return messages;
-  const parts: OpenAIImagePart[] = images.map(img => ({
-    type: 'image_url',
+  const parts: OpenAIImagePart[] = await Promise.all(images.map(async img => ({
+    type: 'image_url' as const,
     image_url: {
-      url: `data:${img.mimeType};base64,${readFileSync(img.path).toString('base64')}`,
+      url: `data:${img.mimeType};base64,${(await readFile(img.path)).toString('base64')}`,
     },
-  }));
+  })));
   const out = messages.map(m => ({ ...m }));
   for (let i = out.length - 1; i >= 0; i--) {
     const msg = out[i]!;
@@ -84,7 +84,7 @@ export async function streamCompletion(
   const { temperature, onProgress, endpoint, maxTokens, signal, effort, images } = opts;
   const baseMessages: ChatMessage[] = messages.map(m => ({ role: m.role, content: m.content }));
   const finalMessages = images && images.length > 0
-    ? attachImagesToLastUserMessage(baseMessages, images)
+    ? await attachImagesToLastUserMessage(baseMessages, images)
     : baseMessages;
   let stream: AsyncIterable<StreamChunk>;
   try {

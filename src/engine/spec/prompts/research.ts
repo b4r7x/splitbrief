@@ -9,21 +9,21 @@ export function buildResearchPrompt(feature: string, projectContext: string, ski
       { heading: 'Project Context', body: `${projectContext}${skillsContext ? `\n${skillsContext}` : ''}` },
       instructionsSection(`Analyze this codebase thoroughly:
 
-1. **Read key files**  -  Identify and read the most important source files: entry points, core modules, configuration, and type definitions.
+1. **Read key files** -- Identify and read the most important source files: entry points, core modules, configuration, and type definitions.
 
-2. **Understand architecture**  -  Map out:
+2. **Understand architecture** -- Map out:
    - How the project is structured (directories, module boundaries)
    - The data flow between components
    - Key abstractions and patterns used
    - How configuration and state are managed
 
-3. **Identify relevant code**  -  Find:
+3. **Identify relevant code** -- Find:
    - Files that will need to be modified for this feature
    - Existing patterns that the new code should follow
    - Related functionality that already exists
    - Shared types, utilities, and helpers that can be reused
 
-4. **Note constraints**  -  Document:
+4. **Note constraints** -- Document:
    - Coding conventions (naming, style, error handling)
    - Testing patterns and test infrastructure
    - Build and runtime requirements

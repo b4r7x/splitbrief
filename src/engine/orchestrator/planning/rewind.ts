@@ -7,17 +7,14 @@ import { buildRegeneratePrompt } from '../../spec/prompts/plan.js';
 import { publishEvent, createBusTextHandler, publishPlannerStatus } from '../events.js';
 import { addUsageAndSave, transitionAndSave, publishPlanApproved } from '../state-ops.js';
 import { appendMessage } from '../../../core/state/persistence.js';
-import { runApprovalLoop } from '../approval.js';
+import { runApprovalLoop } from '../approval/approval.js';
 import {
   drainAndFormat,
-  regenerateTasks,
-  regenerateTasksIfNeeded,
-  regeneratePlanAndTasks,
   runBriefQualityGate,
   runBriefsApprovalLoop,
-  type PlanningPhaseOptions,
-  type PlanningPhaseResult,
 } from './shared.js';
+import { regenerateTasks, regenerateTasksIfNeeded, regeneratePlanAndTasks } from './regen.js';
+import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 
 type RewindPending = NonNullable<PlanningPhaseOptions['rewindPending']>;
 

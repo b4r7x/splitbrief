@@ -8,7 +8,8 @@ import {
   estimateFormattedTaskPromptTokens,
   routeTaskToImplementerProfile,
 } from './context-routing.js';
-import { formatTaskPrompt, SYSTEM_PREAMBLE } from '../spec/formatter.js';
+import { formatTaskPrompt } from '../spec/prompt-formatter.js';
+import { SYSTEM_PREAMBLE } from '../spec/prompts/system.js';
 import { estimateTokens } from '../spec/token-budget.js';
 
 const context: ProjectContext = {

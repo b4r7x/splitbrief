@@ -9,17 +9,17 @@ import type { EvidenceLedger } from '../../core/schemas/evidence.js';
 import { InputBar } from '../../components/input-bar/input-bar.js';
 import { LabeledRow } from '../../components/labeled-row.js';
 import { ScreenShell } from '../../components/screen-shell.js';
-import { SummaryProgress } from './components/summary-progress.js';
-import { SummaryCostBreakdown } from './components/summary-cost-breakdown.js';
-import { SummaryTaskTable } from './components/summary-task-table.js';
-import { SummaryPhaseTiming } from './components/summary-phase-timing.js';
-import { SummaryEvidence } from './components/summary-evidence.js';
-import { SummaryCheckpoints } from './components/summary-checkpoints.js';
-import { SummaryReviewPacket } from './components/summary-review-packet.js';
+import { SummaryProgress } from './components/progress.js';
+import { SummaryCostBreakdown } from './components/cost-breakdown.js';
+import { SummaryTaskTable } from './components/task-table.js';
+import { SummaryPhaseTiming } from './components/phase-timing.js';
+import { SummaryEvidence } from './components/evidence.js';
+import { SummaryCheckpoints } from './components/checkpoints.js';
+import { SummaryReviewPacket } from './components/review-packet.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
-import { readEvidenceLedger } from '../../engine/orchestrator/evidence.js';
+import { readEvidenceLedger } from '../../engine/orchestrator/evidence/evidence.js';
 
 interface SummaryScreenProps {
   commands: SlashCommandDef[];

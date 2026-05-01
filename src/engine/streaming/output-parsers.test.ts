@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { parseTextLine, parseJsonlLine, parseOpencodeLine, accumulateUsage } from './output-parsers.js';
+import { parseTextLine, parseJsonlLine, parseOpencodeLine } from './output-parsers.js';
+import { accumulateUsage } from './token-utils.js';
 
 describe('parseTextLine', () => {
   it('returns empty for blank line', () => {

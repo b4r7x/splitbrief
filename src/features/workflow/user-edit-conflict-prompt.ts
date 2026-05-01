@@ -1,5 +1,5 @@
 import type { RecoveryAction } from '../../core/schemas/enums.js';
-import type { UserEditConflict, UserEditConflictAction } from '../../engine/orchestrator/user-edit-conflicts.js';
+import type { UserEditConflict, UserEditConflictAction } from '../../engine/orchestrator/user-edit/conflicts.js';
 import { formatRecoveryActionChoice } from './recovery-prompt.js';
 
 function formatFiles(files: string[]): string {

@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile, mkdir, utimes, readdir } from 'node:fs/promises
 import { openSync, closeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { simpleGit } from 'simple-git';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
 import type { EventBus, EngineEvent } from '../events/types.js';
@@ -439,11 +439,10 @@ describe('listSnapshots', () => {
     await mkdir(corruptDir, { recursive: true });
     await writeFile(join(corruptDir, 'manifest.json'), '{"invalid": true}');
 
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { manifests } = await listSnapshots(tmp, 'sess-01');
-    warnSpy.mockRestore();
+    const { manifests, corruptedIds } = await listSnapshots(tmp, 'sess-01');
 
     // The corrupted entry is skipped, no throw
     expect(manifests.every(m => m.id !== '0000-corrupt')).toBe(true);
+    expect(corruptedIds).toEqual(['0000-corrupt']);
   });
 });

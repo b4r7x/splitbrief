@@ -11,7 +11,7 @@ import { ensureSessionDir } from '../../core/paths-io.js';
 import { BRIEF_QUALITY_FILE, sessionDir } from '../../core/paths.js';
 import { TASKS_FILE } from '../../core/paths.js';
 import { runPlanningPhase } from './planning/run.js';
-import { createEvidenceLedger, recordRejectionEvidence, writeEvidenceLedger } from './evidence.js';
+import { createEvidenceLedger, recordRejectionEvidence, writeEvidenceLedger } from './evidence/evidence.js';
 import type { WorkflowSinks } from './types.js';
 import type { Planner } from '../planners/types.js';
 import type { Config } from '../../core/schemas/config.js';

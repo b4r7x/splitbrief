@@ -4,12 +4,13 @@ import type { ImplementerCostTier, ImplementerWriteMode } from '../../core/schem
 import { isProviderId } from '../../core/schemas/enums.js';
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { ProjectContext } from '../../core/types/state-actions.js';
-import { findKnownModel, getEffectiveModelId, lookupModelsDevModel, lookupRuntimeModel, type ModelCacheAccessor } from '../providers/model-resolution.js';
-import { formatTaskPrompt, SYSTEM_PREAMBLE } from '../spec/formatter.js';
+import { findKnownModel, getEffectiveModelId, lookupModelsDevModel, lookupRuntimeModel, type ModelCacheAccessor } from '../providers/model/resolution.js';
+import { formatTaskPrompt } from '../spec/prompt-formatter.js';
+import { SYSTEM_PREAMBLE } from '../spec/prompts/system.js';
 import { estimateTokens } from '../spec/token-budget.js';
 
-export type TaskContextFit = 'fits' | 'tight' | 'overflow';
-export type CurrentCodeContextMode = 'none' | 'whole-file' | 'function-level' | 'truncated';
+export type { TaskContextFit, CurrentCodeContextMode } from '../../core/types/workflow-events.js';
+import type { TaskContextFit, CurrentCodeContextMode } from '../../core/types/workflow-events.js';
 
 export interface TaskPromptEstimateOptions {
   task: Task;

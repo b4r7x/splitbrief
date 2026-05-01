@@ -7,12 +7,16 @@ describe('parse', () => {
 
   it('extracts exported symbols from a TS file', async () => {
     const node = await parseFile(resolve('testing/fixtures/codebase/sample.ts'));
+    expect(node).not.toBeNull();
+    if (node === null) return;
     const exportedNames = node.symbols.filter(s => s.exported).map(s => s.name).sort();
     expect(exportedNames).toEqual(['PI', 'Point', 'Vec', 'add']);
   });
 
   it('marks exported flag correctly and detects kind', async () => {
     const node = await parseFile(resolve('testing/fixtures/codebase/sample.ts'));
+    expect(node).not.toBeNull();
+    if (node === null) return;
     const add = node.symbols.find(s => s.name === 'add');
     expect(add?.exported).toBe(true);
     expect(add?.kind).toBe('function');
@@ -30,12 +34,21 @@ describe('parse', () => {
 
   it('extracts import specifiers', async () => {
     const node = await parseFile(resolve('testing/fixtures/codebase/sample.ts'));
+    expect(node).not.toBeNull();
+    if (node === null) return;
     expect(node.imports).toContain('./other.js');
   });
 
   it('captures sizeBytes and mtimeMs from disk stat', async () => {
     const node = await parseFile(resolve('testing/fixtures/codebase/sample.ts'));
+    expect(node).not.toBeNull();
+    if (node === null) return;
     expect(node.sizeBytes).toBeGreaterThan(0);
     expect(node.mtimeMs).toBeGreaterThan(0);
+  });
+
+  it('returns null when filesystem access fails', async () => {
+    const node = await parseFile(resolve('testing/fixtures/codebase/does-not-exist.ts'));
+    expect(node).toBeNull();
   });
 });

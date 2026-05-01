@@ -3,6 +3,24 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { error, matches } from '../utils/error.js';
 
+export function readJsonSafe(path: string): unknown | null {
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+export async function readJsonSafeAsync(path: string): Promise<unknown | null> {
+  try {
+    const raw = await readFile(path, 'utf-8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 export const SECURE_DIR_MODE = 0o700;
 export const SECURE_FILE_MODE = 0o600;
 
@@ -33,6 +51,22 @@ export function checkConfigPermissions(filePath: string): boolean {
     return (perms & 0o022) === 0;
   } catch {
     return false;
+  }
+}
+
+export function readFileSafe(path: string): string | null {
+  try {
+    return readFileSync(path, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+export async function readFileSafeAsync(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, 'utf-8');
+  } catch {
+    return null;
   }
 }
 

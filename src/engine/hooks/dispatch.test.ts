@@ -139,4 +139,13 @@ describe('runHook — kind: module', () => {
     const outcome = await runHook(entry, event, { projectDir, sessionId: 's' });
     expect(outcome.kind).toBe('deny');
   });
+
+  it('returns warn for unrecognized outcome shape instead of silent allow', async () => {
+    const entry = mkModuleEntry({ path: 'testing/fixtures/hooks/invalid-outcome.mjs' });
+    const outcome = await runHook(entry, event, { projectDir, sessionId: 's' });
+    expect(outcome).toEqual({
+      kind: 'warn',
+      message: 'hook returned unrecognized outcome shape',
+    });
+  });
 });

@@ -1,6 +1,5 @@
 import { extname, isAbsolute, join, relative, resolve } from 'node:path';
-import { mkdirSync } from 'node:fs';
-import { readdir } from 'node:fs/promises';
+import { mkdir, readdir } from 'node:fs/promises';
 import { initParser, parseFile } from './parse.js';
 import { createParseCache } from './cache.js';
 import { buildGraph } from './graph.js';
@@ -12,7 +11,6 @@ export interface RepoMapOptions {
   focusFiles?: string[];
   featureText?: string;
   tokenBudget?: number;
-  include?: string[];
   exclude?: string[];
 }
 
@@ -29,13 +27,15 @@ export async function buildRepoMap(projectDir: string, opts: RepoMapOptions = {}
 
   const tokenBudget = opts.tokenBudget ?? 4000;
   const cacheDir = join(projectDir, '.diptych');
-  mkdirSync(cacheDir, { recursive: true });
+  await mkdir(cacheDir, { recursive: true });
   const cache = createParseCache(join(cacheDir, 'repomap.sqlite'));
 
   const absFiles = await discoverFiles(projectDir, opts.exclude);
   if (absFiles.length === 0) return '';
 
-  const nodesAbs = await Promise.all(absFiles.map(f => cache.getOrParse(f, parseFile)));
+  const parsedNodes = await Promise.all(absFiles.map(f => cache.getOrParse(f, parseFile)));
+  const nodesAbs = parsedNodes.filter((node): node is NonNullable<typeof node> => node !== null);
+  if (nodesAbs.length === 0) return '';
 
   const graph = buildGraph(nodesAbs);
   const discoveredPaths = nodesAbs.map(n => n.path);

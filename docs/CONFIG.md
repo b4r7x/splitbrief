@@ -277,7 +277,7 @@ Every env var read by non-test code:
 
 | Variable | Purpose | Consumed by |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | Claude Code planner + Agent SDK auth | `src/engine/providers/anthropic/adapter.ts`, `src/engine/agent-sdk.ts`, config validation |
+| `ANTHROPIC_API_KEY` | Claude Code planner + Agent SDK auth | `src/engine/providers/anthropic/adapter.ts`, `src/engine/agent-sdk-backend.ts`, config validation |
 | `OPENROUTER_API_KEY` | OpenRouter auth | `src/engine/providers/openrouter.ts` |
 | `OPENAI_API_KEY` | OpenAI provider | `src/core/providers/catalog.ts` |
 | `DEEPSEEK_API_KEY` | DeepSeek | catalog |

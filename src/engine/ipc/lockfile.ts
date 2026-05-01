@@ -4,7 +4,8 @@ import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { LOCKFILE } from '../../core/paths.js';
-import { HEARTBEAT_STALENESS_MS } from './heartbeat.js';
+import { SECURE_FILE_MODE } from '../../lib/fs.js';
+import { HEARTBEAT_STALENESS_MS } from './constants.js';
 
 const LockfileDataSchema = z.object({
   version: z.literal(1),
@@ -35,7 +36,7 @@ export async function writeLockfile(
   data: Omit<LockfileData, 'version'>,
 ): Promise<void> {
   const payload: LockfileData = { version: 1, ...data };
-  await writeFile(lockfilePath(sessionDir), JSON.stringify(payload), { mode: 0o600 });
+  await writeFile(lockfilePath(sessionDir), JSON.stringify(payload), { mode: SECURE_FILE_MODE });
 }
 
 export async function updateHeartbeat(sessionDir: string): Promise<void> {
@@ -43,7 +44,7 @@ export async function updateHeartbeat(sessionDir: string): Promise<void> {
   if (!data) return;
   if (data.exitedAt !== undefined) return;
   data.lastAliveMs = Date.now();
-  await writeFile(lockfilePath(sessionDir), JSON.stringify(data), { mode: 0o600 });
+  await writeFile(lockfilePath(sessionDir), JSON.stringify(data), { mode: SECURE_FILE_MODE });
 }
 
 export async function markExited(sessionDir: string, exitCode: number): Promise<void> {
@@ -51,7 +52,7 @@ export async function markExited(sessionDir: string, exitCode: number): Promise<
   if (!data) return;
   data.exitedAt = Date.now();
   data.exitCode = exitCode;
-  await writeFile(lockfilePath(sessionDir), JSON.stringify(data), { mode: 0o600 });
+  await writeFile(lockfilePath(sessionDir), JSON.stringify(data), { mode: SECURE_FILE_MODE });
 }
 
 export async function markCrashed(
@@ -64,7 +65,7 @@ export async function markCrashed(
   data.signal = signal;
   if (cause !== undefined) data.cause = cause;
   if (data.exitedAt === undefined) data.exitedAt = Date.now();
-  await writeFile(lockfilePath(sessionDir), JSON.stringify(data), { mode: 0o600 });
+  await writeFile(lockfilePath(sessionDir), JSON.stringify(data), { mode: SECURE_FILE_MODE });
 }
 
 export async function markSignaled(sessionDir: string, signal: string): Promise<void> {
@@ -72,7 +73,7 @@ export async function markSignaled(sessionDir: string, signal: string): Promise<
   if (!data) return;
   data.signal = signal;
   if (data.exitedAt === undefined) data.exitedAt = Date.now();
-  await writeFile(lockfilePath(sessionDir), JSON.stringify(data), { mode: 0o600 });
+  await writeFile(lockfilePath(sessionDir), JSON.stringify(data), { mode: SECURE_FILE_MODE });
 }
 
 export async function readLockfile(sessionDir: string): Promise<LockfileData | null> {

@@ -7,7 +7,7 @@ import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { useAdvisory } from '../hooks/use-advisory.js';
-import { CostDisplay } from './cost-display.js';
+import { CostDisplay } from './cost/display.js';
 
 interface SidebarProps {
   width: number;

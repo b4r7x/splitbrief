@@ -1,0 +1,497 @@
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import type { Summary } from '../../../../core/schemas/summary.js';
+import type { WorkflowState } from '../../../../core/schemas/workflow.js';
+import type { EvidenceLedger, EvidenceTask } from '../../../../core/schemas/evidence.js';
+import type { RecoveryAction } from '../../../../core/schemas/enums.js';
+import type { ReviewPacket, ReviewPacketFinalReviewStatus } from '../../../../core/schemas/review-packet.js';
+import type { Task, TaskId } from '../../../../core/schemas/task.js';
+import {
+  BRIEF_QUALITY_FILE,
+  DRIFT_CHAINS_FILE,
+  DRIFT_REPORT_FILE,
+  EVIDENCE_FILE,
+  REVIEW_FILE,
+  SESSION_LOG_FILE,
+  STATE_FILE,
+  sessionDir,
+} from '../../../../core/paths.js';
+import { getChangedFiles } from '../../../../lib/git.js';
+import { readDriftChainState } from '../../drift/chain-state.js';
+import type { DriftFinding, DriftReport } from '../../drift/drift.js';
+import type { BuildReviewPacketOptions, BriefQualityArtifact, MissingCollector, PacketEvent } from './build.js';
+
+const REVIEW_EXCERPT_MAX = 500;
+
+function uniqueSorted(values: Iterable<string>): string[] {
+  return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
+}
+
+function taskEvidence(task: Task, ledger: EvidenceLedger | null): EvidenceTask | undefined {
+  return ledger?.tasks.find((entry) => entry.id === task.id);
+}
+
+function expectedEvidenceForTask(task: Task, evidence: EvidenceTask | undefined): string[] {
+  if (evidence) return [...evidence.expectedEvidence];
+  return [...(task.evidence ?? []), ...task.tests];
+}
+
+function missingExpectedEvidence(expectedEvidence: string[], observedEvidence: string[]): string[] {
+  if (expectedEvidence.length === 0) return [];
+  if (observedEvidence.length === 0) return [...expectedEvidence];
+  return expectedEvidence.filter((expected) =>
+    !observedEvidence.some((observed) => observed.includes(expected) || expected.includes(observed))
+  );
+}
+
+export async function resolveChangedFiles(
+  projectDir: string,
+  drift: DriftReport | null,
+  missing: MissingCollector,
+): Promise<string[]> {
+  if (drift) return uniqueSorted(drift.changedFiles);
+  try {
+    return uniqueSorted(await getChangedFiles(projectDir));
+  } catch {
+    missing.addMissing('git status');
+    return [];
+  }
+}
+
+function groupDriftFindings(findings: DriftFinding[]): ReviewPacket['drift']['findingsBySeverity'] {
+  return {
+    info: findings.filter((finding) => finding.severity === 'info'),
+    warning: findings.filter((finding) => finding.severity === 'warning'),
+    error: findings.filter((finding) => finding.severity === 'error'),
+  };
+}
+
+export function buildChanges(
+  state: WorkflowState,
+  ledger: EvidenceLedger | null,
+  drift: DriftReport | null,
+  changedFiles: string[],
+): ReviewPacket['changes'] {
+  const expectedFiles = uniqueSorted(drift?.expectedFiles ?? state.tasks.map((task) => task.file).filter(Boolean));
+  const outOfScopeFiles = uniqueSorted((drift?.findings ?? [])
+    .filter((finding) => finding.code === 'out_of_scope_file' && finding.file)
+    .map((finding) => finding.file ?? ''));
+  const taskFiles = state.tasks.map((task) => {
+    const evidence = taskEvidence(task, ledger);
+    const observedEvidence = evidence?.observedEvidence ?? [];
+    return {
+      taskId: task.id,
+      title: task.title,
+      file: task.file,
+      status: task.status,
+      changedFiles: evidence?.changedFiles ?? (changedFiles.includes(task.file) ? [task.file] : []),
+      expectedEvidence: expectedEvidenceForTask(task, evidence),
+      observedEvidence,
+    };
+  });
+
+  return {
+    changedFiles,
+    expectedFiles,
+    outOfScopeFiles,
+    taskFiles,
+    diffReference: 'Review the working tree with `git diff`; full diffs are intentionally not embedded.',
+  };
+}
+
+export function buildValidation(state: WorkflowState, ledger: EvidenceLedger | null): ReviewPacket['validation'] {
+  const tasks = state.tasks.map((task) => {
+    const evidence = taskEvidence(task, ledger);
+    const expectedEvidence = expectedEvidenceForTask(task, evidence);
+    const observedEvidence = evidence?.observedEvidence ?? [];
+    return {
+      taskId: task.id,
+      title: task.title,
+      status: evidence?.status ?? task.status,
+      validation: (evidence?.validation ?? []).map((entry) => ({
+        stage: entry.stage,
+        passed: entry.passed,
+        ...(entry.errorSummary !== undefined && { errorSummary: entry.errorSummary }),
+      })),
+      expectedEvidence,
+      observedEvidence,
+      missingExpectedEvidence: missingExpectedEvidence(expectedEvidence, observedEvidence),
+    };
+  });
+
+  return {
+    summary: ledger?.validationSummary ?? {
+      passed: state.tasks.filter((task) => task.status === 'done').length,
+      failed: state.tasks.filter((task) => task.status === 'failed').length,
+      skipped: state.tasks.filter((task) => task.status === 'skipped').length,
+      escalated: state.tasks.filter((task) => task.status === 'escalated').length,
+    },
+    tasks,
+    finalReviewEvidenceStatus: ledger?.finalReview?.status ?? null,
+    missingEvidenceWarnings: tasks.flatMap((task) =>
+      task.missingExpectedEvidence.length > 0
+        ? [`${task.taskId} missing expected evidence: ${task.missingExpectedEvidence.join(', ')}`]
+        : []
+    ),
+  };
+}
+
+export function buildEvidence(ledger: EvidenceLedger | null): ReviewPacket['evidence'] {
+  return {
+    path: ledger ? EVIDENCE_FILE : null,
+    present: ledger !== null,
+    briefHash: ledger?.briefHash ?? null,
+    finalReview: ledger?.finalReview ?? null,
+    approvals: ledger?.approvals ?? [],
+    rejections: ledger?.rejections ?? [],
+  };
+}
+
+export function buildDrift(
+  projectDir: string,
+  sessionId: string,
+  drift: DriftReport | null,
+  briefQuality: BriefQualityArtifact | null,
+): ReviewPacket['drift'] {
+  const chainState = readDriftChainState(projectDir, sessionId);
+  const topChain = chainState && chainState.emittedChains.length > 0
+    ? chainState.emittedChains.reduce((best, chain) => best.score >= chain.score ? best : chain)
+    : undefined;
+  const findings = drift?.findings ?? [];
+  return {
+    path: drift ? DRIFT_REPORT_FILE : null,
+    present: drift !== null,
+    passed: drift?.passed ?? null,
+    score: drift?.score ?? null,
+    errorCount: findings.filter((finding) => finding.severity === 'error').length,
+    warningCount: findings.filter((finding) => finding.severity === 'warning').length,
+    changedFiles: drift?.changedFiles ?? [],
+    expectedFiles: drift?.expectedFiles ?? [],
+    findings,
+    findingsBySeverity: groupDriftFindings(findings),
+    briefHash: drift?.briefHash ?? null,
+    chainSummary: {
+      path: DRIFT_CHAINS_FILE,
+      present: chainState !== null,
+      emittedChainCount: chainState?.emittedChains.length ?? 0,
+      topChain: topChain
+        ? {
+          chainLength: topChain.chainLength,
+          score: topChain.score,
+          uniqueOutOfBoundsFiles: topChain.uniqueOutOfBoundsFiles,
+          representativePath: topChain.representativePath,
+          detectedAtTaskId: topChain.detectedAtTaskId,
+        }
+        : null,
+    },
+    briefQuality: {
+      path: BRIEF_QUALITY_FILE,
+      present: briefQuality !== null,
+      passed: briefQuality?.passed ?? null,
+      score: briefQuality?.score ?? null,
+      errorCount: briefQuality?.issues.filter((issue) => issue.severity === 'error').length ?? 0,
+      warningCount: briefQuality?.issues.filter((issue) => issue.severity === 'warning').length ?? 0,
+    },
+  };
+}
+
+function recoveryIssueSummary(state: WorkflowState): ReviewPacket['recoveryDecisions']['currentIssue'] {
+  const issue = state.pendingRecovery;
+  if (!issue) return null;
+  return {
+    issueId: issue.id,
+    reason: issue.reason,
+    status: issue.status,
+    phase: issue.phase,
+    ...(issue.taskId !== undefined && { taskId: issue.taskId }),
+    ...(issue.selectedAction !== undefined && { selectedAction: issue.selectedAction }),
+    recommendedAction: issue.recommendedAction,
+    availableActions: issue.availableActions,
+    files: issue.files,
+    affectedTaskIds: issue.affectedTaskIds,
+  };
+}
+
+type RecoveryOutcome = ReviewPacket['recoveryDecisions']['outcomes'][number];
+type RecoverySelectedAction = ReviewPacket['recoveryDecisions']['selectedActions'][number];
+
+function buildRecovery(state: WorkflowState, events: PacketEvent[], missing: MissingCollector): ReviewPacket['recoveryDecisions'] {
+  const recoveryEvents = events.filter((event) => event.type.startsWith('recovery_'));
+  const selectedActions: RecoverySelectedAction[] = recoveryEvents
+    .filter((event) => event.type === 'recovery_action_selected' && event.issueId && event.reason && event.action)
+    .map((event) => ({
+      issueId: event.issueId ?? '',
+      reason: event.reason ?? 'implementation-error',
+      action: event.action ?? ('pause-run' as RecoveryAction),
+      selectedAt: event.ts,
+    }));
+
+  const resolvedOutcomes: RecoveryOutcome[] = recoveryEvents
+    .filter((event) => event.type === 'recovery_resolved')
+    .map((event) => {
+      const outcome = event.outcome === 'skipped-current-task' ? 'skipped'
+        : event.outcome === 'aborted' ? 'aborted'
+          : event.outcome === 'continued' ? 'continued'
+            : event.outcome === 'retry-current-task' ? 'retry-current-task'
+              : 'unresolved';
+      return {
+        issueId: event.issueId ?? null,
+        ...(event.action !== undefined && { action: event.action }),
+        status: outcome,
+      };
+    });
+
+  const failedOutcomes: RecoveryOutcome[] = recoveryEvents
+    .filter((event) => event.type === 'recovery_action_failed')
+    .map((event) => ({
+      issueId: event.issueId ?? null,
+      ...(event.action !== undefined && { action: event.action }),
+      status: 'failed',
+      ...(event.message !== undefined && { message: event.message }),
+    }));
+
+  const resolvedIssueIds = new Set(resolvedOutcomes.flatMap((outcome) => outcome.issueId ? [outcome.issueId] : []));
+  const pausedOutcomes: RecoveryOutcome[] = selectedActions
+    .filter((selected) => selected.action === 'pause-run' && !resolvedIssueIds.has(selected.issueId))
+    .map((selected) => ({
+      issueId: selected.issueId,
+      action: selected.action,
+      status: 'paused',
+    }));
+
+  const resumedOutcomes: RecoveryOutcome[] = events
+    .filter((event) => event.type === 'workflow_resumed')
+    .map(() => ({
+      issueId: null,
+      status: 'resumed',
+    }));
+
+  const currentIssue = recoveryIssueSummary(state);
+  const unresolvedOutcomes: RecoveryOutcome[] = currentIssue
+    ? [{
+      issueId: currentIssue.issueId,
+      ...(currentIssue.selectedAction !== undefined && { action: currentIssue.selectedAction }),
+      status: 'unresolved',
+      message: `${currentIssue.reason} recovery issue is still ${currentIssue.status}`,
+    }]
+    : [];
+
+  const unresolvedRisks = [
+    ...failedOutcomes.map((outcome) => `Recovery action failed${outcome.issueId ? ` for ${outcome.issueId}` : ''}${outcome.message ? `: ${outcome.message}` : ''}.`),
+    ...pausedOutcomes.map((outcome) => `Recovery issue ${outcome.issueId ?? 'unknown'} paused without a resolved event.`),
+    ...unresolvedOutcomes.map((outcome) => outcome.message ?? 'Recovery issue remains unresolved.'),
+  ];
+
+  if (missing.missingArtifacts.includes(SESSION_LOG_FILE)) {
+    unresolvedRisks.push('Recovery events are unavailable because session.jsonl is missing.');
+  }
+
+  return {
+    sourceArtifacts: [],
+    events: recoveryEvents,
+    currentIssue,
+    selectedActions,
+    outcomes: [...resolvedOutcomes, ...failedOutcomes, ...pausedOutcomes, ...resumedOutcomes, ...unresolvedOutcomes],
+    unresolvedRisks,
+  };
+}
+
+export function makeRecoveryWithSources(
+  projectDir: string,
+  sessionId: string,
+  state: WorkflowState,
+  events: PacketEvent[],
+  ledger: EvidenceLedger | null,
+  missing: MissingCollector,
+): ReviewPacket['recoveryDecisions'] {
+  const recovery = buildRecovery(state, events, missing);
+  return {
+    ...recovery,
+    sourceArtifacts: [
+      { path: STATE_FILE, present: existsSync(join(sessionDir(projectDir, sessionId), STATE_FILE)) },
+      { path: SESSION_LOG_FILE, present: existsSync(join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE)) },
+      { path: EVIDENCE_FILE, present: ledger !== null },
+    ],
+  };
+}
+
+function retryCountsFromEvents(events: PacketEvent[]): Map<TaskId, { retryCount: number; lastError: string | null }> {
+  const retries = new Map<TaskId, { retryCount: number; lastError: string | null }>();
+  for (const event of events) {
+    if (event.type !== 'task_retry' || event.taskId === undefined) continue;
+    const current = retries.get(event.taskId) ?? { retryCount: 0, lastError: null };
+    retries.set(event.taskId, {
+      retryCount: current.retryCount + 1,
+      lastError: event.message ?? current.lastError,
+    });
+  }
+  return retries;
+}
+
+export function buildEscalations(state: WorkflowState, ledger: EvidenceLedger | null, events: PacketEvent[]): ReviewPacket['escalations'] {
+  const retryMap = retryCountsFromEvents(events);
+  for (const entry of ledger?.tasks ?? []) {
+    if (entry.retries <= 0) continue;
+    const current = retryMap.get(entry.id);
+    retryMap.set(entry.id, {
+      retryCount: Math.max(current?.retryCount ?? 0, entry.retries),
+      lastError: current?.lastError ?? null,
+    });
+  }
+
+  const skippedReasons = new Map<TaskId, string>();
+  for (const event of events) {
+    if (event.type === 'task_skipped' && event.taskId !== undefined && event.message !== undefined) {
+      skippedReasons.set(event.taskId, event.message);
+    }
+  }
+  for (const entry of ledger?.tasks ?? []) {
+    const reason = entry.observedEvidence.find((evidence) => evidence.startsWith('skipped: '));
+    if (entry.status === 'skipped' && reason) skippedReasons.set(entry.id, reason.slice('skipped: '.length));
+  }
+
+  return {
+    retries: [...retryMap.entries()]
+      .map(([taskIdValue, retry]) => ({ taskId: taskIdValue, ...retry }))
+      .sort((a, b) => a.taskId.localeCompare(b.taskId)),
+    escalatedTasks: state.tasks
+      .filter((task) => task.status === 'escalated' || taskEvidence(task, ledger)?.escalated === true)
+      .map((task) => {
+        const evidence = taskEvidence(task, ledger);
+        return {
+          taskId: task.id,
+          title: task.title,
+          ...(evidence?.method !== undefined && { method: evidence.method }),
+        };
+      }),
+    skippedTasks: state.tasks
+      .filter((task) => task.status === 'skipped')
+      .map((task) => ({
+        taskId: task.id,
+        title: task.title,
+        reason: skippedReasons.get(task.id) ?? null,
+      })),
+    failedTasks: state.tasks
+      .filter((task) => task.status === 'failed')
+      .map((task) => ({ taskId: task.id, title: task.title })),
+    warnings: events.filter((event) =>
+      event.type === 'warning' ||
+      event.type === 'budget_warning' ||
+      event.type === 'budget_paused' ||
+      event.type === 'budget_exceeded'
+    ),
+  };
+}
+
+export function buildCost(summary: Summary, events: PacketEvent[]): ReviewPacket['cost'] {
+  return {
+    tokenUsage: summary.tokenUsage,
+    costBreakdown: summary.costBreakdown
+      ? {
+        hypotheticalCost: summary.costBreakdown.hypotheticalCost,
+        actualPlannerCost: summary.costBreakdown.actualPlannerCost,
+        actualImplementerCost: summary.costBreakdown.actualImplementerCost,
+        totalActualCost: summary.costBreakdown.totalActualCost,
+        savingsAmount: summary.costBreakdown.savingsAmount,
+        savingsPercentage: summary.costBreakdown.savingsPercentage,
+        localCompletionRate: summary.costBreakdown.localCompletionRate,
+        ...(summary.costBreakdown.hasPricedUsage !== undefined && { hasPricedUsage: summary.costBreakdown.hasPricedUsage }),
+        ...(summary.costBreakdown.hasUnpricedUsage !== undefined && { hasUnpricedUsage: summary.costBreakdown.hasUnpricedUsage }),
+        ...(summary.costBreakdown.hasSavingsEstimate !== undefined && { hasSavingsEstimate: summary.costBreakdown.hasSavingsEstimate }),
+        ...(summary.costBreakdown.isTotalActualCostKnown !== undefined && { isTotalActualCostKnown: summary.costBreakdown.isTotalActualCostKnown }),
+        ...(summary.costBreakdown.isAllPlannerBaselineKnown !== undefined && { isAllPlannerBaselineKnown: summary.costBreakdown.isAllPlannerBaselineKnown }),
+      }
+      : null,
+    estimatedCostSavings: summary.costBreakdown?.hasSavingsEstimate === false
+      ? null
+      : summary.estimatedCostSavings,
+    taskRouting: summary.taskBreakdown ?? [],
+    routingWarnings: events.filter((event) =>
+      event.type === 'mode_advice' ||
+      event.type === 'mode_downgrade_advised' ||
+      event.type === 'task_started' ||
+      event.type === 'task_tokens'
+    ).filter((event) => event.message !== undefined || event.outcome === 'tight' || event.outcome === 'overflow'),
+  };
+}
+
+function stripFrontmatter(text: string): string {
+  if (!text.startsWith('---\n')) return text;
+  const end = text.indexOf('\n---\n', 4);
+  return end === -1 ? text : text.slice(end + 5);
+}
+
+async function reviewExcerpt(projectDir: string, sessionId: string): Promise<string | null> {
+  const target = join(sessionDir(projectDir, sessionId), REVIEW_FILE);
+  if (!existsSync(target)) return null;
+  const normalized = stripFrontmatter(await readFile(target, 'utf8')).replace(/\s+/g, ' ').trim();
+  if (normalized.length === 0) return null;
+  if (normalized.length <= REVIEW_EXCERPT_MAX) return normalized;
+  return `${normalized.slice(0, REVIEW_EXCERPT_MAX - 3)}...`;
+}
+
+export async function buildFinalReview(
+  projectDir: string,
+  sessionId: string,
+  requestedStatus: 'written' | 'failed',
+  ledger: EvidenceLedger | null,
+  missing: MissingCollector,
+): Promise<ReviewPacket['finalReview']> {
+  const target = join(sessionDir(projectDir, sessionId), REVIEW_FILE);
+  const exists = existsSync(target);
+  if (!exists) missing.addMissing(REVIEW_FILE);
+  const status: ReviewPacketFinalReviewStatus = requestedStatus === 'failed'
+    ? 'failed'
+    : exists
+      ? 'written'
+      : 'missing';
+  const statusText = status === 'written'
+    ? `Planner final review written to ${REVIEW_FILE}.`
+    : status === 'failed'
+      ? `Planner final review failed; ${REVIEW_FILE} may be absent.`
+      : `${REVIEW_FILE} was not available.`;
+  return {
+    path: REVIEW_FILE,
+    status,
+    evidenceStatus: ledger?.finalReview?.status ?? null,
+    statusText,
+    excerpt: await reviewExcerpt(projectDir, sessionId),
+  };
+}
+
+export function sourceArtifactMissing(projectDir: string, sessionId: string, missing: MissingCollector): void {
+  if (!existsSync(join(sessionDir(projectDir, sessionId), STATE_FILE))) missing.addMissing(STATE_FILE);
+}
+
+function latestWorkflowComplete(events: PacketEvent[]): string | null {
+  return events.filter((event) => event.type === 'workflow_complete').at(-1)?.ts ?? null;
+}
+
+export function buildRun(
+  opts: BuildReviewPacketOptions,
+  events: PacketEvent[],
+): ReviewPacket['run'] {
+  return {
+    sessionId: opts.sessionId,
+    feature: opts.summary.feature,
+    mode: opts.summary.mode ?? null,
+    phase: opts.state.phase,
+    planner: {
+      tool: opts.summary.plannerTool ?? opts.state.plannerTool ?? null,
+      model: opts.summary.plannerModel ?? opts.state.plannerModel ?? null,
+    },
+    implementer: {
+      tool: opts.summary.implementerTool ?? opts.state.implementerTool ?? null,
+      model: opts.summary.implementerModel ?? opts.state.implementerModel ?? null,
+    },
+    startedAt: opts.state.startedAt ?? null,
+    completedAt: latestWorkflowComplete(events),
+    totalTimeMs: opts.summary.totalTime,
+    totalTasks: opts.summary.totalTasks,
+    completedLocally: opts.summary.completedByLocal,
+    escalated: opts.summary.escalatedToPlanner,
+    skipped: opts.summary.skipped,
+    failed: opts.summary.failed,
+  };
+}

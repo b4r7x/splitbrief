@@ -9,6 +9,7 @@ export interface Graph {
 
 export function buildGraph(nodes: FileNode[]): Graph {
   const pathSet = new Set(nodes.map((n) => n.path));
+  const resolvedPathMap = buildResolvedPathMap(pathSet);
   const outEdges = new Map<string, Set<string>>();
   const inEdges = new Map<string, Set<string>>();
 
@@ -21,7 +22,7 @@ export function buildGraph(nodes: FileNode[]): Graph {
 
   for (const node of nodes) {
     for (const spec of node.imports) {
-      const resolved = resolveImport(node.path, spec, pathSet);
+      const resolved = resolveImport(node.path, spec, resolvedPathMap);
       if (resolved !== null) {
         outEdges.get(node.path)!.add(resolved);
         inEdges.get(resolved)!.add(node.path);
@@ -32,17 +33,31 @@ export function buildGraph(nodes: FileNode[]): Graph {
   return { nodes: nodes.map((n) => n.path), outEdges, inEdges };
 }
 
-function resolveImport(fromPath: string, spec: string, pathSet: Set<string>): string | null {
+function buildResolvedPathMap(pathSet: Set<string>): Map<string, string> {
+  const resolvedPathMap = new Map<string, string>();
+  for (const path of pathSet) {
+    resolvedPathMap.set(pathResolve(path), path);
+    const withoutExt = path.replace(/\.[^.]+$/, '');
+    resolvedPathMap.set(pathResolve(withoutExt), path);
+  }
+  return resolvedPathMap;
+}
+
+function resolveImport(fromPath: string, spec: string, resolvedPathMap: Map<string, string>): string | null {
   if (!spec.startsWith('.')) return null;
 
   const fromDir = dirname(fromPath);
   const stripped = spec.replace(/\.(js|ts|tsx)$/, '');
+  const candidates = [
+    pathResolve(fromDir, stripped + '.ts'),
+    pathResolve(fromDir, stripped + '.tsx'),
+    pathResolve(fromDir, stripped),
+    pathResolve(fromDir, stripped, 'index.ts'),
+  ];
 
-  for (const ext of ['.ts', '.tsx']) {
-    const candidate = pathResolve(fromDir, stripped + ext);
-    for (const p of pathSet) {
-      if (pathResolve(p) === candidate) return p;
-    }
+  for (const candidate of candidates) {
+    const resolved = resolvedPathMap.get(candidate);
+    if (resolved !== undefined) return resolved;
   }
 
   return null;

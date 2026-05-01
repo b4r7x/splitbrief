@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createOpenAICompatProvider } from './compat.js';
-import { setupFetchMock } from './__test-helpers__.js';
+import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 
 describe('createOpenAICompatProvider', () => {
   setupFetchMock();

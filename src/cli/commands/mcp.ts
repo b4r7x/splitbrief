@@ -4,7 +4,7 @@ import { resolveSessionIds } from '../../engine/mcp/discovery.js';
 import { generateToken } from '../../engine/mcp/auth-token.js';
 import { createResolver } from '../../engine/mcp/resolver.js';
 import { startMcpServer } from '../../engine/mcp/server.js';
-import { createToolHandler } from '../../engine/mcp/tool-handler.js';
+import { createToolHandler } from '../../engine/mcp/tool/handler.js';
 import { getDiptychVersion } from '../../core/paths-io.js';
 import { cliError } from '../errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';

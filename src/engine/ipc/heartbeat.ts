@@ -1,7 +1,5 @@
 import { updateHeartbeat } from './lockfile.js';
-
-export const HEARTBEAT_INTERVAL_MS = 2000;
-export const HEARTBEAT_STALENESS_MS = 8000;
+import { HEARTBEAT_INTERVAL_MS } from './constants.js';
 
 export function startHeartbeat(sessionDir: string): () => void {
   const timer = setInterval(() => {

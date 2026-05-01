@@ -12,7 +12,7 @@ import type { InvokeResult } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { Planner, PlannerCallbacks, PlanResult, EscalationResult, RegenerateResult, PhaseResult, PlannerCapabilities, PriorMessage } from './types.js';
-import { formatMessagesForCli } from '../orchestrator/transcript-rebuild.js';
+import { formatMessagesForCli } from '../streaming/format-messages.js';
 import { buildResearchPrompt } from '../spec/prompts/research.js';
 import { buildSpecPrompt } from '../spec/prompts/spec.js';
 import { buildPlanPrompt } from '../spec/prompts/plan.js';
@@ -24,12 +24,16 @@ import { parseTasks } from '../spec/parser.js';
 import { RESEARCH_FILE, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 import { extractCode } from '../parsers/response-extractor.js';
 import { buildProjectContextMarkdown } from './context.js';
-import { accumulateUsage } from '../streaming/output-parsers.js';
+import { accumulateUsage } from '../streaming/token-utils.js';
 import { DEFAULT_AVAILABILITY } from '../../lib/availability.js';
 import { getChangedFiles } from '../../lib/git.js';
 import { createChangeDetector } from '../change-detection.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
 import type { Phase } from '../../core/schemas/enums.js';
+
+function formatRepoMapBlock(codebaseContext: string | undefined): string {
+  return codebaseContext ? `<repo-map>\n${codebaseContext}\n</repo-map>\n\n` : '';
+}
 
 const PHASE_MAP: Partial<Record<string, Phase>> = {
   researching: 'researching',
@@ -83,7 +87,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       codebaseContext?: string,
     ): Promise<PlanResult> {
       const projectContext = await buildProjectContextMarkdown(projectDir);
-      const repoMapBlock = codebaseContext ? `<repo-map>\n${codebaseContext}\n</repo-map>\n\n` : '';
+      const repoMapBlock = formatRepoMapBlock(codebaseContext);
       let usage: TokenDelta | null = null;
       const phases: PhaseResult[] = [];
 
@@ -148,38 +152,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       callbacks: PlannerCallbacks,
       codebaseContext?: string,
     ): Promise<PlanResult> {
-      const projectContext = await buildProjectContextMarkdown(projectDir);
-      const repoMapBlock = codebaseContext ? `<repo-map>\n${codebaseContext}\n</repo-map>\n\n` : '';
-      const prompt = repoMapBlock + buildQuickPlanPrompt(feature, projectContext);
-
-      callbacks.onPhase?.('quick-planning');
-      const buffer = createTranscriptBuffer(
-        projectDir, callbacks.sessionId ?? '', 'planning', callbacks.persistTranscript ?? true,
-      );
-      const priorMessages = callbacks.priorMessages;
-      let effectivePrompt = prompt;
-      if (priorMessages && priorMessages.length > 0 && !config.consumesPriorMessages) {
-        effectivePrompt = formatMessagesForCli(priorMessages) + prompt;
-      }
-      const images = callbacks.attachments && callbacks.attachments.length > 0 ? callbacks.attachments : undefined;
-      const result = await config.invokePlan({
-        prompt: effectivePrompt, projectDir, callbacks: {
-          onOutput: (text) => { callbacks.onOutput(text); buffer.append(text); },
-          onQuestion: callbacks.onQuestion,
-          onSessionId: callbacks.onSessionId,
-          onSessionExpired: callbacks.onSessionExpired,
-        },
-        ...(config.consumesPriorMessages && priorMessages ? { priorMessages } : {}),
-        ...(images ? { images } : {}),
-      });
-      buffer.flush();
-
-      const tasksContent = config.readPhaseOutput
-        ? config.readPhaseOutput(TASKS_FILE, result.text, projectDir, callbacks.sessionId)
-        : result.text;
-      const tasks = parseTasks(tasksContent);
-      const rawOutput = tasksContent !== result.text ? result.text : undefined;
-      return { spec: '', plan: '', tasks, usage: result.usage, phases: [{ text: tasksContent, filename: TASKS_FILE, rawOutput }] };
+      return runSinglePhasePlanning(config, buildQuickPlanPrompt, 'quick-planning', feature, projectDir, callbacks, codebaseContext);
     },
 
     async instantPlan(
@@ -188,38 +161,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       callbacks: PlannerCallbacks,
       codebaseContext?: string,
     ): Promise<PlanResult> {
-      const projectContext = await buildProjectContextMarkdown(projectDir);
-      const repoMapBlock = codebaseContext ? `<repo-map>\n${codebaseContext}\n</repo-map>\n\n` : '';
-      const prompt = repoMapBlock + buildInstantPrompt(feature, projectContext);
-
-      callbacks.onPhase?.('quick-planning');
-      const buffer = createTranscriptBuffer(
-        projectDir, callbacks.sessionId ?? '', 'planning', callbacks.persistTranscript ?? true,
-      );
-      const priorMessages = callbacks.priorMessages;
-      let effectivePrompt = prompt;
-      if (priorMessages && priorMessages.length > 0 && !config.consumesPriorMessages) {
-        effectivePrompt = formatMessagesForCli(priorMessages) + prompt;
-      }
-      const images = callbacks.attachments && callbacks.attachments.length > 0 ? callbacks.attachments : undefined;
-      const result = await config.invokePlan({
-        prompt: effectivePrompt, projectDir, callbacks: {
-          onOutput: (text) => { callbacks.onOutput(text); buffer.append(text); },
-          onQuestion: callbacks.onQuestion,
-          onSessionId: callbacks.onSessionId,
-          onSessionExpired: callbacks.onSessionExpired,
-        },
-        ...(config.consumesPriorMessages && priorMessages ? { priorMessages } : {}),
-        ...(images ? { images } : {}),
-      });
-      buffer.flush();
-
-      const tasksContent = config.readPhaseOutput
-        ? config.readPhaseOutput(TASKS_FILE, result.text, projectDir, callbacks.sessionId)
-        : result.text;
-      const tasks = parseTasks(tasksContent);
-      const rawOutput = tasksContent !== result.text ? result.text : undefined;
-      return { spec: '', plan: '', tasks, usage: result.usage, phases: [{ text: tasksContent, filename: TASKS_FILE, rawOutput }] };
+      return runSinglePhasePlanning(config, buildInstantPrompt, 'instant-planning', feature, projectDir, callbacks, codebaseContext);
     },
 
     async regenerate(
@@ -287,4 +229,49 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
     ...(config.injectUserTurn && { injectUserTurn: config.injectUserTurn }),
     capabilities: config.capabilities,
   };
+}
+
+async function runSinglePhasePlanning(
+  config: PlannerBaseConfig,
+  promptBuilder: (feature: string, projectContext: string) => string,
+  phaseName: string,
+  feature: string,
+  projectDir: string,
+  callbacks: PlannerCallbacks,
+  codebaseContext: string | undefined,
+): Promise<PlanResult> {
+  const projectContext = await buildProjectContextMarkdown(projectDir);
+  const repoMapBlock = formatRepoMapBlock(codebaseContext);
+  const prompt = repoMapBlock + promptBuilder(feature, projectContext);
+
+  callbacks.onPhase?.(phaseName);
+  const buffer = createTranscriptBuffer(
+    projectDir, callbacks.sessionId ?? '', 'planning', callbacks.persistTranscript ?? true,
+  );
+  const priorMessages = callbacks.priorMessages;
+  let effectivePrompt = prompt;
+  if (priorMessages && priorMessages.length > 0 && !config.consumesPriorMessages) {
+    effectivePrompt = formatMessagesForCli(priorMessages) + prompt;
+  }
+  const images = callbacks.attachments && callbacks.attachments.length > 0 ? callbacks.attachments : undefined;
+  const result = await config.invokePlan({
+    prompt: effectivePrompt,
+    projectDir,
+    callbacks: {
+      onOutput: (text) => { callbacks.onOutput(text); buffer.append(text); },
+      onQuestion: callbacks.onQuestion,
+      onSessionId: callbacks.onSessionId,
+      onSessionExpired: callbacks.onSessionExpired,
+    },
+    ...(config.consumesPriorMessages && priorMessages ? { priorMessages } : {}),
+    ...(images ? { images } : {}),
+  });
+  buffer.flush();
+
+  const tasksContent = config.readPhaseOutput
+    ? config.readPhaseOutput(TASKS_FILE, result.text, projectDir, callbacks.sessionId)
+    : result.text;
+  const tasks = parseTasks(tasksContent);
+  const rawOutput = tasksContent !== result.text ? result.text : undefined;
+  return { spec: '', plan: '', tasks, usage: result.usage, phases: [{ text: tasksContent, filename: TASKS_FILE, rawOutput }] };
 }

@@ -77,8 +77,6 @@ export type AdvisorResult = {
   confidence: number;
   factors: string[];
   missing: string[];
-  /** @deprecated use kind !== 'none' */
-  shouldAdvise: boolean;
 };
 
 function classifyRisk(lower: string, wordCount: number): { risk: WorkRisk; confidence: number; factors: string[] } {
@@ -171,7 +169,6 @@ export function adviseMode(prompt: string, currentMode: WorkflowMode): AdvisorRe
       confidence: 0,
       factors: [],
       missing: [],
-      shouldAdvise: false,
     };
   }
 
@@ -197,12 +194,11 @@ export function adviseMode(prompt: string, currentMode: WorkflowMode): AdvisorRe
       confidence,
       factors,
       missing,
-      shouldAdvise: true,
     };
   }
 
   if (suggestedMode === currentMode) {
-    return { kind: 'none', risk, currentMode, suggestedMode, confidence, factors, missing, shouldAdvise: false };
+    return { kind: 'none', risk, currentMode, suggestedMode, confidence, factors, missing };
   }
 
   const isDowngrade = modeIndex(suggestedMode) < modeIndex(currentMode);
@@ -210,7 +206,7 @@ export function adviseMode(prompt: string, currentMode: WorkflowMode): AdvisorRe
 
   if ((isDowngrade || isUpgrade) && confidence >= 0.65) {
     const kind: ModeAdviceKind = isDowngrade ? 'downgrade' : 'upgrade';
-    return { kind, risk, currentMode, suggestedMode, confidence, factors, missing, shouldAdvise: true };
+    return { kind, risk, currentMode, suggestedMode, confidence, factors, missing };
   }
 
   if (missing.length > 0) {
@@ -222,11 +218,10 @@ export function adviseMode(prompt: string, currentMode: WorkflowMode): AdvisorRe
       confidence,
       factors,
       missing,
-      shouldAdvise: true,
     };
   }
 
-  return { kind: 'none', risk, currentMode, suggestedMode, confidence, factors, missing, shouldAdvise: false };
+  return { kind: 'none', risk, currentMode, suggestedMode, confidence, factors, missing };
 }
 
 export function formatAdvisoryText(result: AdvisorResult): string {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createOllamaProvider } from './ollama.js';
-import { setupFetchMock } from './__test-helpers__.js';
+import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 
 // Shared list-contract lives in provider-contract.test.ts. This file covers Ollama-specific
 // detectContextLength which POSTs to /api/show and parses `num_ctx` from the parameters string.

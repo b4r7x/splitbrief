@@ -3,7 +3,7 @@ import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { CONVERSATIONAL_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
-import { createAgentSdkBackend, isAgentSdkAvailable, PLANNER_ALLOWED_TOOLS } from '../agent-sdk.js';
+import { createAgentSdkBackend, isAgentSdkAvailable, PLANNER_ALLOWED_TOOLS } from '../agent-sdk-backend.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
 

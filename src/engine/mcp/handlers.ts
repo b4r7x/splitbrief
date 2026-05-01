@@ -1,6 +1,7 @@
 import type { McpResponse, McpError } from './types.js';
 import type { McpResolver } from './resolver.js';
-import type { McpToolHandler } from './tool-handler.js';
+import type { McpToolHandler } from './types.js';
+import { isRecord } from '../../utils/type-guards.js';
 
 export const PARSE_ERROR = -32700;
 export const INVALID_REQUEST = -32600;
@@ -21,12 +22,12 @@ function jsonRpcError(code: number, message: string, id: string | number | null)
   return { jsonrpc: '2.0', id, error: { code, message } };
 }
 
-export function handleMessage(
+export async function handleMessage(
   rawBody: string,
   resolver: McpResolver,
   serverVersion: string,
   toolHandler?: McpToolHandler,
-): HandleResult {
+): Promise<HandleResult> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawBody);
@@ -34,11 +35,11 @@ export function handleMessage(
     return { kind: 'error', body: jsonRpcError(PARSE_ERROR, 'Parse error', null) };
   }
 
-  if (parsed === null || typeof parsed !== 'object') {
+  if (!isRecord(parsed)) {
     return { kind: 'error', body: jsonRpcError(INVALID_REQUEST, 'Invalid Request', null) };
   }
 
-  const msg = parsed as Record<string, unknown>;
+  const msg = parsed;
 
   if (msg['jsonrpc'] !== '2.0') {
     return { kind: 'error', body: jsonRpcError(INVALID_REQUEST, 'Invalid Request', null) };
@@ -92,7 +93,7 @@ export function handleMessage(
       body: {
         jsonrpc: '2.0',
         id,
-        result: { resources: resolver.listResources() },
+        result: { resources: await resolver.listResources() },
       },
     };
   }
@@ -102,7 +103,7 @@ export function handleMessage(
     if (typeof uri !== 'string') {
       return { kind: 'error', body: jsonRpcError(INVALID_PARAMS, 'Missing uri', id) };
     }
-    const content = resolver.readResource(uri);
+    const content = await resolver.readResource(uri);
     if (content === null) {
       return { kind: 'error', body: jsonRpcError(-32002, 'Resource not found', id) };
     }

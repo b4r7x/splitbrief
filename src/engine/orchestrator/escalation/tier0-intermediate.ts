@@ -1,0 +1,80 @@
+import type { Task } from '../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { Config } from '../../../core/schemas/config.js';
+import type { ApiImplementerConfig } from '../../../core/schemas/implementer-config.js';
+import { hasApiBase } from '../../../core/config/accessors/runner-config.js';
+import { createBusTextHandler, createImplementerPublisher, publishWarning, publishEscalate } from '../events.js';
+import { createImplementer } from '../../runners/factory.js';
+import type { Implementer } from '../../implementers/types.js';
+import { getProviderBaseURL } from '../../../core/providers/catalog.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
+import { runRetryStep, type EscalationContext, type RetryStepOutcome } from './step.js';
+
+export async function runTier0Intermediate(
+  ctx: EscalationContext, initialTask: Task, state: WorkflowState, lastError: string, priorAttempts: number,
+): Promise<RetryStepOutcome> {
+  const escalation = ctx.config.escalation;
+  if (!escalation?.intermediateProvider || escalation.enabled === false) {
+    return { state, task: initialTask, lastError, attempts: priorAttempts };
+  }
+
+  const attempts = priorAttempts + 1;
+  const textHandler = createBusTextHandler(ctx.bus, state.phase);
+
+  publishEscalate(ctx.bus, state.phase, initialTask.id, 0, undefined, escalation.intermediateProvider, escalation.intermediateModel ?? ctx.config.implementer.model);
+
+  const resolvedApiBase = getProviderBaseURL(escalation.intermediateProvider);
+  if (!resolvedApiBase) {
+    publishWarning(ctx.bus, state.phase, `Unknown intermediate provider "${escalation.intermediateProvider}" — falling back to current implementer endpoint`);
+  }
+
+  const currentApiBase = hasApiBase(ctx.config.implementer) ? ctx.config.implementer.apiBase : undefined;
+  const effectiveApiBase = resolvedApiBase || currentApiBase;
+  if (!effectiveApiBase) {
+    publishWarning(ctx.bus, state.phase, `Cannot escalate: no API base URL available for intermediate provider "${escalation.intermediateProvider}"`);
+    return { state, task: initialTask, lastError, attempts: priorAttempts };
+  }
+
+  const intermediateImplConfig: ApiImplementerConfig = {
+    kind: 'api',
+    provider: escalation.intermediateProvider,
+    model: escalation.intermediateModel ?? ctx.config.implementer.model,
+    apiBase: effectiveApiBase,
+    contextLength: ctx.config.implementer.contextLength,
+    temperature: ctx.config.implementer.temperature,
+    timeout: ctx.config.implementer.timeout,
+    customModels: ctx.config.implementer.customModels,
+  };
+
+  const intermediateConfig: Config = {
+    ...ctx.config,
+    implementer: intermediateImplConfig,
+  };
+
+  let intermediateImplementer: Implementer;
+  try {
+    intermediateImplementer = createImplementer(intermediateConfig, { publisher: createImplementerPublisher(ctx.bus) });
+  } catch (err) {
+    publishWarning(ctx.bus, state.phase, `Intermediate provider failed to initialize: ${toErrorMessage(err)}`);
+    return { state, task: initialTask, lastError, attempts: priorAttempts };
+  }
+
+  // Intermediate provider is implementer-class (cheap API), not planner-class.
+  // Recording as 'implementer' avoids ~35x cost overstatement that occurs when
+  // escalation tokens are priced at planner rates (e.g., DeepSeek $0.28 vs Claude $5).
+  return runRetryStep({
+    ctx, task: initialTask, state, lastError, attempts,
+    method: 'escalated-intermediate', transitionType: 'VALIDATION_PASS',
+    commitSuffix: 'intermediate',
+    usageCategory: 'implementer',
+    retryFailureFallback: 'Intermediate escalation failed',
+    invokeRetry: async ({ task: t, lastError: err, attempts: a, projectDir }) =>
+      intermediateImplementer.retry({
+        task: t, projectDir, config: intermediateConfig, context: ctx.context,
+        error: err, attempt: a, kind: 'local',
+        onOutput: textHandler,
+        bus: ctx.bus,
+        phase: state.phase,
+      }),
+  });
+}

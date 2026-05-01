@@ -344,6 +344,7 @@ export async function createSnapshot(opts: CreateSnapshotOptions): Promise<Creat
 
 export type ListSnapshotsResult = {
   manifests: SnapshotManifest[];
+  corruptedIds: string[];
 };
 
 export async function listSnapshots(
@@ -352,15 +353,16 @@ export async function listSnapshots(
 ): Promise<ListSnapshotsResult> {
   const ids = await listSnapshotIds(projectDir, sessionId);
   const manifests: SnapshotManifest[] = [];
+  const corruptedIds: string[] = [];
   for (const id of ids) {
     if (id === SNAPSHOT_BASELINE_ID) continue;
     try {
       const manifest = await readManifest(projectDir, sessionId, id);
       manifests.push(manifest);
     } catch {
-      console.warn(`Skipping corrupted snapshot manifest: ${id}`);
+      corruptedIds.push(id);
     }
   }
   manifests.sort((a, b) => a.id.localeCompare(b.id));
-  return { manifests };
+  return { manifests, corruptedIds };
 }

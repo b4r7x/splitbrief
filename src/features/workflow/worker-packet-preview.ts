@@ -10,7 +10,8 @@ import {
   type RoutingDecision,
   type TaskContextFit,
 } from '../../engine/orchestrator/context-routing.js';
-import { formatTaskPrompt, SYSTEM_PREAMBLE } from '../../engine/spec/formatter.js';
+import { formatTaskPrompt } from '../../engine/spec/prompt-formatter.js';
+import { SYSTEM_PREAMBLE } from '../../engine/spec/prompts/system.js';
 import { estimateTokens } from '../../engine/spec/token-budget.js';
 import type { PlanTaskReviewMetadata } from '../../stores/workflow/plan-editor.js';
 import { redactSecretsWithMetadata } from '../../utils/redact.js';

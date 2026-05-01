@@ -6,6 +6,7 @@ import type { EngineEvent, EventBus } from '../events/types.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import type { ServerMessage, ClientMessage, IpcPromptRequest, IpcPromptResponse, IpcPromptRequestInput } from './protocol.js';
 import { readReplayEvents } from './replay.js';
+import { isRecord } from '../../utils/type-guards.js';
 
 export type IpcServerOptions = {
   sessionId: string;
@@ -124,7 +125,20 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
         if (!trimmed) continue;
         let msg: ClientMessage;
         try {
-          msg = JSON.parse(trimmed) as ClientMessage;
+          const parsed: unknown = JSON.parse(trimmed);
+          if (!isRecord(parsed) || typeof parsed.kind !== 'string') {
+            consumed = true;
+            clearTimeout(timer);
+            const errMsg: ServerMessage = {
+              kind: 'error',
+              code: 'already_attached',
+              message: 'session already has an attached client; use --force to steal',
+            };
+            try { socket.write(JSON.stringify(errMsg) + '\n'); } catch { /* ignore */ }
+            socket.destroy();
+            return;
+          }
+          msg = parsed as ClientMessage;
         } catch {
           consumed = true;
           clearTimeout(timer);
@@ -211,7 +225,12 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
         if (!trimmed) continue;
         let msg: ClientMessage;
         try {
-          msg = JSON.parse(trimmed) as ClientMessage;
+          const parsed: unknown = JSON.parse(trimmed);
+          if (!isRecord(parsed) || typeof parsed.kind !== 'string') {
+            bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: invalid message structure from client: ${trimmed}` });
+            continue;
+          }
+          msg = parsed as ClientMessage;
         } catch {
           bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: malformed JSON from client: ${trimmed}` });
           continue;

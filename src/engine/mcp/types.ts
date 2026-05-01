@@ -42,3 +42,12 @@ export type McpToolDefinition = {
   description: string;
   inputSchema: Record<string, unknown>;
 };
+
+export type ToolCallResult =
+  | { ok: true; content: string }
+  | { ok: false; error: string };
+
+export type McpToolHandler = {
+  listTools(): McpToolDefinition[];
+  callTool(name: string, args: Record<string, unknown>): ToolCallResult;
+};

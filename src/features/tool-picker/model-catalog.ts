@@ -5,9 +5,9 @@ import { CLI_TOOL_IDS, KNOWN_API_PROVIDERS, LOCAL_PROVIDER_IDS, type ProviderId 
 import { getProviderDisplayName, hasApiKey } from '../../core/providers/catalog.js';
 import { includes } from '../../utils/type-guards.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
-import type { ModelCacheAccessor } from '../../engine/providers/model-catalog.js';
-import { resolveModelCatalog } from '../../engine/providers/model-catalog.js';
-import { NULL_CACHE } from '../../engine/providers/model-resolution.js';
+import type { ModelCacheAccessor } from '../../engine/providers/model/catalog.js';
+import { resolveModelCatalog } from '../../engine/providers/model/catalog.js';
+import { NULL_CACHE } from '../../engine/providers/model/resolution.js';
 
 export interface ModelOption {
   id: string;

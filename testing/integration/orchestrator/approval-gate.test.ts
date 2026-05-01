@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { SPEC_FILE } from '../../../src/core/paths.js';
 import { ensureSessionDir, writeSpecFile } from '../../../src/core/paths-io.js';
-import { runApprovalLoop } from '../../../src/engine/orchestrator/approval.js';
+import { runApprovalLoop } from '../../../src/engine/orchestrator/approval/approval.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCallbacks, makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { resetAllStores } from '#testing/helpers/stores.js';

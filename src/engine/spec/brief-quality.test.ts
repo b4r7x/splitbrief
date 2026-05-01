@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { createInitialState } from '../../core/state/machine.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { evaluateBriefQuality, isBriefQualityReport } from './brief-quality.js';
-import { runBriefQualityGate } from '../orchestrator/planning/shared.js';
+import { runBriefQualityGate } from '../orchestrator/planning/run.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';

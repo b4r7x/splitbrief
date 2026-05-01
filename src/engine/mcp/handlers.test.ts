@@ -10,7 +10,7 @@ import {
 } from './handlers.js';
 import type { McpResolver } from './resolver.js';
 import type { McpResourceDescriptor, McpResourceContent } from './types.js';
-import type { McpToolHandler } from './tool-handler.js';
+import type { McpToolHandler } from './types.js';
 
 const SERVER_VERSION = '1.2.3';
 
@@ -36,8 +36,8 @@ const stubToolHandler: McpToolHandler = {
 
 function makeResolver(overrides?: Partial<McpResolver>): McpResolver {
   return {
-    listResources: () => stubResources,
-    readResource: (uri: string) => (uri === stubContent.uri ? stubContent : null),
+    listResources: async () => stubResources,
+    readResource: async (uri: string) => (uri === stubContent.uri ? stubContent : null),
     ...overrides,
   };
 }
@@ -47,8 +47,8 @@ function msg(payload: Record<string, unknown>): string {
 }
 
 describe('handleMessage', () => {
-  it('initialize → correct capabilities, protocolVersion, serverInfo', () => {
-    const result = handleMessage(
+  it('initialize → correct capabilities, protocolVersion, serverInfo', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: MCP_PROTOCOL_VERSION } }),
       makeResolver(),
       SERVER_VERSION,
@@ -62,8 +62,8 @@ describe('handleMessage', () => {
     });
   });
 
-  it('notifications/initialized → { kind: notification } no body', () => {
-    const result = handleMessage(
+  it('notifications/initialized → { kind: notification } no body', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', method: 'notifications/initialized' }),
       makeResolver(),
       SERVER_VERSION,
@@ -71,8 +71,8 @@ describe('handleMessage', () => {
     expect(result).toEqual({ kind: 'notification' });
   });
 
-  it('resources/list → returns resolver.listResources() wrapped in { resources }', () => {
-    const result = handleMessage(
+  it('resources/list → returns resolver.listResources() wrapped in { resources }', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: 2, method: 'resources/list' }),
       makeResolver(),
       SERVER_VERSION,
@@ -82,8 +82,8 @@ describe('handleMessage', () => {
     expect(result.body.result).toEqual({ resources: stubResources });
   });
 
-  it('resources/read with valid URI → returns resolver content wrapped in { contents }', () => {
-    const result = handleMessage(
+  it('resources/read with valid URI → returns resolver content wrapped in { contents }', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: 3, method: 'resources/read', params: { uri: stubContent.uri } }),
       makeResolver(),
       SERVER_VERSION,
@@ -95,8 +95,8 @@ describe('handleMessage', () => {
     expect(r.contents[0]).toMatchObject({ uri: stubContent.uri, mimeType: stubContent.mimeType, text: stubContent.text });
   });
 
-  it('resources/read with unknown URI → resource-not-found error code -32002', () => {
-    const result = handleMessage(
+  it('resources/read with unknown URI → resource-not-found error code -32002', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: 4, method: 'resources/read', params: { uri: 'mcp://diptych/unknown' } }),
       makeResolver(),
       SERVER_VERSION,
@@ -107,8 +107,8 @@ describe('handleMessage', () => {
     expect(result.body.id).toBe(4);
   });
 
-  it('resources/read with missing uri param → INVALID_PARAMS -32602', () => {
-    const result = handleMessage(
+  it('resources/read with missing uri param → INVALID_PARAMS -32602', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: 5, method: 'resources/read', params: {} }),
       makeResolver(),
       SERVER_VERSION,
@@ -119,8 +119,8 @@ describe('handleMessage', () => {
     expect(result.body.id).toBe(5);
   });
 
-  it('tools/list → METHOD_NOT_FOUND when no handler', () => {
-    const result = handleMessage(
+  it('tools/list → METHOD_NOT_FOUND when no handler', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: 21, method: 'tools/list' }),
       makeResolver(),
       SERVER_VERSION,
@@ -130,8 +130,8 @@ describe('handleMessage', () => {
     expect(result.body.error.code).toBe(METHOD_NOT_FOUND);
   });
 
-  it('tools/call → METHOD_NOT_FOUND when no handler', () => {
-    const result = handleMessage(
+  it('tools/call → METHOD_NOT_FOUND when no handler', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'foo' } }),
       makeResolver(),
       SERVER_VERSION,
@@ -141,8 +141,8 @@ describe('handleMessage', () => {
     expect(result.body.error.code).toBe(METHOD_NOT_FOUND);
   });
 
-  it('tools/list → returns tool definitions when handler present', () => {
-    const result = handleMessage(
+  it('tools/list → returns tool definitions when handler present', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: 20, method: 'tools/list' }),
       makeResolver(),
       SERVER_VERSION,
@@ -155,8 +155,8 @@ describe('handleMessage', () => {
     expect(r.tools[0]).toMatchObject({ name: 'report_evidence' });
   });
 
-  it('tools/call with valid tool → success response', () => {
-    const result = handleMessage(
+  it('tools/call with valid tool → success response', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: 22, method: 'tools/call', params: { name: 'report_evidence', arguments: {} } }),
       makeResolver(),
       SERVER_VERSION,
@@ -169,8 +169,8 @@ describe('handleMessage', () => {
     expect(r.content).toEqual([{ type: 'text', text: 'Evidence recorded' }]);
   });
 
-  it('tools/call with unknown tool → isError response', () => {
-    const result = handleMessage(
+  it('tools/call with unknown tool → isError response', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: 23, method: 'tools/call', params: { name: 'unknown', arguments: {} } }),
       makeResolver(),
       SERVER_VERSION,
@@ -182,8 +182,8 @@ describe('handleMessage', () => {
     expect(r.isError).toBe(true);
   });
 
-  it('tools/call without name param → INVALID_PARAMS', () => {
-    const result = handleMessage(
+  it('tools/call without name param → INVALID_PARAMS', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: 24, method: 'tools/call', params: {} }),
       makeResolver(),
       SERVER_VERSION,
@@ -194,8 +194,8 @@ describe('handleMessage', () => {
     expect(result.body.error.code).toBe(INVALID_PARAMS);
   });
 
-  it('initialize advertises tools capability when handler present', () => {
-    const result = handleMessage(
+  it('initialize advertises tools capability when handler present', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: 25, method: 'initialize' }),
       makeResolver(),
       SERVER_VERSION,
@@ -207,8 +207,8 @@ describe('handleMessage', () => {
     expect(r.capabilities.tools).toEqual({});
   });
 
-  it('initialize omits tools capability when no handler', () => {
-    const result = handleMessage(
+  it('initialize omits tools capability when no handler', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: 26, method: 'initialize' }),
       makeResolver(),
       SERVER_VERSION,
@@ -219,8 +219,8 @@ describe('handleMessage', () => {
     expect(r.capabilities).not.toHaveProperty('tools');
   });
 
-  it('prompts/list → METHOD_NOT_FOUND', () => {
-    const result = handleMessage(
+  it('prompts/list → METHOD_NOT_FOUND', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: 8, method: 'prompts/list' }),
       makeResolver(),
       SERVER_VERSION,
@@ -230,8 +230,8 @@ describe('handleMessage', () => {
     expect(result.body.error.code).toBe(METHOD_NOT_FOUND);
   });
 
-  it('resources/subscribe → METHOD_NOT_FOUND', () => {
-    const result = handleMessage(
+  it('resources/subscribe → METHOD_NOT_FOUND', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: 9, method: 'resources/subscribe', params: { uri: 'mcp://diptych/sessions' } }),
       makeResolver(),
       SERVER_VERSION,
@@ -241,16 +241,16 @@ describe('handleMessage', () => {
     expect(result.body.error.code).toBe(METHOD_NOT_FOUND);
   });
 
-  it('Malformed JSON body → PARSE_ERROR -32700', () => {
-    const result = handleMessage('{ not valid json', makeResolver(), SERVER_VERSION);
+  it('Malformed JSON body → PARSE_ERROR -32700', async () => {
+    const result = await handleMessage('{ not valid json', makeResolver(), SERVER_VERSION);
     expect(result.kind).toBe('error');
     if (result.kind !== 'error') return;
     expect(result.body.error.code).toBe(PARSE_ERROR);
     expect(result.body.id).toBeNull();
   });
 
-  it('Missing jsonrpc field → INVALID_REQUEST -32600', () => {
-    const result = handleMessage(
+  it('Missing jsonrpc field → INVALID_REQUEST -32600', async () => {
+    const result = await handleMessage(
       msg({ id: 10, method: 'initialize' }),
       makeResolver(),
       SERVER_VERSION,
@@ -260,8 +260,8 @@ describe('handleMessage', () => {
     expect(result.body.error.code).toBe(INVALID_REQUEST);
   });
 
-  it('Missing method field with id → INVALID_REQUEST -32600', () => {
-    const result = handleMessage(
+  it('Missing method field with id → INVALID_REQUEST -32600', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: 11 }),
       makeResolver(),
       SERVER_VERSION,
@@ -271,8 +271,8 @@ describe('handleMessage', () => {
     expect(result.body.error.code).toBe(INVALID_REQUEST);
   });
 
-  it('Missing method field without id → INVALID_REQUEST -32600', () => {
-    const result = handleMessage(
+  it('Missing method field without id → INVALID_REQUEST -32600', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0' }),
       makeResolver(),
       SERVER_VERSION,
@@ -283,8 +283,8 @@ describe('handleMessage', () => {
     expect(result.body.id).toBeNull();
   });
 
-  it('notification without id (no id field) → kind notification, no response', () => {
-    const result = handleMessage(
+  it('notification without id (no id field) → kind notification, no response', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', method: 'initialize', params: {} }),
       makeResolver(),
       SERVER_VERSION,
@@ -292,8 +292,8 @@ describe('handleMessage', () => {
     expect(result.kind).toBe('notification');
   });
 
-  it('id present as object → INVALID_REQUEST -32600', () => {
-    const result = handleMessage(
+  it('id present as object → INVALID_REQUEST -32600', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: { nested: true }, method: 'initialize' }),
       makeResolver(),
       SERVER_VERSION,
@@ -303,8 +303,8 @@ describe('handleMessage', () => {
     expect(result.body.error.code).toBe(INVALID_REQUEST);
   });
 
-  it('id present as boolean → INVALID_REQUEST -32600', () => {
-    const result = handleMessage(
+  it('id present as boolean → INVALID_REQUEST -32600', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: true, method: 'initialize' }),
       makeResolver(),
       SERVER_VERSION,
@@ -314,8 +314,8 @@ describe('handleMessage', () => {
     expect(result.body.error.code).toBe(INVALID_REQUEST);
   });
 
-  it('id present as array → INVALID_REQUEST -32600', () => {
-    const result = handleMessage(
+  it('id present as array → INVALID_REQUEST -32600', async () => {
+    const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: [], method: 'initialize' }),
       makeResolver(),
       SERVER_VERSION,

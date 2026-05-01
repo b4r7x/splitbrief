@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { TaskReviewRequest } from '../../engine/orchestrator/task-review.js';
+import type { TaskReviewRequest } from '../../engine/orchestrator/task/review.js';
 import { taskId } from '../../core/schemas/task.js';
 import { formatTaskReviewPrompt, parseTaskReviewAnswer } from './task-review-prompt.js';
 
