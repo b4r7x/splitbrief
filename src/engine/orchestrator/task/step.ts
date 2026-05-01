@@ -25,7 +25,7 @@ import {
   type GateChangedFilesDecision,
   type GateDecision,
 } from '../approval/tiered-approval.js';
-import type { EventBus } from '../../events/types.js';
+import type { EventBus, EngineEvent } from '../../events/types.js';
 import {
   readDriftChainState,
   writeDriftChainState,
@@ -37,6 +37,7 @@ import { isExtractedCodeApprovalRaceError } from '../../implementers/base.js';
 import { buildApprovalPromotionConflictRecoveryIssue } from '../recovery/recovery.js';
 import { persistTaskEvidence, persistRejectionEvidence, persistApprovalEvidence } from '../evidence/persistence.js';
 import { retryAndRecord } from './retry.js';
+import { buildRoutingEventFields } from './routing-fields.js';
 
 export function resolveDependsOnFiles(tasks: Task[], task: Task): string[] {
   return task.dependsOn.flatMap((id: TaskId) => {
@@ -178,21 +179,12 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   persistApprovalEvidence(wctx, state, gateResult, task.id);
 
   if (wctx.config.hooks) {
-    const preTaskPayload: import('../../events/types.js').EngineEvent = {
+    const preTaskPayload: EngineEvent = {
       type: 'task_started', ts: Date.now(), phase: state.phase,
       taskId: task.id, title: task.title, index, total: totalTasks,
       file: task.file, action: task.action,
       ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
-      ...(wctx.routingDecision !== undefined && {
-        contextFit: wctx.routingDecision.fit,
-        estimatedTokens: wctx.routingDecision.estimatedTokens,
-        untruncatedEstimatedTokens: wctx.routingDecision.untruncatedEstimatedTokens,
-        ...(wctx.routingDecision.contextLength !== undefined && { contextLength: wctx.routingDecision.contextLength }),
-        currentCodeTruncated: wctx.routingDecision.currentCodeTruncated,
-        currentCodeContextMode: wctx.routingDecision.currentCodeContextMode,
-        costPosture: wctx.routingDecision.costPosture,
-        routingReason: wctx.routingDecision.reason,
-      }),
+      ...buildRoutingEventFields(wctx.routingDecision),
     };
     const pre = await runPreHooks(wctx.config.hooks, 'pre_task', preTaskPayload, { projectDir, sessionId });
     if (!pre.allow) {
@@ -209,16 +201,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     taskId: task.id, title: task.title, index, total: totalTasks, file: task.file, action: task.action,
     tool: getRunnerDisplayName(config.implementer), model: config.implementer.model,
     ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
-    ...(wctx.routingDecision !== undefined && {
-      contextFit: wctx.routingDecision.fit,
-      estimatedTokens: wctx.routingDecision.estimatedTokens,
-      untruncatedEstimatedTokens: wctx.routingDecision.untruncatedEstimatedTokens,
-      ...(wctx.routingDecision.contextLength !== undefined && { contextLength: wctx.routingDecision.contextLength }),
-      currentCodeTruncated: wctx.routingDecision.currentCodeTruncated,
-      currentCodeContextMode: wctx.routingDecision.currentCodeContextMode,
-      costPosture: wctx.routingDecision.costPosture,
-      routingReason: wctx.routingDecision.reason,
-    }),
+    ...buildRoutingEventFields(wctx.routingDecision),
   });
 
   let taskStartSnapshot: ChangedFilesSnapshot;
@@ -429,7 +412,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   if (wctx.signal?.aborted) return state;
 
   if (wctx.config.hooks) {
-    const preValidationPayload: import('../../events/types.js').EngineEvent = {
+    const preValidationPayload: EngineEvent = {
       type: 'validate', ts: Date.now(), phase: state.phase,
       taskId: task.id, status: 'running', passed: false,
       stages: { tsc: false, lint: false, test: false },

@@ -3,7 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ValidationResult } from '../validation.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
-import type { EventBus } from '../../events/types.js';
+import type { EventBus, EngineEvent } from '../../events/types.js';
 import { commitChanges, createTaggedStash, stageAll } from '../../../lib/git.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { publishWarning, publishGitCommit, publishGitCheckpoint, publishTaskComplete } from '../events.js';
@@ -38,7 +38,7 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
     const commitMsg = `feat(diptych): ${task.id} - ${task.title}${suffix}`;
 
     if (config.hooks) {
-      const preCommitPayload: import('../../events/types.js').EngineEvent = {
+      const preCommitPayload: EngineEvent = {
         type: 'git_commit', ts: Date.now(), phase: state.phase, taskId: task.id, message: commitMsg, file: task.file,
       };
       const pre = await runPreHooks(config.hooks, 'pre_commit', preCommitPayload, { projectDir, sessionId });

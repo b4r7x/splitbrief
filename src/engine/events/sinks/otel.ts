@@ -1,5 +1,6 @@
 import { trace, ROOT_CONTEXT, SpanKind, SpanStatusCode, type Span, type Context, type TracerProvider } from '@opentelemetry/api';
 import type { EngineEvent, EventSink } from '../types.js';
+import type { TaskId } from '../../../core/schemas/task.js';
 
 export interface OtelSinkOptions {
   provider: TracerProvider;
@@ -25,6 +26,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
   let phaseCtx: Context = ROOT_CONTEXT;
   let lastPhase: string | null = null;
   const taskSpans = new Map<string, Span>();
+  const taskKey = (id: TaskId): string => id as string;
 
   return (event: EngineEvent) => {
     switch (event.type) {
@@ -96,7 +98,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
           const parentCtx = phaseSpan ? phaseCtx : workflowCtx;
           const span = tracer.startSpan('diptych.task', {
             attributes: {
-              'diptych.task.id': event.taskId as unknown as string,
+              'diptych.task.id': taskKey(event.taskId),
               'diptych.task.title': event.title,
               'diptych.task.file': event.file,
               'diptych.task.action': event.action,
@@ -104,38 +106,38 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
               'diptych.task.total': event.total,
             },
           }, parentCtx);
-          taskSpans.set(event.taskId as unknown as string, span);
+          taskSpans.set(taskKey(event.taskId), span);
         }
         return;
       }
       case 'task_completed': {
-        const span = taskSpans.get(event.taskId as unknown as string);
+        const span = taskSpans.get(taskKey(event.taskId));
         if (span) {
           span.setAttribute('diptych.task.method', event.method);
           span.setAttribute('diptych.task.retries', event.retries);
           span.setAttribute('diptych.task.duration_ms', event.duration);
           span.setStatus({ code: SpanStatusCode.OK });
           span.end();
-          taskSpans.delete(event.taskId as unknown as string);
+          taskSpans.delete(taskKey(event.taskId));
         }
         return;
       }
       case 'task_failed':
       case 'task_full_fail': {
-        const span = taskSpans.get(event.taskId as unknown as string);
+        const span = taskSpans.get(taskKey(event.taskId));
         if (span) {
           span.setStatus({ code: SpanStatusCode.ERROR, message: 'task failed' });
           span.end();
-          taskSpans.delete(event.taskId as unknown as string);
+          taskSpans.delete(taskKey(event.taskId));
         }
         return;
       }
       case 'task_skipped': {
-        const span = taskSpans.get(event.taskId as unknown as string);
+        const span = taskSpans.get(taskKey(event.taskId));
         if (span) {
           span.setAttribute('diptych.task.skip_reason', event.reason);
           span.end();
-          taskSpans.delete(event.taskId as unknown as string);
+          taskSpans.delete(taskKey(event.taskId));
         }
         return;
       }

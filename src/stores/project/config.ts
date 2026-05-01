@@ -4,6 +4,7 @@ import { applyCLIOverrides, applyRunnerOverrides, type CLIOverrides } from '../.
 import type { Config } from '../../core/schemas/config.js';
 import { configError } from '../../core/config/errors.js';
 import { warnStderr } from '../../lib/warn.js';
+import { deepEqual } from '../../utils/deep-equal.js';
 import { isRecord } from '../../utils/type-guards.js';
 
 interface ConfigState {
@@ -33,23 +34,6 @@ export interface SaveOptions {
 
 function cloneConfig(config: Config): Config {
   return structuredClone(config);
-}
-
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (Object.is(a, b)) return true;
-  if (Array.isArray(a) || Array.isArray(b)) {
-    if (!Array.isArray(a) || !Array.isArray(b)) return false;
-    if (a.length !== b.length) return false;
-    return a.every((item, index) => deepEqual(item, b[index]));
-  }
-  if (isRecord(a) || isRecord(b)) {
-    if (!isRecord(a) || !isRecord(b)) return false;
-    const aKeys = Object.keys(a);
-    const bKeys = Object.keys(b);
-    if (aKeys.length !== bKeys.length) return false;
-    return aKeys.every(key => Object.hasOwn(b, key) && deepEqual(a[key], b[key]));
-  }
-  return false;
 }
 
 function cloneValue<T>(value: T): T {

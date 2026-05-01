@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Dirent } from 'node:fs';
 import { readFile, readdir, stat, access } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
@@ -29,7 +30,7 @@ async function discoverFromDir(dir: string, scope: SkillMeta['scope']): Promise<
   try { await access(dir); } catch { return []; }
   const skills: SkillMeta[] = [];
 
-  let entries: import('node:fs').Dirent[];
+  let entries: Dirent[];
   try { entries = await readdir(dir, { withFileTypes: true }); } catch { return []; }
 
   for (const entry of entries) {

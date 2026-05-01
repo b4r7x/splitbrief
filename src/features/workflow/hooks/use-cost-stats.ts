@@ -29,7 +29,7 @@ interface CostDisplay {
   spentText: string;
 }
 
-function asReactiveModelCache(snapshot: ReturnType<typeof modelCacheStore.get>): ModelCacheAccessor {
+function asReactiveModelCache(snapshot: Pick<ReturnType<typeof modelCacheStore.get>, 'modelsDevCatalog' | 'modelsDevFetchedAt' | 'providers'>): ModelCacheAccessor {
   return {
     getModelsDevCatalog: () => {
       if (snapshot.modelsDevCatalog === null || snapshot.modelsDevFetchedAt === null) return null;
@@ -76,7 +76,7 @@ export function formatCostDisplay(localRate: number, costBreakdown: CostBreakdow
 
 export function useCostStats(): CostStats {
   const config = configStore.useConfig();
-  const modelCache = asReactiveModelCache(modelCacheStore.use(state => state));
+  const modelCache = asReactiveModelCache(modelCacheStore.use(s => ({ modelsDevCatalog: s.modelsDevCatalog, modelsDevFetchedAt: s.modelsDevFetchedAt, providers: s.providers })));
   const [
     { tokenUsage, localCount, escalatedCount },
     { currentTask, totalTasks, taskCompletionTimes },

@@ -12,6 +12,7 @@ const store = createStore<ControlsState>(initial);
 
 export const controlsStore = {
   ...storeBase(store),
+  __testReset: () => store.set(initial),
   toggleSidebar: () => {
     store.set(prev => ({ ...prev, sidebarVisible: !prev.sidebarVisible }));
   },

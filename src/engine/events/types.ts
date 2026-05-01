@@ -4,9 +4,9 @@ import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { ActionClass } from '../../core/schemas/enums.js';
 import type { ApprovalTier } from '../../core/schemas/config.js';
-import type { UserEditConflict, UserEditConflictAction } from '../orchestrator/workflow-events.js';
-import type { CurrentCodeContextMode, TaskContextFit } from '../orchestrator/workflow-events.js';
-import type { TaskReviewRequest } from '../orchestrator/workflow-events.js';
+import type { UserEditConflict, UserEditConflictAction } from './workflow-events.js';
+import type { CurrentCodeContextMode, TaskContextFit } from './workflow-events.js';
+import type { TaskReviewRequest } from './workflow-events.js';
 
 export type ValidationStages = { tsc: boolean; lint: boolean; test: boolean };
 

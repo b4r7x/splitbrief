@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { formatWithBudget, estimateTokens } from './budget.js';
+import { formatWithBudget } from './budget.js';
+import { estimateTokens } from '../../core/tokens/estimate.js';
 import { makeFileNode, makeSymbol } from '#testing/helpers/factories/file-node.js';
 
 function fn(path: string, symCount: number) {
