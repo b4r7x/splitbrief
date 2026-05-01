@@ -14,6 +14,8 @@ import { sessionError } from '../../core/sessions/errors.js';
 import { maybeMigrate } from '../../core/migration/executor.js';
 import { printMigrationResult } from './migrate.js';
 import { runHeadless } from '../headless.js';
+import { parseAtFiles } from '../parse-at-files.js';
+import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { cliError } from '../errors.js';
 import { createWorktree, detectWorktree } from '../../engine/worktree.js';
 import { slugify } from '../../utils/slugify.js';
@@ -105,10 +107,10 @@ function readinessForInteractiveStart(report: ReadinessReport): ReadinessReport 
 export function registerStartCommand(program: Command): void {
   addWorkflowOptions(
     program
-      .command('start [feature]')
+      .command('start [feature] [files...]', { isDefault: true })
       .description('Full workflow: plan with Claude, implement with local model')
       .option('--detach', 'spawn workflow as background server and exit', false),
-  ).action(async (feature: string | undefined, opts: WorkflowOpts) => {
+  ).action(async (feature: string | undefined, files: string[], opts: WorkflowOpts) => {
     // Validate flag combinations BEFORE creating any worktree. A failed
     // validation must not leave behind a `.trees/<slug>` directory or a
     // `diptych/<slug>` branch.
@@ -119,6 +121,22 @@ export function registerStartCommand(program: Command): void {
     }
 
     await applyWorktreeOption(feature, opts);
+
+    let enrichedFeature = feature;
+    let textContext = '';
+    if (feature && files.length > 0) {
+      const projectDirAt = resolveProjectDir(opts.project);
+      const parsed = parseAtFiles(feature, files, projectDirAt);
+      enrichedFeature = parsed.feature;
+      textContext = parsed.textContext;
+      for (const att of parsed.attachments) attachmentsStore.add(att);
+      for (const err of parsed.errors) {
+        console.error(`Warning: @${err.path}: ${err.reason}`);
+      }
+    }
+    const plannerFeature = textContext
+      ? `${enrichedFeature}\n\n<user-context>\n${textContext}\n</user-context>`
+      : enrichedFeature;
 
     if (opts.detach) {
       if (!feature) throw cliError('--detach requires a feature argument');
@@ -140,7 +158,7 @@ export function registerStartCommand(program: Command): void {
         sessionDir: sessDir,
         sessionId: sessId,
         projectDir,
-        feature,
+        feature: plannerFeature ?? feature,
         mode,
         configPath: configPath(projectDir),
         overrides,
@@ -169,7 +187,7 @@ export function registerStartCommand(program: Command): void {
       clearStaleSessionForCli(projectDir);
       const sessionId = beginSession(projectDir, feature);
       persistStartReadiness(projectDir, sessionId, readiness.report);
-      await runHeadless(feature, projectDir, opts, undefined, sessionId, readiness);
+      await runHeadless(plannerFeature ?? feature, projectDir, opts, undefined, sessionId, readiness);
       return;
     }
 
@@ -197,7 +215,7 @@ export function registerStartCommand(program: Command): void {
     } else if (feature) {
       routerStore.init({
         screen: 'workflow',
-        feature,
+        feature: plannerFeature ?? feature,
         sessionId,
         worktreeName: worktreeName ?? undefined,
         readiness: readiness ? readinessForInteractiveStart(readiness.report) : undefined,
