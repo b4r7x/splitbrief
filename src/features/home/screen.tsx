@@ -12,6 +12,8 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { useStores } from '../../stores/use-stores.js';
 
+const BANNER_MIN_ROWS = 18;
+
 let cachedBanner: string | undefined;
 
 function getBanner(): string {
@@ -29,26 +31,29 @@ interface HomeScreenProps {
 export function HomeScreen({ commands, onSlashCommand }: HomeScreenProps) {
   const theme = useTheme();
   const hasOverlay = overlayStore.use(s => s.active !== 'none');
-  const [{ cols, isSmall }] = useStores(terminalSizeStore);
+  const [{ cols, rows, isSmall }] = useStores(terminalSizeStore);
 
   const banner = getBanner();
+  const showBanner = rows >= BANNER_MIN_ROWS;
   const contentWidth = getResponsivePanelWidth(cols, isSmall, { small: 70, large: 100 }, 8);
   const onStartWorkflow = (feat: string) => routerStore.navigate({ to: 'workflow', feature: feat });
 
   return (
-    <ScreenShell justifyContent="center" alignItems="center">
-      <Box flexDirection="column" width={contentWidth} gap={isSmall ? 0 : 1}>
-        <Box justifyContent="center" marginBottom={1}>
-          {banner ? (
-            <Text>{banner.trimEnd()}</Text>
-          ) : (
-            <Text bold color={theme.accent}>diptych</Text>
-          )}
+    <ScreenShell justifyContent="flex-start" alignItems="center">
+      <Box flexDirection="column" width={contentWidth} height="100%">
+        <Box flexDirection="column" flexGrow={1} overflowY="hidden" gap={isSmall ? 0 : 1}>
+          <Box justifyContent="center" marginBottom={1}>
+            {showBanner && banner ? (
+              <Text>{banner.trimEnd()}</Text>
+            ) : (
+              <Text bold color={theme.accent}>diptych</Text>
+            )}
+          </Box>
+
+          <HomeConfigSummary />
+
+          <RecentSessions />
         </Box>
-
-        <HomeConfigSummary />
-
-        <RecentSessions />
 
         <InputBar
           disabled={hasOverlay}

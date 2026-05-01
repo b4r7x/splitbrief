@@ -1,28 +1,38 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../theme.js';
+import { ScrollIndicator } from '../scroll-indicator.js';
+import { computeScrollOffset } from '../pickers/picker-utils.js';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 
 interface SlashSuggestionsProps {
   filtered: SlashCommandDef[];
   selectedIndex: number;
   fuzzyMatch?: SlashCommandDef | null;
+  maxVisible: number;
 }
 
-export function SlashSuggestions({ filtered, selectedIndex, fuzzyMatch }: SlashSuggestionsProps) {
+export function SlashSuggestions({ filtered, selectedIndex, fuzzyMatch, maxVisible }: SlashSuggestionsProps) {
   const t = useTheme();
   if (filtered.length === 0 && !fuzzyMatch) return null;
+
+  const scrollOffset = computeScrollOffset(selectedIndex, maxVisible, filtered.length);
+  const visibleSlice = filtered.slice(scrollOffset, scrollOffset + maxVisible);
+  const showScrollUp = scrollOffset > 0;
+  const showScrollDown = scrollOffset + maxVisible < filtered.length;
 
   return (
     <Box
       flexDirection="column"
       borderStyle="round"
       borderColor={t.border}
-      backgroundColor={t.panelBg || undefined}
+      backgroundColor={t.panelBg}
       paddingX={1}
       width="100%"
     >
-      {filtered.map((cmd, i) => {
-        const isSelected = i === selectedIndex;
+      <ScrollIndicator show={showScrollUp} direction="up" />
+      {visibleSlice.map((cmd, i) => {
+        const globalIndex = scrollOffset + i;
+        const isSelected = globalIndex === selectedIndex;
         return (
           <Box
             key={cmd.name}
@@ -45,6 +55,7 @@ export function SlashSuggestions({ filtered, selectedIndex, fuzzyMatch }: SlashS
           </Box>
         );
       })}
+      <ScrollIndicator show={showScrollDown} direction="down" />
       {fuzzyMatch && filtered.length === 0 && (
         <Box paddingX={1}>
           <Text color={t.textDim}>{'▸'}</Text>
