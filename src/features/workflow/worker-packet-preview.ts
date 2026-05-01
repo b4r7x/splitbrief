@@ -3,7 +3,7 @@ import { resolveImplementerProfiles } from '../../core/config/accessors/implemen
 import type { Config } from '../../core/schemas/config.js';
 import type { ImplementerCostTier, ImplementerWriteMode } from '../../core/schemas/implementer-config.js';
 import type { Task } from '../../core/schemas/task.js';
-import type { ProjectContext } from '../../core/types/state-actions.js';
+import type { ProjectContext } from '../../core/state/types.js';
 import {
   routeTaskToImplementerProfile,
   type CurrentCodeContextMode,

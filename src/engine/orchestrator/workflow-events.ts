@@ -1,6 +1,6 @@
-import type { TaskId } from '../schemas/task.js';
-import type { RecoveryReason, TaskStatus } from '../schemas/enums.js';
-import type { TokenUsage, TaskTokenUsage } from '../schemas/tokens.js';
+import type { TaskId } from '../../core/schemas/task.js';
+import type { RecoveryReason, TaskStatus } from '../../core/schemas/enums.js';
+import type { TokenUsage, TaskTokenUsage } from '../../core/schemas/tokens.js';
 
 export type UserEditConflictKind =
   | 'unrelated'

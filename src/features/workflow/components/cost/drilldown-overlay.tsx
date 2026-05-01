@@ -5,13 +5,13 @@ import { tokensStore } from '../../../../stores/workflow/tokens.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { modelCacheStore } from '../../../../stores/discovery/model-cache.js';
 import { formatCost } from '../../../../core/formatting.js';
-import { formatCacheHitPct } from '../../../../core/features/cost-chrome.js';
+import { formatCacheHitPct } from '../../../../core/layout/cost-chrome.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import { calculateUsageCost } from '../../../../engine/providers/pricing.js';
 import { resolvePricing, type ResolvedPricing } from '../../../../engine/providers/pricing-resolver.js';
 import { phaseCostRole } from '../../../../core/phases.js';
 
-export { formatCacheHitPct } from '../../../../core/features/cost-chrome.js';
+export { formatCacheHitPct } from '../../../../core/layout/cost-chrome.js';
 
 export type PhaseRow = {
   phase: string;

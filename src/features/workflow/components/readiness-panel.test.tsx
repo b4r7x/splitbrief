@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { buildReadinessReport } from '../../../core/readiness/checks.js';
+import { buildReadinessReport } from '../../../core/readiness/checks/build.js';
 import { ReadinessPanel } from './readiness-panel.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 

@@ -106,10 +106,14 @@ export type WorkflowMode = z.infer<typeof WorkflowModeSchema>;
 export const LEGACY_WORKFLOW_MODE_ALIASES = { full: 'speckit' } as const;
 export type LegacyWorkflowMode = keyof typeof LEGACY_WORKFLOW_MODE_ALIASES;
 
+function isLegacyMode(input: string): input is LegacyWorkflowMode {
+  return input in LEGACY_WORKFLOW_MODE_ALIASES;
+}
+
 export function normalizeLegacyMode(input: string): WorkflowMode | null {
   if (includes(WORKFLOW_MODES, input)) return input;
-  if (input in LEGACY_WORKFLOW_MODE_ALIASES) {
-    return LEGACY_WORKFLOW_MODE_ALIASES[input as LegacyWorkflowMode];
+  if (isLegacyMode(input)) {
+    return LEGACY_WORKFLOW_MODE_ALIASES[input];
   }
   return null;
 }

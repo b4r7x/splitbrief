@@ -14,7 +14,7 @@ import {
   writeEvidenceLedger,
 } from './evidence.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
-import type { ValidationResult } from '../../../core/types/summary.js';
+import type { ValidationResult } from '../validation.js';
 import type { TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
 import { hashTaskBrief } from '../../../core/brief-hash.js';
 import type { GateDecision } from '../approval/tiered-approval.js';
@@ -86,7 +86,7 @@ export function persistRejectionEvidence(
   wctx: WorkflowContext,
   state: WorkflowState,
   reason: string,
-  actionClass: import('../../../core/schemas/approval-store.js').ActionClass,
+  actionClass: import('../../../core/schemas/enums.js').ActionClass,
   tier: 'sticky' | 'confirm',
   actionDescription: string,
   taskId?: TaskId,

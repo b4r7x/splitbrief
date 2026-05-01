@@ -1,8 +1,5 @@
 import { z } from 'zod';
 import { ActionClassSchema } from './enums.js';
-export { ActionClassSchema } from './enums.js';
-
-export type ActionClass = z.infer<typeof ActionClassSchema>;
 
 export const ApprovalGrantSchema = z.object({
   pattern: z.string().min(1),

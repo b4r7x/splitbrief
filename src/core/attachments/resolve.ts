@@ -7,6 +7,7 @@ import {
   MAX_ATTACHMENT_BYTES,
   SUPPORTED_IMAGE_EXTS,
 } from '../schemas/attachment.js';
+import { includes } from '../../utils/type-guards.js';
 import type { Attachment } from '../schemas/attachment.js';
 
 export type ResolveAttachmentReason =
@@ -62,7 +63,7 @@ export function resolveAttachment(opts: ResolveAttachmentOpts): ResolveAttachmen
   const absPath = isAbsolute(trimmed) ? normalize(trimmed) : resolve(opts.projectDir, trimmed);
 
   const ext = extOf(absPath);
-  if (!(SUPPORTED_IMAGE_EXTS as readonly string[]).includes(ext)) {
+  if (!includes(SUPPORTED_IMAGE_EXTS, ext)) {
     return { ok: false, reason: 'not-image' };
   }
 

@@ -3,7 +3,7 @@ import { getRunnerDisplayName, getRunnerModelName } from '../../../core/config/a
 import type { Config } from '../../../core/schemas/config.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
-import type { ProjectContext } from '../../../core/types/state-actions.js';
+import type { ProjectContext } from '../../../core/state/types.js';
 import { calculateCost } from '../../providers/pricing.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { resolvePricing } from '../../providers/pricing-resolver.js';

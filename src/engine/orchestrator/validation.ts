@@ -2,7 +2,6 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { ValidationResult } from '../../core/types/summary.js';
 import type { ValidationStages } from '../events/types.js';
 import type { EventBus } from '../events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
@@ -12,6 +11,13 @@ import { publishValidation } from './events.js';
 import { truncateByLines } from '../../utils/truncate.js';
 import { parseShellCommand } from '../../utils/parse-shell-command.js';
 import { createTestFileFinder } from '../../core/validation/test-discovery.js';
+
+export interface ValidationResult {
+  passed: boolean;
+  stage: 'tsc' | 'lint' | 'test';
+  error?: string | undefined;
+  output?: string | undefined;
+}
 
 const MAX_ERROR_LINES = 20;
 

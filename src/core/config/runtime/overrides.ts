@@ -116,7 +116,7 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Conf
         ...next.workflow,
         autoApproveSpec: overrides.autoApprove,
         autoApprovePlan: overrides.autoApprove,
-        ...(overrides.autoApprove ? { approve: 'none' as ApproveLevel } : {}),
+        ...(overrides.autoApprove ? { approve: 'none' satisfies ApproveLevel } : {}),
       },
     };
   }
@@ -163,14 +163,5 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Conf
 }
 
 function applyPlannerEffort(config: Config, effort: EffortLevel): Config {
-  const planner: PlannerConfig = (() => {
-    switch (config.planner.kind) {
-      case 'cli': return { ...config.planner, effort };
-      case 'api': return { ...config.planner, effort };
-      case 'shell': return { ...config.planner, effort };
-      case 'agent': return { ...config.planner, effort };
-      case 'agent-sdk': return { ...config.planner, effort };
-    }
-  })();
-  return { ...config, planner };
+  return { ...config, planner: { ...config.planner, effort } };
 }

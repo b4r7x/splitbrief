@@ -1,3 +1,4 @@
+import { configError } from '../errors.js';
 import { ImplementerConfigSchema, defaultImplementerWriteMode } from '../../schemas/implementer-config.js';
 import type { Config } from '../../schemas/config.js';
 import type { ImplementerCapabilities, ImplementerConfig, ImplementerCostTier, ImplementerProfileConfig, ImplementerWriteMode } from '../../schemas/implementer-config.js';
@@ -69,7 +70,7 @@ export function resolveImplementerProfiles(config: Config): ResolvedImplementerP
 
   const defaultProfile = profiles.find(profile => profile.isDefault);
   if (!defaultProfile) {
-    throw new Error(`Default implementer profile "${defaultName}" is not defined`);
+    throw configError.profileNotFound(defaultName);
   }
 
   return { defaultProfile, profiles };

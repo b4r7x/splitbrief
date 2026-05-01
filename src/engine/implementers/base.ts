@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Implementer, ImplementerOptions, ImplementerPublisher, RetryOptions } from './types.js';
 import type { Task } from '../../core/schemas/task.js';
-import type { ImplementerResult } from '../../core/types/summary.js';
+import type { ImplementerResult } from './types.js';
 import type { InvokeResult } from '../runners/types.js';
 import { readFileOrEmpty } from '../../lib/fs.js';
 import { toErrorMessage } from '../../utils/format-errors.js';

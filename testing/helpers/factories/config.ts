@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { Config } from '../../../src/core/schemas/config.js';
 import type { ApiImplementerConfig, ImplementerConfig } from '../../../src/core/schemas/implementer-config.js';
 import type { PlannerConfig } from '../../../src/core/schemas/planner-config.js';
-import type { ProjectContext } from '../../../src/core/types/state-actions.js';
+import type { ProjectContext } from '../../../src/core/state/types.js';
 
 const defaultApiImplementer: ApiImplementerConfig = {
   kind: 'api',

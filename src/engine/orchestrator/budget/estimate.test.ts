@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Config } from '../../../core/schemas/config.js';
-import type { ProjectContext } from '../../../core/types/state-actions.js';
+import type { ProjectContext } from '../../../core/state/types.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';

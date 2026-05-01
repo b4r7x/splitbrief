@@ -1,4 +1,4 @@
-import type { StateAction } from '../types/state-actions.js';
+import type { StateAction } from './types.js';
 import type { WorkflowState } from '../schemas/workflow.js';
 import type { TaskId } from '../schemas/task.js';
 import type { Phase, TaskStatus } from '../schemas/enums.js';
@@ -82,7 +82,7 @@ function canApplyAction(phase: Phase, action: StateAction['type']): boolean {
   return includes(anytimeActions, action) || includes(phaseActions[phase], action);
 }
 
-export function createInitialState(feature: string): WorkflowState {
+export function createInitialState(feature: string, now: Date = new Date()): WorkflowState {
   return {
     stateVersion: CURRENT_STATE_VERSION,
     phase: 'idle',
@@ -91,7 +91,7 @@ export function createInitialState(feature: string): WorkflowState {
     attempt: 0,
     tasks: [],
     plannerSessionId: null,
-    startedAt: new Date().toISOString(),
+    startedAt: now.toISOString(),
     tokenUsage: { ...zeroTokenUsage },
     awaitingContinue: false,
     messageQueue: [],
@@ -116,7 +116,7 @@ function advanceTask(state: WorkflowState, status: TaskStatus): WorkflowState {
   };
 }
 
-function markRecoveryApplying(state: WorkflowState, action: Extract<StateAction, { type: 'MARK_RECOVERY_APPLYING' }>): WorkflowState {
+function markRecoveryApplying(state: WorkflowState, action: Extract<StateAction, { type: 'MARK_RECOVERY_APPLYING' }>, now: Date = new Date()): WorkflowState {
   if (!state.pendingRecovery) return state;
   return {
     ...state,
@@ -124,12 +124,12 @@ function markRecoveryApplying(state: WorkflowState, action: Extract<StateAction,
       ...state.pendingRecovery,
       status: 'applying',
       selectedAction: action.action,
-      selectedAt: action.selectedAt ?? new Date().toISOString(),
+      selectedAt: action.selectedAt ?? now.toISOString(),
     },
   };
 }
 
-export function transition(state: WorkflowState, action: StateAction, maxRetries: number = 3): WorkflowState {
+export function transition(state: WorkflowState, action: StateAction, maxRetries: number = 3, now: Date = new Date()): WorkflowState {
   if (!canApplyAction(state.phase, action.type)) {
     throw transitionError.invalidActionForPhase(state.phase, action.type);
   }
@@ -313,10 +313,10 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
       };
 
     case 'DRAIN_QUEUE': {
-      const now = new Date().toISOString();
+      const ts = now.toISOString();
       return {
         ...state,
-        messageQueue: state.messageQueue.map(m => m.drainedAt ? m : { ...m, drainedAt: now }),
+        messageQueue: state.messageQueue.map(m => m.drainedAt ? m : { ...m, drainedAt: ts }),
       };
     }
 
@@ -337,7 +337,7 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
       };
 
     case 'MARK_RECOVERY_APPLYING':
-      return markRecoveryApplying(state, action);
+      return markRecoveryApplying(state, action, now);
 
     case 'CLEAR_PENDING_RECOVERY':
       return { ...state, pendingRecovery: undefined };

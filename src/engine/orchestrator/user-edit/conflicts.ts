@@ -2,8 +2,8 @@ import type { Task, TaskId } from '../../../core/schemas/task.js';
 import { uniqueIds } from '../../../utils/collections.js';
 import { matchesActionPattern } from '../approval/action-classifier.js';
 
-export type { UserEditConflictKind, UserEditConflictAction, UserEditConflictFile, UserEditConflict } from '../../../core/types/workflow-events.js';
-import type { UserEditConflictKind, UserEditConflictAction, UserEditConflictFile, UserEditConflict } from '../../../core/types/workflow-events.js';
+export type { UserEditConflictKind, UserEditConflictAction, UserEditConflictFile, UserEditConflict } from '../workflow-events.js';
+import type { UserEditConflictKind, UserEditConflictAction, UserEditConflictFile, UserEditConflict } from '../workflow-events.js';
 
 function taskPatterns(task: Task): string[] {
   return [

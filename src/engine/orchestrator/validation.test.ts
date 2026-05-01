@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createValidator, formatValidationError } from './validation.js';
-import type { ValidationResult } from '../../core/types/summary.js';
+import type { ValidationResult } from './validation.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 describe('detectLinter', () => {

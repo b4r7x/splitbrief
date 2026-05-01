@@ -1,6 +1,6 @@
 import type { Config } from '../../../core/schemas/config.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
-import type { ProjectContext } from '../../../core/types/state-actions.js';
+import type { ProjectContext } from '../../../core/state/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { OrchestratorCallbacks } from '../types.js';

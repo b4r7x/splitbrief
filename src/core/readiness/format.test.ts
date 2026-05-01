@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { buildReadinessReport } from './checks.js';
+import { buildReadinessReport } from './checks/build.js';
 import {
   createStartReadinessRecord,
   formatReadinessReport,

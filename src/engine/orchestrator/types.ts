@@ -1,6 +1,6 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { Phase } from '../../core/schemas/enums.js';
-import type { ProjectContext } from '../../core/types/state-actions.js';
+import type { ProjectContext } from '../../core/state/types.js';
 import type { Planner, PriorMessage } from '../planners/types.js';
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
 import type { SpecMetadata } from '../../core/paths-io.js';

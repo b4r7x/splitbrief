@@ -4,11 +4,11 @@ import { tokensStore } from '../../../../stores/workflow/tokens.js';
 import { configStore } from '../../../../stores/project/config.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { formatCost } from '../../../../core/formatting.js';
-import { formatCacheHitPct } from '../../../../core/features/cost-chrome.js';
+import { formatCacheHitPct } from '../../../../core/layout/cost-chrome.js';
 import { formatSpentText, useCostStats, type CostPricingState } from '../../hooks/use-cost-stats.js';
 import type { CostPrediction } from '../../../../core/schemas/summary.js';
 
-export { formatCacheHitPct as formatCachePct } from '../../../../core/features/cost-chrome.js';
+export { formatCacheHitPct as formatCachePct } from '../../../../core/layout/cost-chrome.js';
 
 export function formatSpent(cost: number): string {
   return formatCost(cost);
