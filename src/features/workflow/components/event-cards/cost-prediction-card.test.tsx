@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderFeature } from '../../../../../testing/helpers/ink.js';
 import type { EngineEventOf } from '../../../../engine/events/types.js';
-import { getCostPredictionCardRowCount } from '../../../../core/features/cost-chrome.js';
+import { getCostPredictionCardRowCount } from '../../../../core/layout/cost-chrome.js';
 import { CostPredictionCard } from './cost-prediction-card.js';
 
 function visibleRows(frame: string): number {

@@ -3,14 +3,14 @@ import { missingRunnerCredential } from '../../core/config/accessors/runner-cred
 import type { ImplementerCostTier, ImplementerWriteMode } from '../../core/schemas/implementer-config.js';
 import { isProviderId } from '../../core/schemas/enums.js';
 import type { Task, TaskId } from '../../core/schemas/task.js';
-import type { ProjectContext } from '../../core/types/state-actions.js';
+import type { ProjectContext } from '../../core/state/types.js';
 import { findKnownModel, getEffectiveModelId, lookupModelsDevModel, lookupRuntimeModel, type ModelCacheAccessor } from '../providers/model/resolution.js';
 import { formatTaskPrompt } from '../spec/prompt-formatter.js';
 import { SYSTEM_PREAMBLE } from '../spec/prompts/system.js';
 import { estimateTokens } from '../spec/token-budget.js';
 
-export type { TaskContextFit, CurrentCodeContextMode } from '../../core/types/workflow-events.js';
-import type { TaskContextFit, CurrentCodeContextMode } from '../../core/types/workflow-events.js';
+export type { TaskContextFit, CurrentCodeContextMode } from './workflow-events.js';
+import type { TaskContextFit, CurrentCodeContextMode } from './workflow-events.js';
 
 export interface TaskPromptEstimateOptions {
   task: Task;

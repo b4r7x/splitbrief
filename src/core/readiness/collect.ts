@@ -1,12 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { simpleGit } from 'simple-git';
 import { configPath, loadConfig } from '../config/load/load.js';
 import { applyCLIOverrides } from '../config/runtime/overrides.js';
 import { readActive, isSessionLive } from '../sessions/lifecycle.js';
-import { isGitRepo } from '../../lib/git.js';
+import { isGitRepo, getGitStatus } from '../../lib/git.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { buildReadinessReport } from './checks.js';
+import { isRecord } from '../../utils/type-guards.js';
+import { buildReadinessReport } from './checks/build.js';
 import type { Config } from '../schemas/config.js';
 import type { WorkflowOpts } from '../types/config-options.js';
 import type {
@@ -14,7 +14,7 @@ import type {
   ConfigReadinessInput,
   PackageScriptsReadinessInput,
   RepoReadinessInput,
-} from './checks.js';
+} from './checks/build.js';
 import type { ReadinessReport } from './types.js';
 
 export interface CollectedReadiness {
@@ -131,11 +131,11 @@ function readPackageScripts(projectDir: string): PackageScriptsReadinessInput {
   }
 
   try {
-    const parsed = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    const parsed: unknown = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+    if (!isRecord(parsed)) {
       return { packageJsonExists: true, scripts: {}, parseError: 'package.json root is not an object.' };
     }
-    const scripts = (parsed as { scripts?: unknown }).scripts;
+    const scripts: unknown = parsed['scripts'];
     if (!scripts || typeof scripts !== 'object' || Array.isArray(scripts)) {
       return { packageJsonExists: true, scripts: {} };
     }
@@ -162,7 +162,7 @@ async function readRepoPosture(projectDir: string, requiresCleanWorktree: boolea
     };
   }
 
-  const status = await simpleGit(projectDir).status();
+  const status = await getGitStatus(projectDir);
   const untracked = new Set(status.not_added);
   const dirtyFiles = status.files
     .map(file => file.path)

@@ -1,7 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { ValidationResult } from '../../../core/types/summary.js';
+import type { ValidationResult } from '../validation.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EventBus } from '../../events/types.js';
 import { commitChanges, createTaggedStash, stageAll } from '../../../lib/git.js';

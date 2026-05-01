@@ -32,6 +32,17 @@ export async function isGitRepo(dir: string): Promise<boolean> {
   return git.checkIsRepo();
 }
 
+export async function getGitStatus(dir: string): Promise<{
+  files: Array<{ path: string }>;
+  not_added: string[];
+}> {
+  try {
+    return await getGit(dir).status();
+  } catch (err) {
+    throw toGitCommandError('status', err);
+  }
+}
+
 export async function stageAll(dir: string): Promise<void> {
   await getGit(dir).add('.');
 }

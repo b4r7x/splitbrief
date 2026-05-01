@@ -1,7 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
-import type { ValidationResult } from '../../../core/types/summary.js';
+import type { ValidationResult } from '../validation.js';
 import type { TaskStatus } from '../../../core/schemas/enums.js';
 import type { WorkflowContext } from '../types.js';
 import type { RoutingDecision } from '../context-routing.js';

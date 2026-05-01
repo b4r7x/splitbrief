@@ -2,7 +2,7 @@ import { assertNever } from '../../utils/type-guards.js';
 import type { DynamicSection } from './event-sections.js';
 import type { LayoutEvent } from './event-types.js';
 import { getMaxVisibleDiffLines } from './diff-height.js';
-import { getCostPredictionCardRowCount } from '../features/cost-chrome.js';
+import { getCostPredictionCardRowCount } from './cost-chrome.js';
 
 export interface RenderableConversationItem<TEvent extends LayoutEvent = LayoutEvent> {
   event: TEvent;

@@ -1,4 +1,4 @@
-import type { TokenBudget } from '../../core/types/state-actions.js';
+import type { TokenBudget } from '../../core/state/types.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 
 export { estimateTokens };

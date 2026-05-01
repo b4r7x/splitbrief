@@ -101,6 +101,12 @@ export const configError = {
       `Expected ${expectedKind} ${role} config`,
       { role, expectedKind },
     ),
+  profileNotFound: (defaultName: string) =>
+    error(
+      'config-profile-not-found',
+      `Default implementer profile "${defaultName}" is not defined.`,
+      { defaultName },
+    ),
 
   isInvalidYaml: matches('config-invalid-yaml'),
   isValidationFailed: matches('config-validation-failed'),
@@ -115,4 +121,5 @@ export const configError = {
   isUnknownProvider: matches('config-unknown-provider'),
   isInvalidOverride: matches('config-invalid-override'),
   isKindMismatch: matches('config-kind-mismatch'),
+  isProfileNotFound: matches('config-profile-not-found'),
 } as const;

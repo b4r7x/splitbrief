@@ -1,3 +1,5 @@
+import { clamp } from './math.js';
+
 export interface ScrollWindowState {
   bannerRows: number;
   innerHeight: number;
@@ -19,10 +21,6 @@ export function computeScrollMaxOffset(
   const overflow = Math.max(0, Math.max(0, totalHeight) - Math.max(0, viewportHeight));
   if (overflow === 0) return 0;
   return overflow + TOP_OR_BOTTOM_BANNER_ROWS + (hasNewEvents ? NEW_EVENT_BANNER_ROWS : 0);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
 }
 
 export function getScrollWindowState(

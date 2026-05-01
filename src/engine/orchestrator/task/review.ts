@@ -8,8 +8,8 @@ import type { RoutingDecision } from '../context-routing.js';
 import { EVIDENCE_FILE, sessionDir } from '../../../core/paths.js';
 import { readEvidenceLedger } from '../evidence/evidence.js';
 
-export type { TaskReviewStatus, TaskReviewCommand, TaskReviewAction, TaskReviewValidation, TaskReviewRequest, TaskReviewResponse } from '../../../core/types/workflow-events.js';
-import type { TaskReviewRequest, TaskReviewValidation } from '../../../core/types/workflow-events.js';
+export type { TaskReviewStatus, TaskReviewCommand, TaskReviewAction, TaskReviewValidation, TaskReviewRequest, TaskReviewResponse } from '../workflow-events.js';
+import type { TaskReviewRequest, TaskReviewValidation } from '../workflow-events.js';
 
 interface BuildTaskReviewRequestOptions {
   projectDir: string;

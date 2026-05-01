@@ -13,7 +13,7 @@ import { routeTaskToImplementerProfile } from '../../../engine/orchestrator/cont
 import { isENOENT } from '../../../lib/process/errors.js';
 import { buildPlanReviewScorecard, type PlanReviewScorecardEntry } from '../plan-review-scorecard.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { ProjectContext } from '../../../core/types/state-actions.js';
+import type { ProjectContext } from '../../../core/state/types.js';
 
 const COST_TIER_ORDER: PlanReviewCostTier[] = ['local', 'cheap', 'standard', 'frontier', 'unknown'];
 const SIMPLE_REVIEW_CHROME_ROWS = 7;

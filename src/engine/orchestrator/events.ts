@@ -3,7 +3,7 @@ import type { TaskId } from '../../core/schemas/task.js';
 import type { Phase, RecoveryAction, TaskCompletionMethod, WorkflowMode } from '../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery.js';
 import type { ValidationStages } from '../events/types.js';
-import type { ValidationResult } from '../../core/types/summary.js';
+import type { ValidationResult } from './validation.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { EventBus, EngineEvent } from '../events/types.js';

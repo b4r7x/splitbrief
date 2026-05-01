@@ -1,5 +1,6 @@
 import type { DynamicSection, Section } from './event-sections.js';
 import type { LayoutEvent } from './event-types.js';
+import { clamp } from './math.js';
 import { computeScrollMaxOffset } from './scroll-window.js';
 import {
   estimateRenderableConversationHeight,
@@ -25,10 +26,6 @@ interface ConversationScrollInputs<TEvent extends LayoutEvent = LayoutEvent> {
   rawScrollOffset: number;
   renderableCountAtScroll: number;
   heightAtScroll: number;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
 }
 
 function computeAnchoredScrollOffset(

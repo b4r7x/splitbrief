@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import type { StateAction } from '../../core/types/state-actions.js';
+import type { StateAction } from '../../core/state/types.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';

@@ -16,7 +16,7 @@ import {
   writeEvidenceLedger,
 } from './evidence.js';
 import { makeTask } from '../../../../testing/helpers/factories/task.js';
-import type { ValidationResult } from '../../../core/types/summary.js';
+import type { ValidationResult } from '../validation.js';
 
 function passing(stage: 'tsc' | 'lint' | 'test'): ValidationResult {
   return { passed: true, stage };

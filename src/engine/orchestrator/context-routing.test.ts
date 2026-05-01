@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ResolvedImplementerProfile } from '../../core/config/accessors/implementer-profiles.js';
 import type { ImplementerCostTier } from '../../core/schemas/implementer-config.js';
-import type { ProjectContext } from '../../core/types/state-actions.js';
+import type { ProjectContext } from '../../core/state/types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import {
   classifyContextFit,

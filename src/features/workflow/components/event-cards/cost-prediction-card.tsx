@@ -7,7 +7,7 @@ import {
   formatCostPredictionUnknownReasons,
   hasDisplayableCostPrediction,
   plannerEstimateReviewLine,
-} from '../../../../core/features/cost-chrome.js';
+} from '../../../../core/layout/cost-chrome.js';
 
 type CostPredictionEvent = Extract<EngineEvent, { type: 'cost_prediction' }>;
 

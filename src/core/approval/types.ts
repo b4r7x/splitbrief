@@ -1,5 +1,5 @@
 import type { ApprovalTier } from '../schemas/config.js';
-import type { ActionClass } from '../schemas/approval-store.js';
+import type { ActionClass } from '../schemas/enums.js';
 import type { Phase } from '../schemas/enums.js';
 import type { TaskId } from '../schemas/task.js';
 

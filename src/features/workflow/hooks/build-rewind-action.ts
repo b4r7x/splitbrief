@@ -1,4 +1,4 @@
-import type { StateAction } from '../../../core/types/state-actions.js';
+import type { StateAction } from '../../../core/state/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent } from '../../../engine/events/types.js';

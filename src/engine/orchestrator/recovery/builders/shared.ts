@@ -1,7 +1,7 @@
 import type { Phase, RecoveryAction, RecoveryReason } from '../../../../core/schemas/enums.js';
 import type { RecoveryFact, RecoveryIssue } from '../../../../core/schemas/recovery.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
-import type { ValidationResult } from '../../../../core/types/summary.js';
+import type { ValidationResult } from '../../validation.js';
 import type { UserEditConflict, UserEditConflictAction } from '../../user-edit/conflicts.js';
 import { uniqueIds } from '../../../../utils/collections.js';
 

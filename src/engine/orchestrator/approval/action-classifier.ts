@@ -1,4 +1,4 @@
-import type { ActionClass } from '../../../core/schemas/approval-store.js';
+import type { ActionClass } from '../../../core/schemas/enums.js';
 import type { ApprovalTier } from '../../../core/schemas/config.js';
 
 export type { ApprovalTier };

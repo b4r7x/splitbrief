@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
 import { parseTasks } from '../../../engine/spec/parser.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { isBriefQualityReport, type BriefQualityIssue, type BriefQualityReport } from '../../../engine/spec/brief-quality.js';
-import type { ProjectContext } from '../../../core/types/state-actions.js';
+import type { ProjectContext } from '../../../core/state/types.js';
 import { dirname, join } from 'node:path';
 import {
   buildTaskDetailParts,

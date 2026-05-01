@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { TaskCompletionMethod, TaskStatus, WorkflowMode } from '../../../core/schemas/enums.js';
 import type { Summary } from '../../../core/schemas/summary.js';
-import type { ValidationResult } from '../../../core/types/summary.js';
+import type { ValidationResult } from '../validation.js';
 import type {
   EvidenceFinalReviewStatus,
   EvidenceApproval,

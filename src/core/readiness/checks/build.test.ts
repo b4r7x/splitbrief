@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { buildReadinessReport } from './checks.js';
-import type { BuildReadinessReportInput } from './checks.js';
-import type { Config } from '../schemas/config.js';
+import { buildReadinessReport } from './build.js';
+import type { BuildReadinessReportInput } from './build.js';
+import type { Config } from '../../schemas/config.js';
 
 function baseInput(overrides: Partial<BuildReadinessReportInput> = {}): BuildReadinessReportInput {
   return {

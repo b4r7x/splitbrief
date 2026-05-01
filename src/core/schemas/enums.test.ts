@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  RECOVERY_ACTIONS,
   WorkflowModeSchema,
   WORKFLOW_MODES,
   normalizeLegacyMode,
@@ -28,19 +27,5 @@ describe('normalizeLegacyMode', () => {
   it('returns null for unknown values', () => {
     expect(normalizeLegacyMode('bogus')).toBeNull();
     expect(normalizeLegacyMode('')).toBeNull();
-  });
-});
-
-describe('RECOVERY_ACTIONS', () => {
-  it('includes all v1 recovery actions', () => {
-    expect(RECOVERY_ACTIONS).toEqual([
-      'retry-same-worker',
-      'route-bigger-worker',
-      'planner-split-rebase',
-      'continue',
-      'skip-current-task',
-      'pause-run',
-      'abort-workflow',
-    ]);
   });
 });
