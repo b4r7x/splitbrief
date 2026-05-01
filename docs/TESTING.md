@@ -207,6 +207,54 @@ it('workflow screen shows an escalation card when escalate event arrives', async
 
 Real adapter boundaries (`Planner`, `Implementer`, `ProviderClient`) are the only sanctioned injection points. Everything else is a real import.
 
+## Faux provider architecture (target)
+
+The `orchestrator-factories.ts` fakes work but are `vi.fn` wrappers — assertions tend toward `toHaveBeenCalledWith` (implementation coupling). The target architecture replaces them with **typed faux objects** that implement the real interface and track state declaratively.
+
+### Two levels
+
+| Level | Seam | When to use |
+|---|---|---|
+| **L1: Faux objects** | `Planner` / `Implementer` interface | 90% of orchestrator tests. Declarative scripts, no network, <50ms. Replaces `createFakePlanner`/`createFakeImplementer`. |
+| **L2: Faux HTTP server** | Localhost SSE (OpenAI / Anthropic protocol) | Testing `api.ts` runner: rate limits, malformed SSE, token accounting, effort parameters. Real fetch hits localhost. |
+
+### L1 design
+
+```
+testing/helpers/faux/
+  planner.ts         fauxPlanner(opts) → { planner: Planner, state: FauxPlannerState }
+  implementer.ts     fauxImplementer(opts) → { implementer: Implementer, state: FauxImplementerState }
+  workflow.ts        createFauxWorkflow(opts) → combines both + bus + config + temp dir
+```
+
+- Scripts are cycled: `steps: [{ success: true }, { success: false }]` alternates on repeated calls.
+- State is tracked: `state.planCallCount`, `state.receivedFeatures`, `state.receivedErrors`.
+- Assertions read state: `expect(state.implementCallCount).toBe(3)` — not `toHaveBeenCalledTimes(3)`.
+- Zero `vi.fn`. Zero `vi.mock`. The faux IS the real interface; it just returns scripted data.
+
+### L2 design
+
+```
+testing/helpers/faux/
+  llm-provider.ts    startFauxLlmProvider(opts) → { baseUrl, receivedBodies, close }
+```
+
+Starts a local HTTP server that speaks OpenAI SSE (or Anthropic event format). Replaces the ad-hoc `http.createServer` patterns currently in `api.test.ts`. Tests pass `baseUrl` as `apiBase` in config.
+
+### Migration path
+
+1. Build `testing/helpers/faux/` (L1 first).
+2. New tests use faux; old tests keep working.
+3. Gradually replace `orchestrator-factories.ts` usage with faux equivalents.
+4. Once all consumers migrate, deprecate and remove the old factories.
+
+### What stays unchanged
+
+- Cassette record/replay (`testing/helpers/cassette/`) for e2e tests — real protocol traffic.
+- Shell runners (`kind: 'shell'`) in integration tests — real subprocess spawn with scripted stdout.
+- `testing/helpers/factories/` (config, task, workflow-state) — pure constructors, no mock behavior.
+- `testing/helpers/bus-recorder.ts` — event capture at the EventBus boundary.
+
 ## Test shape
 
 **Pure function tests.** No mocks. Inputs → outputs. Cover edges: empty, null, boundary values, unicode, negative numbers, NaN/Infinity where relevant. Use `it.each(...)` when 5+ tests differ only by parameter. Models: `src/utils/diff.test.ts`, `src/core/state/machine.test.ts`, `src/engine/orchestrator/summary.test.ts`.

@@ -39,6 +39,7 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | When you're about to… | Read |
 |---|---|
 | I'm using diptych for the first time | [docs/GETTING-STARTED.md](./docs/GETTING-STARTED.md) — onboarding |
+| Understand product direction, UX goals, engineering decisions | [docs/DIRECTION.md](./docs/DIRECTION.md) — UX principles, testing architecture, ADRs |
 | Look up a feature | [docs/FEATURES.md](./docs/FEATURES.md) — full feature catalog |
 | Look up a CLI command | [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md) — full command reference |
 | Look up a slash command or keybinding | [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md) — all 21 |
