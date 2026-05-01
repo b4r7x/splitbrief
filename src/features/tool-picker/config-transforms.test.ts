@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Config } from '../../core/schemas/config.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import {
   commitCustomCommand,
   commitImplementerSelection,
@@ -8,23 +9,18 @@ import {
 } from './config-transforms.js';
 
 function makeBaseConfig(): Config {
-  return {
-    version: 2,
+  return makeConfig({
     planner: {
       kind: 'shell',
       command: 'old-command',
     },
     implementer: {
-      kind: 'api',
-      provider: 'ollama',
       model: 'llama3',
-      apiBase: 'http://localhost:11434/v1',
       contextLength: 8192,
       temperature: 0.3,
     },
-    validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', persistTranscript: true },
-  };
+    workflow: { persistTranscript: true },
+  });
 }
 
 function makeConfigWithOptionalSections(): Config {

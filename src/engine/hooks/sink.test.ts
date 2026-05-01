@@ -1,9 +1,10 @@
 import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { createHookSink } from './sink.js';
-import type { HookCommandEntry, HookModuleEntry, HooksConfig } from '../../core/schemas/hooks.js';
+import type { HookCommandEntry, HooksConfig } from '../../core/schemas/hooks.js';
 import type { EngineEvent, EventBus } from '../events/types.js';
 import { createEventBus } from '../events/bus.js';
+import { makeCommandHookEntry, makeAllowHook, makeThrowingModuleHook } from '#testing/helpers/factories/hook-entry.js';
 
 const projectDir = resolve('.');
 const ctx = { projectDir, sessionId: 'sess-1' };
@@ -19,48 +20,9 @@ function makeBus(): { bus: EventBus; warnings: string[]; all: EngineEvent[] } {
   return { bus, warnings, all };
 }
 
-function cmd(overrides: Partial<HookCommandEntry>): HookCommandEntry {
-  return {
-    kind: 'command',
-    command: 'true',
-    args: [],
-    timeout_ms: 5000,
-    on_failure: 'warn',
-    ...overrides,
-  };
-}
-
-function allowHook(name?: string): HookCommandEntry {
-  return cmd({ command: 'echo', args: ['ok'], ...(name ? { name } : {}) });
-}
-
-// A hook that records execution by writing a marker to stdout. We capture ordering
-// via wall-clock timestamps, but since operations are millisecond-close, we use a
-// serializing shared directory file only in the one test that needs it. For the
-// simple ordering case below, sequential dispatch is observable because if the
-// sink ran them in parallel the second hook's exit code would race the first.
-function sequencedHook(tag: string, delayMs = 20): HookCommandEntry {
-  return cmd({
-    command: 'node',
-    args: ['-e', `setTimeout(() => process.stdout.write(${JSON.stringify(tag)}), ${delayMs})`],
-    timeout_ms: 5000,
-  });
-}
-
-function throwingModuleHook(overrides: Partial<HookModuleEntry> = {}): HookModuleEntry {
-  return {
-    kind: 'module',
-    path: 'testing/fixtures/hooks/throws.mjs',
-    name: 'crash-hook',
-    timeout_ms: 5000,
-    on_failure: 'warn',
-    ...overrides,
-  };
-}
-
 function denyViaStdoutHook(name: string, message: string): HookCommandEntry {
   const payload = JSON.stringify({ decision: 'deny', message });
-  return cmd({
+  return makeCommandHookEntry({
     command: 'node',
     args: ['-e', `process.stdout.write(${JSON.stringify(payload)})`],
     name,
@@ -119,7 +81,7 @@ describe('createHookSink', () => {
     // hook on the same event publishes one. Compare the two runs.
     {
       const { bus, warnings, all } = makeBus();
-      const hooks: HooksConfig = { post_task: [allowHook('allow-hook')] };
+      const hooks: HooksConfig = { post_task: [makeAllowHook('allow-hook')] };
       const sink = createHookSink(hooks, ctx, bus);
       sink(taskCompletedEvent);
       await waitForNoActivity(all);
@@ -128,7 +90,7 @@ describe('createHookSink', () => {
     {
       const { bus, warnings } = makeBus();
       const hooks: HooksConfig = {
-        post_task: [cmd({ command: 'false', name: 'fails', on_failure: 'warn' })],
+        post_task: [makeCommandHookEntry({ command: 'false', name: 'fails', on_failure: 'warn' })],
       };
       const sink = createHookSink(hooks, ctx, bus);
       sink(taskCompletedEvent);
@@ -139,29 +101,24 @@ describe('createHookSink', () => {
   });
 
   it('runs multiple hooks sequentially in order', async () => {
-    // Observable sequencing: each hook sleeps for a set duration; if they ran in
-    // parallel the total wall-clock time would be ~max. Two 50ms hooks run serially
-    // must take >= 90ms (loose lower bound to avoid CI flake).
-    //
-    // The hooks fail (no JSON on stdout + exit 0 is allow) so produce no warnings;
-    // we observe only the hook completion via the sink's internal await — ensure
-    // that by waiting on the all-events buffer's idle window after both would have
-    // finished.
-    const { bus, all } = makeBus();
+    const { bus, warnings } = makeBus();
     const hooks: HooksConfig = {
-      post_task: [sequencedHook('first', 50), sequencedHook('second', 50)],
+      post_task: [
+        makeCommandHookEntry({ command: 'false', name: 'hook-a', on_failure: 'warn' }),
+        makeCommandHookEntry({ command: 'false', name: 'hook-b', on_failure: 'warn' }),
+      ],
     };
     const sink = createHookSink(hooks, ctx, bus);
-    const start = Date.now();
     sink(taskCompletedEvent);
-    await waitForNoActivity(all, 600);
-    const elapsed = Date.now() - start;
-    expect(elapsed).toBeGreaterThanOrEqual(90);
+    await waitForWarnings(warnings, 2);
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toContain('hook-a');
+    expect(warnings[1]).toContain('hook-b');
   });
 
   it('publishes a warning when a hook crashes, but does not gate the flow', async () => {
     const { bus, warnings } = makeBus();
-    const hooks: HooksConfig = { post_task: [throwingModuleHook()] };
+    const hooks: HooksConfig = { post_task: [makeThrowingModuleHook({ name: 'crash-hook' })] };
     const sink = createHookSink(hooks, ctx, bus);
     sink(taskCompletedEvent);
     await waitForWarnings(warnings, 1);
@@ -185,7 +142,7 @@ describe('createHookSink', () => {
   it('does not dispatch for validate events with status=running (only done)', async () => {
     const { bus, warnings, all } = makeBus();
     const hooks: HooksConfig = {
-      post_validation: [cmd({ command: 'false', name: 'marker', on_failure: 'warn' })],
+      post_validation: [makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' })],
     };
     const sink = createHookSink(hooks, ctx, bus);
     const runningEvent: EngineEvent = {
@@ -201,7 +158,7 @@ describe('createHookSink', () => {
   it('dispatches post_validation for validate event with status=done', async () => {
     const { bus, warnings } = makeBus();
     const hooks: HooksConfig = {
-      post_validation: [cmd({ command: 'false', name: 'marker', on_failure: 'warn' })],
+      post_validation: [makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' })],
     };
     const sink = createHookSink(hooks, ctx, bus);
     const doneEvent: EngineEvent = {
@@ -217,7 +174,7 @@ describe('createHookSink', () => {
   it('dispatches on_complete for workflow_complete event', async () => {
     const { bus, warnings } = makeBus();
     const hooks: HooksConfig = {
-      on_complete: [cmd({ command: 'false', name: 'marker', on_failure: 'warn' })],
+      on_complete: [makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' })],
     };
     const sink = createHookSink(hooks, ctx, bus);
     const completeEvent: EngineEvent = { type: 'workflow_complete', ts: 1, phase: 'idle' };
@@ -230,7 +187,7 @@ describe('createHookSink', () => {
   it('dispatches on_error for error event', async () => {
     const { bus, warnings } = makeBus();
     const hooks: HooksConfig = {
-      on_error: [cmd({ command: 'false', name: 'marker', on_failure: 'warn' })],
+      on_error: [makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' })],
     };
     const sink = createHookSink(hooks, ctx, bus);
     const errorEvent: EngineEvent = { type: 'error', ts: 1, phase: 'idle', message: 'err' };
@@ -242,7 +199,7 @@ describe('createHookSink', () => {
 
   it('catches unexpected thrown errors and publishes warning', async () => {
     const { bus, warnings } = makeBus();
-    const hooks: HooksConfig = { post_task: [throwingModuleHook({ name: 'unexpected-throw' })] };
+    const hooks: HooksConfig = { post_task: [makeThrowingModuleHook({ name: 'unexpected-throw' })] };
     const sink = createHookSink(hooks, ctx, bus);
     sink(taskCompletedEvent);
     await waitForWarnings(warnings, 1);

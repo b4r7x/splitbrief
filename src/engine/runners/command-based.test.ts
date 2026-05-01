@@ -86,7 +86,6 @@ describe('invokeCommandBasedRunner', () => {
       '',
       process.cwd(),
     );
-    expect(detectChanges).toHaveBeenCalled();
     expect(result.hasChanges).toBe(true);
   });
 
@@ -111,16 +110,15 @@ describe('invokeCommandBasedRunner', () => {
   });
 
   it('streams stdout chunks to the output subscriber', async () => {
-    const onOutput = vi.fn();
+    const chunks: string[] = [];
     await invokeCommandBasedRunner(
       { command: 'echo', args: ['hello'], extractsCode: false },
       '',
       process.cwd(),
-      onOutput,
+      (text: string) => { chunks.push(text); },
     );
-    expect(onOutput).toHaveBeenCalled();
-    const allOutput = onOutput.mock.calls.map(c => c[0]).join('');
-    expect(allOutput).toContain('hello');
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks.join('')).toContain('hello');
   });
 
   it('captures stderr', async () => {

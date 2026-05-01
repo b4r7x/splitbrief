@@ -15,6 +15,7 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import type { Session } from '../../core/schemas/session.js';
 import { SessionsPicker } from './picker.js';
+import { tick } from '#testing/helpers/ink.js';
 import { handleSelect } from './picker-select.js';
 
 let tmp: string;
@@ -23,12 +24,6 @@ function writeSessionSummary(projectDir: string, session: Session): void {
   const dir = join(projectDir, DIPTYCH_DIR, 'sessions', session.id);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'summary.json'), JSON.stringify(session));
-}
-
-async function tick(): Promise<void> {
-  // Two microtasks: one for useEffect to run, one for setState fan-out.
-  await new Promise<void>((resolve) => setTimeout(resolve, 0));
-  await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
 beforeEach(() => {
@@ -57,7 +52,7 @@ describe('SessionsPicker', () => {
     writeSessionSummary(tmp, makeSession({ id: 'sess-beta', feature: 'refactor payments', status: 'interrupted', summary: null }));
 
     const instance = render(<SessionsPicker />);
-    await tick();
+    await tick(1); await tick(1);
 
     // User-observable: the features appear in the rendered frame.
     const frame = instance.lastFrame() ?? '';
@@ -71,7 +66,7 @@ describe('SessionsPicker', () => {
 
   it('shows an empty-state hint when there are no sessions on disk', async () => {
     const instance = render(<SessionsPicker />);
-    await tick();
+    await tick(1); await tick(1);
 
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain('(0)');

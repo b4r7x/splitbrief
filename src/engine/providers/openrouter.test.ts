@@ -7,26 +7,14 @@ import { setupFetchMock, setupEnvMock } from '#testing/helpers/fetch-mock.js';
 // (price parsing, model→DetectedModel transformation) and the metadata fetch shape.
 
 describe('parsePrice', () => {
-  it('returns 0 for undefined', () => {
-    expect(parsePrice(undefined)).toBe(0);
-  });
-
-  it('returns 0 for "0"', () => {
-    expect(parsePrice('0')).toBe(0);
-  });
-
-  it('converts per-token price to per-1M tokens', () => {
-    // 0.000005 per token = 5 per 1M tokens
-    expect(parsePrice('0.000005')).toBe(5);
-  });
-
-  it('handles larger prices', () => {
-    // 0.015 per token = 15000 per 1M tokens
-    expect(parsePrice('0.015')).toBe(15000);
-  });
-
-  it('returns 0 for invalid string', () => {
-    expect(parsePrice('not-a-number')).toBe(0);
+  it.each([
+    [undefined, 0],
+    ['0', 0],
+    ['0.000005', 5],
+    ['0.015', 15000],
+    ['not-a-number', 0],
+  ] as const)('parsePrice(%s) => %s', (input, expected) => {
+    expect(parsePrice(input)).toBe(expected);
   });
 });
 

@@ -3,20 +3,14 @@ import { Text } from 'ink';
 import { useFilterableList } from './use-filterable-list.js';
 import { renderFeature, tick } from '../../testing/helpers/ink.js';
 
-interface Capture<T> {
-  current: { filter: string; filtered: T[]; selectedIndex: number } | null;
-}
-
 function Harness({
   items,
   initialIndex,
   onSelect,
-  capture,
 }: {
   items: string[];
   initialIndex?: number | undefined;
   onSelect: (item: string) => void;
-  capture: Capture<string>;
 }) {
   const list = useFilterableList({
     items,
@@ -24,49 +18,45 @@ function Harness({
     onSelect,
     filterFn: (item, query) => item.includes(query),
   });
-  capture.current = list;
   return <Text>{list.selectedIndex}</Text>;
 }
 
 describe('useFilterableList', () => {
   it('clamps initial negative and oversized indexes', async () => {
-    const negative: Capture<string> = { current: null };
     const negativeUi = renderFeature(
-      <Harness items={['a', 'b']} initialIndex={-5} onSelect={vi.fn()} capture={negative} />,
+      <Harness items={['a', 'b']} initialIndex={-5} onSelect={vi.fn()} />,
     );
     await tick();
 
-    expect(negative.current?.selectedIndex).toBe(0);
+    expect(negativeUi.lastFrame()).toBe('0');
     negativeUi.unmount();
 
-    const oversized: Capture<string> = { current: null };
     const oversizedUi = renderFeature(
-      <Harness items={['a', 'b']} initialIndex={10} onSelect={vi.fn()} capture={oversized} />,
+      <Harness items={['a', 'b']} initialIndex={10} onSelect={vi.fn()} />,
     );
     await tick();
 
-    expect(oversized.current?.selectedIndex).toBe(1);
+    expect(oversizedUi.lastFrame()).toBe('1');
     oversizedUi.unmount();
   });
 
   it('reports a safe index for empty and shrinking lists', async () => {
-    const capture: Capture<string> = { current: null };
     const ui = renderFeature(
-      <Harness items={['a', 'b', 'c']} initialIndex={2} onSelect={vi.fn()} capture={capture} />,
+      <Harness items={['a', 'b', 'c']} initialIndex={2} onSelect={vi.fn()} />,
     );
     await tick();
 
-    expect(capture.current?.selectedIndex).toBe(2);
+    expect(ui.lastFrame()).toBe('2');
 
-    ui.rerender(<Harness items={[]} initialIndex={2} onSelect={vi.fn()} capture={capture} />);
+    ui.rerender(<Harness items={[]} initialIndex={2} onSelect={vi.fn()} />);
     await tick();
 
-    expect(capture.current?.selectedIndex).toBe(0);
+    expect(ui.lastFrame()).toBe('0');
 
-    ui.rerender(<Harness items={['only']} initialIndex={2} onSelect={vi.fn()} capture={capture} />);
+    ui.rerender(<Harness items={['only']} initialIndex={2} onSelect={vi.fn()} />);
     await tick();
 
-    expect(capture.current?.selectedIndex).toBe(0);
+    expect(ui.lastFrame()).toBe('0');
     ui.unmount();
   });
 });

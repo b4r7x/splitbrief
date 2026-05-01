@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { saveState, loadState, appendEngineEvent, appendMessage } from './persistence.js';
 import { createInitialState } from './machine.js';
 import { taskId } from '../schemas/task.js';
-import type { RecoveryIssue } from '../schemas/recovery.js';
 import { SessionLogEventEntrySchema } from '../schemas/session-log.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
 
@@ -58,26 +58,23 @@ describe('saveState / loadState roundtrip', () => {
 
   it('preserves pending recovery in roundtrip', () => {
     const dir = makeTmp();
-    const issue: RecoveryIssue = {
+    const issue = makeRecoveryIssue({
       id: 'rec_2026_04_28_004',
       reason: 'context-overflow',
       phase: 'implementing',
-      status: 'awaiting-user',
       taskId: taskId('T002'),
       taskTitle: 'Split large task',
       files: ['src/large.ts'],
       affectedTaskIds: [taskId('T002')],
       message: 'Task prompt exceeds the selected worker context window',
       details: ['Estimated 42,000 tokens for a 32,768 token worker'],
-      selectedImplementerProfile: 'local-qwen',
       facts: {
         estimatedTokens: 42_000,
         contextLimit: 32_768,
       },
       availableActions: ['route-bigger-worker', 'planner-split-rebase', 'pause-run', 'abort-workflow'],
       recommendedAction: 'route-bigger-worker',
-      createdAt: '2026-04-28T12:00:00.000Z',
-    };
+    });
     const state = {
       ...createInitialState('recoverable-feature'),
       phase: 'implementing' as const,

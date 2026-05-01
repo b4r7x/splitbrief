@@ -2,7 +2,8 @@ import { mkdtemp, rm, writeFile, unlink, readFile, readdir } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { EngineEvent, EventBus } from '../events/types.js';
+import type { EngineEvent } from '../events/types.js';
+import { createEventBus } from '../events/bus.js';
 import { snapshotFilesDir } from '../../core/paths.js';
 import { createSnapshot } from './store.js';
 import { resolveSnapshot, restoreSnapshot } from './restore.js';
@@ -17,12 +18,10 @@ afterEach(async () => {
   await rm(tmp, { recursive: true, force: true });
 });
 
-function makeMockBus(): { bus: EventBus; events: EngineEvent[] } {
+function makeMockBus() {
   const events: EngineEvent[] = [];
-  const bus: EventBus = {
-    publish: (e) => events.push(e),
-    subscribe: () => () => {},
-  };
+  const bus = createEventBus();
+  bus.subscribe((e) => events.push(e));
   return { bus, events };
 }
 

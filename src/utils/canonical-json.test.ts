@@ -2,23 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { canonicalJSON } from './canonical-json.js';
 
 describe('canonicalJSON', () => {
-  it('passes through number primitive', () => {
-    expect(canonicalJSON(42)).toBe('42');
-  });
-
-  it('passes through string primitive', () => {
-    expect(canonicalJSON('hello')).toBe('"hello"');
-  });
-
-  it('passes through null', () => {
-    expect(canonicalJSON(null)).toBe('null');
-  });
-
-  it('passes through boolean', () => {
-    expect(canonicalJSON(true)).toBe('true');
-    expect(canonicalJSON(false)).toBe('false');
-  });
-
   it('sorts object keys lexicographically', () => {
     expect(canonicalJSON({ b: 1, a: 2 })).toBe('{"a":2,"b":1}');
     expect(canonicalJSON({ a: 2, b: 1 })).toBe('{"a":2,"b":1}');

@@ -76,7 +76,7 @@ export function registerMcpCommand(program: Command): void {
         process.stdout.write(
           [
             'diptych MCP server ready',
-            '  Exposes session resources and write tools.',
+            `  Exposes session resources and ${toolHandler.listTools().length} write tools.`,
             '',
             `  URL:    http://127.0.0.1:${actualPort}/mcp`,
             `  Token:  ${token}`,

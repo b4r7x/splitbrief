@@ -7,6 +7,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeCallbacks, makePlanner, makeImplementer, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { makeOpenAiSseResponse } from '#testing/helpers/fixtures/openai-sse.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { handleRetryAndEscalation } from './escalation.js';
@@ -200,7 +201,6 @@ describe('handleRetryAndEscalation', () => {
     });
 
     expect(result.completed).toBe(false);
-    expect(planner.escalateHint).not.toHaveBeenCalled();
     expect(onUserEditConflict).not.toHaveBeenCalled();
     expect(finalState.pendingRecovery).toMatchObject({
       reason: 'approval-promotion-conflict',
@@ -286,27 +286,6 @@ describe('handleRetryAndEscalation', () => {
     expect(finalState.tasks[0]?.status).toBe('pending');
   });
 });
-
-function openAiSseChunks(parts: Array<{ content?: string; usage?: { prompt_tokens: number; completion_tokens: number } }>): string {
-  const lines: string[] = [];
-  for (const p of parts) {
-    const chunk: Record<string, unknown> = {
-      id: 'chatcmpl-1', object: 'chat.completion.chunk', created: 0, model: 'm',
-      choices: [{ index: 0, delta: { content: p.content ?? '' }, finish_reason: null }],
-    };
-    if (p.usage) chunk.usage = p.usage;
-    lines.push(`data: ${JSON.stringify(chunk)}\n\n`);
-  }
-  lines.push('data: [DONE]\n\n');
-  return lines.join('');
-}
-
-function makeOpenAiSseResponse(parts: Parameters<typeof openAiSseChunks>[0]): Response {
-  return new Response(openAiSseChunks(parts), {
-    status: 200,
-    headers: { 'Content-Type': 'text/event-stream' },
-  });
-}
 
 describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
   let fetchMock: ReturnType<typeof vi.fn>;

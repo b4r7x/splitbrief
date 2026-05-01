@@ -11,7 +11,6 @@ import {
   formatProjected,
   formatBudget,
   formatCachePct,
-  buildStatusLine,
 } from './status-line.js';
 
 describe('formatProjected', () => {
@@ -67,24 +66,6 @@ describe('formatCachePct', () => {
   it('rounds percentage correctly', () => {
     // 1 cache, 2 input → 1/(1+2) = 33%
     expect(formatCachePct(1, 2)).toBe('cache 33%');
-  });
-});
-
-describe('buildStatusLine', () => {
-  it('joins non-empty parts with separator', () => {
-    expect(buildStatusLine(['a', 'b', 'c'])).toBe('a · b · c');
-  });
-
-  it('skips empty strings', () => {
-    expect(buildStatusLine(['a', '', 'c'])).toBe('a · c');
-  });
-
-  it('returns empty string when all parts empty', () => {
-    expect(buildStatusLine(['', '', ''])).toBe('');
-  });
-
-  it('returns single part without separator', () => {
-    expect(buildStatusLine(['only'])).toBe('only');
   });
 });
 

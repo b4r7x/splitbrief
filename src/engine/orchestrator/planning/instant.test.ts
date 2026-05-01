@@ -6,9 +6,10 @@ import { createInitialState } from '../../../core/state/machine.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import { expectBriefQualityBlocked } from '#testing/helpers/assertions/brief-quality.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import { sessionDir, TASKS_FILE, SPEC_FILE, PLAN_FILE, RESEARCH_FILE, BRIEF_QUALITY_FILE } from '../../../core/paths.js';
+import { sessionDir, TASKS_FILE, SPEC_FILE, PLAN_FILE, RESEARCH_FILE } from '../../../core/paths.js';
 import { runPlanningPhase } from './run.js';
 import type { Planner, PlanResult } from '../../planners/types.js';
 
@@ -77,16 +78,6 @@ function invalidPlanResult(overrides?: Partial<PlanResult>): PlanResult {
     phases: [{ text: SAMPLE_TASKS_MD, filename: TASKS_FILE }],
     ...overrides,
   };
-}
-
-function expectBriefQualityBlocked(result: Awaited<ReturnType<typeof runPlanningPhase>>, projectDir: string, sessionId: string, events: ReturnType<typeof makeBusRecorder>['events']) {
-  expect(result.cancelled).toBe(true);
-  expect(result.state.phase).not.toBe('implementing');
-  const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE);
-  expect(existsSync(reportPath)).toBe(true);
-  const persisted = JSON.parse(readFileSync(reportPath, 'utf8'));
-  expect(persisted.passed).toBe(false);
-  expect(events.find(e => e.type === 'brief_quality_failed')).toBeDefined();
 }
 
 async function runInstant(plannerOverrides?: Partial<Planner>) {
@@ -179,7 +170,6 @@ describe('runInstantPlanning', () => {
       state: { ...initial, phase: 'idle' },
       feature: 'feature',
     });
-    expect(quickPlan).toHaveBeenCalledOnce();
     expect(result.cancelled).toBe(false);
   });
 

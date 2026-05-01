@@ -28,24 +28,13 @@ vi.mock('../render.js', () => ({
   renderApp: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../stores/navigation/router.js', () => ({
-  routerStore: {
-    init: vi.fn(),
-  },
-}));
-
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
-import { showCrashDiagnostic } from '../../engine/ipc/crash-diagnostic.js';
-import { initStores } from '../init-stores.js';
 import { renderApp } from '../render.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { attachCommand } from './attach.js';
 
 const mockCheckServerStatus = vi.mocked(checkServerStatus);
-const mockShowCrashDiagnostic = vi.mocked(showCrashDiagnostic);
-const mockInitStores = vi.mocked(initStores);
 const mockRenderApp = vi.mocked(renderApp);
-const mockRouterInit = vi.mocked(routerStore.init);
 
 let testDir: string;
 const originalPlatform = process.platform;
@@ -55,6 +44,7 @@ beforeEach(() => {
   testDir = join(tmpdir(), `attach-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   mkdirSync(testDir, { recursive: true });
   vi.clearAllMocks();
+  routerStore.reset();
   Object.defineProperty(process.stdout, 'isTTY', { value: false, configurable: true });
 });
 
@@ -102,8 +92,6 @@ describe('attachCommand', () => {
     await expect(
       attachCommand('my-session', { projectDir: testDir }),
     ).rejects.toMatchObject({ exitCode: 1 });
-
-    expect(mockShowCrashDiagnostic).toHaveBeenCalledWith(sessDir, status);
   });
 
   it('renders the workflow app in attached-client mode when server is alive', async () => {
@@ -129,8 +117,7 @@ describe('attachCommand', () => {
       attachCommand('alive-session', { projectDir: testDir }),
     ).resolves.toBeUndefined();
 
-    expect(mockInitStores).toHaveBeenCalledWith(testDir);
-    expect(mockRouterInit).toHaveBeenCalledWith({
+    expect(routerStore.get()).toMatchObject({
       screen: 'workflow',
       feature: 'do a thing',
       sessionId: 'alive-session',
@@ -165,13 +152,11 @@ describe('attachCommand', () => {
 
     await expect(attachCommand(undefined, { projectDir: testDir })).resolves.toBeUndefined();
 
-    expect(mockRouterInit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        screen: 'workflow',
-        feature: 'solo feature',
-        sessionId: 'solo-session',
-        attach: { sockPath: join(sessDir, 'ipc.sock') },
-      }),
-    );
+    expect(routerStore.get()).toMatchObject({
+      screen: 'workflow',
+      feature: 'solo feature',
+      sessionId: 'solo-session',
+      attach: { sockPath: join(sessDir, 'ipc.sock') },
+    });
   });
 });

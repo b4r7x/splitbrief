@@ -1,8 +1,9 @@
 import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { runPreHooks } from './run-pre-hook.js';
-import type { HookCommandEntry, HookModuleEntry, HooksConfig } from '../../core/schemas/hooks.js';
+import type { HookCommandEntry, HooksConfig } from '../../core/schemas/hooks.js';
 import type { EngineEvent } from '../events/types.js';
+import { makeCommandHookEntry, makeAllowHook, makeThrowingModuleHook } from '#testing/helpers/factories/hook-entry.js';
 
 const projectDir = resolve('.');
 const ctx = { projectDir, sessionId: 'sess-1' };
@@ -19,43 +20,19 @@ const preTaskEvent: EngineEvent = {
   action: 'create',
 };
 
-function cmd(overrides: Partial<HookCommandEntry>): HookCommandEntry {
-  return {
-    kind: 'command',
-    command: 'true',
-    args: [],
-    timeout_ms: 5000,
-    on_failure: 'block',
-    ...overrides,
-  };
-}
-
 function denyViaStdout(message?: string): HookCommandEntry {
   const payload = message === undefined
     ? { decision: 'deny' }
     : { decision: 'deny', message };
-  return cmd({
+  return makeCommandHookEntry({
     command: 'node',
     args: ['-e', `process.stdout.write(${JSON.stringify(JSON.stringify(payload))})`],
+    on_failure: 'block',
   });
 }
 
-function allowHook(): HookCommandEntry {
-  return cmd({ command: 'echo', args: ['ok'] });
-}
-
 function nonZeroExitHook(): HookCommandEntry {
-  return cmd({ command: 'false' });
-}
-
-function throwingModuleHook(overrides: Partial<HookModuleEntry> = {}): HookModuleEntry {
-  return {
-    kind: 'module',
-    path: 'testing/fixtures/hooks/throws.mjs',
-    timeout_ms: 5000,
-    on_failure: 'block',
-    ...overrides,
-  };
+  return makeCommandHookEntry({ command: 'false', on_failure: 'block' });
 }
 
 describe('runPreHooks', () => {
@@ -71,7 +48,7 @@ describe('runPreHooks', () => {
   });
 
   it('returns allow when a single allow hook passes', async () => {
-    const hooks: HooksConfig = { pre_task: [allowHook()] };
+    const hooks: HooksConfig = { pre_task: [makeAllowHook()] };
     const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, ctx);
     expect(result.allow).toBe(true);
   });
@@ -109,7 +86,7 @@ describe('runPreHooks', () => {
   });
 
   it('returns not-allow when crash+block', async () => {
-    const hooks: HooksConfig = { pre_task: [throwingModuleHook()] };
+    const hooks: HooksConfig = { pre_task: [makeThrowingModuleHook({ on_failure: 'block' })] };
     const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, ctx);
     expect(result.allow).toBe(false);
     expect(result.reason).toBe('segfault');
@@ -117,7 +94,7 @@ describe('runPreHooks', () => {
 
   it('returns allow when crash+warn (not block)', async () => {
     const hooks: HooksConfig = {
-      pre_task: [throwingModuleHook({ on_failure: 'warn' })],
+      pre_task: [makeThrowingModuleHook({ on_failure: 'warn' })],
     };
     const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, ctx);
     expect(result.allow).toBe(true);
@@ -138,7 +115,7 @@ describe('runPreHooks', () => {
   });
 
   it('runs multiple hooks sequentially and allows if all pass', async () => {
-    const hooks: HooksConfig = { pre_task: [allowHook(), allowHook()] };
+    const hooks: HooksConfig = { pre_task: [makeAllowHook(), makeAllowHook()] };
     const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, ctx);
     expect(result.allow).toBe(true);
   });

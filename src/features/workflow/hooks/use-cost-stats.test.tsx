@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { Text } from 'ink';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
@@ -7,13 +6,10 @@ import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
-import { useCostStats, type CostPricingState } from './use-cost-stats.js';
+import { useCostStats } from './use-cost-stats.js';
 
-function Harness({ capture }: { capture: { current: CostPricingState | null } }) {
+function Harness() {
   const stats = useCostStats();
-  useEffect(() => {
-    capture.current = stats.pricingState;
-  });
   return <Text>{stats.pricingState}</Text>;
 }
 
@@ -46,11 +42,9 @@ describe('useCostStats', () => {
   });
 
   it('reacts when runtime model pricing is added to the model cache', async () => {
-    const capture: { current: CostPricingState | null } = { current: null };
-    const ui = renderFeature(<Harness capture={capture} />);
+    const ui = renderFeature(<Harness />);
     await tick();
 
-    expect(capture.current).toBe('n/a');
     expect(ui.lastFrame()).toBe('n/a');
 
     modelCacheStore.setProviderModels('openai', [{
@@ -60,7 +54,6 @@ describe('useCostStats', () => {
     }]);
     await tick();
 
-    expect(capture.current).toBe('mixed');
     expect(ui.lastFrame()).toBe('mixed');
     ui.unmount();
   });

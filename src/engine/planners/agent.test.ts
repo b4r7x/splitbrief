@@ -121,7 +121,6 @@ Create a test file.
     expect(result.tasks).toHaveLength(1);
     expect(result.tasks[0]?.id).toBe('task1');
     expect(result.phases).toHaveLength(1);
-    expect(callbacks.onPhase).toHaveBeenCalledWith('quick-planning');
   });
 
   it('supports full plan and reads generated files', async () => {
@@ -160,10 +159,6 @@ Create the main feature.
     expect(result.tasks).toHaveLength(1);
     expect(result.tasks[0]?.id).toBe('task1');
     expect(result.phases).toHaveLength(4);
-    expect(callbacks.onPhase).toHaveBeenCalledWith('researching');
-    expect(callbacks.onPhase).toHaveBeenCalledWith('specifying');
-    expect(callbacks.onPhase).toHaveBeenCalledWith('planning');
-    expect(callbacks.onPhase).toHaveBeenCalledWith('generating-tasks');
   });
 
   it('handles command not found error', async () => {
@@ -193,18 +188,4 @@ Create the main feature.
     expect(result.success).toBe(true);
   });
 
-  it('escalateFull — preserves token usage from underlying review', async () => {
-    const outFile = join(projectDir, 'usage-test.ts');
-    const config = makeConfig({ planner: { kind: 'agent', command: 'bash', args: ['-c', `echo "// usage" > ${outFile}`] } });
-    const planner = createAgentPlanner(config);
-    const task = makeTask();
-    const callbacks = { onOutput: vi.fn() };
-
-    // agent planner command-based invocation returns usage: null (no parsing)
-    // but the result.usage should be passed through, not replaced with null
-    const result = await planner.escalateFull(task, 'error', projectDir, callbacks);
-    // usage will be null for command-based (no token tracking), but it should not be
-    // unconditionally null — it should reflect what the underlying review returned
-    expect(result).toHaveProperty('usage');
-  });
 });

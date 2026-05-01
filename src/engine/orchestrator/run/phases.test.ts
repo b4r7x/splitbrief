@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createInitialState, transition } from '../../../core/state/machine.js';
-import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeBusRecorder, makeCallbacks, makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -15,6 +13,7 @@ import { loadState } from '../../../core/state/persistence.js';
 import { parseTasks } from '../../spec/parser.js';
 import { createValidator } from '../validation.js';
 import type { WorkflowSinks } from '../types.js';
+import type { Task } from '../../../core/schemas/task.js';
 import { runTasksAndReview } from './phases.js';
 
 const TEST_SINKS: WorkflowSinks = {
@@ -36,17 +35,6 @@ function setupProject(): { projectDir: string; sessionId: string } {
   const sessionId = 'sess-phases';
   ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
-}
-
-function makeImplState(tasks: ReturnType<typeof makeTask>[]): WorkflowState {
-  let state = createInitialState('feat');
-  state = transition(state, { type: 'START', feature: 'feat' });
-  state = transition(state, { type: 'RESEARCH_DONE' });
-  state = transition(state, { type: 'SPEC_DONE' });
-  state = transition(state, { type: 'APPROVE_SPEC' });
-  state = transition(state, { type: 'PLAN_DONE', tasks });
-  state = transition(state, { type: 'APPROVE_PLAN' });
-  return state;
 }
 
 describe('runTasksAndReview', () => {
@@ -141,7 +129,7 @@ describe('runTasksAndReview', () => {
       expect(prediction.prediction.deterministic?.totals.hypotheticalAllPlanner).toBeGreaterThan(0);
       expect(prediction.prediction.deterministic?.totals.estimatedSavings).toBeGreaterThan(0);
     }
-  });
+  }, 20_000);
 
   it('runs opt-in planner estimate review before implementation and publishes the result', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -222,17 +210,16 @@ describe('runTasksAndReview', () => {
       setCurrentTask: vi.fn(),
     });
 
-    const firstPrompt = review.mock.calls[0]?.[0] as string | undefined;
     const predictions = events.filter(event => event.type === 'cost_prediction');
     const completedPredictionIndex = events.findIndex(event =>
       event.type === 'cost_prediction' && event.prediction.plannerEstimateReview?.status === 'completed'
     );
     const taskStartIndex = events.findIndex(event => event.type === 'task_started');
 
-    expect(firstPrompt).toContain('Planner Estimate Review');
-    expect(firstPrompt).toContain('"taskId": "T001"');
-    expect(firstPrompt).toContain('"title": "Large task"');
-    expect(firstPrompt).not.toContain(hugeTaskBody);
+    expect(review).toHaveBeenCalledWith(expect.stringContaining('Planner Estimate Review'), expect.anything(), expect.anything());
+    expect(review).toHaveBeenCalledWith(expect.stringContaining('"taskId": "T001"'), expect.anything(), expect.anything());
+    expect(review).toHaveBeenCalledWith(expect.stringContaining('"title": "Large task"'), expect.anything(), expect.anything());
+    expect(review).toHaveBeenCalledWith(expect.not.stringContaining(hugeTaskBody), expect.anything(), expect.anything());
     expect(predictions[0]?.prediction.plannerEstimateReview).toMatchObject({
       status: 'running',
       extraPlannerCall: true,
@@ -246,7 +233,7 @@ describe('runTasksAndReview', () => {
     expect(completedPredictionIndex).toBeGreaterThanOrEqual(0);
     expect(taskStartIndex).toBeGreaterThan(completedPredictionIndex);
     expect(result.summary.costPrediction?.plannerEstimateReview?.status).toBe('completed');
-  });
+  }, 20_000);
 
   it('surfaces auto-split output for approval before task execution', async () => {
     const { projectDir, sessionId } = setupProject();

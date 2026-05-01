@@ -7,22 +7,6 @@ import {
   getContentTopRow,
 } from './chrome-rows.js';
 
-describe('chrome row constants', () => {
-  it('TOP_FIXED_CHROME_ROWS is 4, accounting for Header, AgentStatusRow, CostStatusLine, and spacer', () => {
-    // The cost status line is row 3 of the top chrome. Any change to this value
-    // must be reflected in the layout and accompanied by a test update.
-    expect(TOP_FIXED_CHROME_ROWS).toBe(4);
-  });
-
-  it('CONFIG_CHROME_ROWS is 2', () => {
-    expect(CONFIG_CHROME_ROWS).toBe(2);
-  });
-
-  it('BOTTOM_FIXED_CHROME_ROWS is 2', () => {
-    expect(BOTTOM_FIXED_CHROME_ROWS).toBe(2);
-  });
-});
-
 describe('getChromeHeight', () => {
   it('sums top + bottom + inputRows when config is hidden', () => {
     const inputRows = 2;

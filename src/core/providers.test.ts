@@ -2,36 +2,24 @@ import { describe, it, expect } from 'vitest';
 import { normalizeConfiguredModel, resolveAutoModel } from './providers/model-selection.js';
 
 describe('resolveAutoModel', () => {
-  it('returns undefined for "auto"', () => {
-    expect(resolveAutoModel('auto')).toBeUndefined();
+  it.each([
+    ['auto', undefined, undefined],
+    [undefined, undefined, undefined],
+    ['', undefined, undefined],
+    ['   ', undefined, undefined],
+    ['Auto', undefined, undefined],
+    ['AUTO', undefined, undefined],
+    ['aUtO', undefined, undefined],
+    ['default', 'claude-code', undefined],
+  ])('resolves %j (tool=%j) to undefined', (model, tool, _expected) => {
+    expect(resolveAutoModel(model, tool as string | undefined)).toBeUndefined();
   });
 
-  it('returns undefined when model is undefined', () => {
-    expect(resolveAutoModel(undefined)).toBeUndefined();
-  });
-
-  it('passes through a real model name', () => {
-    expect(resolveAutoModel('claude-sonnet-4-6')).toBe('claude-sonnet-4-6');
-  });
-
-  it('resolves empty string to undefined', () => {
-    expect(resolveAutoModel('')).toBeUndefined();
-  });
-
-  it('resolves whitespace-only string to undefined', () => {
-    expect(resolveAutoModel('   ')).toBeUndefined();
-  });
-
-  it('is case-insensitive for "Auto"', () => {
-    expect(resolveAutoModel('Auto')).toBeUndefined();
-  });
-
-  it('is case-insensitive for "AUTO"', () => {
-    expect(resolveAutoModel('AUTO')).toBeUndefined();
-  });
-
-  it('is case-insensitive for "aUtO"', () => {
-    expect(resolveAutoModel('aUtO')).toBeUndefined();
+  it.each([
+    ['claude-sonnet-4-6', undefined, 'claude-sonnet-4-6'],
+    ['auto', 'openai', 'gpt-5.4'],
+  ])('resolves %j (tool=%j) to %j', (model, tool, expected) => {
+    expect(resolveAutoModel(model, tool as string | undefined)).toBe(expected);
   });
 
   it('canonicalizes auto to lower-case for picker/config consumers', () => {
@@ -40,13 +28,5 @@ describe('resolveAutoModel', () => {
 
   it('normalizes legacy Claude Code default to auto for picker/config consumers', () => {
     expect(normalizeConfiguredModel('default', 'claude-code')).toBe('auto');
-  });
-
-  it('treats Claude Code default as no override at runtime', () => {
-    expect(resolveAutoModel('default', 'claude-code')).toBeUndefined();
-  });
-
-  it('resolves OpenAI auto to the bundled default model', () => {
-    expect(resolveAutoModel('auto', 'openai')).toBe('gpt-5.4');
   });
 });

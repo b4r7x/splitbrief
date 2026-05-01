@@ -47,12 +47,7 @@ describe('e2e: drift out-of-scope detection', () => {
     const summary = await runE2eWorkflow(ctx, scenario);
 
     expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
-
-    if (summary.driftSummary) {
-      expect(ctx.events.some((event) => event.type === 'drift_report')).toBe(true);
-    }
-    if (summary.chainDriftSummary) {
-      expect(ctx.events.some((event) => event.type === 'drift_chain_detected')).toBe(true);
-    }
+    expect(ctx.events.some((event) => event.type === 'drift_report')).toBe(true);
+    expect(ctx.events.some((event) => event.type === 'drift_chain_detected')).toBe(true);
   });
 });

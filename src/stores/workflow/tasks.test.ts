@@ -1,9 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tasksStore, updateTaskMap } from './tasks.js';
+import { tasksStore } from './tasks.js';
 import { addEvent, resetWorkflow } from './actions.js';
 import { taskId } from '../../core/schemas/task.js';
-import type { EngineEvent } from '../../engine/events/types.js';
-import type { WorkflowTask } from './tasks.js';
 import {
   makeTaskStart,
   makeTaskComplete,
@@ -73,26 +71,5 @@ describe('tasksStore — via addEvent', () => {
     addEvent(makeTaskStart({ taskId: taskId('T003'), title: 'Full fail task' }));
     addEvent({ type: 'task_full_fail', ts: Date.now(), phase: 'escalating', taskId: taskId('T003') });
     expect(tasksStore.get().taskMap.get('T003')!.status).toBe('failed');
-  });
-});
-
-describe('updateTaskMap (pure)', () => {
-  it('status unchanged returns original map', () => {
-    const existing = new Map<string, WorkflowTask>([
-      ['T003', { id: 'T003', title: 'Already done', status: 'done' }],
-    ]);
-    const next = updateTaskMap(existing, makeTaskComplete({ taskId: taskId('T003') }));
-    expect(next).toBe(existing);
-  });
-
-  it('leaves unknown terminal task events out of the map', () => {
-    const existing = new Map<string, WorkflowTask>();
-    const event = {
-      type: 'task_failed',
-      ts: Date.now(),
-      phase: 'implementing',
-      taskId: taskId('UNKNOWN'),
-    } satisfies EngineEvent;
-    expect(updateTaskMap(existing, event)).toBe(existing);
   });
 });

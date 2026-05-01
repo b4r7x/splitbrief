@@ -1,5 +1,7 @@
 import type { WorkflowOpts } from '../core/types/config-options.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
+import type { Planner } from '../engine/planners/types.js';
+import type { Implementer } from '../engine/implementers/types.js';
 import { loadConfig } from '../core/config/load/load.js';
 import { applyCLIOverrides } from '../core/config/runtime/overrides.js';
 import { loadState } from '../core/state/persistence.js';
@@ -45,6 +47,8 @@ export async function runHeadless(
   savedState?: WorkflowState | undefined,
   sessionId?: string | undefined,
   readiness?: CollectedReadiness | undefined,
+  _planner?: Planner | undefined,
+  _implementer?: Implementer | undefined,
 ): Promise<void> {
   const loadedResult = readiness?.config
     ? { config: readiness.config, warnings: readiness.warnings }
@@ -84,6 +88,8 @@ export async function runHeadless(
     drainPendingAttachments: () => attachmentsStore.drain(),
     savedState,
     sessionId,
+    _planner,
+    _implementer,
     callbacks: {
       onApprovalNeeded: async () => ({ approved: true }),
       onQuestionAsked: async () => '',

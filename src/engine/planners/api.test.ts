@@ -214,13 +214,8 @@ describe('createApiPlanner', () => {
     expect(hasAssistantPrior).toBe(false);
   });
 
-  it('isAvailable returns true when models endpoint responds', async () => {
-    const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
-    expect(await planner.isAvailable()).toBe(true);
-  });
-
-  it('isAvailable returns true for Anthropic when models endpoint responds', async () => {
-    const planner = createApiPlanner(makeApiPlannerConfig('anthropic'));
+  it.each([['ollama'], ['anthropic']] as const)('isAvailable returns true for %s when endpoint responds', async (provider) => {
+    const planner = createApiPlanner(makeApiPlannerConfig(provider));
     expect(await planner.isAvailable()).toBe(true);
   });
 

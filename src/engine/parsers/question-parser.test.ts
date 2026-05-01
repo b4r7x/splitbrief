@@ -30,6 +30,7 @@ describe('extractQuestionsFromStream', () => {
   });
 
   it('silently skips malformed JSON (emits stderr warning) but extracts valid questions', () => {
+    // last-resort: stderr is the observable output for parse-failure warnings
     const writeSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
       const text = [

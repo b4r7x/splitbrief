@@ -6,21 +6,13 @@ import { createServer, type Server, type Socket } from 'node:net';
 import { render } from 'ink-testing-library';
 import { useState, useEffect } from 'react';
 import { Text } from 'ink';
+import { tick } from '#testing/helpers/ink.js';
 import { useIpcClient, type IpcClientStatus } from './use-ipc-client.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { IpcPromptRequest, IpcPromptResponse, ServerMessage } from '../../../engine/ipc/protocol.js';
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), 'ipc-client-test-'));
-}
-
-function tick(ms = 0): Promise<void> {
-  if (ms > 0) return new Promise((resolve) => setTimeout(resolve, ms));
-  return new Promise((resolve) => setImmediate(resolve));
 }
 
 function waitMs(ms: number): Promise<void> {

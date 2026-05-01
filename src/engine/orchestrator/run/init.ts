@@ -6,6 +6,7 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { Planner } from '../../planners/types.js';
+import type { Implementer } from '../../implementers/types.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
@@ -51,6 +52,8 @@ export type RunWorkflowOptions = {
   _eventSink?: EventSink | undefined;
   /** Test-only: inject a pre-built planner (avoids spawning real subprocesses in tests). */
   _planner?: Planner | undefined;
+  /** Test-only: inject a pre-built implementer (avoids spawning real subprocesses in tests). */
+  _implementer?: Implementer | undefined;
   /** Model cache accessor for pricing/cost lookups — injected from composition layer. */
   modelCache?: ModelCacheAccessor | undefined;
   /** Drains pending attachments from the store — injected from composition layer. */
@@ -105,7 +108,7 @@ export async function initializeWorkflow(
     }
   }
 
-  const implementer = createImplementer(config, { publisher: createImplementerPublisher(bus) });
+  const implementer = opts._implementer ?? createImplementer(config, { publisher: createImplementerPublisher(bus) });
 
   let state: WorkflowState;
 

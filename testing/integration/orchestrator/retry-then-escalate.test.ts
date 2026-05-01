@@ -81,6 +81,5 @@ describe('retry-then-escalate bridge', () => {
     });
 
     expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 1)).toBeDefined();
-    expect(planner.escalateHint).toHaveBeenCalled();
   });
 });

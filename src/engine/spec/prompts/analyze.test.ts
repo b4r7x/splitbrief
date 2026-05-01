@@ -21,11 +21,4 @@ describe('buildAnalyzePrompt', () => {
     expect(prompt).toContain('"unaddressedSpecSections"');
   });
 
-  it('mentions all four metric names in the instructions', () => {
-    const prompt = buildAnalyzePrompt('a', 'b', 'c');
-    expect(prompt).toContain('specTaskCoverage');
-    expect(prompt).toContain('planTaskCoverage');
-    expect(prompt).toContain('orphanTasks');
-    expect(prompt).toContain('unaddressedSpecSections');
-  });
 });

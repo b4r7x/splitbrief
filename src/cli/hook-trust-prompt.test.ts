@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureHooksTrusted } from '../../../src/cli/hook-trust-prompt.js';
-import { isHooksConfigTrusted, markHooksConfigTrusted } from '../../../src/core/hooks/trust.js';
-import { isCliError } from '../../../src/cli/errors.js';
-import type { HooksConfig } from '../../../src/core/schemas/hooks.js';
+import { ensureHooksTrusted } from './hook-trust-prompt.js';
+import { isHooksConfigTrusted, markHooksConfigTrusted } from '../core/hooks/trust.js';
+import { isCliError } from './errors.js';
+import type { HooksConfig } from '../core/schemas/hooks.js';
 
 vi.mock('node:readline/promises', () => ({
   createInterface: vi.fn(),

@@ -1,16 +1,12 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createConnection, type Socket } from 'node:net';
 import { createEventBus } from '../events/bus.js';
 import type { EngineEvent } from '../events/types.js';
 import { startIpcServer, type IpcServer } from './server.js';
 import type { ServerMessage } from './protocol.js';
-
-function makeTmpDir(): string {
-  return mkdtempSync(join(tmpdir(), 'ipc-test-'));
-}
 
 function readLines(socket: Socket, count: number): Promise<ServerMessage[]> {
   return new Promise((resolve, reject) => {
@@ -84,13 +80,11 @@ afterEach(async () => {
   for (const srv of servers.splice(0)) {
     await srv.close().catch(() => undefined);
   }
-  for (const dir of tmpDirs.splice(0)) {
-    try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
-  }
+  for (const dir of tmpDirs.splice(0)) cleanupTempDir(dir);
 });
 
 async function makeServer(overrides?: Partial<Parameters<typeof startIpcServer>[0]>) {
-  const tmpDir = makeTmpDir();
+  const tmpDir = createTempDir('ipc-test');
   tmpDirs.push(tmpDir);
   const bus = createEventBus();
   const onUserInput = vi.fn();
@@ -116,7 +110,7 @@ describe('startIpcServer', () => {
 
   it('publishes ipc_server_started after bind', async () => {
     const events: EngineEvent[] = [];
-    const tmpDir = makeTmpDir();
+    const tmpDir = createTempDir('ipc-test');
     tmpDirs.push(tmpDir);
     const bus = createEventBus();
     bus.subscribe((e) => events.push(e));
@@ -461,7 +455,7 @@ function makeSessionLogLine(event: EngineEvent): string {
 
 describe('startIpcServer replay', () => {
   it('client receives replay_meta before live events when sessionJsonlPath provided', async () => {
-    const tmpDir = makeTmpDir();
+    const tmpDir = createTempDir('ipc-test');
     tmpDirs.push(tmpDir);
     const sessionJsonlPath = join(tmpDir, 'session.jsonl');
     const storedEvents: EngineEvent[] = [
@@ -507,7 +501,7 @@ describe('startIpcServer replay', () => {
   });
 
   it('replayed events arrive in order before replay_complete', async () => {
-    const tmpDir = makeTmpDir();
+    const tmpDir = createTempDir('ipc-test');
     tmpDirs.push(tmpDir);
     const sessionJsonlPath = join(tmpDir, 'session.jsonl');
     const storedEvents: EngineEvent[] = [
@@ -555,7 +549,7 @@ describe('startIpcServer replay', () => {
   });
 
   it('after replay, new bus events are forwarded to client', async () => {
-    const tmpDir = makeTmpDir();
+    const tmpDir = createTempDir('ipc-test');
     tmpDirs.push(tmpDir);
     const sessionJsonlPath = join(tmpDir, 'session.jsonl');
     writeFileSync(sessionJsonlPath, makeSessionLogLine({ type: 'workflow_started', ts: 500, phase: 'idle', feature: 'y' }) + '\n');

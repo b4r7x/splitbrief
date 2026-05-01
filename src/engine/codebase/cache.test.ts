@@ -1,24 +1,20 @@
-import { mkdtempSync, rmSync, writeFileSync, utimesSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createParseCache } from './cache.js';
-import type { FileNode } from './types.js';
+import { makeFileNode } from '#testing/helpers/factories/file-node.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 describe('parseCache', () => {
   let dir: string;
-  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'cache-')); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
-
-  function fakeNode(path: string): FileNode {
-    return { path, symbols: [], imports: [], sizeBytes: 1, mtimeMs: 1 };
-  }
+  beforeEach(() => { dir = createTempDir('cache'); });
+  afterEach(() => { cleanupTempDir(dir); });
 
   it('parses on miss and serves cache on subsequent identical mtime', async () => {
     const f = join(dir, 'a.ts'); writeFileSync(f, 'export function x() {}');
     const cache = createParseCache(join(dir, 'cache.sqlite'));
     let parseCount = 0;
-    const parseSpy = (p: string) => { parseCount++; return Promise.resolve(fakeNode(p)); };
+    const parseSpy = (p: string) => { parseCount++; return Promise.resolve(makeFileNode(p)); };
 
     await cache.getOrParse(f, parseSpy);
     await cache.getOrParse(f, parseSpy);
@@ -32,7 +28,7 @@ describe('parseCache', () => {
     const f = join(dir, 'a.ts'); writeFileSync(f, 'export function x() {}');
     const cache = createParseCache(join(dir, 'cache.sqlite'));
     let parseCount = 0;
-    const parseSpy = (p: string) => { parseCount++; return Promise.resolve(fakeNode(p)); };
+    const parseSpy = (p: string) => { parseCount++; return Promise.resolve(makeFileNode(p)); };
 
     await cache.getOrParse(f, parseSpy);
     // bump mtime by 5 seconds
@@ -48,7 +44,7 @@ describe('parseCache', () => {
     const f = join(dir, 'a.ts'); writeFileSync(f, 'export function x() {}');
     const cache = createParseCache(join(dir, 'cache.sqlite'));
     let parseCount = 0;
-    const parseSpy = (p: string) => { parseCount++; return Promise.resolve(fakeNode(p)); };
+    const parseSpy = (p: string) => { parseCount++; return Promise.resolve(makeFileNode(p)); };
 
     const stat = await import('node:fs').then(fs => fs.statSync(f));
     await cache.getOrParse(f, parseSpy);
@@ -65,7 +61,7 @@ describe('parseCache', () => {
     const f = join(dir, 'a.ts'); writeFileSync(f, 'export function x() {}');
     const dbPath = join(dir, 'cache.sqlite');
     let parseCount = 0;
-    const parseSpy = (p: string) => { parseCount++; return Promise.resolve(fakeNode(p)); };
+    const parseSpy = (p: string) => { parseCount++; return Promise.resolve(makeFileNode(p)); };
 
     const cache1 = createParseCache(dbPath);
     await cache1.getOrParse(f, parseSpy);

@@ -1,19 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { formatFileNode } from './format.js';
-import type { FileNode } from './types.js';
+import { makeFileNode, makeSymbol } from '#testing/helpers/factories/file-node.js';
 
 describe('formatFileNode', () => {
   it('emits file path header followed by indented symbol signatures', () => {
-    const node: FileNode = {
-      path: 'src/foo.ts',
+    const node = makeFileNode('src/foo.ts', {
       symbols: [
-        { name: 'add', kind: 'function', signature: 'export function add(a: number, b: number): number', exported: true, line: 1 },
-        { name: 'Vec', kind: 'type', signature: 'export type Vec = readonly number[]', exported: true, line: 3 },
+        makeSymbol('add', { kind: 'function', signature: 'export function add(a: number, b: number): number', line: 1 }),
+        makeSymbol('Vec', { kind: 'type', signature: 'export type Vec = readonly number[]', line: 3 }),
       ],
-      imports: [],
       sizeBytes: 100,
-      mtimeMs: 1,
-    };
+    });
     const out = formatFileNode(node);
     expect(out).toContain('src/foo.ts:');
     expect(out).toContain('  export function add(a: number, b: number): number');
@@ -21,17 +18,16 @@ describe('formatFileNode', () => {
   });
 
   it('returns just the path header when no symbols', () => {
-    const node: FileNode = { path: 'src/empty.ts', symbols: [], imports: [], sizeBytes: 0, mtimeMs: 0 };
+    const node = makeFileNode('src/empty.ts', { sizeBytes: 0, mtimeMs: 0 });
     const out = formatFileNode(node);
     expect(out.trim()).toBe('src/empty.ts:');
   });
 
   it('emits non-exported symbols too (the budget caller decides what to include)', () => {
-    const node: FileNode = {
-      path: 'src/x.ts',
-      symbols: [{ name: 'priv', kind: 'function', signature: 'function priv()', exported: false, line: 1 }],
-      imports: [], sizeBytes: 10, mtimeMs: 1,
-    };
+    const node = makeFileNode('src/x.ts', {
+      symbols: [makeSymbol('priv', { kind: 'function', signature: 'function priv()', exported: false })],
+      sizeBytes: 10,
+    });
     expect(formatFileNode(node)).toContain('  function priv()');
   });
 });

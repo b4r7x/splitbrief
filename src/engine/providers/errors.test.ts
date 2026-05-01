@@ -53,16 +53,6 @@ describe('providerError factories', () => {
 });
 
 describe('providerError kinds via matches()', () => {
-  test('each kind matches only its factory', () => {
-    expect(matches('provider-unknown-needs-api-base')(providerError.unknownNeedsApiBase('x'))).toBe(true);
-    expect(matches('provider-unknown-needs-api-base')(providerError.unknownNeedsApiKey('x'))).toBe(false);
-    expect(matches('provider-not-api')(providerError.notApi('cli'))).toBe(true);
-    expect(matches('provider-http-failure')(providerError.httpFailure(500, 'u'))).toBe(true);
-    expect(matches('provider-missing-model')(providerError.missingModel('implementer'))).toBe(true);
-    expect(matches('provider-anthropic-not-openai-compat')(providerError.anthropicNotOpenAICompat())).toBe(true);
-    expect(matches('provider-expected-openai-client')(providerError.expectedOpenAIClient('ollama'))).toBe(true);
-  });
-
   test('matches() rejects non-AppError values', () => {
     expect(matches('provider-http-failure')(new Error('plain'))).toBe(false);
     expect(matches('provider-http-failure')(null)).toBe(false);

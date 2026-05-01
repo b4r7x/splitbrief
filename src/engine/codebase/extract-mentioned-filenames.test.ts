@@ -1,18 +1,18 @@
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { extractMentionedFilenames } from './extract-mentioned-filenames.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 describe('extractMentionedFilenames', () => {
   let projectDir: string;
 
   beforeEach(() => {
-    projectDir = mkdtempSync(join(tmpdir(), 'diptych-emf-'));
+    projectDir = createTempDir('diptych-emf');
   });
 
   afterEach(() => {
-    rmSync(projectDir, { recursive: true, force: true });
+    cleanupTempDir(projectDir);
   });
 
   it('returns empty array for empty string', () => {

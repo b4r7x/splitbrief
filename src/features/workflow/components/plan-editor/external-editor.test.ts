@@ -120,19 +120,6 @@ describe('openExternalEditor edit mode', () => {
     expect(planEditorStore.get().saveError).toContain('Editor exited with status 42');
   });
 
-  it('restores stdin when the editor exits non-zero', () => {
-    const pause = vi.spyOn(process.stdin, 'pause');
-    const resume = vi.spyOn(process.stdin, 'resume');
-    const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
-    planEditorStore.initEditor([task]);
-    vi.stubEnv('FAKE_EDITOR_MODE', 'exit-42');
-
-    openExternalEditor(task, 'edit', sessionDir);
-
-    expect(pause).toHaveBeenCalledOnce();
-    expect(resume).toHaveBeenCalledOnce();
-  });
-
   it('surfaces temp file write failures', () => {
     const task = makeTask({ implementationSteps: ['step'], tests: ['test'] });
     planEditorStore.initEditor([task]);

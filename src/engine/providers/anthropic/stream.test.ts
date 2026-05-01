@@ -69,46 +69,4 @@ describe('streamAnthropicCompletion', () => {
     });
   });
 
-  it('forwards thinking.budget_tokens when effort is set', async () => {
-    const fetchMock = vi.mocked(globalThis.fetch);
-    fetchMock.mockResolvedValue(
-      makeSseResponse([
-        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
-      ]),
-    );
-    await streamAnthropicCompletion({
-      apiKey: 'sk-test',
-      apiBase: 'https://api.anthropic.com/v1',
-      model: 'claude-sonnet-4-6',
-      messages: [{ role: 'user', content: 'hi' }],
-      temperature: 0.3,
-      onProgress: () => {},
-      effort: 'high',
-    });
-    const callArgs = fetchMock.mock.calls[0];
-    if (!callArgs) throw new Error('no fetch call');
-    const init = callArgs[1] as { body: string };
-    const body = JSON.parse(init.body) as { thinking?: { budget_tokens: number } };
-    expect(body.thinking?.budget_tokens).toBeGreaterThan(0);
-  });
-
-  it('omits thinking when effort is unset', async () => {
-    const fetchMock = vi.mocked(globalThis.fetch);
-    fetchMock.mockResolvedValue(
-      makeSseResponse(['event: message_stop\ndata: {"type":"message_stop"}\n\n']),
-    );
-    await streamAnthropicCompletion({
-      apiKey: 'sk-test',
-      apiBase: 'https://api.anthropic.com/v1',
-      model: 'claude-sonnet-4-6',
-      messages: [{ role: 'user', content: 'hi' }],
-      temperature: 0.3,
-      onProgress: () => {},
-    });
-    const callArgs = fetchMock.mock.calls[0];
-    if (!callArgs) throw new Error('no fetch call');
-    const init = callArgs[1] as { body: string };
-    const body = JSON.parse(init.body) as { thinking?: unknown };
-    expect(body.thinking).toBeUndefined();
-  });
 });

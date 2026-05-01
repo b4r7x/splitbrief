@@ -199,85 +199,63 @@ describe('buildTaskRows', () => {
 });
 
 describe('renderBar', () => {
-  it('returns empty string when max is 0', () => {
-    expect(renderBar(0, 0, 10)).toBe('');
-    expect(renderBar(5, 0, 10)).toBe('');
-  });
-
-  it('returns full bar when value equals max', () => {
-    expect(renderBar(10, 10, 10)).toBe('█'.repeat(10));
-  });
-
-  it('returns correct proportional bar', () => {
-    const bar = renderBar(5, 10, 10);
-    expect(bar).toBe('█████░░░░░');
-  });
-
-  it('returns empty bar when value is 0', () => {
-    const bar = renderBar(0, 10, 10);
-    expect(bar).toBe('░'.repeat(10));
+  it.each([
+    [0, 0, 10, ''],
+    [5, 0, 10, ''],
+    [10, 10, 10, '██████████'],
+    [5, 10, 10, '█████░░░░░'],
+    [0, 10, 10, '░░░░░░░░░░'],
+  ] as const)('renderBar(%i, %i, %i) → %s', (value, max, width, expected) => {
+    expect(renderBar(value, max, width)).toBe(expected);
   });
 });
 
 describe('formatCacheHitPct', () => {
-  it('returns cache n/a when cacheRead is 0', () => {
-    expect(formatCacheHitPct(0, 500)).toBe('cache n/a');
-  });
-
-  it('returns cache n/a when input is 0', () => {
-    expect(formatCacheHitPct(100, 0)).toBe('cache n/a');
-  });
-
-  it('returns correct percentage', () => {
-    // cacheRead / (cacheRead + input) — 200 / (200 + 800) = 20%
-    expect(formatCacheHitPct(200, 800)).toBe('cache 20%');
-  });
-
-  it('returns 50% for equal cacheRead and input', () => {
-    expect(formatCacheHitPct(500, 500)).toBe('cache 50%');
+  it.each([
+    [0, 500, 'cache n/a'],
+    [100, 0, 'cache n/a'],
+    [200, 800, 'cache 20%'],
+    [500, 500, 'cache 50%'],
+  ] as const)('formatCacheHitPct(%i, %i) → %s', (cacheRead, input, expected) => {
+    expect(formatCacheHitPct(cacheRead, input)).toBe(expected);
   });
 });
 
 describe('formatInputOutputSplit', () => {
-  it('shows raw numbers when total <= 1000', () => {
-    expect(formatInputOutputSplit(300, 200)).toBe('in: 300 / out: 200');
-  });
-
-  it('scales to k when total > 1000', () => {
-    expect(formatInputOutputSplit(1500, 500)).toBe('in: 1.5k / out: 0.5k');
+  it.each([
+    [300, 200, 'in: 300 / out: 200'],
+    [1500, 500, 'in: 1.5k / out: 0.5k'],
+  ] as const)('formatInputOutputSplit(%i, %i) → %s', (input, output, expected) => {
+    expect(formatInputOutputSplit(input, output)).toBe(expected);
   });
 });
 
 describe('formatCacheCreateTokens', () => {
-  it('returns empty string when cache creation is unsupported or absent', () => {
-    expect(formatCacheCreateTokens(0)).toBe('');
-  });
-
-  it('scales cache creation tokens', () => {
-    expect(formatCacheCreateTokens(1500)).toBe('create 1.5k');
+  it.each([
+    [0, ''],
+    [1500, 'create 1.5k'],
+  ] as const)('formatCacheCreateTokens(%i) → %s', (tokens, expected) => {
+    expect(formatCacheCreateTokens(tokens)).toBe(expected);
   });
 });
 
 describe('formatTotalTokens', () => {
-  it('includes (total) suffix', () => {
-    expect(formatTotalTokens(500)).toContain('(total)');
-  });
-
-  it('shows raw count when <= 1000', () => {
-    expect(formatTotalTokens(500)).toBe('500 tokens (total)');
-  });
-
-  it('scales to k when > 1000', () => {
-    expect(formatTotalTokens(2500)).toBe('2.5k tokens (total)');
+  it.each([
+    [500, '500 tokens (total)'],
+    [2500, '2.5k tokens (total)'],
+  ] as const)('formatTotalTokens(%i) → %s', (tokens, expected) => {
+    expect(formatTotalTokens(tokens)).toBe(expected);
   });
 });
 
 describe('formatPhaseCost', () => {
-  it('labels zero-cost unpriced phases explicitly', () => {
-    expect(formatPhaseCost(0, false, 'unpriced-local')).toBe('local');
-    expect(formatPhaseCost(0, false, 'unpriced-cli')).toBe('unpriced');
-    expect(formatPhaseCost(0, false, 'unpriced-meta')).toBe('unpriced');
-    expect(formatPhaseCost(0, false, 'unpriced-unknown')).toBe('n/a');
-    expect(formatPhaseCost(0, false, null)).toBe('n/a');
+  it.each([
+    [0, false, 'unpriced-local' as const, 'local'],
+    [0, false, 'unpriced-cli' as const, 'unpriced'],
+    [0, false, 'unpriced-meta' as const, 'unpriced'],
+    [0, false, 'unpriced-unknown' as const, 'n/a'],
+    [0, false, null, 'n/a'],
+  ] as const)('formatPhaseCost(%i, %s, %s) → %s', (cost, isDerived, reason, expected) => {
+    expect(formatPhaseCost(cost, isDerived, reason)).toBe(expected);
   });
 });

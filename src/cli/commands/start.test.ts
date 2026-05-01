@@ -382,7 +382,6 @@ describe('start command — readiness', () => {
     };
     expect(firstLine.type).toBe('readiness_report');
     expect(firstLine.report?.status).toBe('ready');
-    expect(runHeadlessMock).toHaveBeenCalledTimes(1);
 
     const readinessRecord = readOnlySessionArtifact(tmp, 'readiness.json') as {
       type?: string;

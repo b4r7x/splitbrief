@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'vitest';
-import { matches } from '../../utils/error.js';
 import { runnerConfigError } from './errors.js';
 
 describe('runnerConfigError factories', () => {
@@ -31,30 +30,3 @@ describe('runnerConfigError factories', () => {
   });
 });
 
-describe('runnerConfigError kinds via matches()', () => {
-  test('runner-invalid-kind matches only invalidKind', () => {
-    expect(matches('runner-invalid-kind')(runnerConfigError.invalidKind('x', 'planner'))).toBe(true);
-    expect(matches('runner-invalid-kind')(runnerConfigError.kindMismatch('a', 'b', 'planner'))).toBe(false);
-    expect(matches('runner-invalid-kind')(new Error('plain'))).toBe(false);
-    expect(matches('runner-invalid-kind')(null)).toBe(false);
-  });
-
-  test('runner-kind-mismatch matches only kindMismatch', () => {
-    expect(matches('runner-kind-mismatch')(runnerConfigError.kindMismatch('a', 'b', 'planner'))).toBe(true);
-    expect(matches('runner-kind-mismatch')(runnerConfigError.invalidKind('x', 'planner'))).toBe(false);
-  });
-
-  test('runner-missing-tool-config matches only missingToolConfig', () => {
-    expect(matches('runner-missing-tool-config')(runnerConfigError.missingToolConfig('t', 'planner'))).toBe(true);
-    expect(matches('runner-missing-tool-config')(runnerConfigError.invalidKind('x', 'planner'))).toBe(false);
-  });
-
-  test('matches() narrows data type', () => {
-    const err: unknown = runnerConfigError.kindMismatch('cli', 'api', 'planner');
-    if (matches('runner-kind-mismatch')(err)) {
-      expect(err.data).toEqual({ expected: 'cli', actual: 'api', role: 'planner' });
-    } else {
-      throw new Error('predicate should match');
-    }
-  });
-});

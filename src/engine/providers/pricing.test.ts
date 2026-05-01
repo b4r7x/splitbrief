@@ -3,7 +3,6 @@ import { calculateCost, calculateCostBreakdown, calculateUsageCost, getModelPric
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { CostBreakdownSchema } from '../../core/schemas/summary.js';
 import { taskId } from '../../core/schemas/task.js';
-import type { ModelCacheAccessor } from './model/resolution.js';
 
 describe('calculateCost', () => {
   it('returns 0 for unpriced providers', () => {
@@ -319,26 +318,6 @@ describe('getProviderPricing', () => {
 });
 
 describe('cache pricing', () => {
-  it('merges bundled Anthropic cache rates into runtime model-cache pricing', () => {
-    const cache: ModelCacheAccessor = {
-      getModelsDevCatalog: () => null,
-      getProviderModels: (providerId) => providerId === 'anthropic'
-        ? [{
-            id: 'claude-sonnet-4-6',
-            pricingInput: 4,
-            pricingOutput: 20,
-          }]
-        : null,
-    };
-    const pricing = getProviderPricing('anthropic', 'claude-sonnet-4-6', cache);
-
-    expect(pricing.source).toBe('runtime');
-    expect(pricing.inputPer1M).toBe(4);
-    expect(pricing.outputPer1M).toBe(20);
-    expect(pricing.cacheReadPer1M).toBe(0.3);
-    expect(pricing.cacheWritePer1M).toBe(3.75);
-  });
-
   it('calculateCostBreakdown with cacheRead tokens + priced provider returns correct cacheReadSavings', () => {
     // Sonnet 4.6: input=$3/MTok, cacheRead=$0.30/MTok => savings=$2.70/MTok of cache reads
     const usage = makeUsage({

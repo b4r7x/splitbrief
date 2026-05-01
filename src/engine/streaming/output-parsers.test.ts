@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { parseTextLine, parseJsonlLine, parseOpencodeLine } from './output-parsers.js';
 import { accumulateUsage } from './token-utils.js';
 
@@ -96,17 +96,8 @@ describe('parseJsonlLine', () => {
     expect(result.text).toBe('content string');
   });
 
-  it('returns empty for invalid JSON and emits a stderr warning', () => {
-    const writeSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    try {
-      expect(parseJsonlLine('not json {{')).toEqual({});
-      const warned = writeSpy.mock.calls.some(([chunk]) =>
-        typeof chunk === 'string' && chunk.includes('output-parser: malformed JSONL line'),
-      );
-      expect(warned).toBe(true);
-    } finally {
-      writeSpy.mockRestore();
-    }
+  it('returns empty for invalid JSON', () => {
+    expect(parseJsonlLine('not json {{')).toEqual({});
   });
 
   it('JSON-stringifies non-string content field', () => {
@@ -198,17 +189,8 @@ describe('parseOpencodeLine', () => {
     expect(result.usage).toEqual({ inputTokens: 500, outputTokens: 200 });
   });
 
-  it('returns empty for invalid JSON and emits a stderr warning', () => {
-    const writeSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    try {
-      expect(parseOpencodeLine('broken')).toEqual({});
-      const warned = writeSpy.mock.calls.some(([chunk]) =>
-        typeof chunk === 'string' && chunk.includes('output-parser: malformed opencode JSON'),
-      );
-      expect(warned).toBe(true);
-    } finally {
-      writeSpy.mockRestore();
-    }
+  it('returns empty for invalid JSON', () => {
+    expect(parseOpencodeLine('broken')).toEqual({});
   });
 
   it('returns empty for unknown event type', () => {

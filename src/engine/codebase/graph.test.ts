@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { buildGraph } from './graph.js';
-import type { FileNode } from './types.js';
+import { makeFileNode } from '#testing/helpers/factories/file-node.js';
 
-function fn(path: string, imports: string[]): FileNode {
-  return { path, symbols: [], imports, sizeBytes: 1, mtimeMs: 1 };
+function fn(path: string, imports: string[]) {
+  return makeFileNode(path, { imports });
 }
 
 describe('buildGraph', () => {

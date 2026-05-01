@@ -6,6 +6,7 @@ import { createInitialState, transition } from '../../core/state/machine.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import { expectBriefQualityBlocked } from '#testing/helpers/assertions/brief-quality.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { BRIEF_QUALITY_FILE, sessionDir } from '../../core/paths.js';
@@ -136,22 +137,6 @@ function seedRejectionEvidence(projectDir: string, sessionId: string): void {
     reason: 'user denied network access',
   });
   writeEvidenceLedger(projectDir, sessionId, ledger);
-}
-
-function expectBriefQualityBlocked(
-  result: { cancelled: boolean; state: WorkflowState },
-  projectDir: string,
-  sessionId: string,
-  events: ReturnType<typeof makeBusRecorder>['events'],
-) {
-  expect(result.cancelled).toBe(true);
-  expect(result.state.phase).not.toBe('implementing');
-  const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE);
-  expect(existsSync(reportPath)).toBe(true);
-  const persisted = JSON.parse(readFileSync(reportPath, 'utf8'));
-  expect(persisted.passed).toBe(false);
-  const failed = events.find(e => e.type === 'brief_quality_failed');
-  expect(failed).toBeDefined();
 }
 
 function sequencedApproval(responses: Array<{ approved: boolean; comment?: string; action?: 'edit' }>): OrchestratorCallbacks['onApprovalNeeded'] {
@@ -478,8 +463,7 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
 
     // The comment branch enqueues the message and calls regenerateTasks → planner.review
     expect(reviewFn).toHaveBeenCalledTimes(1);
-    const reviewPrompt = reviewFn.mock.calls[0]?.[0] as string;
-    expect(reviewPrompt).toContain('add scope definitions to all tasks');
+    expect(reviewFn).toHaveBeenCalledWith(expect.stringContaining('add scope definitions to all tasks'), expect.anything(), expect.anything());
     // After regeneration the loop continues and user approves → workflow reaches implementing
     expect(result.cancelled).toBe(false);
     expect(result.state.phase).toBe('implementing');
@@ -535,10 +519,9 @@ describe('runPlanningPhase — planner rejection context', () => {
 
     expect(result.cancelled).toBe(false);
     expect(plan).toHaveBeenCalledTimes(1);
-    const prompt = plan.mock.calls[0]?.[0];
-    expect(prompt).toContain('Previous rejections:');
-    expect(prompt).toContain(rejectionSummary);
-    expect(prompt).toContain(feature);
+    expect(plan.mock.calls[0]?.[0]).toContain('Previous rejections:');
+    expect(plan.mock.calls[0]?.[0]).toContain(rejectionSummary);
+    expect(plan.mock.calls[0]?.[0]).toContain(feature);
   });
 
   it('prepends prior rejection context to quick planner input when enabled', async () => {
@@ -558,10 +541,9 @@ describe('runPlanningPhase — planner rejection context', () => {
 
     expect(result.cancelled).toBe(false);
     expect(quickPlan).toHaveBeenCalledTimes(1);
-    const prompt = quickPlan.mock.calls[0]?.[0];
-    expect(prompt).toContain('Previous rejections:');
-    expect(prompt).toContain(rejectionSummary);
-    expect(prompt).toContain(feature);
+    expect(quickPlan.mock.calls[0]?.[0]).toContain('Previous rejections:');
+    expect(quickPlan.mock.calls[0]?.[0]).toContain(rejectionSummary);
+    expect(quickPlan.mock.calls[0]?.[0]).toContain(feature);
   });
 
   it('does not include prior rejection context when feedRejectionsToPlanner is false', async () => {
@@ -581,10 +563,9 @@ describe('runPlanningPhase — planner rejection context', () => {
 
     expect(result.cancelled).toBe(false);
     expect(plan).toHaveBeenCalledTimes(1);
-    const prompt = plan.mock.calls[0]?.[0];
-    expect(prompt).not.toContain('Previous rejections:');
-    expect(prompt).not.toContain(rejectionSummary);
-    expect(prompt).toContain(feature);
+    expect(plan.mock.calls[0]?.[0]).not.toContain('Previous rejections:');
+    expect(plan.mock.calls[0]?.[0]).not.toContain(rejectionSummary);
+    expect(plan.mock.calls[0]?.[0]).toContain(feature);
   });
 });
 

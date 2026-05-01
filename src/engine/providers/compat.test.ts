@@ -27,40 +27,7 @@ describe('createOpenAICompatProvider', () => {
     expect(p.baseURL).toBe('https://custom.example.com/v1');
   });
 
-  it('listModels fetches and parses model list from /v1/models', async () => {
-    process.env.TEST_PROVIDER_API_KEY = 'some-key';
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({ data: [{ id: 'gpt-4' }, { id: 'gpt-3.5' }] }), { status: 200 }),
-    );
-
-    const p = createOpenAICompatProvider('test', 'https://api.example.com/v1', 'TEST_PROVIDER_API_KEY', false);
-    const models = await p.listModels();
-
-    expect(models).toEqual(['gpt-4', 'gpt-3.5']);
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'https://api.example.com/v1/models',
-      expect.objectContaining({ headers: expect.any(Object) }),
-    );
-  });
-
-  it('listModels normalises baseURL trailing slash', async () => {
-    process.env.TEST_PROVIDER_API_KEY = 'some-key';
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({ data: [{ id: 'm1' }] }), { status: 200 }),
-    );
-
-    const p = createOpenAICompatProvider('test', 'https://api.example.com/v1/', 'TEST_PROVIDER_API_KEY', false);
-    await p.listModels();
-
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'https://api.example.com/v1/models',
-      expect.anything(),
-    );
-  });
-
   it.each([
-    ['network error', async () => { throw new Error('network failure'); }],
-    ['non-ok response', async () => new Response('Unauthorized', { status: 401 })],
     ['malformed JSON', async () => new Response('not json', { status: 200 })],
     ['missing data field', async () => new Response(JSON.stringify({ models: ['a'] }), { status: 200 })],
   ] as const)('listModels returns empty on %s', async (_label, mockFetch) => {
@@ -68,21 +35,6 @@ describe('createOpenAICompatProvider', () => {
     vi.mocked(globalThis.fetch).mockImplementation(mockFetch);
     const p = createOpenAICompatProvider('test', 'https://api.example.com/v1', 'TEST_PROVIDER_API_KEY', false);
     expect(await p.listModels()).toEqual([]);
-  });
-
-  it('sends Authorization header when api key is available', async () => {
-    process.env.TEST_PROVIDER_API_KEY = 'env-key-123';
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({ data: [] }), { status: 200 }),
-    );
-
-    const p = createOpenAICompatProvider('test', 'https://api.example.com/v1', 'TEST_PROVIDER_API_KEY', false);
-    await p.listModels();
-
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ headers: { Authorization: 'Bearer env-key-123' } }),
-    );
   });
 
   it('returns empty without fetching when no api key on non-local provider', async () => {

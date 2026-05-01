@@ -4,14 +4,8 @@ import { join } from 'node:path';
 import YAML from 'yaml';
 import { createDefaultConfig, loadConfig, writeConfig } from './load.js';
 import { toYaml } from './transform.js';
-import type { PlannerConfig } from '../../schemas/planner-config.js';
 import { DIPTYCH_DIR } from '../../paths.js';
-
-function expectCli(p: PlannerConfig): Extract<PlannerConfig, { kind: 'cli' }> {
-  if (p.kind !== 'cli') throw new Error(`Expected cli planner, got ${p.kind}`);
-  return p;
-}
-
+import { expectCli } from '#testing/helpers/config-narrowing.js';
 
 const TMP = join(import.meta.dirname, '.tmp-config-loading-test');
 

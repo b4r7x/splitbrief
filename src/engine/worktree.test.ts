@@ -240,6 +240,7 @@ describe('removeWorktree', () => {
     await writeFile(join(sessionDir, STATE_FILE), JSON.stringify({ phase: 'implementing' }));
     await writeFile(join(wtPath, 'dirty.txt'), 'uncommitted change');
 
+    // last-resort: stderr is the observable output for force-remove warnings
     const stderrSpy = vi.spyOn(process.stderr, 'write');
 
     await removeWorktree({ projectDir: repoDir, slug: 'feat-k', git, force: true });

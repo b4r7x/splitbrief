@@ -2,24 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { resolveMode, resolveApproveLevel, resolveEffortLevel, blocksSpecGate, blocksPlanGate } from './resolve.js';
 import type { Config } from '../../schemas/config.js';
 import type { ApproveLevel, EffortLevel, WorkflowMode } from '../../schemas/enums.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 
-const baseConfig = (mode?: WorkflowMode): Config => ({
-  version: 3,
-  planner: { kind: 'cli', tool: 'claude-code' },
-  implementer: {
-    kind: 'api',
-    provider: 'ollama',
-    model: 'qwen2.5-coder:7b',
-    apiBase: 'http://localhost:11434/v1',
-    contextLength: 32768,
-    temperature: 0.3,
-  },
-  validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
+const baseConfig = (mode?: WorkflowMode): Config => makeConfig({
   workflow: {
     approve: 'default',
-    maxRetries: 3,
     ...(mode ? { mode } : {}),
-    persistTranscript: true,
     git: { commitStrategy: 'none' },
     speckit: { minCoverage: 0.9 },
   },

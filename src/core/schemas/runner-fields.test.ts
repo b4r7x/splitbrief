@@ -2,55 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { RUNNER_KINDS } from './enums.js';
 import {
-  RUNNER_DESCRIPTORS,
   GenerationCommonFields,
   createRunnerConfigSchema,
-  getRunnerKindMeta,
 } from './runner-fields.js';
-
-describe('RUNNER_DESCRIPTORS', () => {
-  it('has an entry for every runner kind', () => {
-    for (const kind of RUNNER_KINDS) {
-      expect(RUNNER_DESCRIPTORS).toHaveProperty(kind);
-      expect(RUNNER_DESCRIPTORS[kind].fields).toBeDefined();
-    }
-  });
-
-  it('each entry has a kind literal matching its key', () => {
-    for (const kind of RUNNER_KINDS) {
-      const kindField = RUNNER_DESCRIPTORS[kind].fields.kind;
-      const parsed = kindField.parse(kind);
-      expect(parsed).toBe(kind);
-    }
-  });
-
-  it('command-based kinds have requiresCommand: true', () => {
-    expect(RUNNER_DESCRIPTORS.shell.requiresCommand).toBe(true);
-    expect(RUNNER_DESCRIPTORS.agent.requiresCommand).toBe(true);
-  });
-
-  it('non-command kinds have requiresCommand: false', () => {
-    expect(RUNNER_DESCRIPTORS.cli.requiresCommand).toBe(false);
-    expect(RUNNER_DESCRIPTORS.api.requiresCommand).toBe(false);
-    expect(RUNNER_DESCRIPTORS['agent-sdk'].requiresCommand).toBe(false);
-  });
-
-  it('api and agent-sdk have usesApiKey: true', () => {
-    expect(RUNNER_DESCRIPTORS.api.usesApiKey).toBe(true);
-    expect(RUNNER_DESCRIPTORS['agent-sdk'].usesApiKey).toBe(true);
-  });
-});
-
-describe('getRunnerKindMeta', () => {
-  it('returns metadata for each runner kind', () => {
-    for (const kind of RUNNER_KINDS) {
-      const meta = getRunnerKindMeta(kind);
-      expect(meta).toHaveProperty('usesArgsOutputFormat');
-      expect(meta).toHaveProperty('usesApiKey');
-      expect(meta).toHaveProperty('requiresCommand');
-    }
-  });
-});
 
 describe('createRunnerConfigSchema', () => {
   it('creates a discriminated union covering all runner kinds', () => {

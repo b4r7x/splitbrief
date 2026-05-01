@@ -1,39 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { taskId } from './task.js';
 import { RecoveryIssueSchema } from './recovery.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 
 describe('RecoveryIssueSchema', () => {
   it('parses a durable recovery issue with task, actions, and context facts', () => {
-    const result = RecoveryIssueSchema.safeParse({
-      id: 'rec_2026_04_28_001',
-      reason: 'validation-failed',
-      phase: 'validating-task',
-      status: 'awaiting-user',
-      taskId: taskId('T001'),
-      taskTitle: 'Fix login validation',
-      files: ['src/auth/session.ts'],
-      affectedTaskIds: [taskId('T001')],
-      message: 'T001 validation failed after 3 attempts',
-      details: ['npm test failed in src/auth/session.test.ts'],
-      attempts: 3,
-      maxAttempts: 3,
-      selectedImplementerProfile: 'local-qwen',
+    const result = RecoveryIssueSchema.safeParse(makeRecoveryIssue({
       facts: {
         spend: 4.36,
         budgetPercent: 87,
         contextLimit: 32_768,
       },
-      availableActions: [
-        'retry-same-worker',
-        'route-bigger-worker',
-        'planner-split-rebase',
-        'skip-current-task',
-        'pause-run',
-        'abort-workflow',
-      ],
-      recommendedAction: 'retry-same-worker',
-      createdAt: '2026-04-28T12:00:00.000Z',
-    });
+    }));
 
     expect(result.success).toBe(true);
     if (!result.success) return;

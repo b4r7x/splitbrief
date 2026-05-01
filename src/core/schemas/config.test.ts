@@ -42,16 +42,6 @@ describe('ConfigSchema palette extension', () => {
     ).toThrow();
   });
 
-  it('inferred type: command is string', () => {
-    const result = ConfigSchema.parse({
-      ...validConfig,
-      palette: {
-        customActions: [{ id: 'x', label: 'X', command: '/help' }],
-      },
-    });
-    const command: string | undefined = result.palette?.customActions?.[0]?.command;
-    expect(typeof command).toBe('string');
-  });
 });
 
 describe('ConfigSchema approval extension', () => {

@@ -15,7 +15,6 @@ describe('adviseMode — risk classification', () => {
     expect(result.kind).toBe('downgrade');
     expect(result.suggestedMode).toBe('instant');
     expect(result.risk).toBe('trivial');
-    expect(result.kind).not.toBe('none');
   });
 
   it('auth/security prompt in quick suggests speckit (upgrade)', () => {
@@ -23,14 +22,12 @@ describe('adviseMode — risk classification', () => {
     expect(result.kind).toBe('upgrade');
     expect(result.suggestedMode).toBe('speckit');
     expect(result.risk).toBe('high');
-    expect(result.kind).not.toBe('none');
   });
 
   it('vague prompt emits missing-context', () => {
     const result = adviseMode('improve it', 'standard');
     expect(result.kind).toBe('missing-context');
     expect(result.missing).toContain('vague target');
-    expect(result.kind).not.toBe('none');
   });
 
   it('non-trivial prompt without area/file/module emits missing-context', () => {
@@ -50,7 +47,6 @@ describe('adviseMode — risk classification', () => {
     const result = adviseMode('fix null check in src/utils/parser.ts', 'standard');
     expect(result.kind).toBe('downgrade');
     expect(result.suggestedMode).toBe('quick');
-    expect(result.kind).not.toBe('none');
   });
 
   it('matching selected mode emits none', () => {
@@ -88,7 +84,6 @@ describe('adviseMode — trivial patterns', () => {
   it('handles empty prompt without advising', () => {
     const result = adviseMode('', 'standard');
     expect(result.kind).toBe('none');
-    expect(result.kind).toBe('none');
   });
 
   it('handles whitespace-only prompt without advising', () => {
@@ -104,48 +99,16 @@ describe('adviseMode — trivial patterns', () => {
 });
 
 describe('adviseMode — high risk patterns', () => {
-  it('security in standard mode → upgrade to speckit', () => {
-    const result = adviseMode('fix security vulnerability in the API', 'standard');
-    expect(result.kind).toBe('upgrade');
-    expect(result.suggestedMode).toBe('speckit');
-    expect(result.risk).toBe('high');
-  });
-
-  it('database migration in quick mode → upgrade to speckit', () => {
-    const result = adviseMode('run database migration for new schema', 'quick');
-    expect(result.kind).toBe('upgrade');
-    expect(result.suggestedMode).toBe('speckit');
-  });
-
-  it('config schema change in standard → upgrade', () => {
-    const result = adviseMode('update config schema to add new fields', 'standard');
-    expect(result.kind).toBe('upgrade');
-    expect(result.risk).toBe('high');
-  });
-
-  it('authentication endpoint in quick → upgrade to speckit', () => {
-    const result = adviseMode('add authentication endpoint', 'quick');
-    expect(result.kind).toBe('upgrade');
-    expect(result.suggestedMode).toBe('speckit');
-    expect(result.risk).toBe('high');
-  });
-
-  it('login system in quick → upgrade to speckit', () => {
-    const result = adviseMode('implement login system', 'quick');
-    expect(result.kind).toBe('upgrade');
-    expect(result.suggestedMode).toBe('speckit');
-    expect(result.risk).toBe('high');
-  });
-
-  it('password hashing in standard → upgrade to speckit', () => {
-    const result = adviseMode('add password hashing', 'standard');
-    expect(result.kind).toBe('upgrade');
-    expect(result.suggestedMode).toBe('speckit');
-    expect(result.risk).toBe('high');
-  });
-
-  it('CSRF protection in standard → upgrade to speckit', () => {
-    const result = adviseMode('set up CSRF protection', 'standard');
+  it.each<[string, WorkflowMode]>([
+    ['fix security vulnerability in the API', 'standard'],
+    ['run database migration for new schema', 'quick'],
+    ['update config schema to add new fields', 'standard'],
+    ['add authentication endpoint', 'quick'],
+    ['implement login system', 'quick'],
+    ['add password hashing', 'standard'],
+    ['set up CSRF protection', 'standard'],
+  ])('high-risk prompt "%s" in %s → upgrade to speckit', (prompt, mode) => {
+    const result = adviseMode(prompt, mode);
     expect(result.kind).toBe('upgrade');
     expect(result.suggestedMode).toBe('speckit');
     expect(result.risk).toBe('high');

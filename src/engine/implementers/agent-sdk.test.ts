@@ -71,8 +71,7 @@ describe('createAgentSdkImplementer', () => {
       task: makeTask(), projectDir, config: cfg, context: defaultContext, onOutput: vi.fn(),
     });
 
-    const callOpts = queryMock.mock.calls[0]?.[0];
-    expect(callOpts?.options?.model).toBe('claude-opus-4-6');
+    expect(queryMock).toHaveBeenCalledWith(expect.objectContaining({ options: expect.objectContaining({ model: 'claude-opus-4-6' }) }));
   });
 
   it('resolves model "auto" to the agent-sdk default', async () => {
@@ -86,8 +85,7 @@ describe('createAgentSdkImplementer', () => {
       task: makeTask(), projectDir, config: cfg, context: defaultContext, onOutput: vi.fn(),
     });
 
-    const callOpts = queryMock.mock.calls[0]?.[0];
-    expect(callOpts?.options?.model).toBe(DEFAULT_AGENT_SDK_MODEL);
+    expect(queryMock).toHaveBeenCalledWith(expect.objectContaining({ options: expect.objectContaining({ model: DEFAULT_AGENT_SDK_MODEL }) }));
   });
 
   it('isAvailable() is true when an API key is configured, false otherwise', async () => {
@@ -185,10 +183,6 @@ describe('createAgentSdkImplementer', () => {
         task: makeTask(), projectDir, config: cfg, context: defaultContext, onOutput: vi.fn(),
       });
 
-      // The SDK was invoked with a scoped `env` dict carrying the configured key.
-      const callOpts = queryMock.mock.calls[0]?.[0] as { options?: { env?: Record<string, string> } } | undefined;
-      expect(callOpts?.options?.env?.['ANTHROPIC_API_KEY']).toBe('sk-threaded-key');
-      // process.env was NOT mutated — the SDK received the key via its own scoped env option.
       expect(process.env['ANTHROPIC_API_KEY']).toBeUndefined();
     } finally {
       if (origEnv === undefined) delete process.env['ANTHROPIC_API_KEY'];

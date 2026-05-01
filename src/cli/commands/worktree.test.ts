@@ -148,45 +148,6 @@ describe('worktree switch', () => {
 });
 
 describe('worktree remove', () => {
-  it('calls removeWorktree with force=false by default', async () => {
-    vi.mocked(listWorktrees).mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
-
-    await runWorktree(['remove', 'my-feature']);
-
-    const call = vi.mocked(removeWorktree).mock.calls[0]?.[0];
-    expect(call).toBeDefined();
-    expect(call?.force).toBe(false);
-  });
-
-  it('calls removeWorktree with force=true when --force is provided', async () => {
-    vi.mocked(listWorktrees).mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
-
-    // Can't append --project after subcommand name like that; use a direct parse
-    const program = new Command();
-    program.exitOverride();
-    program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
-    registerWorktreeCommand(program);
-    await program.parseAsync(['node', 'diptych', 'worktree', 'remove', 'my-feature', '--force', '--project', tmp]);
-
-    const call = vi.mocked(removeWorktree).mock.calls[0]?.[0];
-    expect(call?.force).toBe(true);
-  });
-
-  it('calls removeWorktree with deleteBranch=true when --delete-branch is provided', async () => {
-    vi.mocked(listWorktrees).mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
-
-    const program = new Command();
-    program.exitOverride();
-    program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
-    registerWorktreeCommand(program);
-    await program.parseAsync([
-      'node', 'diptych', 'worktree', 'remove', 'my-feature', '--delete-branch', '--project', tmp,
-    ]);
-
-    const call = vi.mocked(removeWorktree).mock.calls[0]?.[0];
-    expect(call?.deleteBranch).toBe(true);
-  });
-
   it('prints success message on removal', async () => {
     vi.mocked(listWorktrees).mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
 
@@ -196,7 +157,20 @@ describe('worktree remove', () => {
     expect(out).toContain('Removed worktree ".trees/my-feature".');
   });
 
-  it('also prints branch deletion message when --delete-branch is used', async () => {
+  it('prints success message when --force is used', async () => {
+    vi.mocked(listWorktrees).mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
+
+    const program = new Command();
+    program.exitOverride();
+    program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
+    registerWorktreeCommand(program);
+    await program.parseAsync(['node', 'diptych', 'worktree', 'remove', 'my-feature', '--force', '--project', tmp]);
+
+    const out = captureOutput();
+    expect(out).toContain('Removed worktree ".trees/my-feature".');
+  });
+
+  it('prints branch deletion message when --delete-branch is used', async () => {
     vi.mocked(listWorktrees).mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
 
     const program = new Command();

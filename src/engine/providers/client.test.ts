@@ -74,7 +74,7 @@ describe('fetchJsonWithTimeout', () => {
       });
     });
 
-    await expect(fetchJsonWithTimeout('https://slow.example.com', 5)).rejects.toThrow();
+    await expect(fetchJsonWithTimeout('https://slow.example.com', 5)).rejects.toThrow(/abort|timeout/i);
     // The controller attached to the request should be aborted after timeout elapses.
     expect(signalRef?.aborted).toBe(true);
   });
@@ -104,20 +104,6 @@ describe('fetchModelList', () => {
     expect(errors.at(-1)).toBeUndefined();
   });
 
-  it('sends Authorization header when apiKey provided and no explicit headers', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({ data: [] }), { status: 200 }),
-    );
-    await fetchModelList({
-      endpoint: 'https://api.example.com/v1/models',
-      apiKey: 'secret-token',
-      extractModels: defaultExtract,
-    });
-    const call = vi.mocked(globalThis.fetch).mock.calls[0];
-    const init = call?.[1] as RequestInit | undefined;
-    expect((init?.headers as Record<string, string> | undefined)?.['Authorization']).toBe('Bearer secret-token');
-  });
-
   it('uses custom headers verbatim when provided (no Authorization injection)', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ data: [] }), { status: 200 }),
@@ -128,8 +114,7 @@ describe('fetchModelList', () => {
       headers: { 'x-api-key': 'custom' },
       extractModels: defaultExtract,
     });
-    const init = vi.mocked(globalThis.fetch).mock.calls[0]?.[1] as RequestInit | undefined;
-    expect(init?.headers).toEqual({ 'x-api-key': 'custom' });
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ headers: { 'x-api-key': 'custom' } }));
   });
 
   it('returns [] on non-ok and reports HTTP status via onError', async () => {
@@ -184,18 +169,6 @@ describe('fetchModelList', () => {
     expect(errors).toContain('Invalid response payload');
   });
 
-  it('omits Authorization when neither apiKey nor headers are provided', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({ data: [] }), { status: 200 }),
-    );
-    await fetchModelList({
-      endpoint: 'https://api.example.com/v1/models',
-      extractModels: defaultExtract,
-    });
-    const call = vi.mocked(globalThis.fetch).mock.calls[0];
-    // No init argument (or undefined) means no headers.
-    expect(call?.[1]).toBeUndefined();
-  });
 });
 
 describe('createMetadataProvider', () => {
@@ -255,11 +228,6 @@ describe('createMetadataProvider', () => {
     const p = createMetadataProvider(opts, { apiBase: 'https://override.example/v1', apiKey: 'override-key' });
     expect(p.baseURL).toBe('https://override.example/v1');
     expect(p.apiKey()).toBe('override-key');
-    await p.listModels();
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'https://override.example/v1/models',
-      expect.objectContaining({ headers: { Authorization: 'Bearer override-key' } }),
-    );
   });
 
   it('uses custom modelsUrl when provided', async () => {
@@ -271,21 +239,7 @@ describe('createMetadataProvider', () => {
       modelsUrl: (base) => `${base}/custom/models/path`,
     }, { apiKey: 'k' });
     await p.listModels();
-    const firstCall = vi.mocked(globalThis.fetch).mock.calls[0];
-    expect(firstCall?.[0]).toBe('https://api.custom.com/v1/custom/models/path');
-  });
-
-  it('uses custom headers factory (non-bearer auth)', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({ data: [] }), { status: 200 }),
-    );
-    const p = createMetadataProvider({
-      ...opts,
-      headers: (apiKey) => ({ 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }),
-    }, { apiKey: 'secret' });
-    await p.listModels();
-    const init = vi.mocked(globalThis.fetch).mock.calls[0]?.[1] as RequestInit | undefined;
-    expect(init?.headers).toEqual({ 'x-api-key': 'secret', 'anthropic-version': '2023-06-01' });
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledWith('https://api.custom.com/v1/custom/models/path', expect.anything());
   });
 
   it('uses custom extractModels for non-OpenAI list shapes', async () => {

@@ -1,17 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { formatWithBudget, estimateTokens } from './budget.js';
-import type { FileNode } from './types.js';
+import { makeFileNode, makeSymbol } from '#testing/helpers/factories/file-node.js';
 
-function fn(path: string, symCount: number): FileNode {
-  return {
-    path,
-    symbols: Array.from({ length: symCount }, (_, i) => ({
-      name: `s${i}`, kind: 'function' as const,
-      signature: `export function s${i}()`,
-      exported: true, line: i + 1,
-    })),
-    imports: [], sizeBytes: 100, mtimeMs: 1,
-  };
+function fn(path: string, symCount: number) {
+  return makeFileNode(path, {
+    symbols: Array.from({ length: symCount }, (_, i) => makeSymbol(`s${i}`, { line: i + 1 })),
+    sizeBytes: 100,
+  });
 }
 
 describe('estimateTokens', () => {

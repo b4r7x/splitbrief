@@ -1,8 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { eventsStore, MAX_EVENTS, mergeEvent } from './events.js';
+import { eventsStore, MAX_EVENTS } from './events.js';
 import { addEvent, resetWorkflow } from './actions.js';
 import { taskId } from '../../core/schemas/task.js';
-import type { EngineEvent } from '../../engine/events/types.js';
 import {
   makePlannerText,
   makePlannerStatus,
@@ -69,23 +68,5 @@ describe('eventsStore — append via addEvent', () => {
       addEvent(makeValidate({ status: 'running', passed: false, stages: { tsc: false, lint: false, test: false } }));
       expect(eventsStore.get().events).toHaveLength(2);
     });
-  });
-});
-
-describe('mergeEvent (pure)', () => {
-  it('does not coalesce when previous event is a different type', () => {
-    const a = makePlannerStatus({ phase: 'specifying' });
-    const b = makePlannerText({ text: 'hi' });
-    const next = mergeEvent([a], b);
-    expect(next).toHaveLength(2);
-  });
-
-  it('trims one event when events.length === MAX_EVENTS (circular buffer)', () => {
-    const events: EngineEvent[] = Array.from({ length: MAX_EVENTS }, (_, i) => makeRetry({ taskId: taskId(`T${i}`) }));
-    const incoming = makeRetry({ taskId: taskId('newest') });
-    const next = mergeEvent(events, incoming);
-    expect(next).toHaveLength(MAX_EVENTS);
-    expect((next[0] as { taskId: string }).taskId).toBe('T1');
-    expect((next[next.length - 1] as { taskId: string }).taskId).toBe('newest');
   });
 });

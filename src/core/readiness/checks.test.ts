@@ -58,8 +58,7 @@ describe('readiness checks', () => {
   });
 
   it('blocks when config is missing and selects run init', () => {
-    const report = buildReadinessReport({
-      ...baseInput(),
+    const input = baseInput({
       config: undefined,
       configLoad: {
         state: 'missing',
@@ -67,18 +66,11 @@ describe('readiness checks', () => {
         warnings: [],
       },
     });
+    const report = buildReadinessReport(input);
 
     expect(report.status).toBe('blocked');
     expect(report.nextAction.kind).toBe('run-init');
-    expect(allCheckIds({
-      ...baseInput(),
-      config: undefined,
-      configLoad: {
-        state: 'missing',
-        path: '/tmp/project/.diptych/config.yaml',
-        warnings: [],
-      },
-    })).toContain('config.missing');
+    expect(allCheckIds(input)).toContain('config.missing');
   });
 
   it('warns for missing context length without blocking start', () => {
@@ -89,14 +81,15 @@ describe('readiness checks', () => {
     delete implementerWithoutContext.contextLength;
     const config = { ...configWithDefaults, implementer: implementerWithoutContext };
 
-    const report = buildReadinessReport(baseInput({ config }));
+    const input = baseInput({ config });
+    const report = buildReadinessReport(input);
 
     expect(report.status).toBe('ready-with-warnings');
     expect(report.nextAction.kind).toBe('continue');
     expect(report.sections
       .flatMap(section => section.checks)
       .find(check => check.id === 'context.implementer.missing')?.severity).toBe('warning');
-    expect(allCheckIds(baseInput({ config }))).toEqual(expect.arrayContaining([
+    expect(allCheckIds(input)).toEqual(expect.arrayContaining([
       'context.planner.missing',
       'context.implementer.missing',
     ]));
@@ -176,29 +169,24 @@ describe('readiness checks', () => {
       },
     });
 
-    const report = buildReadinessReport(baseInput({
+    const input = baseInput({
       config,
       packageScripts: {
         packageJsonExists: true,
         scripts: { test: 'vitest run' },
       },
-    }));
+    });
+    const report = buildReadinessReport(input);
 
     expect(report.status).toBe('ready-with-warnings');
-    expect(allCheckIds(baseInput({
-      config,
-      packageScripts: {
-        packageJsonExists: true,
-        scripts: { test: 'vitest run' },
-      },
-    }))).toEqual(expect.arrayContaining([
+    expect(allCheckIds(input)).toEqual(expect.arrayContaining([
       'validation.disabled',
       'validation.test-script-missing',
     ]));
   });
 
   it('warns for dirty repositories and blocks live active sessions', () => {
-    const report = buildReadinessReport(baseInput({
+    const input = baseInput({
       repo: {
         isGitRepo: true,
         dirtyFiles: ['src/a.ts'],
@@ -206,19 +194,12 @@ describe('readiness checks', () => {
         activeSession: '2026-04-28-live',
         activeSessionLive: true,
       },
-    }));
+    });
+    const report = buildReadinessReport(input);
 
     expect(report.status).toBe('blocked');
     expect(report.nextAction.kind).toBe('clean-or-isolate-repo');
-    expect(allCheckIds(baseInput({
-      repo: {
-        isGitRepo: true,
-        dirtyFiles: ['src/a.ts'],
-        untrackedFiles: ['scratch.txt'],
-        activeSession: '2026-04-28-live',
-        activeSessionLive: true,
-      },
-    }))).toEqual(expect.arrayContaining([
+    expect(allCheckIds(input)).toEqual(expect.arrayContaining([
       'repo.dirty-worktree',
       'repo.active-session-live',
     ]));

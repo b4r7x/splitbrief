@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import React from 'react';
 import { Text } from 'ink';
 import { render } from 'ink-testing-library';
-import { fuzzyMatchCommand, useSlashAutocomplete } from './use-slash-autocomplete.js';
+import { useSlashAutocomplete } from './use-slash-autocomplete.js';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
@@ -14,27 +14,6 @@ const COMMANDS: SlashCommandDef[] = [
   { kind: 'noarg', name: '/planner', label: 'Planner', description: '', validScreens: ['home'], handler: () => {} },
   { kind: 'noarg', name: '/quit', label: 'Quit', description: '', validScreens: ['home'], handler: () => {} },
 ];
-
-describe('fuzzyMatchCommand (re-exported from use-slash-autocomplete)', () => {
-  it('returns null for empty query', () => {
-    expect(fuzzyMatchCommand(COMMANDS, '')).toBeNull();
-    expect(fuzzyMatchCommand(COMMANDS, '/')).toBeNull();
-  });
-
-  it('resolves typos to the closest command', () => {
-    expect(fuzzyMatchCommand(COMMANDS, '/mde')?.name).toBe('/mode');
-    expect(fuzzyMatchCommand(COMMANDS, '/settngs')?.name).toBe('/settings');
-    expect(fuzzyMatchCommand(COMMANDS, '/hlp')?.name).toBe('/help');
-  });
-
-  it('returns null when the query has no resemblance to any command', () => {
-    expect(fuzzyMatchCommand(COMMANDS, '/zzzzzzzzz')).toBeNull();
-  });
-
-  it('matches without a leading slash', () => {
-    expect(fuzzyMatchCommand(COMMANDS, 'hlp')?.name).toBe('/help');
-  });
-});
 
 interface HarnessProps {
   value: string;

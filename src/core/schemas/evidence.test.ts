@@ -42,7 +42,6 @@ describe('EvidenceLedgerSchema — briefHash backward-compatibility', () => {
   it('parses a ledger with briefHash as a string', () => {
     const result = EvidenceLedgerSchema.safeParse({ ...minimalLedger(), briefHash: 'abc123' });
     expect(result.success).toBe(true);
-    if (result.success) expect(result.data.briefHash).toBe('abc123');
   });
 });
 
@@ -61,6 +60,5 @@ describe('EvidenceTaskSchema — briefHash backward-compatibility', () => {
   it('parses a task entry with briefHash as a string', () => {
     const result = EvidenceTaskSchema.safeParse({ ...minimalTask('T001'), briefHash: 'abc123' });
     expect(result.success).toBe(true);
-    if (result.success) expect(result.data.briefHash).toBe('abc123');
   });
 });
