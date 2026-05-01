@@ -10,21 +10,10 @@ import {
   findKnownModel,
   getDefaultKnownModel,
   getEffectiveModelId,
-  type ModelCacheAccessor,
 } from './resolution.js';
 import type { ModelsDevCatalog } from '../models-dev.js';
-import type { DetectedModel } from '../../../core/types/config-options.js';
 import type { ProviderId } from '../../../core/schemas/enums.js';
-
-function makeCache(opts: {
-  catalog?: ModelsDevCatalog | null;
-  providerModels?: Partial<Record<ProviderId, DetectedModel[]>>;
-}): ModelCacheAccessor {
-  return {
-    getModelsDevCatalog: () => opts.catalog ?? null,
-    getProviderModels: (providerId) => opts.providerModels?.[providerId] ?? null,
-  };
-}
+import { makeModelCacheAccessor as makeCache } from '#testing/helpers/factories/model-cache.js';
 
 describe('NULL_CACHE', () => {
   it('returns null for both accessors regardless of input', () => {

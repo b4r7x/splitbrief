@@ -1,51 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { gateAction } from './tiered-approval.js';
 import type { GateActionInput, TieredApprovalResponse } from './tiered-approval.js';
-import type { EngineEvent, EventBus } from '../../events/types.js';
-import type { Task } from '../../../core/schemas/task.js';
-import { taskId } from '../../../core/schemas/task.js';
+import type { EngineEvent } from '../../events/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { approvalsFile } from '../../../core/paths.js';
-import { DIPTYCH_DIR } from '../../../core/paths.js';
-import { mkdirSync } from 'node:fs';
-
-function makeEventBus(): { bus: EventBus; events: EngineEvent[] } {
-  const events: EngineEvent[] = [];
-  const bus: EventBus = {
-    publish: (event) => { events.push(event); },
-    subscribe: () => () => {},
-  };
-  return { bus, events };
-}
-
-function makeTask(overrides?: Partial<Task>): Task {
-  return {
-    id: taskId('T001'),
-    title: 'Test task',
-    action: 'modify',
-    file: 'src/foo.ts',
-    dependsOn: [],
-    description: 'desc',
-    typeDefs: '',
-    tests: [],
-    constraints: [],
-    implementationSteps: [],
-    status: 'pending',
-    ...overrides,
-  };
-}
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import { createTempDir } from '#testing/helpers/temp-dir.js';
+import { approvalsFile, DIPTYCH_DIR } from '../../../core/paths.js';
 
 function makeInput(overrides: Partial<GateActionInput> = {}): GateActionInput {
-  const { bus } = makeEventBus();
+  const { bus } = makeBusRecorder();
   const task = makeTask();
   return {
     actionDescription: 'modify src/foo.ts',
     task,
     dependsOnFiles: [],
-    projectDir: mkdtempSync(join(tmpdir(), 'diptych-test-')),
+    projectDir: createTempDir('diptych-test'),
     sessionId: 'sess-001',
     phase: 'implementing',
     taskId: task.id,
@@ -62,7 +34,7 @@ function makeInput(overrides: Partial<GateActionInput> = {}): GateActionInput {
 
 describe('gateAction', () => {
   it('approval.enabled=false → allow immediately without events', async () => {
-    const { bus, events } = makeEventBus();
+    const { bus, events } = makeBusRecorder();
     const config = makeConfig({ approval: { enabled: false } } as Parameters<typeof makeConfig>[0]);
     const input = makeInput({ bus, config });
     const result = await gateAction(input);
@@ -71,7 +43,7 @@ describe('gateAction', () => {
   });
 
   it('auto tier → allow, no events emitted', async () => {
-    const { bus, events } = makeEventBus();
+    const { bus, events } = makeBusRecorder();
     // 'modify src/foo.ts' with write_in_scope → auto by default
     // Force tier to auto by using a read description
     const config = makeConfig();
@@ -82,7 +54,7 @@ describe('gateAction', () => {
   });
 
   it('sticky tier, no grant, no callback → deny APPROVAL_REQUIRED', async () => {
-    const { bus, events } = makeEventBus();
+    const { bus, events } = makeBusRecorder();
     const config = makeConfig({ approval: { enabled: true, headless: true } } as Parameters<typeof makeConfig>[0]);
     // write_out_of_scope → sticky tier by default
     const input = makeInput({
@@ -102,8 +74,8 @@ describe('gateAction', () => {
   });
 
   it('sticky tier, always grant exists → allow without callback', async () => {
-    const { bus, events } = makeEventBus();
-    const projectDir = mkdtempSync(join(tmpdir(), 'diptych-test-'));
+    const { bus, events } = makeBusRecorder();
+    const projectDir = createTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
     const store = {
       version: 1,
@@ -137,8 +109,8 @@ describe('gateAction', () => {
   });
 
   it('sticky tier, session grant matching sessionId → allow without callback', async () => {
-    const { bus } = makeEventBus();
-    const projectDir = mkdtempSync(join(tmpdir(), 'diptych-test-'));
+    const { bus } = makeBusRecorder();
+    const projectDir = createTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
     const store = {
       version: 1,
@@ -172,8 +144,8 @@ describe('gateAction', () => {
   });
 
   it('sticky tier, session grant for different sessionId → callback invoked', async () => {
-    const { bus } = makeEventBus();
-    const projectDir = mkdtempSync(join(tmpdir(), 'diptych-test-'));
+    const { bus } = makeBusRecorder();
+    const projectDir = createTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
     const store = {
       version: 1,
@@ -209,8 +181,8 @@ describe('gateAction', () => {
   });
 
   it('sticky tier, callback allow once → allow, no persistence', async () => {
-    const { bus, events } = makeEventBus();
-    const projectDir = mkdtempSync(join(tmpdir(), 'diptych-test-'));
+    const { bus, events } = makeBusRecorder();
+    const projectDir = createTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
     const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
     const input = makeInput({
@@ -234,8 +206,8 @@ describe('gateAction', () => {
   });
 
   it('sticky tier, callback allow session → allow, persist, approval_sticky_recorded emitted', async () => {
-    const { bus, events } = makeEventBus();
-    const projectDir = mkdtempSync(join(tmpdir(), 'diptych-test-'));
+    const { bus, events } = makeBusRecorder();
+    const projectDir = createTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
     const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
     const input = makeInput({
@@ -262,8 +234,8 @@ describe('gateAction', () => {
   });
 
   it('sticky tier, callback deny → deny, approval_rejected emitted', async () => {
-    const { bus, events } = makeEventBus();
-    const projectDir = mkdtempSync(join(tmpdir(), 'diptych-test-'));
+    const { bus, events } = makeBusRecorder();
+    const projectDir = createTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
     const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
     const input = makeInput({
@@ -287,7 +259,7 @@ describe('gateAction', () => {
   });
 
   it('confirm tier, headless → deny APPROVAL_REQUIRED', async () => {
-    const { bus } = makeEventBus();
+    const { bus } = makeBusRecorder();
     const config = makeConfig({ approval: { enabled: true, headless: true, tiers: { destructive: 'confirm' } } } as Parameters<typeof makeConfig>[0]);
     const input = makeInput({
       bus,
@@ -300,7 +272,7 @@ describe('gateAction', () => {
   });
 
   it('confirm tier, valid phrase + reason → allow, approval_granted emitted', async () => {
-    const { bus, events } = makeEventBus();
+    const { bus, events } = makeBusRecorder();
     const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
     const input = makeInput({
       bus,
@@ -322,7 +294,7 @@ describe('gateAction', () => {
   });
 
   it('confirm tier, wrong phrase → deny invalid_confirm_phrase', async () => {
-    const { bus, events } = makeEventBus();
+    const { bus, events } = makeBusRecorder();
     const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
     const input = makeInput({
       bus,
@@ -344,7 +316,7 @@ describe('gateAction', () => {
   });
 
   it('confirm tier, callback deny → deny, approval_rejected emitted', async () => {
-    const { bus, events } = makeEventBus();
+    const { bus, events } = makeBusRecorder();
     const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
     const input = makeInput({
       bus,
@@ -366,7 +338,7 @@ describe('gateAction', () => {
   });
 
   it('tier override write_out_of_scope → confirm', async () => {
-    const { bus, events } = makeEventBus();
+    const { bus, events } = makeBusRecorder();
     const config = makeConfig({ approval: { enabled: true, tiers: { write_out_of_scope: 'confirm' } } } as Parameters<typeof makeConfig>[0]);
     const input = makeInput({
       bus,
@@ -387,7 +359,7 @@ describe('gateAction', () => {
   });
 
   it('confirm tier, callback returns decision:allow → reject invalid_confirm_response', async () => {
-    const { bus, events } = makeEventBus();
+    const { bus, events } = makeBusRecorder();
     const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
     const input = makeInput({
       bus,
@@ -411,7 +383,7 @@ describe('gateAction', () => {
   });
 
   it('confirm tier, valid confirm → approval_granted event records confirmReason', async () => {
-    const { bus, events } = makeEventBus();
+    const { bus, events } = makeBusRecorder();
     const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
     const input = makeInput({
       bus,
@@ -434,7 +406,7 @@ describe('gateAction', () => {
   });
 
   it('sticky tier, session grant matches a different action description on same file (pattern match)', async () => {
-    const projectDir = mkdtempSync(join(tmpdir(), 'diptych-test-'));
+    const projectDir = createTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
 
     // Pre-existing session grant keyed by file path (not full action description)
@@ -446,7 +418,7 @@ describe('gateAction', () => {
     };
     writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
 
-    const { bus, events } = makeEventBus();
+    const { bus, events } = makeBusRecorder();
     let prompted = false;
     const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
     const input = makeInput({
@@ -475,7 +447,7 @@ describe('gateAction', () => {
   });
 
   it('sticky tier, session grant is replaced when same pattern already has a session grant for a different session', async () => {
-    const projectDir = mkdtempSync(join(tmpdir(), 'diptych-test-'));
+    const projectDir = createTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
 
     // Prime with a session grant + an always grant for a different pattern
@@ -488,7 +460,7 @@ describe('gateAction', () => {
     };
     writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
 
-    const { bus } = makeEventBus();
+    const { bus } = makeBusRecorder();
     const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
     const input = makeInput({
       bus,

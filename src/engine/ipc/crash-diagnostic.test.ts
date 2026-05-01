@@ -174,12 +174,6 @@ describe('formatCrashDiagnostic', () => {
     expect(out).not.toContain('some log line');
   });
 
-  it('is pure — same input produces same output', () => {
-    const out1 = formatCrashDiagnostic(crashedDiag);
-    const out2 = formatCrashDiagnostic(crashedDiag);
-    expect(out1).toBe(out2);
-  });
-
   it('shows options footer', () => {
     const out = formatCrashDiagnostic(crashedDiag);
     expect(out).toContain('Options:');
@@ -201,7 +195,10 @@ describe('showCrashDiagnostic', () => {
     await rm(tmpDir2, { recursive: true, force: true });
   });
 
-  it('calls buildCrashDiagnostic and writes to stdout, then exits on key "2"', async () => {
+  async function withProcessStubs<T>(
+    fn: (ctx: { written: string[]; exitCode: () => number | undefined }) => Promise<T>,
+    opts?: { stubTTY?: boolean },
+  ): Promise<T> {
     const written: string[] = [];
     const origWrite = process.stdout.write.bind(process.stdout);
     process.stdout.write = (data: unknown) => { written.push(String(data)); return true; };
@@ -210,57 +207,42 @@ describe('showCrashDiagnostic', () => {
     const origExit = process.exit.bind(process);
     process.exit = ((code?: number) => { exitCode = code; }) as typeof process.exit;
 
+    const origTTY = opts?.stubTTY ? process.stdin.isTTY : undefined;
+    if (opts?.stubTTY) Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: false });
+
     try {
-      await showCrashDiagnostic(tmpDir2, BASE_STATUS_CRASHED, async () => '2');
+      return await fn({ written, exitCode: () => exitCode });
     } finally {
       process.stdout.write = origWrite;
       process.exit = origExit;
+      if (opts?.stubTTY) Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: origTTY });
     }
+  }
 
-    expect(written.length).toBeGreaterThan(0);
-    expect(written.join('')).toContain('CRASHED');
-    expect(exitCode).toBe(0);
+  it('calls buildCrashDiagnostic and writes to stdout, then exits on key "2"', async () => {
+    await withProcessStubs(async ({ written, exitCode }) => {
+      await showCrashDiagnostic(tmpDir2, BASE_STATUS_CRASHED, async () => '2');
+      expect(written.length).toBeGreaterThan(0);
+      expect(written.join('')).toContain('CRASHED');
+      expect(exitCode()).toBe(0);
+    });
   });
 
   it('exits with 0 and writes accurate new-workflow instructions when key "1" is pressed', async () => {
-    const written: string[] = [];
-    const origWrite = process.stdout.write.bind(process.stdout);
-    process.stdout.write = (data: unknown) => { written.push(String(data)); return true; };
-
-    let exitCode: number | undefined;
-    const origExit = process.exit.bind(process);
-    process.exit = ((code?: number) => { exitCode = code; }) as typeof process.exit;
-
-    try {
+    await withProcessStubs(async ({ written, exitCode }) => {
       await showCrashDiagnostic(tmpDir2, BASE_STATUS_CRASHED, async () => '1');
-    } finally {
-      process.stdout.write = origWrite;
-      process.exit = origExit;
-    }
-
-    expect(written.join('')).toContain('Exiting. Run `diptych start`');
-    expect(written.join('')).not.toContain('Starting new workflow');
-    expect(exitCode).toBe(0);
+      expect(written.join('')).toContain('Exiting. Run `diptych start`');
+      expect(written.join('')).not.toContain('Starting new workflow');
+      expect(exitCode()).toBe(0);
+    });
   });
 
   it('non-TTY default path exits without waiting for interactive input', async () => {
-    const written: string[] = [];
-    const origWrite = process.stdout.write.bind(process.stdout);
-    process.stdout.write = (data: unknown) => { written.push(String(data)); return true; };
-
-    let exitCode: number | undefined;
-    const origExit = process.exit.bind(process);
-    process.exit = ((code?: number) => { exitCode = code; }) as typeof process.exit;
-
-    try {
+    await withProcessStubs(async ({ written, exitCode }) => {
       await showCrashDiagnostic(tmpDir2, BASE_STATUS_CRASHED, async () => '2');
-    } finally {
-      process.stdout.write = origWrite;
-      process.exit = origExit;
-    }
-
-    expect(written.join('')).toContain('[2] Exit and inspect logs manually');
-    expect(exitCode).toBe(0);
+      expect(written.join('')).toContain('[2] Exit and inspect logs manually');
+      expect(exitCode()).toBe(0);
+    }, { stubTTY: true });
   });
 });
 

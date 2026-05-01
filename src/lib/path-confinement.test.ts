@@ -16,31 +16,15 @@ describe('assertPathConfined', () => {
     expect(() => assertPathConfined('README.md', ROOT)).not.toThrow();
   });
 
-  it('throws for a path with .. traversal (../escape.md)', () => {
-    expect(() => assertPathConfined('../escape.md', ROOT)).toThrow(/unsafe path/);
-  });
-
-  it('throws for a nested .. traversal (tasks/../../escape.md)', () => {
-    expect(() => assertPathConfined('tasks/../../escape.md', ROOT)).toThrow(/unsafe path/);
-  });
-
-  it('throws for an absolute path', () => {
-    expect(() => assertPathConfined('/etc/passwd', ROOT)).toThrow(/unsafe path/);
-  });
-
-  it('throws for a deeply nested .. that escapes the root', () => {
-    expect(() => assertPathConfined('tasks/../../../safe', ROOT)).toThrow(/unsafe path/);
-  });
-
-  it('throws for a Windows drive absolute path on POSIX', () => {
-    expect(() => assertPathConfined('C:\\windows\\system32', ROOT)).toThrow(/unsafe path/);
-  });
-
-  it('throws for a Windows drive absolute path with forward slashes on POSIX', () => {
-    expect(() => assertPathConfined('C:/windows/system32', ROOT)).toThrow(/unsafe path/);
-  });
-
-  it('throws for a Windows UNC absolute path on POSIX', () => {
-    expect(() => assertPathConfined('\\\\server\\share\\file.md', ROOT)).toThrow(/unsafe path/);
+  it.each([
+    ['.. traversal', '../escape.md'],
+    ['nested .. traversal', 'tasks/../../escape.md'],
+    ['absolute path', '/etc/passwd'],
+    ['deeply nested .. that escapes root', 'tasks/../../../safe'],
+    ['Windows drive absolute path', 'C:\\windows\\system32'],
+    ['Windows drive with forward slashes', 'C:/windows/system32'],
+    ['Windows UNC absolute path', '\\\\server\\share\\file.md'],
+  ])('throws for %s (%s)', (_label, path) => {
+    expect(() => assertPathConfined(path, ROOT)).toThrow(/unsafe path/);
   });
 });

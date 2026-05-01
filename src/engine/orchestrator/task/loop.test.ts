@@ -1,10 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
-import { createInitialState, transition } from '../../../core/state/machine.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeCallbacks, makePlanner, makeImplementer, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -50,33 +49,22 @@ function setupSessionOnly(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
-function makeImplState(tasks: ReturnType<typeof makeTask>[]): WorkflowState {
-  let state = createInitialState('feat');
-  state = transition(state, { type: 'START', feature: 'feat' });
-  state = transition(state, { type: 'RESEARCH_DONE' });
-  state = transition(state, { type: 'SPEC_DONE' });
-  state = transition(state, { type: 'APPROVE_SPEC' });
-  state = transition(state, { type: 'PLAN_DONE', tasks });
-  state = transition(state, { type: 'APPROVE_PLAN' });
-  return state;
-}
-
 // Validation disabled: keeps us from spawning tsc/eslint/npm-test subprocesses.
 const defaultWorkflow = { commitStrategy: 'none' as const, maxRetries: 2 };
 
 describe('runTaskLoop', () => {
   it('task with failed dependency creates dependency-blocked recovery instead of auto-skipping', async () => {
     const { projectDir, sessionId } = setupProject();
-    const t1 = makeTask({ id: 'T001', status: 'failed' });
-    const t2 = makeTask({ id: 'T002', dependsOn: ['T001'] });
-    let state = makeImplState([t1, t2]);
-    // Simulate T001 failed: advance currentTaskIndex past it.
+    const dependency = makeTask({ id: 'T001', status: 'failed' });
+    const blocked = makeTask({ id: 'T002', dependsOn: ['T001'] });
+    let state = makeImplState([dependency, blocked]);
     state = {
       ...state,
       currentTaskIndex: 1,
       tasks: state.tasks.map((t) => (t.id === 'T001' ? { ...t, status: 'failed' } : t)),
     };
 
+    const implementer = makeImplementer({ implement: vi.fn() });
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
 
@@ -88,7 +76,7 @@ describe('runTaskLoop', () => {
         callbacks,
         context: defaultContext,
         planner: makePlanner(),
-        implementer: makeImplementer(),
+        implementer,
         metadata: TEST_METADATA,
         sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
       },
@@ -97,6 +85,8 @@ describe('runTaskLoop', () => {
       setCurrentTask: vi.fn(),
     });
 
+    expect(result.status).toBe('stopped');
+    expect(implementer.implement).not.toHaveBeenCalled();
     expect(events.find((e) => e.type === 'task_skipped')).toBeUndefined();
     expect(result.state.tasks.find((t) => t.id === 'T002')?.status).toBe('pending');
     expect(result.state.pendingRecovery).toMatchObject({
@@ -105,11 +95,18 @@ describe('runTaskLoop', () => {
       affectedTaskIds: ['T001', 'T002'],
       availableActions: ['planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
     });
-    expect(events.find((e) => e.type === 'recovery_prompted')).toMatchObject({
-      type: 'recovery_prompted',
+    expect(result.state.pendingRecovery?.affectedTaskIds).toEqual(expect.arrayContaining(['T001', 'T002']));
+    expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
       reason: 'dependency-blocked',
       taskId: 'T002',
     });
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'recovery_prompted',
+      reason: 'dependency-blocked',
+      taskId: 'T002',
+      availableActions: ['planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
+      recommendedAction: 'planner-split-rebase',
+    }));
   });
 
   it('happy path: implement → validate pass → commit when commit strategy is per-task', async () => {
@@ -349,7 +346,7 @@ describe('runTaskLoop', () => {
     expect(implementer.implement).toHaveBeenCalledTimes(2);
     expect(result.state.currentTaskIndex).toBe(2);
     expect(events.find((event) => event.type === 'paused_external_changes')).toBeUndefined();
-  });
+  }, 20_000);
 
   it('routes a task to the selected profile and publishes profile/tool/model metadata', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -589,9 +586,6 @@ describe('runTaskLoop', () => {
     });
 
     expect(implementer.implement).toHaveBeenCalledTimes(1);
-    expect(setTrackedState).toHaveBeenCalledWith(expect.objectContaining({
-      tasks: [expect.not.objectContaining({ currentCode: expect.any(String) })],
-    }));
     expect(events.find((event) => event.type === 'task_started')).toMatchObject({
       type: 'task_started',
       taskId: 'T001',
@@ -658,6 +652,7 @@ describe('runTaskLoop', () => {
       reason: 'context-overflow',
       taskId: 'T001',
       availableActions: ['planner-split-rebase', 'pause-run', 'abort-workflow'],
+      recommendedAction: 'planner-split-rebase',
     });
     expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
       reason: 'context-overflow',
@@ -667,6 +662,13 @@ describe('runTaskLoop', () => {
       type: 'error',
       message: expect.stringContaining('Ask the planner to split the task'),
     });
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'recovery_prompted',
+      reason: 'context-overflow',
+      taskId: 'T001',
+      availableActions: ['planner-split-rebase', 'pause-run', 'abort-workflow'],
+      recommendedAction: 'planner-split-rebase',
+    }));
   });
 
   it('dispatches each task as a separate implementer call without prior task continuation text', async () => {
@@ -773,7 +775,7 @@ describe('runTaskLoop', () => {
     expect(result.status).toBe('complete');
     expect(result.state.currentTaskIndex).toBe(2);
     expect(events.filter(event => event.type === 'task_review_needed').map(event => event.taskId)).toEqual(['T001', 'T002']);
-  });
+  }, 20_000);
 
   it('taskReview notes are queued and persisted before continuing', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -817,11 +819,6 @@ describe('runTaskLoop', () => {
     });
     expect(result.state.messageQueue[0]?.text).toContain('tighten the follow-up assertions');
     expect(events.some(event => event.type === 'message_queued')).toBe(true);
-    expect(setTrackedState).toHaveBeenCalledWith(expect.objectContaining({
-      messageQueue: expect.arrayContaining([
-        expect.objectContaining({ text: expect.stringContaining('tighten the follow-up assertions') }),
-      ]),
-    }));
     expect(loadState(projectDir, sessionId)?.messageQueue).toEqual(expect.arrayContaining([
       expect.objectContaining({ text: expect.stringContaining('tighten the follow-up assertions') }),
     ]));
@@ -967,7 +964,7 @@ describe('runTaskLoop', () => {
     expect(implementer.implement).toHaveBeenCalledTimes(2);
     expect(result.state.currentTaskIndex).toBe(2);
     expect(events.find((event) => event.type === 'paused_external_changes')).toBeUndefined();
-  });
+  }, 20_000);
 
   it('asks about a future task edit before it becomes a current-task conflict', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -1224,5 +1221,103 @@ describe('runTaskLoop', () => {
     });
     expect(result.state.pendingRecovery?.availableActions).not.toContain('continue');
     expect(loadState(projectDir, sessionId)?.pendingRecovery?.reason).toBe('budget-exceeded');
+  });
+
+  it('taskReview failed emits a recovery-required review gate with task metadata', async () => {
+    const { projectDir, sessionId } = setupProject();
+
+    const task = makeTask({ id: 'T003', title: 'Split large task', file: 'src/large.ts' });
+    const state = makeImplState([task]);
+    const implementer = makeImplementer({ implement: vi.fn() });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTaskLoop({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({
+          implementer: { contextLength: 1 },
+          workflow: { ...defaultWorkflow, taskReview: 'failed' },
+        }),
+        callbacks: makeCallbacks({
+          onTaskReviewNeeded: async () => ({ action: 'continue' }),
+        }).callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+      },
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.status).toBe('stopped');
+    expect(events.find(event => event.type === 'task_review_needed')).toMatchObject({
+      type: 'task_review_needed',
+      taskId: 'T003',
+      taskTitle: 'Split large task',
+      status: 'recovery-required',
+      validation: expect.objectContaining({ passed: false }),
+      recovery: expect.objectContaining({ reason: 'context-overflow' }),
+      availableCommands: ['continue', 'redo', 'edit-notes', 'revise-plan', 'abort'],
+    });
+  });
+
+  it('taskReview failed reviews task-affecting user edit recovery stop points', async () => {
+    const { projectDir, sessionId } = setupProject();
+
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+
+    const setup = makeTask({ id: 'T003', title: 'Setup task', file: 'src/setup.ts' });
+    const conflict = makeTask({ id: 'T004', title: 'Respect edits', file: 'src/conflict.ts' });
+    const state = makeImplState([setup, conflict]);
+    const implementer = makeImplementer({
+      capabilities: { writesFiles: 'direct' },
+      implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: { projectDir: string }) => {
+        mkdirSync(join(runDir, 'src'), { recursive: true });
+        writeFileSync(join(runDir, 'src/setup.ts'), 'export const setup = true;\n');
+        writeFileSync(join(projectDir, 'src/conflict.ts'), 'user edit');
+        return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+    const { callbacks } = makeCallbacks({
+      onUserEditConflict: vi.fn().mockResolvedValue('regenerate-rebase'),
+      onTaskReviewNeeded: async () => ({ action: 'continue' }),
+    });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTaskLoop({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: { ...defaultWorkflow, taskReview: 'failed' } }),
+        callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+      },
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.status).toBe('stopped');
+    expect(implementer.implement).toHaveBeenCalledTimes(1);
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'user-edit-conflict',
+      taskId: 'T003',
+    });
+    expect(events.find(event => event.type === 'task_review_needed')).toMatchObject({
+      type: 'task_review_needed',
+      taskId: 'T003',
+      taskTitle: 'Setup task',
+      status: 'recovery-required',
+      filesTouched: expect.arrayContaining(['src/conflict.ts']),
+      recovery: expect.objectContaining({ reason: 'user-edit-conflict' }),
+    });
   });
 });

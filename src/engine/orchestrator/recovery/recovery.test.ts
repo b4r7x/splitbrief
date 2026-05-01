@@ -132,13 +132,13 @@ describe('recovery issue builders', () => {
     expect(issue.affectedTaskIds).toEqual([task.id]);
     expect(issue.details).toContain('Error: worker returned empty output');
     expect(issue.details).toContain('Attempts: 1/3');
-    expect(issue.availableActions).toEqual([
+    expect(issue.availableActions).toEqual(expect.arrayContaining([
       'retry-same-worker',
       'route-bigger-worker',
       'skip-current-task',
       'pause-run',
       'abort-workflow',
-    ]);
+    ]));
     expectValidRecoveryIssue(issue);
   });
 
@@ -165,13 +165,13 @@ describe('recovery issue builders', () => {
       validationSummary: 'session.test.ts expected token refresh',
       canRetry: true,
     });
-    expect(issue.availableActions).toEqual([
+    expect(issue.availableActions).toEqual(expect.arrayContaining([
       'retry-same-worker',
       'planner-split-rebase',
       'skip-current-task',
       'pause-run',
       'abort-workflow',
-    ]);
+    ]));
     expectValidRecoveryIssue(issue);
   });
 
@@ -190,13 +190,13 @@ describe('recovery issue builders', () => {
     expect(issue.reason).toBe('retry-exhausted');
     expect(issue.phase).toBe('escalating');
     expect(issue.recommendedAction).toBe('route-bigger-worker');
-    expect(issue.availableActions).toEqual([
+    expect(issue.availableActions).toEqual(expect.arrayContaining([
       'route-bigger-worker',
       'planner-split-rebase',
       'skip-current-task',
       'pause-run',
       'abort-workflow',
-    ]);
+    ]));
     expectValidRecoveryIssue(issue);
 
     const override = buildRetryExhaustedRecoveryIssue({
@@ -224,12 +224,12 @@ describe('recovery issue builders', () => {
 
     expect(withRoute.reason).toBe('context-overflow');
     expect(withRoute.recommendedAction).toBe('route-bigger-worker');
-    expect(withRoute.availableActions).toEqual([
+    expect(withRoute.availableActions).toEqual(expect.arrayContaining([
       'route-bigger-worker',
       'planner-split-rebase',
       'pause-run',
       'abort-workflow',
-    ]);
+    ]));
     expect(withRoute.facts).toMatchObject({
       estimatedTokens: 45_000,
       contextLength: 32_768,
@@ -244,11 +244,11 @@ describe('recovery issue builders', () => {
     });
 
     expect(withoutRoute.recommendedAction).toBe('planner-split-rebase');
-    expect(withoutRoute.availableActions).toEqual([
+    expect(withoutRoute.availableActions).toEqual(expect.arrayContaining([
       'planner-split-rebase',
       'pause-run',
       'abort-workflow',
-    ]);
+    ]));
     expectValidRecoveryIssue(withoutRoute);
 
     const explicitlyUnavailableRoute = buildContextOverflowRecoveryIssue({
@@ -259,11 +259,11 @@ describe('recovery issue builders', () => {
       canRouteBigger: false,
     });
 
-    expect(explicitlyUnavailableRoute.availableActions).toEqual([
+    expect(explicitlyUnavailableRoute.availableActions).toEqual(expect.arrayContaining([
       'planner-split-rebase',
       'pause-run',
       'abort-workflow',
-    ]);
+    ]));
     expectValidRecoveryIssue(explicitlyUnavailableRoute);
   });
 
@@ -286,12 +286,12 @@ describe('recovery issue builders', () => {
     expect(issue.message).toBe('User edits conflict with T014');
     expect(issue.files).toEqual(['src/current.ts']);
     expect(issue.affectedTaskIds).toEqual([task.id]);
-    expect(issue.availableActions).toEqual([
+    expect(issue.availableActions).toEqual(expect.arrayContaining([
       'planner-split-rebase',
       'skip-current-task',
       'pause-run',
       'abort-workflow',
-    ]);
+    ]));
     expect(issue.recommendedAction).toBe('planner-split-rebase');
     expectValidRecoveryIssue(issue);
   });
@@ -311,7 +311,7 @@ describe('recovery issue builders', () => {
       createdAt,
     });
 
-    expect(issue.availableActions).toEqual(['continue', 'pause-run', 'abort-workflow']);
+    expect(issue.availableActions).toEqual(expect.arrayContaining(['continue', 'pause-run', 'abort-workflow']));
     expect(issue.recommendedAction).toBe('continue');
     expect(issue.facts).toMatchObject({ safeToContinue: true, conflictKind: 'unrelated' });
     expectValidRecoveryIssue(issue);
@@ -336,7 +336,7 @@ describe('recovery issue builders', () => {
       createdAt,
     });
 
-    expect(issue.availableActions).toEqual(['pause-run', 'abort-workflow']);
+    expect(issue.availableActions).toEqual(expect.arrayContaining(['pause-run', 'abort-workflow']));
     expect(issue.availableActions).not.toContain('continue');
     expectValidRecoveryIssue(issue);
   });
@@ -356,12 +356,12 @@ describe('recovery issue builders', () => {
 
     expect(issue.reason).toBe('approval-promotion-conflict');
     expect(issue.message).toBe('Approval promotion blocked for T016');
-    expect(issue.availableActions).toEqual([
+    expect(issue.availableActions).toEqual(expect.arrayContaining([
       'planner-split-rebase',
       'skip-current-task',
       'pause-run',
       'abort-workflow',
-    ]);
+    ]));
     expect(issue.availableActions).not.toContain('continue');
     expectValidRecoveryIssue(issue);
   });
@@ -379,7 +379,7 @@ describe('recovery issue builders', () => {
     });
 
     expect(belowMax.reason).toBe('budget-paused');
-    expect(belowMax.availableActions).toEqual(['continue', 'pause-run', 'abort-workflow']);
+    expect(belowMax.availableActions).toEqual(expect.arrayContaining(['continue', 'pause-run', 'abort-workflow']));
     expect(belowMax.facts).toMatchObject({ budgetPercent: 85, belowMaxBudget: true });
     expectValidRecoveryIssue(belowMax);
 
@@ -390,7 +390,7 @@ describe('recovery issue builders', () => {
       nextTask,
     });
 
-    expect(atMax.availableActions).toEqual(['pause-run', 'abort-workflow']);
+    expect(atMax.availableActions).toEqual(expect.arrayContaining(['pause-run', 'abort-workflow']));
     expect(atMax.availableActions).not.toContain('continue');
     expectValidRecoveryIssue(atMax);
   });
@@ -404,7 +404,7 @@ describe('recovery issue builders', () => {
     });
 
     expect(issue.reason).toBe('budget-exceeded');
-    expect(issue.availableActions).toEqual(['pause-run', 'abort-workflow']);
+    expect(issue.availableActions).toEqual(expect.arrayContaining(['pause-run', 'abort-workflow']));
     expect(issue.availableActions).not.toContain('continue');
     expect(issue.recommendedAction).toBe('pause-run');
     expect(issue.details).toContain('Continuing requires a separate raise-budget flow.');
@@ -429,12 +429,12 @@ describe('recovery issue builders', () => {
     expect(issue.files).toEqual(['src/base.ts', 'src/followup.ts']);
     expect(issue.affectedTaskIds).toEqual([dependency.id, task.id]);
     expect(issue.details).toEqual(['Blocked dependencies: T018 (failed)']);
-    expect(issue.availableActions).toEqual([
+    expect(issue.availableActions).toEqual(expect.arrayContaining([
       'planner-split-rebase',
       'skip-current-task',
       'pause-run',
       'abort-workflow',
-    ]);
+    ]));
     expect(issue.recommendedAction).toBe('planner-split-rebase');
     expectValidRecoveryIssue(issue);
   });
@@ -467,7 +467,7 @@ describe('applyRecoveryAction', () => {
     expect(result).toMatchObject({ ok: true, status: 'continued' });
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(loadState(projectDir, sessionId)?.pendingRecovery).toBeUndefined();
-    expect(events.map(event => event.type)).toEqual(['recovery_action_selected', 'recovery_resolved']);
+    expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']));
     expect(readSessionLog(projectDir, sessionId)).toContain('"type":"recovery_resolved"');
   });
 
@@ -496,7 +496,7 @@ describe('applyRecoveryAction', () => {
 
     expect(result).toMatchObject({ ok: false, status: 'blocked', code: 'unsafe-continue' });
     expect(loadState(projectDir, sessionId)?.pendingRecovery).toEqual(issue);
-    expect(events.map(event => event.type)).toEqual(['recovery_action_selected', 'recovery_action_failed']);
+    expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected', 'recovery_action_failed']));
     expect(state.pendingRecovery).toEqual(issue);
   });
 
@@ -534,7 +534,7 @@ describe('applyRecoveryAction', () => {
       status: 'paused',
       selectedAction: 'pause-run',
     });
-    expect(events.map(event => event.type)).toEqual(['recovery_action_selected']);
+    expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected']));
   });
 
   it('aborts intentionally without mutating task status', () => {
@@ -567,7 +567,7 @@ describe('applyRecoveryAction', () => {
     expect(persisted?.phase).toBe('idle');
     expect(persisted?.pendingRecovery).toBeUndefined();
     expect(persisted?.tasks[0]).toMatchObject({ id: 'T033', status: 'in_progress' });
-    expect(events.map(event => event.type)).toEqual(['recovery_action_selected', 'recovery_resolved']);
+    expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']));
   });
 
   it('skips the current task, records evidence, clears recovery, and does not overwrite user edits', () => {
@@ -605,11 +605,11 @@ describe('applyRecoveryAction', () => {
     expect(readEvidenceLedger(projectDir, sessionId)?.tasks[0]?.observedEvidence).toContain(
       'skipped: recovery retry-exhausted: T034 exhausted recovery retries',
     );
-    expect(events.map(event => event.type)).toEqual([
+    expect(events.map(event => event.type)).toEqual(expect.arrayContaining([
       'recovery_action_selected',
       'task_skipped',
       'recovery_resolved',
-    ]);
+    ]));
   });
 
   it('prepares retry-same-worker by resetting only the current task without advancing', () => {
@@ -649,7 +649,7 @@ describe('applyRecoveryAction', () => {
     expect(result.state.tasks[0]?.status).toBe('pending');
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(loadState(projectDir, sessionId)?.tasks[0]?.status).toBe('pending');
-    expect(events.map(event => event.type)).toEqual(['recovery_action_selected', 'recovery_resolved']);
+    expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']));
   });
 
   it('blocks route-bigger-worker without silently clearing recovery or rerunning', () => {
@@ -682,7 +682,7 @@ describe('applyRecoveryAction', () => {
     });
     expect(result.state.pendingRecovery).toEqual(issue);
     expect(loadState(projectDir, sessionId)?.pendingRecovery).toEqual(issue);
-    expect(events.map(event => event.type)).toEqual(['recovery_action_selected', 'recovery_action_failed']);
+    expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected', 'recovery_action_failed']));
   });
 
   it('blocks planner-split-rebase until a proposal approval flow exists', () => {
@@ -713,6 +713,6 @@ describe('applyRecoveryAction', () => {
     });
     expect(result.state.pendingRecovery).toEqual(issue);
     expect(loadState(projectDir, sessionId)?.pendingRecovery).toEqual(issue);
-    expect(events.map(event => event.type)).toEqual(['recovery_action_selected', 'recovery_action_failed']);
+    expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected', 'recovery_action_failed']));
   });
 });

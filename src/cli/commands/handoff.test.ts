@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { isCliError } from '../errors.js';
@@ -7,13 +9,8 @@ vi.mock('../../engine/handoff/write.js', () => ({
   writeHandoffPack: vi.fn().mockResolvedValue({ outputDir: '/tmp/out', files: [] }),
 }));
 
-vi.mock('../../engine/handoff/load-renderer.js', () => ({
-  listCustomRenderers: vi.fn().mockReturnValue([]),
-}));
-
 import { registerHandoffCommand } from './handoff.js';
 import { writeHandoffPack } from '../../engine/handoff/write.js';
-import { listCustomRenderers } from '../../engine/handoff/load-renderer.js';
 
 let tmp: string;
 
@@ -36,6 +33,9 @@ async function runHandoff(args: string[]): Promise<void> {
   await program.parseAsync(['node', 'diptych', 'handoff', '--project', tmp, '--session', 'test-session', ...args]);
 }
 
+// The command only prints `result.outputDir` (from the mock return value), not the
+// input arguments (target, selectedTaskIds, outDir). Console output cannot distinguish
+// between different inputs, so these tests verify wiring via mock.calls.
 describe('handoff command — target validation', () => {
   it('passes unknown target through to writeHandoffPack (custom renderer support)', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -92,7 +92,10 @@ describe('handoff command — --list flag', () => {
   });
 
   it('prints custom renderers when listCustomRenderers returns names', async () => {
-    vi.mocked(listCustomRenderers).mockReturnValueOnce(['linear-ticket', 'jira-task']);
+    const renderersDir = join(tmp, '.diptych', 'handoff-renderers');
+    mkdirSync(renderersDir, { recursive: true });
+    writeFileSync(join(renderersDir, 'linear-ticket.ts'), '');
+    writeFileSync(join(renderersDir, 'jira-task.ts'), '');
     const logs: string[] = [];
     vi.spyOn(console, 'log').mockImplementation((...args) => logs.push(args.join(' ')));
 
@@ -106,7 +109,6 @@ describe('handoff command — --list flag', () => {
   });
 
   it('omits Custom renderers section when no custom renderers exist', async () => {
-    vi.mocked(listCustomRenderers).mockReturnValueOnce([]);
     const logs: string[] = [];
     vi.spyOn(console, 'log').mockImplementation((...args) => logs.push(args.join(' ')));
 

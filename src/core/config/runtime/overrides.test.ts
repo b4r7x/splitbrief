@@ -1,26 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { applyCLIOverrides, applyApproveOverride } from './overrides.js';
 import type { Config } from '../../schemas/config.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 
-const baseConfig: Config = {
-  version: 3,
-  planner: { kind: 'cli', tool: 'claude-code' },
-  implementer: {
-    kind: 'api',
-    provider: 'ollama',
-    model: 'qwen2.5-coder:7b',
-    apiBase: 'http://localhost:11434/v1',
-    contextLength: 32768,
-    temperature: 0.3,
-  },
-  validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-  workflow: {
-    approve: 'default',
-    maxRetries: 3,
-    persistTranscript: true,
-    mode: 'standard',
-  },
-};
+function buildBaseConfig(): Config {
+  const c = makeConfig({ workflow: { approve: 'default' } });
+  delete (c.workflow as Record<string, unknown>).autoApproveSpec;
+  delete (c.workflow as Record<string, unknown>).autoApprovePlan;
+  return c;
+}
+const baseConfig: Config = buildBaseConfig();
 
 describe('applyCLIOverrides — approve / auto', () => {
   it('--approve <level> sets workflow.approve', () => {

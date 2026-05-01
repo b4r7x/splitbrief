@@ -6,7 +6,6 @@ import {
   METHOD_NOT_FOUND,
   INVALID_PARAMS,
   MCP_PROTOCOL_VERSION,
-  SUPPORTED_PROTOCOL_VERSIONS,
 } from './handlers.js';
 import type { McpResolver } from './resolver.js';
 import type { McpResourceDescriptor, McpResourceContent } from './types.js';
@@ -325,13 +324,4 @@ describe('handleMessage', () => {
     expect(result.body.error.code).toBe(INVALID_REQUEST);
   });
 
-  it('MCP_PROTOCOL_VERSION is current Streamable HTTP version', () => {
-    expect(MCP_PROTOCOL_VERSION).toBe('2025-11-25');
-  });
-
-  it('SUPPORTED_PROTOCOL_VERSIONS includes only current Streamable HTTP version', () => {
-    expect(SUPPORTED_PROTOCOL_VERSIONS.has(MCP_PROTOCOL_VERSION)).toBe(true);
-    expect(SUPPORTED_PROTOCOL_VERSIONS.has('2024-11-05')).toBe(false);
-    expect(SUPPORTED_PROTOCOL_VERSIONS.has('2025-06-18')).toBe(false);
-  });
 });

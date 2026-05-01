@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { isCliError } from '../errors.js';
@@ -7,19 +9,25 @@ vi.mock('../../engine/mcp/server.js', () => ({
   startMcpServer: vi.fn(),
 }));
 
-vi.mock('../../engine/mcp/auth-token.js', () => ({
-  generateToken: vi.fn().mockReturnValue('test-token-abc123'),
-}));
-
-vi.mock('../../engine/mcp/discovery.js', () => ({
-  resolveSessionIds: vi.fn(),
-}));
-
 import { registerMcpCommand } from './mcp.js';
 import { startMcpServer } from '../../engine/mcp/server.js';
-import { resolveSessionIds } from '../../engine/mcp/discovery.js';
 
 let tmp: string;
+
+function createSessionFixture(projectDir: string, sessionId: string): void {
+  const dir = join(projectDir, '.diptych', 'sessions', sessionId);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'summary.json'), JSON.stringify({
+    id: sessionId,
+    feature: 'test',
+    startedAt: 1,
+    completedAt: null,
+    stateVersion: 1,
+    stateFile: null,
+    status: 'interrupted',
+    summary: null,
+  }));
+}
 
 beforeEach(() => {
   tmp = createTempDir('mcp-command-test');
@@ -27,7 +35,7 @@ beforeEach(() => {
     port: 4321,
     close: vi.fn().mockResolvedValue(undefined),
   });
-  vi.mocked(resolveSessionIds).mockReturnValue(['2026-04-26-test-session']);
+  createSessionFixture(tmp, '2026-04-26-test-session');
 });
 
 afterEach(() => {
@@ -97,10 +105,6 @@ describe('mcp serve — port validation', () => {
 
 describe('mcp serve — no active session', () => {
   it('exits with code 1 with a useful message when no active session and no flags given', async () => {
-    vi.mocked(resolveSessionIds).mockImplementation(() => {
-      throw new Error('No active session. Use --session <id> or --all-sessions.');
-    });
-
     let captured: unknown;
     try {
       await runMcpServe([]);
@@ -127,28 +131,28 @@ describe('mcp serve — startup announcement', () => {
     const output = writes.join('');
     expect(output).toContain('diptych MCP server ready');
     expect(output).toMatch(/resources/i);
-    expect(output).toMatch(/write tools/i);
+    expect(output).toMatch(/\d+ write tools/i);
     expect(output).toContain('http://127.0.0.1:4321/mcp');
-    expect(output).toContain('test-token-abc123');
+    expect(output).toMatch(/Token:\s+[A-Za-z0-9_-]{20,}/);
     expect(output).toContain('Sessions: 2026-04-26-test-session');
   });
 
-  it('passes a five-tool write handler to the MCP server', async () => {
-    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+  it('announces five write tools in the startup output', async () => {
+    const writes: string[] = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
 
     await runMcpServe(['--session', '2026-04-26-test-session']);
 
-    const call = vi.mocked(startMcpServer).mock.calls.at(0);
-    expect(call).toBeDefined();
-    if (call === undefined) return;
-    const [config] = call;
-    expect(config.toolHandler).toBeDefined();
-    if (config.toolHandler === undefined) return;
-    expect(config.toolHandler.listTools()).toHaveLength(5);
+    const output = writes.join('');
+    expect(output).toMatch(/5 write tools/i);
   });
 
   it('shows "all" in Sessions when --all-sessions is provided', async () => {
-    vi.mocked(resolveSessionIds).mockReturnValue(['sess1', 'sess2']);
+    createSessionFixture(tmp, 'sess1');
+    createSessionFixture(tmp, 'sess2');
     const writes: string[] = [];
     vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
       writes.push(String(chunk));

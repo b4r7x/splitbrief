@@ -55,6 +55,35 @@ function tryConnect(sockPath: string): Promise<boolean> {
   });
 }
 
+export function waitForServerReady(
+  sessionDir: string,
+  sessionId: string,
+  timeoutMs = STARTUP_TIMEOUT_MS,
+): Promise<SpawnServerResult> {
+  const sockPath = join(sessionDir, IPC_SOCK_FILE);
+
+  return new Promise<SpawnServerResult>((resolve) => {
+    const deadline = Date.now() + timeoutMs;
+
+    const poll = async () => {
+      const status = await checkServerStatus(sessionDir);
+      if (status.alive) {
+        if (existsSync(sockPath) && (await tryConnect(sockPath))) {
+          resolve({ ok: true, pid: status.data.pid, sessionId });
+          return;
+        }
+      }
+      if (Date.now() >= deadline) {
+        resolve({ ok: false, reason: 'timeout waiting for server to accept connections' });
+        return;
+      }
+      setTimeout(() => void poll(), POLL_INTERVAL_MS);
+    };
+
+    void poll();
+  });
+}
+
 export async function spawnServer(opts: SpawnServerOptions): Promise<SpawnServerResult> {
   const { command, args: entryArgs } = resolveEntryPoint();
 
@@ -90,28 +119,5 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<SpawnServer
   child.unref();
   await logHandle.close();
 
-  const sockPath = join(opts.sessionDir, IPC_SOCK_FILE);
-
-  return new Promise<SpawnServerResult>((resolve) => {
-    const deadline = Date.now() + STARTUP_TIMEOUT_MS;
-
-    const poll = async () => {
-      const status = await checkServerStatus(opts.sessionDir);
-      if (status.alive) {
-        // Lockfile is alive but the IPC socket may not have been bound yet.
-        // Confirm we can actually connect before declaring readiness.
-        if (existsSync(sockPath) && (await tryConnect(sockPath))) {
-          resolve({ ok: true, pid: status.data.pid, sessionId: opts.sessionId });
-          return;
-        }
-      }
-      if (Date.now() >= deadline) {
-        resolve({ ok: false, reason: 'timeout waiting for server to accept connections' });
-        return;
-      }
-      setTimeout(() => void poll(), POLL_INTERVAL_MS);
-    };
-
-    void poll();
-  });
+  return waitForServerReady(opts.sessionDir, opts.sessionId);
 }

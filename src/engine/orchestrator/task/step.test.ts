@@ -14,9 +14,8 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { loadState } from '../../../core/state/persistence.js';
-import { createInitialState, transition } from '../../../core/state/machine.js';
-import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { transition } from '../../../core/state/machine.js';
+import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext, WorkflowSinks } from '../types.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
@@ -46,21 +45,7 @@ function makeSinks(): WorkflowSinks {
   return { setAbortHandler: () => {}, setQueueHandler: () => {} };
 }
 
-function implementingState(tasks: Task[]): WorkflowState {
-  let s = createInitialState('feat');
-  s = transition(s, { type: 'START', feature: 'feat' });
-  s = transition(s, { type: 'RESEARCH_DONE' });
-  s = transition(s, { type: 'SPEC_DONE' });
-  s = transition(s, { type: 'APPROVE_SPEC' });
-  s = transition(s, { type: 'PLAN_DONE', tasks });
-  s = transition(s, { type: 'APPROVE_PLAN' });
-  return {
-    ...s,
-    implementerTool: 'ollama',
-    implementerModel: 'qwen2.5',
-    plannerTool: 'claude-code',
-  };
-}
+const implementingState = makeImplStateWithMetadata;
 
 function makeWorkflowContext(overrides?: Partial<WorkflowContext>): WorkflowContext {
   const proj = overrides?.projectDir
@@ -1027,5 +1012,123 @@ describe('retryAndRecord — retry budget', () => {
     const retryEvents = busEvents.filter((e) => e.type === 'task_retry');
     // At least as many retry events as local attempts.
     expect(retryEvents.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('retryAndRecord — recovery stop points', () => {
+  it('persists pending recovery when retry or escalation throws before returning a result', async () => {
+    const { projectDir, sessionId } = setupProject();
+
+    const task = makeTask({ id: 'T001' });
+    let state = implementingState([task]);
+    state = transition(state, { type: 'START_TASK', taskId: task.id });
+    state = transition(state, { type: 'TASK_SENT' });
+
+    const { bus, events } = makeBusRecorder();
+    const planner = makePlanner({
+      escalateHint: vi.fn().mockRejectedValueOnce(new Error('planner crashed')),
+    });
+    const implementer = makeImplementer({ retry: vi.fn() });
+    const wctx = makeWorkflowContext({
+      projectDir,
+      sessionId,
+      bus,
+      planner,
+      implementer,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { commitStrategy: 'none', maxRetries: 0 },
+      }),
+    });
+
+    const result = await retryAndRecord({
+      wctx,
+      task,
+      initialError: 'initial validation failed',
+      state,
+      taskStartTime: Date.now(),
+      taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+
+    expect(result.completed).toBe(false);
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'retry-exhausted',
+      taskId: 'T001',
+      availableActions: ['retry-same-worker', 'planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
+    });
+    expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
+      reason: 'retry-exhausted',
+      taskId: 'T001',
+    });
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'recovery_prompted',
+      reason: 'retry-exhausted',
+      taskId: 'T001',
+      availableActions: ['retry-same-worker', 'planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
+    }));
+  });
+
+  it('adds recovery to the latest persisted retry state when a later retry step throws', async () => {
+    const { projectDir, sessionId } = setupProject();
+
+    const task = makeTask({ id: 'T001' });
+    let state = implementingState([task]);
+    state = transition(state, { type: 'START_TASK', taskId: task.id });
+    state = transition(state, { type: 'TASK_SENT' });
+
+    const { bus, events } = makeBusRecorder();
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        error: 'retry still failed',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
+    });
+    const planner = makePlanner({
+      escalateHint: vi.fn().mockRejectedValueOnce(new Error('hint planner crashed')),
+    });
+    const wctx = makeWorkflowContext({
+      bus,
+      implementer,
+      planner,
+      projectDir,
+      sessionId,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { commitStrategy: 'none', maxRetries: 1 },
+      }),
+    });
+
+    const result = await retryAndRecord({
+      wctx,
+      task,
+      initialError: 'initial validation failed',
+      state,
+      taskStartTime: Date.now(),
+      taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+
+    expect(result.completed).toBe(false);
+    expect(result.state.attempt).toBe(1);
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'retry-exhausted',
+      taskId: 'T001',
+      attempts: 1,
+    });
+    expect(loadState(projectDir, sessionId)).toMatchObject({
+      attempt: 1,
+      pendingRecovery: expect.objectContaining({ reason: 'retry-exhausted' }),
+    });
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'recovery_prompted',
+      reason: 'retry-exhausted',
+      taskId: 'T001',
+    }));
   });
 });

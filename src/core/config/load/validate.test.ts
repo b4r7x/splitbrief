@@ -1,27 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { validateConfig, securityWarnings } from './validate.js';
 import type { Config } from '../../schemas/config.js';
-import type { ApiImplementerConfig } from '../../schemas/implementer-config.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 
-const validConfig = {
-  version: 2 as const,
-  planner: { kind: 'cli', tool: 'claude-code', model: 'default' },
-  implementer: { kind: 'api', provider: 'ollama', model: 'qwen2.5-coder:7b', apiBase: 'http://localhost:11434/v1', contextLength: 8192, temperature: 0.3 },
-  validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-  workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', persistTranscript: true },
-};
-
-const baseApiImplementer: ApiImplementerConfig = {
-  kind: 'api', provider: 'ollama', model: 'qwen2.5-coder:7b', apiBase: 'http://localhost:11434/v1', contextLength: 8192, temperature: 0.3,
-};
-
-const baseConfig: Config = {
-  version: 2,
-  planner: { kind: 'cli', tool: 'claude-code', model: 'default' },
-  implementer: baseApiImplementer,
-  validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-  workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', persistTranscript: true },
-};
+const validConfig = makeConfig();
+const baseConfig: Config = makeConfig();
 
 describe('validateConfig', () => {
   it('returns no errors for a valid config', () => {

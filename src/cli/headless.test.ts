@@ -1,83 +1,97 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
-import { createInitialState } from '../core/state/machine.js';
-import type { Config } from '../core/schemas/config.js';
+import { createInitialState, transition } from '../core/state/machine.js';
+import { ensureSessionDir } from '../core/paths-io.js';
+import { saveState } from '../core/state/persistence.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { Implementer } from '../engine/implementers/types.js';
 import type { Planner } from '../engine/planners/types.js';
-import { beginSession } from '../core/sessions/lifecycle.js';
-
-const runnerMocks = vi.hoisted(() => ({
-  planner: undefined as Planner | undefined,
-  implementer: undefined as Implementer | undefined,
-}));
-
-vi.mock('../engine/runners/factory.js', () => ({
-  createPlanner: vi.fn(() => {
-    if (!runnerMocks.planner) throw new Error('test planner not configured');
-    return runnerMocks.planner;
-  }),
-  createImplementer: vi.fn(() => {
-    if (!runnerMocks.implementer) throw new Error('test implementer not configured');
-    return runnerMocks.implementer;
-  }),
-}));
-vi.mock('../core/config/load/load.js');
-vi.mock('../core/config/runtime/overrides.js');
-vi.mock('../lib/warn.js', () => ({ warnStderr: vi.fn() }));
-
-import { loadConfig } from '../core/config/load/load.js';
-import { applyCLIOverrides } from '../core/config/runtime/overrides.js';
+import { beginSession, writeActive } from '../core/sessions/lifecycle.js';
+import { buildValidationFailedRecoveryIssue } from '../engine/orchestrator/recovery/recovery.js';
+import { DIPTYCH_DIR, CONFIG_FILE } from '../core/paths.js';
 import { runHeadless } from './headless.js';
 
-const mockLoadConfig = vi.mocked(loadConfig);
-const mockApplyCLIOverrides = vi.mocked(applyCLIOverrides);
+let stderrSpy: ReturnType<typeof vi.spyOn>;
+
+function writeConfigYaml(projectDir: string, yamlLines: string[]): void {
+  const dir = join(projectDir, DIPTYCH_DIR);
+  mkdirSync(dir, { recursive: true });
+  const filePath = join(dir, CONFIG_FILE);
+  writeFileSync(filePath, yamlLines.join('\n'));
+  chmodSync(filePath, 0o600);
+}
+
+function writeBudgetConfigYaml(projectDir: string, pauseThreshold = 0.85): void {
+  writeConfigYaml(projectDir, [
+    'version: 3',
+    'planner:',
+    '  kind: api',
+    '  provider: anthropic',
+    '  model: claude-sonnet-4-6',
+    '  api_base: https://api.anthropic.com/v1',
+    '  api_key: test-key',
+    'implementer:',
+    '  kind: api',
+    '  provider: anthropic',
+    '  model: claude-sonnet-4-6',
+    '  api_base: https://api.anthropic.com/v1',
+    '  api_key: test-key',
+    'validation:',
+    '  typecheck: false',
+    '  lint: false',
+    '  test: false',
+    '  test_command: "noop"',
+    'workflow:',
+    '  mode: quick',
+    '  auto_approve_spec: true',
+    '  auto_approve_plan: true',
+    '  approve: none',
+    '  commit_strategy: none',
+    '  persist_transcript: false',
+    '  max_budget: 20',
+    `  budget_pause_threshold: ${pauseThreshold}`,
+  ]);
+}
+
+function writeMinimalConfigYaml(projectDir: string): void {
+  writeConfigYaml(projectDir, [
+    'version: 3',
+    'planner:',
+    '  kind: cli',
+    '  tool: claude-code',
+    'implementer:',
+    '  kind: api',
+    '  provider: ollama',
+    '  api_base: http://localhost:11434/v1',
+    '  model: qwen2.5-coder:7b',
+    '  context_length: 32768',
+    'validation:',
+    '  typecheck: false',
+    '  lint: false',
+    '  test: false',
+    '  test_command: "noop"',
+    'workflow:',
+    '  auto_approve_spec: true',
+    '  auto_approve_plan: true',
+    '  approve: none',
+    '  commit_strategy: none',
+    '  mode: quick',
+    '  persist_transcript: false',
+  ]);
+}
 
 let dirs: string[] = [];
 
-function makeExitError(code: number | string | null | undefined): Error & { code: number | string | null | undefined } {
-  const err = new Error(`process.exit(${String(code)})`) as Error & { code: number | string | null | undefined };
-  err.code = code;
-  return err;
-}
-
-function makeBudgetConfig(pauseThreshold = 0.85): Config {
-  return makeConfig({
-    planner: {
-      kind: 'api',
-      provider: 'anthropic',
-      model: 'claude-sonnet-4-6',
-      apiBase: 'https://api.anthropic.com/v1',
-      apiKey: 'test-key',
-    },
-    implementer: {
-      kind: 'api',
-      provider: 'anthropic',
-      model: 'claude-sonnet-4-6',
-      apiBase: 'https://api.anthropic.com/v1',
-      apiKey: 'test-key',
-    },
-    validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-    workflow: {
-      mode: 'quick',
-      autoApproveSpec: true,
-      autoApprovePlan: true,
-      commitStrategy: 'none',
-      persistTranscript: false,
-      maxBudget: 20,
-      budgetPauseThreshold: pauseThreshold,
-    },
-  });
-}
-
-function setupProject(): string {
+function setupProject(pauseThreshold = 0.85): string {
   const projectDir = createTempDir('headless-budget-test');
   dirs.push(projectDir);
   createTestGitRepo(projectDir);
+  writeBudgetConfigYaml(projectDir, pauseThreshold);
   return projectDir;
 }
 
@@ -109,24 +123,26 @@ describe('runHeadless — budget pause behavior', () => {
   let stdoutChunks: string[];
   let stdoutSpy: ReturnType<typeof vi.spyOn>;
   let exitSpy: ReturnType<typeof vi.spyOn>;
+  let planner: Planner;
+  let implementer: Implementer;
 
   beforeEach(() => {
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     stdoutChunks = [];
     stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
       stdoutChunks.push(String(chunk));
       return true;
     });
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code: number | string | null | undefined) => {
-      throw makeExitError(code);
+      const err = new Error(`process.exit(${String(code)})`) as Error & { code: number | string | null | undefined };
+      err.code = code;
+      throw err;
     }) as never);
 
-    const config = makeBudgetConfig();
-    mockLoadConfig.mockReturnValue({ config, warnings: [] });
-    mockApplyCLIOverrides.mockReturnValue(config);
-    runnerMocks.planner = makePlanner({
+    planner = makePlanner({
       review: vi.fn().mockResolvedValue({ text: '', usage: null }),
     });
-    runnerMocks.implementer = makeImplementer({
+    implementer = makeImplementer({
       implement: vi.fn().mockResolvedValue({
         success: true,
         output: 'done',
@@ -136,11 +152,10 @@ describe('runHeadless — budget pause behavior', () => {
   });
 
   afterEach(() => {
+    stderrSpy.mockRestore();
     stdoutSpy.mockRestore();
     exitSpy.mockRestore();
     vi.clearAllMocks();
-    runnerMocks.planner = undefined;
-    runnerMocks.implementer = undefined;
     for (const d of dirs) cleanupTempDir(d);
     dirs = [];
   });
@@ -150,7 +165,7 @@ describe('runHeadless — budget pause behavior', () => {
     const sessionId = beginSession(projectDir, 'fix budget behavior');
 
     await expect(
-      runHeadless('fix budget behavior', projectDir, {}, makeBudgetState(), sessionId),
+      runHeadless('fix budget behavior', projectDir, {}, makeBudgetState(), sessionId, undefined, planner, implementer),
     ).rejects.toMatchObject({
       exitCode: 1,
       message: expect.stringContaining('Recovery required'),
@@ -171,7 +186,7 @@ describe('runHeadless — budget pause behavior', () => {
       });
     const paused = jsonLines.find((line) => line.type === 'budget_paused');
 
-    expect(runnerMocks.implementer?.implement).toHaveBeenCalled();
+    expect(implementer.implement).toHaveBeenCalled();
     expect(paused).toBeDefined();
     expect(paused?.currentCost).toBeGreaterThan(17);
     expect(paused?.maxBudget).toBe(20);
@@ -185,12 +200,9 @@ describe('runHeadless — budget pause behavior', () => {
   });
 
   it('uses the configured budgetPauseThreshold in the JSON output', async () => {
-    const projectDir = setupProject();
-    const config = makeBudgetConfig(0.75);
-    mockLoadConfig.mockReturnValue({ config, warnings: [] });
-    mockApplyCLIOverrides.mockReturnValue(config);
+    const projectDir = setupProject(0.75);
 
-    await runHeadless('fix budget behavior', projectDir, {}, makeBudgetState());
+    await runHeadless('fix budget behavior', projectDir, {}, makeBudgetState(), undefined, undefined, planner, implementer);
 
     const pausedLine = stdoutChunks
       .join('')
@@ -204,20 +216,114 @@ describe('runHeadless — budget pause behavior', () => {
 
   it('rejects interactive task review modes before starting a headless run', async () => {
     const projectDir = setupProject();
-    const config = makeBudgetConfig();
-    const reviewConfig: Config = {
-      ...config,
-      workflow: { ...config.workflow, taskReview: 'every' },
-    };
-    mockLoadConfig.mockReturnValue({ config: reviewConfig, warnings: [] });
-    mockApplyCLIOverrides.mockReturnValue(reviewConfig);
+    writeConfigYaml(projectDir, [
+      'version: 3',
+      'planner:',
+      '  kind: api',
+      '  provider: anthropic',
+      '  model: claude-sonnet-4-6',
+      '  api_base: https://api.anthropic.com/v1',
+      '  api_key: test-key',
+      'implementer:',
+      '  kind: api',
+      '  provider: anthropic',
+      '  model: claude-sonnet-4-6',
+      '  api_base: https://api.anthropic.com/v1',
+      '  api_key: test-key',
+      'validation:',
+      '  typecheck: false',
+      '  lint: false',
+      '  test: false',
+      '  test_command: "noop"',
+      'workflow:',
+      '  mode: quick',
+      '  auto_approve_spec: true',
+      '  auto_approve_plan: true',
+      '  approve: none',
+      '  commit_strategy: none',
+      '  persist_transcript: false',
+      '  max_budget: 20',
+      '  budget_pause_threshold: 0.85',
+      '  task_review: every',
+    ]);
 
     await expect(
-      runHeadless('fix budget behavior', projectDir, {}, makeBudgetState()),
+      runHeadless('fix budget behavior', projectDir, {}, makeBudgetState(), undefined, undefined, planner, implementer),
     ).rejects.toMatchObject({
       exitCode: 1,
       message: expect.stringContaining('workflow.taskReview requires an interactive TUI run'),
     });
-    expect(runnerMocks.implementer?.implement).not.toHaveBeenCalled();
+    expect(implementer.implement).not.toHaveBeenCalled();
+  });
+});
+
+describe('runHeadless — recovery stops', () => {
+  let stdoutChunks: string[];
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
+  let planner: Planner;
+  let implementer: Implementer;
+
+  beforeEach(() => {
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    planner = makePlanner();
+    implementer = makeImplementer();
+    stdoutChunks = [];
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      stdoutChunks.push(String(chunk));
+      return true;
+    });
+  });
+
+  afterEach(() => {
+    stderrSpy.mockRestore();
+    stdoutSpy.mockRestore();
+    vi.clearAllMocks();
+    for (const d of dirs) cleanupTempDir(d);
+    dirs = [];
+  });
+
+  it('emits machine-readable recovery actions and exits non-zero when a run leaves pending recovery', async () => {
+    const projectDir = createTempDir('headless-recovery');
+    dirs.push(projectDir);
+    createTestGitRepo(projectDir);
+    writeMinimalConfigYaml(projectDir);
+    const sessionId = 'sess-headless-recovery';
+    ensureSessionDir(projectDir, sessionId);
+    writeActive(projectDir, sessionId);
+
+    const task = makeTask({ id: 'T001' });
+    const issue = buildValidationFailedRecoveryIssue({
+      task,
+      validationSummary: 'npm test failed',
+      attempts: 2,
+      maxAttempts: 2,
+      createdAt: '2026-04-29T00:00:00.000Z',
+    });
+    const state = transition({
+      ...createInitialState('recover me'),
+      phase: 'implementing',
+      tasks: [task],
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    }, { type: 'SET_PENDING_RECOVERY', issue });
+    saveState(projectDir, sessionId, state);
+
+    await expect(runHeadless('recover me', projectDir, {}, state, sessionId, undefined, planner, implementer)).rejects.toMatchObject({
+      exitCode: 1,
+      message: expect.stringContaining('Recovery required'),
+    });
+
+    const jsonLines = stdoutChunks
+      .join('')
+      .trim()
+      .split('\n')
+      .filter((line) => line.trim().startsWith('{'))
+      .map((line) => JSON.parse(line) as { type?: string; reason?: string; availableActions?: string[]; sessionId?: string });
+    expect(jsonLines).toContainEqual(expect.objectContaining({
+      type: 'recovery_required',
+      sessionId,
+      reason: 'validation-failed',
+      availableActions: ['planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
+    }));
   });
 });

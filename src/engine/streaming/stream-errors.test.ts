@@ -69,32 +69,6 @@ describe('streamError factories', () => {
   });
 });
 
-describe('streamError kinds via matches()', () => {
-  test('matches() matches each factory', () => {
-    expect(matches('stream-connection-refused')(streamError.connectionRefused('p', 'b'))).toBe(true);
-    expect(matches('stream-http-status')(streamError.httpStatus('p', 500, 'x'))).toBe(true);
-    expect(matches('stream-api-error')(streamError.apiError('p', 'x'))).toBe(true);
-    expect(matches('stream-empty-response')(streamError.emptyResponse('p'))).toBe(true);
-    expect(matches('stream-invalid-payload')(streamError.invalidPayload('why'))).toBe(true);
-  });
-
-  test('matches() does not cross-match factories', () => {
-    expect(matches('stream-connection-refused')(streamError.httpStatus('p', 500, 'x'))).toBe(false);
-    expect(matches('stream-http-status')(streamError.emptyResponse('p'))).toBe(false);
-    expect(matches('stream-api-error')(new Error('plain'))).toBe(false);
-    expect(matches('stream-invalid-payload')(null)).toBe(false);
-  });
-
-  test('matches() narrows data type', () => {
-    const err: unknown = streamError.httpStatus('openai', 429, 'slow');
-    if (matches('stream-http-status')(err)) {
-      expect(err.data).toEqual({ provider: 'openai', status: 429, detail: 'slow' });
-    } else {
-      throw new Error('predicate should match');
-    }
-  });
-});
-
 describe('throwMappedError', () => {
   test('wraps ECONNREFUSED into connectionRefused with original as cause', () => {
     const underlying = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });

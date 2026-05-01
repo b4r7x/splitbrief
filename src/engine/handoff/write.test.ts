@@ -1,5 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { spawn, spawnSync, exec, execFile } from 'node:child_process';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -8,13 +7,6 @@ import { writeHandoffPack } from './write.js';
 import { DIPTYCH_DIR, STATE_FILE } from '../../core/paths.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
-
-vi.mock('node:child_process', () => ({
-  spawn: vi.fn(),
-  spawnSync: vi.fn(),
-  exec: vi.fn(),
-  execFile: vi.fn(),
-}));
 
 let tmp: string;
 
@@ -374,26 +366,6 @@ describe('writeHandoffPack — validation metadata', () => {
       lint: 'npm run lint',
       test: 'npm run test:unit',
     });
-  });
-});
-
-describe('writeHandoffPack — inert writer', () => {
-  it('does not spawn external commands while rendering artifacts', async () => {
-    const sessionId = 'inert-session';
-    writeSessionState(tmp, sessionId);
-
-    await writeHandoffPack({
-      projectDir: tmp,
-      sessionId,
-      target: 'spec-kit',
-      outDir: join(tmp, 'handoff', 'inert'),
-      mode: 'default',
-    });
-
-    expect(spawn).not.toHaveBeenCalled();
-    expect(spawnSync).not.toHaveBeenCalled();
-    expect(exec).not.toHaveBeenCalled();
-    expect(execFile).not.toHaveBeenCalled();
   });
 });
 

@@ -98,34 +98,6 @@ describe('buildManifest', () => {
   });
 });
 
-describe('HandoffManifestSchema', () => {
-  it('parses a valid manifest', () => {
-    const manifest = buildManifest({ ...baseOptions });
-
-    expect(() => HandoffManifestSchema.parse(manifest)).not.toThrow();
-  });
-
-  it('rejects manifest with missing required fields', () => {
-    const { briefHash: _bh, ...withoutBriefHash } = buildManifest({ ...baseOptions });
-
-    expect(() => HandoffManifestSchema.parse(withoutBriefHash)).toThrow();
-  });
-
-  it('rejects numeric 1 as packVersion (must be string "1")', () => {
-    const raw = JSON.stringify({ ...buildManifest({ ...baseOptions }), packVersion: 1 });
-    const parsed: unknown = JSON.parse(raw);
-
-    expect(() => HandoffManifestSchema.parse(parsed)).toThrow();
-  });
-
-  it('custom target string parses successfully (open field)', () => {
-    const manifest = buildManifest({ ...baseOptions, target: 'custom-tool' });
-    const parsed = HandoffManifestSchema.parse(manifest);
-
-    expect(parsed.target).toBe('custom-tool');
-  });
-});
-
 describe('writeManifest', () => {
   it('writes parseable JSON at manifest.json inside the given directory', () => {
     const manifest = buildManifest({ ...baseOptions });

@@ -1,31 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { getConfigValue, applyEdits } from './state.js';
-import type { Config } from '../../schemas/config.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 
-const mockConfig = {
-  version: 2 as const,
-  planner: { kind: 'cli' as const, tool: 'claude-code' as const, model: 'claude-sonnet-4-6' },
-  implementer: {
-    kind: 'api' as const,
-    provider: 'ollama',
-    model: 'qwen2.5-coder:7b',
-    apiBase: 'http://localhost:11434/v1',
-    contextLength: 32768,
-    temperature: 0.3,
-  },
-  validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-  workflow: {
-    autoApproveSpec: false,
-    autoApprovePlan: false,
-    maxRetries: 3,
-    commitStrategy: 'none' as const,
-    persistTranscript: true,
-    mode: 'standard' as const,
-  },
-  theme: 'terminal' as const,
+const mockConfig = makeConfig({
+  planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
+  implementer: { temperature: 0.3 },
+  theme: 'terminal',
   shikiTheme: 'github-dark',
-  sessions: { scope: 'project' as const },
-} satisfies Config;
+  sessions: { scope: 'project' },
+});
 
 describe('getConfigValue', () => {
   it('reads nested dot-path values', () => {

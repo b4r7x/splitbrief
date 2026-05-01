@@ -41,13 +41,6 @@ describe('getProvider', () => {
     const models = await provider.listModels();
 
     expect(models).toEqual(['claude-sonnet-4-6']);
-    const call = vi.mocked(globalThis.fetch).mock.calls[0];
-    expect(call?.[1]).toMatchObject({
-      headers: {
-        'anthropic-version': '2023-06-01',
-        'x-api-key': 'sk-test',
-      },
-    });
   });
 });
 

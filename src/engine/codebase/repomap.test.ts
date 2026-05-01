@@ -1,16 +1,16 @@
-import { mkdtempSync, rmSync, copyFileSync, readdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { copyFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 import { buildRepoMap } from './repomap.js';
 import { initParser } from './parse.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 describe('buildRepoMap', () => {
   let projectDir: string;
 
   beforeAll(async () => {
     await initParser();
-    projectDir = mkdtempSync(join(tmpdir(), 'repomap-test-'));
+    projectDir = createTempDir('repomap-test');
     const fixtureSrc = resolve('testing/fixtures/codebase/sample-project');
     for (const file of readdirSync(fixtureSrc)) {
       if (file.endsWith('.ts')) {
@@ -20,7 +20,7 @@ describe('buildRepoMap', () => {
   });
 
   afterAll(() => {
-    if (projectDir) rmSync(projectDir, { recursive: true, force: true });
+    if (projectDir) cleanupTempDir(projectDir);
   });
 
   it('returns a non-empty string with file headers and signatures', async () => {

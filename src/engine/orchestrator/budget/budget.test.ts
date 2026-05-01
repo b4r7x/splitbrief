@@ -22,76 +22,42 @@ function makeCallbacks(overrides?: Partial<OrchestratorCallbacks>): Orchestrator
 }
 
 describe('checkBudget', () => {
-  it('returns ok when cost is below 80% threshold', () => {
-    expect(checkBudget(0.50, 1.00)).toEqual({ action: 'ok' });
+  it.each<[string, number, number, number | undefined, ReturnType<typeof checkBudget>]>([
+    ['cost below 80%', 0.50, 1.00, undefined, { action: 'ok' }],
+    ['cost at exactly 79%', 0.79, 1.00, undefined, { action: 'ok' }],
+    ['NaN currentCost (safe default)', NaN, 1.00, undefined, { action: 'ok' }],
+    ['negative currentCost', -0.50, 1.00, undefined, { action: 'ok' }],
+  ])('ok — %s', (_label, cost, budget, pause, expected) => {
+    expect(checkBudget(cost, budget, pause)).toEqual(expected);
   });
 
-  it('returns ok at exactly 79%', () => {
-    expect(checkBudget(0.79, 1.00)).toEqual({ action: 'ok' });
+  it.each<[string, number, number, number | undefined, ReturnType<typeof checkBudget>]>([
+    ['at 80% threshold', 0.80, 1.00, undefined, { action: 'warning' }],
+    ['between 80% and 85%', 0.82, 1.00, undefined, { action: 'warning' }],
+    ['at 85% with custom pauseThreshold 90%', 0.85, 1.00, 0.90, { action: 'warning' }],
+  ])('warning — %s', (_label, cost, budget, pause, expected) => {
+    expect(checkBudget(cost, budget, pause)).toEqual(expected);
   });
 
-  it('returns warning at 80% threshold', () => {
-    expect(checkBudget(0.80, 1.00)).toEqual({ action: 'warning' });
+  it.each<[string, number, number, number | undefined, ReturnType<typeof checkBudget>]>([
+    ['at exactly 85%', 0.85, 1.00, undefined, { action: 'paused' }],
+    ['between 85% and 100%', 0.95, 1.00, undefined, { action: 'paused' }],
+    ['at custom pauseThreshold 90%', 0.90, 1.00, 0.90, { action: 'paused' }],
+  ])('paused — %s', (_label, cost, budget, pause, expected) => {
+    expect(checkBudget(cost, budget, pause)).toEqual(expected);
   });
 
-  it('returns warning between 80% and 85%', () => {
-    expect(checkBudget(0.82, 1.00)).toEqual({ action: 'warning' });
-  });
-
-  it('returns paused at exactly 85%', () => {
-    expect(checkBudget(0.85, 1.00)).toEqual({ action: 'paused' });
-  });
-
-  it('returns paused between 85% and 100%', () => {
-    expect(checkBudget(0.95, 1.00)).toEqual({ action: 'paused' });
-  });
-
-  it('returns paused at custom pauseThreshold of 90%', () => {
-    expect(checkBudget(0.90, 1.00, 0.90)).toEqual({ action: 'paused' });
-  });
-
-  it('returns warning at 85% when custom pauseThreshold is 90%', () => {
-    expect(checkBudget(0.85, 1.00, 0.90)).toEqual({ action: 'warning' });
-  });
-
-  it('returns exceeded at 100%', () => {
-    expect(checkBudget(1.00, 1.00)).toEqual({ action: 'exceeded', shouldStop: true });
-  });
-
-  it('returns exceeded over 100%', () => {
-    expect(checkBudget(1.50, 1.00)).toEqual({ action: 'exceeded', shouldStop: true });
-  });
-
-  it('returns exceeded for NaN budget', () => {
-    expect(checkBudget(0, NaN)).toEqual({ action: 'exceeded', shouldStop: true });
-  });
-
-  it('returns exceeded for zero budget', () => {
-    expect(checkBudget(0, 0)).toEqual({ action: 'exceeded', shouldStop: true });
-  });
-
-  it('returns exceeded for negative budget', () => {
-    expect(checkBudget(0, -1)).toEqual({ action: 'exceeded', shouldStop: true });
-  });
-
-  it('returns exceeded for Infinity budget', () => {
-    expect(checkBudget(0, Infinity)).toEqual({ action: 'exceeded', shouldStop: true });
-  });
-
-  it('returns ok for NaN currentCost (safe default — do not block on bad data)', () => {
-    expect(checkBudget(NaN, 1.00)).toEqual({ action: 'ok' });
-  });
-
-  it('returns exceeded for Infinity currentCost', () => {
-    expect(checkBudget(Infinity, 1.00)).toEqual({ action: 'exceeded', shouldStop: true });
-  });
-
-  it('returns exceeded for negative Infinity currentCost', () => {
-    expect(checkBudget(-Infinity, 1.00)).toEqual({ action: 'exceeded', shouldStop: true });
-  });
-
-  it('returns ok for negative currentCost (below threshold)', () => {
-    expect(checkBudget(-0.50, 1.00)).toEqual({ action: 'ok' });
+  it.each<[string, number, number, number | undefined, ReturnType<typeof checkBudget>]>([
+    ['at 100%', 1.00, 1.00, undefined, { action: 'exceeded', shouldStop: true }],
+    ['over 100%', 1.50, 1.00, undefined, { action: 'exceeded', shouldStop: true }],
+    ['NaN budget', 0, NaN, undefined, { action: 'exceeded', shouldStop: true }],
+    ['zero budget', 0, 0, undefined, { action: 'exceeded', shouldStop: true }],
+    ['negative budget', 0, -1, undefined, { action: 'exceeded', shouldStop: true }],
+    ['Infinity budget', 0, Infinity, undefined, { action: 'exceeded', shouldStop: true }],
+    ['Infinity currentCost', Infinity, 1.00, undefined, { action: 'exceeded', shouldStop: true }],
+    ['negative Infinity currentCost', -Infinity, 1.00, undefined, { action: 'exceeded', shouldStop: true }],
+  ])('exceeded — %s', (_label, cost, budget, pause, expected) => {
+    expect(checkBudget(cost, budget, pause)).toEqual(expected);
   });
 });
 

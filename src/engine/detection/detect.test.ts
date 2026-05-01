@@ -1,17 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { detectAvailablePlanners, detectAvailableImplementers } from './detect.js';
 
 describe('detectAvailablePlanners', () => {
-  let plannerDetection: typeof import('./detect.js');
   const providerResults = [
     { provider: 'openrouter', available: false, isLocal: false, hasKey: false },
   ] as const;
 
-  beforeEach(async () => {
-    plannerDetection = await import('./detect.js');
-  });
-
   it('shell planner is always available', async () => {
-    const results = await plannerDetection.detectAvailablePlanners({ providerResults: [...providerResults] });
+    const results = await detectAvailablePlanners({ providerResults: [...providerResults] });
     const shell = results.find((r) => r.tool === 'shell');
     expect(shell).toMatchObject({ type: 'shell', available: true, description: 'Custom command' });
   });
@@ -20,7 +16,7 @@ describe('detectAvailablePlanners', () => {
     const orig = process.env.ANTHROPIC_API_KEY;
     process.env.ANTHROPIC_API_KEY = 'test-key';
     try {
-      const results = await plannerDetection.detectAvailablePlanners({ providerResults: [...providerResults] });
+      const results = await detectAvailablePlanners({ providerResults: [...providerResults] });
       const anthropic = results.find((r) => r.tool === 'anthropic');
       expect(anthropic).toMatchObject({ available: true, type: 'api', description: 'Anthropic API' });
     } finally {
@@ -39,7 +35,7 @@ describe('detectAvailablePlanners', () => {
       return new Response('', { status: 404 });
     }) as typeof fetch;
     try {
-      const results = await plannerDetection.detectAvailablePlanners({ providerResults: [...providerResults] });
+      const results = await detectAvailablePlanners({ providerResults: [...providerResults] });
       const openrouter = results.find((r) => r.tool === 'openrouter');
       expect(openrouter).toMatchObject({ available: false, type: 'api', description: 'OpenRouter API' });
     } finally {
@@ -50,12 +46,10 @@ describe('detectAvailablePlanners', () => {
 });
 
 describe('detectAvailableImplementers', () => {
-  let plannerDetection: typeof import('./detect.js');
   let originalFetch: typeof globalThis.fetch;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     originalFetch = globalThis.fetch;
-    plannerDetection = await import('./detect.js');
   });
 
   afterEach(() => {
@@ -74,7 +68,7 @@ describe('detectAvailableImplementers', () => {
       return new Response('', { status: 404 });
     }) as typeof globalThis.fetch;
 
-    const results = await plannerDetection.detectAvailableImplementers();
+    const results = await detectAvailableImplementers();
     expect(results.length).toBeGreaterThanOrEqual(2);
 
     const ollama = results.find((r) => r.provider === 'ollama');
@@ -93,7 +87,7 @@ describe('detectAvailableImplementers', () => {
       throw new Error('Connection refused');
     }) as typeof globalThis.fetch;
 
-    const results = await plannerDetection.detectAvailableImplementers();
+    const results = await detectAvailableImplementers();
     const ollama = results.find((r) => r.provider === 'ollama');
     const lmStudio = results.find((r) => r.provider === 'lm-studio');
 
@@ -113,7 +107,7 @@ describe('detectAvailableImplementers', () => {
     ['non-ok HTTP response', async () => new Response('Internal Server Error', { status: 500 })],
   ] as const)('all providers unavailable on %s', async (_label, mockFetch) => {
     globalThis.fetch = vi.fn(mockFetch) as typeof globalThis.fetch;
-    const results = await plannerDetection.detectAvailableImplementers();
+    const results = await detectAvailableImplementers();
     for (const r of results) {
       expect(r.available).toBe(false);
     }
@@ -126,7 +120,7 @@ describe('detectAvailableImplementers', () => {
       });
     }) as typeof globalThis.fetch;
 
-    const results = await plannerDetection.detectAvailableImplementers();
+    const results = await detectAvailableImplementers();
     for (const r of results) {
       expect(r.available).toBe(false);
     }

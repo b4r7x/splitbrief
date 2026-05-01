@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { readReplayEvents } from './replay.js';
 import type { EngineEvent } from '../events/types.js';
 
@@ -25,16 +25,8 @@ function makeSessionEntry(event: EngineEvent): string {
 const tmpDirs: string[] = [];
 
 afterEach(() => {
-  for (const dir of tmpDirs.splice(0)) {
-    try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
-  }
+  for (const dir of tmpDirs.splice(0)) cleanupTempDir(dir);
 });
-
-function makeTmpDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'replay-test-'));
-  tmpDirs.push(dir);
-  return dir;
-}
 
 describe('readReplayEvents', () => {
   it('returns empty result for nonexistent file', async () => {
@@ -43,7 +35,7 @@ describe('readReplayEvents', () => {
   });
 
   it('returns all events from a valid session.jsonl', async () => {
-    const dir = makeTmpDir();
+    const dir = createTempDir('replay-test'); tmpDirs.push(dir);
     const filePath = join(dir, 'session.jsonl');
     const events: EngineEvent[] = [
       { type: 'workflow_started', ts: 1000, phase: 'idle', feature: 'test' },
@@ -62,7 +54,7 @@ describe('readReplayEvents', () => {
   });
 
   it('skips malformed JSON lines and returns valid events around them', async () => {
-    const dir = makeTmpDir();
+    const dir = createTempDir('replay-test'); tmpDirs.push(dir);
     const filePath = join(dir, 'session.jsonl');
     const lines = [
       makeSessionEntry({ type: 'workflow_started', ts: 1000, phase: 'idle', feature: 'test' }),
@@ -78,7 +70,7 @@ describe('readReplayEvents', () => {
   });
 
   it('applies fromTs filter and only returns events with ts >= fromTs', async () => {
-    const dir = makeTmpDir();
+    const dir = createTempDir('replay-test'); tmpDirs.push(dir);
     const filePath = join(dir, 'session.jsonl');
     const events: EngineEvent[] = [
       { type: 'workflow_started', ts: 1000, phase: 'idle', feature: 'test' },
@@ -94,7 +86,7 @@ describe('readReplayEvents', () => {
   });
 
   it('firstTs and lastTs reflect the filtered set', async () => {
-    const dir = makeTmpDir();
+    const dir = createTempDir('replay-test'); tmpDirs.push(dir);
     const filePath = join(dir, 'session.jsonl');
     const events: EngineEvent[] = [
       { type: 'workflow_started', ts: 1000, phase: 'idle', feature: 'test' },
@@ -109,7 +101,7 @@ describe('readReplayEvents', () => {
   });
 
   it('handles large files (>1000 lines) using streaming readline', async () => {
-    const dir = makeTmpDir();
+    const dir = createTempDir('replay-test'); tmpDirs.push(dir);
     const filePath = join(dir, 'session.jsonl');
     // Write 1200 events with enough data per line to exceed typical buffer sizes
     const lines: string[] = [];
@@ -132,7 +124,7 @@ describe('readReplayEvents', () => {
   });
 
   it('returns empty result when all events filtered out by fromTs', async () => {
-    const dir = makeTmpDir();
+    const dir = createTempDir('replay-test'); tmpDirs.push(dir);
     const filePath = join(dir, 'session.jsonl');
     const events: EngineEvent[] = [
       { type: 'workflow_started', ts: 1000, phase: 'idle', feature: 'test' },
@@ -146,7 +138,7 @@ describe('readReplayEvents', () => {
   });
 
   it('skips lines with kind !== event', async () => {
-    const dir = makeTmpDir();
+    const dir = createTempDir('replay-test'); tmpDirs.push(dir);
     const filePath = join(dir, 'session.jsonl');
     const messageLine = JSON.stringify({ kind: 'message', ts: new Date(500).toISOString(), role: 'user', phase: 'idle', text: 'hello' });
     const eventLine = makeSessionEntry({ type: 'workflow_started', ts: 1000, phase: 'idle', feature: 'test' });

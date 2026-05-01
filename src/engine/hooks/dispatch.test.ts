@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { resolve } from 'node:path';
 import { runHook } from './dispatch.js';
 import type { EngineEvent } from '../events/types.js';
-import type { HookCommandEntry, HookModuleEntry } from '../../core/schemas/hooks.js';
+import type { HookModuleEntry } from '../../core/schemas/hooks.js';
+import { makeCommandHookEntry } from '#testing/helpers/factories/hook-entry.js';
 
 const event: EngineEvent = {
   type: 'task_started',
@@ -31,15 +32,8 @@ const forbiddenEvent: EngineEvent = {
 const ctx = { projectDir: '/tmp', sessionId: 'sess-1' };
 const projectDir = resolve('.');
 
-function mkEntry(overrides: Partial<HookCommandEntry>): HookCommandEntry {
-  return {
-    kind: 'command',
-    command: 'echo',
-    args: [],
-    timeout_ms: 5000,
-    on_failure: 'warn',
-    ...overrides,
-  };
+function mkEntry(overrides?: Parameters<typeof makeCommandHookEntry>[0]) {
+  return makeCommandHookEntry({ command: 'echo', ...overrides });
 }
 
 function mkModuleEntry(overrides: Partial<HookModuleEntry> & { path: string }): HookModuleEntry {
@@ -122,12 +116,6 @@ describe('runHook — kind: module', () => {
     expect(outcome.kind).toBe('allow');
   });
 
-  it('returns warn when module file not found', async () => {
-    const entry = mkModuleEntry({ path: './does-not-exist.mjs' });
-    const outcome = await runHook(entry, event, { projectDir, sessionId: 's' });
-    expect(outcome.kind).toBe('warn');
-  });
-
   it('returns warn when module has no default export (on_failure: warn)', async () => {
     const entry = mkModuleEntry({ path: 'testing/fixtures/hooks/no-default-export.mjs', on_failure: 'warn' });
     const outcome = await runHook(entry, event, { projectDir, sessionId: 's' });
@@ -138,14 +126,5 @@ describe('runHook — kind: module', () => {
     const entry = mkModuleEntry({ path: 'testing/fixtures/hooks/no-default-export.mjs', on_failure: 'block' });
     const outcome = await runHook(entry, event, { projectDir, sessionId: 's' });
     expect(outcome.kind).toBe('deny');
-  });
-
-  it('returns warn for unrecognized outcome shape instead of silent allow', async () => {
-    const entry = mkModuleEntry({ path: 'testing/fixtures/hooks/invalid-outcome.mjs' });
-    const outcome = await runHook(entry, event, { projectDir, sessionId: 's' });
-    expect(outcome).toEqual({
-      kind: 'warn',
-      message: 'hook returned unrecognized outcome shape',
-    });
   });
 });

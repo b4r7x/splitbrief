@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render } from 'ink-testing-library';
+import { tick } from '#testing/helpers/ink.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
@@ -18,10 +19,6 @@ afterEach(() => {
   terminalSizeStore.reset();
   lifecycleStore.reset();
 });
-
-async function tick(): Promise<void> {
-  await new Promise<void>(resolve => setTimeout(resolve, 0));
-}
 
 describe('Header — worktree indicator', () => {
   it('renders feature name without bracket prefix when worktreeName is absent', async () => {

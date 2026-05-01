@@ -1,12 +1,18 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { createEventBus } from '../../../engine/events/bus.js';
+import { ensureSessionDir } from '../../../core/paths-io.js';
+import { transition } from '../../../core/state/machine.js';
+import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
 import { readActive, writeActive } from '../../../core/sessions/lifecycle.js';
+import { buildValidationFailedRecoveryIssue } from '../recovery/recovery.js';
 import { simpleGit } from 'simple-git';
 import { runWorkflow, WORKFLOW_REWIND_ABORT_REASON } from './run.js';
 
@@ -297,5 +303,51 @@ describe('runWorkflow — createBranch', () => {
     expect(events.find((e) => e.type === 'git_branch_created')).toBeUndefined();
     const statusAfter = await g.status();
     expect(statusAfter.current).toBe(defaultBranch);
+  });
+});
+
+const implementingState = makeImplStateWithMetadata;
+
+describe('runWorkflow — recovery resume', () => {
+  it('preserves the active session when a saved pending recovery stops before planner availability checks', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'sess-run-recovery';
+    ensureSessionDir(projectDir, sessionId);
+    writeActive(projectDir, sessionId);
+
+    const task = makeTask({ id: 'T001' });
+    const issue = buildValidationFailedRecoveryIssue({
+      task,
+      validationSummary: 'tsc failed',
+      attempts: 1,
+      maxAttempts: 2,
+      createdAt: '2026-04-29T00:00:00.000Z',
+    });
+    const savedState = transition(implementingState([task]), { type: 'SET_PENDING_RECOVERY', issue });
+    saveState(projectDir, sessionId, savedState);
+
+    const { callbacks } = makeCallbacks();
+    const isAvailable = vi.fn().mockResolvedValue(false);
+
+    await runWorkflow({
+      feature: 'feat',
+      projectDir,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { autoApproveSpec: true, autoApprovePlan: true, commitStrategy: 'none', mode: 'quick', persistTranscript: false },
+      }),
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      savedState,
+      sessionId,
+      _planner: makePlanner({ isAvailable }),
+    });
+
+    expect(isAvailable).not.toHaveBeenCalled();
+    expect(readActive(projectDir)).toBe(sessionId);
+    expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
+      reason: 'validation-failed',
+      taskId: 'T001',
+    });
   });
 });

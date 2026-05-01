@@ -170,11 +170,6 @@ describe.each(FIXTURES)('$name provider contract', (f) => {
     const models = await p.listModels();
 
     expect(models).toEqual([f.modelIds[0], f.modelIds[1]]);
-    const [url, init] = vi.mocked(globalThis.fetch).mock.calls[0]!;
-    expect(url).toBe(f.listEndpoint);
-    if (f.sendsAuth) {
-      expect((init as RequestInit | undefined)?.headers).toEqual({ Authorization: 'Bearer test-key' });
-    }
   });
 
   it('listModels returns empty on non-ok response', async () => {

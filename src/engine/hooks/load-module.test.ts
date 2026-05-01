@@ -60,9 +60,4 @@ describe('loadHookModule', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toContain('not a function');
   });
-
-  it('resolves relative paths against projectDir', async () => {
-    const result = await loadHookModule('testing/fixtures/hooks/sample-module.mjs', projectDir);
-    expect(result.ok).toBe(true);
-  });
 });

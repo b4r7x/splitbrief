@@ -9,6 +9,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 
 const SINKS = { setAbortHandler: () => {}, setQueueHandler: () => {} };
@@ -37,7 +38,13 @@ describe('codebase context injection into planner', () => {
     const sessionId = 'sess-codebase-inj';
     ensureSessionDir(projectDir, sessionId);
 
-    const planner = makePlanner();
+    let capturedContext: string | undefined;
+    const planner = makePlanner({
+      quickPlan: vi.fn().mockImplementation((_feature, _dir, _cb, ctx) => {
+        capturedContext = ctx;
+        return { spec: '', plan: '', tasks: [makeTask()], usage: { inputTokens: 50, outputTokens: 25 } };
+      }),
+    });
     const { callbacks } = makeCallbacks();
     const bus = createEventBus();
     const config = makeConfig({
@@ -55,13 +62,9 @@ describe('codebase context injection into planner', () => {
       feature: state.feature,
     });
 
-    const quickPlanCalls = vi.mocked(planner.quickPlan).mock.calls;
-    expect(quickPlanCalls).toHaveLength(1);
-    const codebaseContext = quickPlanCalls[0]?.[3];
-    expect(typeof codebaseContext).toBe('string');
-    expect((codebaseContext as string).length).toBeGreaterThan(0);
-    // The repo-map includes the file header for discovered sources.
-    expect(codebaseContext).toContain('sample.ts');
+    expect(typeof capturedContext).toBe('string');
+    expect(capturedContext!.length).toBeGreaterThan(0);
+    expect(capturedContext).toContain('sample.ts');
   });
 
   it('passes undefined codebaseContext to planner.quickPlan when codebase.enabled is false', async () => {
@@ -72,7 +75,13 @@ describe('codebase context injection into planner', () => {
     const sessionId = 'sess-codebase-disabled';
     ensureSessionDir(projectDir, sessionId);
 
-    const planner = makePlanner();
+    let capturedContext: string | undefined = 'SENTINEL';
+    const planner = makePlanner({
+      quickPlan: vi.fn().mockImplementation((_feature, _dir, _cb, ctx) => {
+        capturedContext = ctx;
+        return { spec: '', plan: '', tasks: [makeTask()], usage: { inputTokens: 50, outputTokens: 25 } };
+      }),
+    });
     const { callbacks } = makeCallbacks();
     const bus = createEventBus();
     const config = makeConfig({
@@ -90,8 +99,6 @@ describe('codebase context injection into planner', () => {
       feature: state.feature,
     });
 
-    const quickPlanCalls = vi.mocked(planner.quickPlan).mock.calls;
-    expect(quickPlanCalls).toHaveLength(1);
-    expect(quickPlanCalls[0]?.[3]).toBeUndefined();
+    expect(capturedContext).toBeUndefined();
   });
 });

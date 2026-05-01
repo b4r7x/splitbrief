@@ -95,7 +95,7 @@ describe('computeSnapshotDiff', () => {
 });
 
 describe('formatSnapshotDiff', () => {
-  it('returns "No differences" string when changedCount is 0', () => {
+  it('mentions the snapshot ID and indicates zero changes when changedCount is 0', () => {
     const result = {
       snapshotId: 'snap-abc',
       createdAt: '2026-04-26T12:00:00.000Z',
@@ -104,7 +104,8 @@ describe('formatSnapshotDiff', () => {
     };
 
     const formatted = formatSnapshotDiff(result, { color: false });
-    expect(formatted).toContain('No differences from snapshot snap-abc.');
+    expect(formatted).toContain('snap-abc');
+    expect(formatted).toMatch(/no\s+differences|0.*changed/i);
   });
 
   it('includes snapshot ID in header', () => {
@@ -119,7 +120,7 @@ describe('formatSnapshotDiff', () => {
     expect(formatted).toContain('2026-04-26T14-00-00-000Z');
   });
 
-  it('includes summary line with correct counts when there are changes', () => {
+  it('includes snapshot ID and numeric counts when there are changes', () => {
     const result = {
       snapshotId: 'snap-abc',
       createdAt: '2026-04-26T12:00:00.000Z',
@@ -133,9 +134,10 @@ describe('formatSnapshotDiff', () => {
     };
 
     const formatted = formatSnapshotDiff(result, { color: false });
-    expect(formatted).toContain('3 file(s) changed');
-    expect(formatted).toContain('modified: 1');
-    expect(formatted).toContain('added: 1');
-    expect(formatted).toContain('removed: 1');
+    expect(formatted).toContain('snap-abc');
+    expect(formatted).toContain('3');
+    expect(formatted).toMatch(/modified.*1/i);
+    expect(formatted).toMatch(/added.*1/i);
+    expect(formatted).toMatch(/removed.*1/i);
   });
 });

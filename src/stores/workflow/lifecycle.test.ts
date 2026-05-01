@@ -5,27 +5,17 @@ import {
   makePlannerStatus,
 } from '#testing/helpers/events.js';
 
-describe('lifecycleStore — phase transitions', () => {
+describe('lifecycleStore', () => {
   beforeEach(() => resetWorkflow());
 
-  it('updates phase when planner_status event received', () => {
+  it('updates phase and tracks queueDepth through enqueue/drain/clear', () => {
     addEvent(makePlannerStatus({ phase: 'specifying' }));
     expect(lifecycleStore.get().phase).toBe('specifying');
-  });
-});
 
-describe('lifecycleStore — queueDepth', () => {
-  beforeEach(() => resetWorkflow());
-
-  it('increments queueDepth on message_queued event', () => {
     addEvent({ type: 'message_queued', ts: Date.now(), id: 'm1', phase: 'researching' });
     addEvent({ type: 'message_queued', ts: Date.now(), id: 'm2', phase: 'researching' });
     expect(lifecycleStore.get().queueDepth).toBe(2);
-  });
 
-  it('resets queueDepth to 0 on queue_drained', () => {
-    addEvent({ type: 'message_queued', ts: Date.now(), id: 'm1', phase: 'researching' });
-    addEvent({ type: 'message_queued', ts: Date.now(), id: 'm2', phase: 'researching' });
     addEvent({ type: 'queue_drained', ts: Date.now(), count: 2, phase: 'researching' });
     expect(lifecycleStore.get().queueDepth).toBe(0);
   });

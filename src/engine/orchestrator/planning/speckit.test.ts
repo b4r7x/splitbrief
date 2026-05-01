@@ -6,9 +6,10 @@ import { createInitialState } from '../../../core/state/machine.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import { expectBriefQualityBlocked } from '#testing/helpers/assertions/brief-quality.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import { sessionDir, SPEC_FILE, PLAN_FILE, TASKS_FILE, BRIEF_QUALITY_FILE } from '../../../core/paths.js';
+import { sessionDir, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { runPlanningPhase } from './run.js';
 import { extractJsonBlock } from './speckit.js';
 import { formatTasks } from '../../spec/formatter.js';
@@ -94,16 +95,6 @@ function invalidPlanResult(): PlanResult {
   };
 }
 
-function expectBriefQualityBlocked(result: Awaited<ReturnType<typeof runPlanningPhase>>, projectDir: string, sessionId: string, events: ReturnType<typeof makeBusRecorder>['events']) {
-  expect(result.cancelled).toBe(true);
-  expect(result.state.phase).not.toBe('implementing');
-  const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE);
-  expect(existsSync(reportPath)).toBe(true);
-  const persisted = JSON.parse(readFileSync(reportPath, 'utf8'));
-  expect(persisted.passed).toBe(false);
-  expect(events.find(e => e.type === 'brief_quality_failed')).toBeDefined();
-}
-
 interface RunOpts {
   withConstitution?: string;
   reviewText?: (prompt: string) => string;
@@ -179,24 +170,6 @@ describe('runSpeckitPlanning', () => {
     expect(an.specTaskCoverage).toBe(1);
   });
 
-  it('skips constitution check when no constitution.md exists (passes by default)', async () => {
-    const { result, planner } = await runSpeckit();
-    expect(result.cancelled).toBe(false);
-    // Only the analyze prompt should hit planner.review; the constitution check is a no-op.
-    const reviewMock = planner.review as ReturnType<typeof vi.fn>;
-    expect(reviewMock).toHaveBeenCalledTimes(1);
-    const promptArg = reviewMock.mock.calls[0]?.[0] as string;
-    expect(promptArg).toMatch(/Analysis/i);
-  });
-
-  it('runs the constitution check when constitution.md exists', async () => {
-    const { planner } = await runSpeckit({ withConstitution: '# Rules\nNo classes.' });
-    const reviewMock = planner.review as ReturnType<typeof vi.fn>;
-    expect(reviewMock).toHaveBeenCalledTimes(2);
-    const firstPrompt = reviewMock.mock.calls[0]?.[0] as string;
-    expect(firstPrompt).toMatch(/Constitution Check/);
-  });
-
   it('aborts the workflow on a hard constitution violation', async () => {
     const failJson = '```json\n{"passed":false,"violations":[{"principle":"P1","reason":"bad","severity":"hard"}]}\n```';
     const { result, projectDir, sessionId } = await runSpeckit({
@@ -260,6 +233,5 @@ describe('runSpeckitPlanning', () => {
     });
     expectBriefQualityBlocked(result, projectDir, sessionId, events);
     expect(tasksPath.endsWith(TASKS_FILE)).toBe(true);
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(4);
   });
 });

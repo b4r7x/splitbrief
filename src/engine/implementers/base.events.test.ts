@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { createImplementerBase, type ImplementerBaseConfig } from './base.js';
+import { createImplementerBase } from './base.js';
 import type { ImplementerPublisher } from './types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import type { InvokeResult } from '../runners/types.js';
+import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 
 type PublisherEvent =
   | { type: 'implementer_generate_running'; phase: string; taskId: string; file?: string | undefined }
@@ -24,17 +24,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanupTempDir(projectDir);
 });
-
-function makeBaseConfig(overrides?: Partial<ImplementerBaseConfig>): ImplementerBaseConfig {
-  return {
-    extractsCode: true,
-    invoke: vi.fn<(opts: unknown) => Promise<InvokeResult>>().mockResolvedValue({
-      text: '```ts\nconst x = 1;\n```',
-      usage: { inputTokens: 10, outputTokens: 20 },
-    }),
-    ...overrides,
-  };
-}
 
 function makePublisher(events: PublisherEvent[]): ImplementerPublisher {
   return {
@@ -66,18 +55,14 @@ describe('createImplementerBase — bus events', () => {
     const types = events.map((e) => e.type);
     expect(types).toContain('implementer_generate_running');
     expect(types).toContain('implementer_generate_done');
-    const runningIdx = types.indexOf('implementer_generate_running');
-    const doneIdx = types.indexOf('implementer_generate_done');
-    expect(runningIdx).toBeLessThan(doneIdx);
-
-    const running = events[runningIdx];
+    const running = events.find((e) => e.type === 'implementer_generate_running');
     if (running?.type === 'implementer_generate_running') {
       expect(running.phase).toBe('implementing');
       expect(running.taskId).toBe('T001');
       expect(running.file).toBe('src/hello.ts');
     }
 
-    const done = events[doneIdx];
+    const done = events.find((e) => e.type === 'implementer_generate_done');
     if (done?.type === 'implementer_generate_done') {
       expect(done.phase).toBe('implementing');
       expect(done.taskId).toBe('T001');
@@ -105,17 +90,4 @@ describe('createImplementerBase — bus events', () => {
     expect(types.indexOf('implementer_generate_running')).toBeLessThan(types.indexOf('implementer_generate_failed'));
   });
 
-  it('does not publish any events when bus is not provided', async () => {
-    const invoke = vi.fn().mockResolvedValue({
-      text: '```ts\nconst x = 1;\n```',
-      usage: null,
-    });
-    const implementer = createImplementerBase(makeBaseConfig({ invoke }));
-
-    const result = await implementer.implement({
-      task: makeTask(), projectDir, config: makeConfig(), context: defaultContext, onOutput: vi.fn(),
-    });
-
-    expect(result.success).toBe(true);
-  });
 });

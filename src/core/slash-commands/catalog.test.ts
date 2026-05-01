@@ -368,10 +368,6 @@ describe('canReviseSpec', () => {
   it.each(denied)('returns false for %s', (phase) => {
     expect(canReviseSpec(phase)).toBe(false);
   });
-
-  it('covers all phases', () => {
-    expect([...allowed, ...denied].sort()).toEqual([...PHASES].sort());
-  });
 });
 
 describe('canRevisePlan', () => {
@@ -384,10 +380,6 @@ describe('canRevisePlan', () => {
 
   it.each(denied)('returns false for %s', (phase) => {
     expect(canRevisePlan(phase)).toBe(false);
-  });
-
-  it('covers all phases', () => {
-    expect([...allowed, ...denied].sort()).toEqual([...PHASES].sort());
   });
 });
 
@@ -446,8 +438,28 @@ describe('canRedoTask', () => {
   it.each(denied)('returns false for %s', (phase) => {
     expect(canRedoTask(phase)).toBe(false);
   });
+});
 
-  it('covers all phases', () => {
+describe('phase guard coverage', () => {
+  const phaseGuards: Array<[string, Phase[], Phase[]]> = [
+    [
+      'canReviseSpec',
+      ['reviewing-spec', 'clarifying', 'constitution-check', 'planning', 'reviewing-plan', 'reviewing-briefs', 'analyzing', 'implementing', 'validating-task', 'escalating', 'final-review'],
+      ['idle', 'researching', 'specifying', 'complete'],
+    ],
+    [
+      'canRevisePlan',
+      ['reviewing-plan', 'reviewing-briefs', 'analyzing', 'implementing', 'validating-task', 'escalating', 'final-review'],
+      ['idle', 'researching', 'specifying', 'reviewing-spec', 'clarifying', 'constitution-check', 'planning', 'complete'],
+    ],
+    [
+      'canRedoTask',
+      ['implementing', 'validating-task', 'escalating'],
+      ['idle', 'researching', 'specifying', 'reviewing-spec', 'clarifying', 'constitution-check', 'planning', 'reviewing-plan', 'reviewing-briefs', 'analyzing', 'final-review', 'complete'],
+    ],
+  ];
+
+  it.each(phaseGuards)('%s covers all phases', (_name, allowed, denied) => {
     expect([...allowed, ...denied].sort()).toEqual([...PHASES].sort());
   });
 });

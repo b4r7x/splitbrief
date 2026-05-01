@@ -1,32 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { Config } from '../../core/schemas/config.js';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { ModeSelector } from './mode-selector.js';
-
-function makeConfig(): Config {
-  return {
-    version: 2,
-    planner: {
-      kind: 'api',
-      provider: 'anthropic',
-      apiBase: 'https://api.anthropic.com/v1',
-      model: 'claude-sonnet-4-6',
-    },
-    implementer: {
-      kind: 'api',
-      provider: 'ollama',
-      apiBase: 'http://localhost:11434/v1',
-      model: 'qwen2.5-coder:7b',
-      contextLength: 8192,
-      temperature: 0.3,
-    },
-    validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', persistTranscript: true, mode: 'standard' },
-  };
-}
+import { makeConfig } from '#testing/helpers/factories/config.js';
 
 describe('ModeSelector', () => {
   beforeEach(() => {

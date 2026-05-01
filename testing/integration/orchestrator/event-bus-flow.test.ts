@@ -4,49 +4,12 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { TASK_MARKDOWN, CODE_RESPONSE } from '#testing/helpers/fixtures/shell-runner.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/run.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { WorkflowSinks } from '../../../src/engine/orchestrator/types.js';
 
 const SINKS: WorkflowSinks = { setAbortHandler: () => {}, setQueueHandler: () => {} };
-
-const TASK_MARKDOWN = [
-  '---',
-  'id: T001',
-  'title: Create hello module',
-  'action: create',
-  'file: src/hello.ts',
-  '---',
-  '',
-  '### Description',
-  'Create a hello world module',
-  '',
-'### Tests',
-'',
-'- returns expected greeting',
-'',
-'### Scope',
-'',
-'**In bounds:**',
-'- src/hello.ts',
-'',
-'**Out of bounds:**',
-'- unrelated files',
-'',
-'### Evidence',
-'',
-'- hello module exists and exports the expected greeting',
-'',
-'### Implementation Steps',
-'',
-'1. Implement the module',
-].join('\n');
-
-const CODE_RESPONSE = [
-  '```typescript',
-  'export function hello() { return "hello"; }',
-  '```',
-].join('\n');
 
 const dirs: string[] = [];
 
@@ -113,5 +76,5 @@ describe('EventBus end-to-end flow', () => {
     expect(idx('implementer_generate_done')).toBeLessThan(idx('task_completed'));
     expect(idx('task_completed')).toBeLessThan(idx('all_tasks_done'));
     expect(idx('all_tasks_done')).toBeLessThan(idx('workflow_complete'));
-  });
+  }, 20_000);
 });

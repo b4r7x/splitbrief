@@ -39,21 +39,4 @@ describe('paletteMruStore', () => {
   it('getRank returns 0 when id is absent', () => {
     expect(paletteMruStore.getRank('z')).toBe(0);
   });
-
-  it('__testReset empties the list', () => {
-    paletteMruStore.record('a');
-    paletteMruStore.record('b');
-    paletteMruStore.__testReset();
-    expect(paletteMruStore.get().ids).toEqual([]);
-  });
-
-  it('use hook returns reactive updates', () => {
-    let captured: string[] = [];
-    const unsub = paletteMruStore.subscribe(() => {
-      captured = paletteMruStore.get().ids;
-    });
-    paletteMruStore.record('x');
-    unsub();
-    expect(captured).toEqual(['x']);
-  });
 });

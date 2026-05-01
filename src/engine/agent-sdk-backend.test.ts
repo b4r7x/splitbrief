@@ -45,35 +45,18 @@ describe('loadSdk', () => {
 });
 
 describe('isAgentSdkAvailable', () => {
-  it('returns false when SDK is not installed', async () => {
+  it('returns false when SDK is not installed regardless of API key', async () => {
     const originalKey = process.env.ANTHROPIC_API_KEY;
-    process.env.ANTHROPIC_API_KEY = 'test-key';
     try {
+      process.env.ANTHROPIC_API_KEY = 'test-key';
       expect(await isAgentSdkAvailable()).toBe(false);
+
+      delete process.env.ANTHROPIC_API_KEY;
+      expect(await isAgentSdkAvailable()).toBe(false);
+      expect(await isAgentSdkAvailable('sk-ant-configured-key')).toBe(false);
     } finally {
       if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
       else process.env.ANTHROPIC_API_KEY = originalKey;
-    }
-  });
-
-  it('returns false when ANTHROPIC_API_KEY is not set and no apiKey param', async () => {
-    const originalKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
-    try {
-      expect(await isAgentSdkAvailable()).toBe(false);
-    } finally {
-      if (originalKey !== undefined) process.env.ANTHROPIC_API_KEY = originalKey;
-    }
-  });
-
-  it('returns false when SDK is not installed even if apiKey param is provided', async () => {
-    const originalKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
-    try {
-      // SDK is not installed, so even with a configured apiKey it should return false
-      expect(await isAgentSdkAvailable('sk-ant-configured-key')).toBe(false);
-    } finally {
-      if (originalKey !== undefined) process.env.ANTHROPIC_API_KEY = originalKey;
     }
   });
 });

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolvePricing, isApiPricedProvider, getPricingMode, formatPricing, LOCAL_PRICING } from './pricing-resolver.js';
 import { NULL_CACHE } from './model/resolution.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 
 describe('pricing-resolver', () => {
   describe('agent-sdk classification', () => {
@@ -81,16 +82,12 @@ describe('pricing-resolver', () => {
       // Simulate a runtime model cache entry for anthropic/claude-sonnet-4-6 with pricing
       // but no cache rates (DetectedModel has no cache pricing fields). We expect resolvePricing
       // to merge the bundled fallback's verified cache rates so cost math stays cache-aware.
-      const fakeCache = {
-        getModelsDevCatalog: () => null,
-        getProviderModels: (provider: string) => {
-          if (provider !== 'anthropic') return null;
-          return [
-            { id: 'claude-sonnet-4-6', pricingInput: 3, pricingOutput: 15 },
-          ];
+      const cache = makeModelCacheAccessor({
+        providerModels: {
+          anthropic: [{ id: 'claude-sonnet-4-6', pricingInput: 3, pricingOutput: 15 }],
         },
-      };
-      const result = resolvePricing('anthropic', fakeCache, 'claude-sonnet-4-6');
+      });
+      const result = resolvePricing('anthropic', cache, 'claude-sonnet-4-6');
       expect(result.isPriced).toBe(true);
       expect(result.source).toBe('runtime');
       expect(result.cacheReadPer1M).toBe(0.30);

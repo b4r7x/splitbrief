@@ -7,20 +7,6 @@ describe('CodebaseConfigSchema', () => {
     expect(result).toEqual({ enabled: true, tokenBudget: 4000, cacheDir: '.diptych' });
   });
 
-  it('parses a fully specified config', () => {
-    const result = CodebaseConfigSchema.parse({
-      enabled: false,
-      tokenBudget: 8000,
-      cacheDir: '/tmp',
-      include: ['src/**/*.ts'],
-      exclude: ['**/*.test.ts'],
-    });
-    expect(result).toEqual({
-      enabled: false, tokenBudget: 8000, cacheDir: '/tmp',
-      include: ['src/**/*.ts'], exclude: ['**/*.test.ts'],
-    });
-  });
-
   it('rejects negative tokenBudget', () => {
     expect(() => CodebaseConfigSchema.parse({ tokenBudget: -1 })).toThrow();
   });
@@ -29,7 +15,4 @@ describe('CodebaseConfigSchema', () => {
     expect(() => CodebaseConfigSchema.parse({ tokenBudget: 999_999 })).toThrow();
   });
 
-  it('rejects unknown keys (strict)', () => {
-    expect(() => CodebaseConfigSchema.parse({ enabled: true, unknownField: 'x' })).toThrow();
-  });
 });

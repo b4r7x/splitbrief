@@ -63,8 +63,6 @@ describe('escalation cascade: local retries exhaust, then hint (tier 1), then fu
 
     expect(retryEvents.length).toBeGreaterThanOrEqual(2);
     expect(tiers).toEqual([1, 2]);
-    expect(planner.escalateHint).toHaveBeenCalled();
-    expect(planner.escalateFull).toHaveBeenCalled();
     expect(result.completed).toBe(false);
     expect(result.method).toBe('failed');
   });

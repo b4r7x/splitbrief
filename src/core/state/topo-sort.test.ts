@@ -1,42 +1,26 @@
 import { describe, expect, test } from 'vitest';
 import { topoError, topoSort } from './topo-sort.js';
-import { taskId, type Task } from '../schemas/task.js';
-
-function makeTask(id: string, dependsOn: string[] = []): Task {
-  return {
-    id: taskId(id),
-    title: id,
-    action: 'create',
-    file: `${id}.ts`,
-    dependsOn: dependsOn.map(taskId),
-    description: id,
-    tests: [],
-    constraints: [],
-    typeDefs: '',
-    implementationSteps: [],
-    status: 'pending',
-  };
-}
+import { makeTask } from '#testing/helpers/factories/task.js';
 
 describe('topoSort', () => {
   test('returns tasks in dependency order', () => {
-    const a = makeTask('a');
-    const b = makeTask('b', ['a']);
-    const c = makeTask('c', ['b']);
+    const a = makeTask({ id: 'a' });
+    const b = makeTask({ id: 'b', dependsOn: ['a'] });
+    const c = makeTask({ id: 'c', dependsOn: ['b'] });
     const sorted = topoSort([c, b, a]);
     expect(sorted.map((t) => t.id)).toEqual([a.id, b.id, c.id]);
   });
 
   test('handles independent tasks in insertion order', () => {
-    const a = makeTask('a');
-    const b = makeTask('b');
+    const a = makeTask({ id: 'a' });
+    const b = makeTask({ id: 'b' });
     const sorted = topoSort([a, b]);
     expect(sorted).toHaveLength(2);
     expect(sorted.map((t) => t.id)).toEqual([a.id, b.id]);
   });
 
   test('throws on unknown dependencies', () => {
-    const a = makeTask('a', ['missing']);
+    const a = makeTask({ id: 'a', dependsOn: ['missing'] });
     try {
       topoSort([a]);
       throw new Error('expected throw');
@@ -50,8 +34,8 @@ describe('topoSort', () => {
   });
 
   test('throws topoError.circularDependency on cycle', () => {
-    const a = makeTask('a', ['b']);
-    const b = makeTask('b', ['a']);
+    const a = makeTask({ id: 'a', dependsOn: ['b'] });
+    const b = makeTask({ id: 'b', dependsOn: ['a'] });
     try {
       topoSort([a, b]);
       throw new Error('expected throw');

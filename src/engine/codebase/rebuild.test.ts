@@ -1,13 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { rebuildRepomap } from './rebuild.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 describe('rebuildRepomap', () => {
   let projectDir: string;
-  beforeEach(() => { projectDir = mkdtempSync(join(tmpdir(), 'repomap-rebuild-')); });
-  afterEach(() => { rmSync(projectDir, { recursive: true, force: true }); });
+  beforeEach(() => { projectDir = createTempDir('repomap-rebuild'); });
+  afterEach(() => { cleanupTempDir(projectDir); });
 
   it('returns deleted=false when no cache file exists', () => {
     const result = rebuildRepomap(projectDir);

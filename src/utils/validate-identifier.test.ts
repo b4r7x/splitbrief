@@ -22,26 +22,13 @@ describe('validateSafeIdentifier', () => {
     if (!result.ok) expect(result.reason).toBe('must not be empty');
   });
 
-  it('rejects path traversal with ..', () => {
-    const result = validateSafeIdentifier('..');
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe("must not contain '..', '/' or '\\'");
-  });
-
-  it('rejects embedded ..', () => {
-    const result = validateSafeIdentifier('foo..bar');
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe("must not contain '..', '/' or '\\'");
-  });
-
-  it('rejects forward slash', () => {
-    const result = validateSafeIdentifier('foo/bar');
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe("must not contain '..', '/' or '\\'");
-  });
-
-  it('rejects backslash', () => {
-    const result = validateSafeIdentifier('foo\\bar');
+  it.each([
+    ['..', 'path traversal'],
+    ['foo..bar', 'embedded ..'],
+    ['foo/bar', 'forward slash'],
+    ['foo\\bar', 'backslash'],
+  ])('rejects %s (%s)', (input) => {
+    const result = validateSafeIdentifier(input);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("must not contain '..', '/' or '\\'");
   });

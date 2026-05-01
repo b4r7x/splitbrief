@@ -22,26 +22,20 @@ afterEach(() => {
   dirs = [];
 });
 
-function makeProject(): string {
-  const projectDir = createTempDir('discovery-test');
-  dirs.push(projectDir);
-  return projectDir;
-}
-
 describe('resolveSessionIds', () => {
   it('returns [session] when --session points to an existing directory', () => {
-    const projectDir = makeProject();
+    const projectDir = createTempDir('discovery-test'); dirs.push(projectDir);
     ensureSessionDir(projectDir, 'abc');
     expect(resolveSessionIds(projectDir, { session: 'abc' })).toEqual(['abc']);
   });
 
   it('throws "Session not found" when --session directory does not exist', () => {
-    const projectDir = makeProject();
+    const projectDir = createTempDir('discovery-test'); dirs.push(projectDir);
     expect(() => resolveSessionIds(projectDir, { session: 'missing' })).toThrow('Session not found: missing');
   });
 
   it('returns all session IDs when --all-sessions is set', () => {
-    const projectDir = makeProject();
+    const projectDir = createTempDir('discovery-test'); dirs.push(projectDir);
     saveSummary(projectDir, 'sess-1', { ...SESSION_STUB, id: 'sess-1' });
     saveSummary(projectDir, 'sess-2', { ...SESSION_STUB, id: 'sess-2' });
     const ids = resolveSessionIds(projectDir, { allSessions: true });
@@ -51,21 +45,21 @@ describe('resolveSessionIds', () => {
   });
 
   it('throws when --all-sessions is set but no sessions exist', () => {
-    const projectDir = makeProject();
+    const projectDir = createTempDir('discovery-test'); dirs.push(projectDir);
     expect(() => resolveSessionIds(projectDir, { allSessions: true })).toThrow(
       'No sessions found in this project.',
     );
   });
 
   it('returns [activeId] when neither option is set and active session exists', () => {
-    const projectDir = makeProject();
+    const projectDir = createTempDir('discovery-test'); dirs.push(projectDir);
     ensureSessionDir(projectDir, 'active-sess');
     writeActive(projectDir, 'active-sess');
     expect(resolveSessionIds(projectDir, {})).toEqual(['active-sess']);
   });
 
   it('throws when neither option is set and no active session exists', () => {
-    const projectDir = makeProject();
+    const projectDir = createTempDir('discovery-test'); dirs.push(projectDir);
     expect(() => resolveSessionIds(projectDir, {})).toThrow(
       'No active session. Use --session <id> or --all-sessions.',
     );
