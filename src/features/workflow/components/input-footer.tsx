@@ -1,5 +1,4 @@
 import { Box, Text } from 'ink';
-import { useSyncExternalStore } from 'react';
 import { useTheme } from '../../../components/theme.js';
 import { useCostStats } from '../hooks/use-cost-stats.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
@@ -7,11 +6,8 @@ import { CostDisplay } from './cost/display.js';
 import { computeEta } from './cost/footer.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { useStores } from '../../../stores/use-stores.js';
-import {
-  formatAdvisoryText,
-  getAdvisory,
-  subscribeAdvisory,
-} from '../../../engine/orchestrator/planning/mode-advisor.js';
+import { useAdvisory } from '../hooks/use-advisory.js';
+import { formatAdvisoryText } from '../../../engine/orchestrator/planning/mode-advisor.js';
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 
@@ -21,7 +17,7 @@ export function InputFooter() {
   const isAttachedClient = routerStore.use(s => s.screen === 'workflow' && s.attach !== undefined);
   const { currentTask, totalTasks, taskCompletionTimes } = useCostStats();
   const etaText = computeEta(taskCompletionTimes, currentTask, totalTasks);
-  const advisory = useSyncExternalStore(subscribeAdvisory, getAdvisory, getAdvisory);
+  const advisory = useAdvisory();
   const workflow = configStore.useConfig().workflow;
   const commitStrategy = workflow.git?.commitStrategy ?? workflow.commitStrategy ?? 'none';
   const createBranchEnabled = workflow.git?.createBranch ?? false;

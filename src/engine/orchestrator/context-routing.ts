@@ -9,8 +9,8 @@ import { formatTaskPrompt } from '../spec/prompt-formatter.js';
 import { SYSTEM_PREAMBLE } from '../spec/prompts/system.js';
 import { estimateTokens } from '../spec/token-budget.js';
 
-export type { TaskContextFit, CurrentCodeContextMode } from './workflow-events.js';
-import type { TaskContextFit, CurrentCodeContextMode } from './workflow-events.js';
+export type { TaskContextFit, CurrentCodeContextMode } from '../events/workflow-events.js';
+import type { TaskContextFit, CurrentCodeContextMode } from '../events/workflow-events.js';
 
 export interface TaskPromptEstimateOptions {
   task: Task;

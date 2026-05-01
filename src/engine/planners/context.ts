@@ -1,3 +1,4 @@
+import type { Dirent } from 'node:fs';
 import { readFile, readdir, access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { readPackageJson } from '../../core/project-meta.js';
@@ -53,7 +54,7 @@ export async function buildProjectContextMarkdown(projectDir: string): Promise<s
 async function listDir(dir: string, root: string, depth: number, maxDepth: number, counter: { count: number }): Promise<string> {
   if (depth >= maxDepth) return '';
 
-  let entries: import('node:fs').Dirent[];
+  let entries: Dirent[];
   try {
     entries = await readdir(dir, { withFileTypes: true });
   } catch {

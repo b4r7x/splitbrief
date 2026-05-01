@@ -1,8 +1,9 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join, resolve, relative, isAbsolute, dirname } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DIPTYCH_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE, sessionDir } from './paths.js';
 import { ensureSecureDir, fsError, SECURE_FILE_MODE } from '../lib/fs.js';
+import { assertPathConfined } from '../lib/path-confinement.js';
 import { validateSafeIdentifier } from '../utils/validate-identifier.js';
 import { error, matches } from '../utils/error.js';
 
@@ -97,16 +98,12 @@ export function readSpecFileOrEmpty(projectDir: string, sessionId: string, filen
 }
 
 export function validateTaskPath(projectDir: string, filePath: string): string {
-  if (isAbsolute(filePath)) {
+  try {
+    assertPathConfined(filePath, projectDir);
+  } catch {
     throw pathError.escapesProject(filePath);
   }
-  const root = resolve(projectDir);
-  const resolved = resolve(root, filePath);
-  const rel = relative(root, resolved);
-  if (rel.startsWith('..') || isAbsolute(rel)) {
-    throw pathError.escapesProject(filePath);
-  }
-  return resolved;
+  return resolve(projectDir, filePath);
 }
 
 export function writeProjectFile(projectDir: string, relPath: string, content: string): void {

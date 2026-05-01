@@ -34,7 +34,7 @@ const store = createStore<RouteData>(initial);
 
 export type NavigateArgs =
   | { to: 'home' }
-  | { to: 'workflow'; feature: string; resumeState?: WorkflowState | undefined; sessionId?: string | undefined; attach?: WorkflowAttach | undefined; readiness?: ReadinessReport | undefined }
+  | { to: 'workflow'; feature: string; resumeState?: WorkflowState | undefined; sessionId?: string | undefined; worktreeName?: string | undefined; attach?: WorkflowAttach | undefined; readiness?: ReadinessReport | undefined }
   | { to: 'summary'; summary: Summary; sessionId?: string | undefined }
   | { to: 'setup'; onComplete?: 'home' | 'workflow' | undefined; feature?: string | undefined };
 
@@ -56,6 +56,7 @@ function navigate(args: NavigateArgs) {
         feature: args.feature,
         resumeState: args.resumeState,
         sessionId: args.sessionId,
+        worktreeName: args.worktreeName,
         attach: args.attach,
         readiness: args.readiness,
       });

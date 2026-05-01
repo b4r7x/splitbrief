@@ -2,8 +2,6 @@ import type { FileNode } from './types.js';
 import { formatFileNode } from './format.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 
-export { estimateTokens };
-
 export function formatWithBudget(
   nodes: FileNode[],
   rankings: Map<string, number>,

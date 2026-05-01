@@ -19,11 +19,11 @@ import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { createStdoutJsonSink } from '../../events/sinks/stdout-json.js';
 import { createOtelSink } from '../../events/sinks/otel.js';
-import type { EventBus, EventSink } from '../../events/types.js';
+import type { EngineEvent, EventBus, EventSink } from '../../events/types.js';
 import { createHookSink } from '../../hooks/sink.js';
 import { runPreHooks } from '../../hooks/run-pre-hook.js';
 import { createBranch } from '../../../lib/git.js';
-import { slug } from '../../../utils/slug.js';
+import { slugify } from '../../../utils/slugify.js';
 
 import type { WorkflowContext, WorkflowSinks, ResumeContextHolder } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary.js';
@@ -134,7 +134,7 @@ export async function initializeWorkflow(
     publishUserMessage(bus, state.phase, feature);
 
     if (config.workflow.git?.createBranch) {
-      const desired = `diptych/${slug(feature)}`;
+      const desired = `diptych/${slugify(feature, 40)}`;
       try {
         const actual = await createBranch(projectDir, desired);
         publishGitBranchCreated(bus, state.phase, actual);
@@ -169,7 +169,7 @@ export async function initializeWorkflow(
   };
 
   if (!savedState && config.hooks) {
-    const prePlanPayload: import('../../events/types.js').EngineEvent = { type: 'workflow_started', ts: Date.now(), phase: state.phase, feature };
+    const prePlanPayload: EngineEvent = { type: 'workflow_started', ts: Date.now(), phase: state.phase, feature };
     const pre = await runPreHooks(config.hooks, 'pre_planning', prePlanPayload, { projectDir, sessionId });
     if (!pre.allow) {
       publishEvent(bus, { type: 'warning', ts: Date.now(), phase: state.phase, message: `pre_planning blocked: ${pre.reason ?? 'hook denied'}` });

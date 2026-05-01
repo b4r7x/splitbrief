@@ -5,6 +5,7 @@ import {
   closeSync,
   unlinkSync,
   statSync,
+  type Dirent,
 } from 'node:fs';
 import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
@@ -74,7 +75,7 @@ export async function readManifest(
 
 export async function listSnapshotIds(projectDir: string, sessionId: string): Promise<string[]> {
   const dir = snapshotsDir(projectDir, sessionId);
-  let entries: import('node:fs').Dirent[];
+  let entries: Dirent[];
   try {
     entries = await readdir(dir, { withFileTypes: true, encoding: 'utf8' });
   } catch {
@@ -108,7 +109,7 @@ export async function hashFile(filePath: string): Promise<string | null> {
 const ALWAYS_EXCLUDED = ['.git', '.diptych', 'node_modules', TREES_DIR];
 
 async function readdirRecursive(dir: string, base: string): Promise<string[]> {
-  let entries: import('node:fs').Dirent[];
+  let entries: Dirent[];
   try {
     entries = await readdir(dir, { withFileTypes: true, encoding: 'utf8' });
   } catch {

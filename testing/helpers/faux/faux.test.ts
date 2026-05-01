@@ -1,0 +1,37 @@
+import { describe, it, expect } from 'vitest';
+import { fauxPlanner } from './planner.js';
+import { fauxImplementer } from './implementer.js';
+import { makeTask } from '../factories/task.js';
+
+describe('fauxPlanner', () => {
+  it('returns scripted tasks and tracks calls', async () => {
+    const task = makeTask({ title: 'test task' });
+    const { planner, state } = fauxPlanner({ plans: [{ tasks: [task] }] });
+    const result = await planner.plan('add feature', '/tmp', { onOutput: () => {} });
+    expect(result.tasks).toHaveLength(1);
+    expect(state.planCallCount).toBe(1);
+    expect(state.receivedFeatures).toEqual(['add feature']);
+  });
+
+  it('throws when script says so', async () => {
+    const { planner } = fauxPlanner({ plans: [{ tasks: [], throws: new Error('boom') }] });
+    await expect(planner.plan('x', '/tmp', { onOutput: () => {} })).rejects.toThrow('boom');
+  });
+});
+
+describe('fauxImplementer', () => {
+  it('returns scripted results and cycles', async () => {
+    const { implementer, state } = fauxImplementer({
+      steps: [
+        { success: true, output: 'done' },
+        { success: false, error: 'fail' },
+      ],
+    });
+    const opts = { task: makeTask(), projectDir: '/tmp', config: {} as any, context: {} as any, onOutput: () => {} };
+    const r1 = await implementer.implement(opts as any);
+    const r2 = await implementer.implement(opts as any);
+    expect(r1.success).toBe(true);
+    expect(r2.success).toBe(false);
+    expect(state.implementCallCount).toBe(2);
+  });
+});

@@ -1,34 +1,31 @@
 import { describe, it, expect } from 'vitest';
-import { slug } from './slug.js';
 import { slugify } from './slugify.js';
 
-describe('slug', () => {
+describe('slugify', () => {
   it('returns empty string for empty input', () => {
-    expect(slug('')).toBe('');
+    expect(slugify('')).toBe('');
   });
 
   it('strips unicode and replaces non-alphanumeric with hyphens', () => {
-    expect(slug('héllo wörld')).toBe('h-llo-w-rld');
+    expect(slugify('héllo wörld')).toBe('h-llo-w-rld');
   });
 
   it('removes leading and trailing hyphens', () => {
-    expect(slug('--add auth--')).toBe('add-auth');
+    expect(slugify('--add auth--')).toBe('add-auth');
   });
 
-  it('truncates to 40 characters', () => {
+  it('truncates when maxLength is provided', () => {
     const input = 'a'.repeat(50);
-    expect(slug(input)).toBe('a'.repeat(40));
+    expect(slugify(input, 40)).toBe('a'.repeat(40));
   });
 
   it('lowercases and collapses multiple non-alphanumeric chars', () => {
-    expect(slug('Add   Auth  Feature')).toBe('add-auth-feature');
+    expect(slugify('Add   Auth  Feature')).toBe('add-auth-feature');
   });
-});
 
-describe('slugify', () => {
-  it('uses the same normalization as slug without truncating', () => {
+  it('does not truncate when maxLength is omitted', () => {
     const input = `${'Feature '.repeat(10)}Done`;
     expect(slugify(input)).toBe('feature-feature-feature-feature-feature-feature-feature-feature-feature-feature-done');
-    expect(slug(input)).toBe(slugify(input).slice(0, 40));
+    expect(slugify(input, 40)).toBe('feature-feature-feature-feature-feature-feature-feature-feature-feature-feature-done'.slice(0, 40));
   });
 });
