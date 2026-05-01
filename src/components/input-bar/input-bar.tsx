@@ -15,6 +15,7 @@ import type { InputMode, Screen } from '../../stores/navigation/router.js';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { useInputBarHistory } from './use-input-bar-history.js';
 import { attachImage } from '../../stores/ui/attachments.js';
+import { computeSuggestionsCap } from './slash-suggestions-height.js';
 
 function borderColorForMode(mode: InputMode, theme: { planner: string; warning: string; border: string }): string {
   if (mode === 'review') return theme.planner;
@@ -51,7 +52,7 @@ export function InputBar({
   disabled,
 }: InputBarProps) {
   const theme = useTheme();
-  const [{ cols }] = useStores(terminalSizeStore);
+  const [{ cols, rows }] = useStores(terminalSizeStore);
   const inputColumns = Math.max(1, (width ?? cols) - 6);
   const [value, setValue] = useState('');
   const [visibleRows, setVisibleRows] = useState(1);
@@ -101,10 +102,12 @@ export function InputBar({
     bumpEpoch();
   };
 
+  const suggestionsCap = computeSuggestionsCap(rows, visibleRows);
+
   useEffect(() => {
-    const suggestionRows = showSuggestions ? Math.min(filtered.length, 8) : 0;
+    const suggestionRows = showSuggestions ? Math.min(filtered.length, suggestionsCap) : 0;
     inputHeightStore.setRows(visibleRows + 2 + suggestionRows);
-  }, [filtered.length, showSuggestions, visibleRows]);
+  }, [filtered.length, showSuggestions, visibleRows, suggestionsCap]);
 
   return (
     <Box flexDirection="column" width="100%" flexShrink={0}>
@@ -118,6 +121,7 @@ export function InputBar({
           filtered={filtered}
           selectedIndex={selectedIndex}
           fuzzyMatch={fuzzyMatch}
+          maxVisible={suggestionsCap}
         />
       )}
       <AttachmentChips />
