@@ -17,6 +17,8 @@ export type PlanEditorAction =
   | { type: 'delete-task' }
   | { type: 'merge-task' }
   | { type: 'toggle-expand' }
+  | { type: 'toggle-flag' }
+  | { type: 'regenerate-flagged' }
   | { type: 'toggle-packet-preview' }
   | { type: 'open-help' }
   | { type: 'open-editor'; mode: 'edit' | 'split' }
@@ -36,6 +38,8 @@ export function handlePlanEditorInput(input: string, key: Key): PlanEditorAction
   if (input === 'k') return { type: 'move-cursor', direction: 'up' };
   if (input === 'd') return { type: 'delete-task' };
   if (input === 'm') return { type: 'merge-task' };
+  if (input === 'x') return { type: 'toggle-flag' };
+  if (input === 'R') return { type: 'regenerate-flagged' };
   if (input === 'p') return { type: 'toggle-packet-preview' };
   if (input === 's') return { type: 'open-editor', mode: 'split' };
   if (input === 'e') return { type: 'open-editor', mode: 'edit' };
@@ -90,6 +94,15 @@ export function applyPlanEditorAction(
       if (task) planEditorStore.toggleExpand(task.id);
       return;
     }
+    case 'toggle-flag': {
+      const { tasks, cursor } = planEditorStore.get();
+      const task = tasks[cursor];
+      if (task) planEditorStore.toggleFlag(task.id);
+      return;
+    }
+    case 'regenerate-flagged': {
+      return;
+    }
     case 'toggle-packet-preview': onTogglePacketPreview?.(); return;
     case 'open-help': overlayStore.open('plan-editor-help'); return;
     case 'open-editor': return;
@@ -107,6 +120,7 @@ export function usePlanEditorKeys(
   onSave: () => Promise<void>,
   sessionDir: string,
   onTogglePacketPreview?: (() => void) | undefined,
+  onRegenerateFlagged?: (() => Promise<void>) | undefined,
 ): void {
   const isOverlayOpen = overlayStore.use(s => s.active !== 'none');
 
@@ -123,6 +137,10 @@ export function usePlanEditorKeys(
         const task = tasks[cursor];
         if (!task) return;
         openExternalEditor(task, action.mode, sessionDir);
+        return;
+      }
+      if (action.type === 'regenerate-flagged') {
+        if (onRegenerateFlagged) void onRegenerateFlagged();
         return;
       }
       applyPlanEditorAction(action, onSave, onTogglePacketPreview);

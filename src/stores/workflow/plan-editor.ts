@@ -62,6 +62,8 @@ export interface PlanEditorState {
    * are produced elsewhere; the editor only renders whatever metadata is known.
    */
   reviewMetadata: ReadonlyMap<string, PlanTaskReviewMetadata>;
+  /** Set of task IDs flagged for rejection/regeneration. */
+  flaggedIds: ReadonlySet<string>;
 }
 
 const store = createStore<PlanEditorState>(() => ({
@@ -72,6 +74,7 @@ const store = createStore<PlanEditorState>(() => ({
   runtimeRichMode: false,
   saveError: null,
   reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
+  flaggedIds: new Set<string>(),
 }));
 
 function cloneTasks(tasks: Task[]): Task[] {
@@ -90,7 +93,7 @@ function cloneReviewMetadataMap(
 
 // Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
 function __testReset(next?: Partial<PlanEditorState>): void {
-  const base = { tasks: [], cursor: 0, expandedIds: new Set<string>(), dirty: false, runtimeRichMode: false, saveError: null, reviewMetadata: new Map<string, PlanTaskReviewMetadata>() };
+  const base = { tasks: [], cursor: 0, expandedIds: new Set<string>(), dirty: false, runtimeRichMode: false, saveError: null, reviewMetadata: new Map<string, PlanTaskReviewMetadata>(), flaggedIds: new Set<string>() };
   if (!next) {
     store.set(base);
     return;
@@ -101,6 +104,7 @@ function __testReset(next?: Partial<PlanEditorState>): void {
     tasks: next.tasks ? cloneTasks(next.tasks) : base.tasks,
     expandedIds: next.expandedIds ? new Set(next.expandedIds) : base.expandedIds,
     reviewMetadata: next.reviewMetadata ? cloneReviewMetadataMap(next.reviewMetadata) : base.reviewMetadata,
+    flaggedIds: next.flaggedIds ? new Set(next.flaggedIds) : base.flaggedIds,
   });
 }
 
@@ -114,6 +118,7 @@ function initEditor(tasks: Task[]): void {
     dirty: false,
     saveError: null,
     reviewMetadata: sameTasks(s.tasks, nextTasks) ? s.reviewMetadata : new Map<string, PlanTaskReviewMetadata>(),
+    flaggedIds: sameTasks(s.tasks, nextTasks) ? s.flaggedIds : new Set<string>(),
   }));
 }
 
@@ -176,6 +181,30 @@ function setSaveError(message: string | null): void {
   store.set(s => (s.saveError === message ? s : { ...s, saveError: message }));
 }
 
+function toggleFlag(taskId: string): void {
+  store.set(s => {
+    const next = new Set(s.flaggedIds);
+    if (next.has(taskId)) {
+      next.delete(taskId);
+    } else {
+      next.add(taskId);
+    }
+    return { ...s, flaggedIds: next };
+  });
+}
+
+function clearFlags(): void {
+  store.set(s => {
+    if (s.flaggedIds.size === 0) return s;
+    return { ...s, flaggedIds: new Set<string>() };
+  });
+}
+
+function getFlaggedTasks(): Task[] {
+  const { tasks, flaggedIds } = store.get();
+  return tasks.filter(t => flaggedIds.has(t.id));
+}
+
 function setReviewMetadata(metadata: PlanTaskReviewMetadata[]): void {
   store.set(s => {
     const next = new Map<string, PlanTaskReviewMetadata>();
@@ -233,6 +262,9 @@ export const planEditorStore = {
   setCursor,
   setTasks,
   toggleExpand,
+  toggleFlag,
+  clearFlags,
+  getFlaggedTasks,
   setRuntimeRichMode,
   setSaveError,
   setReviewMetadata,

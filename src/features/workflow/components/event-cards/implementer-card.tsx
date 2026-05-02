@@ -8,6 +8,7 @@ import { getMaxVisibleDiffLines } from '../../../../core/layout/diff-height.js';
 import { formatDuration } from '../../../../utils/format-time.js';
 import { formatModelName } from '../../../../core/model-display.js';
 import { Card } from './card.js';
+import { StreamingLines } from './streaming-lines.js';
 
 export type ImplementerGenerateEvent = Extract<
   EngineEvent,
@@ -20,7 +21,12 @@ export function ImplementerCard({ event, diffExpanded }: { event: ImplementerGen
 
   if (event.type === 'implementer_generate_running') {
     const fileHint = event.file ? `generating ${event.file}...` : 'generating...';
-    return <Spinner label={fileHint} color={t.implementer} startTime={event.ts} />;
+    return (
+      <Box flexDirection="column">
+        <Spinner label={fileHint} color={t.implementer} startTime={event.ts} />
+        <StreamingLines />
+      </Box>
+    );
   }
 
   if (event.type === 'implementer_generate_failed') {

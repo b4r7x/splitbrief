@@ -348,7 +348,7 @@ describe('PlanEditorComponent review metadata', () => {
     await tick();
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Y save');
+    expect(frame).toContain('Y approve');
     expect(frame).toContain('> ✓ T004');
     expect(frame).not.toContain('T001 pending src/a.ts');
   });
@@ -681,8 +681,8 @@ describe('PlanEditorComponent review metadata', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('packet preview collapsed');
-    expect(frame).toContain('j/k nav');
-    expect(frame).toContain('Y save');
+    expect(frame).toContain('j/k navigate');
+    expect(frame).toContain('Y approve');
   });
 
   it('shows both system and task excerpts when packet preview is expanded at medium height', async () => {
@@ -703,7 +703,7 @@ describe('PlanEditorComponent review metadata', () => {
     expect(frame).toContain('Packet Preview T001');
     expect(frame).toContain('system SYSTEM: You are a TypeScript code generator');
     expect(frame).toContain('task ## Project: unknown');
-    expect(frame).toContain('Y save');
+    expect(frame).toContain('Y approve');
   });
 
   it('keeps save and edit labels visible in a narrow layout', async () => {
@@ -718,10 +718,8 @@ describe('PlanEditorComponent review metadata', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('j/k nav');
-    expect(frame).toContain('d del');
-    expect(frame).toContain('s split');
-    expect(frame).toContain('Y save');
+    expect(frame).toContain('Y app');
+    expect(frame).toContain('q dis');
   });
 
   it('keeps simple review scorecard to one reserved row in a narrow layout', async () => {

@@ -7,6 +7,7 @@ import { _eventsInternal, eventsStore, mergeEvent, type EventsState } from './ev
 import { _tasksInternal, tasksStore, updateTaskCounts, updateTaskMap, type TasksState, type WorkflowTask } from './tasks.js';
 import { _tokensInternal, tokensStore, updateTokens, type TokensState } from './tokens.js';
 import { _lifecycleInternal, lifecycleStore, updatePhase, updateQueueDepth, type LifecycleState } from './lifecycle.js';
+import { streamingOutputStore } from './streaming-output.js';
 
 export type WorkflowViewState = EventsState & TasksState & TokensState & LifecycleState;
 
@@ -75,6 +76,7 @@ export function resetWorkflow(resume?: WorkflowState): void {
   tasksStore.reset();
   tokensStore.reset();
   lifecycleStore.reset();
+  streamingOutputStore.reset();
   cachedEvents = null;
   cachedSections = [];
   if (resume) {

@@ -92,4 +92,5 @@ export type LayoutEvent =
   | EventOf<'user_message', { text: string }>
   | EventOf<'warning', { message: string }>
   | EventOf<'error', { message: string }>
+  | EventOf<'planner_heartbeat', { elapsedMs: number; accumulatedTokens: number; phaseHint?: string | undefined }>
   | EventOf<'cost_prediction', { prediction?: CostPrediction | undefined }>;

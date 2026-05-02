@@ -112,6 +112,7 @@ function applyHeightRule(event: LayoutEvent, ctx: HeightCtx): number {
     case 'warning': return visualLineCount(`warning  ${event.message}`, cols);
     case 'error': return visualLineCount(`error  ${event.message}`, cols);
     case 'cost_update': return 0;
+    case 'planner_heartbeat': return 0;
     case 'cost_prediction': return getCostPredictionCardRowCount(event.prediction);
     case 'budget_warning': return 1;
     case 'budget_paused': return 1;

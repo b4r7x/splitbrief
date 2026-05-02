@@ -366,4 +366,77 @@ describe('planEditorStore', () => {
       expect(planEditorStore.get().reviewMetadata.size).toBe(0);
     });
   });
+
+  describe('toggleFlag', () => {
+    it('adds an ID to flaggedIds', () => {
+      const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
+      planEditorStore.initEditor(tasks);
+      planEditorStore.toggleFlag('T001');
+      expect(planEditorStore.get().flaggedIds.has('T001')).toBe(true);
+      expect(planEditorStore.get().flaggedIds.has('T002')).toBe(false);
+    });
+
+    it('removes an ID when toggled again', () => {
+      const tasks = [makeTask({ id: 'T001' })];
+      planEditorStore.initEditor(tasks);
+      planEditorStore.toggleFlag('T001');
+      expect(planEditorStore.get().flaggedIds.has('T001')).toBe(true);
+      planEditorStore.toggleFlag('T001');
+      expect(planEditorStore.get().flaggedIds.has('T001')).toBe(false);
+    });
+
+    it('does not set dirty to true (flags are UI state)', () => {
+      planEditorStore.initEditor([makeTask({ id: 'T001' })]);
+      expect(planEditorStore.get().dirty).toBe(false);
+      planEditorStore.toggleFlag('T001');
+      expect(planEditorStore.get().dirty).toBe(false);
+    });
+  });
+
+  describe('clearFlags', () => {
+    it('empties the flaggedIds set', () => {
+      planEditorStore.initEditor([makeTask({ id: 'T001' }), makeTask({ id: 'T002' })]);
+      planEditorStore.toggleFlag('T001');
+      planEditorStore.toggleFlag('T002');
+      expect(planEditorStore.get().flaggedIds.size).toBe(2);
+      planEditorStore.clearFlags();
+      expect(planEditorStore.get().flaggedIds.size).toBe(0);
+    });
+  });
+
+  describe('getFlaggedTasks', () => {
+    it('returns only flagged tasks', () => {
+      const first = makeTask({ id: 'T001' });
+      const second = makeTask({ id: 'T002' });
+      const third = makeTask({ id: 'T003' });
+      planEditorStore.initEditor([first, second, third]);
+      planEditorStore.toggleFlag('T001');
+      planEditorStore.toggleFlag('T003');
+      const flagged = planEditorStore.getFlaggedTasks();
+      expect(flagged).toHaveLength(2);
+      expect(flagged.map(t => t.id)).toEqual(['T001', 'T003']);
+    });
+  });
+
+  describe('initEditor resets flaggedIds when tasks change', () => {
+    it('clears flaggedIds when tasks differ', () => {
+      const first = makeTask({ id: 'T001', title: 'Original' });
+      planEditorStore.initEditor([first]);
+      planEditorStore.toggleFlag('T001');
+      expect(planEditorStore.get().flaggedIds.has('T001')).toBe(true);
+
+      planEditorStore.initEditor([{ ...first, title: 'Changed' }]);
+      expect(planEditorStore.get().flaggedIds.size).toBe(0);
+    });
+
+    it('preserves flaggedIds when same tasks are reloaded', () => {
+      const tasks = [makeTask({ id: 'T001' })];
+      planEditorStore.initEditor(tasks);
+      planEditorStore.toggleFlag('T001');
+      expect(planEditorStore.get().flaggedIds.has('T001')).toBe(true);
+
+      planEditorStore.initEditor(tasks);
+      expect(planEditorStore.get().flaggedIds.has('T001')).toBe(true);
+    });
+  });
 });

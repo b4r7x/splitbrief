@@ -63,7 +63,7 @@ function formatTaskStartedValue(event: EngineEventOf<"task_started">): string {
 function getGutterRole(event: EngineEvent): "planner" | "implementer" | null {
   switch (event.type) {
     case "planner_status": return phaseRole(event.phase);
-    case "planner_text": case "task_started": case "escalate": return "planner";
+    case "planner_text": case "planner_heartbeat": case "task_started": case "escalate": return "planner";
     case "implementer_generate_running": case "implementer_generate_done":
     case "implementer_generate_failed": case "validate":
     case "git_commit": case "git_checkpoint": case "git_branch_created": case "task_retry": return "implementer";
@@ -446,6 +446,7 @@ export function EventCard({ event, diffExpanded = false }: EventCardProps) {
     case "instant_plan_received":
     case "clarifications_collected":
     case "clarification_answered":
+    case "planner_heartbeat":
       content = null;
       break;
     case "approval_mode_changed":
