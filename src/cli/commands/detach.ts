@@ -24,7 +24,8 @@ async function resolveRunningSession(projectDir: string): Promise<string> {
     if (status.alive) running.push(entry.name);
   }
 
-  if (running.length === 1) return running[0]!;
+  const [single] = running;
+  if (running.length === 1 && single) return single;
   if (running.length === 0) {
     throw cliError('no running sessions found; pass <session-id> explicitly', 1);
   }
