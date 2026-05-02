@@ -207,9 +207,9 @@ it('workflow screen shows an escalation card when escalate event arrives', async
 
 Real adapter boundaries (`Planner`, `Implementer`, `ProviderClient`) are the only sanctioned injection points. Everything else is a real import.
 
-## Faux provider architecture (target)
+## Faux provider architecture
 
-The `orchestrator-factories.ts` fakes work but are `vi.fn` wrappers — assertions tend toward `toHaveBeenCalledWith` (implementation coupling). The target architecture replaces them with **typed faux objects** that implement the real interface and track state declaratively.
+The `orchestrator-factories.ts` fakes work but are `vi.fn` wrappers — assertions tend toward `toHaveBeenCalledWith` (implementation coupling). The faux architecture replaces them with **typed faux objects** that implement the real interface and track state declaratively.
 
 ### Two levels
 
@@ -243,10 +243,7 @@ Starts a local HTTP server that speaks OpenAI SSE (or Anthropic event format). R
 
 ### Migration path
 
-1. Build `testing/helpers/faux/` (L1 first).
-2. New tests use faux; old tests keep working.
-3. Gradually replace `orchestrator-factories.ts` usage with faux equivalents.
-4. Once all consumers migrate, deprecate and remove the old factories.
+`testing/helpers/faux/` is implemented (L1: `planner.ts`, `implementer.ts`, `workflow.ts`). New tests use faux objects; old tests using `orchestrator-factories.ts` continue to work and are gradually migrated. Once all consumers migrate, the old factories will be deprecated and removed.
 
 ### What stays unchanged
 

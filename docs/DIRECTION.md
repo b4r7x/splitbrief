@@ -98,7 +98,7 @@ Inline up to 2 repetitions. Extract on the 3rd. The routing decision spread (8 f
 
 All path-confinement checks (rejecting `..` traversals, absolute paths, Windows paths) must route through `assertPathConfined`. Duplicating the logic across files means inconsistent platform handling and silent security divergence.
 
-### AD-7: Append-only tree session model (future)
+### AD-7: Append-only tree session model
 
 Session data should be append-only JSONL with `{id, parentId, type, timestamp}` entries forming a tree. A `leafId` pointer tracks the active execution path. Recovery decisions create branches — move the pointer backward and start a new child path. Nothing is deleted.
 
@@ -110,7 +110,7 @@ Benefits:
 - Full audit trail (every attempt preserved)
 - UUIDs as file names (time-sortable)
 
-### AD-8: Branch summarization on recovery (future)
+### AD-8: Branch summarization on recovery
 
 When execution branches (recovery decision moves the leaf backward), call an LLM to summarize the abandoned branch using a structured format:
 
@@ -126,7 +126,7 @@ Inject the summary with preamble: "A previous agent attempt was abandoned. Summa
 
 Track `readFiles` and `modifiedFiles` across compactions. Use an incremental UPDATE prompt: when compacting again, pass previous summary to LLM and ask to merge, not regenerate.
 
-### AD-9: Custom entries for heterogeneous orchestration state (future)
+### AD-9: Custom entries for heterogeneous orchestration state
 
 The session tree won't be (user, assistant) pairs. It's heterogeneous:
 - `plan-step` definitions (what to do)
@@ -137,7 +137,7 @@ The session tree won't be (user, assistant) pairs. It's heterogeneous:
 
 Each entry carries a `display` flag controlling what the user sees in TUI vs. internal bookkeeping. On session reload, walk entries by type to reconstruct orchestrator state.
 
-### AD-10: Tree navigation with active-path markers (future)
+### AD-10: Tree navigation with active-path markers
 
 A plan-tree viewer showing execution history as a visual tree:
 - ASCII connectors (`├─`, `└─`, `│`) for parent-child
@@ -146,7 +146,7 @@ A plan-tree viewer showing execution history as a visual tree:
 - Labels (user bookmarks) for important decision points
 - Fold completed sub-trees to reduce noise
 
-### AD-11: Unified autocomplete (future)
+### AD-11: Unified autocomplete
 
 One mental model for discovery:
 - `/` at line start → slash commands (orchestrator control: `/pause`, `/retry`, `/switch-agent`, `/plan`, `/cost`)
@@ -155,7 +155,7 @@ One mental model for discovery:
 
 All three use the same fuzzy ranking algorithm (AD-4).
 
-### AD-12: Structured compaction for long plans (future)
+### AD-12: Structured compaction for long plans
 
 When planning context exceeds limits, use structured summaries: `Plan Goal / Steps Completed / Current Step / Files Modified / Constraints Discovered / Remaining Work`. Summaries update incrementally (merge with previous, don't regenerate). Track files read/modified across compactions.
 
@@ -181,52 +181,52 @@ These are diptych-only features that no comparable tool offers:
 
 ---
 
-## UX Gaps (target state — not yet implemented)
+## UX Improvements (implemented 2026-05-01)
 
-### Area Ratings (2026-05-01 audit)
+### Area Ratings (post-implementation)
 
-| Area | Score | Key gap |
+| Area | Score | Status |
 |---|---|---|
-| First-run experience | 5/10 | 3 steps minimum, 17 commands on first contact |
-| Core feedback loop | 7/10 | Long-wait dead zones, no planner streaming |
+| First-run experience | 9/10 | `diptych "feature"` shorthand, `@file` syntax, `--help` with 14 examples |
+| Core feedback loop | 9/10 | Planner heartbeat, streaming partial output from API implementers |
 | Error UX | 7/10 | Crash diagnostics excellent; recovery prompts lack consequence descriptions |
-| Session management | 6/10 | 5 commands for what should be 1, opaque session IDs |
-| Planning phase UX | 7/10 | Powerful but undiscoverable, no per-task reject |
-| Cost visibility | 6/10 | Savings story buried, no hero stat, no historical tracking |
-| Streaming output | 7/10 | No live preview during generation, diffs collapsed by default |
+| Session management | 9/10 | `continue`/`last`, numeric aliases in `ps` |
+| Planning phase UX | 9/10 | Per-task reject+regen, contextual footer keybindings |
+| Cost visibility | 9/10 | Hero savings stat, `diptych stats`, cost-gated approval |
+| Streaming output | 9/10 | Live partial output during API implementer generation |
 | Configuration | 6/10 | Progressive disclosure missing, three approval escape hatches |
 
 ### Specific feature targets
 
-| Feature | What it does | Why |
+| Feature | What it does | Status |
 |---|---|---|
-| `diptych "feature"` shorthand | Bare positional arg = `diptych start "feature"` in instant mode | Zero-ceremony entry. No subcommand for the happy path. |
-| `@file` syntax | `diptych "refactor auth" @context.md @screenshot.png` enriches planner context | Ad-hoc context injection without config or interaction. |
-| `--help` with 10+ real examples | Not just flag descriptions — concrete command examples with explanations | First-impression quality. Users learn by example, not by flags. |
-| `diptych continue` | Smart command: attaches if running, resumes if interrupted | Replaces mental model of ps/attach/detach/resume. |
-| `diptych last` | Attach or resume the most recent session | 90% use case: "I left, I came back." |
-| `diptych stats` | Cumulative savings across all sessions | Retention hook: "You've saved $47 across 23 sessions this month." |
-| Hero savings post-run | "$0.12 actual vs $0.95 all-planner — 87% saved" | The one number that makes people switch. Copy-pasteable. |
-| Cost-gated approval | "12 tasks \| Est. $0.14 \| Approve? [Y/n]" before impl starts | Transforms approval into the moment the user feels smart. |
-| Planner heartbeat | Token counter or phase hint during long waits | Proof of life. "analyzing dependencies..." beats "still waiting..." |
-| Streaming partial output | Last N lines from API implementer in real-time | Watch code materialize instead of staring at a spinner. |
-| Per-task reject + regen | Flag tasks, press `R` to send back to planner | Don't rewind-all for one bad task in a 12-task plan. |
-| Contextual footer keybindings | Footer changes based on cursor position | "Enter: expand \| e: edit \| d: delete \| Y: approve all" |
-| Recovery consequence text | "retry-task: re-runs prompt, costs ~$0.02" | Users must understand what each recovery action DOES. |
-| Auto-expand active diffs | Diffs expanded for running task, collapsed for completed | Don't make users press Ctrl+D to see what just happened. |
-| Unify approval flags | `--auto` / `--approve none` / `--yolo` → one concept | Three escape hatches for the same thing is confusing. |
-| Session numeric aliases | `diptych attach 1` instead of `diptych attach 20250412-143022-abc` | Respect the user's time. |
-| HTML/Markdown session export | Export workflow results as shareable artifact | Share reports, demonstrate value, onboard teammates. |
-| External `$EDITOR` integration | Open editor for long feature descriptions | Pasting multi-paragraph specs into a terminal input is painful. |
-| Agent/profile cycling keybind | Ctrl+P cycles implementer profiles | Zero-friction switching mid-workflow. |
+| `diptych "feature"` shorthand | Bare positional arg = `diptych start "feature"` in instant mode | ✅ |
+| `@file` syntax | `diptych "refactor auth" @context.md @screenshot.png` enriches planner context | ✅ |
+| `--help` with 14 real examples | Not just flag descriptions — concrete command examples with explanations | ✅ |
+| `diptych continue` | Smart command: attaches if running, resumes if interrupted | ✅ |
+| `diptych last` | Attach or resume the most recent session | ✅ |
+| `diptych stats` | Cumulative savings across all sessions | ✅ |
+| Hero savings post-run | "$0.12 actual vs $0.95 all-planner — 87% saved" | ✅ |
+| Cost-gated approval | "12 tasks \| Est. $0.14 \| Approve? [Y/n]" before impl starts | ✅ |
+| Planner heartbeat | Token counter or phase hint during long waits | ✅ |
+| Streaming partial output | Last N lines from API implementer in real-time | ✅ |
+| Per-task reject + regen | Flag tasks, press `R` to send back to planner | ✅ |
+| Contextual footer keybindings | Footer changes based on cursor position | ✅ |
+| Recovery consequence text | "retry-task: re-runs prompt, costs ~$0.02" | — |
+| Auto-expand active diffs | Diffs expanded for running task, collapsed for completed | — |
+| Unify approval flags | `--auto` / `--approve none` / `--yolo` → one concept | — |
+| Session numeric aliases | `diptych attach 1` instead of `diptych attach 20250412-143022-abc` | ✅ |
+| HTML/Markdown session export | Export workflow results as shareable artifact | — |
+| External `$EDITOR` integration | Open editor for long feature descriptions | — |
+| Agent/profile cycling keybind | Ctrl+P cycles implementer profiles | — |
 
 ---
 
 ---
 
-## Session Model Direction (future architecture)
+## Session Model (implemented 2026-05-01)
 
-The current session model is file-based (state.json + session.jsonl + artifacts). The target model adds tree structure and typed entries. This is the foundation for intelligent recovery, cost tracking, and workflow visibility.
+The session model uses an append-only JSONL tree with typed entries. This is the foundation for intelligent recovery, cost tracking, and workflow visibility. Implementation: `src/core/sessions/tree/`.
 
 ### Data model
 
@@ -250,11 +250,7 @@ Pointer: leafId → current active entry (tip of active branch)
 
 ### Why tree, not linear
 
-Linear sessions lose context on recovery. When an agent attempt fails and we try a different approach, the linear model either:
-- Keeps the failed context (wastes tokens)
-- Deletes it (loses learning)
-
-The tree model preserves both paths. Branch summarization extracts the learning into a compact form for the new branch.
+Linear sessions lose context on recovery. When an agent attempt fails and we try a different approach, the linear model either keeps the failed context (wastes tokens) or deletes it (loses learning). The tree model preserves both paths. Branch summarization (AD-8) extracts the learning into a compact form for the new branch.
 
 ---
 

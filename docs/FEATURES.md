@@ -32,6 +32,30 @@ diptych start --mode speckit "redesign auth subsystem"
 
 **Configuration.** `workflow.mode`, `workflow.approve` (`none|spec|plan|all|default`), `workflow.maxRetries`. See [CONFIGURATION.md §workflow](./CONFIGURATION.md#5-workflow).
 
+### Zero-ceremony entry (`diptych "feature"` shorthand)
+
+**What it does.** `start` is the default command (`isDefault`). A bare `diptych "feature"` invocation is equivalent to `diptych start "feature"`. No subcommand required for the happy path.
+
+**How to use.**
+
+```bash
+diptych "fix the typo in README"
+diptych "add JWT middleware" --mode standard
+```
+
+### `@file` context injection
+
+**What it does.** Positional arguments prefixed with `@` are resolved as file paths. Their contents are injected into the planner context alongside the feature description — ad-hoc context enrichment without config or interaction.
+
+**How to use.**
+
+```bash
+diptych "refactor auth" @context.md @screenshot.png
+diptych start "add endpoint" @api-spec.yaml @existing-handler.ts
+```
+
+**When to use.** When the planner needs additional context (design docs, screenshots, existing code) that isn't captured by the repo-map or the feature description alone.
+
 ### Runner kinds (cli / api / shell / agent / agent-sdk)
 
 **What it does.** Both planner and implementer dispatch on a `kind` discriminant. Five kinds cover every backend diptych supports.
@@ -223,12 +247,16 @@ Rich review also has a read-only Worker Packet Preview for the selected task. Th
 | `d` | Delete task |
 | `m` | Merge with previous task |
 | `s` | Split task |
+| `x` | Flag/unflag task for rejection |
+| `R` | Regenerate flagged tasks (sends back to planner for targeted regen) |
 | `p` | Toggle Worker Packet Preview |
 | `e` | Open task in `$EDITOR` |
 | `Ctrl+J` / `Ctrl+K` | Reorder down / up |
 | `Y` | Save: write `tasks.md`, re-run quality gate, dispatch `APPROVE_BRIEFS` |
 | `q` | Discard edits, return to simple view |
 | `?` | Open help overlay |
+
+**Contextual footer keybindings.** The footer dynamically shows keybindings relevant to the current cursor position and editor state. For example: `Enter: expand | e: edit | d: delete | Y: approve all` when a task is selected, or `x: flag | R: regen flagged` when tasks are flagged. The footer updates as context changes — no hidden `?` overlay needed for basic discovery.
 
 If the saved tasks fail brief-quality validation, the editor stays open with the error.
 
@@ -271,6 +299,51 @@ workflow:
 ```
 
 Events: `budget_warning` (80%), `budget_paused` (configured threshold), `budget_exceeded` (100%), followed by `recovery_prompted` when a persisted recovery decision is required. Headless `--json` mode emits `recovery_required` with available actions and exits non-zero instead of blocking.
+
+### Cost-gated plan approval
+
+**What it does.** Before implementation starts, the brief review gate shows a cost-aware approval prompt: task count, estimated implementation cost, all-planner comparison cost, and savings percentage. Transforms rubber-stamp approval into an informed cost decision.
+
+**How to use.** Always active in modes with approval gates (standard, speckit). The prompt renders automatically when briefs are ready.
+
+**Format.** `12 tasks | Est. $0.14 | All-planner: ~$1.20 | Saved: 88% | Approve? [Y/n]`
+
+### Hero savings stat (summary screen)
+
+**What it does.** After a completed workflow, the summary screen displays a prominent savings comparison: actual spend vs all-planner alternative, with the percentage saved. Copy-pasteable format for sharing.
+
+**Format.** `$0.12 actual vs $0.95 all-planner — 87% saved`
+
+**How to use.** Always shown on the post-run summary screen when pricing data is available. When the implementer is unpriced (local/subscription), `local` replaces the dollar amount.
+
+### Cumulative stats (`diptych stats`)
+
+**What it does.** Tracks cumulative cost savings across all completed sessions in `.diptych/stats.json`. Shows total sessions, total spend, all-planner estimate, and aggregate savings percentage.
+
+**How to use.**
+
+```bash
+diptych stats
+diptych stats --json
+```
+
+**When to use.** To see the cumulative value of the planner/implementer split over time. Retention hook: "You've saved $47 across 23 sessions this month."
+
+### Planner heartbeat
+
+**What it does.** During planner calls exceeding 5 seconds, displays proof of life: an incrementing token counter and the current phase hint (e.g. "analyzing dependencies...", "writing spec..."). Prevents dead-zone silences.
+
+**How to use.** Always active. No configuration needed.
+
+**When to use.** Automatic during any planner call. The heartbeat appears in the TUI below the status line.
+
+### Streaming partial output (API implementers)
+
+**What it does.** For `kind: api` implementers, the last N lines of generated output stream in real-time via a ring buffer. Users see code materializing instead of staring at a spinner or elapsed-time counter.
+
+**How to use.** Always active for API implementers that support streaming. No configuration needed.
+
+**When to use.** Automatic during implementation when the implementer is an API runner. The streaming lines component renders in the task card.
 
 ---
 
@@ -533,6 +606,67 @@ If a session crashed, `diptych attach` shows a crash diagnostic with last-alive 
 ### Event replay on attach
 
 **What it does.** A freshly attached client reads `session.jsonl` from disk and reconstructs the TUI state before subscribing to the live stream. Replay never re-issues planner calls.
+
+### Session continuity (`diptych continue` / `diptych last`)
+
+**What it does.** One command for session lifecycle. `diptych continue` figures out the right thing: attach if running, resume if interrupted. `diptych last` is the zero-arg shorthand for the most recent session. Replaces the mental model of choosing between `ps`/`attach`/`detach`/`resume` for the 90% case.
+
+**How to use.**
+
+```bash
+diptych continue         # most recent session
+diptych continue 1       # numeric alias from ps output
+diptych last             # always the most recent session
+```
+
+**When to use.** Any time you return to a terminal and want to pick up where you left off.
+
+### Numeric session aliases in `diptych ps`
+
+**What it does.** `diptych ps` output includes a `#` column with numeric aliases (1, 2, 3...). These aliases are accepted by `attach`, `continue`, and other session-targeting commands.
+
+**How to use.**
+
+```bash
+diptych ps               # shows #1, #2, #3...
+diptych attach 1         # instead of the full session ID
+diptych continue 2
+```
+
+---
+
+## Session tree
+
+### Append-only JSONL tree model
+
+**What it does.** Session data is stored as append-only JSONL entries forming a tree: `{id, parentId, type, timestamp, ...payload}`. A `leafId` pointer tracks the active execution path. Recovery decisions create branches — nothing is deleted. Sessions survive crashes, branching is free, and the full audit trail is preserved.
+
+**Entry types.** Seven custom entry types with a registry: `plan-step`, `agent-invocation`, `recovery-decision`, `compaction`, `branch-summary`, `file-state`, `custom`.
+
+**How to use.** Automatic. The tree model underlies all session persistence. Implementation: `src/core/sessions/tree/`.
+
+### Branch summarization
+
+**What it does.** When execution branches (recovery decision moves the leaf backward), an LLM call summarizes the abandoned branch. The summary uses a structured format (Goal / Progress / Key Decisions / Constraints Discovered / Next Steps) and is injected as context for the new branch so subsequent attempts know what didn't work.
+
+**How to use.** Automatic on recovery branching. The summary is appended as a `branch-summary` entry in the tree.
+
+**When to use.** No configuration needed — fires whenever a recovery decision creates a new branch.
+
+### Tree navigation TUI
+
+**What it does.** A plan-tree viewer showing execution history as a visual tree with ASCII connectors. Navigate with keyboard, fold/unfold sub-trees, filter by status.
+
+**How to use.**
+
+| Key | Action |
+|---|---|
+| `j` / `k` | Move cursor up/down |
+| `Space` | Fold/unfold sub-tree |
+| `Enter` | Select entry for detail view |
+| Filter modes | All steps, failed-only, active-path-only |
+
+**When to use.** When inspecting branching history, understanding recovery paths, or navigating complex multi-attempt sessions.
 
 ---
 

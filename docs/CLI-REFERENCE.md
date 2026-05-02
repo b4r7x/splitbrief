@@ -22,22 +22,25 @@ diptych — Cost-optimized AI coding orchestrator (v0.1.0)
 
 | # | Command | Purpose |
 |---|---|---|
-| 1 | `diptych start` | Launch a workflow (TUI, headless, or detached). |
+| 1 | `diptych start` | Launch a workflow (TUI, headless, or detached). Also the default command: `diptych "feature"` works without `start`. |
 | 2 | `diptych spec` | Run the planner only — produce spec/plan/tasks, no implementation. |
 | 3 | `diptych init` | Create `.diptych/config.yaml` with detected models. |
 | 4 | `diptych status` | Show the active session and optional cost history. |
 | 5 | `diptych explain` | Explain routing, cost, review, and warnings from session artifacts. |
 | 6 | `diptych resume` | Resume the most recent interrupted workflow. |
-| 7 | `diptych migrate` | Migrate pre-v3 `.diptych/current/` state to per-session folders. |
-| 8 | `diptych handoff` | Export a Handoff Pack for an external coding agent. |
-| 9 | `diptych snapshot` | Create / list / restore / diff working-tree snapshots. |
-| 10 | `diptych approval` | List or clear sticky approval grants. |
-| 11 | `diptych mcp` | Run the MCP resource server. |
-| 12 | `diptych worktree` | List / switch / remove `.trees/<slug>` git worktrees. |
-| 13 | `diptych attach` | Attach a TUI client to a detached background session. |
-| 14 | `diptych detach` | Detach a TUI client without stopping the background server. |
-| 15 | `diptych ps` | List sessions in the current project with status. |
-| 16 | `diptych doctor` | Check run readiness without creating a workflow session. |
+| 7 | `diptych continue` | Smart session continuity: attach if running, resume if interrupted. |
+| 8 | `diptych last` | Attach or resume the most recent session. |
+| 9 | `diptych stats` | Show cumulative cost savings across all sessions. |
+| 10 | `diptych migrate` | Migrate pre-v3 `.diptych/current/` state to per-session folders. |
+| 11 | `diptych handoff` | Export a Handoff Pack for an external coding agent. |
+| 12 | `diptych snapshot` | Create / list / restore / diff working-tree snapshots. |
+| 13 | `diptych approval` | List or clear sticky approval grants. |
+| 14 | `diptych mcp` | Run the MCP resource server. |
+| 15 | `diptych worktree` | List / switch / remove `.trees/<slug>` git worktrees. |
+| 16 | `diptych attach` | Attach a TUI client to a detached background session. |
+| 17 | `diptych detach` | Detach a TUI client without stopping the background server. |
+| 18 | `diptych ps` | List sessions in the current project with status. |
+| 19 | `diptych doctor` | Check run readiness without creating a workflow session. |
 
 ---
 
@@ -50,6 +53,10 @@ diptych start [feature] [options]
 ```
 
 Launch a complete plan-and-implement workflow. Without a feature argument the TUI opens to the home screen so you can pick one interactively. With a feature, diptych runs the planner, gathers approvals (per `--mode`), then dispatches the implementer loop. This is the canonical entry point for ordinary work.
+
+**Shorthand.** `diptych "feature"` is equivalent to `diptych start "feature"` — `start` is the default command (`isDefault`). No subcommand required for the happy path.
+
+**`@file` syntax.** Positional arguments prefixed with `@` are resolved as file paths and their contents are injected into the planner context. Example: `diptych "refactor auth" @context.md @screenshot.png`.
 
 ### Usage
 
@@ -93,6 +100,12 @@ diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
 ### Examples
 
 ```bash
+# Shorthand — no subcommand needed (start is default)
+diptych "fix the typo in README"
+
+# With @file context injection
+diptych "refactor auth" @design-notes.md @screenshot.png
+
 # Interactive TUI (no feature → home screen)
 diptych start
 
@@ -502,6 +515,165 @@ diptych resume --implementer claude-code --implementer-model claude-sonnet-4-5
 - The version guard rejects resume with: `saved state is from an older version and cannot be resumed. Please start a new workflow with 'diptych start'.`
 - `isResumable(state)` rejects terminal phases with: `Cannot resume from phase "<phase>".`
 - A short `Resuming: <feature> (phase: <phase>, task N/M)` line prints before the TUI mounts.
+
+---
+
+## diptych continue
+
+**Synopsis**
+
+```
+diptych continue [session-id-or-number] [--project <dir>]
+```
+
+Smart session continuity command. Figures out the right thing: attaches if the session is still running, resumes if it was interrupted. Replaces the mental model of choosing between `ps`, `attach`, `detach`, and `resume`.
+
+### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `<session-id-or-number>` | string \| number (positional) | most recent | Session ID, numeric alias from `ps`, or omitted for the most recent session. |
+| `--project <dir>` | path | cwd | Project directory. |
+
+### Examples
+
+```bash
+# Continue the most recent session (attach or resume)
+diptych continue
+
+# Continue by numeric alias from ps output
+diptych continue 1
+
+# Continue a specific session
+diptych continue 2026-05-01-add-auth
+```
+
+### Exit codes
+
+- `0` — attached or resumed successfully.
+- `1` — no sessions found, ambiguous target, or underlying attach/resume failure.
+
+### Files affected
+
+- **Reads:** `.diptych/active`, `.diptych/sessions/<id>/lockfile.json`, `.diptych/sessions/<id>/state.json`.
+- **Writes:** same as `attach` or `resume` depending on session state.
+
+### See also
+
+- `diptych last` — always targets the most recent session.
+- `diptych attach` — explicit attach to a running session.
+- `diptych resume` — explicit resume of an interrupted session.
+- `diptych ps` — list sessions with numeric aliases.
+
+### Behavior notes
+
+- When the target session is running (lockfile present, process alive), `continue` delegates to `attach`.
+- When the target session is not running but has resumable state, `continue` delegates to `resume`.
+- Numeric aliases correspond to the `#` column in `diptych ps` output.
+
+---
+
+## diptych last
+
+**Synopsis**
+
+```
+diptych last [--project <dir>]
+```
+
+Attach or resume the most recent session. Equivalent to `diptych continue` with no arguments — a shorthand for the 90% use case of "I left, I came back."
+
+### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--project <dir>` | path | cwd | Project directory. |
+
+### Examples
+
+```bash
+# Pick up where you left off
+diptych last
+```
+
+### Exit codes
+
+- `0` — attached or resumed successfully.
+- `1` — no sessions found, or underlying attach/resume failure.
+
+### Files affected
+
+- **Reads:** `.diptych/sessions/` (to find the most recent), `.diptych/sessions/<id>/lockfile.json`, `.diptych/sessions/<id>/state.json`.
+- **Writes:** same as `attach` or `resume` depending on session state.
+
+### See also
+
+- `diptych continue` — same behavior with optional session targeting.
+- `diptych ps` — see all sessions.
+
+### Behavior notes
+
+- Selects the session with the most recent `startTimeMs` regardless of status.
+- If the most recent session is running, attaches. If interrupted, resumes.
+
+---
+
+## diptych stats
+
+**Synopsis**
+
+```
+diptych stats [--project <dir>] [--json]
+```
+
+Show cumulative cost savings across all sessions in the project. Reads from `.diptych/stats.json` which is updated after each completed workflow.
+
+### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--project <dir>` | path | cwd | Project directory. |
+| `--json` | boolean | `false` | Emit machine-readable JSON output. |
+
+### Examples
+
+```bash
+# Human-readable savings summary
+diptych stats
+
+# Machine-readable for scripting
+diptych stats --json
+```
+
+### Exit codes
+
+- `0` — stats printed (or empty summary when no sessions have completed).
+- `1` — I/O failure reading stats file.
+
+### Output
+
+```
+Sessions: 23
+Total spent: $2.76
+All-planner estimate: $18.40
+Saved: $15.64 (85%)
+```
+
+### Files affected
+
+- **Reads:** `.diptych/stats.json`.
+- **Writes:** none.
+
+### See also
+
+- `diptych status --history` — per-session cost breakdown.
+- `diptych explain` — per-session cost confidence and routing decisions.
+
+### Behavior notes
+
+- `.diptych/stats.json` is updated atomically after each `workflow_complete` event.
+- When no stats file exists, prints a message indicating no sessions have completed yet.
+- The all-planner estimate uses the same pricing model as the per-run hero savings stat on the summary screen.
 
 ---
 
@@ -1241,8 +1413,9 @@ diptych ps --project ../service-b
 
 ### Output
 
-Columns (whitespace-aligned): `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPSED`, `FEATURE`.
+Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPSED`, `FEATURE`.
 
+- `#` is a numeric alias (1, 2, 3...) usable with `diptych attach 1`, `diptych continue 1`, etc.
 - `STATUS` is one of `running`, `exited`, `crashed`, `unknown`.
 - `ELAPSED` shows `Hh Mm Ss` / `Mm Ss` / `Ss`. For running sessions it's measured against the current clock; for finished sessions, against `exitedAt`.
 
