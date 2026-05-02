@@ -96,7 +96,13 @@ All four modes run the **brief quality gate** (`src/engine/spec/brief-quality.ts
 
 Approval gates are governed by `workflow.approve` (`none` | `spec` | `plan` | `all` | `default`). Each mode has a default (instant/quick → `none`, standard → `spec`, speckit → `all`); `default` follows that mode default. Override via `--approve <level>` on the CLI or `workflow.approve` in config. The legacy `--auto` flag is now a synonym for `--approve none`. Resolution flows through the single `resolveApproveLevel()` helper in `src/core/config/runtime/resolve.ts` (per spec invariant §2: gate decisions never read `config.workflow.autoApprove*` directly).
 
+**Cost-gated approval.** Before implementation starts, the brief review gate shows a cost-aware prompt: task count, estimated cost, all-planner comparison, and savings percentage. This transforms approval into an informed cost decision. The prompt renders as a rich TUI element with the savings comparison highlighted.
+
 The `/mode` slash command and `--mode` CLI flag both write into `config.workflow.mode`.
+
+**Planner heartbeat.** During planner calls, a heartbeat displays proof of life: an incrementing token counter and the current phase hint (e.g. "analyzing dependencies..."). This prevents dead-zone silences during long waits (>5 seconds). Implementation: `src/engine/orchestrator/planning/heartbeat.ts`.
+
+**Streaming partial output.** For API implementers (`kind: api`), the last N lines of generated output stream in real-time via a ring buffer. Users see code materializing instead of staring at a spinner. Implementation: `src/engine/orchestrator/task/streaming-feed.ts`, `src/engine/streaming/ring-buffer.ts`.
 
 ### 1.3 A normal `standard` run, step by step
 
