@@ -108,7 +108,6 @@ export function applyPlanEditorAction(
     case 'open-editor': return;
     case 'save': void onSave(); return;
     case 'discard': {
-      planEditorStore.setRuntimeRichMode(false);
       planEditorStore.reset();
       return;
     }

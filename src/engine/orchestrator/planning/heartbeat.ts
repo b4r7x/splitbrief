@@ -1,5 +1,5 @@
-import type { EventBus } from "../../events/types.js";
-import type { Phase } from "../../../core/schemas/enums.js";
+import type { EventBus } from '../../events/types.js';
+import type { Phase } from '../../../core/schemas/enums.js';
 
 export const HEARTBEAT_THRESHOLD_MS = 5000;
 export const HEARTBEAT_INTERVAL_MS = 2000;
@@ -24,7 +24,7 @@ export function startPlannerHeartbeat(
   let timer: ReturnType<typeof setInterval> | null = null;
   const publish = () => {
     bus.publish({
-      type: "planner_heartbeat",
+      type: 'planner_heartbeat',
       ts: Date.now(),
       phase,
       elapsedMs: Date.now() - startTime,
