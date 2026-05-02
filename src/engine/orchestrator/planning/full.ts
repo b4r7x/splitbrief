@@ -57,6 +57,7 @@ async function runNewPlanning(
       ...(resumeHolder && resumeHolder.messages.length > 0 ? { priorMessages: resumeHolder.messages } : {}),
       ...(opts.attachments && opts.attachments.length > 0 ? { attachments: opts.attachments } : {}),
       collectedQuestions,
+      phaseHint: 'analyzing codebase',
     });
     state = run.state;
     planResult = run.result;

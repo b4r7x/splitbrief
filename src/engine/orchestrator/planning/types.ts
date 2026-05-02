@@ -38,6 +38,7 @@ export type PlannerCallOptions = {
   priorMessages?: PriorMessage[] | undefined;
   collectedQuestions?: ClarificationQuestion[] | undefined;
   attachments?: Attachment[] | undefined;
+  phaseHint?: string | undefined;
 };
 
 export type BriefsApprovalLoopOptions = {

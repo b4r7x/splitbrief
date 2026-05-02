@@ -33,6 +33,7 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
       ...(opts.codebaseContext !== undefined ? { codebaseContext: opts.codebaseContext } : {}),
       ...(resumeHolder && resumeHolder.messages.length > 0 ? { priorMessages: resumeHolder.messages } : {}),
       ...(opts.attachments && opts.attachments.length > 0 ? { attachments: opts.attachments } : {}),
+      phaseHint: 'generating plan',
     });
     state = run.state;
     planResult = run.result;

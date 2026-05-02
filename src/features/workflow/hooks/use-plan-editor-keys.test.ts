@@ -56,7 +56,9 @@ describe('handlePlanEditorInput', () => {
     { label: 'Y', input: 'Y', expected: { type: 'save' } },
     { label: 'q', input: 'q', expected: { type: 'discard' } },
     { label: 'lowercase y', input: 'y', expected: { type: 'none' } },
-    { label: 'unrecognized input', input: 'x', expected: { type: 'none' } },
+    { label: 'x flags task', input: 'x', expected: { type: 'toggle-flag' } },
+    { label: 'R regenerates flagged', input: 'R', expected: { type: 'regenerate-flagged' } },
+    { label: 'unrecognized input', input: 'z', expected: { type: 'none' } },
     { label: 'empty input', input: '', expected: { type: 'none' } },
   ])('$label maps to $expected.type', ({ input, key, expected }) => {
     expect(handlePlanEditorInput(input, { ...noKey, ...key })).toEqual(expected);

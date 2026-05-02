@@ -38,6 +38,11 @@ export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEve
     next[next.length - 1] = event;
     return next;
   }
+  if (event.type === 'planner_heartbeat' && last?.type === 'planner_heartbeat') {
+    const next = events.slice();
+    next[next.length - 1] = event;
+    return next;
+  }
   if (events.length >= MAX_EVENTS) {
     return [...events.slice(1), event];
   }

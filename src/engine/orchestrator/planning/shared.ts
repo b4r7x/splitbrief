@@ -23,6 +23,7 @@ import type { BriefQualityReport } from '../../spec/brief-quality.js';
 import { drainQueue, formatDrainedMessages } from '../queue.js';
 import { buildRejectionContext, readEvidenceLedger } from '../evidence/evidence.js';
 import { regenerateTasks } from './regen.js';
+import { startPlannerHeartbeat } from './heartbeat.js';
 import type {
   PlannerCallRunResult,
   PlannerCallOptions,
@@ -87,6 +88,16 @@ export async function runPlannerCallInContinuationLoop(
   const conversational = planner.capabilities.supportsConversationalPlanning;
   let attachmentsConsumed = false;
 
+  const heartbeat = startPlannerHeartbeat(wctx.bus, state.phase, Date.now());
+  if (opts.phaseHint) heartbeat.updatePhaseHint(opts.phaseHint);
+  const unsubscribeHeartbeat = wctx.bus.subscribe((e) => {
+    if (e.type === 'cost_update') {
+      heartbeat.updateTokens(
+        (e.tokenUsage.plannerInput ?? 0) + (e.tokenUsage.plannerOutput ?? 0),
+      );
+    }
+  });
+
   const loop = await withContinuationLoop<PlanResult>({
     ctx: { projectDir, sessionId, callbacks, signal, sinks },
     state,
@@ -142,6 +153,9 @@ export async function runPlannerCallInContinuationLoop(
       return { value: result };
     },
   });
+
+  heartbeat.stop();
+  unsubscribeHeartbeat();
 
   state = loop.state;
   return { state, result: loop.value };

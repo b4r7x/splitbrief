@@ -30,6 +30,7 @@ import { buildWorkerPacketPreview, type WorkerPacketPreview } from '../worker-pa
 import type { RoutingDecision } from '../../../engine/orchestrator/context-routing.js';
 import { routeTaskToImplementerProfile } from '../../../engine/orchestrator/context-routing.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
+import { PlanEditorFooter } from './plan-editor-footer.js';
 
 interface PlanEditorComponentProps {
   filePath: string;
@@ -37,6 +38,7 @@ interface PlanEditorComponentProps {
   width?: number;
   sessionDirPath?: string;
   onApprove?: () => void;
+  onRegenerateFlagged?: () => Promise<void>;
 }
 
 function DetailList({ label, items }: { label: string; items: string[] }) {
@@ -232,10 +234,11 @@ function getVisibleTaskWindow(
   return { scrollOffset: start, visibleTasks: tasks.slice(start, end) };
 }
 
-function TaskEditorRow({ task, isCursor, isExpanded, issues }: {
+function TaskEditorRow({ task, isCursor, isExpanded, isFlagged, issues }: {
   task: Task;
   isCursor: boolean;
   isExpanded: boolean;
+  isFlagged: boolean;
   issues: BriefQualityIssue[];
 }) {
   const t = useTheme();
@@ -258,6 +261,7 @@ function TaskEditorRow({ task, isCursor, isExpanded, issues }: {
     <Box flexDirection="column">
       <Box flexDirection="row">
         <Text color={isCursor ? t.accent : t.text}>{prefix}</Text>
+        {isFlagged && <Text color={t.error}>✗ </Text>}
         <Text color={statusColor}>{statusSymbol} </Text>
         <Text bold color={t.accent}>{task.id}</Text>
         <Text> </Text>
@@ -278,7 +282,7 @@ function TaskEditorRow({ task, isCursor, isExpanded, issues }: {
   );
 }
 
-export function PlanEditorComponent({ filePath, height, width, sessionDirPath: sessionDirProp, onApprove }: PlanEditorComponentProps) {
+export function PlanEditorComponent({ filePath, height, width, sessionDirPath: sessionDirProp, onApprove, onRegenerateFlagged }: PlanEditorComponentProps) {
   const t = useTheme();
   const sessionDirPath = sessionDirProp ?? dirname(filePath);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -291,13 +295,14 @@ export function PlanEditorComponent({ filePath, height, width, sessionDirPath: s
     await rawSave();
   };
   const [isPacketPreviewOpen, setIsPacketPreviewOpen] = useState(false);
-  usePlanEditorKeys(true, save, sessionDirPath, () => setIsPacketPreviewOpen(open => !open));
+  usePlanEditorKeys(true, save, sessionDirPath, () => setIsPacketPreviewOpen(open => !open), onRegenerateFlagged);
   const [quality, setQuality] = useState<BriefQualityReport | null>(null);
   const [packetPreviewRefresh, setPacketPreviewRefresh] = useState<PacketPreviewRefresh | null>(null);
 
   const tasks = planEditorStore.use(s => s.tasks);
   const cursor = planEditorStore.use(s => s.cursor);
   const expandedIds = planEditorStore.use(s => s.expandedIds);
+  const flaggedIds = planEditorStore.use(s => s.flaggedIds);
   const dirty = planEditorStore.use(s => s.dirty);
   const saveError = planEditorStore.use(s => s.saveError);
   const reviewMetadata = planEditorStore.use(s => s.reviewMetadata);
@@ -483,6 +488,7 @@ export function PlanEditorComponent({ filePath, height, width, sessionDirPath: s
               task={task}
               isCursor={absoluteIndex === cursor}
               isExpanded={expandedIds.has(task.id)}
+              isFlagged={flaggedIds.has(task.id)}
               issues={issuesForTask}
             />
           );
@@ -496,21 +502,7 @@ export function PlanEditorComponent({ filePath, height, width, sessionDirPath: s
         <Text color={t.error} wrap="truncate">{saveError}</Text>
       )}
       <Box height={1} />
-      {isNarrow ? (
-        <>
-          <Text color={t.textDim} wrap="truncate">{isCollapsedPacketPreview ? 'packet preview collapsed · j/k nav · p preview' : 'j/k nav · p preview · d del · m merge'}</Text>
-          <Text color={t.textDim} wrap="truncate">{'e edit · s split · ^j/^k move · Y save · q quit · ?'}</Text>
-        </>
-      ) : (
-        <>
-          <Text color={t.textDim} wrap="truncate">
-            {isCollapsedPacketPreview
-              ? 'packet preview collapsed · j/k navigate · p packet preview'
-              : 'j/k navigate · p packet preview · d delete · m merge · e edit · s split'}
-          </Text>
-          <Text color={t.textDim} wrap="truncate">{'<c-j>/<c-k> reorder · Y save · q discard · ? help'}</Text>
-        </>
-      )}
+      <PlanEditorFooter isPacketPreviewOpen={isPacketPreviewOpen} isNarrow={isNarrow} />
     </Box>
   );
 }

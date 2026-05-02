@@ -40,6 +40,7 @@ import { addEvent, resetWorkflow, useSections } from '../../stores/workflow/acti
 import { controlsStore } from '../../stores/ui/controls.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { planEditorStore } from '../../stores/workflow/plan-editor.js';
+import { buildTargetedRejectionComment } from '../../engine/orchestrator/planning/regen-targeted.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { conversationScrollStore } from '../../stores/workflow/conversation-scroll.js';
 import { useStores } from '../../stores/use-stores.js';
@@ -290,6 +291,13 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
             width={contentWidth}
             sessionDirPath={dirname(reviewFilePath)}
             onApprove={() => inputMode.resolve({ approved: true })}
+            onRegenerateFlagged={async () => {
+              const flagged = planEditorStore.getFlaggedTasks();
+              if (flagged.length === 0) return;
+              const comment = buildTargetedRejectionComment(flagged);
+              planEditorStore.clearFlags();
+              inputMode.resolve({ approved: true, comment });
+            }}
           />
         ) : inputMode.mode === 'review' && reviewFilePath && phase === 'reviewing-briefs' ? (
           <BriefReviewView filePath={reviewFilePath} height={contentHeight} width={contentWidth} />

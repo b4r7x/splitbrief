@@ -2,6 +2,7 @@ import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { formatValidationError } from '../validation.js';
+import { createStreamingFeed } from './streaming-feed.js';
 
 import type { WorkflowContext } from '../types.js';
 import { recordTaskUsage } from '../tokens.js';
@@ -216,6 +217,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   if (wctx.signal?.aborted) return state;
 
   const textHandler = createBusTextHandler(wctx.bus, state.phase);
+  const streamingFeed = createStreamingFeed(task.id, config.implementer.kind === 'api');
 
   type ImplResult = Awaited<ReturnType<typeof wctx.implementer.implement>>;
   let implResult: ImplResult;
@@ -231,7 +233,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       body: async ({ signal, continuationPrompt, recordOutput }) => {
         const result = await wctx.implementer.implement({
           task, projectDir: staged?.projectDir ?? projectDir, config, context,
-          onOutput: (text) => { recordOutput(text); textHandler(text); },
+          onOutput: (text) => { recordOutput(text); textHandler(text); streamingFeed.onText(text); },
           sessionId,
           signal,
           continuationPrompt,
@@ -273,7 +275,9 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     });
     state = loop.state;
     implResult = loop.value;
+    streamingFeed.stop();
   } catch (err) {
+    streamingFeed.stop();
     staged?.cleanup();
     publishError(wctx.bus, state.phase, labelError('Implementation failed', err));
     const retry = await retryAndRecord({

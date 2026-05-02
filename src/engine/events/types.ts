@@ -26,6 +26,7 @@ export type EngineEvent =
   // Planner stream
   | { type: 'planner_status'; ts: number; phase: Phase; status: 'running' | 'done'; tool?: string; model?: string; duration?: number; summary?: string }
   | { type: 'planner_text'; ts: number; phase: Phase; text: string }
+  | { type: 'planner_heartbeat'; ts: number; phase: Phase; elapsedMs: number; accumulatedTokens: number; phaseHint?: string }
   // Planning phase milestones
   | { type: 'research_done'; ts: number; phase: Phase }
   | { type: 'spec_done'; ts: number; phase: Phase }

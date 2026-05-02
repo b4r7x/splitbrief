@@ -69,4 +69,23 @@ describe('eventsStore — append via addEvent', () => {
       expect(eventsStore.get().events).toHaveLength(2);
     });
   });
+
+  describe('planner_heartbeat coalescing', () => {
+    it('replaces consecutive heartbeat with the latest', () => {
+      addEvent({ type: 'planner_heartbeat', ts: 1000, phase: 'planning', elapsedMs: 5000, accumulatedTokens: 100 });
+      addEvent({ type: 'planner_heartbeat', ts: 3000, phase: 'planning', elapsedMs: 7000, accumulatedTokens: 200 });
+      const events = eventsStore.get().events;
+      expect(events).toHaveLength(1);
+      const hb = events[0] as { type: string; elapsedMs: number; accumulatedTokens: number };
+      expect(hb.elapsedMs).toBe(7000);
+      expect(hb.accumulatedTokens).toBe(200);
+    });
+
+    it('does not replace heartbeat when a different event type intervenes', () => {
+      addEvent({ type: 'planner_heartbeat', ts: 1000, phase: 'planning', elapsedMs: 5000, accumulatedTokens: 100 });
+      addEvent(makePlannerText({ text: 'thinking' }));
+      addEvent({ type: 'planner_heartbeat', ts: 3000, phase: 'planning', elapsedMs: 7000, accumulatedTokens: 200 });
+      expect(eventsStore.get().events).toHaveLength(3);
+    });
+  });
 });
