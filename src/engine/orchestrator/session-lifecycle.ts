@@ -7,6 +7,7 @@ import type { EventBus } from '../events/types.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
 import { clearActive } from '../../core/sessions/lifecycle.js';
 import { saveSummary } from '../../core/sessions/io.js';
+import { updateStats } from '../../core/stats/persistence.js';
 import { warnError } from '../../lib/warn.js';
 import { withSignalHandlers } from './signals.js';
 import { shutdownWorkflow } from './final-review.js';
@@ -37,6 +38,19 @@ export function saveFinalSession(opts: SaveFinalSessionOpts): void {
       summary: opts.summary,
     };
     saveSummary(opts.projectDir, opts.sessionId, session);
+    if (opts.summary.costBreakdown && opts.summary.costBreakdown.hasSavingsEstimate !== false) {
+      try {
+        updateStats(opts.projectDir, {
+          costBreakdown: opts.summary.costBreakdown,
+          totalTasks: opts.summary.totalTasks,
+          completedByLocal: opts.summary.completedByLocal,
+          escalatedToPlanner: opts.summary.escalatedToPlanner,
+          providerCosts: opts.summary.costBreakdown.providerCosts,
+        });
+      } catch {
+        // stats update is best-effort; don't fail session save
+      }
+    }
     if (!opts.preserveActive) clearActive(opts.projectDir);
   } catch (err) {
     warnError('Failed to save final session', err);

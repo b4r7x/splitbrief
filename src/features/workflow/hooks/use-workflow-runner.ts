@@ -7,6 +7,7 @@ import type { EngineEvent } from '../../../engine/events/types.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import { addEvent, resetWorkflow } from '../../../stores/workflow/actions.js';
 import { openApprovalPrompt } from '../../../stores/approval-prompt/actions.js';
+import { openCostApprovalPrompt } from '../../../stores/cost-approval/actions.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
@@ -40,6 +41,7 @@ import { getRunnerDisplayName, getRunnerModelName } from '../../../core/config/a
 import { resolveAutoModel } from '../../../core/providers/model-selection.js';
 import { REVIEW_HINT } from '../review-parser.js';
 import { formatCost } from '../../../core/formatting.js';
+import { formatCostGateSummary } from '../../../engine/orchestrator/cost-gate.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 import { buildRewindAction } from './build-rewind-action.js';
 import { formatUserEditConflictPrompt, parseUserEditConflictAnswer } from '../user-edit-conflict-prompt.js';
@@ -288,6 +290,11 @@ export function useWorkflowRunner({
               const issue = buildBudgetPromptIssue('budget-paused', currentCost, maxBudget);
               const answer = await inputMode.setQuestionMode(formatRecoveryPrompt(issue));
               return parseRecoveryActionAnswer(answer, issue) === 'continue' ? 'continue' : 'abort';
+            },
+            onCostApprovalNeeded: async (prediction) => {
+              const summary = formatCostGateSummary(prediction);
+              if (!summary) return true;
+              return openCostApprovalPrompt(prediction);
             },
             onContinuationNeeded: async (_partial) =>
               inputMode.setQuestionMode('Task interrupted. Enter instructions to continue (or press Enter to retry):'),
