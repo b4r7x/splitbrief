@@ -68,34 +68,14 @@ function writeState(sessDir: string, phase: string, extra: Record<string, unknow
   writeFileSync(join(sessDir, 'state.json'), JSON.stringify(state));
 }
 
-// Mock heavy dependencies to keep tests fast and isolated.
+// Only mock the render layer (UI boundary) and deps that produce side effects
+// beyond the fs: initStores, renderApp, headless, crash-diagnostic, setupWorkflow.
 vi.mock('../../app.js', () => ({ App: () => null }));
 vi.mock('../render.js', () => ({ renderApp: vi.fn() }));
 vi.mock('../init-stores.js', () => ({ initStores: vi.fn() }));
-vi.mock('../../stores/navigation/router.js', () => ({
-  routerStore: { init: vi.fn() },
-}));
-vi.mock('../setup.js', () => ({
-  resolveProjectDir: (p: string) => p,
-  setupWorkflow: vi.fn().mockResolvedValue({ useFullscreen: false, useMouse: false }),
-}));
-vi.mock('../options.js', () => ({
-  addWorkflowOptions: (cmd: unknown) => cmd,
-}));
-vi.mock('../../core/migration/executor.js', () => ({
-  maybeMigrate: vi.fn().mockResolvedValue({ migrated: false }),
-}));
-vi.mock('./migrate.js', () => ({
-  printMigrationResult: vi.fn(),
-}));
-vi.mock('../headless.js', () => ({
-  runHeadless: vi.fn(),
-}));
+vi.mock('../headless.js', () => ({ runHeadless: vi.fn() }));
 vi.mock('../../engine/ipc/crash-diagnostic.js', () => ({
   showCrashDiagnostic: vi.fn(),
-}));
-vi.mock('../platform.js', () => ({
-  assertNotWindows: vi.fn(),
 }));
 
 describe('continueCommand', () => {

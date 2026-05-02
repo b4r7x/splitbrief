@@ -2,18 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { isCliError } from '../errors.js';
-
-vi.mock('../../engine/worktree.js', () => ({
-  listWorktrees: vi.fn(),
-  removeWorktree: vi.fn(),
-}));
-
 import { registerWorktreeCommand } from './worktree.js';
-import { listWorktrees, removeWorktree } from '../../engine/worktree.js';
+import type { WorktreeDeps } from './worktree.js';
 import type { WorktreeInfo } from '../../engine/worktree.js';
 
 let tmp: string;
 let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+const mockListWorktrees = vi.fn<() => Promise<WorktreeInfo[]>>().mockResolvedValue([]);
+const mockRemoveWorktree = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+
+const fakeDeps: WorktreeDeps = {
+  listWorktrees: mockListWorktrees as unknown as WorktreeDeps['listWorktrees'],
+  removeWorktree: mockRemoveWorktree as unknown as WorktreeDeps['removeWorktree'],
+};
 
 const makeWorktree = (overrides: Partial<WorktreeInfo> = {}): WorktreeInfo => ({
   name: 'my-feature',
@@ -30,8 +32,8 @@ beforeEach(() => {
   tmp = createTempDir('worktree-command-test');
   Object.defineProperty(process.stdout, 'columns', { value: 200, configurable: true });
   consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-  vi.mocked(listWorktrees).mockReset().mockResolvedValue([]);
-  vi.mocked(removeWorktree).mockReset().mockResolvedValue(undefined);
+  mockListWorktrees.mockReset().mockResolvedValue([]);
+  mockRemoveWorktree.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -47,13 +49,13 @@ async function runWorktree(args: string[]): Promise<void> {
   const program = new Command();
   program.exitOverride();
   program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
-  registerWorktreeCommand(program);
+  registerWorktreeCommand(program, fakeDeps);
   await program.parseAsync(['node', 'diptych', 'worktree', ...args, '--project', tmp]);
 }
 
 describe('worktree list — empty', () => {
   it('prints "no worktrees" message when listWorktrees returns []', async () => {
-    vi.mocked(listWorktrees).mockResolvedValue([]);
+    mockListWorktrees.mockResolvedValue([]);
     await runWorktree(['list']);
     expect(captureOutput()).toContain('No diptych-managed worktrees found.');
   });
@@ -61,7 +63,7 @@ describe('worktree list — empty', () => {
 
 describe('worktree list — with entries', () => {
   it('prints headers and one row per WorktreeInfo entry', async () => {
-    vi.mocked(listWorktrees).mockResolvedValue([
+    mockListWorktrees.mockResolvedValue([
       makeWorktree({ name: 'my-feature', branch: 'diptych/my-feature', status: 'none', sessionId: null }),
       makeWorktree({ name: 'quick-fix', branch: 'diptych/quick-fix', status: 'none', sessionId: null }),
     ]);
@@ -84,7 +86,7 @@ describe('worktree list — with entries', () => {
   });
 
   it('shows session ID, phase, and last-updated for active status', async () => {
-    vi.mocked(listWorktrees).mockResolvedValue([
+    mockListWorktrees.mockResolvedValue([
       makeWorktree({
         name: 'active-wt',
         branch: 'diptych/active-wt',
@@ -105,7 +107,7 @@ describe('worktree list — with entries', () => {
   });
 
   it('prints unknown for missing session metadata', async () => {
-    vi.mocked(listWorktrees).mockResolvedValue([
+    mockListWorktrees.mockResolvedValue([
       makeWorktree({ name: 'idle-wt', branch: 'diptych/idle-wt', status: 'idle', sessionId: 'dip-def456' }),
     ]);
 
@@ -120,7 +122,7 @@ describe('worktree list — with entries', () => {
 
 describe('worktree switch', () => {
   it('prints cd hint when worktree exists', async () => {
-    vi.mocked(listWorktrees).mockResolvedValue([
+    mockListWorktrees.mockResolvedValue([
       makeWorktree({ name: 'my-feature' }),
     ]);
 
@@ -133,7 +135,7 @@ describe('worktree switch', () => {
   });
 
   it('exits 1 when worktree does not exist', async () => {
-    vi.mocked(listWorktrees).mockResolvedValue([]);
+    mockListWorktrees.mockResolvedValue([]);
 
     let captured: unknown;
     try {
@@ -149,7 +151,7 @@ describe('worktree switch', () => {
 
 describe('worktree remove', () => {
   it('prints success message on removal', async () => {
-    vi.mocked(listWorktrees).mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
+    mockListWorktrees.mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
 
     await runWorktree(['remove', 'my-feature']);
 
@@ -158,12 +160,12 @@ describe('worktree remove', () => {
   });
 
   it('prints success message when --force is used', async () => {
-    vi.mocked(listWorktrees).mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
+    mockListWorktrees.mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
 
     const program = new Command();
     program.exitOverride();
     program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
-    registerWorktreeCommand(program);
+    registerWorktreeCommand(program, fakeDeps);
     await program.parseAsync(['node', 'diptych', 'worktree', 'remove', 'my-feature', '--force', '--project', tmp]);
 
     const out = captureOutput();
@@ -171,12 +173,12 @@ describe('worktree remove', () => {
   });
 
   it('prints branch deletion message when --delete-branch is used', async () => {
-    vi.mocked(listWorktrees).mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
+    mockListWorktrees.mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
 
     const program = new Command();
     program.exitOverride();
     program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
-    registerWorktreeCommand(program);
+    registerWorktreeCommand(program, fakeDeps);
     await program.parseAsync([
       'node', 'diptych', 'worktree', 'remove', 'my-feature', '--delete-branch', '--project', tmp,
     ]);
@@ -186,8 +188,8 @@ describe('worktree remove', () => {
   });
 
   it('propagates cliError when removeWorktree rejects', async () => {
-    vi.mocked(listWorktrees).mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
-    vi.mocked(removeWorktree).mockRejectedValue(
+    mockListWorktrees.mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
+    mockRemoveWorktree.mockRejectedValue(
       new Error('Worktree ".trees/my-feature" has a live session. Stop it first.'),
     );
 
@@ -203,7 +205,7 @@ describe('worktree remove', () => {
   });
 
   it('exits 1 when worktree does not exist', async () => {
-    vi.mocked(listWorktrees).mockResolvedValue([]);
+    mockListWorktrees.mockResolvedValue([]);
 
     let captured: unknown;
     try {

@@ -364,6 +364,59 @@ describe('config loading', () => {
 
       expect(() => loadConfig(dir)).toThrow(/Malformed YAML/);
     });
+
+    it('throws mentioning the missing field when shell implementer lacks command', () => {
+      const dir = join(TMP, 'missing-command');
+      writeConfigYaml(dir, {
+        version: 3,
+        implementer: { kind: 'shell', model: 'llama3' },
+      });
+
+      expect(() => loadConfig(dir)).toThrow(/implementer\.command/);
+    });
+
+    it('throws mentioning expected type when temperature is a string', () => {
+      const dir = join(TMP, 'wrong-type-temperature');
+      writeConfigYaml(dir, {
+        version: 3,
+        implementer: { kind: 'api', provider: 'ollama', model: 'llama3', api_base: 'http://localhost:11434/v1', temperature: 'hot' },
+      });
+
+      let thrownMessage = '';
+      try { loadConfig(dir); } catch (err) { thrownMessage = (err as Error).message; }
+      expect(thrownMessage).toContain('implementer.temperature');
+      expect(thrownMessage).toMatch(/number|type/i);
+    });
+
+    it('throws identifying invalid runner kind in the error message (v3 config)', () => {
+      const dir = join(TMP, 'unknown-runner-kind');
+      writeConfigYaml(dir, {
+        version: 3,
+        implementer: { kind: 'magic', model: 'llama3' },
+      });
+
+      let thrownMessage = '';
+      try { loadConfig(dir); } catch (err) { thrownMessage = (err as Error).message; }
+      // Thrown error identifies the problematic path and provides diagnostic info
+      expect(thrownMessage).toContain('implementer.kind');
+      expect(thrownMessage).toMatch(/invalid|expected|discriminator/i);
+    });
+
+    it('invalid YAML syntax error says "Malformed YAML" not a cryptic Zod path', () => {
+      const dir = join(TMP, 'yaml-syntax-error');
+      const configDir = join(dir, DIPTYCH_DIR);
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, 'config.yaml'), ':\n  bad: [unclosed', 'utf-8');
+
+      let thrownMessage = '';
+      try {
+        loadConfig(dir);
+      } catch (err) {
+        thrownMessage = (err as Error).message;
+      }
+      expect(thrownMessage).toContain('Malformed YAML');
+      expect(thrownMessage).not.toMatch(/path.*\..*\./);
+    });
   });
 
   describe('toYaml', () => {

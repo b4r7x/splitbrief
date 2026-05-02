@@ -5,21 +5,12 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { registerStartCommand } from './start.js';
+import type { StartDeps } from './start.js';
 import { CONFIG_FILE, DIPTYCH_DIR, STATE_FILE, worktreePath } from '../../core/paths.js';
 import { isCliError } from '../errors.js';
 import type { SpawnServerOptions } from '../../engine/ipc/spawn-server.js';
 
-const spawnServerMock = vi.hoisted(() => vi.fn());
-const runHeadlessMock = vi.hoisted(() => vi.fn());
-
-vi.mock('../../engine/ipc/spawn-server.js', () => ({
-  spawnServer: spawnServerMock,
-}));
-
-vi.mock('../headless.js', () => ({
-  runHeadless: runHeadlessMock,
-}));
-
+// Keep render-layer mocks (UI boundary exceptions per project rules)
 vi.mock('../init-stores.js', () => ({
   initStores: vi.fn().mockResolvedValue(undefined),
 }));
@@ -29,9 +20,16 @@ vi.mock('../render.js', () => ({
 }));
 
 import { routerStore } from '../../stores/navigation/router.js';
-import { spawnServer } from '../../engine/ipc/spawn-server.js';
 import { renderApp } from '../render.js';
 import { initStores } from '../init-stores.js';
+
+const spawnServerMock = vi.fn<(opts: SpawnServerOptions) => Promise<{ ok: true; pid: number; sessionId: string }>>();
+const runHeadlessMock = vi.fn<() => Promise<void>>();
+
+const fakeDeps: StartDeps = {
+  spawnServer: spawnServerMock,
+  runHeadless: runHeadlessMock as unknown as StartDeps['runHeadless'],
+};
 
 let tmp: string;
 
@@ -41,8 +39,9 @@ beforeEach(() => {
   routerStore.init({ screen: 'home' });
   vi.mocked(renderApp).mockClear();
   vi.mocked(initStores).mockClear();
+  spawnServerMock.mockClear();
   runHeadlessMock.mockClear();
-  vi.mocked(spawnServer).mockImplementation(async (opts: SpawnServerOptions) => {
+  spawnServerMock.mockImplementation(async (opts: SpawnServerOptions) => {
     mkdirSync(opts.sessionDir, { recursive: true });
     writeFileSync(
       join(opts.sessionDir, 'server-args.json'),
@@ -87,8 +86,8 @@ function writeConfigMarker(projectDir: string): void {
 function writeReadyReadinessFixtures(projectDir: string): void {
   mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
   writeFileSync(join(projectDir, '.git', 'info', 'exclude'), '.diptych/\npackage.json\n');
-  const configPath = join(projectDir, DIPTYCH_DIR, CONFIG_FILE);
-  writeFileSync(configPath, [
+  const configFilePath = join(projectDir, DIPTYCH_DIR, CONFIG_FILE);
+  writeFileSync(configFilePath, [
     'version: 3',
     'planner:',
     '  kind: api',
@@ -113,7 +112,7 @@ function writeReadyReadinessFixtures(projectDir: string): void {
     '  persistTranscript: true',
     '  mode: standard',
   ].join('\n'));
-  chmodSync(configPath, 0o600);
+  chmodSync(configFilePath, 0o600);
   writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run' } }, null, 2));
 }
 
@@ -127,7 +126,7 @@ function readOnlySessionArtifact(projectDir: string, artifact: string): unknown 
 async function runStart(args: string[]): Promise<void> {
   const program = new Command();
   program.exitOverride();
-  registerStartCommand(program);
+  registerStartCommand(program, fakeDeps);
   await program.parseAsync(['node', 'diptych', 'start', ...args]);
 }
 
@@ -213,7 +212,7 @@ describe('start command — --worktree flag', () => {
 
   it('applies --worktree before --detach creates detached session artifacts', async () => {
     const wtPath = worktreePath(tmp, 'detached-feature');
-    vi.mocked(spawnServer).mockClear();
+    spawnServerMock.mockClear();
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
     await runStart(['--project', tmp, '--worktree', 'detached-feature', '--detach', 'implement X']);
@@ -227,7 +226,7 @@ describe('start command — --worktree flag', () => {
   });
 
   it('persists detached CLI overrides in the server args artifact', async () => {
-    vi.mocked(spawnServer).mockClear();
+    spawnServerMock.mockClear();
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
     await runStart([
@@ -270,7 +269,7 @@ describe('start command — --worktree flag', () => {
   });
 
   it('rejects --detach without a feature argument before creating any worktree', async () => {
-    vi.mocked(spawnServer).mockClear();
+    spawnServerMock.mockClear();
 
     let captured: unknown;
     try {
@@ -283,11 +282,11 @@ describe('start command — --worktree flag', () => {
     expect(isCliError(captured)).toBe(true);
     expect((captured as Error).message).toContain('--detach requires a feature');
     expect(existsSync(worktreePath(tmp, 'orphan'))).toBe(false);
-    expect(vi.mocked(spawnServer)).not.toHaveBeenCalled();
+    expect(spawnServerMock).not.toHaveBeenCalled();
   });
 
   it('rejects --detach + --json before creating any worktree', async () => {
-    vi.mocked(spawnServer).mockClear();
+    spawnServerMock.mockClear();
 
     let captured: unknown;
     try {
@@ -306,7 +305,7 @@ describe('start command — --worktree flag', () => {
     expect(isCliError(captured)).toBe(true);
     expect((captured as Error).message).toContain('--detach and --json cannot be combined');
     expect(existsSync(worktreePath(tmp, 'combo'))).toBe(false);
-    expect(vi.mocked(spawnServer)).not.toHaveBeenCalled();
+    expect(spawnServerMock).not.toHaveBeenCalled();
   });
 });
 
@@ -429,7 +428,7 @@ describe('start command — shorthand invocation', () => {
 
     const program = new Command();
     program.exitOverride();
-    registerStartCommand(program);
+    registerStartCommand(program, fakeDeps);
     await program.parseAsync(['node', 'diptych', 'implement auth flow']);
 
     expect(routerStore.get()).toMatchObject({ screen: 'workflow', feature: 'implement auth flow' });
@@ -438,7 +437,7 @@ describe('start command — shorthand invocation', () => {
   it('does not hijack explicit subcommands registered on the same program', async () => {
     const program = new Command();
     program.exitOverride();
-    registerStartCommand(program);
+    registerStartCommand(program, fakeDeps);
 
     let specCalled = false;
     program.command('spec').action(() => { specCalled = true; });
@@ -453,7 +452,7 @@ describe('start command — shorthand invocation', () => {
 
     const program = new Command();
     program.exitOverride();
-    registerStartCommand(program);
+    registerStartCommand(program, fakeDeps);
     await program.parseAsync(['node', 'diptych', '--mode', 'quick', 'build feature X', '--project', tmp]);
 
     expect(routerStore.get()).toMatchObject({ screen: 'workflow', feature: 'build feature X' });
@@ -471,7 +470,7 @@ describe('start command — @file syntax', () => {
 
     const program = new Command();
     program.exitOverride();
-    registerStartCommand(program);
+    registerStartCommand(program, fakeDeps);
     await program.parseAsync(['node', 'diptych', 'start', 'build it', '@brief.md', '--project', tmp]);
 
     expect(routerStore.get()).toMatchObject({ screen: 'workflow' });
@@ -486,7 +485,7 @@ describe('start command — @file syntax', () => {
 
     const program = new Command();
     program.exitOverride();
-    registerStartCommand(program);
+    registerStartCommand(program, fakeDeps);
     await program.parseAsync(['node', 'diptych', 'start', 'build it', '@ghost.md', '--project', tmp]);
 
     expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('@ghost.md'));

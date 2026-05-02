@@ -4,6 +4,17 @@ What diptych optimizes for, where it's going, and what tradeoffs we accept. Read
 
 ---
 
+## Next Up (unimplemented — pick these up next)
+
+These are specced in DIRECTION but not yet built. Each is a standalone feature, implementable independently:
+
+1. **Unified autocomplete** (AD-11) — `/` for slash commands, `@` for file paths, Tab for per-command argument completion. One fuzzy-ranked dropdown for all discovery.
+2. **Structured compaction** (AD-12) — When planning context exceeds limits, summarize with `Goal / Steps Completed / Current Step / Files Modified / Constraints Discovered`. Incremental merge (don't regenerate).
+3. **External `$EDITOR` integration** — Open user's editor for writing long feature descriptions. Pasting multi-paragraph specs into terminal input is painful.
+4. **HTML/Markdown session export** — Export workflow results as shareable artifact. For sharing reports, demonstrating value, onboarding teammates.
+
+---
+
 ## UX Principles
 
 diptych is a CLI tool. CLI tools are loved when they respect the developer's time and attention. Seven principles guide every UX decision:
@@ -81,6 +92,8 @@ Design goals:
 ### AD-2: No god-functions in the orchestrator
 
 Any function exceeding ~300 lines with 5+ responsibilities must be decomposed. Extract named helpers at the responsibility boundary. The orchestrator is the most-changed code; readability > compactness.
+
+Canonical example: `src/engine/orchestrator/task/step.ts` (474 → 283 LOC) was decomposed into four focused modules: `pre-task.ts` (pre-hook dispatch, task-start event, snapshot), `run-implementation.ts` (continuation loop, streaming, staging), `apply-changed-files.ts` (post-impl approval, promotion, conflict detection), and `resolve-deps.ts` (dependency resolution).
 
 ### AD-3: Selector narrowness is performance
 
@@ -227,6 +240,8 @@ These are diptych-only features that no comparable tool offers:
 ## Session Model (implemented 2026-05-01)
 
 The session model uses an append-only JSONL tree with typed entries. This is the foundation for intelligent recovery, cost tracking, and workflow visibility. Implementation: `src/core/sessions/tree/`.
+
+The `TreeRecorder` EventSink (`src/engine/events/sinks/tree-recorder.ts`) is registered in `run/init.ts` and actively records every workflow execution. It maps `EngineEvent` instances to tree entries and branches on recovery. This runs alongside the existing JSONL sink — the tree provides structured navigation while JSONL provides raw replay.
 
 ### Data model
 
