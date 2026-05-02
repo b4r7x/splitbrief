@@ -20,6 +20,8 @@ import { registerWorktreeCommand } from './cli/commands/worktree.js';
 import { registerAttachCommand } from './cli/commands/attach.js';
 import { registerDetachCommand } from './cli/commands/detach.js';
 import { registerPsCommand } from './cli/commands/ps.js';
+import { registerContinueCommand } from './cli/commands/continue.js';
+import { registerLastCommand } from './cli/commands/last.js';
 import { isCliError } from './cli/errors.js';
 import { HELP_EXAMPLES } from './cli/help-examples.js';
 import { toErrorMessage } from './utils/format-errors.js';
@@ -52,6 +54,8 @@ registerWorktreeCommand(program);
 registerAttachCommand(program);
 registerDetachCommand(program);
 registerPsCommand(program);
+registerContinueCommand(program);
+registerLastCommand(program);
 
 program.parseAsync().catch((err) => {
   if (isCliError(err)) {

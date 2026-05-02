@@ -1,0 +1,38 @@
+import { Command } from 'commander';
+import { resolveProjectDir } from '../setup.js';
+import { cliError } from '../errors.js';
+import { assertNotWindows } from '../platform.js';
+import { buildAliasedSessions } from '../session-aliases.js';
+import { continueCommand } from './continue.js';
+import { addWorkflowOptions } from '../options.js';
+import type { WorkflowOpts } from '../../core/types/config-options.js';
+
+async function findMostRecentSession(projectDir: string): Promise<string> {
+  const sessions = await buildAliasedSessions(projectDir);
+
+  if (sessions.length === 0) {
+    throw cliError('no sessions found; start one with `diptych start`.', 1);
+  }
+
+  const newest = sessions[0];
+  if (!newest) throw cliError('no sessions found; start one with `diptych start`.', 1);
+  return newest.sessionId;
+}
+
+export async function lastCommand(opts: { projectDir: string } & WorkflowOpts): Promise<void> {
+  assertNotWindows();
+
+  const sessionId = await findMostRecentSession(opts.projectDir);
+  await continueCommand(sessionId, opts);
+}
+
+export function registerLastCommand(program: Command): void {
+  addWorkflowOptions(
+    program
+      .command('last')
+      .description('Continue the most recent session (attaches if running, resumes if interrupted)'),
+  ).action(async (opts: WorkflowOpts) => {
+    const projectDir = resolveProjectDir(opts.project);
+    await lastCommand({ ...opts, projectDir });
+  });
+}

@@ -92,6 +92,7 @@ export async function psCommand(opts: { projectDir: string }): Promise<void> {
 
   const now = Date.now();
 
+  const ALIAS_W = Math.max(2, '#'.length, String(rows.length).length);
   const SID_W = Math.max(10, 'SESSION ID'.length, ...rows.map((r) => r.sessionId.length));
   const STATUS_W = Math.max(7, 'STATUS'.length);
   const PID_W = Math.max(5, 'PID'.length, ...rows.map((r) => String(r.pid ?? '-').length));
@@ -99,6 +100,7 @@ export async function psCommand(opts: { projectDir: string }): Promise<void> {
   const ELAPSED_W = Math.max(9, 'ELAPSED'.length);
 
   const header = [
+    '#'.padEnd(ALIAS_W),
     'SESSION ID'.padEnd(SID_W),
     'STATUS'.padEnd(STATUS_W),
     'PID'.padEnd(PID_W),
@@ -109,10 +111,12 @@ export async function psCommand(opts: { projectDir: string }): Promise<void> {
 
   console.log(header);
 
-  for (const row of rows) {
+  for (const [i, row] of rows.entries()) {
+    const alias = String(i + 1);
     const endMs = row.endTimeMs ?? (row.status === 'running' ? now : (row.lastAliveMs ?? row.startTimeMs));
     const elapsed = row.startTimeMs > 0 ? formatElapsed(row.startTimeMs, endMs) : '-';
     const line = [
+      alias.padEnd(ALIAS_W),
       row.sessionId.padEnd(SID_W),
       row.status.padEnd(STATUS_W),
       String(row.pid ?? '-').padEnd(PID_W),

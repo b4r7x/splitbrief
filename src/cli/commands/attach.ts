@@ -12,6 +12,7 @@ import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import { showCrashDiagnostic } from '../../engine/ipc/crash-diagnostic.js';
 import { sessionsRoot, sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import { isNumericAlias, resolveNumericAlias } from '../session-aliases.js';
 
 async function resolveRunningSession(projectDir: string): Promise<string> {
   const root = sessionsRoot(projectDir);
@@ -29,7 +30,8 @@ async function resolveRunningSession(projectDir: string): Promise<string> {
     if (status.alive) running.push(entry.name);
   }
 
-  if (running.length === 1) return running[0]!;
+  const [single] = running;
+  if (running.length === 1 && single) return single;
   if (running.length === 0) {
     throw cliError('no running sessions found; pass <session-id> explicitly', 1);
   }
@@ -75,6 +77,9 @@ export function registerAttachCommand(program: Command): void {
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (sessionId: string | undefined, opts: { project?: string }) => {
       const projectDir = resolveProjectDir(opts.project);
-      await attachCommand(sessionId, { projectDir });
+      const resolvedId = sessionId !== undefined && isNumericAlias(sessionId)
+        ? await resolveNumericAlias(sessionId, projectDir)
+        : sessionId;
+      await attachCommand(resolvedId, { projectDir });
     });
 }
