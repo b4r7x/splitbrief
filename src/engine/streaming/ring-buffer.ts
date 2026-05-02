@@ -9,7 +9,6 @@ export interface RingBuffer {
 export function createRingBuffer(capacity: number = DEFAULT_CAPACITY): RingBuffer {
   const buffer: string[] = [];
   let writeIndex = 0;
-  let count = 0;
 
   return {
     push(line: string): void {
@@ -19,21 +18,14 @@ export function createRingBuffer(capacity: number = DEFAULT_CAPACITY): RingBuffe
         buffer[writeIndex] = line;
       }
       writeIndex = (writeIndex + 1) % capacity;
-      count = Math.min(count + 1, capacity);
     },
     lines(): string[] {
       if (buffer.length < capacity) return buffer.slice();
-      const start = writeIndex;
-      const result: string[] = [];
-      for (let i = 0; i < count; i++) {
-        result.push(buffer[(start + i) % capacity]!);
-      }
-      return result;
+      return [...buffer.slice(writeIndex), ...buffer.slice(0, writeIndex)];
     },
     clear(): void {
       buffer.length = 0;
       writeIndex = 0;
-      count = 0;
     },
   };
 }

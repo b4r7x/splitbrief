@@ -4,7 +4,8 @@ import { streamingOutputStore } from '../../../../stores/workflow/streaming-outp
 
 export function StreamingLines() {
   const t = useTheme();
-  const { lines, active } = streamingOutputStore.use(s => s);
+  const lines = streamingOutputStore.use(s => s.lines);
+  const active = streamingOutputStore.use(s => s.active);
 
   if (!active || lines.length === 0) return null;
 
