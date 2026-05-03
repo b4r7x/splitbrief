@@ -9,12 +9,19 @@ export type UserEditConflictKind =
   | 'dependency-file-conflict'
   | 'changed-during-approval-promotion';
 
-export type UserEditConflictAction =
-  | 'continue-unrelated'
-  | 'regenerate-rebase'
-  | 'pause'
-  | 'skip-current-task'
-  | 'abort-workflow';
+export const USER_EDIT_CONFLICT_ACTIONS = [
+  'continue-unrelated',
+  'regenerate-rebase',
+  'pause',
+  'skip-current-task',
+  'abort-workflow',
+] as const;
+
+export type UserEditConflictAction = (typeof USER_EDIT_CONFLICT_ACTIONS)[number];
+
+export function isUserEditConflictAction(value: string): value is UserEditConflictAction {
+  return (USER_EDIT_CONFLICT_ACTIONS as readonly string[]).includes(value);
+}
 
 export type UserEditConflictFile = {
   file: string;

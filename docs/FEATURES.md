@@ -842,6 +842,20 @@ diptych start --json --allow-hooks --mode quick "add lint rule for empty catch" 
 
 The first line is `{ type: "readiness_report", report: ... }`. After that, `stdoutJsonSink` in `src/engine/events/sinks/stdout-json.ts` emits one `EngineEvent` JSON object per line.
 
+### `diptych start --rpc`
+
+**What it does.** Runs without Ink like headless mode, but keeps stdin open for external controllers. Stdin accepts NDJSON commands: `approve`, `reject`, `message`, `recovery`, `status`, `abort`, and `slash`. Stdout emits NDJSON responses with `type: "ack"`, `"error"`, `"status"`, or `"event"`; event responses wrap the underlying `EngineEvent` in `data`.
+
+**How to use.**
+
+```bash
+diptych start --rpc --allow-hooks "add lint rule for empty catch"
+```
+
+**When to use.** IDE integrations, editor extensions, service wrappers, and tests that need to drive approvals, clarifications, recovery, or status polling programmatically.
+
+`--rpc` requires a feature argument for new runs and is mutually exclusive with `--json` and `--detach`.
+
 ---
 
 ## Operational extras

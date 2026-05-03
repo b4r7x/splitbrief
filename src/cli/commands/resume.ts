@@ -14,6 +14,7 @@ import { readActive } from '../../core/sessions/lifecycle.js';
 import { maybeMigrate } from '../../core/migration/executor.js';
 import { printMigrationResult } from './migrate.js';
 import { runHeadless } from '../headless.js';
+import { runRpc } from '../rpc/run.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
 export function registerResumeCommand(program: Command): void {
@@ -22,9 +23,10 @@ export function registerResumeCommand(program: Command): void {
       .command('resume')
       .description('Resume an interrupted workflow'),
   ).action(async (opts: WorkflowOpts) => {
+    if (opts.json && opts.rpc) throw cliError('--json and --rpc cannot be combined');
     const projectDir = resolveProjectDir(opts.project);
     const migration = await maybeMigrate(projectDir);
-    if (!opts.json) printMigrationResult(migration);
+    if (!opts.json && !opts.rpc) printMigrationResult(migration);
 
     const sessionId = readActive(projectDir);
     if (!sessionId) {
@@ -47,6 +49,11 @@ export function registerResumeCommand(program: Command): void {
 
     if (opts.json) {
       await runHeadless(state.feature, projectDir, opts, state, sessionId);
+      return;
+    }
+
+    if (opts.rpc) {
+      await runRpc(state.feature, projectDir, opts, state, sessionId);
       return;
     }
 

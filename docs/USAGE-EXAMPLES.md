@@ -1179,11 +1179,43 @@ diptych start --json --allow-hooks "regenerate API client from openapi.yaml" \
 
 **Variations:** `CI=1` env var auto-disables fullscreen mode even without `--json`.
 
-**See also:** recipes 36–37.
+**See also:** recipes 37–38.
 
 ---
 
-### 36. Parse cost in CI
+### 36. Drive a run over RPC
+
+**When:** you are building an editor extension, service wrapper, or test harness that needs to answer gates programmatically.
+
+**Run:**
+
+```bash
+diptych start --rpc --allow-hooks "add auth audit logging"
+```
+
+**Send commands on stdin (NDJSON):**
+
+```json
+{"type":"status"}
+{"type":"approve"}
+{"type":"message","text":"Use the existing audit logger."}
+{"type":"recovery","action":"retry-same-worker"}
+```
+
+**You'll see responses on stdout:**
+
+```json
+{"type":"status","data":{"type":"readiness_report","report":{"status":"ready"}}}
+{"type":"event","data":{"type":"workflow_started","ts":1745692800000,"phase":"researching","feature":"add auth audit logging"}}
+{"type":"status","data":{"pending":"approval","approvalType":"spec","filePath":"/repo/.diptych/sessions/.../spec.md"}}
+{"type":"ack","command":"approve"}
+```
+
+`--rpc` is mutually exclusive with `--json`. Workflow events are wrapped in `event` responses; command failures use `error` responses and do not crash the stream.
+
+---
+
+### 37. Parse cost in CI
 
 **When:** you want to extract the final cost from a CI run and post it as a build comment.
 
@@ -1216,7 +1248,7 @@ The same data lives in `.diptych/sessions/<id>/summary.json` once the run finish
 
 ---
 
-### 37. Fail CI on budget exceeded
+### 38. Fail CI on budget exceeded
 
 **When:** you want CI to bail when spend exceeds the configured ceiling.
 
@@ -1259,7 +1291,7 @@ exit $status
 
 ## Power user
 
-### 38. Define project-level coding rules
+### 39. Define project-level coding rules
 
 **When:** you want speckit's constitution-check to enforce project conventions (no React Context, ESM `.js` suffix, etc.).
 
@@ -1301,7 +1333,7 @@ A hard violation (`severity: hard`) aborts the run with a `warning` event explai
 
 ---
 
-### 39. Run pre/post task shell hooks
+### 40. Run pre/post task shell hooks
 
 **When:** you want to format with Prettier and run Biome after every task without modifying the validation pipeline.
 
@@ -1345,7 +1377,7 @@ hooks trusted (sha256 stored in .diptych/hooks-trust.json)
 
 ---
 
-### 40. Use OpenTelemetry for tracing
+### 41. Use OpenTelemetry for tracing
 
 **When:** you want span-level visibility (workflow → phase → task → validation) in Honeycomb, Tempo, or any OTLP-compatible backend.
 
@@ -1414,7 +1446,7 @@ Engine code never imports `@opentelemetry/*` directly — the sink (`src/engine/
 
 ## TUI quick reference
 
-### 41. Open the command palette
+### 42. Open the command palette
 
 **When:** you want to discover or quickly invoke any of the 21 slash commands from anywhere in the TUI.
 
@@ -1446,7 +1478,7 @@ Start typing to fuzzy-filter the list. Press Enter on the highlighted entry to i
 
 ---
 
-### 42. Confirm a destructive action (confirm tier)
+### 43. Confirm a destructive action (confirm tier)
 
 **When:** an implementer action is classified as `destructive` (e.g. `rm`, `drop table`) and the `approval.tiers.destructive` is set to `confirm`.
 
@@ -1485,7 +1517,7 @@ Start typing to fuzzy-filter the list. Press Enter on the highlighted entry to i
 
 ---
 
-### 43. Adapt the plan from a rejection
+### 44. Adapt the plan from a rejection
 
 **When:** the implementer proposed an action you rejected, and you want the planner to take that rejection into account on the next run.
 

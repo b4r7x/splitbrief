@@ -31,6 +31,7 @@ export interface WorkflowOpts {
   plannerEffort?: EffortLevel;
   allowHooks?: boolean;
   json?: boolean;
+  rpc?: boolean;
   otelExporter?: string;
   // When present, start the session in a new linked worktree.
   // Value is the worktree slug (directory name under .trees/).

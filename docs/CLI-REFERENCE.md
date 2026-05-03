@@ -68,7 +68,7 @@ diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
   [--budget <amount>] [--planner-effort <level>] \
   [--project <dir>] [--worktree [name]] [--detach] \
   [--no-fullscreen] [--no-mouse] \
-  [--allow-hooks] [--json] [--otel-exporter <name>]
+  [--allow-hooks] [--json] [--rpc] [--otel-exporter <name>]
 ```
 
 ### Options
@@ -90,11 +90,12 @@ diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
 | `--budget <amount>` | float | — | Maximum budget in USD (e.g. `2.00`). Workflow stops when exceeded. |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--worktree [name]` | string \| boolean | — | Run inside a new linked git worktree at `.trees/<name>` on branch `diptych/<name>`. If `name` is omitted, the feature slug is used. |
-| `--detach` | boolean | `false` | Spawn the workflow as a background server and exit. Requires a `feature` argument and is mutually exclusive with `--json`. |
+| `--detach` | boolean | `false` | Spawn the workflow as a background server and exit. Requires a `feature` argument and is mutually exclusive with `--json` and `--rpc`. |
 | `--no-fullscreen` | boolean | fullscreen on | Disable the alternate screen buffer. Useful when piping or debugging. |
 | `--no-mouse` | boolean | mouse on | Disable Ink mouse tracking. |
 | `--allow-hooks` | boolean | `false` | Trust the hook config without prompting (CI). |
 | `--json` | boolean | `false` | Headless: emit each `EngineEvent` as NDJSON to stdout, skip TUI. Requires a `feature`. |
+| `--rpc` | boolean | `false` | RPC: bidirectional NDJSON. Reads commands from stdin and writes `ack` / `error` / `status` / wrapped `event` responses to stdout. Requires a `feature`; mutually exclusive with `--json`. |
 | `--otel-exporter <name>` | string | — | Bootstrap an OTel exporter (currently only `console`). Requires `otel.enabled: true` in config. |
 
 ### Examples
@@ -117,6 +118,9 @@ diptych start --mode speckit --budget 2.00 "rewrite billing"
 
 # Headless / CI: stream NDJSON events
 diptych start --json --auto "fix flaky test in user.test.ts"
+
+# RPC: external tool drives approvals and messages
+diptych start --rpc "add audit logging"
 
 # Detached background session, attach later
 diptych start --detach "long migration"
@@ -146,11 +150,11 @@ diptych start --worktree migration "Postgres 17 upgrade"
 
 ### Behavior notes
 
-- `--detach` and `--json` cannot be combined; `--detach` requires a feature; both checks throw `1`.
+- `--detach` cannot be combined with `--json` or `--rpc`; `--json` and `--rpc` cannot be combined. `--detach`, `--json`, and `--rpc` each require a feature where they start a new workflow.
 - The startup pipeline calls `maybeMigrate(projectDir)` first, so a stale pre-v3 state is migrated on the fly.
 - Before planner or implementer calls, `start` computes Run Readiness. Blockers stop the run; warnings are shown in the TUI or emitted as JSON. The compact session artifact is `.diptych/sessions/<id>/readiness.json`.
 - Readiness inspects validation configuration and package-script posture only. It does not run `typecheck`, lint, tests, model calls, or network probes.
-- With `--json`, the first readiness line is `{ "type": "readiness_report", "report": ... }` before model-backed workflow events.
+- With `--json`, the first readiness line is `{ "type": "readiness_report", "report": ... }` before model-backed workflow events. With `--rpc`, readiness is wrapped as `{ "type": "status", "data": { "type": "readiness_report", "report": ... } }`.
 - `clearStaleSession()` runs before a new session begins, so leftover lockfiles from crashed runs do not block a fresh start.
 - When `--worktree` is passed, the source working tree must be clean. The project directory is reassigned to the newly created worktree path before any state is written. With `--detach --worktree`, worktree selection happens before the detached server is spawned. If worktree creation fails, the command exits `1` with the underlying message.
 - The `setupWorkflow()` step may show an interactive setup screen if config is incomplete; pass `--allow-hooks` in CI to skip the hook-trust prompt.
@@ -467,7 +471,7 @@ diptych resume [--mode <mode>] [--auto] [--approve <level>] \
   [--budget <amount>] [--planner-effort <level>] \
   [--project <dir>] [--worktree [name]] \
   [--no-fullscreen] [--no-mouse] \
-  [--allow-hooks] [--json] [--otel-exporter <name>]
+  [--allow-hooks] [--json] [--rpc] [--otel-exporter <name>]
 ```
 
 ### Options
@@ -477,6 +481,7 @@ Resume inherits every workflow option except `--detach`. See [`diptych start`](#
 | Flag | Notes |
 |---|---|
 | `--json` | Resume the run in headless mode, streaming NDJSON to stdout. |
+| `--rpc` | Resume the run in RPC mode, reading commands from stdin and writing NDJSON responses to stdout. Mutually exclusive with `--json`. |
 | `--worktree [name]` | Honored on resume; verify the saved state matches the worktree before relying on this. |
 | `--mode` / `--approve` / planner+implementer flags | Override the persisted values for this run only. |
 
@@ -488,6 +493,9 @@ diptych resume
 
 # Resume in headless mode for CI re-runs
 diptych resume --json --auto
+
+# Resume and drive gates programmatically
+diptych resume --rpc
 
 # Force a different implementer for the rest of the run
 diptych resume --implementer claude-code --implementer-model claude-sonnet-4-5
@@ -523,7 +531,7 @@ diptych resume --implementer claude-code --implementer-model claude-sonnet-4-5
 **Synopsis**
 
 ```
-diptych continue [session-id-or-number] [--project <dir>]
+diptych continue [session-id-or-number] [--project <dir>] [--json] [--rpc]
 ```
 
 Smart session continuity command. Figures out the right thing: attaches if the session is still running, resumes if it was interrupted. Replaces the mental model of choosing between `ps`, `attach`, `detach`, and `resume`.
@@ -534,6 +542,8 @@ Smart session continuity command. Figures out the right thing: attaches if the s
 |---|---|---|---|
 | `<session-id-or-number>` | string \| number (positional) | most recent | Session ID, numeric alias from `ps`, or omitted for the most recent session. |
 | `--project <dir>` | path | cwd | Project directory. |
+| `--json` | boolean | `false` | Resume an interrupted session in headless NDJSON mode. |
+| `--rpc` | boolean | `false` | Resume an interrupted session in bidirectional RPC mode. Mutually exclusive with `--json`; running detached sessions still use `attach`. |
 
 ### Examples
 
@@ -546,6 +556,9 @@ diptych continue 1
 
 # Continue a specific session
 diptych continue 2026-05-01-add-auth
+
+# Continue an interrupted session via RPC
+diptych continue --rpc 2026-05-01-add-auth
 ```
 
 ### Exit codes
@@ -569,6 +582,7 @@ diptych continue 2026-05-01-add-auth
 
 - When the target session is running (lockfile present, process alive), `continue` delegates to `attach`.
 - When the target session is not running but has resumable state, `continue` delegates to `resume`.
+- `--rpc` applies only to interrupted sessions. It does not attach to a live detached server.
 - Numeric aliases correspond to the `#` column in `diptych ps` output.
 
 ---
@@ -1445,6 +1459,7 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 | `--auto` | `start`, `resume`, `spec` | `false` | Skip approval gates. On `start` / `resume` it aliases `--approve none`. |
 | `--allow-hooks` | `start`, `resume`, `spec` | `false` | Skip the hook-trust prompt. CI flag. |
 | `--json` | `start`, `resume`, `doctor`, `explain` | `false` | NDJSON event stream for `start` / `resume`; single JSON object for `doctor` / `explain`. |
+| `--rpc` | `start`, `resume`, `continue` | `false` | Bidirectional NDJSON. Mutually exclusive with `--json`; command responses are wrapped as `ack`, `error`, `status`, or `event`. |
 
 ### Where state lives
 
@@ -1469,6 +1484,10 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 ### Headless event stream (`--json`)
 
 When `start` or `resume` runs with `--json`, every `EngineEvent` is emitted as a single-line JSON object on stdout (NDJSON). The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse` are no-ops in this mode. Pair `--json` with `--auto` (or an explicit `--approve`) so the run does not wait for interactive input.
+
+### RPC stream (`--rpc`)
+
+When `start`, `resume`, or `continue` runs with `--rpc`, stdin accepts one JSON command per line and stdout emits one JSON response per line. Commands are `approve`, `reject`, `message`, `recovery`, `status`, `abort`, and `slash`. Workflow events are wrapped as `{ "type": "event", "data": <EngineEvent> }`; command results use `{ "type": "ack" | "error" | "status", ... }`. Unlike `--json`, RPC keeps approval, question, continuation, cost, and task-review gates open until the client sends the matching command.
 
 ### Workflow modes (`--mode`)
 

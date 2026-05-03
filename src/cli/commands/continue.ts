@@ -20,6 +20,7 @@ import { addWorkflowOptions } from '../options.js';
 import { maybeMigrate } from '../../core/migration/executor.js';
 import { printMigrationResult } from './migrate.js';
 import { runHeadless } from '../headless.js';
+import { runRpc } from '../rpc/run.js';
 import { isNumericAlias, resolveNumericAlias } from '../session-aliases.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
@@ -79,6 +80,7 @@ export async function continueCommand(
   opts: { projectDir: string } & WorkflowOpts,
 ): Promise<void> {
   assertNotWindows();
+  if (opts.json && opts.rpc) throw cliError('--json and --rpc cannot be combined');
 
   const sessionId = await resolveTargetSession(sessionInput, opts.projectDir);
   const sessDir = sessionDir(opts.projectDir, sessionId);
@@ -86,6 +88,7 @@ export async function continueCommand(
   const status = await checkServerStatus(sessDir);
 
   if (status.alive) {
+    if (opts.rpc) throw cliError('--rpc cannot attach to a running detached session yet.');
     const sockPath = join(sessDir, IPC_SOCK_FILE);
     await initStores(opts.projectDir);
     routerStore.init({
@@ -105,7 +108,7 @@ export async function continueCommand(
   }
 
   const migration = await maybeMigrate(opts.projectDir);
-  if (!opts.json) printMigrationResult(migration);
+  if (!opts.json && !opts.rpc) printMigrationResult(migration);
 
   const state = loadState(opts.projectDir, sessionId);
 
@@ -129,6 +132,11 @@ export async function continueCommand(
 
   if (opts.json) {
     await runHeadless(state.feature, opts.projectDir, opts, state, sessionId);
+    return;
+  }
+
+  if (opts.rpc) {
+    await runRpc(state.feature, opts.projectDir, opts, state, sessionId);
     return;
   }
 
