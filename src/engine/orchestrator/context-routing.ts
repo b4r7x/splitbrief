@@ -6,7 +6,9 @@ import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { ProjectContext } from '../../core/state/types.js';
 import { findKnownModel, getEffectiveModelId, lookupModelsDevModel, lookupRuntimeModel, type ModelCacheAccessor } from '../providers/model/resolution.js';
 import { formatTaskPrompt } from '../spec/prompt-formatter.js';
-import { SYSTEM_PREAMBLE } from '../spec/prompts/system.js';
+import type { LanguageContext } from '../spec/prompts/language-context.js';
+import { buildLanguageContext } from '../spec/prompts/language-context.js';
+import { buildSystemPreamble } from '../spec/prompts/system.js';
 import { estimateTokens } from '../spec/token-budget.js';
 
 export type { TaskContextFit, CurrentCodeContextMode } from '../events/workflow-events.js';
@@ -16,6 +18,7 @@ export interface TaskPromptEstimateOptions {
   task: Task;
   context: ProjectContext;
   contextLength?: number | undefined;
+  languageContext?: LanguageContext | undefined;
 }
 
 export interface ContextFitOptions {
@@ -29,6 +32,7 @@ export interface RouteTaskOptions extends ContextFitOptions {
   profiles: ResolvedImplementerProfile[];
   conservativeContextLength?: number | undefined;
   contextCache?: ModelCacheAccessor | undefined;
+  languageContext?: LanguageContext | undefined;
 }
 
 export interface RejectedImplementerProfile {
@@ -142,8 +146,9 @@ function requiredWriteModeForTask(task: Task): ImplementerWriteMode {
 }
 
 export function estimateFormattedTaskPromptTokens(opts: TaskPromptEstimateOptions): number {
-  const prompt = formatTaskPrompt(opts.task, opts.context, opts.contextLength);
-  return estimateTokens(SYSTEM_PREAMBLE) + estimateTokens(prompt);
+  const languageContext = opts.languageContext ?? buildLanguageContext(undefined);
+  const prompt = formatTaskPrompt(opts.task, opts.context, opts.contextLength, languageContext);
+  return estimateTokens(buildSystemPreamble(languageContext)) + estimateTokens(prompt);
 }
 
 export function classifyContextFit(
@@ -224,9 +229,10 @@ function assessProfile(opts: RouteTaskOptions, profile: ResolvedImplementerProfi
     conservativeContextLength,
     opts.contextCache,
   );
-  const untruncatedEstimatedTokens = estimateFormattedTaskPromptTokens({ task: opts.task, context: opts.context });
-  const prompt = formatTaskPrompt(opts.task, opts.context, contextLength);
-  const estimatedTokens = estimateTokens(SYSTEM_PREAMBLE) + estimateTokens(prompt);
+  const languageContext = opts.languageContext ?? buildLanguageContext(undefined);
+  const untruncatedEstimatedTokens = estimateFormattedTaskPromptTokens({ task: opts.task, context: opts.context, languageContext });
+  const prompt = formatTaskPrompt(opts.task, opts.context, contextLength, languageContext);
+  const estimatedTokens = estimateTokens(buildSystemPreamble(languageContext)) + estimateTokens(prompt);
   const mode = currentCodeContextMode(opts.task, prompt);
   const currentCodeTruncated = mode === 'truncated';
   const formattedFit = classifyContextFit(estimatedTokens, contextLength, opts);

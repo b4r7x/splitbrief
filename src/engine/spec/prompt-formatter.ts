@@ -3,7 +3,9 @@ import type { Task } from '../../core/schemas/task.js';
 import { extractFunctionContext } from '../parsers/scope-extractor.js';
 import { DECLARATION_NAME_RE } from '../parsers/code-patterns.js';
 import { estimateTokens, truncateMiddle, computeTokenBudget } from './token-budget.js';
-import { SYSTEM_PREAMBLE } from './prompts/system.js';
+import type { LanguageContext } from './prompts/language-context.js';
+import { buildLanguageContext } from './prompts/language-context.js';
+import { buildSystemPreamble } from './prompts/system.js';
 import { buildScopeLines } from './formatter.js';
 
 const CLOSING_CONSTRAINTS = [
@@ -150,7 +152,13 @@ function insertCodeContext(sections: string[], task: Task, budget?: { remaining:
   }
 }
 
-export function formatTaskPrompt(task: Task, context: ProjectContext, contextLength?: number): string {
+export function formatTaskPrompt(
+  task: Task,
+  context: ProjectContext,
+  contextLength?: number,
+  languageContext?: LanguageContext,
+): string {
+  const ctx = languageContext ?? buildLanguageContext(undefined);
   const sections = buildTaskSections(task, context);
 
   if (!contextLength) {
@@ -158,7 +166,7 @@ export function formatTaskPrompt(task: Task, context: ProjectContext, contextLen
     return sections.join('\n');
   }
 
-  const budget = computeTokenBudget(SYSTEM_PREAMBLE, sections.join('\n'), contextLength);
+  const budget = computeTokenBudget(buildSystemPreamble(ctx), sections.join('\n'), contextLength);
 
   if (task.action === 'modify') {
     insertCodeContext(sections, task, budget);
@@ -167,7 +175,15 @@ export function formatTaskPrompt(task: Task, context: ProjectContext, contextLen
   return sections.join('\n');
 }
 
-export function formatRetryPrompt(task: Task, context: ProjectContext, error: string, attempt: number, contextLength?: number): string {
+export function formatRetryPrompt(
+  task: Task,
+  context: ProjectContext,
+  error: string,
+  attempt: number,
+  contextLength?: number,
+  languageContext?: LanguageContext,
+): string {
+  const ctx = languageContext ?? buildLanguageContext(undefined);
   const framings: Record<number, string> = {
     1: 'Your previous attempt had an error. Fix it:',
     2: 'Previous attempts failed. Here is the task rephrased differently:',
@@ -181,7 +197,7 @@ export function formatRetryPrompt(task: Task, context: ProjectContext, error: st
 
   if (task.currentCode) {
     const budget = contextLength
-      ? computeTokenBudget(SYSTEM_PREAMBLE, sections.join('\n'), contextLength)
+      ? computeTokenBudget(buildSystemPreamble(ctx), sections.join('\n'), contextLength)
       : undefined;
     insertCodeContext(sections, task, budget);
   }

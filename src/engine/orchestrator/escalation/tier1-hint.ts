@@ -1,5 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { createBusTextHandler, publishPlannerStatus, publishEscalate, publishEvent } from '../events.js';
 import { transitionAndSave, addUsageAndSave } from '../state-ops.js';
 import { truncateByChars } from '../../../utils/truncate.js';
@@ -15,9 +16,10 @@ export async function runTier1Hint(
   publishEvent(ctx.bus, { type: 'task_escalating', ts: Date.now(), phase: state.phase, taskId: initialTask.id });
 
   publishEscalate(ctx.bus, state.phase, initialTask.id, 1);
+  const languageContext = buildProjectLanguageContext(ctx.projectDir, state.discoveredValidation?.language);
   const tier1Result = await ctx.planner.escalateHint(initialTask, lastError, ctx.projectDir, {
     onOutput: textHandler,
-  });
+  }, languageContext);
   state = addUsageAndSave(ctx.projectDir, ctx.sessionId, state, 'escalation', tier1Result.usage, ctx.bus);
 
   if (tier1Result.output) {
@@ -35,6 +37,7 @@ export async function runTier1Hint(
     invokeRetry: async ({ task: t, lastError: err, attempts: a, projectDir }) =>
       ctx.implementer.retry({
         task: t, projectDir, config: ctx.config, context: ctx.context,
+        languageContext,
         error: err, attempt: a, kind: 'hint',
         onOutput: textHandler,
         bus: ctx.bus,

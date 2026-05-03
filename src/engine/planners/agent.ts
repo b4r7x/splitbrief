@@ -1,6 +1,7 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { Planner } from './types.js';
+import type { LanguageContext } from '../spec/prompts/language-context.js';
 import { createCommandBasedPlanner, resolveCapabilities } from './command-invoke.js';
 import { buildEscalationPrompt } from '../spec/prompts/escalation.js';
 import { readSpecFile } from '../../core/paths-io.js';
@@ -23,8 +24,14 @@ export function createAgentPlanner(config: Config): Planner {
   return {
     ...base,
 
-    async escalateFull(task: Task, error: string, projectDir: string, callbacks: { onOutput: (text: string) => void }) {
-      const escalationPrompt = buildEscalationPrompt(task, task.currentCode ?? '', error);
+    async escalateFull(
+      task: Task,
+      error: string,
+      projectDir: string,
+      callbacks: { onOutput: (text: string) => void },
+      languageContext?: LanguageContext,
+    ) {
+      const escalationPrompt = buildEscalationPrompt(task, task.currentCode ?? '', error, languageContext);
       const detect = createChangeDetector('Agent planner');
       const filesBefore = await getChangedFiles(projectDir);
       const result = await base.review(escalationPrompt, projectDir, callbacks);

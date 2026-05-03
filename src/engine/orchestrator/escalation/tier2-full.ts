@@ -1,5 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { createBusTextHandler, publishWarning, publishEscalate, publishEvent } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { runRetryStep, type EscalationContext, type RetryResult } from './step.js';
@@ -13,6 +14,7 @@ export async function runTier2Full(
   publishEvent(ctx.bus, { type: 'hint_failed', ts: Date.now(), phase: state.phase, taskId: initialTask.id });
 
   publishEscalate(ctx.bus, state.phase, initialTask.id, 2);
+  const languageContext = buildProjectLanguageContext(ctx.projectDir, state.discoveredValidation?.language);
 
   const outcome = await runRetryStep({
     ctx, task: initialTask, state, lastError, attempts,
@@ -21,7 +23,7 @@ export async function runTier2Full(
     usageCategory: 'escalation',
     retryFailureFallback: 'Tier-2 escalation failed to produce valid code',
     invokeRetry: async ({ task: t, lastError: err, projectDir }) =>
-      ctx.planner.escalateFull(t, err, projectDir, { onOutput: textHandler }),
+      ctx.planner.escalateFull(t, err, projectDir, { onOutput: textHandler }, languageContext),
     onValidationAfterRetryFail: (validationError) => {
       publishWarning(ctx.bus, state.phase, `Tier-2 escalation produced code but validation failed: ${validationError}`);
     },

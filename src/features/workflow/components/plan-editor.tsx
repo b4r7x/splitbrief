@@ -29,6 +29,7 @@ import type { PlanReviewEstimateStatus, PlanTaskReviewMetadata } from '../../../
 import { buildWorkerPacketPreview, type WorkerPacketPreview } from '../worker-packet-preview.js';
 import type { RoutingDecision } from '../../../engine/orchestrator/context-routing.js';
 import { routeTaskToImplementerProfile } from '../../../engine/orchestrator/context-routing.js';
+import { buildProjectLanguageContext } from '../../../engine/spec/prompts/language-context.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { PlanEditorFooter } from './plan-editor-footer.js';
 
@@ -396,7 +397,12 @@ export function PlanEditorComponent({ filePath, height, width, sessionDirPath: s
           runtime: 'node',
           testCommand,
         };
-        routingDecision = routeTaskToImplementerProfile({ task, context, profiles });
+        routingDecision = routeTaskToImplementerProfile({
+          task,
+          context,
+          profiles,
+          languageContext: buildProjectLanguageContext(projectDir, undefined),
+        });
       }
 
       if (controller.signal.aborted) return;

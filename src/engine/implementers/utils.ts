@@ -39,6 +39,7 @@ export interface InvokeOpts {
   projectDir: string;
   config: ImplementerOptions['config'];
   onOutput: (text: string) => void;
+  systemPreamble: string;
   temperature?: number;
   signal?: AbortSignal | undefined;
 }

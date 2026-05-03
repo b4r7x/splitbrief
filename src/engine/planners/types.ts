@@ -2,6 +2,8 @@ import type { Task } from '../../core/schemas/task.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
+import type { DiscoveredValidation } from '../../core/schemas/workflow.js';
+import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type { RunnerRuntime } from '../runners/types.js';
 
 export type PlannerCapabilities = {
@@ -67,6 +69,8 @@ export interface PlannerCallbacks {
    * Multi-phase backends consume them on the first invocation only.
    */
   attachments?: Attachment[] | undefined;
+  /** Validation toolchain discovered by prior research or restored workflow state. */
+  discoveredValidation?: DiscoveredValidation | undefined;
 }
 
 /** Result from a single planning phase. */
@@ -127,6 +131,7 @@ export interface Planner extends RunnerRuntime {
     error: string,
     projectDir: string,
     callbacks: { onOutput: (text: string) => void },
+    languageContext?: LanguageContext,
   ): Promise<EscalationResult>;
 
   escalateFull(
@@ -134,6 +139,7 @@ export interface Planner extends RunnerRuntime {
     error: string,
     projectDir: string,
     callbacks: { onOutput: (text: string) => void },
+    languageContext?: LanguageContext,
   ): Promise<EscalationResult>;
 
   quickPlan(

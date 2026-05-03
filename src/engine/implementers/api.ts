@@ -4,7 +4,6 @@ import type { Implementer, ImplementerFactoryOptions } from './types.js';
 import type { InvokeOpts } from './utils.js';
 import { createImplementerBase } from './base.js';
 import { createClient } from '../providers/registry.js';
-import { SYSTEM_PREAMBLE } from '../spec/prompts/system.js';
 import { estimateTokens } from '../spec/token-budget.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { PROVIDER_CATALOG } from '../../core/providers/catalog.js';
@@ -24,16 +23,16 @@ export function createApiImplementer(initialConfig: Config, options?: Implemente
   return createImplementerBase({
     extractsCode: true,
     publisher: options?.publisher,
-    // API backends send SYSTEM_PREAMBLE as a separate system message
+    // API backends send the system preamble as a separate system message.
     prependSystemPreamble: false,
 
     async invoke(opts: InvokeOpts) {
-      const { prompt, config, onOutput, signal } = opts;
+      const { prompt, config, onOutput, signal, systemPreamble } = opts;
       const impl = asApiConfig(config);
       const temperature = opts.temperature ?? impl.temperature ?? 0.7;
       const contextLength = impl.contextLength ?? 8192;
 
-      const promptTokens = estimateTokens(SYSTEM_PREAMBLE) + estimateTokens(prompt);
+      const promptTokens = estimateTokens(systemPreamble) + estimateTokens(prompt);
       const available = contextLength - promptTokens;
       const maxTokens = Math.min(Math.max(available, 1024), contextLength);
 
@@ -46,7 +45,7 @@ export function createApiImplementer(initialConfig: Config, options?: Implemente
       const resolvedApiKey = impl.apiKey ?? (providerEnvKey ? process.env[providerEnvKey] : undefined) ?? '';
 
       const messages = [
-        { role: 'system' as const, content: SYSTEM_PREAMBLE },
+        { role: 'system' as const, content: systemPreamble },
         { role: 'user' as const, content: prompt },
       ];
 

@@ -8,6 +8,7 @@ import { SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 import { parseTasks } from '../spec/parser.js';
 import { buildPlanPrompt } from '../spec/prompts/plan.js';
 import { buildTasksPrompt } from '../spec/prompts/tasks.js';
+import { buildProjectLanguageContext } from '../spec/prompts/language-context.js';
 import { buildProjectContextMarkdown } from '../planners/context.js';
 import { transitionAndSave } from './state-ops.js';
 import { runPlannerReview } from './planner-review.js';
@@ -130,10 +131,11 @@ export async function regenerateFromFeedback(
   const prefix = drain.messages.length > 0 ? formatDrainedMessages(drain.messages) : '';
 
   const spec = readSpecFileOrEmpty(projectDir, sessionId, SPEC_FILE);
+  const languageContext = buildProjectLanguageContext(projectDir, state.discoveredValidation?.language);
 
   if (kind === 'plan') {
     const projectContext = await buildProjectContextMarkdown(projectDir);
-    const basePrompt = buildPlanPrompt({ content: spec, hasClarifications: spec.includes('## Clarifications') }, projectContext, skillsContext);
+    const basePrompt = buildPlanPrompt({ content: spec, hasClarifications: spec.includes('## Clarifications') }, projectContext, skillsContext, languageContext);
     const result = await runPlannerReview({
       planner,
       prompt: prefix ? prefix + basePrompt : basePrompt,
@@ -148,7 +150,7 @@ export async function regenerateFromFeedback(
   }
 
   const plan = planOverride ?? readSpecFileOrEmpty(projectDir, sessionId, PLAN_FILE);
-  const basePrompt = buildTasksPrompt(spec, plan);
+  const basePrompt = buildTasksPrompt(spec, plan, languageContext);
   const result = await runPlannerReview({
     planner,
     prompt: prefix ? prefix + basePrompt : basePrompt,

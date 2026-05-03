@@ -51,6 +51,7 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
     persistTranscript: config.workflow.persistTranscript,
     ...(priorMessages ? { priorMessages } : {}),
     ...(attachments ? { attachments } : {}),
+    ...(state.discoveredValidation !== undefined ? { discoveredValidation: state.discoveredValidation } : {}),
   };
 
   publishPlannerStatus(wctx.bus, state, 'running');

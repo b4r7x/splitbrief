@@ -14,6 +14,7 @@ import { enforceBudget } from '../budget/budget.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../../../core/config/accessors/runner-config.js';
 import { resolveImplementerProfiles, type ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import { routeTaskToImplementerProfile, type RoutingDecision } from '../context-routing.js';
+import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { createImplementer } from '../../runners/factory.js';
 import { createSnapshot } from '../../snapshots/store.js';
 import { recordRunSnapshot } from '../../snapshots/run.js';
@@ -258,6 +259,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       task: refreshedTask,
       context: wctx.context,
       profiles: resolvedProfiles.profiles,
+      languageContext: buildProjectLanguageContext(projectDir, state.discoveredValidation?.language),
     });
     const selectedProfile = selectedProfileFromDecision(resolvedProfiles.profiles, routingDecision);
     const selectedModel = selectedProfile ? getRunnerModelName(selectedProfile.config) : undefined;

@@ -1,5 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { createBusTextHandler, publishRetry } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { runRetryStep, type EscalationContext, type RetryStepOutcome } from './step.js';
@@ -28,6 +29,7 @@ export async function runLocalRetries(
       invokeRetry: async ({ task: t, lastError: err, attempts: a, projectDir }) =>
         ctx.implementer.retry({
           task: t, projectDir, config: ctx.config, context: ctx.context,
+          languageContext: buildProjectLanguageContext(ctx.projectDir, state.discoveredValidation?.language),
           error: err, attempt: a, kind: 'local',
           onOutput: textHandler,
           bus: ctx.bus,

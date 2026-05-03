@@ -10,6 +10,7 @@ import { planEditorStore, type PlanReviewCostTier, type PlanReviewEstimateStatus
 import { configStore } from '../../../stores/project/config.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { routeTaskToImplementerProfile } from '../../../engine/orchestrator/context-routing.js';
+import { buildProjectLanguageContext } from '../../../engine/spec/prompts/language-context.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { buildPlanReviewScorecard, type PlanReviewScorecardEntry } from '../plan-review-scorecard.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -206,7 +207,12 @@ export function buildRoutingPreviewMetadata(
 
   return Promise.all(tasks.map(async task => {
     const { task: routingTask, estimateStatus } = await refreshTaskForRoutingPreview(task, opts.projectDir);
-    const decision = routeTaskToImplementerProfile({ task: routingTask, context, profiles });
+    const decision = routeTaskToImplementerProfile({
+      task: routingTask,
+      context,
+      profiles,
+      languageContext: buildProjectLanguageContext(opts.projectDir, undefined),
+    });
     const routeBlocked = decision.selectedProfile === undefined;
     const risk: PlanReviewRisk = routeBlocked || estimateStatus === 'missing-current-code' || estimateStatus === 'current-code-unavailable'
       ? 'high'

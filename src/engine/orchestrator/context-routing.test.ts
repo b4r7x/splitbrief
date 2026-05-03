@@ -9,7 +9,8 @@ import {
   routeTaskToImplementerProfile,
 } from './context-routing.js';
 import { formatTaskPrompt } from '../spec/prompt-formatter.js';
-import { SYSTEM_PREAMBLE } from '../spec/prompts/system.js';
+import { buildLanguageContext } from '../spec/prompts/language-context.js';
+import { buildSystemPreamble } from '../spec/prompts/system.js';
 import { estimateTokens } from '../spec/token-budget.js';
 
 const context: ProjectContext = {
@@ -113,11 +114,12 @@ describe('classifyContextFit', () => {
 describe('estimateFormattedTaskPromptTokens', () => {
   it('includes the system preamble in the formatted task prompt estimate', () => {
     const task = makeTask();
+    const languageContext = buildLanguageContext('python');
 
-    const estimatedTokens = estimateFormattedTaskPromptTokens({ task, context, contextLength: 10_000 });
-    const promptOnlyTokens = estimateTokens(formatTaskPrompt(task, context, 10_000));
+    const estimatedTokens = estimateFormattedTaskPromptTokens({ task, context, contextLength: 10_000, languageContext });
+    const promptOnlyTokens = estimateTokens(formatTaskPrompt(task, context, 10_000, languageContext));
 
-    expect(estimatedTokens).toBe(promptOnlyTokens + estimateTokens(SYSTEM_PREAMBLE));
+    expect(estimatedTokens).toBe(promptOnlyTokens + estimateTokens(buildSystemPreamble(languageContext)));
   });
 });
 

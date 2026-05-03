@@ -1,4 +1,4 @@
-export const ESM_CONVENTION = 'ESM imports with .js extensions, pure functions, no classes';
+import { buildLanguageContext, codeFenceLanguage, type LanguageContext } from './language-context.js';
 
 // Markdown rendering of one Product Task Brief v1. Section -> brief mapping:
 //   frontmatter             = Identity
@@ -10,12 +10,17 @@ export const ESM_CONVENTION = 'ESM imports with .js extensions, pure functions, 
 //   ### Scope               = Scope (in/out of bounds)
 //   ### Escalation          = Escalation (when to stop and ask)
 //   ### Evidence            = Evidence (proof to leave behind)
-export const TASK_FORMAT_EXAMPLE = `\`\`\`markdown
+export function buildTaskFormatExample(languageContext?: LanguageContext): string {
+  const ctx = languageContext ?? buildLanguageContext(undefined);
+  const fenceLanguage = codeFenceLanguage(ctx);
+  const codeFenceStart = fenceLanguage ? `\\\`\\\`\\\`${fenceLanguage}` : '\\`\\`\\`';
+
+  return `\`\`\`markdown
 ---
 id: T001
 title: Short descriptive title
 action: create | modify
-file: src/path/to/file.ts
+file: src/path/to/file${ctx.fileExtension}
 depends_on: [] | [T001, T002]
 ---
 
@@ -23,18 +28,18 @@ depends_on: [] | [T001, T002]
 What to implement and why. Include all context the implementer needs.
 
 ### Signature
-\\\`\\\`\\\`typescript
-export function exampleFn(param: Type): ReturnType
+${codeFenceStart}
+${signatureExample(ctx)}
 \\\`\\\`\\\`
 
 ### Type Definitions
-\\\`\\\`\\\`typescript
-// All referenced types, copied verbatim
+${codeFenceStart}
+${typeDefinitionsExample(ctx)}
 \\\`\\\`\\\`
 
 ### Current Code
-\\\`\\\`\\\`typescript
-// Relevant existing code for modify tasks
+${codeFenceStart}
+${currentCodeExample(ctx)}
 \\\`\\\`\\\`
 
 ### Pattern
@@ -61,9 +66,53 @@ Existing codebase pattern or exact snippet the implementer should follow.
 - Reviewable proof the task completed (passing tests, typecheck, changed files, behavioral note).
 
 ### Constraints
-- ESM imports with .js extensions
+- ${ctx.importConvention}
 - Follow existing codebase patterns
 \`\`\``;
+}
+
+function signatureExample(ctx: LanguageContext): string {
+  switch (ctx.language) {
+    case 'TypeScript':
+      return 'export function exampleFn(param: Type): ReturnType';
+    case 'JavaScript':
+      return 'export function exampleFn(param) { /* ... */ }';
+    case 'Python':
+      return 'def example_fn(param: Type) -> ReturnType:';
+    case 'Go':
+      return 'func ExampleFn(param Type) ReturnType';
+    case 'Rust':
+      return 'pub fn example_fn(param: Type) -> ReturnType';
+    default:
+      return 'Function or method signature appropriate for the project language';
+  }
+}
+
+function typeDefinitionsExample(ctx: LanguageContext): string {
+  switch (ctx.language) {
+    case 'TypeScript':
+      return '// All referenced types, copied verbatim';
+    case 'JavaScript':
+      return '// Relevant JSDoc typedefs or data shapes, copied verbatim';
+    case 'Python':
+      return '# Relevant Python type hints, protocols, or data shapes, copied verbatim';
+    case 'Go':
+      return '// Relevant Go structs, interfaces, or type aliases, copied verbatim';
+    case 'Rust':
+      return '// Relevant Rust structs, traits, enums, or type aliases, copied verbatim';
+    default:
+      return 'Referenced types or data shapes, copied verbatim when the language uses them';
+  }
+}
+
+function currentCodeExample(ctx: LanguageContext): string {
+  switch (ctx.language) {
+    case 'Python':
+      return '# Relevant existing code for modify tasks';
+    default:
+      return '// Relevant existing code for modify tasks';
+  }
+}
 
 export interface PromptSection {
   heading: string;

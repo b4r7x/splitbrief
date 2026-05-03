@@ -11,7 +11,8 @@ import { extractCode } from '../parsers/response-extractor.js';
 import { applyCode } from './apply.js';
 import { computeDiff } from '../../utils/diff.js';
 import { formatTaskPrompt, formatRetryPrompt } from '../spec/prompt-formatter.js';
-import { SYSTEM_PREAMBLE } from '../spec/prompts/system.js';
+import { buildLanguageContext } from '../spec/prompts/language-context.js';
+import { buildSystemPreamble } from '../spec/prompts/system.js';
 import { processError } from '../../lib/process/errors.js';
 import { retryTemperature, type InvokeOpts } from './utils.js';
 import { DEFAULT_AVAILABILITY } from '../../lib/availability.js';
@@ -76,8 +77,8 @@ async function processImplementerOutput(
 export interface ImplementerBaseConfig {
   extractsCode: boolean;
   /**
-   * If false, the backend handles SYSTEM_PREAMBLE separately (e.g., as a system message).
-   * If true or undefined (default), runPipeline prepends SYSTEM_PREAMBLE to the prompt.
+   * If false, the backend handles buildSystemPreamble() separately (e.g., as a system message).
+   * If true or undefined (default), runPipeline prepends buildSystemPreamble() to the prompt.
    */
   prependSystemPreamble?: boolean;
 
@@ -101,16 +102,18 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
   const shouldThrow = baseConfig.shouldThrow ?? defaultShouldThrow;
   const prependSystemPreamble = baseConfig.prependSystemPreamble !== false;
   const buildPrompt = baseConfig.buildPrompt ?? ((opts: ImplementerOptions) =>
-    formatTaskPrompt(opts.task, opts.context, opts.config.implementer.contextLength));
+    formatTaskPrompt(opts.task, opts.context, opts.config.implementer.contextLength, opts.languageContext));
   const buildRetryPrompt = baseConfig.buildRetryPrompt ?? ((opts: RetryOptions) =>
-    formatRetryPrompt(opts.task, opts.context, opts.error, opts.attempt, opts.config.implementer.contextLength));
+    formatRetryPrompt(opts.task, opts.context, opts.error, opts.attempt, opts.config.implementer.contextLength, opts.languageContext));
 
   async function runPipeline(
     opts: ImplementerOptions,
     rawPrompt: string,
     temperature?: number,
   ): Promise<ImplementerResult> {
-    const prompt = prependSystemPreamble ? SYSTEM_PREAMBLE + '\n\n' + rawPrompt : rawPrompt;
+    const languageContext = opts.languageContext ?? buildLanguageContext(undefined);
+    const systemPreamble = buildSystemPreamble(languageContext);
+    const prompt = prependSystemPreamble ? systemPreamble + '\n\n' + rawPrompt : rawPrompt;
     const { task, projectDir, config, onOutput, sessionId, phase } = opts;
 
     let oldContent: string | null = null;
@@ -140,7 +143,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     let invokeResult: InvokeResult;
     try {
       invokeResult = await baseConfig.invoke({
-        prompt, task, projectDir, config, onOutput: wrappedOnOutput,
+        prompt, task, projectDir, config, onOutput: wrappedOnOutput, systemPreamble,
         ...(temperature !== undefined && { temperature }),
         signal: opts.signal,
       });

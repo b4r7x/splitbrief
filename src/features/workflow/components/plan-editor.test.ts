@@ -532,7 +532,7 @@ describe('PlanEditorComponent review metadata', () => {
     expect(frame).toContain('context 32768');
     expect(frame).toContain('current-code');
     expect(frame).toContain('estimate refreshed-current-code');
-    expect(frame).toContain('system SYSTEM: You are a TypeScript code generator');
+    expect(frame).toContain('system SYSTEM: You are a code generator for the project language');
     expect(frame).toContain('task ## Project: unknown');
     expect(frame).toContain('## Task: Task T001');
 
@@ -701,7 +701,7 @@ describe('PlanEditorComponent review metadata', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Packet Preview T001');
-    expect(frame).toContain('system SYSTEM: You are a TypeScript code generator');
+    expect(frame).toContain('system SYSTEM: You are a code generator for the project language');
     expect(frame).toContain('task ## Project: unknown');
     expect(frame).toContain('Y approve');
   });
