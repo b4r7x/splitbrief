@@ -106,7 +106,7 @@ export async function initializeWorkflow(
 
   // Stateless backends receive priorMessages instead of plannerSessionId.
   const initialSessionId = savedState?.plannerSessionId ?? null;
-  const planner = opts._planner ?? createPlanner(config, initialSessionId);
+  const planner = opts._planner ?? (await createPlanner(config, initialSessionId));
   if (savedState && !hasPendingRecovery) {
     await autoCompactResumeContext({ projectDir, sessionId, bus, config, planner });
     if (!planner.capabilities.supportsSessionResume) {
@@ -121,7 +121,7 @@ export async function initializeWorkflow(
     }
   }
 
-  const implementer = opts._implementer ?? createImplementer(config, { publisher: createImplementerPublisher(bus) });
+  const implementer = opts._implementer ?? (await createImplementer(config, { publisher: createImplementerPublisher(bus) }));
 
   let state: WorkflowState;
 

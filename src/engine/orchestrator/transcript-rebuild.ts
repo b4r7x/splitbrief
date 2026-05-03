@@ -40,7 +40,7 @@ export async function performManualCompaction(
   projectDir: string,
   sessionId: string,
 ): Promise<CompactTranscriptResult> {
-  const planner = createPlanner(config);
+  const planner = await createPlanner(config);
   const plannerName = getRunnerDisplayName(config.planner);
   if (planner.capabilities.supportsSelfSummarisation !== true) {
     return { status: 'unsupported', plannerName };

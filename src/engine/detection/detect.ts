@@ -70,7 +70,7 @@ export async function detectAvailablePlanners(opts: DetectPlannersOptions = {}):
   const cliResults = await Promise.all(
     CLI_PLANNERS.map(async ({ tool, description }): Promise<PlannerDetection> => {
       try {
-        const planner = createPlanner(minimalConfig(tool));
+        const planner = await createPlanner(minimalConfig(tool));
         const available = await withTimeout(planner.isAvailable(), DETECTION_TIMEOUT_MS);
         let version: string | undefined;
         let error: string | undefined;

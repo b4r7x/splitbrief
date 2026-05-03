@@ -39,7 +39,7 @@ export function registerSpecCommand(program: Command): void {
 
       const sessionId = beginSession(projectDir, feature);
 
-      const planner = createPlanner(config);
+      const planner = await createPlanner(config);
 
       console.log(`Planning feature: ${feature} (planner: ${getRunnerDisplayName(config.planner)})\n`);
 

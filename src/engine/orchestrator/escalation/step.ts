@@ -105,7 +105,7 @@ function stateForRetryProfile(state: WorkflowState, profile: ResolvedImplementer
   };
 }
 
-function createRetryRuntime(ctx: EscalationContext, profileOverride: string | undefined): RetryRuntime {
+async function createRetryRuntime(ctx: EscalationContext, profileOverride: string | undefined): Promise<RetryRuntime> {
   if (profileOverride === undefined) {
     return {
       config: ctx.config,
@@ -121,7 +121,7 @@ function createRetryRuntime(ctx: EscalationContext, profileOverride: string | un
   const factory = ctx.createImplementer ?? createImplementer;
   return {
     config,
-    implementer: factory(config, { publisher: createImplementerPublisher(ctx.bus) }),
+    implementer: await factory(config, { publisher: createImplementerPublisher(ctx.bus) }),
     implementerProfile: profile.name,
     profile,
   };
@@ -307,7 +307,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
 
   ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, ctx.sessionId, state));
 
-  const retryRuntime = createRetryRuntime(ctx, profileOverride);
+  const retryRuntime = await createRetryRuntime(ctx, profileOverride);
   const retryCtx: EscalationContext = {
     ...ctx,
     config: retryRuntime.config,

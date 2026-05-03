@@ -54,7 +54,7 @@ export async function runTier0Intermediate(
 
   let intermediateImplementer: Implementer;
   try {
-    intermediateImplementer = createImplementer(intermediateConfig, { publisher: createImplementerPublisher(ctx.bus) });
+    intermediateImplementer = await createImplementer(intermediateConfig, { publisher: createImplementerPublisher(ctx.bus) });
   } catch (err) {
     publishWarning(ctx.bus, state.phase, `Intermediate provider failed to initialize: ${toErrorMessage(err)}`);
     return { state, task: initialTask, lastError, attempts: priorAttempts };

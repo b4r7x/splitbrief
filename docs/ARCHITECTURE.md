@@ -165,11 +165,11 @@ Both are configured by the same five runner kinds. The factories dispatch identi
 
 ```
 src/engine/runners/factory.ts
-  createPlanner(config)      → Planner
-  createImplementer(config)  → Implementer
+  createPlanner(config)      → Promise<Planner>
+  createImplementer(config)  → Promise<Implementer>
 ```
 
-Each backend for a given kind lives in a matched pair of files:
+Factory dispatch is async and lazy: backend modules are loaded with memoized dynamic imports, so startup only imports the factory and the configured runner kind. Each backend for a given kind lives in a matched pair of files:
 
 | Kind | Planner file | Implementer file |
 |------|--------------|------------------|
@@ -921,7 +921,7 @@ Path encoding: snapshots URL-encode each path segment then join with `__` to fla
 
 ## 7. Runner abstraction (5 kinds)
 
-The `kind` discriminant is required in every planner / implementer config. Factory: `src/engine/runners/factory.ts` — `createPlanner(config)` / `createImplementer(config)` dispatch on `kind`. Pairs of files match by role:
+The `kind` discriminant is required in every planner / implementer config. Factory: `src/engine/runners/factory.ts` — `createPlanner(config)` / `createImplementer(config)` are async and dispatch on `kind` through memoized dynamic imports. Pairs of files match by role:
 
 | `kind` | Planner file | Implementer file | Examples |
 |---|---|---|---|
