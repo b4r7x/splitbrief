@@ -93,6 +93,7 @@ src/engine/events/
 └── sinks/
     ├── tui.ts         # pass-through into workflow/actions.addEvent
     ├── jsonl.ts       # appends every event to sessions/<id>/session.jsonl
+    ├── tree-recorder.ts # maps EngineEvents to session tree entries; branches on recovery
     ├── stdout-json.ts # NDJSON emitter for `diptych start --json`
     └── otel.ts        # optional OpenTelemetry span emitter
 ```
@@ -448,7 +449,7 @@ The codebase follows John Ousterhout's *deep module* principle: a module's publi
 
 **When a file grows past the [length threshold](#file-length-thresholds), create a folder named after the file and move its helpers inside alongside the entry file.**
 
-The canonical pattern in this codebase is `src/engine/orchestrator/planning/`:
+The canonical patterns in this codebase are `src/engine/orchestrator/planning/` and `src/engine/orchestrator/task/`:
 
 ```
 orchestrator/
@@ -458,9 +459,15 @@ orchestrator/
 │   ├── quick.ts      # internal — quick-mode planning flow
 │   ├── rewind.ts     # internal — rewind-to-approval flow
 │   └── shared.ts     # internal — shared planning helpers
+├── task/
+│   ├── step.ts              # entry — single-task execution (283 LOC)
+│   ├── pre-task.ts          # internal — pre-hook dispatch, task-start event, snapshot
+│   ├── run-implementation.ts # internal — continuation loop, streaming, staging
+│   ├── apply-changed-files.ts # internal — post-impl approval, promotion, conflict detection
+│   └── resolve-deps.ts     # internal — dependency resolution
 ```
 
-Callers import from `./planning/run.js`. Files other than `run.ts` are **considered internal to the folder** — the folder boundary is the privacy boundary. There is no `_prefix.ts` convention, no linter-enforced "private" — the convention is structural: if it's not the entry file, it's an internal helper of that folder.
+Callers import from `./planning/run.js` or `./task/step.js`. Files other than the entry are **considered internal to the folder** — the folder boundary is the privacy boundary. There is no `_prefix.ts` convention, no linter-enforced "private" — the convention is structural: if it's not the entry file, it's an internal helper of that folder.
 
 **No underscore prefix** (`_run-init.ts`, `_escalation-step.ts`). Google TypeScript Style Guide, Microsoft, and AWS all advise against it in 2025+. Use folder colocation instead.
 

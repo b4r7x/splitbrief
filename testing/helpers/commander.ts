@@ -6,6 +6,9 @@ import { registerStatusCommand } from '../../src/cli/commands/status.js';
 import { registerExplainCommand } from '../../src/cli/commands/explain.js';
 import { registerResumeCommand } from '../../src/cli/commands/resume.js';
 import { registerMigrateCommand } from '../../src/cli/commands/migrate.js';
+import { registerContinueCommand } from '../../src/cli/commands/continue.js';
+import { registerLastCommand } from '../../src/cli/commands/last.js';
+import { registerStatsCommand } from '../../src/cli/commands/stats.js';
 
 export interface RunCommandResult {
   stdout: string;
@@ -33,6 +36,9 @@ export async function runCommand(args: string[]): Promise<RunCommandResult> {
   registerExplainCommand(program);
   registerResumeCommand(program);
   registerMigrateCommand(program);
+  registerContinueCommand(program);
+  registerLastCommand(program);
+  registerStatsCommand(program);
 
   const stdoutChunks: string[] = [];
   const stderrChunks: string[] = [];

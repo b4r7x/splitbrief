@@ -207,6 +207,35 @@ it('workflow screen shows an escalation card when escalate event arrives', async
 
 Real adapter boundaries (`Planner`, `Implementer`, `ProviderClient`) are the only sanctioned injection points. Everything else is a real import.
 
+## CLI command DI pattern
+
+CLI command handlers accept an optional `deps` parameter for dependency injection. This is the standard pattern for testing commands without `vi.mock`:
+
+```ts
+// src/cli/commands/attach.ts
+export type AttachDeps = {
+  findSession: typeof findSession;
+  attachToSession: typeof attachToSession;
+};
+
+const defaultDeps: AttachDeps = { findSession, attachToSession };
+
+export function registerAttach(program: Command, deps: AttachDeps = defaultDeps) { ... }
+```
+
+In tests, inject fakes directly:
+
+```ts
+registerAttach(program, {
+  findSession: () => makeSession({ id: 's1' }),
+  attachToSession: vi.fn(),
+});
+```
+
+**Commands using this pattern:** `attach.ts` (`AttachDeps`), `last.ts` (`LastDeps`), `start.ts` (`StartDeps`), `worktree.ts` (`WorktreeDeps`).
+
+**Rule:** `vi.mock` is now reserved for TRUE system boundaries only — `process.kill`, `execSync`, `node:net` sockets, and the sanctioned targets listed in [Test I/O and fixtures](#test-io-and-fixtures). All other test isolation uses the `Deps` interface pattern.
+
 ## Faux provider architecture
 
 The `orchestrator-factories.ts` fakes work but are `vi.fn` wrappers — assertions tend toward `toHaveBeenCalledWith` (implementation coupling). The faux architecture replaces them with **typed faux objects** that implement the real interface and track state declaratively.

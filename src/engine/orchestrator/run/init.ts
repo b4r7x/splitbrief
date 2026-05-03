@@ -19,6 +19,7 @@ import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { createStdoutJsonSink } from '../../events/sinks/stdout-json.js';
 import { createOtelSink } from '../../events/sinks/otel.js';
+import { createTreeRecorderSink } from '../../events/sinks/tree-recorder.js';
 import type { EngineEvent, EventBus, EventSink } from '../../events/types.js';
 import { createHookSink } from '../../hooks/sink.js';
 import { runPreHooks } from '../../hooks/run-pre-hook.js';
@@ -80,6 +81,7 @@ export async function initializeWorkflow(
   const bus = opts.eventBus ?? createEventBus();
   if (opts.tuiSink) bus.subscribe(opts.tuiSink);
   bus.subscribe(createJsonlSink(projectDir, sessionId, config.workflow.persistTranscript));
+  bus.subscribe(createTreeRecorderSink({ projectDir, sessionId }));
   if (opts.headless) bus.subscribe(createStdoutJsonSink());
   if (opts._eventSink) bus.subscribe(opts._eventSink);
   if (config.hooks) bus.subscribe(createHookSink(config.hooks, { projectDir, sessionId }, bus));

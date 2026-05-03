@@ -6,6 +6,13 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 import { listWorktrees, removeWorktree } from '../../engine/worktree.js';
 import type { WorktreeInfo } from '../../engine/worktree.js';
 
+export interface WorktreeDeps {
+  listWorktrees: typeof listWorktrees;
+  removeWorktree: typeof removeWorktree;
+}
+
+const defaultDeps: WorktreeDeps = { listWorktrees, removeWorktree };
+
 function statusCell(info: WorktreeInfo): string {
   return info.status;
 }
@@ -112,7 +119,7 @@ function renderList(worktrees: WorktreeInfo[]): void {
   }
 }
 
-export function registerWorktreeCommand(program: Command): void {
+export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = defaultDeps): void {
   const worktree = program
     .command('worktree')
     .description('Manage diptych-managed git worktrees');
@@ -124,7 +131,7 @@ export function registerWorktreeCommand(program: Command): void {
     .action(async (opts: { project?: string }) => {
       const projectDir = resolveProjectDir(opts.project);
       const git = simpleGit(projectDir);
-      const worktrees = await listWorktrees(projectDir, git);
+      const worktrees = await deps.listWorktrees(projectDir, git);
 
       if (worktrees.length === 0) {
         console.log('No diptych-managed worktrees found.');
@@ -141,7 +148,7 @@ export function registerWorktreeCommand(program: Command): void {
     .action(async (name: string, opts: { project?: string }) => {
       const projectDir = resolveProjectDir(opts.project);
       const git = simpleGit(projectDir);
-      const worktrees = await listWorktrees(projectDir, git);
+      const worktrees = await deps.listWorktrees(projectDir, git);
       const found = worktrees.some((w) => w.name === name);
 
       if (!found) {
@@ -169,14 +176,14 @@ export function registerWorktreeCommand(program: Command): void {
         const projectDir = resolveProjectDir(opts.project);
         const git = simpleGit(projectDir);
 
-        const worktrees = await listWorktrees(projectDir, git);
+        const worktrees = await deps.listWorktrees(projectDir, git);
         const found = worktrees.some((w) => w.name === name);
         if (!found) {
           throw cliError(`Worktree "${name}" not found.`, 1);
         }
 
         try {
-          await removeWorktree({
+          await deps.removeWorktree({
             projectDir,
             slug: name,
             git,

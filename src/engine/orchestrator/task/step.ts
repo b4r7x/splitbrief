@@ -1,29 +1,20 @@
-import type { Task, TaskId } from '../../../core/schemas/task.js';
+import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { formatValidationError } from '../validation.js';
-import { createStreamingFeed } from './streaming-feed.js';
 
 import type { WorkflowContext } from '../types.js';
 import { recordTaskUsage } from '../tokens.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
-import { createBusTextHandler, publishDriftChainDetected, publishError, publishRecoveryPrompted, publishTaskStart, publishTaskSkipped, publishUserEditConflict, publishWarning } from '../events.js';
+import { publishError, publishWarning, publishDriftChainDetected, publishRecoveryPrompted, publishUserEditConflict } from '../events.js';
 import { runPreHooks } from '../../hooks/run-pre-hook.js';
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { validateCommitAndAdvance } from './commit.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
-import { withContinuationLoop } from '../continuation.js';
 import {
   gateAction,
-  gateChangedFiles,
-  captureCurrentFileContents,
-  createStagedProject,
   getChangedFilesSinceSnapshot,
-  getChangedFilesSnapshot,
-  promoteStagedChanges,
-  restoreDirtyFilesFromSnapshot,
   type ChangedFilesSnapshot,
-  type GateChangedFilesDecision,
   type GateDecision,
 } from '../approval/tiered-approval.js';
 import type { EventBus, EngineEvent } from '../../events/types.js';
@@ -38,14 +29,12 @@ import { isExtractedCodeApprovalRaceError } from '../../implementers/base.js';
 import { buildApprovalPromotionConflictRecoveryIssue } from '../recovery/recovery.js';
 import { persistTaskEvidence, persistRejectionEvidence, persistApprovalEvidence } from '../evidence/persistence.js';
 import { retryAndRecord } from './retry.js';
-import { buildRoutingEventFields } from './routing-fields.js';
+import { runPreTaskHooksAndPublish } from './pre-task.js';
+import { runImplementation } from './run-implementation.js';
+import { applyChangedFiles } from './apply-changed-files.js';
+import { resolveDependsOnFiles } from './resolve-deps.js';
 
-export function resolveDependsOnFiles(tasks: Task[], task: Task): string[] {
-  return task.dependsOn.flatMap((id: TaskId) => {
-    const dep = tasks.find((t) => t.id === id);
-    return dep ? [dep.file] : [];
-  });
-}
+export { resolveDependsOnFiles } from './resolve-deps.js';
 
 async function runChainAnalysisSafe(opts: {
   wctx: WorkflowContext;
@@ -138,7 +127,7 @@ type RunSingleTaskOptions = {
 
 export async function runSingleTask(opts: RunSingleTaskOptions): Promise<WorkflowState> {
   const { wctx, index, totalTasks, taskBreakdowns, setTrackedState, setCurrentTask } = opts;
-  const { projectDir, sessionId, config, callbacks, context } = wctx;
+  const { projectDir, sessionId, config, callbacks } = wctx;
   let state = opts.state;
 
   if (state.pendingRecovery || wctx.signal?.aborted) return state;
@@ -168,117 +157,26 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     config,
   });
   if (!gateResult.allow) {
-    recordApprovalDenial(
-      wctx,
-      state,
-      task,
-      gateResult,
-      `Task blocked by approval gate: ${gateResult.reason ?? 'denied'}`,
-    );
+    recordApprovalDenial(wctx, state, task, gateResult, `Task blocked by approval gate: ${gateResult.reason ?? 'denied'}`);
     return state;
   }
   persistApprovalEvidence(wctx, state, gateResult, task.id);
 
-  if (wctx.config.hooks) {
-    const preTaskPayload: EngineEvent = {
-      type: 'task_started', ts: Date.now(), phase: state.phase,
-      taskId: task.id, title: task.title, index, total: totalTasks,
-      file: task.file, action: task.action,
-      ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
-      ...buildRoutingEventFields(wctx.routingDecision),
-    };
-    const pre = await runPreHooks(wctx.config.hooks, 'pre_task', preTaskPayload, { projectDir, sessionId });
-    if (!pre.allow) {
-      publishWarning(wctx.bus, state.phase, `pre_task blocked: ${pre.reason ?? 'hook denied'}`);
-      publishTaskSkipped(wctx.bus, state.phase, { taskId: task.id, title: task.title, reason: pre.reason ?? 'pre_task hook denied' });
-      state = transitionAndSave(projectDir, sessionId, state, { type: 'SKIP_TASK', taskId: task.id });
-      setTrackedState(state);
-      persistTaskEvidence(wctx, state, task, 'skipped', { status: 'skipped', reason: pre.reason ?? 'pre_task hook denied' });
-      return state;
-    }
-  }
+  const preTaskResult = await runPreTaskHooksAndPublish({ wctx, task, state, index, totalTasks, setTrackedState });
+  if (!preTaskResult.proceed) return preTaskResult.state;
+  state = preTaskResult.state;
+  const taskStartSnapshot = preTaskResult.taskStartSnapshot;
 
-  publishTaskStart(wctx.bus, state.phase, {
-    taskId: task.id, title: task.title, index, total: totalTasks, file: task.file, action: task.action,
-    tool: getRunnerDisplayName(config.implementer), model: config.implementer.model,
-    ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
-    ...buildRoutingEventFields(wctx.routingDecision),
-  });
-
-  let taskStartSnapshot: ChangedFilesSnapshot;
-  try {
-    taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-  } catch (err) {
-    publishError(wctx.bus, state.phase, `Task blocked by approval gate: ${toErrorMessage(err)}`);
-    return state;
-  }
   const tokensBefore = { ...state.tokenUsage };
-
   if (wctx.signal?.aborted) return state;
 
-  const textHandler = createBusTextHandler(wctx.bus, state.phase);
-  const streamingFeed = createStreamingFeed(task.id, config.implementer.kind === 'api');
-
-  type ImplResult = Awaited<ReturnType<typeof wctx.implementer.implement>>;
-  let implResult: ImplResult;
-  const usesStaging = wctx.implementer.capabilities?.writesFiles === 'direct';
-  const staged = usesStaging ? await createStagedProject(projectDir) : undefined;
-  let preApplyApprovalDenied = false;
-  let preApplyApprovedFiles: string[] = [];
+  let implState: Awaited<ReturnType<typeof runImplementation>>;
   try {
-    const loop = await withContinuationLoop<ImplResult>({
-      ctx: { projectDir: staged?.projectDir ?? projectDir, sessionId, callbacks, signal: wctx.signal, sinks: wctx.sinks },
-      state,
-      onStateChange: setTrackedState,
-      body: async ({ signal, continuationPrompt, recordOutput }) => {
-        const result = await wctx.implementer.implement({
-          task, projectDir: staged?.projectDir ?? projectDir, config, context,
-          onOutput: (text) => { recordOutput(text); textHandler(text); streamingFeed.onText(text); },
-          sessionId,
-          signal,
-          continuationPrompt,
-          bus: wctx.bus,
-          phase: state.phase,
-          approveWrite: async (file) => {
-            if (staged) return { allow: true };
-            const decision = await gateChangedFiles({
-              changedFiles: [file],
-              task,
-              dependsOnFiles: resolveDependsOnFiles(state.tasks, task),
-              projectDir,
-              sessionId,
-              phase: state.phase,
-              taskId: task.id,
-              bus: wctx.bus,
-              callbacks,
-              config,
-            });
-            if (!decision.allow) {
-              preApplyApprovalDenied = true;
-              const files = decision.changedFiles.join(', ');
-              recordApprovalDenial(
-                wctx,
-                state,
-                task,
-                decision,
-                `Task changed files blocked by approval gate: ${decision.reason ?? 'denied'} (${files})`,
-              );
-              return { allow: false, reason: decision.reason ?? 'write denied by approval gate' };
-            }
-            preApplyApprovedFiles = decision.changedFiles;
-            persistApprovalEvidence(wctx, state, decision, task.id);
-            return { allow: true };
-          },
-        });
-        return { value: result, continueIfAborted: !result.success };
-      },
+    implState = await runImplementation({
+      wctx, task, state, taskStartSnapshot, setTrackedState,
+      recordApprovalDenial: (decision, message) => recordApprovalDenial(wctx, state, task, decision, message),
     });
-    state = loop.state;
-    implResult = loop.value;
-    streamingFeed.stop();
   } catch (err) {
-    streamingFeed.stop();
-    staged?.cleanup();
     publishError(wctx.bus, state.phase, labelError('Implementation failed', err));
     const retry = await retryAndRecord({
       wctx, task, initialError: toErrorMessage(err),
@@ -288,127 +186,38 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     return retry.state;
   }
 
-  state = addUsageAndSave(projectDir, sessionId, state, 'implementer', implResult.usage, wctx.bus);
+  state = addUsageAndSave(projectDir, sessionId, implState.state, 'implementer', implState.implResult.usage, wctx.bus);
   setTrackedState(state);
 
-  if (!implResult.success) {
-    staged?.cleanup();
-    if (preApplyApprovalDenied) {
+  if (!implState.implResult.success) {
+    implState.staged?.cleanup();
+    if (implState.preApplyApprovalDenied) {
       return state;
     }
-    if (isExtractedCodeApprovalRaceError(task.file, implResult.error)) {
-      state = await handleApprovalTimeUserEditConflict({
-        wctx,
-        state,
-        task,
-        files: [task.file],
-        taskBreakdowns,
-        setTrackedState,
-      });
+    if (isExtractedCodeApprovalRaceError(task.file, implState.implResult.error)) {
+      state = await handleApprovalTimeUserEditConflict({ wctx, state, task, files: [task.file], taskBreakdowns, setTrackedState });
       return state;
     }
     const retry = await retryAndRecord({
-      wctx, task, initialError: implResult.error ?? 'Implementation failed to produce valid code',
+      wctx, task, initialError: implState.implResult.error ?? 'Implementation failed to produce valid code',
       state, taskStartTime, taskStartSnapshot, tokensBefore, taskBreakdowns, setTrackedState,
     });
     await runChainAnalysisSafe({ wctx, task, projectDir, sessionId, state: retry.state, taskStartSnapshot, bus: wctx.bus });
     return retry.state;
   }
 
-  let taskChangedFiles: string[];
-  let taskChangedFilesFromStaging = Boolean(staged);
-  try {
-    taskChangedFiles = await getChangedFilesSinceSnapshot(staged?.projectDir ?? projectDir, taskStartSnapshot);
-    if (usesStaging && taskChangedFiles.length === 0) {
-      taskChangedFiles = await getChangedFilesSinceSnapshot(projectDir, taskStartSnapshot);
-      taskChangedFilesFromStaging = false;
-    }
-  } catch (err) {
-    staged?.cleanup();
-    publishError(wctx.bus, state.phase, `Task changed files blocked by approval gate: ${toErrorMessage(err)}`);
-    return state;
-  }
-  const preApprovalChangedFileContents = await captureCurrentFileContents(projectDir, taskChangedFiles);
-  const preApplyApprovedFileSet = new Set(preApplyApprovedFiles);
-  const filesNeedingApproval = taskChangedFiles.filter((file) => !preApplyApprovedFileSet.has(file));
-  let changedFilesGate: GateChangedFilesDecision = { allow: true, changedFiles: taskChangedFiles };
-  if (filesNeedingApproval.length > 0) {
-    changedFilesGate = await gateChangedFiles({
-      changedFiles: filesNeedingApproval,
-      task,
-      dependsOnFiles: resolveDependsOnFiles(state.tasks, task),
-      projectDir,
-      sessionId,
-      phase: state.phase,
-      taskId: task.id,
-      bus: wctx.bus,
-      callbacks,
-      config,
-    });
-  }
-  if (!changedFilesGate.allow) {
-    const files = changedFilesGate.changedFiles.join(', ');
-    try {
-      if (!taskChangedFilesFromStaging) {
-        const restoreResult = await restoreDirtyFilesFromSnapshot(
-          projectDir,
-          taskStartSnapshot,
-          changedFilesGate.changedFiles,
-          preApprovalChangedFileContents,
-        );
-        if (restoreResult.conflictedFiles.length > 0) {
-          state = await handleApprovalTimeUserEditConflict({
-            wctx,
-            state,
-            task,
-            files: restoreResult.conflictedFiles,
-            taskBreakdowns,
-            setTrackedState,
-          });
-          publishWarning(
-            wctx.bus,
-            state.phase,
-            `denied task rollback skipped files changed during approval: ${restoreResult.conflictedFiles.join(', ')}`,
-          );
-        }
-      }
-    } catch (err) {
-      publishWarning(wctx.bus, state.phase, `failed to discard denied task changes: ${toErrorMessage(err)}`);
-    }
-    staged?.cleanup();
-    recordApprovalDenial(
-      wctx,
-      state,
-      task,
-      changedFilesGate,
-      `Task changed files blocked by approval gate: ${changedFilesGate.reason ?? 'denied'} (${files})`,
-    );
-    return state;
-  }
-  if (filesNeedingApproval.length > 0) {
-    persistApprovalEvidence(wctx, state, changedFilesGate, task.id);
-  }
-
-  if (staged) {
-    const promoteResult = await promoteStagedChanges(projectDir, staged.projectDir, taskChangedFiles, preApprovalChangedFileContents);
-    staged.cleanup();
-    if (promoteResult.conflictedFiles.length > 0) {
-      state = await handleApprovalTimeUserEditConflict({
-        wctx,
-        state,
-        task,
-        files: promoteResult.conflictedFiles,
-        taskBreakdowns,
-        setTrackedState,
-      });
-      publishError(
-        wctx.bus,
-        state.phase,
-        `Approved task promotion blocked because files changed during approval: ${promoteResult.conflictedFiles.join(', ')}`,
-      );
-      return state;
-    }
-  }
+  const applyResult = await applyChangedFiles({
+    wctx, task, state,
+    staged: implState.staged,
+    usesStaging: implState.usesStaging,
+    preApplyApprovedFiles: implState.preApplyApprovedFiles,
+    taskStartSnapshot,
+    recordApprovalDenial: (s, decision, message) => recordApprovalDenial(wctx, s, task, decision, message),
+    handleConflict: (s, files) => handleApprovalTimeUserEditConflict({ wctx, state: s, task, files, taskBreakdowns, setTrackedState }),
+  });
+  if (!applyResult.proceed) return applyResult.state;
+  state = applyResult.state;
+  const taskChangedFiles = applyResult.taskChangedFiles;
 
   state = transitionAndSave(projectDir, sessionId, state, { type: 'TASK_SENT' });
   setTrackedState(state);

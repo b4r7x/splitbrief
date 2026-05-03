@@ -35,6 +35,14 @@ import {
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
+import type { SpawnServerOptions, SpawnServerResult } from '../../engine/ipc/spawn-server.js';
+
+export interface StartDeps {
+  spawnServer: (opts: SpawnServerOptions) => Promise<SpawnServerResult>;
+  runHeadless: typeof runHeadless;
+}
+
+const defaultStartDeps: StartDeps = { spawnServer, runHeadless };
 
 async function applyWorktreeOption(feature: string | undefined, opts: WorkflowOpts): Promise<void> {
   if (opts.worktree === undefined) return;
@@ -104,7 +112,7 @@ function readinessForInteractiveStart(report: ReadinessReport): ReadinessReport 
   return report.status === 'blocked' ? createBlockerOnlyReadinessReport(report) : report;
 }
 
-export function registerStartCommand(program: Command): void {
+export function registerStartCommand(program: Command, deps: StartDeps = defaultStartDeps): void {
   addWorkflowOptions(
     program
       .command('start [feature] [files...]', { isDefault: true })
@@ -154,7 +162,7 @@ export function registerStartCommand(program: Command): void {
 
       const overrides = buildCLIOverrides(opts, mode);
 
-      const result = await spawnServer({
+      const result = await deps.spawnServer({
         sessionDir: sessDir,
         sessionId: sessId,
         projectDir,
@@ -187,7 +195,7 @@ export function registerStartCommand(program: Command): void {
       clearStaleSessionForCli(projectDir);
       const sessionId = beginSession(projectDir, feature);
       persistStartReadiness(projectDir, sessionId, readiness.report);
-      await runHeadless(plannerFeature ?? feature, projectDir, opts, undefined, sessionId, readiness);
+      await deps.runHeadless(plannerFeature ?? feature, projectDir, opts, undefined, sessionId, readiness);
       return;
     }
 

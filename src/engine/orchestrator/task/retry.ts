@@ -12,7 +12,7 @@ import { handleRetryAndEscalation } from '../escalation/escalation.js';
 import { transitionAndSave } from '../state-ops.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { recordTaskUsage } from '../tokens.js';
-import { resolveDependsOnFiles } from './step.js';
+import { resolveDependsOnFiles } from './resolve-deps.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/recovery.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { persistTaskEvidence } from '../evidence/persistence.js';

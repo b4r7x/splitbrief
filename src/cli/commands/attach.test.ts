@@ -2,39 +2,22 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-
-vi.mock('../../engine/ipc/lockfile.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../engine/ipc/lockfile.js')>();
-  return {
-    ...actual,
-    checkServerStatus: vi.fn(),
-    readLockfile: vi.fn(),
-  };
-});
-
-vi.mock('../../engine/ipc/crash-diagnostic.js', () => ({
-  showCrashDiagnostic: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('../../app.js', () => ({
-  App: () => null,
-}));
-
-vi.mock('../init-stores.js', () => ({
-  initStores: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('../render.js', () => ({
-  renderApp: vi.fn().mockResolvedValue(undefined),
-}));
-
-import { checkServerStatus } from '../../engine/ipc/lockfile.js';
-import { renderApp } from '../render.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { attachCommand } from './attach.js';
+import type { AttachDeps } from './attach.js';
+import type { ServerStatus } from '../../engine/ipc/lockfile.js';
 
-const mockCheckServerStatus = vi.mocked(checkServerStatus);
-const mockRenderApp = vi.mocked(renderApp);
+const mockCheckServerStatus = vi.fn<(dir: string) => Promise<ServerStatus>>();
+const mockShowCrashDiagnostic = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+const mockInitStores = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+const mockRenderApp = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+
+const fakeDeps: AttachDeps = {
+  checkServerStatus: mockCheckServerStatus,
+  showCrashDiagnostic: mockShowCrashDiagnostic,
+  initStores: mockInitStores,
+  renderApp: mockRenderApp,
+};
 
 let testDir: string;
 const originalPlatform = process.platform;
@@ -59,7 +42,7 @@ describe('attachCommand', () => {
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
 
     await expect(
-      attachCommand('some-session', { projectDir: testDir }),
+      attachCommand('some-session', { projectDir: testDir }, fakeDeps),
     ).rejects.toMatchObject({
       exitCode: 1,
       message: expect.stringContaining('not supported on Windows'),
@@ -72,11 +55,11 @@ describe('attachCommand', () => {
     const sessDir = join(testDir, '.diptych', 'sessions', 'my-session');
     mkdirSync(sessDir, { recursive: true });
 
-    const status = {
-      alive: false as const,
+    const status: ServerStatus = {
+      alive: false,
       crashed: true,
       data: {
-        version: 1 as const,
+        version: 1,
         pid: 12345,
         startTimeMs: 1000,
         lastAliveMs: 1000,
@@ -90,7 +73,7 @@ describe('attachCommand', () => {
     mockCheckServerStatus.mockResolvedValue(status);
 
     await expect(
-      attachCommand('my-session', { projectDir: testDir }),
+      attachCommand('my-session', { projectDir: testDir }, fakeDeps),
     ).rejects.toMatchObject({ exitCode: 1 });
   });
 
@@ -114,7 +97,7 @@ describe('attachCommand', () => {
     });
 
     await expect(
-      attachCommand('alive-session', { projectDir: testDir }),
+      attachCommand('alive-session', { projectDir: testDir }, fakeDeps),
     ).resolves.toBeUndefined();
 
     expect(routerStore.get()).toMatchObject({
@@ -150,7 +133,7 @@ describe('attachCommand', () => {
       },
     });
 
-    await expect(attachCommand(undefined, { projectDir: testDir })).resolves.toBeUndefined();
+    await expect(attachCommand(undefined, { projectDir: testDir }, fakeDeps)).resolves.toBeUndefined();
 
     expect(routerStore.get()).toMatchObject({
       screen: 'workflow',
