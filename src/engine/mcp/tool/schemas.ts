@@ -26,7 +26,7 @@ export const MarkTaskDoneInputSchema = z.object({
 export const ReportValidationResultInputSchema = z.object({
   sessionId: z.string().min(1),
   taskId: TaskIdSchema,
-  stage: z.enum(['tsc', 'lint', 'test']),
+  stage: z.enum(['typecheck', 'lint', 'test']),
   passed: z.boolean(),
   errorSummary: z.string().optional(),
   changedFiles: z.array(z.string()).optional(),

@@ -1,66 +1,27 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+
+vi.mock('../../lib/process/spawn.js', () => ({
+  runCommand: vi.fn().mockResolvedValue({ stdout: '', stderr: '', code: 0 }),
+}));
+
+import { runCommand } from '../../lib/process/spawn.js';
 import { createValidator, formatValidationError } from './validation.js';
 import type { ValidationResult } from './validation.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import type { Config } from '../../core/schemas/config.js';
+import type { Task } from '../../core/schemas/task.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import type { DiscoveredValidation } from '../../core/schemas/workflow.js';
+import { createDefaultConfig } from '../../core/config/load/load.js';
 
-describe('detectLinter', () => {
-  let tempDir: string;
+function makeConfig(overrides: Partial<Config['validation']>): Config {
+  const base = createDefaultConfig();
+  return { ...base, validation: { ...base.validation, ...overrides } };
+}
 
-  afterEach(() => {
-    if (tempDir) cleanupTempDir(tempDir);
-  });
-
-  it('returns eslint when eslint.config.js exists', () => {
-    tempDir = createTempDir('validator-test');
-    writeFileSync(join(tempDir, 'eslint.config.js'), 'module.exports = {};');
-    expect(createValidator().detectLinter(tempDir)).toBe('eslint');
-  });
-
-  it('returns eslint when .eslintrc.json exists', () => {
-    tempDir = createTempDir('validator-test');
-    writeFileSync(join(tempDir, '.eslintrc.json'), '{}');
-    expect(createValidator().detectLinter(tempDir)).toBe('eslint');
-  });
-
-  it('returns biome when biome.json exists', () => {
-    tempDir = createTempDir('validator-test');
-    writeFileSync(join(tempDir, 'biome.json'), '{}');
-    expect(createValidator().detectLinter(tempDir)).toBe('biome');
-  });
-
-  it('returns null when neither eslint nor biome config exists', () => {
-    tempDir = createTempDir('validator-test');
-    expect(createValidator().detectLinter(tempDir)).toBe(null);
-  });
-
-  it('prefers eslint over biome when both exist', () => {
-    tempDir = createTempDir('validator-test');
-    writeFileSync(join(tempDir, 'eslint.config.mjs'), 'export default [];');
-    writeFileSync(join(tempDir, 'biome.json'), '{}');
-    expect(createValidator().detectLinter(tempDir)).toBe('eslint');
-  });
-
-  it('caches two different project dirs independently without cross-project bleed', () => {
-    const dirA = createTempDir('validator-test-a');
-    const dirB = createTempDir('validator-test-b');
-    try {
-      writeFileSync(join(dirA, 'biome.json'), '{}');
-      writeFileSync(join(dirB, 'eslint.config.js'), 'module.exports = {};');
-
-      const v = createValidator();
-      expect(v.detectLinter(dirA)).toBe('biome');
-      expect(v.detectLinter(dirB)).toBe('eslint');
-
-      expect(v.detectLinter(dirA)).toBe('biome');
-      expect(v.detectLinter(dirB)).toBe('eslint');
-    } finally {
-      cleanupTempDir(dirA);
-      cleanupTempDir(dirB);
-    }
-  });
-});
+const mockRunCommand = vi.mocked(runCommand);
 
 describe('findAffectedTestFile', () => {
   let tempDir: string;
@@ -92,7 +53,7 @@ describe('findAffectedTestFile', () => {
 describe('formatValidationError', () => {
   it('returns empty string when all passed', () => {
     const results: ValidationResult[] = [
-      { passed: true, stage: 'tsc', output: 'ok' },
+      { passed: true, stage: 'typecheck', output: 'ok' },
       { passed: true, stage: 'lint', output: 'ok' },
     ];
     expect(formatValidationError(results)).toBe('');
@@ -104,7 +65,7 @@ describe('formatValidationError', () => {
 
   it('extracts first failed result', () => {
     const results: ValidationResult[] = [
-      { passed: true, stage: 'tsc', output: 'ok' },
+      { passed: true, stage: 'typecheck', output: 'ok' },
       { passed: false, stage: 'lint', error: 'Unexpected token' },
       { passed: false, stage: 'test', error: 'Test failed' },
     ];
@@ -116,10 +77,172 @@ describe('formatValidationError', () => {
   it('truncates error to 20 lines', () => {
     const longError = Array.from({ length: 30 }, (_, i) => `Error line ${i + 1}`).join('\n');
     const results: ValidationResult[] = [
-      { passed: false, stage: 'tsc', error: longError },
+      { passed: false, stage: 'typecheck', error: longError },
     ];
     const error = formatValidationError(results);
     expect(error).not.toContain('Error line 21');
     expect(error).toContain('Error line 20');
+  });
+});
+
+describe('validation pipeline', () => {
+  let tempDir: string;
+  let validator: ReturnType<typeof createValidator>;
+
+  beforeEach(() => {
+    tempDir = createTempDir('val-pipe');
+    validator = createValidator();
+    mockRunCommand.mockClear();
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+    vi.restoreAllMocks();
+  });
+
+  function mkTask(file: string): Task {
+    return makeTask({ file, action: 'modify' });
+  }
+
+  const fakeBus = { publish: () => {}, subscribe: () => () => {} };
+
+  it('skips typecheck when master switch is off', async () => {
+    const config = makeConfig({ typecheck: false, typecheckCommand: 'cargo check', lint: false, test: false });
+    const results = await validator.runValidation(mkTask('src/main.rs'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+    expect(results).toHaveLength(0);
+  });
+
+  it('skips lint when master switch is off', async () => {
+    const config = makeConfig({ lint: false, lintCommand: 'cargo clippy' });
+    const results = await validator.runValidation(mkTask('src/main.rs'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+    const lintResult = results.find((r) => r.stage === 'lint');
+    expect(lintResult).toBeUndefined();
+  });
+
+  it('skips test when master switch is off', async () => {
+    const config = makeConfig({ test: false });
+    mkdirSync(join(tempDir, 'tests'), { recursive: true });
+    writeFileSync(join(tempDir, 'tests', 'foo.test.ts'), '');
+    const results = await validator.runValidation(mkTask('src/foo.ts'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+    const testResult = results.find((r) => r.stage === 'test');
+    expect(testResult).toBeUndefined();
+  });
+});
+
+describe('layer priority', () => {
+  let tempDir: string;
+  let validator: ReturnType<typeof createValidator>;
+
+  beforeEach(() => {
+    tempDir = createTempDir('val-layer');
+    validator = createValidator();
+    mockRunCommand.mockClear();
+    mockRunCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 });
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  function mkTask(file: string): Task {
+    return makeTask({ file, action: 'modify' });
+  }
+
+  const fakeBus = { publish: () => {}, subscribe: () => () => {} };
+
+  it('config wins over discovered', async () => {
+    const config = makeConfig({ typecheckCommand: 'mypy src/', lint: false, test: false });
+    const discovered: DiscoveredValidation = { typecheckCommand: 'cargo check' };
+
+    await validator.runValidation(mkTask('src/main.py'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id'], discovered);
+
+    expect(mockRunCommand).toHaveBeenCalledWith('mypy', ['src/'], expect.objectContaining({ cwd: tempDir }));
+  });
+
+  it('discovered wins over heuristic', async () => {
+    const config = makeConfig({ lint: false, test: false });
+    const discovered: DiscoveredValidation = { typecheckCommand: 'cargo check' };
+    writeFileSync(join(tempDir, 'go.mod'), 'module example.com/test');
+
+    await validator.runValidation(mkTask('src/main.rs'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id'], discovered);
+
+    expect(mockRunCommand).toHaveBeenCalledWith('cargo', ['check'], expect.objectContaining({ cwd: tempDir }));
+  });
+
+  it('heuristic fallback when no config and no discovered', async () => {
+    const config = makeConfig({ lint: false, test: false });
+    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
+
+    await validator.runValidation(mkTask('src/main.rs'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+
+    expect(mockRunCommand).toHaveBeenCalledWith('cargo', ['check'], expect.objectContaining({ cwd: tempDir }));
+  });
+
+  it('lint stage skipped when no layer provides a command', async () => {
+    const config = makeConfig({ typecheck: false, lint: true, test: false });
+
+    const results = await validator.runValidation(mkTask('src/foo.ts'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+
+    expect(mockRunCommand).not.toHaveBeenCalled();
+    const lintResult = results.find((r) => r.stage === 'lint');
+    expect(lintResult).toBeUndefined();
+  });
+
+  it('ENOENT skips gracefully', async () => {
+    const enoent = Object.assign(new Error('spawn cargo ENOENT'), { code: 'ENOENT' });
+    mockRunCommand.mockRejectedValueOnce(enoent);
+
+    const config = makeConfig({ lint: false, test: false });
+    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
+
+    const results = await validator.runValidation(mkTask('src/main.rs'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+
+    const tc = results.find((r) => r.stage === 'typecheck');
+    expect(tc?.passed).toBe(true);
+    expect(tc?.output).toContain('not found');
+  });
+
+  it('TS project uses default npx tsc --noEmit when heuristic returns null', async () => {
+    const config = makeConfig({ lint: false, test: false });
+    writeFileSync(join(tempDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
+
+    await validator.runValidation(mkTask('src/app.ts'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+
+    expect(mockRunCommand).toHaveBeenCalledWith('npx', ['tsc', '--noEmit'], expect.objectContaining({ cwd: tempDir }));
+  });
+
+  it('short-circuits on typecheck failure without running lint or test', async () => {
+    mockRunCommand.mockResolvedValueOnce({ stdout: '', stderr: 'type error', code: 1 });
+
+    const config = makeConfig({ typecheck: true, lint: true, test: true });
+    writeFileSync(join(tempDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
+
+    const results = await validator.runValidation(mkTask('src/app.ts'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+
+    expect(results).toHaveLength(1);
+    const tc = results.find((r) => r.stage === 'typecheck');
+    expect(tc?.passed).toBe(false);
+    expect(mockRunCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips test stage when default source but no test file found', async () => {
+    const config = makeConfig({ typecheck: false, lint: false, test: true, testCommand: undefined });
+    writeFileSync(join(tempDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
+
+    const results = await validator.runValidation(mkTask('src/app.ts'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id']);
+
+    expect(results.find((r) => r.stage === 'test')).toBeUndefined();
+    expect(mockRunCommand).not.toHaveBeenCalled();
+  });
+});
+
+describe('formatValidationError edge cases', () => {
+  it('falls back to output when error is undefined', () => {
+    const results: ValidationResult[] = [
+      { passed: false, stage: 'lint', error: undefined, output: 'some lint output' },
+    ];
+    const error = formatValidationError(results);
+    expect(error).toContain('lint');
+    expect(error).toContain('some lint output');
   });
 });

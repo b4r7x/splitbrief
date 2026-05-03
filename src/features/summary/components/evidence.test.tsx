@@ -69,11 +69,11 @@ describe('SummaryEvidence', () => {
     let ledger = createEvidenceLedger({ sessionId: 's1', feature: 'demo', mode: 'standard', tasks: [a, b] });
     ledger = recordLocalTaskEvidence({
       ledger, task: a, status: 'done', method: 'local',
-      validation: [{ passed: true, stage: 'tsc' }, { passed: true, stage: 'lint' }, { passed: true, stage: 'test' }],
+      validation: [{ passed: true, stage: 'typecheck' }, { passed: true, stage: 'lint' }, { passed: true, stage: 'test' }],
     });
     ledger = recordRetryOrEscalationEvidence({
       ledger, task: b, status: 'escalated', escalated: true,
-      validation: [{ passed: true, stage: 'tsc' }],
+      validation: [{ passed: true, stage: 'typecheck' }],
     });
     ledger = recordFinalReviewEvidence({ ledger, status: 'written' });
 
@@ -95,7 +95,7 @@ describe('SummaryEvidence', () => {
     expect(frame).toContain('1 escalated');
     expect(frame).toContain('T001');
     expect(frame).toContain('Add hello module');
-    expect(frame).toContain('tsc,lint,test');
+    expect(frame).toContain('typecheck,lint,test');
     expect(frame).toContain('task reached done');
     expect(frame).toContain('T002');
     expect(frame).toContain('task reached escalated');

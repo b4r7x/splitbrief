@@ -318,16 +318,19 @@ If `implementerProfiles.default` is omitted, diptych resolves the default profil
 
 ## 4. `validation`
 
-What runs after every implementer task. All four fields are **required** in the schema; the loader fills them from `createDefaultConfig()` if absent.
+What runs after every implementer task. The four base fields are **required** in the schema; the loader fills them from `createDefaultConfig()` if absent. Three optional command overrides let you pin exact validation commands per project.
 
 ### Schema
 
 ```ts
 validation: {
-  typecheck:   boolean;
-  lint:        boolean;
-  test:        boolean;
-  testCommand: string; // non-empty
+  typecheck:    boolean;
+  lint:         boolean;
+  test:         boolean;
+  testCommand:  string; // non-empty
+  typecheckCommand?: string; // optional
+  lintCommand?:      string; // optional
+  testPattern?:      string; // optional
 }
 ```
 
@@ -335,12 +338,15 @@ validation: {
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `typecheck` | boolean | `true` | Runs `npm run typecheck` (or `tsc --noEmit` fallback) after each task |
-| `lint` | boolean | `true` | Runs `npm run lint` after each task (Biome by default in this project's stack) |
-| `test` | boolean | `true` | Runs the test command after each task |
+| `typecheck` | boolean | `true` | Master switch for the type-checking stage |
+| `lint` | boolean | `true` | Master switch for the linting stage |
+| `test` | boolean | `true` | Master switch for the test stage |
 | `testCommand` | string | `npm test` | Argv-style test runner command. Diptych appends `-- <test-file>` for the affected test, so shell operators and environment expansion are not interpreted here. |
+| `typecheckCommand` | string | — | Optional override for the type-checking command (e.g. `cargo check`, `go vet ./...`, `mypy src/`) |
+| `lintCommand` | string | — | Optional override for the linting command (e.g. `cargo clippy --no-deps`, `ruff check`) |
+| `testPattern` | string | — | Optional glob for finding test files (e.g. `*_test.go`, `test_*.py`). Defaults to TypeScript patterns (`*.test.ts`, `*.test.tsx`) |
 
-YAML:
+YAML — TypeScript project (default):
 
 ```yaml
 validation:
@@ -350,12 +356,36 @@ validation:
   testCommand: npm test -- --run --reporter=dot
 ```
 
-**When to use the toggles:**
-- Disable `test` for repos with no test suite (rare — diptych nudges you to add one).
-- Disable `lint` if your linter is enforced only at PR time (CI) and you want faster local iteration.
-- Always leave `typecheck: true` for TypeScript projects — it's the cheapest signal that the implementer actually wrote compilable code.
+YAML — Rust project:
 
-**See also:** [WORKFLOW.md](./WORKFLOW.md) (where validation sits in the loop), `src/engine/validators/`.
+```yaml
+validation:
+  typecheck: true
+  lint: true
+  test: true
+  typecheckCommand: cargo check
+  lintCommand: cargo clippy --no-deps
+  testCommand: cargo test
+  testPattern: "*_test.rs"
+```
+
+### How commands are resolved
+
+Diptych resolves each validation stage through 4 layers, in priority order:
+
+1. **User config** — `typecheckCommand`, `lintCommand`, `testCommand` override everything.
+2. **Planner-discovered** — during the research phase, the planner reads config files and reports the project's validation toolchain. This is persisted to `WorkflowState.discoveredValidation` and used if no user config exists.
+3. **Heuristic fallback** — if no config or discovery exists, diptych looks at marker files (`Cargo.toml`, `go.mod`, `pyproject.toml`, `package.json`) to infer the language and default commands.
+4. **Graceful skip** — if no layer provides a command, the stage is silently skipped (no error).
+
+Master switches (`typecheck`, `lint`, `test`) still gate each stage: setting `lint: false` skips lint regardless of whether a command is available.
+
+**When to use the toggles:**
+- Disable `test` for repos with no test suite.
+- Disable `lint` if your linter is enforced only at PR time (CI) and you want faster local iteration.
+- Leave `typecheck: true` for typed languages — it's the cheapest signal that the implementer wrote compilable code.
+
+**See also:** [WORKFLOW.md](./WORKFLOW.md) (where validation sits in the loop), `src/engine/orchestrator/validation.ts`.
 
 ---
 

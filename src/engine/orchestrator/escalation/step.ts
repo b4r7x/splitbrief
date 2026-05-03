@@ -162,7 +162,7 @@ export async function validateAndCommit(
     persistRetryApprovalEvidence(ctx, state, task, changedFilesGate);
   }
 
-  const validationResults = await ctx.validator.runValidation(task, ctx.projectDir, ctx.config, ctx.bus, state.phase, task.id);
+  const validationResults = await ctx.validator.runValidation(task, ctx.projectDir, ctx.config, ctx.bus, state.phase, task.id, state.discoveredValidation);
   const result = await validateCommitAndAdvance({
     task, projectDir: ctx.projectDir, sessionId: ctx.sessionId,
     config: ctx.config, bus: ctx.bus,

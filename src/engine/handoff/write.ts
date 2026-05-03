@@ -39,7 +39,7 @@ function resolveValidationCommands(projectDir: string): {
     validation: {
       ...(config.validation.typecheck ? { typecheck: 'npm run typecheck' } : {}),
       ...(config.validation.lint ? { lint: 'npm run lint' } : {}),
-      ...(config.validation.test ? { test: config.validation.testCommand } : {}),
+      ...(config.validation.test ? { test: config.validation.testCommand ?? 'npm test' } : {}),
     },
     ...(config.workflow.mode !== undefined ? { configMode: config.workflow.mode } : {}),
   };

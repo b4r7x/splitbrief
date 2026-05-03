@@ -154,7 +154,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
         if (span && event.status === 'done') {
           span.addEvent('diptych.validate', {
             'diptych.validate.passed': event.passed,
-            'diptych.validate.tsc': event.stages.tsc,
+            'diptych.validate.typecheck': event.stages.typecheck,
             'diptych.validate.lint': event.stages.lint,
             'diptych.validate.test': event.stages.test,
             ...(event.error ? { 'diptych.validate.error': event.error } : {}),

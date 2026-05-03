@@ -86,7 +86,10 @@ export const ConfigSchema = z.object({
     typecheck: z.boolean(),
     lint: z.boolean(),
     test: z.boolean(),
-    testCommand: z.string().min(1),
+    testCommand: z.string().min(1).optional(),
+    typecheckCommand: z.string().min(1).optional(),
+    lintCommand: z.string().min(1).optional(),
+    testPattern: z.string().min(1).optional(),
   }),
   workflow: z.object({
     autoApproveSpec: z.boolean().optional(),

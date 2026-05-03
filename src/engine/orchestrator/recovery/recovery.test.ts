@@ -149,7 +149,7 @@ describe('recovery issue builders', () => {
       task,
       createdAt,
       validationResults: [
-        { stage: 'tsc', passed: true },
+        { stage: 'typecheck', passed: true },
         { stage: 'test', passed: false, error: 'session.test.ts expected token refresh' },
       ],
       attempts: 2,

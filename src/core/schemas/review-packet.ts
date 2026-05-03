@@ -134,7 +134,7 @@ export const ReviewPacketValidationTaskSchema = z.object({
   title: z.string(),
   status: TaskStatusSchema,
   validation: z.array(z.object({
-    stage: z.enum(['tsc', 'lint', 'test']),
+    stage: z.enum(['typecheck', 'lint', 'test']),
     passed: z.boolean(),
     errorSummary: z.string().optional(),
   })),

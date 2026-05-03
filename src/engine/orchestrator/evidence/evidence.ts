@@ -16,7 +16,7 @@ import { EVIDENCE_FILE, REVIEW_FILE, sessionDir } from '../../../core/paths.js';
 import { readJsonSafe, writeSecureFile } from '../../../lib/fs.js';
 
 const VALIDATION_PASSED_LABEL: Record<EvidenceValidationEntry['stage'], string> = {
-  tsc: 'tsc passed',
+  typecheck: 'typecheck passed',
   lint: 'lint passed',
   test: 'test passed',
 };

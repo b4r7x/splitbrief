@@ -200,7 +200,7 @@ export function buildRoutingPreviewMetadata(
     name: 'unknown',
     dir: opts.projectDir,
     runtime: 'node',
-    testCommand: opts.config.validation.testCommand,
+    testCommand: opts.config.validation.testCommand ?? 'npm test',
   };
   const profiles = resolveImplementerProfiles(opts.config).profiles;
 

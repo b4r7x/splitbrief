@@ -48,7 +48,16 @@ Coding patterns, conventions, and styles found in the codebase that new code mus
 Technical constraints, runtime requirements, and existing limitations.
 
 ### Implementation Considerations
-Initial thoughts on how the feature might fit into the existing architecture.`,
+Initial thoughts on how the feature might fit into the existing architecture.
+
+### Validation Tools
+
+Identify the project's validation toolchain by reading config files:
+- **Language**: Primary programming language (e.g., typescript, python, rust, go)
+- **Type checker**: Command to run type checking (e.g., \`npx tsc --noEmit\`, \`cargo check\`, \`mypy src/\`, \`go vet ./...\`), or "none"
+- **Linter**: Command to run linting (e.g., \`npx biome check\`, \`cargo clippy\`, \`ruff check\`, \`golangci-lint run\`), or "none"
+- **Test runner**: Command to run tests (e.g., \`npm test\`, \`cargo test\`, \`pytest\`, \`go test ./...\`)
+- **Test file pattern**: How test files are named (e.g., \`*.test.ts\`, \`*_test.go\`, \`test_*.py\`)`,
       },
       {
         heading: 'User Interaction',

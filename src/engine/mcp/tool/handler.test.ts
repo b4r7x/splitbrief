@@ -216,7 +216,7 @@ describe('MCP tool handler', () => {
     const result = handler.callTool('report_validation_result', {
       sessionId: 'sess-001',
       taskId: 'T001',
-      stage: 'tsc',
+      stage: 'typecheck',
       passed: true,
     });
     expect(result.ok).toBe(true);
@@ -224,8 +224,8 @@ describe('MCP tool handler', () => {
     const ledger = readLedger(projectDir, 'sess-001');
     const task = findTask(ledger, 'T001');
     expect(task.validation).toHaveLength(1);
-    expect(task.validation.at(0)).toMatchObject({ stage: 'tsc', passed: true });
-    expect(task.observedEvidence).toContain('tsc passed');
+    expect(task.validation.at(0)).toMatchObject({ stage: 'typecheck', passed: true });
+    expect(task.observedEvidence).toContain('typecheck passed');
   });
 
   it('report_validation_result records failed validation with error summary', () => {

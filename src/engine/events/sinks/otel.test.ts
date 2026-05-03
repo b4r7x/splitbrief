@@ -139,7 +139,7 @@ describe('createOtelSink', () => {
     const sink = createOtelSink({ provider });
     sink({ type: 'workflow_started', ts: 1, phase: 'idle', feature: 'x' });
     sink({ type: 'planner_status', ts: 2, phase: 'implementing', status: 'running' });
-    sink({ type: 'validate', ts: 30, phase: 'implementing', taskId: 'T5' as never, status: 'done', passed: true, stages: { tsc: true, lint: true, test: true } });
+    sink({ type: 'validate', ts: 30, phase: 'implementing', taskId: 'T5' as never, status: 'done', passed: true, stages: { typecheck: true, lint: true, test: true } });
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
     const phase = exporter.getFinishedSpans().find(s => s.name === 'diptych.phase.implementing');

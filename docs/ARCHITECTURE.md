@@ -384,7 +384,7 @@ See [CHANGELOG.md](../CHANGELOG.md) for release history and amendments.
 - Tool-call output from the implementer — small models can't reliably produce it; we extract code from plain text.
 - Full message-level rewind (Claude Code "double-Esc" style) and Cursor-style code snapshot undo — see `docs/FUTURE.md`.
 - Anything Windows-specific — not tested there.
-- Non-TypeScript language support — the validator pipeline is TS-shaped.
+- ~~Non-TypeScript language support~~ — implemented via 4-layer polyglot validation (config > planner-discovered > heuristic > skip). See `docs/FUTURE.md`.
 
 ---
 
@@ -588,7 +588,7 @@ src/
 │   │   │                          without native session resume
 │   │   ├── types.ts               WorkflowContext, OrchestratorCallbacks,
 │   │   │                          WorkflowSinks
-│   │   └── validation.ts          Validator pipeline (tsc / lint / test)
+│   │   └── validation.ts          Validator pipeline (typecheck / lint / test)
 │   ├── palette/aggregate.ts       Cross-store palette aggregator
 │   ├── parsers/                   code-detection, code-patterns,
 │   │                              question-parser, response-extractor,

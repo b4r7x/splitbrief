@@ -5,6 +5,8 @@ import type { PlanResult } from '../../planners/types.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import type { ApproveLevel } from '../../../core/schemas/enums.js';
 import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../../core/paths.js';
+import { saveState } from '../../../core/state/persistence.js';
+import { parseDiscoveredValidation } from './parse-validation.js';
 import { buildSkillsSection } from '../../skill-discovery.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { publishPlannerStatus, publishEvent } from '../events.js';
@@ -67,6 +69,15 @@ async function runNewPlanning(
 
   persistPhases(projectDir, sessionId, planResult.phases, metadata);
   let tasks = planResult.tasks;
+
+  const researchPhase = planResult.phases?.[0];
+  if (researchPhase) {
+    const discovered = parseDiscoveredValidation(researchPhase.text);
+    if (discovered) {
+      state = { ...state, discoveredValidation: discovered };
+      saveState(projectDir, sessionId, state);
+    }
+  }
 
   state = addUsageAndSave(projectDir, sessionId, state, 'planner', planResult.usage, wctx.bus);
 

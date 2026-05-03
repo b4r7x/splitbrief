@@ -227,7 +227,7 @@ describe('buildSummary', () => {
       let ledger = createEvidenceLedger({ sessionId, feature: 'ev-test', mode: 'standard', tasks: [task] });
       ledger = recordLocalTaskEvidence({
         ledger, task, status: 'done', method: 'local',
-        validation: [{ passed: true, stage: 'tsc' }],
+        validation: [{ passed: true, stage: 'typecheck' }],
       });
       writeEvidenceLedger(projectDir, sessionId, ledger);
 

@@ -71,13 +71,13 @@ const TOOL_DEFINITIONS: McpToolDefinition[] = [
   },
   {
     name: 'report_validation_result',
-    description: 'Report a validation result (tsc, lint, or test) for a task. Call after running each validation stage.',
+    description: 'Report a validation result (typecheck, lint, or test) for a task. Call after running each validation stage.',
     inputSchema: {
       type: 'object',
       properties: {
         sessionId: { type: 'string', description: 'Active diptych session ID' },
         taskId: { type: 'string', description: 'Task ID (e.g. T001)' },
-        stage: { type: 'string', enum: ['tsc', 'lint', 'test'], description: 'Validation stage' },
+        stage: { type: 'string', enum: ['typecheck', 'lint', 'test'], description: 'Validation stage' },
         passed: { type: 'boolean', description: 'Whether validation passed' },
         errorSummary: { type: 'string', description: 'Error summary if validation failed' },
         changedFiles: {

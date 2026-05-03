@@ -228,7 +228,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     const preValidationPayload: EngineEvent = {
       type: 'validate', ts: Date.now(), phase: state.phase,
       taskId: task.id, status: 'running', passed: false,
-      stages: { tsc: false, lint: false, test: false },
+      stages: { typecheck: false, lint: false, test: false },
     };
     const preVal = await runPreHooks(wctx.config.hooks, 'pre_validation', preValidationPayload, { projectDir, sessionId });
     if (!preVal.allow) {
@@ -237,7 +237,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     }
   }
 
-  const validationResults = await wctx.validator.runValidation(task, projectDir, config, wctx.bus, state.phase, task.id);
+  const validationResults = await wctx.validator.runValidation(task, projectDir, config, wctx.bus, state.phase, task.id, state.discoveredValidation);
   const commitResult = await validateCommitAndAdvance({
     task, projectDir, sessionId, config, bus: wctx.bus, state,
     method: 'local', transitionType: 'VALIDATION_PASS', taskStartTime,
