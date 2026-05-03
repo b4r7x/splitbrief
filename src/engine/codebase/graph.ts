@@ -1,4 +1,5 @@
-import { dirname, resolve as pathResolve } from 'node:path';
+import { dirname, resolve as pathResolve, extname } from 'node:path';
+import { getLanguageForExtension } from './languages.js';
 import type { FileNode } from './types.js';
 
 export interface Graph {
@@ -22,7 +23,7 @@ export function buildGraph(nodes: FileNode[]): Graph {
 
   for (const node of nodes) {
     for (const spec of node.imports) {
-      const resolved = resolveImport(node.path, spec, resolvedPathMap);
+      const resolved = resolveImport(spec, node.path, resolvedPathMap);
       if (resolved !== null) {
         outEdges.get(node.path)!.add(resolved);
         inEdges.get(resolved)!.add(node.path);
@@ -43,20 +44,17 @@ function buildResolvedPathMap(pathSet: Set<string>): Map<string, string> {
   return resolvedPathMap;
 }
 
-function resolveImport(fromPath: string, spec: string, resolvedPathMap: Map<string, string>): string | null {
+function resolveImport(spec: string, importerPath: string, resolvedPathMap: Map<string, string>): string | null {
   if (!spec.startsWith('.')) return null;
 
-  const fromDir = dirname(fromPath);
-  const stripped = spec.replace(/\.(js|ts|tsx)$/, '');
-  const candidates = [
-    pathResolve(fromDir, stripped + '.ts'),
-    pathResolve(fromDir, stripped + '.tsx'),
-    pathResolve(fromDir, stripped),
-    pathResolve(fromDir, stripped, 'index.ts'),
-  ];
+  const lang = getLanguageForExtension(extname(importerPath));
+  if (!lang) return null;
 
-  for (const candidate of candidates) {
-    const resolved = resolvedPathMap.get(candidate);
+  const fromDir = dirname(importerPath);
+  const stripped = spec.replace(/\.(tsx|ts|jsx|js|py|go|rs|mjs|cjs)$/, '');
+
+  for (const candidate of lang.resolveImportCandidates(stripped)) {
+    const resolved = resolvedPathMap.get(pathResolve(fromDir, candidate));
     if (resolved !== undefined) return resolved;
   }
 

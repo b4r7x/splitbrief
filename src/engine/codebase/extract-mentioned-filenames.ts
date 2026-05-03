@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { basename, isAbsolute, resolve } from 'node:path';
 
-const PATH_PATTERN = /(?:\.{1,2}\/)?(?:[\w./-]+\/)?[\w-]+\.(ts|tsx|js|jsx)\b/g;
+const PATH_PATTERN = /(?:\.{1,2}\/)?(?:[\w./-]+\/)?[\w-]+\.(tsx|ts|jsx|js|py|go|rs)\b/g;
 
 export function extractMentionedFilenames(
   text: string,

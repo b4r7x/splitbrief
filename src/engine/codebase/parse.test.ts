@@ -1,6 +1,9 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-import { initParser, parseFile } from './parse.js';
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { initParser, parseFile, kindForNodeType } from './parse.js';
 import { resolve } from 'node:path';
+import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 describe('parse', () => {
   beforeAll(async () => { await initParser(); });
@@ -50,5 +53,75 @@ describe('parse', () => {
   it('returns null when filesystem access fails', async () => {
     const node = await parseFile(resolve('testing/fixtures/codebase/does-not-exist.ts'));
     expect(node).toBeNull();
+  });
+});
+
+describe('parseFile', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'parse-'));
+    await initParser();
+  });
+
+  afterEach(() => rmSync(tmpDir, { recursive: true }));
+
+  it('returns null for unknown extension', async () => {
+    const file = join(tmpDir, 'test.xyz');
+    writeFileSync(file, 'some content');
+    const node = await parseFile(file);
+    expect(node).toBeNull();
+  });
+
+  it('returns filename-only node when grammar package is missing', async () => {
+    const file = join(tmpDir, 'test.py');
+    writeFileSync(file, 'def hello(): pass');
+    const node = await parseFile(file);
+    expect(node).toBeTruthy();
+    expect(node?.symbols).toEqual([]);
+    expect(node?.imports).toEqual([]);
+    expect(node?.path).toBe(file);
+  });
+});
+
+describe('kindForNodeType polyglot', () => {
+  it('maps Python function_definition to function', () => {
+    expect(kindForNodeType('function_definition')).toBe('function');
+  });
+
+  it('maps Python class_definition to class', () => {
+    expect(kindForNodeType('class_definition')).toBe('class');
+  });
+
+  it('maps Go method_declaration to function', () => {
+    expect(kindForNodeType('method_declaration')).toBe('function');
+  });
+
+  it('maps Rust struct_item to class', () => {
+    expect(kindForNodeType('struct_item')).toBe('class');
+  });
+
+  it('maps Rust trait_item to interface', () => {
+    expect(kindForNodeType('trait_item')).toBe('interface');
+  });
+
+  it('maps Rust enum_item to enum', () => {
+    expect(kindForNodeType('enum_item')).toBe('enum');
+  });
+
+  it('maps Rust type_item to type', () => {
+    expect(kindForNodeType('type_item')).toBe('type');
+  });
+
+  it('maps Go type_declaration to type', () => {
+    expect(kindForNodeType('type_declaration')).toBe('type');
+  });
+
+  it('maps Rust function_item to function', () => {
+    expect(kindForNodeType('function_item')).toBe('function');
+  });
+
+  it('maps unknown node type to const', () => {
+    expect(kindForNodeType('something_random')).toBe('const');
   });
 });

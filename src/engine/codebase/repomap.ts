@@ -6,15 +6,16 @@ import { buildGraph } from './graph.js';
 import { pagerank } from './pagerank.js';
 import { formatWithBudget } from './budget.js';
 import { extractMentionedFilenames } from './extract-mentioned-filenames.js';
+import { ALL_KNOWN_EXTENSIONS } from './languages.js';
 
 export interface RepoMapOptions {
   focusFiles?: string[];
   featureText?: string;
   tokenBudget?: number;
+  include?: string[];
   exclude?: string[];
 }
 
-const DEFAULT_INCLUDE_EXTS = new Set(['.ts', '.tsx']);
 const DEFAULT_EXCLUDE_PATTERNS = [
   /\.test\.tsx?$/,
   /node_modules\//,
@@ -30,7 +31,7 @@ export async function buildRepoMap(projectDir: string, opts: RepoMapOptions = {}
   await mkdir(cacheDir, { recursive: true });
   const cache = createParseCache(join(cacheDir, 'repomap.sqlite'));
 
-  const absFiles = await discoverFiles(projectDir, opts.exclude);
+  const absFiles = await discoverFiles(projectDir, opts.exclude, opts.include);
   if (absFiles.length === 0) return '';
 
   const parsedNodes = await Promise.all(absFiles.map(f => cache.getOrParse(f, parseFile)));
@@ -57,10 +58,25 @@ export async function buildRepoMap(projectDir: string, opts: RepoMapOptions = {}
   return formatWithBudget(displayNodes, rankingsByRelPath, tokenBudget);
 }
 
-async function discoverFiles(projectDir: string, excludePatterns?: string[]): Promise<string[]> {
+function extractExtensionsFromPatterns(patterns: string[]): Set<string> {
+  const exts = new Set<string>();
+  for (const p of patterns) {
+    const match = p.match(/\*(\.[a-zA-Z0-9]+)$/);
+    if (match?.[1]) exts.add(match[1]);
+  }
+  return exts;
+}
+
+async function discoverFiles(projectDir: string, excludePatterns?: string[], includePatterns?: string[]): Promise<string[]> {
   const exclude = excludePatterns
     ? excludePatterns.map(p => new RegExp(p))
     : DEFAULT_EXCLUDE_PATTERNS;
+  const extracted = includePatterns?.length
+    ? extractExtensionsFromPatterns(includePatterns)
+    : null;
+  const allowedExtensions = extracted && extracted.size > 0
+    ? extracted
+    : ALL_KNOWN_EXTENSIONS;
   const out: string[] = [];
 
   async function walk(dir: string): Promise<void> {
@@ -73,7 +89,7 @@ async function discoverFiles(projectDir: string, excludePatterns?: string[]): Pr
         await walk(abs);
       } else if (entry.isFile()) {
         const ext = extname(abs);
-        if (DEFAULT_INCLUDE_EXTS.has(ext)) out.push(resolve(abs));
+        if (allowedExtensions.has(ext)) out.push(resolve(abs));
       }
     }
   }

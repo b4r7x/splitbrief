@@ -384,7 +384,7 @@ See [CHANGELOG.md](../CHANGELOG.md) for release history and amendments.
 - Tool-call output from the implementer — small models can't reliably produce it; we extract code from plain text.
 - Full message-level rewind (Claude Code "double-Esc" style) and Cursor-style code snapshot undo — see `docs/FUTURE.md`.
 - Anything Windows-specific — not tested there.
-- ~~Non-TypeScript language support~~ — implemented via 4-layer polyglot validation (config > planner-discovered > heuristic > skip). See `docs/FUTURE.md`.
+- ~~Non-TypeScript language support~~ — implemented via polyglot validation pipeline and polyglot codebase analysis (tree-sitter grammars for Python, Go, Rust, JavaScript). See `docs/FUTURE.md`.
 
 ---
 

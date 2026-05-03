@@ -54,4 +54,11 @@ describe('buildGraph', () => {
     const g = buildGraph([a, b]);
     expect(g.nodes).toEqual(['src/a.ts', 'src/b.ts']);
   });
+
+  it('Go files produce no import edges', () => {
+    const a = fn('src/a.go', ['./b']);
+    const b = fn('src/b.go', []);
+    const g = buildGraph([a, b]);
+    expect(g.outEdges.get('src/a.go')?.size ?? 0).toBe(0);
+  });
 });
