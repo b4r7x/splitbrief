@@ -2,6 +2,7 @@ import type { ProjectContext } from '../../core/state/types.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
+import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type { RunnerRuntime } from '../runners/types.js';
 import type { EventBus } from '../events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
@@ -47,6 +48,7 @@ export interface ImplementerOptions {
   sessionId?: string | undefined;
   signal?: AbortSignal | undefined;
   continuationPrompt?: string | undefined;
+  languageContext?: LanguageContext | undefined;
   bus?: EventBus | undefined;
   phase?: Phase | undefined;
   approveWrite?: ((file: string) => Promise<{ allow: boolean; reason?: string | undefined }>) | undefined;

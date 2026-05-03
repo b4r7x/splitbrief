@@ -131,6 +131,7 @@ export async function runPlannerCallInContinuationLoop(
         persistTranscript: config.workflow.persistTranscript,
         ...(priorMessages && priorMessages.length > 0 ? { priorMessages } : {}),
         ...(callAttachments ? { attachments: callAttachments } : {}),
+        ...(state.discoveredValidation !== undefined ? { discoveredValidation: state.discoveredValidation } : {}),
         ...(mode === 'speckit' && conversational && collectedQuestions
           ? {
               onQuestion: (questions) => {

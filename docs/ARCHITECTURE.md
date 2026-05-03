@@ -159,6 +159,8 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 
 The planner receives a token-budgeted [repo-map](./REPOMAP.md) of the codebase on every workflow start so it can compile sharper Task Briefs and decide when spec work is worth the cost.
 
+Prompt builders receive a language context resolved from planner-discovered validation, project heuristics, or a generic fallback. TypeScript keeps the existing ESM-with-`.js` guidance; Python, Go, Rust, JavaScript, and generic prompts use language-appropriate imports, module wording, examples, and type guidance.
+
 Both are configured by the same five runner kinds. The factories dispatch identically:
 
 ```
@@ -384,7 +386,7 @@ See [CHANGELOG.md](../CHANGELOG.md) for release history and amendments.
 - Tool-call output from the implementer — small models can't reliably produce it; we extract code from plain text.
 - Full message-level rewind (Claude Code "double-Esc" style) and Cursor-style code snapshot undo — see `docs/FUTURE.md`.
 - Anything Windows-specific — not tested there.
-- ~~Non-TypeScript language support~~ — implemented via polyglot validation pipeline and polyglot codebase analysis (tree-sitter grammars for Python, Go, Rust, JavaScript). See `docs/FUTURE.md`.
+- ~~Non-TypeScript language support~~ — implemented via polyglot validation, polyglot codebase analysis (tree-sitter grammars for Python, Go, Rust, JavaScript), and language-aware planner/implementer prompts. See `docs/FUTURE.md`.
 
 ---
 
@@ -401,7 +403,7 @@ A snapshot of the codebase as it actually stands today, generated for an AI agen
 diptych is a cost-aware task compiler for AI coding agents. It composes two roles around a strict workflow:
 
 1. **Planner** — an expensive, capable model (Claude / GPT / Codex / Claude-Code CLI / etc.) that ingests the feature request, explores the repo, and compiles a Task Brief: a structured list of single-file `Task` objects with scope, validation, and evidence.
-2. **Implementer** — a cheaper, smaller model that executes one task at a time against its self-contained brief, with TypeScript / lint / test gates after each.
+2. **Implementer** — a cheaper, smaller model that executes one task at a time against its self-contained brief, with typecheck / lint / test gates resolved from config, planner-discovered validation, heuristic fallback, or defaults.
 
 The repository layers many supporting subsystems on top of that core loop:
 

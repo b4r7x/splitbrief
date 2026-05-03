@@ -152,10 +152,11 @@ The canonical solution is git worktrees: each worktree is an isolated checkout a
 - The validator pipeline is now polyglot: it resolves commands from 4 layers — user config > planner-discovered > heuristic fallback > graceful skip.
 - Heuristic detection reads project marker files (`Cargo.toml`, `go.mod`, `pyproject.toml`, `package.json`) to infer language and validation tools.
 - The research prompt asks the planner to identify the project's validation toolchain, which is persisted to `WorkflowState.discoveredValidation`.
+- Planner and implementer prompts are language-aware: TypeScript keeps ESM-with-`.js` guidance, while Python, Go, Rust, JavaScript, and generic contexts avoid TypeScript-specific wording.
 - Missing commands at any layer silently skip the stage instead of erroring.
 - Default TS projects (`package.json` with `typescript` devDependency) preserve identical behavior to before.
 
-**Remaining.** Prompts still have TS-specific framing ("emit TypeScript with types", etc.). Per-language prompt variants are out of scope until demand appears.
+**Remaining.** Deeper language-specific planning heuristics can still be added as usage patterns emerge.
 
 ---
 
@@ -218,7 +219,7 @@ Follow-ups from the workflow hook system — see [HOOKS-CONFIG.md §Design decis
 
 ## Repo-map v2 (mixed)
 
-Follow-ups from the repo-map subsystem — see [REPOMAP.md §Design decisions](./REPOMAP.md#design-decisions). v1 is TypeScript-only via tree-sitter + PageRank; these are the axes along which it will grow.
+Follow-ups from the repo-map subsystem — see [REPOMAP.md §Design decisions](./REPOMAP.md#design-decisions). v1 now supports multiple tree-sitter grammars plus PageRank; these are the axes along which it will grow.
 
 - **[Won't-v1] Embeddings-based retrieval.** Optional `codebase.kind: 'embeddings'` with a pluggable provider (Voyage, OpenAI, a local embedding model). Semantically richer than symbol matching; deferred because of per-call cost, index-sync work, and the cost/latency profile for local-only users. The symbol-graph path stays the default.
 - ~~**[Should] Non-TypeScript language support.** Python, Go, Rust via their respective tree-sitter grammars. Each language needs its own `tags.scm`-equivalent extractor and a validator pipeline fit for the language.~~ ✅ Done

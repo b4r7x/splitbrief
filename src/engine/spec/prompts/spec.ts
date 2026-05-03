@@ -1,12 +1,15 @@
+import type { LanguageContext } from './language-context.js';
+import { buildLanguageContextSections } from './language-context.js';
 import { buildPrompt, instructionsSection, requiredSectionsSection } from './shared.js';
 
-export function buildSpecPrompt(feature: string, researchOutput: string): string {
+export function buildSpecPrompt(feature: string, researchOutput: string, languageContext?: LanguageContext): string {
   return buildPrompt({
     title: 'Write Feature Specification',
     intro: 'You are writing a detailed specification for a new feature. Use the research findings below to ground your spec in the actual codebase.',
     sections: [
       { heading: 'Specification', body: feature },
       { heading: 'Research Findings', body: researchOutput },
+      ...(languageContext ? buildLanguageContextSections(languageContext) : []),
       instructionsSection(
         'Write a complete `spec.md` document that defines **what** to build (not how). The spec should be detailed enough that a developer unfamiliar with the feature request could implement it correctly.',
       ),

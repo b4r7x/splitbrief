@@ -7,6 +7,7 @@ import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
+import { buildLanguageContext } from '../spec/prompts/language-context.js';
 
 let projectDir: string;
 
@@ -80,6 +81,32 @@ describe('createImplementerBase — error paths', () => {
 
     expect(result.success).toBe(false);
     if (!result.success) expect(result.error).toBeTruthy();
+  });
+});
+
+describe('createImplementerBase — language-aware system preamble', () => {
+  it('uses Python system guidance when a Python language context is provided', async () => {
+    let seenPrompt = '';
+    let seenSystemPreamble = '';
+    const invoke = vi.fn().mockImplementation(async (opts) => {
+      seenPrompt = opts.prompt;
+      seenSystemPreamble = opts.systemPreamble;
+      return { text: 'done', usage: null };
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+    await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      languageContext: buildLanguageContext('python'),
+      onOutput: vi.fn(),
+    });
+
+    expect(seenSystemPreamble).toContain('Python code generator');
+    expect(seenSystemPreamble).not.toContain('TypeScript');
+    expect(seenPrompt).toContain(seenSystemPreamble);
   });
 });
 

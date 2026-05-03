@@ -5,6 +5,7 @@ import type { ApiImplementerConfig } from '../../../core/schemas/implementer-con
 import { hasApiBase } from '../../../core/config/accessors/runner-config.js';
 import { createBusTextHandler, createImplementerPublisher, publishWarning, publishEscalate } from '../events.js';
 import { createImplementer } from '../../runners/factory.js';
+import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import type { Implementer } from '../../implementers/types.js';
 import { getProviderBaseURL } from '../../../core/providers/catalog.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
@@ -71,6 +72,7 @@ export async function runTier0Intermediate(
     invokeRetry: async ({ task: t, lastError: err, attempts: a, projectDir }) =>
       intermediateImplementer.retry({
         task: t, projectDir, config: intermediateConfig, context: ctx.context,
+        languageContext: buildProjectLanguageContext(ctx.projectDir, state.discoveredValidation?.language),
         error: err, attempt: a, kind: 'local',
         onOutput: textHandler,
         bus: ctx.bus,

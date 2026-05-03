@@ -40,7 +40,7 @@ type Task = {
   tests: string[];                   // test cases / acceptance criteria
   constraints: string[];             // additional constraints or requirements
   implementationSteps: string[];     // step-by-step guide for the implementer
-  typeDefs: string;                  // TypeScript type definitions / signatures
+  typeDefs: string;                  // language-specific type declarations / signatures
   signature?: string;                // optional: function/interface signature hint
   currentCode?: string;              // optional: captured existing code at task start
   pattern?: string;                  // optional: code pattern hint
@@ -274,7 +274,7 @@ type EvidenceLedger = {
     retries: number;
     durationMs?: number;
     changedFiles: string[];
-    validation: Array<{ stage: 'tsc' | 'lint' | 'test'; passed: boolean; errorSummary?: string }>;
+    validation: Array<{ stage: 'typecheck' | 'lint' | 'test'; passed: boolean; errorSummary?: string }>;
     expectedEvidence: string[];   // task.evidence ++ task.tests
     observedEvidence: string[];   // produced by orchestrator
     escalated: boolean;
@@ -294,7 +294,7 @@ Strings appended to `observedEvidence` are stable. UI and tests may match on the
 |---|---|
 | `task reached done` | Task transitions to `done` (local implementation or escalation success) |
 | `task reached escalated` | Task transitions to `escalated` |
-| `tsc passed` / `lint passed` / `test passed` | Validation stage reported `passed: true` |
+| `typecheck passed` / `lint passed` / `test passed` | Validation stage reported `passed: true` |
 | `diff written for <file>` | Task produced at least one changed file |
 | `final review written` | Final review succeeded; appended to every completed task |
 | `skipped: <reason>` | `pre_task` hook denied the task |

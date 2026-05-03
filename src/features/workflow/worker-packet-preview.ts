@@ -11,7 +11,9 @@ import {
   type TaskContextFit,
 } from '../../engine/orchestrator/context-routing.js';
 import { formatTaskPrompt } from '../../engine/spec/prompt-formatter.js';
-import { SYSTEM_PREAMBLE } from '../../engine/spec/prompts/system.js';
+import type { LanguageContext } from '../../engine/spec/prompts/language-context.js';
+import { buildProjectLanguageContext } from '../../engine/spec/prompts/language-context.js';
+import { buildSystemPreamble } from '../../engine/spec/prompts/system.js';
 import { estimateTokens } from '../../engine/spec/token-budget.js';
 import type { PlanTaskReviewMetadata } from '../../stores/workflow/plan-editor.js';
 import { redactSecretsWithMetadata } from '../../utils/redact.js';
@@ -31,6 +33,7 @@ export interface BuildWorkerPacketPreviewOptions {
   config?: Config | undefined;
   profiles?: ResolvedImplementerProfile[] | undefined;
   contextLength?: number | undefined;
+  languageContext?: LanguageContext | undefined;
   display?: WorkerPacketPreviewDisplayOptions | undefined;
 }
 
@@ -73,7 +76,8 @@ function routeFromOptions(opts: BuildWorkerPacketPreviewOptions, task: Task): Ro
   if (opts.metadata) return undefined;
   const profiles = opts.profiles ?? (opts.config ? resolveImplementerProfiles(opts.config).profiles : undefined);
   if (!profiles || profiles.length === 0) return undefined;
-  return routeTaskToImplementerProfile({ task, context: opts.context, profiles });
+  const languageContext = opts.languageContext ?? buildProjectLanguageContext(opts.context.dir, undefined);
+  return routeTaskToImplementerProfile({ task, context: opts.context, profiles, languageContext });
 }
 
 function promptTaskForPreview(task: Task, metadata: PlanTaskReviewMetadata | undefined): Task {
@@ -136,8 +140,13 @@ function makeVisiblePreview(
   };
 }
 
-function estimateFullPacketTokens(task: Task, context: ProjectContext, contextLength: number | undefined): number {
-  return estimateTokens(SYSTEM_PREAMBLE) + estimateTokens(formatTaskPrompt(task, context, contextLength));
+function estimateFullPacketTokens(
+  task: Task,
+  context: ProjectContext,
+  contextLength: number | undefined,
+  languageContext: LanguageContext,
+): number {
+  return estimateTokens(buildSystemPreamble(languageContext)) + estimateTokens(formatTaskPrompt(task, context, contextLength, languageContext));
 }
 
 function buildNotices(opts: {
@@ -205,11 +214,13 @@ export function buildWorkerPacketPreview(opts: BuildWorkerPacketPreviewOptions):
   const task = opts.task;
   if (!task) return null;
 
+  const languageContext = opts.languageContext ?? buildProjectLanguageContext(opts.context.dir, undefined);
   const decision = routeFromOptions(opts, task);
   const contextLength = effectiveContextLength(opts, decision);
   const promptTask = promptTaskForPreview(task, opts.metadata);
-  const taskPrompt = formatTaskPrompt(promptTask, opts.context, contextLength);
-  const visibleSystem = makeVisiblePreview(SYSTEM_PREAMBLE, {
+  const systemPreamble = buildSystemPreamble(languageContext);
+  const taskPrompt = formatTaskPrompt(promptTask, opts.context, contextLength, languageContext);
+  const visibleSystem = makeVisiblePreview(systemPreamble, {
     maxChars: opts.display?.maxSystemChars,
     maxLines: opts.display?.maxSystemLines,
   });
@@ -218,10 +229,10 @@ export function buildWorkerPacketPreview(opts: BuildWorkerPacketPreviewOptions):
     maxLines: opts.display?.maxPromptLines,
   });
   const untruncatedEstimatedTokens = decision?.untruncatedEstimatedTokens
-    ?? estimateFullPacketTokens(promptTask, opts.context, undefined);
+    ?? estimateFullPacketTokens(promptTask, opts.context, undefined, languageContext);
   const estimatedTokens = decision?.estimatedTokens
     ?? opts.metadata?.estimatedTokens
-    ?? estimateFullPacketTokens(promptTask, opts.context, contextLength);
+    ?? estimateFullPacketTokens(promptTask, opts.context, contextLength, languageContext);
   const routingPending = hasPendingRoutingMetadata(opts.metadata, decision);
   const refreshRequired = requiresRefresh(opts.metadata);
 

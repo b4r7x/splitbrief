@@ -13,6 +13,7 @@ import { publishCostPrediction, publishError, publishWarning } from '../events.j
 import { decideCostGate } from '../cost-gate.js';
 import { predictCost } from '../budget/cost-prediction.js';
 import { estimateDeterministicCost } from '../budget/estimate.js';
+import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { reviewPlannerEstimate, runningPlannerEstimateReview } from '../planner-estimate-review.js';
 import { autoSplitOverflowTasks, type AutoSplitOverflowSkippedSplit } from '../auto-split-overflow.js';
 import { runPlanningPhase, runBriefQualityGate } from '../planning/run.js';
@@ -101,6 +102,7 @@ function predictTasksCost(opts: {
       context: opts.wctx.context,
       config: opts.wctx.config,
       pricingCache: opts.wctx.modelCache,
+      languageContext: buildProjectLanguageContext(opts.wctx.projectDir, opts.state.discoveredValidation?.language),
     }),
     ...(opts.plannerEstimateReview !== undefined && { plannerEstimateReview: opts.plannerEstimateReview }),
   };

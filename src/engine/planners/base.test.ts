@@ -19,6 +19,27 @@ const defaultCapabilities: PlannerCapabilities = {
   supportsImages: false,
 };
 
+const taskMarkdown = `---
+id: T001
+title: Test task
+action: create
+file: src/example.py
+depends_on: []
+---
+
+### Description
+Create an example file.
+
+### Implementation Steps
+1. Write the file.
+
+### Tests
+- pytest passes
+
+### Constraints
+- Follow project conventions
+`;
+
 beforeEach(() => {
   projectDir = createTempDir('planner-base-test');
   createTestGitRepo(projectDir);
@@ -104,6 +125,59 @@ A test task.
     const result = await instantPlan('feature', projectDir, { onOutput: () => {}, onPhase });
 
     expect(result.tasks).toBeDefined();
+  });
+
+  it('standard planning uses research-discovered language for later prompts', async () => {
+    const captured: string[] = [];
+    const outputs = [
+      `## Validation Tools
+
+- **Language**: python
+- **Type checker**: \`mypy src/\`
+- **Linter**: \`ruff check\`
+- **Test runner**: \`pytest\`
+- **Test file pattern**: \`test_*.py\``,
+      '# Spec',
+      '# Plan',
+      taskMarkdown,
+    ];
+    const planner = createPlannerBase({
+      invokePlan: async ({ prompt }) => {
+        captured.push(prompt);
+        return { text: outputs[captured.length - 1] ?? '', usage: null };
+      },
+      invokeEscalate: async () => ({ text: '', usage: null }),
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+    });
+
+    await planner.plan('feature', projectDir, { onOutput: () => {} });
+
+    expect(captured[2]).toContain('Python');
+    expect(captured[2]).toContain('PEP 484');
+    expect(captured[2]).not.toContain('TypeScript');
+    expect(captured[3]).toContain('file: src/path/to/file.py');
+    expect(captured[3]).not.toContain('```typescript');
+  });
+
+  it('quickPlan uses prompt-language heuristic when no research phase exists', async () => {
+    writeFileSync(join(projectDir, 'pyproject.toml'), '[tool.pytest.ini_options]');
+    let captured = '';
+    const planner = createPlannerBase({
+      invokePlan: async ({ prompt }) => {
+        captured = prompt;
+        return { text: taskMarkdown, usage: null };
+      },
+      invokeEscalate: async () => ({ text: '', usage: null }),
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+    });
+
+    await planner.quickPlan('feature', projectDir, { onOutput: () => {} });
+
+    expect(captured).toContain('Python');
+    expect(captured).toContain('file: src/path/to/file.py');
+    expect(captured).not.toMatch(/TypeScript|```typescript|file\.ts/);
   });
 });
 

@@ -4,6 +4,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ProjectContext } from '../../../core/state/types.js';
+import type { LanguageContext } from '../../spec/prompts/language-context.js';
 import { calculateCost } from '../../providers/pricing.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { resolvePricing } from '../../providers/pricing-resolver.js';
@@ -49,6 +50,7 @@ export interface EstimateDeterministicCostOptions {
   config: Config;
   pricingCache?: ModelCacheAccessor | undefined;
   conservativeContextLength?: number | undefined;
+  languageContext?: LanguageContext | undefined;
 }
 
 interface TaskEstimateInput {
@@ -58,6 +60,7 @@ interface TaskEstimateInput {
   profiles: ResolvedImplementerProfile[] | null;
   pricingCache?: ModelCacheAccessor | undefined;
   conservativeContextLength?: number | undefined;
+  languageContext?: LanguageContext | undefined;
 }
 
 const DEFAULT_CONSERVATIVE_CONTEXT_LENGTH = 8192;
@@ -100,7 +103,7 @@ function estimateTask(opts: TaskEstimateInput): DeterministicTaskEstimate {
   const hasPlannerPrice = plannerCost !== null;
 
   if (!opts.profiles || opts.profiles.length === 0) {
-    const estimatedPromptTokens = estimateFormattedTaskPromptTokens({ task: opts.task, context: opts.context });
+    const estimatedPromptTokens = estimateFormattedTaskPromptTokens({ task: opts.task, context: opts.context, languageContext: opts.languageContext });
     return {
       taskId: opts.task.id,
       title: opts.task.title,
@@ -122,6 +125,7 @@ function estimateTask(opts: TaskEstimateInput): DeterministicTaskEstimate {
     profiles: opts.profiles,
     ...(opts.conservativeContextLength !== undefined && { conservativeContextLength: opts.conservativeContextLength }),
     ...(opts.pricingCache !== undefined && { contextCache: opts.pricingCache }),
+    ...(opts.languageContext !== undefined && { languageContext: opts.languageContext }),
   });
   const selectedProfile = opts.profiles.find(profile => profile.name === decision.selectedProfile);
   const confidenceProfile = profileForContextConfidence(opts.profiles, decision.selectedProfile ?? decision.rejected.at(0)?.profile);
@@ -239,6 +243,7 @@ export function estimateDeterministicCost(opts: EstimateDeterministicCostOptions
     profiles,
     ...(opts.pricingCache !== undefined && { pricingCache: opts.pricingCache }),
     ...(opts.conservativeContextLength !== undefined && { conservativeContextLength: opts.conservativeContextLength }),
+    ...(opts.languageContext !== undefined && { languageContext: opts.languageContext }),
   }));
 
   return {

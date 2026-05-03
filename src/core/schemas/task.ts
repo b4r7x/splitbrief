@@ -46,7 +46,7 @@ export const TaskSchema = z.object({
   constraints: z.array(z.string()),
   /** Optional code pattern hint (e.g. a relevant snippet from the codebase). */
   pattern: z.string().optional(),
-  /** TypeScript type definitions / interface declarations relevant to this task. */
+  /** Language-specific type declarations, interfaces, or data shapes relevant to this task. */
   typeDefs: z.string(),
   /** Ordered list of implementation steps for the implementer to follow. */
   implementationSteps: z.array(z.string()),

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { buildLanguageContext } from './language-context.js';
 import { buildInstantPrompt } from './instant.js';
 import { buildQuickPlanPrompt } from './quick-plan.js';
 
@@ -15,22 +16,19 @@ describe('buildInstantPrompt', () => {
     expect(prompt.toLowerCase()).toContain('small');
   });
 
-  it('includes skills when provided', () => {
-    const prompt = buildInstantPrompt('x', 'y', 'skill: foo');
-    expect(prompt).toMatch(/skill: foo/);
-    expect(prompt).toMatch(/^##\s+Skills/im);
-  });
-
-  it('omits skills section when not provided', () => {
-    const prompt = buildInstantPrompt('x', 'y');
-    expect(prompt).not.toMatch(/^##\s+Skills/im);
-  });
-
   it('requires Task Brief v1 scope, escalation, and evidence sections', () => {
     const prompt = buildInstantPrompt('x', 'y');
     expect(prompt).toContain('Scope, Implementation Steps, Tests (Validation), Constraints, Escalation, Evidence');
     expect(prompt).toContain('do not omit them');
     expect(prompt).not.toContain('optional in instant mode');
+  });
+
+  it('uses Python task examples when Python context is provided', () => {
+    const prompt = buildInstantPrompt('x', 'y', buildLanguageContext('python'));
+    expect(prompt).toContain('file: src/path/to/file.py');
+    expect(prompt).toContain('\\`\\`\\`python');
+    expect(prompt).toContain('PEP 484');
+    expect(prompt).not.toMatch(/TypeScript|typescript|file\.ts|\.js extensions/);
   });
 });
 
@@ -43,5 +41,12 @@ describe('buildQuickPlanPrompt', () => {
     expect(prompt).toContain('must state the reviewable proof');
     expect(prompt).not.toContain('whenever the change touches');
     expect(prompt).not.toContain('when the brief should leave behind');
+  });
+
+  it('uses Python task examples when Python context is provided', () => {
+    const prompt = buildQuickPlanPrompt('change feature', 'repo', buildLanguageContext('python'));
+    expect(prompt).toContain('file: src/path/to/file.py');
+    expect(prompt).toContain('\\`\\`\\`python');
+    expect(prompt).not.toMatch(/TypeScript|typescript|file\.ts|\.js extensions/);
   });
 });

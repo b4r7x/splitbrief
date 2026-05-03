@@ -20,6 +20,8 @@ import { buildTasksPrompt } from '../spec/prompts/tasks.js';
 import { buildHintPrompt, buildEscalationPrompt } from '../spec/prompts/escalation.js';
 import { buildQuickPlanPrompt } from '../spec/prompts/quick-plan.js';
 import { buildInstantPrompt } from '../spec/prompts/instant.js';
+import type { LanguageContext } from '../spec/prompts/language-context.js';
+import { buildProjectLanguageContext, extractLanguageFromResearch } from '../spec/prompts/language-context.js';
 import { parseTasks } from '../spec/parser.js';
 import { RESEARCH_FILE, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 import { extractCode } from '../parsers/response-extractor.js';
@@ -137,9 +139,13 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       }
 
       const research = await runPhase('researching', repoMapBlock + buildResearchPrompt(feature, projectContext, skillsContext), RESEARCH_FILE);
-      const spec = await runPhase('specifying', buildSpecPrompt(feature, research), SPEC_FILE);
-      const plan = await runPhase('planning', buildPlanPrompt({ content: spec, hasClarifications: spec.includes('## Clarifications') }, projectContext, skillsContext), PLAN_FILE);
-      const tasksMarkdown = await runPhase('generating-tasks', buildTasksPrompt(spec, plan), TASKS_FILE);
+      const languageContext = buildProjectLanguageContext(
+        projectDir,
+        extractLanguageFromResearch(research) ?? callbacks.discoveredValidation?.language,
+      );
+      const spec = await runPhase('specifying', buildSpecPrompt(feature, research, languageContext), SPEC_FILE);
+      const plan = await runPhase('planning', buildPlanPrompt({ content: spec, hasClarifications: spec.includes('## Clarifications') }, projectContext, skillsContext, languageContext), PLAN_FILE);
+      const tasksMarkdown = await runPhase('generating-tasks', buildTasksPrompt(spec, plan, languageContext), TASKS_FILE);
 
       const tasks = parseTasks(tasksMarkdown);
 
@@ -152,7 +158,15 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       callbacks: PlannerCallbacks,
       codebaseContext?: string,
     ): Promise<PlanResult> {
-      return runSinglePhasePlanning(config, buildQuickPlanPrompt, 'quick-planning', feature, projectDir, callbacks, codebaseContext);
+      return runSinglePhasePlanning(
+        config,
+        (promptFeature, projectContext, languageContext) => buildQuickPlanPrompt(promptFeature, projectContext, languageContext),
+        'quick-planning',
+        feature,
+        projectDir,
+        callbacks,
+        codebaseContext,
+      );
     },
 
     async instantPlan(
@@ -161,7 +175,15 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       callbacks: PlannerCallbacks,
       codebaseContext?: string,
     ): Promise<PlanResult> {
-      return runSinglePhasePlanning(config, buildInstantPrompt, 'instant-planning', feature, projectDir, callbacks, codebaseContext);
+      return runSinglePhasePlanning(
+        config,
+        (promptFeature, projectContext, languageContext) => buildInstantPrompt(promptFeature, projectContext, languageContext),
+        'instant-planning',
+        feature,
+        projectDir,
+        callbacks,
+        codebaseContext,
+      );
     },
 
     async regenerate(
@@ -179,11 +201,12 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       error: string,
       projectDir: string,
       callbacks: { onOutput: (text: string) => void },
+      languageContext?: LanguageContext,
     ): Promise<EscalationResult> {
       if (config.capabilities.supportsHintEscalation === false) {
         return { success: false, output: '', code: null, usage: null };
       }
-      const hintPrompt = buildHintPrompt(task, error);
+      const hintPrompt = buildHintPrompt(task, error, languageContext ?? buildProjectLanguageContext(projectDir, undefined));
       const useFiles = config.hintSuccessMode === 'files';
       const detect = useFiles ? createChangeDetector('Hint escalation') : null;
       const filesBefore = useFiles ? await getChangedFiles(projectDir) : [];
@@ -199,8 +222,9 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       error: string,
       projectDir: string,
       callbacks: { onOutput: (text: string) => void },
+      languageContext?: LanguageContext,
     ): Promise<EscalationResult> {
-      const escalationPrompt = buildEscalationPrompt(task, task.currentCode ?? '', error);
+      const escalationPrompt = buildEscalationPrompt(task, task.currentCode ?? '', error, languageContext ?? buildProjectLanguageContext(projectDir, undefined));
       const result = await config.invokeEscalate({ prompt: escalationPrompt, projectDir, callbacks });
 
       const extracted = extractCode(result.text);
@@ -233,7 +257,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
 
 async function runSinglePhasePlanning(
   config: PlannerBaseConfig,
-  promptBuilder: (feature: string, projectContext: string) => string,
+  promptBuilder: (feature: string, projectContext: string, languageContext: LanguageContext) => string,
   phaseName: string,
   feature: string,
   projectDir: string,
@@ -241,8 +265,9 @@ async function runSinglePhasePlanning(
   codebaseContext: string | undefined,
 ): Promise<PlanResult> {
   const projectContext = await buildProjectContextMarkdown(projectDir);
+  const languageContext = buildProjectLanguageContext(projectDir, callbacks.discoveredValidation?.language);
   const repoMapBlock = formatRepoMapBlock(codebaseContext);
-  const prompt = repoMapBlock + promptBuilder(feature, projectContext);
+  const prompt = repoMapBlock + promptBuilder(feature, projectContext, languageContext);
 
   callbacks.onPhase?.(phaseName);
   const buffer = createTranscriptBuffer(

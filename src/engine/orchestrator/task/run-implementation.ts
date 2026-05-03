@@ -12,6 +12,7 @@ import {
 } from '../approval/tiered-approval.js';
 import { persistApprovalEvidence } from '../evidence/persistence.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
+import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 
 export type RunImplementationResult = {
   state: WorkflowState;
@@ -51,6 +52,7 @@ export async function runImplementation(opts: {
       body: async ({ signal, continuationPrompt, recordOutput }) => {
         const result = await wctx.implementer.implement({
           task, projectDir: staged?.projectDir ?? projectDir, config, context,
+          languageContext: buildProjectLanguageContext(projectDir, state.discoveredValidation?.language),
           onOutput: (text) => { recordOutput(text); textHandler(text); streamingFeed.onText(text); },
           sessionId,
           signal,

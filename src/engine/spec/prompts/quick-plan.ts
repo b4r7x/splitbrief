@@ -1,18 +1,23 @@
-import { TASK_FORMAT_EXAMPLE, buildPrompt, instructionsSection } from './shared.js';
+import type { LanguageContext } from './language-context.js';
+import { buildLanguageContext, buildLanguageContextSections } from './language-context.js';
+import { buildPrompt, buildTaskFormatExample, instructionsSection } from './shared.js';
 
-export function buildQuickPlanPrompt(feature: string, projectContext: string): string {
+export function buildQuickPlanPrompt(feature: string, projectContext: string, languageContext?: LanguageContext): string {
+  const ctx = languageContext ?? buildLanguageContext(undefined);
+
   return buildPrompt({
     title: 'Quick: Compile Task Briefs',
     intro: 'You are compiling **Product Task Brief v1** records for a small change in an existing codebase. Briefly analyze the project, then emit an ordered list of self-contained Task Briefs. The `tasks.md` file is the markdown transport; each brief is the durable contract a small implementer model will execute.',
     sections: [
       { heading: 'Specification', body: feature },
       { heading: 'Project Context', body: projectContext },
+      ...buildLanguageContextSections(ctx),
       instructionsSection(`1. Briefly review the codebase structure and identify files to create or modify.
 2. Output a \`tasks.md\` file with atomic Task Briefs. One brief = one file.
 
 Each brief must be rendered in this exact markdown shape:
 
-${TASK_FORMAT_EXAMPLE}`),
+${buildTaskFormatExample(ctx)}`),
       {
         heading: 'Rules',
         body: `- One brief per file. Self-contained with all context inlined.

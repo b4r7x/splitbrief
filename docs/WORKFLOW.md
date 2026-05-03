@@ -270,7 +270,7 @@ The orchestrator appends to the ledger when each task reaches a terminal state
 (`done`, `escalated`, `failed`, or `skipped` via `pre_task` hook denial), and
 once more after the final review writes (or fails to write). The ledger captures
 expected evidence (from `task.evidence` ++ `task.tests`) alongside observed
-evidence strings produced by the orchestrator (`tsc passed`, `lint passed`,
+evidence strings produced by the orchestrator (`typecheck passed`, `lint passed`,
 `test passed`, `diff written for <file>`, `task reached done`,
 `task reached escalated`, `final review written`, `skipped: <reason>`).
 

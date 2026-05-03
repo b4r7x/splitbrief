@@ -1,14 +1,17 @@
-import { TASK_FORMAT_EXAMPLE, buildPrompt, instructionsSection } from './shared.js';
+import type { LanguageContext } from './language-context.js';
+import { buildLanguageContext, buildLanguageContextSections } from './language-context.js';
+import { buildPrompt, buildTaskFormatExample, instructionsSection } from './shared.js';
 
 export function buildInstantPrompt(
   feature: string,
   projectContext: string,
-  skillsContext?: string,
+  languageContext?: LanguageContext,
 ): string {
+  const ctx = languageContext ?? buildLanguageContext(undefined);
   const sections = [
     { heading: 'Feature', body: feature },
     { heading: 'Project Context', body: projectContext },
-    ...(skillsContext ? [{ heading: 'Skills', body: skillsContext }] : []),
+    ...buildLanguageContextSections(ctx),
     instructionsSection(`You are given a tiny feature request — the requester has already decided this change is trivial. Emit the narrowest useful **Product Task Brief v1** records and stop.
 
 1. Output ONLY a tasks list. No spec, no plan document.
@@ -19,7 +22,7 @@ export function buildInstantPrompt(
 
 Each brief must be rendered in this exact markdown shape:
 
-${TASK_FORMAT_EXAMPLE}`),
+${buildTaskFormatExample(ctx)}`),
   ];
 
   return buildPrompt({
