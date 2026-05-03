@@ -13,6 +13,10 @@ export function computeScrollOffset(index: number, windowSize: number, totalItem
   return Math.max(0, Math.min(index - half, totalItems - windowSize));
 }
 
+export function rotateIndex(current: number, length: number, delta: 1 | -1): number {
+  return (current + delta + length) % length;
+}
+
 export function filterByFields<T>(item: T, query: string, fields: (keyof T)[]): boolean {
   if (query.length === 0) return true;
   const lower = query.toLowerCase();
