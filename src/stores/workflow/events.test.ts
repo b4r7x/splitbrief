@@ -56,16 +56,16 @@ describe('eventsStore — append via addEvent', () => {
 
   describe('validate coalescing', () => {
     it('replaces running validate event with updated stages', () => {
-      addEvent(makeValidate({ status: 'running', passed: false, stages: { tsc: false, lint: false, test: false } }));
-      addEvent(makeValidate({ status: 'running', passed: false, stages: { tsc: true, lint: false, test: false } }));
+      addEvent(makeValidate({ status: 'running', passed: false, stages: { typecheck: false, lint: false, test: false } }));
+      addEvent(makeValidate({ status: 'running', passed: false, stages: { typecheck: true, lint: false, test: false } }));
       const events = eventsStore.get().events;
       expect(events).toHaveLength(1);
-      expect((events[0] as { stages: { tsc: boolean } }).stages.tsc).toBe(true);
+      expect((events[0] as { stages: { typecheck: boolean } }).stages.typecheck).toBe(true);
     });
 
     it('does not replace done validate with running', () => {
-      addEvent(makeValidate({ status: 'done', passed: true, stages: { tsc: true, lint: true, test: true } }));
-      addEvent(makeValidate({ status: 'running', passed: false, stages: { tsc: false, lint: false, test: false } }));
+      addEvent(makeValidate({ status: 'done', passed: true, stages: { typecheck: true, lint: true, test: true } }));
+      addEvent(makeValidate({ status: 'running', passed: false, stages: { typecheck: false, lint: false, test: false } }));
       expect(eventsStore.get().events).toHaveLength(2);
     });
   });

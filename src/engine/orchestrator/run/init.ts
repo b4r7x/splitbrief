@@ -159,7 +159,7 @@ export async function initializeWorkflow(
     name: typeof pkg?.['name'] === 'string' ? pkg['name'] : 'unknown',
     dir: projectDir,
     runtime: 'node',
-    testCommand: config.validation.testCommand,
+    testCommand: config.validation.testCommand ?? 'npm test',
   };
 
   const validator = createValidator();

@@ -147,7 +147,7 @@ describe('createHookSink', () => {
     const sink = createHookSink(hooks, ctx, bus);
     const runningEvent: EngineEvent = {
       type: 'validate', ts: 1, phase: 'implementing', taskId: 'T1' as never,
-      status: 'running', passed: false, stages: { tsc: false, lint: false, test: false },
+      status: 'running', passed: false, stages: { typecheck: false, lint: false, test: false },
     };
     sink(runningEvent);
     await waitForNoActivity(all);
@@ -163,7 +163,7 @@ describe('createHookSink', () => {
     const sink = createHookSink(hooks, ctx, bus);
     const doneEvent: EngineEvent = {
       type: 'validate', ts: 1, phase: 'implementing', taskId: 'T1' as never,
-      status: 'done', passed: true, stages: { tsc: true, lint: true, test: true },
+      status: 'done', passed: true, stages: { typecheck: true, lint: true, test: true },
     };
     sink(doneEvent);
     await waitForWarnings(warnings, 1);

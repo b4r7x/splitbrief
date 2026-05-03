@@ -18,10 +18,10 @@ import {
 import { makeTask } from '../../../../testing/helpers/factories/task.js';
 import type { ValidationResult } from '../validation.js';
 
-function passing(stage: 'tsc' | 'lint' | 'test'): ValidationResult {
+function passing(stage: 'typecheck' | 'lint' | 'test'): ValidationResult {
   return { passed: true, stage };
 }
-function failing(stage: 'tsc' | 'lint' | 'test', error: string): ValidationResult {
+function failing(stage: 'typecheck' | 'lint' | 'test', error: string): ValidationResult {
   return { passed: false, stage, error };
 }
 
@@ -52,10 +52,10 @@ describe('recordLocalTaskEvidence', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
     const updated = recordLocalTaskEvidence({
-      ledger, task, status: 'done', validation: [passing('tsc'), passing('lint')],
+      ledger, task, status: 'done', validation: [passing('typecheck'), passing('lint')],
     });
     expect(updated.tasks[0]?.status).toBe('done');
-    expect(updated.tasks[0]?.observedEvidence).toContain('tsc passed');
+    expect(updated.tasks[0]?.observedEvidence).toContain('typecheck passed');
     expect(updated.tasks[0]?.observedEvidence).toContain('lint passed');
     expect(updated.tasks[0]?.observedEvidence).toContain('task reached done');
   });
@@ -66,7 +66,7 @@ describe('recordRetryOrEscalationEvidence', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
     const updated = recordRetryOrEscalationEvidence({
-      ledger, task, status: 'escalated', escalated: true, validation: [failing('tsc', 'error')],
+      ledger, task, status: 'escalated', escalated: true, validation: [failing('typecheck', 'error')],
     });
     expect(updated.tasks[0]?.escalated).toBe(true);
     expect(updated.tasks[0]?.observedEvidence).toContain('task reached escalated');
@@ -87,7 +87,7 @@ describe('recordFinalReviewEvidence', () => {
   it('marks final review as written', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    const local = recordLocalTaskEvidence({ ledger, task, status: 'done', validation: [passing('tsc')] });
+    const local = recordLocalTaskEvidence({ ledger, task, status: 'done', validation: [passing('typecheck')] });
     const updated = recordFinalReviewEvidence({ ledger: local, status: 'written' });
     expect(updated.finalReview?.status).toBe('written');
     expect(updated.tasks[0]?.observedEvidence).toContain('final review written');
@@ -128,7 +128,7 @@ describe('buildEvidenceSummary', () => {
   it('produces summary counts', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    const local = recordLocalTaskEvidence({ ledger, task, status: 'done', validation: [passing('tsc')] });
+    const local = recordLocalTaskEvidence({ ledger, task, status: 'done', validation: [passing('typecheck')] });
     const summary = buildEvidenceSummary(local);
     expect(summary.totalTasks).toBe(1);
     expect(summary.tasksWithValidationEvidence).toBe(1);

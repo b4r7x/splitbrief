@@ -873,7 +873,6 @@ describe('runTaskLoop', () => {
     const state = makeImplState([task]);
     let validationCalls = 0;
     const validator = {
-      detectLinter: TEST_VALIDATOR.detectLinter,
       findAffectedTestFile: TEST_VALIDATOR.findAffectedTestFile,
       runValidation: vi.fn().mockImplementation(async () => {
         validationCalls += 1;

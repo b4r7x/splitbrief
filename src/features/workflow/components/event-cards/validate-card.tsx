@@ -6,7 +6,7 @@ import { Spinner } from '../../../../components/spinner.js';
 import { formatDuration } from '../../../../utils/format-time.js';
 import { Card } from './card.js';
 
-const VALIDATION_STAGES = ['tsc', 'lint', 'test'] as const;
+const VALIDATION_STAGES = ['typecheck', 'lint', 'test'] as const;
 type ValidationStage = typeof VALIDATION_STAGES[number];
 
 interface StagesProps {

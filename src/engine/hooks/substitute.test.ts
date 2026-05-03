@@ -35,8 +35,8 @@ describe('substituteEventFields', () => {
   });
 
   it('JSON-stringifies object/array values', () => {
-    const event: EngineEvent = { type: 'validate', ts: 1, phase: 'validating-task', taskId: 'T1' as never, status: 'done', passed: true, stages: { tsc: true, lint: true, test: true } };
-    expect(substituteEventFields(S('event.stages'), event)).toBe('{"tsc":true,"lint":true,"test":true}');
+    const event: EngineEvent = { type: 'validate', ts: 1, phase: 'validating-task', taskId: 'T1' as never, status: 'done', passed: true, stages: { typecheck: true, lint: true, test: true } };
+    expect(substituteEventFields(S('event.stages'), event)).toBe('{"typecheck":true,"lint":true,"test":true}');
   });
 
   it('leaves non-event-placeholder text unchanged', () => {

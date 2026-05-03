@@ -71,7 +71,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
     publishValidation(bus, 'implementing', 'T001' as import('../../core/schemas/task.js').TaskId, {
       phase: 'result',
       results: [
-        { stage: 'tsc', passed: true },
+        { stage: 'typecheck', passed: true },
         { stage: 'lint', passed: true },
         { stage: 'test', passed: true },
       ],
@@ -80,7 +80,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
 
     expect(events[0]).toMatchObject({
       type: 'validate', status: 'done', passed: true,
-      stages: { tsc: true, lint: true, test: true },
+      stages: { typecheck: true, lint: true, test: true },
     });
     expect((events[0] as Record<string, unknown>)['error']).toBeUndefined();
   });
@@ -90,7 +90,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
     publishValidation(bus, 'implementing', 'T001' as import('../../core/schemas/task.js').TaskId, {
       phase: 'result',
       results: [
-        { stage: 'tsc', passed: true },
+        { stage: 'typecheck', passed: true },
         { stage: 'lint', passed: false, error: 'lint error' },
       ],
       startTime: Date.now(),
@@ -98,7 +98,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
 
     expect(events[0]).toMatchObject({
       type: 'validate', passed: false,
-      stages: { tsc: true, lint: false, test: false },
+      stages: { typecheck: true, lint: false, test: false },
       error: 'lint error',
     });
   });
@@ -108,7 +108,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
     const startTime = Date.now() - 500;
 
     publishValidation(bus, 'implementing', 'T001' as import('../../core/schemas/task.js').TaskId, {
-      phase: 'result', results: [{ stage: 'tsc', passed: true }], startTime,
+      phase: 'result', results: [{ stage: 'typecheck', passed: true }], startTime,
     });
 
     expect((events[0] as Record<string, unknown>)['duration']).toBeGreaterThanOrEqual(400);

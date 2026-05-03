@@ -22,7 +22,7 @@ export const EvidenceApprovalSchema = z.object({
 });
 export type EvidenceApproval = z.infer<typeof EvidenceApprovalSchema>;
 
-export const EvidenceValidationStageSchema = z.enum(['tsc', 'lint', 'test']);
+export const EvidenceValidationStageSchema = z.enum(['typecheck', 'lint', 'test']);
 export type EvidenceValidationStage = z.infer<typeof EvidenceValidationStageSchema>;
 
 export const EvidenceValidationEntrySchema = z.object({

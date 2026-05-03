@@ -59,13 +59,13 @@ export function makeImplementer(overrides?: Partial<Implementer>): Implementer {
 }
 
 export const passingResults: ValidationResult[] = [
-  { passed: true, stage: 'tsc' },
+  { passed: true, stage: 'typecheck' },
   { passed: true, stage: 'lint' },
   { passed: true, stage: 'test' },
 ];
 
 export const failingResults: ValidationResult[] = [
-  { passed: false, stage: 'tsc', error: 'TS error' },
+  { passed: false, stage: 'typecheck', error: 'TS error' },
 ];
 
 export function makeBusRecorder(): { bus: EventBus; events: EngineEvent[] } {

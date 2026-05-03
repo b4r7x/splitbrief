@@ -5,6 +5,16 @@ import { TokenUsageSchema } from './tokens.js';
 import { AnalyzeResultSchema } from './analyze.js';
 import { RecoveryIssueSchema } from './recovery.js';
 
+export const DiscoveredValidationSchema = z.object({
+  typecheckCommand: z.string().optional(),
+  lintCommand: z.string().optional(),
+  testCommand: z.string().optional(),
+  testPattern: z.string().optional(),
+  language: z.string().optional(),
+});
+
+export type DiscoveredValidation = z.infer<typeof DiscoveredValidationSchema>;
+
 export const QueuedMessageSchema = z.object({
   id: z.string(),
   text: z.string(),
@@ -45,6 +55,7 @@ export const WorkflowStateSchema = z.object({
   constitutionFailureReason: z.string().optional(),
   analysisResult: AnalyzeResultSchema.optional(),
   pendingRecovery: RecoveryIssueSchema.optional(),
+  discoveredValidation: DiscoveredValidationSchema.optional(),
 });
 
 export type WorkflowState = z.infer<typeof WorkflowStateSchema>;

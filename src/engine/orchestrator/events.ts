@@ -13,7 +13,7 @@ import type { UserEditConflict, UserEditConflictAction } from './user-edit/confl
 import type { CurrentCodeContextMode, TaskContextFit } from './context-routing.js';
 import type { TaskReviewRequest } from './task/review.js';
 
-const EMPTY_STAGES: ValidationStages = { tsc: false, lint: false, test: false };
+const EMPTY_STAGES: ValidationStages = { typecheck: false, lint: false, test: false };
 
 type ValidationPhase =
   | { phase: 'start' }
@@ -81,7 +81,7 @@ export function publishValidation(bus: EventBus, workflowPhase: Phase, taskId: T
   let failedError: string | undefined;
   let passed = true;
   for (const r of opts.results) {
-    if (r.stage === 'tsc') stages.tsc = r.passed;
+    if (r.stage === 'typecheck') stages.typecheck = r.passed;
     else if (r.stage === 'lint') stages.lint = r.passed;
     else if (r.stage === 'test') stages.test = r.passed;
     if (!r.passed) {

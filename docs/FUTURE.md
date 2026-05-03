@@ -143,17 +143,19 @@ The canonical solution is git worktrees: each worktree is an isolated checkout a
 
 ---
 
-## **[Should]** Non-TypeScript language support
+## ~~**[Should]** Non-TypeScript language support~~ ✅ Done
 
 **Why we want it.** Obvious: not all users are on TS projects.
 
-**Why deferred.**
+**What was built.**
 
-- The validator pipeline is hardcoded TS-shaped (`tsc → lint → test`).
-- Prompts have TS-specific framing ("emit TypeScript with types", etc.).
-- Would require a language-detection step, per-language validators, and per-language prompt variants.
+- The validator pipeline is now polyglot: it resolves commands from 4 layers — user config > planner-discovered > heuristic fallback > graceful skip.
+- Heuristic detection reads project marker files (`Cargo.toml`, `go.mod`, `pyproject.toml`, `package.json`) to infer language and validation tools.
+- The research prompt asks the planner to identify the project's validation toolchain, which is persisted to `WorkflowState.discoveredValidation`.
+- Missing commands at any layer silently skip the stage instead of erroring.
+- Default TS projects (`package.json` with `typescript` devDependency) preserve identical behavior to before.
 
-No work yet. Will be a separate design effort when demand appears.
+**Remaining.** Prompts still have TS-specific framing ("emit TypeScript with types", etc.). Per-language prompt variants are out of scope until demand appears.
 
 ---
 

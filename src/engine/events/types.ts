@@ -8,7 +8,7 @@ import type { UserEditConflict, UserEditConflictAction } from './workflow-events
 import type { CurrentCodeContextMode, TaskContextFit } from './workflow-events.js';
 import type { TaskReviewRequest } from './workflow-events.js';
 
-export type ValidationStages = { tsc: boolean; lint: boolean; test: boolean };
+export type ValidationStages = { typecheck: boolean; lint: boolean; test: boolean };
 
 export type EngineEvent =
   // Workflow lifecycle

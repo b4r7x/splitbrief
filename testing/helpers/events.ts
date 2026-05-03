@@ -41,7 +41,7 @@ export function makeImplementerGenerate(overrides?: Record<string, unknown>): Im
 }
 
 export function makeValidate(overrides?: Partial<EventOfType<'validate'>>): EventOfType<'validate'> {
-  return { type: 'validate', ts: Date.now(), phase: 'implementing', taskId: taskId('T001'), status: 'done', passed: true, stages: { tsc: true, lint: true, test: true }, ...overrides };
+  return { type: 'validate', ts: Date.now(), phase: 'implementing', taskId: taskId('T001'), status: 'done', passed: true, stages: { typecheck: true, lint: true, test: true }, ...overrides };
 }
 
 export function makeRetry(overrides?: Partial<EventOfType<'task_retry'>>): EventOfType<'task_retry'> {
