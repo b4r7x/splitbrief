@@ -1,64 +1,68 @@
 import { stat, readFile } from 'node:fs/promises';
+import { extname } from 'node:path';
 import { createRequire } from 'node:module';
 import { Parser, Language } from 'web-tree-sitter';
-import type { Node } from 'web-tree-sitter';
+import type { Node, Tree } from 'web-tree-sitter';
 import { error } from '../../utils/error.js';
 import type { FileNode, SymbolKind, SymbolRef } from './types.js';
+import { getLanguageForExtension } from './languages.js';
+import type { LanguageConfig } from './languages.js';
 
 export const parseError = {
-  notInitialized: () =>
-    error('codebase-parse-not-initialized', 'Parser not initialized — call initParser() first'),
   parseFailed: (absPath: string) =>
     error('codebase-parse-failed', `tree-sitter failed to parse: ${absPath}`, { absPath }),
 } as const;
 
-const require = createRequire(import.meta.url);
+const loadedGrammars = new Map<string, Promise<Language | null>>();
 
-let tsLanguage: Language | null = null;
-let tsxLanguage: Language | null = null;
-let parserInitialized = false;
+let initPromise: Promise<void> | null = null;
 
-export async function initParser(): Promise<void> {
-  if (parserInitialized) return;
-
-  await Parser.init();
-
-  const tsWasmPath: string = require.resolve('tree-sitter-typescript/tree-sitter-typescript.wasm');
-  const tsxWasmPath: string = require.resolve('tree-sitter-typescript/tree-sitter-tsx.wasm');
-
-  [tsLanguage, tsxLanguage] = await Promise.all([
-    Language.load(tsWasmPath),
-    Language.load(tsxWasmPath),
-  ]);
-
-  parserInitialized = true;
-}
-
-function getLanguage(absPath: string): Language {
-  if (!tsLanguage || !tsxLanguage) {
-    throw parseError.notInitialized();
+export function initParser(): Promise<void> {
+  if (!initPromise) {
+    initPromise = Parser.init();
   }
-  return absPath.endsWith('.tsx') ? tsxLanguage : tsLanguage;
+  return initPromise;
 }
 
-const DECLARATION_NODE_TYPES = new Set([
-  'function_declaration',
-  'class_declaration',
-  'abstract_class_declaration',
-  'interface_declaration',
-  'type_alias_declaration',
-  'enum_declaration',
-  'lexical_declaration',
-]);
+function loadGrammar(lang: LanguageConfig, ext: string): Promise<Language | null> {
+  const wasmFile = lang.resolveGrammarWasm(ext);
+  if (!wasmFile || !lang.grammarPackage) return Promise.resolve(null);
 
-function kindForNodeType(type: string): SymbolKind {
+  const cached = loadedGrammars.get(wasmFile);
+  if (cached) return cached;
+
+  const promise = (async () => {
+    try {
+      const require = createRequire(import.meta.url);
+      const wasmPath = require.resolve(`${lang.grammarPackage}/${wasmFile}`);
+      return await Language.load(wasmPath);
+    } catch {
+      return null;
+    }
+  })();
+
+  loadedGrammars.set(wasmFile, promise);
+  return promise;
+}
+
+export function kindForNodeType(type: string): SymbolKind {
   switch (type) {
-    case 'function_declaration': return 'function';
+    case 'function_declaration':
+    case 'function_definition':
+    case 'method_declaration':
+    case 'function_item': return 'function';
     case 'class_declaration':
-    case 'abstract_class_declaration': return 'class';
-    case 'interface_declaration': return 'interface';
-    case 'type_alias_declaration': return 'type';
-    case 'enum_declaration': return 'enum';
+    case 'abstract_class_declaration':
+    case 'class_definition':
+    case 'struct_item':
+    case 'impl_item': return 'class';
+    case 'interface_declaration':
+    case 'trait_item': return 'interface';
+    case 'type_alias_declaration':
+    case 'type_declaration':
+    case 'type_item': return 'type';
+    case 'enum_declaration':
+    case 'enum_item': return 'enum';
     case 'lexical_declaration': return 'const';
     default: return 'const';
   }
@@ -66,7 +70,7 @@ function kindForNodeType(type: string): SymbolKind {
 
 function extractName(declNode: Node): string | null {
   if (declNode.type === 'lexical_declaration') {
-    const declarator = declNode.namedChildren.find(c => c.type === 'variable_declarator');
+    const declarator = declNode.namedChildren.find((c: Node) => c.type === 'variable_declarator');
     if (!declarator) return null;
     const nameNode = declarator.childForFieldName('name');
     return nameNode?.text ?? null;
@@ -90,41 +94,24 @@ function extractSignature(declNode: Node, exported: boolean): string {
   return (exportPrefix + sigWithoutExport).trim();
 }
 
-const IMPORT_RE = /import\s+(?:[^'"`]+\s+from\s+)?['"]([^'"]+)['"]/g;
-
-function extractImports(source: string): string[] {
-  const matches = [...source.matchAll(IMPORT_RE)];
-  return matches.flatMap(m => (m[1] !== undefined ? [m[1]] : []));
+function extractImports(source: string, regex: RegExp | null): string[] {
+  if (!regex) return [];
+  const matches = [...source.matchAll(regex)];
+  return matches.map(m => {
+    for (let i = 1; i < m.length; i++) {
+      if (m[i] !== undefined) return m[i];
+    }
+    return undefined;
+  }).filter((s): s is string => s !== undefined);
 }
 
-export async function parseFile(absPath: string): Promise<FileNode | null> {
-  if (!parserInitialized) {
-    await initParser();
-  }
-
-  let fileStat: Awaited<ReturnType<typeof stat>>;
-  let source: string;
-  try {
-    fileStat = await stat(absPath);
-    source = await readFile(absPath, 'utf8');
-  } catch {
-    return null;
-  }
-
-  const parser = new Parser();
-  parser.setLanguage(getLanguage(absPath));
-  const tree = parser.parse(source);
-
-  if (!tree) {
-    throw parseError.parseFailed(absPath);
-  }
-
+function extractSymbols(tree: Tree, lang: LanguageConfig): SymbolRef[] {
   const symbols: SymbolRef[] = [];
   const rootChildren = tree.rootNode.namedChildren;
 
   for (const child of rootChildren) {
     if (child.type === 'export_statement') {
-      const declNode = child.namedChildren.find(c => DECLARATION_NODE_TYPES.has(c.type));
+      const declNode = child.namedChildren.find((c: Node) => lang.declarationNodeTypes.has(c.type));
       if (!declNode) continue;
 
       const name = extractName(declNode);
@@ -135,17 +122,59 @@ export async function parseFile(absPath: string): Promise<FileNode | null> {
       const line = declNode.startPosition.row + 1;
 
       symbols.push({ name, kind, signature, exported: true, line });
-    } else if (DECLARATION_NODE_TYPES.has(child.type)) {
+    } else if (lang.declarationNodeTypes.has(child.type)) {
       const name = extractName(child);
       if (!name) continue;
 
+      const exported = lang.isExported ? lang.isExported(name, child.text) : false;
       const kind = kindForNodeType(child.type);
-      const signature = extractSignature(child, false);
+      const signature = extractSignature(child, exported);
       const line = child.startPosition.row + 1;
 
-      symbols.push({ name, kind, signature, exported: false, line });
+      symbols.push({ name, kind, signature, exported, line });
     }
   }
+
+  return symbols;
+}
+
+export async function parseFile(absPath: string): Promise<FileNode | null> {
+  await initParser();
+
+  const ext = extname(absPath);
+  const lang = getLanguageForExtension(ext);
+  if (!lang) return null;
+
+  let fileStat: Awaited<ReturnType<typeof stat>>;
+  let source: string;
+  try {
+    fileStat = await stat(absPath);
+    source = await readFile(absPath, 'utf8');
+  } catch {
+    return null;
+  }
+
+  const grammar = await loadGrammar(lang, ext);
+  if (!grammar) {
+    return {
+      path: absPath,
+      symbols: [],
+      imports: [],
+      sizeBytes: fileStat.size,
+      mtimeMs: fileStat.mtimeMs,
+    };
+  }
+
+  const parser = new Parser();
+  parser.setLanguage(grammar);
+  const tree = parser.parse(source);
+
+  if (!tree) {
+    throw parseError.parseFailed(absPath);
+  }
+
+  const symbols = extractSymbols(tree, lang);
+  const imports = extractImports(source, lang.importRegex);
 
   parser.delete();
   tree.delete();
@@ -153,7 +182,7 @@ export async function parseFile(absPath: string): Promise<FileNode | null> {
   return {
     path: absPath,
     symbols,
-    imports: extractImports(source),
+    imports,
     sizeBytes: fileStat.size,
     mtimeMs: fileStat.mtimeMs,
   };

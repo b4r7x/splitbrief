@@ -1,6 +1,6 @@
 # Repo-map context
 
-The diptych planner sees a token-budgeted **repo-map** of your project's TypeScript source on every workflow start. The repo-map gives the planner a structural overview — file paths, top-level signatures, exports — without burning context tokens on file reads. Inspired by [Aider's repomap](https://aider.chat/docs/repomap.html), tuned for a planner that compiles Task Briefs and decides when extra structure is worth paying for.
+The diptych planner sees a token-budgeted **repo-map** of your project's source on every workflow start. The repo-map gives the planner a structural overview — file paths, top-level signatures, exports — without burning context tokens on file reads. Inspired by [Aider's repomap](https://aider.chat/docs/repomap.html), tuned for a planner that compiles Task Briefs and decides when extra structure is worth paying for.
 
 ## Why
 
@@ -31,7 +31,7 @@ codebase:
   enabled: true              # set to false to disable
   tokenBudget: 4000          # tokens reserved in the planner prompt
   cacheDir: ".diptych"       # where the SQLite cache lives
-  include: ["src/**/*.ts"]   # globs (default: discovery walks .ts/.tsx)
+  include: ["src/**/*"]     # globs (default: discovery walks all known language extensions)
   exclude:                   # regex strings; default excludes test files + node_modules + dist
     - "\\.test\\.tsx?$"
     - "node_modules/"
@@ -98,7 +98,7 @@ The planner runs without the `<repo-map>` block. Use this if you have token-tigh
 
 Module: `src/engine/codebase/`. The entry point `repomap.ts` composes a four-step pipeline:
 
-1. **Parse** — `src/engine/codebase/parse.ts` wraps `web-tree-sitter` with the TypeScript WASM grammar. For each discovered `.ts`/`.tsx` file it extracts `tags.scm`-equivalent captures: function declarations, class declarations, type aliases, interface declarations, and exports. Output is `FileNode { symbols, imports, sizeBytes, mtimeMs }`. The parse step is fronted by the cache (see above) — actual tree-sitter work only runs on misses.
+1. **Parse** — `src/engine/codebase/parse.ts` wraps `web-tree-sitter` with language-specific WASM grammars loaded lazily from the `LanguageConfig` registry. For each discovered file it extracts `tags.scm`-equivalent captures (function declarations, classes, types, etc.) according to the language's node types. Unknown languages or missing grammars fall back to filename-only inclusion (empty symbols/imports). Output is `FileNode { symbols, imports, sizeBytes, mtimeMs }`. The parse step is fronted by the cache (see above) — actual tree-sitter work only runs on misses.
 2. **Graph build** — `src/engine/codebase/graph.ts` turns the parsed `imports` of each file into a directed file→file graph. Imports are resolved via `tsconfig` `baseUrl`/`paths`; unresolved or external imports are dropped. Edge weight equals the number of symbols imported from the target.
 3. **PageRank** — `src/engine/codebase/pagerank.ts` runs PageRank over the graph with a personalization vector built from `focusFiles` and basenames extracted from the user's prompt (see [Ranking](#ranking)).
 4. **Budget-aware emit** — `src/engine/codebase/format.ts` and `src/engine/codebase/budget.ts` walk files in descending rank order, emitting one block of signature lines per file. A rolling token estimate (chars / 4) stops emission once `tokenBudget` is exceeded, so files in the ranked tail are dropped first.
@@ -134,4 +134,4 @@ Alternatives considered and rejected:
 - **D — Skip caching, parse every run.** Simpler, no SQLite, but ~3s on every `diptych start` for a 200-file repo is unacceptable repeated cost. **Rejected.**
 - **E — TypeScript Language Server (tsserver) over LSP.** Zero new parsing code, but requires a long-running subprocess with a complex lifecycle, heavy startup overhead, and is TS-only by design anyway. Out of proportion for the gain. **Rejected.**
 
-Trade-offs accepted: ~3 MB of new runtime deps (`web-tree-sitter` + TS grammar WASM + `better-sqlite3`), a native module via `better-sqlite3` (prebuilt binaries cover macOS/Linux), and non-TS files are ignored (fine — diptych is TS-only by scope).
+Trade-offs accepted: ~3 MB of new runtime deps (`web-tree-sitter` + TS grammar WASM + `better-sqlite3`), a native module via `better-sqlite3` (prebuilt binaries cover macOS/Linux). Non-TS files are now supported via a language registry (Python, Go, Rust, JavaScript) with lazy grammar loading; unknown languages or missing grammars fall back to filename-only inclusion.

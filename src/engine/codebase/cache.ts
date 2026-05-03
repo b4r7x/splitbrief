@@ -4,7 +4,7 @@ import { stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { FileNode } from './types.js';
 
-const PARSE_VERSION = 1;
+const PARSE_VERSION = 2;
 
 export type Metrics = { hits: number; misses: number };
 
