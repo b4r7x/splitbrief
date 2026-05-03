@@ -1,5 +1,6 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { Phase } from '../../core/schemas/enums.js';
+import type { TaskId } from '../../core/schemas/task.js';
 import type { ProjectContext } from '../../core/state/types.js';
 import type { Planner, PriorMessage } from '../planners/types.js';
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
@@ -51,6 +52,8 @@ export interface WorkflowContext {
   implementer: Implementer;
   createImplementer?: ((config: Config, options?: ImplementerFactoryOptions) => Implementer) | undefined;
   implementerProfile?: string | undefined;
+  retryProfileOverride?: string | undefined;
+  retryProfileOverrideTaskId?: TaskId | undefined;
   routingDecision?: RoutingDecision | undefined;
   signal?: AbortSignal | undefined;
   metadata: SpecMetadata;

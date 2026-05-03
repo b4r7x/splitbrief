@@ -1,4 +1,4 @@
-import type { Task } from '../../../core/schemas/task.js';
+import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
@@ -21,6 +21,8 @@ type HandleRetryOptions = {
   taskStartTime?: number;
   taskStartSnapshot?: ChangedFilesSnapshot;
   dependsOnFiles?: string[];
+  profileOverride?: string | undefined;
+  profileOverrideTaskId?: TaskId | undefined;
 };
 
 export async function handleRetryAndEscalation(opts: HandleRetryOptions): Promise<{ state: WorkflowState; result: RetryResult }> {
@@ -39,6 +41,8 @@ export async function handleRetryAndEscalation(opts: HandleRetryOptions): Promis
     taskStartTime,
     taskStartSnapshot,
     dependsOnFiles: opts.dependsOnFiles ?? [],
+    ...(opts.profileOverride !== undefined && { retryProfileOverride: opts.profileOverride }),
+    ...(opts.profileOverrideTaskId !== undefined && { retryProfileOverrideTaskId: opts.profileOverrideTaskId }),
   };
 
   const retries = await runLocalRetries(ctx, task, currentState, initialError);

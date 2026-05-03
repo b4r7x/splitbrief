@@ -254,6 +254,7 @@ Recovery is a persisted overlay on the current workflow phase. It is created whe
 Implemented recovery actions:
 
 - `retry-same-worker` clears recovery, resets only the current task to `pending`, resets attempts, and reruns it in a fresh worker context.
+- `route-bigger-worker` is offered when the recovery issue names a larger implementer profile. It clears recovery, resets only the current task, and reruns that task with the named profile as a one-shot override.
 - `continue` is allowed only for budget pause below max budget or safe unrelated user edits. It is never allowed for `budget-exceeded`.
 - `skip-current-task` records skip evidence, marks the task `skipped`, advances the index, and lets dependency checks stop later tasks safely.
 - `pause-run` keeps the issue pending and the active session resumable.
@@ -261,7 +262,6 @@ Implemented recovery actions:
 
 Deferred recovery actions:
 
-- `route-bigger-worker` is typed and can be offered when the issue names a larger profile, but execution is currently blocked with `route-bigger-not-ready`; the original `pendingRecovery` remains intact.
 - `planner-split-rebase` is typed and shown as requiring approve/edit/reject of a proposal, but proposal generation/execution is currently blocked with `planner-proposal-required`; the original `pendingRecovery` remains intact.
 
 Headless/JSON runs do not block for input. If the run leaves `pendingRecovery`, the CLI emits one machine-readable `recovery_required` JSON line with available actions and exits non-zero.

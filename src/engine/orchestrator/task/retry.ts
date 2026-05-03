@@ -28,6 +28,12 @@ function routeBiggerProfileFromDecision(decision: RoutingDecision | undefined): 
   return candidate?.profile;
 }
 
+function retryProfileOverrideForTask(wctx: WorkflowContext, task: Task): string | undefined {
+  if (!wctx.retryProfileOverride) return undefined;
+  if (wctx.retryProfileOverrideTaskId !== undefined && wctx.retryProfileOverrideTaskId !== task.id) return undefined;
+  return wctx.retryProfileOverride;
+}
+
 export type RetryAndRecordOptions = {
   wctx: WorkflowContext;
   task: Task;
@@ -55,11 +61,14 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
   }
   let state: WorkflowState;
   let result: Awaited<ReturnType<typeof handleRetryAndEscalation>>['result'];
+  const retryProfileOverride = retryProfileOverrideForTask(wctx, task);
   try {
     ({ state, result } = await handleRetryAndEscalation({
       wctx, task, initialError, currentState: opts.state, taskStartTime,
       taskStartSnapshot,
       dependsOnFiles: resolveDependsOnFiles(opts.state.tasks, task),
+      profileOverride: retryProfileOverride,
+      ...(retryProfileOverride !== undefined && { profileOverrideTaskId: task.id }),
     }));
   } catch (err) {
     const message = labelError('Retry/escalation failed', err);
@@ -88,6 +97,7 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
   }
   let nextState = state;
   setTrackedState(nextState);
+  const retryImplementerProfile = retryProfileOverride ?? wctx.implementerProfile;
   if (!result.completed) {
     if (wctx.signal?.aborted) {
       return { state: nextState, completed: false };
@@ -101,7 +111,7 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
         attempts: result.attempts,
         maxAttempts: wctx.config.workflow.maxRetries,
         allowRetryOverride: true,
-        selectedImplementerProfile: wctx.implementerProfile,
+        selectedImplementerProfile: retryImplementerProfile,
         routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
         createdAt: new Date().toISOString(),
       });
@@ -120,9 +130,9 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
     state: nextState,
     taskBreakdowns,
     retryCount: result.attempts,
-    tool: getRunnerDisplayName(wctx.config.implementer),
-    model: wctx.config.implementer.model,
-    ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
+    tool: nextState.implementerTool ?? getRunnerDisplayName(wctx.config.implementer),
+    model: nextState.implementerModel ?? wctx.config.implementer.model,
+    ...(retryImplementerProfile !== undefined && { implementerProfile: retryImplementerProfile }),
     ...(wctx.routingDecision !== undefined && { routingDecision: wctx.routingDecision }),
   });
   const escalated = result.method !== 'local';

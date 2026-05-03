@@ -10,6 +10,7 @@ import type { LanguageContext } from '../spec/prompts/language-context.js';
 import { buildLanguageContext } from '../spec/prompts/language-context.js';
 import { buildSystemPreamble } from '../spec/prompts/system.js';
 import { estimateTokens } from '../spec/token-budget.js';
+import { looksLikeFilePath } from '../../utils/path-patterns.js';
 
 export type { TaskContextFit, CurrentCodeContextMode } from '../events/workflow-events.js';
 import type { TaskContextFit, CurrentCodeContextMode } from '../events/workflow-events.js';
@@ -107,23 +108,6 @@ function normalizeScopePattern(pattern: string): string {
   return pattern.trim().replace(/^\.\//, '');
 }
 
-const ROOT_FILE_NAMES = new Set([
-  'Dockerfile',
-  'Makefile',
-  'README',
-  'LICENSE',
-  'CHANGELOG',
-  'NOTICE',
-  'Procfile',
-]);
-
-function looksLikePathPattern(pattern: string): boolean {
-  if (pattern.includes('/') || pattern.includes('\\') || pattern.includes('*')) return true;
-  if (/\s/.test(pattern)) return false;
-  if (pattern.startsWith('.') && pattern.length > 1) return true;
-  if (/^[A-Za-z0-9_.-]+\.[A-Za-z0-9]+$/.test(pattern)) return true;
-  return ROOT_FILE_NAMES.has(pattern);
-}
 
 function matchesTaskFilePattern(pattern: string, taskFile: string): boolean {
   return normalizeScopePattern(pattern) === normalizeScopePattern(taskFile);
@@ -138,7 +122,7 @@ function requiredWriteModeForTask(task: Task): ImplementerWriteMode {
   const hasAdditionalPathScope = scopedWritePatterns.some(pattern => {
     const normalized = normalizeScopePattern(pattern);
     return normalized.length > 0
-      && looksLikePathPattern(normalized)
+      && looksLikeFilePath(normalized)
       && !matchesTaskFilePattern(normalized, task.file);
   });
 

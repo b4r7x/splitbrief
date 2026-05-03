@@ -1,5 +1,6 @@
 import { useRef, useEffect, useEffectEvent, useState } from 'react';
 import type { Config } from '../../../core/schemas/config.js';
+import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery.js';
@@ -66,7 +67,7 @@ interface UseWorkflowRunnerResult {
 }
 
 type PendingRecoveryResult =
-  | { shouldRun: true; state: WorkflowState }
+  | { shouldRun: true; state: WorkflowState; retryProfileOverride?: string | undefined; retryProfileOverrideTaskId?: TaskId | undefined }
   | { shouldRun: false; state?: WorkflowState | undefined };
 
 export function useWorkflowRunner({
@@ -149,12 +150,15 @@ export function useWorkflowRunner({
     if (!latest.pendingRecovery) return { shouldRun: true, state: latest };
 
     const action = parseRecoveryActionAnswer(answer, latest.pendingRecovery);
+    const selectedImplementerProfile = latest.pendingRecovery.selectedImplementerProfile;
+    const retryProfileOverrideTaskId = latest.pendingRecovery.taskId ?? latest.tasks[latest.currentTaskIndex]?.id;
     const result = applyRecoveryAction({
       projectDir,
       sessionId: activeSessionId,
       state: latest,
       action,
       bus,
+      config,
       selectedAt: new Date().toISOString(),
       mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
     });
@@ -177,7 +181,13 @@ export function useWorkflowRunner({
       return { shouldRun: false, state: result.state };
     }
 
-    return { shouldRun: true, state: result.state };
+    const retryProfileOverride = result.implementerProfile ?? selectedImplementerProfile;
+    return {
+      shouldRun: true,
+      state: result.state,
+      ...(retryProfileOverride !== undefined && result.status === 'retry-current-task' && { retryProfileOverride }),
+      ...(retryProfileOverride !== undefined && result.status === 'retry-current-task' && retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
+    };
   };
 
   const buildBudgetPromptIssue = (
@@ -243,6 +253,8 @@ export function useWorkflowRunner({
     });
 
     try {
+      let retryProfileOverride: string | undefined;
+      let retryProfileOverrideTaskId: TaskId | undefined;
       while (!controller.signal.aborted && !abortedRef.current) {
         if (stateForRun?.pendingRecovery) {
           activeSessionId = activeSessionId ?? readActive(projectDir) ?? undefined;
@@ -259,6 +271,8 @@ export function useWorkflowRunner({
           recoveryPromptAlreadyPublished = false;
           if (!recovery.shouldRun) return;
           stateForRun = recovery.state;
+          retryProfileOverride = recovery.retryProfileOverride;
+          retryProfileOverrideTaskId = recovery.retryProfileOverrideTaskId;
         }
 
         await runWorkflow({
@@ -324,7 +338,11 @@ export function useWorkflowRunner({
           savedState: stateForRun,
           selectedSkills,
           sessionId: activeSessionId,
+          ...(retryProfileOverride !== undefined && { retryProfileOverride }),
+          ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
         });
+        retryProfileOverride = undefined;
+        retryProfileOverrideTaskId = undefined;
 
         if (controller.signal.aborted || abortedRef.current) return;
 

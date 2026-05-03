@@ -362,7 +362,7 @@ diptych stats --json
 | `skip-current-task` | Marks the task skipped, records evidence, and leaves dependents for normal blocked-dependency recovery. |
 | `pause-run` | Leaves the active session resumable with the issue intact. |
 | `abort-workflow` | Ends through the normal intentional shutdown path without staging or committing. |
-| `route-bigger-worker` | Typed/deferred: currently returns `route-bigger-not-ready` and preserves the pending issue. |
+| `route-bigger-worker` | Resets the current task and reruns it with the larger implementer profile named by the recovery issue. |
 | `planner-split-rebase` | Typed/deferred: currently returns `planner-proposal-required` and preserves the pending issue. |
 
 **Resume/headless.** `diptych resume` shows pending recovery before any planner or implementer call. Headless JSON runs emit `recovery_required` with reason, task/files, available actions, and recommendation, then exit non-zero.

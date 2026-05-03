@@ -316,6 +316,8 @@ implementerProfiles:
 
 If `implementerProfiles.default` is omitted, diptych resolves the default profile deterministically from the first profile name in sorted order. If `default` is set, it must name an existing profile.
 
+When recovery offers `route-bigger-worker`, the issue names a target profile from this pool. Selecting that action resets only the current task and reruns it once with the named profile instead of the cheapest-capable routing choice.
+
 ---
 
 ## 4. `validation`

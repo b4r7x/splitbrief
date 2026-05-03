@@ -3,9 +3,12 @@ import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { assertNever } from '../../../utils/type-guards.js';
 import type { EventBus } from '../../events/types.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
+import type { Config } from '../../../core/schemas/config.js';
 import { hashTaskBrief } from '../../../core/brief-hash.js';
+import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import {
   createEvidenceLedger,
   readEvidenceLedger,
@@ -25,7 +28,8 @@ export type RecoveryActionBlockedCode =
   | 'action-not-available'
   | 'unsafe-continue'
   | 'missing-current-task'
-  | 'route-bigger-not-ready'
+  | 'missing-profile'
+  | 'profile-not-found'
   | 'planner-proposal-required';
 
 export type RecoveryActionAppliedStatus =
@@ -61,6 +65,7 @@ export interface ApplyRecoveryActionOptions {
   state: WorkflowState;
   action: RecoveryAction;
   bus: EventBus;
+  config?: Config | undefined;
   selectedAt?: string | undefined;
   mode?: WorkflowMode | undefined;
 }
@@ -87,44 +92,31 @@ export function applyRecoveryAction(opts: ApplyRecoveryActionOptions): ApplyReco
     });
   }
 
-  if (opts.action === 'continue') {
-    return applyContinueRecoveryAction(opts, issue);
+  switch (opts.action) {
+    case 'continue':
+      return applyContinueRecoveryAction(opts, issue);
+    case 'pause-run':
+      return applyPauseRecoveryAction(opts, issue);
+    case 'abort-workflow':
+      return applyAbortRecoveryAction(opts, issue);
+    case 'skip-current-task':
+      return applySkipCurrentTaskRecoveryAction(opts, issue);
+    case 'retry-same-worker':
+      return applyRetrySameWorkerRecoveryAction(opts, issue);
+    case 'route-bigger-worker':
+      return applyRouteBiggerWorkerRecoveryAction(opts, issue);
+    case 'planner-split-rebase':
+      return blockRecoveryAction({
+        ...opts,
+        issue,
+        code: 'planner-proposal-required',
+        message: 'Planner split/rebase requires a parseable proposed Task Brief and explicit approve/edit/reject before execution can resume.',
+        implementerProfile: issue.selectedImplementerProfile,
+        publishSelected: true,
+      });
+    default:
+      return assertNever(opts.action);
   }
-  if (opts.action === 'pause-run') {
-    return applyPauseRecoveryAction(opts, issue);
-  }
-  if (opts.action === 'abort-workflow') {
-    return applyAbortRecoveryAction(opts, issue);
-  }
-  if (opts.action === 'skip-current-task') {
-    return applySkipCurrentTaskRecoveryAction(opts, issue);
-  }
-  if (opts.action === 'retry-same-worker') {
-    return applyRetrySameWorkerRecoveryAction(opts, issue);
-  }
-  if (opts.action === 'route-bigger-worker') {
-    const profile = issueFactString(issue, 'routeBiggerProfile');
-    return blockRecoveryAction({
-      ...opts,
-      issue,
-      code: 'route-bigger-not-ready',
-      message: profile
-        ? `Routing to ${profile} requires one-shot profile override plumbing before execution can resume.`
-        : 'Routing to a bigger worker requires a selected larger profile before execution can resume.',
-      implementerProfile: profile,
-      publishSelected: true,
-    });
-  }
-
-  const profile = issue.selectedImplementerProfile;
-  return blockRecoveryAction({
-    ...opts,
-    issue,
-    code: 'planner-proposal-required',
-    message: 'Planner split/rebase requires a parseable proposed Task Brief and explicit approve/edit/reject before execution can resume.',
-    implementerProfile: profile,
-    publishSelected: true,
-  });
 }
 
 type ApplyRecoveryActionOptionsWithIssue = ApplyRecoveryActionOptions & {
@@ -236,16 +228,65 @@ function applyRetrySameWorkerRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
+  return applyRetryCurrentTaskRecoveryAction(
+    opts,
+    issue,
+    'Retry same worker requires the pending recovery task to match the current task index.',
+  );
+}
+
+function applyRouteBiggerWorkerRecoveryAction(
+  opts: ApplyRecoveryActionOptions,
+  issue: RecoveryIssue,
+): ApplyRecoveryActionResult {
+  const profile = issueFactString(issue, 'routeBiggerProfile');
+  if (!profile) {
+    return blockRecoveryAction({
+      ...opts,
+      issue,
+      code: 'missing-profile',
+      message: 'No bigger profile identified in recovery issue facts.',
+      publishSelected: true,
+    });
+  }
+
+  if (!opts.config || !hasImplementerProfile(opts.config, profile)) {
+    return blockRecoveryAction({
+      ...opts,
+      issue,
+      code: 'profile-not-found',
+      message: `Profile '${profile}' not found in config.`,
+      implementerProfile: profile,
+      publishSelected: true,
+    });
+  }
+
+  return applyRetryCurrentTaskRecoveryAction(
+    opts,
+    issue,
+    'Route bigger worker requires the pending recovery task to match the current task index.',
+    profile,
+  );
+}
+
+function applyRetryCurrentTaskRecoveryAction(
+  opts: ApplyRecoveryActionOptions,
+  issue: RecoveryIssue,
+  missingTaskMessage: string,
+  selectedImplementerProfile?: string | undefined,
+): ApplyRecoveryActionResult {
   const target = currentRecoveryTask(opts.state, issue);
   if (!target) {
     return blockRecoveryAction({
       ...opts,
       issue,
       code: 'missing-current-task',
-      message: 'Retry same worker requires the pending recovery task to match the current task index.',
+      message: missingTaskMessage,
       publishSelected: true,
     });
   }
+
+  const effectiveProfile = selectedImplementerProfile ?? issue.selectedImplementerProfile;
 
   let state = markRecoveryApplying(opts, issue);
   state = transitionAndSave(opts.projectDir, opts.sessionId, state, {
@@ -261,7 +302,7 @@ function applyRetrySameWorkerRecoveryAction(
     issue,
     opts.action,
     'retry-current-task',
-    issue.selectedImplementerProfile,
+    effectiveProfile,
   );
 
   return {
@@ -270,8 +311,12 @@ function applyRetrySameWorkerRecoveryAction(
     issue,
     state,
     status: 'retry-current-task',
-    implementerProfile: issue.selectedImplementerProfile,
+    implementerProfile: effectiveProfile,
   };
+}
+
+function hasImplementerProfile(config: Config, profile: string): boolean {
+  return resolveImplementerProfiles(config).profiles.some(candidate => candidate.name === profile);
 }
 
 function markRecoveryApplying(opts: ApplyRecoveryActionOptions, issue: RecoveryIssue): WorkflowState {
