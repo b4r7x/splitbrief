@@ -16,6 +16,7 @@ export function resolveCapabilities(override: { [K in keyof PlannerCapabilities]
     supportsSessionResume: override?.supportsSessionResume ?? false,
     supportsEffort: override?.supportsEffort ?? false,
     supportsImages: override?.supportsImages ?? false,
+    supportsSelfSummarisation: override?.supportsSelfSummarisation ?? false,
   };
 }
 

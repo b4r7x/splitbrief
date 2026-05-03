@@ -160,7 +160,7 @@ Arbitrary `stdin → stdout` command. Diptych writes the prompt to stdin and par
 | `command` | non-empty string | yes | Executable path (relative to project or absolute) |
 | `args` | string[] | no | Argv |
 | `outputFormat` | enum | no | Same values as `cli` |
-| `capabilities` | partial object | no | `{ supportsConversationalPlanning?, supportsHintEscalation?, supportsSessionResume? }` — declares what your script can do so the orchestrator skips features it can't. |
+| `capabilities` | partial object | no | Declares optional planner features such as `supportsConversationalPlanning`, `supportsHintEscalation`, `supportsSessionResume`, `supportsEffort`, `supportsImages`, and `supportsSelfSummarisation` so the orchestrator skips features the wrapper cannot provide. |
 
 ```yaml
 planner:
@@ -173,6 +173,8 @@ planner:
     supportsHintEscalation: true
     supportsSessionResume: false
 ```
+
+Set `supportsSelfSummarisation: true` only for planner wrappers that can summarize an existing transcript through `planner.summarize()`. It enables `/compact-transcript`; unsupported planners report a clear message and leave the session log untouched.
 
 **When to use:** wrapping a tool diptych doesn't ship adapters for, or piping through your own pre/post-processing layer.
 
@@ -426,6 +428,7 @@ workflow: {
 
   // Transcript
   persistTranscript:      boolean; // default true
+  compactionThreshold?:   number;  // int >= 10
 }
 ```
 
@@ -446,7 +449,8 @@ workflow: {
 | `budgetPauseThreshold` | 0..1 | unset | Fraction of `maxBudget` at which to pause. e.g. `0.8` pauses at 80%. |
 | `driftChainThreshold` | 0..1 | unset | Drift-detection threshold for repeated escalation cycles. Higher = more tolerance. |
 | `speckit.minCoverage` | 0..1 | unset | Speckit-mode minimum test-coverage gate. |
-| `persistTranscript` | boolean | `true` | Persist planner/user text chunks to `session.jsonl` for replay/audit. |
+| `persistTranscript` | boolean | `true` | Persist planner/user text chunks to `session.jsonl` for replay/audit and `/compact-transcript`. |
+| `compactionThreshold` | int >= 10 | unset | On resume, auto-compact persisted transcript context when compacted message count exceeds this threshold and the planner supports self-summarisation. |
 
 ### Per-mode defaults
 
@@ -505,6 +509,7 @@ workflow:
 - `maxBudget` — always set this for API-billed runs. It's your stop-loss.
 - `budgetPauseThreshold` — set for unattended runs so you can intervene before the hard ceiling.
 - `briefReview: rich` — when you want to edit the brief in-place before implementation; otherwise stick with `simple` for speed.
+- `persistTranscript: true` — keep this enabled if you want resume reconstruction and manual transcript compaction. `/compact-transcript` appends a summary entry and keeps recent turns verbatim; it does not delete old log lines.
 
 **See also:** [WORKFLOW.md](./WORKFLOW.md), [SLASH-COMMANDS.md](./SLASH-COMMANDS.md) (`/mode`, `/approve` runtime overrides).
 

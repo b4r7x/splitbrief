@@ -30,7 +30,7 @@ import type { WorkflowContext, WorkflowSinks, ResumeContextHolder } from '../typ
 import { buildSummary, type SummaryBase } from '../summary.js';
 import { createImplementerPublisher, publishEvent, publishError, publishPlannerStatus, publishWorkflowConfig, publishUserMessage, publishWarning, publishGitBranchCreated } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
-import { applyRebuiltContext } from '../resume-context.js';
+import { applyRebuiltContext, autoCompactResumeContext } from '../resume-context.js';
 import { createValidator } from '../validation.js';
 
 export type RunWorkflowOptions = {
@@ -99,8 +99,11 @@ export async function initializeWorkflow(
   // Stateless backends receive priorMessages instead of plannerSessionId.
   const initialSessionId = savedState?.plannerSessionId ?? null;
   const planner = opts._planner ?? createPlanner(config, initialSessionId);
-  if (savedState && !hasPendingRecovery && !planner.capabilities.supportsSessionResume) {
-    await applyRebuiltContext({ projectDir, sessionId, callbacks, bus, config, resumeHolder, requireNonEmpty: true });
+  if (savedState && !hasPendingRecovery) {
+    await autoCompactResumeContext({ projectDir, sessionId, bus, config, planner });
+    if (!planner.capabilities.supportsSessionResume) {
+      await applyRebuiltContext({ projectDir, sessionId, callbacks, bus, config, resumeHolder, requireNonEmpty: true });
+    }
   }
   if (!hasPendingRecovery) {
     const available = await planner.isAvailable();

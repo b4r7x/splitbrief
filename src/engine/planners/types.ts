@@ -17,6 +17,8 @@ export type PlannerCapabilities = {
   supportsEffort: boolean;
   /** Backend can accept image attachments (vision models, --image flag, content blocks, etc.). */
   supportsImages: boolean;
+  /** Planner can summarize its own prior transcript for compaction. */
+  supportsSelfSummarisation: boolean;
 };
 
 /** Preset for session-based conversational planners (Claude Code, Agent SDK, codex). */
@@ -26,6 +28,7 @@ export const CONVERSATIONAL_CAPS: PlannerCapabilities = {
   supportsSessionResume: true,
   supportsEffort: true,
   supportsImages: true,
+  supportsSelfSummarisation: true,
 };
 
 /** Preset for one-shot API planners (OpenAI-compatible endpoints). */
@@ -35,11 +38,17 @@ export const ONE_SHOT_API_CAPS: PlannerCapabilities = {
   supportsSessionResume: false,
   supportsEffort: false,
   supportsImages: false,
+  supportsSelfSummarisation: true,
 };
 
 export interface PriorMessage {
   role: 'user' | 'assistant';
   content: string;
+}
+
+export interface PlannerSummaryMessage {
+  role: string;
+  text: string;
 }
 
 export interface PlannerCallbacks {
@@ -168,6 +177,8 @@ export interface Planner extends RunnerRuntime {
     projectDir: string,
     callbacks: { onOutput: (text: string) => void },
   ): Promise<{ text: string; usage: TokenDelta | null }>;
+
+  summarize(messages: PlannerSummaryMessage[], projectDir?: string): Promise<string>;
 
   injectUserTurn?: (text: string, projectDir: string) => Promise<void>;
 

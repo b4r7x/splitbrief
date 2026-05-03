@@ -11,7 +11,7 @@ import type { Task } from '../../core/schemas/task.js';
 import type { InvokeResult } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
-import type { Planner, PlannerCallbacks, PlanResult, EscalationResult, RegenerateResult, PhaseResult, PlannerCapabilities, PriorMessage } from './types.js';
+import type { Planner, PlannerCallbacks, PlanResult, EscalationResult, RegenerateResult, PhaseResult, PlannerCapabilities, PriorMessage, PlannerSummaryMessage } from './types.js';
 import { formatMessagesForCli } from '../streaming/format-messages.js';
 import { buildResearchPrompt } from '../spec/prompts/research.js';
 import { buildSpecPrompt } from '../spec/prompts/spec.js';
@@ -44,6 +44,8 @@ const PHASE_MAP: Partial<Record<string, Phase>> = {
   'generating-tasks': 'planning',
   'quick-planning': 'planning',
 };
+
+const SUMMARY_PROMPT = 'Summarize this conversation compactly. Preserve: feature goal, key decisions, progress (phases/tasks done), files modified, active constraints, pending items. Output as structured markdown.';
 
 type InternalInvokeFn = (opts: {
   prompt: string;
@@ -79,7 +81,27 @@ export interface PlannerBaseConfig {
   injectUserTurn?: (text: string, projectDir: string) => Promise<void>;
 }
 
+function normalizeCapabilities(capabilities: PlannerCapabilities): PlannerCapabilities {
+  return {
+    supportsConversationalPlanning: capabilities.supportsConversationalPlanning,
+    supportsHintEscalation: capabilities.supportsHintEscalation,
+    supportsSessionResume: capabilities.supportsSessionResume,
+    supportsEffort: capabilities.supportsEffort,
+    supportsImages: capabilities.supportsImages,
+    supportsSelfSummarisation: capabilities.supportsSelfSummarisation ?? false,
+  };
+}
+
+function buildSummaryPrompt(messages: PlannerSummaryMessage[]): string {
+  const transcript = messages
+    .map(message => `[${message.role}]\n${message.text}`)
+    .join('\n\n');
+  return `${SUMMARY_PROMPT}\n\nConversation:\n${transcript}`;
+}
+
 export function createPlannerBase(config: PlannerBaseConfig): Planner {
+  const capabilities = normalizeCapabilities(config.capabilities);
+
   return {
     async plan(
       feature: string,
@@ -247,11 +269,21 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       return config.invokeEscalate({ prompt, projectDir, callbacks });
     },
 
+    async summarize(messages: PlannerSummaryMessage[], projectDir?: string): Promise<string> {
+      if (messages.length === 0) return '';
+      const result = await config.invokeEscalate({
+        prompt: buildSummaryPrompt(messages),
+        projectDir: projectDir ?? process.cwd(),
+        callbacks: { onOutput: () => {} },
+      });
+      return result.text.trim();
+    },
+
     ...DEFAULT_AVAILABILITY,
     isAvailable: config.isAvailable,
     ...(config.getVersion && { getVersion: config.getVersion }),
     ...(config.injectUserTurn && { injectUserTurn: config.injectUserTurn }),
-    capabilities: config.capabilities,
+    capabilities,
   };
 }
 

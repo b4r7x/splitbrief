@@ -23,6 +23,10 @@ export type RejectRunSnapshotResult =
     missingSnapshotFiles: string[];
   };
 
+export type CompactTranscriptResult =
+  | { status: 'unsupported'; plannerName: string }
+  | { status: 'compacted'; summary: string; entriesRemoved: number };
+
 interface SlashCommandBase {
   name: string;
   aliases?: string[];
@@ -62,6 +66,7 @@ export interface CommandContext {
   setApprovalEnabled: (enabled: boolean) => void;
   acceptRunSnapshot: () => Promise<AcceptRunSnapshotResult>;
   rejectRunSnapshot: () => Promise<RejectRunSnapshotResult>;
+  compactTranscript: () => Promise<CompactTranscriptResult>;
 }
 
 export interface CommandPaletteItem {

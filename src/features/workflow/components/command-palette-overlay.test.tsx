@@ -65,6 +65,7 @@ function createTestCommands(): SlashCommandDef[] {
     setApprovalEnabled: () => {},
     acceptRunSnapshot: async () => ({ snapshotId: 'test-snapshot', isFirstSnapshot: false }),
     rejectRunSnapshot: async () => ({ status: 'empty' }),
+    compactTranscript: async () => ({ status: 'unsupported', plannerName: 'test' }),
   };
   return createCommands(ctx);
 }

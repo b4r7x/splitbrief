@@ -17,6 +17,7 @@ const defaultCapabilities: PlannerCapabilities = {
   supportsSessionResume: false,
   supportsEffort: false,
   supportsImages: false,
+  supportsSelfSummarisation: false,
 };
 
 const taskMarkdown = `---
@@ -247,6 +248,7 @@ describe('createPlannerBase — hintSuccessMode', () => {
         supportsSessionResume: false,
         supportsEffort: false,
         supportsImages: false,
+        supportsSelfSummarisation: false,
       },
     });
 
