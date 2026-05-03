@@ -60,6 +60,22 @@ describe('runPreHooks', () => {
     expect(result.reason).toBe('access denied');
   });
 
+  it('returns not-allow when a module pre-hook returns deny', async () => {
+    const hooks: HooksConfig = {
+      pre_task: [
+        {
+          kind: 'module',
+          path: 'testing/fixtures/hooks/sample-module.mjs',
+          timeout_ms: 5000,
+          on_failure: 'warn',
+        },
+      ],
+    };
+    const result = await runPreHooks(hooks, 'pre_task', { ...preTaskEvent, title: 'forbidden task' }, ctx);
+    expect(result.allow).toBe(false);
+    expect(result.reason).toBe('forbidden by sample-module');
+  });
+
   it('uses default reason message when deny has no message', async () => {
     const hooks: HooksConfig = { pre_task: [denyViaStdout()] };
     const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, ctx);

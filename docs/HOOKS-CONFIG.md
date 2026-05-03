@@ -2,7 +2,7 @@
 
 > **Different from `docs/HOOKS.md`!** That doc covers React hooks. This doc covers user-extensible **workflow lifecycle hooks** — shell commands or built-in scanners that fire at well-known moments during a diptych workflow. Lifecycle hooks are not React hooks.
 
-User-extensible hook system inspired by Claude Agent SDK. Declare commands in `.diptych/config.yml` to fire at workflow events (pre/post task, pre/post validation, optional pre/post commit, etc.). Used for `prettier --write` after each task, secret scanning when product-level commit hooks are enabled, Slack notifications, custom validators — anything you can run from a script.
+User-extensible hook system inspired by Claude Agent SDK. Declare commands or modules in `.diptych/config.yml`, or drop convention-named JS/TS modules into `.diptych/hooks/`, to fire at workflow events (pre/post task, pre/post validation, optional pre/post commit, etc.). Used for `prettier --write` after each task, secret scanning when product-level commit hooks are enabled, Slack notifications, custom validators — anything you can run from a script or module.
 
 ## Quick start
 
@@ -119,11 +119,26 @@ Return value shape:
 | `{ kind: 'crash', message: string }` | Treated as crash                |
 | Any other shape                     | Treated as `allow` (defensive)  |
 
-**Module loading:** Modules are loaded via ESM `import()` which is cached by URL — each module is loaded once per process lifetime.
+**Module loading:** Modules are loaded via ESM `import()` which is cached by URL — each module is loaded once per process lifetime. The default export must be a function. A missing default export or a non-function default fails with a clear load error and then follows `on_failure`.
 
-**Timeout:** Module calls are raced against a `setTimeout`. If the module exceeds `timeout_ms`, the promise is abandoned (not killed — JS cannot terminate in-process code). The outcome follows `on_failure`.
+**Timeout:** Module hooks use the same timeout defaults as command hooks: `timeout_ms` defaults to 30000 ms and is capped at 300000 ms. Module calls are raced against a `setTimeout`. If the module exceeds `timeout_ms`, the promise is abandoned (not killed — JS cannot terminate in-process code). The outcome follows `on_failure`.
 
 **Module not found:** Treated as `warn` regardless of `on_failure` config, same as ENOENT for command hooks.
+
+### `.diptych/hooks/` auto-discovery
+
+Diptych also auto-discovers JS/TS module hooks from `.diptych/hooks/`. Files named after hook events in kebab-case are registered for the matching event:
+
+| File                              | Event             |
+|-----------------------------------|-------------------|
+| `.diptych/hooks/pre-task.ts`      | `pre_task`        |
+| `.diptych/hooks/post-task.js`     | `post_task`       |
+| `.diptych/hooks/pre-validation.ts` | `pre_validation`  |
+| `.diptych/hooks/on-complete.js`   | `on_complete`     |
+
+Discovery only considers `.js` and `.ts` files. Non-matching filenames such as `utils.ts`, `readme.md`, or `pre_task.ts` are ignored. A missing `.diptych/hooks/` directory is fine and registers no hooks.
+
+Discovered hooks are equivalent to `kind: module` entries with their `path` set to the discovered file. For the same event, explicitly configured hooks run first, then discovered hooks.
 
 ### `command` restrictions
 
@@ -253,7 +268,7 @@ Post hooks fire after the action has already happened. A `deny` returned from `p
 
 ## Execution order
 
-Hooks for the **same event** run **sequentially in declaration order** — the order they appear in `.diptych/config.yml`, with built-ins (if enabled) running first. There is no fan-out or parallelism.
+Hooks for the **same event** run **sequentially** — built-ins first, explicitly configured hooks in `.diptych/config.yml` declaration order, then discovered `.diptych/hooks/` modules. There is no fan-out or parallelism.
 
 Each hook's stdin reflects any `modify` patch returned by the previous hook for that event. Example:
 
@@ -288,6 +303,7 @@ Specific runtime failures are handled as follows, independent of (or layered on 
 |--------------------------------------------------|--------------------------------------------------------------------------------------------|
 | Command not found (ENOENT)                       | Always emits `warning` and proceeds — treated as `on_failure: warn` regardless of config.  |
 | Module `path` does not resolve (`kind: module`)  | Same as ENOENT — warn and proceed.                                                         |
+| Module default export is missing or not a function | Clear load error; treated as failure per `on_failure`.                                    |
 | Timeout (`timeout_ms` exceeded)                  | Child killed (`SIGTERM`, then `SIGKILL`). Treated as failure per `on_failure`.             |
 | Module exceeds `timeout_ms`                      | Promise abandoned (JS cannot terminate in-process code). Treated as failure per `on_failure`. |
 | Stdout is invalid JSON                           | Treated as success with empty body. Side effects of the hook stand.                        |

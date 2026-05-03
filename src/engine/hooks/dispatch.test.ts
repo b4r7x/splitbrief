@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { resolve } from 'node:path';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { runHook } from './dispatch.js';
 import type { EngineEvent } from '../events/types.js';
 import type { HookModuleEntry } from '../../core/schemas/hooks.js';
-import { makeCommandHookEntry } from '#testing/helpers/factories/hook-entry.js';
+import { makeCommandHookEntry, makeThrowingModuleHook } from '#testing/helpers/factories/hook-entry.js';
 
 const event: EngineEvent = {
   type: 'task_started',
@@ -43,6 +45,17 @@ function mkModuleEntry(overrides: Partial<HookModuleEntry> & { path: string }): 
     on_failure: 'warn',
     ...overrides,
   };
+}
+
+async function withTempModule<T>(source: string, run: (modulePath: string) => Promise<T>): Promise<T> {
+  const tempDir = await mkdtemp(join(tmpdir(), 'diptych-hook-module-'));
+  const modulePath = join(tempDir, 'hook.mjs');
+  try {
+    await writeFile(modulePath, source);
+    return await run(modulePath);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 }
 
 describe('runHook', () => {
@@ -126,5 +139,43 @@ describe('runHook — kind: module', () => {
     const entry = mkModuleEntry({ path: 'testing/fixtures/hooks/no-default-export.mjs', on_failure: 'block' });
     const outcome = await runHook(entry, event, { projectDir, sessionId: 's' });
     expect(outcome.kind).toBe('deny');
+  });
+
+  it.each([
+    { onFailure: 'block', outcome: 'deny' },
+    { onFailure: 'warn', outcome: 'warn' },
+    { onFailure: 'ignore', outcome: 'allow' },
+  ] as const)('maps module timeout with on_failure=$onFailure to $outcome', async ({ onFailure, outcome }) => {
+    await withTempModule(
+      'export default async function hook() { await new Promise((resolve) => setTimeout(resolve, 50)); return { kind: "allow" }; }',
+      async (modulePath) => {
+        const entry = mkModuleEntry({ path: modulePath, timeout_ms: 10, on_failure: onFailure });
+        const result = await runHook(entry, event, { projectDir, sessionId: 's' });
+        expect(result.kind).toBe(outcome);
+        if (result.kind !== 'allow') expect(result.message).toContain('hook timed out after 10ms');
+      },
+    );
+  });
+
+  it.each([
+    { onFailure: 'block', outcome: 'deny' },
+    { onFailure: 'warn', outcome: 'warn' },
+    { onFailure: 'ignore', outcome: 'allow' },
+  ] as const)('maps module throw with on_failure=$onFailure to $outcome', async ({ onFailure, outcome }) => {
+    const entry = makeThrowingModuleHook({ on_failure: onFailure });
+    const result = await runHook(entry, event, { projectDir, sessionId: 's' });
+    expect(result.kind).toBe(outcome);
+    if (result.kind === 'warn' || result.kind === 'deny') {
+      expect(result.message).toContain('segfault');
+    }
+  });
+
+  it('returns warn with unrecognized-shape message for invalid outcome', async () => {
+    const entry = mkModuleEntry({ path: 'testing/fixtures/hooks/invalid-outcome.mjs' });
+    const result = await runHook(entry, event, { projectDir, sessionId: 's' });
+    expect(result.kind).toBe('warn');
+    if (result.kind === 'warn') {
+      expect(result.message).toBe('hook returned unrecognized outcome shape');
+    }
   });
 });

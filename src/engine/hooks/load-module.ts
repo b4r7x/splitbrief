@@ -20,14 +20,28 @@ export async function loadHookModule(modulePath: string, projectDir: string): Pr
   try {
     const mod: unknown = await import(url);
     if (mod === null || typeof mod !== 'object') {
-      return { ok: false, reason: 'module did not export an object' };
+      return { ok: false, reason: invalidDefaultExportReason(absPath, undefined) };
     }
-    const fn = (mod as { default?: unknown }).default;
-    if (typeof fn !== 'function') {
-      return { ok: false, reason: 'module default export is not a function' };
+    const fn = 'default' in mod ? mod.default : undefined;
+    if (!isHookModuleFunction(fn)) {
+      return { ok: false, reason: invalidDefaultExportReason(absPath, fn) };
     }
-    return { ok: true, fn: fn as HookModuleFunction };
+    return { ok: true, fn };
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : String(err), error: err };
   }
+}
+
+function isHookModuleFunction(value: unknown): value is HookModuleFunction {
+  return typeof value === 'function';
+}
+
+function invalidDefaultExportReason(absPath: string, value: unknown): string {
+  return `Hook module ${absPath} must export a default function; expected default function, got ${describeValue(value)}`;
+}
+
+function describeValue(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
 }

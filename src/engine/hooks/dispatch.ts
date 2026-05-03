@@ -1,7 +1,7 @@
 import type { HookEntry, HookCommandEntry, HookModuleEntry } from '../../core/schemas/hooks.js';
 import type { EngineEvent } from '../events/types.js';
 import { spawnWithTimeout } from '../../lib/process/spawn.js';
-import { isENOENT } from '../../lib/process/errors.js';
+import { isENOENT, isNodeError } from '../../lib/process/errors.js';
 import { substituteEventFields } from './substitute.js';
 import type { HookOutcome, HookContext } from './types.js';
 import { loadHookModule } from './load-module.js';
@@ -57,26 +57,22 @@ async function runCommandHook(entry: HookCommandEntry, event: EngineEvent, ctx: 
 async function runModuleHook(entry: HookModuleEntry, event: EngineEvent, ctx: HookContext): Promise<HookOutcome> {
   const loaded = await loadHookModule(entry.path, ctx.projectDir);
   if (!loaded.ok) {
-    const reason = loaded.reason.toLowerCase();
-    if (isENOENT(loaded.error) || reason.includes('cannot find') || reason.includes('module not found')) {
+    if (isENOENT(loaded.error) || (isNodeError(loaded.error) && loaded.error.code === 'ERR_MODULE_NOT_FOUND')) {
       return { kind: 'warn', message: `hook module not found: ${entry.path}` };
     }
     return failureOutcome(entry, `failed to load module: ${loaded.reason}`);
   }
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const result = await Promise.race([
       Promise.resolve(loaded.fn(event, ctx)),
-      new Promise<HookOutcome>((_, rej) =>
-        setTimeout(() => rej(new Error(`hook timed out after ${entry.timeout_ms}ms`)), entry.timeout_ms),
-      ),
-    ]);
+      new Promise<never>((_, rej) => {
+        timer = setTimeout(() => rej(new Error(`hook timed out after ${entry.timeout_ms}ms`)), entry.timeout_ms);
+      }),
+    ]).finally(() => clearTimeout(timer));
     return validateOutcome(result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes('timed out')) {
-      return failureOutcome(entry, message);
-    }
-    return { kind: 'crash', message };
+    return failureOutcome(entry, err instanceof Error ? err.message : String(err));
   }
 }
 

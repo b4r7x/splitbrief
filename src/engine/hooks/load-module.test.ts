@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { resolve } from 'node:path';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { loadHookModule } from './load-module.js';
 import type { EngineEvent } from '../events/types.js';
 import type { HookContext } from './types.js';
@@ -56,8 +58,31 @@ describe('loadHookModule', () => {
   });
 
   it('returns ok:false when module has no default export', async () => {
-    const result = await loadHookModule('testing/fixtures/hooks/no-default-export.mjs', projectDir);
+    const modulePath = 'testing/fixtures/hooks/no-default-export.mjs';
+    const resolvedPath = resolve(projectDir, modulePath);
+    const result = await loadHookModule(modulePath, projectDir);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toContain('not a function');
+    if (!result.ok) {
+      expect(result.reason).toContain(resolvedPath);
+      expect(result.reason).toContain('default function');
+      expect(result.reason).toContain('undefined');
+    }
+  });
+
+  it('returns ok:false when default export is not a function', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'diptych-hook-module-'));
+    const modulePath = join(tempDir, 'default-string.mjs');
+    try {
+      await writeFile(modulePath, 'export default "not a function";');
+      const result = await loadHookModule(modulePath, projectDir);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.reason).toContain(modulePath);
+        expect(result.reason).toContain('default function');
+        expect(result.reason).toContain('string');
+      }
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 });

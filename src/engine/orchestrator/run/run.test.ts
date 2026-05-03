@@ -1,7 +1,9 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks, makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -237,6 +239,55 @@ describe('runWorkflow — smoke', () => {
     });
 
     expect(readActive(projectDir)).toBeNull();
+  });
+
+  it('runs auto-discovered pre_task module hooks without hooks config', async () => {
+    const projectDir = setupProject();
+    mkdirSync(join(projectDir, '.diptych', 'hooks'), { recursive: true });
+    writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ type: 'module' }));
+    writeFileSync(
+      join(projectDir, '.diptych', 'hooks', 'pre-task.js'),
+      'export default () => ({ kind: "deny", message: "auto blocked" });',
+    );
+
+    const { callbacks } = makeCallbacks();
+    const events: EngineEvent[] = [];
+
+    await runWorkflow({
+      feature: 'auto hook',
+      projectDir,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: {
+          autoApproveSpec: true,
+          autoApprovePlan: true,
+          commitStrategy: 'none',
+          mode: 'quick',
+          persistTranscript: false,
+        },
+      }),
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _eventSink: (event) => events.push(event),
+      _planner: makePlanner({
+        quickPlan: vi.fn().mockResolvedValue({
+          spec: '',
+          plan: '',
+          tasks: [makeTask({
+            scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
+            evidence: ['task_skipped event shows the discovered hook blocked the task'],
+            typeDefs: 'type HelloTask = { file: string }',
+          })],
+          usage: { inputTokens: 50, outputTokens: 25 },
+        }),
+      }),
+      _implementer: makeImplementer(),
+    });
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'task_skipped',
+      reason: 'auto blocked',
+    }));
   });
 });
 
