@@ -4,7 +4,7 @@ import type { Implementer, ImplementerFactoryOptions } from './types.js';
 import type { InvokeOpts } from './utils.js';
 import { createImplementerBase } from './base.js';
 import { createClient } from '../providers/registry.js';
-import { estimateTokens } from '../spec/token-budget.js';
+import { estimateTokens } from '../../core/tokens/estimate.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { PROVIDER_CATALOG } from '../../core/providers/catalog.js';
 import { isProviderId } from '../../core/schemas/enums.js';

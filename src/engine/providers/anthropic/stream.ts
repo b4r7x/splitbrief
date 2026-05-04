@@ -33,6 +33,12 @@ interface AnthropicMessage {
   content: string | AnthropicContentBlock[];
 }
 
+interface AnthropicSystemBlock {
+  type: 'text';
+  text: string;
+  cache_control?: { type: 'ephemeral' };
+}
+
 interface AnthropicStreamOptions {
   apiKey: string;
   apiBase: string;
@@ -50,24 +56,24 @@ interface SseEvent {
   data: string;
 }
 
-function splitSystemMessages(
+export function splitSystemMessages(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-): { system: string | undefined; conversation: AnthropicMessage[] } {
-  const systemParts: string[] = [];
+): { system: AnthropicSystemBlock[] | undefined; conversation: AnthropicMessage[] } {
+  const systemBlocks: AnthropicSystemBlock[] = [];
   const conversation: AnthropicMessage[] = [];
 
   for (const message of messages) {
     if (message.role === 'system') {
-      systemParts.push(message.content);
+      systemBlocks.push({ type: 'text', text: message.content });
       continue;
     }
     conversation.push({ role: message.role, content: message.content });
   }
 
-  return {
-    system: systemParts.length > 0 ? systemParts.join('\n\n') : undefined,
-    conversation,
-  };
+  if (systemBlocks.length === 0) return { system: undefined, conversation };
+  const last = systemBlocks[systemBlocks.length - 1];
+  if (last) last.cache_control = { type: 'ephemeral' };
+  return { system: systemBlocks, conversation };
 }
 
 function parseUsage(value: unknown): Partial<TokenDelta> {

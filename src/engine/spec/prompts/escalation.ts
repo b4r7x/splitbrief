@@ -2,6 +2,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { LanguageContext } from './language-context.js';
 import { buildLanguageContext, codeFenceLanguage, isJavaScriptLikeLanguage } from './language-context.js';
 import { buildPrompt, instructionsSection, type PromptSection } from './shared.js';
+import { selectRelevantExamples, formatExamplesSection } from './escalation-examples.js';
 
 function taskMetaSection(task: Task, ctx: LanguageContext): PromptSection {
   return {
@@ -42,15 +43,20 @@ Do NOT write code. Only explain the diagnosis and approach.`;
 
 export function buildHintPrompt(task: Task, error: string, languageContext?: LanguageContext): string {
   const ctx = languageContext ?? buildLanguageContext(undefined);
+  const examples = selectRelevantExamples(error, ctx);
+  const sections: PromptSection[] = [
+    taskMetaSection(task, ctx),
+    { heading: 'Constraints', body: constraintsBlock(task) },
+    { heading: 'Validation Error', body: '```\n' + error + '\n```' },
+  ];
+  if (examples.length > 0) {
+    sections.push({ heading: 'Similar Issues', body: formatExamplesSection(examples) });
+  }
+  sections.push(instructionsSection(hintInstructions(ctx)));
   return buildPrompt({
     title: 'Diagnose Implementation Failure',
     intro: 'An implementer model attempted to implement the task below but the result failed validation. Provide a concise diagnosis and approach hint -- do NOT write code.',
-    sections: [
-      taskMetaSection(task, ctx),
-      { heading: 'Constraints', body: constraintsBlock(task) },
-      { heading: 'Validation Error', body: '```\n' + error + '\n```' },
-      instructionsSection(hintInstructions(ctx)),
-    ],
+    sections,
   });
 }
 
@@ -69,6 +75,7 @@ Respond with the complete file content for \`${task.file}\`. Do not include expl
 
 export function buildEscalationPrompt(task: Task, lastAttempt: string, error: string, languageContext?: LanguageContext): string {
   const ctx = languageContext ?? buildLanguageContext(undefined);
+  const examples = selectRelevantExamples(error, ctx);
   const sections: PromptSection[] = [
     taskMetaSection(task, ctx),
   ];
@@ -84,8 +91,11 @@ export function buildEscalationPrompt(task: Task, lastAttempt: string, error: st
     { heading: 'Constraints', body: constraintsBlock(task) },
     { heading: 'Last Failed Attempt', body: '```\n' + lastAttempt + '\n```' },
     { heading: 'Validation Error', body: '```\n' + error + '\n```' },
-    instructionsSection(escalationInstructions(task, ctx)),
   );
+  if (examples.length > 0) {
+    sections.push({ heading: 'Similar Issues', body: formatExamplesSection(examples) });
+  }
+  sections.push(instructionsSection(escalationInstructions(task, ctx)));
 
   return buildPrompt({
     title: 'Escalation: Implement Fix',

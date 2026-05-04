@@ -11,7 +11,7 @@ import {
 import { formatTaskPrompt } from '../spec/prompt-formatter.js';
 import { buildLanguageContext } from '../spec/prompts/language-context.js';
 import { buildSystemPreamble } from '../spec/prompts/system.js';
-import { estimateTokens } from '../spec/token-budget.js';
+import { estimateTokens } from '../../core/tokens/estimate.js';
 
 const context: ProjectContext = {
   name: 'test-project',

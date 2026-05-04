@@ -39,7 +39,7 @@ interface Planner extends RunnerRuntime {
 
 `plan()` runs the full 4-phase pipeline: research, spec, plan, tasks. `quickPlan()` collapses that into one call. `instantPlan()` is optional -- backends that don't implement it fall back to `quickPlan` via the dispatcher.
 
-`escalateHint()` and `escalateFull()` handle tiered escalation when the implementer fails. `regenerate()` re-runs spec or plan after user comments. `review()` does the final review pass.
+`escalateHint()` and `escalateFull()` handle tiered escalation when the implementer fails. Both prompt builders include a **Similar Issues** section with language-matched few-shot examples selected by keyword scoring against the error text (`src/engine/spec/prompts/escalation-examples.ts`). `regenerate()` re-runs spec or plan after user comments. `review()` does the final review pass.
 
 `PlanResult` is the return type for all planning methods:
 
@@ -252,6 +252,8 @@ Per-task usage is recorded as `TaskTokenUsage`, which tracks: implementer tokens
 ```
 budget = contextLength - systemPromptTokens - taskBodyTokens - (contextLength * 0.25)
 ```
+
+Token estimation uses a per-model-family character-to-token ratio (`src/core/tokens/estimate.ts`): Claude models use 3.5, GPT uses 4.0, DeepSeek/Qwen/Llama/etc. use family-specific ratios. When a model ID is available (e.g., during implementer profile routing), the calibrated ratio produces more accurate estimates — reducing unnecessary escalations from overestimates and overflow failures from underestimates. Callers without model context (repomap budget, planner base) default to 4.0 chars/token.
 
 The 25% reserve is for output. The remaining budget goes to `currentCode`. If the whole file doesn't fit, the prompt formatter tries these modes in order:
 
