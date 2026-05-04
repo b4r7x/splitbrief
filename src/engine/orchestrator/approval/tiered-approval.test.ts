@@ -44,8 +44,6 @@ describe('gateAction', () => {
 
   it('auto tier → allow, no events emitted', async () => {
     const { bus, events } = makeBusRecorder();
-    // 'modify src/foo.ts' with write_in_scope → auto by default
-    // Force tier to auto by using a read description
     const config = makeConfig();
     const input = makeInput({ bus, config, actionDescription: 'read src/foo.ts' });
     const result = await gateAction(input);
@@ -56,7 +54,6 @@ describe('gateAction', () => {
   it('sticky tier, no grant, no callback → deny APPROVAL_REQUIRED', async () => {
     const { bus, events } = makeBusRecorder();
     const config = makeConfig({ approval: { enabled: true, headless: true } } as Parameters<typeof makeConfig>[0]);
-    // write_out_of_scope → sticky tier by default
     const input = makeInput({
       bus,
       config,
@@ -173,7 +170,6 @@ describe('gateAction', () => {
         onTieredApproval: async () => { callbackCalled = true; return { decision: 'allow', scope: 'once' }; },
       },
     });
-    // Force non-TTY headless=false so callback gets called
     Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
     const result = await gateAction(input);
     expect(callbackCalled).toBe(true);
@@ -409,7 +405,6 @@ describe('gateAction', () => {
     const projectDir = createTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
 
-    // Pre-existing session grant keyed by file path (not full action description)
     const store = {
       version: 1,
       grants: [
@@ -426,7 +421,6 @@ describe('gateAction', () => {
       config,
       projectDir,
       sessionId: 'sess-X',
-      // A different verb against the same file should still match the existing grant
       actionDescription: 'modify /tmp/outside-project/file.ts',
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
@@ -450,7 +444,6 @@ describe('gateAction', () => {
     const projectDir = createTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
 
-    // Prime with a session grant + an always grant for a different pattern
     const store = {
       version: 1,
       grants: [
@@ -479,10 +472,8 @@ describe('gateAction', () => {
     await gateAction(input);
 
     const updated = JSON.parse(readFileSync(approvalsFile(projectDir), 'utf-8'));
-    // Should still have the always grant for the other pattern
     const alwaysGrant = updated.grants.find((g: { pattern: string; scope: string }) => g.pattern === '/tmp/other/file.ts' && g.scope === 'always');
     expect(alwaysGrant).toBeDefined();
-    // Should have replaced the old session grant with new one (keyed by extracted file path)
     const sessionGrants = updated.grants.filter((g: { pattern: string; scope: string }) => g.pattern === '/tmp/outside-project/file.ts' && g.scope === 'session');
     expect(sessionGrants).toHaveLength(1);
     expect(sessionGrants[0].sessionId).toBe('sess-NEW');

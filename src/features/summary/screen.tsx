@@ -20,7 +20,7 @@ import { HeroSavings } from './components/hero-savings.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
-import { readEvidenceLedger } from '../../engine/orchestrator/evidence/evidence.js';
+import { readEvidenceLedger } from '../../engine/orchestrator/evidence/persistence.js';
 
 interface SummaryScreenProps {
   commands: SlashCommandDef[];

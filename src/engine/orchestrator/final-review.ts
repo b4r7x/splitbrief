@@ -13,7 +13,11 @@ import { getCurrentDiff, discardFileChange, getChangedFiles } from '../../lib/gi
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
-import { readEvidenceLedger, recordFinalReviewEvidence, writeEvidenceLedger } from './evidence/evidence.js';
+import { recordFinalReviewEvidence } from './evidence/reporting.js';
+import {
+  readEvidenceLedger,
+  writeEvidenceLedger,
+} from './evidence/persistence.js';
 import { analyzeBriefDrift, formatDriftReportForPrompt, publishDriftReport, writeDriftReport } from './drift/drift.js';
 
 import type { Planner } from '../planners/types.js';

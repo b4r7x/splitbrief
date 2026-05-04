@@ -3,7 +3,8 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { createBusTextHandler, publishRetry } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
-import { runRetryStep, type EscalationContext, type RetryStepOutcome } from './step.js';
+import { runRetryStep } from './step.js';
+import type { EscalationContext, RetryStepOutcome } from './types.js';
 
 export async function runLocalRetries(
   ctx: EscalationContext, initialTask: Task, initialState: WorkflowState, initialError: string,

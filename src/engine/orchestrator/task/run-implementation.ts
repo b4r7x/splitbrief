@@ -2,14 +2,14 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import type { ImplementerResult } from '../../implementers/types.js';
-import type { StagedProject, ChangedFilesSnapshot, GateDecision } from '../approval/tiered-approval.js';
+import type { StagedProject } from '../approval/staged-project.js';
+import type { ChangedFilesSnapshot } from '../approval/file-snapshots.js';
+import type { GateDecision } from '../approval/tiered-approval.js';
 import { createBusTextHandler } from '../events.js';
 import { createStreamingFeed } from './streaming-feed.js';
 import { withContinuationLoop } from '../continuation.js';
-import {
-  gateChangedFiles,
-  createStagedProject,
-} from '../approval/tiered-approval.js';
+import { gateChangedFiles } from '../approval/gate-files.js';
+import { createStagedProject } from '../approval/staged-project.js';
 import { persistApprovalEvidence } from '../evidence/persistence.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowSinks } from '../types.js';
-import { getChangedFilesSnapshot } from '../approval/tiered-approval.js';
+import { getChangedFilesSnapshot } from '../approval/file-snapshots.js';
 import { createValidator } from '../validation.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { loadState } from '../../../core/state/persistence.js';

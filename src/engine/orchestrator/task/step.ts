@@ -6,17 +6,13 @@ import { formatValidationError } from '../validation.js';
 import type { WorkflowContext } from '../types.js';
 import { recordTaskUsage } from '../tokens.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
-import { publishError, publishWarning, publishDriftChainDetected, publishRecoveryPrompted, publishUserEditConflict } from '../events.js';
+import { publishError, publishWarning, publishDriftChainDetected } from '../events.js';
 import { runPreHooks } from '../../hooks/run-pre-hook.js';
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { validateCommitAndAdvance } from './commit.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
-import {
-  gateAction,
-  getChangedFilesSinceSnapshot,
-  type ChangedFilesSnapshot,
-  type GateDecision,
-} from '../approval/tiered-approval.js';
+import { gateAction, type GateDecision } from '../approval/tiered-approval.js';
+import { getChangedFilesSinceSnapshot, type ChangedFilesSnapshot } from '../approval/file-snapshots.js';
 import type { EventBus, EngineEvent } from '../../events/types.js';
 import {
   readDriftChainState,
@@ -24,17 +20,14 @@ import {
   initialDriftChainState,
 } from '../drift/chain-state.js';
 import { computePerTaskOutOfBounds, analyzeDriftChain } from '../drift/chain.js';
-import { createApprovalPromotionConflict } from '../user-edit/conflicts.js';
 import { isExtractedCodeApprovalRaceError } from '../../implementers/base.js';
-import { buildApprovalPromotionConflictRecoveryIssue } from '../recovery/recovery.js';
+import { handleApprovalTimeUserEditConflict } from '../escalation/approval-conflict.js';
 import { persistTaskEvidence, persistRejectionEvidence, persistApprovalEvidence } from '../evidence/persistence.js';
 import { retryAndRecord } from './retry.js';
 import { runPreTaskHooksAndPublish } from './pre-task.js';
 import { runImplementation } from './run-implementation.js';
 import { applyChangedFiles } from './apply-changed-files.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
-
-export { resolveDependsOnFiles } from './resolve-deps.js';
 
 async function runChainAnalysisSafe(opts: {
   wctx: WorkflowContext;
@@ -85,31 +78,6 @@ function recordApprovalDenial(
       task.id,
     );
   }
-}
-
-async function handleApprovalTimeUserEditConflict(opts: {
-  wctx: WorkflowContext;
-  state: WorkflowState;
-  task: Task;
-  files: string[];
-  taskBreakdowns?: TaskTokenUsage[] | undefined;
-  setTrackedState?: ((s: WorkflowState) => void) | undefined;
-}): Promise<WorkflowState> {
-  const conflict = createApprovalPromotionConflict({
-    files: opts.files,
-    currentTaskId: opts.task.id,
-  });
-  publishUserEditConflict(opts.wctx.bus, opts.state.phase, conflict, 'pause');
-  const issue = buildApprovalPromotionConflictRecoveryIssue({
-    conflict,
-    currentTask: opts.task,
-    phase: opts.state.phase,
-    createdAt: new Date().toISOString(),
-  });
-  const next = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, opts.state, { type: 'SET_PENDING_RECOVERY', issue });
-  publishRecoveryPrompted(opts.wctx.bus, issue);
-  opts.setTrackedState?.(next);
-  return next;
 }
 
 type RunSingleTaskOptions = {
@@ -195,7 +163,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       return state;
     }
     if (isExtractedCodeApprovalRaceError(task.file, implState.implResult.error)) {
-      state = await handleApprovalTimeUserEditConflict({ wctx, state, task, files: [task.file], taskBreakdowns, setTrackedState });
+      state = await handleApprovalTimeUserEditConflict({ ctx: wctx, state, task, files: [task.file], setTrackedState });
       return state;
     }
     const retry = await retryAndRecord({
@@ -213,7 +181,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     preApplyApprovedFiles: implState.preApplyApprovedFiles,
     taskStartSnapshot,
     recordApprovalDenial: (s, decision, message) => recordApprovalDenial(wctx, s, task, decision, message),
-    handleConflict: (s, files) => handleApprovalTimeUserEditConflict({ wctx, state: s, task, files, taskBreakdowns, setTrackedState }),
+    handleConflict: (s, files) => handleApprovalTimeUserEditConflict({ ctx: wctx, state: s, task, files, setTrackedState }),
   });
   if (!applyResult.proceed) return applyResult.state;
   state = applyResult.state;

@@ -3,17 +3,15 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { publishError, publishWarning } from '../events.js';
+import { gateChangedFiles, type GateChangedFilesDecision } from '../approval/gate-files.js';
 import {
-  gateChangedFiles,
   captureCurrentFileContents,
   getChangedFilesSinceSnapshot,
-  promoteStagedChanges,
   restoreDirtyFilesFromSnapshot,
   type ChangedFilesSnapshot,
-  type GateChangedFilesDecision,
-  type GateDecision,
-  type StagedProject,
-} from '../approval/tiered-approval.js';
+} from '../approval/file-snapshots.js';
+import { promoteStagedChanges, type StagedProject } from '../approval/staged-project.js';
+import type { GateDecision } from '../approval/tiered-approval.js';
 import { persistApprovalEvidence } from '../evidence/persistence.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 

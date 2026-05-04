@@ -9,12 +9,12 @@ import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { hashTaskBrief } from '../../../core/brief-hash.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
+import { createEvidenceLedger } from '../evidence/ledger.js';
 import {
-  createEvidenceLedger,
   readEvidenceLedger,
-  recordSkippedTaskEvidence,
   writeEvidenceLedger,
-} from '../evidence/evidence.js';
+} from '../evidence/persistence.js';
+import { recordSkippedTaskEvidence } from '../evidence/task-evidence.js';
 import {
   publishRecoveryActionFailed,
   publishRecoveryActionSelected,

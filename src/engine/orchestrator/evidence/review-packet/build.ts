@@ -19,7 +19,7 @@ import {
 import { readEvents } from '../../../../core/sessions/log-reader.js';
 import { readJsonSafe } from '../../../../lib/fs.js';
 import { includes, narrowRecord } from '../../../../utils/type-guards.js';
-import { readEvidenceLedger } from '../evidence.js';
+import { readEvidenceLedger } from '../persistence.js';
 import { readDriftReport } from '../../drift/drift.js';
 import { listCheckpointSummaries, type CheckpointSummary } from '../../../snapshots/checkpoint-summary.js';
 import { readRunSnapshotLedger } from '../../../snapshots/run.js';

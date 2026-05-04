@@ -9,7 +9,8 @@ import { buildProjectLanguageContext } from '../../spec/prompts/language-context
 import type { Implementer } from '../../implementers/types.js';
 import { getProviderBaseURL } from '../../../core/providers/catalog.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
-import { runRetryStep, type EscalationContext, type RetryStepOutcome } from './step.js';
+import { runRetryStep } from './step.js';
+import type { EscalationContext, RetryStepOutcome } from './types.js';
 
 export async function runTier0Intermediate(
   ctx: EscalationContext, initialTask: Task, state: WorkflowState, lastError: string, priorAttempts: number,

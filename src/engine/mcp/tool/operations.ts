@@ -6,7 +6,7 @@ import { assertPathConfined } from '../../../lib/path-confinement.js';
 import {
   readEvidenceLedger,
   writeEvidenceLedger,
-} from '../../orchestrator/evidence/evidence.js';
+} from '../../orchestrator/evidence/persistence.js';
 import {
   MarkTaskDoneInputSchema,
   ReportErrorInputSchema,

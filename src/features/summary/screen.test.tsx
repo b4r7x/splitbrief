@@ -7,12 +7,10 @@ import { makeConfig } from '../../../testing/helpers/factories/config.js';
 import { makeSummary } from '../../../testing/helpers/factories/summary.js';
 import { makeTask } from '../../../testing/helpers/factories/task.js';
 import { resetAllStores } from '../../../testing/helpers/stores.js';
-import {
-  createEvidenceLedger,
-  recordFinalReviewEvidence,
-  recordLocalTaskEvidence,
-  writeEvidenceLedger,
-} from '../../engine/orchestrator/evidence/evidence.js';
+import { createEvidenceLedger } from '../../engine/orchestrator/evidence/ledger.js';
+import { writeEvidenceLedger } from '../../engine/orchestrator/evidence/persistence.js';
+import { recordFinalReviewEvidence } from '../../engine/orchestrator/evidence/reporting.js';
+import { recordLocalTaskEvidence } from '../../engine/orchestrator/evidence/task-evidence.js';
 import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';

@@ -18,7 +18,8 @@ import {
   getFailedTaskIds,
   getSkippedTaskIds,
 } from '../../core/state/selectors.js';
-import { buildEvidenceSummary, readEvidenceLedger } from './evidence/evidence.js';
+import { readEvidenceLedger } from './evidence/persistence.js';
+import { buildEvidenceSummary } from './evidence/reporting.js';
 import { readDriftReport } from './drift/drift.js';
 import { readDriftChainState } from './drift/chain-state.js';
 import { BRIEF_QUALITY_FILE, REVIEW_PACKET_JSON_FILE, REVIEW_PACKET_MARKDOWN_FILE, reviewPacketJsonPath, sessionDir } from '../../core/paths.js';

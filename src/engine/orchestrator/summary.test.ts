@@ -8,11 +8,9 @@ import type { BuildSummaryState } from './summary.js';
 import { taskId } from '../../core/schemas/task.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import {
-  createEvidenceLedger,
-  recordLocalTaskEvidence,
-  writeEvidenceLedger,
-} from './evidence/evidence.js';
+import { createEvidenceLedger } from './evidence/ledger.js';
+import { writeEvidenceLedger } from './evidence/persistence.js';
+import { recordLocalTaskEvidence } from './evidence/task-evidence.js';
 import { writeDriftChainState } from './drift/chain-state.js';
 import type { DriftChainState } from '../../core/schemas/drift-chain.js';
 

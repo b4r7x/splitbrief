@@ -4,9 +4,9 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskReviewMode } from '../../../core/schemas/config.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { EvidenceTask } from '../../../core/schemas/evidence.js';
-import type { RoutingDecision } from '../context-routing.js';
+import type { RoutingDecision } from '../context-routing/types.js';
 import { EVIDENCE_FILE, sessionDir } from '../../../core/paths.js';
-import { readEvidenceLedger } from '../evidence/evidence.js';
+import { readEvidenceLedger } from '../evidence/persistence.js';
 
 export type { TaskReviewStatus, TaskReviewCommand, TaskReviewAction, TaskReviewValidation, TaskReviewRequest, TaskReviewResponse } from '../../events/workflow-events.js';
 import type { TaskReviewRequest, TaskReviewValidation } from '../../events/workflow-events.js';

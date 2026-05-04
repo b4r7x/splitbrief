@@ -9,7 +9,7 @@ import { isBriefQualityReport, type BriefQualityIssue, type BriefQualityReport }
 import { planEditorStore, type PlanReviewCostTier, type PlanReviewEstimateStatus, type PlanReviewRisk, type PlanTaskReviewMetadata } from '../../../stores/workflow/plan-editor.js';
 import { configStore } from '../../../stores/project/config.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
-import { routeTaskToImplementerProfile } from '../../../engine/orchestrator/context-routing.js';
+import { routeTaskToImplementerProfile } from '../../../engine/orchestrator/context-routing/route.js';
 import { buildProjectLanguageContext } from '../../../engine/spec/prompts/language-context.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { buildPlanReviewScorecard, type PlanReviewScorecardEntry } from '../plan-review-scorecard.js';

@@ -23,7 +23,7 @@ import { createImplementerBase } from '../../implementers/base.js';
 import { createValidator } from '../validation.js';
 import { runSingleTask } from './step.js';
 import { retryAndRecord } from './retry.js';
-import { readEvidenceLedger } from '../evidence/evidence.js';
+import { readEvidenceLedger } from '../evidence/persistence.js';
 
 let dirs: string[] = [];
 

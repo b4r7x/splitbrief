@@ -12,8 +12,8 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
-import { readEvidenceLedger } from '../evidence/evidence.js';
-import type { RoutingDecision } from '../context-routing.js';
+import { readEvidenceLedger } from '../evidence/persistence.js';
+import type { RoutingDecision } from '../context-routing/types.js';
 import { createApprovalPromotionConflict, classifyUserEditConflict } from '../user-edit/conflicts.js';
 import { RecoveryIssueSchema } from '../../../core/schemas/recovery.js';
 import {

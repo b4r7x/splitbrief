@@ -4,12 +4,8 @@ import type { Config } from '../../core/schemas/config.js';
 import type { ImplementerCostTier, ImplementerWriteMode } from '../../core/schemas/implementer-config.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { ProjectContext } from '../../core/state/types.js';
-import {
-  routeTaskToImplementerProfile,
-  type CurrentCodeContextMode,
-  type RoutingDecision,
-  type TaskContextFit,
-} from '../../engine/orchestrator/context-routing.js';
+import { routeTaskToImplementerProfile } from '../../engine/orchestrator/context-routing/route.js';
+import type { CurrentCodeContextMode, RoutingDecision, TaskContextFit } from '../../engine/orchestrator/context-routing/types.js';
 import { formatTaskPrompt } from '../../engine/spec/prompt-formatter.js';
 import type { LanguageContext } from '../../engine/spec/prompts/language-context.js';
 import { buildProjectLanguageContext } from '../../engine/spec/prompts/language-context.js';
