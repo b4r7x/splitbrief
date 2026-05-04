@@ -3,6 +3,7 @@ import { useInput } from 'ink';
 import type { Screen } from '../../stores/navigation/router.js';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { fuzzyMatchCommand } from '../../core/slash-commands/fuzzy.js';
+import { rotateIndex } from '../pickers/picker-utils.js';
 
 export { fuzzyMatchCommand };
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
@@ -11,10 +12,6 @@ import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 function matchesSlashQuery(cmd: SlashCommandDef, query: string): boolean {
   if (cmd.name.toLowerCase().startsWith(query)) return true;
   return cmd.aliases?.some(a => a.toLowerCase().startsWith(query)) ?? false;
-}
-
-function rotateIndex(current: number, length: number, delta: 1 | -1): number {
-  return (current + delta + length) % length;
 }
 
 interface UseSlashAutocompleteOptions {

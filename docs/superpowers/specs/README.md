@@ -1,6 +1,6 @@
 # Execution Specs
 
-8 speckit packs for upgrading diptych to polyglot, RPC-capable, production SOTA.
+11 speckit packs for upgrading diptych to polyglot, RPC-capable, production SOTA.
 
 > **For agentic workers:** Each spec has an `execute-prompt.md` with a ready-to-paste prompt. The prompt tells the agent which skills to load, what to read, and which agent-briefs to implement.
 
@@ -18,6 +18,11 @@ Phase 1 (parallel — no dependencies):
 Phase 2 (after Phase 1):
   03-polyglot-prompts/           1 brief ← depends on 01 (state.discoveredValidation.language)
   07-implementer-pool/           1 brief ← benefits from 01 (validation works with any profile)
+
+Phase 3 (parallel — no dependencies on Phase 1/2):
+  09-at-file-autocomplete/       1 brief
+  10-html-session-export/        2 briefs, sequential
+  11-structured-compaction/      1 brief ← depends on 05 (extends existing compaction)
 ```
 
 ## How to Execute
@@ -57,15 +62,19 @@ Checklist:
 | 06 | Module Hooks | 1 | Auto-discovery from .diptych/hooks/, module polish |
 | 07 | Implementer Pool | 1 | Unblock route-bigger-worker, profile switching |
 | 08 | Lazy Provider Loading | 1 | Memoized dynamic imports in factory.ts |
+| 09 | `@` File Autocomplete | 1 | Mid-text `@` file path autocomplete in TUI input bar |
+| 10 | HTML Session Export | 2 | `diptych export` + `/export` → self-contained HTML report |
+| 11 | Structured Compaction | 1 | Zod-validated structured summaries with incremental merge |
 
 ## Required Skills per Spec
 
 Every spec requires: `/sota`, `/test-behavior-not-implementation`, `/clean-code`
 
 Additional per-spec:
-- 01, 02, 03, 04, 05, 07: `/code-audit`
+- 01, 02, 03, 04, 05, 07, 11: `/code-audit`
 - 03: `/prompt-engineering`
 - 04: `/api-patterns`
+- 09: `/coding-standards`
 
 ## Post-Completion (manual)
 

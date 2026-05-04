@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { InputBar } from './input-bar.js';
 import { renderFeature, tick } from '../../../testing/helpers/ink.js';
 import { resetAllStores } from '../../../testing/helpers/stores.js';
+import { createTempDir, cleanupTempDir } from '../../../testing/helpers/temp-dir.js';
+import { configStore } from '../../stores/project/config.js';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 
 const COMMANDS: SlashCommandDef[] = [
@@ -49,5 +53,41 @@ describe('input-bar integration: Tab autocomplete', () => {
     expect(submits).toEqual([]);
 
     ui.unmount();
+  });
+
+  it('typing @src/ shows project file suggestions and Tab fills the selected path', async () => {
+    const projectDir = createTempDir('input-bar-at-file');
+    try {
+      mkdirSync(join(projectDir, 'src'), { recursive: true });
+      writeFileSync(join(projectDir, 'src', 'app.ts'), '');
+      configStore.__testReset({ projectDir });
+
+      const submits: string[] = [];
+      const ui = renderFeature(
+        <InputBar
+          commands={COMMANDS}
+          currentScreen="home"
+          mode="normal"
+          hint=""
+          onSubmit={(t) => submits.push(t)}
+          onSlashCommand={() => {}}
+        />,
+      );
+
+      ui.stdin.write('@src/');
+      await tick(20);
+
+      expect(ui.lastFrame()).toContain('src/app.ts');
+
+      ui.stdin.write('\t');
+      await tick(20);
+      ui.stdin.write('\r');
+      await tick(20);
+
+      expect(submits).toEqual(['@src/app.ts']);
+      ui.unmount();
+    } finally {
+      cleanupTempDir(projectDir);
+    }
   });
 });
