@@ -270,6 +270,21 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
     },
     {
       kind: 'noarg',
+      name: '/export',
+      label: 'Export',
+      description: 'Export session as HTML report',
+      validScreens: ['workflow', 'summary'],
+      handler: async () => {
+        const result = await ctx.exportSession();
+        if (result.status === 'ok') {
+          ctx.setFeedbackMessage(`Report written to ${result.path}`);
+          return;
+        }
+        ctx.setFeedbackError(`Export failed: ${result.error}`);
+      },
+    },
+    {
+      kind: 'noarg',
       name: '/compact-transcript',
       label: 'Compact Transcript',
       description: 'Summarize older transcript turns',

@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { sessionDir } from '../core/paths.js';
 import { configStore } from '../stores/project/config.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
@@ -13,6 +14,7 @@ import { writeHandoffPack } from '../engine/handoff/write.js';
 import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from '../engine/orchestrator/approvals-store.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run.js';
 import { performManualCompaction } from '../engine/orchestrator/transcript-rebuild.js';
+import { writeSessionHtmlReport } from '../engine/export/collect.js';
 import type { CommandContext } from '../core/slash-commands/types.js';
 
 function currentSessionId(projectDir: string): string | null {
@@ -130,6 +132,12 @@ export function buildCommandContext({ exit }: { exit: () => void }): CommandCont
       const sessionId = currentSessionId(projectDir);
       if (!sessionId) throw new Error('No active session for /compact-transcript');
       return performManualCompaction(config, projectDir, sessionId);
+    },
+    exportSession: async () => {
+      const projectDir = configStore.get().projectDir;
+      const sessionId = currentSessionId(projectDir);
+      if (!sessionId) return { status: 'error', error: 'No active session for /export' };
+      return writeSessionHtmlReport(sessionDir(projectDir, sessionId), sessionId);
     },
   };
 }

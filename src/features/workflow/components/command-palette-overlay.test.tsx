@@ -66,6 +66,7 @@ function createTestCommands(): SlashCommandDef[] {
     acceptRunSnapshot: async () => ({ snapshotId: 'test-snapshot', isFirstSnapshot: false }),
     rejectRunSnapshot: async () => ({ status: 'empty' }),
     compactTranscript: async () => ({ status: 'unsupported', plannerName: 'test' }),
+    exportSession: async () => ({ status: 'ok', path: '/tmp/report.html' }),
   };
   return createCommands(ctx);
 }
