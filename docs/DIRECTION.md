@@ -9,7 +9,7 @@ What diptych optimizes for, where it's going, and what tradeoffs we accept. Read
 These are specced in DIRECTION but not yet built. Each is a standalone feature, implementable independently:
 
 1. **Unified autocomplete** (AD-11) — `/` for slash commands, `@` for file paths, Tab for per-command argument completion. One fuzzy-ranked dropdown for all discovery.
-2. **Structured compaction** (AD-12) — When planning context exceeds limits, summarize with `Goal / Steps Completed / Current Step / Files Modified / Constraints Discovered`. Incremental merge (don't regenerate).
+2. **Structured compaction follow-ups** (AD-12, partial) — Core structured/freeform transcript compaction exists. Remaining direction: tree-session compaction entries and read-file tracking across branches.
 3. **External `$EDITOR` integration** — Open user's editor for writing long feature descriptions. Pasting multi-paragraph specs into terminal input is painful.
 4. **HTML/Markdown session export** — Export workflow results as shareable artifact. For sharing reports, demonstrating value, onboarding teammates.
 
@@ -168,9 +168,9 @@ One mental model for discovery:
 
 All three use the same fuzzy ranking algorithm (AD-4).
 
-### AD-12: Structured compaction for long plans
+### AD-12: Structured compaction for long plans (partial)
 
-When planning context exceeds limits, use structured summaries: `Plan Goal / Steps Completed / Current Step / Files Modified / Constraints Discovered / Remaining Work`. Summaries update incrementally (merge with previous, don't regenerate). Track files read/modified across compactions.
+Implemented for transcript compaction: `workflow.compactionFormat` supports `auto`, `freeform`, and `structured`; `auto` selects structured JSON for `api` and `agent-sdk` planners and freeform for subprocess planners. Structured summaries use `Plan Goal / Steps Completed / Current Step / Files Modified / Constraints Discovered / Remaining Work`, update incrementally by merging with the previous structured summary, and fall back to freeform text on validation failure. Still future: tree-session compaction entries and read-file tracking across branches.
 
 ---
 

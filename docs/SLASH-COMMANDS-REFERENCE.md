@@ -223,7 +223,7 @@ Commands that produce or manage on-disk artifacts: handoff packs for external ag
 - **Screens**: `workflow`, `summary`.
 - **Args**: none.
 - **Example**: `/compact-transcript`
-- **Behavior**: Uses the current planner from config. If that planner does not advertise `supportsSelfSummarisation`, the feedback line reports that transcript compaction is unsupported and no file is changed. Otherwise diptych calls `compactTranscript()` for the current session directory, appends a summary entry to `session.jsonl`, leaves recent messages verbatim, and reports how many older messages were summarized. The log stays append-only; compaction does not delete historical lines.
+- **Behavior**: Uses the current planner from config. If that planner does not advertise `supportsSelfSummarisation`, the feedback line reports that transcript compaction is unsupported and no file is changed. Otherwise diptych calls `compactTranscript()` for the current session directory, appends a summary entry to `session.jsonl`, leaves recent messages verbatim, and reports how many older messages were summarized. `workflow.compactionFormat` controls whether the appended summary is freeform text or structured JSON; `auto` picks structured for `api` and `agent-sdk` planners and freeform for `cli`, `shell`, and `agent`. Structured validation failures are saved as freeform text. The log stays append-only; compaction does not delete historical lines.
 - **Implementation**: catalog at `src/core/slash-commands/catalog.ts`; context wiring at `src/app/slash-command-context.ts`; core compaction in `src/core/sessions/compaction.ts`.
 - **See also**: `/sessions`, `/handoff`.
 

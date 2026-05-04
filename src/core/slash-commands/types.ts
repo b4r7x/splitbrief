@@ -3,6 +3,7 @@ import type { EffortLevel, WorkflowMode } from '../schemas/enums.js';
 import type { OverlayType, Screen } from '../navigation/types.js';
 import type { HandoffTarget } from '../handoff/targets.js';
 import type { ApprovalGrant } from '../schemas/approval-store.js';
+import type { StructuredSummary } from '../schemas/compaction.js';
 
 type CommandHandlerResult = void | Promise<void>;
 
@@ -25,7 +26,7 @@ export type RejectRunSnapshotResult =
 
 export type CompactTranscriptResult =
   | { status: 'unsupported'; plannerName: string }
-  | { status: 'compacted'; summary: string; entriesRemoved: number };
+  | { status: 'compacted'; summary: string; entriesRemoved: number; structured?: StructuredSummary | null };
 
 export type ExportSessionResult =
   | { status: 'ok'; path: string }

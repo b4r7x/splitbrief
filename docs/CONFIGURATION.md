@@ -431,6 +431,7 @@ workflow: {
   // Transcript
   persistTranscript:      boolean; // default true
   compactionThreshold?:   number;  // int >= 10
+  compactionFormat:       'auto' | 'freeform' | 'structured'; // default auto
 }
 ```
 
@@ -453,6 +454,7 @@ workflow: {
 | `speckit.minCoverage` | 0..1 | unset | Speckit-mode minimum test-coverage gate. |
 | `persistTranscript` | boolean | `true` | Persist planner/user text chunks to `session.jsonl` for replay/audit and `/compact-transcript`. |
 | `compactionThreshold` | int >= 10 | unset | On resume, auto-compact persisted transcript context when compacted message count exceeds this threshold and the planner supports self-summarisation. |
+| `compactionFormat` | enum | `auto` | Summary format for transcript compaction: `auto` selects structured JSON for `api` and `agent-sdk` planners, freeform text for `cli`, `shell`, and `agent`; `freeform` preserves legacy markdown/text summaries; `structured` requires Zod-validated JSON and falls back to freeform text if validation fails. |
 
 ### Per-mode defaults
 

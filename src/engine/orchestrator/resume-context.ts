@@ -5,6 +5,7 @@ import type { Planner } from '../planners/types.js';
 import { publishWarning } from './events.js';
 import { buildResumeContext, compactResumeTranscript, keepRecentCountForThreshold } from './transcript-rebuild.js';
 import { labelError } from '../../utils/format-errors.js';
+import { resolveCompactionFormat } from '../../core/schemas/compaction.js';
 
 export type ApplyRebuiltContextOpts = {
   projectDir: string;
@@ -20,8 +21,8 @@ export type AutoCompactResumeOpts = {
   projectDir: string;
   sessionId: string;
   bus: EventBus;
-  config: Pick<Config, 'workflow'>;
-  planner: Pick<Planner, 'capabilities' | 'summarize'>;
+  config: Pick<Config, 'workflow' | 'planner'>;
+  planner: Pick<Planner, 'capabilities' | 'summarize' | 'summarizeStructured'>;
 };
 
 export async function autoCompactResumeContext(opts: AutoCompactResumeOpts): Promise<void> {
@@ -34,11 +35,20 @@ export async function autoCompactResumeContext(opts: AutoCompactResumeOpts): Pro
   if (rebuilt.messages.length <= threshold) return;
 
   try {
+    const format = resolveCompactionFormat(opts.config.workflow.compactionFormat, opts.config.planner.kind);
+    const summarizeStructured = opts.planner.summarizeStructured;
     await compactResumeTranscript(
       opts.projectDir,
       opts.sessionId,
-      { summarize: messages => summarize(messages, opts.projectDir) },
+      {
+        summarize: messages => summarize(messages, opts.projectDir),
+        ...(summarizeStructured
+          ? { summarizeStructured: (messages, previous) => summarizeStructured(messages, previous, opts.projectDir) }
+          : {}),
+      },
       keepRecentCountForThreshold(threshold),
+      format,
+      () => publishWarning(opts.bus, 'researching', 'Structured compaction returned invalid JSON; saved freeform summary instead.'),
     );
   } catch (err) {
     publishWarning(opts.bus, 'researching', labelError('Transcript auto-compaction failed', err));

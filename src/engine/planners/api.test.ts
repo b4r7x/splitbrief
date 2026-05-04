@@ -31,7 +31,7 @@ function makeApiPlannerConfig(provider: string): Config {
       temperature: 0.3,
     },
     validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
-    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', persistTranscript: true },
+    workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', persistTranscript: true, compactionFormat: 'auto' },
   };
 }
 

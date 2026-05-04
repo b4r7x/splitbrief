@@ -15,9 +15,18 @@ function workflowConfig(persistTranscript: boolean, compactionThreshold?: number
     maxRetries: 3,
     commitStrategy: 'none' as const,
     persistTranscript,
+    compactionFormat: 'auto' as const,
     ...(compactionThreshold !== undefined && { compactionThreshold }),
   };
 }
+
+const cliPlannerConfig = { kind: 'cli' as const, tool: 'claude-code' as const };
+const apiPlannerConfig = {
+  kind: 'api' as const,
+  provider: 'ollama' as const,
+  apiBase: 'http://localhost:11434/v1',
+  model: 'test',
+};
 
 let dirs: string[] = [];
 
@@ -176,7 +185,7 @@ describe('autoCompactResumeContext', () => {
       projectDir,
       sessionId,
       bus,
-      config: { workflow: workflowConfig(true, 10) },
+      config: { workflow: workflowConfig(true, 10), planner: cliPlannerConfig },
       planner: {
         capabilities: {
           supportsConversationalPlanning: false,
@@ -207,6 +216,81 @@ describe('autoCompactResumeContext', () => {
     expect(events.find(event => event.type === 'warning')).toBeUndefined();
   });
 
+  it('uses structured compaction for api planners in auto mode', async () => {
+    const originalEntries = Array.from({ length: 12 }, (_, index) => numberedMessageEntry(index));
+    const { projectDir, sessionId } = setupSession(originalEntries);
+    const { bus, events } = makeBusRecorder();
+    const structured = {
+      goal: 'resume api planner',
+      stepsCompleted: ['older turns compacted'],
+      currentStep: 'resume',
+      filesModified: ['src/engine/orchestrator/resume-context.ts'],
+      constraintsDiscovered: ['api planners use structured auto mode'],
+      remainingWork: ['continue'],
+    };
+
+    await autoCompactResumeContext({
+      projectDir,
+      sessionId,
+      bus,
+      config: { workflow: workflowConfig(true, 10), planner: apiPlannerConfig },
+      planner: {
+        capabilities: {
+          supportsConversationalPlanning: false,
+          supportsHintEscalation: true,
+          supportsSessionResume: false,
+          supportsEffort: false,
+          supportsImages: false,
+          supportsSelfSummarisation: true,
+        },
+        summarize: async () => {
+          throw new Error('freeform summarization should not be used');
+        },
+        summarizeStructured: async () => ({ text: JSON.stringify(structured), structured }),
+      },
+    });
+
+    const file = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);
+    const entries = readFileSync(file, 'utf-8').trim().split('\n').map(line => JSON.parse(line) as Record<string, unknown>);
+
+    expect(entries.at(-1)).toMatchObject({
+      kind: 'summary',
+      text: JSON.stringify(structured),
+      structured,
+    });
+    expect(events.find(event => event.type === 'warning')).toBeUndefined();
+  });
+
+  it('emits a warning when structured compaction falls back to freeform text', async () => {
+    const originalEntries = Array.from({ length: 12 }, (_, index) => numberedMessageEntry(index));
+    const { projectDir, sessionId } = setupSession(originalEntries);
+    const { bus, events } = makeBusRecorder();
+
+    await autoCompactResumeContext({
+      projectDir,
+      sessionId,
+      bus,
+      config: { workflow: workflowConfig(true, 10), planner: apiPlannerConfig },
+      planner: {
+        capabilities: {
+          supportsConversationalPlanning: false,
+          supportsHintEscalation: true,
+          supportsSessionResume: false,
+          supportsEffort: false,
+          supportsImages: false,
+          supportsSelfSummarisation: true,
+        },
+        summarize: async () => {
+          throw new Error('freeform summarization should not be used');
+        },
+        summarizeStructured: async () => ({ text: 'not json', structured: null }),
+      },
+    });
+
+    const warning = events.find(event => event.type === 'warning');
+    expect(warning && 'message' in warning ? warning.message : '').toMatch(/invalid JSON/i);
+  });
+
   it('leaves the transcript untouched when the planner cannot summarize', async () => {
     const originalEntries = Array.from({ length: 12 }, (_, index) => numberedMessageEntry(index));
     const { projectDir, sessionId } = setupSession(originalEntries);
@@ -216,7 +300,7 @@ describe('autoCompactResumeContext', () => {
       projectDir,
       sessionId,
       bus,
-      config: { workflow: workflowConfig(true, 10) },
+      config: { workflow: workflowConfig(true, 10), planner: cliPlannerConfig },
       planner: {
         capabilities: {
           supportsConversationalPlanning: false,

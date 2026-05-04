@@ -79,7 +79,7 @@ Full reference: `docs/SLASH-COMMANDS.md`.
 | `REWIND_TO_PLAN` no comment | `{ target: 'plan' }` | Yes (fast-path, skip regen) | No |
 | `RESET_TASK` | not set | No | No |
 
-`/compact-transcript` is available on the workflow and summary screens. It creates the current planner from config, checks `supportsSelfSummarisation`, and appends a transcript summary entry for older `session.jsonl` messages. Unsupported planners report that compaction is unavailable and leave the log untouched. On resume, `workflow.compactionThreshold` can trigger the same append-only compaction automatically before rebuilt context is passed to stateless planners.
+`/compact-transcript` is available on the workflow and summary screens. It creates the current planner from config, checks `supportsSelfSummarisation`, and appends a transcript summary entry for older `session.jsonl` messages. `workflow.compactionFormat` controls whether summaries are freeform text or structured JSON; `auto` uses structured summaries for `api` and `agent-sdk` planners and freeform for subprocess planners. Unsupported planners report that compaction is unavailable and leave the log untouched. On resume, `workflow.compactionThreshold` can trigger the same append-only compaction automatically before rebuilt context is passed to stateless planners.
 
 ### 1.2 Mode dispatch
 

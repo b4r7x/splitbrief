@@ -37,6 +37,7 @@ export function makeConfig(overrides?: Omit<Partial<Config>, 'implementer' | 'pl
       mode: 'standard',
       taskReview: 'none',
       ...overrides?.workflow,
+      compactionFormat: overrides?.workflow?.compactionFormat ?? 'auto',
     },
   };
   if (overrides?.theme !== undefined) base.theme = overrides.theme;

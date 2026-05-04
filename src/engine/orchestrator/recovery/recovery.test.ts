@@ -683,7 +683,7 @@ describe('applyRecoveryAction', () => {
           },
         },
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', persistTranscript: true, mode: 'standard', taskReview: 'none' },
+        workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', persistTranscript: true, compactionFormat: 'auto', mode: 'standard', taskReview: 'none' },
       },
       selectedAt,
     });

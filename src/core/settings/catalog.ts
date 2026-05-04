@@ -155,6 +155,14 @@ export const SETTINGS_DEFS: SettingDef[] = [
     max: MAX_RETRIES_LIMIT,
   },
   {
+    id: 'workflow.compactionFormat',
+    label: 'Compaction Format',
+    section: 'Workflow',
+    description: 'Summary format for transcript compaction',
+    kind: 'enum',
+    options: ['auto', 'freeform', 'structured'],
+  },
+  {
     id: 'workflow.git.commitStrategy',
     label: 'Commit Strategy',
     section: 'Workflow',

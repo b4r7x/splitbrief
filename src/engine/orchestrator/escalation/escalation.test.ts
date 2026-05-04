@@ -373,7 +373,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
       workflow: {
         autoApproveSpec: false, autoApprovePlan: false,
         maxRetries: 1, commitStrategy: 'none' as const,
-        persistTranscript: true, mode: 'standard' as const,
+        persistTranscript: true, compactionFormat: 'auto' as const, mode: 'standard' as const,
       },
       escalation: { intermediateProvider: 'totally-bogus-provider', intermediateModel: 'whatever', enabled: true },
     };

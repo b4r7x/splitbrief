@@ -3,6 +3,7 @@ import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { DiscoveredValidation } from '../../core/schemas/workflow.js';
+import type { StructuredSummary } from '../../core/schemas/compaction.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type { RunnerRuntime } from '../runners/types.js';
 
@@ -179,6 +180,12 @@ export interface Planner extends RunnerRuntime {
   ): Promise<{ text: string; usage: TokenDelta | null }>;
 
   summarize(messages: PlannerSummaryMessage[], projectDir?: string): Promise<string>;
+
+  summarizeStructured?(
+    messages: PlannerSummaryMessage[],
+    previousSummary?: StructuredSummary,
+    projectDir?: string,
+  ): Promise<{ text: string; structured: StructuredSummary | null }>;
 
   injectUserTurn?: (text: string, projectDir: string) => Promise<void>;
 
