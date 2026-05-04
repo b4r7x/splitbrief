@@ -36,7 +36,7 @@ const HookCommandEntrySchema = z
   })
   .strict();
 
-const HookModuleEntrySchema = z
+export const HookModuleEntrySchema = z
   .object({
     kind: z.literal('module'),
     name: z.string().min(1).optional(),

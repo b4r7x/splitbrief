@@ -210,11 +210,9 @@ Follow-ups from the EventBus and OpenTelemetry work — see [ARCHITECTURE.md §D
 
 ## Hook system v2 (mixed)
 
-Follow-ups from the workflow hook system — see [HOOKS-CONFIG.md §Design decisions](./HOOKS-CONFIG.md#design-decisions). v1 ships command-kind hooks; the schema already reserves space for more.
+Follow-ups from the workflow hook system — see [HOOKS-CONFIG.md §Design decisions](./HOOKS-CONFIG.md#design-decisions). v1 ships command-kind hooks, JS/TS module hooks, and `.diptych/hooks/` discovery.
 
-- **[Should] JS/TS module hooks.** `kind: 'module'` with `path: './hooks/my-hook.ts'` is validated by the v1 schema but not yet invoked. Dynamic-import semantics, return-value contract, and timeout behavior need to match the command-kind dispatcher's outcome model (`{ kind: 'allow' | 'deny', message? }`).
 - **[Could] Async fan-out within a single event.** Today hooks run sequentially in declaration order (order matters for `modify` patches). Opt-in parallel execution for events where ordering is irrelevant (`post_*`, `on_*`), with timeout aggregation and an explicit `parallel: true` flag on the entry.
-- **[Could] Hook discovery.** Auto-detect `.diptych/hooks/*.ts` files and register them under a conventional event inferred from the filename (e.g. `pre-task.ts` → `pre_task`). Avoids configuring the obvious.
 
 ---
 

@@ -23,6 +23,7 @@ import { createTreeRecorderSink } from '../../events/sinks/tree-recorder.js';
 import type { EngineEvent, EventBus, EventSink } from '../../events/types.js';
 import { createHookSink } from '../../hooks/sink.js';
 import { runPreHooks } from '../../hooks/run-pre-hook.js';
+import { resolveHooksConfig } from '../../hooks/discover.js';
 import { createBranch } from '../../../lib/git.js';
 import { slugify } from '../../../utils/slugify.js';
 
@@ -73,10 +74,13 @@ export async function initializeWorkflow(
   setTrackedState: (s: WorkflowState) => void,
   resumeHolder: ResumeContextHolder,
 ): Promise<InitResult> {
-  const { feature, projectDir, config, callbacks, savedState, sinks } = opts;
+  const { feature, projectDir, callbacks, savedState, sinks } = opts;
 
   ensureDiptychDir(projectDir);
   ensureSessionDir(projectDir, sessionId);
+
+  const hooks = await resolveHooksConfig(projectDir, opts.config.hooks);
+  const config: Config = hooks === undefined ? opts.config : { ...opts.config, hooks };
 
   const bus = opts.eventBus ?? createEventBus();
   if (opts.tuiSink) bus.subscribe(opts.tuiSink);
