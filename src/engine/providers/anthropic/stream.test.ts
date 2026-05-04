@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { streamAnthropicCompletion } from './stream.js';
+import { streamAnthropicCompletion, splitSystemMessages } from './stream.js';
 
 function makeSseResponse(events: string[]): Response {
   return new Response(events.join(''), {
@@ -69,4 +69,34 @@ describe('streamAnthropicCompletion', () => {
     });
   });
 
+});
+
+describe('splitSystemMessages', () => {
+  it('returns cache_control on last system block only', () => {
+    const result = splitSystemMessages([
+      { role: 'system', content: 'system preamble' },
+      { role: 'system', content: 'repo map content' },
+      { role: 'user', content: 'research the codebase' },
+    ]);
+    expect(result.system).toHaveLength(2);
+    expect(result.system![0]!.cache_control).toBeUndefined();
+    expect(result.system![1]!.cache_control).toEqual({ type: 'ephemeral' });
+    expect(result.conversation).toHaveLength(1);
+  });
+
+  it('returns undefined system when no system messages', () => {
+    const result = splitSystemMessages([
+      { role: 'user', content: 'hello' },
+    ]);
+    expect(result.system).toBeUndefined();
+  });
+
+  it('single system message gets cache_control', () => {
+    const result = splitSystemMessages([
+      { role: 'system', content: 'only system' },
+      { role: 'user', content: 'query' },
+    ]);
+    expect(result.system).toHaveLength(1);
+    expect(result.system![0]!.cache_control).toEqual({ type: 'ephemeral' });
+  });
 });

@@ -14,7 +14,7 @@ import { formatTaskPrompt } from '../../engine/spec/prompt-formatter.js';
 import type { LanguageContext } from '../../engine/spec/prompts/language-context.js';
 import { buildProjectLanguageContext } from '../../engine/spec/prompts/language-context.js';
 import { buildSystemPreamble } from '../../engine/spec/prompts/system.js';
-import { estimateTokens } from '../../engine/spec/token-budget.js';
+import { estimateTokens } from '../../core/tokens/estimate.js';
 import type { PlanTaskReviewMetadata } from '../../stores/workflow/plan-editor.js';
 import { redactSecretsWithMetadata } from '../../utils/redact.js';
 

@@ -494,7 +494,8 @@ src/
 │   │                              keybindings, types
 │   ├── state/                     machine (reducer), persistence (state.json
 │   │                              IO), selectors, topo-sort (task ordering)
-│   ├── tokens/estimate.ts         Token estimation heuristics
+│   ├── tokens/estimate.ts         Token estimation (model-family lookup:
+│   │                              Claude=3.5, GPT=4.0, DeepSeek=3.8, …)
 │   ├── types/                     config-options, state-actions (branded),
 │   │                              summary
 │   └── validation/test-discovery  Test-command auto-detection
@@ -605,7 +606,9 @@ src/
 │   │                              claude-code (cli specialization), cli,
 │   │                              shell + base, command-invoke, context,
 │   │                              types
-│   ├── providers/                 anthropic adapter+stream, capability-
+│   ├── providers/                 anthropic adapter+stream (prompt caching:
+│   │                              system sent as block array with
+│   │                              cache_control markers), capability-
 │   │                              inference, client, compat, constants,
 │   │                              discovery, errors, groq, lm-studio,
 │   │                              metadata, model-catalog, model-parsing,
@@ -630,7 +633,8 @@ src/
 │   │   ├── formatter.ts           tasks.md transport writer
 │   │   ├── parser.ts              tasks.md transport reader
 │   │   ├── prompts/               analyze, clarify, constitution,
-│   │   │                          escalation, instant, plan, quick-plan,
+│   │   │                          escalation (incl. few-shot examples
+│   │   │                          via escalation-examples.ts), instant, plan, quick-plan,
 │   │   │                          research, review, shared, spec, tasks
 │   │   └── token-budget.ts        Per-mode planner token budgets
 │   └── streaming/                 output-parsers (stream-json, jsonl,
