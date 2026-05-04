@@ -454,6 +454,82 @@ describe('runTaskLoop', () => {
     });
   });
 
+  it('uses a one-shot recovery profile override for the resumed task dispatch', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = makeImplState([task]);
+    const config: Config = {
+      ...makeNoValidationConfig({ workflow: defaultWorkflow }),
+      implementerProfiles: {
+        default: 'local-small',
+        profiles: {
+          'cheap-large': {
+            kind: 'api',
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
+            model: 'qwen-large',
+            costTier: 'cheap',
+            contextLength: 32768,
+          },
+          'local-small': {
+            kind: 'api',
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
+            model: 'qwen-small',
+            costTier: 'local',
+            contextLength: 32768,
+          },
+        },
+      },
+    };
+    const selectedImplementer = makeImplementer({
+      implement: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'code',
+        usage: { inputTokens: 20, outputTokens: 10 },
+      }),
+    });
+    const defaultImplementer = makeImplementer({ implement: vi.fn() });
+    const createProfileImplementer = vi.fn().mockReturnValue(selectedImplementer);
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    await runTaskLoop({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        context: defaultContext,
+        planner: makePlanner(),
+        implementer: defaultImplementer,
+        createImplementer: createProfileImplementer,
+        retryProfileOverride: 'cheap-large',
+        retryProfileOverrideTaskId: task.id,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS, validator: TEST_VALIDATOR, bus,
+      },
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(defaultImplementer.implement).not.toHaveBeenCalled();
+    expect(selectedImplementer.implement).toHaveBeenCalledTimes(1);
+    expect(createProfileImplementer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        implementer: expect.objectContaining({ model: 'qwen-large' }),
+      }),
+      expect.objectContaining({ publisher: expect.any(Object) }),
+    );
+    expect(events.find((event) => event.type === 'task_started')).toMatchObject({
+      type: 'task_started',
+      taskId: 'T001',
+      implementerProfile: 'cheap-large',
+      model: 'qwen-large',
+    });
+  });
+
   it('routes modify tasks using current code refreshed from disk before dispatch', async () => {
     const { projectDir, sessionId } = setupProject();
     mkdirSync(join(projectDir, 'src'), { recursive: true });

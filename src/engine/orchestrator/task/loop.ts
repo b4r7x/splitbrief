@@ -101,6 +101,12 @@ function createTaskImplementer(opts: {
   return factory(opts.taskConfig, { publisher: createImplementerPublisher(opts.wctx.bus) });
 }
 
+function retryProfileOverrideForTask(wctx: WorkflowContext, task: Task): string | undefined {
+  if (!wctx.retryProfileOverride) return undefined;
+  if (wctx.retryProfileOverrideTaskId !== undefined && wctx.retryProfileOverrideTaskId !== task.id) return undefined;
+  return wctx.retryProfileOverride;
+}
+
 async function reviewTaskIfNeeded(opts: {
   wctx: WorkflowContext;
   state: WorkflowState;
@@ -255,10 +261,31 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     ({ task: refreshedTask, state } = await refreshAndPersistCode(task, projectDir, sessionId, state));
     setTrackedState(state);
 
+    const retryProfileOverride = retryProfileOverrideForTask(wctx, refreshedTask);
+    const routingProfiles = retryProfileOverride === undefined
+      ? resolvedProfiles.profiles
+      : resolvedProfiles.profiles.filter(profile => profile.name === retryProfileOverride);
+    if (routingProfiles.length === 0) {
+      const message = `Recovery selected implementer profile "${retryProfileOverride}" is not configured.`;
+      publishError(wctx.bus, state.phase, message);
+      const issue = buildContextOverflowRecoveryIssue({
+        task: refreshedTask,
+        phase: state.phase,
+        selectedImplementerProfile: retryProfileOverride,
+        canRouteBigger: false,
+        routingReason: message,
+        createdAt: new Date().toISOString(),
+      });
+      state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });
+      publishRecoveryPrompted(wctx.bus, issue);
+      setTrackedState(state);
+      return { state, taskBreakdowns, status: 'stopped' };
+    }
+
     const routingDecision = routeTaskToImplementerProfile({
       task: refreshedTask,
       context: wctx.context,
-      profiles: resolvedProfiles.profiles,
+      profiles: routingProfiles,
       languageContext: buildProjectLanguageContext(projectDir, state.discoveredValidation?.language),
     });
     const selectedProfile = selectedProfileFromDecision(resolvedProfiles.profiles, routingDecision);

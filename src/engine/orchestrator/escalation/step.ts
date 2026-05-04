@@ -2,6 +2,12 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
+import type { Config } from '../../../core/schemas/config.js';
+import type { Implementer } from '../../implementers/types.js';
+import { configError } from '../../../core/config/errors.js';
+import { getRunnerDisplayName, getRunnerModelName } from '../../../core/config/accessors/runner-config.js';
+import { resolveImplementerProfiles, type ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
+import { saveState } from '../../../core/state/persistence.js';
 import { formatValidationError } from '../validation.js';
 import type { WorkflowContext } from '../types.js';
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave } from '../state-ops.js';
@@ -17,7 +23,7 @@ import {
   type ChangedFilesSnapshot,
   type GateDecision,
 } from '../approval/tiered-approval.js';
-import { publishError, publishRecoveryPrompted, publishUserEditConflict } from '../events.js';
+import { createImplementerPublisher, publishError, publishRecoveryPrompted, publishUserEditConflict } from '../events.js';
 import {
   createEvidenceLedger,
   readEvidenceLedger,
@@ -28,6 +34,7 @@ import {
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import { createApprovalPromotionConflict } from '../user-edit/conflicts.js';
 import { buildApprovalPromotionConflictRecoveryIssue } from '../recovery/recovery.js';
+import { createImplementer } from '../../runners/factory.js';
 
 export const MAX_HINT_ERROR_LENGTH = 4000;
 
@@ -51,6 +58,16 @@ export type RetryStepOutcome = {
 
 export type SuccessMethod = Exclude<TaskCompletionMethod, 'failed' | 'skipped'>;
 
+export type RetryInvokeArgs = {
+  task: Task;
+  lastError: string;
+  attempts: number;
+  projectDir: string;
+  config: Config;
+  implementer: Implementer;
+  implementerProfile?: string | undefined;
+};
+
 export type RetryStepOpts = {
   ctx: EscalationContext;
   task: Task;
@@ -62,9 +79,53 @@ export type RetryStepOpts = {
   commitSuffix?: string | undefined;
   usageCategory: UsageCategory;
   retryFailureFallback: string;
-  invokeRetry: (args: { task: Task; lastError: string; attempts: number; projectDir: string }) => Promise<{ success: boolean; error?: string | undefined; usage?: TokenDelta | null | undefined }>;
+  profileOverride?: string | undefined;
+  invokeRetry: (args: RetryInvokeArgs) => Promise<{ success: boolean; error?: string | undefined; usage?: TokenDelta | null | undefined }>;
   onValidationAfterRetryFail?: ((validationError: string) => void) | undefined;
 };
+
+type RetryRuntime = {
+  config: Config;
+  implementer: Implementer;
+  implementerProfile?: string | undefined;
+  profile?: ResolvedImplementerProfile | undefined;
+};
+
+function retryConfigForProfile(config: Config, profile: ResolvedImplementerProfile): Config {
+  return { ...config, implementer: profile.config };
+}
+
+function stateForRetryProfile(state: WorkflowState, profile: ResolvedImplementerProfile): WorkflowState {
+  const { implementerModel: _previousImplementerModel, ...stateWithoutImplementerModel } = state;
+  const model = getRunnerModelName(profile.config);
+  return {
+    ...stateWithoutImplementerModel,
+    implementerTool: getRunnerDisplayName(profile.config),
+    ...(model !== undefined && { implementerModel: model }),
+  };
+}
+
+function createRetryRuntime(ctx: EscalationContext, profileOverride: string | undefined): RetryRuntime {
+  if (profileOverride === undefined) {
+    return {
+      config: ctx.config,
+      implementer: ctx.implementer,
+      ...(ctx.implementerProfile !== undefined && { implementerProfile: ctx.implementerProfile }),
+    };
+  }
+
+  const profile = resolveImplementerProfiles(ctx.config).profiles.find(candidate => candidate.name === profileOverride);
+  if (!profile) throw configError.profileNotFound(profileOverride);
+
+  const config = retryConfigForProfile(ctx.config, profile);
+  const factory = ctx.createImplementer ?? createImplementer;
+  return {
+    config,
+    implementer: factory(config, { publisher: createImplementerPublisher(ctx.bus) }),
+    implementerProfile: profile.name,
+    profile,
+  };
+}
 
 async function handleApprovalTimeUserEditConflict(opts: {
   ctx: EscalationContext;
@@ -240,16 +301,36 @@ function persistRetryRejectionEvidence(
  * Callers provide tier-specific inputs (method, usage category, commit suffix, retry invocation).
  */
 export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcome> {
-  const { ctx, state: initialState, lastError, attempts, method, transitionType, commitSuffix, usageCategory, retryFailureFallback, invokeRetry, onValidationAfterRetryFail } = opts;
+  const { ctx, state: initialState, lastError, attempts, method, transitionType, commitSuffix, usageCategory, retryFailureFallback, profileOverride, invokeRetry, onValidationAfterRetryFail } = opts;
   let state = initialState;
   let task = opts.task;
 
   ({ task, state } = await refreshAndPersistCode(task, ctx.projectDir, ctx.sessionId, state));
 
+  const retryRuntime = createRetryRuntime(ctx, profileOverride);
+  const retryCtx: EscalationContext = {
+    ...ctx,
+    config: retryRuntime.config,
+    implementer: retryRuntime.implementer,
+    ...(retryRuntime.implementerProfile !== undefined && { implementerProfile: retryRuntime.implementerProfile }),
+  };
+  if (retryRuntime.profile !== undefined) {
+    state = stateForRetryProfile(state, retryRuntime.profile);
+    saveState(ctx.projectDir, ctx.sessionId, state);
+  }
+
   const staged = await createStagedProject(ctx.projectDir);
   let retryResult: Awaited<ReturnType<typeof invokeRetry>>;
   try {
-    retryResult = await invokeRetry({ task, lastError, attempts, projectDir: staged.projectDir });
+    retryResult = await invokeRetry({
+      task,
+      lastError,
+      attempts,
+      projectDir: staged.projectDir,
+      config: retryRuntime.config,
+      implementer: retryRuntime.implementer,
+      ...(retryRuntime.implementerProfile !== undefined && { implementerProfile: retryRuntime.implementerProfile }),
+    });
   } catch (err) {
     staged.cleanup();
     throw err;
@@ -338,7 +419,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   }
   staged.cleanup();
 
-  const commitResult = await validateAndCommit(ctx, task, state, method, transitionType, attempts, commitSuffix, actualChangedFiles);
+  const commitResult = await validateAndCommit(retryCtx, task, state, method, transitionType, attempts, commitSuffix, actualChangedFiles);
   if ('blockedReason' in commitResult) {
     return {
       state: commitResult.state,

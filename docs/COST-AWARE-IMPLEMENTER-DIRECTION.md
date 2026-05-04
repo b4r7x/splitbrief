@@ -162,7 +162,7 @@ The implemented behavior is:
 - consider context length before dispatch,
 - consider runner kind and write mode (`extracted-code` profiles can only return one file's contents; `direct` profiles can edit in-scope files directly),
 - keep a record of the routing decision,
-- fall back predictably when validation fails,
+- fall back predictably when validation fails, including recovery-time rerouting to a named larger profile for the current task,
 - never parallel-write the same checkout in v1.
 
 ## Parallelism

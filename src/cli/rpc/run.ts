@@ -1,6 +1,7 @@
 import type { Readable, Writable } from 'node:stream';
 import type { Config } from '../../core/schemas/config.js';
 import type { Phase } from '../../core/schemas/enums.js';
+import type { TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 import type { Planner } from '../../engine/planners/types.js';
@@ -141,7 +142,7 @@ export async function runRpc(
     return pending;
   };
 
-  const requestRecoveryAction = async (state: WorkflowState): Promise<{ shouldRun: boolean; state: WorkflowState }> => {
+  const requestRecoveryAction = async (state: WorkflowState): Promise<{ shouldRun: boolean; state: WorkflowState; retryProfileOverride?: string | undefined; retryProfileOverrideTaskId?: TaskId | undefined }> => {
     if (!state.pendingRecovery) return { shouldRun: true, state };
     const id = activeSessionId ?? currentSessionId(projectDir, sessionId);
     if (!id) {
@@ -162,12 +163,17 @@ export async function runRpc(
       }
 
       const latest = readCurrentState() ?? state;
+      const issue = latest.pendingRecovery;
+      if (!issue) return { shouldRun: true, state: latest };
+      const selectedImplementerProfile = issue.selectedImplementerProfile;
+      const retryProfileOverrideTaskId = issue.taskId ?? latest.tasks[latest.currentTaskIndex]?.id;
       const result = applyRecoveryAction({
         projectDir,
         sessionId: id,
         state: latest,
         action: parsed.data,
         bus,
+        config,
         mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
       });
       if (!result.ok) {
@@ -176,9 +182,12 @@ export async function runRpc(
       }
 
       writer.ack('recovery', { action: result.action, status: result.status });
+      const retryProfileOverride = result.implementerProfile ?? selectedImplementerProfile;
       return {
         shouldRun: result.status !== 'paused' && result.status !== 'aborted',
         state: result.state,
+        ...(retryProfileOverride !== undefined && result.status === 'retry-current-task' && { retryProfileOverride }),
+        ...(retryProfileOverride !== undefined && result.status === 'retry-current-task' && retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
       };
     }
 
@@ -214,11 +223,15 @@ export async function runRpc(
 
   try {
     let stateForRun = savedState;
+    let retryProfileOverride: string | undefined;
+    let retryProfileOverrideTaskId: TaskId | undefined;
     while (!abortController.signal.aborted) {
       if (stateForRun?.pendingRecovery) {
         const recovery = await requestRecoveryAction(stateForRun);
         if (!recovery.shouldRun) return;
         stateForRun = recovery.state;
+        retryProfileOverride = recovery.retryProfileOverride;
+        retryProfileOverrideTaskId = recovery.retryProfileOverrideTaskId;
       }
 
       const callbacks = createWorkflowCallbacks({
@@ -248,7 +261,11 @@ export async function runRpc(
         sessionId: activeSessionId,
         _planner: planner,
         _implementer: implementer,
+        ...(retryProfileOverride !== undefined && { retryProfileOverride }),
+        ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
       });
+      retryProfileOverride = undefined;
+      retryProfileOverrideTaskId = undefined;
 
       if (abortController.signal.aborted) return;
       const savedSessionId = activeSessionId ?? readActive(projectDir) ?? undefined;

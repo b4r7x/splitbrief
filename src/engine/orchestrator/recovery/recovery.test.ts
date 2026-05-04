@@ -652,8 +652,8 @@ describe('applyRecoveryAction', () => {
     expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']));
   });
 
-  it('blocks route-bigger-worker without silently clearing recovery or rerunning', () => {
-    const { projectDir, sessionId } = setupSession('route-bigger-blocked');
+  it('prepares route-bigger-worker by resetting the current task with the selected profile', () => {
+    const { projectDir, sessionId } = setupSession('route-bigger-worker');
     const task = makeTask({ id: 'T036', file: 'src/large.ts' });
     const issue = buildContextOverflowRecoveryIssue({
       task,
@@ -671,18 +671,33 @@ describe('applyRecoveryAction', () => {
       state,
       action: 'route-bigger-worker',
       bus,
+      config: {
+        version: 2,
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'api', provider: 'ollama', apiBase: 'http://localhost:11434/v1', model: 'qwen-small' },
+        implementerProfiles: {
+          default: 'local-qwen',
+          profiles: {
+            'cheap-cloud': { kind: 'api', provider: 'deepseek', apiBase: 'https://api.deepseek.com/v1', model: 'deepseek-chat', costTier: 'cheap' },
+            'local-qwen': { kind: 'api', provider: 'ollama', apiBase: 'http://localhost:11434/v1', model: 'qwen-small', costTier: 'local' },
+          },
+        },
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { autoApproveSpec: false, autoApprovePlan: false, maxRetries: 3, commitStrategy: 'none', persistTranscript: true, mode: 'standard', taskReview: 'none' },
+      },
       selectedAt,
     });
 
     expect(result).toMatchObject({
-      ok: false,
-      status: 'blocked',
-      code: 'route-bigger-not-ready',
+      ok: true,
+      status: 'retry-current-task',
       implementerProfile: 'cheap-cloud',
     });
-    expect(result.state.pendingRecovery).toEqual(issue);
-    expect(loadState(projectDir, sessionId)?.pendingRecovery).toEqual(issue);
-    expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected', 'recovery_action_failed']));
+    expect(result.state.currentTaskIndex).toBe(0);
+    expect(result.state.tasks[0]?.status).toBe('pending');
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(loadState(projectDir, sessionId)?.pendingRecovery).toBeUndefined();
+    expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']));
   });
 
   it('blocks planner-split-rebase until a proposal approval flow exists', () => {

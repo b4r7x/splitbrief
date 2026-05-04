@@ -3,6 +3,7 @@ import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
+import type { TaskId } from '../../../core/schemas/task.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { Planner } from '../../planners/types.js';
@@ -56,6 +57,9 @@ export type RunWorkflowOptions = {
   _planner?: Planner | undefined;
   /** Test-only: inject a pre-built implementer (avoids spawning real subprocesses in tests). */
   _implementer?: Implementer | undefined;
+  /** One-shot implementer profile override used when recovery retries a task on a selected worker. */
+  retryProfileOverride?: string | undefined;
+  retryProfileOverrideTaskId?: TaskId | undefined;
   /** Model cache accessor for pricing/cost lookups — injected from composition layer. */
   modelCache?: ModelCacheAccessor | undefined;
   /** Drains pending attachments from the store — injected from composition layer. */
@@ -173,6 +177,8 @@ export async function initializeWorkflow(
   const wctx: WorkflowContext = {
     projectDir, sessionId, config, callbacks, bus, planner, context, implementer,
     signal: opts.signal, metadata, resumeHolder, sinks, validator,
+    ...(opts.retryProfileOverride !== undefined && { retryProfileOverride: opts.retryProfileOverride }),
+    ...(opts.retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId: opts.retryProfileOverrideTaskId }),
     ...(opts.modelCache !== undefined && { modelCache: opts.modelCache }),
     ...(opts.drainPendingAttachments !== undefined && { drainPendingAttachments: opts.drainPendingAttachments }),
   };

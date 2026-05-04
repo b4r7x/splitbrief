@@ -4,6 +4,7 @@ import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import type { ValidationResult } from '../../validation.js';
 import type { UserEditConflict, UserEditConflictAction } from '../../user-edit/conflicts.js';
 import { uniqueIds } from '../../../../utils/collections.js';
+import { looksLikeFilePath } from '../../../../utils/path-patterns.js';
 
 const ACTION_ORDER: RecoveryAction[] = [
   'retry-same-worker',
@@ -220,25 +221,6 @@ export function formatPercent(value: number): string {
 export function formatCostFact(value: number): string {
   if (!Number.isFinite(value)) return String(value);
   return `$${value.toFixed(2)}`;
-}
-
-const ROOT_FILE_NAMES = new Set([
-  'Dockerfile',
-  'Makefile',
-  'README',
-  'LICENSE',
-  'CHANGELOG',
-  'NOTICE',
-  'Procfile',
-]);
-
-function looksLikeFilePath(value: string): boolean {
-  const trimmed = value.trim();
-  if (trimmed.includes('/') || trimmed.includes('\\') || trimmed.includes('*')) return true;
-  if (/\s/.test(trimmed)) return false;
-  if (trimmed.startsWith('.') && trimmed.length > 1) return true;
-  if (/^[A-Za-z0-9_.-]+\.[A-Za-z0-9]+$/.test(trimmed)) return true;
-  return ROOT_FILE_NAMES.has(trimmed);
 }
 
 export function uniqueFiles(files: string[]): string[] {
