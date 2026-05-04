@@ -75,7 +75,7 @@ Here is what happens, step by step:
 5. Each successful task records evidence and can create a checkpoint. Product-level git commits are optional when `workflow.git.commitStrategy` is explicitly configured; in this repository, agents must never stage or commit.
 6. After all tasks complete, the planner does a final review: it diffs the actual changes against the brief and writes `review.md`. A deterministic drift report flags anything the agent touched outside the planned scope.
 
-Hit `q` to quit at any point. State is on disk. Resume later with `diptych resume`. Press `Ctrl+K` inside the TUI at any time to open the command palette — a searchable list of all 21 slash commands.
+Hit `q` to quit at any point. State is on disk. Resume later with `diptych resume`. Press `Ctrl+K` inside the TUI at any time to open the command palette — a searchable list of all slash commands.
 
 ---
 
@@ -192,7 +192,7 @@ A few common alternatives:
 - **Hybrid (default after `diptych init`)**: Claude Code planner + Ollama implementer. Best quality-per-dollar.
 - **Cloud-only**: planner `kind: api`, `provider: anthropic`, model `claude-opus-4-5`; implementer `kind: api`, `provider: deepseek`, model `deepseek-coder`.
 
-Every field, default, and validation rule is in [docs/CONFIG.md](./CONFIG.md). API key handling: [docs/API-KEYS.md](./API-KEYS.md).
+Every field, default, and validation rule is in [docs/CONFIGURATION.md](./CONFIGURATION.md). API key handling: [docs/API-KEYS.md](./API-KEYS.md).
 
 ---
 
@@ -262,7 +262,7 @@ Explicit non-goals, so you don't go looking:
 
 These features shipped in Phase 6 and are all active by default unless noted:
 
-- **Command palette (Ctrl+K)** — searchable overlay listing all 21 slash commands with descriptions. See [FEATURES.md §Command palette overlay](./FEATURES.md#command-palette-overlay-ctrlk).
+- **Command palette (Ctrl+K)** — searchable overlay listing all slash commands with descriptions. See [FEATURES.md §Command palette overlay](./FEATURES.md#command-palette-overlay-ctrlk).
 - **Rich plan editor** — lazygit-style inline editor for the Task Brief. Set `briefReview: rich` in config or press `e` from the simple review view. See [FEATURES.md §Plan editor screen](./FEATURES.md#plan-editor-screen-lazygit-style).
 - **Tiered approval gates** — `auto` / `sticky` / `confirm` per action class, composing with the document-level approval loop. See [FEATURES.md §Tiered approval gates](./FEATURES.md#tiered-approval-gates-auto--sticky--confirm).
 - **MCP resources server** — exposes read-only session artifacts such as specs, plans, tasks, state, evidence, and drift reports to MCP-aware clients (Claude Code, Cursor). It has no tool calls or mutation API. Start with `diptych mcp serve`. See [FEATURES.md §MCP resources server](./FEATURES.md#mcp-resources-server).

@@ -20,7 +20,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** Pin the engine in your shell profile via `nvm`/`fnm`. The `package.json` `engines.node` field already declares the minimum; add a `.nvmrc` if you frequently switch projects.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md), [CONTRIBUTING.md](../CONTRIBUTING.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ---
 
@@ -51,7 +51,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** Never run diptych under `sudo`. If you accidentally do, immediately `chown` the resulting directory back. CI containers should mount the workspace with read-write permissions for the running user.
 
-**See also:** [docs/BOOTSTRAP.md](./BOOTSTRAP.md), [docs/CONFIG.md](./CONFIG.md).
+**See also:** [docs/BOOTSTRAP.md](./BOOTSTRAP.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
@@ -116,7 +116,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** Decouple planner and implementer cost tiers — that asymmetry is the entire point of diptych. Always set `workflow.maxBudget` for production usage.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md), [docs/ARCHITECTURE.md](./ARCHITECTURE.md), [docs/VISION.md](./VISION.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/ARCHITECTURE.md](./ARCHITECTURE.md), [docs/VISION.md](./VISION.md).
 
 ---
 
@@ -132,7 +132,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** Calibrate budgets against `summary.json` from a few representative runs before locking them down.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md), `src/engine/orchestrator/budget.ts`.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), `src/engine/orchestrator/budget.ts`.
 
 ---
 
@@ -163,7 +163,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** Audit `summary.json` for any `n/a` row after introducing a new model and add the override before relying on cost totals.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md), `src/core/providers/known-models.ts`.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), `src/core/providers/known-models.ts`.
 
 ---
 
@@ -181,7 +181,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** Default to `standard` mode for ordinary feature work and reserve `instant` / `quick` for trivial edits that genuinely do not need ceremony.
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/SLASH-COMMANDS.md](./SLASH-COMMANDS.md), [docs/REPOMAP.md](./REPOMAP.md).
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), [docs/REPOMAP.md](./REPOMAP.md).
 
 ---
 
@@ -197,7 +197,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** Always set explicit timeouts when using high-latency planners, and prefer `--detach` for long jobs so terminal disconnects do not interrupt them.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md), [docs/WORKFLOW.md](./WORKFLOW.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/WORKFLOW.md](./WORKFLOW.md).
 
 ---
 
@@ -213,7 +213,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** When onboarding a new repo, run a single `start` and inspect the repo-map size; tune limits so the planner-relevant code fits.
 
-**See also:** [docs/REPOMAP.md](./REPOMAP.md), [docs/CONFIG.md](./CONFIG.md).
+**See also:** [docs/REPOMAP.md](./REPOMAP.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
@@ -278,7 +278,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** Match implementer capability to brief complexity. Keep constraint lists short (under ~7 items) for sub-Sonnet models.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md), [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 ---
 
@@ -294,7 +294,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** Keep `validation.testCommand` minimal but reliable: at least `npm run typecheck`. Slow test suites should not block per-task validation; move them to CI.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md), [docs/DEBUGGING.md](./DEBUGGING.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/DEBUGGING.md](./DEBUGGING.md).
 
 ---
 
@@ -327,7 +327,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** Decide up front whether a run is interactive or headless; configure approval policy to match.
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/SLASH-COMMANDS.md](./SLASH-COMMANDS.md).
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
 ---
 
@@ -343,7 +343,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** Write review comments as imperatives ("rename `foo` to `bar`", "remove constraint about X"), not impressions ("seems off").
 
-**See also:** [docs/SLASH-COMMANDS.md](./SLASH-COMMANDS.md), [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md).
+**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 ---
 
@@ -360,7 +360,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** Audit `approval.tiers` before running headless. Any tier left at `sticky` or `confirm` will block headless runs.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md) §approval, [docs/WORKFLOW.md](./WORKFLOW.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval, [docs/WORKFLOW.md](./WORKFLOW.md).
 
 ---
 
@@ -375,7 +375,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** The phrase is always displayed in the prompt. Read it before typing.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md) §approval.tiers.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval.tiers.
 
 ---
 
@@ -424,7 +424,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** Keep build outputs and lockfiles in `.gitignore` — the snapshot walker respects it. Run `prune` periodically as a maintenance step.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md), [docs/INVARIANTS.md](./INVARIANTS.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/INVARIANTS.md](./INVARIANTS.md).
 
 ---
 
@@ -457,7 +457,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** Tune the threshold against a representative session before relying on it as a gate.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md), `src/engine/orchestrator/final-review.ts`.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), `src/engine/orchestrator/final-review.ts`.
 
 ---
 
@@ -507,7 +507,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** Copy from a known-good renderer template when starting a new one rather than writing from scratch.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md), [docs/WORKFLOW.md](./WORKFLOW.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/WORKFLOW.md](./WORKFLOW.md).
 
 ---
 
@@ -543,7 +543,7 @@ Diptych MCP is a read-only resources server. It exposes session artifacts for ex
 
 **Prevention:** Always pass `--port` and `--session` explicitly in scripts; never rely on defaults for production usage.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
@@ -559,7 +559,7 @@ Diptych MCP is a read-only resources server. It exposes session artifacts for ex
 
 **Prevention:** Start MCP from a wrapper script that captures the startup banner and writes the generated token into your client config. The token is generated in memory for each server run and is not pinned by environment variable.
 
-**See also:** [docs/API-KEYS.md](./API-KEYS.md), [docs/CONFIG.md](./CONFIG.md).
+**See also:** [docs/API-KEYS.md](./API-KEYS.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
@@ -575,7 +575,7 @@ Diptych MCP is a read-only resources server. It exposes session artifacts for ex
 
 **Prevention:** Start MCP after the session has produced at least its first brief.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
@@ -590,7 +590,7 @@ Diptych MCP is a read-only resources server. It exposes session artifacts for ex
 
 **Prevention:** Start the MCP server after all relevant sessions exist, or use `--all-sessions` for a long-lived MCP endpoint.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
@@ -605,7 +605,7 @@ Diptych MCP is a read-only resources server. It exposes session artifacts for ex
 
 **Prevention:** Keep the terminal that started `diptych mcp serve` visible, or have a wrapper script tee the startup banner to a file before handing the token to your client config.
 
-**See also:** [docs/API-KEYS.md](./API-KEYS.md), [docs/CONFIG.md](./CONFIG.md).
+**See also:** [docs/API-KEYS.md](./API-KEYS.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
@@ -619,7 +619,7 @@ Diptych MCP is a read-only resources server. It exposes session artifacts for ex
 
 **Prevention:** Always pass `--port` explicitly in scripts; do not rely on the default when running multiple MCP servers.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
@@ -757,7 +757,7 @@ Diptych MCP is a read-only resources server. It exposes session artifacts for ex
 
 **Prevention:** Keep sessions short — split long-running multi-feature work across multiple sessions rather than one mega-session.
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/CONFIG.md](./CONFIG.md).
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
@@ -820,7 +820,7 @@ Diptych MCP is a read-only resources server. It exposes session artifacts for ex
 
 **Prevention:** Configure your terminal as a `xterm-256color` (or modern) `$TERM` and leave `NO_COLOR` unset.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md), [docs/WORKFLOW.md](./WORKFLOW.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/WORKFLOW.md](./WORKFLOW.md).
 
 ---
 
@@ -836,7 +836,7 @@ Diptych MCP is a read-only resources server. It exposes session artifacts for ex
 
 **Prevention:** When adding a new slash command, list every screen it should be available on — defaulting to too few is more common than too many.
 
-**See also:** [docs/SLASH-COMMANDS.md](./SLASH-COMMANDS.md), `src/core/slash-commands/catalog.ts`.
+**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), `src/core/slash-commands/catalog.ts`.
 
 ---
 
@@ -865,7 +865,7 @@ Diptych MCP is a read-only resources server. It exposes session artifacts for ex
 
 **Prevention:** Use `api` / `agent-sdk` runners when live cost feedback matters.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md), [docs/OTEL.md](./OTEL.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/OTEL.md](./OTEL.md).
 
 ---
 
@@ -946,7 +946,7 @@ Diptych MCP is a read-only resources server. It exposes session artifacts for ex
 
 **Prevention:** Treat validation toggles as a temporary debugging tool, not a permanent workflow option. If you find yourself disabling checks routinely, your validation config is wrong.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md), [docs/WORKFLOW.md](./WORKFLOW.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/WORKFLOW.md](./WORKFLOW.md).
 
 ---
 
@@ -963,7 +963,7 @@ Diptych MCP is a read-only resources server. It exposes session artifacts for ex
 
 **Prevention:** In CI, redirect stdout and stderr to distinct files.
 
-**See also:** [docs/DEBUGGING.md](./DEBUGGING.md), [docs/CONFIG.md](./CONFIG.md).
+**See also:** [docs/DEBUGGING.md](./DEBUGGING.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
@@ -1013,7 +1013,7 @@ Diptych MCP is a read-only resources server. It exposes session artifacts for ex
 
 **Prevention:** Run `diptych migrate` after every diptych version bump.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md), [docs/MIGRATION.md](./MIGRATION.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/MIGRATION.md](./MIGRATION.md).
 
 ---
 
@@ -1028,4 +1028,4 @@ Diptych MCP is a read-only resources server. It exposes session artifacts for ex
 
 **Prevention:** Standardize on one configuration layer per setting. Keep CLI flags for one-off overrides only.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md), [docs/BOOTSTRAP.md](./BOOTSTRAP.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/BOOTSTRAP.md](./BOOTSTRAP.md).

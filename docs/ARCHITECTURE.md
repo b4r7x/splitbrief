@@ -400,7 +400,7 @@ See [CHANGELOG.md](../CHANGELOG.md) for release history and amendments.
 
 A snapshot of the codebase as it actually stands today, generated for an AI agent with no prior context that needs to understand how the system fits together. This section is the inventory; Part 1 is the design rationale.
 
-> **Verified counts (this snapshot):** 453 non-test source files + 247 test files = 700 total `.ts/.tsx` under `src/`. 78 `EngineEvent` variants in the union. 13 CLI subcommands registered. 21 slash commands in catalog.
+> **Note:** This section is a point-in-time snapshot. For current system understanding, start with [MENTAL-MODEL.md](./MENTAL-MODEL.md) → [HOW-IT-WORKS.md](./HOW-IT-WORKS.md) → [ENGINE.md](./ENGINE.md). Counts below may be stale.
 
 ---
 
@@ -515,7 +515,7 @@ src/
 │   ├── events/
 │   │   ├── bus.ts                 createEventBus (sync pub/sub)
 │   │   ├── sinks/                 jsonl, otel, stdout-json, tui
-│   │   └── types.ts               EngineEvent union (78 variants),
+│   │   └── types.ts               EngineEvent union,
 │   │                              EventSink, EventBus
 │   ├── git/worktree.ts            listWorktrees, removeWorktree,
 │   │                              createWorktree
@@ -804,7 +804,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 
 ### EngineEvent variants — full union
 
-`src/engine/events/types.ts` defines the discriminated union. Every `EngineEvent` carries `ts: number` and (except for `snapshot_restored` / `snapshot_restore_conflict`) a `phase: Phase`. Listed below by group exactly as they appear in the union (78 total variants):
+`src/engine/events/types.ts` defines the discriminated union. Every `EngineEvent` carries `ts: number` and (except for `snapshot_restored` / `snapshot_restore_conflict`) a `phase: Phase`. Listed below by group exactly as they appear in the union. For key event shapes with full field definitions, see [ENGINE.md](./ENGINE.md).
 
 **Workflow lifecycle (6):**
 `workflow_started`, `workflow_resumed`, `workflow_complete`, `workflow_cancelled`, `workflow_config`, `paused_external_changes`

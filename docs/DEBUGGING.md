@@ -75,7 +75,7 @@ There is no `debug` package / namespace logger in diptych today. The diagnostic 
 | `NODE_ENV=development` | Enables store-creation logging | `src/stores/create-store.ts` |
 | `CI` | Suppresses fullscreen TUI (`--no-fullscreen` is equivalent) | `src/cli/setup.ts` |
 
-For finer-grained traces, use the event log or OTel spans. API-key-bearing env vars (`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, etc.) are listed in [CONFIG.md](./CONFIG.md) — missing keys surface as loud config-validation warnings.
+For finer-grained traces, use the event log or OTel spans. API-key-bearing env vars (`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, etc.) are listed in [CONFIGURATION.md](./CONFIGURATION.md) — missing keys surface as loud config-validation warnings.
 
 ## Common issues
 
@@ -87,7 +87,7 @@ Cause: YAML failed zod validation. The message lists each failing path. Check:
 - Per-kind required fields are set (e.g. `kind: api` requires `provider` and `apiBase`).
 - No unknown keys in `codebase`, `hooks`, `otel` — those sections are `.strict()`.
 
-See [CONFIG.md](./CONFIG.md) for the full schema. The loader throws `ConfigError` (`src/core/config/errors.ts`) mapped to CLI exit code 2 by `loadConfigOrExit` in `src/cli/setup.ts`.
+See [CONFIGURATION.md](./CONFIGURATION.md) for the full schema. The loader throws `ConfigError` (`src/core/config/errors.ts`) mapped to CLI exit code 2 by `loadConfigOrExit` in `src/cli/setup.ts`.
 
 ### "Hook config is not trusted and no TTY available"
 
@@ -151,7 +151,7 @@ Diagnostic checklist:
 
 ### API key warning in logs
 
-Cause: config file contains `apiKey: sk-...` inline. diptych detects and warns via `warnStderr` — config load still succeeds. Migrate to the corresponding env var (see [API-KEYS.md](./API-KEYS.md) and [CONFIG.md](./CONFIG.md) §Environment variables).
+Cause: config file contains `apiKey: sk-...` inline. diptych detects and warns via `warnStderr` — config load still succeeds. Migrate to the corresponding env var (see [API-KEYS.md](./API-KEYS.md) and [CONFIGURATION.md](./CONFIGURATION.md) §Environment variables).
 
 ### `.diptych/config.yaml` permissions warning
 
