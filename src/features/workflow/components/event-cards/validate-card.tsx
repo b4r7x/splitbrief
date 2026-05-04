@@ -1,4 +1,4 @@
-import React from 'react';
+import type { ReactElement } from 'react';
 import { Box, Text } from 'ink';
 import type { EngineEvent, ValidationStages } from '../../../../engine/events/types.js';
 import { useTheme } from '../../../../components/theme.js';
@@ -15,7 +15,7 @@ interface StagesProps {
   failedStage?: ValidationStage | undefined;
 }
 
-function Stages({ stages, currentStage, failedStage }: StagesProps): React.ReactElement {
+function Stages({ stages, currentStage, failedStage }: StagesProps): ReactElement {
   const t = useTheme();
   return (
     <>
