@@ -42,7 +42,7 @@ export type AnalyzeBriefDriftInput = {
   briefHash?: string | null;
 };
 
-function isDriftReport(value: unknown): value is DriftReport {
+export function isDriftReport(value: unknown): value is DriftReport {
   if (!isRecord(value)) return false;
   return value.version === 1
     && typeof value.passed === 'boolean'

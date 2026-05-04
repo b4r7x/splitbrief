@@ -42,6 +42,7 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
       missingSnapshotFiles: [],
     }),
     compactTranscript: async () => ({ status: 'compacted', summary: 'summary', entriesRemoved: 3 }),
+    exportSession: async () => ({ status: 'ok', path: '/fake/report.html' }),
     ...overrides,
   };
 }
@@ -529,6 +530,39 @@ describe('/handoff command', () => {
     executeSlashCommand(commands, '/handoff spec-kit', 'workflow', noop);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(error).toContain('No active session for handoff');
+  });
+});
+
+describe('/export command', () => {
+  it('appears in catalog for workflow and summary screens', () => {
+    const commands = createCommands(makeCtx());
+    const command = commands.find((c) => c.name === '/export');
+    expect(command).toBeDefined();
+    expect(command?.validScreens).toEqual(['workflow', 'summary']);
+  });
+
+  it('exports the session and reports the output path', async () => {
+    let message: string | undefined;
+    const commands = createCommands(makeCtx({
+      exportSession: async () => ({ status: 'ok', path: '/proj/.diptych/sessions/s1/report.html' }),
+      setFeedbackMessage: (m) => { message = m; },
+    }));
+
+    await executeSlashCommand(commands, '/export', 'workflow', noop);
+
+    expect(message).toContain('/proj/.diptych/sessions/s1/report.html');
+  });
+
+  it('surfaces export errors from the context', async () => {
+    let error: string | undefined;
+    const commands = createCommands(makeCtx({
+      exportSession: async () => ({ status: 'error', error: 'No summary.json found for session' }),
+      setFeedbackError: (m) => { error = m; },
+    }));
+
+    await executeSlashCommand(commands, '/export', 'summary', noop);
+
+    expect(error).toContain('No summary.json found for session');
   });
 });
 

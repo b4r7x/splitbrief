@@ -4,6 +4,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { taskId as parseTaskId } from '../../core/schemas/task.js';
 import type { EventBus } from '../../engine/events/types.js';
 import type { QueueHandler } from '../../engine/orchestrator/types.js';
+import { sessionDir } from '../../core/paths.js';
 import { transitionAndSave } from '../../engine/orchestrator/state-ops.js';
 import { WORKFLOW_REWIND_ABORT_REASON } from '../../engine/orchestrator/run/run.js';
 import type { CommandContext } from '../../core/slash-commands/types.js';
@@ -13,6 +14,7 @@ import { writeHandoffPack } from '../../engine/handoff/write.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../../engine/snapshots/run.js';
 import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from '../../engine/orchestrator/approvals-store.js';
 import { performManualCompaction } from '../../engine/orchestrator/transcript-rebuild.js';
+import { writeSessionHtmlReport } from '../../engine/export/collect.js';
 
 export function createRpcCommandContext(opts: {
   projectDir: string;
@@ -124,6 +126,10 @@ export function createRpcCommandContext(opts: {
     compactTranscript: async () => {
       const sessionId = getSessionIdOrThrow();
       return performManualCompaction(opts.getConfig(), opts.projectDir, sessionId);
+    },
+    exportSession: async () => {
+      const sessionId = getSessionIdOrThrow();
+      return writeSessionHtmlReport(sessionDir(opts.projectDir, sessionId), sessionId);
     },
   };
 }

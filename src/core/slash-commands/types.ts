@@ -27,6 +27,10 @@ export type CompactTranscriptResult =
   | { status: 'unsupported'; plannerName: string }
   | { status: 'compacted'; summary: string; entriesRemoved: number };
 
+export type ExportSessionResult =
+  | { status: 'ok'; path: string }
+  | { status: 'error'; error: string };
+
 interface SlashCommandBase {
   name: string;
   aliases?: string[];
@@ -67,6 +71,7 @@ export interface CommandContext {
   acceptRunSnapshot: () => Promise<AcceptRunSnapshotResult>;
   rejectRunSnapshot: () => Promise<RejectRunSnapshotResult>;
   compactTranscript: () => Promise<CompactTranscriptResult>;
+  exportSession: () => Promise<ExportSessionResult>;
 }
 
 export interface CommandPaletteItem {
