@@ -37,7 +37,7 @@ diptych init
 
 **Variations:** `diptych init --reconfigure` overwrites an existing config. `diptych init --project ../other-repo` initializes a different project.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md), [docs/BOOTSTRAP.md](./BOOTSTRAP.md), [docs/API-KEYS.md](./API-KEYS.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/BOOTSTRAP.md](./BOOTSTRAP.md), [docs/API-KEYS.md](./API-KEYS.md).
 
 ---
 
@@ -208,7 +208,7 @@ Three events fire as spend grows: `budget_warning` at 80%, `budget_paused` at th
 
 **Variations:** `--budget 5.00` overrides the config field for one run. Omit `maxBudget` entirely to disable budget enforcement.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md) `workflow.maxBudget`, recipe 8.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) `workflow.maxBudget`, recipe 8.
 
 ---
 
@@ -251,7 +251,7 @@ The footer renders `local` instead of a dollar amount when the implementer is un
 
 **Variations:** Swap `lm-studio` for `ollama` (`apiBase: http://localhost:11434/v1`) for an Ollama backend. Use Sonnet or Opus on the planner via `kind: api, provider: anthropic, model: claude-sonnet-4-6`.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md) §planner / §implementer.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §planner / §implementer.
 
 ---
 
@@ -448,7 +448,7 @@ snapshot_created · phase=implementing taskIndex=1  (auto preTask)
 
 **Variations:** Set just `preTask: true` for the cheapest safety net. All triggers are off by default. Failures emit a `warning` event and don't abort the run.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md) §snapshots, [docs/WORKFLOW.md](./WORKFLOW.md) §Auto-snapshots.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §snapshots, [docs/WORKFLOW.md](./WORKFLOW.md) §Auto-snapshots.
 
 ---
 
@@ -494,7 +494,7 @@ Sticky grants persist to `.diptych/approvals.json`; revoke with `diptych approva
 
 **Variations:** Set every class to `auto` for legacy YOLO behavior; set everything to `confirm` for paranoid mode. `approval.headless: true` fails closed in CI when a `confirm` would have prompted.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md) §approval, recipes 15, 25.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval, recipes 15, 25.
 
 ---
 
@@ -565,7 +565,7 @@ phase: implementing
 
 **Variations:** `c <text>` triggers planner regeneration with the comment as feedback. The comment goes through `planner.regenerate(...)` exactly the same way `/revise-spec <text>` does.
 
-**See also:** [docs/SLASH-COMMANDS.md](./SLASH-COMMANDS.md) `/revise-spec`, recipe 17.
+**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) `/revise-spec`, recipe 17.
 
 ---
 
@@ -595,7 +595,7 @@ A non-empty comment regenerates; an empty comment skips back to the gate without
 
 **Variations:** Mid-run, `/revise-spec <text>` rewinds to the spec gate from any phase from `reviewing-spec` onward. `/revise-plan <text>` rewinds only the plan (spec preserved).
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.1, [docs/SLASH-COMMANDS.md](./SLASH-COMMANDS.md).
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.1, [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
 ---
 
@@ -634,7 +634,7 @@ Per-task editor lets you rewrite signature, implementationSteps, constraints, an
 
 **Variations:** The rich editor is opt-in because most briefs only need approve / comment. Set it as the default with `briefReview: rich` if you typically need to tweak.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md) `workflow.briefReview`.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) `workflow.briefReview`.
 
 ---
 
@@ -706,7 +706,7 @@ task_completed T003
 
 **Variations:** Redo is gated to `implementing`, `validating-task`, and `escalating` phases. The slash command takes the task ID; calling without one prints a usage error.
 
-**See also:** [docs/SLASH-COMMANDS.md](./SLASH-COMMANDS.md) `/redo-task`, [docs/WORKFLOW.md](./WORKFLOW.md) §1.1.
+**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) `/redo-task`, [docs/WORKFLOW.md](./WORKFLOW.md) §1.1.
 
 ---
 
@@ -884,7 +884,7 @@ The pack contains only the requested task, but the supporting spec / plan are st
 
 **Variations:** `--task T001,T003,T005` for a subset. Without `--task`, every task is included.
 
-**See also:** [docs/SLASH-COMMANDS.md](./SLASH-COMMANDS.md) `/handoff`.
+**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) `/handoff`.
 
 ---
 
@@ -1448,7 +1448,7 @@ Engine code never imports `@opentelemetry/*` directly — the sink (`src/engine/
 
 ### 42. Open the command palette
 
-**When:** you want to discover or quickly invoke any of the 21 slash commands from anywhere in the TUI.
+**When:** you want to discover or quickly invoke any of the slash commands from anywhere in the TUI.
 
 **Run:**
 
@@ -1474,7 +1474,7 @@ Start typing to fuzzy-filter the list. Press Enter on the highlighted entry to i
 - Commands whose `validScreens` excludes your current screen are hidden from the list.
 - `Ctrl+K` is handled by `src/hooks/use-app-keys.ts:82`.
 
-**See also:** [docs/SLASH-COMMANDS.md](./SLASH-COMMANDS.md).
+**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
 ---
 
@@ -1513,7 +1513,7 @@ Start typing to fuzzy-filter the list. Press Enter on the highlighted entry to i
 - Confirm-tier approvals are one-shot and are NOT persisted to `.diptych/approvals.json`.
 - Only `sticky`-tier grants are saved to `approvals.json`.
 
-**See also:** [docs/CONFIG.md](./CONFIG.md) §approval.tiers, recipe 14.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval.tiers, recipe 14.
 
 ---
 
@@ -1553,15 +1553,15 @@ plan_done · 3 tasks  ← T002 now avoids the rejected path
 
 **Variations:** Set `approval.feedRejectionsToPlanner: false` to keep rejections out of planner context (useful when you want to deny an action once without influencing the plan).
 
-**See also:** [docs/CONFIG.md](./CONFIG.md) §approval, [docs/SLASH-COMMANDS.md](./SLASH-COMMANDS.md) `/revise-plan`.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval, [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) `/revise-plan`.
 
 ---
 
 ## See also
 
 - [docs/WORKFLOW.md](./WORKFLOW.md) — phase machine, modes, abort/queue/continue.
-- [docs/CONFIG.md](./CONFIG.md) — every config field with type, default, description.
-- [docs/SLASH-COMMANDS.md](./SLASH-COMMANDS.md) — full reference for the 21 runtime slash commands.
+- [docs/CONFIGURATION.md](./CONFIGURATION.md) — every config field with type, default, description.
+- [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — full reference for the runtime slash commands.
 - [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — hook events, payloads, security model.
 - [docs/ARCHITECTURE.md](./ARCHITECTURE.md) — canonical inventory of CLI commands, runners, sinks, paths.
 - [docs/DEBUGGING.md](./DEBUGGING.md) — JSONL inspection, headless mode, OTel console exporter.

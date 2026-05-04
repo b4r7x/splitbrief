@@ -34,24 +34,26 @@ npm run test-ci                  # typecheck && lint && test
 
 Read the canonical doc **before** touching the matching area. Every link below exists.
 
-**Start here:** New? Read [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) → [docs/CONCEPTS.md](./docs/CONCEPTS.md) → [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+**Start here:** New? Read [docs/MENTAL-MODEL.md](./docs/MENTAL-MODEL.md) → [docs/HOW-IT-WORKS.md](./docs/HOW-IT-WORKS.md) → [docs/WORKFLOW.md](./docs/WORKFLOW.md).
 
 | When you're about to… | Read |
 |---|---|
-| I'm using diptych for the first time | [docs/GETTING-STARTED.md](./docs/GETTING-STARTED.md) — onboarding |
-| Understand product direction, UX goals, engineering decisions | [docs/DIRECTION.md](./docs/DIRECTION.md) — UX principles, testing architecture, ADRs |
-| Look up a feature | [docs/FEATURES.md](./docs/FEATURES.md) — full feature catalog |
-| Look up a CLI command | [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md) — full command reference |
-| Look up a slash command or keybinding | [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md) — all 21 |
-| Configure diptych | [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) — full config reference |
-| Run end-to-end scenarios / find a recipe | [docs/USAGE-EXAMPLES.md](./docs/USAGE-EXAMPLES.md) — 50+ recipes |
+| Understand what diptych is | [docs/MENTAL-MODEL.md](./docs/MENTAL-MODEL.md) — the concept, no code |
+| Understand how it works end-to-end | [docs/HOW-IT-WORKS.md](./docs/HOW-IT-WORKS.md) — data flow with file paths |
+| Understand the workflow state machine | [docs/WORKFLOW.md](./docs/WORKFLOW.md) — phases, transitions, modes |
+| Understand the orchestrator and EventBus | [docs/ENGINE.md](./docs/ENGINE.md) — orchestrator, sinks, callbacks vs events |
+| Understand planner/implementer pipeline | [docs/PLANNERS-AND-IMPLEMENTERS.md](./docs/PLANNERS-AND-IMPLEMENTERS.md) — runner kinds, Task Brief, token accounting |
+| Understand stores and UI | [docs/STORES-AND-UI.md](./docs/STORES-AND-UI.md) — store factory, screens, overlays |
+| Understand approval gates and recovery | [docs/APPROVAL-AND-RECOVERY.md](./docs/APPROVAL-AND-RECOVERY.md) — tiered approval, escalation, drift |
+| Understand supporting subsystems | [docs/SUBSYSTEMS.md](./docs/SUBSYSTEMS.md) — hooks, snapshots, IPC, repo-map, handoff, MCP |
+| Add a command, event, store, or backend | [docs/EXTENDING.md](./docs/EXTENDING.md) — step-by-step recipes |
+| Get diptych running for the first time | [docs/GETTING-STARTED.md](./docs/GETTING-STARTED.md) — onboarding |
+| Look up a CLI command | [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md) — command reference |
+| Look up a slash command | [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md) — runtime commands |
+| Configure diptych | [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) — config reference |
+| Run end-to-end scenarios / find a recipe | [docs/USAGE-EXAMPLES.md](./docs/USAGE-EXAMPLES.md) — recipes |
 | Hit a problem | [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) — symptoms & fixes |
-| Start reading the docs | [docs/README.md](./docs/README.md) — index + reading order |
-| Orient yourself in the codebase | [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) — one-page rule index |
-| Understand the system end-to-end | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — planner/implementer contracts, orchestrator loop, event model |
-| See current architecture inventory (file counts, events, commands) | [docs/ARCHITECTURE.md#part-2--current-state-the-what](./docs/ARCHITECTURE.md#part-2--current-state-the-what) |
-| Look up shared vocabulary | [docs/CONCEPTS.md](./docs/CONCEPTS.md) |
-| Add or move any file | [docs/STRUCTURE.md](./docs/STRUCTURE.md) — file tree, feature anatomy, length thresholds |
+| Add or move any file | [docs/STRUCTURE.md](./docs/STRUCTURE.md) — file tree, feature anatomy |
 | Decide `utils/` vs `lib/` vs `core/` vs `engine/` vs `features/` | [docs/LAYERS.md](./docs/LAYERS.md) |
 | Touch anything under `src/stores/` | [docs/STORES.md](./docs/STORES.md) |
 | Add or move a type | [docs/TYPES.md](./docs/TYPES.md) |
@@ -61,16 +63,15 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Create a new error type | [docs/ERRORS.md](./docs/ERRORS.md) |
 | Place a test | [docs/TESTING.md](./docs/TESTING.md) |
 | Enforce a cross-cutting rule | [docs/INVARIANTS.md](./docs/INVARIANTS.md) — pre-merge grep gates |
-| Understand end-user modes | [docs/WORKFLOW.md](./docs/WORKFLOW.md) |
+| Orient yourself in the codebase | [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) — one-page rule index |
 | Check strategic direction | [docs/VISION.md](./docs/VISION.md), [docs/FUTURE.md](./docs/FUTURE.md) |
 | Contribute to this project | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 | Work with API keys | [docs/API-KEYS.md](./docs/API-KEYS.md) |
 | Debug a failing workflow | [docs/DEBUGGING.md](./docs/DEBUGGING.md) |
-| Work with workflow hooks (user-declared commands) | [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md) |
+| Work with workflow hooks | [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md) |
 | Enable OpenTelemetry | [docs/OTEL.md](./docs/OTEL.md) |
 | Tune the planner repo-map | [docs/REPOMAP.md](./docs/REPOMAP.md) |
-| Review architectural rationale | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) §Design decisions, [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md) §Design decisions, [docs/REPOMAP.md](./docs/REPOMAP.md) §Design decisions, [docs/OTEL.md](./docs/OTEL.md) §Design decisions |
-| Look up release history & amendments | [CHANGELOG.md](./CHANGELOG.md) — canonical; [docs/CHANGELOG.md](./docs/CHANGELOG.md) — supplementary narrative |
+| Look up release history | [CHANGELOG.md](./CHANGELOG.md) |
 
 Reference also: `.specify/memory/constitution.md` — 6 constitutional principles (v1.3.1, linked from VISION).
 

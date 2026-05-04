@@ -2,7 +2,7 @@
 
 Complete reference for `.diptych/config.yaml` — the single declarative file that wires diptych to your planner, implementer, validation tools, workflow gates, hooks, snapshots, and observability.
 
-This document is a comprehensive, field-by-field reference. For end-user mode semantics see [WORKFLOW.md](./WORKFLOW.md); for hook plumbing see [HOOKS-CONFIG.md](./HOOKS-CONFIG.md); for repo-map tuning see [REPOMAP.md](./REPOMAP.md); for OpenTelemetry export see [OTEL.md](./OTEL.md). For a one-screen lookup table see [CONFIG.md](./CONFIG.md) — this document supersedes and extends it with worked examples and "when to use" guidance.
+This document is a comprehensive, field-by-field reference. For end-user mode semantics see [WORKFLOW.md](./WORKFLOW.md); for hook plumbing see [HOOKS-CONFIG.md](./HOOKS-CONFIG.md); for repo-map tuning see [REPOMAP.md](./REPOMAP.md); for OpenTelemetry export see [OTEL.md](./OTEL.md). For a one-screen lookup table see [CONFIGURATION.md](./CONFIGURATION.md) — this document supersedes and extends it with worked examples and "when to use" guidance.
 
 ---
 
@@ -515,7 +515,7 @@ workflow:
 - `briefReview: rich` — when you want to edit the brief in-place before implementation; otherwise stick with `simple` for speed.
 - `persistTranscript: true` — keep this enabled if you want resume reconstruction and manual transcript compaction. `/compact-transcript` appends a summary entry and keeps recent turns verbatim; it does not delete old log lines.
 
-**See also:** [WORKFLOW.md](./WORKFLOW.md), [SLASH-COMMANDS.md](./SLASH-COMMANDS.md) (`/mode`, `/approve` runtime overrides).
+**See also:** [WORKFLOW.md](./WORKFLOW.md), [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) (`/mode`, `/approve` runtime overrides).
 
 ---
 
@@ -858,7 +858,7 @@ palette:
 
 **When to use:** surfacing project-specific runbook actions inside diptych's TUI without leaving the session.
 
-**See also:** [SLASH-COMMANDS.md](./SLASH-COMMANDS.md).
+**See also:** [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
 ---
 
@@ -1143,7 +1143,7 @@ diptych start --allow-hooks "your feature description"
 - [REPOMAP.md](./REPOMAP.md) — `codebase.*` semantics, PageRank, cache
 - [OTEL.md](./OTEL.md) — span hierarchy, exporter setup
 - [API-KEYS.md](./API-KEYS.md) — secret handling and redaction
-- [SLASH-COMMANDS.md](./SLASH-COMMANDS.md) — runtime overrides and palette commands
+- [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — runtime overrides and palette commands
 - [DEBUGGING.md](./DEBUGGING.md) — diagnosing config load failures
 - [ERRORS.md](./ERRORS.md) — `ConfigError` shape and exit codes
-- [CONFIG.md](./CONFIG.md) — quick lookup table (this doc supersedes with examples)
+- [CONFIGURATION.md](./CONFIGURATION.md) — quick lookup table (this doc supersedes with examples)

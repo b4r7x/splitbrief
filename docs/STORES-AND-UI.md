@@ -1,0 +1,227 @@
+# Stores and UI
+
+How state flows from the engine to the screen. Read this before adding a store, a feature, or an overlay. Prerequisites: [MENTAL-MODEL.md](./MENTAL-MODEL.md) for concepts, [ENGINE.md](./ENGINE.md) for how the EventBus delivers events, [HOW-IT-WORKS.md](./HOW-IT-WORKS.md) for the full flow.
+
+---
+
+## The store factory
+
+`src/stores/create-store.ts` creates a store from an initial value or factory function. Each store exposes five methods:
+
+- `get()` -- synchronous read. Used by engine code and actions.
+- `set(updater)` -- replace state or pass a function `(prev) => next`. Skips notification when the new value is reference-equal (`Object.is`) to the old one, so updaters must return new objects to trigger subscribers.
+- `subscribe(listener)` -- register a callback, returns an unsubscribe function.
+- `use(selector)` -- React hook. Wraps `useSyncExternalStore`. Caches the selected value per render -- if the store state reference and selector function haven't changed, it returns the cached result without re-running the selector.
+- `reset()` -- restore to initial state.
+
+Stores are module-scoped singletons. Import the store, call its methods. No providers, no prop drilling.
+
+`storeBase(store)` strips `set` from the public surface, exposing only `use`, `get`, `subscribe`, `reset`. The `set` method is kept in a private `_nameInternal` export so only the store's own actions file can write to it.
+
+**What the codebase does not use:** No React Context for state (only a static `ThemeContext` for colors). No `useMemo`, `useCallback`, `React.memo`, `forwardRef`, `useImperativeHandle`. The store pattern makes them unnecessary.
+
+---
+
+## Engine to UI -- the event path
+
+```mermaid
+flowchart LR
+  Engine["Engine (EventBus)"]
+  Sink["tuiSink (addEvent)"]
+  Events["eventsStore"]
+  Tasks["tasksStore"]
+  Tokens["tokensStore"]
+  Lifecycle["lifecycleStore"]
+  React["React components"]
+
+  Engine -->|"publish(event)"| Sink
+  Sink --> Events
+  Sink --> Tasks
+  Sink --> Tokens
+  Sink --> Lifecycle
+  Events -->|"store.use(selector)"| React
+  Tasks -->|"store.use(selector)"| React
+  Tokens -->|"store.use(selector)"| React
+  Lifecycle -->|"store.use(selector)"| React
+```
+
+The engine publishes events through the EventBus. `createTuiSink()` in `src/features/workflow/tui-sink.ts` returns `addEvent` -- a function in `src/stores/workflow/actions.ts` that dispatches each event synchronously to four sub-stores in a fixed order: events, tasks, tokens, lifecycle. React 19 + Ink batch these synchronous updates into one commit, so subscribers see a consistent snapshot.
+
+This is the only path from engine to UI. Components never import engine modules directly.
+
+When the workflow needs a human decision -- approve a spec, answer a question, confirm a cost -- it uses a separate mechanism: the engine awaits a promise, and the UI resolves it when the user acts. These blocking callbacks are distinct from the fire-and-forget event path. The approval stores (`src/stores/approval-prompt/`, `src/stores/cost-approval/`) and the `useInputMode` hook manage this.
+
+---
+
+## Store groups
+
+### Workflow -- `src/stores/workflow/`
+
+Runtime state of the active workflow run.
+
+- **eventsStore** -- the event log. Array of `EngineEvent` objects, merged and capped.
+- **lifecycleStore** -- current phase (`researching`, `reviewing-spec`, `implementing`, etc.), cancellation flag, message queue depth.
+- **tasksStore** -- task map, ordered task list, current/total counts, completion times.
+- **tokensStore** -- token usage, cost, pricing context, per-phase breakdowns.
+- **planEditorStore** -- rich brief editor state (flags, cursor, runtime mode toggle).
+- **conversationScrollStore** -- scroll offset for the conversation view.
+- **abortStore** -- pending abort signal.
+- **streamingOutputStore** -- live implementer output lines.
+- **reviewStore** -- which file is under review.
+- **attachmentsStore** -- files attached to the next user message.
+
+### Navigation -- `src/stores/navigation/`
+
+- **routerStore** -- current screen (`home` | `workflow` | `summary` | `setup`) plus screen-specific data (feature name, resume state, summary). Validates transitions against a fixed map -- you can't navigate from `home` to `summary` directly.
+
+### UI -- `src/stores/ui/`
+
+- **overlayStore** -- active overlay type, overlay stack, exclusive flag.
+- **feedbackStore** -- user-facing messages with 3-second auto-clear.
+- **controlsStore** -- sidebar visibility, input mode echo.
+- **terminalSizeStore** -- reactive terminal cols/rows, subscribes to resize events.
+- **inputHeightStore** -- current input bar height in rows.
+- **inputHistoryStore** -- command history with disk persistence.
+- **paletteMruStore** -- most-recently-used entries for the command palette.
+
+### Project -- `src/stores/project/`
+
+- **configStore** -- loaded `Config` object, project directory, CLI overrides, disk persistence.
+- **skillsStore** -- available and selected planner skills.
+- **detectionStore** -- detected tool availability (git, npm, language runtimes).
+- **sessionsStore** -- past session metadata.
+
+### Discovery -- `src/stores/discovery/`
+
+- **modelCacheStore** -- provider model lists with TTL-based expiry.
+
+### Approval -- `src/stores/approval-prompt/`, `src/stores/cost-approval/`
+
+Promise-based gates. `openApprovalPrompt(request)` returns a promise. The store holds the pending request and its `resolve` function. The UI renders the prompt, the user acts, the component calls `closeApprovalPrompt(response)`, and the promise resolves. The engine continues.
+
+---
+
+## The multi-store hook
+
+`useStores()` from `src/stores/use-stores.ts` subscribes to multiple stores in one call. It returns proxied state objects that track which properties each component actually reads. On the next store update, it compares only the accessed properties -- if none changed, the component skips re-rendering.
+
+```ts
+const [router, overlay] = useStores(routerStore, overlayStore);
+// Only re-renders when router.screen or overlay.active changes
+// (assuming those are the only properties read in JSX)
+```
+
+Use `store.use(selector)` when reading one store. Use `useStores()` when reading two or more in the same component.
+
+---
+
+## Screens
+
+`src/app.tsx` reads `routerStore.screen` and renders the matching screen:
+
+| Screen | Component | Location |
+|---|---|---|
+| `home` | `HomeScreen` | `src/features/home/screen.tsx` |
+| `workflow` | `WorkflowScreen` | `src/features/workflow/screen.tsx` |
+| `summary` | `SummaryScreen` | `src/features/summary/screen.tsx` |
+| `setup` | `SetupScreen` | `src/features/setup/screen.tsx` |
+
+Features are vertical slices. Each `src/features/<name>/` owns its screen (or overlay/picker), local components in `components/`, local hooks in `hooks/`. Features never import from each other. Shared code lives in `src/components/`, `src/hooks/`, `src/utils/`.
+
+---
+
+## WorkflowScreen
+
+The main screen during execution. Key hooks:
+
+- **`useWorkflowRunner()`** -- starts the engine via `runWorkflow()`. Creates the EventBus, wires `tuiSink`, manages the run lifecycle. Returns `startedAt` and `handleResume`.
+- **`useInputMode()`** -- manages three input modes: `normal` (typing), `review` (approve/reject), `question` (answering planner). `setReviewMode()` and `setQuestionMode()` return promises -- the engine blocks until the user acts, then the promise resolves.
+- **`useWorkflowKeys()`** -- keyboard shortcuts (Ctrl-C abort, Ctrl-D detach, arrow navigation).
+- **`useIpcClient()`** -- connects to a running workflow via Unix socket for attach mode.
+
+Key components: `Header`, `ConfigLine`, `AgentStatusRow`, `CostStatusLine`, `ConversationFlow` (event cards), `Sidebar`, `InputBar`, `InputFooter`, `ApprovalPrompt`, `CostApprovalPromptConnected`.
+
+---
+
+## Overlays
+
+`overlayStore` manages a stack. Opening an overlay pushes the current one onto the stack. `Esc` pops. When an overlay is active, `Layout` (`src/layout.tsx`) hides the screen and renders the overlay in its place.
+
+Overlay types: `help`, `command-palette`, `skills`, `settings`, `mode-selector`, `planner-picker`, `implementer-picker`, `sessions`, `cost-drilldown`, `plan-editor-help`.
+
+Each type maps to a component in `renderOverlay()` in `src/app.tsx`.
+
+---
+
+## Adding a new store
+
+1. Create `src/stores/<group>/<name>.ts`.
+2. Call `createStore(initialState)`.
+3. Export the public API via `storeBase(store)` -- this gives consumers `use`, `get`, `subscribe`, `reset`.
+4. Export `_nameInternal = { set: store.set }` for the actions file that needs write access.
+5. If the store reads disk on startup: add an init call in `src/cli/init-stores.ts`.
+6. Reset in tests: `beforeEach(() => store.reset())`.
+
+---
+
+## Key store shapes
+
+State types from the source files. Use `store.use(selector)` in React, `store.get()` in engine code.
+
+```ts
+// src/stores/workflow/lifecycle.ts
+interface LifecycleState {
+  phase: Phase;          // 'idle' | 'researching' | 'implementing' | ...
+  cancelled: boolean;
+  queueDepth: number;    // pending user messages
+}
+
+// src/stores/workflow/tasks.ts
+interface TasksState {
+  currentTask: number;
+  totalTasks: number;
+  tasks: WorkflowTask[];               // ordered list
+  taskMap: Map<string, WorkflowTask>;   // id → task
+  taskCompletionTimes: number[];
+}
+interface WorkflowTask { id: string; title: string; status: TaskStatus }
+
+// src/stores/workflow/tokens.ts
+interface TokensState {
+  tokenUsage: TokenUsage | null;
+  perPhase: Record<string, PhaseTokens>;
+  perTask: Record<string, PerTaskTokens>;
+  localCount: number;       // tasks completed by primary implementer
+  escalatedCount: number;   // tasks completed via escalation
+  completedTaskCount: number;
+  prediction: CostPrediction | null;
+  pricingContext: { plannerTool: string; implementerTool: string;
+    plannerModel?: string; implementerModel?: string } | null;
+}
+
+// src/stores/project/config.ts
+interface ConfigState {
+  config: Config | null;   // full resolved config (disk + CLI overrides)
+  projectDir: string;
+  overrides: CLIOverrides;
+}
+
+// src/stores/navigation/router.ts
+type RouteData =
+  | { screen: 'home' }
+  | { screen: 'workflow'; feature: string; resumeState?: WorkflowState;
+      sessionId?: string; attach?: WorkflowAttach }
+  | { screen: 'summary'; summary: Summary; sessionId?: string }
+  | { screen: 'setup'; onComplete?: 'home' | 'workflow'; feature?: string };
+```
+
+---
+
+## Adding a new feature
+
+1. Create `src/features/<name>/screen.tsx` (or `overlay.tsx` / `picker.tsx`).
+2. Wire it in `src/app.tsx` -- add to `renderScreen()` or `renderOverlay()`.
+3. If it's a new screen: add the route to the `Screen` type and the `transitions` map in `src/stores/navigation/router.ts`.
+4. Feature-local components: `src/features/<name>/components/`.
+5. Feature-local hooks: `src/features/<name>/hooks/`.
+6. When something is used by two or more features, move it to `src/components/` or `src/hooks/`.

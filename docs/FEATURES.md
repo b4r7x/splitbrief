@@ -672,7 +672,7 @@ diptych continue 2
 
 ## TUI features
 
-### Slash commands palette (24 commands)
+### Slash commands palette
 
 **What it does.** Every runtime command is a slash command. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match.
 
