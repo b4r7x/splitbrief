@@ -11,6 +11,7 @@ import { runWorkflow } from '../engine/orchestrator/run/run.js';
 import { modelCacheStore } from '../stores/discovery/model-cache.js';
 import { attachmentsStore } from '../stores/workflow/attachments.js';
 import { cliError } from './errors.js';
+import { buildCLIOverrides } from './build-overrides.js';
 import type { CollectedReadiness } from '../core/readiness/collect.js';
 
 function buildNoopSinks() {
@@ -57,20 +58,8 @@ export async function runHeadless(
   for (const w of warnings) warnStderr(`⚠ ${w}`);
 
   const config = applyCLIOverrides(loaded, {
-    planner: {
-      tool: opts.planner,
-      model: opts.plannerModel,
-      command: opts.plannerCommand,
-    },
-    implementer: {
-      tool: opts.implementer ?? opts.provider,
-      model: opts.implementerModel ?? opts.model,
-      command: opts.implementerCommand,
-    },
+    ...buildCLIOverrides(opts),
     autoApprove: opts.auto !== undefined ? opts.auto : true,
-    mode: opts.mode,
-    budget: opts.budget,
-    yolo: opts.yolo,
   });
 
   if (!config) throw cliError('Failed to load config');

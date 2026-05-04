@@ -25,10 +25,12 @@ import { initStores } from '../init-stores.js';
 
 const spawnServerMock = vi.fn<(opts: SpawnServerOptions) => Promise<{ ok: true; pid: number; sessionId: string }>>();
 const runHeadlessMock = vi.fn<() => Promise<void>>();
+const runRpcMock = vi.fn<() => Promise<void>>();
 
 const fakeDeps: StartDeps = {
   spawnServer: spawnServerMock,
   runHeadless: runHeadlessMock as unknown as StartDeps['runHeadless'],
+  runRpc: runRpcMock as unknown as StartDeps['runRpc'],
 };
 
 let tmp: string;
@@ -41,6 +43,7 @@ beforeEach(() => {
   vi.mocked(initStores).mockClear();
   spawnServerMock.mockClear();
   runHeadlessMock.mockClear();
+  runRpcMock.mockClear();
   spawnServerMock.mockImplementation(async (opts: SpawnServerOptions) => {
     mkdirSync(opts.sessionDir, { recursive: true });
     writeFileSync(
@@ -57,6 +60,7 @@ beforeEach(() => {
     return { ok: true, pid: 1234, sessionId: opts.sessionId };
   });
   runHeadlessMock.mockResolvedValue(undefined);
+  runRpcMock.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -415,6 +419,51 @@ describe('start command — readiness', () => {
     };
     expect(firstLine.report?.status).toBe('blocked');
     expect(firstLine.report?.sections?.flatMap(section => section.checks.map(check => check.id))).toContain('repo.active-session-live');
+  });
+
+  it('emits readiness before RPC workflow execution and persists compact session evidence', async () => {
+    writeReadyReadinessFixtures(tmp);
+    const stdoutChunks: string[] = [];
+    let writesBeforeWorkflow = 0;
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      stdoutChunks.push(String(chunk));
+      return true;
+    });
+    runRpcMock.mockImplementation(async () => {
+      writesBeforeWorkflow = stdoutChunks.length;
+    });
+
+    await runStart(['--project', tmp, '--rpc', 'implement X']);
+
+    expect(writesBeforeWorkflow).toBeGreaterThan(0);
+    const firstLine = JSON.parse(stdoutChunks[0]?.trim() ?? '{}') as {
+      type?: string;
+      data?: { type?: string; report?: { status?: string } };
+    };
+    expect(firstLine.type).toBe('status');
+    expect(firstLine.data?.type).toBe('readiness_report');
+    expect(firstLine.data?.report?.status).toBe('ready');
+
+    const readinessRecord = readOnlySessionArtifact(tmp, 'readiness.json') as {
+      type?: string;
+      status?: string;
+    };
+    expect(readinessRecord.type).toBe('start-readiness');
+    expect(readinessRecord.status).toBe('ready');
+  });
+
+  it('rejects --json and --rpc together before workflow execution', async () => {
+    let captured: unknown;
+    try {
+      await runStart(['--project', tmp, '--json', '--rpc', 'implement X']);
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    expect((captured as Error).message).toContain('--json and --rpc cannot be combined');
+    expect(runHeadlessMock).not.toHaveBeenCalled();
+    expect(runRpcMock).not.toHaveBeenCalled();
   });
 });
 

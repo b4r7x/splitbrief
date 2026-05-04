@@ -14,6 +14,8 @@ import { sessionError } from '../../core/sessions/errors.js';
 import { maybeMigrate } from '../../core/migration/executor.js';
 import { printMigrationResult } from './migrate.js';
 import { runHeadless } from '../headless.js';
+import { runRpc } from '../rpc/run.js';
+import { createResponseWriter } from '../rpc/writer.js';
 import { parseAtFiles } from '../parse-at-files.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { cliError } from '../errors.js';
@@ -33,16 +35,17 @@ import {
   readinessBlockerMessage,
 } from '../../core/readiness/format.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
-import type { CLIOverrides } from '../../core/config/runtime/overrides.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { SpawnServerOptions, SpawnServerResult } from '../../engine/ipc/spawn-server.js';
+import { buildCLIOverrides } from '../build-overrides.js';
 
 export interface StartDeps {
   spawnServer: (opts: SpawnServerOptions) => Promise<SpawnServerResult>;
   runHeadless: typeof runHeadless;
+  runRpc: typeof runRpc;
 }
 
-const defaultStartDeps: StartDeps = { spawnServer, runHeadless };
+const defaultStartDeps: StartDeps = { spawnServer, runHeadless, runRpc };
 
 async function applyWorktreeOption(feature: string | undefined, opts: WorkflowOpts): Promise<void> {
   if (opts.worktree === undefined) return;
@@ -68,27 +71,6 @@ function persistStartReadiness(projectDir: string, sessionId: string, report: Re
     join(sessionDir(projectDir, sessionId), READINESS_FILE),
     JSON.stringify(record, null, 2) + '\n',
   );
-}
-
-function buildCLIOverrides(opts: WorkflowOpts, mode: WorkflowOpts['mode']): CLIOverrides {
-  return {
-    planner: {
-      tool: opts.planner,
-      model: opts.plannerModel,
-      command: opts.plannerCommand,
-    },
-    implementer: {
-      tool: opts.implementer ?? opts.provider,
-      model: opts.implementerModel ?? opts.model,
-      command: opts.implementerCommand,
-    },
-    autoApprove: opts.auto,
-    approve: opts.approve,
-    mode,
-    budget: opts.budget,
-    plannerEffort: opts.plannerEffort,
-    yolo: opts.yolo,
-  };
 }
 
 function assertReadinessCanStart(report: ReadinessReport, json: boolean | undefined): void {
@@ -126,7 +108,10 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       assertNotWindows();
       if (!feature) throw cliError('--detach requires a feature argument');
       if (opts.json) throw cliError('--detach and --json cannot be combined');
+      if (opts.rpc) throw cliError('--detach and --rpc cannot be combined');
     }
+    if (opts.json && opts.rpc) throw cliError('--json and --rpc cannot be combined');
+    if (opts.rpc && !feature) throw cliError('--rpc requires a feature argument');
 
     await applyWorktreeOption(feature, opts);
 
@@ -160,7 +145,7 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       ensureSessionDir(projectDir, sessId);
       persistStartReadiness(projectDir, sessId, readiness.report);
 
-      const overrides = buildCLIOverrides(opts, mode);
+      const overrides = { ...buildCLIOverrides(opts), mode };
 
       const result = await deps.spawnServer({
         sessionDir: sessDir,
@@ -184,7 +169,7 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
 
     const projectDir = resolveProjectDir(opts.project);
     const migration = await maybeMigrate(projectDir);
-    if (!opts.json) printMigrationResult(migration);
+    if (!opts.json && !opts.rpc) printMigrationResult(migration);
 
     if (opts.json) {
       if (!feature) throw cliError('--json requires a feature argument');
@@ -196,6 +181,19 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       const sessionId = beginSession(projectDir, feature);
       persistStartReadiness(projectDir, sessionId, readiness.report);
       await deps.runHeadless(plannerFeature ?? feature, projectDir, opts, undefined, sessionId, readiness);
+      return;
+    }
+
+    if (opts.rpc) {
+      if (!feature) throw cliError('--rpc requires a feature argument');
+      await ensureGitAndConfig(projectDir);
+      const readiness = await collectReadiness({ projectDir, opts });
+      createResponseWriter(process.stdout).status({ type: 'readiness_report', report: readiness.report });
+      assertReadinessCanStart(readiness.report, true);
+      clearStaleSessionForCli(projectDir);
+      const sessionId = beginSession(projectDir, feature);
+      persistStartReadiness(projectDir, sessionId, readiness.report);
+      await deps.runRpc(plannerFeature ?? feature, projectDir, opts, undefined, sessionId, readiness);
       return;
     }
 

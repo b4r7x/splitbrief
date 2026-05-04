@@ -74,6 +74,7 @@ vi.mock('../../app.js', () => ({ App: () => null }));
 vi.mock('../render.js', () => ({ renderApp: vi.fn() }));
 vi.mock('../init-stores.js', () => ({ initStores: vi.fn() }));
 vi.mock('../headless.js', () => ({ runHeadless: vi.fn() }));
+vi.mock('../rpc/run.js', () => ({ runRpc: vi.fn() }));
 vi.mock('../../engine/ipc/crash-diagnostic.js', () => ({
   showCrashDiagnostic: vi.fn(),
 }));
@@ -113,6 +114,34 @@ describe('continueCommand', () => {
     await expect(
       continueCommand('2025-04-01-done', { projectDir } as never),
     ).rejects.toThrow(/cannot be resumed/);
+  });
+
+  it('routes interrupted sessions to RPC mode when --rpc is passed', async () => {
+    const { continueCommand } = await import('./continue.js');
+    const { runRpc } = await import('../rpc/run.js');
+    const projectDir = makeTmpProject();
+    const sessDir = makeSessionDir(projectDir, '2025-04-01-rpc');
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-rpc' });
+    writeState(sessDir, 'implementing');
+
+    await continueCommand('2025-04-01-rpc', { projectDir, rpc: true } as never);
+
+    expect(runRpc).toHaveBeenCalledWith(
+      'test-feature',
+      projectDir,
+      expect.objectContaining({ rpc: true, projectDir }),
+      expect.objectContaining({ feature: 'test-feature', phase: 'implementing' }),
+      '2025-04-01-rpc',
+    );
+  });
+
+  it('rejects --json and --rpc together', async () => {
+    const { continueCommand } = await import('./continue.js');
+    const projectDir = makeTmpProject();
+
+    await expect(
+      continueCommand(undefined, { projectDir, json: true, rpc: true } as never),
+    ).rejects.toThrow(/--json and --rpc cannot be combined/);
   });
 
   it('resolveSessionInput returns undefined for undefined input', async () => {
