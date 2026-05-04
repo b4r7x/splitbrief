@@ -90,12 +90,12 @@ function selectedProfileFromDecision(
   return profiles.find(profile => profile.name === decision.selectedProfile);
 }
 
-function createTaskImplementer(opts: {
+async function createTaskImplementer(opts: {
   wctx: WorkflowContext;
   profile: ResolvedImplementerProfile;
   taskConfig: WorkflowContext['config'];
   singleImplementerMode: boolean;
-}): Implementer {
+}): Promise<Implementer> {
   if (opts.singleImplementerMode && opts.profile.isDefault) return opts.wctx.implementer;
   const factory = opts.wctx.createImplementer ?? createImplementer;
   return factory(opts.taskConfig, { publisher: createImplementerPublisher(opts.wctx.bus) });
@@ -328,7 +328,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       label: `pre-task-${i}`,
     });
 
-    const taskImplementer = createTaskImplementer({
+    const taskImplementer = await createTaskImplementer({
       wctx,
       profile: selectedProfile,
       taskConfig: selectedTaskConfig,

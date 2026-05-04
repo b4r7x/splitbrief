@@ -13,12 +13,12 @@ function makeConfig(extra?: Partial<Config['implementer']>): Config {
 const context = { ...defaultContext, dir: '/tmp', runtime: 'node' };
 
 async function implementTask(task: ReturnType<typeof makeTask>, opts: { projectDir: string; config: Config; context: typeof defaultContext; onOutput: (text: string) => void }) {
-  const implementer = createImplementer(opts.config);
+  const implementer = await createImplementer(opts.config);
   return implementer.implement({ ...opts, task });
 }
 
 async function retryTask(task: ReturnType<typeof makeTask>, opts: { projectDir: string; config: Config; context: typeof defaultContext; error: string; attempt: number; onOutput: (text: string) => void }) {
-  const implementer = createImplementer(opts.config);
+  const implementer = await createImplementer(opts.config);
   return implementer.retry({ ...opts, task, kind: 'local' });
 }
 
