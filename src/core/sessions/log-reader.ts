@@ -61,7 +61,7 @@ export async function readCompactedMessages(dir: string): Promise<SessionLogMess
   ];
 }
 
-function findLatestSummary(entries: SessionLogEntry[]): SessionLogSummaryEntry | null {
+export function findLatestSummary(entries: SessionLogEntry[]): SessionLogSummaryEntry | null {
   let latest: SessionLogSummaryEntry | null = null;
   for (const entry of entries) {
     if (entry.kind === 'summary') latest = entry;
@@ -74,11 +74,11 @@ function summaryAsMessage(summary: SessionLogSummaryEntry): SessionLogMessageEnt
     kind: 'message',
     ts: summary.ts,
     role: 'user',
-    text: summary.text,
+    text: summary.structured ? JSON.stringify(summary.structured) : summary.text,
   };
 }
 
-function isAfterTimestamp(timestamp: string, boundary: string): boolean {
+export function isAfterTimestamp(timestamp: string, boundary: string): boolean {
   const left = timestampValue(timestamp);
   const right = timestampValue(boundary);
   if (left !== null && right !== null) return left > right;

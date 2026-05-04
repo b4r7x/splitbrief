@@ -40,6 +40,32 @@ describe('ConfigSchema approval extension', () => {
   });
 });
 
+describe('ConfigSchema compaction extension', () => {
+  it('defaults compactionFormat to auto', () => {
+    const result = ConfigSchema.parse({
+      ...validConfig,
+      workflow: {
+        ...validConfig.workflow,
+        compactionFormat: undefined,
+      },
+    });
+
+    expect(result.workflow.compactionFormat).toBe('auto');
+  });
+
+  it('rejects invalid compactionFormat values', () => {
+    expect(() =>
+      ConfigSchema.parse({
+        ...validConfig,
+        workflow: {
+          ...validConfig.workflow,
+          compactionFormat: 'invalid',
+        },
+      })
+    ).toThrow();
+  });
+});
+
 describe('ConfigSchema implementer profiles extension', () => {
   it('parses named implementer profiles with metadata', () => {
     const result = ConfigSchema.parse({
@@ -123,4 +149,3 @@ describe('ConfigSchema implementer profiles extension', () => {
     ).toThrow(/Define at least one implementer profile/);
   });
 });
-

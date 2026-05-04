@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { PhaseSchema } from './enums.js';
 import { TaskIdSchema } from './task.js';
+import { StructuredSummarySchema } from './compaction.js';
 
 const SessionLogTimestampSchema = z.union([
   z.string(),
@@ -35,6 +36,7 @@ export const SessionLogSummaryEntrySchema = z.object({
   text: z.string(),
   summarizedUpTo: SessionLogTimestampSchema,
   tokenEstimate: z.number().optional(),
+  structured: StructuredSummarySchema.optional(),
 });
 export type SessionLogSummaryEntry = z.infer<typeof SessionLogSummaryEntrySchema>;
 

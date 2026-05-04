@@ -48,6 +48,14 @@ describe('matchesFilter', () => {
     const def = SETTINGS_DEFS.find(d => d.id === 'workflow.mode')!;
     expect(matchesFilter(def, 'workflow')).toBe(true);
   });
+
+  it('includes compaction format in workflow settings', () => {
+    const def = SETTINGS_DEFS.find(d => d.id === 'workflow.compactionFormat');
+    expect(def).toMatchObject({
+      kind: 'enum',
+      options: ['auto', 'freeform', 'structured'],
+    });
+  });
 });
 
 describe('validateNumber', () => {

@@ -40,6 +40,7 @@ export function createDefaultConfig(): Config {
       commitStrategy: 'none',
       git: { commitStrategy: 'none' },
       persistTranscript: true,
+      compactionFormat: 'auto',
       mode: 'standard',
       taskReview: 'none',
     },

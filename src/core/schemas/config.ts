@@ -5,6 +5,7 @@ import { ImplementerConfigSchema, ImplementerProfilesConfigSchema } from './impl
 import { CodebaseConfigSchema } from './codebase.js';
 import { HooksConfigSchema } from './hooks.js';
 import { OtelConfigSchema } from './otel.js';
+import { CompactionFormatSchema } from './compaction.js';
 
 const PaletteCustomActionSchema = z.object({
   id: z.string().min(1),
@@ -108,6 +109,7 @@ export const ConfigSchema = z.object({
     costGate: z.boolean().optional(),
     persistTranscript: z.boolean().default(true),
     compactionThreshold: z.number().int().min(10).optional(),
+    compactionFormat: CompactionFormatSchema.default('auto'),
   }),
   theme: ThemeModeSchema.optional(),
   shikiTheme: ShikiThemeSchema.optional(),

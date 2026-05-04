@@ -297,6 +297,56 @@ describe('createPlannerBase — hintSuccessMode', () => {
   });
 });
 
+describe('createPlannerBase — structured summarization', () => {
+  it('validates structured summary JSON from the planner', async () => {
+    const structured = {
+      goal: 'add compaction',
+      stepsCompleted: ['wrote schema'],
+      currentStep: 'testing',
+      filesModified: ['src/core/schemas/compaction.ts'],
+      constraintsDiscovered: ['return JSON only'],
+      remainingWork: ['run tests'],
+    };
+    const planner = createPlannerBase({
+      invokePlan: async () => ({ text: '', usage: null }),
+      invokeEscalate: async () => ({ text: JSON.stringify(structured), usage: null }),
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+    });
+
+    const result = await planner.summarizeStructured?.([{ role: 'user', text: 'compact this' }], undefined, projectDir);
+
+    expect(result).toEqual({ text: JSON.stringify(structured), structured });
+  });
+
+  it('uses the merge prompt when a previous structured summary is provided', async () => {
+    const previous = {
+      goal: 'add compaction',
+      stepsCompleted: ['old step'],
+      currentStep: 'old current',
+      filesModified: ['old.ts'],
+      constraintsDiscovered: ['old constraint'],
+      remainingWork: ['old work'],
+    };
+    let prompt = '';
+    const planner = createPlannerBase({
+      invokePlan: async () => ({ text: '', usage: null }),
+      invokeEscalate: async (opts) => {
+        prompt = opts.prompt;
+        return { text: JSON.stringify(previous), usage: null };
+      },
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+    });
+
+    await planner.summarizeStructured?.([{ role: 'assistant', text: 'new work' }], previous, projectDir);
+
+    expect(prompt).toContain('Previous summary:');
+    expect(prompt).toContain(JSON.stringify(previous));
+    expect(prompt).toContain('New messages:');
+  });
+});
+
 describe('createPlannerBase — priorMessages injection (FR-007)', () => {
   it('prepends a <!-- prior conversation --> block to the first phase prompt for CLI-style backends', async () => {
     const captured: string[] = [];

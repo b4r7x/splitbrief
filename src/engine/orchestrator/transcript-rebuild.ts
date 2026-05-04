@@ -6,6 +6,7 @@ import { sessionDir } from '../../core/paths.js';
 import { createPlanner } from '../runners/factory.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
 import type { PlannerSummaryMessage } from '../planners/types.js';
+import { resolveCompactionFormat, type ResolvedCompactionFormat, type StructuredSummary } from '../../core/schemas/compaction.js';
 
 export type ResumeMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -29,10 +30,24 @@ export function keepRecentCountForThreshold(threshold: number): number {
 export async function compactResumeTranscript(
   projectDir: string,
   sessionId: string,
-  planner: { summarize: (messages: PlannerSummaryMessage[]) => Promise<string> },
+  planner: {
+    summarize: (messages: PlannerSummaryMessage[]) => Promise<string>;
+    summarizeStructured?: (
+      messages: PlannerSummaryMessage[],
+      previousSummary?: StructuredSummary,
+    ) => Promise<{ text: string; structured: StructuredSummary | null }>;
+  },
   keepRecentCount: number,
+  format: ResolvedCompactionFormat = 'freeform',
+  onFallback?: (text: string) => void | Promise<void>,
 ): Promise<TranscriptCompactionResult> {
-  return compactTranscript(sessionDir(projectDir, sessionId), planner, keepRecentCount);
+  return compactTranscript({
+    sessionDir: sessionDir(projectDir, sessionId),
+    planner,
+    keepRecentCount,
+    format,
+    ...(onFallback ? { onFallback } : {}),
+  });
 }
 
 export async function performManualCompaction(
@@ -49,9 +64,19 @@ export async function performManualCompaction(
   const keepRecentCount = threshold !== undefined
     ? keepRecentCountForThreshold(threshold)
     : DEFAULT_KEEP_RECENT_COUNT;
-  const result = await compactTranscript(sessionDir(projectDir, sessionId), {
-    summarize: messages => planner.summarize(messages, projectDir),
-  }, keepRecentCount);
+  const format = resolveCompactionFormat(config.workflow.compactionFormat, config.planner.kind);
+  const summarizeStructured = planner.summarizeStructured;
+  const result = await compactTranscript({
+    sessionDir: sessionDir(projectDir, sessionId),
+    keepRecentCount,
+    format,
+    planner: {
+      summarize: messages => planner.summarize(messages, projectDir),
+      ...(summarizeStructured
+        ? { summarizeStructured: (messages, previous) => summarizeStructured(messages, previous, projectDir) }
+        : {}),
+    },
+  });
   return { status: 'compacted', ...result };
 }
 
