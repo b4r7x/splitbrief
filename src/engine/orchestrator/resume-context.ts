@@ -1,8 +1,10 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { OrchestratorCallbacks, ResumeContextHolder } from './types.js';
 import type { EventBus } from '../events/types.js';
+import type { Planner } from '../planners/types.js';
 import { publishWarning } from './events.js';
-import { buildResumeContext } from './transcript-rebuild.js';
+import { buildResumeContext, compactResumeTranscript, keepRecentCountForThreshold } from './transcript-rebuild.js';
+import { labelError } from '../../utils/format-errors.js';
 
 export type ApplyRebuiltContextOpts = {
   projectDir: string;
@@ -13,6 +15,35 @@ export type ApplyRebuiltContextOpts = {
   resumeHolder: ResumeContextHolder | undefined;
   requireNonEmpty?: boolean | undefined;
 };
+
+export type AutoCompactResumeOpts = {
+  projectDir: string;
+  sessionId: string;
+  bus: EventBus;
+  config: Pick<Config, 'workflow'>;
+  planner: Pick<Planner, 'capabilities' | 'summarize'>;
+};
+
+export async function autoCompactResumeContext(opts: AutoCompactResumeOpts): Promise<void> {
+  const threshold = opts.config.workflow.compactionThreshold;
+  if (threshold === undefined || opts.config.workflow.persistTranscript === false) return;
+  const summarize = opts.planner.summarize;
+  if (opts.planner.capabilities.supportsSelfSummarisation !== true || !summarize) return;
+
+  const rebuilt = await buildResumeContext(opts.projectDir, opts.sessionId, true);
+  if (rebuilt.messages.length <= threshold) return;
+
+  try {
+    await compactResumeTranscript(
+      opts.projectDir,
+      opts.sessionId,
+      { summarize: messages => summarize(messages, opts.projectDir) },
+      keepRecentCountForThreshold(threshold),
+    );
+  } catch (err) {
+    publishWarning(opts.bus, 'researching', labelError('Transcript auto-compaction failed', err));
+  }
+}
 
 export async function applyRebuiltContext(opts: ApplyRebuiltContextOpts): Promise<void> {
   const { projectDir, sessionId, bus, config, resumeHolder, requireNonEmpty } = opts;

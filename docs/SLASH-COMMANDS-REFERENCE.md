@@ -19,9 +19,9 @@ Three rewind-family commands also enforce a `phaseGuard`. The guards are the sin
 - `canRevisePlan(phase)` — `src/core/slash-commands/catalog.ts:21` — true once the plan is written (`reviewing-plan`, `reviewing-briefs`, and later).
 - `canRedoTask(phase)` — `src/core/slash-commands/catalog.ts:25` — true only during `implementing`, `validating-task`, or `escalating`.
 
-Handlers reach the engine and stores through the `CommandContext` interface (`src/core/slash-commands/types.ts:21`), wired up in `src/core/slash-commands/context.ts`. The catalog itself never imports stores directly; this keeps the command list testable in isolation (see `src/core/slash-commands/catalog.test.ts`).
+Handlers reach the engine and stores through the `CommandContext` interface (`src/core/slash-commands/types.ts:21`), wired up for the TUI in `src/app/slash-command-context.ts`. The catalog itself never imports stores directly; this keeps the command list testable in isolation (see `src/core/slash-commands/catalog.test.ts`).
 
-There are 24 slash commands in total. They cover overlays, workflow mode/tool selection, rewind/redo, queue and artifact actions, attachments, approvals, run accept/reject, and quitting. They are grouped below by purpose.
+There are 25 slash commands in total. They cover overlays, workflow mode/tool selection, rewind/redo, queue and artifact actions, transcript compaction, attachments, approvals, run accept/reject, and quitting. They are grouped below by purpose.
 
 ---
 
@@ -202,7 +202,7 @@ Commands that open an overlay for interactive selection. None of these mutate st
 
 ## Output and artifacts
 
-Commands that produce or manage on-disk artifacts: handoff packs for external agents, the repo-map cache, and pending image attachments.
+Commands that produce or manage on-disk artifacts: handoff packs for external agents, transcript compaction, the repo-map cache, and pending image attachments.
 
 ### `/handoff <target> [task-id]`
 
@@ -216,6 +216,16 @@ Commands that produce or manage on-disk artifacts: handoff packs for external ag
 - **Behavior**: Writes the pack to `.diptych/sessions/<sessionId>/handoffs/<target>/` in `overwrite` mode. On success prints `"Handoff written to: <outputDir>"`. On failure prints the error message. Requires an active session — fails with `"No active session for handoff"` otherwise.
 - **Implementation**: catalog at `src/core/slash-commands/catalog.ts:246`; calls `writeHandoffPack` from `src/engine/handoff/write.ts` via the wiring in `src/core/slash-commands/context.ts:77`.
 - **See also**: `/sessions`.
+
+### `/compact-transcript`
+
+- **Purpose**: Summarize older persisted planner/user turns into a compact transcript summary so future resume context can stay small.
+- **Screens**: `workflow`, `summary`.
+- **Args**: none.
+- **Example**: `/compact-transcript`
+- **Behavior**: Uses the current planner from config. If that planner does not advertise `supportsSelfSummarisation`, the feedback line reports that transcript compaction is unsupported and no file is changed. Otherwise diptych calls `compactTranscript()` for the current session directory, appends a summary entry to `session.jsonl`, leaves recent messages verbatim, and reports how many older messages were summarized. The log stays append-only; compaction does not delete historical lines.
+- **Implementation**: catalog at `src/core/slash-commands/catalog.ts`; context wiring at `src/app/slash-command-context.ts`; core compaction in `src/core/sessions/compaction.ts`.
+- **See also**: `/sessions`, `/handoff`.
 
 ### `/queue [show|clear]`
 
@@ -403,6 +413,7 @@ Alphabetical, for fast lookup:
 
 - [`/approval`](#approval-listclear) — list or clear sticky approval grants.
 - [`/attach`](#attach-path) — attach an image for the next planner call.
+- [`/compact-transcript`](#compact-transcript) — summarize older persisted transcript turns.
 - [`/config`](#settings-alias-config) — alias for `/settings`.
 - [`/detach`](#detach-indexid) — remove a pending image attachment.
 - [`/effort`](#effort-lowmediumhighxhigh) — set planner reasoning effort.

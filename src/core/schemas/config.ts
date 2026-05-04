@@ -107,6 +107,7 @@ export const ConfigSchema = z.object({
     driftChainThreshold: z.number().min(0).max(1).optional(),
     costGate: z.boolean().optional(),
     persistTranscript: z.boolean().default(true),
+    compactionThreshold: z.number().int().min(10).optional(),
   }),
   theme: ThemeModeSchema.optional(),
   shikiTheme: ShikiThemeSchema.optional(),

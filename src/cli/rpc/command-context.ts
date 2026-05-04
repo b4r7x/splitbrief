@@ -12,6 +12,7 @@ import { attachImage, detachImage, listAttachments } from '../../stores/ui/attac
 import { writeHandoffPack } from '../../engine/handoff/write.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../../engine/snapshots/run.js';
 import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from '../../engine/orchestrator/approvals-store.js';
+import { performManualCompaction } from '../../engine/orchestrator/transcript-rebuild.js';
 
 export function createRpcCommandContext(opts: {
   projectDir: string;
@@ -120,5 +121,9 @@ export function createRpcCommandContext(opts: {
     },
     acceptRunSnapshot: () => acceptRunSnapshot(opts.projectDir, getSessionIdOrThrow()),
     rejectRunSnapshot: () => rejectRunSnapshot(opts.projectDir, getSessionIdOrThrow()),
+    compactTranscript: async () => {
+      const sessionId = getSessionIdOrThrow();
+      return performManualCompaction(opts.getConfig(), opts.projectDir, sessionId);
+    },
   };
 }

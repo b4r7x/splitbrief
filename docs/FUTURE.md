@@ -95,28 +95,29 @@ The canonical solution is git worktrees: each worktree is an isolated checkout a
 
 ---
 
-## **[Should]** Transcript compaction / summarisation
+## **[Could]** Token-aware transcript compaction
 
 **Why we want it.** `session.jsonl` grows without bound over a session's lifetime. Long sessions with many regenerations, clarifications, and aborts can produce hundreds of KB of message content. On resume, rebuilding context from a 500KB transcript and feeding it into a planner that has an 8K or 32K context window won't fit.
 
-**What it would look like.**
+**Current baseline.** Manual compaction exists through `/compact-transcript`. Resume-time auto-compaction is available when `workflow.compactionThreshold` is set. Both paths ask planners with `supportsSelfSummarisation` to summarize older turns, append a summary entry to `session.jsonl`, and let resume rebuild context from the latest summary plus recent messages.
 
-- `/compact-transcript` slash command (or automatic when transcript token count > threshold).
-- Planner is asked to summarise older turns into a single `<!-- summary: ... -->` block.
-- `session.jsonl` gets a `kind: "summary"` entry marking the compaction point.
-- On subsequent transcript rebuilds, only entries after the last summary are used verbatim; earlier entries are represented by the summary.
+**What remains.**
+
+- Token-count thresholds based on backend context windows instead of message count.
+- A separate recent-message retention knob.
+- UI feedback when auto-compaction runs during resume.
 
 **Why deferred.**
 
-- v1 sessions are unlikely to hit this problem. Most feature workflows end in under 100 turns.
-- Requires a new planner capability flag (`supportsSelfSummarisation`) and a standardised summary prompt.
-- The summary prompt is itself a design problem: what information must be preserved?
+- Manual compaction and resume-time message-count compaction cover deliberate long-session cleanup.
+- Token-counting thresholds need to respect backend-specific context limits.
+- Queue-drain compaction must not surprise users during active planner turns.
 
 **Where to start when we do it.**
 
-- Add `PlannerCapabilities.supportsSelfSummarisation`.
-- Add a `summarise(transcript)` method to `Planner`.
-- Hook compaction check into the resume path and into `ENQUEUE_USER_MSG`.
+- Add `workflow.compactionKeepRecentCount`.
+- Hook compaction checks into safe queue-drain boundaries.
+- Emit a compact `transcript_compacted` event when auto-compaction runs.
 
 ---
 

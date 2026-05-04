@@ -7,6 +7,8 @@ export const PlannerCapabilitiesSchema = z.object({
   supportsHintEscalation: z.boolean(),
   supportsSessionResume: z.boolean(),
   supportsEffort: z.boolean(),
+  supportsImages: z.boolean(),
+  supportsSelfSummarisation: z.boolean(),
 }).strict();
 
 export const CliRunnerFields = {

@@ -79,6 +79,8 @@ Full reference: `docs/SLASH-COMMANDS.md`.
 | `REWIND_TO_PLAN` no comment | `{ target: 'plan' }` | Yes (fast-path, skip regen) | No |
 | `RESET_TASK` | not set | No | No |
 
+`/compact-transcript` is available on the workflow and summary screens. It creates the current planner from config, checks `supportsSelfSummarisation`, and appends a transcript summary entry for older `session.jsonl` messages. Unsupported planners report that compaction is unavailable and leave the log untouched. On resume, `workflow.compactionThreshold` can trigger the same append-only compaction automatically before rebuilt context is passed to stateless planners.
+
 ### 1.2 Mode dispatch
 
 Mode selection happens in `src/engine/orchestrator/planning/run.ts`.
@@ -180,6 +182,8 @@ Persisted artifacts: `research.md`, supporting `spec.md`, `clarifications.md`, `
 | Every phase transition | `saveState()` | `sessions/<id>/state.json` |
 | Every emitted event | Append line (kind: `event`) | `sessions/<id>/session.jsonl` |
 | Every planner/user text chunk (if `persistTranscript`) | Append line (kind: `message`) | `sessions/<id>/session.jsonl` |
+| Manual `/compact-transcript` | Append compact summary entry | `sessions/<id>/session.jsonl` |
+| Resume auto-compaction (`workflow.compactionThreshold`) | Append compact summary entry | `sessions/<id>/session.jsonl` |
 | End of a planning phase | Write artifact | `sessions/<id>/{spec,plan,tasks}.md` |
 | End of `clarifying` phase *(speckit)* | Write marker file | `sessions/<id>/clarifications.md` |
 | End of `constitution-check` phase *(speckit)* | Write check result | `sessions/<id>/constitution-check.json` |
@@ -205,7 +209,7 @@ If the saved state has `pendingRecovery`, resume shows that recovery issue befor
 
 1. If the backend has `supportsSessionResume: true` **and** `state.plannerSessionId` is set, attempt to reuse the native session. For Claude Code this means `claude --session-id <id>`. For Codex this means `codex exec resume --json <id> <prompt>` (`thread_id` captured from the `thread.started` JSONL event). For Agent SDK this means the `options.resume` argument to `query()`.
 2. If the backend rejects the session id (expired, unknown, 4xx), emit `session_expired` to `session.jsonl`, notify the user with a short toast ("Previous planner conversation expired — rebuilding context from transcript"), and proceed to step 3.
-3. **Rebuild context from `session.jsonl`**: read all `kind: "message"` lines, assemble a messages array of alternating user / assistant turns, and pass that as the initial context to the fresh planner call. For stateless `api` backends this is the *native* way to resume. For `cli` backends without `supportsSessionResume`, we prepend the rebuilt transcript as a `<!-- prior conversation -->` block in the prompt.
+3. **Rebuild context from `session.jsonl`**: read transcript messages, using the latest compact summary entry plus later messages when the log has been compacted. Pass that as the initial context to the fresh planner call. For stateless `api` backends this is the *native* way to resume. For `cli` backends without `supportsSessionResume`, we prepend the rebuilt transcript as a `<!-- prior conversation -->` block in the prompt.
 4. If `persistTranscript: false` and step 1 failed, there is no transcript to rebuild from. Emit `transcript_unavailable`, ask the user to confirm, and continue with the Task Brief transport plus any supporting `spec.md` / `plan.md` as the only handoff.
 
 In-flight task state: tasks marked `in_progress` at save time are re-attempted from `attempt: 0`. Partial implementer output (if any was captured before abort) is in `session.jsonl` and is used as a hint in the retry prompt.
@@ -348,6 +352,6 @@ No open questions remain after specs 001–009. See `docs/FUTURE.md` for deferre
 
 - `docs/CONCEPTS.md` — terminology (sessions, queue, awaiting-continue, capability matrix)
 - `docs/ARCHITECTURE.md` — code layers, persistence tables, capability matrix per backend
-- `docs/FUTURE.md` — deferred scope: message-level rewind, Cursor-style snapshot undo, transcript compaction, parallel sessions
+- `docs/FUTURE.md` — deferred scope: message-level rewind, Cursor-style snapshot undo, automatic transcript compaction, parallel sessions
 - `docs/STORES.md` — state management details (external stores, zero React Context)
 - `docs/VISION.md` — project identity, anti-goals, strategic direction

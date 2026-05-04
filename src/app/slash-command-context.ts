@@ -12,7 +12,16 @@ import { readActive } from '../core/sessions/lifecycle.js';
 import { writeHandoffPack } from '../engine/handoff/write.js';
 import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from '../engine/orchestrator/approvals-store.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run.js';
+import { performManualCompaction } from '../engine/orchestrator/transcript-rebuild.js';
 import type { CommandContext } from '../core/slash-commands/types.js';
+
+function currentSessionId(projectDir: string): string | null {
+  const route = routerStore.get();
+  if ((route.screen === 'workflow' || route.screen === 'summary') && route.sessionId) {
+    return route.sessionId;
+  }
+  return readActive(projectDir);
+}
 
 export function buildCommandContext({ exit }: { exit: () => void }): CommandContext {
   return {
@@ -114,6 +123,13 @@ export function buildCommandContext({ exit }: { exit: () => void }): CommandCont
       const sessionId = readActive(projectDir);
       if (!sessionId) throw new Error('No active session for /reject-run');
       return rejectRunSnapshot(projectDir, sessionId);
+    },
+    compactTranscript: async () => {
+      const { config, projectDir } = configStore.get();
+      if (!config) throw new Error('No config loaded for /compact-transcript');
+      const sessionId = currentSessionId(projectDir);
+      if (!sessionId) throw new Error('No active session for /compact-transcript');
+      return performManualCompaction(config, projectDir, sessionId);
     },
   };
 }

@@ -642,7 +642,7 @@ describe('runPlanningPhase — onQuestion wiring', () => {
     const planner = makePassingPlanner({
       plan,
       ...(supports
-        ? { capabilities: { supportsConversationalPlanning: true, supportsHintEscalation: true, supportsSessionResume: false, supportsEffort: false, supportsImages: false } }
+        ? { capabilities: { supportsConversationalPlanning: true, supportsHintEscalation: true, supportsSessionResume: false, supportsEffort: false, supportsImages: false, supportsSelfSummarisation: false } }
         : {}),
     });
 

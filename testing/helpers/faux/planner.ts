@@ -109,6 +109,10 @@ export function fauxPlanner(opts?: {
       return { text: '', usage: null };
     },
 
+    async summarize() {
+      return '';
+    },
+
     async injectUserTurn(_text, _projectDir) {
       return Promise.resolve();
     },

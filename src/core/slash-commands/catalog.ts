@@ -269,6 +269,27 @@ export function createCommands(ctx: CommandContext): SlashCommandDef[] {
       },
     },
     {
+      kind: 'noarg',
+      name: '/compact-transcript',
+      label: 'Compact Transcript',
+      description: 'Summarize older transcript turns',
+      validScreens: ['workflow', 'summary'],
+      handler: async () => {
+        try {
+          const result = await ctx.compactTranscript();
+          if (result.status === 'unsupported') {
+            ctx.setFeedbackMessage(`Planner "${result.plannerName}" does not support transcript compaction.`);
+            return;
+          }
+          const count = result.entriesRemoved;
+          const plural = count === 1 ? '' : 's';
+          ctx.setFeedbackMessage(`Transcript compacted: ${count} older message${plural} summarized.`);
+        } catch (err) {
+          ctx.setFeedbackError(err instanceof Error ? err.message : String(err));
+        }
+      },
+    },
+    {
       kind: 'arg',
       name: '/repomap',
       label: 'Repomap',

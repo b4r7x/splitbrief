@@ -1,20 +1,21 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../core/paths.js';
 import type { ResumeContextHolder } from './types.js';
-import { applyRebuiltContext, createSessionExpiredHandler } from './resume-context.js';
+import { applyRebuiltContext, autoCompactResumeContext, createSessionExpiredHandler } from './resume-context.js';
 
-function workflowConfig(persistTranscript: boolean) {
+function workflowConfig(persistTranscript: boolean, compactionThreshold?: number) {
   return {
     autoApproveSpec: false,
     autoApprovePlan: false,
     maxRetries: 3,
     commitStrategy: 'none' as const,
     persistTranscript,
+    ...(compactionThreshold !== undefined && { compactionThreshold }),
   };
 }
 
@@ -43,6 +44,16 @@ function messageEntry(role: 'user' | 'assistant', text: string): string {
     ts: new Date('2025-01-01T00:00:00Z').toISOString(),
     role,
     text,
+    phase: 'planning',
+  });
+}
+
+function numberedMessageEntry(index: number): string {
+  return JSON.stringify({
+    kind: 'message',
+    ts: 1000 + index,
+    role: index % 2 === 0 ? 'user' : 'assistant',
+    text: `msg ${index}`,
     phase: 'planning',
   });
 }
@@ -151,6 +162,78 @@ describe('applyRebuiltContext', () => {
     });
 
     expect(events.some((e) => e.type === 'warning')).toBe(true);
+  });
+});
+
+describe('autoCompactResumeContext', () => {
+  it('summarizes older persisted messages when resume context exceeds the configured threshold', async () => {
+    const originalEntries = Array.from({ length: 12 }, (_, index) => numberedMessageEntry(index));
+    const { projectDir, sessionId } = setupSession(originalEntries);
+    const { bus, events } = makeBusRecorder();
+    const summarizedBatches: Array<Array<{ role: string; text: string }>> = [];
+
+    await autoCompactResumeContext({
+      projectDir,
+      sessionId,
+      bus,
+      config: { workflow: workflowConfig(true, 10) },
+      planner: {
+        capabilities: {
+          supportsConversationalPlanning: false,
+          supportsHintEscalation: true,
+          supportsSessionResume: false,
+          supportsEffort: false,
+          supportsImages: false,
+          supportsSelfSummarisation: true,
+        },
+        summarize: async (messages) => {
+          summarizedBatches.push(messages);
+          return '## Summary\nCompacted older work';
+        },
+      },
+    });
+
+    const file = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);
+    const entries = readFileSync(file, 'utf-8').trim().split('\n').map(line => JSON.parse(line) as Record<string, unknown>);
+
+    expect(summarizedBatches).toHaveLength(1);
+    expect(summarizedBatches[0]).toHaveLength(3);
+    expect(entries).toHaveLength(originalEntries.length + 1);
+    expect(entries.at(-1)).toMatchObject({
+      kind: 'summary',
+      text: '## Summary\nCompacted older work',
+      summarizedUpTo: '1002',
+    });
+    expect(events.find(event => event.type === 'warning')).toBeUndefined();
+  });
+
+  it('leaves the transcript untouched when the planner cannot summarize', async () => {
+    const originalEntries = Array.from({ length: 12 }, (_, index) => numberedMessageEntry(index));
+    const { projectDir, sessionId } = setupSession(originalEntries);
+    const { bus } = makeBusRecorder();
+
+    await autoCompactResumeContext({
+      projectDir,
+      sessionId,
+      bus,
+      config: { workflow: workflowConfig(true, 10) },
+      planner: {
+        capabilities: {
+          supportsConversationalPlanning: false,
+          supportsHintEscalation: true,
+          supportsSessionResume: false,
+          supportsEffort: false,
+          supportsImages: false,
+          supportsSelfSummarisation: false,
+        },
+        summarize: async () => {
+          throw new Error('should not be called');
+        },
+      },
+    });
+
+    const file = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);
+    expect(readFileSync(file, 'utf-8').trim().split('\n')).toHaveLength(originalEntries.length);
   });
 });
 
