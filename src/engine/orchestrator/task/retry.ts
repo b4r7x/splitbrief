@@ -4,7 +4,7 @@ import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js
 import type { ValidationResult } from '../validation.js';
 import type { TaskStatus } from '../../../core/schemas/enums.js';
 import type { WorkflowContext } from '../types.js';
-import type { RoutingDecision } from '../context-routing.js';
+import type { RoutingDecision } from '../context-routing/types.js';
 
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
 import { publishError, publishRecoveryPrompted } from '../events.js';
@@ -16,8 +16,8 @@ import { resolveDependsOnFiles } from './resolve-deps.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/recovery.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { persistTaskEvidence } from '../evidence/persistence.js';
-import type { ChangedFilesSnapshot } from '../approval/tiered-approval.js';
-import { getChangedFilesSnapshot } from '../approval/tiered-approval.js';
+import type { ChangedFilesSnapshot } from '../approval/file-snapshots.js';
+import { getChangedFilesSnapshot } from '../approval/file-snapshots.js';
 
 function routeBiggerProfileFromDecision(decision: RoutingDecision | undefined): string | undefined {
   if (!decision?.selectedProfile) return undefined;

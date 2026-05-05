@@ -6,12 +6,12 @@ import { runLocalRetries } from './local-retries.js';
 import { runTier0Intermediate } from './tier0-intermediate.js';
 import { runTier1Hint } from './tier1-hint.js';
 import { runTier2Full } from './tier2-full.js';
-import type { EscalationContext, RetryResult } from './step.js';
+import type { EscalationContext, RetryResult } from './types.js';
 import { runPreHooks } from '../../hooks/run-pre-hook.js';
 import { publishWarning } from '../events.js';
-import { getChangedFilesSnapshot, type ChangedFilesSnapshot } from '../approval/tiered-approval.js';
+import { getChangedFilesSnapshot, type ChangedFilesSnapshot } from '../approval/file-snapshots.js';
 
-export type { EscalationContext, RetryResult } from './step.js';
+export type { EscalationContext, RetryResult } from './types.js';
 
 type HandleRetryOptions = {
   wctx: WorkflowContext;

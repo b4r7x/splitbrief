@@ -21,7 +21,8 @@ import { formatTasks } from '../../spec/formatter.js';
 import { parseTasks } from '../../spec/parser.js';
 import type { BriefQualityReport } from '../../spec/brief-quality.js';
 import { drainQueue, formatDrainedMessages } from '../queue.js';
-import { buildRejectionContext, readEvidenceLedger } from '../evidence/evidence.js';
+import { readEvidenceLedger } from '../evidence/persistence.js';
+import { buildRejectionContext } from '../evidence/reporting.js';
 import { regenerateTasks } from './regen.js';
 import { startPlannerHeartbeat } from './heartbeat.js';
 import type {

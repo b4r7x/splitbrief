@@ -2,7 +2,7 @@ import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TokenUsage, TokenDelta, TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { EventBus } from '../events/types.js';
-import type { RoutingDecision } from './context-routing.js';
+import type { RoutingDecision } from './context-routing/types.js';
 import { publishEvent } from './events.js';
 
 export type UsageCategory = 'planner' | 'implementer' | 'escalation';

@@ -4,7 +4,8 @@ import { buildProjectLanguageContext } from '../../spec/prompts/language-context
 import { createBusTextHandler, publishPlannerStatus, publishEscalate, publishEvent } from '../events.js';
 import { transitionAndSave, addUsageAndSave } from '../state-ops.js';
 import { truncateByChars } from '../../../utils/truncate.js';
-import { runRetryStep, MAX_HINT_ERROR_LENGTH, type EscalationContext, type RetryStepOutcome } from './step.js';
+import { runRetryStep } from './step.js';
+import { MAX_HINT_ERROR_LENGTH, type EscalationContext, type RetryStepOutcome } from './types.js';
 
 export async function runTier1Hint(
   ctx: EscalationContext, initialTask: Task, state: WorkflowState, lastError: string, priorAttempts: number,

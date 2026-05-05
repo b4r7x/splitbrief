@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Config } from '../../core/schemas/config.js';
-import type { RoutingDecision } from '../../engine/orchestrator/context-routing.js';
+import type { RoutingDecision } from '../../engine/orchestrator/context-routing/types.js';
 import type { PlanTaskReviewMetadata } from '../../stores/workflow/plan-editor.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';

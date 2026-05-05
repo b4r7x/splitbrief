@@ -11,10 +11,8 @@ import {
   writeDriftReport,
 } from './drift.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import {
-  createEvidenceLedger,
-  recordRetryOrEscalationEvidence,
-} from '../evidence/evidence.js';
+import { createEvidenceLedger } from '../evidence/ledger.js';
+import { recordRetryOrEscalationEvidence } from '../evidence/task-evidence.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { EventBus } from '../../events/types.js';
 

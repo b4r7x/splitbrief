@@ -3,7 +3,8 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { createBusTextHandler, publishWarning, publishEscalate, publishEvent } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
-import { runRetryStep, type EscalationContext, type RetryResult } from './step.js';
+import { runRetryStep } from './step.js';
+import type { EscalationContext, RetryResult } from './types.js';
 
 export async function runTier2Full(
   ctx: EscalationContext, initialTask: Task, state: WorkflowState, lastError: string, priorAttempts: number,

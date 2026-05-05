@@ -8,13 +8,10 @@ import type { LanguageContext } from '../../spec/prompts/language-context.js';
 import { calculateCost } from '../../providers/pricing.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { resolvePricing } from '../../providers/pricing-resolver.js';
-import {
-  estimateFormattedTaskPromptTokens,
-  resolveProfileContextLength,
-  routeTaskToImplementerProfile,
-  type ContextLengthSource,
-  type TaskContextFit,
-} from '../context-routing.js';
+import { estimateFormattedTaskPromptTokens } from '../context-routing/estimation.js';
+import { resolveProfileContextLength } from '../context-routing/context-length.js';
+import { routeTaskToImplementerProfile } from '../context-routing/route.js';
+import type { ContextLengthSource, TaskContextFit } from '../context-routing/types.js';
 
 export type EstimateContextConfidence =
   | 'context-explicit'

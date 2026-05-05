@@ -11,7 +11,7 @@ import type { Validator } from './validation.js';
 import type { EventBus } from '../events/types.js';
 import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
 import type { UserEditConflict, UserEditConflictAction } from './user-edit/conflicts.js';
-import type { RoutingDecision } from './context-routing.js';
+import type { RoutingDecision } from './context-routing/types.js';
 import type { TaskReviewRequest, TaskReviewResponse } from './task/review.js';
 import type { ModelCacheAccessor } from '../providers/model/resolution.js';
 import type { Attachment } from '../../core/schemas/attachment.js';

@@ -10,7 +10,7 @@ import type { EventBus, EngineEvent } from '../events/types.js';
 import type { ImplementerPublisher } from '../implementers/types.js';
 import type { EmittedChain } from '../../core/schemas/drift-chain.js';
 import type { UserEditConflict, UserEditConflictAction } from './user-edit/conflicts.js';
-import type { CurrentCodeContextMode, TaskContextFit } from './context-routing.js';
+import type { CurrentCodeContextMode, TaskContextFit } from './context-routing/types.js';
 import type { TaskReviewRequest } from './task/review.js';
 
 const EMPTY_STAGES: ValidationStages = { typecheck: false, lint: false, test: false };
