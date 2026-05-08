@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useInput, type Key } from 'ink';
-import { clampIndex, navigateIndex } from './navigate-index.js';
+import { clampIndex, navigateIndex } from '../utils/indexing.js';
 
 interface UseFilterableListOptions<T> {
   items: T[];

@@ -1472,7 +1472,7 @@ Start typing to fuzzy-filter the list. Press Enter on the highlighted entry to i
 **Notes:**
 - The palette is disabled while another overlay (help, settings, skills) is active.
 - Commands whose `validScreens` excludes your current screen are hidden from the list.
-- `Ctrl+K` is handled by `src/hooks/use-app-keys.ts:82`.
+- `Ctrl+K` is handled by `src/app/keys.ts:91`.
 
 **See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 

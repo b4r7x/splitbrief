@@ -49,7 +49,7 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Add a command, event, store, or backend | [docs/EXTENDING.md](./docs/EXTENDING.md) — step-by-step recipes |
 | Get diptych running for the first time | [docs/GETTING-STARTED.md](./docs/GETTING-STARTED.md) — onboarding |
 | Look up a CLI command | [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md) — command reference |
-| Look up a slash command | [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md) — runtime commands |
+| Look up a runtime command (`/name`) | [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md) — runtime commands |
 | Configure diptych | [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) — config reference |
 | Run end-to-end scenarios / find a recipe | [docs/USAGE-EXAMPLES.md](./docs/USAGE-EXAMPLES.md) — recipes |
 | Hit a problem | [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) — symptoms & fixes |
@@ -90,6 +90,14 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 - **No imperative handles.** No `forwardRef` / `useImperativeHandle`. Extract state to a store instead.
 - **Zero engine → React imports.** `src/engine/` must not import from `ink`, `react`, or `src/features/`, `src/components/`, `src/hooks/`.
 - **Zero failing tests.** `npm run test-ci` (typecheck → lint → test) must pass before any PR.
+
+## Current TUI architecture
+
+- **Composer** lives in `src/components/composer/`. Do not recreate `input-bar` modules or compatibility shims.
+- **Runtime commands** live in `src/core/runtime/commands/`. They use slash names, but the registry backs composer `/` input, the command palette, and RPC dispatch.
+- **App shell glue** lives in `src/app/`: global keys in `keys.ts`, runtime command context in `command-context.ts`.
+- **Command palette** lives in `src/features/palette/`; source assembly is `sources.ts`, ranking is `results.ts`, rendering is `overlay.tsx`.
+- **Runner selection** is the `src/features/runners/` feature. `ToolModelPicker` / `renderToolPicker` are component/callback names, not a `tool-picker` folder boundary.
 
 ## Runner kinds
 

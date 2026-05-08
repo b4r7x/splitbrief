@@ -6,7 +6,7 @@ import { openApprovalPrompt } from '../../../stores/approval-prompt/actions.js';
 import { approvalPromptStore, type TieredApprovalRequest } from '../../../stores/approval-prompt/store.js';
 
 const ENTER = '\r';
-const ESC = '';
+const ESC = '\u001b';
 
 function makeConfirmRequest(actionDescription: string): TieredApprovalRequest {
   return {

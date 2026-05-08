@@ -80,9 +80,9 @@ Runtime state of the active workflow run.
 - **feedbackStore** -- user-facing messages with 3-second auto-clear.
 - **controlsStore** -- sidebar visibility, input mode echo.
 - **terminalSizeStore** -- reactive terminal cols/rows, subscribes to resize events.
-- **inputHeightStore** -- current input bar height in rows.
+- **inputHeightStore** -- current composer height in rows.
 - **inputHistoryStore** -- command history with disk persistence.
-- **paletteMruStore** -- most-recently-used entries for the command palette.
+- **commandPaletteMruStore** -- most-recently-used entries for the command palette.
 
 ### Project -- `src/stores/project/`
 
@@ -139,7 +139,7 @@ The main screen during execution. Key hooks:
 - **`useWorkflowKeys()`** -- keyboard shortcuts (Ctrl-C abort, Ctrl-D detach, arrow navigation).
 - **`useIpcClient()`** -- connects to a running workflow via Unix socket for attach mode.
 
-Key components: `Header`, `ConfigLine`, `AgentStatusRow`, `CostStatusLine`, `ConversationFlow` (event cards), `Sidebar`, `InputBar`, `InputFooter`, `ApprovalPrompt`, `CostApprovalPromptConnected`.
+Key components: `Header`, `ConfigLine`, `AgentStatusRow`, `CostStatusLine`, `ConversationFlow` (event cards), `Sidebar`, `Composer`, `InputFooter`, `ApprovalPrompt`, `CostApprovalPromptConnected`.
 
 ---
 

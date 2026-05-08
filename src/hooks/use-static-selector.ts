@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useInput } from 'ink';
-import { clampIndex, navigateIndex } from './navigate-index.js';
+import { clampIndex, navigateIndex } from '../utils/indexing.js';
 
 interface UseStaticSelectorOptions<T> {
   items: readonly T[];

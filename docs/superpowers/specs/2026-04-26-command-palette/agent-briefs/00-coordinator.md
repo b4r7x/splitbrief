@@ -33,7 +33,7 @@ If running agents in parallel: 01 and 05 can run together; 02 starts after 01 fi
 - `src/hooks/use-app-keys.ts` — existing `Ctrl+K` binding at line 82
 - `src/core/slash-commands/types.ts` — `CommandPaletteItem`, `CommandContext`
 - `src/core/slash-commands/catalog.ts` — full command list
-- `src/core/slash-commands/dispatch.ts` — `toPaletteItems`, `executeSlashCommand`
+- `src/core/runtime/commands/dispatch.ts` — `executeRuntimeCommand`; palette command items are assembled in `src/features/palette/sources.ts`
 - `src/core/slash-commands/context.ts` — `buildCommandContext`
 - `src/components/overlays/command-palette.tsx` — existing stub (to be deleted by Brief 03)
 - `src/core/schemas/config.ts` — `ConfigSchema` (to be extended by Brief 05)

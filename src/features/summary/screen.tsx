@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
-import type { SlashCommandDef } from '../../core/slash-commands/types.js';
+import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { useTheme } from '../../components/theme.js';
 import { formatTime } from '../../utils/format-time.js';
 import { formatToolModel } from '../../core/model-display.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { EvidenceLedger } from '../../core/schemas/evidence.js';
-import { InputBar } from '../../components/input-bar/input-bar.js';
+import { Composer } from '../../components/composer/composer.js';
 import { LabeledRow } from '../../components/labeled-row.js';
 import { ScreenShell } from '../../components/screen-shell.js';
 import { SummaryProgress } from './components/progress.js';
@@ -23,8 +23,8 @@ import { configStore } from '../../stores/project/config.js';
 import { readEvidenceLedger } from '../../engine/orchestrator/evidence/persistence.js';
 
 interface SummaryScreenProps {
-  commands: SlashCommandDef[];
-  onSlashCommand: (command: string) => void;
+  commands: RuntimeCommandDef[];
+  onRuntimeCommand: (command: string) => void;
 }
 
 function formatImplementerSummary(summary: Summary): string | null {
@@ -81,7 +81,7 @@ function useSummaryEvidenceLedger(summary: Summary | null, sessionId: string | u
   return state.key === ledgerKey ? state.ledger : null;
 }
 
-export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) {
+export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps) {
   const theme = useTheme();
   const isSmall = terminalSizeStore.use(s => s.isSmall);
 
@@ -188,9 +188,9 @@ export function SummaryScreen({ commands, onSlashCommand }: SummaryScreenProps) 
       )}
 
       <Box marginTop={1}>
-        <InputBar
+        <Composer
           onSubmit={onDone}
-          onSlashCommand={onSlashCommand}
+          onRuntimeCommand={onRuntimeCommand}
           commands={commands}
           mode="normal"
           hint="press enter to continue"

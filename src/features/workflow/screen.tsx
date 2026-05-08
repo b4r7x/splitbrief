@@ -3,7 +3,7 @@ import { Box, Text, useApp, useInput } from 'ink';
 import { dirname } from 'node:path';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { InputMode } from '../../stores/navigation/router.js';
-import type { SlashCommandDef } from '../../core/slash-commands/types.js';
+import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { ApprovalPrompt } from './components/approval-prompt.js';
 import { CostApprovalPromptConnected } from './components/cost-approval-prompt.js';
 import { ReadinessPanel } from './components/readiness-panel.js';
@@ -14,7 +14,7 @@ import { CostStatusLine } from './components/cost/status-line.js';
 import { ConfigLine } from './components/config-line.js';
 import { ConversationFlow } from './components/conversation-flow/flow.js';
 import { FeedbackRow } from './components/feedback-row.js';
-import { InputBar } from '../../components/input-bar/input-bar.js';
+import { Composer } from '../../components/composer/composer.js';
 import { InputFooter } from './components/input-footer.js';
 import { ScreenShell } from '../../components/screen-shell.js';
 import { ReviewView } from './components/review-view.js';
@@ -54,8 +54,8 @@ import { collectReadiness } from '../../core/readiness/collect.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 
 interface WorkflowScreenProps {
-  commands: SlashCommandDef[];
-  onSlashCommand: (command: string) => void;
+  commands: RuntimeCommandDef[];
+  onRuntimeCommand: (command: string) => void;
 }
 
 function resolveInputHint(cancelled: boolean, inputHint: string, inputMode: InputMode, phase: string): string {
@@ -74,7 +74,7 @@ function resolveAttachInputHint(status: IpcClientStatus): string {
   return 'connecting to server...';
 }
 
-export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps) {
+export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenProps) {
   const { exit } = useApp();
   const config = configStore.useConfig();
   const projectDir = configStore.use(s => s.projectDir);
@@ -267,9 +267,9 @@ export function WorkflowScreen({ commands, onSlashCommand }: WorkflowScreenProps
       footer={
         <>
           <FeedbackRow />
-          <InputBar
+          <Composer
             onSubmit={handleInput}
-            onSlashCommand={onSlashCommand}
+            onRuntimeCommand={onRuntimeCommand}
             commands={commands}
             mode={inputMode.mode}
             hint={inputHint}

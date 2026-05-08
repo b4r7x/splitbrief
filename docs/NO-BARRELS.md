@@ -1,6 +1,6 @@
 # No Barrels — Module Boundaries Principle
 
-> **Status**: Adopted for `src/stores/` (2026-04-17). Scheduled for incremental rollout to `src/engine/`, `src/core/`, `src/components/`.
+> **Status**: Adopted codebase-wide. `src/` has zero `index.ts` / `index.tsx` files.
 
 ## Principle
 
@@ -64,7 +64,7 @@ A file that **contains real code** and happens to be named `index.ts` is not a b
 
 **Content determines barrel status, not the filename.** A file named `config-options.ts`, `catalog-adapter.ts`, or `picker-model-catalog.ts` whose body is mostly `export { X } from './x.js'` / `export type { Y } from '../schemas/...'` **is a barrel** and is equally forbidden. The `index.ts` name is just the most common giveaway — a disguised barrel by content inflates the module graph identically.
 
-Heuristic: if deleting every `export { … } from '…'` / `export type { … } from '…'` line leaves the file at zero (or near-zero) own code, it is a disguised barrel. Fix by deleting it and rewriting consumer imports to the real producer. Canonical cases removed in Batch 1A / 1C: `core/types/config-options.ts` re-export block, `features/tool-picker/picker-model-catalog.ts`, `features/tool-picker/catalog-adapter.ts` — see inventory below.
+Heuristic: if deleting every `export { … } from '…'` / `export type { … } from '…'` line leaves the file at zero (or near-zero) own code, it is a disguised barrel. Fix by deleting it and rewriting consumer imports to the real producer. Canonical cases removed in Batch 1A / 1C: `core/types/config-options.ts` re-export block, `features/runners/picker-model-catalog.ts`, and `features/runners/catalog-adapter.ts` — see inventory below.
 
 ## Exceptions
 
@@ -72,7 +72,7 @@ The principle allows one exception: **public API surfaces of published libraries
 
 Shared type re-exports are not an exception. If `src/types/index.ts` re-exports from 10 sibling type files, those type-only re-exports still inflate the build graph and still slow down tsc/tsserver; inline imports are preferred.
 
-## Current inventory (updated after input-bar rename)
+## Current inventory (updated after composer rename)
 
 **All application barrels have been removed.** `find src -name 'index.ts' -o -name 'index.tsx'` returns zero results.
 
@@ -84,7 +84,7 @@ Shared type re-exports are not an exception. If `src/types/index.ts` re-exports 
 | `src/types.ts` | RFC-02 | Top-level type re-export barrel. |
 | `src/core/config/index.ts` | FW-1 | Consumers import directly from `loading.ts`, `validation.ts`, etc. |
 | `src/core/providers/index.ts` | FW-1 | Catalog + enum modules imported directly. |
-| `src/core/slash-commands/index.ts` | FW-1 | Imported directly from command modules. |
+| Runtime command barrel | FW-1 | Consumers import directly from `src/core/runtime/commands/registry.ts`, `dispatch.ts`, `lookup.ts`, or `types.ts`. |
 | `src/engine/index.ts` | FW-2 | Top-level engine barrel. |
 | `src/engine/detection/index.ts` | FW-2 | Imported directly from `detect.ts`, `cache.ts`, etc. |
 | `src/engine/orchestrator/index.ts` | FW-2 | Imported directly from orchestrator submodules. |
@@ -94,24 +94,25 @@ Shared type re-exports are not an exception. If `src/types/index.ts` re-exports 
 | `src/core/types/config-options.ts` (re-export block) | Batch 1A (2026-04) | ~12 `export type { X } from '../schemas/...'` lines re-exporting `PlannerConfig`, `ImplementerConfig`, workflow/planner config variants, and enum values. A disguised barrel by content — the filename was not `index.ts` but the re-exports made `config-options.ts` a second public surface. Consumers now import directly from `core/schemas/*`. |
 | `src/core/schemas/config.ts` tail (lines 43-46) | Batch 1A (2026-04) | `export type { PlannerConfig } from './planner-config.js'`, same for `ImplementerConfig`, plus `export { PlannerConfigSchema, ImplementerConfigSchema }`. Consumers now import from `planner-config.ts` / `implementer-config.ts` directly. |
 | `src/stores/discovery/model-cache.ts` line 5 | Batch 1A (2026-04) | `export type { DetectedModel } from '../../core/types/config-options.js'` — one-liner type re-export. Consumers now import `DetectedModel` from `core/types/config-options.ts` directly. |
-| `src/features/tool-picker/picker-model-catalog.ts` + `catalog-adapter.ts` | Batch 1C (2026-04) | **Disguised barrels**: even if a file isn't named `index.ts`, if its content is mostly re-exports (like `picker-model-catalog.ts`, which re-exported the contents of `model-sorting.ts` + `picker-options.ts` plus one own function, and `catalog-adapter.ts`, a 12-line wrapper injecting the `modelCacheStore`), it IS a barrel and must be eliminated. Dissolved into the deep module `src/features/tool-picker/model-catalog.ts`. |
+| `src/features/runners/picker-model-catalog.ts` + `catalog-adapter.ts` | Batch 1C (2026-04) | **Disguised barrels**: even if a file isn't named `index.ts`, if its content is mostly re-exports (like `picker-model-catalog.ts`, which re-exported the contents of `model-sorting.ts` + `picker-options.ts` plus one own function, and `catalog-adapter.ts`, a 12-line wrapper injecting the `modelCacheStore`), it IS a barrel and must be eliminated. Dissolved into the deep module `src/features/runners/model-catalog.ts`. |
 
 Rule: if an `index.{ts,tsx}` contains primary implementation instead of re-exports, it is not a barrel by content; rename it anyway to keep the codebase's zero-index invariant simple.
 
-## Rollout plan
+## Ongoing rule
 
-- **Phase 2 of stores restructure** — applies this principle to `src/stores/` (no `index.ts` anywhere in the subtree).
-- **Future RFC A** — `src/core/{config,providers,slash-commands}/index.ts` removal. Relatively contained; single-domain.
-- **Future RFC B** — `src/engine/**/index.ts` removal. Larger surface, many consumers. Best done after stores to validate the direct-import pattern holds at scale.
-- **Future RFC C** — `src/components/summary/index.ts` removal. Tiny; bundle into RFC A.
+The rollout is complete. New work must keep the invariant true:
 
-Each future RFC follows the same gate protocol: typecheck, lint, full test suite, zero grep hits on deleted barrel paths.
+```bash
+find src -name 'index.ts' -o -name 'index.tsx'
+```
+
+Expected output: nothing.
+
+If a refactor deletes or moves a module, update all consumers in the same change. Do not add a temporary re-export shim or a disguised barrel to smooth the migration.
 
 ## How to enforce
 
-After rollout completes, add a lint rule (Biome custom or `no-restricted-imports`) forbidding imports that match `'**/index.js'` where the target file is a pure re-exporter. Details deferred to the future RFC that does the last barrel removal.
-
-Until enforcement lands, reviewers should block new barrel creations during code review and reference this document.
+Reviewers should block new barrel creations during code review and reference this document. `docs/INVARIANTS.md` carries the pre-merge check.
 
 ## References
 

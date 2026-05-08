@@ -8,7 +8,7 @@ import { CursorCell } from '../../components/pickers/cursor-cell.js';
 import { type SettingDef } from '../../core/settings/catalog.js';
 import { displayValue, valueColor } from '../../core/settings/presentation.js';
 
-import { useSettingsEditor } from './use-settings-editor.js';
+import { useSettingsEditor } from './hooks/editor.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getClampedTerminalWidth } from '../../core/layout/terminal-width.js';
 import { useStores } from '../../stores/use-stores.js';

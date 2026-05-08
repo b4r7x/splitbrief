@@ -39,7 +39,7 @@ These exist and must be understood before touching anything:
 
 - `src/components/overlays/command-palette.tsx` — existing stub using `FilterableList` + substring match. **Brief 03 supersedes this file; the implementing agent must delete it.**
 - `src/hooks/use-app-keys.ts:82` — `Ctrl+K → openOverlay('command-palette')` already wired.
-- `src/core/slash-commands/types.ts` — `CommandPaletteItem` type already defined; `toPaletteItems()` adapter in `dispatch.ts`.
+- `src/core/runtime/commands/types.ts` — `CommandPaletteItem` type already defined; palette command items are assembled in `src/features/palette/sources.ts`.
 - `src/core/slash-commands/fuzzy.ts` — uses the `fzf` package for *name matching on slash command input*. Stays untouched; serves a different concern.
 
 ## Dependencies

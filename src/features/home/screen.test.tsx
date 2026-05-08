@@ -8,10 +8,10 @@ import { saveSummary } from '../../core/sessions/io.js';
 import { configStore } from '../../stores/project/config.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import type { SlashCommandDef } from '../../core/slash-commands/types.js';
+import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { HomeScreen } from './screen.js';
 
-const COMMANDS: SlashCommandDef[] = [
+const COMMANDS: RuntimeCommandDef[] = [
   { kind: 'noarg', name: '/help', label: 'Help', description: 'Show help', validScreens: ['home'], handler: () => {} },
   { kind: 'arg', name: '/mode', label: 'Mode', description: 'Workflow mode', validScreens: ['home'], handler: () => {} },
 ];
@@ -40,7 +40,7 @@ describe('HomeScreen', () => {
   it('centers the main content on wide terminals while keeping the input visible', async () => {
     terminalSizeStore.__testReset({ cols: 160, rows: 42, isSmall: false });
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onSlashCommand={() => {}} />);
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
@@ -53,7 +53,7 @@ describe('HomeScreen', () => {
   it('keeps useful compact content on short terminals', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 20, isSmall: true });
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onSlashCommand={() => {}} />);
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
@@ -66,7 +66,7 @@ describe('HomeScreen', () => {
   it('renders slash suggestions directly above the docked input', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 34, isSmall: false });
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onSlashCommand={() => {}} />);
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
     ui.stdin.write('/');
     await tick(20);
@@ -93,7 +93,7 @@ describe('HomeScreen', () => {
       }));
     }
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onSlashCommand={() => {}} />);
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
@@ -111,7 +111,7 @@ describe('HomeScreen', () => {
       feature: 'hidden feature',
     }));
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onSlashCommand={() => {}} />);
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
 
     expect(ui.lastFrame() ?? '').not.toContain('hidden feature');
@@ -122,7 +122,7 @@ describe('HomeScreen', () => {
   it('opens slash suggestions as an overlay without moving the centered content', async () => {
     terminalSizeStore.__testReset({ cols: 160, rows: 42, isSmall: false });
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onSlashCommand={() => {}} />);
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
 
     const before = ui.lastFrame() ?? '';

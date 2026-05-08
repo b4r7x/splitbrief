@@ -209,7 +209,7 @@ The **queue** is a workflow-scoped buffer of user messages that the user types w
 
 Flow:
 
-1. During a live planner phase, the TUI input bar accepts text. Pressing **Enter with text** appends the message to the queue — it does **not** abort the current call.
+1. During a live planner phase, the TUI composer accepts text. Pressing **Enter with text** appends the message to the queue — it does **not** abort the current call.
 2. At the next safe point (end of current planner call, boundary between phases), the orchestrator drains the queue and prepends its contents to the next planner prompt as `[user also says: ...]` blocks.
 3. For backends that expose a native session with mid-conversation inject (Claude Code via `--session-id`), each queued message is *also* dispatched as a parallel `user` turn into the live session. The planner sees it on its next model turn without waiting for our orchestrator to start a new phase.
 4. Queue drains at safe-points only, never mid-model-output.

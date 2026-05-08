@@ -1,5 +1,5 @@
 import type { Config } from '../../core/schemas/config.js';
-import type { CompactTranscriptResult } from '../../core/slash-commands/types.js';
+import type { CompactTranscriptResult } from '../../core/runtime/commands/types.js';
 import { compactTranscript, type TranscriptCompactionResult } from '../../core/sessions/compaction.js';
 import { readCompactedMessages, readMessages } from '../../core/sessions/log-reader.js';
 import { sessionDir } from '../../core/paths.js';

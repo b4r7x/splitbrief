@@ -18,8 +18,8 @@ Existing example to follow: `src/cli/commands/start.ts`.
 
 ## 2. New slash command
 
-1. Open `src/core/slash-commands/catalog.ts`
-2. Add a new entry to the array returned by `createCommands(ctx)`
+1. Open `src/core/runtime/commands/registry.ts`
+2. Add a new entry to the array returned by `createRuntimeCommands(ctx)`
 3. Each entry needs:
    - `kind` — `'noarg'` or `'arg'`
    - `name` — the `/command` string

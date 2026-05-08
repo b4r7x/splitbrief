@@ -1,0 +1,244 @@
+import { useState, useEffect } from 'react';
+import { Box, Text } from 'ink';
+import { MultilineInput } from '../input/multiline-input.js';
+import { CommandCompletionMenu } from './completion/command/menu.js';
+import { ReferenceCompletionMenu } from './completion/reference/menu.js';
+import { AttachmentChips } from './attachments.js';
+import { useCommandCompletion } from './completion/command/hook.js';
+import { useReferenceCompletion } from './completion/reference/hook.js';
+import { useTheme } from '../theme.js';
+import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { inputHistoryStore } from '../../stores/ui/input-history.js';
+import { inputHeightStore } from '../../stores/ui/input-height.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
+import { configStore } from '../../stores/project/config.js';
+import { listProjectFiles } from '../../lib/file-listing.js';
+import { useStores } from '../../stores/use-stores.js';
+import type { InputMode, Screen } from '../../stores/navigation/router.js';
+import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
+import { useHistory } from './use-history.js';
+import { attachImage } from '../../stores/ui/attachments.js';
+import { computeCompletionOverlayRows, computeCompletionCap } from './completion/layout.js';
+
+const MAX_REFERENCE_SUGGESTIONS = 8;
+
+function borderColorForMode(mode: InputMode, theme: { planner: string; warning: string; border: string }): string {
+  if (mode === 'review') return theme.planner;
+  if (mode === 'question') return theme.warning;
+  return theme.border;
+}
+
+function placeholderForMode(mode: InputMode, hint?: string): string {
+  if (hint) return hint;
+  if (mode === 'review') return 'approve / edit / comment ... / quit';
+  if (mode === 'question') return 'type your answer...';
+  return 'describe your feature...';
+}
+
+function readProjectFiles(projectDir: string): string[] {
+  if (!projectDir) return [];
+  try {
+    return listProjectFiles(projectDir);
+  } catch {
+    return [];
+  }
+}
+
+function isRefreshCommand(command: string): boolean {
+  return command.trim() === '/refresh';
+}
+
+interface ComposerProps {
+  onSubmit: (text: string) => void;
+  onRuntimeCommand: (command: string) => void;
+  commands: RuntimeCommandDef[];
+  mode: InputMode;
+  hint: string;
+  currentScreen: Screen;
+  width?: number;
+  disabled?: boolean;
+}
+
+export function Composer({
+  onSubmit,
+  onRuntimeCommand,
+  commands,
+  mode,
+  hint,
+  currentScreen,
+  width,
+  disabled,
+}: ComposerProps) {
+  const theme = useTheme();
+  const [{ cols, rows }] = useStores(terminalSizeStore);
+  const [{ projectDir }] = useStores(configStore);
+  const inputColumns = Math.max(1, (width ?? cols) - 6);
+  const [value, setValue] = useState('');
+  const [visibleRows, setVisibleRows] = useState(1);
+  const [projectFiles, setProjectFiles] = useState<string[]>([]);
+
+  const refreshProjectFiles = () => {
+    setProjectFiles(readProjectFiles(projectDir));
+  };
+
+  const { inputEpoch, bumpEpoch, handleBoundaryNavigate, resetHistory, onChange } = useHistory({
+    currentScreen,
+    disabled,
+    value,
+    setValue,
+  });
+
+  const handleRuntimeCommand = (command: string) => {
+    onRuntimeCommand(command);
+    if (isRefreshCommand(command)) {
+      refreshProjectFiles();
+    }
+  };
+
+  const command = useCommandCompletion({
+    commands,
+    currentScreen,
+    value,
+    setValue: onChange,
+    onRuntimeCommand: handleRuntimeCommand,
+    disabled,
+  });
+
+  const reference = useReferenceCompletion({
+    files: projectFiles,
+    value,
+    setValue: onChange,
+    disabled,
+  });
+
+  const showCommandSuggestions = command.showSuggestions;
+  const showReferenceSuggestions = reference.showSuggestions && !showCommandSuggestions;
+
+  const handleFileDrop = (path: string) => {
+    const projectDir = configStore.get().projectDir;
+    const result = attachImage(path, projectDir);
+    if (result.ok) {
+      feedbackStore.setMessage(`Attached: ${result.path}`);
+    } else {
+      feedbackStore.setError(`Cannot attach: ${result.reason}`);
+    }
+  };
+
+  const handleSubmit = (text: string) => {
+    if (showCommandSuggestions || showReferenceSuggestions) return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    if (currentScreen === 'home') {
+      inputHistoryStore.push(trimmed);
+    }
+
+    if (trimmed.startsWith('/')) {
+      handleRuntimeCommand(trimmed);
+    } else {
+      onSubmit(trimmed);
+    }
+    setValue('');
+    resetHistory();
+    bumpEpoch();
+  };
+
+  const handleInputBoundaryNavigate = (direction: 'up' | 'down') => {
+    if (showCommandSuggestions || showReferenceSuggestions) return true;
+    return handleBoundaryNavigate(direction);
+  };
+
+  const completionCap = computeCompletionCap(rows, visibleRows);
+  const referenceSuggestionsCap = Math.min(MAX_REFERENCE_SUGGESTIONS, completionCap);
+  const commandOverlayRows = showCommandSuggestions
+    ? computeCompletionOverlayRows({
+        itemCount: command.filtered.length,
+        selectedIndex: command.selectedIndex,
+        maxVisible: completionCap,
+        hasFuzzyMatch: command.fuzzyMatch !== null,
+      })
+    : 0;
+  const referenceOverlayRows = showReferenceSuggestions
+    ? computeCompletionOverlayRows({
+        itemCount: reference.filtered.length,
+        selectedIndex: reference.selectedIndex,
+        maxVisible: referenceSuggestionsCap,
+      })
+    : 0;
+  const reserveHomeHint = currentScreen === 'home';
+  const showHomeHint = reserveHomeHint && !showCommandSuggestions && !showReferenceSuggestions;
+
+  useEffect(() => {
+    refreshProjectFiles();
+  }, [projectDir]);
+
+  useEffect(() => {
+    inputHeightStore.setRows(visibleRows + 2);
+  }, [visibleRows]);
+
+  return (
+    <Box flexDirection="column" width="100%" flexShrink={0} overflow="visible">
+      {reserveHomeHint && (
+        <Box justifyContent="center" height={1}>
+          {showHomeHint ? (
+            <Text color={theme.textDim}>/help /config /skills Ctrl+K</Text>
+          ) : (
+            <Text> </Text>
+          )}
+        </Box>
+      )}
+      <AttachmentChips />
+      <Box flexDirection="column" width="100%" overflow="visible">
+        <Box
+          borderStyle="round"
+          borderColor={borderColorForMode(mode, theme)}
+          paddingX={1}
+          width="100%"
+          minHeight={3}
+        >
+          <Text color={theme.accent}>&gt; </Text>
+          <Box flexGrow={1}>
+            <MultilineInput
+              key={`${command.inputKey}:${reference.inputKey}:${inputEpoch}`}
+              value={value}
+              onChange={onChange}
+              onSubmit={handleSubmit}
+              onFileDrop={handleFileDrop}
+              columns={inputColumns}
+              focus={!disabled}
+              placeholder={placeholderForMode(mode, hint)}
+              rows={1}
+              maxRows={6}
+              onVisibleRowsChange={setVisibleRows}
+              keyBindings={{
+                submit: (key: { return: boolean }) => key.return,
+                newline: (key: { return: boolean; shift: boolean }) =>
+                  key.return && key.shift,
+              }}
+              onBoundaryNavigate={handleInputBoundaryNavigate}
+            />
+          </Box>
+        </Box>
+        {showCommandSuggestions && (
+          <Box position="absolute" width="100%" marginTop={-commandOverlayRows}>
+            <CommandCompletionMenu
+              filtered={command.filtered}
+              selectedIndex={command.selectedIndex}
+              fuzzyMatch={command.fuzzyMatch}
+              maxVisible={completionCap}
+            />
+          </Box>
+        )}
+        {showReferenceSuggestions && (
+          <Box position="absolute" width="100%" marginTop={-referenceOverlayRows}>
+            <ReferenceCompletionMenu
+              filtered={reference.filtered}
+              selectedIndex={reference.selectedIndex}
+              maxVisible={referenceSuggestionsCap}
+            />
+          </Box>
+        )}
+      </Box>
+    </Box>
+  );
+}

@@ -53,17 +53,17 @@ Why: the only consumer holds the contract. Moving it one file away adds indirect
 **Create `types.ts` in that folder.**
 
 ```
-src/core/slash-commands/
-├── catalog.ts          # defines available slash commands
+src/core/runtime/commands/
+├── registry.ts         # defines available runtime commands
 ├── dispatch.ts         # runs them
-├── keybindings.ts      # maps keys to commands
-└── types.ts            # SlashCommandDef, CommandContext, CommandPaletteItem
-                          — used by catalog.ts, dispatch.ts, keybindings.ts
+├── lookup.ts           # exact + fuzzy lookup
+└── types.ts            # RuntimeCommandDef, RuntimeCommandContext, CommandPaletteItem
+                          — used by registry.ts, dispatch.ts, lookup.ts
 ```
 
-Why: shared intra-folder contract. Folder name provides the naming context (`slash-commands/`) so the file is just `types.ts` — no prefix, no suffix.
+Why: shared intra-folder contract. Folder name provides the naming context (`runtime/commands/`) so the file is just `types.ts` — no prefix, no suffix.
 
-**Banned**: `*-types.ts` suffix (e.g., `slash-command-types.ts`) — redundant, the folder already says the domain.
+**Banned**: `*-types.ts` suffix (e.g., `runtime-command-types.ts`) — redundant, the folder already says the domain.
 
 ### Case C — cross-folder consumers
 
@@ -113,7 +113,7 @@ Types should live where their domain meaning is created — not in a central `ty
 | `ThemeColors` | `core/types/theme.ts` | `components/theme.tsx` (inline) | Only used by the theme component |
 | `SidebarTask` | `core/types/app.ts` | `features/workflow/components/sidebar.tsx` (inline) | Single consumer |
 | `Screen`, `InputMode`, `OverlayType` | `core/types/app.ts` | `stores/navigation/router.ts` (inline) | Single consumer |
-| `SlashCommandDef`, `CommandContext`, `CommandPaletteItem` | `core/types/app.ts` | `core/slash-commands/types.ts` | Multiple files in one folder |
+| `RuntimeCommandDef`, `RuntimeCommandContext`, `CommandPaletteItem` | `core/types/app.ts` | `core/runtime/commands/types.ts` | Multiple files in one folder |
 
 **Banned anti-patterns:**
 
@@ -260,7 +260,7 @@ A: No. Use `src/core/types/` only for types meeting the exception threshold (fan
 ```ts
 // ❌ src/core/types/app.ts before the 2026-04 restructure
 export type Screen = 'home' | 'workflow' | ...;
-export interface SlashCommandDef { ... }
+export interface RuntimeCommandDef { ... }
 export interface SidebarTask { ... }
 export interface SkillMeta { ... }
 export type CommandPaletteItem = { ... };

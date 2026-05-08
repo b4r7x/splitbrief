@@ -73,7 +73,7 @@ src/
 │   ├── config/               YAML load + validation + migration (v1 → v2)
 │   ├── state/                Workflow state machine + disk persistence
 │   ├── phases.ts             Phase taxonomy (role, cancellable, resumable)
-│   ├── commands/             Slash command registry
+│   ├── runtime/commands/     Runtime command registry, dispatch, lookup
 │   ├── sessions/             Per-run summary persistence
 │   ├── settings/             Setting definitions catalog (for /config overlay)
 │   └── types/                All shared types + Zod schemas
@@ -94,14 +94,16 @@ src/
 │   ├── create-store.ts       ~45 LOC factory: get/set/subscribe/use/reset
 │   └── {ui,workflow,navigation,project,discovery}/*.ts
 │
-├── features/                 Business features — one folder per concept (8 features)
+├── features/                 Business features — one folder per concept (10 features)
+│   ├── help/                 help overlay
 │   ├── workflow/             screen + components + hooks + pure helpers
 │   ├── home/                 screen + components
+│   ├── palette/              command palette overlay + result ranking
 │   ├── setup/                screen
 │   ├── summary/              screen + components
 │   ├── settings/             overlay + hooks
 │   ├── sessions/             picker + row
-│   ├── tool-picker/          picker + view + catalog adapter + hooks
+│   ├── runners/             picker + view + catalog adapter + hooks (planner / implementer runner selection)
 │   └── skills/               picker
 ├── components/               Shared UI (cross-feature): primitives + shared overlays + pickers + input
 ├── hooks/                    Shared React hooks (cross-feature primitives, flat)
@@ -137,10 +139,10 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 1. **User** runs `diptych start "add JWT auth"`.
 2. `cli/commands/start.ts` boots stores, initialises router with the feature, renders `<App/>`.
 3. `<App/>` reads `routerStore` and mounts `<WorkflowScreen/>`.
-4. `useWorkflow` hook is triggered in the workflow screen. It calls `runWorkflow(opts)` from `src/engine/orchestrator/run/run.ts`. `initializeWorkflow` builds an `EventBus` and subscribes the TUI sink (writes to `workflowStore.addEvent`), JSONL sink (writes to `session.jsonl`), and Hook sink (when `config.hooks` is configured). The bus is threaded through `WorkflowContext.bus`.
+4. `useWorkflowRunner()` is triggered in the workflow screen. It calls `runWorkflow(opts)` from `src/engine/orchestrator/run/run.ts`. `initializeWorkflow` builds an `EventBus` and subscribes the TUI sink (writes to `workflow/actions.addEvent`), JSONL sink (writes to `session.jsonl`), and Hook sink (when `config.hooks` is configured). The bus is threaded through `WorkflowContext.bus`.
 5. `runWorkflow` creates planner + implementer via factories, compiles Task Briefs, produces supporting spec/plan artifacts when the selected mode includes them, then runs the task loop and final review.
 6. During each phase, the engine emits via `wctx.bus.publish(EngineEvent)`. The bus fans out synchronously to all subscribed sinks:
-   - `tuiSink` (`src/engine/events/sinks/tui.ts`) — pass-through to `workflow/actions.addEvent(event)`; workflow sub-stores consume `EngineEvent` directly, so the sink is a named wiring point, not a mapper (UI re-renders).
+   - `tuiSink` (`src/features/workflow/tui-sink.ts`) — pass-through to `workflow/actions.addEvent(event)`; workflow sub-stores consume `EngineEvent` directly, so the sink is a named wiring point, not a mapper (UI re-renders).
    - `jsonlSink` (`src/engine/events/sinks/jsonl.ts`) — appends to `.diptych/sessions/<id>/session.jsonl` via `appendEngineEvent`.
    - `stdoutJsonSink` (`src/engine/events/sinks/stdout-json.ts`) — opt-in under `--json` / `diptych start --json`; writes NDJSON events on stdout for headless integration (see `src/cli/headless.ts`).
    - `otelSink` (`src/engine/events/sinks/otel.ts`) — opt-in via `config.otel.enabled`; maps `EngineEvent` to OpenTelemetry spans. See [`OTEL.md`](./OTEL.md) §Design decisions.
@@ -292,7 +294,7 @@ See [Part 2 §12](#12-test-suite-shape) for current test counts.
 | Adding a … | Go to |
 |-----------|-------|
 | New CLI subcommand | `src/cli/commands/` + register in `src/cli.ts` |
-| New slash command | `src/core/slash-commands/definitions.ts` |
+| New runtime command | `src/core/runtime/commands/registry.ts` |
 | New planner backend | `src/engine/planners/<name>.ts` + `runners/factory.ts` switch + planner-config schema variant + declare `capabilities` struct |
 | New implementer backend | Mirror of above under `src/engine/implementers/` |
 | New provider (for `api` kind) | `src/engine/providers/<name>.ts` + register in `providers/registry.ts` |
@@ -329,7 +331,7 @@ The engine emits **EngineEvent** values through a single `EventBus` port. Sinks 
 - **`EngineEvent`** is a discriminated union with snake_case `type` and mandatory `phase` (`src/engine/events/types.ts`) — the single source of truth for all engine events. The legacy `TuiEvent` / `OrchestratorEvent` types are removed.
 - **`createEventBus`** is a sync pub/sub with crash isolation per sink (`src/engine/events/bus.ts`)
 - **`publish*` helpers** (e.g. `publishTaskStart`, `publishPlannerStatus`) wrap `bus.publish` with typed signatures (`src/engine/orchestrator/events.ts`)
-- **`tuiSink`** (`src/engine/events/sinks/tui.ts`) forwards `EngineEvent` straight into `workflow/actions.addEvent` — no mapping, because workflow sub-stores now consume `EngineEvent` directly.
+- **`tuiSink`** (`src/features/workflow/tui-sink.ts`) forwards `EngineEvent` straight into `workflow/actions.addEvent` — no mapping, because workflow sub-stores now consume `EngineEvent` directly.
 - **`jsonlSink`** (`src/engine/events/sinks/jsonl.ts`) appends events to `.diptych/sessions/<id>/session.jsonl`. Transcript kinds respect `workflow.persistTranscript`.
 - **`stdoutJsonSink`** (`src/engine/events/sinks/stdout-json.ts`) emits NDJSON to stdout for headless / `--json` mode (see `src/cli/headless.ts`).
 - **`otelSink`** (opt-in, `config.otel.enabled: true`) maps `EngineEvent` → OpenTelemetry spans — see [OTEL.md](./OTEL.md) §Design decisions.
@@ -490,8 +492,8 @@ src/
 │   │                              generation), log-reader
 │   ├── settings/                  catalog (settings registry),
 │   │                              presentation (UI labels)
-│   ├── slash-commands/            catalog, context, dispatch, fuzzy,
-│   │                              keybindings, types
+│   ├── runtime/commands/          registry, dispatch, lookup, types
+│   ├── keybindings/registry.ts    Keyboard shortcut table (Ctrl+K, Ctrl+/, …)
 │   ├── state/                     machine (reducer), persistence (state.json
 │   │                              IO), selectors, topo-sort (task ordering)
 │   ├── tokens/estimate.ts         Token estimation (model-family lookup:
@@ -598,7 +600,6 @@ src/
 │   │   ├── types.ts               WorkflowContext, OrchestratorCallbacks,
 │   │   │                          WorkflowSinks
 │   │   └── validation.ts          Validator pipeline (typecheck / lint / test)
-│   ├── palette/aggregate.ts       Cross-store palette aggregator
 │   ├── parsers/                   code-detection, code-patterns,
 │   │                              question-parser, response-extractor,
 │   │                              scope-extractor
@@ -650,30 +651,34 @@ src/
 │   ├── navigation/router.ts       Active screen + overlay
 │   ├── project/                   config, detection, sessions, skills
 │   ├── ui/                        controls, feedback, input-height,
-│   │                              input-history, overlay, palette-mru,
+│   │                              input-history, overlay,
+│   │                              command-palette-mru,
 │   │                              persistence, terminal-size
 │   └── workflow/                  abort, actions, attachments,
 │                                  conversation-scroll, events, lifecycle,
 │                                  plan-editor, review, tasks, tokens
 │
 ├── features/                      TUI features (one folder per business slice)
+│   ├── help/                      overlay (global Ctrl-/ help overlay)
 │   ├── home/                      screen + components (config-summary,
 │   │                              recent-sessions)
+│   ├── palette/                   overlay + results (command palette overlay
+│   │                              and cross-store result aggregator)
 │   ├── sessions/                  picker, picker-select
-│   ├── settings/                  overlay + mode-selector + edit-buffer +
-│   │                              settings-editor hooks
+│   ├── settings/                  overlay + mode-selector +
+│   │                              hooks/{buffer, editor}
 │   ├── setup/screen.tsx           First-run / reconfigure flow
 │   ├── skills/picker.tsx          Skills selection
 │   ├── summary/                   screen + components (cost-breakdown,
 │   │                              evidence, phase-timing, progress,
 │   │                              task-table)
-│   ├── tool-picker/               picker, view, catalog, hooks,
-│   │                              transforms, view-state
+│   ├── runners/                   picker, view, catalog, hooks,
+│   │                              transforms, view-state (planner /
+│   │                              implementer runner selection)
 │   └── workflow/                  Largest feature
 │       ├── attach-resolver.ts     /attach path resolver
 │       ├── components/            agent-status-row, approval-prompt,
-│       │                          brief-review-view,
-│       │                          command-palette-overlay, config-line,
+│       │                          brief-review-view, config-line,
 │       │                          conversation-flow/flow,
 │       │                          cost-display/drilldown/footer/status,
 │       │                          event-cards/{card, cost-prediction-,
@@ -686,7 +691,7 @@ src/
 │       │                          plan-editor/{actions, external-editor},
 │       │                          plan-editor-help-overlay, review-view,
 │       │                          sidebar, task-summary
-│       ├── handlers.ts            Slash-command-context hooks
+│       ├── handlers.ts            Runtime command context actions
 │       ├── hooks/                 use-advisory, use-cost-stats,
 │       │                          use-input-mode, use-ipc-client,
 │       │                          use-mouse-scroll, use-plan-editor-keys,
@@ -704,14 +709,13 @@ src/
 │   ├── input/                     controlled-multiline-input,
 │   │                              measure-box, multiline-input, segments,
 │   │                              text-editing, viewport-scroll
-│   ├── input-bar/                 attachment-chips, history-navigation,
-│   │                              index, slash-suggestions,
-│   │                              use-input-bar-history,
-│   │                              use-slash-autocomplete
+│   ├── composer/                  composer, attachments, history,
+│   │                              use-history, completion/{layout,
+│   │                              command/{hook, menu},
+│   │                              reference/{hook, menu}}
 │   ├── labeled-row.tsx
 │   ├── markdown.tsx               Shiki-highlighted markdown
-│   ├── overlays/                  help-overlay, overlay-panel,
-│   │                              text-input-overlay
+│   ├── overlays/                  overlay-panel, text-input-overlay
 │   ├── pickers/                   cursor-cell, filterable-list,
 │   │                              picker-utils, single-column-picker,
 │   │                              two-column-picker/{picker,
@@ -723,12 +727,13 @@ src/
 │   ├── spinner.tsx
 │   └── theme.tsx
 │
-├── hooks/                         Shared React hooks
-│   ├── navigate-index.ts
-│   ├── use-app-keys.ts
+├── hooks/                         Shared React hooks (cross-feature)
 │   ├── use-async-highlight.ts
 │   ├── use-filterable-list.ts
 │   └── use-static-selector.ts
+│
+│   App-wide keyboard dispatch lives at `app/keys.ts` (next to `app.tsx`).
+│   The pure list-navigation helper lives at `utils/indexing.ts`.
 │
 ├── lib/                           Third-party adapters
 │   ├── availability.ts            Tool-availability probe
@@ -798,7 +803,7 @@ Single `EventBus` port (`src/engine/events/bus.ts`), synchronous fan-out, per-si
 
 | Sink | File | Trigger | Purpose |
 |---|---|---|---|
-| `tuiSink` | `events/sinks/tui.ts` | always (interactive runs) | forwards every event to `workflow/actions.addEvent` |
+| `tuiSink` | `features/workflow/tui-sink.ts` | always (interactive runs) | forwards every event to `workflow/actions.addEvent` |
 | `jsonlSink` | `events/sinks/jsonl.ts` | always | appends to `.diptych/sessions/<id>/session.jsonl` |
 | `stdoutJsonSink` | `events/sinks/stdout-json.ts` | `--json` headless | NDJSON line per event on stdout |
 | `otelSink` | `events/sinks/otel.ts` | `config.otel.enabled` | maps events to OpenTelemetry spans |
@@ -1112,11 +1117,11 @@ Registered in `src/cli.ts` (verified). All accept `--project <dir>` (default cwd
 
 ---
 
-## 10. Slash commands (full list, 21)
+## 10. Runtime commands (full list, 26)
 
-Defined in `src/core/slash-commands/catalog.ts`. The `kind` field is `'static'` (no args), `'arg'` (positional), or `'submenu'` (opens picker).
+Defined in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input). Commands are callable from composer `/` input, the command palette, and RPC command dispatch.
 
-| Slash command | Description |
+| Runtime command | Description |
 |---|---|
 | `/help` | Show help overlay |
 | `/palette` | Open command palette |
@@ -1134,10 +1139,15 @@ Defined in `src/core/slash-commands/catalog.ts`. The `kind` field is `'static'` 
 | `/redo-task` | Reset a task to pending and re-run it |
 | `/queue [show\|clear]` | Show or clear the message queue |
 | `/handoff <target> [task-id]` | Export Handoff Pack inline |
+| `/export` | Export session as HTML report |
+| `/compact-transcript` | Summarize older transcript turns |
 | `/repomap rebuild` | Clear the repo-map cache |
 | `/attach <path>` | Attach an image for the next planner call |
 | `/detach <index-or-id>` | Remove a pending image attachment |
 | `/approval` | List or clear sticky approval grants |
+| `/accept-run` | Accept current run changes and prevent run rejection |
+| `/reject-run confirm` | Restore diptych-written files from the run baseline |
+| `/yolo` | Toggle approval gates off/on for the session |
 | `/quit` | Exit application |
 
 ---
@@ -1174,7 +1184,7 @@ All sections are optional; absence means the feature is off (snapshots) or uses 
 
 Colocated test files (`foo.test.ts` next to `foo.ts`). Engine tests are headless; stores reset in `beforeEach`. Agent-implementer tests spawn real subprocesses (slow, ~30s per test).
 
-To run: `npm test -- --run` (uses the package script for reliable vitest invocation; direct `npx vitest run` may fail with reporter loader errors in some environments).
+Full verification: `npm run test-ci` (typecheck, lint, then Vitest). Targeted verification: `npm test -- <path>` for the touched files before running the full suite.
 
 ---
 
