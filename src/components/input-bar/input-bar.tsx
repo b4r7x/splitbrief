@@ -18,7 +18,7 @@ import type { InputMode, Screen } from '../../stores/navigation/router.js';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { useInputBarHistory } from './use-input-bar-history.js';
 import { attachImage } from '../../stores/ui/attachments.js';
-import { computeSuggestionsCap } from './slash-suggestions-height.js';
+import { computeSuggestionOverlayRows, computeSuggestionsCap } from './suggestion-panel-layout.js';
 
 const MAX_AT_FILE_SUGGESTIONS = 8;
 
@@ -150,83 +150,94 @@ export function InputBar({
 
   const suggestionsCap = computeSuggestionsCap(rows, visibleRows);
   const atFileSuggestionsCap = Math.min(MAX_AT_FILE_SUGGESTIONS, suggestionsCap);
+  const slashOverlayRows = showSlashSuggestions
+    ? computeSuggestionOverlayRows({
+        itemCount: slash.filtered.length,
+        selectedIndex: slash.selectedIndex,
+        maxVisible: suggestionsCap,
+        hasFuzzyMatch: slash.fuzzyMatch !== null,
+      })
+    : 0;
+  const atFileOverlayRows = showAtFileSuggestions
+    ? computeSuggestionOverlayRows({
+        itemCount: atFile.filtered.length,
+        selectedIndex: atFile.selectedIndex,
+        maxVisible: atFileSuggestionsCap,
+      })
+    : 0;
+  const reserveHomeHint = currentScreen === 'home';
+  const showHomeHint = reserveHomeHint && !showSlashSuggestions && !showAtFileSuggestions;
 
   useEffect(() => {
     refreshProjectFiles();
   }, [projectDir]);
 
   useEffect(() => {
-    const slashRows = showSlashSuggestions
-      ? Math.min(slash.filtered.length || (slash.fuzzyMatch ? 1 : 0), suggestionsCap)
-      : 0;
-    const atRows = showAtFileSuggestions
-      ? Math.min(atFile.filtered.length, atFileSuggestionsCap)
-      : 0;
-    const suggestionRows = Math.max(slashRows, atRows);
-    inputHeightStore.setRows(visibleRows + 2 + suggestionRows);
-  }, [
-    slash.filtered.length,
-    slash.fuzzyMatch,
-    showSlashSuggestions,
-    atFile.filtered.length,
-    showAtFileSuggestions,
-    visibleRows,
-    suggestionsCap,
-    atFileSuggestionsCap,
-  ]);
+    inputHeightStore.setRows(visibleRows + 2);
+  }, [visibleRows]);
 
   return (
-    <Box flexDirection="column" width="100%" flexShrink={0}>
-      {!showSlashSuggestions && !showAtFileSuggestions && currentScreen === 'home' && (
-        <Box justifyContent="center">
-          <Text color={theme.textDim}>/help /config /skills Ctrl+K</Text>
+    <Box flexDirection="column" width="100%" flexShrink={0} overflow="visible">
+      {reserveHomeHint && (
+        <Box justifyContent="center" height={1}>
+          {showHomeHint ? (
+            <Text color={theme.textDim}>/help /config /skills Ctrl+K</Text>
+          ) : (
+            <Text> </Text>
+          )}
         </Box>
-      )}
-      {showSlashSuggestions && (
-        <SlashSuggestions
-          filtered={slash.filtered}
-          selectedIndex={slash.selectedIndex}
-          fuzzyMatch={slash.fuzzyMatch}
-          maxVisible={suggestionsCap}
-        />
-      )}
-      {showAtFileSuggestions && (
-        <AtFileSuggestions
-          filtered={atFile.filtered}
-          selectedIndex={atFile.selectedIndex}
-          maxVisible={atFileSuggestionsCap}
-        />
       )}
       <AttachmentChips />
-      <Box
-        borderStyle="round"
-        borderColor={borderColorForMode(mode, theme)}
-        paddingX={1}
-        width="100%"
-        minHeight={3}
-      >
-        <Text color={theme.accent}>&gt; </Text>
-        <Box flexGrow={1}>
-          <MultilineInput
-            key={`${slash.inputKey}:${inputEpoch}`}
-            value={value}
-            onChange={onChange}
-            onSubmit={handleSubmit}
-            onFileDrop={handleFileDrop}
-            columns={inputColumns}
-            focus={!disabled}
-            placeholder={placeholderForMode(mode, hint)}
-            rows={1}
-            maxRows={6}
-            onVisibleRowsChange={setVisibleRows}
-            keyBindings={{
-              submit: (key: { return: boolean }) => key.return,
-              newline: (key: { return: boolean; shift: boolean }) =>
-                key.return && key.shift,
-            }}
-            onBoundaryNavigate={handleInputBoundaryNavigate}
-          />
+      <Box flexDirection="column" width="100%" overflow="visible">
+        <Box
+          borderStyle="round"
+          borderColor={borderColorForMode(mode, theme)}
+          paddingX={1}
+          width="100%"
+          minHeight={3}
+        >
+          <Text color={theme.accent}>&gt; </Text>
+          <Box flexGrow={1}>
+            <MultilineInput
+              key={`${slash.inputKey}:${atFile.inputKey}:${inputEpoch}`}
+              value={value}
+              onChange={onChange}
+              onSubmit={handleSubmit}
+              onFileDrop={handleFileDrop}
+              columns={inputColumns}
+              focus={!disabled}
+              placeholder={placeholderForMode(mode, hint)}
+              rows={1}
+              maxRows={6}
+              onVisibleRowsChange={setVisibleRows}
+              keyBindings={{
+                submit: (key: { return: boolean }) => key.return,
+                newline: (key: { return: boolean; shift: boolean }) =>
+                  key.return && key.shift,
+              }}
+              onBoundaryNavigate={handleInputBoundaryNavigate}
+            />
+          </Box>
         </Box>
+        {showSlashSuggestions && (
+          <Box position="absolute" width="100%" marginTop={-slashOverlayRows}>
+            <SlashSuggestions
+              filtered={slash.filtered}
+              selectedIndex={slash.selectedIndex}
+              fuzzyMatch={slash.fuzzyMatch}
+              maxVisible={suggestionsCap}
+            />
+          </Box>
+        )}
+        {showAtFileSuggestions && (
+          <Box position="absolute" width="100%" marginTop={-atFileOverlayRows}>
+            <AtFileSuggestions
+              filtered={atFile.filtered}
+              selectedIndex={atFile.selectedIndex}
+              maxVisible={atFileSuggestionsCap}
+            />
+          </Box>
+        )}
       </Box>
     </Box>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useInput } from 'ink';
 import { Fzf, type FzfResultItem } from 'fzf';
 import { rotateIndex } from '../pickers/picker-utils.js';
@@ -17,11 +17,25 @@ interface UseAtFileAutocompleteResult {
   selectedIndex: number;
   showSuggestions: boolean;
   atQuery: string;
+  inputKey: number;
 }
 
 interface AtToken {
   start: number;
   query: string;
+}
+
+interface SelectionState {
+  key: string;
+  index: number;
+}
+
+interface LatestAtFileState {
+  value: string;
+  token: AtToken | null;
+  selectionKey: string;
+  filtered: string[];
+  effectiveSelectedIndex: number;
 }
 
 function isTokenBoundary(value: string, index: number): boolean {
@@ -52,47 +66,67 @@ function completeToken(value: string, token: AtToken, selected: string): string 
   return `${value.slice(0, token.start)}@${selected}${value.slice(token.start + token.query.length + 1)}`;
 }
 
+function buildSelectionKey(token: AtToken | null, filtered: string[]): string {
+  if (!token) return '';
+  return [token.start, token.query, filtered.join('\u0000')].join('\u0001');
+}
+
 export function useAtFileAutocomplete({
   files,
   value,
   setValue,
   disabled,
 }: UseAtFileAutocompleteOptions): UseAtFileAutocompleteResult {
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [inputKey, setInputKey] = useState(0);
+  const [selection, setSelection] = useState<SelectionState>({ key: '', index: 0 });
   const [dismissedValue, setDismissedValue] = useState<string | null>(null);
+  const latestRef = useRef<LatestAtFileState | null>(null);
 
   const token = findAtToken(value);
   const filtered = token ? filterFiles(files, token.query) : [];
   const showSuggestions = token !== null && filtered.length > 0 && dismissedValue !== value;
+  const selectionKey = buildSelectionKey(token, filtered);
+  const selectedIndex = selection.key === selectionKey ? selection.index : 0;
   const effectiveSelectedIndex = Math.min(selectedIndex, Math.max(0, filtered.length - 1));
-
-  useEffect(() => {
-    setSelectedIndex(0);
-  }, [token?.query]);
+  latestRef.current = {
+    value,
+    token,
+    selectionKey,
+    filtered,
+    effectiveSelectedIndex,
+  };
 
   useInput(
     (_input, key) => {
-      if (!token || filtered.length === 0) return;
+      const latest = latestRef.current;
+      if (!latest?.token || latest.filtered.length === 0) return;
 
       if (key.upArrow) {
-        setSelectedIndex(rotateIndex(effectiveSelectedIndex, filtered.length, -1));
+        setSelection({
+          key: latest.selectionKey,
+          index: rotateIndex(latest.effectiveSelectedIndex, latest.filtered.length, -1),
+        });
         return;
       }
       if (key.downArrow) {
-        setSelectedIndex(rotateIndex(effectiveSelectedIndex, filtered.length, 1));
+        setSelection({
+          key: latest.selectionKey,
+          index: rotateIndex(latest.effectiveSelectedIndex, latest.filtered.length, 1),
+        });
         return;
       }
       if (key.tab || key.return) {
-        const selected = filtered[effectiveSelectedIndex];
+        const selected = latest.filtered[latest.effectiveSelectedIndex];
         if (selected) {
-          const nextValue = completeToken(value, token, selected);
+          const nextValue = completeToken(latest.value, latest.token, selected);
           setValue(nextValue);
           setDismissedValue(nextValue);
+          setInputKey((k) => k + 1);
         }
         return;
       }
       if (key.escape) {
-        setDismissedValue(value);
+        setDismissedValue(latest.value);
       }
     },
     { isActive: showSuggestions && !disabled },
@@ -103,5 +137,6 @@ export function useAtFileAutocomplete({
     selectedIndex: effectiveSelectedIndex,
     showSuggestions,
     atQuery: token?.query ?? '',
+    inputKey,
   };
 }
