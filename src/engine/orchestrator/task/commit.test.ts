@@ -33,6 +33,19 @@ function makeDirty(projectDir: string, relativePath = 'task-file.txt'): void {
   writeFileSync(join(projectDir, relativePath), 'content');
 }
 
+function makeGitOps(overrides: Partial<{
+  stageAll: (dir: string) => Promise<void>;
+  commitChanges: (dir: string, message: string) => Promise<string>;
+  createTaggedStash: (dir: string, message: string, tagName: string) => Promise<string>;
+}> = {}) {
+  return {
+    stageAll: async () => {},
+    commitChanges: async () => 'commit-sha',
+    createTaggedStash: async (_dir: string, _message: string, tagName: string) => tagName,
+    ...overrides,
+  };
+}
+
 function firstTask(state: WorkflowState): Task {
   const t = state.tasks[0];
   if (!t) throw new Error('expected first task in state');
@@ -95,11 +108,12 @@ describe('validateCommitAndAdvance', () => {
     expect(result.state.phase).not.toBe(state.phase);
   });
 
-  it('commit strategy per-task: makes a real git commit and emits git_commit event', async () => {
+  it('commit strategy per-task emits git_commit event with the task commit message', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeState();
     makeDirty(projectDir);
     const { bus, events } = makeBusRecorder();
+    const gitOpsCalls: string[] = [];
 
     const result = await validateCommitAndAdvance({
       task: firstTask(state),
@@ -111,6 +125,15 @@ describe('validateCommitAndAdvance', () => {
       bus,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
+      gitOps: makeGitOps({
+        stageAll: async (dir) => {
+          gitOpsCalls.push(`stage:${dir}`);
+        },
+        commitChanges: async (_dir, message) => {
+          gitOpsCalls.push(`commit:${message}`);
+          return 'commit-sha';
+        },
+      }),
     });
 
     expect(result.completed).toBe(true);
@@ -118,9 +141,10 @@ describe('validateCommitAndAdvance', () => {
     const gitEvent = events.find((e) => e.type === 'git_commit');
     expect(gitEvent).toBeDefined();
     expect(gitEvent && 'message' in gitEvent ? gitEvent.message : '').toContain(firstTask(state).id);
-
-    const log = execSync('git log --format=%s -n 1', { cwd: projectDir, encoding: 'utf-8' });
-    expect(log).toContain(firstTask(state).id);
+    expect(gitOpsCalls).toEqual([
+      `stage:${projectDir}`,
+      expect.stringContaining(`commit:feat(diptych): ${firstTask(state).id}`),
+    ]);
   });
 
   it('commit strategy none: does not emit git events and leaves HEAD unchanged', async () => {
@@ -148,11 +172,12 @@ describe('validateCommitAndAdvance', () => {
     expect(headAfter).toBe(headBefore);
   });
 
-  it('commit strategy checkpoint: tags a real git stash and emits git_checkpoint event', async () => {
+  it('commit strategy checkpoint emits git_checkpoint event for the created tag', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeState();
     makeDirty(projectDir);
     const { bus, events } = makeBusRecorder();
+    const checkpointCalls: Array<{ dir: string; message: string; tagName: string }> = [];
 
     await validateCommitAndAdvance({
       task: firstTask(state),
@@ -164,6 +189,12 @@ describe('validateCommitAndAdvance', () => {
       bus,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
+      gitOps: makeGitOps({
+        createTaggedStash: async (dir, message, tagName) => {
+          checkpointCalls.push({ dir, message, tagName });
+          return tagName;
+        },
+      }),
     });
 
     const cpEvent = events.find((e) => e.type === 'git_checkpoint');
@@ -173,8 +204,11 @@ describe('validateCommitAndAdvance', () => {
       tag: 'diptych/T001',
       taskId: 'T001',
     });
-    const tags = execSync('git tag', { cwd: projectDir, encoding: 'utf-8' }).split('\n').filter(Boolean);
-    expect(tags).toContain('diptych/T001');
+    expect(checkpointCalls).toEqual([{
+      dir: projectDir,
+      message: `diptych checkpoint: ${firstTask(state).id}`,
+      tagName: `diptych/${firstTask(state).id}`,
+    }]);
   });
 
   it('emits task_completed event with method and taskId', async () => {
@@ -193,6 +227,7 @@ describe('validateCommitAndAdvance', () => {
       bus,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
+      gitOps: makeGitOps(),
     });
 
     const taskEvent = events.find((e) => e.type === 'task_completed');
@@ -260,6 +295,7 @@ describe('validateCommitAndAdvance', () => {
     writeFileSync(secretPath, 'const k = "AKIAIOSFODNN7EXAMPLE";');
     const { bus, events } = makeBusRecorder();
     const headBefore = execSync('git rev-parse HEAD', { cwd: projectDir, encoding: 'utf-8' }).trim();
+    const commitAttempts: string[] = [];
 
     const result = await validateCommitAndAdvance({
       task: firstTask(state),
@@ -274,11 +310,18 @@ describe('validateCommitAndAdvance', () => {
       bus,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
+      gitOps: makeGitOps({
+        commitChanges: async (_dir, message) => {
+          commitAttempts.push(message);
+          return 'commit-sha';
+        },
+      }),
     });
 
     expect(result.completed).toBe(true);
     // No commit event — hook blocked it
     expect(events.find((e) => e.type === 'git_commit')).toBeUndefined();
+    expect(commitAttempts).toEqual([]);
     // HEAD must be unchanged
     const headAfter = execSync('git rev-parse HEAD', { cwd: projectDir, encoding: 'utf-8' }).trim();
     expect(headAfter).toBe(headBefore);
@@ -300,6 +343,7 @@ describe('validateCommitAndAdvance', () => {
     mkdirSync(dirname(cleanPath), { recursive: true });
     writeFileSync(cleanPath, 'export const hello = "world";');
     const { bus, events } = makeBusRecorder();
+    const commitAttempts: string[] = [];
 
     const result = await validateCommitAndAdvance({
       task: firstTask(state),
@@ -314,9 +358,16 @@ describe('validateCommitAndAdvance', () => {
       bus,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
+      gitOps: makeGitOps({
+        commitChanges: async (_dir, message) => {
+          commitAttempts.push(message);
+          return 'commit-sha';
+        },
+      }),
     });
 
     expect(result.completed).toBe(true);
     expect(events.find((e) => e.type === 'git_commit')).toBeDefined();
+    expect(commitAttempts).toEqual([expect.stringContaining(firstTask(state).id)]);
   });
 });

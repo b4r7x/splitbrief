@@ -1,26 +1,37 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer, type Server, type Socket } from 'node:net';
-
-vi.mock('../../engine/ipc/lockfile.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../engine/ipc/lockfile.js')>();
-  return {
-    ...actual,
-    checkServerStatus: vi.fn(),
-  };
-});
-
-import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import { detachCommand } from './detach.js';
-
-const mockCheckServerStatus = vi.mocked(checkServerStatus);
+import type { DetachDeps } from './detach.js';
+import type { ServerStatus } from '../../engine/ipc/lockfile.js';
 
 let testDir: string;
 let server: Server | null = null;
 const originalPlatform = process.platform;
 const received: string[] = [];
+
+function runningStatus(sessionId: string): ServerStatus {
+  return {
+    alive: true,
+    data: {
+      version: 1,
+      pid: 99,
+      startTimeMs: Date.now(),
+      lastAliveMs: Date.now(),
+      sessionId,
+      mode: 'quick',
+      feature: 'do a thing',
+    },
+  };
+}
+
+function createDeps(status: ServerStatus): DetachDeps {
+  return {
+    checkServerStatus: async () => status,
+  };
+}
 
 function listen(sockPath: string): Promise<void> {
   server = createServer((socket: Socket) => {
@@ -54,15 +65,16 @@ function closeServer(): Promise<void> {
 }
 
 beforeEach(() => {
-  testDir = mkdtempSync(join(tmpdir(), 'dt-'));
+  testDir = join(tmpdir(), `dt-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  mkdirSync(testDir, { recursive: true });
   received.length = 0;
-  vi.clearAllMocks();
 });
 
 afterEach(async () => {
   await closeServer().catch(() => undefined);
   if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
   Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  vi.restoreAllMocks();
 });
 
 describe('detachCommand', () => {
@@ -70,7 +82,7 @@ describe('detachCommand', () => {
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
 
     await expect(
-      detachCommand('some-session', { projectDir: testDir }),
+      detachCommand('some-session', { projectDir: testDir }, createDeps(runningStatus('some-session'))),
     ).rejects.toMatchObject({
       exitCode: 1,
       message: expect.stringContaining('not supported on Windows'),
@@ -84,33 +96,27 @@ describe('detachCommand', () => {
     mkdirSync(sessDir, { recursive: true });
     await listen(join(sessDir, 'ipc.sock'));
 
-    mockCheckServerStatus.mockResolvedValue({
-      alive: true,
-      data: {
-        version: 1,
-        pid: 99,
-        startTimeMs: Date.now(),
-        lastAliveMs: Date.now(),
-        sessionId: 'alive-session',
-        mode: 'quick',
-        feature: 'do a thing',
-      },
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((line) => {
+      logs.push(line);
     });
 
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    await expect(detachCommand('alive-session', { projectDir: testDir })).resolves.toBeUndefined();
+    await expect(
+      detachCommand('alive-session', { projectDir: testDir }, createDeps(runningStatus('alive-session'))),
+    ).resolves.toBeUndefined();
 
-    expect(received.map(line => JSON.parse(line))).toContainEqual({ kind: 'detach' });
-    expect(console.log).toHaveBeenCalledWith('Session alive-session detached.');
-    vi.restoreAllMocks();
+    expect(received.map((line) => JSON.parse(line))).toContainEqual({ kind: 'detach' });
+    expect(logs).toContain('Session alive-session detached.');
   });
 
   it('fails when the session is not running', async () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
 
-    mockCheckServerStatus.mockResolvedValue({ alive: false, crashed: false, data: null });
-
-    await expect(detachCommand('dead-session', { projectDir: testDir })).rejects.toMatchObject({
+    await expect(
+      detachCommand('dead-session', {
+        projectDir: testDir,
+      }, createDeps({ alive: false, crashed: false, data: null })),
+    ).rejects.toMatchObject({
       exitCode: 1,
       message: 'session dead-session is not running',
     });

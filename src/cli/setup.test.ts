@@ -45,21 +45,16 @@ describe('setupWorkflow', () => {
     expect(existsSync(join(tmp, DIPTYCH_DIR, CONFIG_FILE))).toBe(true);
   });
 
-  it('writes the config but does NOT request setup when a runner override (planner) is provided', async () => {
+  it.each([
+    { label: 'planner', opts: { planner: 'claude-code' } },
+    { label: 'implementer', opts: { implementer: 'ollama' } },
+  ] as const)('writes the config without requesting setup when a $label override is provided', async ({ opts }) => {
     createTestGitRepo(tmp);
 
-    const result = await setupWorkflow({ project: tmp, fullscreen: false, planner: 'claude-code' });
+    const result = await setupWorkflow({ project: tmp, fullscreen: false, ...opts });
 
     expect(result.needsSetup).toBeUndefined();
     expect(existsSync(join(tmp, DIPTYCH_DIR, CONFIG_FILE))).toBe(true);
-  });
-
-  it('does NOT request setup when implementer override is provided', async () => {
-    createTestGitRepo(tmp);
-
-    const result = await setupWorkflow({ project: tmp, fullscreen: false, implementer: 'ollama' });
-
-    expect(result.needsSetup).toBeUndefined();
   });
 
   it('still requests setup when non-runner flags (mode / auto / budget) are the only extras', async () => {

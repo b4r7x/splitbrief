@@ -1,5 +1,4 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -32,10 +31,10 @@ afterEach(() => {
   dirs = [];
 });
 
-function setupProject(): { projectDir: string; sessionId: string } {
+function setupProject(files: Record<string, string> = {}): { projectDir: string; sessionId: string } {
   const projectDir = createTempDir('task-step-test');
   dirs.push(projectDir);
-  createTestGitRepo(projectDir);
+  createTestGitRepo(projectDir, files);
   const sessionId = 'sess-task-step';
   ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
@@ -335,12 +334,8 @@ describe('runSingleTask — happy path', () => {
   });
 
   it('blocks out-of-scope changes to an already-dirty file (dirty-at-start detection)', async () => {
-    const { projectDir, sessionId } = setupProject();
+    const { projectDir, sessionId } = setupProject({ 'src/existing.ts': 'export const v = 1;\n' });
 
-    // Commit a file, then make it dirty (user edit) before the task starts
-    mkdirSync(join(projectDir, 'src'), { recursive: true });
-    writeFileSync(join(projectDir, 'src/existing.ts'), 'export const v = 1;\n');
-    execSync('git add . && git commit -m "add existing"', { cwd: projectDir, stdio: 'pipe' });
     const userEdit = 'export const v = 2; // user edit\n';
     writeFileSync(join(projectDir, 'src/existing.ts'), userEdit);
 
@@ -397,12 +392,8 @@ describe('runSingleTask — happy path', () => {
   });
 
   it('denied out-of-scope write leaves a pre-existing user edit unchanged', async () => {
-    const { projectDir, sessionId } = setupProject();
+    const { projectDir, sessionId } = setupProject({ 'src/existing.ts': 'export const v = 1;\n' });
 
-    // Commit a file, then make it dirty (user edit) before the task starts
-    mkdirSync(join(projectDir, 'src'), { recursive: true });
-    writeFileSync(join(projectDir, 'src/existing.ts'), 'export const v = 1;\n');
-    execSync('git add . && git commit -m "add existing"', { cwd: projectDir, stdio: 'pipe' });
     const userEdit = 'export const v = 2; // user edit\n';
     writeFileSync(join(projectDir, 'src/existing.ts'), userEdit);
 
@@ -451,11 +442,8 @@ describe('runSingleTask — happy path', () => {
   });
 
   it('denied out-of-scope direct write in staging leaves a pre-existing user edit unchanged', async () => {
-    const { projectDir, sessionId } = setupProject();
+    const { projectDir, sessionId } = setupProject({ 'src/existing.ts': 'export const v = 1;\n' });
 
-    mkdirSync(join(projectDir, 'src'), { recursive: true });
-    writeFileSync(join(projectDir, 'src/existing.ts'), 'export const v = 1;\n');
-    execSync('git add . && git commit -m "add existing"', { cwd: projectDir, stdio: 'pipe' });
     const userEdit = 'export const v = 2; // user edit\n';
     writeFileSync(join(projectDir, 'src/existing.ts'), userEdit);
 
@@ -508,11 +496,8 @@ describe('runSingleTask — happy path', () => {
   });
 
   it('blocks deletion of an already-dirty out-of-scope file', async () => {
-    const { projectDir, sessionId } = setupProject();
+    const { projectDir, sessionId } = setupProject({ 'src/existing.ts': 'export const v = 1;\n' });
 
-    mkdirSync(join(projectDir, 'src'), { recursive: true });
-    writeFileSync(join(projectDir, 'src/existing.ts'), 'export const v = 1;\n');
-    execSync('git add . && git commit -m "add existing"', { cwd: projectDir, stdio: 'pipe' });
     const userEdit = 'export const v = 2; // user edit\n';
     writeFileSync(join(projectDir, 'src/existing.ts'), userEdit);
 
@@ -564,11 +549,7 @@ describe('runSingleTask — happy path', () => {
   });
 
   it('denied rollback does not erase a clean-at-start file edited during approval', async () => {
-    const { projectDir, sessionId } = setupProject();
-
-    mkdirSync(join(projectDir, 'src'), { recursive: true });
-    writeFileSync(join(projectDir, 'src/existing.ts'), 'export const v = 1;\n');
-    execSync('git add . && git commit -m "add existing"', { cwd: projectDir, stdio: 'pipe' });
+    const { projectDir, sessionId } = setupProject({ 'src/existing.ts': 'export const v = 1;\n' });
 
     const task = makeTask({
       id: 'T001',
@@ -624,11 +605,7 @@ describe('runSingleTask — happy path', () => {
   });
 
   it('denied direct write leaves user edits made during approval and drops staged implementer output', async () => {
-    const { projectDir, sessionId } = setupProject();
-
-    mkdirSync(join(projectDir, 'src'), { recursive: true });
-    writeFileSync(join(projectDir, 'src/existing.ts'), 'export const v = 1;\n');
-    execSync('git add . && git commit -m "add existing"', { cwd: projectDir, stdio: 'pipe' });
+    const { projectDir, sessionId } = setupProject({ 'src/existing.ts': 'export const v = 1;\n' });
 
     const task = makeTask({
       id: 'T001',
@@ -681,11 +658,7 @@ describe('runSingleTask — happy path', () => {
   });
 
   it('approved direct write does not promote staged output over user edits made during approval', async () => {
-    const { projectDir, sessionId } = setupProject();
-
-    mkdirSync(join(projectDir, 'src'), { recursive: true });
-    writeFileSync(join(projectDir, 'src/other.ts'), 'export const v = 1;\n');
-    execSync('git add . && git commit -m "add other"', { cwd: projectDir, stdio: 'pipe' });
+    const { projectDir, sessionId } = setupProject({ 'src/other.ts': 'export const v = 1;\n' });
 
     const task = makeTask({
       id: 'T001',

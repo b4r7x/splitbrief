@@ -8,6 +8,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 import { buildLanguageContext } from '../spec/prompts/language-context.js';
+import { createChangeDetector } from '../change-detection.js';
 
 let projectDir: string;
 
@@ -49,7 +50,6 @@ describe('createImplementerBase — error paths', () => {
   });
 
   it('returns failure when the invoke output contains no extractable code', async () => {
-    // The real extractCode runs and cannot find a code block in plain prose.
     const invoke = vi.fn().mockResolvedValue({
       text: 'I think you should write this yourself.',
       usage: null,
@@ -67,7 +67,6 @@ describe('createImplementerBase — error paths', () => {
   });
 
   it('returns failure when applyCode cannot write (path escapes projectDir)', async () => {
-    // The real validateTaskPath rejects paths that escape the project root.
     const invoke = vi.fn().mockResolvedValue({
       text: '```ts\nconst x = 1;\n```',
       usage: null,
@@ -112,7 +111,6 @@ describe('createImplementerBase — language-aware system preamble', () => {
 
 describe('createImplementerBase — extractsCode pipeline success', () => {
   it('writes extracted code to disk and returns success with diff metrics', async () => {
-    // Seed existing file so computeDiff reports linesRemoved > 0
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/hello.ts'), 'old content\n');
 
@@ -203,24 +201,42 @@ describe('createImplementerBase — non-extracting backends (detectChanges)', ()
     expect(result.success).toBe(true);
   });
 
-  it('passes a pre-workflow git snapshot to detectChanges so pre-existing dirty files are excluded', async () => {
-    // Create a pre-existing dirty file in the git repo before invoking the implementer.
+  it('ignores pre-existing dirty files and succeeds only when the backend writes a new file', async () => {
     const prePath = join(projectDir, 'src/pre-existing.ts');
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(prePath, 'pre-existing content\n');
-    // The file is untracked in git → getChangedFiles will report it.
 
-    const detectChanges = vi.fn().mockResolvedValue({ changed: true, output: '' });
-    const implementer = createImplementerBase(makeBaseConfig({
+    const detectChanges = createChangeDetector('Direct implementer');
+    const noChangeImplementer = createImplementerBase(makeBaseConfig({
       extractsCode: false,
       detectChanges,
+      invoke: vi.fn().mockResolvedValue({ text: 'done', usage: null }),
     }));
 
-    await implementer.implement({
+    const noChange = await noChangeImplementer.implement({
       task: makeTask(), projectDir, config: makeConfig(), context: defaultContext, onOutput: vi.fn(),
     });
 
-    expect(detectChanges).toHaveBeenCalled();
+    expect(noChange.success).toBe(false);
+    if (!noChange.success) expect(noChange.error).toContain('without changing any files');
+
+    const newPath = join(projectDir, 'src/new-file.ts');
+    const writingImplementer = createImplementerBase(makeBaseConfig({
+      extractsCode: false,
+      detectChanges,
+      invoke: vi.fn().mockImplementation(async () => {
+        writeFileSync(newPath, 'export const created = true;\n');
+        return { text: 'done', usage: null };
+      }),
+    }));
+
+    const changed = await writingImplementer.implement({
+      task: makeTask(), projectDir, config: makeConfig(), context: defaultContext, onOutput: vi.fn(),
+    });
+
+    expect(changed.success).toBe(true);
+    expect(readFileSync(prePath, 'utf-8')).toBe('pre-existing content\n');
+    expect(readFileSync(newPath, 'utf-8')).toBe('export const created = true;\n');
   });
 
   it('returns success when extractsCode is false and no detectChanges provided', async () => {

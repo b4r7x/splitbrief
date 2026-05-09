@@ -33,18 +33,6 @@ async function runSnapshot(args: string[]): Promise<void> {
 }
 
 describe('snapshot create', () => {
-  it('exits 1 with actionable message when no active session and no --session', async () => {
-    let captured: unknown;
-    try {
-      await runSnapshot(['create', '--project', tmp]);
-    } catch (err) {
-      captured = err;
-    }
-    expect(isCliError(captured)).toBe(true);
-    const msg = (captured as Error).message;
-    expect(msg).toMatch(/active session|--session/i);
-  });
-
   it('creates a snapshot and prints the ID when --session is provided', async () => {
     await writeFile(join(tmp, 'src.ts'), 'export {}');
 
@@ -54,9 +42,6 @@ describe('snapshot create', () => {
     expect(out).toMatch(/Snapshot created:/);
     expect(out).toMatch(/Files:/);
     expect(out).toMatch(/Location:/);
-    // The very first snapshot must NOT print just "baseline" — that is an
-    // internal identifier the user can never list or restore by name. The
-    // CLI follows up with a real, listable snapshot.
     expect(out).toMatch(/Initialized snapshot baseline/);
     expect(out).not.toMatch(/Snapshot created: baseline$/m);
   });
@@ -65,6 +50,7 @@ describe('snapshot create', () => {
     await writeFile(join(tmp, 'src.ts'), 'v1');
 
     await runSnapshot(['create', '--project', tmp, '--session', 'first-sess', '--name', 'kickoff']);
+    expect(captureOutput()).toContain('kickoff');
     consoleSpy.mockClear();
 
     await runSnapshot(['list', '--project', tmp, '--session', 'first-sess']);
@@ -72,13 +58,6 @@ describe('snapshot create', () => {
     expect(out).not.toMatch(/No snapshots found/);
     expect(out).toMatch(/kickoff/);
     expect(out).toMatch(/files=/);
-  });
-
-  it('prints the name when --name is provided', async () => {
-    await runSnapshot(['create', '--project', tmp, '--session', 'test-sess', '--name', 'my snap']);
-
-    const out = captureOutput();
-    expect(out).toContain('my snap');
   });
 });
 
@@ -92,28 +71,29 @@ describe('snapshot list', () => {
   it('lists created snapshots after creating them', async () => {
     await writeFile(join(tmp, 'src.ts'), 'version 1');
 
-    // Create baseline
     await runSnapshot(['create', '--project', tmp, '--session', 'test-sess']);
     consoleSpy.mockClear();
 
-    // Modify and create a delta snapshot
     await writeFile(join(tmp, 'src.ts'), 'version 2');
     await runSnapshot(['create', '--project', tmp, '--session', 'test-sess']);
     consoleSpy.mockClear();
 
-    // List
     await runSnapshot(['list', '--project', tmp, '--session', 'test-sess']);
     const out = captureOutput();
 
-    // Should show at least one non-baseline snapshot
     expect(out).toMatch(/files=/);
     expect(out).toMatch(/phase=manual/);
   });
+});
 
-  it('exits 1 with actionable message when no active session and no --session', async () => {
+describe('snapshot session resolution', () => {
+  it.each([
+    ['create'],
+    ['list'],
+  ])('%s exits 1 with actionable message when no active session and no --session', async (subcommand) => {
     let captured: unknown;
     try {
-      await runSnapshot(['list', '--project', tmp]);
+      await runSnapshot([subcommand, '--project', tmp]);
     } catch (err) {
       captured = err;
     }

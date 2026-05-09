@@ -3,59 +3,47 @@ import { streamingOutputStore } from './streaming-output.js';
 import { taskId } from '../../core/schemas/task.js';
 
 describe('streamingOutputStore', () => {
-  beforeEach(() => streamingOutputStore.__testReset());
+  beforeEach(() => streamingOutputStore.reset());
 
-  it('startStreaming sets active=true, clears lines, sets taskId', () => {
+  it('streams output for the active task until the stream is stopped', () => {
     const id = taskId('T001');
     streamingOutputStore.startStreaming(id);
-    const s = streamingOutputStore.get();
-    expect(s.active).toBe(true);
-    expect(s.lines).toEqual([]);
-    expect(s.taskId).toBe(id);
-  });
-
-  it('pushLines updates lines when active', () => {
-    streamingOutputStore.startStreaming(taskId('T001'));
     streamingOutputStore.pushLines(['hello', 'world']);
-    expect(streamingOutputStore.get().lines).toEqual(['hello', 'world']);
-  });
 
-  it('pushLines is no-op when inactive', () => {
-    streamingOutputStore.pushLines(['hello']);
-    expect(streamingOutputStore.get().lines).toEqual([]);
-  });
+    expect(streamingOutputStore.get()).toEqual({
+      active: true,
+      lines: ['hello', 'world'],
+      taskId: id,
+    });
 
-  it('stopStreaming sets active=false and preserves lines', () => {
-    streamingOutputStore.startStreaming(taskId('T001'));
-    streamingOutputStore.pushLines(['line1']);
     streamingOutputStore.stopStreaming();
-    const s = streamingOutputStore.get();
-    expect(s.active).toBe(false);
-    expect(s.lines).toEqual(['line1']);
+    streamingOutputStore.pushLines(['ignored after stop']);
+
+    expect(streamingOutputStore.get()).toEqual({
+      active: false,
+      lines: ['hello', 'world'],
+      taskId: id,
+    });
   });
 
-  it('stopStreaming is no-op when already inactive', () => {
+  it('ignores output outside an active stream and can return to an idle state', () => {
+    streamingOutputStore.pushLines(['ignored before start']);
     streamingOutputStore.stopStreaming();
-    expect(streamingOutputStore.get().active).toBe(false);
-  });
 
-  it('reset returns to initial state', () => {
+    expect(streamingOutputStore.get()).toEqual({
+      active: false,
+      lines: [],
+      taskId: null,
+    });
+
     streamingOutputStore.startStreaming(taskId('T001'));
-    streamingOutputStore.pushLines(['abc']);
+    streamingOutputStore.pushLines(['visible']);
     streamingOutputStore.reset();
-    const s = streamingOutputStore.get();
-    expect(s.active).toBe(false);
-    expect(s.lines).toEqual([]);
-    expect(s.taskId).toBeNull();
-  });
 
-  it('__testReset restores state for tests', () => {
-    streamingOutputStore.startStreaming(taskId('T001'));
-    streamingOutputStore.__testReset();
-    expect(streamingOutputStore.get().active).toBe(false);
-
-    streamingOutputStore.__testReset({ active: true, taskId: taskId('T042'), lines: ['x'] });
-    expect(streamingOutputStore.get().active).toBe(true);
-    expect(streamingOutputStore.get().taskId).toBe(taskId('T042'));
+    expect(streamingOutputStore.get()).toEqual({
+      active: false,
+      lines: [],
+      taskId: null,
+    });
   });
 });

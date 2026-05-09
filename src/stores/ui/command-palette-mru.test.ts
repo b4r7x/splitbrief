@@ -3,40 +3,30 @@ import { commandPaletteMruStore, MAX_PALETTE_MRU } from './command-palette-mru.j
 
 describe('commandPaletteMruStore', () => {
   beforeEach(() => {
-    commandPaletteMruStore.__testReset();
+    commandPaletteMruStore.reset();
   });
 
-  it('record single id', () => {
-    commandPaletteMruStore.record('a');
-    expect(commandPaletteMruStore.get().ids).toEqual(['a']);
-  });
-
-  it('most-recent first ordering', () => {
+  it('keeps commands ordered by recent use and reports their ranks', () => {
     commandPaletteMruStore.record('b');
     commandPaletteMruStore.record('a');
-    expect(commandPaletteMruStore.get().ids).toEqual(['a', 'b']);
+    commandPaletteMruStore.record('a');
+    commandPaletteMruStore.record('c');
+
+    expect(commandPaletteMruStore.get().ids).toEqual(['c', 'a', 'b']);
+    expect(commandPaletteMruStore.getRank('c')).toBe(1);
+    expect(commandPaletteMruStore.getRank('a')).toBe(2);
+    expect(commandPaletteMruStore.getRank('b')).toBe(3);
+    expect(commandPaletteMruStore.getRank('z')).toBe(0);
   });
 
-  it('deduplicates on re-record', () => {
-    commandPaletteMruStore.record('a');
-    commandPaletteMruStore.record('a');
-    commandPaletteMruStore.record('a');
-    expect(commandPaletteMruStore.get().ids).toEqual(['a']);
-  });
-
-  it('caps at MAX_PALETTE_MRU', () => {
+  it('drops the oldest command when the MRU list exceeds capacity', () => {
     for (let i = 0; i < MAX_PALETTE_MRU + 1; i++) {
       commandPaletteMruStore.record(`item-${i}`);
     }
+
     expect(commandPaletteMruStore.get().ids).toHaveLength(MAX_PALETTE_MRU);
-  });
-
-  it('getRank returns 1-based rank when id is first', () => {
-    commandPaletteMruStore.record('a');
-    expect(commandPaletteMruStore.getRank('a')).toBe(1);
-  });
-
-  it('getRank returns 0 when id is absent', () => {
-    expect(commandPaletteMruStore.getRank('z')).toBe(0);
+    expect(commandPaletteMruStore.get().ids[0]).toBe(`item-${MAX_PALETTE_MRU}`);
+    expect(commandPaletteMruStore.get().ids).not.toContain('item-0');
+    expect(commandPaletteMruStore.getRank('item-0')).toBe(0);
   });
 });

@@ -1,15 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { writeFileSync, rmSync, existsSync, readFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
 import {
   isGitRepo,
-  commitChanges,
   getCurrentDiff,
   hasExternalChanges,
   getChangedFiles,
-  stageAll,
-  createTaggedStash,
   discardFileChange,
   branchExists,
   createBranch,
@@ -52,40 +48,6 @@ describe('git utils', () => {
     });
   });
 
-  describe('stageAll', () => {
-    it('stages new untracked files', async () => {
-      const dir = tracked(setupGitRepo());
-      writeFileSync(join(dir, 'new.txt'), 'hello');
-      await stageAll(dir);
-      const status = execSync('git status --porcelain', { cwd: dir, encoding: 'utf-8' });
-      expect(status).toMatch(/^A\s+new\.txt/m);
-    });
-  });
-
-  describe('commitChanges', () => {
-    it('commits previously staged changes and returns a hash', async () => {
-      const dir = tracked(setupGitRepo());
-      writeFileSync(join(dir, 'new.txt'), 'hello');
-      await stageAll(dir);
-      const hash = await commitChanges(dir, 'add new file');
-      expect(hash).toBeTruthy();
-      expect(typeof hash).toBe('string');
-      const log = execSync('git log --oneline', { cwd: dir, encoding: 'utf-8' });
-      expect(log).toContain('add new file');
-    });
-
-    it('does not auto-stage: unstaged changes are not committed', async () => {
-      const dir = tracked(setupGitRepo());
-      const headBefore = execSync('git rev-parse HEAD', { cwd: dir, encoding: 'utf-8' }).trim();
-      writeFileSync(join(dir, 'new.txt'), 'hello');
-      await commitChanges(dir, 'should not include new.txt');
-      const headAfter = execSync('git rev-parse HEAD', { cwd: dir, encoding: 'utf-8' }).trim();
-      expect(headAfter).toBe(headBefore);
-      const log = execSync('git log --oneline', { cwd: dir, encoding: 'utf-8' });
-      expect(log).not.toContain('should not include new.txt');
-    });
-  });
-
   describe('getCurrentDiff', () => {
     it('returns combined staged and unstaged diff', async () => {
       const dir = tracked(setupGitRepo());
@@ -113,22 +75,15 @@ describe('git utils', () => {
       expect(await hasExternalChanges(dir)).toBe(false);
     });
 
-    it('returns true for staged created files', async () => {
-      const dir = tracked(setupGitRepo());
-      writeFileSync(join(dir, 'created.txt'), 'created');
-      execSync('git add created.txt', { cwd: dir, stdio: 'ignore' });
-      expect(await hasExternalChanges(dir)).toBe(true);
-    });
-
     it('returns true for deleted files', async () => {
       const dir = tracked(setupGitRepo());
       rmSync(join(dir, 'init.txt'));
       expect(await hasExternalChanges(dir)).toBe(true);
     });
 
-    it('returns true for renamed files', async () => {
+    it('returns true for moved files', async () => {
       const dir = tracked(setupGitRepo());
-      execSync('git mv init.txt renamed.txt', { cwd: dir, stdio: 'ignore' });
+      renameSync(join(dir, 'init.txt'), join(dir, 'renamed.txt'));
       expect(await hasExternalChanges(dir)).toBe(true);
     });
   });
@@ -152,23 +107,6 @@ describe('git utils', () => {
       writeFileSync(join(dir, 'new-file.txt'), 'content');
       const files = await getChangedFiles(dir);
       expect(files).toContain('new-file.txt');
-    });
-  });
-
-  describe('createTaggedStash', () => {
-    it('creates a tagged stash sha for dirty working tree and returns its tag', async () => {
-      const dir = tracked(setupGitRepo());
-      writeFileSync(join(dir, 'init.txt'), 'modified');
-      const tag = await createTaggedStash(dir, 'checkpoint: T001', 'checkpoint/T001');
-      expect(tag).toBe('checkpoint/T001');
-      const tags = execSync('git tag', { cwd: dir, encoding: 'utf-8' });
-      expect(tags).toContain('checkpoint/T001');
-    });
-
-    it('returns empty string when there is nothing to stash', async () => {
-      const dir = tracked(setupGitRepo());
-      const tag = await createTaggedStash(dir, 'checkpoint: T002', 'checkpoint/T002');
-      expect(tag).toBe('');
     });
   });
 

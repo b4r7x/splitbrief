@@ -1,10 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
+import { e2eImplementer, e2ePlanner } from '../helpers/e2e-config.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/e2e-harness.js';
-
-const e2eApiBase = process.env.DIPTYCH_E2E_API_BASE ?? 'http://localhost:11434/v1';
-const replayApiKey = process.env.DIPTYCH_E2E_RECORD === '1'
-  ? undefined
-  : 'e2e-placeholder';
 
 const scenario = {
   name: 'cost routing - cheapest capable profile',
@@ -13,38 +12,18 @@ const scenario = {
   mode: 'quick' as const,
   config: {
     version: 2,
-    planner: {
-      kind: 'api',
-      provider: 'openai',
-      apiBase: e2eApiBase,
-      ...(replayApiKey ? { apiKey: replayApiKey } : {}),
-      model: 'gpt-4o',
-    },
-    implementer: {
-      kind: 'api',
-      provider: 'openai',
-      apiBase: e2eApiBase,
-      ...(replayApiKey ? { apiKey: replayApiKey } : {}),
-      model: 'gpt-4o-mini',
-    },
+    planner: e2ePlanner,
+    implementer: e2eImplementer,
     implementerProfiles: {
       default: 'cheap-local',
       profiles: {
         'cheap-local': {
-          kind: 'api',
-          provider: 'openai',
-          apiBase: e2eApiBase,
-          ...(replayApiKey ? { apiKey: replayApiKey } : {}),
-          model: 'gpt-4o-mini',
+          ...e2eImplementer,
           costTier: 'local',
           contextLength: 200000,
         },
         'expensive-cloud': {
-          kind: 'api',
-          provider: 'openai',
-          apiBase: e2eApiBase,
-          ...(replayApiKey ? { apiKey: replayApiKey } : {}),
-          model: 'gpt-4o',
+          ...e2ePlanner,
           costTier: 'frontier',
           contextLength: 200000,
         },
@@ -72,6 +51,9 @@ describe('e2e: cost routing cheapest capable', () => {
     const taskStarted = ctx.events.find((event) => event.type === 'task_started');
     expect(taskStarted).toBeDefined();
     expect(taskStarted?.implementerProfile).toBe('cheap-local');
+    const utilityPath = join(ctx.projectDir, 'src/utility.ts');
+    expect(readFileSync(utilityPath, 'utf-8')).toContain('toTitleCase');
+    expect(evaluateTsArtifact(utilityPath, "mod.toTitleCase('hello WORLD')")).toBe('Hello World');
 
     expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
   });

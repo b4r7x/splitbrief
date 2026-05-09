@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { Config } from '../../../core/schemas/config.js';
+import type { RetryOptions } from '../../implementers/types.js';
 import type { WorkflowSinks } from '../types.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots.js';
 import { createValidator } from '../validation.js';
@@ -76,15 +77,25 @@ describe('runRetryStep', () => {
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-    const defaultRetry = vi.fn().mockResolvedValue({ success: false, output: '', error: 'wrong worker' });
-    const overrideRetry = vi.fn().mockResolvedValue({
-      success: true,
-      output: 'fixed',
-      usage: { inputTokens: 12, outputTokens: 6 },
-    });
+    const defaultRetry = async () => {
+      throw new Error('default implementer should not handle an overridden retry');
+    };
+    const overrideRetry = async ({ config: retryConfig, error, attempt, kind }: RetryOptions) => {
+      const implementer = retryConfig.implementer;
+      return {
+        success: implementer.kind === 'api'
+          && implementer.provider === 'deepseek'
+          && implementer.model === 'deepseek-chat'
+          && error === 'validation failed'
+          && attempt === 1
+          && kind === 'local',
+        output: 'fixed',
+        usage: { inputTokens: 12, outputTokens: 6 },
+      };
+    };
     const defaultImplementer = makeImplementer({ retry: defaultRetry });
     const overrideImplementer = makeImplementer({ retry: overrideRetry });
-    const createProfileImplementer = vi.fn().mockReturnValue(overrideImplementer);
+    const createProfileImplementer = () => overrideImplementer;
 
     const outcome = await runRetryStep({
       ctx: {
@@ -128,28 +139,6 @@ describe('runRetryStep', () => {
     });
 
     expect(outcome.result).toEqual({ completed: true, method: 'local', attempts: 1 });
-    expect(defaultRetry).not.toHaveBeenCalled();
-    expect(createProfileImplementer).toHaveBeenCalledWith(
-      expect.objectContaining({
-        implementer: expect.objectContaining({
-          provider: 'deepseek',
-          model: 'deepseek-chat',
-          contextLength: 128_000,
-        }),
-      }),
-      expect.objectContaining({ publisher: expect.any(Object) }),
-    );
-    expect(overrideRetry).toHaveBeenCalledWith(expect.objectContaining({
-      config: expect.objectContaining({
-        implementer: expect.objectContaining({
-          provider: 'deepseek',
-          model: 'deepseek-chat',
-        }),
-      }),
-      error: 'validation failed',
-      attempt: 1,
-      kind: 'local',
-    }));
     expect(events.find(event => event.type === 'task_completed')).toMatchObject({
       type: 'task_completed',
       taskId: 'T001',
@@ -223,13 +212,15 @@ describe('runRetryStep', () => {
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-    const defaultRetry = vi.fn().mockResolvedValue({
+    const defaultRetry = async () => ({
       success: true,
       output: 'done',
       usage: { inputTokens: 10, outputTokens: 5 },
     });
     const defaultImplementer = makeImplementer({ retry: defaultRetry });
-    const createProfileImplementer = vi.fn();
+    const createProfileImplementer = () => {
+      throw new Error('profile implementer should not be created without an override');
+    };
 
     const outcome = await runRetryStep({
       ctx: {
@@ -273,7 +264,5 @@ describe('runRetryStep', () => {
     });
 
     expect(outcome.result).toEqual({ completed: true, method: 'local', attempts: 1 });
-    expect(defaultRetry).toHaveBeenCalled();
-    expect(createProfileImplementer).not.toHaveBeenCalled();
   });
 });

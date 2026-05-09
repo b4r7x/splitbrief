@@ -2,18 +2,17 @@ import { describe, expect, test } from 'vitest';
 import { timeoutError, withTimeout, withIdleTimeout } from './with-timeout.js';
 
 describe('timeoutError.idle factory', () => {
-  test('uses default message when none given', () => {
-    const err = timeoutError.idle();
-    expect(err).toBeInstanceOf(Error);
-    expect(err.kind).toBe('idle-timeout');
-    expect(err.message).toBe('Idle timeout');
-    expect(err.data).toEqual({ message: 'Idle timeout' });
-  });
+  test.each([
+    { message: undefined, expected: 'Idle timeout' },
+    { message: 'Model response timed out', expected: 'Model response timed out' },
+  ])('formats idle timeout errors', ({ message, expected }) => {
+    const err = timeoutError.idle(message);
 
-  test('accepts custom message', () => {
-    const err = timeoutError.idle('Model response timed out');
-    expect(err.message).toBe('Model response timed out');
-    expect(err.data).toEqual({ message: 'Model response timed out' });
+    expect(err).toMatchObject({
+      kind: 'idle-timeout',
+      message: expected,
+      data: { message: expected },
+    });
   });
 });
 
@@ -24,17 +23,8 @@ describe('timeoutError.isIdle predicate', () => {
   });
 
   test('rejects non-matching values', () => {
-    expect(timeoutError.isIdle(new Error('plain'))).toBe(false);
-    expect(timeoutError.isIdle(null)).toBe(false);
-    expect(timeoutError.isIdle({ kind: 'idle-timeout' })).toBe(false);
-  });
-
-  test('narrows type for data access', () => {
-    const err: unknown = timeoutError.idle('slow');
-    if (timeoutError.isIdle(err)) {
-      expect(err.data).toEqual({ message: 'slow' });
-    } else {
-      throw new Error('predicate should match');
+    for (const value of [new Error('plain'), null, { kind: 'idle-timeout' }]) {
+      expect(timeoutError.isIdle(value)).toBe(false);
     }
   });
 });

@@ -1,78 +1,85 @@
-import { describe, expect, it, vi } from 'vitest';
+import { useState } from 'react';
+import { describe, expect, it } from 'vitest';
 import { Text } from 'ink';
 import { useStaticSelector } from './use-static-selector.js';
 import { renderFeature, tick } from '../../testing/helpers/ink.js';
 
+const UP = '\u001b[A';
+const DOWN = '\u001b[B';
+const ENTER = '\r';
+const ESC = '\u001b';
+
 function Harness({
   items,
   initialIndex,
-  onSelect,
 }: {
   items: string[];
   initialIndex?: number | undefined;
-  onSelect: (item: string, index: number) => void;
 }) {
+  const [chosen, setChosen] = useState('none');
+  const [cancelled, setCancelled] = useState(false);
   const selector = useStaticSelector({
     items,
     initialIndex,
-    onSelect,
+    onSelect: (item, index) => setChosen(`${item}@${index}`),
+    onCancel: () => setCancelled(true),
   });
-  return <Text>{selector.selectedIndex}</Text>;
+  const current = items[selector.selectedIndex] ?? 'none';
+  return (
+    <Text>
+      {`current:${current}|chosen:${chosen}|cancelled:${cancelled ? 'yes' : 'no'}`}
+    </Text>
+  );
 }
 
 describe('useStaticSelector', () => {
-  it('clamps initial negative and oversized indexes', async () => {
-    const negativeUi = renderFeature(
-      <Harness items={['a', 'b']} initialIndex={-5} onSelect={vi.fn()} />,
-    );
-    await tick();
+  it('wraps through choices, selects the visible item, and cancels from keyboard input', async () => {
+    const ui = renderFeature(<Harness items={['alpha', 'beta', 'gamma']} />);
+    await tick(20);
 
-    expect(negativeUi.lastFrame()).toBe('0');
-    negativeUi.unmount();
+    expect(ui.lastFrame()).toContain('current:alpha|chosen:none|cancelled:no');
 
-    const oversizedUi = renderFeature(
-      <Harness items={['a', 'b']} initialIndex={10} onSelect={vi.fn()} />,
-    );
-    await tick();
+    ui.stdin.write(UP);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('current:gamma');
 
-    expect(oversizedUi.lastFrame()).toBe('1');
-    oversizedUi.unmount();
-  });
+    ui.stdin.write(ENTER);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('chosen:gamma@2');
 
-  it('selects the clamped index after a list shrinks', async () => {
-    const onSelect = vi.fn();
-    const ui = renderFeature(
-      <Harness items={['a', 'b', 'c']} initialIndex={2} onSelect={onSelect} />,
-    );
-    await tick();
+    ui.stdin.write(DOWN);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('current:alpha');
 
-    expect(ui.lastFrame()).toBe('2');
+    ui.stdin.write(ESC);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('cancelled:yes');
 
-    ui.rerender(<Harness items={['a']} initialIndex={2} onSelect={onSelect} />);
-    await tick();
-
-    expect(ui.lastFrame()).toBe('0');
-
-    ui.stdin.write('\r');
-    await tick();
-
-    expect(onSelect).toHaveBeenCalledWith('a', 0);
     ui.unmount();
   });
 
-  it('keeps an empty list at index zero and does not select missing items', async () => {
-    const onSelect = vi.fn();
-    const ui = renderFeature(
-      <Harness items={[]} initialIndex={4} onSelect={onSelect} />,
-    );
-    await tick();
+  it('keeps the visible selection valid when the item list shrinks or empties', async () => {
+    const ui = renderFeature(<Harness items={['alpha', 'beta', 'gamma']} initialIndex={2} />);
+    await tick(20);
 
-    expect(ui.lastFrame()).toBe('0');
+    expect(ui.lastFrame()).toContain('current:gamma');
 
-    ui.stdin.write('\r');
-    await tick();
+    ui.rerender(<Harness items={['alpha']} initialIndex={2} />);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('current:alpha');
 
-    expect(onSelect).not.toHaveBeenCalled();
+    ui.stdin.write(ENTER);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('chosen:alpha@0');
+
+    ui.rerender(<Harness items={[]} initialIndex={2} />);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('current:none');
+
+    ui.stdin.write(ENTER);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('chosen:alpha@0');
+
     ui.unmount();
   });
 });

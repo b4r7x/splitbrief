@@ -378,7 +378,9 @@ describe('runWorkflow — recovery resume', () => {
     saveState(projectDir, sessionId, savedState);
 
     const { callbacks } = makeCallbacks();
-    const isAvailable = vi.fn().mockResolvedValue(false);
+    const isAvailable = async () => {
+      throw new Error('planner availability should not be checked while pending recovery is unresolved');
+    };
 
     await runWorkflow({
       feature: 'feat',
@@ -394,7 +396,6 @@ describe('runWorkflow — recovery resume', () => {
       _planner: makePlanner({ isAvailable }),
     });
 
-    expect(isAvailable).not.toHaveBeenCalled();
     expect(readActive(projectDir)).toBe(sessionId);
     expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
       reason: 'validation-failed',

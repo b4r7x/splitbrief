@@ -20,6 +20,7 @@ export interface ValidationResult {
 }
 
 const MAX_ERROR_LINES = 20;
+export type ValidationCommandRunner = typeof runCommand;
 
 export interface Validator {
   findAffectedTestFile: (taskFile: string, projectDir: string, testPattern?: string) => string | null;
@@ -33,6 +34,10 @@ export interface Validator {
     discoveredValidation?: DiscoveredValidation,
   ) => Promise<ValidationResult[]>;
 }
+
+type ValidatorDeps = {
+  runCommand?: ValidationCommandRunner | undefined;
+};
 
 type CommandField = 'typecheckCommand' | 'lintCommand' | 'testCommand';
 type CommandSource = 'config' | 'discovered' | 'heuristic' | 'default';
@@ -73,7 +78,9 @@ function resolveTestPattern(
   return config.validation.testPattern ?? discovered?.testPattern ?? heuristic?.testPattern ?? undefined;
 }
 
-export function createValidator(): Validator {
+export function createValidator(deps: ValidatorDeps = {}): Validator {
+  const commandRunner = deps.runCommand ?? runCommand;
+
   async function validateTask(
     task: Task,
     projectDir: string,
@@ -88,7 +95,7 @@ export function createValidator(): Validator {
     if (config.validation.typecheck) {
       const resolved = resolveCommand('typecheckCommand', config, discovered, heuristic, { cmd: 'npx', args: ['tsc', '--noEmit'], source: 'default' });
       if (resolved) {
-        const result = await runValidationStep({ stage: 'typecheck', cmd: resolved.cmd, args: resolved.args, cwd: projectDir });
+        const result = await runValidationStep({ stage: 'typecheck', cmd: resolved.cmd, args: resolved.args, cwd: projectDir, runCommand: commandRunner });
         results.push(result);
         if (!result.passed) return results;
         stages.typecheck = true;
@@ -99,7 +106,7 @@ export function createValidator(): Validator {
     if (config.validation.lint) {
       const resolved = resolveCommand('lintCommand', config, discovered, heuristic, null);
       if (resolved) {
-        const result = await runValidationStep({ stage: 'lint', cmd: resolved.cmd, args: resolved.args, cwd: projectDir });
+        const result = await runValidationStep({ stage: 'lint', cmd: resolved.cmd, args: resolved.args, cwd: projectDir, runCommand: commandRunner });
         results.push(result);
         if (!result.passed) return results;
         stages.lint = true;
@@ -116,14 +123,14 @@ export function createValidator(): Validator {
           const testFile = findAffectedTestFile(task.file, projectDir, testPattern);
           if (testFile) {
             const args = [...resolved.args, '--', testFile];
-            const result = await runValidationStep({ stage: 'test', cmd: resolved.cmd, args, cwd: projectDir });
+            const result = await runValidationStep({ stage: 'test', cmd: resolved.cmd, args, cwd: projectDir, runCommand: commandRunner });
             results.push(result);
             if (!result.passed) return results;
             stages.test = true;
             onStageComplete?.(stages);
           }
         } else {
-          const result = await runValidationStep({ stage: 'test', cmd: resolved.cmd, args: resolved.args, cwd: projectDir });
+          const result = await runValidationStep({ stage: 'test', cmd: resolved.cmd, args: resolved.args, cwd: projectDir, runCommand: commandRunner });
           results.push(result);
           if (!result.passed) return results;
           stages.test = true;
@@ -162,8 +169,9 @@ async function runValidationStep(opts: {
   cmd: string;
   args: string[];
   cwd: string;
+  runCommand: ValidationCommandRunner;
 }): Promise<ValidationResult> {
-  const { stage, cmd, args, cwd } = opts;
+  const { stage, cmd, args, cwd, runCommand } = opts;
   try {
     const { stdout, stderr, code } = await runCommand(cmd, args, { cwd });
 

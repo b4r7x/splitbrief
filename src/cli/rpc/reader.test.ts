@@ -1,7 +1,7 @@
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { createCommandReader } from './reader.js';
-import { RpcCommandSchema, type RpcCommand } from './types.js';
+import type { RpcCommand } from './types.js';
 
 const validCommands: RpcCommand[] = [
   { type: 'approve' },
@@ -21,28 +21,6 @@ function createReadableInput(): PassThrough {
 async function waitForReader(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve));
 }
-
-describe('RpcCommandSchema', () => {
-  it('accepts every supported command shape', () => {
-    expect(validCommands.map((command) => RpcCommandSchema.safeParse(command).success)).toEqual([
-      true,
-      true,
-      true,
-      true,
-      true,
-      true,
-      true,
-      true,
-    ]);
-  });
-
-  it('rejects unknown commands and empty command payloads', () => {
-    expect(RpcCommandSchema.safeParse({ type: 'unknown' }).success).toBe(false);
-    expect(RpcCommandSchema.safeParse({ type: 'message', text: '' }).success).toBe(false);
-    expect(RpcCommandSchema.safeParse({ type: 'recovery', action: '' }).success).toBe(false);
-    expect(RpcCommandSchema.safeParse({ type: 'slash', command: '' }).success).toBe(false);
-  });
-});
 
 describe('createCommandReader', () => {
   it('parses non-empty JSON lines into commands', async () => {
@@ -81,7 +59,7 @@ describe('createCommandReader', () => {
     expect(errors).toEqual(['Invalid JSON: not json']);
   });
 
-  it('reports validation errors for unsupported commands', async () => {
+  it('reports validation errors for unsupported commands and empty payloads', async () => {
     const commands: RpcCommand[] = [];
     const errors: string[] = [];
     const stream = createReadableInput();
@@ -92,11 +70,16 @@ describe('createCommandReader', () => {
       (error) => errors.push(error),
     );
 
-    stream.end('{"type":"unknown"}\n');
+    stream.end([
+      '{"type":"unknown"}',
+      '{"type":"message","text":""}',
+      '{"type":"recovery","action":""}',
+      '{"type":"slash","command":""}',
+    ].join('\n'));
     await waitForReader();
 
     expect(commands).toEqual([]);
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain('Invalid command:');
+    expect(errors).toHaveLength(4);
+    expect(errors.every((error) => error.startsWith('Invalid command:'))).toBe(true);
   });
 });

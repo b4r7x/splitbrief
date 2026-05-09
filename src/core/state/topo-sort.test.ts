@@ -65,15 +65,6 @@ describe('topoError.isCircularDependency predicate', () => {
     expect(topoError.isCircularDependency(null)).toBe(false);
     expect(topoError.isCircularDependency({ kind: 'topo-circular-dependency' })).toBe(false);
   });
-
-  test('narrows type for cycle access', () => {
-    const err: unknown = topoError.circularDependency(['x', 'y', 'x']);
-    if (topoError.isCircularDependency(err)) {
-      expect(err.data).toEqual({ cycle: ['x', 'y', 'x'] });
-    } else {
-      throw new Error('predicate should match');
-    }
-  });
 });
 
 describe('topoError.unknownDependency factory', () => {

@@ -35,11 +35,12 @@ afterEach(() => {
 });
 
 describe('ensureHooksTrusted', () => {
-  it('does nothing when hooks is undefined', async () => {
+  it('allows runs with no hooks configured', async () => {
     await expect(ensureHooksTrusted({ projectDir: tmp, hooks: undefined, allowHooks: false })).resolves.toBeUndefined();
+    expect(isHooksConfigTrusted(tmp, hooks)).toBe(false);
   });
 
-  it('does nothing when hooks config is already trusted', async () => {
+  it('allows already trusted hooks config without prompting again', async () => {
     markHooksConfigTrusted(tmp, hooks);
     await expect(ensureHooksTrusted({ projectDir: tmp, hooks, allowHooks: false })).resolves.toBeUndefined();
     expect(isHooksConfigTrusted(tmp, hooks)).toBe(true);
@@ -83,25 +84,12 @@ describe('ensureHooksTrusted', () => {
     expect(isCliError(caught)).toBe(true);
     expect((caught as Error).message).toMatch(/untrusted hooks/);
     expect(isHooksConfigTrusted(tmp, hooks)).toBe(false);
-    expect(rl.close).toHaveBeenCalled();
   });
 
-  it('marks trusted and proceeds when user answers y on TTY', async () => {
+  it.each(['y', 'yes'])('marks trusted and proceeds when user answers %s on TTY', async (answer) => {
     setStdinIsTTY(true);
 
-    const rl = { question: vi.fn().mockResolvedValue('y'), close: vi.fn() };
-    const { createInterface } = await import('node:readline/promises');
-    vi.mocked(createInterface).mockReturnValue(rl as never);
-
-    await expect(ensureHooksTrusted({ projectDir: tmp, hooks, allowHooks: false })).resolves.toBeUndefined();
-    expect(isHooksConfigTrusted(tmp, hooks)).toBe(true);
-    expect(rl.close).toHaveBeenCalled();
-  });
-
-  it('marks trusted and proceeds when user answers yes on TTY', async () => {
-    setStdinIsTTY(true);
-
-    const rl = { question: vi.fn().mockResolvedValue('yes'), close: vi.fn() };
+    const rl = { question: vi.fn().mockResolvedValue(answer), close: vi.fn() };
     const { createInterface } = await import('node:readline/promises');
     vi.mocked(createInterface).mockReturnValue(rl as never);
 

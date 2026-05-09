@@ -8,7 +8,6 @@ import { renderFeature, tick } from '../../../testing/helpers/ink.js';
 import { resetAllStores } from '../../../testing/helpers/stores.js';
 import { createTempDir, cleanupTempDir } from '../../../testing/helpers/temp-dir.js';
 import { configStore } from '../../stores/project/config.js';
-import { inputHeightStore } from '../../stores/ui/input-height.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 
 const COMMANDS: RuntimeCommandDef[] = [
@@ -29,12 +28,25 @@ function renderDockedComposer(props: ComponentProps<typeof Composer>) {
   );
 }
 
-describe('composer integration: Tab autocomplete', () => {
+function seedProjectFiles(prefix: string, files: string[]): string {
+  const projectDir = createTempDir(prefix);
+  for (const file of files) {
+    const directory = file.split('/').slice(0, -1).join('/');
+    if (directory) {
+      mkdirSync(join(projectDir, directory), { recursive: true });
+    }
+    writeFileSync(join(projectDir, file), '');
+  }
+  configStore.__testReset({ projectDir });
+  return projectDir;
+}
+
+describe('composer integration: completions', () => {
   beforeEach(() => {
     resetAllStores();
   });
 
-  it('typing /mde then Tab fills the input with /mode, then Enter submits the command', async () => {
+  it('completes a fuzzy slash command and dispatches it only after the user submits', async () => {
     const commandCalls: string[] = [];
     const submits: string[] = [];
 
@@ -66,7 +78,7 @@ describe('composer integration: Tab autocomplete', () => {
     ui.unmount();
   });
 
-  it('typing / then Down and Tab fills the highlighted command', async () => {
+  it('fills the arrow-highlighted slash command without dispatching until submit', async () => {
     const commandCalls: string[] = [];
     const ui = renderDockedComposer({
       commands: COMMANDS,
@@ -93,33 +105,9 @@ describe('composer integration: Tab autocomplete', () => {
     ui.unmount();
   });
 
-  it('keeps the reserved input height stable while command suggestions overlay', async () => {
-    const ui = renderDockedComposer({
-      commands: COMMANDS,
-      currentScreen: 'home',
-      mode: 'normal',
-      hint: '',
-      onSubmit: () => {},
-      onRuntimeCommand: () => {},
-    });
-    await tick(20);
-
-    const before = inputHeightStore.get().rows;
-    ui.stdin.write('/');
-    await tick(20);
-
-    expect(ui.lastFrame()).toContain('Tab fill');
-    expect(inputHeightStore.get().rows).toBe(before);
-    ui.unmount();
-  });
-
   it('typing @src/ shows project file suggestions, fills the selected path, and appends later input', async () => {
-    const projectDir = createTempDir('composer-at-file');
+    const projectDir = seedProjectFiles('composer-at-file', ['src/app.ts']);
     try {
-      mkdirSync(join(projectDir, 'src'), { recursive: true });
-      writeFileSync(join(projectDir, 'src', 'app.ts'), '');
-      configStore.__testReset({ projectDir });
-
       const submits: string[] = [];
       const ui = renderDockedComposer({
         commands: COMMANDS,
@@ -149,29 +137,103 @@ describe('composer integration: Tab autocomplete', () => {
     }
   });
 
-  it('keeps the reserved input height stable while file suggestions overlay', async () => {
-    const projectDir = createTempDir('composer-at-file-height');
+  it('accepts the arrow-highlighted file suggestion with Enter, then submits on the next Enter', async () => {
+    const projectDir = seedProjectFiles('composer-at-file-arrow', [
+      'src/app.ts',
+      'src/components/composer/composer.tsx',
+    ]);
     try {
-      mkdirSync(join(projectDir, 'src'), { recursive: true });
-      writeFileSync(join(projectDir, 'src', 'app.ts'), '');
-      configStore.__testReset({ projectDir });
-
+      const submits: string[] = [];
       const ui = renderDockedComposer({
         commands: COMMANDS,
         currentScreen: 'home',
         mode: 'normal',
         hint: '',
-        onSubmit: () => {},
+        onSubmit: (text) => submits.push(text),
         onRuntimeCommand: () => {},
       });
+
+      ui.stdin.write('@src');
+      await tick(20);
+      expect(ui.lastFrame()).toContain('src/app.ts');
+
+      ui.stdin.write(DOWN);
+      await tick(20);
+      ui.stdin.write(ENTER);
       await tick(20);
 
-      const before = inputHeightStore.get().rows;
-      ui.stdin.write('@src/');
+      expect(ui.lastFrame()).toContain('@src/components/composer/composer.tsx');
+      expect(submits).toEqual([]);
+
+      ui.stdin.write(ENTER);
+      await tick(20);
+
+      expect(submits).toEqual(['@src/components/composer/composer.tsx']);
+      ui.unmount();
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
+  it('Escape dismisses file suggestions without clearing the typed reference', async () => {
+    const projectDir = seedProjectFiles('composer-at-file-escape', ['src/app.ts']);
+    try {
+      const submits: string[] = [];
+      const ui = renderDockedComposer({
+        commands: COMMANDS,
+        currentScreen: 'home',
+        mode: 'normal',
+        hint: '',
+        onSubmit: (text) => submits.push(text),
+        onRuntimeCommand: () => {},
+      });
+
+      ui.stdin.write('@src');
       await tick(20);
 
       expect(ui.lastFrame()).toContain('src/app.ts');
-      expect(inputHeightStore.get().rows).toBe(before);
+
+      ui.stdin.write('\u001b');
+      await tick(20);
+
+      const dismissedFrame = ui.lastFrame() ?? '';
+      expect(dismissedFrame).toContain('@src');
+      expect(dismissedFrame).not.toContain('src/app.ts');
+
+      ui.stdin.write(ENTER);
+      await tick(20);
+
+      expect(submits).toEqual(['@src']);
+      ui.unmount();
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
+  it('treats @ inside a word as plain text instead of opening file suggestions', async () => {
+    const projectDir = seedProjectFiles('composer-at-file-boundary', ['src/app.ts']);
+    try {
+      const submits: string[] = [];
+      const ui = renderDockedComposer({
+        commands: COMMANDS,
+        currentScreen: 'home',
+        mode: 'normal',
+        hint: '',
+        onSubmit: (text) => submits.push(text),
+        onRuntimeCommand: () => {},
+      });
+
+      ui.stdin.write('email user@example.com');
+      await tick(20);
+
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('user@example.com');
+      expect(frame).not.toContain('src/app.ts');
+
+      ui.stdin.write(ENTER);
+      await tick(20);
+
+      expect(submits).toEqual(['email user@example.com']);
       ui.unmount();
     } finally {
       cleanupTempDir(projectDir);

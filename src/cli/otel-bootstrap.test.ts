@@ -1,90 +1,57 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { trace } from '@opentelemetry/api';
-import { BasicTracerProvider } from '@opentelemetry/sdk-trace-base';
-import { bootstrapOtel } from './otel-bootstrap.js';
+import { execFileSync } from 'node:child_process';
+import { describe, expect, it } from 'vitest';
+
+type ProbeOptions = {
+  env?: Record<string, string | undefined>;
+  argv?: string[];
+};
+
+function runSpanExportProbe(options: ProbeOptions = {}): string {
+  const env = { ...process.env };
+  delete env['OTEL_TRACES_EXPORTER'];
+  delete env['DIPTYCH_OTEL_EXPORTER'];
+
+  for (const [key, value] of Object.entries(options.env ?? {})) {
+    if (value === undefined) {
+      delete env[key];
+    } else {
+      env[key] = value;
+    }
+  }
+
+  const script = `
+    import { trace } from '@opentelemetry/api';
+    import { bootstrapOtel } from './src/cli/otel-bootstrap.ts';
+
+    console.dir = (value) => {
+      if (value && typeof value === 'object' && value.name === 'probe-span') {
+        process.stdout.write('exported:probe-span');
+      }
+    };
+
+    bootstrapOtel();
+    const span = trace.getTracer('probe').startSpan('probe-span');
+    span.end();
+  `;
+
+  const argv = options.argv && options.argv.length > 0 ? ['--', ...options.argv] : [];
+  return execFileSync(process.execPath, ['--import', 'tsx', '--eval', script, ...argv], {
+    cwd: process.cwd(),
+    env,
+    encoding: 'utf-8',
+  });
+}
 
 describe('bootstrapOtel', () => {
-  let originalOtelExporter: string | undefined;
-  let originalDiptychExporter: string | undefined;
-  let originalArgv: string[];
-
-  beforeEach(() => {
-    originalOtelExporter = process.env['OTEL_TRACES_EXPORTER'];
-    originalDiptychExporter = process.env['DIPTYCH_OTEL_EXPORTER'];
-    originalArgv = process.argv;
+  it('does not export spans when no supported exporter is requested', () => {
+    expect(runSpanExportProbe()).toBe('');
+    expect(runSpanExportProbe({ env: { OTEL_TRACES_EXPORTER: 'otlp' } })).toBe('');
   });
 
-  afterEach(() => {
-    if (originalOtelExporter === undefined) {
-      delete process.env['OTEL_TRACES_EXPORTER'];
-    } else {
-      process.env['OTEL_TRACES_EXPORTER'] = originalOtelExporter;
-    }
-    if (originalDiptychExporter === undefined) {
-      delete process.env['DIPTYCH_OTEL_EXPORTER'];
-    } else {
-      process.env['DIPTYCH_OTEL_EXPORTER'] = originalDiptychExporter;
-    }
-    process.argv = originalArgv;
-  });
-
-  it('does nothing when no exporter signal is present', () => {
-    delete process.env['OTEL_TRACES_EXPORTER'];
-    delete process.env['DIPTYCH_OTEL_EXPORTER'];
-    process.argv = ['node', 'cli.js', 'start', 'feature'];
-    const before = trace.getTracerProvider();
-    bootstrapOtel();
-    // Provider reference is the same proxy — delegate was not changed
-    expect(trace.getTracerProvider()).toBe(before);
-  });
-
-  it('does nothing when OTEL_TRACES_EXPORTER is set to an unsupported value', () => {
-    process.env['OTEL_TRACES_EXPORTER'] = 'otlp';
-    const before = trace.getTracerProvider();
-    bootstrapOtel();
-    expect(trace.getTracerProvider()).toBe(before);
-  });
-
-  it('registers a BasicTracerProvider as global delegate when OTEL_TRACES_EXPORTER=console', () => {
-    process.env['OTEL_TRACES_EXPORTER'] = 'console';
-    bootstrapOtel();
-    // The global proxy delegates to the real provider; a tracer obtained after
-    // bootstrap should be a real SDK Tracer, not a no-op.
-    const tracer = trace.getTracer('test');
-    // A no-op tracer has a constructor named 'NoopTracer'; a real one is 'Tracer'.
-    expect(tracer.constructor.name).toBe('Tracer');
-    // Also verify the delegate on the proxy is a BasicTracerProvider
-    const provider = trace.getTracerProvider();
-    // @ts-expect-error — getDelegate is part of the ProxyTracerProvider API but not the public interface type
-    expect(provider.getDelegate()).toBeInstanceOf(BasicTracerProvider);
-  });
-
-  it('registers a BasicTracerProvider when DIPTYCH_OTEL_EXPORTER=console', () => {
-    delete process.env['OTEL_TRACES_EXPORTER'];
-    process.env['DIPTYCH_OTEL_EXPORTER'] = 'console';
-    bootstrapOtel();
-    const provider = trace.getTracerProvider();
-    // @ts-expect-error — getDelegate is part of the ProxyTracerProvider API but not the public interface type
-    expect(provider.getDelegate()).toBeInstanceOf(BasicTracerProvider);
-  });
-
-  it('registers a BasicTracerProvider when --otel-exporter=console is on argv', () => {
-    delete process.env['OTEL_TRACES_EXPORTER'];
-    delete process.env['DIPTYCH_OTEL_EXPORTER'];
-    process.argv = ['node', 'cli.js', 'start', '--otel-exporter=console', 'feature'];
-    bootstrapOtel();
-    const provider = trace.getTracerProvider();
-    // @ts-expect-error — getDelegate is part of the ProxyTracerProvider API but not the public interface type
-    expect(provider.getDelegate()).toBeInstanceOf(BasicTracerProvider);
-  });
-
-  it('registers a BasicTracerProvider when --otel-exporter console is on argv (separate token)', () => {
-    delete process.env['OTEL_TRACES_EXPORTER'];
-    delete process.env['DIPTYCH_OTEL_EXPORTER'];
-    process.argv = ['node', 'cli.js', 'start', '--otel-exporter', 'console', 'feature'];
-    bootstrapOtel();
-    const provider = trace.getTracerProvider();
-    // @ts-expect-error — getDelegate is part of the ProxyTracerProvider API but not the public interface type
-    expect(provider.getDelegate()).toBeInstanceOf(BasicTracerProvider);
+  it('exports spans when console exporter is requested', () => {
+    expect(runSpanExportProbe({ env: { OTEL_TRACES_EXPORTER: 'console' } })).toBe('exported:probe-span');
+    expect(runSpanExportProbe({ env: { DIPTYCH_OTEL_EXPORTER: 'console' } })).toBe('exported:probe-span');
+    expect(runSpanExportProbe({ argv: ['--otel-exporter=console'] })).toBe('exported:probe-span');
+    expect(runSpanExportProbe({ argv: ['--otel-exporter', 'console'] })).toBe('exported:probe-span');
   });
 });

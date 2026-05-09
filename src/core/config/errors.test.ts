@@ -130,15 +130,6 @@ describe('configError predicates', () => {
     expect(configError.isInvalidYaml(null)).toBe(false);
   });
 
-  test('predicates narrow type for data access', () => {
-    const err: unknown = configError.runnerMissingField('planner', 'api', 'apiBase');
-    if (configError.isRunnerMissingField(err)) {
-      expect(err.data).toEqual({ role: 'planner', kind: 'api', field: 'apiBase' });
-    } else {
-      throw new Error('predicate should match');
-    }
-  });
-
   test('each predicate rejects a non-matching factory', () => {
     expect(configError.isValidationFailed(configError.invalidYaml('/p', new Error()))).toBe(false);
     expect(configError.isLoadNotCalled(configError.saveFailed('/p', new Error()))).toBe(false);

@@ -62,31 +62,10 @@ describe('worktree list — empty', () => {
 });
 
 describe('worktree list — with entries', () => {
-  it('prints headers and one row per WorktreeInfo entry', async () => {
+  it('prints headers, rows, and session metadata for WorktreeInfo entries', async () => {
     mockListWorktrees.mockResolvedValue([
       makeWorktree({ name: 'my-feature', branch: 'diptych/my-feature', status: 'none', sessionId: null }),
       makeWorktree({ name: 'quick-fix', branch: 'diptych/quick-fix', status: 'none', sessionId: null }),
-    ]);
-
-    await runWorktree(['list']);
-
-    const out = captureOutput();
-    expect(out).toContain('NAME');
-    expect(out).toContain('PATH');
-    expect(out).toContain('BRANCH');
-    expect(out).toContain('STATUS');
-    expect(out).toContain('SESSION');
-    expect(out).toContain('PHASE');
-    expect(out).toContain('UPDATED');
-    expect(out).toContain('my-feature');
-    expect(out).toContain('quick-fix');
-    expect(out).toContain('/project/.trees/my-feature');
-    expect(out).toContain('diptych/my-feature');
-    expect(out).toContain('diptych/quick-fix');
-  });
-
-  it('shows session ID, phase, and last-updated for active status', async () => {
-    mockListWorktrees.mockResolvedValue([
       makeWorktree({
         name: 'active-wt',
         branch: 'diptych/active-wt',
@@ -95,28 +74,35 @@ describe('worktree list — with entries', () => {
         phase: 'implementing',
         lastUpdated: '2026-04-27T10:00:00.000Z',
       }),
-    ]);
-
-    await runWorktree(['list']);
-
-    const out = captureOutput();
-    expect(out).toContain('active');
-    expect(out).toContain('dip-abc123');
-    expect(out).toContain('implementing');
-    expect(out).toContain('2026-04-27T10:00:00.000Z');
-  });
-
-  it('prints unknown for missing session metadata', async () => {
-    mockListWorktrees.mockResolvedValue([
       makeWorktree({ name: 'idle-wt', branch: 'diptych/idle-wt', status: 'idle', sessionId: 'dip-def456' }),
     ]);
 
     await runWorktree(['list']);
 
     const out = captureOutput();
-    expect(out).toContain('idle');
-    expect(out).toContain('dip-def456');
-    expect(out).toContain('unknown');
+    for (const text of [
+      'NAME',
+      'PATH',
+      'BRANCH',
+      'STATUS',
+      'SESSION',
+      'PHASE',
+      'UPDATED',
+      'my-feature',
+      'quick-fix',
+      '/project/.trees/my-feature',
+      'diptych/my-feature',
+      'diptych/quick-fix',
+      'active',
+      'dip-abc123',
+      'implementing',
+      '2026-04-27T10:00:00.000Z',
+      'idle',
+      'dip-def456',
+      'unknown',
+    ]) {
+      expect(out).toContain(text);
+    }
   });
 });
 
@@ -133,13 +119,15 @@ describe('worktree switch', () => {
     expect(out).toContain('cd .trees/my-feature');
     expect(out).toContain('diptych-switch()');
   });
+});
 
-  it('exits 1 when worktree does not exist', async () => {
+describe('worktree missing target', () => {
+  it.each(['switch', 'remove'])('exits 1 when %s targets a missing worktree', async (command) => {
     mockListWorktrees.mockResolvedValue([]);
 
     let captured: unknown;
     try {
-      await runWorktree(['switch', 'missing-wt']);
+      await runWorktree([command, 'missing-wt']);
     } catch (err) {
       captured = err;
     }
@@ -150,41 +138,20 @@ describe('worktree switch', () => {
 });
 
 describe('worktree remove', () => {
-  it('prints success message on removal', async () => {
+  it.each([
+    { flags: [] as string[], expected: ['Removed worktree ".trees/my-feature".'] },
+    { flags: ['--force'], expected: ['Removed worktree ".trees/my-feature".'] },
+    {
+      flags: ['--delete-branch'],
+      expected: ['Removed worktree ".trees/my-feature".', 'Deleted branch diptych/my-feature.'],
+    },
+  ])('prints removal result for flags $flags', async ({ flags, expected }) => {
     mockListWorktrees.mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
 
-    await runWorktree(['remove', 'my-feature']);
+    await runWorktree(['remove', 'my-feature', ...flags]);
 
     const out = captureOutput();
-    expect(out).toContain('Removed worktree ".trees/my-feature".');
-  });
-
-  it('prints success message when --force is used', async () => {
-    mockListWorktrees.mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
-
-    const program = new Command();
-    program.exitOverride();
-    program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
-    registerWorktreeCommand(program, fakeDeps);
-    await program.parseAsync(['node', 'diptych', 'worktree', 'remove', 'my-feature', '--force', '--project', tmp]);
-
-    const out = captureOutput();
-    expect(out).toContain('Removed worktree ".trees/my-feature".');
-  });
-
-  it('prints branch deletion message when --delete-branch is used', async () => {
-    mockListWorktrees.mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
-
-    const program = new Command();
-    program.exitOverride();
-    program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
-    registerWorktreeCommand(program, fakeDeps);
-    await program.parseAsync([
-      'node', 'diptych', 'worktree', 'remove', 'my-feature', '--delete-branch', '--project', tmp,
-    ]);
-
-    const out = captureOutput();
-    expect(out).toContain('Deleted branch diptych/my-feature.');
+    for (const line of expected) expect(out).toContain(line);
   });
 
   it('propagates cliError when removeWorktree rejects', async () => {
@@ -202,19 +169,5 @@ describe('worktree remove', () => {
 
     expect(isCliError(captured)).toBe(true);
     expect((captured as Error).message).toContain('live session');
-  });
-
-  it('exits 1 when worktree does not exist', async () => {
-    mockListWorktrees.mockResolvedValue([]);
-
-    let captured: unknown;
-    try {
-      await runWorktree(['remove', 'ghost-wt']);
-    } catch (err) {
-      captured = err;
-    }
-
-    expect(isCliError(captured)).toBe(true);
-    expect((captured as Error).message).toContain('ghost-wt');
   });
 });

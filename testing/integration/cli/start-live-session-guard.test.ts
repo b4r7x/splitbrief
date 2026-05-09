@@ -1,7 +1,3 @@
-// Integration complement to src/cli/commands/start.test.ts:44 ('start command — concurrency guard').
-// That test asserts the guard in isolation against the command handler; this asserts
-// the same guard through `runCommand()` to cover commander wiring, shared subcommand
-// registration, and the exit-code contract end-to-end. Intentional duplication — do not collapse.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';

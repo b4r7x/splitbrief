@@ -52,65 +52,45 @@ function buildBranchedTree() {
 }
 
 describe('TreeView', () => {
-  it('renders header with entry and branch counts', async () => {
+  it('renders the session summary, visible entries, active marker, and navigation help', async () => {
     const tree = buildSampleTree();
     const instance = render(<TreeView tree={tree} maxHeight={10} />);
     await tick(20);
     const frame = instance.lastFrame() ?? '';
+
     expect(frame).toContain('Session Tree');
     expect(frame).toContain('3 entries');
     expect(frame).toContain('0 branches');
-    instance.unmount();
-  });
-
-  it('renders tree lines with entry labels', async () => {
-    const tree = buildSampleTree();
-    const instance = render(<TreeView tree={tree} maxHeight={10} />);
-    await tick(20);
-    const frame = instance.lastFrame() ?? '';
+    expect(frame).toContain('filter: displayable');
     expect(frame).toContain('[START]');
     expect(frame).toContain('Step 1');
     expect(frame).toContain('app.ts');
-    instance.unmount();
-  });
-
-  it('renders branched tree with collapsed indicators', async () => {
-    const tree = buildBranchedTree();
-    const instance = render(<TreeView tree={tree} maxHeight={10} />);
-    await tick(20);
-    const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('[+]');
-    expect(frame).toContain('2 branches');
-    instance.unmount();
-  });
-
-  it('renders active-path markers (● for active)', async () => {
-    const tree = buildSampleTree();
-    const instance = render(<TreeView tree={tree} maxHeight={10} />);
-    await tick(20);
-    const frame = instance.lastFrame() ?? '';
-    const activeMarkers = (frame.match(/●/g) ?? []).length;
-    expect(activeMarkers).toBeGreaterThanOrEqual(1);
-    instance.unmount();
-  });
-
-  it('renders filter help text', async () => {
-    const tree = buildSampleTree();
-    const instance = render(<TreeView tree={tree} maxHeight={10} />);
-    await tick(20);
-    const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('filter: displayable');
+    expect(frame).toContain('●');
     expect(frame).toContain('navigate');
     instance.unmount();
   });
 
-  it('renders entry and branch counts in header', async () => {
+  it('expands and collapses branched sessions from the keyboard', async () => {
     const tree = buildBranchedTree();
     const instance = render(<TreeView tree={tree} maxHeight={10} />);
     await tick(20);
-    const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('4 entries');
-    expect(frame).toContain('2 branches');
+    const collapsedFrame = instance.lastFrame() ?? '';
+    expect(collapsedFrame).toContain('4 entries');
+    expect(collapsedFrame).toContain('2 branches');
+    expect(collapsedFrame).toContain('[+]');
+
+    instance.stdin.write('e');
+    await tick(20);
+
+    const expandedFrame = instance.lastFrame() ?? '';
+    expect(expandedFrame).toContain('[-]');
+    expect(expandedFrame).toContain('Branch A');
+    expect(expandedFrame).toContain('Branch B');
+
+    instance.stdin.write('c');
+    await tick(20);
+
+    expect(instance.lastFrame() ?? '').toContain('[+]');
     instance.unmount();
   });
 });

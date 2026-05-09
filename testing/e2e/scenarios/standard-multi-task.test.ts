@@ -1,10 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
+import { e2eImplementer, e2ePlanner } from '../helpers/e2e-config.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/e2e-harness.js';
-
-const e2eApiBase = process.env.DIPTYCH_E2E_API_BASE ?? 'http://localhost:11434/v1';
-const replayApiKey = process.env.DIPTYCH_E2E_RECORD === '1'
-  ? undefined
-  : 'e2e-placeholder';
 
 const scenario = {
   name: 'standard mode - multi-task feature',
@@ -13,20 +12,8 @@ const scenario = {
   mode: 'standard' as const,
   config: {
     version: 2,
-    planner: {
-      kind: 'api',
-      provider: 'openai',
-      apiBase: e2eApiBase,
-      ...(replayApiKey ? { apiKey: replayApiKey } : {}),
-      model: 'gpt-4o',
-    },
-    implementer: {
-      kind: 'api',
-      provider: 'openai',
-      apiBase: e2eApiBase,
-      ...(replayApiKey ? { apiKey: replayApiKey } : {}),
-      model: 'gpt-4o-mini',
-    },
+    planner: e2ePlanner,
+    implementer: e2eImplementer,
     workflow: {
       mode: 'standard',
       commitStrategy: 'none',
@@ -53,6 +40,14 @@ describe('e2e: standard mode multi-task', () => {
     const taskCompletedEvents = ctx.events.filter((event) => event.type === 'task_completed');
     expect(taskStartedEvents.length).toBeGreaterThanOrEqual(2);
     expect(taskCompletedEvents.length).toBeGreaterThanOrEqual(2);
+    const profilePath = join(ctx.projectDir, 'src/profile.ts');
+    expect(readFileSync(profilePath, 'utf-8')).toContain('Ada Lovelace');
+    expect(evaluateTsArtifact(profilePath, 'mod.getUserProfile()')).toEqual({
+      id: 'user-1',
+      name: 'Ada Lovelace',
+      role: 'admin',
+    });
+    expect(readFileSync(join(ctx.projectDir, 'src/profile.test.ts'), 'utf-8')).toContain('getUserProfile');
     expect(taskStartedEvents.map((event) => event.index)).toEqual(
       taskStartedEvents.map((_, index) => index),
     );

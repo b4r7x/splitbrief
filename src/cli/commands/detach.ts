@@ -8,8 +8,17 @@ import { assertNotWindows } from '../platform.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import { sessionsRoot, sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import type { ClientMessage, ServerMessage } from '../../engine/ipc/protocol.js';
+import type { ServerStatus } from '../../engine/ipc/lockfile.js';
 
-async function resolveRunningSession(projectDir: string): Promise<string> {
+export type DetachDeps = {
+  checkServerStatus: (sessionDir: string) => Promise<ServerStatus>;
+};
+
+const defaultDeps: DetachDeps = {
+  checkServerStatus,
+};
+
+async function resolveRunningSession(projectDir: string, deps: DetachDeps): Promise<string> {
   const root = sessionsRoot(projectDir);
   if (!existsSync(root)) {
     throw cliError('no running sessions found; pass <session-id> explicitly', 1);
@@ -20,7 +29,7 @@ async function resolveRunningSession(projectDir: string): Promise<string> {
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    const status = await checkServerStatus(sessionDir(projectDir, entry.name));
+    const status = await deps.checkServerStatus(sessionDir(projectDir, entry.name));
     if (status.alive) running.push(entry.name);
   }
 
@@ -83,12 +92,13 @@ function sendDetach(sockPath: string): Promise<void> {
 export async function detachCommand(
   sessionId: string | undefined,
   opts: { projectDir: string },
+  deps: DetachDeps = defaultDeps,
 ): Promise<void> {
   assertNotWindows();
 
-  const resolvedId = sessionId ?? (await resolveRunningSession(opts.projectDir));
+  const resolvedId = sessionId ?? (await resolveRunningSession(opts.projectDir, deps));
   const sessDir = sessionDir(opts.projectDir, resolvedId);
-  const status = await checkServerStatus(sessDir);
+  const status = await deps.checkServerStatus(sessDir);
 
   if (!status.alive) {
     throw cliError(`session ${resolvedId} is not running`, 1);

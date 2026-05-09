@@ -4,33 +4,30 @@ import { chmodSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirS
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
 import { registerStartCommand } from './start.js';
 import type { StartDeps } from './start.js';
 import { CONFIG_FILE, DIPTYCH_DIR, STATE_FILE, worktreePath } from '../../core/paths.js';
 import { isCliError } from '../errors.js';
 import type { SpawnServerOptions } from '../../engine/ipc/spawn-server.js';
 
-// Keep render-layer mocks (UI boundary exceptions per project rules)
-vi.mock('../init-stores.js', () => ({
-  initStores: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('../render.js', () => ({
-  renderApp: vi.fn().mockResolvedValue(undefined),
-}));
-
 import { routerStore } from '../../stores/navigation/router.js';
-import { renderApp } from '../render.js';
-import { initStores } from '../init-stores.js';
 
 const spawnServerMock = vi.fn<(opts: SpawnServerOptions) => Promise<{ ok: true; pid: number; sessionId: string }>>();
 const runHeadlessMock = vi.fn<() => Promise<void>>();
 const runRpcMock = vi.fn<() => Promise<void>>();
+const initStoresMock: StartDeps['initStores'] = async () => {};
+const renderCalls: Array<Parameters<StartDeps['renderApp']>[1]> = [];
+const renderAppFake: StartDeps['renderApp'] = async (_app, options) => {
+  renderCalls.push(options);
+};
 
 const fakeDeps: StartDeps = {
   spawnServer: spawnServerMock,
   runHeadless: runHeadlessMock as unknown as StartDeps['runHeadless'],
   runRpc: runRpcMock as unknown as StartDeps['runRpc'],
+  initStores: initStoresMock,
+  renderApp: renderAppFake,
 };
 
 let tmp: string;
@@ -38,9 +35,9 @@ let tmp: string;
 beforeEach(() => {
   tmp = createTempDir('start-command-test');
   createTestGitRepo(tmp);
+  resetAllStores();
   routerStore.init({ screen: 'home' });
-  vi.mocked(renderApp).mockClear();
-  vi.mocked(initStores).mockClear();
+  renderCalls.length = 0;
   spawnServerMock.mockClear();
   runHeadlessMock.mockClear();
   runRpcMock.mockClear();
@@ -361,7 +358,7 @@ describe('start command — readiness', () => {
     expect(output).toContain('repo.active-session-live');
     expect(output).not.toContain('repo.dirty-worktree');
     expect(output).not.toContain('scratch.txt');
-    expect(renderApp).not.toHaveBeenCalled();
+    expect(renderCalls).toEqual([]);
   });
 
   it('emits readiness before headless workflow execution and persists compact session evidence', async () => {
@@ -493,7 +490,7 @@ describe('start command — shorthand invocation', () => {
     await program.parseAsync(['node', 'diptych', 'spec']);
 
     expect(specCalled).toBe(true);
-    expect(renderApp).not.toHaveBeenCalled();
+    expect(renderCalls).toEqual([]);
   });
 
   it('passes workflow options through shorthand invocation', async () => {

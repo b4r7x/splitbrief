@@ -1,96 +1,82 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { processError } from './errors.js';
 
 describe('processError.notFound', () => {
-  it('produces default message from command', () => {
-    const err = processError.notFound('codex');
-    expect(err.kind).toBe('command-not-found');
-    expect(err.message).toBe('Command not found: codex');
-    expect(err.data.command).toBe('codex');
-  });
+  it.each([
+    {
+      command: 'codex',
+      message: undefined,
+      expected: 'Command not found: codex',
+    },
+    {
+      command: 'codex',
+      message: 'Codex CLI not found. Install it with: npm install -g @openai/codex',
+      expected: 'Codex CLI not found. Install it with: npm install -g @openai/codex',
+    },
+  ])('formats command-not-found errors for $command', ({ command, message, expected }) => {
+    const err = processError.notFound(command, message);
 
-  it('uses custom message when provided', () => {
-    const err = processError.notFound(
-      'codex',
-      'Codex CLI not found. Install it with: npm install -g @openai/codex',
-    );
-    expect(err.message).toBe(
-      'Codex CLI not found. Install it with: npm install -g @openai/codex',
-    );
-    expect(err.data.command).toBe('codex');
-  });
-
-  it('is matched by isNotFound', () => {
-    expect(processError.isNotFound(processError.notFound('x'))).toBe(true);
+    expect(err).toMatchObject({
+      kind: 'command-not-found',
+      message: expected,
+      data: { command },
+    });
+    expect(processError.isNotFound(err)).toBe(true);
   });
 });
 
 describe('processError.timeout', () => {
-  it('formats with label when provided', () => {
-    const err = processError.timeout({
-      command: 'x',
-      label: 'Codex',
-      timeoutMs: 120_000,
-      output: 'partial',
-    });
-    expect(err.kind).toBe('command-timeout');
-    expect(err.message).toBe('Codex timed out after 120s');
-    expect(err.data.output).toBe('partial');
-  });
+  it.each([
+    {
+      opts: { command: 'x', label: 'Codex', timeoutMs: 120_000, output: 'partial' },
+      expected: 'Codex timed out after 120s',
+    },
+    {
+      opts: { command: 'codex', timeoutMs: 60_000, output: '' },
+      expected: 'codex timed out after 60s',
+    },
+  ])('formats timeout errors with the visible process label', ({ opts, expected }) => {
+    const err = processError.timeout(opts);
 
-  it('falls back to command when label is absent', () => {
-    const err = processError.timeout({
-      command: 'codex',
-      timeoutMs: 60_000,
-      output: '',
+    expect(err).toMatchObject({
+      kind: 'command-timeout',
+      message: expected,
+      data: opts,
     });
-    expect(err.message).toBe('codex timed out after 60s');
-  });
-
-  it('is matched by isTimeout', () => {
-    const err = processError.timeout({ command: 'x', timeoutMs: 1000, output: '' });
     expect(processError.isTimeout(err)).toBe(true);
   });
 });
 
 describe('processError.exitCode', () => {
-  it('includes stderr detail when provided', () => {
-    const err = processError.exitCode({
-      command: 'codex',
-      label: 'Codex',
-      code: 1,
-      stderr: '  boom  ',
-    });
+  it.each([
+    {
+      opts: { command: 'codex', label: 'Codex', code: 1, stderr: '  boom  ' },
+      expected: 'Codex exited with code 1: boom',
+    },
+    {
+      opts: { command: 'codex', code: 1, stderr: '   ' },
+      expected: 'codex exited with code 1',
+    },
+    {
+      opts: { command: 'node', code: 127, stderr: '' },
+      expected: 'node exited with code 127',
+    },
+  ])('formats process-output errors for non-zero exits', ({ opts, expected }) => {
+    const err = processError.exitCode(opts);
+
     expect(err.kind).toBe('process-output');
-    expect(err.message).toBe('Codex exited with code 1: boom');
+    expect(err.message).toBe(expected);
+    expect(processError.isExitCode(err)).toBe(true);
   });
 
-  it('omits detail when stderr is empty', () => {
-    const err = processError.exitCode({
-      command: 'codex',
-      code: 1,
-      stderr: '   ',
-    });
-    expect(err.message).toBe('codex exited with code 1');
-  });
-
-  it('works without label', () => {
-    const err = processError.exitCode({ command: 'node', code: 127, stderr: '' });
-    expect(err.message).toBe('node exited with code 127');
-  });
-
-  it('stores output in data when provided', () => {
+  it('redacts and stores output detail for process failures', () => {
     const err = processError.exitCode({
       command: 'node',
       code: 2,
       stderr: 'err',
       output: 'stdout text',
     });
-    expect(err.data.output).toBe('stdout text');
-  });
 
-  it('is matched by isExitCode', () => {
-    const err = processError.exitCode({ command: 'x', code: 1, stderr: '' });
-    expect(processError.isExitCode(err)).toBe(true);
+    expect(err.data.output).toBe('stdout text');
   });
 });

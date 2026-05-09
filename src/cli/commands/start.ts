@@ -43,9 +43,17 @@ export interface StartDeps {
   spawnServer: (opts: SpawnServerOptions) => Promise<SpawnServerResult>;
   runHeadless: typeof runHeadless;
   runRpc: typeof runRpc;
+  initStores: typeof initStores;
+  renderApp: typeof renderApp;
 }
 
-const defaultStartDeps: StartDeps = { spawnServer, runHeadless, runRpc };
+const defaultStartDeps: StartDeps = {
+  spawnServer,
+  runHeadless,
+  runRpc,
+  initStores,
+  renderApp,
+};
 
 async function applyWorktreeOption(feature: string | undefined, opts: WorkflowOpts): Promise<void> {
   if (opts.worktree === undefined) return;
@@ -209,7 +217,7 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
     const sessionId = feature ? beginSession(projectDir, feature) : undefined;
     if (feature && sessionId && readiness) persistStartReadiness(projectDir, sessionId, readiness.report);
 
-    await initStores(projectDir, opts);
+    await deps.initStores(projectDir, opts);
     let worktreeName: string | null = null;
     try {
       worktreeName = await detectWorktree(projectDir, simpleGit(projectDir));
@@ -228,6 +236,6 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       });
     }
 
-    await renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useMouse });
+    await deps.renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useMouse });
   });
 }

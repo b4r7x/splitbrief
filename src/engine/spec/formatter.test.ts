@@ -212,34 +212,23 @@ describe('formatRetryPrompt', () => {
 });
 
 describe('estimateTokens', () => {
-  it('returns reasonable estimate for known text', () => {
-    const tokens = estimateTokens('Hello, world!');
-    expect(tokens).toBeGreaterThan(0);
-    expect(tokens).toBe(Math.ceil(13 / 4));
+  it.each([
+    ['known text', 'Hello, world!', Math.ceil(13 / 4)],
+    ['empty string', '', 0],
+  ] as const)('estimates %s', (_name, text, expected) => {
+    expect(estimateTokens(text)).toBe(expected);
   });
-
-  it('returns 0 for empty string', () => {
-    expect(estimateTokens('')).toBe(0);
-  });
-
 });
 
 describe('truncateMiddle', () => {
-  it('returns text unchanged when under limit', () => {
-    const text = 'short text';
-    expect(truncateMiddle(text, 1000)).toBe(text);
-  });
+  it('keeps small text unchanged and preserves both ends when truncating long text', () => {
+    expect(truncateMiddle('short text', 1000)).toBe('short text');
 
-  it('truncates long text with marker', () => {
-    const text = 'A'.repeat(10000);
-    const result = truncateMiddle(text, 100);
-    expect(result).toContain('// ... truncated to fit context window ...');
-    expect(result.length).toBeLessThan(text.length);
-  });
-
-  it('preserves start and end of text', () => {
     const text = 'START' + 'X'.repeat(10000) + 'END!!';
     const result = truncateMiddle(text, 200);
+
+    expect(result).toContain('// ... truncated to fit context window ...');
+    expect(result.length).toBeLessThan(text.length);
     expect(result.startsWith('START')).toBeTruthy();
     expect(result.endsWith('END!!')).toBeTruthy();
   });
@@ -303,7 +292,7 @@ describe('formatTaskPrompt with contextLength', () => {
 });
 
 describe('computeTokenBudget', () => {
-  it('returns correct token breakdown', () => {
+  it('returns a consistent token breakdown', () => {
     const budget = computeTokenBudget('system text', 'task body', 8192);
     expect(budget.system).toBe(estimateTokens('system text'));
     expect(budget.taskBody).toBe(estimateTokens('task body'));
@@ -313,79 +302,75 @@ describe('computeTokenBudget', () => {
     expect(budget.remaining).toBe(8192 - expectedTotal);
   });
 
-  it('remaining equals contextLength minus total', () => {
-    const budget = computeTokenBudget('system prompt here', 'the task body text', 16384);
-    expect(budget.remaining).toBe(16384 - budget.total);
-  });
-
-  it('remaining decreases as system prompt grows', () => {
+  it('remaining tracks prompt size and can go negative when context is too small', () => {
     const small = computeTokenBudget('short', 'task', 8192);
     const large = computeTokenBudget('a'.repeat(2000), 'task', 8192);
+    const tooSmall = computeTokenBudget('a'.repeat(4000), 'b'.repeat(4000), 100);
+
     expect(large.remaining).toBeLessThan(small.remaining);
+    expect(tooSmall.remaining).toBeLessThan(0);
   });
-
-  it('can produce negative remaining when context is too small', () => {
-    const budget = computeTokenBudget('a'.repeat(4000), 'b'.repeat(4000), 100);
-    expect(budget.remaining).toBeLessThan(0);
-  });
-
 });
 
 describe('formatTasks', () => {
-  it('empty array returns empty string', () => {
+  it('handles the empty boundary', () => {
     expect(formatTasks([])).toBe('');
-  });
-
-  it('empty string parses to empty array (round-trip boundary)', () => {
     expect(parseTasks('')).toEqual([]);
   });
 
-  it('single task round-trips: id is preserved', () => {
-    const task = makeTask({ implementationSteps: ['step one'], tests: ['returns x'], constraints: ['pure'] });
-    const markdown = formatTasks([task]);
-    const parsed = parseTasks(markdown);
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0]?.id).toBe(task.id);
-  });
+  it('round-trips ordered tasks with metadata and optional brief fields', () => {
+    const first = makeTask({
+      id: 'T001' as never,
+      title: 'My Task',
+      action: 'modify',
+      file: 'src/foo.ts',
+      description: 'Implement the helper function for string trimming.',
+      implementationSteps: ['first step', 'second step'],
+      tests: ['assertion one', 'assertion two'],
+      constraints: ['no side effects', 'pure function'],
+      escalation: ['stop on ambiguity'],
+      evidence: ['npm test passes'],
+      scope: { inBounds: ['only foo.ts'], outOfBounds: ['do not touch bar.ts'] },
+      typeDefs: 'export type Foo = { bar: string };',
+      signature: 'export function greet(name: string): string',
+      currentCode: 'export function old(): void {}',
+      pattern: 'Follow the existing parseConfig(raw) guard shape.',
+    });
+    const second = makeBaseTask({
+      id: 'T002' as never,
+      title: 'Second',
+      file: 'src/bar.ts',
+      description: 'Do bar',
+      dependsOn: [first.id],
+      implementationSteps: ['step 2'],
+      tests: ['test B'],
+    });
 
-  it('single task round-trips: title, action, file are preserved', () => {
-    const task = makeTask({ title: 'My Task', action: 'modify', file: 'src/foo.ts', implementationSteps: ['do it'], tests: ['works'] });
-    const parsed = parseTasks(formatTasks([task]));
-    expect(parsed[0]?.title).toBe('My Task');
-    expect(parsed[0]?.action).toBe('modify');
-    expect(parsed[0]?.file).toBe('src/foo.ts');
-  });
+    const parsed = parseTasks(formatTasks([first, second]));
 
-  it('two tasks round-trip: both tasks are returned', () => {
-    const t1 = makeTask({ title: 'First', implementationSteps: ['step 1'], tests: ['test A'] });
-    const t2 = makeBaseTask({ id: 'T002', title: 'Second', file: 'src/bar.ts', description: 'Do bar', implementationSteps: ['step 2'], tests: ['test B'] });
-    const markdown = formatTasks([t1, t2]);
-    const parsed = parseTasks(markdown);
     expect(parsed).toHaveLength(2);
-  });
-
-  it('depends_on round-trips', () => {
-    const t1 = makeTask({ implementationSteps: ['step 1'], tests: ['test A'] });
-    const t2 = makeBaseTask({ id: 'T002', title: 'Second', file: 'src/bar.ts', description: 'Do bar', dependsOn: [t1.id], implementationSteps: ['step 2'], tests: ['test B'] });
-    const parsed = parseTasks(formatTasks([t1, t2]));
-    expect(parsed[1]?.dependsOn).toContain(t1.id);
-  });
-
-  it.each([
-    ['implementationSteps', { implementationSteps: ['first step', 'second step'], tests: ['test'] }, (p: Task) => expect(p.implementationSteps).toEqual(['first step', 'second step'])],
-    ['tests', { implementationSteps: ['step'], tests: ['assertion one', 'assertion two'] }, (p: Task) => expect(p.tests).toEqual(['assertion one', 'assertion two'])],
-    ['constraints', { implementationSteps: ['step'], tests: ['test'], constraints: ['no side effects', 'pure function'] }, (p: Task) => expect(p.constraints).toEqual(['no side effects', 'pure function'])],
-    ['escalation', { implementationSteps: ['step'], tests: ['test'], escalation: ['stop on ambiguity'] }, (p: Task) => expect(p.escalation).toEqual(['stop on ambiguity'])],
-    ['evidence', { implementationSteps: ['step'], tests: ['test'], evidence: ['npm test passes'] }, (p: Task) => expect(p.evidence).toEqual(['npm test passes'])],
-    ['scope', { implementationSteps: ['step'], tests: ['test'], scope: { inBounds: ['only foo.ts'], outOfBounds: ['do not touch bar.ts'] } }, (p: Task) => { expect(p.scope?.inBounds).toEqual(['only foo.ts']); expect(p.scope?.outOfBounds).toEqual(['do not touch bar.ts']); }],
-    ['typeDefs', { implementationSteps: ['step'], tests: ['test'], typeDefs: 'export type Foo = { bar: string };' }, (p: Task) => expect(p.typeDefs).toBe('export type Foo = { bar: string };')],
-    ['description', { description: 'Implement the helper function for string trimming.', implementationSteps: ['step'], tests: ['test'] }, (p: Task) => expect(p.description).toBe('Implement the helper function for string trimming.')],
-    ['signature', { signature: 'export function greet(name: string): string' }, (p: Task) => expect(p.signature).toBe('export function greet(name: string): string')],
-    ['currentCode', { action: 'modify' as const, currentCode: 'export function old(): void {}' }, (p: Task) => expect(p.currentCode).toBe('export function old(): void {}')],
-    ['pattern', { pattern: 'Follow the existing parseConfig(raw) guard shape.' }, (p: Task) => expect(p.pattern).toBe('Follow the existing parseConfig(raw) guard shape.')],
-  ] as [string, Partial<Task>, (p: Task) => void][])('%s round-trips', (_field, overrides, verify) => {
-    const task = makeTask(overrides);
-    const parsed = parseTasks(formatTasks([task]));
-    verify(parsed[0]!);
+    expect(parsed[0]).toMatchObject({
+      id: first.id,
+      title: 'My Task',
+      action: 'modify',
+      file: 'src/foo.ts',
+      description: 'Implement the helper function for string trimming.',
+      implementationSteps: ['first step', 'second step'],
+      tests: ['assertion one', 'assertion two'],
+      constraints: ['no side effects', 'pure function'],
+      escalation: ['stop on ambiguity'],
+      evidence: ['npm test passes'],
+      scope: { inBounds: ['only foo.ts'], outOfBounds: ['do not touch bar.ts'] },
+      typeDefs: 'export type Foo = { bar: string };',
+      signature: 'export function greet(name: string): string',
+      currentCode: 'export function old(): void {}',
+      pattern: 'Follow the existing parseConfig(raw) guard shape.',
+    });
+    expect(parsed[1]).toMatchObject({
+      id: second.id,
+      title: 'Second',
+      file: 'src/bar.ts',
+      dependsOn: [first.id],
+    });
   });
 });
