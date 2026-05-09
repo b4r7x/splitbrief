@@ -7,12 +7,10 @@ import { ScreenShell } from '../../components/screen-shell.js';
 import { HomeConfigSummary } from './components/config-summary.js';
 import { RecentSessions } from './components/recent-sessions.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { getResponsivePanelWidth } from '../../core/layout/terminal-width.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { useStores } from '../../stores/use-stores.js';
-
-const BANNER_MIN_ROWS = 18;
+import { getHomeLayout } from './layout.js';
 
 let cachedBanner: string | undefined;
 
@@ -34,37 +32,49 @@ export function HomeScreen({ commands, onSlashCommand }: HomeScreenProps) {
   const [{ cols, rows, isSmall }] = useStores(terminalSizeStore);
 
   const banner = getBanner();
-  const showBanner = rows >= BANNER_MIN_ROWS;
-  const contentWidth = getResponsivePanelWidth(cols, isSmall, { small: 70, large: 100 }, 8);
+  const layout = getHomeLayout({ cols, rows, isSmall });
   const onStartWorkflow = (feat: string) => routerStore.navigate({ to: 'workflow', feature: feat });
 
   return (
     <ScreenShell justifyContent="flex-start" alignItems="center">
-      <Box flexDirection="column" width={contentWidth} height="100%">
-        <Box flexDirection="column" flexGrow={1} overflowY="hidden" gap={isSmall ? 0 : 1}>
-          <Box justifyContent="center" marginBottom={1}>
-            {showBanner && banner ? (
-              <Text>{banner.trimEnd()}</Text>
-            ) : (
-              <Text bold color={theme.accent}>diptych</Text>
-            )}
+      <Box flexDirection="column" width={layout.inputWidth} height="100%">
+        <Box
+          flexDirection="column"
+          flexGrow={1}
+          overflowY="hidden"
+          justifyContent={layout.mainJustifyContent}
+          alignItems="center"
+        >
+          <Box flexDirection="column" width={layout.bodyWidth} gap={isSmall ? 0 : 1}>
+            <Box justifyContent="center" marginBottom={1}>
+              {layout.showBanner && banner ? (
+                <Text>{banner.trimEnd()}</Text>
+              ) : (
+                <Text bold color={theme.accent}>diptych</Text>
+              )}
+            </Box>
+
+            <HomeConfigSummary />
+
+            <RecentSessions
+              limit={layout.recentSessionLimit}
+              featureColWidth={layout.recentFeatureColWidth}
+            />
           </Box>
-
-          <HomeConfigSummary />
-
-          <RecentSessions />
         </Box>
 
-        <InputBar
-          disabled={hasOverlay}
-          onSubmit={onStartWorkflow}
-          onSlashCommand={onSlashCommand}
-          commands={commands}
-          mode="normal"
-          hint="describe your feature..."
-          currentScreen='home'
-          width={contentWidth}
-        />
+        <Box flexDirection="column" marginBottom={layout.inputBottomMargin}>
+          <InputBar
+            disabled={hasOverlay}
+            onSubmit={onStartWorkflow}
+            onSlashCommand={onSlashCommand}
+            commands={commands}
+            mode="normal"
+            hint="describe your feature..."
+            currentScreen="home"
+            width={layout.inputWidth}
+          />
+        </Box>
       </Box>
     </ScreenShell>
   );

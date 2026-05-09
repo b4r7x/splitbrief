@@ -14,7 +14,7 @@ type MouseListener = (event: MouseEvent) => void;
 
 // biome-ignore-start lint/suspicious/noControlCharactersInRegex: matches ANSI escape (U+001B) in terminal input
 const SGR_MOUSE_RE = /\u001b\[<(\d+);(\d+);(\d+)([Mm])/g;
-const PARTIAL_SGR_MOUSE_RE = /^\u001b\[<[\d;]*$/;
+const PARTIAL_SGR_MOUSE_RE = /^(?:\u001b|\u001b\[|\u001b\[<[\d;]*)$/;
 const COMPLETE_SGR_MOUSE_RE = /^\u001b\[<(\d+);(\d+);(\d+)([Mm])$/;
 // biome-ignore-end lint/suspicious/noControlCharactersInRegex: matches ANSI escape (U+001B) in terminal input
 const ENABLE_MOUSE_TRACKING = '\u001b[?1000h';
@@ -24,11 +24,9 @@ const DISABLE_SGR_MODE = '\u001b[?1006l';
 
 export function parseMouseEvents(chunk: string): { events: MouseEvent[]; clean: string } {
   const events: MouseEvent[] = [];
-  const clean = chunk.replace(SGR_MOUSE_RE, (match, rawBtn, rawX, rawY) => {
+  const clean = chunk.replace(SGR_MOUSE_RE, (_match, rawBtn, rawX, rawY) => {
     const btn = parseInt(rawBtn, 10);
     const baseButton = btn & ~(4 | 8 | 16);
-
-    if (baseButton < 64) return match;
 
     if (baseButton !== 64 && baseButton !== 65) return '';
 
@@ -66,9 +64,6 @@ export function getActiveFilteredStdin(): FilteredStdin | undefined {
   return activeFilteredStdin;
 }
 
-// `isTTY` and `isRaw` attach as getters delegating to real stdin; `setRawMode`,
-// `ref`, `unref` delegate via Object.assign. Final cast is the sanctioned interop
-// boundary — PassThrough cannot structurally satisfy `tty.ReadStream`.
 function bridgeTty(filtered: PassThrough, stdin: NodeJS.ReadStream): NodeJS.ReadStream {
   Object.defineProperty(filtered, 'isTTY', {
     configurable: true,
@@ -94,6 +89,8 @@ function bridgeTty(filtered: PassThrough, stdin: NodeJS.ReadStream): NodeJS.Read
       return filtered;
     },
   });
+  // Ink types require tty.ReadStream, while the filter must be a writable PassThrough.
+  // The TTY members Ink uses are bridged above; the cast is the interop boundary.
   return filtered as unknown as NodeJS.ReadStream;
 }
 

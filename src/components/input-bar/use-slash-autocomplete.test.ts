@@ -7,6 +7,10 @@ import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 
+const DOWN = '\u001B[B';
+const TAB = '\t';
+const ENTER = '\r';
+
 const COMMANDS: SlashCommandDef[] = [
   { kind: 'noarg', name: '/help', label: 'Help', description: '', validScreens: ['home'], handler: () => {} },
   { kind: 'arg', name: '/mode', label: 'Mode', description: '', validScreens: ['home'], handler: () => {} },
@@ -33,7 +37,11 @@ function Harness({ value: initialValue, onSlashCommand, onState, setValueSpy }: 
     onSlashCommand,
   });
   if (onState) onState({ filtered: result.filtered, fuzzyMatch: result.fuzzyMatch });
-  return React.createElement(Text, null, `value=${value}|first=${result.filtered[0]?.name ?? ''}|fuzzy=${result.fuzzyMatch?.name ?? ''}`);
+  return React.createElement(
+    Text,
+    null,
+    `value=${value}|first=${result.filtered[0]?.name ?? ''}|selected=${result.filtered[result.selectedIndex]?.name ?? ''}|fuzzy=${result.fuzzyMatch?.name ?? ''}`,
+  );
 }
 
 async function flush(): Promise<void> {
@@ -61,14 +69,12 @@ describe('useSlashAutocomplete (integration)', () => {
       }),
     );
     await flush();
-    // Prefix filter surfaces /help as the first match for "/he".
     expect(instance.lastFrame() ?? '').toContain('first=/help');
 
-    instance.stdin.write('\r');
+    instance.stdin.write(ENTER);
     await flush();
 
     expect(received).toBe('/help');
-    // Selected command is pushed to input history on the home screen.
     expect(inputHistoryStore.get().entries[0]).toBe('/help');
 
     instance.unmount();
@@ -85,19 +91,60 @@ describe('useSlashAutocomplete (integration)', () => {
       }),
     );
     await flush();
-    // No prefix match; fuzzy resolves /hlp → /help.
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain('first=');
     expect(frame).toContain('fuzzy=/help');
 
-    instance.stdin.write('\t');
+    instance.stdin.write(TAB);
     await flush();
 
-    // After Tab, the controlled value has been rewritten to the fuzzy match.
     expect(instance.lastFrame() ?? '').toContain('value=/help');
-    // Tab on a fuzzy match completes; it does not dispatch the command.
     expect(received).toBeNull();
 
+    instance.unmount();
+  });
+
+  it('Down then Enter invokes the highlighted prefix match', async () => {
+    let received: string | null = null;
+    const instance = render(
+      React.createElement(Harness, {
+        value: '/',
+        onSlashCommand: (cmd: string) => { received = cmd; },
+      }),
+    );
+    await flush();
+    expect(instance.lastFrame() ?? '').toContain('selected=/help');
+
+    instance.stdin.write(DOWN);
+    await flush();
+    expect(instance.lastFrame() ?? '').toContain('selected=/mode');
+
+    instance.stdin.write(ENTER);
+    await flush();
+
+    expect(received).toBe('/mode');
+    expect(inputHistoryStore.get().entries[0]).toBe('/mode');
+    instance.unmount();
+  });
+
+  it('Down then Tab fills the highlighted prefix match without dispatching it', async () => {
+    let received: string | null = null;
+    const instance = render(
+      React.createElement(Harness, {
+        value: '/',
+        onSlashCommand: (cmd: string) => { received = cmd; },
+      }),
+    );
+    await flush();
+
+    instance.stdin.write(DOWN);
+    await flush();
+    instance.stdin.write(TAB);
+    await flush();
+
+    expect(instance.lastFrame() ?? '').toContain('value=/mode');
+    expect(received).toBeNull();
+    expect(inputHistoryStore.get().entries).toEqual([]);
     instance.unmount();
   });
 });

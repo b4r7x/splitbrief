@@ -1,11 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useInput } from 'ink';
 import type { Screen } from '../../stores/navigation/router.js';
 import type { SlashCommandDef } from '../../core/slash-commands/types.js';
 import { fuzzyMatchCommand } from '../../core/slash-commands/fuzzy.js';
 import { rotateIndex } from '../pickers/picker-utils.js';
-
-export { fuzzyMatchCommand };
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 
@@ -31,6 +29,35 @@ interface UseSlashAutocompleteResult {
   inputKey: number;
 }
 
+interface SelectionState {
+  key: string;
+  index: number;
+}
+
+interface LatestSlashState {
+  currentScreen: Screen;
+  selectionKey: string;
+  filtered: SlashCommandDef[];
+  fuzzyMatch: SlashCommandDef | null;
+  effectiveSelectedIndex: number;
+}
+
+function buildSelectionKey(
+  currentScreen: Screen,
+  phase: string,
+  query: string,
+  filtered: SlashCommandDef[],
+  fuzzyMatch: SlashCommandDef | null,
+): string {
+  return [
+    currentScreen,
+    phase,
+    query,
+    filtered.map(cmd => cmd.name).join('\u0000'),
+    fuzzyMatch?.name ?? '',
+  ].join('\u0001');
+}
+
 export function useSlashAutocomplete({
   commands,
   currentScreen,
@@ -40,7 +67,8 @@ export function useSlashAutocomplete({
   disabled,
 }: UseSlashAutocompleteOptions): UseSlashAutocompleteResult {
   const [inputKey, setInputKey] = useState(0);
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selection, setSelection] = useState<SelectionState>({ key: '', index: 0 });
+  const latestRef = useRef<LatestSlashState | null>(null);
   const phase = lifecycleStore.use(s => s.phase);
 
   const slashMode = value.startsWith('/');
@@ -59,43 +87,64 @@ export function useSlashAutocomplete({
     : null;
 
   const showSuggestions = slashMode && (filtered.length > 0 || fuzzyMatch !== null);
+  const selectionKey = buildSelectionKey(currentScreen, phase, query, filtered, fuzzyMatch);
+  const selectedIndex = selection.key === selectionKey ? selection.index : 0;
   const effectiveSelectedIndex = Math.min(selectedIndex, Math.max(0, filtered.length - 1));
+  latestRef.current = {
+    currentScreen,
+    selectionKey,
+    filtered,
+    fuzzyMatch,
+    effectiveSelectedIndex,
+  };
 
   useInput(
     (_input, key) => {
-      if (key.return) {
-        const selected = filtered[effectiveSelectedIndex];
-        if (selected) {
-          if (currentScreen === 'home') {
-            inputHistoryStore.push(selected.name);
-          }
-          onSlashCommand(selected.name);
-          setValue('');
-        } else if (fuzzyMatch) {
-          if (currentScreen === 'home') {
-            inputHistoryStore.push(fuzzyMatch.name);
-          }
-          onSlashCommand(fuzzyMatch.name);
-          setValue('');
-        }
-        return;
-      }
+      const latest = latestRef.current;
+      if (!latest) return;
+
       if (key.escape) {
         setValue('');
         return;
       }
-      if (key.tab && !key.shift) {
-        if (filtered.length > 0) {
-          setSelectedIndex((i) => rotateIndex(Math.min(i, Math.max(0, filtered.length - 1)), filtered.length, 1));
-        } else if (fuzzyMatch) {
-          setValue(fuzzyMatch.name);
+      if (key.upArrow) {
+        if (latest.filtered.length > 0) {
+          setSelection({
+            key: latest.selectionKey,
+            index: rotateIndex(latest.effectiveSelectedIndex, latest.filtered.length, -1),
+          });
+        }
+        return;
+      }
+      if (key.downArrow) {
+        if (latest.filtered.length > 0) {
+          setSelection({
+            key: latest.selectionKey,
+            index: rotateIndex(latest.effectiveSelectedIndex, latest.filtered.length, 1),
+          });
+        }
+        return;
+      }
+      if (key.tab) {
+        const selected = latest.filtered[latest.effectiveSelectedIndex];
+        if (selected) {
+          setValue(selected.name);
+          setInputKey((k) => k + 1);
+        } else if (latest.fuzzyMatch) {
+          setValue(latest.fuzzyMatch.name);
           setInputKey((k) => k + 1);
         }
         return;
       }
-      if (key.tab && key.shift) {
-        if (filtered.length > 0) {
-          setSelectedIndex((i) => rotateIndex(Math.min(i, Math.max(0, filtered.length - 1)), filtered.length, -1));
+      if (key.return) {
+        const selected = latest.filtered[latest.effectiveSelectedIndex];
+        const command = selected?.name ?? latest.fuzzyMatch?.name;
+        if (command) {
+          if (latest.currentScreen === 'home') {
+            inputHistoryStore.push(command);
+          }
+          onSlashCommand(command);
+          setValue('');
         }
         return;
       }

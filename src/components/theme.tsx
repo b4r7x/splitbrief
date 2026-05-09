@@ -23,6 +23,7 @@ export interface Theme {
   validator: string;
   border: string;
   panelBg: string | undefined;
+  suggestionPanelBg: string;
   selectionBg: string;
   spinner: string;
   scrollIndicator: string;
@@ -66,6 +67,7 @@ const terminalTheme: Theme = {
   validator: 'green',
   border: 'gray',
   panelBg: undefined,
+  suggestionPanelBg: '#24283b',
   selectionBg: '#333333',
   spinner: 'cyan',
   scrollIndicator: 'gray',
@@ -109,6 +111,7 @@ const monoTheme: Theme = {
   validator: '#9ece6a',
   border: '#3b3b3b',
   panelBg: '#1a1a1a',
+  suggestionPanelBg: '#1a1a1a',
   selectionBg: '#2a2a3a',
   spinner: '#7aa2f7',
   scrollIndicator: '#666666',

@@ -7,7 +7,7 @@ describe('parseMouseEvents', () => {
     const input = `before\u001b[<0;10;20Mmiddle\u001b[<64;10;20Mafter`;
     const { events, clean } = parseMouseEvents(input);
 
-    expect(clean).toBe(`before\u001b[<0;10;20Mmiddleafter`);
+    expect(clean).toBe('beforemiddleafter');
     expect(events).toEqual([
       { type: 'wheel-up', x: 10, y: 20, button: 64, shift: false, meta: false, ctrl: false },
     ]);
@@ -22,22 +22,22 @@ describe('parseMouseEvents', () => {
     ]);
   });
 
-  it('passes non-wheel SGR mouse sequences through untouched', () => {
+  it('strips non-wheel SGR mouse sequences without emitting events', () => {
     const press = '\u001b[<0;5;10M';
     const release = '\u001b[<0;5;10m';
     const input = `${press}text${release}`;
     const { events, clean } = parseMouseEvents(input);
 
     expect(events).toEqual([]);
-    expect(clean).toBe(input);
+    expect(clean).toBe('text');
   });
 
-  it('passes non-wheel sequences with modifier bits through untouched', () => {
+  it('strips non-wheel sequences with modifier bits', () => {
     const seq = '\u001b[<4;1;1M';
     const { events, clean } = parseMouseEvents(seq);
 
     expect(events).toEqual([]);
-    expect(clean).toBe(seq);
+    expect(clean).toBe('');
   });
 
   it('intercepts wheel events with modifier bits using the masked button code', () => {
@@ -59,7 +59,7 @@ describe('parseMouseEvents', () => {
     const input = '\u001b[<0;1;1Mhello\u001b[<64;2;3Mworld\u001b[<1;4;5M';
     const { events, clean } = parseMouseEvents(input);
 
-    expect(clean).toBe('\u001b[<0;1;1Mhelloworld\u001b[<1;4;5M');
+    expect(clean).toBe('helloworld');
     expect(events).toHaveLength(1);
     expect(events[0]?.type).toBe('wheel-up');
   });
@@ -161,6 +161,22 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     filtered.disable();
   });
 
+  it('strips click reports from filtered stdin without reporting scroll events', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const events: MouseEvent[] = [];
+    filtered.onMouse(e => events.push(e));
+
+    fakeStdin.emit('data', Buffer.from('a\u001b[<0;3;4Mb\u001b[<2;5;6Mc'));
+
+    const clean = await readFiltered(filtered.stdin, 'abc'.length);
+
+    expect(clean).toBe('abc');
+    expect(events).toEqual([]);
+
+    filtered.disable();
+  });
+
   it('delivers multiple consecutive wheel events from a single chunk in order', async () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
@@ -204,19 +220,80 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     filtered.disable();
   });
 
-  it('does not buffer trailing plain escape characters that cannot start a mouse sequence', async () => {
+  it('strips a non-wheel click report split across chunks', async () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
     filtered.onMouse(e => events.push(e));
 
-    // `\u001b` alone (e.g. from an Alt-key press) does not match the partial
-    // mouse pattern `^\u001b\[<[\d;]*$`; it must pass through unchanged.
-    fakeStdin.emit('data', Buffer.from('ab\u001b'));
+    const cleanPromise = readFiltered(filtered.stdin, 'leftright'.length);
+    fakeStdin.emit('data', Buffer.from('left\u001b[<0;5'));
+    fakeStdin.emit('data', Buffer.from(';6Mright'));
 
-    const clean = await readFiltered(filtered.stdin, 'ab\u001b'.length);
-    expect(clean).toBe('ab\u001b');
+    await expect(cleanPromise).resolves.toBe('leftright');
     expect(events).toEqual([]);
+
+    filtered.disable();
+  });
+
+  it('withholds a mouse report split immediately after ESC until completion', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const events: MouseEvent[] = [];
+    const collected: string[] = [];
+    filtered.onMouse(e => events.push(e));
+    filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
+
+    fakeStdin.emit('data', Buffer.from('left\u001b'));
+    await new Promise(r => setTimeout(r, 10));
+
+    expect(collected.join('')).toBe('left');
+
+    fakeStdin.emit('data', Buffer.from('[<64;1;2Mright'));
+    await new Promise(r => setTimeout(r, 10));
+
+    expect(collected.join('')).toBe('leftright');
+    expect(events).toEqual([
+      { type: 'wheel-up', x: 1, y: 2, button: 64, shift: false, meta: false, ctrl: false },
+    ]);
+
+    filtered.disable();
+  });
+
+  it('withholds a mouse report split after ESC[ until completion', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const events: MouseEvent[] = [];
+    const collected: string[] = [];
+    filtered.onMouse(e => events.push(e));
+    filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
+
+    fakeStdin.emit('data', Buffer.from('left\u001b['));
+    await new Promise(r => setTimeout(r, 10));
+
+    expect(collected.join('')).toBe('left');
+
+    fakeStdin.emit('data', Buffer.from('<65;3;4Mright'));
+    await new Promise(r => setTimeout(r, 10));
+
+    expect(collected.join('')).toBe('leftright');
+    expect(events).toEqual([
+      { type: 'wheel-down', x: 3, y: 4, button: 65, shift: false, meta: false, ctrl: false },
+    ]);
+
+    filtered.disable();
+  });
+
+  it('passes through a buffered escape once the next chunk proves it is not an SGR mouse report', async () => {
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+
+    const cleanPromise = readFiltered(filtered.stdin, 'ab\u001bx'.length);
+    fakeStdin.emit('data', Buffer.from('ab\u001b'));
+    await new Promise(r => setTimeout(r, 10));
+    fakeStdin.emit('data', Buffer.from('x'));
+
+    await expect(cleanPromise).resolves.toBe('ab\u001bx');
 
     filtered.disable();
   });
@@ -246,11 +323,9 @@ describe('createFilteredStdin partial chunk handling (splitMouseChunk)', () => {
     filtered.onMouse(e => events.push(e));
 
     filtered.disable();
-    // After disable, emitting data on the real stdin must not produce events.
     fakeStdin.emit('data', Buffer.from('\u001b[<64;1;1M'));
 
     expect(events).toEqual([]);
-    // Idempotent — second disable must not throw.
     expect(() => filtered.disable()).not.toThrow();
   });
 });

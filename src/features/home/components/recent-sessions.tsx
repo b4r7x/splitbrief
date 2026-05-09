@@ -7,7 +7,12 @@ import { configStore } from '../../../stores/project/config.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { SessionRow } from '../../../components/session-row.js';
 
-export function RecentSessions() {
+interface RecentSessionsProps {
+  limit?: number | undefined;
+  featureColWidth?: number | undefined;
+}
+
+export function RecentSessions({ limit, featureColWidth }: RecentSessionsProps) {
   const [{ sessions }, { isSmall }, { projectDir }] = useStores(
     sessionsStore,
     terminalSizeStore,
@@ -16,8 +21,11 @@ export function RecentSessions() {
   const theme = useTheme();
 
   useEffect(() => {
+    if (limit !== undefined && limit <= 0) return;
     sessionsStore.load(projectDir);
-  }, [projectDir]);
+  }, [projectDir, limit]);
+
+  if (limit !== undefined && limit <= 0) return null;
 
   if (sessions.length === 0) {
     return (
@@ -27,14 +35,24 @@ export function RecentSessions() {
     );
   }
 
+  const visibleSessions = sessions.slice(0, limit ?? sessions.length);
+  const hiddenCount = sessions.length - visibleSessions.length;
+
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box marginBottom={isSmall ? 0 : 1}>
         <Text color={theme.textDim}>Recent sessions</Text>
       </Box>
-      {sessions.map((s) => (
-        <SessionRow key={s.id} session={s} />
+      {visibleSessions.map((s) => (
+        <SessionRow
+          key={s.id}
+          session={s}
+          {...(featureColWidth !== undefined ? { featureColWidth } : {})}
+        />
       ))}
+      {hiddenCount > 0 && (
+        <Text color={theme.textDim}>  +{hiddenCount} more</Text>
+      )}
     </Box>
   );
 }

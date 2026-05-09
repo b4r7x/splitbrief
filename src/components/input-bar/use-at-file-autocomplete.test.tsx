@@ -19,10 +19,12 @@ const FILES = [
 interface HarnessProps {
   initialValue: string;
   disabled?: boolean;
+  setValueSpy?: { current: ((value: string) => void) | null };
 }
 
-function Harness({ initialValue, disabled }: HarnessProps) {
+function Harness({ initialValue, disabled, setValueSpy }: HarnessProps) {
   const [value, setValue] = React.useState(initialValue);
+  if (setValueSpy) setValueSpy.current = setValue;
   const result = useAtFileAutocomplete({
     files: FILES,
     value,
@@ -86,6 +88,25 @@ describe('useAtFileAutocomplete', () => {
     await tick(1); await tick(1);
 
     expect(instance.lastFrame() ?? '').toContain('value=@src/components/input-bar/input-bar.tsx');
+    instance.unmount();
+  });
+
+  it('resets the highlighted file when the @ query changes', async () => {
+    const setValueSpy: HarnessProps['setValueSpy'] = { current: null };
+    const instance = render(<Harness initialValue="@" setValueSpy={setValueSpy} />);
+    await tick(1); await tick(1);
+
+    instance.stdin.write(DOWN);
+    await tick(1); await tick(1);
+    expect(instance.lastFrame() ?? '').toContain('selected=src/components/input-bar/input-bar.tsx');
+
+    setValueSpy.current?.('@docs');
+    await tick(1); await tick(1);
+    expect(instance.lastFrame() ?? '').toContain('selected=docs/README.md');
+
+    instance.stdin.write(ENTER);
+    await tick(1); await tick(1);
+    expect(instance.lastFrame() ?? '').toContain('value=@docs/README.md');
     instance.unmount();
   });
 
