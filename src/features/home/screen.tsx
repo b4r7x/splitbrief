@@ -1,8 +1,8 @@
 import { Box, Text } from 'ink';
 import cfonts from 'cfonts';
-import type { SlashCommandDef } from '../../core/slash-commands/types.js';
+import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { useTheme } from '../../components/theme.js';
-import { InputBar } from '../../components/input-bar/input-bar.js';
+import { Composer } from '../../components/composer/composer.js';
 import { ScreenShell } from '../../components/screen-shell.js';
 import { HomeConfigSummary } from './components/config-summary.js';
 import { RecentSessions } from './components/recent-sessions.js';
@@ -22,11 +22,11 @@ function getBanner(): string {
 }
 
 interface HomeScreenProps {
-  commands: SlashCommandDef[];
-  onSlashCommand: (command: string) => void;
+  commands: RuntimeCommandDef[];
+  onRuntimeCommand: (command: string) => void;
 }
 
-export function HomeScreen({ commands, onSlashCommand }: HomeScreenProps) {
+export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
   const theme = useTheme();
   const hasOverlay = overlayStore.use(s => s.active !== 'none');
   const [{ cols, rows, isSmall }] = useStores(terminalSizeStore);
@@ -64,10 +64,10 @@ export function HomeScreen({ commands, onSlashCommand }: HomeScreenProps) {
         </Box>
 
         <Box flexDirection="column" marginBottom={layout.inputBottomMargin}>
-          <InputBar
+          <Composer
             disabled={hasOverlay}
             onSubmit={onStartWorkflow}
-            onSlashCommand={onSlashCommand}
+            onRuntimeCommand={onRuntimeCommand}
             commands={commands}
             mode="normal"
             hint="describe your feature..."

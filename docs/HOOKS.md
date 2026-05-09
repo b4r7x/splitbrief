@@ -44,7 +44,8 @@ Cross-feature primitives only. Flat directory — no subfolders, no barrels.
 | `use-filterable-list.ts` | Filterable, searchable picker state (arrow-nav, filter, selection). Used by every feature-level picker. |
 | `use-static-selector.ts` | Fixed-list keyboard selector (no filter). Peer of `use-filterable-list` for simpler cases. |
 | `use-async-highlight.ts` | Shiki async highlight wrapper with cancellation. Used by any component rendering highlighted code. |
-| `use-app-keys.ts` | App-wide keyboard dispatch: Ctrl+C (quit / abort workflow), Ctrl+K (command palette), Ctrl+, (settings), Escape (overlay close). Always mounted. |
+
+App-wide keyboard dispatch (`useAppKeys`) lives at `src/app/keys.ts` rather than under `src/hooks/`. It binds to app-shell concerns (`useApp().exit`, the global router, overlay stack, lifecycle abort) and is composed once by `src/app.tsx`, so it sits next to the shell it serves.
 
 ### Feature-scoped (`src/features/{feature}/hooks/`)
 
@@ -119,7 +120,7 @@ When a hook would wrap another hook and add only trivial logic, inline instead. 
 1. **Trivial hooks do not need direct tests.** A 20-LOC hook with no branching that wraps an Ink API is covered transitively through its consumer's integration test. Writing a direct test for it asserts implementation.
 2. **Behavior lives in the hook, not the pure helper.** If you split a hook into `use-foo.ts` + `foo-helpers.ts`, the hook orchestrates, the helpers stay pure. Test the pure helpers directly; test the hook at the behavior level.
 3. **Hooks do not import from other features.** `features/home/hooks/*` must not import from `features/workflow/*`. Cross-feature needs go through a shared hook in `src/hooks/` or a store.
-4. **One `useInput` per concern.** Splitting `use-global-keys` into `use-app-keys` + `use-workflow-keys` was a direct application of this: global keybindings stay always-on, workflow keybindings mount conditionally under `screen === 'workflow'`.
+4. **One `useInput` per concern.** Splitting `use-global-keys` into `useAppKeys` (now at `src/app/keys.ts`) + `use-workflow-keys` was a direct application of this: global keybindings stay always-on, workflow keybindings mount conditionally under `screen === 'workflow'`.
 5. **Prefer `AbortController` over ad-hoc `cancelled` flags for async cancellation.** When a hook races a promise against unmount, use `new AbortController()` + `controller.signal` and return `() => controller.abort()` from the effect. Node's `fs.readFile`, `fetch`, and most async APIs accept `{ signal }` natively. Closure booleans (`let cancelled = false`) work but signal the wrong intent — `AbortController.abort()` is self-documenting and the Node-native SOTA. Canonical example: `use-review-content.ts`.
 
 ## Design decisions
@@ -130,8 +131,8 @@ Once the shared directory only contains hooks used across ≥2 features, the cou
 **Why keep `use-filterable-list` shared when it powers feature-level pickers?**
 It is a keyboard/filter primitive, not a business hook. Every feature picker composes it — the primitive has its own lifecycle independent of any feature.
 
-**Why split `use-global-keys` into `use-app-keys` + `use-workflow-keys`?**
-Three reasons: (1) `use-workflow-keys` reads from workflow-scoped stores (`conversationScrollStore`, `reviewStore`, `lifecycleStore`) and belongs in the workflow feature; (2) mounting the workflow listeners only on the workflow screen eliminates edge cases where a workflow chord fires on the home screen; (3) feature-local keyboard logic is discoverable from the feature folder, not from a 130-LOC shared hook with 9 store dependencies.
+**Why split `use-global-keys` into `useAppKeys` (`src/app/keys.ts`) + `use-workflow-keys` (`src/features/workflow/hooks/use-workflow-keys.ts`)?**
+Three reasons: (1) `use-workflow-keys` reads from workflow-scoped stores (`conversationScrollStore`, `reviewStore`, `lifecycleStore`) and belongs in the workflow feature; (2) mounting the workflow listeners only on the workflow screen eliminates edge cases where a workflow chord fires on the home screen; (3) feature-local keyboard logic is discoverable from the feature folder, not from a 130-LOC shared hook with 9 store dependencies. `useAppKeys` lives next to `src/app.tsx` because its concerns are app-shell concerns (exit, overlay stack, lifecycle abort).
 
 **Why not put `keyboard.ts` under `features/workflow/hooks/`?**
 It is a pure function, not a hook. Hooks imply React lifecycle. Keeping pure helpers at the feature root (`features/workflow/keyboard.ts`) signals "this is feature logic, consumable by both React and non-React code".

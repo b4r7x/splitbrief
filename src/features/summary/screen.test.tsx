@@ -28,7 +28,7 @@ describe('SummaryScreen', () => {
   it('renders the persisted mode from the summary', () => {
     routerStore.init({ screen: 'summary', summary: makeSummary({ mode: 'standard' }) });
 
-    const ui = renderFeature(<SummaryScreen commands={[]} onSlashCommand={() => {}} />);
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Mode');
@@ -41,7 +41,7 @@ describe('SummaryScreen', () => {
     configStore.__testReset({ config: makeConfig({ workflow: { mode: 'quick' } }) });
     routerStore.init({ screen: 'summary', summary: makeSummary() });
 
-    const ui = renderFeature(<SummaryScreen commands={[]} onSlashCommand={() => {}} />);
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).not.toContain('Mode');
@@ -53,7 +53,7 @@ describe('SummaryScreen', () => {
   it('uses task compiler language in the summary header', () => {
     routerStore.init({ screen: 'summary', summary: makeSummary({ totalTasks: 5, completedByLocal: 4, escalatedToPlanner: 1 }) });
 
-    const ui = renderFeature(<SummaryScreen commands={[]} onSlashCommand={() => {}} />);
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Task Brief');
@@ -97,7 +97,7 @@ describe('SummaryScreen', () => {
       }),
     });
 
-    const ui = renderFeature(<SummaryScreen commands={[]} onSlashCommand={() => {}} />);
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('mixed profiles');
@@ -110,7 +110,7 @@ describe('SummaryScreen', () => {
   it('renders "quality n/a" when no briefQuality present', () => {
     routerStore.init({ screen: 'summary', summary: makeSummary() });
 
-    const ui = renderFeature(<SummaryScreen commands={[]} onSlashCommand={() => {}} />);
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('quality n/a');
@@ -121,7 +121,7 @@ describe('SummaryScreen', () => {
   it('renders brief quality score when briefQuality is present', () => {
     routerStore.init({ screen: 'summary', summary: makeSummary({ briefQuality: { score: 0.8, passed: true, errorCount: 0, warningCount: 2 } }) });
 
-    const ui = renderFeature(<SummaryScreen commands={[]} onSlashCommand={() => {}} />);
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('quality 0.80');
@@ -133,7 +133,7 @@ describe('SummaryScreen', () => {
   it('renders drift warning count when driftSummary is present', () => {
     routerStore.init({ screen: 'summary', summary: makeSummary({ driftSummary: { passed: false, score: 0.84, errorCount: 0, warningCount: 1 } }) });
 
-    const ui = renderFeature(<SummaryScreen commands={[]} onSlashCommand={() => {}} />);
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Drift');
@@ -173,7 +173,7 @@ describe('SummaryScreen', () => {
       }),
     });
 
-    const ui = renderFeature(<SummaryScreen commands={[]} onSlashCommand={() => {}} />);
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Checkpoints');
@@ -220,7 +220,7 @@ describe('SummaryScreen', () => {
         }),
       });
 
-      const ui = renderFeature(<SummaryScreen commands={[]} onSlashCommand={() => {}} />);
+      const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
       await tick();
       const frame = ui.lastFrame() ?? '';
 
@@ -270,7 +270,7 @@ describe('SummaryScreen', () => {
       }),
     });
 
-    const ui = renderFeature(<SummaryScreen commands={[]} onSlashCommand={() => {}} />);
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('12 ckpts');
@@ -288,7 +288,7 @@ describe('SummaryScreen', () => {
   it('does not render "full" mode label anywhere', () => {
     routerStore.init({ screen: 'summary', summary: makeSummary({ mode: 'standard' }) });
 
-    const ui = renderFeature(<SummaryScreen commands={[]} onSlashCommand={() => {}} />);
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).not.toContain('full');

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SettingsOverlay } from './overlay.js';
 import { renderFeature, tick } from '../../../testing/helpers/ink.js';
 import { resetAllStores } from '../../../testing/helpers/stores.js';
@@ -50,7 +50,9 @@ describe('settings overlay integration', () => {
     ui.stdin.write('\r'); // commit
     await tick(20);
 
-    expect(configStore.get().config?.workflow.maxRetries).toBe(5);
+    await vi.waitFor(() => {
+      expect(configStore.get().config?.workflow.maxRetries).toBe(5);
+    });
     ui.unmount();
   });
 

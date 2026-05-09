@@ -130,7 +130,7 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - `core/formatting.ts` — LLM-specific formatters (`formatCost`, `formatContextLength`)
 - `core/layout/` — pure layout/geometry helpers for the TUI (no React, no hooks)
 - `core/paths.ts`, `core/paths-io.ts` — `.diptych/` path derivation and validation
-- `core/slash-commands/` — command definitions (pure data + handlers)
+- `core/runtime/commands/` — runtime command definitions (pure data + handlers; see also `core/keybindings/`)
 - `core/providers/` — provider catalog, known-models, model-selection logic
 - `core/hooks/` — workflow hook config validation + sha256 trust hashing (`trust.ts`)
 - `core/tokens/` — pure token accounting helpers (`estimate.ts`) used by the repo-map budget and the planner base
@@ -207,7 +207,7 @@ If a file in `src/components/` turns out to have a single feature consumer, demo
 | File (old home in `components/`) | Real consumer | New home |
 |---|---|---|
 | `components/overlays/mode-selector.tsx` | `app.tsx` overlay switch; writes to `configStore.workflow.mode` (settings domain) | `features/settings/mode-selector.tsx` |
-| `components/input-bar/feedback-row.tsx` | `features/workflow/screen.tsx`; reads `abortStore` (workflow domain) | `features/workflow/components/feedback-row.tsx` |
+| `components/composer/feedback-row.tsx` | `features/workflow/screen.tsx`; reads `abortStore` (workflow domain) | `features/workflow/components/feedback-row.tsx` |
 
 The demotions cost one import-path rewrite each; the benefit is that `src/components/` stops advertising false sharing.
 

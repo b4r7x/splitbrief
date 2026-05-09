@@ -93,15 +93,15 @@ Worktree names are validated against a strict whitelist (`[A-Za-z0-9_][A-Za-z0-9
 
 ---
 
-## 8. Slash commands
+## 8. Runtime commands
 
-`src/core/slash-commands/`
+`src/core/runtime/commands/`
 
-User-facing commands typed as `/name args` in the input bar. Registered in `src/core/slash-commands/catalog.ts` via `createCommands(ctx)`, which takes a `CommandContext` providing access to navigation, overlays, detection, rewind, handoff, snapshots, and other capabilities.
+User-facing commands typed as `/name args` in the composer. Registered in `src/core/runtime/commands/registry.ts` via `createRuntimeCommands(ctx)`, which takes a `RuntimeCommandContext` providing access to navigation, overlays, detection, rewind, handoff, snapshots, and other capabilities.
 
 Each command declares: `name`, optional `aliases`, a `kind` discriminant (`noarg` or `arg`), `handler`, `validScreens` (which screens the command can run on), optional `phaseGuard` (function that checks whether the current workflow phase allows execution), and optional `label` and `shortcut`. Commands with a `label` appear in the command palette (Ctrl-K).
 
-Dispatch (`src/core/slash-commands/dispatch.ts`): parse the raw input, split name from args, look up the command via fuzzy matching (`src/core/slash-commands/fuzzy.ts`), validate screen and phase guards, then execute the handler. Errors are surfaced through the `onError` callback. Full reference: `docs/SLASH-COMMANDS-REFERENCE.md`.
+Dispatch (`src/core/runtime/commands/dispatch.ts`): parse the raw input, split name from args, look up the command via fuzzy matching (`src/core/runtime/commands/lookup.ts`), validate screen and phase guards, then execute the handler. Errors are surfaced through the `onError` callback. Full reference: `docs/SLASH-COMMANDS-REFERENCE.md`.
 
 ---
 
@@ -167,7 +167,7 @@ Activated via `diptych start --rpc`. The workflow runs headlessly with a machine
 | `recovery` | `action` | Picks a recovery action (retry, skip, abort, etc.) |
 | `status` | -- | Requests current workflow state |
 | `abort` | -- | Aborts the workflow |
-| `slash` | `command` | Executes a slash command (e.g. `/mode quick`, `/skip`) |
+| `slash` | `command` | Executes a runtime command by slash name (e.g. `/mode quick`, `/queue clear`) |
 
 **Server responses** (stdout). Each response has a `type` field: `ack` (command accepted, with optional `command` and `data`), `error` (with `error` message), `status` (current workflow state in `data`), or `event` (a forwarded `EngineEvent`).
 

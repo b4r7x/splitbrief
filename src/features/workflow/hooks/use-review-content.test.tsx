@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Text } from 'ink';
@@ -16,38 +16,44 @@ function Harness({ filePath }: { filePath: string | null }) {
 
 describe('useReviewContent', () => {
   let tmp: string;
+  let ui: ReturnType<typeof renderFeature> | null;
 
   beforeEach(() => {
     resetAllStores();
     tmp = createTempDir('use-review-content');
+    ui = null;
+  });
+
+  afterEach(() => {
+    ui?.unmount();
+    cleanupTempDir(tmp);
   });
 
   it('reads the file and syncs content + lineCount to reviewStore', async () => {
     const file = join(tmp, 'spec.md');
     writeFileSync(file, 'line one\nline two\nline three\n');
 
-    const ui = renderFeature(<Harness filePath={file} />);
-    await tick(20);
+    ui = renderFeature(<Harness filePath={file} />);
 
-    expect(ui.lastFrame()).toContain('content=line one');
-    expect(reviewStore.get().lineCount).toBe(4); // trailing newline → 4 split segments
-    ui.unmount();
-    cleanupTempDir(tmp);
+    await vi.waitFor(() => {
+      expect(ui?.lastFrame()).toContain('content=line one');
+      expect(reviewStore.get().lineCount).toBe(4); // trailing newline → 4 split segments
+    });
   });
 
   it('does not write to stores after the component unmounts mid-read', async () => {
     const file = join(tmp, 'spec.md');
     writeFileSync(file, 'mid-read content\n');
 
-    const ui = renderFeature(<Harness filePath={file} />);
+    ui = renderFeature(<Harness filePath={file} />);
     // Unmount before giving the microtask/IO a chance to resolve.
     ui.unmount();
+    ui = null;
     await tick(50);
 
     expect(feedbackStore.get().message).toBeNull();
     // lineCount stays at its initial value; the resolved branch never ran.
     expect(reviewStore.get().lineCount).toBe(0);
-    cleanupTempDir(tmp);
   });
 
   it('aborts the prior read when filePath changes', async () => {
@@ -56,15 +62,14 @@ describe('useReviewContent', () => {
     writeFileSync(fileA, 'aaa\n');
     writeFileSync(fileB, 'bbb\nbbb\nbbb\n');
 
-    const ui = renderFeature(<Harness filePath={fileA} />);
+    ui = renderFeature(<Harness filePath={fileA} />);
     ui.rerender(<Harness filePath={fileB} />);
-    await tick(50);
 
     // The final resolved read is for fileB — that's what the user sees.
-    expect(ui.lastFrame()).toContain('content=bbb');
-    expect(reviewStore.get().lineCount).toBe(4);
-    expect(feedbackStore.get().message).toBeNull();
-    ui.unmount();
-    cleanupTempDir(tmp);
+    await vi.waitFor(() => {
+      expect(ui?.lastFrame()).toContain('content=bbb');
+      expect(reviewStore.get().lineCount).toBe(4);
+      expect(feedbackStore.get().message).toBeNull();
+    });
   });
 });

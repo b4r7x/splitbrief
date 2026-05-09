@@ -7,7 +7,7 @@ import type { QueueHandler } from '../../engine/orchestrator/types.js';
 import { sessionDir } from '../../core/paths.js';
 import { transitionAndSave } from '../../engine/orchestrator/state-ops.js';
 import { WORKFLOW_REWIND_ABORT_REASON } from '../../engine/orchestrator/run/run.js';
-import type { CommandContext } from '../../core/slash-commands/types.js';
+import type { RuntimeCommandContext } from '../../core/runtime/commands/types.js';
 import { rebuildRepomap } from '../../engine/codebase/rebuild.js';
 import { attachImage, detachImage, listAttachments } from '../../stores/ui/attachments.js';
 import { writeHandoffPack } from '../../engine/handoff/write.js';
@@ -29,7 +29,7 @@ export function createRpcCommandContext(opts: {
   messages: string[];
   errors: string[];
   pendingQueueDepth: (state: WorkflowState | null) => number;
-}): CommandContext {
+}): RuntimeCommandContext {
   const pushMessage = (message: string) => {
     opts.messages.push(message);
   };

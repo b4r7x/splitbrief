@@ -29,7 +29,7 @@ Read before writing:
 
 - `src/utils/fuzzy-match.ts` — the `fuzzyMatchExtended` function you will call
 - `src/core/slash-commands/types.ts` — `CommandPaletteItem`, `SlashCommandDef`
-- `src/core/slash-commands/dispatch.ts` — `toPaletteItems` adapter (shows shape of slash command items)
+- `src/features/palette/sources.ts` — command item assembly for palette sources
 - `src/features/sessions/picker-select.ts` — `handleSelect` (action for session items — you will accept a pre-built action callback, not import this directly)
 - `src/core/schemas/session.ts` — `Session` type
 - `src/stores/workflow/tasks.ts` — `SidebarTask` shape (your input type for task items)
@@ -58,7 +58,7 @@ export type PaletteResult = {
 ```ts
 export type PaletteInputs = {
   query: string;
-  // Slash command items — already converted by toPaletteItems() in the caller
+  // Slash command items — already converted by the palette source builder
   slashItems: CommandPaletteItem[];
   // Mode entries — caller builds these
   modeItems: Array<{ label: string; description: string; action: () => void }>;

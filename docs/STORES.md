@@ -235,7 +235,7 @@ A small number of stores ship two test-only exports so tests can arrange specifi
 | Symbol | Shape | Who may import |
 |---|---|---|
 | `__testReset(next?)` on a store facade | Replaces current state with `{ ...initial, ...next }` | `*.test.ts` / `*.test.tsx` files only |
-| `_<name>Internal = { set }` (e.g. `_lifecycleInternal`, `_eventsInternal`, `_tasksInternal`, `_tokensInternal`) | Exposes the raw store setter | `src/stores/workflow/actions.ts` for the production write path; tests that need to reach a state the public actions cannot produce (e.g. `src/hooks/use-app-keys.test.tsx` forcing a mid-workflow phase) |
+| `_<name>Internal = { set }` (e.g. `_lifecycleInternal`, `_eventsInternal`, `_tasksInternal`, `_tokensInternal`) | Exposes the raw store setter | `src/stores/workflow/actions.ts` for the production write path; tests that need to reach a state the public actions cannot produce (e.g. `src/app/keys.test.tsx` forcing a mid-workflow phase) |
 
 **Rule.** Production code outside `workflow/actions.ts` MUST NOT import either symbol. Reviewers reject PRs that add new call sites in `src/` outside that one module. Tests are the only other sanctioned caller.
 
@@ -245,7 +245,7 @@ A small number of stores ship two test-only exports so tests can arrange specifi
 
 ## Engine Write Pattern
 
-Since the 2026-04 uplift the engine no longer calls `workflowStore` / `actions.addEvent` directly. Events are published on the `EventBus` (`wctx.bus.publish(event)`); the `tuiSink` (`src/engine/events/sinks/tui.ts`) is subscribed at workflow init and forwards each `EngineEvent` to `workflow/actions.addEvent`. This keeps the intended **engine → bus → sink → store → UI** direction and preserves the layer rule (engine has zero React imports):
+Since the 2026-04 uplift the engine no longer calls `workflowStore` / `actions.addEvent` directly. Events are published on the `EventBus` (`wctx.bus.publish(event)`); the `tuiSink` (`src/features/workflow/tui-sink.ts`) is subscribed at workflow init and forwards each `EngineEvent` to `workflow/actions.addEvent`. This keeps the intended **engine → bus → sink → store → UI** direction and preserves the layer rule (engine has zero React imports):
 
 - Engine code publishes events; sinks write to stores; UI components subscribe reactively and re-render only when their selected slice changes.
 - Non-event cross-cutting writes (abort / queue handler registration) still go through the `sinks` surface on the workflow context; `abortStore` is the one store engine code still reads directly for cancellation status.

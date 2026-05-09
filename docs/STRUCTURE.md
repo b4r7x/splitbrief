@@ -19,6 +19,7 @@ This is **feature-based organization, bulletproof-react-inspired**, adapted for 
 ```
 src/
 ├── app.tsx, layout.tsx, cli.ts              # app entry + shell
+├── app/                                     # app-shell support: global keys + runtime command context
 ├── cli/                                     # CLI subcommand handlers
 ├── core/                                    # domain logic (config, types, state, formatting)
 ├── engine/                                  # workflow orchestrator (zero React)
@@ -28,13 +29,15 @@ src/
 ├── lib/                                     # infrastructure wrappers (git, fs, process, terminal, highlight) — see LAYERS.md
 ├── utils/                                   # generic primitives (zero domain, zero infra) — see LAYERS.md
 └── features/                                # business features
+    ├── help/
     ├── workflow/
     ├── home/
+    ├── palette/
     ├── setup/
     ├── summary/
     ├── settings/
     ├── sessions/
-    ├── tool-picker/
+    ├── runners/
     └── skills/
 ```
 
@@ -78,7 +81,7 @@ src/stores/ui/
 ├── overlay.ts         # overlay active/exclusive/stack state
 ├── feedback.ts        # feedback/error message state
 ├── input-history.ts   # command input history (in-memory)
-├── input-height.ts    # input bar rendered height (cross-tree)
+├── input-height.ts    # composer rendered height (cross-tree)
 └── persistence.ts     # disk I/O for inputHistoryStore (hydrate + debounced save)
 ```
 
@@ -144,6 +147,18 @@ src/core/tokens/
 └── estimate.ts        # shared token estimator (planner base + repo-map budget)
 ```
 
+### `src/core/runtime/commands/` — runtime command domain
+
+```
+src/core/runtime/commands/
+├── registry.ts        # createRuntimeCommands(ctx) and phase guards
+├── dispatch.ts        # parses /name args, validates screen/phase, executes
+├── lookup.ts          # exact, alias, and fuzzy command lookup
+└── types.ts           # RuntimeCommandDef, RuntimeCommandContext, CommandPaletteItem
+```
+
+These are runtime commands, not a slash-only subsystem: the same registry backs composer `/` input, the command palette, and RPC command dispatch.
+
 ### `src/core/sessions/` — session domain
 
 ```
@@ -208,9 +223,13 @@ features/workflow/
 ```
 features/settings/
 ├── overlay.tsx               # feature entry — rendered when overlay active
-├── use-edit-buffer.ts        # feature-local hook (trivial, inline candidate)
-└── use-settings-editor.ts    # feature-local hook
+├── mode-selector.tsx         # secondary overlay
+└── hooks/
+    ├── buffer.ts             # useEditBuffer — feature-local
+    └── editor.ts             # useSettingsEditor — feature-local
 ```
+
+`features/help/` and `features/palette/` follow the same overlay-entry pattern. The command palette pairs `overlay.tsx` with `sources.ts` and `results.ts`: `sources.ts` assembles commands/modes/picker actions/live tasks/sessions/custom actions, and `results.ts` ranks/filter-matches them for rendering.
 
 **Minimal feature** (e.g. `features/setup/`):
 
@@ -219,7 +238,7 @@ features/setup/
 └── screen.tsx                # accepts render-prop callbacks for cross-feature composition
 ```
 
-`features/setup/` never imports from `features/tool-picker/`. It accepts a `renderToolPicker` prop; `src/app.tsx` composes setup + tool-picker together. This is the canonical **callback-composition-at-app.tsx** pattern for cases where one feature needs to render UI owned by another.
+`features/setup/` never imports from `features/runners/`. It accepts a `renderToolPicker` prop; `src/app.tsx` composes setup + runners together. This is the canonical **callback-composition-at-app.tsx** pattern for cases where one feature needs to render UI owned by another. `runners` is the feature boundary; `ToolModelPicker` / `renderToolPicker` are component and callback names, not a `tool-picker` feature.
 
 Rules:
 - **`components/` subfolder** appears only when the feature has ≥2 component files.
@@ -303,7 +322,7 @@ Why:
 
 If you need shared behavior across features, it belongs in `src/components/`, `src/hooks/`, `src/utils/`, `src/core/`, or `src/stores/`. Composition between features happens at the app level (`src/app.tsx` dispatches, `src/layout.tsx` wraps).
 
-When feature A needs to render UI owned by feature B (e.g. `setup` rendering the `tool-picker`), feature A accepts a render-prop callback (`renderToolPicker`) and `src/app.tsx` supplies the implementation. The canonical example is `setup/`.
+When feature A needs to render UI owned by feature B (e.g. `setup` rendering the `runners` picker), feature A accepts a render-prop callback (`renderToolPicker`) and `src/app.tsx` supplies the implementation. The canonical example is `setup/`. Keep the feature folder named for the domain (`runners`); callback names do not create folder names.
 
 The one sanctioned cross-cutting channel between features is **stores**. Feature A can write to `workflowStore`, and feature B can read from it — that is the same engine→UI pattern already described in [`STORES.md`](./STORES.md).
 
@@ -312,8 +331,8 @@ The one sanctioned cross-cutting channel between features is **stores**. Feature
 `src/components/` holds UI that is not tied to any single feature:
 
 - **Primitives** — `theme.tsx`, `spinner.tsx`, `scroll-indicator.tsx`, `card.tsx`, `labeled-row.tsx`, `screen-shell.tsx`, `diff-view.tsx`, `filter-input.tsx`, `markdown.tsx`.
-- **Input subsystem** — `input/` (multiline input primitive), `input-bar/` (composite used on every screen).
-- **Shared overlays** — `overlays/overlay-panel.tsx`, `overlays/command-palette.tsx`, `overlays/help-overlay.tsx`, `overlays/text-input-overlay.tsx`. Feature-specific overlays live in their feature folder (e.g. `features/settings/mode-selector.tsx`).
+- **Input subsystem** — `input/` (multiline input primitive), `composer/` (composite used on every screen).
+- **Shared overlays** — `overlays/overlay-panel.tsx`, `overlays/text-input-overlay.tsx`. Feature-specific overlays live in their feature folder (e.g. `features/help/overlay.tsx`, `features/palette/overlay.tsx`, `features/settings/mode-selector.tsx`).
 - **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/static-selector.tsx`, `pickers/two-column-picker/`.
 
 There is **no separate `src/ui/` directory** for primitives. The distinction between "primitive" and "composed" is fuzzy in practice (stateful primitives exist; stateless composed widgets exist). Flat `src/components/` with natural subfolders (`input/`, `overlays/`, `pickers/`) is enough.
@@ -423,11 +442,13 @@ Features are small and irregular. A template would over-prescribe (minimal featu
 |---|---|---|
 | `workflow` | Running workflow — conversation flow, event cards, sidebar, input mode, keyboard, runner lifecycle | `screen.tsx` |
 | `home` | Landing screen — banner, config summary, recent sessions, input | `screen.tsx` |
+| `help` | Global help overlay — keyboard and command reference | `overlay.tsx` |
+| `palette` | Command palette overlay — source assembly, filtering, MRU ranking | `overlay.tsx` |
 | `setup` | First-time setup — planner + implementer selection | `screen.tsx` |
 | `summary` | Post-workflow report — cost, task table, phase timing | `screen.tsx` |
 | `settings` | Settings overlay — field editor for config | `overlay.tsx` |
 | `sessions` | Sessions picker — select a past session to resume | `picker.tsx` |
-| `tool-picker` | Planner/implementer tool + model selection | `picker.tsx` |
+| `runners` | Planner/implementer runner + model selection | `picker.tsx` |
 | `skills` | Skills picker — toggle available skills for a workflow | `picker.tsx` |
 
 Each feature's entry file is what `src/app.tsx` (or `src/layout.tsx` for overlays) imports. Internal structure is documented by inspection — there is no catalog per-feature.

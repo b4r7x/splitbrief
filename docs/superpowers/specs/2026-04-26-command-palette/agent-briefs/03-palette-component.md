@@ -41,7 +41,7 @@ Read all of these before writing:
 - `src/stores/project/config.ts` — `configStore.useConfig()` (for `palette.customActions`)
 - `src/core/slash-commands/catalog.ts` — `createCommands(ctx)` for slash command list
 - `src/core/slash-commands/context.ts` — `buildCommandContext`
-- `src/core/slash-commands/dispatch.ts` — `toPaletteItems`, `executeSlashCommand`
+- `src/core/runtime/commands/dispatch.ts` — `executeRuntimeCommand`; palette command items are assembled in `src/features/palette/sources.ts`
 - `src/core/schemas/enums.ts` — `WORKFLOW_MODES`
 - `src/features/sessions/picker-select.ts` — `handleSelect(session)` for session action
 - `src/components/overlays/overlay-panel.tsx` — `OverlayPanel` wrapper (full file — understand props)
@@ -98,7 +98,7 @@ useEffect(() => { sessionsStore.load(projectDir); }, [projectDir]);
 
 Build `PaletteInputs` inside the component body (not in a `useMemo`):
 
-- `slashItems`: `toPaletteItems(createCommands(buildCommandContext({ exit: () => {} })))` filtered to `.availableOn.includes(screen)` — note: pass a no-op `exit` since the palette action will call the real handler
+- `slashItems`: build from labeled runtime commands in `src/features/palette/sources.ts`, filtered to `.availableOn.includes(screen)`; the palette action should call the real runtime command handler
 - `modeItems`: `WORKFLOW_MODES.map(mode => ({ label: mode, description: `Switch to ${mode} mode`, action: () => { ctx.setWorkflowMode(mode); } }))`
 - `pickerItems`: 4 fixed entries — planner, implementer, sessions, settings — each calling `overlayStore.open(target)` (the component closes the palette first, then the action opens the target overlay — see "consistent close" note below)
 - `taskItems`: only populate when `phase === 'implementing' || phase === 'validating-task' || phase === 'escalating'`; `tasks.map(t => ({ id: t.id, title: t.title, action: () => { feedbackStore.setMessage(`Task ${t.id}: ${t.title}`) } }))` — see note on task action
@@ -157,7 +157,7 @@ Reset `cursor` to 0 whenever `query` changes (already handled by setting cursor 
 3. Add import of `CommandPaletteOverlay` from `'./features/workflow/components/command-palette-overlay.js'`.
 4. In `renderOverlay`, change the `'command-palette'` case to `return <CommandPaletteOverlay />;`.
 5. Remove `paletteItems` from the `renderOverlay` parameter object if it has no other uses.
-6. Verify the `CommandPaletteItem` type import from `types.ts` is still needed (it is used by `toPaletteItems` return type — keep it only if still referenced; remove if not).
+6. Verify the `CommandPaletteItem` type import from `types.ts` is still needed by the current palette source/result types; remove it if not.
 
 ### Deleting the old stub
 

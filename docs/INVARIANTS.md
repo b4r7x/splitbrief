@@ -5,9 +5,7 @@ A consolidated set of grep / find commands that must return **zero** (or match t
 Run before every commit of non-trivial scope:
 
 ```bash
-npm run typecheck
-npm run lint
-npm test
+npm run test-ci
 ```
 
 …plus the checks below.
@@ -31,6 +29,8 @@ npm test
 | 11 | `grep -rn "OrchestratorEvent\b" src/` | 0 matches | **Post-migration defensive regression guard.** Legacy `OrchestratorEvent` type was deleted during the 2026-04 uplift; `EngineEvent` is the single source of truth. Expected 0; any match means a regression. (See [ARCHITECTURE.md §Design decisions](./ARCHITECTURE.md#design-decisions--why-eventbus)) |
 | 12 | `grep -rln "from.*features" src/engine \| grep -v "\.test\." \| wc -l` | 0 | Engine MUST NOT import from features. (See [LAYERS.md](./LAYERS.md)) |
 | 13 | `grep -rn "\bTuiEvent\b" src/` | 0 matches | **Post-migration defensive regression guard.** The `TuiEvent` union was removed during the 2026-04 uplift; the workflow store consumes `EngineEvent` directly. Expected 0; any match means a regression. |
+| 14 | `rg -n -e "components/input-bar" -e "core/slash-commands" -e "features/tool-picker" -e "hooks/use-app-keys" -e "workflow/components/command-palette-overlay" -e "engine/palette-aggregate" -e "SlashCommand" -e "InputBar" -e "toPaletteItems" -e "slashItems" -e "source: 'slash'" -e "'slash:'" src CLAUDE.md docs --glob '*.md' --glob '!docs/INVARIANTS.md' --glob '!docs/superpowers/**' --glob '!docs/audits/**'` | 0 matches | React architecture refactor guard: composer, runtime commands, runners, app keys, and palette source naming are canonical. |
+| 15 | `find src -type f \( -name '*.ts' -o -name '*.tsx' \) -exec perl -ne 'while (/([\x00-\x08\x0B\x0C\x0E-\x1F\x7F])/g) { printf "%s:%d:%d:U+%04X\n", $ARGV, $., pos($_), ord($1) } close ARGV if eof' {} +` | 0 matches | No hidden ASCII control bytes in source. Use visible escapes like `\u001b` / `\u007f` in tests. |
 
 Gates are consolidated here; full rationale for each lives in the linked doc.
 

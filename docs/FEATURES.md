@@ -674,7 +674,7 @@ diptych continue 2
 
 ### Slash commands palette
 
-**What it does.** Every runtime command is a slash command. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match.
+**What it does.** Runtime commands use slash names (`/help`, `/mode`, etc.), but the same registry backs composer `/` input, the command palette, and RPC dispatch. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match.
 
 | Command | Purpose |
 |---|---|
@@ -694,12 +694,15 @@ diptych continue 2
 | `/redo-task <id>` | Reset a task to pending and re-run |
 | `/queue [show\|clear]` | Inspect or clear the message queue |
 | `/handoff <target> [task-id]` | Export handoff pack inline |
+| `/export` | Export session as HTML report |
+| `/compact-transcript` | Summarize older transcript turns |
 | `/repomap rebuild` | Clear the repo-map cache |
 | `/attach <path>` | Attach an image for the next planner call |
 | `/detach <index-or-id>` | Remove a pending image attachment |
 | `/approval [list\|clear]` | List or clear sticky approval grants |
 | `/accept-run` | Accept current run changes and prevent run rejection |
 | `/reject-run confirm` | Restore diptych-written files from the run baseline |
+| `/yolo` | Toggle approval gates off/on for the session |
 | `/quit` | Exit application (Ctrl+Q) |
 
 Full reference: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
@@ -921,7 +924,7 @@ Or per-run: `--otel-exporter console`. Full details: [OTEL.md](./OTEL.md).
 
 ### Image attachments
 
-**What it does.** Attach screenshots or images for the next planner call (multimodal-capable backends only). Tracked in the workflow store; displayed as chips in the input bar.
+**What it does.** Attach screenshots or images for the next planner call (multimodal-capable backends only). Tracked in the workflow store; displayed as chips in the composer.
 
 **How to use.**
 

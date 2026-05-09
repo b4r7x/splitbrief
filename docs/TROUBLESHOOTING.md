@@ -321,7 +321,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Likely cause:** The TUI is waiting for input but the input mode is wrong, or you ran headless and the approval gate has no way to surface a prompt.
 
 **Fix:**
-1. In the TUI, focus the input bar (Tab if focus is elsewhere) and submit `approve` / `comment ...` / `reject`.
+1. In the TUI, focus the composer (Tab if focus is elsewhere) and submit `approve` / `comment ...` / `reject`.
 2. If you ran with `--headless`, the run paused waiting for an approval that headless cannot deliver. Re-attach with `diptych attach <session>` and approve interactively, or re-run with `--mode quick` (which has no approval gates).
 3. Check `workflow.approve` in config; `workflow.approve: none` skips all workflow gates, `workflow.approve: spec` (default) blocks only on the spec, `workflow.approve: all` blocks on both spec and plan. For action-level control, see the `approval.tiers` config block.
 
@@ -830,13 +830,13 @@ Diptych MCP is a read-only resources server. It exposes session artifacts for ex
 
 **Fix:**
 1. Inspect the screen indicator in the TUI status bar.
-2. Open `src/core/slash-commands/catalog.ts` and check the command's `validScreens` array.
+2. Open `src/core/runtime/commands/registry.ts` and check the command's `validScreens` array.
 3. Navigate to a screen where the command is valid.
 4. If you authored the command, add the missing screen to its `validScreens`.
 
 **Prevention:** When adding a new slash command, list every screen it should be available on — defaulting to too few is more common than too many.
 
-**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), `src/core/slash-commands/catalog.ts`.
+**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), `src/core/runtime/commands/registry.ts`.
 
 ---
 

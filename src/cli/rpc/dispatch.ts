@@ -3,8 +3,8 @@ import type { Phase } from '../../core/schemas/enums.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { EventBus } from '../../engine/events/types.js';
 import type { QueueHandler } from '../../engine/orchestrator/types.js';
-import { createCommands } from '../../core/slash-commands/catalog.js';
-import { executeSlashCommand } from '../../core/slash-commands/dispatch.js';
+import { createRuntimeCommands } from '../../core/runtime/commands/registry.js';
+import { executeRuntimeCommand } from '../../core/runtime/commands/dispatch.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { createRpcCommandContext } from './command-context.js';
 import type { RpcCommand } from './types.js';
@@ -29,9 +29,9 @@ export function createCommandHandler(deps: {
   };
   pendingQueueDepth: (state: WorkflowState | null) => number;
 }): (cmd: RpcCommand) => void {
-  let slashChain: Promise<void> = Promise.resolve();
+  let runtimeChain: Promise<void> = Promise.resolve();
 
-  const executeRpcSlashCommand = async (raw: string) => {
+  const executeRpcRuntimeCommand = async (raw: string) => {
     const messages: string[] = [];
     const errors: string[] = [];
     const context = createRpcCommandContext({
@@ -48,7 +48,7 @@ export function createCommandHandler(deps: {
       errors,
       pendingQueueDepth: deps.pendingQueueDepth,
     });
-    await executeSlashCommand(createCommands(context), raw, {
+    await executeRuntimeCommand(createRuntimeCommands(context), raw, {
       screen: 'workflow',
       phase: deps.getPhase(),
       onError: (message) => errors.push(message),
@@ -99,8 +99,8 @@ export function createCommandHandler(deps: {
       return;
     }
 
-    slashChain = slashChain
-      .then(() => executeRpcSlashCommand(cmd.command))
+    runtimeChain = runtimeChain
+      .then(() => executeRpcRuntimeCommand(cmd.command))
       .catch((err) => {
         deps.writer.error(toErrorMessage(err));
       });
