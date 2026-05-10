@@ -1,10 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
+import { e2eImplementer, e2ePlanner } from '../helpers/e2e-config.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/e2e-harness.js';
-
-const e2eApiBase = process.env.DIPTYCH_E2E_API_BASE ?? 'http://localhost:11434/v1';
-const replayApiKey = process.env.DIPTYCH_E2E_RECORD === '1'
-  ? undefined
-  : 'e2e-placeholder';
 
 const scenario = {
   name: 'recovery - task fails then retries successfully',
@@ -13,20 +12,8 @@ const scenario = {
   mode: 'quick' as const,
   config: {
     version: 2,
-    planner: {
-      kind: 'api',
-      provider: 'openai',
-      apiBase: e2eApiBase,
-      ...(replayApiKey ? { apiKey: replayApiKey } : {}),
-      model: 'gpt-4o',
-    },
-    implementer: {
-      kind: 'api',
-      provider: 'openai',
-      apiBase: e2eApiBase,
-      ...(replayApiKey ? { apiKey: replayApiKey } : {}),
-      model: 'gpt-4o-mini',
-    },
+    planner: e2ePlanner,
+    implementer: e2eImplementer,
     workflow: {
       mode: 'quick',
       commitStrategy: 'none',
@@ -50,7 +37,12 @@ describe('e2e: recovery retry success', () => {
     const retryEvents = ctx.events.filter((event) => event.type === 'task_retry');
     const taskCompleted = ctx.events.filter((event) => event.type === 'task_completed');
 
-    expect(retryEvents.length + taskCompleted.length).toBeGreaterThan(0);
+    expect(retryEvents.length).toBeGreaterThan(0);
+    expect(taskCompleted.length).toBeGreaterThan(0);
     expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
+    const validationPath = join(ctx.projectDir, 'src/form-validation.ts');
+    expect(readFileSync(validationPath, 'utf-8')).toContain('validateForm');
+    expect(evaluateTsArtifact(validationPath, "mod.validateForm({ email: 'ada@example.com' })")).toEqual({ valid: true, errors: [] });
+    expect(evaluateTsArtifact(validationPath, "mod.validateForm({ email: 'broken' }).valid")).toBe(false);
   });
 });

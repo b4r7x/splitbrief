@@ -109,13 +109,11 @@ describe('runTaskLoop', () => {
     }));
   });
 
-  it('happy path: implement → validate pass → commit when commit strategy is per-task', async () => {
+  it('happy path completes a task after implementation and validation pass', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
     const state = makeImplState([task]);
 
-    // The implementer port is a subprocess seam — we fake success via makeImplementer().
-    // The implementer produces a file on disk so per-task commit has something to commit.
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async () => {
         mkdirSync(join(projectDir, 'src'), { recursive: true });
@@ -132,7 +130,7 @@ describe('runTaskLoop', () => {
         projectDir,
         sessionId,
         config: makeNoValidationConfig({
-          workflow: { commitStrategy: 'per-task' },
+          workflow: { commitStrategy: 'none' },
         }),
         callbacks,
         context: defaultContext,

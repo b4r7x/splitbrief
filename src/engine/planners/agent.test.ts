@@ -4,7 +4,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 let projectDir: string;
@@ -95,8 +95,7 @@ describe('createAgentPlanner', () => {
     const planner = createAgentPlanner(config);
     const SESSION_ID = 'test-session-2024';
     const callbacks = { onOutput: vi.fn(), onPhase: vi.fn(), sessionId: SESSION_ID };
-    
-    // Setup mock tasks.md file with correct format
+
     const tasksContent = `---
 id: task1
 title: Create test
@@ -114,7 +113,7 @@ Create a test file.
 - Use TypeScript
 `;
     setupMockFiles(projectDir, SESSION_ID, { 'tasks.md': tasksContent });
-    
+
     const result = await planner.quickPlan('test feature', projectDir, callbacks);
     expect(result.spec).toBe('');
     expect(result.plan).toBe('');
@@ -128,8 +127,7 @@ Create a test file.
     const planner = createAgentPlanner(config);
     const SESSION_ID = 'test-session-2024';
     const callbacks = { onOutput: vi.fn(), onPhase: vi.fn(), sessionId: SESSION_ID };
-    
-    // Setup mock generated files
+
     const mockFiles = {
       'research.md': '# Research\nProject analysis...',
       'spec.md': '# Specification\nFeature requirements...',
@@ -152,7 +150,7 @@ Create the main feature.
 `,
     };
     setupMockFiles(projectDir, SESSION_ID, mockFiles);
-    
+
     const result = await planner.plan('test feature', projectDir, callbacks);
     expect(result.spec).toContain('Feature requirements');
     expect(result.plan).toContain('Implementation strategy');
@@ -165,27 +163,31 @@ Create the main feature.
     const config = makeConfig({ planner: { kind: 'agent', command: 'nonexistent-command-12345' } });
     const planner = createAgentPlanner(config);
     const callbacks = { onOutput: vi.fn() };
-    
+
     await expect(planner.review('test', projectDir, callbacks))
       .rejects.toThrow('Agent planner command not found: nonexistent-command-12345');
   });
 
-  it('escalateFull — ignores pre-existing dirty files (before/after snapshot)', async () => {
-    // A pre-existing dirty file exists before escalation. The agent writes a NEW file.
-    // Only the NEW file should count as a change.
+  it('escalateFull ignores pre-existing dirty files and succeeds only on new writes', async () => {
     const preExistingFile = join(projectDir, 'pre-existing.ts');
     writeFileSync(preExistingFile, '// pre-existing');
-
-    // Pre-existing dirty file is already tracked by git status; commit it partially
-    // (we only write, not commit, so it shows as untracked/modified in git status)
-    const newFile = join(projectDir, 'new-from-escalation.ts');
-    const config = makeConfig({ planner: { kind: 'agent', command: 'bash', args: ['-c', `echo "// escalated" > ${newFile}`] } });
-    const planner = createAgentPlanner(config);
     const task = makeTask();
     const callbacks = { onOutput: vi.fn() };
 
+    const noChangePlanner = createAgentPlanner(makeConfig({
+      planner: { kind: 'agent', command: 'echo', args: ['no changes'] },
+    }));
+
+    const noChange = await noChangePlanner.escalateFull(task, 'error message', projectDir, callbacks);
+    expect(noChange.success).toBe(false);
+
+    const newFile = join(projectDir, 'new-from-escalation.ts');
+    const config = makeConfig({ planner: { kind: 'agent', command: 'bash', args: ['-c', `echo "// escalated" > ${newFile}`] } });
+    const planner = createAgentPlanner(config);
+
     const result = await planner.escalateFull(task, 'error message', projectDir, callbacks);
     expect(result.success).toBe(true);
+    expect(readFileSync(preExistingFile, 'utf-8')).toBe('// pre-existing');
+    expect(readFileSync(newFile, 'utf-8')).toBe('// escalated\n');
   });
-
 });

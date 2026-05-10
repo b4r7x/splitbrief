@@ -50,42 +50,18 @@ describe('readFileOrEmpty', () => {
 });
 
 describe('checkConfigPermissions', () => {
-  it('returns true for a file with 0o600 permissions', () => {
+  it.each([
+    { mode: 0o600, expected: true },
+    { mode: 0o644, expected: true },
+    { mode: 0o666, expected: false },
+    { mode: 0o700, expected: true },
+    { mode: 0o602, expected: false },
+  ])('returns $expected for file mode $mode', ({ mode, expected }) => {
     const dir = makeTmp();
-    const file = join(dir, 'secure.yaml');
-    writeFileSync(file, 'key: value', { mode: 0o600 });
-    expect(checkConfigPermissions(file)).toBe(true);
-  });
-
-  it('returns true for a file with 0o644 permissions', () => {
-    const dir = makeTmp();
-    const file = join(dir, 'readable.yaml');
-    writeFileSync(file, 'key: value', { mode: 0o644 });
-    expect(checkConfigPermissions(file)).toBe(true);
-  });
-
-  it('returns false for a file with 0o666 permissions', () => {
-    const dir = makeTmp();
-    const file = join(dir, 'open.yaml');
+    const file = join(dir, `mode-${mode.toString(8)}.yaml`);
     writeFileSync(file, 'key: value');
-    chmodSync(file, 0o666);
-    expect(checkConfigPermissions(file)).toBe(false);
-  });
-
-  it('returns true for a file with 0o700 permissions (secure dir)', () => {
-    const dir = makeTmp();
-    const file = join(dir, 'dir-perm.yaml');
-    writeFileSync(file, 'key: value');
-    chmodSync(file, 0o700);
-    expect(checkConfigPermissions(file)).toBe(true);
-  });
-
-  it('returns false for a file with 0o602 permissions (other-writable)', () => {
-    const dir = makeTmp();
-    const file = join(dir, 'world.yaml');
-    writeFileSync(file, 'key: value');
-    chmodSync(file, 0o602);
-    expect(checkConfigPermissions(file)).toBe(false);
+    chmodSync(file, mode);
+    expect(checkConfigPermissions(file)).toBe(expected);
   });
 
   it('returns false when file does not exist', () => {
@@ -173,9 +149,6 @@ describe('writeSecureFile', () => {
     const dir = makeTmp();
     const blocker = join(dir, 'blocker');
     writeFileSync(blocker, 'i am a file');
-    // Asking writeSecureFile to create `blocker/child.txt` must fail: blocker
-    // is a regular file, not a directory — mkdirSync('.../blocker', {recursive:true})
-    // surfaces an EEXIST / ENOTDIR to the caller.
     expect(() => writeSecureFile(join(blocker, 'child.txt'), 'x')).toThrow();
   });
 
@@ -208,7 +181,6 @@ describe('writeSecureFile', () => {
       expect(readFileSync(path, 'utf-8')).toBe(`value-${i}`);
       expect(statSync(path).mode & 0o777).toBe(0o600);
     }
-    // And the directory itself is 0o700.
     expect(statSync(base).mode & 0o777).toBe(0o700);
   });
 });
@@ -237,19 +209,27 @@ describe('ensureSecureDir', () => {
 });
 
 describe('fsError factories', () => {
-  test('invalidId without reason produces simple message', () => {
-    const err = fsError.invalidId('session-id', 'bad/value');
-    expect(err).toBeInstanceOf(Error);
-    expect(err.kind).toBe('fs-invalid-id');
-    expect(err.message).toBe("Invalid session-id 'bad/value'");
-    expect(err.data).toEqual({ label: 'session-id', id: 'bad/value', reason: undefined });
-  });
+  test.each([
+    {
+      label: 'session-id',
+      id: 'bad/value',
+      reason: undefined,
+      message: "Invalid session-id 'bad/value'",
+    },
+    {
+      label: 'filename',
+      id: '../traversal',
+      reason: "must not contain '..', '/' or '\\'",
+      message: "Invalid filename '../traversal': must not contain '..', '/' or '\\'",
+    },
+  ])('invalidId formats $label failures', ({ label, id, reason, message }) => {
+    const err = fsError.invalidId(label, id, reason);
 
-  test('invalidId with reason appends reason to message', () => {
-    const err = fsError.invalidId('filename', '../traversal', "must not contain '..', '/' or '\\'");
-    expect(err.kind).toBe('fs-invalid-id');
-    expect(err.message).toBe("Invalid filename '../traversal': must not contain '..', '/' or '\\'");
-    expect(err.data).toEqual({ label: 'filename', id: '../traversal', reason: "must not contain '..', '/' or '\\'" });
+    expect(err).toMatchObject({
+      kind: 'fs-invalid-id',
+      message,
+      data: { label, id, reason },
+    });
   });
 });
 
@@ -263,15 +243,6 @@ describe('fsError.isInvalidId predicate', () => {
     expect(fsError.isInvalidId(new Error('plain'))).toBe(false);
     expect(fsError.isInvalidId(null)).toBe(false);
     expect(fsError.isInvalidId({ kind: 'fs-invalid-id' })).toBe(false);
-  });
-
-  test('narrows type for data access', () => {
-    const err: unknown = fsError.invalidId('filename', '../evil', 'blocked');
-    if (fsError.isInvalidId(err)) {
-      expect(err.data).toEqual({ label: 'filename', id: '../evil', reason: 'blocked' });
-    } else {
-      throw new Error('predicate should match');
-    }
   });
 });
 

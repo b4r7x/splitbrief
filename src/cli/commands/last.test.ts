@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { afterEach, describe, expect, it } from 'vitest';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -9,6 +9,7 @@ import type { LastDeps } from './last.js';
 function makeTmpProject(): string {
   const dir = join(tmpdir(), `diptych-test-${randomUUID()}`);
   mkdirSync(dir, { recursive: true });
+  tmpProjects.push(dir);
   return dir;
 }
 
@@ -34,66 +35,76 @@ function makeSessionWithLockfile(
   writeFileSync(join(sessDir, 'lockfile.json'), JSON.stringify(data));
 }
 
-const mockContinueCommand = vi.fn().mockResolvedValue(undefined);
-const fakeDeps: LastDeps = { continueCommand: mockContinueCommand };
+const tmpProjects: string[] = [];
+
+function captureContinuation(): { deps: LastDeps; sessionIds: string[] } {
+  const sessionIds: string[] = [];
+  return {
+    sessionIds,
+    deps: {
+      continueCommand: async (sessionId) => {
+        sessionIds.push(sessionId ?? '');
+      },
+    } as LastDeps,
+  };
+}
 
 describe('lastCommand', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  afterEach(() => {
+    while (tmpProjects.length > 0) {
+      const projectDir = tmpProjects.pop();
+      if (projectDir && existsSync(projectDir)) rmSync(projectDir, { recursive: true, force: true });
+    }
   });
 
-  it('throws when no sessions directory exists', async () => {
+  it.each([
+    {
+      name: 'no sessions directory exists',
+      arrange: (_projectDir: string) => {},
+    },
+    {
+      name: 'sessions directory is empty',
+      arrange: (projectDir: string) => {
+        mkdirSync(join(projectDir, '.diptych', 'sessions'), { recursive: true });
+      },
+    },
+    {
+      name: 'no session has a valid lockfile',
+      arrange: (projectDir: string) => {
+        mkdirSync(join(projectDir, '.diptych', 'sessions', 'orphan-session'), { recursive: true });
+      },
+    },
+  ])('throws when $name', async ({ arrange }) => {
     const projectDir = makeTmpProject();
+    arrange(projectDir);
+    const { deps } = captureContinuation();
 
     await expect(
-      lastCommand({ projectDir } as never, fakeDeps),
-    ).rejects.toThrow(/no sessions found/);
-  });
-
-  it('throws when sessions directory is empty', async () => {
-    const projectDir = makeTmpProject();
-    mkdirSync(join(projectDir, '.diptych', 'sessions'), { recursive: true });
-
-    await expect(
-      lastCommand({ projectDir } as never, fakeDeps),
-    ).rejects.toThrow(/no sessions found/);
-  });
-
-  it('throws when no session has a valid lockfile', async () => {
-    const projectDir = makeTmpProject();
-    // Create a session dir with no lockfile.
-    mkdirSync(join(projectDir, '.diptych', 'sessions', 'orphan-session'), { recursive: true });
-
-    await expect(
-      lastCommand({ projectDir } as never, fakeDeps),
+      lastCommand({ projectDir } as never, deps),
     ).rejects.toThrow(/no sessions found/);
   });
 
   it('selects the session with the highest startTimeMs', async () => {
     const projectDir = makeTmpProject();
+    const { deps, sessionIds } = captureContinuation();
 
     makeSessionWithLockfile(projectDir, '2025-04-01-older', 1000);
     makeSessionWithLockfile(projectDir, '2025-04-02-newer', 2000);
     makeSessionWithLockfile(projectDir, '2025-04-01-middle', 1500);
 
-    await lastCommand({ projectDir } as never, fakeDeps);
+    await lastCommand({ projectDir } as never, deps);
 
-    expect(mockContinueCommand).toHaveBeenCalledWith(
-      '2025-04-02-newer',
-      expect.objectContaining({ projectDir }),
-    );
+    expect(sessionIds).toEqual(['2025-04-02-newer']);
   });
 
   it('works with a single session', async () => {
     const projectDir = makeTmpProject();
+    const { deps, sessionIds } = captureContinuation();
 
     makeSessionWithLockfile(projectDir, '2025-04-01-only', 5000);
 
-    await lastCommand({ projectDir } as never, fakeDeps);
+    await lastCommand({ projectDir } as never, deps);
 
-    expect(mockContinueCommand).toHaveBeenCalledWith(
-      '2025-04-01-only',
-      expect.objectContaining({ projectDir }),
-    );
+    expect(sessionIds).toEqual(['2025-04-01-only']);
   });
 });

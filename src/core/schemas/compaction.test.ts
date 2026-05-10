@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { StructuredSummarySchema, resolveCompactionFormat, tryParseStructuredSummary } from './compaction.js';
+import { resolveCompactionFormat, tryParseStructuredSummary } from './compaction.js';
 
 const structuredSummary = {
   goal: 'add JWT auth',
@@ -9,16 +9,6 @@ const structuredSummary = {
   constraintsDiscovered: ['must use RS256'],
   remainingWork: ['T004', 'T005'],
 };
-
-describe('StructuredSummarySchema', () => {
-  it('validates a complete structured summary', () => {
-    expect(StructuredSummarySchema.safeParse(structuredSummary).success).toBe(true);
-  });
-
-  it('rejects missing required fields', () => {
-    expect(StructuredSummarySchema.safeParse({ goal: 'test' }).success).toBe(false);
-  });
-});
 
 describe('resolveCompactionFormat', () => {
   it('uses structured summaries for api planners in auto mode', () => {

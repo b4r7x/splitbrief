@@ -1,151 +1,96 @@
-import { describe, it, expect } from 'vitest';
-import { ConfigSchema } from './config.js';
+import { describe, expect, it } from 'vitest';
 import { createDefaultConfig } from '../config/load/load.js';
+import { ConfigSchema } from './config.js';
 
 const validConfig = createDefaultConfig();
 
-describe('ConfigSchema palette extension', () => {
-  it('throws when id is empty string', () => {
-    expect(() =>
-      ConfigSchema.parse({
-        ...validConfig,
-        palette: {
-          customActions: [{ id: '', label: 'X', command: '/help' }],
-        },
-      })
-    ).toThrow();
-  });
+function issuesFor(input: unknown) {
+  const result = ConfigSchema.safeParse(input);
+  expect(result.success).toBe(false);
+  return result.success ? [] : result.error.issues;
+}
 
-  it('throws when command does not start with /', () => {
-    expect(() =>
-      ConfigSchema.parse({
-        ...validConfig,
-        palette: {
-          customActions: [{ id: 'x', label: 'X', command: 'no-slash' }],
-        },
-      })
-    ).toThrow();
-  });
+function hasIssueAtPath(issues: ReturnType<typeof issuesFor>, path: string): boolean {
+  return issues.some(issue => issue.path.join('.') === path);
+}
 
-});
-
-describe('ConfigSchema approval extension', () => {
-  it('throws on invalid tier string in tiers map', () => {
-    expect(() =>
-      ConfigSchema.parse({
-        ...validConfig,
-        approval: { tiers: { read: 'invalid_tier' } },
-      })
-    ).toThrow();
-  });
-});
-
-describe('ConfigSchema compaction extension', () => {
-  it('defaults compactionFormat to auto', () => {
-    const result = ConfigSchema.parse({
+describe('ConfigSchema user config contracts', () => {
+  it('validates palette custom actions users can invoke from the command palette', () => {
+    const valid = ConfigSchema.safeParse({
       ...validConfig,
-      workflow: {
-        ...validConfig.workflow,
-        compactionFormat: undefined,
+      palette: {
+        customActions: [{ id: 'open-docs', label: 'Open docs', command: '/docs' }],
       },
     });
+    expect(valid.success).toBe(true);
 
-    expect(result.workflow.compactionFormat).toBe('auto');
+    expect(hasIssueAtPath(issuesFor({
+      ...validConfig,
+      palette: {
+        customActions: [{ id: '', label: 'Open docs', command: '/docs' }],
+      },
+    }), 'palette.customActions.0.id')).toBe(true);
+
+    expect(hasIssueAtPath(issuesFor({
+      ...validConfig,
+      palette: {
+        customActions: [{ id: 'open-docs', label: 'Open docs', command: 'docs' }],
+      },
+    }), 'palette.customActions.0.command')).toBe(true);
   });
 
-  it('rejects invalid compactionFormat values', () => {
-    expect(() =>
-      ConfigSchema.parse({
-        ...validConfig,
-        workflow: {
-          ...validConfig.workflow,
-          compactionFormat: 'invalid',
-        },
-      })
-    ).toThrow();
+  it('rejects unknown approval tiers before they can change write approvals', () => {
+    expect(hasIssueAtPath(issuesFor({
+      ...validConfig,
+      approval: { tiers: { write_out_of_scope: 'always' } },
+    }), 'approval.tiers.write_out_of_scope')).toBe(true);
   });
-});
 
-describe('ConfigSchema implementer profiles extension', () => {
-  it('parses named implementer profiles with metadata', () => {
-    const result = ConfigSchema.parse({
+  it('defaults workflow compaction format and rejects unknown formats', () => {
+    expect(ConfigSchema.parse({
+      ...validConfig,
+      workflow: { ...validConfig.workflow, compactionFormat: undefined },
+    }).workflow.compactionFormat).toBe('auto');
+
+    expect(hasIssueAtPath(issuesFor({
+      ...validConfig,
+      workflow: { ...validConfig.workflow, compactionFormat: 'markdown' },
+    }), 'workflow.compactionFormat')).toBe(true);
+  });
+
+  it('validates implementer profile names and default profile references', () => {
+    expect(hasIssueAtPath(issuesFor({
       ...validConfig,
       implementerProfiles: {
-        default: 'local-qwen',
+        default: 'missing-profile',
         profiles: {
           'local-qwen': {
             kind: 'api',
             provider: 'ollama',
             apiBase: 'http://localhost:11434/v1',
             model: 'qwen2.5-coder:7b',
-            contextLength: 32768,
-            label: 'Local Qwen',
-            costTier: 'local',
-            capabilities: { writesFiles: 'extracted-code' },
-          },
-          'cheap-cloud': {
-            kind: 'api',
-            provider: 'openrouter',
-            apiBase: 'https://openrouter.ai/api/v1',
-            apiKey: 'sk-or-test',
-            model: 'qwen/qwen3-coder',
-            contextLength: 131072,
-            costTier: 'cheap',
           },
         },
       },
-    });
+    }), 'implementerProfiles.default')).toBe(true);
 
-    expect(result.implementerProfiles?.default).toBe('local-qwen');
-    expect(result.implementerProfiles?.profiles['cheap-cloud']?.costTier).toBe('cheap');
-    expect(result.implementerProfiles?.profiles['local-qwen']?.capabilities?.writesFiles).toBe('extracted-code');
-  });
-
-  it('rejects unknown default profile names', () => {
-    expect(() =>
-      ConfigSchema.parse({
-        ...validConfig,
-        implementerProfiles: {
-          default: 'missing-profile',
-          profiles: {
-            'local-qwen': {
-              kind: 'api',
-              provider: 'ollama',
-              apiBase: 'http://localhost:11434/v1',
-              model: 'qwen2.5-coder:7b',
-            },
+    expect(hasIssueAtPath(issuesFor({
+      ...validConfig,
+      implementerProfiles: {
+        profiles: {
+          'Local Qwen': {
+            kind: 'api',
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
+            model: 'qwen2.5-coder:7b',
           },
         },
-      })
-    ).toThrow(/Default implementer profile/);
-  });
+      },
+    }), 'implementerProfiles.profiles.Local Qwen')).toBe(true);
 
-  it('rejects invalid profile names', () => {
-    expect(() =>
-      ConfigSchema.parse({
-        ...validConfig,
-        implementerProfiles: {
-          profiles: {
-            'Local Qwen': {
-              kind: 'api',
-              provider: 'ollama',
-              apiBase: 'http://localhost:11434/v1',
-              model: 'qwen2.5-coder:7b',
-            },
-          },
-        },
-      })
-    ).toThrow();
-  });
-
-  it('rejects empty profile maps', () => {
-    expect(() =>
-      ConfigSchema.parse({
-        ...validConfig,
-        implementerProfiles: {
-          profiles: {},
-        },
-      })
-    ).toThrow(/Define at least one implementer profile/);
+    expect(hasIssueAtPath(issuesFor({
+      ...validConfig,
+      implementerProfiles: { profiles: {} },
+    }), 'implementerProfiles.profiles')).toBe(true);
   });
 });

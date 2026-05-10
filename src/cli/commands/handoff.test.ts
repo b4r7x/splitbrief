@@ -4,48 +4,58 @@ import { join } from 'node:path';
 import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { isCliError } from '../errors.js';
-
-vi.mock('../../engine/handoff/write.js', () => ({
-  writeHandoffPack: vi.fn().mockResolvedValue({ outputDir: '/tmp/out', files: [] }),
-}));
-
+import { listCustomRenderers } from '../../engine/handoff/load-renderer.js';
 import { registerHandoffCommand } from './handoff.js';
-import { writeHandoffPack } from '../../engine/handoff/write.js';
+import type { HandoffDeps } from './handoff.js';
+
+type HandoffWrite = Parameters<HandoffDeps['writeHandoffPack']>[0];
 
 let tmp: string;
+let writes: HandoffWrite[];
+
+function createDeps(): HandoffDeps {
+  return {
+    readActive: () => null,
+    listCustomRenderers,
+    writeHandoffPack: async (options) => {
+      writes.push(options);
+      return {
+        outputDir: options.outDir,
+        files: [`${options.target}.md`],
+      };
+    },
+  };
+}
 
 beforeEach(() => {
   tmp = createTempDir('handoff-command-test');
-  vi.mocked(writeHandoffPack).mockClear();
-  vi.mocked(writeHandoffPack).mockResolvedValue({ outputDir: '/tmp/out', files: [] });
+  writes = [];
 });
 
 afterEach(() => {
   if (tmp) cleanupTempDir(tmp);
+  vi.restoreAllMocks();
 });
 
-async function runHandoff(args: string[]): Promise<void> {
+async function runHandoff(args: string[], deps = createDeps()): Promise<string[]> {
+  const logs: string[] = [];
+  vi.spyOn(console, 'log').mockImplementation((...parts) => logs.push(parts.join(' ')));
+
   const program = new Command();
   program.exitOverride();
-  // suppress commander output
   program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
-  registerHandoffCommand(program);
+  registerHandoffCommand(program, deps);
   await program.parseAsync(['node', 'diptych', 'handoff', '--project', tmp, '--session', 'test-session', ...args]);
+  return logs;
 }
 
-// The command only prints `result.outputDir` (from the mock return value), not the
-// input arguments (target, selectedTaskIds, outDir). Console output cannot distinguish
-// between different inputs, so these tests verify wiring via mock.calls.
 describe('handoff command — target validation', () => {
-  it('passes unknown target through to writeHandoffPack (custom renderer support)', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+  it('passes unknown target through to writeHandoffPack for custom renderer support', async () => {
+    const logs = await runHandoff(['custom-target']);
 
-    await runHandoff(['custom-target']);
-
-    const callArg = vi.mocked(writeHandoffPack).mock.calls[0]?.[0];
-    expect(callArg?.target).toBe('custom-target');
-
-    vi.restoreAllMocks();
+    expect(writes).toMatchObject([{ target: 'custom-target' }]);
+    expect(logs.join('\n')).toContain(`${tmp}/handoff/custom-target`);
+    expect(logs.join('\n')).toContain('custom-target.md');
   });
 });
 
@@ -59,88 +69,63 @@ describe('handoff command — mode validation', () => {
     }
 
     expect(isCliError(captured)).toBe(true);
-    const msg = (captured as Error).message;
-    expect(msg).toContain('invalid-mode');
+    expect((captured as Error).message).toContain('invalid-mode');
+    expect(writes).toEqual([]);
   });
 });
 
 describe('handoff command — task parsing', () => {
-  it('parses --task T001,T002 to ["T001", "T002"]', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-
+  it('parses comma-separated task ids before writing the pack', async () => {
     await runHandoff(['--task', 'T001,T002']);
 
-    const callArg = vi.mocked(writeHandoffPack).mock.calls[0]?.[0];
-    expect(callArg?.selectedTaskIds).toEqual(['T001', 'T002']);
-
-    vi.restoreAllMocks();
+    expect(writes).toMatchObject([
+      {
+        selectedTaskIds: ['T001', 'T002'],
+      },
+    ]);
   });
 });
 
 describe('handoff command — --list flag', () => {
-  it('prints built-in targets and does not call writeHandoffPack', async () => {
-    const logs: string[] = [];
-    vi.spyOn(console, 'log').mockImplementation((...args) => logs.push(args.join(' ')));
+  it('prints built-in targets without writing a pack', async () => {
+    const logs = await runHandoff(['--list']);
 
-    await runHandoff(['--list']);
-
-    expect(vi.mocked(writeHandoffPack)).not.toHaveBeenCalled();
-    expect(logs.some(l => l.includes('Built-in targets'))).toBe(true);
-    expect(logs.some(l => l.includes('spec-kit'))).toBe(true);
-
-    vi.restoreAllMocks();
+    expect(writes).toEqual([]);
+    expect(logs.some((line) => line.includes('Built-in targets'))).toBe(true);
+    expect(logs.some((line) => line.includes('spec-kit'))).toBe(true);
   });
 
-  it('prints custom renderers when listCustomRenderers returns names', async () => {
+  it('prints custom renderers when renderer files exist', async () => {
     const renderersDir = join(tmp, '.diptych', 'handoff-renderers');
     mkdirSync(renderersDir, { recursive: true });
     writeFileSync(join(renderersDir, 'linear-ticket.ts'), '');
     writeFileSync(join(renderersDir, 'jira-task.ts'), '');
-    const logs: string[] = [];
-    vi.spyOn(console, 'log').mockImplementation((...args) => logs.push(args.join(' ')));
 
-    await runHandoff(['--list']);
+    const logs = await runHandoff(['--list']);
 
-    expect(logs.some(l => l.includes('Custom renderers'))).toBe(true);
-    expect(logs.some(l => l.includes('linear-ticket'))).toBe(true);
-    expect(logs.some(l => l.includes('jira-task'))).toBe(true);
-
-    vi.restoreAllMocks();
+    expect(logs.some((line) => line.includes('Custom renderers'))).toBe(true);
+    expect(logs.some((line) => line.includes('linear-ticket'))).toBe(true);
+    expect(logs.some((line) => line.includes('jira-task'))).toBe(true);
   });
 
   it('omits Custom renderers section when no custom renderers exist', async () => {
-    const logs: string[] = [];
-    vi.spyOn(console, 'log').mockImplementation((...args) => logs.push(args.join(' ')));
+    const logs = await runHandoff(['--list']);
 
-    await runHandoff(['--list']);
-
-    expect(logs.some(l => l.includes('Custom renderers'))).toBe(false);
-
-    vi.restoreAllMocks();
+    expect(logs.some((line) => line.includes('Custom renderers'))).toBe(false);
   });
 });
 
 describe('handoff command — defaults', () => {
   it('defaults target to spec-kit when not specified', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-
     await runHandoff([]);
 
-    const callArg = vi.mocked(writeHandoffPack).mock.calls[0]?.[0];
-    expect(callArg?.target).toBe('spec-kit');
-
-    vi.restoreAllMocks();
+    expect(writes).toMatchObject([{ target: 'spec-kit' }]);
   });
 
   it('defaults outDir to <projectDir>/handoff/spec-kit', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const logs = await runHandoff([]);
 
-    await runHandoff([]);
-
-    const callArg = vi.mocked(writeHandoffPack).mock.calls[0]?.[0];
-    const expectedOutDir = `${tmp}/handoff/spec-kit`;
-    expect(callArg?.outDir).toBe(expectedOutDir);
-
-    vi.restoreAllMocks();
+    expect(writes).toMatchObject([{ outDir: join(tmp, 'handoff', 'spec-kit') }]);
+    expect(logs.join('\n')).toContain(join(tmp, 'handoff', 'spec-kit'));
   });
 });

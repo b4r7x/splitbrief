@@ -85,43 +85,18 @@ describe('parseFile', () => {
 });
 
 describe('kindForNodeType polyglot', () => {
-  it('maps Python function_definition to function', () => {
-    expect(kindForNodeType('function_definition')).toBe('function');
-  });
-
-  it('maps Python class_definition to class', () => {
-    expect(kindForNodeType('class_definition')).toBe('class');
-  });
-
-  it('maps Go method_declaration to function', () => {
-    expect(kindForNodeType('method_declaration')).toBe('function');
-  });
-
-  it('maps Rust struct_item to class', () => {
-    expect(kindForNodeType('struct_item')).toBe('class');
-  });
-
-  it('maps Rust trait_item to interface', () => {
-    expect(kindForNodeType('trait_item')).toBe('interface');
-  });
-
-  it('maps Rust enum_item to enum', () => {
-    expect(kindForNodeType('enum_item')).toBe('enum');
-  });
-
-  it('maps Rust type_item to type', () => {
-    expect(kindForNodeType('type_item')).toBe('type');
-  });
-
-  it('maps Go type_declaration to type', () => {
-    expect(kindForNodeType('type_declaration')).toBe('type');
-  });
-
-  it('maps Rust function_item to function', () => {
-    expect(kindForNodeType('function_item')).toBe('function');
-  });
-
-  it('maps unknown node type to const', () => {
-    expect(kindForNodeType('something_random')).toBe('const');
+  it.each([
+    ['function_definition', 'function'],
+    ['class_definition', 'class'],
+    ['method_declaration', 'function'],
+    ['struct_item', 'class'],
+    ['trait_item', 'interface'],
+    ['enum_item', 'enum'],
+    ['type_item', 'type'],
+    ['type_declaration', 'type'],
+    ['function_item', 'function'],
+    ['something_random', 'const'],
+  ] as const)('maps %s to %s', (nodeType, kind) => {
+    expect(kindForNodeType(nodeType)).toBe(kind);
   });
 });

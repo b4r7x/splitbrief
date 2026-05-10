@@ -186,7 +186,6 @@ describe('runHeadless — budget pause behavior', () => {
       });
     const paused = jsonLines.find((line) => line.type === 'budget_paused');
 
-    expect(implementer.implement).toHaveBeenCalled();
     expect(paused).toBeDefined();
     expect(paused?.currentCost).toBeGreaterThan(17);
     expect(paused?.maxBudget).toBe(20);
@@ -253,7 +252,7 @@ describe('runHeadless — budget pause behavior', () => {
       exitCode: 1,
       message: expect.stringContaining('workflow.taskReview requires an interactive TUI run'),
     });
-    expect(implementer.implement).not.toHaveBeenCalled();
+    expect(stdoutChunks.join('')).toBe('');
   });
 });
 

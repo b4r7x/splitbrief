@@ -24,6 +24,26 @@ import { runRpc } from '../rpc/run.js';
 import { isNumericAlias, resolveNumericAlias } from '../session-aliases.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
+export interface ContinueDeps {
+  checkServerStatus: typeof checkServerStatus;
+  initStores: typeof initStores;
+  renderApp: typeof renderApp;
+  runHeadless: typeof runHeadless;
+  runRpc: typeof runRpc;
+  setupWorkflow: typeof setupWorkflow;
+  showCrashDiagnostic: typeof showCrashDiagnostic;
+}
+
+const defaultContinueDeps: ContinueDeps = {
+  checkServerStatus,
+  initStores,
+  renderApp,
+  runHeadless,
+  runRpc,
+  setupWorkflow,
+  showCrashDiagnostic,
+};
+
 export async function resolveSessionInput(
   input: string | undefined,
   projectDir: string,
@@ -40,6 +60,7 @@ export async function resolveSessionInput(
 async function resolveTargetSession(
   sessionInput: string | undefined,
   projectDir: string,
+  deps: ContinueDeps,
 ): Promise<string> {
   const resolved = await resolveSessionInput(sessionInput, projectDir);
   if (resolved !== undefined) return resolved;
@@ -59,7 +80,7 @@ async function resolveTargetSession(
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const sessDir = sessionDir(projectDir, entry.name);
-    const status = await checkServerStatus(sessDir);
+    const status = await deps.checkServerStatus(sessDir);
     if (status.alive) running.push(entry.name);
   }
 
@@ -78,19 +99,20 @@ async function resolveTargetSession(
 export async function continueCommand(
   sessionInput: string | undefined,
   opts: { projectDir: string } & WorkflowOpts,
+  deps: ContinueDeps = defaultContinueDeps,
 ): Promise<void> {
   assertNotWindows();
   if (opts.json && opts.rpc) throw cliError('--json and --rpc cannot be combined');
 
-  const sessionId = await resolveTargetSession(sessionInput, opts.projectDir);
+  const sessionId = await resolveTargetSession(sessionInput, opts.projectDir, deps);
   const sessDir = sessionDir(opts.projectDir, sessionId);
 
-  const status = await checkServerStatus(sessDir);
+  const status = await deps.checkServerStatus(sessDir);
 
   if (status.alive) {
     if (opts.rpc) throw cliError('--rpc cannot attach to a running detached session yet.');
     const sockPath = join(sessDir, IPC_SOCK_FILE);
-    await initStores(opts.projectDir);
+    await deps.initStores(opts.projectDir);
     routerStore.init({
       screen: 'workflow',
       feature: status.data.feature,
@@ -99,12 +121,12 @@ export async function continueCommand(
     });
 
     const useFullscreen = Boolean(process.stdout.isTTY) && !process.env['CI'];
-    await renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useFullscreen });
+    await deps.renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useFullscreen });
     return;
   }
 
   if (status.crashed) {
-    await showCrashDiagnostic(sessDir, status);
+    await deps.showCrashDiagnostic(sessDir, status);
   }
 
   const migration = await maybeMigrate(opts.projectDir);
@@ -131,32 +153,32 @@ export async function continueCommand(
   }
 
   if (opts.json) {
-    await runHeadless(state.feature, opts.projectDir, opts, state, sessionId);
+    await deps.runHeadless(state.feature, opts.projectDir, opts, state, sessionId);
     return;
   }
 
   if (opts.rpc) {
-    await runRpc(state.feature, opts.projectDir, opts, state, sessionId);
+    await deps.runRpc(state.feature, opts.projectDir, opts, state, sessionId);
     return;
   }
 
   console.log(`Resuming: ${state.feature} (phase: ${state.phase}, task ${state.currentTaskIndex + 1}/${state.tasks.length})`);
 
-  const { useFullscreen, useMouse } = await setupWorkflow(opts);
+  const { useFullscreen, useMouse } = await deps.setupWorkflow(opts);
 
-  await initStores(opts.projectDir, opts);
+  await deps.initStores(opts.projectDir, opts);
   routerStore.init({ screen: 'workflow', feature: state.feature, resumeState: state, sessionId });
 
-  await renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useMouse });
+  await deps.renderApp(createElement(App), { fullscreen: useFullscreen, mouse: useMouse });
 }
 
-export function registerContinueCommand(program: Command): void {
+export function registerContinueCommand(program: Command, deps: ContinueDeps = defaultContinueDeps): void {
   addWorkflowOptions(
     program
       .command('continue [session-id]')
       .description('Continue a session: attaches if running, resumes if interrupted'),
   ).action(async (sessionId: string | undefined, opts: WorkflowOpts) => {
     const projectDir = resolveProjectDir(opts.project);
-    await continueCommand(sessionId, { ...opts, projectDir });
+    await continueCommand(sessionId, { ...opts, projectDir }, deps);
   });
 }

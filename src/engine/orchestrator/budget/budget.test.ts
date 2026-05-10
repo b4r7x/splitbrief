@@ -256,9 +256,7 @@ describe('enforceBudget', () => {
     expect(events.some(e => e.type === 'budget_warning')).toBe(false);
   });
 
-  it('stops workflow when budget exceeded and no callback', async () => {
-    const callbacks = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
+  it('stops with budget exceeded recovery regardless of legacy prompt behavior', async () => {
     const usage: TokenUsage = {
       ...zeroUsage,
       plannerInput: 1_000_000,
@@ -271,103 +269,36 @@ describe('enforceBudget', () => {
     });
     const budget = cost * 0.5;
 
-    const result = await enforceBudget({
-      ...baseOpts,
-      plannerTool: 'anthropic',
-      tokenUsage: usage,
-      maxBudget: budget,
-      callbacks,
-      bus,
-      warningEmitted: false,
-      pauseEmitted: false,
-    });
+    for (const legacyResponse of [undefined, true, false] as const) {
+      const onBudgetExceeded = legacyResponse === undefined
+        ? undefined
+        : vi.fn().mockResolvedValue(legacyResponse);
+      const callbacks = makeCallbacks(onBudgetExceeded ? { onBudgetExceeded } : undefined);
+      const { bus, events } = makeBusRecorder();
 
-    expect(result.stop).toBe(true);
-    expect(result.warningEmitted).toBe(true);
-    expect(result.recovery?.reason).toBe('budget-exceeded');
-    expect(events.some(e => e.type === 'budget_exceeded')).toBe(true);
+      const result = await enforceBudget({
+        ...baseOpts,
+        plannerTool: 'anthropic',
+        tokenUsage: usage,
+        maxBudget: budget,
+        callbacks,
+        bus,
+        warningEmitted: false,
+        pauseEmitted: false,
+      });
+
+      if (onBudgetExceeded) expect(onBudgetExceeded).not.toHaveBeenCalled();
+      expect(result.stop).toBe(true);
+      expect(result.warningEmitted).toBe(true);
+      expect(result.recovery).toMatchObject({
+        reason: 'budget-exceeded',
+        maxBudget: budget,
+      });
+      expect(events.some(e => e.type === 'budget_exceeded')).toBe(true);
+    }
   });
 
-  it('does not continue past budget exceeded even when legacy callback would allow it', async () => {
-    const budgetPromptArgs: Array<{ current: number; max: number }> = [];
-    const onBudgetExceeded = vi.fn().mockImplementation(async (current: number, max: number) => {
-      budgetPromptArgs.push({ current, max });
-      return true;
-    });
-    const callbacks = makeCallbacks({ onBudgetExceeded });
-    const { bus } = makeBusRecorder();
-    const usage: TokenUsage = {
-      ...zeroUsage,
-      plannerInput: 1_000_000,
-      plannerOutput: 100_000,
-    };
-    const cost = getCurrentCost({
-      ...baseOpts,
-      tokenUsage: usage,
-      plannerTool: 'anthropic',
-    });
-    const budget = cost * 0.5;
-
-    const result = await enforceBudget({
-      ...baseOpts,
-      plannerTool: 'anthropic',
-      tokenUsage: usage,
-      maxBudget: budget,
-      callbacks,
-      bus,
-      warningEmitted: false,
-      pauseEmitted: false,
-    });
-
-    expect(onBudgetExceeded).not.toHaveBeenCalled();
-    expect(budgetPromptArgs).toHaveLength(0);
-    expect(result.stop).toBe(true);
-    expect(result.recovery).toMatchObject({
-      reason: 'budget-exceeded',
-      maxBudget: budget,
-    });
-  });
-
-  it('stops with budget exceeded recovery when legacy callback would abort', async () => {
-    const budgetPromptArgs: Array<{ current: number; max: number }> = [];
-    const onBudgetExceeded = vi.fn().mockImplementation(async (current: number, max: number) => {
-      budgetPromptArgs.push({ current, max });
-      return false;
-    });
-    const callbacks = makeCallbacks({ onBudgetExceeded });
-    const { bus } = makeBusRecorder();
-    const usage: TokenUsage = {
-      ...zeroUsage,
-      plannerInput: 1_000_000,
-      plannerOutput: 100_000,
-    };
-    const cost = getCurrentCost({
-      ...baseOpts,
-      tokenUsage: usage,
-      plannerTool: 'anthropic',
-    });
-    const budget = cost * 0.5;
-
-    const result = await enforceBudget({
-      ...baseOpts,
-      plannerTool: 'anthropic',
-      tokenUsage: usage,
-      maxBudget: budget,
-      callbacks,
-      bus,
-      warningEmitted: false,
-      pauseEmitted: false,
-    });
-
-    expect(onBudgetExceeded).not.toHaveBeenCalled();
-    expect(budgetPromptArgs).toHaveLength(0);
-    expect(result.stop).toBe(true);
-    expect(result.recovery?.reason).toBe('budget-exceeded');
-  });
-
-  it('stops workflow when paused and no onBudgetPaused callback', async () => {
-    const callbacks = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
+  it('stops with budget pause recovery regardless of legacy prompt behavior', async () => {
     const usage: TokenUsage = {
       ...zeroUsage,
       plannerInput: 200_000,
@@ -380,88 +311,31 @@ describe('enforceBudget', () => {
     });
     const budget = cost / 0.87;
 
-    const result = await enforceBudget({
-      ...baseOpts,
-      plannerTool: 'anthropic',
-      tokenUsage: usage,
-      maxBudget: budget,
-      callbacks,
-      bus,
-      warningEmitted: false,
-      pauseEmitted: false,
-    });
+    for (const legacyResponse of [undefined, 'continue', 'abort', 'raise'] as const) {
+      const onBudgetPaused = legacyResponse === undefined
+        ? undefined
+        : vi.fn().mockResolvedValue(legacyResponse);
+      const callbacks = makeCallbacks(onBudgetPaused ? { onBudgetPaused } : undefined);
+      const { bus, events } = makeBusRecorder();
 
-    expect(result.stop).toBe(true);
-    expect(result.pauseEmitted).toBe(true);
-    expect(result.recovery?.reason).toBe('budget-paused');
-    expect(events.some(e => e.type === 'budget_paused')).toBe(true);
-  });
+      const result = await enforceBudget({
+        ...baseOpts,
+        plannerTool: 'anthropic',
+        tokenUsage: usage,
+        maxBudget: budget,
+        callbacks,
+        bus,
+        warningEmitted: false,
+        pauseEmitted: false,
+      });
 
-  it('stops with budget pause recovery instead of invoking legacy continue callback', async () => {
-    const onBudgetPaused = vi.fn().mockResolvedValue('continue' as const);
-    const callbacks = makeCallbacks({ onBudgetPaused });
-    const { bus, events } = makeBusRecorder();
-    const usage: TokenUsage = {
-      ...zeroUsage,
-      plannerInput: 200_000,
-      plannerOutput: 20_000,
-    };
-    const cost = getCurrentCost({
-      ...baseOpts,
-      tokenUsage: usage,
-      plannerTool: 'anthropic',
-    });
-    const budget = cost / 0.87;
-
-    const result = await enforceBudget({
-      ...baseOpts,
-      plannerTool: 'anthropic',
-      tokenUsage: usage,
-      maxBudget: budget,
-      callbacks,
-      bus,
-      warningEmitted: false,
-      pauseEmitted: false,
-    });
-
-    expect(onBudgetPaused).not.toHaveBeenCalled();
-    expect(result.stop).toBe(true);
-    expect(result.pauseEmitted).toBe(true);
-    expect(result.recovery).toMatchObject({ reason: 'budget-paused', threshold: 0.85 });
-    expect(events.some(e => e.type === 'budget_paused')).toBe(true);
-  });
-
-  it('stops with budget pause recovery when legacy callback would abort', async () => {
-    const onBudgetPaused = vi.fn().mockResolvedValue('abort' as const);
-    const callbacks = makeCallbacks({ onBudgetPaused });
-    const { bus } = makeBusRecorder();
-    const usage: TokenUsage = {
-      ...zeroUsage,
-      plannerInput: 200_000,
-      plannerOutput: 20_000,
-    };
-    const cost = getCurrentCost({
-      ...baseOpts,
-      tokenUsage: usage,
-      plannerTool: 'anthropic',
-    });
-    const budget = cost / 0.87;
-
-    const result = await enforceBudget({
-      ...baseOpts,
-      plannerTool: 'anthropic',
-      tokenUsage: usage,
-      maxBudget: budget,
-      callbacks,
-      bus,
-      warningEmitted: false,
-      pauseEmitted: false,
-    });
-
-    expect(onBudgetPaused).not.toHaveBeenCalled();
-    expect(result.stop).toBe(true);
-    expect(result.pauseEmitted).toBe(true);
-    expect(result.recovery?.reason).toBe('budget-paused');
+      if (onBudgetPaused) expect(onBudgetPaused).not.toHaveBeenCalled();
+      expect(result.stop).toBe(true);
+      expect(result.pauseEmitted).toBe(true);
+      expect(result.recovery).toMatchObject({ reason: 'budget-paused', threshold: 0.85 });
+      expect(events.find(e => e.type === 'budget_paused')).toMatchObject({ threshold: 0.85 });
+      expect(events.some(e => e.type === 'warning')).toBe(true);
+    }
   });
 
   it('does not re-pause when pauseEmitted is true', async () => {
@@ -494,73 +368,6 @@ describe('enforceBudget', () => {
     expect(result.stop).toBe(false);
     expect(onBudgetPaused).not.toHaveBeenCalled();
     expect(events.some(e => e.type === 'budget_paused')).toBe(false);
-  });
-
-  it('publishes budget_paused event on first pause trigger', async () => {
-    const onBudgetPaused = vi.fn().mockResolvedValue('continue' as const);
-    const callbacks = makeCallbacks({ onBudgetPaused });
-    const { bus, events } = makeBusRecorder();
-    const usage: TokenUsage = {
-      ...zeroUsage,
-      plannerInput: 200_000,
-      plannerOutput: 20_000,
-    };
-    const cost = getCurrentCost({
-      ...baseOpts,
-      tokenUsage: usage,
-      plannerTool: 'anthropic',
-    });
-    const budget = cost / 0.87;
-
-    await enforceBudget({
-      ...baseOpts,
-      plannerTool: 'anthropic',
-      tokenUsage: usage,
-      maxBudget: budget,
-      callbacks,
-      bus,
-      warningEmitted: false,
-      pauseEmitted: false,
-    });
-
-    const pauseEvent = events.find(e => e.type === 'budget_paused');
-    expect(onBudgetPaused).not.toHaveBeenCalled();
-    expect(pauseEvent).toBeDefined();
-    expect(pauseEvent?.type === 'budget_paused' && pauseEvent.threshold).toBe(0.85);
-  });
-
-  it('stops for budget pause instead of treating legacy raise response as continue', async () => {
-    const onBudgetPaused = vi.fn().mockResolvedValue('raise' as const);
-    const callbacks = makeCallbacks({ onBudgetPaused });
-    const { bus, events } = makeBusRecorder();
-    const usage: TokenUsage = {
-      ...zeroUsage,
-      plannerInput: 200_000,
-      plannerOutput: 20_000,
-    };
-    const cost = getCurrentCost({
-      ...baseOpts,
-      tokenUsage: usage,
-      plannerTool: 'anthropic',
-    });
-    const budget = cost / 0.87;
-
-    const result = await enforceBudget({
-      ...baseOpts,
-      plannerTool: 'anthropic',
-      tokenUsage: usage,
-      maxBudget: budget,
-      callbacks,
-      bus,
-      warningEmitted: false,
-      pauseEmitted: false,
-    });
-
-    expect(onBudgetPaused).not.toHaveBeenCalled();
-    expect(result.stop).toBe(true);
-    expect(result.pauseEmitted).toBe(true);
-    expect(result.recovery?.reason).toBe('budget-paused');
-    expect(events.some(e => e.type === 'warning')).toBe(true);
   });
 
   it('emits budget_warning before budget_paused when crossing past 80% straight into pause zone', async () => {

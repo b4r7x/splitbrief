@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { detectAvailablePlanners, detectAvailableImplementers } from './detect.js';
+import { DETECTION_TIMEOUT_MS } from '../providers/registry.js';
 
 describe('detectAvailablePlanners', () => {
   const providerResults = [
@@ -54,6 +55,7 @@ describe('detectAvailableImplementers', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    vi.useRealTimers();
   });
 
   it('returns results for ollama and lm-studio', async () => {
@@ -113,14 +115,16 @@ describe('detectAvailableImplementers', () => {
     }
   });
 
-  it('handles timeout (slow provider)', { timeout: 30000 }, async () => {
+  it('handles timeout when a provider never responds', async () => {
+    vi.useFakeTimers();
     globalThis.fetch = vi.fn(async () => {
-      return new Promise<Response>(() => {
-        // never resolves
-      });
+      return new Promise<Response>(() => {});
     }) as typeof globalThis.fetch;
 
-    const results = await detectAvailableImplementers();
+    const pendingResults = detectAvailableImplementers();
+    await vi.advanceTimersByTimeAsync(DETECTION_TIMEOUT_MS);
+    const results = await pendingResults;
+
     for (const r of results) {
       expect(r.available).toBe(false);
     }

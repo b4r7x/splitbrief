@@ -1,13 +1,10 @@
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SESSION_LOG_FILE, sessionsRoot } from '../../../src/core/paths.js';
+import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
+import { e2eImplementer, e2ePlanner } from '../helpers/e2e-config.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/e2e-harness.js';
-
-const e2eApiBase = process.env.DIPTYCH_E2E_API_BASE ?? 'http://localhost:11434/v1';
-const replayApiKey = process.env.DIPTYCH_E2E_RECORD === '1'
-  ? undefined
-  : 'e2e-placeholder';
 
 const scenario = {
   name: 'quick mode - add endpoint',
@@ -16,20 +13,8 @@ const scenario = {
   mode: 'quick' as const,
   config: {
     version: 2,
-    planner: {
-      kind: 'api',
-      provider: 'openai',
-      apiBase: e2eApiBase,
-      ...(replayApiKey ? { apiKey: replayApiKey } : {}),
-      model: 'gpt-4o',
-    },
-    implementer: {
-      kind: 'api',
-      provider: 'openai',
-      apiBase: e2eApiBase,
-      ...(replayApiKey ? { apiKey: replayApiKey } : {}),
-      model: 'gpt-4o-mini',
-    },
+    planner: e2ePlanner,
+    implementer: e2eImplementer,
     workflow: {
       mode: 'quick',
       commitStrategy: 'none',
@@ -64,6 +49,9 @@ describe('e2e: quick mode add endpoint', () => {
 
     const taskEvents = ctx.events.filter((event) => event.type === 'task_completed');
     expect(taskEvents.length).toBeGreaterThanOrEqual(1);
+    const healthPath = join(ctx.projectDir, 'src/health.ts');
+    expect(readFileSync(healthPath, 'utf-8')).toContain("status: 'ok'");
+    expect(evaluateTsArtifact(healthPath, 'mod.getHealth()')).toEqual({ status: 'ok' });
 
     expect(hasSessionArtifact(ctx.projectDir, SESSION_LOG_FILE)).toBe(true);
     expect(summary.totalTime).toBeGreaterThan(0);

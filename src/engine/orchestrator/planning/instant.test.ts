@@ -132,8 +132,10 @@ describe('runInstantPlanning', () => {
     expect(instantReceived && 'taskCount' in instantReceived ? instantReceived.taskCount : 0).toBe(1);
   });
 
-  it('does not invoke onApprovalNeeded', async () => {
-    const onApprovalNeeded = vi.fn();
+  it('reaches implementation without opening approval gates', async () => {
+    const onApprovalNeeded = async () => {
+      throw new Error('instant mode should not request artifact approval');
+    };
     const { projectDir, sessionId } = setupProject();
     const planner = makePlanner({
       instantPlan: vi.fn().mockResolvedValue(instantPlanResult()),
@@ -141,7 +143,7 @@ describe('runInstantPlanning', () => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const config = makeConfig({ workflow: { mode: 'instant' } });
     const initial = createInitialState('feature');
-    await runPlanningPhase({
+    const result = await runPlanningPhase({
       wctx: {
         projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus: makeBusRecorder().bus,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
@@ -150,7 +152,9 @@ describe('runInstantPlanning', () => {
       state: { ...initial, phase: 'idle' },
       feature: 'feature',
     });
-    expect(onApprovalNeeded).not.toHaveBeenCalled();
+
+    expect(result.cancelled).toBe(false);
+    expect(result.state.phase).toBe('implementing');
   });
 
   it('falls back to quickPlan when instantPlan is not provided', async () => {

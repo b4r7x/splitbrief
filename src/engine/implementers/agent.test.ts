@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
 import { createAgentImplementer } from './agent.js';
@@ -72,9 +73,9 @@ describe('agent implementer', () => {
 
   it('throws on timeout', async () => {
     const config = makeConfig({
-      command: 'sleep',
-      args: ['10'],
-      timeout: 100,
+      command: 'node',
+      args: ['-e', 'setInterval(() => {}, 1000)'],
+      timeout: 50,
     });
 
     const implementer = createAgentImplementer(config);
@@ -109,8 +110,13 @@ describe('agent implementer', () => {
   it('replaces {prompt} placeholder in args', async () => {
     const outFile = join(testDir, 'prompt-out.txt');
     const config = makeConfig({
-      command: 'bash',
-      args: ['-c', `echo "{prompt}" | head -c 100 > ${outFile}`],
+      command: 'node',
+      args: [
+        '-e',
+        'require("node:fs").writeFileSync(process.argv[1], process.argv[2])',
+        outFile,
+        '{prompt}',
+      ],
     });
 
     const implementer = createAgentImplementer(config);
@@ -123,6 +129,10 @@ describe('agent implementer', () => {
     });
 
     expect(result.success).toBe(true);
+    const prompt = readFileSync(outFile, 'utf-8');
+    expect(prompt).toContain('test prompt content');
+    expect(prompt).toContain('Output the complete file contents');
+    expect(prompt).not.toContain('{prompt}');
   });
 
   it('retryTaskViaAgent works with error context', async () => {

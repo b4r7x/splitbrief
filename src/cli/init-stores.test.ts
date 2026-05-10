@@ -2,13 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
+import { resetAllStores } from '#testing/helpers/stores.js';
 import { initStores } from './init-stores.js';
 import { configStore } from '../stores/project/config.js';
 import { sessionsStore } from '../stores/project/sessions.js';
 import { skillsStore } from '../stores/project/skills.js';
-import { inputHistoryStore } from '../stores/ui/input-history.js';
-import { feedbackStore } from '../stores/ui/feedback.js';
-import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { DIPTYCH_DIR } from '../core/paths.js';
 import { toYaml } from '../core/config/load/transform.js';
 import { createDefaultConfig } from '../core/config/load/load.js';
@@ -37,16 +35,11 @@ function writeConfigYaml(projectDir: string, obj: Record<string, unknown>): void
 }
 
 beforeEach(() => {
-  configStore.reset();
-  sessionsStore.reset();
-  skillsStore.reset();
-  inputHistoryStore.reset();
-  feedbackStore.reset();
-  terminalSizeStore.reset();
+  resetAllStores();
 });
 
 afterEach(() => {
-  terminalSizeStore.reset();
+  resetAllStores();
   if (tmp) cleanupTempDir(tmp);
 });
 

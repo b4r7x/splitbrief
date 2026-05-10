@@ -2,54 +2,49 @@ import { describe, expect, it } from 'vitest';
 import { redactSecrets, redactSecretsWithMetadata, maskApiKey } from './redact.js';
 
 describe('redactSecrets', () => {
-  it('redacts Anthropic-style keys', () => {
-    const msg = 'Error: invalid key sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456';
-    expect(redactSecrets(msg)).toBe('Error: invalid key sk-ant-***REDACTED***');
-  });
-
-  it('redacts OpenAI-style keys', () => {
-    const msg = 'Auth failed with sk-proj-abcdefghijklmnopqrstuvwxyz';
-    expect(redactSecrets(msg)).toBe('Auth failed with sk-***REDACTED***');
-  });
-
-  it('redacts Bearer tokens', () => {
-    const msg = 'Header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature';
-    expect(redactSecrets(msg)).toBe('Header: Bearer ***REDACTED***');
-  });
-
-  it('redacts Groq-style keys', () => {
-    const msg = 'Error with gsk_abcdefghijklmnopqrstuvwxyz123456';
-    expect(redactSecrets(msg)).toBe('Error with gsk_***REDACTED***');
-  });
-
-  it('redacts xAI-style keys', () => {
-    const msg = 'Failed: xai-abcdefghijklmnopqrstuvwxyz123456';
-    expect(redactSecrets(msg)).toBe('Failed: xai-***REDACTED***');
-  });
-
-  it('redacts GitHub personal access tokens', () => {
-    const msg = 'token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij';
-    expect(redactSecrets(msg)).toBe('token: ghp_***REDACTED***');
-  });
-
-  it('redacts GitHub OAuth tokens (gho_)', () => {
-    const msg = 'token: gho_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij';
-    expect(redactSecrets(msg)).toBe('token: gho_***REDACTED***');
-  });
-
-  it('redacts GitHub fine-grained PATs (github_pat_)', () => {
-    const msg = 'token: github_pat_ABCDEFGHIJKLMNOPQRSTUV22';
-    expect(redactSecrets(msg)).toBe('token: github_pat_***REDACTED***');
-  });
-
-  it('redacts AWS access key IDs', () => {
-    const msg = 'aws_key: AKIAIOSFODNN7EXAMPLE';
-    expect(redactSecrets(msg)).toBe('aws_key: AKIA***REDACTED***');
-  });
-
-  it('redacts Slack-style tokens', () => {
-    const msg = 'slack: xoxb-abcdefghijklmnop';
-    expect(redactSecrets(msg)).toBe('slack: xoxb-***REDACTED***');
+  it.each([
+    [
+      'Error: invalid key sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456',
+      'Error: invalid key sk-ant-***REDACTED***',
+    ],
+    [
+      'Auth failed with sk-proj-abcdefghijklmnopqrstuvwxyz',
+      'Auth failed with sk-***REDACTED***',
+    ],
+    [
+      'Header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature',
+      'Header: Bearer ***REDACTED***',
+    ],
+    [
+      'Error with gsk_abcdefghijklmnopqrstuvwxyz123456',
+      'Error with gsk_***REDACTED***',
+    ],
+    [
+      'Failed: xai-abcdefghijklmnopqrstuvwxyz123456',
+      'Failed: xai-***REDACTED***',
+    ],
+    [
+      'token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij',
+      'token: ghp_***REDACTED***',
+    ],
+    [
+      'token: gho_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij',
+      'token: gho_***REDACTED***',
+    ],
+    [
+      'token: github_pat_ABCDEFGHIJKLMNOPQRSTUV22',
+      'token: github_pat_***REDACTED***',
+    ],
+    [
+      'aws_key: AKIAIOSFODNN7EXAMPLE',
+      'aws_key: AKIA***REDACTED***',
+    ],
+    [
+      'slack: xoxb-abcdefghijklmnop',
+      'slack: xoxb-***REDACTED***',
+    ],
+  ])('redacts known secret shapes', (input, expected) => {
+    expect(redactSecrets(input)).toBe(expected);
   });
 
   it('handles multiple keys in one string', () => {
@@ -61,18 +56,12 @@ describe('redactSecrets', () => {
     expect(result).toContain('sk-***REDACTED***');
   });
 
-  it('handles empty string', () => {
-    expect(redactSecrets('')).toBe('');
-  });
-
-  it('does not redact git commit SHAs', () => {
-    const msg = 'commit abc123def456789012345678901234567890abcd';
-    expect(redactSecrets(msg)).toBe(msg);
-  });
-
-  it('does not redact short strings below the redaction threshold', () => {
-    const msg = 'Error: key sk-short is invalid';
-    expect(redactSecrets(msg)).toBe('Error: key sk-short is invalid');
+  it.each([
+    '',
+    'commit abc123def456789012345678901234567890abcd',
+    'Error: key sk-short is invalid',
+  ])('leaves non-secret text unchanged', (message) => {
+    expect(redactSecrets(message)).toBe(message);
   });
 
   it('returns redaction metadata and supports a custom marker', () => {

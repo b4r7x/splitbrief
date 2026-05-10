@@ -1,10 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { e2eImplementer, e2ePlanner } from '../helpers/e2e-config.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/e2e-harness.js';
-
-const e2eApiBase = process.env.DIPTYCH_E2E_API_BASE ?? 'http://localhost:11434/v1';
-const replayApiKey = process.env.DIPTYCH_E2E_RECORD === '1'
-  ? undefined
-  : 'e2e-placeholder';
 
 const scenario = {
   name: 'instant mode - trivial edit',
@@ -13,20 +11,8 @@ const scenario = {
   mode: 'instant' as const,
   config: {
     version: 2,
-    planner: {
-      kind: 'api',
-      provider: 'openai',
-      apiBase: e2eApiBase,
-      ...(replayApiKey ? { apiKey: replayApiKey } : {}),
-      model: 'gpt-4o',
-    },
-    implementer: {
-      kind: 'api',
-      provider: 'openai',
-      apiBase: e2eApiBase,
-      ...(replayApiKey ? { apiKey: replayApiKey } : {}),
-      model: 'gpt-4o-mini',
-    },
+    planner: e2ePlanner,
+    implementer: e2eImplementer,
     workflow: {
       mode: 'instant',
       commitStrategy: 'none',
@@ -56,6 +42,7 @@ describe('e2e: instant mode trivial edit', () => {
 
     const taskCompleted = ctx.events.find((event) => event.type === 'task_completed');
     expect(taskCompleted).toBeDefined();
+    expect(readFileSync(join(ctx.projectDir, 'README.md'), 'utf-8')).toBe('# Tiny Spec\n\nA small fixture project for e2e replay.');
 
     expect(summary.tokenUsage.plannerInput + summary.tokenUsage.implementerInput).toBeGreaterThan(0);
     expect(summary.tokenUsage.plannerOutput + summary.tokenUsage.implementerOutput).toBeGreaterThan(0);

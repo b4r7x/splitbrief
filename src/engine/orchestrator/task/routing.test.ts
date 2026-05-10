@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   taskConfigForProfile,
   selectedProfileFromDecision,
@@ -37,7 +37,7 @@ describe('selectedProfileFromDecision', () => {
 
 describe('createTaskImplementer', () => {
   it('returns existing implementer in single mode with default profile', async () => {
-    const implementer = { implement: vi.fn() } as any;
+    const implementer = { implement: async () => ({ success: true, output: '' }) } as any;
     const wctx = { implementer, bus: {} as any };
     const profile = { isDefault: true, config: {} } as ResolvedImplementerProfile;
     const result = await createTaskImplementer({ wctx: wctx as any, profile, taskConfig: {} as any, singleImplementerMode: true });
@@ -45,13 +45,20 @@ describe('createTaskImplementer', () => {
   });
 
   it('creates new implementer when not single mode', async () => {
-    const factory = vi.fn().mockReturnValue({ implement: vi.fn() });
+    const createdImplementer = { implement: async () => ({ success: true, output: '' }) };
+    const taskConfig = { implementer: { provider: 'ollama' } };
+    let receivedConfig: typeof taskConfig | undefined;
+    const factory = (config: typeof taskConfig) => {
+      receivedConfig = config;
+      return createdImplementer as any;
+    };
     const wctx = { implementer: {} as any, bus: {} as any, createImplementer: factory };
     const profile = { isDefault: false, config: { provider: 'ollama' } } as ResolvedImplementerProfile;
-    const taskConfig = { implementer: { provider: 'ollama' } };
+
     const result = await createTaskImplementer({ wctx: wctx as any, profile, taskConfig: taskConfig as any, singleImplementerMode: false });
-    expect(factory).toHaveBeenCalledWith(taskConfig, expect.any(Object));
-    expect(result).toBeDefined();
+
+    expect(result).toBe(createdImplementer);
+    expect(receivedConfig).toBe(taskConfig);
   });
 });
 

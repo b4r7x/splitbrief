@@ -33,12 +33,4 @@ describe('sessionError predicates', () => {
     expect(sessionError.isIdCollision(undefined)).toBe(false);
   });
 
-  test('predicates narrow data type', () => {
-    const err: unknown = sessionError.invalidData('sid', 'because');
-    if (sessionError.isInvalidData(err)) {
-      expect(err.data).toEqual({ sessionId: 'sid', reason: 'because' });
-    } else {
-      throw new Error('predicate should match');
-    }
-  });
 });

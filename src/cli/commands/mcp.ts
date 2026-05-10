@@ -11,7 +11,15 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 
 const DEFAULT_PORT = 4321;
 
-export function registerMcpCommand(program: Command): void {
+export type McpDeps = {
+  startMcpServer: typeof startMcpServer;
+};
+
+const defaultDeps: McpDeps = {
+  startMcpServer,
+};
+
+export function registerMcpCommand(program: Command, deps: McpDeps = defaultDeps): void {
   const mcp = program
     .command('mcp')
     .description('MCP resource and write-tool server commands');
@@ -57,7 +65,7 @@ export function registerMcpCommand(program: Command): void {
 
         let handle: Awaited<ReturnType<typeof startMcpServer>>;
         try {
-          handle = await startMcpServer({
+          handle = await deps.startMcpServer({
             port,
             host: '127.0.0.1',
             token,

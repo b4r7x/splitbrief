@@ -10,6 +10,12 @@ import { publishWarning, publishGitCommit, publishGitCheckpoint, publishTaskComp
 import { transitionAndSave } from '../state-ops.js';
 import { runPreHooks } from '../../hooks/run-pre-hook.js';
 
+type GitOps = {
+  stageAll: typeof stageAll;
+  commitChanges: typeof commitChanges;
+  createTaggedStash: typeof createTaggedStash;
+};
+
 type ValidateCommitOptions = {
   task: Task;
   results: ValidationResult[];
@@ -24,10 +30,12 @@ type ValidateCommitOptions = {
   taskStartTime?: number | undefined;
   retryCount?: number | undefined;
   implementerProfile?: string | undefined;
+  gitOps?: Partial<GitOps> | undefined;
 };
 
 export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Promise<{ state: WorkflowState; completed: boolean }> {
   const { task, results, projectDir, sessionId, config, bus, method, transitionType, commitSuffix, taskStartTime, state, retryCount, implementerProfile } = opts;
+  const gitOps: GitOps = { stageAll, commitChanges, createTaggedStash, ...opts.gitOps };
   if (!results.every((r) => r.passed)) {
     return { state, completed: false };
   }
@@ -58,15 +66,15 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
     }
 
     try {
-      await stageAll(projectDir);
-      await commitChanges(projectDir, commitMsg);
+      await gitOps.stageAll(projectDir);
+      await gitOps.commitChanges(projectDir, commitMsg);
       publishGitCommit(bus, state.phase, task.id, commitMsg, task.file);
     } catch (err) {
       publishWarning(bus, state.phase, labelError('Failed to commit', err));
     }
   } else if (strategy === 'checkpoint') {
     try {
-      const tag = await createTaggedStash(projectDir, `diptych checkpoint: ${task.id}`, `diptych/${task.id}`);
+      const tag = await gitOps.createTaggedStash(projectDir, `diptych checkpoint: ${task.id}`, `diptych/${task.id}`);
       if (tag) {
         publishGitCheckpoint(bus, state.phase, task.id, tag);
       }

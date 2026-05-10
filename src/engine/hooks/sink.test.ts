@@ -30,22 +30,16 @@ function denyViaStdoutHook(name: string, message: string): HookCommandEntry {
   });
 }
 
-// The sink schedules hook execution as a detached promise. Poll until the expected
-// number of events has arrived (or absence-check has held long enough), bounded by
-// a generous timeout so flaking under concurrent test load is avoided.
 async function waitForWarnings(warnings: readonly string[], expected: number, timeoutMs = 5000): Promise<void> {
   const start = Date.now();
   while (warnings.length < expected) {
     if (Date.now() - start > timeoutMs) return;
     await new Promise((r) => setTimeout(r, 20));
   }
-  // Small settle window so we also catch any unwanted extras.
   await new Promise((r) => setTimeout(r, 50));
 }
 
 async function waitForNoActivity(all: readonly unknown[], idleMs = 400): Promise<void> {
-  // For absence assertions: wait a fixed idle window. The sink has nothing to wait on
-  // because there is no event to observe — we are verifying it did NOT dispatch.
   const start = Date.now();
   while (Date.now() - start < idleMs) {
     const before = all.length;
@@ -77,8 +71,6 @@ describe('createHookSink', () => {
   });
 
   it('dispatches post_task hook on task_completed event', async () => {
-    // Observable: an allow-path hook produces no warnings on the bus; a warn-path
-    // hook on the same event publishes one. Compare the two runs.
     {
       const { bus, warnings, all } = makeBus();
       const hooks: HooksConfig = { post_task: [makeAllowHook('allow-hook')] };

@@ -1,300 +1,153 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { planEditorStore } from './plan-editor.js';
+import { planEditorStore, type PlanTaskReviewMetadata } from './plan-editor.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { taskId } from '../../core/schemas/task.js';
 
+function resetEditor(): void {
+  planEditorStore.initEditor([]);
+  planEditorStore.setRuntimeRichMode(false);
+  planEditorStore.setReviewMetadata([]);
+  planEditorStore.clearFlags();
+  planEditorStore.markSaved();
+}
+
 describe('planEditorStore', () => {
-  beforeEach(() => planEditorStore.__testReset());
+  beforeEach(resetEditor);
 
-  describe('initEditor', () => {
-    it('resets cursor to 0 and dirty to false', () => {
-      const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
-      planEditorStore.initEditor(tasks);
-      planEditorStore.moveCursor('down');
-      planEditorStore.setTasks(tasks);
-      planEditorStore.initEditor(tasks);
-      expect(planEditorStore.get().cursor).toBe(0);
-      expect(planEditorStore.get().dirty).toBe(false);
+  it('loads a plan as a clean snapshot and keeps runtime editor mode', () => {
+    const tasks = [
+      makeTask({ id: 'T001', title: 'Original title' }),
+      makeTask({ id: 'T002' }),
+    ];
+
+    planEditorStore.setRuntimeRichMode(true);
+    planEditorStore.initEditor(tasks);
+    tasks[0] = makeTask({ id: 'T001', title: 'Mutated outside store' });
+
+    planEditorStore.moveCursor('down');
+    planEditorStore.toggleExpand('T001');
+    planEditorStore.setSaveError('stale save error');
+    planEditorStore.initEditor([
+      makeTask({ id: 'T001', title: 'Original title' }),
+      makeTask({ id: 'T002' }),
+    ]);
+
+    expect(planEditorStore.get().tasks[0]?.title).toBe('Original title');
+    expect(planEditorStore.get()).toMatchObject({
+      cursor: 0,
+      dirty: false,
+      runtimeRichMode: true,
+      saveError: null,
     });
-
-    it('sets tasks correctly', () => {
-      const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
-      planEditorStore.initEditor(tasks);
-      expect(planEditorStore.get().tasks).toEqual(tasks);
-    });
-
-    it('does not retain the caller-owned task array', () => {
-      const tasks = [makeTask({ id: 'T001', title: 'Original title' })];
-      planEditorStore.initEditor(tasks);
-
-      tasks[0] = makeTask({ id: 'T001', title: 'Mutated outside store' });
-
-      expect(planEditorStore.get().tasks[0]?.title).toBe('Original title');
-    });
-
-    it('preserves runtime rich mode while loading tasks', () => {
-      const tasks = [makeTask({ id: 'T001' })];
-      planEditorStore.setRuntimeRichMode(true);
-      planEditorStore.initEditor(tasks);
-      expect(planEditorStore.get().runtimeRichMode).toBe(true);
-    });
+    expect(planEditorStore.get().expandedIds.size).toBe(0);
   });
 
-  describe('moveCursor', () => {
-    it('increments cursor on down, clamped at tasks.length - 1', () => {
-      const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
-      planEditorStore.initEditor(tasks);
-      planEditorStore.moveCursor('down');
-      expect(planEditorStore.get().cursor).toBe(1);
-      planEditorStore.moveCursor('down');
-      expect(planEditorStore.get().cursor).toBe(1);
+  it('edits tasks as dirty snapshots, clears stale save state, and marks saved after persistence', () => {
+    const task = makeTask({ id: 'T001', title: 'Original title' });
+    const edited = { ...task, title: 'Edited title' };
+
+    planEditorStore.initEditor([task]);
+    planEditorStore.setReviewMetadata([{ taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' }]);
+    planEditorStore.setSaveError('old parse error');
+    planEditorStore.setTasks([edited]);
+    edited.title = 'Mutated after edit';
+
+    expect(planEditorStore.get().tasks[0]?.title).toBe('Edited title');
+    expect(planEditorStore.get()).toMatchObject({
+      dirty: true,
+      saveError: null,
+    });
+    expect(planEditorStore.get().reviewMetadata.size).toBe(0);
+
+    planEditorStore.markSaved();
+    planEditorStore.setSaveError('transient disk error');
+    planEditorStore.markSaved();
+
+    expect(planEditorStore.get()).toMatchObject({
+      dirty: false,
+      saveError: null,
     });
 
-    it('decrements cursor on up, clamped at 0', () => {
-      const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
-      planEditorStore.initEditor(tasks);
-      planEditorStore.moveCursor('up');
-      expect(planEditorStore.get().cursor).toBe(0);
-      planEditorStore.moveCursor('down');
-      planEditorStore.moveCursor('up');
-      expect(planEditorStore.get().cursor).toBe(0);
-    });
-
-    it('is a no-op when tasks is empty', () => {
-      expect(planEditorStore.get().tasks).toHaveLength(0);
-      planEditorStore.moveCursor('down');
-      expect(planEditorStore.get().cursor).toBe(0);
-      planEditorStore.moveCursor('up');
-      expect(planEditorStore.get().cursor).toBe(0);
-    });
+    planEditorStore.setTasks([{ ...task, title: 'Edited title' }]);
+    expect(planEditorStore.get().dirty).toBe(false);
   });
 
-  describe('setTasks', () => {
-    it('replaces the task list and sets dirty to true', () => {
-      const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
-      planEditorStore.setTasks(tasks);
-      expect(planEditorStore.get().tasks).toEqual(tasks);
-      expect(planEditorStore.get().dirty).toBe(true);
-    });
+  it('clears review metadata when renumbered tasks reuse IDs for different work', () => {
+    const first = makeTask({ id: 'T001', title: 'First task', file: 'src/first.ts' });
+    const second = makeTask({ id: 'T002', title: 'Second task', file: 'src/second.ts' });
+    planEditorStore.initEditor([first, second]);
+    planEditorStore.setReviewMetadata([
+      { taskId: 'T001', workerProfile: 'local-qwen', contextFit: 'fits' },
+      { taskId: 'T002', workerProfile: 'frontier', contextFit: 'tight' },
+    ]);
 
-    it('does not retain caller-owned task objects', () => {
-      const task = makeTask({ id: 'T001', title: 'Original title' });
-      const tasks = [task];
-      planEditorStore.setTasks(tasks);
+    planEditorStore.setTasks([
+      { ...second, id: taskId('T001') },
+      { ...first, id: taskId('T002') },
+    ]);
 
-      task.title = 'Mutated outside store';
-
-      expect(planEditorStore.get().tasks[0]?.title).toBe('Original title');
-    });
-
-    it('does not mark dirty when the task list is unchanged', () => {
-      const tasks = [makeTask({ id: 'T001' })];
-      planEditorStore.initEditor(tasks);
-      planEditorStore.setTasks(tasks);
-      expect(planEditorStore.get().dirty).toBe(false);
-    });
-
-    it('clears stale save errors after a successful task edit', () => {
-      const task = makeTask({ id: 'T001' });
-      planEditorStore.initEditor([task]);
-      planEditorStore.setSaveError('old parse error');
-      planEditorStore.setTasks([{ ...task, title: 'Edited title' }]);
-      expect(planEditorStore.get().saveError).toBeNull();
-    });
-
-    it('clears review metadata when an edit changes a task with the same ID', () => {
-      const task = makeTask({ id: 'T001', title: 'Original title' });
-      planEditorStore.initEditor([task]);
-      planEditorStore.setReviewMetadata([{ taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' }]);
-
-      planEditorStore.setTasks([{ ...task, title: 'Edited title' }]);
-
-      expect(planEditorStore.get().reviewMetadata.size).toBe(0);
-    });
-
-    it('clears review metadata when renumbered tasks reuse IDs for different work', () => {
-      const first = makeTask({ id: 'T001', title: 'First task', file: 'src/first.ts' });
-      const second = makeTask({ id: 'T002', title: 'Second task', file: 'src/second.ts' });
-      planEditorStore.initEditor([first, second]);
-      planEditorStore.setReviewMetadata([
-        { taskId: 'T001', workerProfile: 'local-qwen', contextFit: 'fits' },
-        { taskId: 'T002', workerProfile: 'frontier', contextFit: 'tight' },
-      ]);
-
-      planEditorStore.setTasks([
-        { ...second, id: taskId('T001') },
-        { ...first, id: taskId('T002') },
-      ]);
-
-      expect(planEditorStore.get().reviewMetadata.size).toBe(0);
-    });
+    expect(planEditorStore.get().reviewMetadata.size).toBe(0);
   });
 
-  describe('toggleExpand', () => {
-    it('adds an ID not in the set', () => {
-      planEditorStore.toggleExpand('T001');
-      expect(planEditorStore.get().expandedIds.has('T001')).toBe(true);
-    });
+  it('keeps the cursor within the available task list while moving or jumping', () => {
+    planEditorStore.initEditor([
+      makeTask({ id: 'T001' }),
+      makeTask({ id: 'T002' }),
+      makeTask({ id: 'T003' }),
+    ]);
 
-    it('removes an ID already in the set', () => {
-      planEditorStore.toggleExpand('T001');
-      planEditorStore.toggleExpand('T001');
-      expect(planEditorStore.get().expandedIds.has('T001')).toBe(false);
-    });
+    planEditorStore.moveCursor('up');
+    expect(planEditorStore.get().cursor).toBe(0);
 
+    planEditorStore.moveCursor('down');
+    planEditorStore.moveCursor('down');
+    planEditorStore.moveCursor('down');
+    expect(planEditorStore.get().cursor).toBe(2);
+
+    planEditorStore.setCursor(-1);
+    expect(planEditorStore.get().cursor).toBe(0);
+
+    planEditorStore.setCursor(999);
+    expect(planEditorStore.get().cursor).toBe(2);
+
+    planEditorStore.initEditor([]);
+    planEditorStore.moveCursor('down');
+    planEditorStore.setCursor(5);
+    expect(planEditorStore.get().cursor).toBe(0);
   });
 
-  describe('setCursor', () => {
-    it('sets cursor to an absolute index', () => {
-      const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' }), makeTask({ id: 'T003' })];
-      planEditorStore.initEditor(tasks);
-      planEditorStore.setCursor(2);
-      expect(planEditorStore.get().cursor).toBe(2);
-    });
+  it('toggles expanded task details open and closed', () => {
+    planEditorStore.toggleExpand('T001');
+    expect(planEditorStore.get().expandedIds.has('T001')).toBe(true);
 
-    it('clamps negative index to 0', () => {
-      const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
-      planEditorStore.initEditor(tasks);
-      planEditorStore.setCursor(-1);
-      expect(planEditorStore.get().cursor).toBe(0);
-    });
-
-    it('clamps out-of-range index to tasks.length - 1', () => {
-      const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' }), makeTask({ id: 'T003' })];
-      planEditorStore.initEditor(tasks);
-      planEditorStore.setCursor(999);
-      expect(planEditorStore.get().cursor).toBe(2);
-    });
-
-    it('sets cursor to 0 on empty list', () => {
-      planEditorStore.setCursor(0);
-      expect(planEditorStore.get().cursor).toBe(0);
-    });
+    planEditorStore.toggleExpand('T001');
+    expect(planEditorStore.get().expandedIds.has('T001')).toBe(false);
   });
 
-  describe('setRuntimeRichMode', () => {
-    it('sets runtimeRichMode to true and back to false', () => {
-      planEditorStore.setRuntimeRichMode(true);
-      expect(planEditorStore.get().runtimeRichMode).toBe(true);
-      planEditorStore.setRuntimeRichMode(false);
-      expect(planEditorStore.get().runtimeRichMode).toBe(false);
-    });
-  });
+  it('refreshes review metadata as a full cloned snapshot without dirtying the plan', () => {
+    const conflict: NonNullable<PlanTaskReviewMetadata['conflict']> = {
+      kind: 'current-task-conflict',
+      files: ['src/a.ts'],
+    };
+    const metadata: PlanTaskReviewMetadata = {
+      taskId: 'T001',
+      workerProfile: 'cheap-cloud',
+      selectedCostTier: 'cheap',
+      costPosture: 'Selected cheap cost tier via cheapest-capable routing',
+      contextFit: 'overflow',
+      conflict,
+      checkpoint: 'pre-task T001',
+      stale: true,
+      validationStatus: 'warn',
+    };
 
-  describe('setSaveError', () => {
-    it('sets the error string', () => {
-      planEditorStore.setSaveError('disk full');
-      expect(planEditorStore.get().saveError).toBe('disk full');
-    });
-
-    it('clears the error when set to null', () => {
-      planEditorStore.setSaveError('disk full');
-      planEditorStore.setSaveError(null);
-      expect(planEditorStore.get().saveError).toBeNull();
-    });
-  });
-
-  describe('markSaved', () => {
-    it('sets dirty to false and saveError to null', () => {
-      const tasks = [makeTask({ id: 'T001' })];
-      planEditorStore.setTasks(tasks);
-      planEditorStore.setSaveError('some error');
-      planEditorStore.markSaved();
-      expect(planEditorStore.get().dirty).toBe(false);
-      expect(planEditorStore.get().saveError).toBeNull();
-    });
-  });
-
-  describe('review metadata', () => {
-    it('stores routing and conflict metadata without marking the editor dirty', () => {
-      const task = makeTask({ id: 'T001' });
-      planEditorStore.initEditor([task]);
-
-      planEditorStore.setReviewMetadata([
-        {
-          taskId: 'T001',
-          workerProfile: 'local-qwen',
-          selectedCostTier: 'local',
-          costPosture: 'Selected local cost tier via cheapest-capable routing',
-          contextFit: 'overflow',
-          estimatedTokens: 9000,
-          contextLength: 8192,
-          risk: 'high',
-          conflict: { kind: 'current-task-conflict', files: ['src/hello.ts'], affectedTaskIds: ['T001'] },
-        },
-      ]);
-
-      const metadata = planEditorStore.get().reviewMetadata.get('T001');
-      expect(metadata).toMatchObject({
-        workerProfile: 'local-qwen',
-        selectedCostTier: 'local',
-        costPosture: 'Selected local cost tier via cheapest-capable routing',
-        contextFit: 'overflow',
-        conflict: { files: ['src/hello.ts'] },
-      });
-      expect(planEditorStore.get().dirty).toBe(false);
-    });
-
-    it('does not retain caller-owned review metadata', () => {
-      const metadata = {
+    planEditorStore.setReviewMetadata([
+      metadata,
+      { taskId: 'T002', workerProfile: 'frontier', contextFit: 'tight' },
+    ]);
+    planEditorStore.setReviewMetadata([
+      {
         taskId: 'T001',
-        conflict: { kind: 'future-task-stale-input', files: ['src/a.ts'] },
-      };
-
-      planEditorStore.setReviewMetadata([metadata]);
-      metadata.conflict.files.push('src/b.ts');
-
-      expect(planEditorStore.get().reviewMetadata.get('T001')?.conflict?.files).toEqual(['src/a.ts']);
-    });
-
-    it('preserves review metadata when the same tasks are reloaded into the editor', () => {
-      const tasks = [makeTask({ id: 'T001' })];
-      planEditorStore.initEditor(tasks);
-      planEditorStore.setReviewMetadata([{ taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' }]);
-      planEditorStore.initEditor(tasks);
-      expect(planEditorStore.get().reviewMetadata.get('T001')?.workerProfile).toBe('cheap-cloud');
-    });
-
-    it('clears review metadata when loaded tasks differ from the reviewed plan', () => {
-      const reviewed = makeTask({ id: 'T001', title: 'Reviewed title' });
-      planEditorStore.initEditor([reviewed]);
-      planEditorStore.setReviewMetadata([{ taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' }]);
-
-      planEditorStore.initEditor([{ ...reviewed, title: 'Externally edited title' }]);
-
-      expect(planEditorStore.get().reviewMetadata.size).toBe(0);
-    });
-
-    it('replaces stale warning fields on full review metadata refresh', () => {
-      planEditorStore.setReviewMetadata([
-        {
-          taskId: 'T001',
-          workerProfile: 'cheap-cloud',
-          selectedCostTier: 'cheap',
-          costPosture: 'Selected cheap cost tier via cheapest-capable routing',
-          contextFit: 'overflow',
-          conflict: { kind: 'current-task-conflict', files: ['src/a.ts'] },
-          checkpoint: 'pre-task T001',
-          stale: true,
-          validationStatus: 'warn',
-        },
-      ]);
-
-      planEditorStore.setReviewMetadata([
-        {
-          taskId: 'T001',
-          workerProfile: 'local-qwen',
-          selectedCostTier: 'local',
-          costPosture: 'Selected local cost tier via cheapest-capable routing',
-          contextFit: 'fits',
-          estimatedTokens: 1200,
-          contextLength: 32768,
-          routingReason: 'rerouted to local-qwen',
-          risk: 'low',
-        },
-      ]);
-
-      expect(planEditorStore.get().reviewMetadata.get('T001')).toMatchObject({
         workerProfile: 'local-qwen',
         selectedCostTier: 'local',
         costPosture: 'Selected local cost tier via cheapest-capable routing',
@@ -303,140 +156,93 @@ describe('planEditorStore', () => {
         contextLength: 32768,
         routingReason: 'rerouted to local-qwen',
         risk: 'low',
-      });
-      expect(planEditorStore.get().reviewMetadata.get('T001')).not.toMatchObject({
-        conflict: { files: ['src/a.ts'] },
-        checkpoint: 'pre-task T001',
-        stale: true,
-        validationStatus: 'warn',
-      });
+        conflict: { kind: 'future-task-stale-input', files: ['src/b.ts'] },
+      },
+    ]);
+    conflict.files.push('src/mutated.ts');
+
+    expect(planEditorStore.get().reviewMetadata.get('T001')).toMatchObject({
+      workerProfile: 'local-qwen',
+      selectedCostTier: 'local',
+      contextFit: 'fits',
+      estimatedTokens: 1200,
+      contextLength: 32768,
+      routingReason: 'rerouted to local-qwen',
+      risk: 'low',
+      conflict: { files: ['src/b.ts'] },
     });
-
-    it('removes tasks omitted from a full review metadata refresh', () => {
-      planEditorStore.setReviewMetadata([
-        { taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' },
-        { taskId: 'T002', workerProfile: 'frontier', contextFit: 'tight' },
-      ]);
-
-      planEditorStore.setReviewMetadata([
-        { taskId: 'T001', workerProfile: 'local-qwen', contextFit: 'fits' },
-      ]);
-
-      expect(planEditorStore.get().reviewMetadata.has('T001')).toBe(true);
-      expect(planEditorStore.get().reviewMetadata.has('T002')).toBe(false);
+    expect(planEditorStore.get().reviewMetadata.get('T001')).not.toMatchObject({
+      checkpoint: 'pre-task T001',
+      stale: true,
+      validationStatus: 'warn',
     });
+    expect(planEditorStore.get().reviewMetadata.has('T002')).toBe(false);
+    expect(planEditorStore.get().dirty).toBe(false);
+  });
 
-    it('upserts one task review without removing metadata for another task', () => {
-      planEditorStore.setReviewMetadata([
-        { taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' },
-        { taskId: 'T002', workerProfile: 'frontier', contextFit: 'tight' },
-      ]);
+  it('preserves review metadata for the same plan and clears it when plan content changes', () => {
+    const reviewed = makeTask({ id: 'T001', title: 'Reviewed title' });
 
-      planEditorStore.upsertTaskReviewMetadata({ taskId: 'T001', contextFit: 'overflow', risk: 'high' });
+    planEditorStore.initEditor([reviewed]);
+    planEditorStore.setReviewMetadata([{ taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' }]);
+    planEditorStore.initEditor([reviewed]);
 
-      expect(planEditorStore.get().reviewMetadata.get('T001')).toMatchObject({
-        workerProfile: 'cheap-cloud',
-        contextFit: 'overflow',
-        risk: 'high',
-      });
-      expect(planEditorStore.get().reviewMetadata.get('T002')).toMatchObject({
-        workerProfile: 'frontier',
-        contextFit: 'tight',
-      });
+    expect(planEditorStore.get().reviewMetadata.get('T001')?.workerProfile).toBe('cheap-cloud');
+
+    planEditorStore.initEditor([{ ...reviewed, title: 'Externally edited title' }]);
+
+    expect(planEditorStore.get().reviewMetadata.size).toBe(0);
+  });
+
+  it('upserts one task review without removing metadata for another task', () => {
+    planEditorStore.setReviewMetadata([
+      { taskId: 'T001', workerProfile: 'cheap-cloud', contextFit: 'fits' },
+      { taskId: 'T002', workerProfile: 'frontier', contextFit: 'tight' },
+    ]);
+
+    planEditorStore.upsertTaskReviewMetadata({ taskId: 'T001', contextFit: 'overflow', risk: 'high' });
+
+    expect(planEditorStore.get().reviewMetadata.get('T001')).toMatchObject({
+      workerProfile: 'cheap-cloud',
+      contextFit: 'overflow',
+      risk: 'high',
+    });
+    expect(planEditorStore.get().reviewMetadata.get('T002')).toMatchObject({
+      workerProfile: 'frontier',
+      contextFit: 'tight',
     });
   });
 
-  describe('__testReset', () => {
-    it('returns store to initial state', () => {
-      const tasks = [makeTask({ id: 'T001' })];
-      planEditorStore.initEditor(tasks);
-      planEditorStore.moveCursor('down');
-      planEditorStore.toggleExpand('T001');
-      planEditorStore.setRuntimeRichMode(true);
-      planEditorStore.setSaveError('err');
-      planEditorStore.__testReset();
-      expect(planEditorStore.get()).toMatchObject({
-        tasks: [],
-        cursor: 0,
-        dirty: false,
-        runtimeRichMode: false,
-        saveError: null,
-      });
-      expect(planEditorStore.get().expandedIds.size).toBe(0);
-      expect(planEditorStore.get().reviewMetadata.size).toBe(0);
-    });
+  it('flags tasks for regeneration without dirtying the plan', () => {
+    const first = makeTask({ id: 'T001' });
+    const second = makeTask({ id: 'T002' });
+    const third = makeTask({ id: 'T003' });
+    planEditorStore.initEditor([first, second, third]);
+
+    planEditorStore.toggleFlag('T001');
+    planEditorStore.toggleFlag('T003');
+
+    expect(planEditorStore.get().dirty).toBe(false);
+    expect(planEditorStore.getFlaggedTasks().map(t => t.id)).toEqual(['T001', 'T003']);
+
+    planEditorStore.toggleFlag('T001');
+    expect(planEditorStore.getFlaggedTasks().map(t => t.id)).toEqual(['T003']);
+
+    planEditorStore.clearFlags();
+    expect(planEditorStore.getFlaggedTasks()).toEqual([]);
   });
 
-  describe('toggleFlag', () => {
-    it('adds an ID to flaggedIds', () => {
-      const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
-      planEditorStore.initEditor(tasks);
-      planEditorStore.toggleFlag('T001');
-      expect(planEditorStore.get().flaggedIds.has('T001')).toBe(true);
-      expect(planEditorStore.get().flaggedIds.has('T002')).toBe(false);
-    });
+  it('preserves flags only while the loaded plan is unchanged', () => {
+    const task = makeTask({ id: 'T001', title: 'Original' });
 
-    it('removes an ID when toggled again', () => {
-      const tasks = [makeTask({ id: 'T001' })];
-      planEditorStore.initEditor(tasks);
-      planEditorStore.toggleFlag('T001');
-      expect(planEditorStore.get().flaggedIds.has('T001')).toBe(true);
-      planEditorStore.toggleFlag('T001');
-      expect(planEditorStore.get().flaggedIds.has('T001')).toBe(false);
-    });
+    planEditorStore.initEditor([task]);
+    planEditorStore.toggleFlag('T001');
+    planEditorStore.initEditor([task]);
 
-    it('does not set dirty to true (flags are UI state)', () => {
-      planEditorStore.initEditor([makeTask({ id: 'T001' })]);
-      expect(planEditorStore.get().dirty).toBe(false);
-      planEditorStore.toggleFlag('T001');
-      expect(planEditorStore.get().dirty).toBe(false);
-    });
-  });
+    expect(planEditorStore.get().flaggedIds.has('T001')).toBe(true);
 
-  describe('clearFlags', () => {
-    it('empties the flaggedIds set', () => {
-      planEditorStore.initEditor([makeTask({ id: 'T001' }), makeTask({ id: 'T002' })]);
-      planEditorStore.toggleFlag('T001');
-      planEditorStore.toggleFlag('T002');
-      expect(planEditorStore.get().flaggedIds.size).toBe(2);
-      planEditorStore.clearFlags();
-      expect(planEditorStore.get().flaggedIds.size).toBe(0);
-    });
-  });
+    planEditorStore.initEditor([{ ...task, title: 'Changed' }]);
 
-  describe('getFlaggedTasks', () => {
-    it('returns only flagged tasks', () => {
-      const first = makeTask({ id: 'T001' });
-      const second = makeTask({ id: 'T002' });
-      const third = makeTask({ id: 'T003' });
-      planEditorStore.initEditor([first, second, third]);
-      planEditorStore.toggleFlag('T001');
-      planEditorStore.toggleFlag('T003');
-      const flagged = planEditorStore.getFlaggedTasks();
-      expect(flagged).toHaveLength(2);
-      expect(flagged.map(t => t.id)).toEqual(['T001', 'T003']);
-    });
-  });
-
-  describe('initEditor resets flaggedIds when tasks change', () => {
-    it('clears flaggedIds when tasks differ', () => {
-      const first = makeTask({ id: 'T001', title: 'Original' });
-      planEditorStore.initEditor([first]);
-      planEditorStore.toggleFlag('T001');
-      expect(planEditorStore.get().flaggedIds.has('T001')).toBe(true);
-
-      planEditorStore.initEditor([{ ...first, title: 'Changed' }]);
-      expect(planEditorStore.get().flaggedIds.size).toBe(0);
-    });
-
-    it('preserves flaggedIds when same tasks are reloaded', () => {
-      const tasks = [makeTask({ id: 'T001' })];
-      planEditorStore.initEditor(tasks);
-      planEditorStore.toggleFlag('T001');
-      expect(planEditorStore.get().flaggedIds.has('T001')).toBe(true);
-
-      planEditorStore.initEditor(tasks);
-      expect(planEditorStore.get().flaggedIds.has('T001')).toBe(true);
-    });
+    expect(planEditorStore.get().flaggedIds.size).toBe(0);
   });
 });

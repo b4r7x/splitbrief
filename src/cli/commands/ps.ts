@@ -7,6 +7,16 @@ import { checkServerStatus, readLockfile } from '../../engine/ipc/lockfile.js';
 import type { LockfileData } from '../../engine/ipc/lockfile.js';
 import { sessionsRoot } from '../../core/paths.js';
 
+export type PsDeps = {
+  readLockfile: (sessionDir: string) => Promise<LockfileData | null>;
+  checkServerStatus: typeof checkServerStatus;
+};
+
+const defaultDeps: PsDeps = {
+  readLockfile,
+  checkServerStatus,
+};
+
 type SessionRow = {
   sessionId: string;
   status: 'running' | 'exited' | 'crashed' | 'unknown';
@@ -28,8 +38,8 @@ function formatElapsed(startMs: number, endMs: number): string {
   return `${s}s`;
 }
 
-async function buildRow(sessDir: string, sessionId: string): Promise<SessionRow> {
-  const data: LockfileData | null = await readLockfile(sessDir);
+async function buildRow(sessDir: string, sessionId: string, deps: PsDeps): Promise<SessionRow> {
+  const data: LockfileData | null = await deps.readLockfile(sessDir);
 
   if (!data) {
     return {
@@ -44,7 +54,7 @@ async function buildRow(sessDir: string, sessionId: string): Promise<SessionRow>
     };
   }
 
-  const status = await checkServerStatus(sessDir);
+  const status = await deps.checkServerStatus(sessDir);
 
   let rowStatus: SessionRow['status'];
   if (status.alive) {
@@ -67,7 +77,10 @@ async function buildRow(sessDir: string, sessionId: string): Promise<SessionRow>
   };
 }
 
-export async function psCommand(opts: { projectDir: string }): Promise<void> {
+export async function psCommand(
+  opts: { projectDir: string },
+  deps: PsDeps = defaultDeps,
+): Promise<void> {
   assertNotWindows();
 
   const root = sessionsRoot(opts.projectDir);
@@ -85,7 +98,7 @@ export async function psCommand(opts: { projectDir: string }): Promise<void> {
   }
 
   const rows = await Promise.all(
-    entries.map((e) => buildRow(join(root, e.name), e.name)),
+    entries.map((e) => buildRow(join(root, e.name), e.name, deps)),
   );
 
   rows.sort((a, b) => b.startTimeMs - a.startTimeMs);

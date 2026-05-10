@@ -1,38 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
-import { RUNNER_KINDS } from './enums.js';
 import {
   GenerationCommonFields,
   createRunnerConfigSchema,
 } from './runner-fields.js';
 
 describe('createRunnerConfigSchema', () => {
-  it('creates a discriminated union covering all runner kinds', () => {
+  it('accepts the runner config shapes users can put in config files', () => {
     const schema = createRunnerConfigSchema(GenerationCommonFields);
-    for (const kind of RUNNER_KINDS) {
-      const minimalValid = buildMinimalConfig(kind);
-      const result = schema.safeParse(minimalValid);
-      expect(result.success, `kind '${kind}' should parse: ${JSON.stringify(result)}`).toBe(true);
-    }
+
+    expect([
+      schema.safeParse({ kind: 'cli', tool: 'codex', model: 'gpt-5', args: ['--quiet'], outputFormat: 'jsonl' }).success,
+      schema.safeParse({ kind: 'api', provider: 'openai', apiBase: 'https://api.openai.com/v1', apiKey: 'env:OPENAI_API_KEY', model: 'gpt-5-mini' }).success,
+      schema.safeParse({ kind: 'shell', command: './run-planner', args: ['--json'], model: 'local-shell' }).success,
+      schema.safeParse({ kind: 'agent', command: 'my-agent', capabilities: { supportsEffort: true }, model: 'agent-default' }).success,
+      schema.safeParse({ kind: 'agent-sdk', apiKey: 'env:ANTHROPIC_API_KEY', model: 'claude-sonnet-4-5' }).success,
+    ]).toEqual([true, true, true, true, true]);
   });
 
-  it('rejects unknown kind values', () => {
+  it('rejects unknown and incomplete runner config payloads', () => {
     const schema = createRunnerConfigSchema(GenerationCommonFields);
-    const result = schema.safeParse({ kind: 'unknown', model: 'x' });
-    expect(result.success).toBe(false);
+    expect(schema.safeParse({ kind: 'unknown', model: 'x' }).success).toBe(false);
+    expect(schema.safeParse({ kind: 'shell', model: 'x' }).success).toBe(false);
+    expect(schema.safeParse({ kind: 'api', provider: 'openai', model: 'x' }).success).toBe(false);
   });
 
-  it('respects common field overrides (e.g., optional model)', () => {
-    const optionalModelFields = {
-      ...GenerationCommonFields,
-      model: z.string().min(1).optional(),
-    };
-    const schema = createRunnerConfigSchema(optionalModelFields);
-    const result = schema.safeParse({ kind: 'cli', tool: 'claude-code' });
-    expect(result.success).toBe(true);
-  });
-
-  it('enforces strict mode (rejects extra fields)', () => {
+  it('rejects unknown keys so misspelled config does not silently pass', () => {
     const schema = createRunnerConfigSchema(GenerationCommonFields);
     const result = schema.safeParse({
       kind: 'cli',
@@ -43,20 +35,3 @@ describe('createRunnerConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 });
-
-function buildMinimalConfig(kind: string): Record<string, unknown> {
-  switch (kind) {
-    case 'cli':
-      return { kind: 'cli', tool: 'claude-code', model: 'test' };
-    case 'api':
-      return { kind: 'api', provider: 'ollama', apiBase: 'http://localhost:11434/v1', model: 'test' };
-    case 'shell':
-      return { kind: 'shell', command: 'my-shell', model: 'test' };
-    case 'agent':
-      return { kind: 'agent', command: 'my-agent', model: 'test' };
-    case 'agent-sdk':
-      return { kind: 'agent-sdk', model: 'test' };
-    default:
-      throw new Error(`Unknown kind: ${kind}`);
-  }
-}

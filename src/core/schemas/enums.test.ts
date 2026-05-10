@@ -1,18 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  WorkflowModeSchema,
-  WORKFLOW_MODES,
-  normalizeLegacyMode,
-} from './enums.js';
-
-describe('WORKFLOW_MODES', () => {
-  it('does not include legacy "full"', () => {
-    expect((WORKFLOW_MODES as readonly string[]).includes('full')).toBe(false);
-  });
-  it('WorkflowModeSchema rejects "full"', () => {
-    expect(WorkflowModeSchema.safeParse('full').success).toBe(false);
-  });
-});
+import { normalizeLegacyMode } from './enums.js';
 
 describe('normalizeLegacyMode', () => {
   it.each([

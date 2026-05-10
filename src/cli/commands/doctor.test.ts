@@ -63,6 +63,15 @@ async function runDoctor(args: string[]): Promise<void> {
   await program.parseAsync(['node', 'diptych', 'doctor', ...args]);
 }
 
+function captureStdout(): string[] {
+  const writes: string[] = [];
+  vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+    writes.push(String(chunk));
+    return true;
+  });
+  return writes;
+}
+
 describe('doctor command', () => {
   it('prints human readiness without creating workflow artifacts', async () => {
     initGitRepo(tmp);
@@ -85,11 +94,7 @@ describe('doctor command', () => {
   it('emits JSON with warning and info severities', async () => {
     initGitRepo(tmp);
     writeConfig(tmp);
-    const writes: string[] = [];
-    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
-      writes.push(String(chunk));
-      return true;
-    });
+    const writes = captureStdout();
 
     await runDoctor(['--project', tmp, '--json']);
 
@@ -105,11 +110,7 @@ describe('doctor command', () => {
 
   it('emits JSON and exits non-zero for missing config without writing setup files', async () => {
     initGitRepo(tmp);
-    const writes: string[] = [];
-    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
-      writes.push(String(chunk));
-      return true;
-    });
+    const writes = captureStdout();
 
     let captured: unknown;
     try {
@@ -141,11 +142,7 @@ describe('doctor command', () => {
       '  model: qwen2.5-coder:7b',
     ].join('\n');
     const configFile = writeConfig(tmp, badConfig);
-    const writes: string[] = [];
-    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
-      writes.push(String(chunk));
-      return true;
-    });
+    const writes = captureStdout();
 
     let captured: unknown;
     try {
@@ -163,11 +160,7 @@ describe('doctor command', () => {
 
   it('reports a non-git project as blocked', async () => {
     writeConfig(tmp);
-    const writes: string[] = [];
-    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
-      writes.push(String(chunk));
-      return true;
-    });
+    const writes = captureStdout();
 
     let captured: unknown;
     try {

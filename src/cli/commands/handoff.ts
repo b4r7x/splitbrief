@@ -11,7 +11,19 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 const VALID_MODES = ['default', 'append', 'overwrite'] as const;
 type WriteMode = (typeof VALID_MODES)[number];
 
-export function registerHandoffCommand(program: Command): void {
+export type HandoffDeps = {
+  readActive: typeof readActive;
+  listCustomRenderers: typeof listCustomRenderers;
+  writeHandoffPack: typeof writeHandoffPack;
+};
+
+const defaultDeps: HandoffDeps = {
+  readActive,
+  listCustomRenderers,
+  writeHandoffPack,
+};
+
+export function registerHandoffCommand(program: Command, deps: HandoffDeps = defaultDeps): void {
   program
     .command('handoff [target]')
     .description('Export a Handoff Pack for an external coding agent')
@@ -34,7 +46,7 @@ export function registerHandoffCommand(program: Command): void {
             for (const t of HANDOFF_TARGETS) {
               console.log(`  ${t}`);
             }
-            const custom = listCustomRenderers(projectDir);
+            const custom = deps.listCustomRenderers(projectDir);
             if (custom.length > 0) {
               console.log('Custom renderers:');
               for (const name of custom) {
@@ -44,7 +56,7 @@ export function registerHandoffCommand(program: Command): void {
             return;
           }
 
-          const sessionId = opts.session ?? readActive(projectDir);
+          const sessionId = opts.session ?? deps.readActive(projectDir);
           if (!sessionId) {
             throw cliError(
               'No session specified and no active session found. Use --session <id>.',
@@ -63,10 +75,10 @@ export function registerHandoffCommand(program: Command): void {
           const outDir = opts.out ?? join(projectDir, 'handoff', target);
 
           const selectedTaskIds = opts.task
-            ? opts.task.split(',').map(s => s.trim())
+            ? opts.task.split(',').map((s) => s.trim())
             : undefined;
 
-          const result = await writeHandoffPack({
+          const result = await deps.writeHandoffPack({
             projectDir,
             sessionId,
             target,

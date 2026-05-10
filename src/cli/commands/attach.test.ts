@@ -49,7 +49,7 @@ describe('attachCommand', () => {
     });
   });
 
-  it('calls showCrashDiagnostic and throws when server status is not alive (crashed)', async () => {
+  it('exits non-zero when the requested session is not alive', async () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
 
     const sessDir = join(testDir, '.diptych', 'sessions', 'my-session');

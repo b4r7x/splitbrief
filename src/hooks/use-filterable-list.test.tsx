@@ -1,62 +1,91 @@
-import { describe, expect, it, vi } from 'vitest';
+import { useState } from 'react';
+import { describe, expect, it } from 'vitest';
 import { Text } from 'ink';
 import { useFilterableList } from './use-filterable-list.js';
 import { renderFeature, tick } from '../../testing/helpers/ink.js';
 
+const DOWN = '\u001b[B';
+const ENTER = '\r';
+const ESC = '\u001b';
+const BACKSPACE = '\x7f';
+
 function Harness({
   items,
   initialIndex,
-  onSelect,
 }: {
   items: string[];
   initialIndex?: number | undefined;
-  onSelect: (item: string) => void;
 }) {
+  const [chosen, setChosen] = useState('none');
+  const [closed, setClosed] = useState(false);
   const list = useFilterableList({
     items,
     initialIndex,
-    onSelect,
+    onSelect: setChosen,
+    onClose: () => setClosed(true),
     filterFn: (item, query) => item.includes(query),
   });
-  return <Text>{list.selectedIndex}</Text>;
+  const current = list.filtered[list.selectedIndex] ?? 'none';
+  return (
+    <Text>
+      {`filter:${list.filter}|current:${current}|chosen:${chosen}|closed:${closed ? 'yes' : 'no'}`}
+    </Text>
+  );
 }
 
 describe('useFilterableList', () => {
-  it('clamps initial negative and oversized indexes', async () => {
-    const negativeUi = renderFeature(
-      <Harness items={['a', 'b']} initialIndex={-5} onSelect={vi.fn()} />,
-    );
-    await tick();
+  it('filters, navigates, selects, clears input, and closes from keyboard input', async () => {
+    const ui = renderFeature(<Harness items={['alpha', 'beta', 'gamma']} />);
+    await tick(20);
 
-    expect(negativeUi.lastFrame()).toBe('0');
-    negativeUi.unmount();
+    expect(ui.lastFrame()).toContain('filter:|current:alpha|chosen:none|closed:no');
 
-    const oversizedUi = renderFeature(
-      <Harness items={['a', 'b']} initialIndex={10} onSelect={vi.fn()} />,
-    );
-    await tick();
+    ui.stdin.write(DOWN);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('current:beta');
 
-    expect(oversizedUi.lastFrame()).toBe('1');
-    oversizedUi.unmount();
+    ui.stdin.write(ENTER);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('chosen:beta');
+
+    ui.stdin.write('g');
+    await tick(20);
+    expect(ui.lastFrame()).toContain('filter:g|current:gamma');
+
+    ui.stdin.write(ENTER);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('chosen:gamma');
+
+    ui.stdin.write(BACKSPACE);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('filter:|current:alpha');
+
+    ui.stdin.write(ESC);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('closed:yes');
+
+    ui.unmount();
   });
 
-  it('reports a safe index for empty and shrinking lists', async () => {
-    const ui = renderFeature(
-      <Harness items={['a', 'b', 'c']} initialIndex={2} onSelect={vi.fn()} />,
-    );
-    await tick();
+  it('keeps the visible selection valid when the item list changes', async () => {
+    const ui = renderFeature(<Harness items={['alpha', 'beta']} initialIndex={10} />);
+    await tick(20);
 
-    expect(ui.lastFrame()).toBe('2');
+    expect(ui.lastFrame()).toContain('current:beta');
 
-    ui.rerender(<Harness items={[]} initialIndex={2} onSelect={vi.fn()} />);
-    await tick();
+    ui.rerender(<Harness items={[]} initialIndex={10} />);
+    await tick(20);
 
-    expect(ui.lastFrame()).toBe('0');
+    expect(ui.lastFrame()).toContain('current:none|chosen:none');
 
-    ui.rerender(<Harness items={['only']} initialIndex={2} onSelect={vi.fn()} />);
-    await tick();
+    ui.rerender(<Harness items={['solo']} initialIndex={10} />);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('current:solo');
 
-    expect(ui.lastFrame()).toBe('0');
+    ui.stdin.write(ENTER);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('chosen:solo');
+
     ui.unmount();
   });
 });

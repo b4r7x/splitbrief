@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { simpleGit, type SimpleGit } from 'simple-git';
+import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
   createWorktree,
   listWorktrees,
@@ -16,14 +17,8 @@ let repoDir: string;
 let git: SimpleGit;
 
 async function initRepo(dir: string): Promise<SimpleGit> {
-  const g = simpleGit(dir);
-  await g.init();
-  await g.addConfig('user.email', 'test@test.test');
-  await g.addConfig('user.name', 'Test');
-  await writeFile(join(dir, 'README.md'), '# test\n');
-  await g.add('README.md');
-  await g.commit('initial commit');
-  return g;
+  createTestGitRepo(dir, { 'README.md': '# test\n' });
+  return simpleGit(dir);
 }
 
 beforeEach(async () => {
