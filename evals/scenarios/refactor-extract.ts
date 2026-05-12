@@ -1,28 +1,11 @@
-import { execSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import type { EvalScenario, QualityCheck, QualityCheckResult } from './types.js';
+import { resolve } from 'node:path';
+import { readSourceFiles, runNpmTest } from './shared.js';
+import type { EvalScenario, QualityCheck } from './types.js';
 
 type SourceFile = {
   path: string;
   content: string;
 };
-
-function sourceFiles(dir: string): SourceFile[] {
-  const srcDir = join(dir, 'src');
-  if (!existsSync(srcDir)) return [];
-
-  return readdirSync(srcDir, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts'))
-    .map((entry) => {
-      const parentPath = entry.parentPath;
-      const fullPath = join(parentPath, entry.name);
-      return {
-        path: fullPath.slice(dir.length + 1),
-        content: readFileSync(fullPath, 'utf-8'),
-      };
-    });
-}
 
 function findFunctionBody(content: string, functionName: string): string | null {
   const declaration = new RegExp(`(?:function|const)\\s+${functionName}\\b`);
@@ -57,20 +40,11 @@ function processQueueFile(files: SourceFile[]): SourceFile | null {
   return files.find((file) => /\bprocessQueue\b/.test(file.content)) ?? null;
 }
 
-function testsPass(dir: string): QualityCheckResult {
-  try {
-    execSync('npm test', { cwd: dir, stdio: 'pipe', timeout: 30_000 });
-    return { passed: true, detail: 'npm test passed' };
-  } catch {
-    return { passed: false, detail: 'npm test failed' };
-  }
-}
-
 const qualityChecks: QualityCheck[] = [
   {
     name: 'retryWithBackoff function exists',
     check: async (dir) => {
-      const file = retryWithBackoffExists(sourceFiles(dir));
+      const file = retryWithBackoffExists(readSourceFiles(dir));
       return file
         ? { passed: true, detail: `Found retryWithBackoff in ${file.path}` }
         : { passed: false, detail: 'No retryWithBackoff function found in src' };
@@ -79,7 +53,7 @@ const qualityChecks: QualityCheck[] = [
   {
     name: 'processQueue uses retryWithBackoff',
     check: async (dir) => {
-      const file = processQueueFile(sourceFiles(dir));
+      const file = processQueueFile(readSourceFiles(dir));
       if (!file) return { passed: false, detail: 'processQueue not found' };
 
       const body = findFunctionBody(file.content, 'processQueue');
@@ -92,12 +66,12 @@ const qualityChecks: QualityCheck[] = [
   },
   {
     name: 'tests pass after refactor',
-    check: async (dir) => testsPass(dir),
+    check: async (dir) => runNpmTest(dir),
   },
   {
     name: 'retry logic is extracted rather than duplicated',
     check: async (dir) => {
-      const file = processQueueFile(sourceFiles(dir));
+      const file = processQueueFile(readSourceFiles(dir));
       if (!file) return { passed: false, detail: 'processQueue not found' };
 
       const body = findFunctionBody(file.content, 'processQueue');
@@ -118,6 +92,5 @@ export const refactorExtractScenario: EvalScenario = {
   name: 'Extract function',
   feature: 'Extract the retry logic from processQueue into a standalone retryWithBackoff function',
   fixtureDir: resolve(import.meta.dirname, '../fixtures/refactor-extract'),
-  mode: 'quick',
   qualityChecks,
 };

@@ -61,12 +61,8 @@ export function addUsageAndSave(
   return next;
 }
 
-export type PlanApprovedBusContext = {
-  bus: EventBus;
-};
-
-export function publishPlanApproved(state: WorkflowState, ctx: PlanApprovedBusContext): WorkflowState {
-  publishPlannerStatus(ctx.bus, state, 'running');
-  publishEvent(ctx.bus, { type: 'plan_approved', ts: Date.now(), phase: state.phase });
+export function publishPlanApproved(state: WorkflowState, bus: EventBus): WorkflowState {
+  publishPlannerStatus(bus, state, 'running');
+  publishEvent(bus, { type: 'plan_approved', ts: Date.now(), phase: state.phase });
   return state;
 }

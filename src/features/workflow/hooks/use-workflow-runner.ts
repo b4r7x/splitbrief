@@ -20,8 +20,10 @@ import type { WorkflowSinks } from '../../../engine/orchestrator/types.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { createJsonlSink } from '../../../engine/events/sinks/jsonl.js';
 import { createTuiSink } from '../tui-sink.js';
+import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
+import type { StreamingSink } from '../../../engine/orchestrator/task/streaming-feed.js';
 import { publishRecoveryPrompted } from '../../../engine/orchestrator/events.js';
-import { applyRecoveryAction } from '../../../engine/orchestrator/recovery/recovery.js';
+import { applyRecoveryAction } from '../../../engine/orchestrator/recovery/actions.js';
 import { buildSummary } from '../../../engine/orchestrator/summary.js';
 import { saveFinalSession } from '../../../engine/orchestrator/session-lifecycle.js';
 import {
@@ -182,11 +184,13 @@ export function useWorkflowRunner({
     }
 
     const retryProfileOverride = result.implementerProfile ?? selectedImplementerProfile;
+    const retryOverrides = retryProfileOverride !== undefined && result.status === 'retry-current-task'
+      ? { retryProfileOverride, ...(retryProfileOverrideTaskId !== undefined ? { retryProfileOverrideTaskId } : {}) }
+      : {};
     return {
       shouldRun: true,
       state: result.state,
-      ...(retryProfileOverride !== undefined && result.status === 'retry-current-task' && { retryProfileOverride }),
-      ...(retryProfileOverride !== undefined && result.status === 'retry-current-task' && retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
+      ...retryOverrides,
     };
   };
 
@@ -275,6 +279,12 @@ export function useWorkflowRunner({
           retryProfileOverrideTaskId = recovery.retryProfileOverrideTaskId;
         }
 
+        const storeStreamingSink: StreamingSink = {
+          start: (tid) => streamingOutputStore.startStreaming(tid),
+          pushLines: (lines) => streamingOutputStore.pushLines(lines),
+          stop: () => streamingOutputStore.stopStreaming(),
+        };
+
         await runWorkflow({
           feature,
           projectDir,
@@ -283,6 +293,7 @@ export function useWorkflowRunner({
           tuiSink: createTuiSink(),
           modelCache: modelCacheStore,
           drainPendingAttachments: () => attachmentsStore.drain(),
+          streamingSink: storeStreamingSink,
           signal: controller.signal,
           callbacks: {
             onApprovalNeeded: async (_type, filePath) => {

@@ -3,6 +3,7 @@ import { readdirSync, existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import type { HandoffInput, HandoffPack } from './types.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 
 export type RendererFunction = (input: HandoffInput) => Promise<HandoffPack> | HandoffPack;
 
@@ -27,7 +28,7 @@ export async function loadRenderer(
     }
     return { ok: true, fn: fn as RendererFunction };
   } catch (err) {
-    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+    return { ok: false, reason: toErrorMessage(err) };
   }
 }
 

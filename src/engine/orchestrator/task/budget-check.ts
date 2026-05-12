@@ -6,7 +6,7 @@ import { getRunnerDisplayName, getRunnerModelName } from '../../../core/config/a
 import { getEscalatedTaskIds } from '../../../core/state/selectors.js';
 import { transitionAndSave } from '../state-ops.js';
 import { publishRecoveryPrompted } from '../events.js';
-import { buildBudgetExceededRecoveryIssue, buildBudgetPausedRecoveryIssue } from '../recovery/recovery.js';
+import { buildBudgetExceededRecoveryIssue, buildBudgetPausedRecoveryIssue } from '../recovery/builders/workflow.js';
 
 export async function checkBudgetAfterTask(opts: {
   wctx: WorkflowContext;

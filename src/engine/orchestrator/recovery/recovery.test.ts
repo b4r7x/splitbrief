@@ -17,17 +17,19 @@ import type { RoutingDecision } from '../context-routing/types.js';
 import { createApprovalPromotionConflict, classifyUserEditConflict } from '../user-edit/conflicts.js';
 import { RecoveryIssueSchema } from '../../../core/schemas/recovery.js';
 import {
-  applyRecoveryAction,
-  buildApprovalPromotionConflictRecoveryIssue,
-  buildBudgetExceededRecoveryIssue,
-  buildBudgetPausedRecoveryIssue,
   buildContextOverflowRecoveryIssue,
   buildDependencyBlockedRecoveryIssue,
   buildImplementationErrorRecoveryIssue,
   buildRetryExhaustedRecoveryIssue,
-  buildUserEditConflictRecoveryIssue,
   buildValidationFailedRecoveryIssue,
-} from './recovery.js';
+} from './builders/task.js';
+import {
+  buildApprovalPromotionConflictRecoveryIssue,
+  buildBudgetExceededRecoveryIssue,
+  buildBudgetPausedRecoveryIssue,
+  buildUserEditConflictRecoveryIssue,
+} from './builders/workflow.js';
+import { applyRecoveryAction } from './actions.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
 const selectedAt = '2026-04-28T12:05:00.000Z';

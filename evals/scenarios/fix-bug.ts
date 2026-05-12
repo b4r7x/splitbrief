@@ -1,12 +1,10 @@
-import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, resolve } from 'node:path';
+import { runNpmTest } from './shared.js';
 import type { EvalScenario, QualityCheck, QualityCheckResult } from './types.js';
 
 const paginationPath = 'src/pagination.ts';
 const evalCheckPath = 'src/pagination.eval-check.test.ts';
-const scenarioDir = dirname(fileURLToPath(import.meta.url));
 
 function fileExists(dir: string, path: string): QualityCheckResult {
   const full = join(dir, path);
@@ -37,15 +35,6 @@ function buggyPatternRemoved(dir: string): QualityCheckResult {
   return foundPattern === undefined
     ? { passed: true, detail: 'buggy floor division pattern not found' }
     : { passed: false, detail: `buggy pattern remains: ${foundPattern}` };
-}
-
-function runNpmTest(dir: string): QualityCheckResult {
-  try {
-    execSync('npm test', { cwd: dir, stdio: 'pipe', timeout: 30_000 });
-    return { passed: true, detail: 'npm test passed' };
-  } catch {
-    return { passed: false, detail: 'npm test failed' };
-  }
 }
 
 function lastPageIsReachable(dir: string): QualityCheckResult {
@@ -101,7 +90,6 @@ export const fixBugScenario: EvalScenario = {
   id: 'fix-bug',
   name: 'Fix off-by-one',
   feature: 'Fix the off-by-one error in calculatePagination - it skips the last page',
-  fixtureDir: resolve(scenarioDir, '../fixtures/fix-bug'),
-  mode: 'quick',
+  fixtureDir: resolve(import.meta.dirname, '../fixtures/fix-bug'),
   qualityChecks,
 };

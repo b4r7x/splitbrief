@@ -9,12 +9,6 @@ import {
   type ModelCacheAccessor,
 } from './model/resolution.js';
 
-export interface ModelPricing {
-  input: number | undefined;
-  output: number | undefined;
-  isFree: boolean | undefined;
-}
-
 export type PricingMode =
   | 'api-priced'
   | 'unpriced-cli'
@@ -76,31 +70,6 @@ export function getPricingMode(providerId: ProviderId): PricingMode {
   if (isApiPricedProvider(providerId)) return 'api-priced';
   if (UNPRICED_CLI_PROVIDER_IDS.has(providerId) || isProviderSubscription(providerId)) return 'unpriced-cli';
   return 'unpriced-meta';
-}
-
-export function lookupModelPricing(providerId: ProviderId, modelName: string, cache: ModelCacheAccessor = NULL_CACHE): ModelPricing | null {
-  const match = lookupModelsDevModel(providerId, modelName, cache)
-    ?? lookupRuntimeModel(providerId, modelName, cache);
-  if (!match) return null;
-  return {
-    input: match.pricingInput,
-    output: match.pricingOutput,
-    isFree: match.isFree,
-  };
-}
-
-export function formatPricing(input: number | undefined, output: number | undefined): string | null {
-  if (input === undefined && output === undefined) return null;
-
-  const formatNum = (n: number | undefined): string => {
-    if (n === undefined) return '?';
-    if (n === 0) return '$0';
-    if (n < 0.01) return `$${n.toFixed(4)}`;
-    if (n < 1) return `$${n.toFixed(2)}`;
-    return `$${n}`;
-  };
-
-  return `${formatNum(input)}/${formatNum(output)}`;
 }
 
 function makePricedResult(

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { resolveAttachment } from './attach-resolver.js';
+import { resolveAttachment } from '../../core/attachments/resolve.js';
 
 let projectDir: string;
 let externalDir: string;

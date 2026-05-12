@@ -1,4 +1,4 @@
-import type { DetectedModel } from '../../core/types/config-options.js';
+import type { DetectedModel } from './types.js';
 import type { ProviderId } from '../../core/schemas/enums.js';
 import { ModelsDevCatalogSchema, type ModelsDevCatalog, type ModelsDevModel } from '../../core/schemas/models-dev.js';
 import { fetchJsonWithTimeout } from './client.js';

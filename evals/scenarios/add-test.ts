@@ -1,8 +1,7 @@
-import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { ensureNodeModules } from './ensure-node-modules.js';
-import type { EvalScenario, QualityCheck, QualityCheckResult } from './types.js';
+import { runNpmTest } from './shared.js';
+import type { EvalScenario, QualityCheck } from './types.js';
 
 const explicitTestCandidates = [
   'src/email.test.ts',
@@ -58,16 +57,6 @@ function readEmailTestContent(dir: string): string {
 
 function hasPattern(content: string, patterns: RegExp[]): boolean {
   return patterns.some((pattern) => pattern.test(content));
-}
-
-function testsPass(dir: string): QualityCheckResult {
-  try {
-    ensureNodeModules(dir);
-    execSync('npm test', { cwd: dir, stdio: 'pipe', timeout: 30_000 });
-    return { passed: true, detail: 'npm test passed' };
-  } catch {
-    return { passed: false, detail: 'npm test failed' };
-  }
 }
 
 const qualityChecks: QualityCheck[] = [
@@ -134,7 +123,7 @@ const qualityChecks: QualityCheck[] = [
   },
   {
     name: 'tests pass after implementation',
-    check: async (dir) => testsPass(dir),
+    check: async (dir) => runNpmTest(dir),
   },
 ];
 
@@ -143,6 +132,5 @@ export const addTestScenario: EvalScenario = {
   name: 'Add test coverage',
   feature: 'Add tests for the validateEmail function - cover valid emails, invalid formats, and edge cases',
   fixtureDir: resolve(import.meta.dirname, '../fixtures/add-test'),
-  mode: 'quick',
   qualityChecks,
 };

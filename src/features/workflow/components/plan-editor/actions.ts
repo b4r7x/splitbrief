@@ -2,6 +2,7 @@ import { parseTasks } from '../../../../engine/spec/parser.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import { taskId } from '../../../../core/schemas/task.js';
 import { topoSort } from '../../../../core/state/topo-sort.js';
+import { toErrorMessage } from '../../../../utils/format-errors.js';
 
 export function renumberTasks(tasks: Task[]): Task[] {
   const idMap = new Map<TaskId, TaskId>();
@@ -158,13 +159,12 @@ export function moveTaskUp(
 
 export function parseSplitResult(
   markdown: string,
-  _originalTask: Task,
 ): Task[] | { error: string } {
   let parsed: Task[];
   try {
     parsed = parseTasks(markdown);
   } catch (err) {
-    return { error: `split parse failed: ${err instanceof Error ? err.message : String(err)}` };
+    return { error: `split parse failed: ${toErrorMessage(err)}` };
   }
   if (parsed.length === 0) {
     return { error: 'split produced no tasks' };

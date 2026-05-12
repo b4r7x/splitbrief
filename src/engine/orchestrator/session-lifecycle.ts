@@ -83,7 +83,6 @@ export type InstallQueueHandlerOpts = {
   planner: Planner;
 };
 
-/** Wire the workflow's queue handler sink to a freshly built queue handler. */
 export function installQueueHandler(opts: InstallQueueHandlerOpts): void {
   opts.sinks.setQueueHandler(createQueueHandler(
     opts.projectDir,

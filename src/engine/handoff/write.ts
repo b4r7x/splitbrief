@@ -2,8 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { SECURE_FILE_MODE } from '../../lib/fs.js';
-import type { HandoffTarget } from './types.js';
-// target is widened to string to support custom renderers alongside built-in HandoffTarget values
+import type { HandoffTarget } from '../../core/handoff/targets.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import { taskId } from '../../core/schemas/task.js';
 import { SessionSchema } from '../../core/schemas/session.js';
@@ -19,6 +18,7 @@ import { assertPathConfined } from '../../lib/path-confinement.js';
 export type WriteHandoffOptions = {
   projectDir: string;
   sessionId: string;
+  // Widened to string to support custom renderers alongside built-in HandoffTarget values
   target: HandoffTarget | string;
   outDir: string;
   selectedTaskIds?: string[];

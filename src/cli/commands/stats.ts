@@ -6,7 +6,7 @@ import { formatCost } from '../../core/formatting.js';
 import { getProviderDisplayName } from '../../core/providers/catalog.js';
 import { listAllSessions } from '../../core/sessions/io.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { cliError } from '../errors.js';
+import { cliError, isCliError } from '../errors.js';
 import type { StatsUpdateInput } from '../../core/stats/persistence.js';
 
 export function registerStatsCommand(program: Command): void {
@@ -62,7 +62,7 @@ export function registerStatsCommand(program: Command): void {
 
         console.log(ansis.dim(`\n  Last updated: ${stats.updatedAt}`));
       } catch (err) {
-        if (err instanceof Error && 'exitCode' in err) throw err;
+        if (isCliError(err)) throw err;
         throw cliError(toErrorMessage(err), 1);
       }
     });

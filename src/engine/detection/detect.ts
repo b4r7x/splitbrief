@@ -3,7 +3,8 @@ import type { PlannerTool, PlannerDetection, ProviderDetection } from '../../cor
 import { buildRunnerConfig } from '../../core/config/runtime/build-runner.js';
 import { createDefaultConfig } from '../../core/config/load/load.js';
 import { createPlanner } from '../runners/factory.js';
-import { detectAvailableProviders, DETECTION_TIMEOUT_MS, KNOWN_PROVIDERS } from '../providers/registry.js';
+import { detectAvailableProviders, KNOWN_PROVIDERS } from '../providers/registry.js';
+import { DETECTION_TIMEOUT_MS } from '../constants.js';
 import { withTimeout } from '../../utils/with-timeout.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';

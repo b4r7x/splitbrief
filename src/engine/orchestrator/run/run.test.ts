@@ -14,7 +14,7 @@ import { transition } from '../../../core/state/machine.js';
 import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { readActive, writeActive } from '../../../core/sessions/lifecycle.js';
-import { buildValidationFailedRecoveryIssue } from '../recovery/recovery.js';
+import { buildValidationFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { simpleGit } from 'simple-git';
 import { runWorkflow, WORKFLOW_REWIND_ABORT_REASON } from './run.js';
 

@@ -10,6 +10,7 @@ import type { Planner } from '../../planners/types.js';
 import type { Implementer } from '../../implementers/types.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
+import type { StreamingSink } from '../task/streaming-feed.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { appendMessage } from '../../../core/state/persistence.js';
@@ -27,6 +28,7 @@ import { runPreHooks } from '../../hooks/run-pre-hook.js';
 import { resolveHooksConfig } from '../../hooks/discover.js';
 import { createBranch } from '../../../lib/git.js';
 import { slugify } from '../../../utils/slugify.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 
 import type { WorkflowContext, WorkflowSinks, ResumeContextHolder } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary.js';
@@ -64,6 +66,7 @@ export type RunWorkflowOptions = {
   modelCache?: ModelCacheAccessor | undefined;
   /** Drains pending attachments from the store — injected from composition layer. */
   drainPendingAttachments?: (() => Attachment[]) | undefined;
+  streamingSink?: StreamingSink | undefined;
 };
 
 export type InitResult =
@@ -152,7 +155,7 @@ export async function initializeWorkflow(
         const actual = await createBranch(projectDir, desired);
         publishGitBranchCreated(bus, state.phase, actual);
       } catch (err) {
-        publishWarning(bus, state.phase, `failed to create branch: ${err instanceof Error ? err.message : String(err)}`);
+        publishWarning(bus, state.phase, `failed to create branch: ${toErrorMessage(err)}`);
       }
     }
   }
@@ -181,6 +184,7 @@ export async function initializeWorkflow(
     ...(opts.retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId: opts.retryProfileOverrideTaskId }),
     ...(opts.modelCache !== undefined && { modelCache: opts.modelCache }),
     ...(opts.drainPendingAttachments !== undefined && { drainPendingAttachments: opts.drainPendingAttachments }),
+    ...(opts.streamingSink !== undefined && { streamingSink: opts.streamingSink }),
   };
 
   if (!savedState && config.hooks) {

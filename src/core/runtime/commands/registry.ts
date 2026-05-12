@@ -6,6 +6,7 @@ import { includes } from '../../../utils/type-guards.js';
 import type { Phase } from '../../schemas/enums.js';
 import { PHASES } from '../../schemas/enums.js';
 import { HANDOFF_TARGETS, parseHandoffTarget } from '../../handoff/targets.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 
 export function phaseOrder(phase: Phase): number {
   return PHASES.indexOf(phase);
@@ -161,11 +162,6 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       validScreens: ['workflow'],
       phaseGuard: canReviseSpec,
       handler: (args) => {
-        const phase = ctx.getCurrentPhase();
-        if (!canReviseSpec(phase)) {
-          ctx.setFeedbackError('/revise-spec is only available after the spec is written.');
-          return;
-        }
         const comment = args?.trim() || undefined;
         if (!ctx.requestRewind('spec', comment)) {
           ctx.setFeedbackError('Cannot rewind: no active workflow.');
@@ -180,11 +176,6 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       validScreens: ['workflow'],
       phaseGuard: canRevisePlan,
       handler: (args) => {
-        const phase = ctx.getCurrentPhase();
-        if (!canRevisePlan(phase)) {
-          ctx.setFeedbackError('/revise-plan is only available after the plan is written.');
-          return;
-        }
         const comment = args?.trim() || undefined;
         if (!ctx.requestRewind('plan', comment)) {
           ctx.setFeedbackError('Cannot rewind: no active workflow.');
@@ -264,7 +255,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
           const { outputDir } = await ctx.writeHandoff(handoffTarget, taskId);
           ctx.setFeedbackMessage(`Handoff written to: ${outputDir}`);
         } catch (err) {
-          ctx.setFeedbackError(err instanceof Error ? err.message : String(err));
+          ctx.setFeedbackError(toErrorMessage(err));
         }
       },
     },
@@ -300,7 +291,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
           const plural = count === 1 ? '' : 's';
           ctx.setFeedbackMessage(`Transcript compacted: ${count} older message${plural} summarized.`);
         } catch (err) {
-          ctx.setFeedbackError(err instanceof Error ? err.message : String(err));
+          ctx.setFeedbackError(toErrorMessage(err));
         }
       },
     },
@@ -410,7 +401,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
           const result = await ctx.acceptRunSnapshot();
           ctx.setFeedbackMessage(`Run accepted at snapshot ${result.snapshotId}`);
         } catch (err) {
-          ctx.setFeedbackError(err instanceof Error ? err.message : String(err));
+          ctx.setFeedbackError(toErrorMessage(err));
         }
       },
     },
@@ -449,7 +440,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
             ctx.setFeedbackMessage(message);
           }
         } catch (err) {
-          ctx.setFeedbackError(err instanceof Error ? err.message : String(err));
+          ctx.setFeedbackError(toErrorMessage(err));
         }
       },
     },

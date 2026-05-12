@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { CassetteSchema, type Cassette } from './types.js';
 
+type RequestInfo = string | URL | Request;
+
 export function loadCassette(path: string): Cassette {
   const raw = readFileSync(path, 'utf-8');
   const parsed: unknown = JSON.parse(raw);

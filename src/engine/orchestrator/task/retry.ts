@@ -13,7 +13,8 @@ import { transitionAndSave } from '../state-ops.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { recordTaskUsage } from '../tokens.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
-import { buildRetryExhaustedRecoveryIssue } from '../recovery/recovery.js';
+import { retryProfileOverrideForTask } from './routing.js';
+import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { persistTaskEvidence } from '../evidence/persistence.js';
 import type { ChangedFilesSnapshot } from '../approval/file-snapshots.js';
@@ -26,12 +27,6 @@ function routeBiggerProfileFromDecision(decision: RoutingDecision | undefined): 
     && (profile.requiredWriteMode !== 'direct' || profile.profileWriteMode === 'direct')
   );
   return candidate?.profile;
-}
-
-function retryProfileOverrideForTask(wctx: WorkflowContext, task: Task): string | undefined {
-  if (!wctx.retryProfileOverride) return undefined;
-  if (wctx.retryProfileOverrideTaskId !== undefined && wctx.retryProfileOverrideTaskId !== task.id) return undefined;
-  return wctx.retryProfileOverride;
 }
 
 export type RetryAndRecordOptions = {

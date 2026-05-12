@@ -3,7 +3,7 @@ import ansis from 'ansis';
 import { resolveProjectDir } from '../setup.js';
 import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from '../../engine/orchestrator/approvals-store.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { cliError } from '../errors.js';
+import { cliError, isCliError } from '../errors.js';
 
 const VALID_SCOPES = ['session', 'always', 'all'] as const;
 type ClearScope = (typeof VALID_SCOPES)[number];
@@ -60,6 +60,7 @@ export function registerApprovalCommand(program: Command): void {
           );
         }
       } catch (err) {
+        if (isCliError(err)) throw err;
         throw cliError(toErrorMessage(err), 1);
       }
     });
@@ -72,22 +73,23 @@ export function registerApprovalCommand(program: Command): void {
     .action((opts: { scope?: string; project?: string }) => {
       try {
         const projectDir = resolveProjectDir(opts.project);
-        const scope = (opts.scope ?? 'all') as ClearScope;
+        const rawScope = opts.scope ?? 'all';
 
-        if (!VALID_SCOPES.includes(scope)) {
+        if (!VALID_SCOPES.includes(rawScope as ClearScope)) {
           throw cliError(
-            `Unknown --scope: "${scope}". Valid scopes: ${VALID_SCOPES.join(', ')}`,
+            `Unknown --scope: "${rawScope}". Valid scopes: ${VALID_SCOPES.join(', ')}`,
             1,
           );
         }
 
+        const scope = rawScope as ClearScope;
         const before = readApprovalsStore(projectDir);
         const after = clearGrantsByScope(before, scope);
         writeApprovalsStore(projectDir, after);
         const count = before.grants.length - after.grants.length;
         console.log(`Cleared ${count} approval grant(s).`);
       } catch (err) {
-        if (err instanceof Error && 'exitCode' in err) throw err;
+        if (isCliError(err)) throw err;
         throw cliError(toErrorMessage(err), 1);
       }
     });

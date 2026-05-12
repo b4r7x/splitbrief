@@ -9,7 +9,6 @@ import {
   calculateCostBreakdown,
   calculateTaskUsageCost,
   isTaskUsageCostKnown,
-  type TaskCostTokenUsage,
 } from '../providers/pricing.js';
 import { formatCost } from '../../core/formatting.js';
 import {
@@ -95,24 +94,6 @@ function checkpointKindLabel(checkpoint: ReviewPacketCheckpoint | null): string 
     : checkpoint.kind;
 }
 
-export function calculateTaskCost(
-  task: TaskTokenUsage,
-  globalUsage: TaskCostTokenUsage,
-  implementerTool: string,
-  plannerTool: string,
-  implementerModel?: string | undefined,
-  plannerModel?: string | undefined,
-): number {
-  return calculateTaskUsageCost(
-    task,
-    globalUsage,
-    implementerTool,
-    plannerTool,
-    implementerModel,
-    plannerModel,
-  );
-}
-
 export function buildSummary(opts: BuildSummaryOptions): Summary {
   const { feature, state, startTime, taskBreakdowns, plannerTool, plannerModel, implementerTool, implementerModel, phaseTimings, mode, projectDir, sessionId, costPrediction } = opts;
   const totalTasks = state.tasks.length;
@@ -144,7 +125,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     return {
       ...taskWithoutCost,
       ...(isCostKnown
-        ? { cost: calculateTaskCost(task, state.tokenUsage, implementerTool, plannerTool, implementerModel, plannerModel) }
+        ? { cost: calculateTaskUsageCost(task, state.tokenUsage, implementerTool, plannerTool, implementerModel, plannerModel) }
         : { costPosture: task.costPosture ?? 'unknown-price' }),
     };
   });

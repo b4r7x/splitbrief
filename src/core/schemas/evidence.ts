@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { TaskIdSchema } from './task.js';
 import { ActionClassSchema, TaskStatusSchema, TaskCompletionMethodSchema, WorkflowModeSchema } from './enums.js';
 
-export const EvidenceRejectionSchema = z.object({
+const EvidenceRejectionSchema = z.object({
   ts: z.string(),
   tier: z.enum(['sticky', 'confirm']),
   actionClass: ActionClassSchema,
@@ -12,7 +12,7 @@ export const EvidenceRejectionSchema = z.object({
 });
 export type EvidenceRejection = z.infer<typeof EvidenceRejectionSchema>;
 
-export const EvidenceApprovalSchema = z.object({
+const EvidenceApprovalSchema = z.object({
   ts: z.string(),
   tier: z.literal('confirm'),
   actionClass: ActionClassSchema,
@@ -25,7 +25,7 @@ export type EvidenceApproval = z.infer<typeof EvidenceApprovalSchema>;
 export const EvidenceValidationStageSchema = z.enum(['typecheck', 'lint', 'test']);
 export type EvidenceValidationStage = z.infer<typeof EvidenceValidationStageSchema>;
 
-export const EvidenceValidationEntrySchema = z.object({
+const EvidenceValidationEntrySchema = z.object({
   stage: EvidenceValidationStageSchema,
   passed: z.boolean(),
   errorSummary: z.string().optional(),
@@ -34,7 +34,7 @@ export const EvidenceValidationEntrySchema = z.object({
 });
 export type EvidenceValidationEntry = z.infer<typeof EvidenceValidationEntrySchema>;
 
-export const EvidenceTaskSchema = z.object({
+const EvidenceTaskSchema = z.object({
   id: TaskIdSchema,
   title: z.string(),
   file: z.string(),
@@ -54,13 +54,13 @@ export type EvidenceTask = z.infer<typeof EvidenceTaskSchema>;
 export const EvidenceFinalReviewStatusSchema = z.enum(['written', 'failed', 'skipped']);
 export type EvidenceFinalReviewStatus = z.infer<typeof EvidenceFinalReviewStatusSchema>;
 
-export const EvidenceFinalReviewSchema = z.object({
+const EvidenceFinalReviewSchema = z.object({
   path: z.string(),
   status: EvidenceFinalReviewStatusSchema,
 });
 export type EvidenceFinalReview = z.infer<typeof EvidenceFinalReviewSchema>;
 
-export const EvidenceValidationSummarySchema = z.object({
+const EvidenceValidationSummarySchema = z.object({
   passed: z.number().nonnegative(),
   failed: z.number().nonnegative(),
   skipped: z.number().nonnegative(),

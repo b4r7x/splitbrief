@@ -1,6 +1,5 @@
 import type { Task } from '../../../src/core/schemas/task.js';
 import { taskId as brand } from '../../../src/core/schemas/task.js';
-import { hashTaskBrief } from '../../../src/core/brief-hash.js';
 
 type TaskOverrides = Omit<Partial<Task>, 'id' | 'dependsOn'> & {
   id?: string;
@@ -23,8 +22,4 @@ export function makeTask(overrides?: TaskOverrides): Task {
     status: 'pending',
     ...rest,
   };
-}
-
-export function makeBriefHash(tasks?: Task[]): string {
-  return hashTaskBrief(tasks ?? [makeTask()]);
 }

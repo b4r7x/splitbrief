@@ -4,6 +4,7 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { requestEnqueue } from './handlers.js';
 import { isLivePhase, isImplementerPhase } from '../../core/phases.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 
 export const REVIEW_HINT = 'approve / edit / comment <text> / quit';
@@ -96,7 +97,7 @@ export function createReviewInputHandler(inputMode: UseInputModeResult): ReviewI
               inputMode.resolve({ approved: false, action: 'edit' });
             }
           } catch (err) {
-            feedbackStore.setError(`Failed to open editor: ${err instanceof Error ? err.message : String(err)}`);
+            feedbackStore.setError(`Failed to open editor: ${toErrorMessage(err)}`);
           }
         }
       }

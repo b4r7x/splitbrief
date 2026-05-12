@@ -5,7 +5,7 @@ import {
   isGitRepo,
   getCurrentDiff,
   hasExternalChanges,
-  getChangedFiles,
+  getCurrentChangedFiles,
   discardFileChange,
   branchExists,
   createBranch,
@@ -88,24 +88,24 @@ describe('git utils', () => {
     });
   });
 
-  describe('getChangedFiles', () => {
+  describe('getCurrentChangedFiles', () => {
     it('returns modified file paths', async () => {
       const dir = tracked(setupGitRepo());
       writeFileSync(join(dir, 'init.txt'), 'modified');
-      const files = await getChangedFiles(dir);
+      const files = await getCurrentChangedFiles(dir);
       expect(files).toContain('init.txt');
     });
 
     it('returns empty array for clean working tree', async () => {
       const dir = tracked(setupGitRepo());
-      const files = await getChangedFiles(dir);
+      const files = await getCurrentChangedFiles(dir);
       expect(files).toEqual([]);
     });
 
     it('includes new untracked files', async () => {
       const dir = tracked(setupGitRepo());
       writeFileSync(join(dir, 'new-file.txt'), 'content');
-      const files = await getChangedFiles(dir);
+      const files = await getCurrentChangedFiles(dir);
       expect(files).toContain('new-file.txt');
     });
   });

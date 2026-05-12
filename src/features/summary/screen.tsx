@@ -70,12 +70,8 @@ function useSummaryEvidenceLedger(summary: Summary | null, sessionId: string | u
       return;
     }
 
-    let cancelled = false;
     const ledger = readEvidenceLedger(projectDir, sessionId);
-    if (!cancelled) setState({ key: ledgerKey, ledger });
-    return () => {
-      cancelled = true;
-    };
+    setState({ key: ledgerKey, ledger });
   }, [projectDir, sessionId, evidencePath, ledgerKey]);
 
   return state.key === ledgerKey ? state.ledger : null;

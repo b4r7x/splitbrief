@@ -48,14 +48,6 @@ export function makeRetry(overrides?: Partial<EventOfType<'task_retry'>>): Event
   return { type: 'task_retry', ts: Date.now(), phase: 'implementing', taskId: taskId('T001'), attempt: 1, maxRetries: 3, error: '', ...overrides };
 }
 
-export function makeEscalate(overrides?: Partial<EventOfType<'escalate'>>): EventOfType<'escalate'> {
-  return { type: 'escalate', ts: Date.now(), phase: 'implementing', taskId: taskId('T001'), tier: 1, ...overrides };
-}
-
-export function makeGitCommit(overrides?: Partial<EventOfType<'git_commit'>>): EventOfType<'git_commit'> {
-  return { type: 'git_commit', ts: Date.now(), phase: 'implementing', taskId: taskId('T001'), message: 'feat: implement test task', ...overrides };
-}
-
 export function makeErrorEvent(overrides?: Partial<EventOfType<'error'>>): EventOfType<'error'> {
   return { type: 'error', ts: Date.now(), phase: 'implementing', message: 'Something went wrong', ...overrides };
 }

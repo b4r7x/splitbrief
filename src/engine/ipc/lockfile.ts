@@ -1,6 +1,7 @@
 import { writeFile, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { LOCKFILE } from '../../core/paths.js';
@@ -39,20 +40,25 @@ export async function writeLockfile(
   await writeFile(lockfilePath(sessionDir), JSON.stringify(payload), { mode: SECURE_FILE_MODE });
 }
 
-export async function updateHeartbeat(sessionDir: string): Promise<void> {
+async function updateLockfile(sessionDir: string, mutate: (data: LockfileData) => void): Promise<void> {
   const data = await readLockfile(sessionDir);
   if (!data) return;
-  if (data.exitedAt !== undefined) return;
-  data.lastAliveMs = Date.now();
+  mutate(data);
   await writeFile(lockfilePath(sessionDir), JSON.stringify(data), { mode: SECURE_FILE_MODE });
 }
 
+export async function updateHeartbeat(sessionDir: string): Promise<void> {
+  await updateLockfile(sessionDir, (data) => {
+    if (data.exitedAt !== undefined) return;
+    data.lastAliveMs = Date.now();
+  });
+}
+
 export async function markExited(sessionDir: string, exitCode: number): Promise<void> {
-  const data = await readLockfile(sessionDir);
-  if (!data) return;
-  data.exitedAt = Date.now();
-  data.exitCode = exitCode;
-  await writeFile(lockfilePath(sessionDir), JSON.stringify(data), { mode: SECURE_FILE_MODE });
+  await updateLockfile(sessionDir, (data) => {
+    data.exitedAt = Date.now();
+    data.exitCode = exitCode;
+  });
 }
 
 export async function markCrashed(
@@ -60,20 +66,18 @@ export async function markCrashed(
   signal: string,
   cause?: string,
 ): Promise<void> {
-  const data = await readLockfile(sessionDir);
-  if (!data) return;
-  data.signal = signal;
-  if (cause !== undefined) data.cause = cause;
-  if (data.exitedAt === undefined) data.exitedAt = Date.now();
-  await writeFile(lockfilePath(sessionDir), JSON.stringify(data), { mode: SECURE_FILE_MODE });
+  await updateLockfile(sessionDir, (data) => {
+    data.signal = signal;
+    if (cause !== undefined) data.cause = cause;
+    if (data.exitedAt === undefined) data.exitedAt = Date.now();
+  });
 }
 
 export async function markSignaled(sessionDir: string, signal: string): Promise<void> {
-  const data = await readLockfile(sessionDir);
-  if (!data) return;
-  data.signal = signal;
-  if (data.exitedAt === undefined) data.exitedAt = Date.now();
-  await writeFile(lockfilePath(sessionDir), JSON.stringify(data), { mode: SECURE_FILE_MODE });
+  await updateLockfile(sessionDir, (data) => {
+    data.signal = signal;
+    if (data.exitedAt === undefined) data.exitedAt = Date.now();
+  });
 }
 
 export async function readLockfile(sessionDir: string): Promise<LockfileData | null> {
@@ -87,17 +91,18 @@ export async function readLockfile(sessionDir: string): Promise<LockfileData | n
   }
 }
 
-function isProcessAliveByPid(pid: number, startTimeMs: number): boolean {
+const execFileAsync = promisify(execFile);
+
+async function isProcessAliveByPid(pid: number, startTimeMs: number): Promise<boolean> {
   try {
     process.kill(pid, 0);
   } catch {
     return false;
   }
 
-  // PID-reuse guard: compare start time via `ps`
   try {
-    const lstart = execSync(`ps -o lstart= -p ${pid}`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-    const psTime = Date.parse(lstart);
+    const { stdout } = await execFileAsync('ps', ['-o', 'lstart=', '-p', String(pid)]);
+    const psTime = Date.parse(stdout.trim());
     if (!Number.isNaN(psTime) && Math.abs(psTime - startTimeMs) > 2000) {
       return false;
     }
@@ -118,7 +123,7 @@ export async function checkServerStatus(sessionDir: string): Promise<ServerStatu
   if (data.exitedAt !== undefined) return { alive: false, crashed: false, data };
 
   // Rule 3: process gone (PID check including PID-reuse guard)
-  if (!isProcessAliveByPid(data.pid, data.startTimeMs)) {
+  if (!(await isProcessAliveByPid(data.pid, data.startTimeMs))) {
     return { alive: false, crashed: true, data };
   }
 

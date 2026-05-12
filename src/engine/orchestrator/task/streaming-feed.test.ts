@@ -1,43 +1,67 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createStreamingFeed } from './streaming-feed.js';
-import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
+import type { StreamingSink } from './streaming-feed.js';
 import { taskId } from '../../../core/schemas/task.js';
 
-describe('createStreamingFeed', () => {
-  beforeEach(() => streamingOutputStore.__testReset());
+function fakeSink(): StreamingSink & {
+  lines: string[][];
+  started: boolean;
+  stopped: boolean;
+} {
+  const sink = {
+    lines: [] as string[][],
+    started: false,
+    stopped: false,
+    start: vi.fn(() => {
+      sink.started = true;
+    }),
+    pushLines: vi.fn((l: string[]) => {
+      sink.lines.push([...l]);
+    }),
+    stop: vi.fn(() => {
+      sink.stopped = true;
+    }),
+  };
+  return sink;
+}
 
+describe('createStreamingFeed', () => {
   it('ignores output for non-API runners', () => {
-    const feed = createStreamingFeed(taskId('T001'), false);
+    const sink = fakeSink();
+    const feed = createStreamingFeed(taskId('T001'), false, sink);
 
     feed.onText('hello');
     feed.stop();
 
-    expect(streamingOutputStore.get().active).toBe(false);
-    expect(streamingOutputStore.get().lines).toEqual([]);
+    expect(sink.start).not.toHaveBeenCalled();
+    expect(sink.pushLines).not.toHaveBeenCalled();
+    expect(sink.stop).not.toHaveBeenCalled();
   });
 
-  it('streams API runner output into the visible task feed until stopped', () => {
-    const feed = createStreamingFeed(taskId('T001'), true);
+  it('streams API runner output into the sink until stopped', () => {
+    const sink = fakeSink();
+    const feed = createStreamingFeed(taskId('T001'), true, sink);
+
+    expect(sink.start).toHaveBeenCalledWith(taskId('T001'));
 
     feed.onText('first\n');
-    expect(streamingOutputStore.get().lines).toEqual(['first']);
-    expect(streamingOutputStore.get().active).toBe(true);
+    expect(sink.lines.at(-1)).toEqual(['first']);
 
     feed.onText('\nsecond\n\nthird\n');
-    expect(streamingOutputStore.get().lines).toEqual(['first', 'second', 'third']);
+    expect(sink.lines.at(-1)).toEqual(['first', 'second', 'third']);
 
     feed.stop();
-    expect(streamingOutputStore.get().active).toBe(false);
-    expect(streamingOutputStore.get().lines).toEqual(['first', 'second', 'third']);
+    expect(sink.stop).toHaveBeenCalled();
   });
 
   it('shows long incomplete lines before a newline arrives', () => {
-    const feed = createStreamingFeed(taskId('T001'), true);
+    const sink = fakeSink();
+    const feed = createStreamingFeed(taskId('T001'), true, sink);
     const longLine = 'a'.repeat(21);
 
     feed.onText(longLine);
 
-    expect(streamingOutputStore.get().lines).toEqual([longLine]);
+    expect(sink.lines.at(-1)).toEqual([longLine]);
     feed.stop();
   });
 });

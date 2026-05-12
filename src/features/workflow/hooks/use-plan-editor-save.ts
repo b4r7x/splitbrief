@@ -5,6 +5,7 @@ import { formatTasks } from '../../../engine/spec/formatter.js';
 import { parseTasks } from '../../../engine/spec/parser.js';
 import { evaluateBriefQuality } from '../../../engine/spec/brief-quality.js';
 import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 import type { Task } from '../../../core/schemas/task.js';
 
 function sameTaskIds(a: Task[], b: Task[]): boolean {
@@ -29,7 +30,7 @@ export function createSaveHandler(sessionDirPath: string, onApprove?: () => void
     try {
       await writeFile(tmpPath, markdown, { encoding: 'utf-8', mode: 0o600 });
     } catch (err) {
-      planEditorStore.setSaveError(`Failed to write: ${err instanceof Error ? err.message : String(err)}`);
+      planEditorStore.setSaveError(`Failed to write: ${toErrorMessage(err)}`);
       return;
     }
 
@@ -38,7 +39,7 @@ export function createSaveHandler(sessionDirPath: string, onApprove?: () => void
       parsed = parseTasks(markdown);
     } catch (err) {
       try { await rename(tmpPath, tmpPath + '.bad'); } catch { /* ignore */ }
-      planEditorStore.setSaveError(`Round-trip parse failed: ${err instanceof Error ? err.message : String(err)}`);
+      planEditorStore.setSaveError(`Round-trip parse failed: ${toErrorMessage(err)}`);
       return;
     }
 
@@ -53,7 +54,7 @@ export function createSaveHandler(sessionDirPath: string, onApprove?: () => void
     try {
       await rename(tmpPath, tasksPath);
     } catch (err) {
-      planEditorStore.setSaveError(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);
+      planEditorStore.setSaveError(`Failed to save: ${toErrorMessage(err)}`);
       return;
     }
 

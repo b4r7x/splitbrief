@@ -1,12 +1,13 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJsonSafeAsync, readFileSafeAsync } from '../../lib/fs.js';
+import { warnError } from '../../lib/warn.js';
 import type { McpResourceDescriptor, McpResourceContent } from './types.js';
 import { sessionDir, SPEC_FILE, PLAN_FILE, TASKS_FILE, STATE_FILE, EVIDENCE_FILE, DRIFT_REPORT_FILE } from '../../core/paths.js';
 import { listAllSessions } from '../../core/sessions/io.js';
 import { SessionSchema } from '../../core/schemas/session.js';
 import { WorkflowStateSchema } from '../../core/schemas/workflow.js';
-import { parseTasks } from '../spec/parser.js';
+import { parseTasks, splitTaskBlocks } from '../spec/parser.js';
 import { hashTaskBrief } from '../../core/brief-hash.js';
 
 export type McpResolverConfig = {
@@ -40,31 +41,7 @@ function parseTasksSafe(tasksContent: string) {
 }
 
 function extractTaskBlock(tasksContent: string, taskId: string): string | null {
-  const lines = tasksContent.split('\n');
-  const blocks: string[] = [];
-  let current: string[] = [];
-  let state: 'idle' | 'in-frontmatter' | 'in-body' = 'idle';
-
-  for (const line of lines) {
-    const isSeparator = line.trim() === '---';
-    if (state === 'idle' && isSeparator) {
-      current = [line];
-      state = 'in-frontmatter';
-    } else if (state === 'in-frontmatter' && isSeparator) {
-      current.push(line);
-      state = 'in-body';
-    } else if (state === 'in-body' && isSeparator) {
-      blocks.push(current.join('\n'));
-      current = [line];
-      state = 'in-frontmatter';
-    } else {
-      current.push(line);
-    }
-  }
-
-  if (state === 'in-body' && current.length > 0) {
-    blocks.push(current.join('\n'));
-  }
+  const blocks = splitTaskBlocks(tasksContent);
 
   for (const block of blocks) {
     const blockId = extractIdFromBlock(block);
@@ -344,7 +321,8 @@ export function createResolver(config: McpResolverConfig): McpResolver {
       }
 
       return null;
-    } catch {
+    } catch (err) {
+      warnError(`MCP readResource(${uri})`, err);
       return null;
     }
   }

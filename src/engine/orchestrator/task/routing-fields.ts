@@ -1,6 +1,6 @@
 import type { TaskContextFit, CurrentCodeContextMode } from '../../events/workflow-events.js';
 
-export interface RoutingDecision {
+export interface RoutingEventFields {
   fit: TaskContextFit;
   estimatedTokens: number;
   untruncatedEstimatedTokens: number;
@@ -11,7 +11,7 @@ export interface RoutingDecision {
   reason: string;
 }
 
-export function buildRoutingEventFields(decision: RoutingDecision | undefined): Record<string, unknown> {
+export function buildRoutingEventFields(decision: RoutingEventFields | undefined): Record<string, unknown> {
   if (decision === undefined) return {};
   return {
     contextFit: decision.fit,

@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { attachmentShortName } from '../../core/attachments/resolve.js';
+import { attachmentsStore } from '../workflow/attachments.js';
 import {
   attachImage,
-  attachmentShortName,
-  attachmentsStore,
   detachImage,
   listAttachments,
 } from './attachments.js';

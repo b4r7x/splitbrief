@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateCost, calculateCostBreakdown, calculateUsageCost, getModelPricing, getProviderPricing } from './pricing.js';
+import { calculateCost, calculateCostBreakdown, calculateUsageCost, getProviderPricing } from './pricing.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { CostBreakdownSchema } from '../../core/schemas/summary.js';
 import { taskId } from '../../core/schemas/task.js';
@@ -272,20 +272,6 @@ describe('calculateCostBreakdown', () => {
 
     expect(result.actualImplementerCost).toBeCloseTo(0.35, 10);
     expect(result.providerCosts?.['deepseek']?.cost).toBeCloseTo(0.35, 10);
-  });
-});
-
-describe('getModelPricing', () => {
-  it('returns pricing for known API models', () => {
-    expect(getModelPricing('claude-opus-4-6')).toMatchObject({
-      inputPer1M: 5,
-      outputPer1M: 25,
-      isPriced: true,
-    });
-  });
-
-  it('returns undefined for unknown models', () => {
-    expect(getModelPricing('totally-unknown-model')).toBeUndefined();
   });
 });
 

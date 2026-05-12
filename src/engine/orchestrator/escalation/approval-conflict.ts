@@ -4,7 +4,7 @@ import type { WorkflowContext } from '../types.js';
 import { transitionAndSave } from '../state-ops.js';
 import { publishRecoveryPrompted, publishUserEditConflict } from '../events.js';
 import { createApprovalPromotionConflict } from '../user-edit/conflicts.js';
-import { buildApprovalPromotionConflictRecoveryIssue } from '../recovery/recovery.js';
+import { buildApprovalPromotionConflictRecoveryIssue } from '../recovery/builders/workflow.js';
 
 export async function handleApprovalTimeUserEditConflict(opts: {
   ctx: WorkflowContext;

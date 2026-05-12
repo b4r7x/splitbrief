@@ -4,15 +4,15 @@ import { readActive } from '../../core/sessions/lifecycle.js';
 import { listAllSessions } from '../../core/sessions/io.js';
 import { writeSessionHtmlReport } from '../../engine/export/collect.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { cliError } from '../errors.js';
+import { cliError, isCliError } from '../errors.js';
 import { resolveProjectDir } from '../setup.js';
 
-export interface ExportCommandOptions {
+interface ExportCommandOptions {
   project?: string;
   out?: string;
 }
 
-export async function exportAction(sessionId: string | undefined, opts: ExportCommandOptions): Promise<void> {
+async function exportAction(sessionId: string | undefined, opts: ExportCommandOptions): Promise<void> {
   try {
     const projectDir = resolveProjectDir(opts.project);
     const resolvedSessionId = resolveExportSessionId(projectDir, sessionId);
@@ -28,7 +28,7 @@ export async function exportAction(sessionId: string | undefined, opts: ExportCo
 
     console.log(`Report written to ${result.path}`);
   } catch (err) {
-    if (err instanceof Error && 'exitCode' in err) throw err;
+    if (isCliError(err)) throw err;
     throw cliError(toErrorMessage(err), 1);
   }
 }

@@ -1,5 +1,5 @@
-import React from 'react';
 import { Text, Box } from 'ink';
+import type { ReactElement } from 'react';
 import type { TreeLine } from './format.js';
 
 interface TreeNodeProps {
@@ -7,7 +7,7 @@ interface TreeNodeProps {
   isSelected: boolean;
 }
 
-export function TreeNode({ line, isSelected }: TreeNodeProps): React.ReactElement {
+export function TreeNode({ line, isSelected }: TreeNodeProps): ReactElement {
   const activeMarker = line.isActive ? '●' : '○';
   const branchIndicator = line.isBranchPoint
     ? (line.isCollapsed ? ' [+]' : ' [-]')

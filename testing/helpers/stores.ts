@@ -18,14 +18,12 @@ import { sessionsStore } from '../../src/stores/project/sessions.js';
 import { skillsStore } from '../../src/stores/project/skills.js';
 import { detectionStore } from '../../src/stores/project/detection.js';
 import { modelCacheStore } from '../../src/stores/discovery/model-cache.js';
+import { streamingOutputStore } from '../../src/stores/workflow/streaming-output.js';
+import { planEditorStore } from '../../src/stores/workflow/plan-editor.js';
+import { approvalPromptStore } from '../../src/stores/approval-prompt/store.js';
+import { costApprovalStore } from '../../src/stores/cost-approval/store.js';
+import { commandPaletteMruStore } from '../../src/stores/ui/command-palette-mru.js';
 
-/**
- * Reset every application store to its initial state.
- *
- * Call this from `beforeEach` when a test touches stores directly or
- * transitively. Stores are module-scoped singletons, so state leaks across
- * tests without explicit reset.
- */
 export function resetAllStores(): void {
   eventsStore.reset();
   tasksStore.reset();
@@ -47,4 +45,9 @@ export function resetAllStores(): void {
   skillsStore.reset();
   detectionStore.reset();
   modelCacheStore.reset();
+  streamingOutputStore.reset();
+  planEditorStore.reset();
+  approvalPromptStore.reset();
+  costApprovalStore.reset();
+  commandPaletteMruStore.reset();
 }

@@ -1,8 +1,6 @@
 import { z } from 'zod';
 import { TaskIdSchema } from '../../schemas/task.js';
 import { RecoveryReasonSchema, RecoveryActionSchema, PhaseSchema } from '../../schemas/enums.js';
-import type { TreeEntryEnvelope, EntryId } from './schemas.js';
-import { nextEntryId } from './schemas.js';
 
 export const SessionStartPayloadSchema = z.object({
   feature: z.string(),
@@ -78,7 +76,7 @@ export const BranchSummaryPayloadSchema = z.object({
 });
 export type BranchSummaryPayload = z.infer<typeof BranchSummaryPayloadSchema>;
 
-export const ENTRY_TYPES = [
+const ENTRY_TYPES = [
   'session-start',
   'plan-step',
   'agent-invocation',
@@ -88,65 +86,3 @@ export const ENTRY_TYPES = [
   'branch-summary',
 ] as const;
 export type EntryType = (typeof ENTRY_TYPES)[number];
-
-export interface EntryFactoryOptions {
-  parentId: EntryId | null;
-  entryCount: number;
-  timestamp: number;
-  display?: boolean;
-}
-
-export function createPlanStepEntry(payload: PlanStepPayload, opts: EntryFactoryOptions): TreeEntryEnvelope {
-  return {
-    id: nextEntryId(opts.entryCount),
-    parentId: opts.parentId,
-    type: 'plan-step',
-    timestamp: opts.timestamp,
-    payload: PlanStepPayloadSchema.parse(payload),
-    display: opts.display ?? true,
-  };
-}
-
-export function createAgentInvocationEntry(payload: AgentInvocationPayload, opts: EntryFactoryOptions): TreeEntryEnvelope {
-  return {
-    id: nextEntryId(opts.entryCount),
-    parentId: opts.parentId,
-    type: 'agent-invocation',
-    timestamp: opts.timestamp,
-    payload: AgentInvocationPayloadSchema.parse(payload),
-    display: opts.display ?? false,
-  };
-}
-
-export function createRecoveryDecisionEntry(payload: RecoveryDecisionPayload, opts: EntryFactoryOptions): TreeEntryEnvelope {
-  return {
-    id: nextEntryId(opts.entryCount),
-    parentId: opts.parentId,
-    type: 'recovery-decision',
-    timestamp: opts.timestamp,
-    payload: RecoveryDecisionPayloadSchema.parse(payload),
-    display: opts.display ?? true,
-  };
-}
-
-export function createFileStateEntry(payload: FileStatePayload, opts: EntryFactoryOptions): TreeEntryEnvelope {
-  return {
-    id: nextEntryId(opts.entryCount),
-    parentId: opts.parentId,
-    type: 'file-state',
-    timestamp: opts.timestamp,
-    payload: FileStatePayloadSchema.parse(payload),
-    display: opts.display ?? false,
-  };
-}
-
-export function createCostCheckpointEntry(payload: CostCheckpointPayload, opts: EntryFactoryOptions): TreeEntryEnvelope {
-  return {
-    id: nextEntryId(opts.entryCount),
-    parentId: opts.parentId,
-    type: 'cost-checkpoint',
-    timestamp: opts.timestamp,
-    payload: CostCheckpointPayloadSchema.parse(payload),
-    display: opts.display ?? false,
-  };
-}

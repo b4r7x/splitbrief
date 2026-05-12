@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { RunnerKind } from './enums.js';
 
 export const StructuredSummarySchema = z.object({
   goal: z.string(),
@@ -16,7 +17,7 @@ export type ResolvedCompactionFormat = Exclude<CompactionFormat, 'auto'>;
 
 export function resolveCompactionFormat(
   configured: CompactionFormat,
-  plannerKind: string,
+  plannerKind: RunnerKind,
 ): ResolvedCompactionFormat {
   if (configured === 'freeform') return 'freeform';
   if (configured === 'structured') return 'structured';

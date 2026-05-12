@@ -13,6 +13,5 @@ export type EvalScenario = {
   name: string;
   feature: string;
   fixtureDir: string;
-  mode: 'quick';
   qualityChecks: QualityCheck[];
 };

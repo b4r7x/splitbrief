@@ -3,13 +3,11 @@ import type { Section } from '../../core/layout/event-sections.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { abortStore } from './abort.js';
-import { _eventsInternal, eventsStore, mergeEvent, type EventsState } from './events.js';
+import { _eventsInternal, eventsStore, mergeEvent } from './events.js';
 import { _tasksInternal, tasksStore, updateTaskCounts, updateTaskMap, type TasksState, type WorkflowTask } from './tasks.js';
 import { _tokensInternal, tokensStore, updateTokens, type TokensState } from './tokens.js';
-import { _lifecycleInternal, lifecycleStore, updatePhase, updateQueueDepth, type LifecycleState } from './lifecycle.js';
+import { _lifecycleInternal, lifecycleStore, updatePhase, updateQueueDepth } from './lifecycle.js';
 import { streamingOutputStore } from './streaming-output.js';
-
-export type WorkflowViewState = EventsState & TasksState & TokensState & LifecycleState;
 
 export function addEvent(event: EngineEvent): void {
   // Cancelled gate: dispatcher policy — sub-stores are passive containers.

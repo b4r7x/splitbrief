@@ -1,13 +1,13 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-export interface LanguageContext {
+export type LanguageContext = {
   language: string;
   importConvention: string;
   typeAnnotationStyle: string;
   fileExtension: string;
   moduleSystem: string;
-}
+};
 
 export function normalizeLanguage(language: string | undefined): string | undefined {
   const normalized = language?.trim().toLowerCase().replace(/^`|`$/g, '');
@@ -18,7 +18,7 @@ export function normalizeLanguage(language: string | undefined): string | undefi
   if (normalized.includes('javascript')) return 'javascript';
   if (normalized.includes('python')) return 'python';
   if (normalized.includes('rust')) return 'rust';
-  if (normalized === 'go' || normalized === 'golang' || normalized.includes('golang') || /\bgo\b/.test(normalized)) return 'go';
+  if (normalized === 'go' || normalized === 'golang' || /\bgo\b/.test(normalized)) return 'go';
   return normalized;
 }
 

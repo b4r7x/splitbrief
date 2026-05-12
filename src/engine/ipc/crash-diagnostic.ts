@@ -146,13 +146,13 @@ export async function waitForCrashDiagnosticOption(): Promise<string> {
 export async function showCrashDiagnostic(
   sessionDir: string,
   status: ServerStatus,
-  _waitForKey: () => Promise<string> = waitForCrashDiagnosticOption,
+  waitForKey: () => Promise<string> = waitForCrashDiagnosticOption,
 ): Promise<void> {
   const diag = await buildCrashDiagnostic(sessionDir, status);
   const formatted = formatCrashDiagnostic(diag);
   process.stdout.write(formatted + '\n');
 
-  const key = await _waitForKey();
+  const key = await waitForKey();
   if (key === '1') {
     process.stdout.write(
       'Exiting. Run `diptych start` to begin a new workflow.\n',

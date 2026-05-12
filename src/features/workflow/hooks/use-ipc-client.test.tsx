@@ -64,10 +64,6 @@ function closeServer(server: Server): Promise<void> {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Harness component
-// ---------------------------------------------------------------------------
-
 interface CapturedState {
   status: IpcClientStatus;
   sessionId: string | null;
@@ -100,10 +96,6 @@ function Harness({
   return <Text>{state.status}</Text>;
 }
 
-// ---------------------------------------------------------------------------
-// Cleanup tracking
-// ---------------------------------------------------------------------------
-
 const tmpDirs: string[] = [];
 const servers: Server[] = [];
 
@@ -116,10 +108,6 @@ afterEach(async () => {
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
   }
 });
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe('useIpcClient', () => {
   it('initial status is connecting', async () => {

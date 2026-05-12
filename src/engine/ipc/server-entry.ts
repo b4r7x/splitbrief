@@ -12,6 +12,7 @@ import { createIpcWorkflowBridge } from './workflow-bridge.js';
 import type { IpcPromptResponse } from './protocol.js';
 import { applyCLIOverrides, type CLIOverrides } from '../../core/config/runtime/overrides.js';
 import { isRecord } from '../../utils/type-guards.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 
 const SERVER_ARGS_FILE = 'server-args.json';
 
@@ -105,25 +106,23 @@ async function main() {
     await markExited(dir, exitCode);
   };
 
-  process.on('SIGTERM', () => {
+  const handleSignal = (signal: string) => {
     void (async () => {
-      await markSignaled(dir, 'SIGTERM');
-      await onCleanup(0);
-      process.exit(0);
+      try {
+        await markSignaled(dir, signal);
+        await onCleanup(0);
+        process.exit(0);
+      } catch {
+        process.exit(1);
+      }
     })();
-  });
+  };
 
-  process.on('SIGINT', () => {
-    void (async () => {
-      await markSignaled(dir, 'SIGINT');
-      await onCleanup(0);
-      process.exit(0);
-    })();
-  });
+  process.on('SIGTERM', () => handleSignal('SIGTERM'));
+  process.on('SIGINT', () => handleSignal('SIGINT'));
 
   process.on('unhandledRejection', (reason) => {
-    const msg = reason instanceof Error ? reason.message : String(reason);
-    void markCrashed(dir, 'uncaught', msg).then(() => process.exit(1));
+    void markCrashed(dir, 'uncaught', toErrorMessage(reason)).then(() => process.exit(1));
   });
 
   process.on('uncaughtException', (err) => {
@@ -200,6 +199,5 @@ async function main() {
 }
 
 main().catch((err) => {
-  const msg = err instanceof Error ? err.message : String(err);
-  void markCrashed(dir, 'uncaught', msg).then(() => process.exit(1));
+  void markCrashed(dir, 'uncaught', toErrorMessage(err)).then(() => process.exit(1));
 });

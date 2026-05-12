@@ -36,13 +36,13 @@ describe('isOpenAIModelList / extractOpenAIModelList', () => {
   it('extractOpenAIModelList maps each entry via mapper', () => {
     const ids = extractOpenAIModelList(
       { data: [{ id: 'a', extra: 1 }, { id: 'b' }] },
-      (m) => m.id.toUpperCase(),
+      (m: { id: string }) => m.id.toUpperCase(),
     );
     expect(ids).toEqual(['A', 'B']);
   });
 
   it('extractOpenAIModelList returns [] for invalid input', () => {
-    expect(extractOpenAIModelList({ bad: 'shape' }, (m) => m.id)).toEqual([]);
+    expect(extractOpenAIModelList({ bad: 'shape' }, (m: { id: string }) => m.id)).toEqual([]);
   });
 });
 
@@ -85,7 +85,7 @@ describe('fetchModelList', () => {
 
   const defaultExtract = (data: unknown): Array<{ id: string }> | null => {
     if (!isOpenAIModelList(data)) return null;
-    return extractOpenAIModelList(data, (m) => ({ id: m.id }));
+    return extractOpenAIModelList(data, (m: { id: string }) => ({ id: m.id }));
   };
 
   it('returns extracted models on 200 + valid payload and clears error on onError', async () => {
@@ -96,7 +96,7 @@ describe('fetchModelList', () => {
     const result = await fetchModelList({
       endpoint: 'https://api.example.com/v1/models',
       apiKey: 'k',
-      onError: (err) => errors.push(err),
+      onError: (err: string | undefined) => errors.push(err),
       extractModels: defaultExtract,
     });
     expect(result).toEqual([{ id: 'm1' }, { id: 'm2' }]);
@@ -122,7 +122,7 @@ describe('fetchModelList', () => {
     const errors: Array<string | undefined> = [];
     const result = await fetchModelList({
       endpoint: 'https://api.example.com/v1/models',
-      onError: (err) => errors.push(err),
+      onError: (err: string | undefined) => errors.push(err),
       extractModels: defaultExtract,
     });
     expect(result).toEqual([]);
@@ -134,7 +134,7 @@ describe('fetchModelList', () => {
     const errors: Array<string | undefined> = [];
     const result = await fetchModelList({
       endpoint: 'https://api.example.com/v1/models',
-      onError: (err) => errors.push(err),
+      onError: (err: string | undefined) => errors.push(err),
       extractModels: defaultExtract,
     });
     expect(result).toEqual([]);
@@ -148,7 +148,7 @@ describe('fetchModelList', () => {
     const errors: Array<string | undefined> = [];
     const result = await fetchModelList({
       endpoint: 'https://api.example.com/v1/models',
-      onError: (err) => errors.push(err),
+      onError: (err: string | undefined) => errors.push(err),
       extractModels: defaultExtract,
     });
     expect(result).toEqual([]);
@@ -162,7 +162,7 @@ describe('fetchModelList', () => {
     const errors: Array<string | undefined> = [];
     const result = await fetchModelList({
       endpoint: 'https://api.example.com/v1/models',
-      onError: (err) => errors.push(err),
+      onError: (err: string | undefined) => errors.push(err),
       extractModels: defaultExtract,
     });
     expect(result).toEqual([]);

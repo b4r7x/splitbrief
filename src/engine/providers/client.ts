@@ -70,10 +70,8 @@ export async function fetchModelList<T>(options: {
 }): Promise<T[]> {
   const { endpoint, apiKey, onError, extractModels } = options;
   try {
-    const headers: Record<string, string> | undefined =
-      options.headers ?? (apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined);
-    const opts = headers ? { headers } : undefined;
-    const res = opts ? await fetch(endpoint, opts) : await fetch(endpoint);
+    const headers = options.headers ?? (apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined);
+    const res = await fetch(endpoint, headers ? { headers } : undefined);
     if (!res.ok) {
       onError?.(`HTTP ${res.status}`);
       return [];
@@ -111,12 +109,7 @@ export interface MetadataProviderOpts<TRaw extends { id: string }> {
   toDetected?: (raw: TRaw) => DetectedModel;
   contextLength?: (raw: TRaw) => number | null;
   modelsUrl?: (baseURL: string) => string;
-  /**
-   * Per-request header factory. When provided, the returned headers replace the
-   * default bearer auth. Use for providers with non-bearer auth (e.g. Anthropic x-api-key).
-   */
   headers?: (apiKey: string) => Record<string, string>;
-  /** Custom extractor for providers whose list shape is not OpenAI's `data: [...]`. */
   extractModels?: (data: unknown) => TRaw[] | null;
 }
 

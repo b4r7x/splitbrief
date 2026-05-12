@@ -3,13 +3,6 @@ import { createEmptyTree, appendEntry, branchFrom } from './store.js';
 import { entryId } from './schemas.js';
 import { taskId } from '../../schemas/task.js';
 import {
-  createPlanStepEntry,
-  createAgentInvocationEntry,
-  createRecoveryDecisionEntry,
-  createFileStateEntry,
-  createCostCheckpointEntry,
-} from './entry-types.js';
-import {
   PlanStepPayloadSchema,
   CostCheckpointPayloadSchema,
 } from './entry-types.js';
@@ -22,25 +15,28 @@ import {
 function buildTreeWithEntries() {
   let tree = createEmptyTree(1000);
 
-  const step1 = createPlanStepEntry(
-    { taskId: taskId('T001'), title: 'Step 1', file: 'src/a.ts', action: 'create', description: 'd1', index: 0, total: 2 },
-    { parentId: tree.meta.leafId, entryCount: tree.meta.entryCount, timestamp: 2000 },
-  );
-  const r1 = appendEntry(tree, { type: step1.type, payload: step1.payload, timestamp: step1.timestamp, display: step1.display! });
+  const r1 = appendEntry(tree, {
+    type: 'plan-step',
+    payload: { taskId: taskId('T001'), title: 'Step 1', file: 'src/a.ts', action: 'create', description: 'd1', index: 0, total: 2 },
+    timestamp: 2000,
+    display: true,
+  });
   tree = r1.tree;
 
-  const agent1 = createAgentInvocationEntry(
-    { role: 'planner', tool: 'claude-code', phase: 'planning', status: 'started' },
-    { parentId: tree.meta.leafId, entryCount: tree.meta.entryCount, timestamp: 3000 },
-  );
-  const r2 = appendEntry(tree, { type: agent1.type, payload: agent1.payload, timestamp: agent1.timestamp, display: agent1.display! });
+  const r2 = appendEntry(tree, {
+    type: 'agent-invocation',
+    payload: { role: 'planner', tool: 'claude-code', phase: 'planning', status: 'started' },
+    timestamp: 3000,
+    display: false,
+  });
   tree = r2.tree;
 
-  const step2 = createPlanStepEntry(
-    { taskId: taskId('T002'), title: 'Step 2', file: 'src/b.ts', action: 'modify', description: 'd2', index: 1, total: 2 },
-    { parentId: tree.meta.leafId, entryCount: tree.meta.entryCount, timestamp: 4000 },
-  );
-  const r3 = appendEntry(tree, { type: step2.type, payload: step2.payload, timestamp: step2.timestamp, display: step2.display! });
+  const r3 = appendEntry(tree, {
+    type: 'plan-step',
+    payload: { taskId: taskId('T002'), title: 'Step 2', file: 'src/b.ts', action: 'modify', description: 'd2', index: 1, total: 2 },
+    timestamp: 4000,
+    display: true,
+  });
   tree = r3.tree;
 
   return tree;
@@ -65,18 +61,20 @@ describe('reconstructState', () => {
   it('accumulates file states with later overwriting earlier', () => {
     let tree = createEmptyTree(1000);
 
-    const f1 = createFileStateEntry(
-      { path: 'src/x.ts', action: 'created' },
-      { parentId: tree.meta.leafId, entryCount: tree.meta.entryCount, timestamp: 2000 },
-    );
-    const r1 = appendEntry(tree, { type: f1.type, payload: f1.payload, timestamp: f1.timestamp, display: f1.display! });
+    const r1 = appendEntry(tree, {
+      type: 'file-state',
+      payload: { path: 'src/x.ts', action: 'created' },
+      timestamp: 2000,
+      display: false,
+    });
     tree = r1.tree;
 
-    const f2 = createFileStateEntry(
-      { path: 'src/x.ts', action: 'modified' },
-      { parentId: tree.meta.leafId, entryCount: tree.meta.entryCount, timestamp: 3000 },
-    );
-    const r2 = appendEntry(tree, { type: f2.type, payload: f2.payload, timestamp: f2.timestamp, display: f2.display! });
+    const r2 = appendEntry(tree, {
+      type: 'file-state',
+      payload: { path: 'src/x.ts', action: 'modified' },
+      timestamp: 3000,
+      display: false,
+    });
     tree = r2.tree;
 
     const state = reconstructState(tree);
@@ -87,18 +85,20 @@ describe('reconstructState', () => {
   it('keeps the latest cost checkpoint', () => {
     let tree = createEmptyTree(1000);
 
-    const c1 = createCostCheckpointEntry(
-      { totalCost: 1, inputTokens: 10, outputTokens: 5, phase: 'planning' },
-      { parentId: tree.meta.leafId, entryCount: tree.meta.entryCount, timestamp: 2000 },
-    );
-    const r1 = appendEntry(tree, { type: c1.type, payload: c1.payload, timestamp: c1.timestamp, display: c1.display! });
+    const r1 = appendEntry(tree, {
+      type: 'cost-checkpoint',
+      payload: { totalCost: 1, inputTokens: 10, outputTokens: 5, phase: 'planning' },
+      timestamp: 2000,
+      display: false,
+    });
     tree = r1.tree;
 
-    const c2 = createCostCheckpointEntry(
-      { totalCost: 2, inputTokens: 20, outputTokens: 10, phase: 'implementing' },
-      { parentId: tree.meta.leafId, entryCount: tree.meta.entryCount, timestamp: 3000 },
-    );
-    const r2 = appendEntry(tree, { type: c2.type, payload: c2.payload, timestamp: c2.timestamp, display: c2.display! });
+    const r2 = appendEntry(tree, {
+      type: 'cost-checkpoint',
+      payload: { totalCost: 2, inputTokens: 20, outputTokens: 10, phase: 'implementing' },
+      timestamp: 3000,
+      display: false,
+    });
     tree = r2.tree;
 
     const state = reconstructState(tree);
@@ -127,11 +127,12 @@ describe('reconstructState', () => {
   it('collects recovery decisions', () => {
     let tree = createEmptyTree(1000);
 
-    const rec = createRecoveryDecisionEntry(
-      { issueId: 'i1', reason: 'implementation-error', selectedAction: 'retry-same-worker', availableActions: ['retry-same-worker'], message: 'm' },
-      { parentId: tree.meta.leafId, entryCount: tree.meta.entryCount, timestamp: 2000 },
-    );
-    const r1 = appendEntry(tree, { type: rec.type, payload: rec.payload, timestamp: rec.timestamp, display: rec.display! });
+    const r1 = appendEntry(tree, {
+      type: 'recovery-decision',
+      payload: { issueId: 'i1', reason: 'implementation-error', selectedAction: 'retry-same-worker', availableActions: ['retry-same-worker'], message: 'm' },
+      timestamp: 2000,
+      display: true,
+    });
     tree = r1.tree;
 
     const state = reconstructState(tree);
@@ -142,18 +143,21 @@ describe('reconstructState', () => {
   it('only considers entries on the active path after a branch', () => {
     let tree = createEmptyTree(1000);
 
-    const step1 = createPlanStepEntry(
-      { taskId: taskId('T001'), title: 'Main', file: 'src/a.ts', action: 'create', description: 'd', index: 0, total: 1 },
-      { parentId: tree.meta.leafId, entryCount: tree.meta.entryCount, timestamp: 2000 },
-    );
-    const r1 = appendEntry(tree, { type: step1.type, payload: step1.payload, timestamp: step1.timestamp, display: step1.display! });
+    const r1 = appendEntry(tree, {
+      type: 'plan-step',
+      payload: { taskId: taskId('T001'), title: 'Main', file: 'src/a.ts', action: 'create', description: 'd', index: 0, total: 1 },
+      timestamp: 2000,
+      display: true,
+    });
     tree = r1.tree;
 
-    const branchStep = createPlanStepEntry(
-      { taskId: taskId('T002'), title: 'Branch', file: 'src/b.ts', action: 'create', description: 'd', index: 0, total: 1 },
-      { parentId: entryId('E0001'), entryCount: tree.meta.entryCount, timestamp: 3000 },
-    );
-    const r2 = branchFrom(tree, { fromId: entryId('E0001'), type: branchStep.type, payload: branchStep.payload, timestamp: branchStep.timestamp, display: branchStep.display! });
+    const r2 = branchFrom(tree, {
+      fromId: entryId('E0001'),
+      type: 'plan-step',
+      payload: { taskId: taskId('T002'), title: 'Branch', file: 'src/b.ts', action: 'create', description: 'd', index: 0, total: 1 },
+      timestamp: 3000,
+      display: true,
+    });
     tree = r2.tree;
 
     const state = reconstructState(tree);
@@ -202,18 +206,20 @@ describe('displayableEntries', () => {
   it('returns only entries with display !== false', () => {
     let tree = createEmptyTree(1000);
 
-    const step = createPlanStepEntry(
-      { taskId: taskId('T001'), title: 'Visible', file: 'a.ts', action: 'create', description: 'd', index: 0, total: 1 },
-      { parentId: tree.meta.leafId, entryCount: tree.meta.entryCount, timestamp: 2000 },
-    );
-    const r1 = appendEntry(tree, { type: step.type, payload: step.payload, timestamp: step.timestamp, display: step.display! });
+    const r1 = appendEntry(tree, {
+      type: 'plan-step',
+      payload: { taskId: taskId('T001'), title: 'Visible', file: 'a.ts', action: 'create', description: 'd', index: 0, total: 1 },
+      timestamp: 2000,
+      display: true,
+    });
     tree = r1.tree;
 
-    const agent = createAgentInvocationEntry(
-      { role: 'planner', tool: 't', phase: 'planning', status: 'started' },
-      { parentId: tree.meta.leafId, entryCount: tree.meta.entryCount, timestamp: 3000 },
-    );
-    const r2 = appendEntry(tree, { type: agent.type, payload: agent.payload, timestamp: agent.timestamp, display: agent.display! });
+    const r2 = appendEntry(tree, {
+      type: 'agent-invocation',
+      payload: { role: 'planner', tool: 't', phase: 'planning', status: 'started' },
+      timestamp: 3000,
+      display: false,
+    });
     tree = r2.tree;
 
     const displayable = displayableEntries(tree);

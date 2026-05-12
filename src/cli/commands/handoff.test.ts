@@ -15,7 +15,6 @@ let writes: HandoffWrite[];
 
 function createDeps(): HandoffDeps {
   return {
-    readActive: () => null,
     listCustomRenderers,
     writeHandoffPack: async (options) => {
       writes.push(options);

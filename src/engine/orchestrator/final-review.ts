@@ -9,7 +9,7 @@ import { saveState } from '../../core/state/persistence.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, REVIEW_FILE } from '../../core/paths.js';
 import { killAllProcesses } from '../../lib/process/registry.js';
-import { getCurrentDiff, discardFileChange, getChangedFiles } from '../../lib/git.js';
+import { getCurrentDiff, discardFileChange, getCurrentChangedFiles } from '../../lib/git.js';
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
@@ -68,7 +68,7 @@ export async function runFinalReviewPhase(
 
     let driftPromptSection: string | undefined;
     try {
-      const changedFiles = await getChangedFiles(projectDir);
+      const changedFiles = await getCurrentChangedFiles(projectDir);
       const ledger = readEvidenceLedger(projectDir, sessionId);
       const driftReport = analyzeBriefDrift({ tasks: state.tasks, changedFiles, diff, ledger, briefHash: hashTaskBrief(state.tasks) });
       writeDriftReport(projectDir, sessionId, driftReport);
@@ -107,21 +107,21 @@ export async function runFinalReviewPhase(
   publishPlannerStatus(bus, state, 'done', { duration: Date.now() - finalReviewStart });
   publishEvent(bus, { type: 'workflow_complete', ts: Date.now(), phase: state.phase });
 
-  if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
-
-  let summary = buildSummary({
+  const summaryOpts = {
     ...summaryBase,
     projectDir,
     sessionId,
     state,
     taskBreakdowns,
     ...(phaseTimings && { phaseTimings }),
-  });
+  };
+
+  const preSummary = buildSummary(summaryOpts);
   try {
     await writeReviewPacket({
       projectDir,
       sessionId,
-      summary,
+      summary: preSummary,
       state,
       finalReviewStatus: reviewStatus,
     });
@@ -130,14 +130,7 @@ export async function runFinalReviewPhase(
   }
 
   if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
-  summary = buildSummary({
-    ...summaryBase,
-    projectDir,
-    sessionId,
-    state,
-    taskBreakdowns,
-    ...(phaseTimings && { phaseTimings }),
-  });
+  const summary = buildSummary(summaryOpts);
   callbacks.onComplete(summary);
   return summary;
 }

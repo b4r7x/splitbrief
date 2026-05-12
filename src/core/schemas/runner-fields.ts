@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { CliToolIdSchema, EffortLevelSchema, OutputFormatSchema } from './enums.js';
 import type { RunnerKind } from './enums.js';
 
-export const PlannerCapabilitiesSchema = z.object({
+const PlannerCapabilitiesSchema = z.object({
   supportsConversationalPlanning: z.boolean(),
   supportsHintEscalation: z.boolean(),
   supportsSessionResume: z.boolean(),
@@ -55,11 +55,11 @@ export const GenerationCommonFields = {
   effort: EffortLevelSchema.optional(),
 };
 
-export interface RunnerKindCapabilities {
+type RunnerKindCapabilities = {
   usesArgsOutputFormat: boolean;
   usesApiKey: boolean;
   requiresCommand: boolean;
-}
+};
 
 export const RUNNER_DESCRIPTORS = {
   cli: { fields: CliRunnerFields, usesArgsOutputFormat: true, usesApiKey: false, requiresCommand: false },

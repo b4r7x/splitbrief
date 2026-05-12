@@ -1,6 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 import { publishError } from '../events.js';
 import { validateCommitAndAdvance } from '../task/commit.js';
 import {
@@ -27,7 +28,7 @@ export async function validateAndCommit(
   try {
     changedFiles = preApprovedChangedFiles ?? await getChangedFilesSinceSnapshot(ctx.projectDir, ctx.taskStartSnapshot);
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
+    const reason = toErrorMessage(err);
     publishError(ctx.bus, state.phase, `Retry changed files blocked by approval gate: ${reason}`);
     return {
       state,
@@ -75,7 +76,7 @@ export async function validateAndCommit(
           );
         }
       } catch (err) {
-        publishError(ctx.bus, state.phase, `Failed to discard denied retry changes: ${err instanceof Error ? err.message : String(err)}`);
+        publishError(ctx.bus, state.phase, `Failed to discard denied retry changes: ${toErrorMessage(err)}`);
       }
       publishError(ctx.bus, nextState.phase, `Retry changed files blocked by approval gate: ${reason} (${files})`);
       persistRetryRejectionEvidence(ctx, nextState, task, changedFilesGate);

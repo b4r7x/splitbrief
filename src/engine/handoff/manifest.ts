@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { writeSecureFile } from '../../lib/fs.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { HandoffManifest } from '../../core/schemas/handoff-manifest.js';
-import type { HandoffTarget } from './types.js';
+import type { HandoffTarget } from '../../core/handoff/targets.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import { HandoffManifestSchema } from '../../core/schemas/handoff-manifest.js';
 import { hashTaskBrief } from '../../core/brief-hash.js';

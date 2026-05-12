@@ -18,8 +18,6 @@ import { withTimeout } from '../../utils/with-timeout.js';
 import { DETECTION_TIMEOUT_MS } from '../constants.js';
 import { providerError } from './errors.js';
 
-export { DETECTION_TIMEOUT_MS };
-
 type ProviderFactory = (overrides?: ProviderOverrides) => ProviderDef;
 
 const BESPOKE_PROVIDERS: Partial<Record<ProviderId, ProviderFactory>> = {

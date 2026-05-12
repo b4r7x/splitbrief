@@ -1,31 +1,8 @@
-// Cache token population by runner kind:
-// - api / agent-sdk: populated from API response when SDK exposes cache_read_input_tokens
-// - cli (claude-code): best-effort; populated when tool stream includes cache fields
-// - cli (other), shell, agent: not available; cache fields absent in TokenUsage
-// When absent, cacheReadSavings is 0 and cache columns render 'n/a' in TUI.
-
-import { API_PROVIDER_IDS } from '../../core/schemas/enums.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import type { TaskTokenUsage, TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostBreakdown } from '../../core/schemas/summary.js';
-import { parseModelId } from './model/parsing.js';
-import { resolvePricing, isApiPricedProvider, type ResolvedPricing } from './pricing-resolver.js';
+import { resolvePricing, type ResolvedPricing } from './pricing-resolver.js';
 import type { ModelCacheAccessor } from './model/resolution.js';
-
-export function getModelPricing(model: string, cache?: ModelCacheAccessor): ResolvedPricing | undefined {
-  const parsed = parseModelId(model);
-  if (parsed.provider && isApiPricedProvider(parsed.provider)) {
-    const direct = resolvePricing(parsed.provider, cache, model);
-    return direct.isPriced ? direct : undefined;
-  }
-
-  for (const providerId of API_PROVIDER_IDS) {
-    const resolved = resolvePricing(providerId, cache, model);
-    if (resolved.isPriced) return resolved;
-  }
-
-  return undefined;
-}
 
 export function getProviderPricing(tool: string, model?: string, cache?: ModelCacheAccessor): ResolvedPricing {
   return resolvePricing(tool, cache, model);

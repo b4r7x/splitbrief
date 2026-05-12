@@ -1,12 +1,12 @@
 import { Command } from 'commander';
 import ansis from 'ansis';
 import { resolveProjectDir } from '../setup.js';
-import { readActive } from '../../core/sessions/lifecycle.js';
 import { createSnapshot, listSnapshots } from '../../engine/snapshots/store.js';
 import { resolveSnapshot, restoreSnapshot } from '../../engine/snapshots/restore.js';
 import { computeSnapshotDiff, formatSnapshotDiff } from '../../engine/snapshots/diff.js';
-import { cliError } from '../errors.js';
+import { cliError, isCliError } from '../errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { resolveSessionOrThrow } from '../session-resolve.js';
 
 export function registerSnapshotCommand(program: Command): void {
   const snapshot = program
@@ -21,10 +21,7 @@ export function registerSnapshotCommand(program: Command): void {
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (opts: { name?: string; session?: string; project?: string }) => {
       const projectDir = resolveProjectDir(opts.project);
-      const sessionId = opts.session ?? readActive(projectDir);
-      if (!sessionId) {
-        throw cliError('No active session. Pass --session <id>.', 1);
-      }
+      const sessionId = resolveSessionOrThrow(projectDir, opts.session);
 
       try {
         const result = await createSnapshot({
@@ -64,6 +61,7 @@ export function registerSnapshotCommand(program: Command): void {
         console.log(`  Files: ${result.manifest.trackedFileCount}`);
         console.log(`  Location: ${result.snapshotDir}`);
       } catch (err) {
+        if (isCliError(err)) throw err;
         throw cliError(toErrorMessage(err), 1);
       }
     });
@@ -75,10 +73,7 @@ export function registerSnapshotCommand(program: Command): void {
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (opts: { session?: string; project?: string }) => {
       const projectDir = resolveProjectDir(opts.project);
-      const sessionId = opts.session ?? readActive(projectDir);
-      if (!sessionId) {
-        throw cliError('No active session. Pass --session <id>.', 1);
-      }
+      const sessionId = resolveSessionOrThrow(projectDir, opts.session);
 
       try {
         const { manifests } = await listSnapshots(projectDir, sessionId);
@@ -95,6 +90,7 @@ export function registerSnapshotCommand(program: Command): void {
           );
         }
       } catch (err) {
+        if (isCliError(err)) throw err;
         throw cliError(toErrorMessage(err), 1);
       }
     });
@@ -107,10 +103,7 @@ export function registerSnapshotCommand(program: Command): void {
     .option('--force', 'Overwrite files even if modified after snapshot')
     .action(async (idOrName: string, opts: { session?: string; project?: string; force?: boolean }) => {
       const projectDir = resolveProjectDir(opts.project);
-      const sessionId = opts.session ?? readActive(projectDir);
-      if (!sessionId) {
-        throw cliError('No active session. Pass --session <id>.', 1);
-      }
+      const sessionId = resolveSessionOrThrow(projectDir, opts.session);
 
       let result: Awaited<ReturnType<typeof restoreSnapshot>>;
       try {
@@ -121,6 +114,7 @@ export function registerSnapshotCommand(program: Command): void {
           force: opts.force ?? false,
         });
       } catch (err) {
+        if (isCliError(err)) throw err;
         throw cliError(toErrorMessage(err), 1);
       }
 
@@ -148,7 +142,7 @@ export function registerSnapshotCommand(program: Command): void {
       }
 
       if (result.conflictedPaths.length > 0) {
-        process.exit(1);
+        throw cliError('Restore completed with conflicts.', 1);
       }
     });
 
@@ -160,15 +154,13 @@ export function registerSnapshotCommand(program: Command): void {
     .option('--no-color', 'Disable color output')
     .action(async (idOrName: string, opts: { session?: string; project?: string; color?: boolean }) => {
       const projectDir = resolveProjectDir(opts.project);
-      const sessionId = opts.session ?? readActive(projectDir);
-      if (!sessionId) {
-        throw cliError('No active session. Pass --session <id>.', 1);
-      }
+      const sessionId = resolveSessionOrThrow(projectDir, opts.session);
 
       let manifest: Awaited<ReturnType<typeof resolveSnapshot>>;
       try {
         manifest = await resolveSnapshot(projectDir, sessionId, idOrName);
       } catch (err) {
+        if (isCliError(err)) throw err;
         throw cliError(toErrorMessage(err), 1);
       }
 
@@ -176,6 +168,7 @@ export function registerSnapshotCommand(program: Command): void {
       try {
         result = await computeSnapshotDiff({ projectDir, sessionId, manifest });
       } catch (err) {
+        if (isCliError(err)) throw err;
         throw cliError(toErrorMessage(err), 1);
       }
 
@@ -183,7 +176,7 @@ export function registerSnapshotCommand(program: Command): void {
       console.log(formatted);
 
       if (result.changedCount > 0) {
-        process.exit(1);
+        throw cliError('Snapshot differs from working tree.', 1);
       }
     });
 }

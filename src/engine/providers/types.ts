@@ -1,5 +1,5 @@
 import type { DetectedModel } from '../../core/types/config-options.js';
-export type { DetectedModel } from '../../core/types/config-options.js';
+export type { DetectedModel };
 
 export interface ProviderDef {
   readonly name: string;

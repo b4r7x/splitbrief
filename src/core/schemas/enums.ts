@@ -22,9 +22,6 @@ export const PLANNER_TOOL_IDS = [
 ] as const;
 
 export type CliToolId = (typeof CLI_TOOL_IDS)[number];
-export type ApiProviderId = (typeof API_PROVIDER_IDS)[number];
-export type LocalProviderId = (typeof LOCAL_PROVIDER_IDS)[number];
-export type MetaProviderId = (typeof META_PROVIDER_IDS)[number];
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 export type PlannerToolId = (typeof PLANNER_TOOL_IDS)[number];
 
@@ -56,11 +53,11 @@ export const PHASES = [
 export const PhaseSchema = z.enum(PHASES);
 export type Phase = z.infer<typeof PhaseSchema>;
 
-export const TASK_STATUSES = ['pending', 'in_progress', 'done', 'failed', 'escalated', 'skipped'] as const;
+const TASK_STATUSES = ['pending', 'in_progress', 'done', 'failed', 'escalated', 'skipped'] as const;
 export const TaskStatusSchema = z.enum(TASK_STATUSES);
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
-export const TASK_COMPLETION_METHODS = ['local', 'escalated-intermediate', 'escalated-hint', 'escalated-full', 'failed', 'skipped', 'mcp-tool'] as const;
+const TASK_COMPLETION_METHODS = ['local', 'escalated-intermediate', 'escalated-hint', 'escalated-full', 'failed', 'skipped', 'mcp-tool'] as const;
 export const TaskCompletionMethodSchema = z.enum(TASK_COMPLETION_METHODS);
 export type TaskCompletionMethod = z.infer<typeof TaskCompletionMethodSchema>;
 
@@ -90,21 +87,15 @@ export const RECOVERY_ACTIONS = [
 export const RecoveryActionSchema = z.enum(RECOVERY_ACTIONS);
 export type RecoveryAction = z.infer<typeof RecoveryActionSchema>;
 
-export const RECOVERY_STATUSES = ['awaiting-user', 'paused', 'applying'] as const;
+const RECOVERY_STATUSES = ['awaiting-user', 'paused', 'applying'] as const;
 export const RecoveryStatusSchema = z.enum(RECOVERY_STATUSES);
-export type RecoveryStatus = z.infer<typeof RecoveryStatusSchema>;
 
 export const WORKFLOW_MODES = ['instant', 'quick', 'standard', 'speckit'] as const;
 export const WorkflowModeSchema = z.enum(WORKFLOW_MODES);
 export type WorkflowMode = z.infer<typeof WorkflowModeSchema>;
 
-/**
- * Legacy mode aliases accepted on input only. Aliased to canonical
- * {@link WorkflowMode} via {@link normalizeLegacyMode}. These names never
- * appear in memory as canonical config values.
- */
-export const LEGACY_WORKFLOW_MODE_ALIASES = { full: 'speckit' } as const;
-export type LegacyWorkflowMode = keyof typeof LEGACY_WORKFLOW_MODE_ALIASES;
+const LEGACY_WORKFLOW_MODE_ALIASES = { full: 'speckit' } as const;
+type LegacyWorkflowMode = keyof typeof LEGACY_WORKFLOW_MODE_ALIASES;
 
 function isLegacyMode(input: string): input is LegacyWorkflowMode {
   return input in LEGACY_WORKFLOW_MODE_ALIASES;
@@ -122,7 +113,7 @@ export const APPROVE_LEVELS = ['none', 'spec', 'plan', 'all', 'default'] as cons
 export const ApproveLevelSchema = z.enum(APPROVE_LEVELS);
 export type ApproveLevel = z.infer<typeof ApproveLevelSchema>;
 
-export const ACTION_CLASSES = [
+const ACTION_CLASSES = [
   'read',
   'write_in_scope',
   'validation',
@@ -134,26 +125,23 @@ export const ACTION_CLASSES = [
 export const ActionClassSchema = z.enum(ACTION_CLASSES);
 export type ActionClass = z.infer<typeof ActionClassSchema>;
 
-export const COMMIT_STRATEGIES = ['none', 'checkpoint', 'per-task'] as const;
+const COMMIT_STRATEGIES = ['none', 'checkpoint', 'per-task'] as const;
 export const CommitStrategySchema = z.enum(COMMIT_STRATEGIES);
-export type CommitStrategy = z.infer<typeof CommitStrategySchema>;
 
-export const THEME_MODES = ['terminal', 'mono'] as const;
+const THEME_MODES = ['terminal', 'mono'] as const;
 export const ThemeModeSchema = z.enum(THEME_MODES);
-export type ThemeMode = z.infer<typeof ThemeModeSchema>;
 
-export const SHIKI_THEMES = ['github-dark', 'github-light'] as const;
+const SHIKI_THEMES = ['github-dark', 'github-light'] as const;
 export const ShikiThemeSchema = z.enum(SHIKI_THEMES);
-export type ShikiTheme = z.infer<typeof ShikiThemeSchema>;
 
-export const OUTPUT_FORMATS = ['stream-json', 'jsonl', 'text', 'opencode'] as const;
+const OUTPUT_FORMATS = ['stream-json', 'jsonl', 'text', 'opencode'] as const;
 export const OutputFormatSchema = z.enum(OUTPUT_FORMATS);
 export type OutputFormat = z.infer<typeof OutputFormatSchema>;
 
 export const CliToolIdSchema = z.enum(CLI_TOOL_IDS);
 
 export const RUNNER_KINDS = ['cli', 'api', 'shell', 'agent', 'agent-sdk'] as const;
-export const RunnerKindSchema = z.enum(RUNNER_KINDS);
+const RunnerKindSchema = z.enum(RUNNER_KINDS);
 export type RunnerKind = z.infer<typeof RunnerKindSchema>;
 
 export const KNOWN_API_PROVIDERS = [...LOCAL_PROVIDER_IDS, ...API_PROVIDER_IDS] as const;
@@ -169,7 +157,6 @@ const ANTHROPIC_EFFORT_BUDGET: Record<EffortLevel, number> = {
   xhigh: 48_000,
 };
 
-/** Map an effort level to the Anthropic `thinking.budget_tokens` approximation. */
 export function effortToAnthropicBudget(level: EffortLevel): number {
   return ANTHROPIC_EFFORT_BUDGET[level];
 }

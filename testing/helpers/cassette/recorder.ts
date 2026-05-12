@@ -2,6 +2,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Cassette, CassetteEntry } from './types.js';
 
+type RequestInfo = string | URL | Request;
+
 const AUTH_HEADER_KEYS = ['authorization', 'x-api-key'];
 
 function redactHeaders(headers: Record<string, string>): Record<string, string> {

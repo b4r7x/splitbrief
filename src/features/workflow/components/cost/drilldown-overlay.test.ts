@@ -8,13 +8,13 @@ import {
   buildTaskRows,
   CostDrilldownOverlay,
   renderBar,
-  formatCacheHitPct,
   formatCacheCreateTokens,
   formatInputOutputSplit,
   formatTotalTokens,
   formatPhaseCost,
   calculatePhaseRowCost,
 } from './drilldown-overlay.js';
+import { formatCacheHitPct } from '../../../../core/layout/cost-chrome.js';
 import { resolvePricing } from '../../../../engine/providers/pricing-resolver.js';
 
 describe('buildPhaseRows', () => {
@@ -34,20 +34,8 @@ describe('buildPhaseRows', () => {
   it('can sort by a derived display cost when store rows keep raw token data', () => {
     const pricing = resolvePricing('anthropic', undefined, 'claude-sonnet-4-6');
     const rows = buildPhaseRows({
-      planning: {
-        inputTokens: 1_000,
-        outputTokens: 500,
-        cacheReadTokens: 0,
-        cacheCreateTokens: 0,
-        cost: 0,
-      },
-      'reviewing-plan': {
-        inputTokens: 1_000_000,
-        outputTokens: 1_000_000,
-        cacheReadTokens: 0,
-        cacheCreateTokens: 0,
-        cost: 0,
-      },
+      planning: { inputTokens: 1_000, outputTokens: 500, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0 },
+      'reviewing-plan': { inputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0 },
     }, row => calculatePhaseRowCost(row, pricing, null));
 
     expect(rows.map(r => r.phase)).toEqual(['reviewing-plan', 'planning']);
@@ -59,13 +47,7 @@ describe('CostDrilldownOverlay', () => {
   it('renders real phase cost and cache data from the store', () => {
     tokensStore.__testReset({
       perPhase: {
-        planning: {
-          inputTokens: 1000,
-          outputTokens: 500,
-          cacheReadTokens: 250,
-          cacheCreateTokens: 125,
-          cost: 0.03,
-        },
+        planning: { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 250, cacheCreateTokens: 125, cost: 0.03 },
       },
     });
     terminalSizeStore.__testReset({ cols: 100 });
@@ -89,20 +71,8 @@ describe('CostDrilldownOverlay', () => {
         implementerModel: 'unknown-model',
       },
       perPhase: {
-        planning: {
-          inputTokens: 1000,
-          outputTokens: 500,
-          cacheReadTokens: 0,
-          cacheCreateTokens: 0,
-          cost: 0,
-        },
-        implementing: {
-          inputTokens: 2000,
-          outputTokens: 1000,
-          cacheReadTokens: 0,
-          cacheCreateTokens: 0,
-          cost: 0,
-        },
+        planning: { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0 },
+        implementing: { inputTokens: 2000, outputTokens: 1000, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0 },
       },
     });
     terminalSizeStore.__testReset({ cols: 100 });
@@ -125,13 +95,7 @@ describe('CostDrilldownOverlay', () => {
         implementerModel: 'qwen2.5',
       },
       perPhase: {
-        planning: {
-          inputTokens: 1_000_000,
-          outputTokens: 1_000_000,
-          cacheReadTokens: 0,
-          cacheCreateTokens: 0,
-          cost: 0,
-        },
+        planning: { inputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheCreateTokens: 0, cost: 0 },
       },
     });
     terminalSizeStore.__testReset({ cols: 100 });

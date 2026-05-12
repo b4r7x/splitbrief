@@ -14,8 +14,6 @@ import {
   type RightItemOrVirtual,
 } from './use-two-column-state.js';
 
-export type { LeftColumnProps, RightColumnProps, CustomRowOptions } from './use-two-column-state.js';
-
 export interface TwoColumnPickerProps<L extends FilterableItem, R extends { id: string }> {
   title: string;
   stepLabel?: string | undefined;

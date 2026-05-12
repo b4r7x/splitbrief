@@ -16,6 +16,7 @@ import type { TaskReviewRequest, TaskReviewResponse } from './task/review.js';
 import type { ModelCacheAccessor } from '../providers/model/resolution.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
+import type { StreamingSink } from './task/streaming-feed.js';
 
 export interface OrchestratorCallbacks {
   onApprovalNeeded: (type: 'spec' | 'plan' | 'briefs', filePath: string) => Promise<{ approved: boolean; comment?: string | undefined; action?: 'edit' | undefined }>;
@@ -62,6 +63,7 @@ export interface WorkflowContext {
   validator: Validator;
   modelCache?: ModelCacheAccessor | undefined;
   drainPendingAttachments?: (() => Attachment[]) | undefined;
+  streamingSink?: StreamingSink | undefined;
 }
 
 export type PlannerCallbacksContext = Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'config' | 'callbacks' | 'bus' | 'signal' | 'metadata' | 'resumeHolder' | 'sinks' | 'drainPendingAttachments'>;

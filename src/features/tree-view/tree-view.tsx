@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, type ReactElement } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { SessionTree } from '../../core/sessions/tree/store.js';
 import { TreeNode } from './tree-node.js';
@@ -18,7 +18,7 @@ interface TreeViewProps {
   maxHeight?: number;
 }
 
-export function TreeView({ tree, maxHeight = 20 }: TreeViewProps): React.ReactElement {
+export function TreeView({ tree, maxHeight = 20 }: TreeViewProps): ReactElement {
   const [viewState, setViewState] = useState<TreeViewState>(createTreeViewState);
 
   const lines = formatTree(tree, viewState);
@@ -38,9 +38,8 @@ export function TreeView({ tree, maxHeight = 20 }: TreeViewProps): React.ReactEl
       if (target) setViewState(s => selectNode(s, target.id));
     }
     if (key.return || input === ' ') {
-      if (viewState.selectedNodeId) {
-        setViewState(s => toggleExpanded(s, viewState.selectedNodeId!));
-      }
+      const id = viewState.selectedNodeId;
+      if (id) setViewState(s => toggleExpanded(s, id));
     }
     if (input === 'e') {
       setViewState(s => expandAll(s, getBranchPointIds(tree)));

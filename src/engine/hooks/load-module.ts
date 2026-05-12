@@ -2,6 +2,7 @@ import { resolve, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { EngineEvent } from '../events/types.js';
 import type { HookOutcome, HookContext } from './types.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 
 export type HookModuleFunction = (event: EngineEvent, ctx: HookContext) => Promise<HookOutcome> | HookOutcome;
 
@@ -9,11 +10,7 @@ export type LoadResult =
   | { ok: true; fn: HookModuleFunction }
   | { ok: false; reason: string; error?: unknown };
 
-/**
- * Dynamically import a hook module by relative or absolute path.
- * ESM import() is cached by URL — the module is loaded once per process lifetime.
- * Returns the default export (must be a function) or an error reason.
- */
+// ESM import() is cached by URL — the module is loaded once per process lifetime.
 export async function loadHookModule(modulePath: string, projectDir: string): Promise<LoadResult> {
   const absPath = isAbsolute(modulePath) ? modulePath : resolve(projectDir, modulePath);
   const url = pathToFileURL(absPath).href;
@@ -28,7 +25,7 @@ export async function loadHookModule(modulePath: string, projectDir: string): Pr
     }
     return { ok: true, fn };
   } catch (err) {
-    return { ok: false, reason: err instanceof Error ? err.message : String(err), error: err };
+    return { ok: false, reason: toErrorMessage(err), error: err };
   }
 }
 

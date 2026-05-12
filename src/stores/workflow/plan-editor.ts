@@ -1,6 +1,7 @@
 import { createStore, storeBase } from '../create-store.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { ImplementerCostTier } from '../../core/schemas/implementer-config.js';
+import { deepEqual } from '../../utils/deep-equal.js';
 
 export type PlanReviewRisk = 'low' | 'medium' | 'high';
 export type PlanReviewContextFit = 'fits' | 'tight' | 'overflow';
@@ -11,7 +12,7 @@ export type PlanReviewEstimateStatus =
   | 'missing-current-code'
   | 'current-code-unavailable';
 
-export interface PlanReviewConflictMetadata {
+interface PlanReviewConflictMetadata {
   kind: string;
   files: string[];
   affectedTaskIds?: string[] | undefined;
@@ -66,16 +67,20 @@ export interface PlanEditorState {
   flaggedIds: ReadonlySet<string>;
 }
 
-const store = createStore<PlanEditorState>(() => ({
-  tasks: [],
-  cursor: 0,
-  expandedIds: new Set<string>(),
-  dirty: false,
-  runtimeRichMode: false,
-  saveError: null,
-  reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
-  flaggedIds: new Set<string>(),
-}));
+function makeInitialState(): PlanEditorState {
+  return {
+    tasks: [],
+    cursor: 0,
+    expandedIds: new Set<string>(),
+    dirty: false,
+    runtimeRichMode: false,
+    saveError: null,
+    reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
+    flaggedIds: new Set<string>(),
+  };
+}
+
+const store = createStore<PlanEditorState>(makeInitialState);
 
 function cloneTasks(tasks: Task[]): Task[] {
   return structuredClone(tasks);
@@ -91,9 +96,8 @@ function cloneReviewMetadataMap(
   return new Map(Array.from(metadata, ([taskId, value]) => [taskId, cloneReviewMetadata(value)]));
 }
 
-// Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
 function __testReset(next?: Partial<PlanEditorState>): void {
-  const base = { tasks: [], cursor: 0, expandedIds: new Set<string>(), dirty: false, runtimeRichMode: false, saveError: null, reviewMetadata: new Map<string, PlanTaskReviewMetadata>(), flaggedIds: new Set<string>() };
+  const base = makeInitialState();
   if (!next) {
     store.set(base);
     return;
@@ -136,7 +140,7 @@ function moveCursor(direction: 'up' | 'down'): void {
 function sameTasks(a: Task[], b: Task[]): boolean {
   if (a === b) return true;
   if (a.length !== b.length) return false;
-  return JSON.stringify(a) === JSON.stringify(b);
+  return a.every((t, i) => deepEqual(t, b[i]));
 }
 
 function setTasks(tasks: Task[]): void {
@@ -220,7 +224,7 @@ function upsertTaskReviewMetadata(metadata: PlanTaskReviewMetadata): void {
   store.set(s => {
     const current = s.reviewMetadata.get(metadata.taskId);
     const merged = cloneReviewMetadata(mergeReviewMetadata(current, metadata));
-    if (current && JSON.stringify(current) === JSON.stringify(merged)) return s;
+    if (current && deepEqual(current, merged)) return s;
     const next = new Map(s.reviewMetadata);
     next.set(metadata.taskId, merged);
     return { ...s, reviewMetadata: next };
@@ -242,7 +246,7 @@ function sameReviewMetadata(
   if (a.size !== b.size) return false;
   for (const [taskId, value] of a) {
     const other = b.get(taskId);
-    if (!other || JSON.stringify(value) !== JSON.stringify(other)) return false;
+    if (!other || !deepEqual(value, other)) return false;
   }
   return true;
 }

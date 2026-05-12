@@ -4,7 +4,7 @@ import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { timeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
 import { toTokenDelta } from '../streaming/token-utils.js';
-import { STREAM_TIMEOUT_MS, throwMappedError } from '../streaming/stream-errors.js';
+import { STREAM_IDLE_TIMEOUT_MS, throwMappedError } from '../streaming/stream-errors.js';
 import { readFile } from 'node:fs/promises';
 
 interface StreamCompletionOptions {
@@ -111,7 +111,7 @@ export async function streamCompletion(
   let usage: TokenDelta | null = null;
 
   try {
-    for await (const chunk of withIdleTimeout(stream, STREAM_TIMEOUT_MS, 'Model response timed out')) {
+    for await (const chunk of withIdleTimeout(stream, STREAM_IDLE_TIMEOUT_MS, 'Model response timed out')) {
       if (opts.signal?.aborted) break;
       const content = chunk.choices?.[0]?.delta?.content;
       if (content) {

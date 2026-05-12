@@ -35,7 +35,7 @@ export function stripFileFrontmatter(content: string): string {
   return content.slice(match[0].length);
 }
 
-function splitTaskBlocks(markdown: string): string[] {
+export function splitTaskBlocks(markdown: string): string[] {
   const blocks: string[] = [];
   const lines = markdown.split('\n');
   let current: string[] = [];
@@ -110,7 +110,7 @@ function extractTaskFrontmatter(block: string): TaskFrontmatter | null {
   return result.success ? result.data : null;
 }
 
-interface Sections {
+type Sections = {
   description: string;
   signature: string;
   tests: string[];
@@ -123,7 +123,7 @@ interface Sections {
   scopeOutOfBounds: string[];
   escalation: string[];
   evidence: string[];
-}
+};
 
 function readSection(sectionMap: Record<string, string>, ...headers: string[]): string {
   for (const header of headers) {

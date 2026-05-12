@@ -12,7 +12,7 @@ import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { Implementer } from '../engine/implementers/types.js';
 import type { Planner } from '../engine/planners/types.js';
 import { beginSession, writeActive } from '../core/sessions/lifecycle.js';
-import { buildValidationFailedRecoveryIssue } from '../engine/orchestrator/recovery/recovery.js';
+import { buildValidationFailedRecoveryIssue } from '../engine/orchestrator/recovery/builders/task.js';
 import { DIPTYCH_DIR, CONFIG_FILE } from '../core/paths.js';
 import { runHeadless } from './headless.js';
 

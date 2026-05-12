@@ -24,15 +24,13 @@ import {
   TREES_DIR,
 } from '../../core/paths.js';
 import { ensureSecureDir, SECURE_FILE_MODE } from '../../lib/fs.js';
+import { isNodeError } from '../../lib/process/errors.js';
+import { error } from '../../utils/error.js';
 import type { EventBus } from '../events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 
+// Hex-encode to avoid path collisions
 export function encodeSnapshotPath(relativePath: string): string {
-  // Collision-free encoding: hex of the UTF-8 bytes of the relative path.
-  // Old `path.replaceAll('/', '__')`-style schemes collided when a path
-  // already contained `__` (for example `a/b.ts` and `a__b.ts` mapped to
-  // the same blob name). Hex is unambiguous, filesystem-safe everywhere,
-  // and trivially reversible without escape semantics.
   return Buffer.from(relativePath, 'utf8').toString('hex');
 }
 
@@ -66,8 +64,8 @@ export async function readManifest(
   let raw: string;
   try {
     raw = await readFile(target, 'utf-8');
-  } catch {
-    throw new Error(`Snapshot manifest not found: ${target}`);
+  } catch (cause) {
+    throw error('snapshot-manifest-not-found', `Snapshot manifest not found: ${target}`, undefined, cause);
   }
   const parsed = JSON.parse(raw);
   return SnapshotManifestSchema.parse(parsed);
@@ -163,14 +161,13 @@ export async function acquireSnapshotLock(
       const fd = openSync(lockPath, 'wx');
       closeSync(fd);
     } catch (err: unknown) {
-      const nodeErr = err as NodeJS.ErrnoException;
-      if (nodeErr.code === 'EEXIST') {
+      if (isNodeError(err) && err.code === 'EEXIST') {
         if (!isRetry) {
           let mtime: number;
           try {
             mtime = statSync(lockPath).mtimeMs;
           } catch {
-            throw new Error('Another snapshot operation is in progress for this session.');
+            throw error('snapshot-lock-busy', 'Another snapshot operation is in progress for this session.');
           }
           if (Date.now() - mtime > STALE_LOCK_MS) {
             try {
@@ -182,7 +179,7 @@ export async function acquireSnapshotLock(
             return;
           }
         }
-        throw new Error('Another snapshot operation is in progress for this session.');
+        throw error('snapshot-lock-busy', 'Another snapshot operation is in progress for this session.');
       }
       throw err;
     }

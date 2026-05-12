@@ -23,12 +23,12 @@ const initial: ConfigState = {
 
 const store = createStore<ConfigState>(initial);
 
-export interface SaveResult {
+interface SaveResult {
   ok: boolean;
   error?: Error;
 }
 
-export interface SaveOptions {
+interface SaveOptions {
   changedPaths?: readonly string[] | undefined;
 }
 

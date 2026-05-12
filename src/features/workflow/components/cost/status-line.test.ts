@@ -10,8 +10,8 @@ import {
   CostStatusLine,
   formatProjected,
   formatBudget,
-  formatCachePct,
 } from './status-line.js';
+import { formatCacheHitPct as formatCachePct } from '../../../../core/layout/cost-chrome.js';
 
 describe('formatProjected', () => {
   it('returns rolling average when tasks completed', () => {
@@ -91,13 +91,7 @@ describe('CostStatusLine', () => {
         plannerCacheRead: 25,
       },
       perPhase: {
-        planning: {
-          inputTokens: 100,
-          outputTokens: 50,
-          cacheReadTokens: 25,
-          cacheCreateTokens: 0,
-          cost: 0.01,
-        },
+        planning: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 25, cacheCreateTokens: 0, cost: 0.01 },
       },
     });
 

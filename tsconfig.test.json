@@ -3,7 +3,7 @@
   "compilerOptions": {
     "rootDir": ".",
     "noEmit": true,
-    "lib": ["ES2024", "DOM"],
+    "lib": ["ES2024"],
     "types": ["node", "react"],
     "paths": {
       "#testing/*": ["./testing/*"]
@@ -11,10 +11,7 @@
   },
   "include": [
     "src/**/*",
-    "src/**/*.test.ts",
-    "src/**/*.test.tsx",
     "testing/**/*",
-    "testing/integration/**/*",
     "evals/*.ts",
     "evals/scenarios/**/*.ts"
   ],

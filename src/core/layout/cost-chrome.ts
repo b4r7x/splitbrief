@@ -3,7 +3,6 @@ import type { CostPrediction } from '../schemas/summary.js';
 export function formatCacheHitPct(cacheRead: number | undefined, input: number): string {
   if (cacheRead === undefined || cacheRead === 0 || input === 0) return 'cache n/a';
   const total = cacheRead + input;
-  if (total === 0) return 'cache n/a';
   return `cache ${Math.round((cacheRead / total) * 100)}%`;
 }
 

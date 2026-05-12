@@ -11,8 +11,6 @@ import { calculateUsageCost } from '../../../../engine/providers/pricing.js';
 import { resolvePricing, type ResolvedPricing } from '../../../../engine/providers/pricing-resolver.js';
 import { phaseCostRole } from '../../../../core/phases.js';
 
-export { formatCacheHitPct } from '../../../../core/layout/cost-chrome.js';
-
 export type PhaseRow = {
   phase: string;
   inputTokens: number;

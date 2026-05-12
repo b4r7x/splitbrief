@@ -11,7 +11,6 @@ import {
   readTreeEntries,
   reconstructTree,
   persistAppend,
-  persistBranch,
 } from './io.js';
 import { entryId } from './schemas.js';
 import { createEmptyTree, appendEntry, branchFrom } from './store.js';
@@ -309,13 +308,13 @@ describe('persistAppend', () => {
   });
 });
 
-describe('persistBranch', () => {
+describe('persistAppend (branch)', () => {
   it('writes entry and meta atomically for branches', async () => {
     await withTempDir('tree-io-test', async (dir) => {
       const tree = createEmptyTree(1000);
       const r1 = branchFrom(tree, { fromId: entryId('E0001'), type: 'fork', payload: {}, timestamp: 2000 });
 
-      persistBranch(dir, r1.entry, r1.tree.meta);
+      persistAppend(dir, r1.entry, r1.tree.meta);
 
       expect(readTreeEntries(dir)).toHaveLength(1);
       const meta = readTreeMeta(dir);

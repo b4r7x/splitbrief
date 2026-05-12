@@ -3,37 +3,38 @@ import {
   PhaseSchema,
   RecoveryActionSchema,
   RecoveryReasonSchema,
+  RecoveryStatusSchema,
   TaskCompletionMethodSchema,
   TaskStatusSchema,
   WorkflowModeSchema,
 } from './enums.js';
+import { EvidenceValidationStageSchema, EvidenceFinalReviewStatusSchema } from './evidence.js';
+import { CostBreakdownSchema } from './summary.js';
 import { TaskIdSchema } from './task.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
 import { RunSnapshotKindSchema } from './snapshot.js';
 
 export const REVIEW_PACKET_VERSION = 1;
 
-const NullableStringSchema = z.string().nullable();
-
-export const ReviewPacketArtifactSourceSchema = z.object({
+const ReviewPacketArtifactSourceSchema = z.object({
   path: z.string(),
   present: z.boolean(),
 });
 
-export const ReviewPacketRunnerSchema = z.object({
+const ReviewPacketRunnerSchema = z.object({
   tool: z.string().nullable(),
   model: z.string().nullable(),
 });
 
-export const ReviewPacketRunSchema = z.object({
+const ReviewPacketRunSchema = z.object({
   sessionId: z.string(),
   feature: z.string(),
   mode: WorkflowModeSchema.nullable(),
   phase: PhaseSchema,
   planner: ReviewPacketRunnerSchema,
   implementer: ReviewPacketRunnerSchema,
-  startedAt: NullableStringSchema,
-  completedAt: NullableStringSchema,
+  startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
   totalTimeMs: z.number().nonnegative().nullable(),
   totalTasks: z.number().int().nonnegative(),
   completedLocally: z.number().int().nonnegative(),
@@ -42,7 +43,7 @@ export const ReviewPacketRunSchema = z.object({
   failed: z.number().int().nonnegative(),
 });
 
-export const ReviewPacketReadinessSchema = z.object({
+const ReviewPacketReadinessSchema = z.object({
   path: z.string(),
   present: z.boolean(),
   status: z.enum(['ready', 'ready-with-warnings', 'blocked']).nullable(),
@@ -64,7 +65,7 @@ export const ReviewPacketReadinessSchema = z.object({
   })),
 });
 
-export const ReviewPacketTaskFileSchema = z.object({
+const ReviewPacketTaskFileSchema = z.object({
   taskId: TaskIdSchema,
   title: z.string(),
   file: z.string(),
@@ -74,7 +75,7 @@ export const ReviewPacketTaskFileSchema = z.object({
   observedEvidence: z.array(z.string()),
 });
 
-export const ReviewPacketChangesSchema = z.object({
+const ReviewPacketChangesSchema = z.object({
   changedFiles: z.array(z.string()),
   expectedFiles: z.array(z.string()),
   outOfScopeFiles: z.array(z.string()),
@@ -82,7 +83,7 @@ export const ReviewPacketChangesSchema = z.object({
   diffReference: z.string(),
 });
 
-export const ReviewPacketCheckpointSafetySchema = z.object({
+const ReviewPacketCheckpointSafetySchema = z.object({
   hashGuarded: z.literal(true),
   conflictsSkippedByDefault: z.literal(true),
   forceOverwritesConflicts: z.literal(true),
@@ -97,7 +98,7 @@ export const ReviewPacketCheckpointSafetySchema = z.object({
   }),
 });
 
-export const ReviewPacketCheckpointSchema = z.object({
+const ReviewPacketCheckpointSchema = z.object({
   id: z.string(),
   name: z.string().optional(),
   createdAt: z.string(),
@@ -112,7 +113,7 @@ export const ReviewPacketCheckpointSchema = z.object({
   safety: ReviewPacketCheckpointSafetySchema,
 });
 
-export const ReviewPacketRunLedgerSchema = z.object({
+const ReviewPacketRunLedgerSchema = z.object({
   path: z.string(),
   present: z.boolean(),
   accepted: z.boolean().nullable(),
@@ -122,19 +123,19 @@ export const ReviewPacketRunLedgerSchema = z.object({
   latestSnapshotId: z.string().nullable(),
 });
 
-export const ReviewPacketCheckpointsSchema = z.object({
+const ReviewPacketCheckpointsSchema = z.object({
   items: z.array(ReviewPacketCheckpointSchema),
   latestRunCheckpoint: ReviewPacketCheckpointSchema.nullable(),
   preFinalReview: ReviewPacketCheckpointSchema.nullable(),
   runLedger: ReviewPacketRunLedgerSchema,
 });
 
-export const ReviewPacketValidationTaskSchema = z.object({
+const ReviewPacketValidationTaskSchema = z.object({
   taskId: TaskIdSchema,
   title: z.string(),
   status: TaskStatusSchema,
   validation: z.array(z.object({
-    stage: z.enum(['typecheck', 'lint', 'test']),
+    stage: EvidenceValidationStageSchema,
     passed: z.boolean(),
     errorSummary: z.string().optional(),
   })),
@@ -143,7 +144,7 @@ export const ReviewPacketValidationTaskSchema = z.object({
   missingExpectedEvidence: z.array(z.string()),
 });
 
-export const ReviewPacketValidationSchema = z.object({
+const ReviewPacketValidationSchema = z.object({
   summary: z.object({
     passed: z.number().int().nonnegative(),
     failed: z.number().int().nonnegative(),
@@ -151,17 +152,17 @@ export const ReviewPacketValidationSchema = z.object({
     escalated: z.number().int().nonnegative(),
   }),
   tasks: z.array(ReviewPacketValidationTaskSchema),
-  finalReviewEvidenceStatus: z.enum(['written', 'failed', 'skipped']).nullable(),
+  finalReviewEvidenceStatus: EvidenceFinalReviewStatusSchema.nullable(),
   missingEvidenceWarnings: z.array(z.string()),
 });
 
-export const ReviewPacketEvidenceSchema = z.object({
+const ReviewPacketEvidenceSchema = z.object({
   path: z.string().nullable(),
   present: z.boolean(),
   briefHash: z.string().nullable(),
   finalReview: z.object({
     path: z.string(),
-    status: z.enum(['written', 'failed', 'skipped']),
+    status: EvidenceFinalReviewStatusSchema,
   }).nullable(),
   approvals: z.array(z.object({
     ts: z.string(),
@@ -181,7 +182,7 @@ export const ReviewPacketEvidenceSchema = z.object({
   })),
 });
 
-export const ReviewPacketDriftFindingSchema = z.object({
+const ReviewPacketDriftFindingSchema = z.object({
   severity: z.enum(['info', 'warning', 'error']),
   code: z.string(),
   taskId: z.string().optional(),
@@ -189,7 +190,7 @@ export const ReviewPacketDriftFindingSchema = z.object({
   message: z.string(),
 });
 
-export const ReviewPacketDriftSchema = z.object({
+const ReviewPacketDriftSchema = z.object({
   path: z.string().nullable(),
   present: z.boolean(),
   passed: z.boolean().nullable(),
@@ -227,7 +228,7 @@ export const ReviewPacketDriftSchema = z.object({
   }),
 });
 
-export const ReviewPacketEventSchema = z.object({
+const ReviewPacketEventSchema = z.object({
   ts: z.string(),
   type: z.string(),
   phase: PhaseSchema.optional(),
@@ -243,10 +244,10 @@ export const ReviewPacketEventSchema = z.object({
   message: z.string().optional(),
 });
 
-export const ReviewPacketRecoveryIssueSchema = z.object({
+const ReviewPacketRecoveryIssueSchema = z.object({
   issueId: z.string(),
   reason: RecoveryReasonSchema,
-  status: z.enum(['awaiting-user', 'paused', 'applying']),
+  status: RecoveryStatusSchema,
   phase: PhaseSchema,
   taskId: TaskIdSchema.optional(),
   selectedAction: RecoveryActionSchema.optional(),
@@ -256,14 +257,14 @@ export const ReviewPacketRecoveryIssueSchema = z.object({
   affectedTaskIds: z.array(TaskIdSchema),
 });
 
-export const ReviewPacketRecoveryOutcomeSchema = z.object({
+const ReviewPacketRecoveryOutcomeSchema = z.object({
   issueId: z.string().nullable(),
   action: RecoveryActionSchema.optional(),
   status: z.enum(['continued', 'retry-current-task', 'skipped', 'paused', 'resumed', 'aborted', 'failed', 'unresolved']),
   message: z.string().optional(),
 });
 
-export const ReviewPacketRecoverySchema = z.object({
+const ReviewPacketRecoverySchema = z.object({
   sourceArtifacts: z.array(ReviewPacketArtifactSourceSchema),
   events: z.array(ReviewPacketEventSchema),
   currentIssue: ReviewPacketRecoveryIssueSchema.nullable(),
@@ -277,7 +278,7 @@ export const ReviewPacketRecoverySchema = z.object({
   unresolvedRisks: z.array(z.string()),
 });
 
-export const ReviewPacketEscalationsSchema = z.object({
+const ReviewPacketEscalationsSchema = z.object({
   retries: z.array(z.object({
     taskId: TaskIdSchema,
     retryCount: z.number().int().nonnegative(),
@@ -300,31 +301,31 @@ export const ReviewPacketEscalationsSchema = z.object({
   warnings: z.array(ReviewPacketEventSchema),
 });
 
-export const ReviewPacketCostSchema = z.object({
+const ReviewPacketCostSchema = z.object({
   tokenUsage: TokenUsageSchema,
-  costBreakdown: z.object({
-    hypotheticalCost: z.number().nonnegative(),
-    actualPlannerCost: z.number().nonnegative(),
-    actualImplementerCost: z.number().nonnegative(),
-    totalActualCost: z.number().nonnegative(),
-    savingsAmount: z.number(),
-    savingsPercentage: z.number(),
-    localCompletionRate: z.number().nonnegative().max(1),
-    hasPricedUsage: z.boolean().optional(),
-    hasUnpricedUsage: z.boolean().optional(),
-    hasSavingsEstimate: z.boolean().optional(),
-    isTotalActualCostKnown: z.boolean().optional(),
-    isAllPlannerBaselineKnown: z.boolean().optional(),
+  costBreakdown: CostBreakdownSchema.pick({
+    hypotheticalCost: true,
+    actualPlannerCost: true,
+    actualImplementerCost: true,
+    totalActualCost: true,
+    savingsAmount: true,
+    savingsPercentage: true,
+    localCompletionRate: true,
+    hasPricedUsage: true,
+    hasUnpricedUsage: true,
+    hasSavingsEstimate: true,
+    isTotalActualCostKnown: true,
+    isAllPlannerBaselineKnown: true,
   }).nullable(),
   estimatedCostSavings: z.string().nullable(),
   taskRouting: z.array(TaskTokenUsageSchema),
   routingWarnings: z.array(ReviewPacketEventSchema),
 });
 
-export const ReviewPacketFinalReviewSchema = z.object({
+const ReviewPacketFinalReviewSchema = z.object({
   path: z.string(),
   status: z.enum(['written', 'failed', 'missing', 'skipped']),
-  evidenceStatus: z.enum(['written', 'failed', 'skipped']).nullable(),
+  evidenceStatus: EvidenceFinalReviewStatusSchema.nullable(),
   statusText: z.string(),
   excerpt: z.string().nullable(),
 });

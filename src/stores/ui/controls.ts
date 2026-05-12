@@ -1,7 +1,7 @@
 import type { InputMode } from '../navigation/router.js';
 import { createStore, storeBase } from '../create-store.js';
 
-export interface ControlsState {
+interface ControlsState {
   sidebarVisible: boolean;
   inputMode: InputMode;
 }

@@ -17,7 +17,7 @@ import {
   STATE_FILE,
   sessionDir,
 } from '../../../../core/paths.js';
-import { getChangedFiles } from '../../../../lib/git.js';
+import { getCurrentChangedFiles } from '../../../../lib/git.js';
 import { readDriftChainState } from '../../drift/chain-state.js';
 import type { DriftFinding, DriftReport } from '../../drift/drift.js';
 import type { BuildReviewPacketOptions, BriefQualityArtifact, MissingCollector, PacketEvent } from './build.js';
@@ -52,7 +52,7 @@ export async function resolveChangedFiles(
 ): Promise<string[]> {
   if (drift) return uniqueSorted(drift.changedFiles);
   try {
-    return uniqueSorted(await getChangedFiles(projectDir));
+    return uniqueSorted(await getCurrentChangedFiles(projectDir));
   } catch {
     missing.addMissing('git status');
     return [];
@@ -223,7 +223,7 @@ function buildRecovery(state: WorkflowState, events: PacketEvent[], missing: Mis
     .map((event) => ({
       issueId: event.issueId ?? '',
       reason: event.reason ?? 'implementation-error',
-      action: event.action ?? ('pause-run' as RecoveryAction),
+      action: (event.action ?? 'pause-run') satisfies RecoveryAction,
       selectedAt: event.ts,
     }));
 

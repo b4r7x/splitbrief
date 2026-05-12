@@ -4,6 +4,7 @@ import type { RecoveryIssue } from '../../../core/schemas/recovery.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 import type { EventBus } from '../../events/types.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -200,7 +201,7 @@ function applySkipCurrentTaskRecoveryAction(
       ...opts,
       issue,
       code: 'missing-current-task',
-      message: `Failed to record skip evidence: ${err instanceof Error ? err.message : String(err)}`,
+      message: `Failed to record skip evidence: ${toErrorMessage(err)}`,
       publishSelected: true,
     });
   }

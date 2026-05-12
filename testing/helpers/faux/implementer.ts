@@ -13,14 +13,6 @@ export type FauxImplementStep = {
   throws?: Error;
 };
 
-export type FauxRetryStep = {
-  success: boolean;
-  output?: string;
-  error?: string;
-  usage?: TokenDelta;
-  throws?: Error;
-};
-
 export type FauxImplementerState = {
   implementCallCount: number;
   retryCallCount: number;
@@ -30,7 +22,7 @@ export type FauxImplementerState = {
 
 export function fauxImplementer(opts?: {
   steps?: FauxImplementStep[];
-  retries?: FauxRetryStep[];
+  retries?: FauxImplementStep[];
 }): { implementer: Implementer; state: FauxImplementerState } {
   const steps = opts?.steps ?? [];
   const retries = opts?.retries ?? [];

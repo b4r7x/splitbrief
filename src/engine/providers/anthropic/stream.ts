@@ -6,7 +6,7 @@ import { effortToAnthropicBudget } from '../../../core/schemas/enums.js';
 import { timeoutError, withIdleTimeout } from '../../../utils/with-timeout.js';
 import { stripV1Suffix, ANTHROPIC_API_VERSION } from '../constants.js';
 import { narrowRecord, assertNever } from '../../../utils/type-guards.js';
-import { STREAM_TIMEOUT_MS, streamError, throwMappedError } from '../../streaming/stream-errors.js';
+import { STREAM_IDLE_TIMEOUT_MS, streamError, throwMappedError } from '../../streaming/stream-errors.js';
 import { readFile } from 'node:fs/promises';
 
 type AnthropicEventType =
@@ -275,12 +275,13 @@ export async function streamAnthropicCompletion(
   try {
     for await (const event of withIdleTimeout(
       readSseEvents(response.body, opts.signal),
-      STREAM_TIMEOUT_MS,
+      STREAM_IDLE_TIMEOUT_MS,
       'Model response timed out',
     )) {
       if (event.data === '[DONE]') continue;
 
-      const payload = narrowRecord(JSON.parse(event.data));
+      const raw: unknown = JSON.parse(event.data);
+      const payload = narrowRecord(raw);
       if (payload === null) continue;
 
       const eventType = getEventType(payload);
