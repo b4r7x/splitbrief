@@ -2,10 +2,6 @@ import type { Config } from '../../schemas/config.js';
 import type { ApproveLevel, EffortLevel, WorkflowMode } from '../../schemas/enums.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../schemas/config.js';
 
-/**
- * Resolve the effective workflow mode from config + optional CLI override.
- * Single source of truth for mode resolution per spec invariant §1.
- */
 export function resolveMode(opts: {
   config: Config;
   cliOverride?: WorkflowMode | undefined;
@@ -14,9 +10,6 @@ export function resolveMode(opts: {
   return opts.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE;
 }
 
-/**
- * Per-mode default approval gate. Spec §4.2.
- */
 const MODE_DEFAULT_APPROVE: Record<WorkflowMode, ApproveLevel> = {
   instant: 'none',
   quick: 'none',
@@ -24,10 +17,6 @@ const MODE_DEFAULT_APPROVE: Record<WorkflowMode, ApproveLevel> = {
   speckit: 'all',
 };
 
-/**
- * Resolve the effective approve level from config + optional CLI override + mode default.
- * Single source of truth for approve-level resolution per spec invariant §2.
- */
 export function resolveApproveLevel(opts: {
   mode: WorkflowMode;
   configApprove?: ApproveLevel | undefined;
@@ -48,10 +37,6 @@ export function blocksPlanGate(level: ApproveLevel): boolean {
   return level === 'plan' || level === 'all';
 }
 
-/**
- * Resolve the effective planner effort hint from config + optional CLI override.
- * Single source of truth for effort-level resolution per spec invariant §3.
- */
 export function resolveEffortLevel(opts: {
   config: Config;
   cliOverride?: EffortLevel | undefined;

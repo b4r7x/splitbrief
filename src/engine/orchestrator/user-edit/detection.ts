@@ -10,7 +10,7 @@ import {
 } from './conflicts.js';
 import { publishRecoveryPrompted, publishUserEditConflict, publishWarning } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
-import { buildUserEditConflictRecoveryIssue } from '../recovery/recovery.js';
+import { buildUserEditConflictRecoveryIssue } from '../recovery/builders/workflow.js';
 
 export async function checkUserEditConflicts(opts: {
   projectDir: string;

@@ -1,6 +1,6 @@
-import { execSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { runNpmTest } from './shared.js';
 import type { EvalScenario, QualityCheck, QualityCheckResult } from './types.js';
 
 const healthEndpointCandidates = ['src/routes/health.ts', 'src/health.ts', 'src/api/health.ts'];
@@ -15,15 +15,6 @@ function fileContains(dir: string, path: string, substring: string): QualityChec
   return content.includes(substring)
     ? { passed: true, detail: `${path} contains "${substring}"` }
     : { passed: false, detail: `${path} does not contain "${substring}"` };
-}
-
-function testsPass(dir: string): QualityCheckResult {
-  try {
-    execSync('npm test', { cwd: dir, stdio: 'pipe', timeout: 30_000 });
-    return { passed: true, detail: 'npm test passed' };
-  } catch {
-    return { passed: false, detail: 'npm test failed' };
-  }
 }
 
 function findCandidateFile(dir: string): string | undefined {
@@ -80,7 +71,7 @@ const qualityChecks: QualityCheck[] = [
   },
   {
     name: 'tests pass after implementation',
-    check: async (dir) => testsPass(dir),
+    check: async (dir) => runNpmTest(dir),
   },
 ];
 
@@ -89,6 +80,5 @@ export const addEndpointScenario: EvalScenario = {
   name: 'Add REST endpoint',
   feature: 'Add a GET /api/health endpoint that returns { status: "ok", uptime: process.uptime() }',
   fixtureDir: resolve(import.meta.dirname, '../fixtures/add-endpoint'),
-  mode: 'quick',
   qualityChecks,
 };

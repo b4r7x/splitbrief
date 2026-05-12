@@ -14,7 +14,7 @@ import { runTaskLoop } from './loop.js';
 import type { WorkflowSinks } from '../types.js';
 import { createValidator } from '../validation.js';
 import { readRunSnapshotLedger } from '../../snapshots/run.js';
-import { buildContextOverflowRecoveryIssue } from '../recovery/recovery.js';
+import { buildContextOverflowRecoveryIssue } from '../recovery/builders/task.js';
 
 const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' };
 

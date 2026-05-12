@@ -1,42 +1,7 @@
-import { execSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { ensureNodeModules } from './ensure-node-modules.js';
-import type { EvalScenario, QualityCheck, QualityCheckResult } from './types.js';
-
-function readSourceFiles(dir: string): Array<{ path: string; content: string }> {
-  const srcDir = join(dir, 'src');
-  if (!existsSync(srcDir)) return [];
-
-  const pending = ['src'];
-  const files: Array<{ path: string; content: string }> = [];
-
-  for (const relativeDir of pending) {
-    for (const entry of readdirSync(join(dir, relativeDir))) {
-      const relativePath = join(relativeDir, entry);
-      const fullPath = join(dir, relativePath);
-      if (statSync(fullPath).isDirectory()) {
-        pending.push(relativePath);
-        continue;
-      }
-      if (relativePath.endsWith('.ts') && !relativePath.endsWith('.test.ts')) {
-        files.push({ path: relativePath, content: readFileSync(fullPath, 'utf-8') });
-      }
-    }
-  }
-
-  return files;
-}
-
-function testsPass(dir: string): QualityCheckResult {
-  try {
-    ensureNodeModules(dir);
-    execSync('npm test', { cwd: dir, stdio: 'pipe', timeout: 30_000 });
-    return { passed: true, detail: 'npm test passed' };
-  } catch {
-    return { passed: false, detail: 'npm test failed' };
-  }
-}
+import { readSourceFiles, runNpmTest } from './shared.js';
+import type { EvalScenario, QualityCheck } from './types.js';
 
 function hasZodUsage(content: string): boolean {
   return /from\s+['"]zod['"]/.test(content) || /\bz\.(object|string|email|optional)\b/.test(content);
@@ -97,12 +62,12 @@ const qualityChecks: QualityCheck[] = [
     name: 'invalid input returns status 400',
     check: async (dir) => {
       writeInvalidInputTest(dir);
-      return testsPass(dir);
+      return runNpmTest(dir);
     },
   },
   {
     name: 'tests pass after implementation',
-    check: async (dir) => testsPass(dir),
+    check: async (dir) => runNpmTest(dir),
   },
 ];
 
@@ -111,6 +76,5 @@ export const addValidationScenario: EvalScenario = {
   name: 'Add input validation',
   feature: 'Add Zod validation to the createUser handler - validate email, name (1-100 chars), and optional phone',
   fixtureDir: resolve(import.meta.dirname, '../fixtures/add-validation'),
-  mode: 'quick',
   qualityChecks,
 };

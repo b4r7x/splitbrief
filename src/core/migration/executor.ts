@@ -14,6 +14,7 @@ import {
 } from '../paths.js';
 import { writeActive } from '../sessions/lifecycle.js';
 import { deriveSessionId, migrateState, migrateEvents } from './legacy.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 
 export type MigrationResult =
   | { status: 'not-needed' }
@@ -50,7 +51,7 @@ export async function migrateCommand(projectDir: string): Promise<MigrationResul
       status: 'skipped',
       sourceDir,
       warnings: [
-        `Cannot read legacy state at ${sourceDir}/${STATE_FILE}: ${err instanceof Error ? err.message : String(err)}`,
+        `Cannot read legacy state at ${sourceDir}/${STATE_FILE}: ${toErrorMessage(err)}`,
         'Skipping migration. Delete the legacy directory manually if you want to start fresh.',
       ],
     };

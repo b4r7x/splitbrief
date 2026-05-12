@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const SUPPORTED_IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'] as const;
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
-export const AttachmentKindSchema = z.enum(['image']);
+const AttachmentKindSchema = z.enum(['image']);
 
 export const AttachmentSchema = z.object({
   id: z.string(),

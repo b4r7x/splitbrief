@@ -1,6 +1,6 @@
 import type { Summary } from '../../core/schemas/summary.js';
 
-export interface ExportData {
+export type ExportData = {
   sessionId: string;
   feature: string;
   completedAt: string | null;
@@ -9,25 +9,25 @@ export interface ExportData {
   evidence?: EvidenceExport;
   drift?: DriftExport;
   briefQuality?: BriefQualityExport;
-}
+};
 
-export interface EvidenceExport {
+export type EvidenceExport = {
   totalTasks: number;
   tasksWithValidationEvidence: number;
   escalatedTasks: number;
   failedTasks: number;
-}
+};
 
-export interface DriftExport {
+export type DriftExport = {
   passed: boolean;
   score: number;
   errorCount: number;
   warningCount: number;
-}
+};
 
-export interface BriefQualityExport {
+export type BriefQualityExport = {
   score: number;
   passed: boolean;
   errorCount: number;
   warningCount: number;
-}
+};

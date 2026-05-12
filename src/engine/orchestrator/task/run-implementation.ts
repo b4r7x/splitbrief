@@ -6,7 +6,8 @@ import type { StagedProject } from '../approval/staged-project.js';
 import type { ChangedFilesSnapshot } from '../approval/file-snapshots.js';
 import type { GateDecision } from '../approval/tiered-approval.js';
 import { createBusTextHandler } from '../events.js';
-import { createStreamingFeed } from './streaming-feed.js';
+import { createStreamingFeed, noopStreamingSink } from './streaming-feed.js';
+import type { StreamingSink } from './streaming-feed.js';
 import { withContinuationLoop } from '../continuation.js';
 import { gateChangedFiles } from '../approval/gate-files.js';
 import { createStagedProject } from '../approval/staged-project.js';
@@ -30,13 +31,18 @@ export async function runImplementation(opts: {
   taskStartSnapshot: ChangedFilesSnapshot;
   setTrackedState: (s: WorkflowState) => void;
   recordApprovalDenial: (decision: GateDecision, message: string) => void;
+  streamingSink?: StreamingSink | undefined;
 }): Promise<RunImplementationResult> {
   const { wctx, task, setTrackedState } = opts;
   const { projectDir, sessionId, config, callbacks, context } = wctx;
   let state = opts.state;
 
   const textHandler = createBusTextHandler(wctx.bus, state.phase);
-  const streamingFeed = createStreamingFeed(task.id, config.implementer.kind === 'api');
+  const streamingFeed = createStreamingFeed(
+    task.id,
+    config.implementer.kind === 'api',
+    opts.streamingSink ?? noopStreamingSink,
+  );
 
   const usesStaging = wctx.implementer.capabilities?.writesFiles === 'direct';
   const staged = usesStaging ? await createStagedProject(projectDir) : undefined;

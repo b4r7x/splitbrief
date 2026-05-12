@@ -1,10 +1,10 @@
 import { Command } from 'commander';
-import { readActive } from '../../core/sessions/lifecycle.js';
 import { buildRunExplain } from '../../engine/orchestrator/explain/explain.js';
 import { formatRunExplain } from '../../engine/orchestrator/explain/format.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { cliError } from '../errors.js';
+import { cliError, isCliError } from '../errors.js';
 import { resolveProjectDir } from '../setup.js';
+import { resolveSessionOrThrow } from '../session-resolve.js';
 
 interface ExplainOpts {
   project?: string | undefined;
@@ -21,10 +21,7 @@ export function registerExplainCommand(program: Command): void {
     .option('--json', 'Emit explanation as JSON', false)
     .action(async (opts: ExplainOpts) => {
       const projectDir = resolveProjectDir(opts.project);
-      const sessionId = opts.session ?? readActive(projectDir);
-      if (!sessionId) {
-        throw cliError('No session specified and no active session found. Use --session <id>.', 1);
-      }
+      const sessionId = resolveSessionOrThrow(projectDir, opts.session);
 
       try {
         const explain = await buildRunExplain({ projectDir, sessionId });
@@ -34,6 +31,7 @@ export function registerExplainCommand(program: Command): void {
         }
         console.log(formatRunExplain(explain));
       } catch (err) {
+        if (isCliError(err)) throw err;
         throw cliError(toErrorMessage(err), 1);
       }
     });

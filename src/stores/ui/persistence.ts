@@ -3,16 +3,13 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { DIPTYCH_DIR } from '../../core/paths.js';
 import { writeSecureFile } from '../../lib/fs.js';
+import { isNodeError } from '../../lib/process/errors.js';
 import { warnError } from '../../lib/warn.js';
 import { inputHistoryStore, MAX_INPUT_HISTORY } from './input-history.js';
 
 const HISTORY_FILE = join(homedir(), DIPTYCH_DIR, 'history');
 const DEBOUNCE_MS = 300;
 let activeTeardown: (() => void) | null = null;
-
-function isNodeError(err: unknown): err is NodeJS.ErrnoException {
-  return err instanceof Error && 'code' in err;
-}
 
 export function loadHistoryFromDisk(): string[] {
   try {

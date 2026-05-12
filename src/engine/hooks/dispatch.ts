@@ -5,8 +5,9 @@ import { isENOENT, isNodeError } from '../../lib/process/errors.js';
 import { substituteEventFields } from './substitute.js';
 import type { HookOutcome, HookContext } from './types.js';
 import { loadHookModule } from './load-module.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 
-interface HookResponse {
+type HookResponse = {
   decision?: 'allow' | 'deny' | 'warn';
   message?: string;
 }
@@ -50,7 +51,7 @@ async function runCommandHook(entry: HookCommandEntry, event: EngineEvent, ctx: 
     if (isENOENT(err)) {
       return { kind: 'warn', message: `hook command not found: ${entry.command}` };
     }
-    return { kind: 'crash', message: err instanceof Error ? err.message : String(err) };
+    return { kind: 'crash', message: toErrorMessage(err) };
   }
 }
 
@@ -72,7 +73,7 @@ async function runModuleHook(entry: HookModuleEntry, event: EngineEvent, ctx: Ho
     ]).finally(() => clearTimeout(timer));
     return validateOutcome(result);
   } catch (err) {
-    return failureOutcome(entry, err instanceof Error ? err.message : String(err));
+    return failureOutcome(entry, toErrorMessage(err));
   }
 }
 
@@ -92,9 +93,7 @@ function tryParseResponse(stdout: string): HookResponse | null {
   try {
     const parsed = JSON.parse(trimmed) as unknown;
     if (parsed !== null && typeof parsed === 'object') return parsed as HookResponse;
-  } catch {
-    // ignore parse failures — hooks with malformed JSON stdout are treated as no-op
-  }
+  } catch {}
   return null;
 }
 

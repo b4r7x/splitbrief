@@ -87,26 +87,7 @@ export function removeCustomModel(config: Config, role: 'planner' | 'implementer
 }
 
 function omitModel(planner: PlannerConfig, customModels: string[]): PlannerConfig {
-  switch (planner.kind) {
-    case 'cli': {
-      const { model: _model, ...rest } = planner;
-      return { ...rest, customModels };
-    }
-    case 'api': {
-      const { model: _model, ...rest } = planner;
-      return { ...rest, customModels };
-    }
-    case 'shell': {
-      const { model: _model, ...rest } = planner;
-      return { ...rest, customModels };
-    }
-    case 'agent': {
-      const { model: _model, ...rest } = planner;
-      return { ...rest, customModels };
-    }
-    case 'agent-sdk': {
-      const { model: _model, ...rest } = planner;
-      return { ...rest, customModels };
-    }
-  }
+  // exactOptionalPropertyTypes forbids { model: undefined } — destructure to omit.
+  const { model: _model, ...rest } = planner;
+  return { ...rest, customModels } as PlannerConfig;
 }

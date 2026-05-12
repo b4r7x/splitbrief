@@ -91,7 +91,7 @@ export async function handleRewindSpec(
   finalTasks = briefsLoop.tasks;
   if (briefsLoop.rejected) return { state, tasks: [], cancelled: true };
 
-  state = publishPlanApproved(state, { bus: wctx.bus });
+  state = publishPlanApproved(state, wctx.bus);
   return { state, tasks: finalTasks, cancelled: false };
 }
 
@@ -155,6 +155,6 @@ export async function handleRewindPlan(
   finalTasks = briefsLoop.tasks;
   if (briefsLoop.rejected) return { state, tasks: [], cancelled: true };
 
-  state = publishPlanApproved(state, { bus: wctx.bus });
+  state = publishPlanApproved(state, wctx.bus);
   return { state, tasks: finalTasks, cancelled: false };
 }

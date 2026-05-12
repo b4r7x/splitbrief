@@ -15,7 +15,7 @@ import { routeTaskToImplementerProfile } from '../context-routing/route.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { createSnapshot } from '../../snapshots/store.js';
 import { recordRunSnapshot } from '../../snapshots/run.js';
-import { buildContextOverflowRecoveryIssue, buildDependencyBlockedRecoveryIssue } from '../recovery/recovery.js';
+import { buildContextOverflowRecoveryIssue, buildDependencyBlockedRecoveryIssue } from '../recovery/builders/task.js';
 import { captureChangedFilesBaseline, inferTaskAcceptedChangedFiles, refreshChangedFilesBaseline } from '../changed-files-baseline.js';
 import { checkUserEditConflicts } from '../user-edit/detection.js';
 import { taskConfigForProfile, selectedProfileFromDecision, createTaskImplementer, retryProfileOverrideForTask, routingBlockMessage } from './routing.js';

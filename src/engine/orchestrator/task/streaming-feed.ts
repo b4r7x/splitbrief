@@ -1,13 +1,28 @@
 import type { TaskId } from '../../../core/schemas/task.js';
 import { createRingBuffer } from '../../streaming/ring-buffer.js';
-import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
+
+export interface StreamingSink {
+  start(taskId: TaskId): void;
+  pushLines(lines: string[]): void;
+  stop(): void;
+}
+
+export const noopStreamingSink: StreamingSink = {
+  start() {},
+  pushLines() {},
+  stop() {},
+};
 
 export interface StreamingFeed {
   onText(text: string): void;
   stop(): void;
 }
 
-export function createStreamingFeed(taskId: TaskId, isApiRunner: boolean): StreamingFeed {
+export function createStreamingFeed(
+  taskId: TaskId,
+  isApiRunner: boolean,
+  sink: StreamingSink,
+): StreamingFeed {
   if (!isApiRunner) {
     return { onText() {}, stop() {} };
   }
@@ -15,7 +30,7 @@ export function createStreamingFeed(taskId: TaskId, isApiRunner: boolean): Strea
   const ringBuffer = createRingBuffer(5);
   let remainder = '';
 
-  streamingOutputStore.startStreaming(taskId);
+  sink.start(taskId);
 
   return {
     onText(text: string): void {
@@ -30,10 +45,10 @@ export function createStreamingFeed(taskId: TaskId, isApiRunner: boolean): Strea
       if (remainder.trim().length > 20) {
         ringBuffer.push(remainder.trim());
       }
-      streamingOutputStore.pushLines(ringBuffer.lines());
+      sink.pushLines(ringBuffer.lines());
     },
     stop(): void {
-      streamingOutputStore.stopStreaming();
+      sink.stop();
     },
   };
 }

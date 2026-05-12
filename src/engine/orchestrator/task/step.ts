@@ -143,6 +143,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     implState = await runImplementation({
       wctx, task, state, taskStartSnapshot, setTrackedState,
       recordApprovalDenial: (decision, message) => recordApprovalDenial(wctx, state, task, decision, message),
+      streamingSink: wctx.streamingSink,
     });
   } catch (err) {
     publishError(wctx.bus, state.phase, labelError('Implementation failed', err));

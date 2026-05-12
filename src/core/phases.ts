@@ -1,7 +1,7 @@
 import type { Phase } from './schemas/enums.js';
 import type { WorkflowState } from './schemas/workflow.js';
 
-export type PhaseRole = 'planner' | 'implementer';
+type PhaseRole = 'planner' | 'implementer';
 
 const IMPLEMENTER_PHASES: ReadonlySet<Phase> = new Set([
   'implementing',
@@ -37,31 +37,7 @@ export function phaseCostRole(phase: string): PhaseRole | null {
   return null;
 }
 
-export function isPlannerCostPhase(phase: string): boolean {
-  return phaseCostRole(phase) === 'planner';
-}
-
-export function isImplementerCostPhase(phase: string): boolean {
-  return phaseCostRole(phase) === 'implementer';
-}
-
-export const CANCELLABLE_PHASES: ReadonlySet<Phase> = new Set([
-  'researching',
-  'specifying',
-  'reviewing-spec',
-  'clarifying',
-  'constitution-check',
-  'planning',
-  'reviewing-plan',
-  'reviewing-briefs',
-  'analyzing',
-  'implementing',
-  'validating-task',
-  'escalating',
-  'final-review',
-]);
-
-export const RESUMABLE_PHASES: ReadonlySet<Phase> = new Set<Phase>([
+const RESUMABLE_PHASES: ReadonlySet<Phase> = new Set<Phase>([
   'reviewing-spec',
   'clarifying',
   'constitution-check',

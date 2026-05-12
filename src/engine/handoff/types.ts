@@ -1,8 +1,6 @@
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import type { HandoffTarget } from '../../core/handoff/targets.js';
-export { HANDOFF_TARGETS, parseHandoffTarget } from '../../core/handoff/targets.js';
-export type { HandoffTarget } from '../../core/handoff/targets.js';
 
 export type HandoffInput = {
   target: HandoffTarget;

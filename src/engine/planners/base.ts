@@ -29,7 +29,7 @@ import { extractCode } from '../parsers/response-extractor.js';
 import { buildProjectContextMarkdown } from './context.js';
 import { accumulateUsage } from '../streaming/token-utils.js';
 import { DEFAULT_AVAILABILITY } from '../../lib/availability.js';
-import { getChangedFiles } from '../../lib/git.js';
+import { getCurrentChangedFiles } from '../../lib/git.js';
 import { createChangeDetector } from '../change-detection.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
 import type { Phase } from '../../core/schemas/enums.js';
@@ -263,7 +263,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       const hintPrompt = buildHintPrompt(task, error, languageContext ?? buildProjectLanguageContext(projectDir, undefined));
       const useFiles = config.hintSuccessMode === 'files';
       const detect = useFiles ? createChangeDetector('Hint escalation') : null;
-      const filesBefore = useFiles ? await getChangedFiles(projectDir) : [];
+      const filesBefore = useFiles ? await getCurrentChangedFiles(projectDir) : [];
       const result = await config.invokeEscalate({ prompt: hintPrompt, projectDir, callbacks });
       const success = detect
         ? (await detect(projectDir, filesBefore)).changed

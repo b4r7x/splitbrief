@@ -21,23 +21,23 @@ const PaletteConfigSchema = z.object({
 export type PaletteCustomAction = z.infer<typeof PaletteCustomActionSchema>;
 export type PaletteConfig = z.infer<typeof PaletteConfigSchema>;
 
-export const SnapshotsAutoConfigSchema = z.object({
+const SnapshotsAutoConfigSchema = z.object({
   preTask: z.boolean().optional(),
   postTask: z.boolean().optional(),
   preFinalReview: z.boolean().optional(),
 });
 
-export const SnapshotsConfigSchema = z.object({
+const SnapshotsConfigSchema = z.object({
   auto: SnapshotsAutoConfigSchema.optional(),
 });
 
-export const EscalationConfigSchema = z.object({
+const EscalationConfigSchema = z.object({
   intermediateProvider: z.string().optional(),
   intermediateModel: z.string().optional(),
   enabled: z.boolean().optional(),
 });
 
-export const GitWorkflowConfigSchema = z.object({
+const GitWorkflowConfigSchema = z.object({
   commitStrategy: CommitStrategySchema.optional(),
   createBranch: z.boolean().optional(),
 });
@@ -45,7 +45,7 @@ export const GitWorkflowConfigSchema = z.object({
 export const TaskReviewModeSchema = z.enum(['none', 'failed', 'every']);
 export type TaskReviewMode = z.infer<typeof TaskReviewModeSchema>;
 
-export const SpeckitWorkflowConfigSchema = z.object({
+const SpeckitWorkflowConfigSchema = z.object({
   minCoverage: z.number().min(0).max(1).optional(),
 });
 

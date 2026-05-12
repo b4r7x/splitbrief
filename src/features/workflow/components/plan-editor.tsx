@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import { dirname } from 'node:path';
 import { useTheme } from '../../../components/theme.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 import { configStore } from '../../../stores/project/config.js';
 import { planEditorStore } from '../../../stores/workflow/plan-editor.js';
 import type { BriefQualityReport } from '../../../engine/spec/brief-quality.js';
@@ -72,7 +73,7 @@ export function PlanEditorComponent({
       setQuality(loadedQuality);
     }).catch((err) => {
       if (!signal.aborted) {
-        const message = `Failed to load Task Briefs: ${err instanceof Error ? err.message : String(err)}`;
+        const message = `Failed to load Task Briefs: ${toErrorMessage(err)}`;
         setLoadError(message);
         planEditorStore.setSaveError(message);
       }

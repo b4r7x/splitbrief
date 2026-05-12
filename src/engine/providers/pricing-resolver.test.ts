@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolvePricing, isApiPricedProvider, getPricingMode, formatPricing, LOCAL_PRICING } from './pricing-resolver.js';
+import { resolvePricing, isApiPricedProvider, getPricingMode, LOCAL_PRICING } from './pricing-resolver.js';
 import { NULL_CACHE } from './model/resolution.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
@@ -92,20 +92,6 @@ describe('pricing-resolver', () => {
       expect(result.source).toBe('runtime');
       expect(result.cacheReadPer1M).toBe(0.30);
       expect(result.cacheWritePer1M).toBe(3.75);
-    });
-  });
-
-  describe('formatPricing', () => {
-    it('formats pricing with both values', () => {
-      expect(formatPricing(3, 15)).toBe('$3/$15');
-    });
-
-    it('formats decimal values', () => {
-      expect(formatPricing(0.28, 0.42)).toBe('$0.28/$0.42');
-    });
-
-    it('returns null when both values are undefined', () => {
-      expect(formatPricing(undefined, undefined)).toBeNull();
     });
   });
 

@@ -1,9 +1,11 @@
 import type { EngineEvent, EventSink } from '../types.js';
+import type { TaskId } from '../../../core/schemas/task.js';
 import type { TreeEntryEnvelope } from '../../../core/sessions/tree/schemas.js';
 import type { SessionTree } from '../../../core/sessions/tree/store.js';
 import { createEmptyTree, appendEntry, branchFrom } from '../../../core/sessions/tree/store.js';
-import { persistAppend, persistBranch, writeTreeMeta, appendTreeEntry, reconstructTree } from '../../../core/sessions/tree/io.js';
+import { persistAppend, writeTreeMeta, appendTreeEntry, reconstructTree } from '../../../core/sessions/tree/io.js';
 import { sessionDir } from '../../../core/paths.js';
+import { totalInputTokens, totalOutputTokens } from '../../../core/schemas/tokens.js';
 import type { AgentInvocationPayload, CostCheckpointPayload, PlanStepPayload, RecoveryDecisionPayload } from '../../../core/sessions/tree/entry-types.js';
 
 export interface TreeRecorderOptions {
@@ -13,8 +15,11 @@ export interface TreeRecorderOptions {
 
 const BRANCHING_ACTIONS = new Set(['retry-same-worker', 'route-bigger-worker', 'planner-split-rebase']);
 
+// All disk I/O is wrapped in try/catch — persistence failures must not crash the workflow.
 export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
   const dir = sessionDir(opts.projectDir, opts.sessionId);
+
+  const tid = (id: TaskId): string => id as string;
 
   let tree: SessionTree | null = null;
   const taskStartTimes = new Map<string, number>();
@@ -24,19 +29,9 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
     if (!tree) return;
     try {
       persistAppend(dir, entry, tree.meta);
-    } catch {
-      // Disk failure must not crash the workflow
-    }
+    } catch {}
   }
 
-  function persistBranchEntry(entry: TreeEntryEnvelope): void {
-    if (!tree) return;
-    try {
-      persistBranch(dir, entry, tree.meta);
-    } catch {
-      // Disk failure must not crash the workflow
-    }
-  }
 
   return (event: EngineEvent) => {
     switch (event.type) {
@@ -46,9 +41,7 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
         try {
           appendTreeEntry(dir, root);
           writeTreeMeta(dir, tree.meta);
-        } catch {
-          // non-fatal
-        }
+        } catch {}
         return;
       }
 
@@ -63,9 +56,7 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
             try {
               appendTreeEntry(dir, root);
               writeTreeMeta(dir, tree.meta);
-            } catch {
-              // non-fatal
-            }
+            } catch {}
           }
         }
         return;
@@ -89,14 +80,14 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
           display: true,
         });
         tree = result.tree;
-        taskStartTimes.set(event.taskId as string, event.ts);
+        taskStartTimes.set(tid(event.taskId), event.ts);
         persist(result.entry);
         return;
       }
 
       case 'task_tokens': {
         if (!tree) return;
-        taskTokens.set(event.taskId as string, event.implementerTokens + event.escalationTokens);
+        taskTokens.set(tid(event.taskId), event.implementerTokens + event.escalationTokens);
         return;
       }
 
@@ -110,7 +101,7 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
           phase: event.phase,
           status: 'completed',
           durationMs: event.duration,
-          tokensUsed: taskTokens.get(event.taskId as string),
+          tokensUsed: taskTokens.get(tid(event.taskId)),
         };
         const result = appendEntry(tree, {
           type: 'agent-invocation',
@@ -119,15 +110,15 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
         });
         tree = result.tree;
         persist(result.entry);
-        taskTokens.delete(event.taskId as string);
-        taskStartTimes.delete(event.taskId as string);
+        taskTokens.delete(tid(event.taskId));
+        taskStartTimes.delete(tid(event.taskId));
         return;
       }
 
       case 'task_failed':
       case 'task_full_fail': {
         if (!tree) return;
-        const startTime = taskStartTimes.get(event.taskId as string);
+        const startTime = taskStartTimes.get(tid(event.taskId));
         const payload: AgentInvocationPayload = {
           taskId: event.taskId,
           role: 'implementer',
@@ -135,7 +126,7 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
           phase: event.phase,
           status: 'failed',
           durationMs: startTime !== undefined ? event.ts - startTime : undefined,
-          tokensUsed: taskTokens.get(event.taskId as string),
+          tokensUsed: taskTokens.get(tid(event.taskId)),
         };
         const result = appendEntry(tree, {
           type: 'agent-invocation',
@@ -144,8 +135,8 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
         });
         tree = result.tree;
         persist(result.entry);
-        taskTokens.delete(event.taskId as string);
-        taskStartTimes.delete(event.taskId as string);
+        taskTokens.delete(tid(event.taskId));
+        taskStartTimes.delete(tid(event.taskId));
         return;
       }
 
@@ -169,7 +160,7 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
             display: true,
           });
           tree = result.tree;
-          persistBranchEntry(result.entry);
+          persist(result.entry);
         } else {
           const result = appendEntry(tree, {
             type: 'recovery-decision',
@@ -185,11 +176,10 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
 
       case 'cost_update': {
         if (!tree) return;
-        const u = event.tokenUsage;
         const payload: CostCheckpointPayload = {
-          totalCost: 0, // cost in dollars not available from this event; record token counts
-          inputTokens: u.plannerInput + u.implementerInput + u.escalationInput,
-          outputTokens: u.plannerOutput + u.implementerOutput + u.escalationOutput,
+          totalCost: 0,
+          inputTokens: totalInputTokens(event.tokenUsage),
+          outputTokens: totalOutputTokens(event.tokenUsage),
           phase: event.phase,
         };
         const result = appendEntry(tree, {

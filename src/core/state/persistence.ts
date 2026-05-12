@@ -74,11 +74,5 @@ export function appendEngineEvent<TEvent extends { type: string; ts: number }>(
     ...(taskId !== undefined && { taskId }),
     data,
   };
-  const dir = sessionDir(projectDir, sessionId);
-  try {
-    ensureSecureDir(dir);
-    appendFileSync(join(dir, SESSION_LOG_FILE), JSON.stringify(entry) + '\n', { mode: SECURE_FILE_MODE });
-  } catch (err) {
-    warnStderr(`Warning: failed to persist log entry: ${toErrorMessage(err)}`);
-  }
+  appendLine(projectDir, sessionId, entry);
 }

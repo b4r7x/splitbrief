@@ -2,7 +2,7 @@ const replayApiKey = process.env.DIPTYCH_E2E_RECORD === '1'
   ? undefined
   : 'e2e-placeholder';
 
-export const e2eApiBase = process.env.DIPTYCH_E2E_API_BASE ?? 'http://localhost:11434/v1';
+const e2eApiBase = process.env.DIPTYCH_E2E_API_BASE ?? 'http://localhost:11434/v1';
 
 export const e2ePlanner = {
   kind: 'api',

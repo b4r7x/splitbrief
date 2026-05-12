@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { HandoffInput, HandoffPack } from './types.js';
-import { HANDOFF_TARGETS } from './types.js';
+import { HANDOFF_TARGETS } from '../../core/handoff/targets.js';
 import { renderSpecKit } from './renderers/spec-kit.js';
 import { renderAgentsMd } from './renderers/agents-md.js';
 import { renderClaudeCode } from './renderers/claude-code.js';

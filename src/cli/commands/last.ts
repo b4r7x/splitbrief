@@ -16,12 +16,11 @@ const defaultDeps: LastDeps = { continueCommand };
 async function findMostRecentSession(projectDir: string): Promise<string> {
   const sessions = await buildAliasedSessions(projectDir);
 
-  if (sessions.length === 0) {
+  const newest = sessions[0];
+  if (!newest) {
     throw cliError('no sessions found; start one with `diptych start`.', 1);
   }
 
-  const newest = sessions[0];
-  if (!newest) throw cliError('no sessions found; start one with `diptych start`.', 1);
   return newest.sessionId;
 }
 

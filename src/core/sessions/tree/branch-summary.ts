@@ -1,28 +1,19 @@
-import { z } from 'zod';
 import type { TreeEntryEnvelope, EntryId } from './schemas.js';
 import type { SessionTree } from './store.js';
 import { pathToRoot, branchFrom } from './store.js';
 import { buildBranchSummaryPrompt } from './summary-prompt.js';
+import { BranchSummaryPayloadSchema } from './entry-types.js';
+import type { BranchSummaryPayload } from './entry-types.js';
 
-export const BranchSummarySchema = z.object({
-  goal: z.string(),
-  progress: z.array(z.string()),
-  decisions: z.array(z.string()),
-  constraints: z.array(z.string()),
-  nextSteps: z.array(z.string()),
-  failureReason: z.string(),
-  entryCount: z.number().int().nonnegative(),
-  durationMs: z.number().int().nonnegative(),
-});
-export type BranchSummary = z.infer<typeof BranchSummarySchema>;
+export type BranchSummary = BranchSummaryPayload;
 
 export function parseBranchSummaryResponse(raw: string): BranchSummary | null {
   // Try to extract JSON from markdown code blocks first
   const codeBlockMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
   if (codeBlockMatch) {
     try {
-      const parsed: unknown = JSON.parse(codeBlockMatch[1]!.trim());
-      const result = BranchSummarySchema.safeParse(parsed);
+      const parsed: unknown = JSON.parse((codeBlockMatch[1] ?? '').trim());
+      const result = BranchSummaryPayloadSchema.safeParse(parsed);
       if (result.success) return result.data;
     } catch {
       // Fall through to brace matching
@@ -34,7 +25,7 @@ export function parseBranchSummaryResponse(raw: string): BranchSummary | null {
   for (const match of matches) {
     try {
       const parsed: unknown = JSON.parse(match[0]);
-      const result = BranchSummarySchema.safeParse(parsed);
+      const result = BranchSummaryPayloadSchema.safeParse(parsed);
       if (result.success) return result.data;
     } catch {
     }
@@ -77,7 +68,7 @@ export function mechanicalBranchSummary(ctx: BranchContext): BranchSummary {
   };
 }
 
-export interface SummarizeBranchOptions {
+interface SummarizeBranchOptions {
   tree: SessionTree;
   failedLeafId: EntryId;
   branchPointId: EntryId;
@@ -119,7 +110,7 @@ export async function summarizeAndBranch(opts: SummarizeBranchOptions): Promise<
     ...summary,
     entryCount: failedPath.length,
     durationMs: failedPath.length > 1
-      ? failedPath[0]!.timestamp - failedPath[failedPath.length - 1]!.timestamp
+      ? (failedPath[0]?.timestamp ?? 0) - (failedPath[failedPath.length - 1]?.timestamp ?? 0)
       : 0,
   };
 

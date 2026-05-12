@@ -2,8 +2,9 @@ import type { HookEvent, HookEntry, HooksConfig } from '../../core/schemas/hooks
 import type { Phase } from '../../core/schemas/enums.js';
 import type { EngineEvent, EventBus, EventSink } from '../events/types.js';
 import { runHook } from './dispatch.js';
-import type { HookContext } from './types.js';
+import type { HookContext, HookOutcome } from './types.js';
 import { activeBuiltinsFor } from './builtins/registry.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 
 export function createHookSink(hooks: HooksConfig, ctx: HookContext, bus: EventBus): EventSink {
   return (event) => {
@@ -16,6 +17,26 @@ export function createHookSink(hooks: HooksConfig, ctx: HookContext, bus: EventB
   };
 }
 
+async function runAndReport(
+  label: string,
+  phase: Phase,
+  bus: EventBus,
+  fn: () => Promise<HookOutcome>,
+): Promise<void> {
+  try {
+    const outcome = await fn();
+    if (outcome.kind === 'crash') {
+      bus.publish({ type: 'warning', ts: Date.now(), phase, message: `${label} crashed: ${outcome.message}` });
+    } else if (outcome.kind === 'warn' && outcome.message) {
+      bus.publish({ type: 'warning', ts: Date.now(), phase, message: `${label} ${outcome.message}` });
+    } else if (outcome.kind === 'deny') {
+      bus.publish({ type: 'warning', ts: Date.now(), phase, message: `${label} denied (post-hook deny is informational only): ${outcome.message ?? ''}` });
+    }
+  } catch (err) {
+    bus.publish({ type: 'warning', ts: Date.now(), phase, message: `${label} crashed: ${toErrorMessage(err)}` });
+  }
+}
+
 async function runBuiltinsAndEntriesAndReport(
   builtins: ReturnType<typeof activeBuiltinsFor>,
   entries: HookEntry[],
@@ -26,41 +47,16 @@ async function runBuiltinsAndEntriesAndReport(
 ): Promise<void> {
   const phase = getEventPhase(event);
   for (const builtin of builtins) {
-    try {
-      const outcome = await builtin.run(event, ctx);
-      if (outcome.kind === 'crash') {
-        bus.publish({ type: 'warning', ts: Date.now(), phase, message: `[builtin ${builtin.name}] crashed: ${outcome.message}` });
-      } else if (outcome.kind === 'warn' && outcome.message) {
-        bus.publish({ type: 'warning', ts: Date.now(), phase, message: `[builtin ${builtin.name}] ${outcome.message}` });
-      } else if (outcome.kind === 'deny') {
-        bus.publish({ type: 'warning', ts: Date.now(), phase, message: `[builtin ${builtin.name}] denied (post-hook deny is informational only): ${outcome.message ?? ''}` });
-      }
-    } catch (err) {
-      bus.publish({ type: 'warning', ts: Date.now(), phase, message: `[builtin ${builtin.name}] crashed: ${err instanceof Error ? err.message : String(err)}` });
-    }
+    await runAndReport(`[builtin ${builtin.name}]`, phase, bus, () => builtin.run(event, ctx));
   }
   for (const entry of entries) {
-    try {
-      const outcome = await runHook(entry, event, ctx);
-      const label = entry.name ?? (entry.kind === 'module' ? entry.path : entry.command);
-      if (outcome.kind === 'crash') {
-        bus.publish({ type: 'warning', ts: Date.now(), phase, message: `[hook ${hookEvent} ${label}] crashed: ${outcome.message}` });
-      } else if (outcome.kind === 'warn' && outcome.message) {
-        bus.publish({ type: 'warning', ts: Date.now(), phase, message: `[hook ${hookEvent} ${label}] ${outcome.message}` });
-      } else if (outcome.kind === 'deny') {
-        bus.publish({ type: 'warning', ts: Date.now(), phase, message: `[hook ${hookEvent} ${label}] denied (post-hook deny is informational only): ${outcome.message ?? ''}` });
-      }
-    } catch (err) {
-      bus.publish({ type: 'warning', ts: Date.now(), phase, message: `[hook ${hookEvent}] crashed: ${err instanceof Error ? err.message : String(err)}` });
-    }
+    const label = entry.name ?? (entry.kind === 'module' ? entry.path : entry.command);
+    await runAndReport(`[hook ${hookEvent} ${label}]`, phase, bus, () => runHook(entry, event, ctx));
   }
 }
 
 function getEventPhase(event: EngineEvent): Phase {
-  if ('phase' in event && typeof (event as { phase: unknown }).phase === 'string') {
-    return (event as { phase: string }).phase as Phase;
-  }
-  return 'implementing';
+  return 'phase' in event ? event.phase : 'implementing';
 }
 
 function eventToHookKey(e: EngineEvent): HookEvent | null {

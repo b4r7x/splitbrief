@@ -16,15 +16,6 @@ export interface RunCommandResult {
   exitCode: number;
 }
 
-/**
- * Run the diptych CLI in-process with the given args.
- *
- * Creates a fresh commander `Command` on each call, registers every subcommand,
- * installs `exitOverride()` so failing commands throw instead of killing the
- * process, and captures stdout/stderr via console spies.
- *
- * Passing `['start', 'feature']` behaves like `diptych start feature`.
- */
 export async function runCommand(args: string[]): Promise<RunCommandResult> {
   const program = new Command();
   program.name('diptych').version('0.1.0').exitOverride();

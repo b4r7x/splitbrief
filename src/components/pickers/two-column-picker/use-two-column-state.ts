@@ -4,6 +4,8 @@ import { filterByFields, type FilterableItem } from '../picker-utils.js';
 import { handleKeyboardInput } from './two-column-keyboard.js';
 import { useColumnState } from './use-column-state.js';
 
+const noop = () => {};
+
 export interface LeftColumnProps<L> {
   items: L[];
   label?: string | undefined;
@@ -97,7 +99,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const allowCustomRight = !!rightProps.customRow;
   const initialRightIndex = rightProps.initialIndex ?? (allowCustomRight ? 1 : 0);
   const rightPlaceholder = rightProps.placeholder;
-  const onLeftChange = rightProps.onLeftChange ?? (() => {});
+  const onLeftChange = rightProps.onLeftChange ?? noop;
   const onCustomRightOverlay = rightProps.customRow?.onSelect;
   const onDeleteRight = rightProps.customRow?.onDelete;
 
@@ -163,7 +165,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
       setRightIndex: rightCol.setIndex,
       resetRight,
     });
-  }, { isActive: true });
+  });
 
   return {
     activeColumn,

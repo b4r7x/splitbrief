@@ -11,19 +11,16 @@ import type { TaskReviewRequest } from './workflow-events.js';
 export type ValidationStages = { typecheck: boolean; lint: boolean; test: boolean };
 
 export type EngineEvent =
-  // Workflow lifecycle
   | { type: 'workflow_started'; ts: number; phase: Phase; feature: string }
   | { type: 'workflow_resumed'; ts: number; phase: Phase }
   | { type: 'workflow_complete'; ts: number; phase: Phase }
   | { type: 'workflow_cancelled'; ts: number; phase: Phase }
   | { type: 'workflow_config'; ts: number; phase: Phase; mode: WorkflowMode; plannerTool: string; plannerModel?: string; implementerTool: string; implementerModel?: string }
   | { type: 'paused_external_changes'; ts: number; phase: Phase; conflict?: UserEditConflict; selectedAction?: UserEditConflictAction }
-  // Recovery flow
   | { type: 'recovery_prompted'; ts: number; phase: Phase; issueId: string; reason: RecoveryReason; taskId?: TaskId; files: string[]; affectedTaskIds: TaskId[]; availableActions: RecoveryAction[]; recommendedAction: RecoveryAction }
   | { type: 'recovery_action_selected'; ts: number; phase: Phase; issueId: string; reason: RecoveryReason; action: RecoveryAction }
   | { type: 'recovery_action_failed'; ts: number; phase: Phase; issueId: string; reason: RecoveryReason; action: RecoveryAction; message: string }
   | { type: 'recovery_resolved'; ts: number; phase: Phase; issueId: string; reason: RecoveryReason; action: RecoveryAction; outcome: 'continued' | 'retry-current-task' | 'skipped-current-task' | 'aborted'; implementerProfile?: string }
-  // Planner stream
   | { type: 'planner_status'; ts: number; phase: Phase; status: 'running' | 'done'; tool?: string; model?: string; duration?: number; summary?: string }
   | { type: 'planner_text'; ts: number; phase: Phase; text: string }
   | { type: 'planner_heartbeat'; ts: number; phase: Phase; elapsedMs: number; accumulatedTokens: number; phaseHint?: string }
@@ -51,7 +48,6 @@ export type EngineEvent =
   | { type: 'mode_downgrade_advised'; ts: number; phase: Phase; currentMode: WorkflowMode; suggestedMode: WorkflowMode }
   | { type: 'mode_advice'; ts: number; phase: Phase; kind: 'none' | 'downgrade' | 'upgrade' | 'missing-context'; risk: 'trivial' | 'small' | 'normal' | 'high'; currentMode: WorkflowMode; suggestedMode: WorkflowMode; confidence: number; factors: string[]; missing: string[] }
   | { type: 'instant_plan_received'; ts: number; phase: Phase; taskCount: number }
-  // Task lifecycle
   | { type: 'task_started'; ts: number; phase: Phase; taskId: TaskId; title: string; index: number; total: number; file: string; action: 'create' | 'modify'; tool?: string; model?: string; implementerProfile?: string; contextFit?: TaskContextFit; estimatedTokens?: number; untruncatedEstimatedTokens?: number; contextLength?: number; currentCodeTruncated?: boolean; currentCodeContextMode?: CurrentCodeContextMode; costPosture?: string; routingReason?: string }
   | { type: 'task_completed'; ts: number; phase: Phase; taskId: TaskId; title: string; method: TaskCompletionMethod; retries: number; duration: number; tool?: string; model?: string; implementerProfile?: string }
   | { type: 'task_failed'; ts: number; phase: Phase; taskId: TaskId }
@@ -63,43 +59,33 @@ export type EngineEvent =
   | { type: 'task_tokens'; ts: number; phase: Phase; taskId: TaskId; method: TaskCompletionMethod; implementerTokens: number; escalationTokens: number; retryCount: number; tool?: string; model?: string; implementerProfile?: string; contextFit?: TaskContextFit; estimatedTokens?: number; untruncatedEstimatedTokens?: number; contextLength?: number; currentCodeTruncated?: boolean; currentCodeContextMode?: CurrentCodeContextMode; costPosture?: string; routingReason?: string }
   | ({ type: 'task_review_needed'; ts: number; phase: Phase } & TaskReviewRequest)
   | { type: 'hint_failed'; ts: number; phase: Phase; taskId: TaskId }
-  // Implementer
   | { type: 'implementer_generate_running'; ts: number; phase: Phase; taskId: TaskId; file?: string }
   | { type: 'implementer_generate_done'; ts: number; phase: Phase; taskId: TaskId; file: string; diff?: string; linesAdded: number; linesRemoved: number; duration: number }
   | { type: 'implementer_generate_failed'; ts: number; phase: Phase; taskId: TaskId; model: string }
-  // Validation
   | { type: 'validate'; ts: number; phase: Phase; taskId: TaskId; status: 'running' | 'done'; passed: boolean; stages: ValidationStages; error?: string; duration?: number }
-  // Escalation
   | { type: 'escalate'; ts: number; phase: Phase; taskId: TaskId; tier: 0 | 1 | 2; hint?: string; tool?: string; model?: string }
-  // Git
   | { type: 'git_commit'; ts: number; phase: Phase; taskId: TaskId; message: string; file?: string }
   | { type: 'git_checkpoint'; ts: number; phase: Phase; taskId: TaskId; tag: string }
   | { type: 'git_branch_created'; ts: number; phase: Phase; name: string }
-  // Clarifications
   | { type: 'clarifications_collected'; ts: number; phase: Phase; count: number; clarifications: Array<{ question: string; answer: string }> }
   | { type: 'clarification_answered'; ts: number; phase: Phase; questionId?: string; answer: string }
-  // Queue
   | { type: 'message_queued'; ts: number; phase: Phase; id: string }
   | { type: 'message_injected_native'; ts: number; phase: Phase; id: string }
   | { type: 'queue_drained'; ts: number; phase: Phase; count: number }
   | { type: 'queue_cleared'; ts: number; phase: Phase; count: number }
   | { type: 'user_message'; ts: number; phase: Phase; text: string }
-  // Attachments
   | { type: 'planner_attachment_added'; ts: number; phase: Phase; id: string; path: string; sizeBytes: number }
   | { type: 'planner_attachments_dropped'; ts: number; phase: Phase; count: number; reason: 'unsupported-backend' | 'capability-degraded' }
-  // Cost & budget
   | { type: 'cost_update'; ts: number; phase: Phase; tokenUsage: TokenUsage }
   | { type: 'cost_prediction'; ts: number; phase: Phase; prediction: CostPrediction }
   | { type: 'budget_warning'; ts: number; phase: Phase; currentCost: number; maxBudget: number }
   | { type: 'budget_paused'; ts: number; phase: Phase; currentCost: number; maxBudget: number; threshold: number }
   | { type: 'budget_exceeded'; ts: number; phase: Phase; currentCost: number; maxBudget: number }
-  // Tiered approval gate
   | { type: 'approval_prompted'; ts: number; phase: Phase; tier: ApprovalTier; actionClass: ActionClass; taskId?: TaskId }
   | { type: 'approval_granted'; ts: number; phase: Phase; tier: ApprovalTier; actionClass: ActionClass; taskId?: TaskId; scope: 'once' | 'session' | 'always'; confirmReason?: string }
   | { type: 'approval_rejected'; ts: number; phase: Phase; tier: ApprovalTier; actionClass: ActionClass; taskId?: TaskId; reason: string }
   | { type: 'approval_sticky_recorded'; ts: number; phase: Phase; pattern: string; scope: 'session' | 'always'; actionClass: ActionClass }
   | { type: 'approval_mode_changed'; ts: number; mode: 'yolo' | 'normal' }
-  // IPC
   | { type: 'ipc_server_started'; ts: number; phase: Phase; sockPath: string }
   | { type: 'ipc_client_attached'; ts: number; phase: Phase }
   | { type: 'ipc_client_detached'; ts: number; phase: Phase }
@@ -109,7 +95,6 @@ export type EngineEvent =
   | { type: 'server_post_mortem_shown'; ts: number; phase: Phase; sessionId: string }
   | { type: 'replay_started'; ts: number; phase: Phase; totalEvents: number }
   | { type: 'replay_complete'; ts: number; phase: Phase; totalEvents: number; durationMs: number }
-  // Generic
   | { type: 'warning'; ts: number; phase: Phase; message: string }
   | { type: 'error'; ts: number; phase: Phase; message: string };
 

@@ -19,6 +19,7 @@ import { createResponseWriter } from '../rpc/writer.js';
 import { parseAtFiles } from '../parse-at-files.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { cliError } from '../errors.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import { createWorktree, detectWorktree } from '../../engine/worktree.js';
 import { slugify } from '../../utils/slugify.js';
 import { spawnServer } from '../../engine/ipc/spawn-server.js';
@@ -69,7 +70,7 @@ async function applyWorktreeOption(feature: string | undefined, opts: WorkflowOp
     console.log(`Starting session in worktree .trees/${slug} (branch diptych/${slug})`);
     opts.project = wtPath;
   } catch (err) {
-    throw cliError(err instanceof Error ? err.message : String(err), 1);
+    throw cliError(toErrorMessage(err), 1);
   }
 }
 
@@ -140,7 +141,6 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       : enrichedFeature;
 
     if (opts.detach) {
-      if (!feature) throw cliError('--detach requires a feature argument');
       const projectDir = resolveProjectDir(opts.project);
       printMigrationResult(await maybeMigrate(projectDir));
       await ensureGitAndConfig(projectDir);
@@ -148,7 +148,8 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       assertReadinessCanStart(readiness.report, opts.json);
 
       const mode = opts.mode ?? 'standard';
-      const sessId = generateSessionId(projectDir, feature);
+      const detachFeature = feature as string;
+      const sessId = generateSessionId(projectDir, detachFeature);
       const sessDir = sessionDir(projectDir, sessId);
       ensureSessionDir(projectDir, sessId);
       persistStartReadiness(projectDir, sessId, readiness.report);
@@ -159,15 +160,14 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
         sessionDir: sessDir,
         sessionId: sessId,
         projectDir,
-        feature: plannerFeature ?? feature,
+        feature: plannerFeature ?? detachFeature,
         mode,
         configPath: configPath(projectDir),
         overrides,
       });
 
       if (!result.ok) {
-        console.error(`Failed to start server: ${result.reason}`);
-        process.exit(1);
+        throw cliError(`Failed to start server: ${result.reason}`, 1);
       }
 
       console.log(`Session ${result.sessionId} started (pid ${result.pid}).`);

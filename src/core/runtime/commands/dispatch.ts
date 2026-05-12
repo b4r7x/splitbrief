@@ -2,6 +2,7 @@ import type { Phase } from '../../schemas/enums.js';
 import type { Screen } from '../../navigation/types.js';
 import type { RuntimeCommandDef } from './types.js';
 import { lookupRuntimeCommand } from './lookup.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 
 interface CommandExecutionOptions {
   screen: Screen;
@@ -35,6 +36,6 @@ export async function executeRuntimeCommand(
     if (cmd.kind === 'arg') await cmd.handler(args);
     else await cmd.handler();
   } catch (err) {
-    options.onError(err instanceof Error ? err.message : String(err));
+    options.onError(toErrorMessage(err));
   }
 }

@@ -3,6 +3,7 @@ import { getRunnerDisplayName, getRunnerModelName } from '../../config/accessors
 import type { Config } from '../../schemas/config.js';
 import type { ReadinessCheck } from '../types.js';
 import { capitalize } from './format.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 
 function formatRunner(runner: Config['planner'] | Config['implementer']): string {
   const model = getRunnerModelName(runner);
@@ -37,7 +38,7 @@ export function buildRunnerChecks(config: Config): ReadinessCheck[] {
     checks.push({
       id: 'runners.implementer.profiles-invalid',
       severity: 'blocker',
-      summary: err instanceof Error ? err.message : String(err),
+      summary: toErrorMessage(err),
       fix: 'Fix implementerProfiles.default or remove the broken profile setting.',
       nextAction: 'fix-config',
     });

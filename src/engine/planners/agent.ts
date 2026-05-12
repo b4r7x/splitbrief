@@ -5,7 +5,7 @@ import type { LanguageContext } from '../spec/prompts/language-context.js';
 import { createCommandBasedPlanner, resolveCapabilities } from './command-invoke.js';
 import { buildEscalationPrompt } from '../spec/prompts/escalation.js';
 import { readSpecFile } from '../../core/paths-io.js';
-import { getChangedFiles } from '../../lib/git.js';
+import { getCurrentChangedFiles } from '../../lib/git.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import { createChangeDetector } from '../change-detection.js';
 
@@ -33,7 +33,7 @@ export function createAgentPlanner(config: Config): Planner {
     ) {
       const escalationPrompt = buildEscalationPrompt(task, task.currentCode ?? '', error, languageContext);
       const detect = createChangeDetector('Agent planner');
-      const filesBefore = await getChangedFiles(projectDir);
+      const filesBefore = await getCurrentChangedFiles(projectDir);
       const result = await base.review(escalationPrompt, projectDir, callbacks);
       const { changed } = await detect(projectDir, filesBefore);
       return { success: changed, output: result.text, code: null, usage: result.usage };

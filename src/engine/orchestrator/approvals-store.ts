@@ -3,6 +3,7 @@ import type { ApprovalsStore, ApprovalGrant } from '../../core/schemas/approval-
 import { ApprovalsStoreSchema } from '../../core/schemas/approval-store.js';
 import { approvalsFile } from '../../core/paths.js';
 import { readJsonSafe, writeSecureFile } from '../../lib/fs.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 
 const EMPTY_STORE: ApprovalsStore = { version: 1, grants: [] };
 
@@ -17,7 +18,7 @@ export function readApprovalsStore(projectDir: string): ApprovalsStore {
     return ApprovalsStoreSchema.parse(raw);
   } catch (err) {
     throw new Error(
-      `approval store is corrupt and cannot be read: ${err instanceof Error ? err.message : String(err)}`,
+      `approval store is corrupt and cannot be read: ${toErrorMessage(err)}`,
     );
   }
 }

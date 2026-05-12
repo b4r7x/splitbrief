@@ -104,19 +104,12 @@ export type RegenerateFromFeedbackCtx = {
   state: WorkflowState;
   metadata: SpecMetadata;
   skillsContext?: string | undefined;
-  /** When provided, used as the plan text for tasks regeneration (avoids reading PLAN_FILE from disk). */
   planOverride?: string | undefined;
 };
 
 type PlanRegenResult = { kind: 'plan'; state: WorkflowState; plan: string };
 type TasksRegenResult = { kind: 'tasks'; state: WorkflowState; tasks: Task[] };
 
-/**
- * Unified regeneration for plan.md or tasks.md driven by the current spec/plan on disk.
- * Drains any queued messages before calling the planner, then writes the resulting artifact
- * to disk via runPlannerReview. Callers handle emitting higher-level orchestrator events
- * around the regeneration.
- */
 export async function regenerateFromFeedback(kind: 'plan', ctx: RegenerateFromFeedbackCtx): Promise<PlanRegenResult>;
 export async function regenerateFromFeedback(kind: 'tasks', ctx: RegenerateFromFeedbackCtx): Promise<TasksRegenResult>;
 export async function regenerateFromFeedback(

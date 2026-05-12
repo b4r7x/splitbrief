@@ -32,8 +32,6 @@ import type {
   BriefsApprovalLoopResult,
 } from './types.js';
 
-export type { PlanningPhaseOptions, PlanningPhaseResult, PlannerCallRunResult, PlannerCallOptions, BriefsApprovalLoopOptions, BriefsApprovalLoopResult } from './types.js';
-
 export const MAX_CLARIFICATION_QUESTIONS = 5;
 
 export function drainAndFormat(
@@ -275,7 +273,7 @@ export async function runBriefsApprovalLoop(opts: BriefsApprovalLoopOptions): Pr
       id: randomUUID(),
       text: result.comment,
       queuedAt: new Date().toISOString(),
-      phase: state.phase as Phase,
+      phase: state.phase,
       deliveredViaNative: false as const,
     };
     state = transitionAndSave(projectDir, sessionId, state, { type: 'ENQUEUE_USER_MSG', message });

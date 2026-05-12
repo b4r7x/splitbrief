@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { parseTasks } from '../../../../engine/spec/parser.js';
 import { formatTasks } from '../../../../engine/spec/formatter.js';
 import { planEditorStore } from '../../../../stores/workflow/plan-editor.js';
+import { toErrorMessage } from '../../../../utils/format-errors.js';
 import type { Task } from '../../../../core/schemas/task.js';
 import { renumberTasks, parseSplitResult } from './actions.js';
 
@@ -35,7 +36,7 @@ export function openExternalEditor(task: Task, mode: 'edit' | 'split', sessionDi
   try {
     writeFileSync(tmpPath, content, { encoding: 'utf-8', mode: 0o600 });
   } catch (err) {
-    planEditorStore.setSaveError(`Failed to write editor file: ${err instanceof Error ? err.message : String(err)}`);
+    planEditorStore.setSaveError(`Failed to write editor file: ${toErrorMessage(err)}`);
     return;
   }
 
@@ -44,7 +45,7 @@ export function openExternalEditor(task: Task, mode: 'edit' | 'split', sessionDi
     process.stdin.pause();
     result = spawnSync(editor, [tmpPath], { stdio: 'inherit' });
   } catch (err) {
-    planEditorStore.setSaveError(`Failed to open editor: ${err instanceof Error ? err.message : String(err)}`);
+    planEditorStore.setSaveError(`Failed to open editor: ${toErrorMessage(err)}`);
     removeTempFile(tmpPath);
     return;
   } finally {
@@ -67,7 +68,7 @@ export function openExternalEditor(task: Task, mode: 'edit' | 'split', sessionDi
   try {
     editedContent = readFileSync(tmpPath, 'utf-8');
   } catch (err) {
-    planEditorStore.setSaveError(`Failed to read editor file: ${err instanceof Error ? err.message : String(err)}`);
+    planEditorStore.setSaveError(`Failed to read editor file: ${toErrorMessage(err)}`);
     removeTempFile(tmpPath);
     return;
   }
@@ -79,7 +80,7 @@ export function openExternalEditor(task: Task, mode: 'edit' | 'split', sessionDi
     try {
       parsed = parseTasks(editedContent);
     } catch (err) {
-      planEditorStore.setSaveError(`Edit parse failed: ${err instanceof Error ? err.message : String(err)}`);
+      planEditorStore.setSaveError(`Edit parse failed: ${toErrorMessage(err)}`);
       return;
     }
     if (parsed.length !== 1) {
@@ -92,7 +93,7 @@ export function openExternalEditor(task: Task, mode: 'edit' | 'split', sessionDi
     const renumbered = renumberTasks(updated);
     planEditorStore.setTasks(renumbered);
   } else {
-    const splitResult = parseSplitResult(editedContent, task);
+    const splitResult = parseSplitResult(editedContent);
     if ('error' in splitResult) {
       planEditorStore.setSaveError(splitResult.error);
       return;

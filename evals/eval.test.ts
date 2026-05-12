@@ -35,8 +35,8 @@ describe('eval harness', () => {
     expect(routed.quality.failedChecks).toEqual(['missing edge case']);
   });
 
-  it('writes JSON and markdown reports to a chosen output directory', () => {
-    withTempDir((dir) => {
+  it('writes JSON and markdown reports to a chosen output directory', async () => {
+    await withTempDir((dir) => {
       const report = makeReport();
 
       const { jsonPath, mdPath } = generateReport(report, dir);
@@ -60,7 +60,7 @@ describe('eval harness', () => {
     globalThis.fetch = fakeFetch;
 
     try {
-      await withTempDirAsync(async (dir) => {
+      await withTempDir(async (dir) => {
         const cassettePath = join(dir, 'test-record.json');
         const recorder = createCassetteRecorder(cassettePath, 'test-record');
         recorder.install();
@@ -88,7 +88,7 @@ describe('eval harness', () => {
   });
 
   it('replays recorded responses and reports cassette exhaustion clearly', async () => {
-    await withTempDirAsync(async (dir) => {
+    await withTempDir(async (dir) => {
       const cassettePath = join(dir, 'fake-baseline.json');
       writeFileSync(cassettePath, JSON.stringify(makeCassette(), null, 2));
 
@@ -107,8 +107,8 @@ describe('eval harness', () => {
     });
   });
 
-  it('copies fixtures to a temp project without modifying the original fixture', () => {
-    withTempDir((dir) => {
+  it('copies fixtures to a temp project without modifying the original fixture', async () => {
+    await withTempDir((dir) => {
       const fixtureDir = join(dir, 'fixture');
       const originalConfig = 'version: 3\n';
       mkdirSync(join(fixtureDir, '.diptych'), { recursive: true });
@@ -252,16 +252,7 @@ function firstEntry<T>(entries: T[]): T {
   return entry;
 }
 
-function withTempDir(fn: (dir: string) => void): void {
-  const dir = mkdtempSync(join(tmpdir(), 'diptych-eval-test-'));
-  try {
-    fn(dir);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-async function withTempDirAsync(fn: (dir: string) => Promise<void>): Promise<void> {
+async function withTempDir(fn: (dir: string) => void | Promise<void>): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), 'diptych-eval-test-'));
   try {
     await fn(dir);

@@ -24,9 +24,6 @@ export function validateSessionId(sessionId: string): void {
   if (!result.ok) {
     throw fsError.invalidId('session id', sessionId, result.reason);
   }
-  if (sessionId !== sessionId.trim()) {
-    throw fsError.invalidId('session id', sessionId, 'must not start or end with whitespace');
-  }
   if (!SESSION_ID_PATTERN.test(sessionId)) {
     throw fsError.invalidId('session id', sessionId, 'must contain only letters, numbers, dots, underscores or hyphens and start with a letter or number');
   }
@@ -46,7 +43,7 @@ export const reviewPacketMarkdownPath = (projectDir: string, sessionId: string):
 export const getDiptychPath = (projectDir: string, ...parts: string[]): string =>
   join(projectDir, DIPTYCH_DIR, ...parts);
 
-export const APPROVALS_FILE = 'approvals.json';
+const APPROVALS_FILE = 'approvals.json';
 
 export const approvalsFile = (projectDir: string): string =>
   join(projectDir, DIPTYCH_DIR, APPROVALS_FILE);
@@ -69,7 +66,6 @@ export const BRIEF_QUALITY_FILE = 'brief-quality.json';
 export const READINESS_FILE = 'readiness.json';
 export const REVIEW_PACKET_JSON_FILE = 'review-packet.json';
 export const REVIEW_PACKET_MARKDOWN_FILE = 'review-packet.md';
-export const HANDOFF_MANIFEST_FILE = 'manifest.json';
 export const LOCKFILE = 'lockfile.json';
 export const SERVER_LOG_FILE = 'server.log';
 export const IPC_SOCK_FILE = 'ipc.sock';
@@ -82,8 +78,8 @@ export const worktreePath = (projectDir: string, slug: string): string =>
 export const SNAPSHOTS_DIR = 'snapshots';
 export const SNAPSHOT_BASELINE_ID = 'baseline';
 export const SNAPSHOT_MANIFEST_FILE = 'manifest.json';
-export const SNAPSHOT_FILES_DIR = 'files';
-export const SNAPSHOT_LOCK_FILE = '.lock';
+const SNAPSHOT_FILES_DIR = 'files';
+const SNAPSHOT_LOCK_FILE = '.lock';
 
 export const snapshotsDir = (projectDir: string, sessionId: string): string =>
   join(sessionDir(projectDir, sessionId), SNAPSHOTS_DIR);
@@ -99,9 +95,6 @@ export const snapshotManifestPath = (
   sessionId: string,
   snapshotId: string,
 ): string => join(snapshotDir(projectDir, sessionId, snapshotId), SNAPSHOT_MANIFEST_FILE);
-
-export const baselineManifestPath = (projectDir: string, sessionId: string): string =>
-  snapshotManifestPath(projectDir, sessionId, SNAPSHOT_BASELINE_ID);
 
 export const snapshotFilesDir = (
   projectDir: string,

@@ -85,7 +85,6 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
   const currentModelIdx = catalog.focusModels
     ? catalog.rightModels.findIndex(m => m.id === catalog.currentModel)
     : -1;
-  // Offset accounts for virtual custom row prepended by allowCustomRight
   const initialRightIndex = currentModelIdx >= 0 ? currentModelIdx + CUSTOM_ROW_OFFSET : undefined;
 
   const handleRefresh = () => {

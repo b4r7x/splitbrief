@@ -1,22 +1,14 @@
 import { trace, ROOT_CONTEXT, SpanKind, SpanStatusCode, type Span, type Context, type TracerProvider } from '@opentelemetry/api';
 import type { EngineEvent, EventSink } from '../types.js';
 import type { TaskId } from '../../../core/schemas/task.js';
+import { totalInputTokens, totalOutputTokens } from '../../../core/schemas/tokens.js';
 
 export interface OtelSinkOptions {
   provider: TracerProvider;
   serviceName?: string;
 }
 
-/**
- * EventSink that emits OpenTelemetry spans for workflow lifecycle events.
- * - Workflow lifecycle: root span 'diptych.workflow'
- * - Phases: nested 'diptych.phase.<name>' spans under workflow
- * - Tasks: nested 'diptych.task' spans under workflow during implementing phase
- * - Point events (cost_update, validate, error, warning): attributes/events on active spans
- *
- * Requires a TracerProvider scoped to this workflow run. Context is propagated
- * by passing it explicitly to startSpan (SDK v2 pattern — no global registration needed).
- */
+// SDK v2 pattern — context is propagated by passing it explicitly to startSpan, no global registration.
 export function createOtelSink(opts: OtelSinkOptions): EventSink {
   const tracer = opts.provider.getTracer(opts.serviceName ?? 'diptych');
 
@@ -143,9 +135,8 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       }
       case 'cost_update': {
         if (workflowSpan) {
-          const u = event.tokenUsage;
-          workflowSpan.setAttribute('diptych.cost.input_tokens', u.plannerInput + u.implementerInput + u.escalationInput);
-          workflowSpan.setAttribute('diptych.cost.output_tokens', u.plannerOutput + u.implementerOutput + u.escalationOutput);
+          workflowSpan.setAttribute('diptych.cost.input_tokens', totalInputTokens(event.tokenUsage));
+          workflowSpan.setAttribute('diptych.cost.output_tokens', totalOutputTokens(event.tokenUsage));
         }
         return;
       }

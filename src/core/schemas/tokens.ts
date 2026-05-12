@@ -46,3 +46,11 @@ export const TaskTokenUsageSchema = z.object({
 export type TokenDelta = z.infer<typeof TokenDeltaSchema>;
 export type TokenUsage = z.infer<typeof TokenUsageSchema>;
 export type TaskTokenUsage = z.infer<typeof TaskTokenUsageSchema>;
+
+export function totalInputTokens(u: TokenUsage): number {
+  return u.plannerInput + u.implementerInput + u.escalationInput;
+}
+
+export function totalOutputTokens(u: TokenUsage): number {
+  return u.plannerOutput + u.implementerOutput + u.escalationOutput;
+}

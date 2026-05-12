@@ -1,12 +1,10 @@
-import { resolveAttachment, attachmentShortName } from '../../core/attachments/resolve.js';
+import { resolveAttachment } from '../../core/attachments/resolve.js';
 import type { ResolveAttachmentReason } from '../../core/attachments/resolve.js';
 import { attachmentsStore } from '../workflow/attachments.js';
 
 export type AttachImageResult =
   | { ok: true; path: string }
   | { ok: false; reason: ResolveAttachmentReason };
-
-export { attachmentsStore, attachmentShortName };
 
 export function attachImage(input: string, projectDir: string): AttachImageResult {
   const result = resolveAttachment({ input, projectDir });

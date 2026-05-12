@@ -82,17 +82,18 @@ function formatEntryLabel(entry: TreeEntryEnvelope): string {
   return detail ? `${time} ${typeLabel} ${detail}` : `${time} ${typeLabel}`;
 }
 
+const TYPE_LABELS: Record<string, string> = {
+  'session-start': '[START]',
+  'plan-step': '[PLAN]',
+  'agent-invocation': '[AGENT]',
+  'recovery-decision': '[RECOVERY]',
+  'file-state': '[FILE]',
+  'cost-checkpoint': '[COST]',
+  'branch-summary': '[SUMMARY]',
+};
+
 function formatTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    'session-start': '[START]',
-    'plan-step': '[PLAN]',
-    'agent-invocation': '[AGENT]',
-    'recovery-decision': '[RECOVERY]',
-    'file-state': '[FILE]',
-    'cost-checkpoint': '[COST]',
-    'branch-summary': '[SUMMARY]',
-  };
-  return labels[type] ?? `[${type.toUpperCase()}]`;
+  return TYPE_LABELS[type] ?? `[${type.toUpperCase()}]`;
 }
 
 function extractDetail(entry: TreeEntryEnvelope): string {

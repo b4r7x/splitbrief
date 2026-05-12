@@ -382,8 +382,7 @@ describe('moveTaskUp', () => {
 
 describe('parseSplitResult', () => {
   it('returns single Task array for valid single-task markdown', () => {
-    const original = makeTask({ id: 'T001' });
-    const result = parseSplitResult(singleTaskMarkdown, original);
+    const result = parseSplitResult(singleTaskMarkdown);
     expect(Array.isArray(result)).toBe(true);
     if (!Array.isArray(result)) throw new Error('expected array');
     expect(result).toHaveLength(1);
@@ -391,16 +390,14 @@ describe('parseSplitResult', () => {
   });
 
   it('returns error object for zero-task markdown', () => {
-    const original = makeTask({ id: 'T001' });
-    const result = parseSplitResult('no tasks here', original);
+    const result = parseSplitResult('no tasks here');
     expect(Array.isArray(result)).toBe(false);
     if (Array.isArray(result)) throw new Error('expected error');
     expect(result.error).toBe('split produced no tasks');
   });
 
   it('returns multiple tasks for multi-task markdown', () => {
-    const original = makeTask({ id: 'T001' });
-    const result = parseSplitResult(multiTaskMarkdown, original);
+    const result = parseSplitResult(multiTaskMarkdown);
     expect(Array.isArray(result)).toBe(true);
     if (!Array.isArray(result)) throw new Error('expected array');
     expect(result).toHaveLength(2);
@@ -409,8 +406,7 @@ describe('parseSplitResult', () => {
   });
 
   it('overrides status to pending on all returned tasks', () => {
-    const original = makeTask({ id: 'T001' });
-    const result = parseSplitResult(singleTaskMarkdown, original);
+    const result = parseSplitResult(singleTaskMarkdown);
     if (!Array.isArray(result)) throw new Error('expected array');
     for (const task of result) {
       expect(task.status).toBe('pending');

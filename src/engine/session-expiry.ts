@@ -1,3 +1,5 @@
+import { toErrorMessage } from '../utils/format-errors.js';
+
 export const SESSION_EXPIRED_PATTERNS: readonly RegExp[] = [
   /session not found/i,
   /session_not_found/i,
@@ -8,7 +10,7 @@ export const SESSION_EXPIRED_PATTERNS: readonly RegExp[] = [
 ];
 
 export function isSessionExpiredError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = toErrorMessage(err);
   return SESSION_EXPIRED_PATTERNS.some(p => p.test(msg));
 }
 

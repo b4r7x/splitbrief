@@ -4,7 +4,7 @@ import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { phaseCostRole } from '../../core/phases.js';
 
-export interface PhaseTokens {
+interface PhaseTokens {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -20,7 +20,7 @@ export interface PhaseTokens {
   cost: number;
 }
 
-export interface PerTaskTokens {
+interface PerTaskTokens {
   totalTokens: number;
   cost: number;
   title: string;
@@ -223,7 +223,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
 
   if (event.type === 'task_completed') {
     let { localCount, escalatedCount } = state;
-    if (event.method === 'local') localCount += 1;
+    if (event.method === 'local' || event.method === 'mcp-tool') localCount += 1;
     else if (
       event.method === 'escalated-intermediate' ||
       event.method === 'escalated-hint' ||

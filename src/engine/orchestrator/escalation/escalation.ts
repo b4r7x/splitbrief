@@ -8,10 +8,9 @@ import { runTier1Hint } from './tier1-hint.js';
 import { runTier2Full } from './tier2-full.js';
 import type { EscalationContext, RetryResult } from './types.js';
 import { runPreHooks } from '../../hooks/run-pre-hook.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 import { publishWarning } from '../events.js';
 import { getChangedFilesSnapshot, type ChangedFilesSnapshot } from '../approval/file-snapshots.js';
-
-export type { EscalationContext, RetryResult } from './types.js';
 
 type HandleRetryOptions = {
   wctx: WorkflowContext;
@@ -32,7 +31,7 @@ export async function handleRetryAndEscalation(opts: HandleRetryOptions): Promis
     try {
       taskStartSnapshot = await getChangedFilesSnapshot(wctx.projectDir);
     } catch (err) {
-      publishWarning(wctx.bus, currentState.phase, `retry approval snapshot failed: ${err instanceof Error ? err.message : String(err)}`);
+      publishWarning(wctx.bus, currentState.phase, `retry approval snapshot failed: ${toErrorMessage(err)}`);
       return { state: currentState, result: { completed: false, method: 'failed', attempts: 0 } };
     }
   }

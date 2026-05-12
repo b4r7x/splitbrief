@@ -1,10 +1,5 @@
 import type { ProviderId } from '../../core/schemas/enums.js';
 
-/**
- * Heuristic: does the (provider, model) pair expose a reasoning/effort knob
- * we can drive via the API? Used by the api planner to advertise
- * `supportsEffort` dynamically.
- */
 export function modelSupportsEffort(provider: ProviderId, model: string | undefined): boolean {
   if (!model) return false;
   if (provider === 'anthropic') return /claude-(opus|sonnet)-[4-9]/i.test(model);
@@ -13,10 +8,6 @@ export function modelSupportsEffort(provider: ProviderId, model: string | undefi
   return false;
 }
 
-/**
- * Heuristic: does the (provider, model) pair accept image attachments via the API?
- * Used by the api planner to advertise `supportsImages` dynamically.
- */
 export function modelSupportsImages(provider: ProviderId, model: string | undefined): boolean {
   if (!model) return false;
   if (provider === 'anthropic') return /claude-(opus|sonnet|haiku)-[3-9]/i.test(model);

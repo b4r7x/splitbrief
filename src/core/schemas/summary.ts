@@ -165,17 +165,7 @@ export const SummarySchema = z.object({
   implementerTool: z.string().optional(),
   implementerModel: z.string().optional(),
   phaseTimings: z.record(z.string(), z.number()).optional(),
-  /**
-   * Workflow mode the run actually executed in. Optional for backward
-   * compatibility with persisted summaries from older sessions.
-   */
   mode: WorkflowModeSchema.optional(),
-  /**
-   * Compact rollup of the evidence ledger written for the run, if any. Optional
-   * for backward compatibility with sessions that ran before the ledger was
-   * introduced. Full per-task evidence lives in `evidence.json` referenced by
-   * `path`.
-   */
   evidenceSummary: z.object({
     path: z.string(),
     totalTasks: z.number().nonnegative(),
@@ -184,35 +174,11 @@ export const SummarySchema = z.object({
     failedTasks: z.number().nonnegative(),
     rejectionCount: z.number().nonnegative().optional(),
   }).optional(),
-  /**
-   * Brief quality gate result from the planner's task compilation step.
-   * Optional for backward compatibility with older sessions.
-   */
   briefQuality: BriefQualitySummarySchema.optional(),
-  /**
-   * Drift analysis result computed at the end of the run.
-   * Optional for backward compatibility with older sessions.
-   */
   driftSummary: DriftSummarySchema.optional(),
-  /**
-   * Chain drift analysis result from the run, if any chains were emitted.
-   * Optional for backward compatibility with older sessions.
-   */
   chainDriftSummary: ChainDriftSummarySchema.optional(),
-  /**
-   * Cost prediction made before implementing tasks. Optional — not present
-   * in instant/quick modes that skip prediction or in old sessions.
-   */
   costPrediction: CostPredictionSchema.optional(),
-  /**
-   * Compact checkpoint rollup derived from the review packet for the summary
-   * screen. Optional for sessions created before review packets existed.
-   */
   checkpointSummary: CheckpointSummaryRollupSchema.optional(),
-  /**
-   * Compact review-packet rollup for summary rendering. The canonical packet
-   * remains `review-packet.json`.
-   */
   reviewPacket: ReviewPacketSummarySchema.optional(),
 });
 

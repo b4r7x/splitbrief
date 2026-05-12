@@ -5,18 +5,6 @@ import { narrowRecord, includes } from '../../../utils/type-guards.js';
 import { configError } from '../errors.js';
 import type { RunnerKind } from '../../schemas/enums.js';
 
-/**
- * Migrate a raw config blob through v1 → v2 → v3 in sequence. Returns the
- * fully-migrated v3 shape. Optional `warnings` array collects deprecation
- * notices produced during migration (e.g. from v2 to v3 of a config still
- * declaring `version: 2`).
- *
- * The returned config preserves deprecated v2 workflow keys
- * (`autoApproveSpec`, `autoApprovePlan`, top-level `commitStrategy`) alongside
- * their v3 replacements (`approve`, `git.commitStrategy`). Briefs 04 and 07
- * remove the v2 read sites; until then dual-population keeps existing readers
- * working.
- */
 export function migrateConfig(raw: unknown, warnings?: string[]): unknown {
   if (!raw || typeof raw !== 'object') {
     throw configError.notAnObject('Config');
@@ -43,14 +31,6 @@ export function migrateConfig(raw: unknown, warnings?: string[]): unknown {
   return migrateV2ToV3(v2);
 }
 
-/**
- * Migrate a v2 config to v3:
- *  - bumps `version` to 3
- *  - introduces `workflow.approve` derived from v2 auto-approve flags
- *  - moves `workflow.commitStrategy` into `workflow.git.commitStrategy`
- *  - normalizes legacy `workflow.mode = 'full'` to `'speckit'`
- *  - preserves deprecated v2 keys for backward-compat reads
- */
 export function migrateV2ToV3(v2: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = { ...v2, version: 3 };
 
@@ -89,14 +69,6 @@ export interface DeriveApproveLevelInput {
   autoApprovePlan?: boolean;
 }
 
-/**
- * Derive the v3 `workflow.approve` level from v2 auto-approve flags.
- *
- *  - both true   → 'none'   (no manual gates)
- *  - spec true   → 'plan'   (gate at plan)
- *  - plan true   → 'spec'   (gate at spec)
- *  - both false  → 'default' (preserve mode-defined gates)
- */
 export function deriveApproveLevel(flags: DeriveApproveLevelInput): ApproveLevel {
   const spec = flags.autoApproveSpec === true;
   const plan = flags.autoApprovePlan === true;
@@ -135,7 +107,6 @@ function migrateWorkflowV1ToV2(raw: unknown): unknown {
 
   const result = { ...workflow };
 
-  // Migrate commitPerTask → commitStrategy
   if ('commitPerTask' in result) {
     const commitPerTask = result.commitPerTask;
     delete result.commitPerTask;
@@ -158,12 +129,9 @@ function migrateRunnerV1ToV2(role: 'planner' | 'implementer', raw: unknown): unk
   const command = typeof runner.command === 'string' ? runner.command : undefined;
   const apiBase = typeof runner.apiBase === 'string' ? runner.apiBase : undefined;
 
-  // Infer the new kind
   const kind = inferLegacyKind(legacyKind, tool, command, apiBase, role);
 
-  // cli and api have unique migration logic
   if (kind === 'cli') {
-    // Planners with no explicit tool/kind default to claude-code
     const resolvedTool = tool || legacyKind || (role === 'planner' ? 'claude-code' : undefined);
     return {
       kind: 'cli',
@@ -192,7 +160,6 @@ function migrateRunnerV1ToV2(role: 'planner' | 'implementer', raw: unknown): unk
     };
   }
 
-  // All other kinds are descriptor-driven
   const meta = getRunnerKindMeta(kind);
 
   if (meta.requiresCommand && !command) {
@@ -217,22 +184,18 @@ function inferLegacyKind(
   apiBase: string | undefined,
   role: 'planner' | 'implementer',
 ): RunnerKind {
-  // New v2 kinds pass through
   if (legacyKind && includes(RUNNER_KINDS, legacyKind)) {
     return legacyKind;
   }
 
-  // Legacy CLI-tool-as-kind (e.g., kind: 'claude-code')
   if (legacyKind && includes(CLI_TOOL_IDS, legacyKind)) {
     return 'cli';
   }
 
-  // Infer from shape
   if (tool && includes(CLI_TOOL_IDS, tool)) return 'cli';
   if (apiBase) return 'api';
   if (command) return 'shell';
 
-  // Default: planners fall back to cli (claude-code); implementers fall back to api (ollama)
   return role === 'planner' ? 'cli' : 'api';
 }
 

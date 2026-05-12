@@ -4,6 +4,7 @@ import { createConnection } from 'node:net';
 import { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import { assertNotWindows } from '../platform.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import { sessionsRoot, sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
@@ -107,7 +108,7 @@ export async function detachCommand(
   try {
     await sendDetach(join(sessDir, IPC_SOCK_FILE));
   } catch (err) {
-    throw cliError(err instanceof Error ? err.message : String(err), 1);
+    throw cliError(toErrorMessage(err), 1);
   }
   console.log(`Session ${resolvedId} detached.`);
 }

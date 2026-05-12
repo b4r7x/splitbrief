@@ -16,7 +16,6 @@ interface UseReferenceCompletionResult {
   filtered: string[];
   selectedIndex: number;
   showSuggestions: boolean;
-  atQuery: string;
   inputKey: number;
 }
 
@@ -136,7 +135,6 @@ export function useReferenceCompletion({
     filtered,
     selectedIndex: effectiveSelectedIndex,
     showSuggestions,
-    atQuery: token?.query ?? '',
     inputKey,
   };
 }

@@ -27,7 +27,7 @@ describe('hooks-builtins integration', () => {
         type: 'git_commit',
         ts: Date.now(),
         phase: 'implementing',
-        taskId: 'T1' as never,
+        taskId: taskId('T1'),
         message: commitMsg,
         file: 'infra.ts',
       };
@@ -46,7 +46,7 @@ describe('hooks-builtins integration', () => {
         type: 'git_commit',
         ts: Date.now(),
         phase: 'implementing',
-        taskId: 'T1' as never,
+        taskId: taskId('T1'),
         message: 'feat(diptych): T1 - clean task',
         file: 'clean.ts',
       };
@@ -65,7 +65,7 @@ describe('hooks-builtins integration', () => {
         type: 'git_commit',
         ts: Date.now(),
         phase: 'implementing',
-        taskId: 'T1' as never,
+        taskId: taskId('T1'),
         message: 'feat(diptych): T1 - oops',
         // no file field
       };

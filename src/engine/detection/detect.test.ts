@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { detectAvailablePlanners, detectAvailableImplementers } from './detect.js';
-import { DETECTION_TIMEOUT_MS } from '../providers/registry.js';
+import { DETECTION_TIMEOUT_MS } from '../constants.js';
 
 describe('detectAvailablePlanners', () => {
   const providerResults = [

@@ -16,7 +16,7 @@ import { buildSystemPreamble } from '../spec/prompts/system.js';
 import { processError } from '../../lib/process/errors.js';
 import { retryTemperature, type InvokeOpts } from './utils.js';
 import { DEFAULT_AVAILABILITY } from '../../lib/availability.js';
-import { getChangedFiles } from '../../lib/git.js';
+import { getCurrentChangedFiles } from '../../lib/git.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
 
 export function extractedCodeApprovalRaceError(file: string): string {
@@ -123,7 +123,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
 
     let filesBefore: string[] = [];
     if (!baseConfig.extractsCode && baseConfig.detectChanges) {
-      filesBefore = await getChangedFiles(projectDir);
+      filesBefore = await getCurrentChangedFiles(projectDir);
     }
 
     const persistTranscript = config.workflow.persistTranscript;

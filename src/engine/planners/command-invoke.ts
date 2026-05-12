@@ -6,7 +6,7 @@ import { createPlannerBase } from './base.js';
 import { invokeCommandBasedRunner } from '../runners/command-based.js';
 import { extractQuestionsFromStream } from '../parsers/question-parser.js';
 import { createCommandAvailability } from '../../lib/availability.js';
-import { getChangedFiles } from '../../lib/git.js';
+import { getCurrentChangedFiles } from '../../lib/git.js';
 import type { OutputFormat } from '../../core/schemas/enums.js';
 
 export function resolveCapabilities(override: { [K in keyof PlannerCapabilities]?: boolean | undefined } | undefined): PlannerCapabilities {
@@ -45,7 +45,7 @@ export function createCommandBasedPlanner(
     projectDir: string;
     callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion'>;
   }): Promise<InvokeResult> => {
-    const filesBefore = dc ? await getChangedFiles(projectDir) : [];
+    const filesBefore = dc ? await getCurrentChangedFiles(projectDir) : [];
     const result = await invokeCommandBasedRunner(
       {
         command: config.command,

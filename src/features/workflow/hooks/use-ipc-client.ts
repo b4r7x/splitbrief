@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createConnection, type Socket } from 'node:net';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { IpcPromptRequest, IpcPromptResponse, ServerMessage } from '../../../engine/ipc/protocol.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 
 export type IpcClientStatus =
   | 'connecting'
@@ -152,7 +153,7 @@ export function useIpcClient(opts: {
                   type: 'warning',
                   ts: Date.now(),
                   phase: 'idle',
-                  message: `IPC: prompt handler failed: ${err instanceof Error ? err.message : String(err)}`,
+                  message: `IPC: prompt handler failed: ${toErrorMessage(err)}`,
                 });
               });
           } else if (msg.kind === 'error') {

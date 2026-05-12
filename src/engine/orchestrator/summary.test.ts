@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildSummary, calculateTaskCost } from './summary.js';
-import { calculateCostBreakdown } from '../providers/pricing.js';
+import { buildSummary } from './summary.js';
+import { calculateCostBreakdown, calculateTaskUsageCost } from '../providers/pricing.js';
 import type { BuildSummaryState } from './summary.js';
 import { taskId } from '../../core/schemas/task.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
@@ -577,18 +577,18 @@ describe('buildSummary estimatedCostSavings', () => {
   });
 });
 
-describe('calculateTaskCost', () => {
+describe('calculateTaskUsageCost', () => {
   it('returns 0 for local implementer with no escalation', () => {
     const task = { taskId: taskId('T001'), taskTitle: 'test', method: 'local' as const, implementerTokens: 1000, escalationTokens: 0, retryCount: 0 };
     const globalUsage = { implementerInput: 500, implementerOutput: 500, escalationInput: 0, escalationOutput: 0 };
-    const cost = calculateTaskCost(task, globalUsage, 'ollama', 'claude-code');
+    const cost = calculateTaskUsageCost(task, globalUsage, 'ollama', 'claude-code');
     expect(cost).toBe(0);
   });
 
   it('calculates cost using blended rate from global token ratio', () => {
     const task = { taskId: taskId('T001'), taskTitle: 'test', method: 'local' as const, implementerTokens: 300_000, escalationTokens: 0, retryCount: 0 };
     const globalUsage = { implementerInput: 200_000, implementerOutput: 100_000, escalationInput: 0, escalationOutput: 0 };
-    const cost = calculateTaskCost(task, globalUsage, 'deepseek', 'claude-code');
+    const cost = calculateTaskUsageCost(task, globalUsage, 'deepseek', 'claude-code');
     expect(cost).toBeGreaterThan(0);
     expect(cost).toBeCloseTo(0.28 * 200_000 / 1_000_000 + 0.42 * 100_000 / 1_000_000, 6);
   });
@@ -596,7 +596,7 @@ describe('calculateTaskCost', () => {
   it('includes escalation cost when escalation tokens present', () => {
     const task = { taskId: taskId('T001'), taskTitle: 'test', method: 'escalated-full' as const, implementerTokens: 1000, escalationTokens: 150_000, retryCount: 2 };
     const globalUsage = { implementerInput: 500, implementerOutput: 500, escalationInput: 100_000, escalationOutput: 50_000 };
-    const cost = calculateTaskCost(task, globalUsage, 'ollama', 'anthropic');
+    const cost = calculateTaskUsageCost(task, globalUsage, 'ollama', 'anthropic');
     expect(cost).toBeGreaterThan(0);
   });
 
@@ -604,8 +604,8 @@ describe('calculateTaskCost', () => {
     const task = { taskId: taskId('T001'), taskTitle: 'test', method: 'escalated-full' as const, implementerTokens: 0, escalationTokens: 150_000, retryCount: 1 };
     const globalUsage = { implementerInput: 0, implementerOutput: 0, escalationInput: 100_000, escalationOutput: 50_000 };
 
-    const sonnetCost = calculateTaskCost(task, globalUsage, 'ollama', 'anthropic', undefined, 'claude-sonnet-4-6');
-    const opusCost = calculateTaskCost(task, globalUsage, 'ollama', 'anthropic', undefined, 'claude-opus-4-6');
+    const sonnetCost = calculateTaskUsageCost(task, globalUsage, 'ollama', 'anthropic', undefined, 'claude-sonnet-4-6');
+    const opusCost = calculateTaskUsageCost(task, globalUsage, 'ollama', 'anthropic', undefined, 'claude-opus-4-6');
 
     expect(sonnetCost).toBeCloseTo(1.05, 6);
     expect(opusCost).toBeCloseTo(1.75, 6);
@@ -614,7 +614,7 @@ describe('calculateTaskCost', () => {
   it('returns cost 0 when all global token totals are zero', () => {
     const task = { taskId: taskId('T001'), taskTitle: 'test', method: 'local' as const, implementerTokens: 0, escalationTokens: 0, retryCount: 0 };
     const globalUsage = { implementerInput: 0, implementerOutput: 0, escalationInput: 0, escalationOutput: 0 };
-    const cost = calculateTaskCost(task, globalUsage, 'ollama', 'claude-code');
+    const cost = calculateTaskUsageCost(task, globalUsage, 'ollama', 'claude-code');
     expect(cost).toBe(0);
   });
 
@@ -623,8 +623,8 @@ describe('calculateTaskCost', () => {
     const heavyTask = { taskId: taskId('T001'), taskTitle: 'heavy', method: 'local' as const, implementerTokens: 800_000, escalationTokens: 0, retryCount: 0 };
     const lightTask = { taskId: taskId('T002'), taskTitle: 'light', method: 'local' as const, implementerTokens: 200_000, escalationTokens: 0, retryCount: 0 };
 
-    const heavyCost = calculateTaskCost(heavyTask, globalUsage, 'deepseek', 'claude-code');
-    const lightCost = calculateTaskCost(lightTask, globalUsage, 'deepseek', 'claude-code');
+    const heavyCost = calculateTaskUsageCost(heavyTask, globalUsage, 'deepseek', 'claude-code');
+    const lightCost = calculateTaskUsageCost(lightTask, globalUsage, 'deepseek', 'claude-code');
 
     // Per-task cost uses blended rate × task tokens — tasks with more tokens cost proportionally more
     expect(heavyCost / lightCost).toBeCloseTo(800_000 / 200_000, 5);

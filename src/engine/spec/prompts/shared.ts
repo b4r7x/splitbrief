@@ -114,17 +114,17 @@ function currentCodeExample(ctx: LanguageContext): string {
   }
 }
 
-export interface PromptSection {
+export type PromptSection = {
   heading: string;
   body: string;
-}
+};
 
-interface PromptSpec {
+type PromptSpec = {
   title: string;
   intro: string;
   sections: PromptSection[];
   output?: string | undefined;
-}
+};
 
 export function buildPrompt(spec: PromptSpec): string {
   const parts: string[] = [`# ${spec.title}`, '', spec.intro];

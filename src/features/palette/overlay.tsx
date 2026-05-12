@@ -15,6 +15,7 @@ import { tasksStore } from '../../stores/workflow/tasks.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 
 const MAX_VISIBLE = 8;
 
@@ -72,9 +73,13 @@ export function CommandPaletteOverlay({
         if (item) {
           commandPaletteMruStore.record(item.id);
           overlayStore.close();
-          void Promise.resolve(item.action()).catch((err: unknown) => {
-            feedbackStore.setError(err instanceof Error ? err.message : String(err));
-          });
+          try {
+            void Promise.resolve(item.action()).catch((err: unknown) =>
+              feedbackStore.setError(toErrorMessage(err)),
+            );
+          } catch (err) {
+            feedbackStore.setError(toErrorMessage(err));
+          }
         }
         return;
       }

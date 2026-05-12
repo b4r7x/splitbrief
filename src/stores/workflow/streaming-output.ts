@@ -37,15 +37,10 @@ function stopStreaming(): void {
   });
 }
 
-function reset(): void {
-  store.set(initial);
-}
-
 export const streamingOutputStore = {
   ...storeBase(store),
   __testReset,
   startStreaming,
   pushLines,
   stopStreaming,
-  reset,
 };

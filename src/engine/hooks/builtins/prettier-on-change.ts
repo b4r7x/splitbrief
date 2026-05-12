@@ -2,6 +2,7 @@ import { join, isAbsolute } from 'node:path';
 import type { EngineEvent } from '../../events/types.js';
 import type { HookOutcome, HookContext } from '../types.js';
 import { runCommand } from '../../../lib/process/spawn.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 
 export async function prettierOnChange(event: EngineEvent, ctx: HookContext): Promise<HookOutcome> {
   const file = 'file' in event && typeof event.file === 'string' ? event.file : null;
@@ -12,6 +13,6 @@ export async function prettierOnChange(event: EngineEvent, ctx: HookContext): Pr
     if (result.code === 0) return { kind: 'allow' };
     return { kind: 'warn', message: `prettier failed for ${file} (exit ${result.code}): ${result.stderr.trim()}` };
   } catch (err) {
-    return { kind: 'warn', message: err instanceof Error ? err.message : String(err) };
+    return { kind: 'warn', message: toErrorMessage(err) };
   }
 }

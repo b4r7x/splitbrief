@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { useTheme } from '../../../components/theme.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 import { parseTasks } from '../../../engine/spec/parser.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { isBriefQualityReport, type BriefQualityIssue, type BriefQualityReport } from '../../../engine/spec/brief-quality.js';
@@ -319,7 +320,7 @@ function useBriefData(filePath: string): BriefData {
 
     load().catch((err) => {
       if (!signal.aborted) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = toErrorMessage(err);
         setData({ tasks: [], quality: null, loadError: `Failed to load Task Briefs: ${message}` });
       }
     });

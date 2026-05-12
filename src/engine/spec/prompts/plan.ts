@@ -2,10 +2,10 @@ import type { LanguageContext } from './language-context.js';
 import { buildLanguageContext, buildLanguageContextSections } from './language-context.js';
 import { buildPrompt, instructionsSection, requiredSectionsSection } from './shared.js';
 
-interface PlanPromptSpec {
+type PlanPromptSpec = {
   content: string;
   hasClarifications: boolean;
-}
+};
 
 function outputInstruction(hasClarifications: boolean, ctx: LanguageContext): string {
   const base = ctx.language === 'TypeScript'

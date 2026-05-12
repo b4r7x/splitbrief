@@ -54,7 +54,6 @@ export function readTreeEntries(sessionDir: string): TreeEntryEnvelope[] {
       const result = TreeEntryEnvelopeSchema.safeParse(raw);
       if (result.success) entries.push(result.data);
     } catch {
-      // Skip malformed lines
     }
   }
   return entries;
@@ -70,7 +69,7 @@ function countBranches(children: Map<EntryId | null, EntryId[]>): number {
 
 function parseEntryNumber(id: EntryId): number {
   const match = id.match(/^E(\d+)$/);
-  return match ? parseInt(match[1]!, 10) : 0;
+  return match ? parseInt(match[1] ?? '0', 10) : 0;
 }
 
 function maxEntryCount(entries: TreeEntryEnvelope[]): number {
@@ -98,7 +97,8 @@ export function reconstructTree(sessionDir: string): SessionTree | null {
   }
 
   const maxCount = maxEntryCount(entries);
-  const lastEntry = entries[entries.length - 1]!;
+  const lastEntry = entries.at(-1);
+  if (!lastEntry) return null;
 
   const resolvedLeafId = meta && entryMap.has(meta.leafId) ? meta.leafId : lastEntry.id;
 
@@ -116,11 +116,6 @@ export function reconstructTree(sessionDir: string): SessionTree | null {
 }
 
 export function persistAppend(sessionDir: string, entry: TreeEntryEnvelope, meta: TreeMeta): void {
-  appendTreeEntry(sessionDir, entry);
-  writeTreeMeta(sessionDir, meta);
-}
-
-export function persistBranch(sessionDir: string, entry: TreeEntryEnvelope, meta: TreeMeta): void {
   appendTreeEntry(sessionDir, entry);
   writeTreeMeta(sessionDir, meta);
 }

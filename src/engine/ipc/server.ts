@@ -7,6 +7,7 @@ import type { WorkflowMode } from '../../core/schemas/enums.js';
 import type { ServerMessage, ClientMessage, IpcPromptRequest, IpcPromptResponse, IpcPromptRequestInput } from './protocol.js';
 import { readReplayEvents } from './replay.js';
 import { isRecord } from '../../utils/type-guards.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 
 export type IpcServerOptions = {
   sessionId: string;
@@ -64,8 +65,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
   let currentClient: ClientState | null = null;
   let nextPromptId = 1;
   const pendingPrompts = new Map<string, PendingPrompt>();
-  // Array form is forward-looking for Phase B fan-out; Phase A enforces single client at line ~48.
-  const allUnsubscribes: Array<() => void> = [];
+  let currentUnsubscribe: (() => void) | null = null;
 
   function writeMessage(socket: Socket, msg: ServerMessage): void {
     if (socket.destroyed) return;
@@ -100,19 +100,22 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     );
   }
 
+  function rejectAsAlreadyAttached(socket: Socket): void {
+    writeMessage(socket, {
+      kind: 'error',
+      code: 'already_attached',
+      message: 'session already has an attached client; use --force to steal',
+    });
+    socket.destroy();
+  }
+
   function tryControlDetach(socket: Socket): void {
     let buffer = '';
     let consumed = false;
     const timer = setTimeout(() => {
       if (consumed) return;
       consumed = true;
-      const msg: ServerMessage = {
-        kind: 'error',
-        code: 'already_attached',
-        message: 'session already has an attached client; use --force to steal',
-      };
-      try { socket.write(JSON.stringify(msg) + '\n'); } catch { /* ignore */ }
-      socket.destroy();
+      rejectAsAlreadyAttached(socket);
     }, 500);
 
     socket.on('data', (chunk: Buffer) => {
@@ -129,26 +132,14 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
           if (!isRecord(parsed) || typeof parsed.kind !== 'string') {
             consumed = true;
             clearTimeout(timer);
-            const errMsg: ServerMessage = {
-              kind: 'error',
-              code: 'already_attached',
-              message: 'session already has an attached client; use --force to steal',
-            };
-            try { socket.write(JSON.stringify(errMsg) + '\n'); } catch { /* ignore */ }
-            socket.destroy();
+            rejectAsAlreadyAttached(socket);
             return;
           }
           msg = parsed as ClientMessage;
         } catch {
           consumed = true;
           clearTimeout(timer);
-          const errMsg: ServerMessage = {
-            kind: 'error',
-            code: 'already_attached',
-            message: 'session already has an attached client; use --force to steal',
-          };
-          try { socket.write(JSON.stringify(errMsg) + '\n'); } catch { /* ignore */ }
-          socket.destroy();
+          rejectAsAlreadyAttached(socket);
           return;
         }
         if (msg.kind === 'detach') {
@@ -161,13 +152,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
         } else {
           consumed = true;
           clearTimeout(timer);
-          const errMsg: ServerMessage = {
-            kind: 'error',
-            code: 'already_attached',
-            message: 'session already has an attached client; use --force to steal',
-          };
-          try { socket.write(JSON.stringify(errMsg) + '\n'); } catch { /* ignore */ }
-          socket.destroy();
+          rejectAsAlreadyAttached(socket);
         }
         return;
       }
@@ -208,8 +193,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       if (detached) return;
       detached = true;
       client.unsubscribe();
-      const idx = allUnsubscribes.indexOf(client.unsubscribe);
-      if (idx !== -1) allUnsubscribes.splice(idx, 1);
+      if (currentUnsubscribe === client.unsubscribe) currentUnsubscribe = null;
       if (currentClient?.socket === socket) {
         currentClient = null;
       }
@@ -239,7 +223,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
           try {
             onUserInput(msg.text);
           } catch (err) {
-            bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: onUserInput threw: ${err instanceof Error ? err.message : String(err)}` });
+            bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: onUserInput threw: ${toErrorMessage(err)}` });
           }
         } else if (msg.kind === 'prompt_response') {
           const pending = pendingPrompts.get(msg.requestId);
@@ -279,7 +263,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       writeEvent(event);
     });
     client.unsubscribe = unsubscribe;
-    allUnsubscribes.push(unsubscribe);
+    currentUnsubscribe = unsubscribe;
 
     if (sessionJsonlPath) {
       const replayStart = Date.now();
@@ -364,10 +348,10 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       }
       pendingPrompts.clear();
 
-      for (const unsub of allUnsubscribes) {
-        try { unsub(); } catch { /* ignore */ }
+      if (currentUnsubscribe) {
+        try { currentUnsubscribe(); } catch { /* ignore */ }
+        currentUnsubscribe = null;
       }
-      allUnsubscribes.length = 0;
 
       if (currentClient) {
         try { currentClient.socket.destroy(); } catch { /* ignore */ }

@@ -1,4 +1,4 @@
-export function openAiSseChunks(parts: Array<{ content?: string; usage?: { prompt_tokens: number; completion_tokens: number } }>): string {
+function openAiSseChunks(parts: Array<{ content?: string; usage?: { prompt_tokens: number; completion_tokens: number } }>): string {
   const lines: string[] = [];
   for (const p of parts) {
     const chunk: Record<string, unknown> = {

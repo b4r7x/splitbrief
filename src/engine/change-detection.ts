@@ -1,8 +1,8 @@
-import { getChangedFiles } from '../lib/git.js';
+import { getCurrentChangedFiles } from '../lib/git.js';
 
 export function createChangeDetector(label: string) {
   return async (projectDir: string, before: string[]) => {
-    const changedFiles = await getChangedFiles(projectDir);
+    const changedFiles = await getCurrentChangedFiles(projectDir);
     const beforeSet = new Set(before);
     const newChanges = changedFiles.filter(f => !beforeSet.has(f));
     if (newChanges.length === 0) {

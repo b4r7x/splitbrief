@@ -44,13 +44,21 @@ export async function getGitStatus(dir: string): Promise<{
 }
 
 export async function stageAll(dir: string): Promise<void> {
-  await getGit(dir).add('.');
+  try {
+    await getGit(dir).add('.');
+  } catch (err) {
+    throw toGitCommandError('add .', err);
+  }
 }
 
 export async function commitChanges(dir: string, message: string): Promise<string> {
-  const git = getGit(dir);
-  const result = await git.commit(message);
-  return result.commit;
+  try {
+    const git = getGit(dir);
+    const result = await git.commit(message);
+    return result.commit;
+  } catch (err) {
+    throw toGitCommandError('commit', err);
+  }
 }
 
 export async function getCurrentDiff(dir: string): Promise<string> {
@@ -66,12 +74,6 @@ export async function hasExternalChanges(dir: string): Promise<boolean> {
   const git = getGit(dir);
   const status = await git.status();
   return getStatusPaths(status).length > 0;
-}
-
-export async function getChangedFiles(dir: string): Promise<string[]> {
-  const git = getGit(dir);
-  const status = await git.status();
-  return getStatusPaths(status);
 }
 
 export async function getCurrentCommitSha(dir: string): Promise<string> {

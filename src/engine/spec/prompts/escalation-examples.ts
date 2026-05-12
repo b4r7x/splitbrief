@@ -1,12 +1,12 @@
 import type { LanguageContext } from './language-context.js';
 import { isJavaScriptLikeLanguage } from './language-context.js';
 
-interface EscalationExample {
+type EscalationExample = {
   label: string;
   error: string;
   rootCause: string;
   fix: string;
-}
+};
 
 const TS_EXAMPLES: EscalationExample[] = [
   {

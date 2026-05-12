@@ -1,7 +1,8 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../theme.js';
 import { useStores } from '../../stores/use-stores.js';
-import { attachmentsStore, attachmentShortName } from '../../stores/ui/attachments.js';
+import { attachmentShortName } from '../../core/attachments/resolve.js';
+import { attachmentsStore } from '../../stores/workflow/attachments.js';
 
 export function AttachmentChips() {
   const theme = useTheme();

@@ -1,24 +1,22 @@
 import { Command } from 'commander';
 import { join } from 'node:path';
 import { resolveProjectDir } from '../setup.js';
-import { readActive } from '../../core/sessions/lifecycle.js';
-import { HANDOFF_TARGETS } from '../../engine/handoff/types.js';
+import { HANDOFF_TARGETS } from '../../core/handoff/targets.js';
 import { listCustomRenderers } from '../../engine/handoff/load-renderer.js';
 import { writeHandoffPack } from '../../engine/handoff/write.js';
-import { cliError } from '../errors.js';
+import { cliError, isCliError } from '../errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { resolveSessionOrThrow } from '../session-resolve.js';
 
 const VALID_MODES = ['default', 'append', 'overwrite'] as const;
 type WriteMode = (typeof VALID_MODES)[number];
 
 export type HandoffDeps = {
-  readActive: typeof readActive;
   listCustomRenderers: typeof listCustomRenderers;
   writeHandoffPack: typeof writeHandoffPack;
 };
 
 const defaultDeps: HandoffDeps = {
-  readActive,
   listCustomRenderers,
   writeHandoffPack,
 };
@@ -56,21 +54,16 @@ export function registerHandoffCommand(program: Command, deps: HandoffDeps = def
             return;
           }
 
-          const sessionId = opts.session ?? deps.readActive(projectDir);
-          if (!sessionId) {
-            throw cliError(
-              'No session specified and no active session found. Use --session <id>.',
-              1,
-            );
-          }
+          const sessionId = resolveSessionOrThrow(projectDir, opts.session);
 
-          const mode = opts.mode as WriteMode;
-          if (!VALID_MODES.includes(mode)) {
+          const rawMode = opts.mode;
+          if (!VALID_MODES.includes(rawMode as WriteMode)) {
             throw cliError(
-              `Unknown --mode: "${opts.mode}". Valid modes: ${VALID_MODES.join(', ')}`,
+              `Unknown --mode: "${rawMode}". Valid modes: ${VALID_MODES.join(', ')}`,
               1,
             );
           }
+          const mode = rawMode as WriteMode;
 
           const outDir = opts.out ?? join(projectDir, 'handoff', target);
 
@@ -92,9 +85,7 @@ export function registerHandoffCommand(program: Command, deps: HandoffDeps = def
             console.log(`  ${file}`);
           }
         } catch (err) {
-          if (err instanceof Error && 'exitCode' in err) {
-            throw err;
-          }
+          if (isCliError(err)) throw err;
           throw cliError(toErrorMessage(err), 1);
         }
       },
