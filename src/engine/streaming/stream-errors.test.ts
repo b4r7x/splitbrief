@@ -39,12 +39,19 @@ describe('streamError factories', () => {
     const err = streamError.httpStatus('openai', 500, 'leaked sk-ant-1234567890abcdefghijklmnopqrstuvwxyz boom');
     expect(err.message).not.toContain('sk-ant-1234567890abcdefghijklmnopqrstuvwxyz');
     expect(err.message).toContain('***REDACTED***');
+    expect(err.data.detail).not.toContain('sk-ant-1234567890abcdefghijklmnopqrstuvwxyz');
   });
 
   test('apiError records detail', () => {
     const err = streamError.apiError('anthropic', 'overloaded');
     expect(err.kind).toBe('stream-api-error');
     expect(err.data).toEqual({ provider: 'anthropic', detail: 'overloaded' });
+  });
+
+  test('apiError redacts secrets in data', () => {
+    const err = streamError.apiError('anthropic', 'token=github_pat_1234567890abcdef');
+    expect(err.message).not.toContain('github_pat_1234567890abcdef');
+    expect(err.data.detail).toBe('token=github_pat_***REDACTED***');
   });
 
   test('apiError threads cause', () => {
@@ -66,6 +73,12 @@ describe('streamError factories', () => {
     expect(err.kind).toBe('stream-invalid-payload');
     expect(err.data).toEqual({ reason: 'bad json' });
     expect(err.cause).toBe(cause);
+  });
+
+  test('invalidPayload redacts secrets in data', () => {
+    const err = streamError.invalidPayload('bad payload with password=hunter2hunter2hunter2');
+    expect(err.message).not.toContain('hunter2hunter2hunter2');
+    expect(err.data.reason).toBe('bad payload with password=***REDACTED***');
   });
 });
 

@@ -3,7 +3,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DIPTYCH_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE, sessionDir } from './paths.js';
 import { ensureSecureDir, fsError, SECURE_FILE_MODE } from '../lib/fs.js';
-import { assertPathConfined } from '../lib/path-confinement.js';
+import { assertWritablePathConfined } from '../lib/path-confinement.js';
 import { validateSafeIdentifier } from '../utils/validate-identifier.js';
 import { error, matches } from '../utils/error.js';
 
@@ -99,7 +99,7 @@ export function readSpecFileOrEmpty(projectDir: string, sessionId: string, filen
 
 export function validateTaskPath(projectDir: string, filePath: string): string {
   try {
-    assertPathConfined(filePath, projectDir);
+    assertWritablePathConfined(filePath, projectDir);
   } catch {
     throw pathError.escapesProject(filePath);
   }

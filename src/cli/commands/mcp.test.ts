@@ -132,17 +132,17 @@ describe('mcp serve — startup announcement', () => {
 
     expect(output).toContain('diptych MCP server ready');
     expect(output).toMatch(/resources/i);
-    expect(output).toMatch(/\d+ write tools/i);
+    expect(output).toMatch(/\d+ evidence tools/i);
     expect(output).toContain('http://127.0.0.1:4321/mcp');
     expect(output).toMatch(/Token:\s+[A-Za-z0-9_-]{20,}/);
     expect(output).toContain('Sessions: 2026-04-26-test-session');
     expect(closeCount).toBe(0);
   });
 
-  it('announces five write tools in the startup output', async () => {
+  it('announces five evidence tools in the startup output', async () => {
     const output = await runMcpServe(['--session', '2026-04-26-test-session']);
 
-    expect(output).toMatch(/5 write tools/i);
+    expect(output).toMatch(/5 evidence tools/i);
   });
 
   it('shows "all" in Sessions when --all-sessions is provided', async () => {

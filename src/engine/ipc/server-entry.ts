@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, existsSync } from 'node:fs';
+import { mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from '../../core/config/load/load.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../core/paths.js';
@@ -10,54 +10,60 @@ import { createEventBus } from '../events/bus.js';
 import { normalizeLegacyMode } from '../../core/schemas/enums.js';
 import { createIpcWorkflowBridge } from './workflow-bridge.js';
 import type { IpcPromptResponse } from './protocol.js';
-import { applyCLIOverrides, type CLIOverrides } from '../../core/config/runtime/overrides.js';
-import { isRecord } from '../../utils/type-guards.js';
+import { applyCLIOverrides } from '../../core/config/runtime/overrides.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { error } from '../../utils/error.js';
+import { readIpcServerArgsFile, SERVER_ARGS_FILE, type IpcServerArgs } from './server-args.js';
 
-const SERVER_ARGS_FILE = 'server-args.json';
+const ipcServerEntryError = {
+  promptResponseKindMismatch: (expected: string, actual: string) =>
+    error('ipc-prompt-response-kind-mismatch', `IPC prompt response kind mismatch: expected ${expected}, got ${actual}`, { expected, actual }),
+} as const;
 
 function assertPromptResponse<T extends IpcPromptResponse['kind']>(
   response: IpcPromptResponse,
   kind: T,
 ): Extract<IpcPromptResponse, { kind: T }> {
   if (response.kind !== kind) {
-    throw new Error(`IPC prompt response kind mismatch: expected ${kind}, got ${response.kind}`);
+    throw ipcServerEntryError.promptResponseKindMismatch(kind, response.kind);
   }
   return response as Extract<IpcPromptResponse, { kind: T }>;
 }
 
-type ServerArgs = {
-  sessionId: string;
-  projectDir: string;
-  feature: string;
-  mode: string;
-  configPath: string;
-  overrides: CLIOverrides;
-};
+function exitInvalidArgs(message: string): never {
+  process.stderr.write(`server-entry: ${message}\n`);
+  process.exit(1);
+}
 
-function getArgv(): ServerArgs {
-  const [, , sessionId, projectDir, feature, mode, configPath] = process.argv;
-  if (!sessionId || !projectDir || !feature || !mode || !configPath) {
-    process.stderr.write('server-entry: missing required argv\n');
-    process.exit(1);
+function readArgsFileOrExit(argsFile: string): IpcServerArgs {
+  try {
+    return readIpcServerArgsFile(argsFile);
+  } catch (err) {
+    exitInvalidArgs(toErrorMessage(err));
+  }
+}
+
+function getArgv(): IpcServerArgs {
+  const [, , firstArg, secondArg, feature, mode, configPath] = process.argv;
+  if (firstArg && !secondArg) {
+    return readArgsFileOrExit(firstArg);
+  }
+  if (firstArg === '--args-file' && secondArg) {
+    return readArgsFileOrExit(secondArg);
   }
 
-  // Try to load richer args (with CLI overrides) from server-args.json beside the lockfile.
+  const sessionId = firstArg;
+  const projectDir = secondArg;
+  if (!sessionId || !projectDir || !feature || !mode || !configPath) {
+    exitInvalidArgs('missing required argv');
+  }
+
   const argsFile = join(sessionDir(projectDir, sessionId), SERVER_ARGS_FILE);
   if (existsSync(argsFile)) {
     try {
-      const parsed: unknown = JSON.parse(readFileSync(argsFile, 'utf8'));
-      if (!isRecord(parsed)) throw new Error('invalid server-args.json');
-      return {
-        sessionId,
-        projectDir,
-        feature,
-        mode,
-        configPath,
-        overrides: (isRecord(parsed.overrides)) ? parsed.overrides as CLIOverrides : {},
-      };
+      return readIpcServerArgsFile(argsFile);
     } catch {
-      // Fall through to argv-only mode.
+      // Legacy argv launches can still run without persisted overrides.
     }
   }
 

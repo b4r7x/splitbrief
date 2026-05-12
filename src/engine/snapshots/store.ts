@@ -9,7 +9,6 @@ import {
 } from 'node:fs';
 import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
-import { simpleGit } from 'simple-git';
 import type { SnapshotFileEntry, SnapshotManifest, SnapshotPhase } from '../../core/schemas/snapshot.js';
 import { SnapshotManifestSchema } from '../../core/schemas/snapshot.js';
 import {
@@ -24,6 +23,7 @@ import {
   TREES_DIR,
 } from '../../core/paths.js';
 import { ensureSecureDir, SECURE_FILE_MODE } from '../../lib/fs.js';
+import { checkIgnoredPaths } from '../../lib/git.js';
 import { isNodeError } from '../../lib/process/errors.js';
 import { error } from '../../utils/error.js';
 import type { EventBus } from '../events/types.js';
@@ -133,12 +133,7 @@ export async function collectTrackedFiles(projectDir: string): Promise<string[]>
   const allFiles = await readdirRecursive(projectDir, projectDir);
   if (allFiles.length === 0) return [];
 
-  let ignoredPaths: string[] = [];
-  try {
-    ignoredPaths = await simpleGit(projectDir).checkIgnore(allFiles);
-  } catch {
-    ignoredPaths = [];
-  }
+  const ignoredPaths = await checkIgnoredPaths(projectDir, allFiles);
 
   const ignored = new Set(ignoredPaths);
   const filtered = allFiles.filter(rel => !ignored.has(rel));

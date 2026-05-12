@@ -53,7 +53,10 @@ export function createCommandHandler(deps: {
       phase: deps.getPhase(),
       onError: (message) => errors.push(message),
     });
-    for (const error of errors) deps.writer.error(error);
+    if (errors.length > 0) {
+      for (const error of errors) deps.writer.error(error);
+      return;
+    }
     deps.writer.ack('slash', { command: raw, messages });
   };
 

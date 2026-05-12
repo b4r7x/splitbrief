@@ -238,7 +238,7 @@ That means:
 - Claude Code, Codex, OpenCode, Kilo, Copilot, or Agent SDK may use their own tools and MCP clients when they are the planner or implementer.
 - Diptych should not become another tool-calling agent that independently reads, writes, browses, and shells around the worker.
 - Diptych should run deterministic orchestration operations: file snapshots, git status/diff, validation commands, budget checks, drift checks, evidence writes, approval gates.
-- Diptych's MCP server should remain read-only unless a separate spec proves why mutations are necessary.
+- Diptych's MCP server should keep project resources read-only. The current mutation surface is limited to evidence-ledger tools that let external agents report progress, evidence, validation results, completion, or errors.
 
 MCP is useful as a way for external tools to read diptych session artifacts. It should not become the main execution path.
 
@@ -277,7 +277,7 @@ High-confidence cleanup:
 - Make the no-commit rule explicit for this repository, and separate it from optional product-level commit strategies.
 - Update stale config examples that use old snake_case or old config keys.
 - Reword Task Contract docs so external Kanban/Jira usage is not presented as the main purpose.
-- Keep MCP described as read-only resources, not writeable tool execution.
+- Keep MCP described as read-only project resources plus constrained evidence-ledger tools, not general writable tool execution.
 - Audit tests for behavior value, especially hook/wrapper tests and large UI tests that assert "no crash" rather than user-observable behavior.
 
 Lower-confidence cleanup that should not happen blindly:

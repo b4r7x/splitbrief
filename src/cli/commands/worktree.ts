@@ -1,9 +1,9 @@
 import { Command } from 'commander';
-import { simpleGit } from 'simple-git';
 import { resolveProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { listWorktrees, removeWorktree } from '../../engine/worktree.js';
+import { createGitClient } from '../../lib/git.js';
 import type { WorktreeInfo } from '../../engine/worktree.js';
 
 export interface WorktreeDeps {
@@ -130,7 +130,7 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (opts: { project?: string }) => {
       const projectDir = resolveProjectDir(opts.project);
-      const git = simpleGit(projectDir);
+      const git = createGitClient(projectDir);
       const worktrees = await deps.listWorktrees(projectDir, git);
 
       if (worktrees.length === 0) {
@@ -147,7 +147,7 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (name: string, opts: { project?: string }) => {
       const projectDir = resolveProjectDir(opts.project);
-      const git = simpleGit(projectDir);
+      const git = createGitClient(projectDir);
       const worktrees = await deps.listWorktrees(projectDir, git);
       const found = worktrees.some((w) => w.name === name);
 
@@ -174,7 +174,7 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
         opts: { force?: boolean; deleteBranch?: boolean; project?: string },
       ) => {
         const projectDir = resolveProjectDir(opts.project);
-        const git = simpleGit(projectDir);
+        const git = createGitClient(projectDir);
 
         const worktrees = await deps.listWorktrees(projectDir, git);
         const found = worktrees.some((w) => w.name === name);

@@ -52,6 +52,7 @@ import {
 } from '../../core/layout/workflow-rect.js';
 import { collectReadiness } from '../../core/readiness/collect.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
+import { buildReadinessFailureReport } from './readiness-failure.js';
 
 interface WorkflowScreenProps {
   commands: RuntimeCommandDef[];
@@ -207,7 +208,11 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
         if (!cancelled) setComputedReadiness(report);
       })
       .catch((err) => {
-        if (!cancelled) feedbackStore.setError(`Readiness check failed: ${String(err)}`);
+        if (!cancelled) {
+          const failure = buildReadinessFailureReport(projectDir, err);
+          setComputedReadiness(failure);
+          feedbackStore.setError('Readiness check failed.');
+        }
       });
     return () => {
       cancelled = true;

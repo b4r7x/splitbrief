@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdirSync, symlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { applyCode } from './apply.js';
 import { makeTask as makeBaseTask } from '#testing/helpers/factories/task.js';
@@ -12,6 +12,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 
 describe('applyCode', () => {
   let tempDir: string;
+  const itUnix = process.platform === 'win32' ? it.skip : it;
 
   afterEach(() => {
     if (tempDir) cleanupTempDir(tempDir);
@@ -132,5 +133,23 @@ describe('applyCode', () => {
     const result = await applyCode('malicious code', task, tempDir);
     expect(result.success).toBe(false);
     expect(result.error).toContain('escapes project directory');
+  });
+
+  itUnix('rejects writes through symlinked directories outside the project', async () => {
+    tempDir = createTempDir('impl-test');
+    const outside = createTempDir('impl-test-outside');
+    try {
+      mkdirSync(join(outside, 'target'), { recursive: true });
+      symlinkSync(join(outside, 'target'), join(tempDir, 'linked'));
+      const task = makeTask({ action: 'create', file: 'linked/evil.ts' });
+
+      const result = await applyCode('malicious code', task, tempDir);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('escapes project directory');
+      expect(existsSync(join(outside, 'target', 'evil.ts'))).toBe(false);
+    } finally {
+      cleanupTempDir(outside);
+    }
   });
 });

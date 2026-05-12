@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { readStats, updateStats, rebuildStats } from './persistence.js';
@@ -119,5 +119,18 @@ describe('stats persistence', () => {
     const raw = readFileSync(join(testDir, '.diptych', 'stats.json'), 'utf-8');
     const parsed = JSON.parse(raw);
     expect(parsed.version).toBe(1);
+  });
+
+  it('does not leave a temporary stats file after write', () => {
+    updateStats(testDir, {
+      costBreakdown: makeCostBreakdown(),
+      totalTasks: 1,
+      completedByLocal: 1,
+      escalatedToPlanner: 0,
+    });
+
+    const files = readdirSync(join(testDir, '.diptych'));
+    expect(files).toContain('stats.json');
+    expect(files.some(file => file.endsWith('.tmp'))).toBe(false);
   });
 });

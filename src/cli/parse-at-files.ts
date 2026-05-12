@@ -1,8 +1,8 @@
 import { readFileSync, statSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { isAbsolute, relative, resolve } from 'node:path';
 import { MAX_ATTACHMENT_BYTES } from '../core/schemas/attachment.js';
 import { resolveAttachment } from '../core/attachments/resolve.js';
-import { assertPathConfined } from '../lib/path-confinement.js';
+import { assertExistingPathConfined, assertPathConfined } from '../lib/path-confinement.js';
 import type { Attachment } from '../core/schemas/attachment.js';
 
 export interface AtFileResult {
@@ -44,18 +44,39 @@ export function parseAtFiles(
   for (const raw of atPaths) {
     const absPath = resolve(projectDir, raw);
 
+    if (!isAbsolute(raw)) {
+      try {
+        assertPathConfined(raw, projectDir);
+      } catch {
+        errors.push({ path: raw, reason: 'outside-project' });
+        continue;
+      }
+    }
+
     const imageResult = resolveAttachment({ input: absPath, projectDir });
     if (imageResult.ok) {
+      if (!isAbsolute(raw)) {
+        try {
+          assertExistingPathConfined(raw, projectDir);
+        } catch {
+          errors.push({ path: raw, reason: 'outside-project' });
+          continue;
+        }
+      }
       attachments.push(imageResult.attachment);
       continue;
     }
     if (imageResult.reason !== 'not-image') {
-      errors.push({ path: raw, reason: imageResult.reason });
+      const reason = imageResult.reason === 'outside-safe-roots' && !isAbsolute(raw)
+        ? 'outside-project'
+        : imageResult.reason;
+      errors.push({ path: raw, reason });
       continue;
     }
 
+    const projectPath = relative(resolve(projectDir), absPath);
     try {
-      assertPathConfined(raw, projectDir);
+      assertPathConfined(projectPath, projectDir);
     } catch {
       errors.push({ path: raw, reason: 'outside-project' });
       continue;
@@ -71,6 +92,13 @@ export function parseAtFiles(
 
     if (!stat.isFile()) {
       errors.push({ path: raw, reason: 'not-a-file' });
+      continue;
+    }
+
+    try {
+      assertExistingPathConfined(projectPath, projectDir);
+    } catch {
+      errors.push({ path: raw, reason: 'outside-project' });
       continue;
     }
 

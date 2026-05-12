@@ -322,7 +322,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
 
 ```
  1. diptych start "add email validator"
- 2. CLI loads .diptych/config.yml → configStore
+ 2. CLI loads .diptych/config.yaml → configStore
  3. CLI checks .diptych/active → error if present.
     Generate session ID, create .diptych/sessions/<id>/, write .diptych/active.
  4. routerStore → screen: workflow. useWorkflow starts.

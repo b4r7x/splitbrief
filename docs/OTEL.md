@@ -3,7 +3,7 @@
 diptych can emit OpenTelemetry spans for the workflow lifecycle. Opt-in via:
 
 ```yaml
-# .diptych/config.yml
+# .diptych/config.yaml
 otel:
   enabled: true            # default false
   serviceName: diptych     # default 'diptych'
@@ -26,7 +26,7 @@ DIPTYCH_OTEL_EXPORTER=console node dist/cli.js start --json --mode quick "otel s
 node dist/cli.js start --otel-exporter=console --json --mode quick "otel smoke"
 ```
 
-You still need `otel.enabled: true` in `.diptych/config.yml` — the env var / flag only bootstraps the provider; the sink is only installed when the config says so. Spans print to stderr on workflow end.
+You still need `otel.enabled: true` in `.diptych/config.yaml` — the env var / flag only bootstraps the provider; the sink is only installed when the config says so. Spans print to stderr on workflow end.
 
 The argv / env path exists because pre-registering a `TracerProvider` from an external wrapper script is defeated by ESM's dual-resolution of `@opentelemetry/api` (absolute path vs bare specifier → distinct module cache entries). The bootstrap (`src/cli/otel-bootstrap.ts`) registers the provider in the same resolution context that the sink imports from, sidestepping the dual cache.
 

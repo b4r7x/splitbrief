@@ -529,7 +529,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ## MCP server
 
-Diptych MCP is a read-only resources server. It exposes session artifacts for external tools to inspect; it does not expose MCP tools, writes, or mutation endpoints. Tool calls remain inside the configured planner or implementer runner.
+Diptych MCP exposes read-only session resources and five constrained evidence tools. The tools only update `.diptych/sessions/<id>/evidence.json` for existing sessions/tasks; they do not write project files, run shells, or dispatch implementers. General tool calls remain inside the configured planner or implementer runner.
 
 ### Symptom: `diptych mcp serve` exits immediately or refuses to bind
 
@@ -565,7 +565,7 @@ Diptych MCP is a read-only resources server. It exposes session artifacts for ex
 
 ### Symptom: Expected MCP resources are missing or empty
 
-**Likely cause:** Resources are synthesized from the live session's artifacts. If the session has not produced briefs, evidence, or summary yet, those resources will be empty. This is read-only by design; there is no MCP tool call that can create the missing artifacts.
+**Likely cause:** Resources are synthesized from the live session's artifacts. If the session has not produced briefs, evidence, or summary yet, those resources will be empty. MCP evidence tools can update the evidence ledger, but no MCP tool can create missing planning artifacts.
 
 **Fix:**
 1. Confirm the session is past the planning phase: `diptych status <session>` should show artifacts present.

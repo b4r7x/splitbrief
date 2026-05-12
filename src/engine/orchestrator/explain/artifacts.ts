@@ -19,6 +19,7 @@ import type { SessionLogEventEntry } from '../../../core/schemas/session-log.js'
 import { readEvents } from '../../../core/sessions/log-reader.js';
 import { readJsonSafeAsync } from '../../../lib/fs.js';
 import { isENOENT } from '../../../lib/process/errors.js';
+import { error } from '../../../utils/error.js';
 import { narrowRecord } from '../../../utils/type-guards.js';
 import {
   stringValue,
@@ -28,6 +29,13 @@ import {
 } from './types.js';
 
 export const SUMMARY_FILE = 'summary.json';
+
+export const explainArtifactsError = {
+  sessionPathNotDirectory: (sessionId: string) =>
+    error('explain-session-path-not-directory', `Session path is not a directory: ${sessionId}`, { sessionId }),
+  sessionNotFound: (sessionId: string) =>
+    error('explain-session-not-found', `No session found: ${sessionId}`, { sessionId }),
+} as const;
 
 const ARTIFACT_FILES = [
   { key: 'summary', file: SUMMARY_FILE },
@@ -48,9 +56,9 @@ export function artifactPath(sessionId: string, file: string): string {
 export async function assertSessionDirectory(projectDir: string, sessionId: string): Promise<void> {
   try {
     const stats = await stat(sessionDir(projectDir, sessionId));
-    if (!stats.isDirectory()) throw new Error(`Session path is not a directory: ${sessionId}`);
+    if (!stats.isDirectory()) throw explainArtifactsError.sessionPathNotDirectory(sessionId);
   } catch (err) {
-    if (isENOENT(err)) throw new Error(`No session found: ${sessionId}`);
+    if (isENOENT(err)) throw explainArtifactsError.sessionNotFound(sessionId);
     throw err;
   }
 }

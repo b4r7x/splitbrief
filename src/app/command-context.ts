@@ -16,6 +16,12 @@ import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run.js
 import { performManualCompaction } from '../engine/orchestrator/transcript-rebuild.js';
 import { writeSessionHtmlReport } from '../engine/export/collect.js';
 import type { RuntimeCommandContext } from '../core/runtime/commands/types.js';
+import { error } from '../utils/error.js';
+
+const appCommandContextError = {
+  noActiveSession: (command: string) => error('app-command-no-active-session', `No active session for ${command}`, { command }),
+  noConfig: (command: string) => error('app-command-no-config', `No config loaded for ${command}`, { command }),
+} as const;
 
 function currentSessionId(projectDir: string): string | null {
   const route = routerStore.get();
@@ -81,7 +87,7 @@ export function buildCommandContext({ exit }: { exit: () => void }): RuntimeComm
     writeHandoff: async (target, taskId) => {
       const projectDir = configStore.get().projectDir;
       const sessionId = readActive(projectDir);
-      if (!sessionId) throw new Error('No active session for handoff');
+      if (!sessionId) throw appCommandContextError.noActiveSession('handoff');
       const outDir = join(
         projectDir, '.diptych', 'sessions', sessionId, 'handoffs', target,
       );
@@ -117,20 +123,20 @@ export function buildCommandContext({ exit }: { exit: () => void }): RuntimeComm
     acceptRunSnapshot: async () => {
       const projectDir = configStore.get().projectDir;
       const sessionId = readActive(projectDir);
-      if (!sessionId) throw new Error('No active session for /accept-run');
+      if (!sessionId) throw appCommandContextError.noActiveSession('/accept-run');
       return acceptRunSnapshot(projectDir, sessionId);
     },
     rejectRunSnapshot: async () => {
       const projectDir = configStore.get().projectDir;
       const sessionId = readActive(projectDir);
-      if (!sessionId) throw new Error('No active session for /reject-run');
+      if (!sessionId) throw appCommandContextError.noActiveSession('/reject-run');
       return rejectRunSnapshot(projectDir, sessionId);
     },
     compactTranscript: async () => {
       const { config, projectDir } = configStore.get();
-      if (!config) throw new Error('No config loaded for /compact-transcript');
+      if (!config) throw appCommandContextError.noConfig('/compact-transcript');
       const sessionId = currentSessionId(projectDir);
-      if (!sessionId) throw new Error('No active session for /compact-transcript');
+      if (!sessionId) throw appCommandContextError.noActiveSession('/compact-transcript');
       return performManualCompaction(config, projectDir, sessionId);
     },
     exportSession: async () => {

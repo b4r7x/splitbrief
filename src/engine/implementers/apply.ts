@@ -1,5 +1,5 @@
 import { readFile, writeFile, access, mkdir } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { dirname } from 'node:path';
 import type { Task } from '../../core/schemas/task.js';
 import { validateTaskPath } from '../../core/paths-io.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -7,13 +7,13 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 const SEARCH_REPLACE_LINE_THRESHOLD = 200;
 
 export async function applyCode(code: string, task: Task, projectDir: string): Promise<{ success: boolean; error?: string }> {
+  let filePath: string;
   try {
-    validateTaskPath(projectDir, task.file);
+    filePath = validateTaskPath(projectDir, task.file);
   } catch (err) {
     return { success: false, error: toErrorMessage(err) };
   }
 
-  const filePath = join(projectDir, task.file);
   const dir = dirname(filePath);
 
   try {

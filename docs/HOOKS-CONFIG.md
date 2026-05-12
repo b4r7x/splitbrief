@@ -2,12 +2,12 @@
 
 > **Different from `docs/HOOKS.md`!** That doc covers React hooks. This doc covers user-extensible **workflow lifecycle hooks** — shell commands or built-in scanners that fire at well-known moments during a diptych workflow. Lifecycle hooks are not React hooks.
 
-User-extensible hook system inspired by Claude Agent SDK. Declare commands or modules in `.diptych/config.yml`, or drop convention-named JS/TS modules into `.diptych/hooks/`, to fire at workflow events (pre/post task, pre/post validation, optional pre/post commit, etc.). Used for `prettier --write` after each task, secret scanning when product-level commit hooks are enabled, Slack notifications, custom validators — anything you can run from a script or module.
+User-extensible hook system inspired by Claude Agent SDK. Declare commands or modules in `.diptych/config.yaml`, or drop convention-named JS/TS modules into `.diptych/hooks/`, to fire at workflow events (pre/post task, pre/post validation, optional pre/post commit, etc.). Used for `prettier --write` after each task, secret scanning when product-level commit hooks are enabled, Slack notifications, custom validators — anything you can run from a script or module.
 
 ## Quick start
 
 ```yaml
-# .diptych/config.yml
+# .diptych/config.yaml
 hooks:
   post_task:
     - command: "npx"
@@ -268,7 +268,7 @@ Post hooks fire after the action has already happened. A `deny` returned from `p
 
 ## Execution order
 
-Hooks for the **same event** run **sequentially** — built-ins first, explicitly configured hooks in `.diptych/config.yml` declaration order, then discovered `.diptych/hooks/` modules. There is no fan-out or parallelism.
+Hooks for the **same event** run **sequentially** — built-ins first, explicitly configured hooks in `.diptych/config.yaml` declaration order, then discovered `.diptych/hooks/` modules. There is no fan-out or parallelism.
 
 Each hook's stdin reflects any `modify` patch returned by the previous hook for that event. Example:
 
@@ -326,7 +326,7 @@ Because of that authority, diptych layers several guardrails:
 
 ### Trust model
 
-Adding a hook to `.diptych/config.yml` is RCE on the next `diptych start`. A malicious PR could drop a `hooks:` block and own the reviewer's machine. To prevent this:
+Adding a hook to `.diptych/config.yaml` is RCE on the next `diptych start`. A malicious PR could drop a `hooks:` block and own the reviewer's machine. To prevent this:
 
 - The first time diptych sees a hook config, it computes `sha256(canonical-JSON)` and prompts in TTY: `Trust these hooks for this project? [y/N]`
 - On `y`: hash stored in `.diptych/hook-trust.json`. Future runs compare against the stored hash.
@@ -374,7 +374,7 @@ Built-ins run **before** user-declared hooks for the same event.
 
 Goal: auto-run Prettier after each task.
 
-1. Edit `.diptych/config.yml`:
+1. Edit `.diptych/config.yaml`:
 
 ```yaml
 hooks:

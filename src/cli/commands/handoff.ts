@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { join } from 'node:path';
 import { resolveProjectDir } from '../setup.js';
-import { HANDOFF_TARGETS } from '../../core/handoff/targets.js';
+import { HANDOFF_TARGETS, validateHandoffTargetName } from '../../core/handoff/targets.js';
 import { listCustomRenderers } from '../../engine/handoff/load-renderer.js';
 import { writeHandoffPack } from '../../engine/handoff/write.js';
 import { cliError, isCliError } from '../errors.js';
@@ -64,6 +64,11 @@ export function registerHandoffCommand(program: Command, deps: HandoffDeps = def
             );
           }
           const mode = rawMode as WriteMode;
+
+          const targetValidation = validateHandoffTargetName(target);
+          if (!targetValidation.ok) {
+            throw cliError(`Invalid target "${target}": ${targetValidation.reason}`, 1);
+          }
 
           const outDir = opts.out ?? join(projectDir, 'handoff', target);
 

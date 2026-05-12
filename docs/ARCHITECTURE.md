@@ -119,7 +119,7 @@ UI code is organized by **business feature**, not technical layer — see [`STRU
 Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow the same pattern:
 
 1. Parse CLI flags via commander.
-2. Resolve project dir; load config from `.diptych/config.yml`.
+2. Resolve project dir; load config from `.diptych/config.yaml`.
 3. `initStores()` — load config, sessions, skills into module-scoped stores before anything renders. This is the only place where `store.load()` runs. Doing it earlier (inside React hooks) caused infinite render loops, so it's lifted out.
 4. Initialise the router store (`routerStore.init({ screen, feature?, resumeState? })`).
 5. Call `renderApp(<App/>)`, which hands off to Ink.
@@ -420,7 +420,7 @@ The repository layers many supporting subsystems on top of that core loop:
 - **Quality gates** — every mode runs a brief-quality scoring pass before tasks start; standard and speckit additionally enter a `reviewing-briefs` phase for human approval. A drift-report fires per task, and a chained-drift detector scores cross-task scope creep.
 - **Snapshots** (`src/engine/snapshots/`) — content-addressed working-tree snapshots stored under `.diptych/sessions/<id>/snapshots/` with a baseline + delta layout. Auto-snapshots fire on user-configured triggers (`preTask` / `postTask` / `preFinalReview`); manual ones via `diptych snapshot create` (CLI-only; no `/snapshot` slash command).
 - **Handoff packs** (`src/engine/handoff/`) — render the compiled brief into formats other agents consume (`spec-kit`, `agents-md`, `claude-code`, `copilot-issue`) plus user-supplied custom renderers under `.diptych/handoff-renderers/`.
-- **MCP server** (`src/engine/mcp/`) — exposes session artifacts (state, evidence, drift, briefs, snapshots) as read-only MCP resources for external clients. It declares no MCP tools and is not an execution path.
+- **MCP server** (`src/engine/mcp/`) — exposes session artifacts (state, evidence, drift, briefs, snapshots) as read-only MCP resources for external clients, plus constrained evidence-ledger tools. It is not an execution path.
 - **IPC server** (`src/engine/ipc/`) — UNIX-domain socket per session so a `diptych attach` TUI client can re-bind to a long-running background workflow; `diptych ps` lists status.
 - **Worktree management** (`src/engine/git/worktree.ts`) — `diptych worktree list / switch / remove` for isolated parallel sessions under `.trees/<name>/`.
 - **Tiered approval** (`src/engine/orchestrator/tiered-approval.ts`) — every implementer write goes through `auto` / `sticky` / `confirm` tiers per action class, with sticky grants persisted at `.diptych/approvals.json` and managed via `diptych approval list / clear`.
@@ -464,7 +464,7 @@ src/
 │   │   ├── runtime/               build-runner, overrides, resolve
 │   │   └── errors.ts              ConfigError types
 │   ├── formatting.ts              formatCost, formatDuration, etc.
-│   ├── hooks/trust.ts             Hook trust store (.diptych/hooks-trust.json)
+│   ├── hooks/trust.ts             Hook trust store (.diptych/hook-trust.json)
 │   ├── layout/                    8 pure helpers: chrome-rows,
 │   │                              conversation-scroll, diff-height,
 │   │                              event-sections, renderable-conversation,
@@ -875,7 +875,7 @@ All per-session state lives under `.diptych/sessions/<session-id>/`. Path consta
 ├── active                          plain text — single session-id (the lock)
 ├── config.yaml                     Project config (v2 or v3)
 ├── approvals.json                  Sticky approval grants (cross-session)
-├── hooks-trust.json                Hook-trust state (created on first prompt)
+├── hook-trust.json                 Hook-trust state (created on first prompt)
 ├── handoff-renderers/              User-supplied custom renderers
 │   └── <name>.ts | <name>.js
 └── sessions/
@@ -1110,7 +1110,7 @@ Registered in `src/cli.ts` (verified). All accept `--project <dir>` (default cwd
 | `diptych handoff [target]` | — | Export Handoff Pack. Flags: `--session`, `--out`, `--task <ids>`, `--mode default\|append\|overwrite`, `--list`. Default target `spec-kit`. |
 | `diptych snapshot` | `create`, `list`, `restore <id-or-name>`, `diff <id-or-name>` | Working-tree snapshots. `restore` supports `--force` to overwrite conflicts. `diff` exits non-zero when changes detected. |
 | `diptych approval` | `list`, `clear --scope session\|always\|all` | Manage sticky approval grants in `.diptych/approvals.json`. |
-| `diptych mcp` | `serve` | Start read-only MCP HTTP resource server (default port 4321) exposing session resources. Generates one-shot bearer token; supports `--session` or `--all-sessions`; exposes no MCP tools. |
+| `diptych mcp` | `serve` | Start MCP HTTP server (default port 4321) exposing session resources and constrained evidence tools. Generates one-shot bearer token; supports `--session` or `--all-sessions`. |
 | `diptych worktree` | `list`, `switch <name>`, `remove <name>` | Manage `.trees/<name>/` git worktrees. `remove` supports `--force` and `--delete-branch`. |
 | `diptych attach [session-id]` | — | Connect TUI client to a running background session via `ipc.sock`. Auto-resolves the session-id if exactly one is running. (Not supported on Windows.) |
 | `diptych ps` | — | List sessions with status (`running` / `exited` / `crashed` / `unknown`), pid, mode, elapsed time, feature. Sorted newest-first. (Not supported on Windows.) |

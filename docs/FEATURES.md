@@ -325,9 +325,10 @@ Events: `budget_warning` (80%), `budget_paused` (configured threshold), `budget_
 ```bash
 diptych stats
 diptych stats --json
+diptych stats --rebuild
 ```
 
-**When to use.** To see the cumulative value of the planner/implementer split over time. Retention hook: "You've saved $47 across 23 sessions this month."
+**When to use.** To see the cumulative value of the planner/implementer split over time. Use `--rebuild` to reconstruct `.diptych/stats.json` from completed session history after the cache is deleted, corrupted, or copied between projects. Retention hook: "You've saved $47 across 23 sessions this month."
 
 ### Planner heartbeat
 
@@ -493,11 +494,11 @@ diptych handoff jira
 
 **When to use.** When you need to push the brief into a tool diptych does not ship a renderer for.
 
-### MCP resources server (advanced, read-only)
+### MCP resources and evidence tools server (advanced)
 
-**What it does.** A localhost-only HTTP MCP server exposing supported read-only session resources via standard `resources/list` / `resources/read`: the sessions index, `manifest.json` when canonical `summary.json` and `state.json` exist, `summary.json`, `state.json`, `spec.md`, `plan.md`, `tasks`, individual `tasks/<id>` blocks, `evidence.json`, and `drift-report.json` when present. Missing concrete resources return resource-not-found; unavailable manifests are not advertised. Bound to `127.0.0.1`, Bearer-token authenticated (one-shot token printed at startup).
+**What it does.** A localhost-only HTTP MCP server exposing supported session resources via standard `resources/list` / `resources/read`: the sessions index, `manifest.json` when canonical `summary.json` and `state.json` exist, `summary.json`, `state.json`, `spec.md`, `plan.md`, `tasks`, individual `tasks/<id>` blocks, `evidence.json`, and `drift-report.json` when present. Missing concrete resources return resource-not-found; unavailable manifests are not advertised. Bound to `127.0.0.1`, Bearer-token authenticated (one-shot token printed at startup).
 
-MCP itself can expose model-controlled tools; the official spec treats those as sensitive operations that need visible, confirmable user control. Diptych's MCP surface deliberately avoids that category. It declares no tools, performs no writes, and never dispatches implementation work. Tool calls belong to the selected planner or implementer runner, while this server is only a live resource window into session artifacts.
+MCP also exposes five constrained evidence tools: `report_evidence`, `report_progress`, `mark_task_done`, `report_validation_result`, and `report_error`. These tools only update `.diptych/sessions/<id>/evidence.json` for existing sessions and tasks; they do not run shells, write project files, or dispatch implementation work. General tool calls belong to the selected planner or implementer runner.
 
 **Transport.** Implements the MCP Streamable HTTP transport (`2025-11-25`). Accepts `POST /mcp` for requests and notifications. `GET /mcp` returns `405 Method Not Allowed` with an `Allow: POST` header (SSE not implemented). Non-local browser `Origin` headers are rejected with `403`. The server supports `MCP-Protocol-Version: 2025-11-25`; when the request header is missing, the server defaults to that current supported version and echoes it in the response header. Unsupported protocol-version headers return `400` with a JSON-RPC error. Notifications receive `202 Accepted` (no body); requests receive `200` with a JSON-RPC response body.
 
@@ -510,7 +511,7 @@ diptych mcp serve --all-sessions               # expose every session in the pro
 
 External MCP-aware tools (Claude Code, Codex, Cursor) configure the URL plus the printed token. URI scheme is forward-compatible with the handoff pack v1 paths. The bearer token is a one-shot random value generated in-memory at server startup (`src/engine/mcp/auth-token.ts` — `generateToken()`); it is never persisted to disk. Every `manifest.json` exposed by the server includes `briefHash`.
 
-**When to use.** Live read-only mode for external agents that need to inspect diptych state without a copied handoff pack. MCP exposes resources only: no tools, no writes, no mutation endpoints. Tool execution remains inside the configured planner or implementer runner; MCP does not become diptych's write path.
+**When to use.** Live mode for external agents that need to inspect diptych state without a copied handoff pack and report evidence back to the active ledger. MCP does not become diptych's project write path; implementation remains inside the configured planner or implementer runner.
 
 ---
 

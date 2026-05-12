@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, test } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileOrEmpty } from '../lib/fs.js';
 import {
@@ -20,6 +20,7 @@ import { DIPTYCH_DIR, SESSIONS_DIR, sessionDir } from './paths.js';
 
 let tmp: string;
 const SESSION_ID = '2024-01-01-test-feature';
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 function makeTmp(): string {
   tmp = createTempDir('paths-io-test');
@@ -201,6 +202,19 @@ describe('validateTaskPath', () => {
     const dir = makeTmp();
     const resolved = validateTaskPath(dir, 'file.ts');
     expect(resolved).toBe(join(dir, 'file.ts'));
+  });
+
+  itUnix('rejects paths that write through symlinked directories outside the project', () => {
+    const dir = makeTmp();
+    const outside = createTempDir('paths-io-outside');
+    try {
+      mkdirSync(join(outside, 'target'), { recursive: true });
+      symlinkSync(join(outside, 'target'), join(dir, 'linked'));
+
+      expect(() => validateTaskPath(dir, 'linked/file.ts')).toThrow('escapes project directory');
+    } finally {
+      cleanupTempDir(outside);
+    }
   });
 });
 

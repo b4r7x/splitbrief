@@ -17,7 +17,7 @@ export function loadConfigOrExit(projectDir: string): ReturnType<typeof loadConf
   try {
     return loadConfig(projectDir);
   } catch (err) {
-    throw cliError(toErrorMessage(err), 2);
+    throw cliError(toErrorMessage(err), 1);
   }
 }
 

@@ -15,7 +15,8 @@ export function registerStatsCommand(program: Command): void {
     .description('Show cumulative cost savings across all sessions')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--rebuild', 'Rebuild stats from session history')
-    .action((opts: { project?: string; rebuild?: boolean }) => {
+    .option('--json', 'Emit machine-readable JSON output', false)
+    .action((opts: { project?: string; rebuild?: boolean; json?: boolean }) => {
       try {
         const projectDir = resolveProjectDir(opts.project);
 
@@ -34,10 +35,15 @@ export function registerStatsCommand(program: Command): void {
             });
           }
           rebuildStats(projectDir, inputs);
-          console.log(`Rebuilt stats from ${inputs.length} session(s).`);
+          if (!opts.json) console.log(`Rebuilt stats from ${inputs.length} session(s).`);
         }
 
         const stats = readStats(projectDir);
+
+        if (opts.json) {
+          process.stdout.write(JSON.stringify({ type: 'stats', stats }) + '\n');
+          return;
+        }
 
         if (stats.totalSessions === 0) {
           console.log('No completed sessions with cost data yet.');

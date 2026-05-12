@@ -1,5 +1,11 @@
 import type { EntryId, TreeEntryEnvelope, TreeMeta } from './schemas.js';
 import { entryId, nextEntryId } from './schemas.js';
+import { error } from '../../../utils/error.js';
+
+export const sessionTreeError = {
+  unknownBranchEntry: (fromId: EntryId) =>
+    error('session-tree-unknown-branch-entry', `Cannot branch from unknown entry: ${fromId}`, { fromId }),
+} as const;
 
 export interface SessionTree {
   readonly entries: ReadonlyMap<EntryId, TreeEntryEnvelope>;
@@ -81,7 +87,7 @@ export function branchFrom(tree: SessionTree, opts: BranchOptions): {
   entry: TreeEntryEnvelope;
 } {
   if (!tree.entries.has(opts.fromId)) {
-    throw new Error(`Cannot branch from unknown entry: ${opts.fromId}`);
+    throw sessionTreeError.unknownBranchEntry(opts.fromId);
   }
 
   const id = nextEntryId(tree.meta.entryCount);
