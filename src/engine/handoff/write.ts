@@ -14,6 +14,7 @@ import { loadConfig } from '../../core/config/load/load.js';
 import { hashTaskBrief } from '../../core/brief-hash.js';
 import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../core/paths.js';
 import { assertPathConfined } from '../../lib/path-confinement.js';
+import { error } from '../../utils/error.js';
 
 export type WriteHandoffOptions = {
   projectDir: string;
@@ -29,6 +30,17 @@ export type WriteHandoffResult = {
   outputDir: string;
   files: string[];
 };
+
+export const handoffWriteError = {
+  stateNotFound: (sessionId: string) => error('handoff-state-not-found', `no state found for session: ${sessionId}`, { sessionId }),
+  unknownTaskId: (id: string) => error('handoff-unknown-task-id', `unknown task id: ${id}`, { id }),
+  outputDirectoryExists: (outDir: string) =>
+    error(
+      'handoff-output-directory-exists',
+      `output directory already exists: ${outDir}. Use --mode append or --mode overwrite.`,
+      { outDir },
+    ),
+} as const;
 
 function resolveValidationCommands(projectDir: string): {
   validation: { typecheck?: string; lint?: string; test?: string };
@@ -50,7 +62,7 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
 
   const state = loadState(projectDir, sessionId);
   if (!state) {
-    throw new Error(`no state found for session: ${sessionId}`);
+    throw handoffWriteError.stateNotFound(sessionId);
   }
 
   const specContent = readSpecFile(projectDir, sessionId, SPEC_FILE) ?? undefined;
@@ -92,7 +104,7 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
   const filteredTasks = brandedTaskIds
     ? brandedTaskIds.map(id => {
         const task = state.tasks.find(t => t.id === id);
-        if (!task) throw new Error(`unknown task id: ${id}`);
+        if (!task) throw handoffWriteError.unknownTaskId(id);
         return task;
       })
     : state.tasks;
@@ -112,9 +124,7 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
   }, projectDir);
 
   if (mode === 'default' && existsSync(outDir)) {
-    throw new Error(
-      `output directory already exists: ${outDir}. Use --mode append or --mode overwrite.`,
-    );
+    throw handoffWriteError.outputDirectoryExists(outDir);
   }
 
   if (mode === 'overwrite' && existsSync(outDir)) {

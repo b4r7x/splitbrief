@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
 import { snapshotFilesDir, SNAPSHOT_BASELINE_ID } from '../../core/paths.js';
 import type { EventBus } from '../events/types.js';
+import { error } from '../../utils/error.js';
 import {
   acquireSnapshotLock,
   hashFile,
@@ -25,6 +26,15 @@ export type RestoreOptions = {
   force?: boolean;
   bus?: EventBus;
 };
+
+export const snapshotRestoreError = {
+  notFound: (idOrName: string) =>
+    error('snapshot-not-found', `No snapshot found with id or name: ${idOrName}`, { idOrName }),
+  ambiguousName: (idOrName: string, ids: string) =>
+    error('snapshot-name-ambiguous', `Ambiguous snapshot name '${idOrName}': matches ${ids}. Use the snapshot ID directly.`, { idOrName, ids }),
+  baselineMissing: (sessionId: string) =>
+    error('snapshot-baseline-missing', `Baseline snapshot missing for session ${sessionId}. Cannot restore.`, { sessionId }),
+} as const;
 
 export async function resolveSnapshot(
   projectDir: string,
@@ -52,13 +62,11 @@ export async function resolveSnapshot(
   }
 
   if (matches.length === 0) {
-    throw new Error(`No snapshot found with id or name: ${idOrName}`);
+    throw snapshotRestoreError.notFound(idOrName);
   }
   if (matches.length > 1) {
     const ids = matches.map(m => m.id).join(', ');
-    throw new Error(
-      `Ambiguous snapshot name '${idOrName}': matches ${ids}. Use the snapshot ID directly.`,
-    );
+    throw snapshotRestoreError.ambiguousName(idOrName, ids);
   }
   return matches[0]!;
 }
@@ -79,9 +87,7 @@ export async function restoreSnapshot(opts: RestoreOptions): Promise<RestoreResu
     try {
       baselineManifest = await readManifest(projectDir, sessionId, SNAPSHOT_BASELINE_ID);
     } catch {
-      throw new Error(
-        `Baseline snapshot missing for session ${sessionId}. Cannot restore.`,
-      );
+      throw snapshotRestoreError.baselineMissing(sessionId);
     }
 
     const snapshotFileSet = new Set(manifest.fileEntries.map(e => e.path));

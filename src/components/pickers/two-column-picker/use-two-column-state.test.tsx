@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import { Text } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
@@ -44,21 +44,24 @@ describe('useTwoColumnState via TwoColumnPicker', () => {
         onCancel={() => {}}
       />,
     );
-    await tick(20);
-    expect(leftChanges.at(-1)).toBe('alpha'); // initial effect
+    await vi.waitFor(() => {
+      expect(leftChanges.at(-1)).toBe('alpha');
+    });
 
     ui.stdin.write('\u001B[B'); // ↓ → 'beta' (disabled)
-    await tick(20);
-    expect(leftChanges.at(-1)).toBe('beta');
+    await vi.waitFor(() => {
+      expect(leftChanges.at(-1)).toBe('beta');
+    });
 
     ui.stdin.write('\r'); // Enter on disabled — no-op
     await tick(20);
     expect(confirms).toEqual([]);
 
     ui.stdin.write('\u001B[B'); // ↓ → 'gamma'
-    await tick(20);
-    expect(leftChanges.at(-1)).toBe('gamma');
-    expect(ui.lastFrame()).toContain('Gamma');
+    await vi.waitFor(() => {
+      expect(leftChanges.at(-1)).toBe('gamma');
+      expect(ui.lastFrame()).toContain('Gamma');
+    });
     ui.unmount();
   });
 

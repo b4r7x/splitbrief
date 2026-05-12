@@ -204,6 +204,22 @@ describe('startIpcServer', () => {
     expect(onUserInput).toHaveBeenCalledWith('hello world');
   });
 
+  it('ignores user_input messages without string text', async () => {
+    const events: EngineEvent[] = [];
+    const { srv, bus, onUserInput } = await makeServer();
+    bus.subscribe((e) => events.push(e));
+    const socket = await connectClient(srv.sockPath);
+    sockets.push(socket);
+    await readLines(socket, 1);
+
+    socket.write(JSON.stringify({ kind: 'user_input', text: { value: 'not text' } }) + '\n');
+    await tick();
+    await tick();
+
+    expect(onUserInput).not.toHaveBeenCalled();
+    expect(events.some((e) => e.type === 'warning' && e.message.includes('invalid message structure'))).toBe(true);
+  });
+
   it('sends pending prompt requests when a client attaches and resolves prompt_response', async () => {
     const { srv, bus } = await makeServer();
 
@@ -235,6 +251,36 @@ describe('startIpcServer', () => {
     }) + '\n');
 
     await expect(promptPromise).resolves.toEqual({ kind: 'external_changes', proceed: true });
+  });
+
+  it('ignores prompt_response messages with invalid response payloads', async () => {
+    const events: EngineEvent[] = [];
+    const { srv, bus } = await makeServer();
+    bus.subscribe((e) => events.push(e));
+    const socket = await connectClient(srv.sockPath);
+    sockets.push(socket);
+    await readLines(socket, 1);
+
+    let settled = false;
+    const promptPromise = srv.requestClientPrompt({ kind: 'external_changes' });
+    promptPromise.finally(() => {
+      settled = true;
+    }).catch(() => undefined);
+    const msgs = await readLines(socket, 1);
+    const msg = msgs[0]!;
+    expect(msg.kind).toBe('prompt_request');
+    if (msg.kind !== 'prompt_request') throw new Error('missing prompt_request');
+
+    socket.write(JSON.stringify({
+      kind: 'prompt_response',
+      requestId: msg.request.requestId,
+      response: { kind: 'external_changes', proceed: 'yes' },
+    }) + '\n');
+    await tick();
+    await tick();
+
+    expect(settled).toBe(false);
+    expect(events.some((e) => e.type === 'warning' && e.message.includes('invalid message structure'))).toBe(true);
   });
 
   it('fails closed for no-client prompts when configured for explicit headless mode', async () => {

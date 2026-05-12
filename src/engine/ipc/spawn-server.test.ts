@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, rmSync, existsSync, statSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -7,7 +7,8 @@ import { createServer, type Server } from 'node:net';
 import { IPC_SOCK_FILE } from '../../core/paths.js';
 import { HEARTBEAT_STALENESS_MS } from './constants.js';
 import { writeLockfile } from './lockfile.js';
-import { waitForServerReady } from './spawn-server.js';
+import { buildServerArgv, waitForServerReady } from './spawn-server.js';
+import { parseIpcServerArgs, readIpcServerArgsFile, writeIpcServerArgsFile } from './server-args.js';
 
 let testDir: string;
 let socketServer: Server | null = null;
@@ -91,5 +92,58 @@ describe('waitForServerReady', () => {
     if (!result.ok) {
       expect(result.reason).toContain('timeout');
     }
+  });
+});
+
+describe('server args launch contract', () => {
+  it('stores detached launch details in a secure args file', () => {
+    const argsFile = writeIpcServerArgsFile(testDir, {
+      sessionId: 'test-session',
+      projectDir: '/repo',
+      feature: 'implement from @file\n\nsecret context',
+      mode: 'standard',
+      configPath: '/repo/.diptych/config.yaml',
+      overrides: { budget: 4 },
+    });
+
+    expect(statSync(argsFile).mode & 0o777).toBe(0o600);
+    expect(readIpcServerArgsFile(argsFile)).toMatchObject({
+      sessionId: 'test-session',
+      feature: 'implement from @file\n\nsecret context',
+      overrides: { budget: 4 },
+    });
+  });
+
+  it('keeps feature text out of detached process argv', () => {
+    const argv = buildServerArgv(['server-entry.js'], '/repo/.diptych/sessions/s/server-args.json');
+
+    expect(argv).toEqual(['server-entry.js', '/repo/.diptych/sessions/s/server-args.json']);
+    expect(argv.join(' ')).not.toContain('secret context');
+  });
+
+  it('rejects server args with incorrectly typed nested overrides', () => {
+    const parsed = parseIpcServerArgs({
+      sessionId: 'test-session',
+      projectDir: '/repo',
+      feature: 'feature',
+      mode: 'standard',
+      configPath: '/repo/.diptych/config.yaml',
+      overrides: { yolo: 'yes' },
+    });
+
+    expect(parsed).toBeNull();
+  });
+
+  it('rejects server args with unknown nested override keys', () => {
+    const parsed = parseIpcServerArgs({
+      sessionId: 'test-session',
+      projectDir: '/repo',
+      feature: 'feature',
+      mode: 'standard',
+      configPath: '/repo/.diptych/config.yaml',
+      overrides: { planner: { tool: 'codex', extra: true } },
+    });
+
+    expect(parsed).toBeNull();
   });
 });

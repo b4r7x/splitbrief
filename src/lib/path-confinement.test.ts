@@ -1,7 +1,16 @@
-import { describe, it, expect } from 'vitest';
-import { assertPathConfined } from './path-confinement.js';
+import { afterEach, describe, it, expect } from 'vitest';
+import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { assertExistingPathConfined, assertPathConfined, assertWritablePathConfined } from './path-confinement.js';
 
 const ROOT = '/safe/root/dir';
+const itUnix = process.platform === 'win32' ? it.skip : it;
+const tmpDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) cleanupTempDir(dir);
+});
 
 describe('assertPathConfined', () => {
   it('does not throw for a safe relative path', () => {
@@ -26,5 +35,25 @@ describe('assertPathConfined', () => {
     ['Windows UNC absolute path', '\\\\server\\share\\file.md'],
   ])('throws for %s (%s)', (_label, path) => {
     expect(() => assertPathConfined(path, ROOT)).toThrow(/unsafe path/);
+  });
+
+  itUnix('rejects existing symlinks that resolve outside the root', () => {
+    const root = createTempDir('path-conf-root');
+    const outside = createTempDir('path-conf-outside');
+    tmpDirs.push(root, outside);
+    writeFileSync(join(outside, 'secret.txt'), 'secret');
+    symlinkSync(join(outside, 'secret.txt'), join(root, 'linked.txt'));
+
+    expect(() => assertExistingPathConfined('linked.txt', root)).toThrow(/unsafe path/);
+  });
+
+  itUnix('rejects writes through symlinked parent directories outside the root', () => {
+    const root = createTempDir('path-conf-root');
+    const outside = createTempDir('path-conf-outside');
+    tmpDirs.push(root, outside);
+    mkdirSync(join(outside, 'target'), { recursive: true });
+    symlinkSync(join(outside, 'target'), join(root, 'linked-dir'));
+
+    expect(() => assertWritablePathConfined('linked-dir/file.ts', root)).toThrow(/unsafe path/);
   });
 });

@@ -410,4 +410,19 @@ describe('writeHandoffPack — renderer path confinement', () => {
       }),
     ).rejects.toThrow(/unsafe path/);
   });
+
+  it('rejects path-like custom renderer targets before loading a renderer', async () => {
+    const sessionId = 'unsafe-target-session';
+    writeSessionState(tmp, sessionId);
+
+    await expect(
+      writeHandoffPack({
+        projectDir: tmp,
+        sessionId,
+        target: '../malicious',
+        outDir: join(tmp, 'handoff', 'unsafe-target'),
+        mode: 'default',
+      }),
+    ).rejects.toThrow(/invalid handoff target/);
+  });
 });

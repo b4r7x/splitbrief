@@ -48,4 +48,17 @@ describe('ReadinessPanel', () => {
     expect(ui.lastFrame() ?? '').toContain('blocked');
     ui.unmount();
   });
+
+  it('renders check details for readiness failures', async () => {
+    const report = blockedReport();
+    const check = report.sections[0]?.checks[0];
+    if (!check) throw new Error('missing readiness check');
+    check.details = ['config could not be read'];
+
+    const ui = renderFeature(<ReadinessPanel report={report} />);
+    await tick();
+
+    expect(ui.lastFrame() ?? '').toContain('config could not be read');
+    ui.unmount();
+  });
 });

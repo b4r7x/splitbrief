@@ -1,8 +1,14 @@
 import { validateSafeIdentifier } from '../../../utils/validate-identifier.js';
+import { error } from '../../../utils/error.js';
 import { assertSessionDirectory, readExplainArtifacts } from './artifacts.js';
 import { buildRoutes } from './routing.js';
 import { buildActivity, buildCost, buildReview, buildWarnings, sessionStatus } from './sections.js';
 import type { RunExplain } from './types.js';
+
+const runExplainError = {
+  invalidSessionId: (sessionId: string, reason: string) =>
+    error('run-explain-invalid-session-id', `Invalid session id "${sessionId}": ${reason}`, { sessionId, reason }),
+} as const;
 
 export async function buildRunExplain(opts: { projectDir: string; sessionId: string }): Promise<RunExplain> {
   validateSessionId(opts.sessionId);
@@ -29,5 +35,5 @@ export async function buildRunExplain(opts: { projectDir: string; sessionId: str
 
 function validateSessionId(sessionId: string): void {
   const result = validateSafeIdentifier(sessionId);
-  if (!result.ok) throw new Error(`Invalid session id "${sessionId}": ${result.reason}`);
+  if (!result.ok) throw runExplainError.invalidSessionId(sessionId, result.reason);
 }

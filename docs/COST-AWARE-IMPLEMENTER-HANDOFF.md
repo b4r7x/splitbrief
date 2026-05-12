@@ -26,7 +26,7 @@ expensive planner -> Task Briefs -> cheapest capable implementer profile -> chec
 - No swarm manager.
 - No same-checkout parallel writes.
 - No plan archive, kanban board, or cross-plan project-management layer.
-- No MCP write tools.
+- No MCP project-write, execution, or implementation-dispatch tools; MCP only exposes the constrained evidence-ledger tools documented in the CLI reference.
 - No hidden diptych tool-calling layer. Tools belong to the selected runner; diptych owns deterministic orchestration, state, checkpoints, validation, and evidence.
 
 ## Implementation Map
@@ -74,7 +74,7 @@ expensive planner -> Task Briefs -> cheapest capable implementer profile -> chec
 ### MCP And Tool Boundary
 
 - `src/cli/commands/mcp.ts` and `src/engine/ipc/protocol.ts` remain boundary code for session visibility and workflow IPC.
-- The product boundary is unchanged: MCP resources are for read-only external visibility unless a future spec explicitly proves mutation is needed.
+- The product boundary is unchanged: MCP project resources are for read-only external visibility; the current write surface is limited to evidence-ledger reporting tools.
 - Diptych does not insert its own agent tool-calling layer between the planner/implementer and their native tools.
 
 ## Main Tests To Read
@@ -109,7 +109,7 @@ expensive planner -> Task Briefs -> cheapest capable implementer profile -> chec
 - `extracted-code` profiles may write only one file's contents.
 - Stale `currentCode` must be cleared or refreshed from disk; it must not be reused after the file changed or disappeared.
 - Same-checkout task execution stays sequential.
-- MCP remains read-only and is not the execution path for implementer writes.
+- MCP remains outside the execution path for implementer writes. Its only mutation surface is evidence-ledger reporting for existing sessions and tasks.
 
 ## Validation
 

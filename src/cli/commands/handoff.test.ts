@@ -56,6 +56,19 @@ describe('handoff command — target validation', () => {
     expect(logs.join('\n')).toContain(`${tmp}/handoff/custom-target`);
     expect(logs.join('\n')).toContain('custom-target.md');
   });
+
+  it('rejects path-like targets before deriving the default output directory', async () => {
+    let captured: unknown;
+    try {
+      await runHandoff(['../escape', '--mode', 'overwrite']);
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    expect((captured as Error).message).toContain('Invalid target "../escape"');
+    expect(writes).toEqual([]);
+  });
 });
 
 describe('handoff command — mode validation', () => {

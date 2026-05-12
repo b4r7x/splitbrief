@@ -40,7 +40,7 @@ After setup, the handler calls `initStores()` and then `renderApp()`.
 
 **`initUIChrome()`** subscribes the terminal-size store to resize events so layout reflows when the window changes.
 
-**`loadProjectState()`** loads configuration from `.diptych/config.yml` via `configStore.load()`, loads session history via `sessionsStore.load()`, and installs history persistence. If the user specified `--mode full`, it warns that `full` is a deprecated alias for `speckit`. Config must load before sessions — session display depends on config state.
+**`loadProjectState()`** loads configuration from `.diptych/config.yaml` via `configStore.load()`, loads session history via `sessionsStore.load()`, and installs history persistence. If the user specified `--mode full`, it warns that `full` is a deprecated alias for `speckit`. Config must load before sessions — session display depends on config state.
 
 **`ensureHooksTrusted()`** (`src/cli/hook-trust-prompt.ts`) checks whether the project's configured hooks have been approved. If not, it prompts the user before continuing. This runs after config is loaded (hooks come from config) but before discovery (discovery shouldn't run under untrusted hooks).
 

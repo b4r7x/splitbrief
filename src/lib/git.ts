@@ -3,9 +3,17 @@ import { error, matches } from '../utils/error.js';
 
 const getGit = (dir: string): SimpleGit => simpleGit(dir);
 
+export type GitClient = SimpleGit;
+
+export function createGitClient(dir: string): GitClient {
+  return getGit(dir);
+}
+
 export const gitError = {
   commandFailed: (intent: string, causeMessage: string, cause?: unknown) =>
     error('git-command-failed', `git ${intent} failed: ${causeMessage}`, { intent, causeMessage }, cause),
+  branchNameCollision: (desiredName: string) =>
+    error('git-branch-name-collision', `too many branch name collisions on ${desiredName}`, { desiredName }),
   isCommandFailed: matches('git-command-failed'),
 } as const;
 
@@ -102,6 +110,14 @@ export async function getCommittedFilesSince(dir: string, baseRef: string): Prom
   }
 }
 
+export async function checkIgnoredPaths(dir: string, paths: string[]): Promise<string[]> {
+  try {
+    return await getGit(dir).checkIgnore(paths);
+  } catch {
+    return [];
+  }
+}
+
 export async function createTaggedStash(dir: string, message: string, tagName: string): Promise<string> {
   await stageAll(dir);
   const git = getGit(dir);
@@ -129,7 +145,7 @@ export async function createBranch(dir: string, desiredName: string): Promise<st
   let suffix = 2;
   while (await branchExists(dir, name)) {
     if (suffix > 99) {
-      throw new Error(`too many branch name collisions on ${desiredName}`);
+      throw gitError.branchNameCollision(desiredName);
     }
     name = `${desiredName}-${suffix}`;
     suffix++;

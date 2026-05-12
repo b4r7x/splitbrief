@@ -15,6 +15,11 @@ import { acceptRunSnapshot, rejectRunSnapshot } from '../../engine/snapshots/run
 import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from '../../engine/orchestrator/approvals-store.js';
 import { performManualCompaction } from '../../engine/orchestrator/transcript-rebuild.js';
 import { writeSessionHtmlReport } from '../../engine/export/collect.js';
+import { error } from '../../utils/error.js';
+
+const rpcCommandContextError = {
+  noActiveSession: () => error('rpc-command-no-active-session', 'No active session.'),
+} as const;
 
 export function createRpcCommandContext(opts: {
   projectDir: string;
@@ -38,7 +43,7 @@ export function createRpcCommandContext(opts: {
   };
   const getSessionIdOrThrow = () => {
     const id = opts.getSessionId();
-    if (!id) throw new Error('No active session.');
+    if (!id) throw rpcCommandContextError.noActiveSession();
     return id;
   };
 

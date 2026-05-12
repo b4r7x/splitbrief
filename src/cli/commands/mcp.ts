@@ -22,11 +22,11 @@ const defaultDeps: McpDeps = {
 export function registerMcpCommand(program: Command, deps: McpDeps = defaultDeps): void {
   const mcp = program
     .command('mcp')
-    .description('MCP resource and write-tool server commands');
+    .description('MCP resource and evidence-tool server commands');
 
   mcp
     .command('serve')
-    .description('Start an MCP server for project resources and write tools')
+    .description('Start an MCP server for project resources and evidence tools')
     .option('--port <number>', 'Port to listen on', String(DEFAULT_PORT))
     .option('--session <id>', 'Serve only this session')
     .option('--all-sessions', 'Serve all sessions in the project')
@@ -85,7 +85,7 @@ export function registerMcpCommand(program: Command, deps: McpDeps = defaultDeps
         process.stdout.write(
           [
             'diptych MCP server ready',
-            `  Exposes session resources and ${toolHandler.listTools().length} write tools.`,
+            `  Exposes session resources and ${toolHandler.listTools().length} evidence tools.`,
             '',
             `  URL:    http://127.0.0.1:${actualPort}/mcp`,
             `  Token:  ${token}`,

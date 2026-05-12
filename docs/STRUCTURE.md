@@ -275,14 +275,14 @@ Is it global state with subscribers?
 └── YES → src/stores/<domain>/  (see STORES.md)
 
 Is it a pure, zero-dep, framework-agnostic primitive?
-  (no tiny-spec literals, no Node APIs beyond stdlib types, npm-publishable in isolation)
+  (no diptych literals, no Node APIs beyond stdlib types, npm-publishable in isolation)
 └── YES → src/utils/
 
 Is it a boundary wrapper around an external system?
   (git, fs, node:child_process, terminal I/O, shiki, simple-git, HTTP)
 └── YES → src/lib/<domain>/
 
-Does it know tiny-spec concepts (config, cost, tokens, sessions, `.diptych/`, state machine)?
+Does it know diptych concepts (config, cost, tokens, sessions, `.diptych/`, state machine)?
 ├── Workflow orchestration (planner/implementer/validation/retry) → src/engine/<domain>/
 └── Pure domain logic / types / formatting                         → src/core/<domain>/
 

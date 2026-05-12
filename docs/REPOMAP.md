@@ -26,7 +26,7 @@ Only signatures (declarations) appear. Bodies elided. Files outside the budget a
 ## Configuration
 
 ```yaml
-# .diptych/config.yml — all fields optional, defaults shown
+# .diptych/config.yaml — all fields optional, defaults shown
 codebase:
   enabled: true              # set to false to disable
   tokenBudget: 4000          # tokens reserved in the planner prompt
@@ -87,7 +87,7 @@ Cold parse on a 200-file repo: ~3s on M1. Warm hit: <100ms (mtime check + JSON l
 ## Opt-out
 
 ```yaml
-# .diptych/config.yml
+# .diptych/config.yaml
 codebase:
   enabled: false
 ```

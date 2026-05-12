@@ -49,7 +49,7 @@ export type RunWorkflowOptions = {
   signal?: AbortSignal | undefined;
   /** Headless mode: emit events as NDJSON to stdout. TUI render is skipped at the CLI layer. */
   headless?: boolean | undefined;
-  /** Optional TUI event sink — bridges engine events to React stores. Passed from features layer. */
+  /** Optional TUI event sink — bridges engine events to React stores. Supplied by the React workflow layer. */
   tuiSink?: EventSink | undefined;
   /** Optional externally-owned bus, used by the detached IPC server/client path. */
   eventBus?: EventBus | undefined;

@@ -31,10 +31,10 @@ export async function ensureHooksTrusted(opts: HookTrustOptions): Promise<void> 
   rl.close();
 
   if (answer !== 'y' && answer !== 'yes') {
-    throw cliError(
-      'Refusing to run with untrusted hooks. Edit .diptych/config.yml or re-run and answer y.',
-      1,
-    );
+      throw cliError(
+        'Refusing to run with untrusted hooks. Edit .diptych/config.yaml or re-run and answer y.',
+        1,
+      );
   }
   markHooksConfigTrusted(opts.projectDir, opts.hooks);
 }

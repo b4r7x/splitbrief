@@ -1,9 +1,10 @@
 import { existsSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, sep } from 'node:path';
-import type { SimpleGit } from 'simple-git';
 import { DIPTYCH_DIR, ACTIVE_FILE, STATE_FILE, SESSIONS_DIR, TREES_DIR, worktreePath } from '../core/paths.js';
 import { readJsonSafeAsync } from '../lib/fs.js';
+import type { GitClient } from '../lib/git.js';
+import { error } from '../utils/error.js';
 
 export type WorktreeStatus = 'active' | 'idle' | 'none';
 
@@ -17,26 +18,43 @@ export type WorktreeStatus = 'active' | 'idle' | 'none';
 // trees directory).
 const WORKTREE_NAME_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$/;
 
+export const worktreeError = {
+  nameRequired: () => error('worktree-name-required', 'Worktree name is required.'),
+  nameTooLong: (name: string) => error('worktree-name-too-long', `Worktree name "${name}" is too long (max 64 characters).`, { name }),
+  nameBadPrefix: (name: string) => error('worktree-name-bad-prefix', `Worktree name "${name}" must not start with "." or "-".`, { name }),
+  nameReserved: (name: string) => error('worktree-name-reserved', `Worktree name "${name}" is reserved.`, { name }),
+  nameHasPathSeparator: (name: string) => error('worktree-name-path-separator', `Worktree name "${name}" must not contain path separators.`, { name }),
+  nameInvalidCharacters: (name: string) =>
+    error('worktree-name-invalid-characters', `Worktree name "${name}" contains invalid characters. Allowed: letters, digits, "_", "-", "." (after the first character).`, { name }),
+  sourceDirty: (fileCount: number) =>
+    error('worktree-source-dirty', `Source working tree is dirty (${fileCount} uncommitted file(s)). Commit, stash, or clean changes before using --worktree.`, { fileCount }),
+  branchExists: (branch: string) =>
+    error('worktree-branch-exists', `Branch ${branch} already exists. Use --worktree <other-name> or delete the branch first.`, { branch }),
+  notFound: (slug: string) => error('worktree-not-found', `Worktree ".trees/${slug}" does not exist.`, { slug }),
+  liveSession: (slug: string, sessionId: string) =>
+    error('worktree-live-session', `Worktree ".trees/${slug}" has a live session ${sessionId}. Stop the session first, or use --force.`, { slug, sessionId }),
+  uncommittedChanges: (slug: string) =>
+    error('worktree-uncommitted-changes', `Worktree ".trees/${slug}" has uncommitted changes. Commit or stash them, or use --force.`, { slug }),
+} as const;
+
 export function validateWorktreeName(name: string): void {
   if (typeof name !== 'string' || name.length === 0) {
-    throw new Error('Worktree name is required.');
+    throw worktreeError.nameRequired();
   }
   if (name.length > 64) {
-    throw new Error(`Worktree name "${name}" is too long (max 64 characters).`);
+    throw worktreeError.nameTooLong(name);
   }
   if (name.startsWith('.') || name.startsWith('-')) {
-    throw new Error(`Worktree name "${name}" must not start with "." or "-".`);
+    throw worktreeError.nameBadPrefix(name);
   }
   if (name === '.' || name === '..') {
-    throw new Error(`Worktree name "${name}" is reserved.`);
+    throw worktreeError.nameReserved(name);
   }
   if (name.includes('/') || name.includes('\\') || name.includes(sep)) {
-    throw new Error(`Worktree name "${name}" must not contain path separators.`);
+    throw worktreeError.nameHasPathSeparator(name);
   }
   if (!WORKTREE_NAME_RE.test(name)) {
-    throw new Error(
-      `Worktree name "${name}" contains invalid characters. Allowed: letters, digits, "_", "-", "." (after the first character).`,
-    );
+    throw worktreeError.nameInvalidCharacters(name);
   }
 }
 
@@ -53,13 +71,13 @@ export type WorktreeInfo = {
 export type CreateWorktreeOptions = {
   projectDir: string;
   slug: string;
-  git: SimpleGit;
+  git: GitClient;
 };
 
 export type RemoveWorktreeOptions = {
   projectDir: string;
   slug: string;
-  git: SimpleGit;
+  git: GitClient;
   force?: boolean;
 };
 
@@ -105,23 +123,19 @@ export async function createWorktree(opts: CreateWorktreeOptions): Promise<strin
     return path !== TREES_DIR && !path.startsWith(`${TREES_DIR}/`);
   });
   if (dirtyFiles.length > 0) {
-    throw new Error(
-      `Source working tree is dirty (${dirtyFiles.length} uncommitted file(s)). Commit, stash, or clean changes before using --worktree.`,
-    );
+    throw worktreeError.sourceDirty(dirtyFiles.length);
   }
 
   const branches = await git.branch();
   if (branches.all.includes(branch)) {
-    throw new Error(
-      `Branch ${branch} already exists. Use --worktree <other-name> or delete the branch first.`,
-    );
+    throw worktreeError.branchExists(branch);
   }
 
   await git.raw(['worktree', 'add', wtPath, '-b', branch]);
   return wtPath;
 }
 
-export async function listWorktrees(projectDir: string, _git: SimpleGit): Promise<WorktreeInfo[]> {
+export async function listWorktrees(projectDir: string, _git: GitClient): Promise<WorktreeInfo[]> {
   const treesDir = join(projectDir, TREES_DIR);
   if (!existsSync(treesDir)) return [];
 
@@ -188,7 +202,7 @@ export async function removeWorktree(
   const branch = `diptych/${slug}`;
 
   if (!existsSync(wtPath)) {
-    throw new Error(`Worktree ".trees/${slug}" does not exist.`);
+    throw worktreeError.notFound(slug);
   }
 
   let liveSessionBypassed = false;
@@ -204,9 +218,7 @@ export async function removeWorktree(
       const isLive = phase !== null && phase !== 'complete' && phase !== 'idle';
       if (isLive) {
         if (!force) {
-          throw new Error(
-            `Worktree ".trees/${slug}" has a live session ${sessionId}. Stop the session first, or use --force.`,
-          );
+          throw worktreeError.liveSession(slug, sessionId);
         }
         liveSessionBypassed = true;
         liveSessionId = sessionId;
@@ -218,9 +230,7 @@ export async function removeWorktree(
   if (porcelain.trim()) {
     uncommittedFileCount = porcelain.trim().split('\n').filter(Boolean).length;
     if (!force) {
-      throw new Error(
-        `Worktree ".trees/${slug}" has uncommitted changes. Commit or stash them, or use --force.`,
-      );
+      throw worktreeError.uncommittedChanges(slug);
     }
     uncommittedBypassed = true;
   }
@@ -243,7 +253,7 @@ export async function removeWorktree(
   }
 }
 
-export async function detectWorktree(projectDir: string, git: SimpleGit): Promise<string | null> {
+export async function detectWorktree(projectDir: string, git: GitClient): Promise<string | null> {
   try {
     const [gitDir, gitCommonDir] = await Promise.all([
       git.raw(['rev-parse', '--git-dir']),

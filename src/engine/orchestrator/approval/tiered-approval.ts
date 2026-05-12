@@ -9,6 +9,11 @@ import { classifyAction, extractActionPattern, matchesActionPattern } from './ac
 import type { OrchestratorCallbacks } from '../types.js';
 import type { EventBus } from '../../events/types.js';
 import { readApprovalsStore, writeApprovalsStore } from '../approvals-store.js';
+import { error } from '../../../utils/error.js';
+
+const approvalError = {
+  unknownTier: () => error('approval-tier-unknown', 'unreachable: unknown approval tier'),
+} as const;
 
 export type { TieredApprovalRequest, TieredApprovalResponse } from '../../../core/approval/types.js';
 
@@ -148,5 +153,5 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
   }
 
   tier satisfies never;
-  throw new Error('unreachable: unknown approval tier');
+  throw approvalError.unknownTier();
 }

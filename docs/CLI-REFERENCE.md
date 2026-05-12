@@ -31,16 +31,17 @@ diptych — Cost-optimized AI coding orchestrator (v0.1.0)
 | 7 | `diptych continue` | Smart session continuity: attach if running, resume if interrupted. |
 | 8 | `diptych last` | Attach or resume the most recent session. |
 | 9 | `diptych stats` | Show cumulative cost savings across all sessions. |
-| 10 | `diptych migrate` | Migrate pre-v3 `.diptych/current/` state to per-session folders. |
-| 11 | `diptych handoff` | Export a Handoff Pack for an external coding agent. |
-| 12 | `diptych snapshot` | Create / list / restore / diff working-tree snapshots. |
-| 13 | `diptych approval` | List or clear sticky approval grants. |
-| 14 | `diptych mcp` | Run the MCP resource server. |
-| 15 | `diptych worktree` | List / switch / remove `.trees/<slug>` git worktrees. |
-| 16 | `diptych attach` | Attach a TUI client to a detached background session. |
-| 17 | `diptych detach` | Detach a TUI client without stopping the background server. |
-| 18 | `diptych ps` | List sessions in the current project with status. |
-| 19 | `diptych doctor` | Check run readiness without creating a workflow session. |
+| 10 | `diptych export` | Export a session as an HTML report. |
+| 11 | `diptych migrate` | Migrate pre-v3 `.diptych/current/` state to per-session folders. |
+| 12 | `diptych handoff` | Export a Handoff Pack for an external coding agent. |
+| 13 | `diptych snapshot` | Create / list / restore / diff working-tree snapshots. |
+| 14 | `diptych approval` | List or clear sticky approval grants. |
+| 15 | `diptych mcp` | Run the MCP resource and evidence-tool server. |
+| 16 | `diptych worktree` | List / switch / remove `.trees/<slug>` git worktrees. |
+| 17 | `diptych attach` | Attach a TUI client to a detached background session. |
+| 18 | `diptych detach` | Detach a TUI client without stopping the background server. |
+| 19 | `diptych ps` | List sessions in the current project with status. |
+| 20 | `diptych doctor` | Check run readiness without creating a workflow session. |
 
 ---
 
@@ -205,7 +206,7 @@ diptych spec --auto --allow-hooks "tighten zod schemas"
 
 ### Files affected
 
-- **Reads:** `.diptych/config.yaml`, repo files passed to the planner, `.diptych/.hooks-trust.json`.
+- **Reads:** `.diptych/config.yaml`, repo files passed to the planner, `.diptych/hook-trust.json`.
 - **Writes:** `.diptych/sessions/<id>/spec.md`, `.diptych/sessions/<id>/plan.md`, `.diptych/sessions/<id>/tasks.md`, the `.diptych/active` pointer.
 
 ### See also
@@ -439,7 +440,7 @@ diptych explain --session 2026-04-29-add-auth --json
 
 - `diptych status` — live phase/task posture.
 - `diptych doctor` — pre-run readiness diagnostics.
-- `diptych mcp serve` — read-only artifact access for MCP clients.
+- `diptych mcp serve` — artifact access and evidence reporting for MCP clients.
 
 ### Behavior notes
 
@@ -637,7 +638,7 @@ diptych last
 **Synopsis**
 
 ```
-diptych stats [--project <dir>] [--json]
+diptych stats [--project <dir>] [--rebuild] [--json]
 ```
 
 Show cumulative cost savings across all sessions in the project. Reads from `.diptych/stats.json` which is updated after each completed workflow.
@@ -647,6 +648,7 @@ Show cumulative cost savings across all sessions in the project. Reads from `.di
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--project <dir>` | path | cwd | Project directory. |
+| `--rebuild` | boolean | `false` | Rebuild `.diptych/stats.json` from completed session summaries before printing. |
 | `--json` | boolean | `false` | Emit machine-readable JSON output. |
 
 ### Examples
@@ -657,12 +659,15 @@ diptych stats
 
 # Machine-readable for scripting
 diptych stats --json
+
+# Rebuild aggregate stats from session history
+diptych stats --rebuild
 ```
 
 ### Exit codes
 
 - `0` — stats printed (or empty summary when no sessions have completed).
-- `1` — I/O failure reading stats file.
+- `1` — I/O failure reading session history or writing `.diptych/stats.json` during `--rebuild`.
 
 ### Output
 
@@ -675,8 +680,8 @@ Saved: $15.64 (85%)
 
 ### Files affected
 
-- **Reads:** `.diptych/stats.json`.
-- **Writes:** none.
+- **Reads:** `.diptych/stats.json`; with `--rebuild`, completed session summaries under `.diptych/sessions/`.
+- **Writes:** none normally. With `--rebuild`, rewrites `.diptych/stats.json`.
 
 ### See also
 
@@ -688,6 +693,48 @@ Saved: $15.64 (85%)
 - `.diptych/stats.json` is updated atomically after each `workflow_complete` event.
 - When no stats file exists, prints a message indicating no sessions have completed yet.
 - The all-planner estimate uses the same pricing model as the per-run hero savings stat on the summary screen.
+
+---
+
+## diptych export
+
+**Synopsis**
+
+```
+diptych export [session-id] [--out <path>] [--project <dir>]
+```
+
+Export a completed session as a standalone HTML report. If `session-id` is omitted, diptych uses the active session when it is complete, otherwise the newest completed session.
+
+### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--out <path>` | path | `.diptych/sessions/<id>/report.html` | Output file path. |
+| `--project <dir>` | path | cwd | Project directory. |
+
+### Examples
+
+```bash
+diptych export
+diptych export 2026-04-26-abcd1234
+diptych export 2026-04-26-abcd1234 --out ./report.html
+```
+
+### Exit codes
+
+- `0` — report written.
+- `1` — no session could be resolved, export failed, or the output path could not be written.
+
+### Files affected
+
+- **Reads:** `.diptych/sessions/<id>/summary.json`, `state.json`, `evidence.json`, and related report inputs when present.
+- **Writes:** the requested HTML report path.
+
+### See also
+
+- `/export` — export the active session from the TUI.
+- `diptych explain` — inspect the same session artifacts without producing HTML.
 
 ---
 
@@ -1089,7 +1136,7 @@ diptych approval clear --scope always       # only persistent grants
 diptych mcp serve [options]
 ```
 
-Start an MCP (Model Context Protocol) HTTP server that exposes supported diptych session resources to MCP-aware clients (Claude Code, Cursor, etc.). This is a read-only resources surface: it supports resource discovery and resource reads only, and it does not expose MCP tools, prompts, mutation endpoints, shell access, or implementer execution. Currently exposes a single subcommand: `serve`.
+Start an MCP (Model Context Protocol) HTTP server that exposes supported diptych session resources to MCP-aware clients (Claude Code, Cursor, etc.). It serves read-only session resources and a narrow evidence-recording tool surface for external agents to report task progress, evidence, validation results, completion, or errors. It does not expose shell access, arbitrary file writes, prompts, or implementer execution. Currently exposes a single subcommand: `serve`.
 
 ### Usage
 
@@ -1127,7 +1174,7 @@ diptych mcp serve --session 2026-04-26-abcd1234
 ### Files affected
 
 - **Reads:** session artifacts under `.diptych/sessions/`.
-- **Writes:** none persistent. The server binds to `127.0.0.1:<port>` and emits a fresh bearer token on stdout each invocation.
+- **Writes:** evidence ledger updates under `.diptych/sessions/<id>/evidence.json` when MCP tools are called. The server also binds to `127.0.0.1:<port>` and emits a fresh bearer token on stdout each invocation.
 
 ### Output
 
@@ -1137,13 +1184,14 @@ After binding, prints the URL, generated bearer token, listed sessions, and a re
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — MCP integration in the engine.
 - [Model Context Protocol specification](https://modelcontextprotocol.io/specification/draft) — protocol overview and safety guidance.
-- [MCP tools specification](https://modelcontextprotocol.io/specification/draft/server/tools) — tool surfaces are model-controlled and require explicit safety treatment; diptych intentionally does not expose one here.
+- [MCP tools specification](https://modelcontextprotocol.io/specification/draft/server/tools) — tool surfaces are model-controlled and require explicit safety treatment; diptych's tool surface is limited to evidence ledger updates.
 
 ### Behavior notes
 
 - The bearer token is regenerated every run via `generateToken()`. Keep it private; treat the output as a credential.
 - The server binds to `127.0.0.1` only — it is not accessible over the network without your own proxy.
-- `tools/list` is not a supported capability for this server. Tool execution stays inside the configured planner or implementer runner, where the user can review the runner's own tool UI and approval prompts.
+- `tools/list` advertises five evidence tools: `report_evidence`, `report_progress`, `mark_task_done`, `report_validation_result`, and `report_error`. `tools/call` for these tools only mutates diptych's evidence ledger for existing sessions/tasks.
+- General tool execution stays inside the configured planner or implementer runner, where the user can review the runner's own tool UI and approval prompts.
 - `--port 0` is rejected (the validator requires `>= 1`); a free random port cannot be requested via this CLI.
 - MCP Streamable HTTP uses protocol version `2025-11-25`. Missing `MCP-Protocol-Version` request headers default to that version; unsupported versions return `400`.
 - `resources/list` always includes the sessions index and conditionally lists session resources that exist: `manifest.json` only when canonical `summary.json` and `state.json` are valid, plus `summary.json`, `state.json`, `spec.md`, `plan.md`, `tasks`, individual `tasks/<id>` blocks, `evidence.json`, and `drift-report.json`.
@@ -1458,7 +1506,7 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 | `--session <id>` | `explain`, `handoff`, `snapshot *`, `mcp serve` | active session | When omitted, the active session is read from `.diptych/active`. |
 | `--auto` | `start`, `resume`, `spec` | `false` | Skip approval gates. On `start` / `resume` it aliases `--approve none`. |
 | `--allow-hooks` | `start`, `resume`, `spec` | `false` | Skip the hook-trust prompt. CI flag. |
-| `--json` | `start`, `resume`, `doctor`, `explain` | `false` | NDJSON event stream for `start` / `resume`; single JSON object for `doctor` / `explain`. |
+| `--json` | `start`, `resume`, `continue`, `doctor`, `explain`, `stats` | `false` | NDJSON event stream for `start` / `resume` / `continue`; single JSON object for `doctor` / `explain` / `stats`. |
 | `--rpc` | `start`, `resume`, `continue` | `false` | Bidirectional NDJSON. Mutually exclusive with `--json`; command responses are wrapped as `ack`, `error`, `status`, or `event`. |
 
 ### Where state lives
@@ -1476,7 +1524,7 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 | `.diptych/sessions/<id>/lockfile.json` | `start --detach` | Background server lockfile. |
 | `.diptych/sessions/<id>/ipc.sock` | `start --detach` | Unix domain socket for IPC. |
 | `.diptych/approvals.json` | `approval`, runtime `/approval` | Sticky grants. |
-| `.diptych/.hooks-trust.json` | `start`/`resume`/`spec` trust prompt | Hook trust ledger. |
+| `.diptych/hook-trust.json` | `start`/`resume`/`spec` trust prompt | Hook trust ledger. |
 | `.diptych/handoff-renderers/` | user | Custom Handoff Pack renderers. |
 | `.trees/<slug>/` | `worktree`, `start --worktree` | Linked git worktrees on branch `diptych/<slug>`. |
 | `handoff/<target>/` | `handoff` | Default Handoff Pack output (overridden by `--out`). |

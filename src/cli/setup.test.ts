@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { setupWorkflow } from './setup.js';
+import { loadConfigOrExit, setupWorkflow } from './setup.js';
 import { DIPTYCH_DIR, CONFIG_FILE } from '../core/paths.js';
 import { isCliError } from './errors.js';
 
@@ -73,5 +73,23 @@ describe('setupWorkflow', () => {
     // Second invocation: config exists -> no setup prompt.
     const second = await setupWorkflow({ project: tmp, fullscreen: false });
     expect(second.needsSetup).toBeUndefined();
+  });
+});
+
+describe('loadConfigOrExit', () => {
+  it('maps config load failures to CLI exit code 1', () => {
+    mkdirSync(join(tmp, DIPTYCH_DIR), { recursive: true });
+    writeFileSync(join(tmp, DIPTYCH_DIR, CONFIG_FILE), 'planner: [unterminated\n');
+
+    let captured: unknown;
+    try {
+      loadConfigOrExit(tmp);
+      throw new Error('expected loadConfigOrExit to throw');
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    expect((captured as { exitCode?: number }).exitCode).toBe(1);
   });
 });

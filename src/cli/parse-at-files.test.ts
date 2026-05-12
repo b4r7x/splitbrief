@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { parseAtFiles } from './parse-at-files.js';
 
 let tmp: string;
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 beforeEach(() => {
   tmp = createTempDir('parse-at-files-test');
@@ -46,6 +48,17 @@ describe('parseAtFiles', () => {
     expect(result.attachments).toHaveLength(1);
     expect(result.attachments[0]?.mimeType).toBe('image/png');
     expect(result.textContext).toBe('');
+  });
+
+  it('accepts absolute image paths inside the project', () => {
+    const imgPath = join(tmp, 'screenshot.png');
+    writeFileSync(imgPath, Buffer.alloc(100));
+
+    const result = parseAtFiles('fix layout', [`@${imgPath}`], tmp);
+
+    expect(result.attachments).toHaveLength(1);
+    expect(result.attachments[0]?.mimeType).toBe('image/png');
+    expect(result.errors).toEqual([]);
   });
 
   it('handles multiple text and image files together', () => {
@@ -108,6 +121,69 @@ describe('parseAtFiles', () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.path).toBe('../../etc/passwd');
     expect(result.errors[0]?.reason).toBe('outside-project');
+  });
+
+  it('accepts absolute text paths inside the project', () => {
+    const textPath = join(tmp, 'context.md');
+    writeFileSync(textPath, 'Design notes.');
+
+    const result = parseAtFiles('fix', [`@${textPath}`], tmp);
+
+    expect(result.textContext).toContain(`--- @${textPath} ---`);
+    expect(result.textContext).toContain('Design notes.');
+    expect(result.errors).toEqual([]);
+  });
+
+  itUnix('reports outside-project error for symlinks that resolve outside the project', () => {
+    const outside = createTempDir('parse-at-files-outside');
+    try {
+      writeFileSync(join(outside, 'secret.md'), 'secret');
+      symlinkSync(join(outside, 'secret.md'), join(tmp, 'linked.md'));
+
+      const result = parseAtFiles('fix', ['@linked.md'], tmp);
+
+      expect(result.errors).toEqual([{ path: 'linked.md', reason: 'outside-project' }]);
+      expect(result.textContext).toBe('');
+    } finally {
+      cleanupTempDir(outside);
+    }
+  });
+
+  itUnix('reports outside-project error for image symlinks that resolve outside the project', () => {
+    const outside = createTempDir('parse-at-files-image-outside');
+    try {
+      writeFileSync(join(outside, 'secret.png'), Buffer.alloc(100));
+      symlinkSync(join(outside, 'secret.png'), join(tmp, 'linked.png'));
+
+      const result = parseAtFiles('fix', ['@linked.png'], tmp);
+
+      expect(result.errors).toEqual([{ path: 'linked.png', reason: 'outside-project' }]);
+      expect(result.attachments).toHaveLength(0);
+    } finally {
+      cleanupTempDir(outside);
+    }
+  });
+
+  itUnix('reports outside-project error for relative image symlinks into the home safe root', () => {
+    const root = join(
+      homedir(),
+      `.diptych-parse-at-files-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    const project = join(root, 'project');
+    const outside = join(root, 'outside');
+    try {
+      mkdirSync(project, { recursive: true });
+      mkdirSync(outside, { recursive: true });
+      writeFileSync(join(outside, 'secret.png'), Buffer.alloc(100));
+      symlinkSync(join(outside, 'secret.png'), join(project, 'linked.png'));
+
+      const result = parseAtFiles('fix', ['@linked.png'], project);
+
+      expect(result.errors).toEqual([{ path: 'linked.png', reason: 'outside-project' }]);
+      expect(result.attachments).toHaveLength(0);
+    } finally {
+      cleanupTempDir(root);
+    }
   });
 
   it('reports not-a-file error for directories', () => {

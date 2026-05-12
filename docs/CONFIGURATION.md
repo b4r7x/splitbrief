@@ -959,7 +959,7 @@ Declared in `src/cli/options.ts` (shared by `start` + `resume`). These flags **o
 
 Config is validated on every load (`src/core/config/load/load.ts:loadConfig`).
 
-- Errors → `ConfigError` (`src/core/config/errors.ts`) → top-level catch in `src/cli/setup.ts` → exit code 2.
+- Errors → `ConfigError` (`src/core/config/errors.ts`) → top-level catch in `src/cli/setup.ts` → exit code 1.
 - Non-fatal warnings on stderr (`warnStderr` in `src/lib/warn.ts`):
   - Config file with permissions looser than `0600` on POSIX.
   - `apiKey` detected inline in config (recommends env var).

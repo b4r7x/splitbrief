@@ -344,6 +344,41 @@ describe('runRpc', () => {
     await run;
   });
 
+  it('does not acknowledge slash commands that report errors', async () => {
+    const projectDir = setupProject();
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    let finishWorkflow: (() => void) | undefined;
+    const workflowDone = new Promise<void>((resolve) => {
+      finishWorkflow = resolve;
+    });
+    const runWorkflowStub = async () => workflowDone;
+
+    const run = runRpc(
+      'slash error test',
+      projectDir,
+      { rpc: true },
+      undefined,
+      'rpc-slash-error-session',
+      undefined,
+      undefined,
+      undefined,
+      { input, output, runWorkflow: runWorkflowStub },
+    );
+
+    input.write('{"type":"slash","command":"/mode nope"}\n');
+    await waitForLine(chunks, line =>
+      line.type === 'error' && typeof line.error === 'string' && line.error.includes('Invalid mode'),
+    );
+
+    finishWorkflow?.();
+    await run;
+
+    expect(parseLines(chunks)).not.toContainEqual(
+      expect.objectContaining({ type: 'ack', command: 'slash' }),
+    );
+  });
+
   it('shuts down cleanly when stdin closes', async () => {
     const projectDir = setupProject();
     const input = new PassThrough();

@@ -1,9 +1,11 @@
+import { error } from './error.js';
+
 export function includes<T>(arr: readonly T[], item: unknown): item is T {
   return (arr as readonly unknown[]).includes(item);
 }
 
 export function assertNever(value: never): never {
-  throw new Error(`Unexpected value: ${String(value)}`);
+  throw error('unexpected-value', `Unexpected value: ${String(value)}`, { value: String(value) });
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

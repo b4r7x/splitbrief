@@ -64,6 +64,9 @@ function ReadinessCheckLine({ check }: { check: ReadinessCheck }) {
   return (
     <Box flexDirection="column">
       <Text color={color}>{check.severity} {check.id}: {check.summary}</Text>
+      {check.details?.slice(0, 2).map(detail => (
+        <Text key={detail} color={t.textDim}>  {detail}</Text>
+      ))}
       {check.fix && <Text color={t.textDim}>  Fix: {check.fix}</Text>}
     </Box>
   );

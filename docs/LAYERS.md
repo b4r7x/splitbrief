@@ -12,7 +12,7 @@ Companion to [`STRUCTURE.md`](./STRUCTURE.md) (file tree, feature anatomy) and [
 |---|---|---|---|
 | `src/utils/` | Generic primitives — pure, stateless, zero domain | Node stdlib, npm, other `utils/` | anyone |
 | `src/lib/` | Infrastructure wrappers — single-purpose adapters for Node/terminal/external libs | Node stdlib, npm, `utils/`, other `lib/` | anyone except `utils/` |
-| `src/core/` | Domain logic — knows tiny-spec concepts (config, state machine, paths, types, formatting of cost/tokens) | `utils/`, `lib/`, `core/` siblings | `engine/`, `stores/`, `features/` |
+| `src/core/` | Domain logic — knows diptych concepts (config, state machine, paths, types, formatting of cost/tokens) | `utils/`, `lib/`, `core/` siblings | `engine/`, `stores/`, `features/` |
 | `src/engine/` | Workflow orchestrator — runs planners, implementers, validation. Zero React/Ink | `utils/`, `lib/`, `core/`, `engine/` siblings | `cli/`, `features/workflow/` |
 | `src/stores/` | External state stores — the only cross-cutting channel between engine and UI | `utils/`, `core/`, `lib/` | anyone |
 | `src/features/{f}/` | Vertical business slices — screens, feature-local hooks, components | everything below + shared `components/`, `hooks/` | only `app.tsx` |
@@ -27,7 +27,7 @@ Import direction is one-way, top to bottom. For the cross-check table and blocke
 
 **Acceptance criteria:**
 - No imports from `core/`, `engine/`, `stores/`, `features/`, `components/`, `hooks/`, or `lib/`
-- No tiny-spec string literals (`.diptych`, `claude-code`, `ollama`, `cost`, `planner`, `workflow`, etc.)
+- No diptych string literals (`.diptych`, `claude-code`, `ollama`, `cost`, `planner`, `workflow`, etc.)
 - Pure function or small stateless module — you could publish it to npm under a different name without touching the code
 - Reusable across unrelated projects
 
@@ -45,7 +45,7 @@ Import direction is one-way, top to bottom. For the cross-check table and blocke
 **Prohibited imports:** `core/`, `engine/`, `stores/`, `features/`, `components/`, `hooks/`, `lib/`, `cli/`.
 
 **Red flags that something does not belong in `utils/`:**
-- Contains a string literal that names a tiny-spec tool, provider, or internal path
+- Contains a string literal that names a diptych tool, provider, or internal path
 - Imports `node:child_process`, `simple-git`, `shiki`, or wraps a specific binary — that's `lib/`
 - Has `process.exit` or hardcoded exit codes — that's feature-level
 - Depends on a specific file-system layout (`.diptych/sessions/` etc.) — that's `core/`
@@ -68,12 +68,12 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 
 ## `lib/` — infrastructure wrappers
 
-**Purpose.** Single-responsibility adapters around Node stdlib, npm packages, or terminal protocols. Infra the codebase needs but does not speak tiny-spec.
+**Purpose.** Single-responsibility adapters around Node stdlib, npm packages, or terminal protocols. Infra the codebase needs but does not speak diptych.
 
 **Acceptance criteria:**
 - Wraps a single external system (Node stdlib, npm package, terminal protocol)
-- Does not know about tiny-spec concepts — the wrapper is generic, the caller supplies context
-- May have state (caches, registries) but not tiny-spec-specific state
+- Does not know about diptych concepts — the wrapper is generic, the caller supplies context
+- May have state (caches, registries) but not diptych-specific state
 - Survives without the rest of the codebase (the wrapper is reusable)
 
 **What lives here:**
@@ -89,7 +89,7 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 
 **Why `lib/` is not `utils/`:** these modules depend on Node APIs, external packages, or protocol specifics. They are reusable, but not as drop-in primitives. `utils/` is for things you could copy-paste into any TypeScript project; `lib/` is for things that only make sense in a Node + terminal context.
 
-**Why `lib/` is not `core/`:** these modules don't know anything about tiny-spec. A workflow runner, a `.diptych/` session store, a cost calculation — all domain. A git-commit wrapper, a process spawner, a terminal mouse parser — all infrastructure. Swap `simple-git` for another implementation, `lib/git.ts` changes; `core/` doesn't.
+**Why `lib/` is not `core/`:** these modules don't know anything about diptych. A workflow runner, a `.diptych/` session store, a cost calculation — all domain. A git-commit wrapper, a process spawner, a terminal mouse parser — all infrastructure. Swap `simple-git` for another implementation, `lib/git.ts` changes; `core/` doesn't.
 
 **Nesting rule:** create a sub-folder under `lib/` only when you have ≥3 closely-coupled files for a single subsystem (`lib/process/` has `spawn`, `errors`, `registry`, `line-buffer`). One-file subsystems stay flat (`lib/git.ts`, not `lib/git/git.ts`).
 
@@ -113,10 +113,10 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 
 ## `core/` — domain logic (no React, no orchestration)
 
-**Purpose.** Describes tiny-spec: config shape, state machine, paths, sessions, cost/token math. UI-agnostic and orchestration-agnostic.
+**Purpose.** Describes diptych: config shape, state machine, paths, sessions, cost/token math. UI-agnostic and orchestration-agnostic.
 
 **Acceptance criteria:**
-- Knows tiny-spec concepts: config shape, workflow state machine, task entities, cost/token math, session metadata, path conventions
+- Knows diptych concepts: config shape, workflow state machine, task entities, cost/token math, session metadata, path conventions
 - No React, no Ink, no DOM — pure TypeScript
 - No subprocess spawning or file-writing side effects (that's `engine/` or `lib/fs.ts`)
 - Typed data structures, pure transformations, and schema validation live here

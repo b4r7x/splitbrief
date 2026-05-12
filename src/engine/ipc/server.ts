@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { IPC_SOCK_FILE } from '../../core/paths.js';
 import type { EngineEvent, EventBus } from '../events/types.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
-import type { ServerMessage, ClientMessage, IpcPromptRequest, IpcPromptResponse, IpcPromptRequestInput } from './protocol.js';
+import type { ServerMessage, IpcPromptRequest, IpcPromptResponse, IpcPromptRequestInput } from './protocol.js';
+import { parseClientMessage } from './protocol.js';
 import { readReplayEvents } from './replay.js';
-import { isRecord } from '../../utils/type-guards.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 
 export type IpcServerOptions = {
@@ -126,16 +126,16 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
-        let msg: ClientMessage;
+        let msg: ReturnType<typeof parseClientMessage>;
         try {
           const parsed: unknown = JSON.parse(trimmed);
-          if (!isRecord(parsed) || typeof parsed.kind !== 'string') {
+          msg = parseClientMessage(parsed);
+          if (!msg) {
             consumed = true;
             clearTimeout(timer);
             rejectAsAlreadyAttached(socket);
             return;
           }
-          msg = parsed as ClientMessage;
         } catch {
           consumed = true;
           clearTimeout(timer);
@@ -207,14 +207,14 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
-        let msg: ClientMessage;
+        let msg: ReturnType<typeof parseClientMessage>;
         try {
           const parsed: unknown = JSON.parse(trimmed);
-          if (!isRecord(parsed) || typeof parsed.kind !== 'string') {
+          msg = parseClientMessage(parsed);
+          if (!msg) {
             bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: invalid message structure from client: ${trimmed}` });
             continue;
           }
-          msg = parsed as ClientMessage;
         } catch {
           bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: `IPC: malformed JSON from client: ${trimmed}` });
           continue;

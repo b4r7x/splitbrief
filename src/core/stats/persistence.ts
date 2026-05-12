@@ -1,7 +1,8 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { getDiptychPath } from '../paths.js';
 import { StatsSchema, emptyStats, type Stats } from '../schemas/stats.js';
+import { SECURE_FILE_MODE } from '../../lib/fs.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import type { CostBreakdown } from '../schemas/summary.js';
 
@@ -27,7 +28,9 @@ export function readStats(projectDir: string): Stats {
 function writeStats(projectDir: string, stats: Stats): void {
   const filePath = statsPath(projectDir);
   mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, JSON.stringify(stats, null, 2) + '\n', 'utf-8');
+  const tempPath = `${filePath}.${process.pid}.tmp`;
+  writeFileSync(tempPath, JSON.stringify(stats, null, 2) + '\n', { encoding: 'utf-8', mode: SECURE_FILE_MODE });
+  renameSync(tempPath, filePath);
 }
 
 export interface StatsUpdateInput {

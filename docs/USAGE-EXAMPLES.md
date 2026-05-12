@@ -976,7 +976,7 @@ Press Ctrl+C to stop.
 
 The bearer token is generated per invocation and only printed once. Restart the server to rotate.
 
-This endpoint is read-only. It lets MCP-aware clients inspect session artifacts through resources, but it does not expose MCP tools, run shell commands, write files, or execute tasks.
+This endpoint exposes read-only session resources plus constrained evidence tools (`report_evidence`, `report_progress`, `mark_task_done`, `report_validation_result`, `report_error`). The tools only update `.diptych/sessions/<id>/evidence.json` for existing sessions and tasks; they do not run shell commands, write project files, or execute tasks.
 
 **Variations:** `--session <id>` serves a specific session (otherwise the active session). Default port is 4321; choose a concrete port with `--port <number>` when 4321 is unavailable.
 
@@ -1001,7 +1001,7 @@ diptych MCP server ready
   Sessions: all
 ```
 
-The MCP resource list now includes every session's `state.json`, `tasks.md`, `evidence.json`, `drift-report.json`, and snapshot manifests. It remains a read-only resource list, not a multi-session execution or mutation surface.
+The MCP resource list now includes every session's `state.json`, `tasks.md`, `evidence.json`, `drift-report.json`, and snapshot manifests. Multi-session mode is still not an execution surface; the only mutation surface is the constrained evidence-tool set for existing sessions and tasks.
 
 **Variations:** `--session` and `--all-sessions` are mutually exclusive.
 
@@ -1366,7 +1366,7 @@ diptych start --allow-hooks "add the User model"
 ```
 Trust these hooks for this project? [y/N]
 > y
-hooks trusted (sha256 stored in .diptych/hooks-trust.json)
+hooks trusted (sha256 stored in .diptych/hook-trust.json)
 ```
 
 `--allow-hooks` skips the prompt in non-TTY (CI). Editing the hooks block invalidates trust and re-prompts on the next run.

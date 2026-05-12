@@ -1,7 +1,6 @@
 import { Command } from 'commander';
 import { createElement } from 'react';
 import { join } from 'node:path';
-import { simpleGit } from 'simple-git';
 import { App } from '../../app.js';
 import { renderApp } from '../render.js';
 import { addWorkflowOptions } from '../options.js';
@@ -21,6 +20,7 @@ import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { cliError } from '../errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { createWorktree, detectWorktree } from '../../engine/worktree.js';
+import { createGitClient } from '../../lib/git.js';
 import { slugify } from '../../utils/slugify.js';
 import { spawnServer } from '../../engine/ipc/spawn-server.js';
 import { configPath } from '../../core/config/load/load.js';
@@ -64,7 +64,7 @@ async function applyWorktreeOption(feature: string | undefined, opts: WorkflowOp
       ? opts.worktree
       : slugify(feature ?? 'session');
   const baseProjectDir = resolveProjectDir(opts.project);
-  const git = simpleGit(baseProjectDir);
+  const git = createGitClient(baseProjectDir);
   try {
     const wtPath = await createWorktree({ projectDir: baseProjectDir, slug, git });
     console.log(`Starting session in worktree .trees/${slug} (branch diptych/${slug})`);
@@ -220,7 +220,7 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
     await deps.initStores(projectDir, opts);
     let worktreeName: string | null = null;
     try {
-      worktreeName = await detectWorktree(projectDir, simpleGit(projectDir));
+      worktreeName = await detectWorktree(projectDir, createGitClient(projectDir));
     } catch {
       worktreeName = null;
     }
