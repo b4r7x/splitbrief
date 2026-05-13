@@ -241,27 +241,34 @@ function riskLabel(risk: WorkRisk): string {
   return ({ trivial: 'trivial edit', small: 'small/localized', normal: 'standard scope', high: 'security/config risk' } as const)[risk];
 }
 
-let currentAdvisory: AdvisorResult | null = null;
-const listeners = new Set<() => void>();
-
-export function setAdvisory(next: AdvisorResult | null): void {
-  if (currentAdvisory === next) return;
-  currentAdvisory = next;
-  for (const listener of listeners) listener();
+export interface AdvisoryStore {
+  get: () => AdvisorResult | null;
+  set: (next: AdvisorResult | null) => void;
+  subscribe: (listener: () => void) => () => void;
 }
 
-export function getAdvisory(): AdvisorResult | null {
-  return currentAdvisory;
-}
+export function createAdvisoryStore(): AdvisoryStore {
+  let current: AdvisorResult | null = null;
+  const listeners = new Set<() => void>();
 
-export function subscribeAdvisory(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
+  return {
+    get: () => current,
+    set: (next) => {
+      if (current === next) return;
+      current = next;
+      for (const listener of listeners) listener();
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
   };
 }
 
-export function __resetAdvisoryForTests(): void {
-  currentAdvisory = null;
-  listeners.clear();
-}
+const defaultAdvisoryStore = createAdvisoryStore();
+
+export const setAdvisory = defaultAdvisoryStore.set;
+export const getAdvisory = defaultAdvisoryStore.get;
+export const subscribeAdvisory = defaultAdvisoryStore.subscribe;

@@ -1,10 +1,12 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
-import { uniqueIds } from '../../../utils/collections.js';
+import { uniqueIds, uniqueSorted } from '../../../utils/collections.js';
 import { matchesActionPattern } from '../approval/action-classifier.js';
 
-export type { UserEditConflictKind, UserEditConflictAction, UserEditConflictFile, UserEditConflict } from '../../events/workflow-events.js';
-export { isUserEditConflictAction } from '../../events/workflow-events.js';
 import type { UserEditConflictKind, UserEditConflictAction, UserEditConflictFile, UserEditConflict } from '../../events/workflow-events.js';
+import { isUserEditConflictAction } from '../../events/workflow-events.js';
+
+export type { UserEditConflictKind, UserEditConflictAction, UserEditConflictFile, UserEditConflict };
+export { isUserEditConflictAction };
 
 function taskPatterns(task: Task): string[] {
   return [
@@ -16,10 +18,6 @@ function taskPatterns(task: Task): string[] {
 
 function fileMatchesTask(file: string, task: Task): boolean {
   return taskPatterns(task).some((pattern) => matchesActionPattern(file, pattern));
-}
-
-function uniqueSortedFiles(files: string[]): string[] {
-  return Array.from(new Set(files)).filter(Boolean).sort();
 }
 
 function classifyFile(opts: {
@@ -87,7 +85,7 @@ export function classifyUserEditConflict(opts: {
   allTasks: Task[];
   currentTaskIndex: number;
 }): UserEditConflict {
-  const files = uniqueSortedFiles(opts.files);
+  const files = uniqueSorted(opts.files, { nonEmpty: true });
   const fileConflicts = files.map((file) => classifyFile({ ...opts, file }));
   const kind = dominantKind(fileConflicts);
   const affectedTaskIds = uniqueIds(fileConflicts.flatMap((conflict) => conflict.affectedTaskIds));
@@ -108,7 +106,7 @@ export function createApprovalPromotionConflict(opts: {
   files: string[];
   currentTaskId?: TaskId;
 }): UserEditConflict {
-  const files = uniqueSortedFiles(opts.files);
+  const files = uniqueSorted(opts.files, { nonEmpty: true });
   const affectedTaskIds = opts.currentTaskId ? [opts.currentTaskId] : [];
   return {
     kind: 'changed-during-approval-promotion',

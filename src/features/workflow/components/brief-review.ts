@@ -9,6 +9,7 @@ import { routeTaskToImplementerProfile } from '../../../engine/orchestrator/cont
 import { buildProjectLanguageContext } from '../../../engine/spec/prompts/language-context.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { configStore } from '../../../stores/project/config.js';
+import { uniqueSorted } from '../../../utils/collections.js';
 import type { PlanReviewCostTier, PlanReviewEstimateStatus, PlanReviewRisk, PlanTaskReviewMetadata } from '../../../stores/workflow/plan-editor.js';
 
 const COST_TIER_ORDER: PlanReviewCostTier[] = ['local', 'cheap', 'standard', 'frontier', 'unknown'];
@@ -124,7 +125,10 @@ export function formatPlanReviewSummary(
   const tightCount = values.filter(item => item.contextFit === 'tight').length;
   const fitCount = values.filter(item => item.contextFit === 'fits').length;
   const tokenTotal = values.reduce((sum, item) => sum + (item.estimatedTokens ?? 0), 0);
-  const workers = Array.from(new Set(values.map(item => item.workerProfile).filter((worker): worker is string => worker !== undefined && worker.length > 0))).sort();
+  const workers = uniqueSorted(
+    values.map(item => item.workerProfile).filter((worker): worker is string => worker !== undefined),
+    { nonEmpty: true },
+  );
   const costTierCounts = new Map<PlanReviewCostTier, number>();
   for (const item of values) {
     if (item.selectedCostTier === undefined) continue;

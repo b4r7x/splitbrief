@@ -3,7 +3,7 @@ import { useTheme } from '../../../components/theme.js';
 import { formatCost } from '../../../core/formatting.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import { LabeledRow } from '../../../components/labeled-row.js';
-import type { CostBreakdown } from '../../../core/schemas/summary.js';
+import { costKnownFlags, type CostBreakdown } from '../../../core/schemas/summary.js';
 
 interface SummaryCostBreakdownProps {
   costBreakdown: CostBreakdown;
@@ -23,35 +23,28 @@ export function SummaryCostBreakdown({
 }: SummaryCostBreakdownProps) {
   const t = useTheme();
 
-  const isActualPlannerCostKnown = costBreakdown.isActualPlannerCostKnown
-    ?? !(costBreakdown.hasUnpricedUsage && !costBreakdown.hasPricedUsage);
-  const isActualImplementerCostKnown = costBreakdown.isActualImplementerCostKnown
-    ?? !costBreakdown.hasUnpricedUsage;
-  const isTotalActualCostKnown = costBreakdown.isTotalActualCostKnown
-    ?? (isActualPlannerCostKnown && isActualImplementerCostKnown);
-  const isAllPlannerBaselineKnown = costBreakdown.isAllPlannerBaselineKnown
-    ?? (costBreakdown.hasSavingsEstimate ?? true);
+  const { plannerCostKnown, implementerCostKnown, totalCostKnown, allPlannerBaselineKnown } = costKnownFlags(costBreakdown);
   const hasUnknownPrice =
-    !isActualPlannerCostKnown ||
-    !isActualImplementerCostKnown ||
-    !isTotalActualCostKnown ||
-    !isAllPlannerBaselineKnown ||
+    !plannerCostKnown ||
+    !implementerCostKnown ||
+    !totalCostKnown ||
+    !allPlannerBaselineKnown ||
     costBreakdown.hasSavingsEstimate === false;
   const localRatePct = `${(costBreakdown.localCompletionRate * 100).toFixed(0)}%`;
 
   return (
     <Box flexDirection="column" marginTop={1} gap={isSmall ? 0 : 1}>
       <LabeledRow label="Actual cost" labelWidth={labelWidth}>
-        <Text bold>{formatKnownCost(costBreakdown.totalActualCost, isTotalActualCostKnown)}</Text>
+        <Text bold>{formatKnownCost(costBreakdown.totalActualCost, totalCostKnown)}</Text>
       </LabeledRow>
       <LabeledRow label="Planner cost" labelWidth={labelWidth}>
-        <Text color={t.textDim}>{formatKnownCost(costBreakdown.actualPlannerCost, isActualPlannerCostKnown)}</Text>
+        <Text color={t.textDim}>{formatKnownCost(costBreakdown.actualPlannerCost, plannerCostKnown)}</Text>
       </LabeledRow>
       <LabeledRow label="Implementer cost" labelWidth={labelWidth}>
-        <Text color={t.textDim}>{formatKnownCost(costBreakdown.actualImplementerCost, isActualImplementerCostKnown)}</Text>
+        <Text color={t.textDim}>{formatKnownCost(costBreakdown.actualImplementerCost, implementerCostKnown)}</Text>
       </LabeledRow>
       <LabeledRow label="All-planner baseline" labelWidth={labelWidth}>
-        <Text color={t.textDim}>{formatKnownCost(costBreakdown.hypotheticalCost, isAllPlannerBaselineKnown)}</Text>
+        <Text color={t.textDim}>{formatKnownCost(costBreakdown.hypotheticalCost, allPlannerBaselineKnown)}</Text>
       </LabeledRow>
       <LabeledRow label="Saved" labelWidth={labelWidth}>
         <Text color={costBreakdown.hasSavingsEstimate === false ? t.textDim : t.success}>

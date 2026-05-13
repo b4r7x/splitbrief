@@ -6,7 +6,7 @@ import { formatValidationError } from '../validation.js';
 import type { WorkflowContext } from '../types.js';
 import { recordTaskUsage } from '../tokens.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
-import { publishError, publishWarning, publishDriftChainDetected } from '../events.js';
+import { publishError, publishWarning, publishWarningFromError, publishDriftChainDetected } from '../events.js';
 import { runPreHooks } from '../../hooks/run-pre-hook.js';
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { validateCommitAndAdvance } from './commit.js';
@@ -54,7 +54,7 @@ async function runChainAnalysisSafe(opts: {
       publishDriftChainDetected(opts.bus, opts.state.phase, update.emitted, threshold);
     }
   } catch (err) {
-    publishWarning(opts.wctx.bus, opts.state.phase, `drift chain analysis failed: ${toErrorMessage(err)}`);
+    publishWarningFromError(opts.wctx.bus, opts.state.phase, 'drift chain analysis failed', err);
   }
 }
 

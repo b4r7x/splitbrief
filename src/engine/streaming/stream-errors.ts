@@ -2,6 +2,7 @@ import { error } from '../../utils/error.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { formatErrorWithHint } from '../error-hints.js';
 import { redactSecrets } from '../../utils/redact.js';
+import { isRecord } from '../../utils/type-guards.js';
 
 export { STREAM_IDLE_TIMEOUT_MS } from '../constants.js';
 
@@ -32,13 +33,9 @@ export const streamError = {
   },
 } as const;
 
-function isErrorLike(val: unknown): val is Record<string, unknown> {
-  return typeof val === 'object' && val !== null;
-}
-
 export function throwMappedError(err: unknown, endpoint?: { provider: string; apiBase?: string | undefined }): never {
-  if (!isErrorLike(err)) throw err;
-  const cause = isErrorLike(err.cause) ? err.cause : {};
+  if (!isRecord(err)) throw err;
+  const cause = isRecord(err.cause) ? err.cause : {};
   const provider = endpoint?.provider ?? 'provider';
   if (err.code === 'ECONNREFUSED' || cause.code === 'ECONNREFUSED') {
     throw streamError.connectionRefused(provider, endpoint?.apiBase, err);

@@ -3,12 +3,11 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ApiImplementerConfig } from '../../../core/schemas/implementer-config.js';
 import { hasApiBase } from '../../../core/config/accessors/runner-config.js';
-import { createBusTextHandler, createImplementerPublisher, publishWarning, publishEscalate } from '../events.js';
+import { createBusTextHandler, createImplementerPublisher, publishWarning, publishWarningFromError, publishEscalate } from '../events.js';
 import { createImplementer } from '../../runners/factory.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import type { Implementer } from '../../implementers/types.js';
 import { getProviderBaseURL } from '../../../core/providers/catalog.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
 import { runRetryStep } from './step.js';
 import type { EscalationContext, RetryStepOutcome } from './types.js';
 
@@ -57,7 +56,7 @@ export async function runTier0Intermediate(
   try {
     intermediateImplementer = await createImplementer(intermediateConfig, { publisher: createImplementerPublisher(ctx.bus) });
   } catch (err) {
-    publishWarning(ctx.bus, state.phase, `Intermediate provider failed to initialize: ${toErrorMessage(err)}`);
+    publishWarningFromError(ctx.bus, state.phase, 'Intermediate provider failed to initialize', err);
     return { state, task: initialTask, lastError, attempts: priorAttempts };
   }
 

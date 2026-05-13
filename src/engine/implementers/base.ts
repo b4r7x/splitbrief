@@ -23,6 +23,7 @@ import { processError } from '../../lib/process/errors.js';
 import { DEFAULT_AVAILABILITY } from '../../lib/availability.js';
 import { getCurrentChangedFiles } from '../../lib/git.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
+import { isRecord } from '../../utils/type-guards.js';
 
 const MAX_RETRY_TEMPERATURE = 2;
 const DEFAULT_RETRY_TEMPERATURE = 0.7;
@@ -166,7 +167,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         return { success: false, output: '', error: 'Aborted' };
       }
       if (shouldThrow(err)) throw err;
-      const output = typeof err === 'object' && err !== null && 'output' in err && typeof err.output === 'string' ? err.output : '';
+      const output = isRecord(err) && typeof err.output === 'string' ? err.output : '';
       if (phase) baseConfig.publisher?.publishFailed({ phase, taskId: task.id, model: config.implementer.model });
       return { success: false, output, error: formatErrorWithHint(toErrorMessage(err)) };
     }

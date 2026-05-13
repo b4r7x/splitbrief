@@ -5,6 +5,7 @@ import { normalizeLegacyMode } from '../../core/schemas/enums.js';
 import { writeSecureFile } from '../../lib/fs.js';
 import { error } from '../../utils/error.js';
 import { isRecord } from '../../utils/type-guards.js';
+import { isOptionalString } from './guards.js';
 
 export const SERVER_ARGS_FILE = 'server-args.json';
 
@@ -51,10 +52,6 @@ function parseRunnerOverride(value: unknown): RunnerOverride | null | undefined 
     ...(value.model !== undefined && { model: value.model }),
     ...(value.command !== undefined && { command: value.command }),
   };
-}
-
-function isOptionalString(value: unknown): value is string | undefined {
-  return value === undefined || typeof value === 'string';
 }
 
 function isOptionalBoolean(value: unknown): value is boolean | undefined {

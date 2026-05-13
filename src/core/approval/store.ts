@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
-import type { ApprovalsStore, ApprovalGrant } from '../../core/schemas/approval-store.js';
-import { ApprovalsStoreSchema } from '../../core/schemas/approval-store.js';
-import { approvalsFile } from '../../core/paths.js';
+import type { ApprovalsStore, ApprovalGrant } from '../schemas/approval-store.js';
+import { ApprovalsStoreSchema } from '../schemas/approval-store.js';
+import { approvalsFile } from '../paths.js';
 import { readJsonSafe, writeSecureFile } from '../../lib/fs.js';
 import { error } from '../../utils/error.js';
 import { toErrorMessage } from '../../utils/format-errors.js';

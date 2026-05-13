@@ -21,14 +21,14 @@ export function isCustomModel(item: ModelOption): boolean {
   return item.isCustom ?? false;
 }
 
-const DATE_SUFFIX_RE = /(\d{8})$/;
+const TRAILING_DATE_CAPTURE_RE = /(\d{8})$/;
 const SIZE_SEGMENT_RE = /^\d+(?:\.\d+)?b$/i;
 
 function extractRecencyKey(id: string): { date: number; version: number[]; name: string } {
   const base = id.includes('/') ? id.slice(id.indexOf('/') + 1) : id;
   const withoutTag = base.includes(':') ? base.slice(0, base.indexOf(':')) : base;
 
-  const dateMatch = withoutTag.match(DATE_SUFFIX_RE);
+  const dateMatch = withoutTag.match(TRAILING_DATE_CAPTURE_RE);
   const date = dateMatch?.[1] ? parseInt(dateMatch[1], 10) : 0;
 
   const segments = withoutTag.split(/[-._]/);

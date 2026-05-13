@@ -122,13 +122,13 @@ describe('createWorktree', () => {
 
 describe('listWorktrees', () => {
   it('returns [] when .trees/ does not exist', async () => {
-    const result = await listWorktrees(repoDir, git);
+    const result = await listWorktrees(repoDir);
     expect(result).toEqual([]);
   });
 
   it('returns one entry after createWorktree', async () => {
     await createWorktree({ projectDir: repoDir, slug: 'feat-d', git });
-    const result = await listWorktrees(repoDir, git);
+    const result = await listWorktrees(repoDir);
     expect(result).toHaveLength(1);
     const entry = result[0]!;
     expect(entry.name).toBe('feat-d');
@@ -137,7 +137,7 @@ describe('listWorktrees', () => {
 
   it('reports status "none" when no .diptych/active exists in the worktree', async () => {
     await createWorktree({ projectDir: repoDir, slug: 'feat-e', git });
-    const result = await listWorktrees(repoDir, git);
+    const result = await listWorktrees(repoDir);
     const entry = result[0]!;
     expect(entry.status).toBe('none');
     expect(entry.sessionId).toBeNull();
@@ -153,7 +153,7 @@ describe('listWorktrees', () => {
     await writeFile(join(diptychDir, ACTIVE_FILE), sessionId + '\n');
     await writeFile(join(sessionDir, STATE_FILE), JSON.stringify({ phase: 'implementing' }));
 
-    const result = await listWorktrees(repoDir, git);
+    const result = await listWorktrees(repoDir);
     const entry = result[0]!;
     expect(entry.status).toBe('active');
     expect(entry.sessionId).toBe(sessionId);
@@ -171,7 +171,7 @@ describe('listWorktrees', () => {
     await writeFile(join(diptychDir, ACTIVE_FILE), sessionId + '\n');
     await writeFile(join(sessionDir, STATE_FILE), JSON.stringify({ phase: 'complete' }));
 
-    const result = await listWorktrees(repoDir, git);
+    const result = await listWorktrees(repoDir);
     const entry = result[0]!;
     expect(entry.status).toBe('idle');
     expect(entry.sessionId).toBe(sessionId);

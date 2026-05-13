@@ -24,6 +24,7 @@ import { readDriftChainState } from './drift/chain-state.js';
 import { BRIEF_QUALITY_FILE, REVIEW_PACKET_JSON_FILE, REVIEW_PACKET_MARKDOWN_FILE, reviewPacketJsonPath, sessionDir } from '../../core/paths.js';
 import { isBriefQualityReport, type BriefQualityReport } from '../spec/brief-quality.js';
 import { readJsonSafe } from '../../lib/fs.js';
+import { countBySeverity } from '../../utils/collections.js';
 
 export type BuildSummaryState = Pick<WorkflowState, 'tasks' | 'tokenUsage'>;
 
@@ -120,10 +121,9 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
 
   const costedBreakdowns = taskBreakdowns?.map(task => {
     const isCostKnown = isTaskUsageCostKnown(task, implementerTool, plannerTool, implementerModel, plannerModel);
-    const taskWithoutCost = { ...task };
-    delete taskWithoutCost.cost;
+    const { cost: _cost, ...rest } = task;
     return {
-      ...taskWithoutCost,
+      ...rest,
       ...(isCostKnown
         ? { cost: calculateTaskUsageCost(task, state.tokenUsage, implementerTool, plannerTool, implementerModel, plannerModel) }
         : { costPosture: task.costPosture ?? 'unknown-price' }),
@@ -142,21 +142,23 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
 
     const bqReport = readBriefQualityReport(projectDir, sessionId);
     if (bqReport) {
+      const counts = countBySeverity(bqReport.issues);
       briefQuality = {
         score: bqReport.score,
         passed: bqReport.passed,
-        errorCount: bqReport.issues.filter(i => i.severity === 'error').length,
-        warningCount: bqReport.issues.filter(i => i.severity === 'warning').length,
+        errorCount: counts.error,
+        warningCount: counts.warning,
       };
     }
 
     const drift = readDriftReport(projectDir, sessionId);
     if (drift) {
+      const counts = countBySeverity(drift.findings);
       driftSummary = {
         passed: drift.passed,
         score: drift.score,
-        errorCount: drift.findings.filter(f => f.severity === 'error').length,
-        warningCount: drift.findings.filter(f => f.severity === 'warning').length,
+        errorCount: counts.error,
+        warningCount: counts.warning,
       };
     }
 

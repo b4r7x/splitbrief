@@ -7,7 +7,7 @@ import { timeoutError, withIdleTimeout } from '../../../utils/with-timeout.js';
 import { stripV1Suffix, ANTHROPIC_API_VERSION } from '../constants.js';
 import { narrowRecord, assertNever } from '../../../utils/type-guards.js';
 import { STREAM_IDLE_TIMEOUT_MS, streamError, throwMappedError } from '../../streaming/stream-errors.js';
-import { readFile } from 'node:fs/promises';
+import { readImagesAsBase64 } from '../../streaming/attachments.js';
 
 type AnthropicEventType =
   | 'message_start'
@@ -203,17 +203,14 @@ async function attachImagesToLastUserMessage(
   images: Attachment[],
 ): Promise<void> {
   if (images.length === 0) return;
-  const blocks: AnthropicImageBlock[] = await Promise.all(images.map(async img => ({
+  const encoded = await readImagesAsBase64(images);
+  const blocks: AnthropicImageBlock[] = encoded.map(({ mime, data }) => ({
     type: 'image' as const,
-    source: {
-      type: 'base64' as const,
-      media_type: img.mimeType,
-      data: (await readFile(img.path)).toString('base64'),
-    },
-  })));
+    source: { type: 'base64' as const, media_type: mime, data },
+  }));
   for (let i = conversation.length - 1; i >= 0; i--) {
-    const msg = conversation[i]!;
-    if (msg.role !== 'user') continue;
+    const msg = conversation[i];
+    if (!msg || msg.role !== 'user') continue;
     const existing: AnthropicContentBlock[] = typeof msg.content === 'string'
       ? [{ type: 'text', text: msg.content }]
       : msg.content;

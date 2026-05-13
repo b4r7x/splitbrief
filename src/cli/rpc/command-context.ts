@@ -14,7 +14,7 @@ import { rebuildRepomap } from '../../engine/codebase/rebuild.js';
 import { attachImage, detachImage, listAttachments } from '../../stores/ui/attachments.js';
 import { writeHandoffPack } from '../../engine/handoff/write.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../../engine/snapshots/run.js';
-import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from '../../engine/orchestrator/approvals-store.js';
+import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from '../../core/approval/store.js';
 import { performManualCompaction } from '../../engine/orchestrator/transcript-rebuild.js';
 import { writeSessionHtmlReport } from '../../engine/export/collect.js';
 import { error } from '../../utils/error.js';

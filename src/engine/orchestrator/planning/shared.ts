@@ -12,6 +12,8 @@ import { transitionAndSave } from '../state-ops.js';
 import { createSessionExpiredHandler } from '../resume-context.js';
 import { withContinuationLoop } from '../continuation.js';
 import { labelError } from '../../../utils/format-errors.js';
+import { countBySeverity } from '../../../utils/collections.js';
+import { nowIso } from '../../../utils/format-time.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import type { PlanResult, PlannerCallbacks } from '../../planners/types.js';
 import type { Phase } from '../../../core/schemas/enums.js';
@@ -67,8 +69,7 @@ export function runBriefQualityGate(
 ): { report: BriefQualityReport; ok: boolean } {
   const report = evaluateBriefQuality(tasks);
   writeSpecFile(projectDir, sessionId, BRIEF_QUALITY_FILE, JSON.stringify(report, null, 2), null);
-  const errorCount = report.issues.filter(i => i.severity === 'error').length;
-  const warningCount = report.issues.filter(i => i.severity === 'warning').length;
+  const { error: errorCount, warning: warningCount } = countBySeverity(report.issues);
   if (report.passed) {
     bus.publish({ type: 'brief_quality_passed', ts: Date.now(), phase, score: report.score, warningCount });
   } else {
@@ -272,7 +273,7 @@ export async function runBriefsApprovalLoop(opts: BriefsApprovalLoopOptions): Pr
     const message = {
       id: randomUUID(),
       text: result.comment,
-      queuedAt: new Date().toISOString(),
+      queuedAt: nowIso(),
       phase: state.phase,
       deliveredViaNative: false as const,
     };

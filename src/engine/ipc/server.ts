@@ -88,6 +88,32 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     }
   }
 
+  async function replaySession(socket: Socket, jsonlPath: string): Promise<void> {
+    const replayStart = Date.now();
+    const result = await readReplayEvents({ sessionJsonlPath: jsonlPath });
+    const { events: replayedEvents, count: totalEvents, firstTs, lastTs } = result;
+
+    if (!socket.destroyed) {
+      writeMessage(socket, { kind: 'event', payload: { type: 'replay_started', ts: Date.now(), phase: 'idle', totalEvents } });
+    }
+
+    const replayMeta: ServerMessage = { kind: 'replay_meta', totalEvents, firstTs, lastTs };
+    if (!socket.destroyed) {
+      writeMessage(socket, replayMeta);
+    }
+
+    for (const event of replayedEvents) {
+      if (socket.destroyed) break;
+      writeMessage(socket, { kind: 'event', payload: event });
+    }
+
+    const durationMs = Date.now() - replayStart;
+    const completeEvent = { type: 'replay_complete' as const, ts: Date.now(), phase: 'idle' as const, totalEvents, durationMs };
+    if (!socket.destroyed) {
+      writeMessage(socket, { kind: 'event', payload: completeEvent });
+    }
+  }
+
   const server: Server = createServer((socket: Socket) => {
     void handleConnection(socket);
   });
@@ -272,29 +298,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     currentUnsubscribe = unsubscribe;
 
     if (sessionJsonlPath) {
-      const replayStart = Date.now();
-      const result = await readReplayEvents({ sessionJsonlPath });
-      const { events: replayedEvents, count: totalEvents, firstTs, lastTs } = result;
-
-      if (!socket.destroyed) {
-        writeMessage(socket, { kind: 'event', payload: { type: 'replay_started', ts: Date.now(), phase: 'idle', totalEvents } });
-      }
-
-      const replayMeta: ServerMessage = { kind: 'replay_meta', totalEvents, firstTs, lastTs };
-      if (!socket.destroyed) {
-        writeMessage(socket, replayMeta);
-      }
-
-      for (const event of replayedEvents) {
-        if (socket.destroyed) break;
-        writeMessage(socket, { kind: 'event', payload: event });
-      }
-
-      const durationMs = Date.now() - replayStart;
-      const completeEvent = { type: 'replay_complete' as const, ts: Date.now(), phase: 'idle' as const, totalEvents, durationMs };
-      if (!socket.destroyed) {
-        writeMessage(socket, { kind: 'event', payload: completeEvent });
-      }
+      await replaySession(socket, sessionJsonlPath);
     }
 
     replaying = false;

@@ -2,8 +2,7 @@ import { join } from 'node:path';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
-import { publishWarning } from '../events.js';
+import { publishWarningFromError } from '../events.js';
 import { createEvidenceLedger } from './ledger.js';
 import { recordLocalTaskEvidence, recordRetryOrEscalationEvidence, recordSkippedTaskEvidence } from './task-evidence.js';
 import { recordApprovalEvidence, recordRejectionEvidence } from './approval-evidence.js';
@@ -67,7 +66,7 @@ export function persistTaskEvidence(
     }
     writeEvidenceLedger(wctx.projectDir, wctx.sessionId, updated);
   } catch (err) {
-    publishWarning(wctx.bus, state.phase, `failed to persist evidence ledger: ${toErrorMessage(err)}`);
+    publishWarningFromError(wctx.bus, state.phase, 'failed to persist evidence ledger', err);
   }
 }
 
@@ -103,6 +102,6 @@ export function persistApprovalEvidence(
     }
     writeEvidenceLedger(wctx.projectDir, wctx.sessionId, ledger);
   } catch (err) {
-    publishWarning(wctx.bus, state.phase, `failed to persist approval evidence: ${toErrorMessage(err)}`);
+    publishWarningFromError(wctx.bus, state.phase, 'failed to persist approval evidence', err);
   }
 }

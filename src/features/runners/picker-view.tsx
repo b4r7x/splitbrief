@@ -3,6 +3,7 @@ import { TwoColumnPicker } from '../../components/pickers/two-column-picker/pick
 import { useTheme } from '../../components/theme.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { refreshDetectionStores } from '../../stores/discovery/detection-adapter.js';
+import { getDefaultDetectionService } from '../../engine/detection/service.js';
 import { configStore } from '../../stores/project/config.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import type { PickerOption, ModelOption } from './model-catalog.js';
@@ -65,9 +66,11 @@ function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }
   return <Text color={t.textDim}>No models available. Press Ctrl+R to refresh.</Text>;
 }
 
+const defaultRefresh = (projectDir: string | undefined) => refreshDetectionStores(getDefaultDetectionService(), projectDir);
+
 export async function refreshPickerDetection(
   projectDir: string,
-  refresh: (projectDir: string | undefined) => Promise<void> = refreshDetectionStores,
+  refresh: (projectDir: string | undefined) => Promise<void> = defaultRefresh,
 ): Promise<void> {
   feedbackStore.setMessage('Refreshing models...');
   try {
@@ -104,7 +107,7 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
         label: 'Tools',
         getKey: item => item.id,
         isSpecial: item => item.kind === 'shell' || item.kind === 'agent',
-        isDisabled: item => !item.available && item.kind !== 'shell' && item.kind !== 'agent' && item.kind !== 'agent-sdk',
+        isDisabled: item => !item.available && item.kind !== 'shell' && item.kind !== 'agent',
         initialIndex: catalog.initialLeftIdx,
         specialHelp: (
           <Box flexDirection="column" marginTop={1} paddingX={1}>

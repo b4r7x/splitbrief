@@ -16,7 +16,14 @@ interface ConversationFlowProps {
   width: number;
 }
 
-const EVENT_KEY_FIELDS = [
+// Keys that some EngineEvent variants carry — used to build a stable React key per event.
+// Field set is intentional and ordered; reordering would churn keys for in-flight renders.
+type EngineEventOptionalKey =
+  | 'taskId' | 'issueId' | 'id' | 'snapshotId' | 'message' | 'file' | 'path'
+  | 'action' | 'reason' | 'scope' | 'pattern' | 'sockPath' | 'sessionId'
+  | 'attempt' | 'maxAttempts';
+
+const EVENT_KEY_FIELDS: readonly EngineEventOptionalKey[] = [
   'taskId',
   'issueId',
   'id',
@@ -32,7 +39,7 @@ const EVENT_KEY_FIELDS = [
   'sessionId',
   'attempt',
   'maxAttempts',
-] as const;
+];
 
 function keyPart(value: unknown): string | null {
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
@@ -48,13 +55,24 @@ function keyPart(value: unknown): string | null {
   return null;
 }
 
+type EventWithField<F extends EngineEventOptionalKey> = Extract<EngineEvent, { [K in F]: unknown }>;
+
+function hasField<F extends EngineEventOptionalKey>(event: EngineEvent, field: F): event is EventWithField<F> {
+  return field in event;
+}
+
+function readEventField<F extends EngineEventOptionalKey>(event: EngineEvent, field: F): EventWithField<F>[F] | undefined {
+  return hasField(event, field) ? event[field] : undefined;
+}
+
 function getEventBaseKey(event: EngineEvent): string {
-  const record = event as Record<string, unknown>;
   const parts = [`type:${event.type}`, `ts:${event.ts}`];
-  const phase = keyPart(record.phase);
-  if (phase !== null) parts.push(`phase:${phase}`);
+  if ('phase' in event) {
+    const phase = keyPart(event.phase);
+    if (phase !== null) parts.push(`phase:${phase}`);
+  }
   for (const field of EVENT_KEY_FIELDS) {
-    const value = keyPart(record[field]);
+    const value = keyPart(readEventField(event, field));
     if (value !== null) parts.push(`${field}:${value}`);
   }
   return parts.join('|');

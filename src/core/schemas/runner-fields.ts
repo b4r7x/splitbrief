@@ -11,21 +11,21 @@ const PlannerCapabilitiesSchema = z.object({
   supportsSelfSummarisation: z.boolean(),
 }).strict();
 
-export const CliRunnerFields = {
+const CliRunnerFields = {
   kind: z.literal('cli'),
   tool: CliToolIdSchema,
   args: z.array(z.string()).optional(),
   outputFormat: OutputFormatSchema.optional(),
 };
 
-export const ApiRunnerFields = {
+const ApiRunnerFields = {
   kind: z.literal('api'),
   provider: z.string().min(1),
   apiBase: z.string().min(1),
   apiKey: z.string().optional(),
 };
 
-export const ShellRunnerFields = {
+const ShellRunnerFields = {
   kind: z.literal('shell'),
   command: z.string().min(1),
   args: z.array(z.string()).optional(),
@@ -33,7 +33,7 @@ export const ShellRunnerFields = {
   capabilities: PlannerCapabilitiesSchema.partial().optional(),
 };
 
-export const AgentRunnerFields = {
+const AgentRunnerFields = {
   kind: z.literal('agent'),
   command: z.string().min(1),
   args: z.array(z.string()).optional(),
@@ -41,7 +41,7 @@ export const AgentRunnerFields = {
   capabilities: PlannerCapabilitiesSchema.partial().optional(),
 };
 
-export const AgentSdkRunnerFields = {
+const AgentSdkRunnerFields = {
   kind: z.literal('agent-sdk'),
   apiKey: z.string().optional(),
 };

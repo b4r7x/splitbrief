@@ -5,6 +5,7 @@ import type {
   EvidenceRejection,
 } from '../../../core/schemas/evidence.js';
 import { withAppendedApproval, withAppendedRejection } from './ledger.js';
+import { nowIso } from '../../../utils/format-time.js';
 
 export type RecordRejectionEvidenceInput = {
   ledger: EvidenceLedger;
@@ -26,7 +27,7 @@ export type RecordApprovalEvidenceInput = {
 
 export function recordApprovalEvidence(input: RecordApprovalEvidenceInput): EvidenceLedger {
   const entry: EvidenceApproval = {
-    ts: new Date().toISOString(),
+    ts: nowIso(),
     tier: input.tier,
     actionClass: input.actionClass,
     actionDescription: input.actionDescription,
@@ -38,7 +39,7 @@ export function recordApprovalEvidence(input: RecordApprovalEvidenceInput): Evid
 
 export function recordRejectionEvidence(input: RecordRejectionEvidenceInput): EvidenceLedger {
   const entry: EvidenceRejection = {
-    ts: new Date().toISOString(),
+    ts: nowIso(),
     tier: input.tier,
     actionClass: input.actionClass,
     actionDescription: input.actionDescription,

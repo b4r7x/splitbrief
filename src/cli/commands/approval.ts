@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import ansis from 'ansis';
 import { resolveProjectDir } from '../setup.js';
-import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from '../../engine/orchestrator/approvals-store.js';
+import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from '../../core/approval/store.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { cliError, isCliError } from '../errors.js';
 

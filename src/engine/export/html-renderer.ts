@@ -1,6 +1,6 @@
 import { formatCost } from '../../core/formatting.js';
 import { formatToolModel } from '../../core/model-display.js';
-import type { CostBreakdown } from '../../core/schemas/summary.js';
+import { costKnownFlags, type CostBreakdown } from '../../core/schemas/summary.js';
 import { formatTime } from '../../utils/format-time.js';
 import type { BriefQualityExport, DriftExport, EvidenceExport, ExportData } from './types.js';
 
@@ -289,8 +289,8 @@ function renderPhaseRow(phase: string, duration: number, width: number): string 
 }
 
 function formatActualCost(costBreakdown: CostBreakdown): string {
-  const isImplementerCostKnown = costBreakdown.isActualImplementerCostKnown ?? !costBreakdown.hasUnpricedUsage;
-  if (!isImplementerCostKnown) return 'local';
+  const { implementerCostKnown } = costKnownFlags(costBreakdown);
+  if (!implementerCostKnown) return 'local';
   return formatCost(costBreakdown.totalActualCost);
 }
 

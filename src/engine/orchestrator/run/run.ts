@@ -10,12 +10,12 @@ import { saveState } from '../../../core/state/persistence.js';
 import { generateSessionId } from '../../../core/sessions/lifecycle.js';
 import { resolveAutoModel } from '../../../core/providers/model-selection.js';
 import { killAllProcesses } from '../../../lib/process/registry.js';
-import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
 
 import type { ResumeContextHolder, WorkflowContext } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary.js';
-import { publishError, publishWarning } from '../events.js';
+import { publishError, publishWarningFromError } from '../events.js';
 import { saveFinalSession, withShutdownHandlers, installQueueHandler } from '../session-lifecycle.js';
 
 import { initializeWorkflow, type RunWorkflowOptions } from './init.js';
@@ -106,7 +106,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
       } catch (err) {
         if (trackedState) {
           try { saveState(projectDir, sessionId, trackedState); } catch (saveErr) {
-            if (wctx) publishWarning(wctx.bus, trackedState.phase, labelError('Failed to save state', saveErr));
+            if (wctx) publishWarningFromError(wctx.bus, trackedState.phase, 'Failed to save state', saveErr);
           }
         }
         killAllProcesses();

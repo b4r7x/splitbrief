@@ -5,6 +5,7 @@ import type { ImplementerCostTier, ImplementerWriteMode } from '../../core/schem
 import type { Task } from '../../core/schemas/task.js';
 import type { ProjectContext } from '../../core/state/types.js';
 import { routeTaskToImplementerProfile } from '../../engine/orchestrator/context-routing/route.js';
+import { currentCodeContextMode as inferCurrentCodeContextModeFromPrompt } from '../../engine/orchestrator/context-routing/headings.js';
 import type { CurrentCodeContextMode, RoutingDecision, TaskContextFit } from '../../engine/orchestrator/context-routing/types.js';
 import { formatTaskPrompt } from '../../engine/spec/prompt-formatter.js';
 import type { LanguageContext } from '../../engine/spec/prompts/language-context.js';
@@ -63,9 +64,6 @@ export interface WorkerPacketPreview {
 
 const DISPLAY_TRUNCATION_MARKER = '[... display truncated ...]';
 const SECRET_REDACTION_MARKER = '[REDACTED]';
-const FORMATTER_TRUNCATION_MARKER = '// ... truncated to fit context window ...';
-const FUNCTION_CONTEXT_HEADING = '### Current Code (relevant section)';
-const WHOLE_FILE_CONTEXT_HEADING = '### Current Code';
 
 function routeFromOptions(opts: BuildWorkerPacketPreviewOptions, task: Task): RoutingDecision | undefined {
   if (opts.routingDecision) return opts.routingDecision;
@@ -97,11 +95,7 @@ function inferCurrentCodeContextMode(
   decision: RoutingDecision | undefined,
 ): CurrentCodeContextMode {
   if (decision) return decision.currentCodeContextMode;
-  if (task.action !== 'modify' || !task.currentCode) return 'none';
-  if (prompt.includes(FUNCTION_CONTEXT_HEADING)) return 'function-level';
-  if (prompt.includes(FORMATTER_TRUNCATION_MARKER)) return 'truncated';
-  if (!prompt.includes(WHOLE_FILE_CONTEXT_HEADING)) return 'none';
-  return prompt.includes(task.currentCode) ? 'whole-file' : 'truncated';
+  return inferCurrentCodeContextModeFromPrompt(task, prompt);
 }
 
 function truncateByLines(text: string, maxLines: number | undefined): { text: string; truncated: boolean } {

@@ -191,3 +191,22 @@ export type PlannerEstimateReviewClassification = z.infer<typeof PlannerEstimate
 export type PlannerEstimateReview = z.infer<typeof PlannerEstimateReviewSchema>;
 export type CheckpointSummaryRollup = z.infer<typeof CheckpointSummaryRollupSchema>;
 export type ReviewPacketSummary = z.infer<typeof ReviewPacketSummarySchema>;
+
+export interface CostKnownFlags {
+  plannerCostKnown: boolean;
+  implementerCostKnown: boolean;
+  totalCostKnown: boolean;
+  allPlannerBaselineKnown: boolean;
+}
+
+export function costKnownFlags(breakdown: CostBreakdown): CostKnownFlags {
+  const plannerCostKnown = breakdown.isActualPlannerCostKnown
+    ?? !(breakdown.hasUnpricedUsage === true && breakdown.hasPricedUsage !== true);
+  const implementerCostKnown = breakdown.isActualImplementerCostKnown
+    ?? !(breakdown.hasUnpricedUsage === true);
+  const totalCostKnown = breakdown.isTotalActualCostKnown
+    ?? (plannerCostKnown && implementerCostKnown);
+  const allPlannerBaselineKnown = breakdown.isAllPlannerBaselineKnown
+    ?? (breakdown.hasSavingsEstimate ?? true);
+  return { plannerCostKnown, implementerCostKnown, totalCostKnown, allPlannerBaselineKnown };
+}

@@ -61,14 +61,15 @@ export async function resolveSnapshot(
     }
   }
 
-  if (matches.length === 0) {
-    throw snapshotRestoreError.notFound(idOrName);
-  }
   if (matches.length > 1) {
     const ids = matches.map(m => m.id).join(', ');
     throw snapshotRestoreError.ambiguousName(idOrName, ids);
   }
-  return matches[0]!;
+  const [first] = matches;
+  if (!first) {
+    throw snapshotRestoreError.notFound(idOrName);
+  }
+  return first;
 }
 
 export async function restoreSnapshot(opts: RestoreOptions): Promise<RestoreResult> {
@@ -90,22 +91,23 @@ export async function restoreSnapshot(opts: RestoreOptions): Promise<RestoreResu
       throw snapshotRestoreError.baselineMissing(sessionId);
     }
 
-    const snapshotFileSet = new Set(manifest.fileEntries.map(e => e.path));
+    const snapshotEntryByPath = new Map(manifest.fileEntries.map(e => [e.path, e]));
+    const baselineEntryByPath = new Map(baselineManifest.fileEntries.map(e => [e.path, e]));
 
     for (const path of Object.keys(manifest.fileHashes)) {
       const absPath = join(projectDir, path);
 
       let sourceFilePath: string;
       let expectedBlobHash: string;
-      if (snapshotFileSet.has(path)) {
-        const entry = manifest.fileEntries.find(e => e.path === path)!;
+      const snapshotEntry = snapshotEntryByPath.get(path);
+      if (snapshotEntry) {
         sourceFilePath = join(
           snapshotFilesDir(projectDir, sessionId, manifest.id),
-          entry.encodedName,
+          snapshotEntry.encodedName,
         );
-        expectedBlobHash = entry.hash;
+        expectedBlobHash = snapshotEntry.hash;
       } else {
-        const baselineEntry = baselineManifest.fileEntries.find(e => e.path === path);
+        const baselineEntry = baselineEntryByPath.get(path);
         if (!baselineEntry) {
           missingSnapshotFiles.push(path);
           continue;

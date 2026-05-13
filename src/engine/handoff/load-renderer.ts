@@ -1,9 +1,9 @@
-import { resolve, isAbsolute } from 'node:path';
 import { readdirSync, existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import type { HandoffInput, HandoffPack } from './types.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { resolveFromProject } from '../../utils/path-patterns.js';
 
 export type RendererFunction = (input: HandoffInput) => Promise<HandoffPack> | HandoffPack;
 
@@ -15,7 +15,7 @@ export async function loadRenderer(
   rendererPath: string,
   projectDir: string,
 ): Promise<LoadRendererResult> {
-  const absPath = isAbsolute(rendererPath) ? rendererPath : resolve(projectDir, rendererPath);
+  const absPath = resolveFromProject(projectDir, rendererPath);
   const url = pathToFileURL(absPath).href;
   try {
     const mod: unknown = await import(url);

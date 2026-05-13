@@ -18,14 +18,17 @@ export interface DetectionServiceResult {
 
 export interface DetectionService {
   loadDetection(deps: DetectionDeps, projectDir?: string): Promise<DetectionServiceResult>;
-  invalidateDetection(projectDir: string): Promise<void>;
   refreshDetection(projectDir: string | undefined): Promise<DetectionServiceResult | null>;
+}
+
+export interface DetectionServiceForTests extends DetectionService {
+  invalidateDetection(projectDir: string): Promise<void>;
   getPendingSave(): Promise<void>;
 }
 
 const EMPTY_CLI_MODELS: Partial<Record<CliToolId, DetectedModel[]>> = {};
 
-export function createDetectionService(): DetectionService {
+export function createDetectionService(): DetectionServiceForTests {
   let pendingSave: Promise<void> = Promise.resolve();
   let lastDeps: DetectionDeps | undefined;
 
@@ -79,3 +82,7 @@ const defaultService = createDetectionService();
 
 export const loadDetection = defaultService.loadDetection.bind(defaultService);
 export const refreshDetection = defaultService.refreshDetection.bind(defaultService);
+
+export function getDefaultDetectionService(): DetectionService {
+  return defaultService;
+}

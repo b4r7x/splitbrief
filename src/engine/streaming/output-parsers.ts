@@ -156,7 +156,6 @@ export function parseJsonlLine(line: string): ParsedLine {
       if (usage) return { usage };
     }
 
-    // Fallback for simple text/content events — too simple for schemas
     const e = narrowRecord(event);
     if (e !== null) {
       if (typeof e.text === 'string') return { text: e.text };

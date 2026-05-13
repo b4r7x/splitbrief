@@ -4,11 +4,10 @@ import type { ReviewPacket } from '../../../core/schemas/review-packet.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SessionLogEventEntry } from '../../../core/schemas/session-log.js';
 import { formatCost } from '../../../core/formatting.js';
-import { narrowRecord } from '../../../utils/type-guards.js';
+import { narrowRecord, optionalString } from '../../../utils/type-guards.js';
+import { uniqueSorted } from '../../../utils/collections.js';
 import { artifactPath } from './artifacts.js';
 import {
-  stringValue,
-  uniqueStrings,
   type DeterministicEstimate,
   type ReadinessSummary,
   type RunExplain,
@@ -24,13 +23,13 @@ export function sessionStatus(summary: Summary | null, state: WorkflowState | nu
 export function buildCost(summary: Summary | null, packet: ReviewPacket | null, routes: RunExplainRoute[]): RunExplain['cost'] {
   const costBreakdown = summary?.costBreakdown ?? packet?.cost.costBreakdown ?? null;
   const deterministic = summary?.costPrediction?.deterministic;
-  const unknownPricing = uniqueStrings([
+  const unknownPricing = uniqueSorted([
     ...unknownCostReasons(deterministic),
     ...unknownCostFlags(costBreakdown),
     ...routes.flatMap((route) => route.priceConfidence && route.priceConfidence !== 'price-known'
       ? [`${route.taskId}: ${route.priceConfidence}`]
       : []),
-  ]);
+  ], { trim: true, nonEmpty: true });
   const confidence = costBreakdown || deterministic
     ? unknownPricing.length > 0 ? 'partial' : 'known'
     : 'unavailable';
@@ -74,7 +73,7 @@ export function buildReview(
   artifacts: RunExplainArtifact[],
 ): RunExplain['review'] {
   const taskReviewEvents = events.filter((event) => event.type === 'task_review_needed');
-  const taskReviewIds = uniqueStrings(taskReviewEvents.flatMap((event) => event.taskId ? [event.taskId] : []));
+  const taskReviewIds = uniqueSorted(taskReviewEvents.flatMap((event) => event.taskId ? [event.taskId] : []), { trim: true, nonEmpty: true });
   const reviewPresent = artifacts.find((artifact) => artifact.key === 'review')?.present === true;
   const finalReviewStatus = packet?.finalReview.status
     ?? (reviewPresent ? 'written' : state?.phase === 'complete' ? 'unavailable' : 'not-reached');
@@ -219,8 +218,8 @@ function taskStatusActivity(
     const data = narrowRecord(event.data);
     tasks.set(event.taskId, {
       taskId: event.taskId,
-      title: stringValue(data?.title) ?? tasks.get(event.taskId)?.title ?? null,
-      method: stringValue(data?.method),
+      title: optionalString(data?.title, { trim: true, nonEmpty: true }) ?? tasks.get(event.taskId)?.title ?? null,
+      method: optionalString(data?.method, { trim: true, nonEmpty: true }) ?? null,
     });
   }
   return [...tasks.values()].sort((left, right) => left.taskId.localeCompare(right.taskId));
@@ -236,8 +235,8 @@ function skippedActivity(state: WorkflowState | null, events: SessionLogEventEnt
     const data = narrowRecord(event.data);
     tasks.set(event.taskId, {
       taskId: event.taskId,
-      title: stringValue(data?.title) ?? tasks.get(event.taskId)?.title ?? null,
-      reason: stringValue(data?.reason) ?? eventMessage(event),
+      title: optionalString(data?.title, { trim: true, nonEmpty: true }) ?? tasks.get(event.taskId)?.title ?? null,
+      reason: optionalString(data?.reason, { trim: true, nonEmpty: true }) ?? eventMessage(event),
     });
   }
   return [...tasks.values()].sort((left, right) => left.taskId.localeCompare(right.taskId));
@@ -245,8 +244,9 @@ function skippedActivity(state: WorkflowState | null, events: SessionLogEventEnt
 
 function eventMessage(event: SessionLogEventEntry): string | null {
   const data = narrowRecord(event.data);
-  return stringValue(data?.message)
-    ?? stringValue(data?.error)
-    ?? stringValue(data?.reason)
-    ?? stringValue(data?.routingReason);
+  return optionalString(data?.message, { trim: true, nonEmpty: true })
+    ?? optionalString(data?.error, { trim: true, nonEmpty: true })
+    ?? optionalString(data?.reason, { trim: true, nonEmpty: true })
+    ?? optionalString(data?.routingReason, { trim: true, nonEmpty: true })
+    ?? null;
 }

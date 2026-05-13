@@ -2,13 +2,13 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { EventBus } from '../../events/types.js';
-import { labelError } from '../../../utils/format-errors.js';
 import { changedFilesSinceBaseline, type ChangedFilesBaseline } from '../changed-files-baseline.js';
 import {
   classifyUserEditConflict,
   normalizeUserEditConflictAction,
 } from './conflicts.js';
-import { publishRecoveryPrompted, publishUserEditConflict, publishWarning } from '../events.js';
+import { publishRecoveryPrompted, publishUserEditConflict, publishWarning, publishWarningFromError } from '../events.js';
+import { nowIso } from '../../../utils/format-time.js';
 import { transitionAndSave } from '../state-ops.js';
 import { buildUserEditConflictRecoveryIssue } from '../recovery/builders/workflow.js';
 
@@ -77,14 +77,14 @@ export async function checkUserEditConflicts(opts: {
       conflict,
       currentTask: task,
       phase: state.phase,
-      createdAt: new Date().toISOString(),
+      createdAt: nowIso(),
     });
     state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });
     publishRecoveryPrompted(bus, issue);
     setTrackedState(state);
     return { state, stopped: true };
   } catch (err) {
-    publishWarning(bus, state.phase, labelError('Failed to check user edit conflicts', err));
+    publishWarningFromError(bus, state.phase, 'Failed to check user edit conflicts', err);
   }
   const issue = buildUserEditConflictRecoveryIssue({
     conflict: {
@@ -98,7 +98,7 @@ export async function checkUserEditConflicts(opts: {
     },
     currentTask: task,
     phase: state.phase,
-    createdAt: new Date().toISOString(),
+    createdAt: nowIso(),
   });
   state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });
   publishRecoveryPrompted(bus, issue);

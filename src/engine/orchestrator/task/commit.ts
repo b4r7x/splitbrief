@@ -5,8 +5,7 @@ import type { ValidationResult } from '../validation.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EventBus, EngineEvent } from '../../events/types.js';
 import { commitChanges, createTaggedStash, stageAll } from '../../../lib/git.js';
-import { labelError } from '../../../utils/format-errors.js';
-import { publishWarning, publishGitCommit, publishGitCheckpoint, publishTaskComplete } from '../events.js';
+import { publishWarning, publishWarningFromError, publishGitCommit, publishGitCheckpoint, publishTaskComplete } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { runPreHooks } from '../../hooks/run-pre-hook.js';
 
@@ -70,7 +69,7 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
       await gitOps.commitChanges(projectDir, commitMsg);
       publishGitCommit(bus, state.phase, task.id, commitMsg, task.file);
     } catch (err) {
-      publishWarning(bus, state.phase, labelError('Failed to commit', err));
+      publishWarningFromError(bus, state.phase, 'Failed to commit', err);
     }
   } else if (strategy === 'checkpoint') {
     try {
@@ -79,7 +78,7 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
         publishGitCheckpoint(bus, state.phase, task.id, tag);
       }
     } catch (err) {
-      publishWarning(bus, state.phase, labelError('Failed to create checkpoint', err));
+      publishWarningFromError(bus, state.phase, 'Failed to create checkpoint', err);
     }
   }
 

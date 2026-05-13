@@ -11,7 +11,7 @@ import { refreshDetection } from '../engine/detection/service.js';
 import { rebuildRepomap as doRebuildRepomap } from '../engine/codebase/rebuild.js';
 import { readActive } from '../core/sessions/lifecycle.js';
 import { writeHandoffPack } from '../engine/handoff/write.js';
-import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from '../engine/orchestrator/approvals-store.js';
+import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from '../core/approval/store.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run.js';
 import { performManualCompaction } from '../engine/orchestrator/transcript-rebuild.js';
 import { writeSessionHtmlReport } from '../engine/export/collect.js';

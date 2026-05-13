@@ -8,7 +8,6 @@ import { adviseMode, setAdvisory } from './mode-advisor.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 
 export { runBriefQualityGate } from './shared.js';
-export type { PlanningPhaseOptions } from './types.js';
 
 export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx } = opts;

@@ -47,6 +47,14 @@ const anytimeActions = [
   'RESOLVE_PENDING_RECOVERY',
 ] as const satisfies readonly StateAction['type'][];
 
+const VALIDATION_OR_ESCALATION_SHARED_ACTIONS = [
+  'VALIDATION_PASS',
+  'HINT_SUCCESS',
+  'FULL_SUCCESS',
+  'SKIP_TASK',
+  'RESET_TASK',
+] as const satisfies readonly StateAction['type'][];
+
 const phaseActions = {
   idle: ['START', 'START_QUICK', 'START_INSTANT', 'RESEARCH_DONE', 'SPEC_CLARIFY_START'],
   researching: ['RESEARCH_DONE', 'SPEC_CLARIFY_START', 'START_QUICK', 'START_INSTANT'],
@@ -72,8 +80,8 @@ const phaseActions = {
     'ANALYZE_START',
     'ALL_DONE',
   ],
-  'validating-task': ['VALIDATION_PASS', 'VALIDATION_FAIL', 'ESCALATE', 'HINT_SUCCESS', 'FULL_SUCCESS', 'SKIP_TASK', 'RESET_TASK'],
-  escalating: ['VALIDATION_PASS', 'UPDATE_TASK_CODE', 'CLEAR_TASK_CODE', 'HINT_SUCCESS', 'HINT_FAIL', 'FULL_SUCCESS', 'FULL_FAIL', 'SKIP_TASK', 'RESET_TASK'],
+  'validating-task': [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'VALIDATION_FAIL', 'ESCALATE'],
+  escalating: [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'UPDATE_TASK_CODE', 'CLEAR_TASK_CODE', 'HINT_FAIL', 'FULL_FAIL'],
   'final-review': ['REVIEW_DONE'],
   complete: [],
 } as const satisfies Record<Phase, readonly StateAction['type'][]>;

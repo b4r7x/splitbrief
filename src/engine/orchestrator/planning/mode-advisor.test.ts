@@ -1,12 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import {
   adviseMode,
+  createAdvisoryStore,
   formatAdvisoryText,
-  getAdvisory,
-  setAdvisory,
-  subscribeAdvisory,
-  __resetAdvisoryForTests,
 } from './mode-advisor.js';
 
 describe('adviseMode — risk classification', () => {
@@ -172,40 +169,39 @@ describe('formatAdvisoryText', () => {
 });
 
 describe('advisory store', () => {
-  beforeEach(() => {
-    __resetAdvisoryForTests();
-  });
-
   it('starts with no advisory', () => {
-    expect(getAdvisory()).toBeNull();
+    const store = createAdvisoryStore();
+    expect(store.get()).toBeNull();
   });
 
   it('notifies subscribers when advisory changes', () => {
+    const store = createAdvisoryStore();
     let calls = 0;
-    const unsubscribe = subscribeAdvisory(() => {
+    const unsubscribe = store.subscribe(() => {
       calls += 1;
     });
 
     const advisory = adviseMode('fix typo', 'standard');
-    setAdvisory(advisory);
-    expect(getAdvisory()).toEqual(advisory);
+    store.set(advisory);
+    expect(store.get()).toEqual(advisory);
     expect(calls).toBe(1);
 
-    setAdvisory(null);
-    expect(getAdvisory()).toBeNull();
+    store.set(null);
+    expect(store.get()).toBeNull();
     expect(calls).toBe(2);
 
     unsubscribe();
-    setAdvisory(advisory);
+    store.set(advisory);
     expect(calls).toBe(2);
   });
 
   it('skips notification when value is unchanged reference', () => {
+    const store = createAdvisoryStore();
     let calls = 0;
-    subscribeAdvisory(() => {
+    store.subscribe(() => {
       calls += 1;
     });
-    setAdvisory(null);
+    store.set(null);
     expect(calls).toBe(0);
   });
 });

@@ -8,6 +8,7 @@ import { publishWarning } from './events.js';
 import { appendMessage } from '../../core/state/persistence.js';
 import { dispatchNativeInjection } from './native-injection.js';
 import { warnError } from '../../lib/warn.js';
+import { nowIso } from '../../utils/format-time.js';
 
 export const MAX_QUEUE_SIZE = 50;
 
@@ -29,7 +30,7 @@ export function enqueueUserMessage(
   const message: QueuedMessage = {
     id: randomUUID(),
     text,
-    queuedAt: new Date().toISOString(),
+    queuedAt: nowIso(),
     phase,
     deliveredViaNative: false,
   };

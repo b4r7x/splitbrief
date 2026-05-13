@@ -1,5 +1,4 @@
 import { join } from 'node:path';
-import { readdirSync, existsSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
@@ -7,9 +6,10 @@ import { cliError } from '../errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { assertNotWindows } from '../platform.js';
 import { checkServerStatus, type ServerStatus } from '../../engine/ipc/lockfile.js';
-import { sessionsRoot, sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
+import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import type { ClientMessage, ServerMessage } from '../../engine/ipc/protocol.js';
 import { isNumericAlias, resolveNumericAlias } from '../session-aliases.js';
+import { findSingleRunningSession } from '../sessions/single-running-session.js';
 
 export type DetachDeps = {
   checkServerStatus: (sessionDir: string) => Promise<ServerStatus>;
@@ -20,27 +20,13 @@ const defaultDeps: DetachDeps = {
 };
 
 async function resolveRunningSession(projectDir: string, deps: DetachDeps): Promise<string> {
-  const root = sessionsRoot(projectDir);
-  if (!existsSync(root)) {
-    throw cliError('no running sessions found; pass <session-id> explicitly', 1);
-  }
-
-  const entries = readdirSync(root, { withFileTypes: true });
-  const running: string[] = [];
-
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const status = await deps.checkServerStatus(sessionDir(projectDir, entry.name));
-    if (status.alive) running.push(entry.name);
-  }
-
-  const [single] = running;
-  if (running.length === 1 && single) return single;
-  if (running.length === 0) {
+  const result = await findSingleRunningSession(projectDir, deps);
+  if (result.kind === 'single') return result.id;
+  if (result.kind === 'none') {
     throw cliError('no running sessions found; pass <session-id> explicitly', 1);
   }
   throw cliError(
-    `multiple running sessions (${running.join(', ')}); pass <session-id> explicitly`,
+    `multiple running sessions (${result.ids.join(', ')}); pass <session-id> explicitly`,
     1,
   );
 }

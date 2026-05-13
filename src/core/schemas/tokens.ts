@@ -2,12 +2,12 @@ import { z } from 'zod';
 import { TaskCompletionMethodSchema } from './enums.js';
 import { TaskIdSchema } from './task.js';
 
-export const TokenDeltaSchema = z.object({
-  inputTokens: z.number(),
-  outputTokens: z.number(),
-  cacheReadTokens: z.number().nonnegative().optional(),
-  cacheCreateTokens: z.number().nonnegative().optional(),
-});
+export interface TokenDelta {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheCreateTokens?: number;
+}
 
 export const TokenUsageSchema = z.object({
   plannerInput: z.number(),
@@ -43,7 +43,6 @@ export const TaskTokenUsageSchema = z.object({
   routingReason: z.string().optional(),
 });
 
-export type TokenDelta = z.infer<typeof TokenDeltaSchema>;
 export type TokenUsage = z.infer<typeof TokenUsageSchema>;
 export type TaskTokenUsage = z.infer<typeof TaskTokenUsageSchema>;
 

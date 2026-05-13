@@ -1,7 +1,11 @@
 import { configError } from '../errors.js';
 import { ImplementerConfigSchema, defaultImplementerWriteMode } from '../../schemas/implementer-config.js';
 import type { Config } from '../../schemas/config.js';
-import type { ImplementerCapabilities, ImplementerConfig, ImplementerCostTier, ImplementerProfileConfig, ImplementerWriteMode } from '../../schemas/implementer-config.js';
+import type { ImplementerCapabilities, ImplementerConfig, ImplementerCostTier, ImplementerProfileConfig, ImplementerProfilesConfig, ImplementerWriteMode } from '../../schemas/implementer-config.js';
+
+export function pickDefaultProfileName(profileConfig: ImplementerProfilesConfig): string | undefined {
+  return profileConfig.default ?? Object.keys(profileConfig.profiles).sort()[0];
+}
 
 export interface ResolvedImplementerCapabilities {
   writesFiles: ImplementerWriteMode;
@@ -51,7 +55,7 @@ export function resolveImplementerProfiles(config: Config): ResolvedImplementerP
   const profileConfig = config.implementerProfiles;
   if (!profileConfig) return singleImplementerProfile(config);
 
-  const defaultName = profileConfig.default ?? Object.keys(profileConfig.profiles).sort()[0];
+  const defaultName = pickDefaultProfileName(profileConfig);
   if (!defaultName) return singleImplementerProfile(config);
 
   const profiles = Object.entries(profileConfig.profiles)

@@ -20,9 +20,8 @@ import { readEvents } from '../../../core/sessions/log-reader.js';
 import { readJsonSafeAsync } from '../../../lib/fs.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { error } from '../../../utils/error.js';
-import { narrowRecord } from '../../../utils/type-guards.js';
+import { narrowRecord, optionalString } from '../../../utils/type-guards.js';
 import {
-  stringValue,
   type ExplainArtifactInputs,
   type ReadinessSummary,
   type RunExplainArtifact,
@@ -118,7 +117,7 @@ async function readReadiness(projectDir: string, sessionId: string): Promise<Rea
   if (!record || record.type !== 'start-readiness') return null;
   return {
     present: true,
-    status: stringValue(record.status),
+    status: optionalString(record.status, { trim: true, nonEmpty: true }) ?? null,
     checks: readinessChecks(record.checks),
   };
 }
@@ -128,9 +127,9 @@ function readinessChecks(value: unknown): ReadinessSummary['checks'] {
   const checks: ReadinessSummary['checks'] = [];
   for (const entry of value) {
     const record = narrowRecord(entry);
-    const id = stringValue(record?.id);
-    const severity = stringValue(record?.severity);
-    const summary = stringValue(record?.summary);
+    const id = optionalString(record?.id, { trim: true, nonEmpty: true });
+    const severity = optionalString(record?.severity, { trim: true, nonEmpty: true });
+    const summary = optionalString(record?.summary, { trim: true, nonEmpty: true });
     if (id && severity && summary) checks.push({ id, severity, summary });
   }
   return checks;

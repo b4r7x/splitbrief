@@ -2,9 +2,8 @@ import type { Config } from '../../core/schemas/config.js';
 import type { OrchestratorCallbacks, ResumeContextHolder } from './types.js';
 import type { EventBus } from '../events/types.js';
 import type { Planner } from '../planners/types.js';
-import { publishWarning } from './events.js';
+import { publishWarning, publishWarningFromError } from './events.js';
 import { buildResumeContext, compactResumeTranscript, keepRecentCountForThreshold } from './transcript-rebuild.js';
-import { labelError } from '../../utils/format-errors.js';
 import { resolveCompactionFormat } from '../../core/schemas/compaction.js';
 
 export type ApplyRebuiltContextOpts = {
@@ -51,7 +50,7 @@ export async function autoCompactResumeContext(opts: AutoCompactResumeOpts): Pro
       () => publishWarning(opts.bus, 'researching', 'Structured compaction returned invalid JSON; saved freeform summary instead.'),
     );
   } catch (err) {
-    publishWarning(opts.bus, 'researching', labelError('Transcript auto-compaction failed', err));
+    publishWarningFromError(opts.bus, 'researching', 'Transcript auto-compaction failed', err);
   }
 }
 

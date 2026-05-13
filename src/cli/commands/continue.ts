@@ -1,5 +1,4 @@
 import { join } from 'node:path';
-import { readdirSync, existsSync } from 'node:fs';
 import { createElement } from 'react';
 import { Command } from 'commander';
 import { App } from '../../app.js';
@@ -10,7 +9,7 @@ import { cliError } from '../errors.js';
 import { assertNotWindows } from '../platform.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import { showCrashDiagnostic } from '../../engine/ipc/crash-diagnostic.js';
-import { sessionsRoot, sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
+import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { loadState } from '../../core/state/persistence.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
@@ -22,6 +21,7 @@ import { printMigrationResult } from './migrate.js';
 import { runHeadless } from '../headless.js';
 import { runRpc } from '../rpc/run.js';
 import { isNumericAlias, resolveNumericAlias } from '../session-aliases.js';
+import { findSingleRunningSession } from '../sessions/single-running-session.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
 export interface ContinueDeps {
@@ -69,30 +69,14 @@ async function resolveTargetSession(
   const active = readActive(projectDir);
   if (active) return active;
 
-  const root = sessionsRoot(projectDir);
-  if (!existsSync(root)) {
-    throw cliError('no session to continue; start one with `diptych start`.', 1);
-  }
-
-  const entries = readdirSync(root, { withFileTypes: true });
-  const running: string[] = [];
-
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const sessDir = sessionDir(projectDir, entry.name);
-    const status = await deps.checkServerStatus(sessDir);
-    if (status.alive) running.push(entry.name);
-  }
-
-  const [single] = running;
-  if (running.length === 1 && single) return single;
-  if (running.length > 1) {
+  const result = await findSingleRunningSession(projectDir, deps);
+  if (result.kind === 'single') return result.id;
+  if (result.kind === 'multiple') {
     throw cliError(
-      `multiple sessions found (${running.join(', ')}); pass a session ID or use \`diptych ps\` to list them.`,
+      `multiple sessions found (${result.ids.join(', ')}); pass a session ID or use \`diptych ps\` to list them.`,
       1,
     );
   }
-
   throw cliError('no session to continue; start one with `diptych start`.', 1);
 }
 

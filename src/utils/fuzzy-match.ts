@@ -1,4 +1,4 @@
-import { Fzf, type FzfResultItem } from 'fzf';
+import { Fzf } from 'fzf';
 
 export type FuzzyMatchResult = {
   score: number;
@@ -27,10 +27,4 @@ export function fuzzyMatchExtended(query: string, target: string): FuzzyMatchRes
     for (const p of result.positions) allPositions.add(p);
   }
   return { score: totalScore, positions: Array.from(allPositions).sort((a, b) => a - b) };
-}
-
-export function fuzzyRank<T>(items: T[], query: string, selector: (item: T) => string): T[] {
-  if (!query) return items;
-  const fzf = new Fzf(items, { selector });
-  return fzf.find(query).map((r: FzfResultItem<T>) => r.item);
 }

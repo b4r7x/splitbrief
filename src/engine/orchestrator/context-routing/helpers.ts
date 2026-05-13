@@ -1,5 +1,6 @@
 import type { ImplementerCostTier, ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import type { Task } from '../../../core/schemas/task.js';
+import { uniqueSorted } from '../../../utils/collections.js';
 import { looksLikeFilePath } from '../../../utils/path-patterns.js';
 import type { ProfileFit } from './types.js';
 
@@ -91,7 +92,7 @@ function currentCodeReductionNote(profileFit: ProfileFit, prefix: string): strin
 
 export function costPosture(selected: ProfileFit | undefined, rejected: ProfileFit[]): string {
   if (!selected) return 'No capable implementer profile; no cost tier selected';
-  const rejectedTiers = Array.from(new Set(rejected.map(profileFit => profileFit.profile.costTier))).sort();
+  const rejectedTiers = uniqueSorted(rejected.map(profileFit => profileFit.profile.costTier));
   const rejectedNote = rejectedTiers.length > 0 ? `; rejected tiers: ${rejectedTiers.join(', ')}` : '';
   return `Selected ${selected.profile.costTier} cost tier via cheapest-capable routing${rejectedNote}`;
 }

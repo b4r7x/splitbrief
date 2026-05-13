@@ -3,9 +3,9 @@ import { mkdtempSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from './approvals-store.js';
-import type { ApprovalsStore, ApprovalGrant } from '../../core/schemas/approval-store.js';
-import { DIPTYCH_DIR } from '../../core/paths.js';
+import { readApprovalsStore, writeApprovalsStore, clearGrantsByScope } from './store.js';
+import type { ApprovalsStore, ApprovalGrant } from '../schemas/approval-store.js';
+import { DIPTYCH_DIR } from '../paths.js';
 
 let tmpDir: string;
 

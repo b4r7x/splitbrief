@@ -1,12 +1,4 @@
-/**
- * Shared planner runtime: orchestrates the planning phases (research, spec, plan,
- * brief compilation) on top of a backend-specific invoke function. The durable
- * planner→implementer handoff is the array of Product Task Briefs that ends up
- * in `PlanResult.tasks`; the markdown phases (`spec.md`, `plan.md`, `tasks.md`)
- * are transport for human review and brief compilation, not the contract itself.
- *
- * @see docs/TASK-CONTRACT.md
- */
+// Planner→implementer contract: docs/TASK-CONTRACT.md
 import type { Task } from '../../core/schemas/task.js';
 import type { InvokeResult } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
@@ -86,6 +78,13 @@ export interface PlannerBaseConfig {
    * Default: 'text'
    */
   hintSuccessMode?: 'text' | 'files';
+  /**
+   * How to determine whether escalateFull succeeded.
+   * - 'text': extract code block from stdout (API/streaming planners)
+   * - 'files': git changed files (agent planners that write files directly)
+   * Default: 'text'
+   */
+  escalateFullMode?: 'text' | 'files';
   /** Override to read the artifact from disk when the backend writes files directly (e.g., agent planner). Falls back to stdout text when not provided. */
   readPhaseOutput?: (filename: string, resultText: string, projectDir: string, sessionId?: string) => string;
   escalateFullPostProcess?: (task: Task, result: InvokeResult, extracted: { code: string }, projectDir: string) => EscalationResult;
@@ -96,6 +95,30 @@ export interface PlannerBaseConfig {
    */
   consumesPriorMessages?: boolean;
   injectUserTurn?: (text: string, projectDir: string) => Promise<void>;
+}
+
+type InvokeExtras = {
+  priorMessages?: PriorMessage[];
+  images?: Attachment[];
+};
+
+function prepareInvokeArgs(opts: {
+  prompt: string;
+  priorMessages: PriorMessage[] | undefined;
+  images: Attachment[] | undefined;
+  consumesPriorMessages: boolean | undefined;
+}): { effectivePrompt: string; extras: InvokeExtras } {
+  const { prompt, priorMessages, images, consumesPriorMessages } = opts;
+  const hasPrior = priorMessages !== undefined && priorMessages.length > 0;
+  const effectivePrompt = hasPrior && !consumesPriorMessages
+    ? formatMessagesForCli(priorMessages) + prompt
+    : prompt;
+  const hasImages = images !== undefined && images.length > 0;
+  const extras: InvokeExtras = {
+    ...(consumesPriorMessages && hasPrior ? { priorMessages } : {}),
+    ...(hasImages ? { images } : {}),
+  };
+  return { effectivePrompt, extras };
 }
 
 function normalizeCapabilities(capabilities: PlannerCapabilities): PlannerCapabilities {
@@ -157,18 +180,17 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
           projectDir, callbacks.sessionId ?? '', plannerPhase, callbacks.persistTranscript ?? true,
         );
 
-        // On the first phase of a resume, inject prior conversation. Backends that set
-        // `consumesPriorMessages` receive the raw array via invokePlan; the rest get a
-        // prompt-level prefix.
         const priorMessages = !priorInjected ? callbacks.priorMessages : undefined;
-        let effectivePrompt = prompt;
-        if (priorMessages && priorMessages.length > 0 && !config.consumesPriorMessages) {
-          effectivePrompt = formatMessagesForCli(priorMessages) + prompt;
-        }
         priorInjected = true;
-
         const images = !imagesInjected && pendingImages && pendingImages.length > 0 ? pendingImages : undefined;
         imagesInjected = true;
+
+        const { effectivePrompt, extras } = prepareInvokeArgs({
+          prompt,
+          priorMessages,
+          images,
+          consumesPriorMessages: config.consumesPriorMessages,
+        });
 
         const result = await config.invokePlan({
           prompt: effectivePrompt,
@@ -179,8 +201,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
             onSessionId: callbacks.onSessionId,
             onSessionExpired: callbacks.onSessionExpired,
           },
-          ...(config.consumesPriorMessages && priorMessages ? { priorMessages } : {}),
-          ...(images ? { images } : {}),
+          ...extras,
         });
         buffer.flush();
         if (result.usage) usage = accumulateUsage(usage, result.usage);
@@ -279,6 +300,15 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       languageContext?: LanguageContext,
     ): Promise<EscalationResult> {
       const escalationPrompt = buildEscalationPrompt(task, task.currentCode ?? '', error, languageContext ?? buildProjectLanguageContext(projectDir, undefined));
+
+      if (config.escalateFullMode === 'files') {
+        const detect = createChangeDetector('Full escalation');
+        const filesBefore = await getCurrentChangedFiles(projectDir);
+        const result = await config.invokeEscalate({ prompt: escalationPrompt, projectDir, callbacks });
+        const { changed } = await detect(projectDir, filesBefore);
+        return { success: changed, output: result.text, code: null, usage: result.usage };
+      }
+
       const result = await config.invokeEscalate({ prompt: escalationPrompt, projectDir, callbacks });
 
       const extracted = extractCode(result.text);
@@ -352,12 +382,12 @@ async function runSinglePhasePlanning(
   const buffer = createTranscriptBuffer(
     projectDir, callbacks.sessionId ?? '', 'planning', callbacks.persistTranscript ?? true,
   );
-  const priorMessages = callbacks.priorMessages;
-  let effectivePrompt = prompt;
-  if (priorMessages && priorMessages.length > 0 && !config.consumesPriorMessages) {
-    effectivePrompt = formatMessagesForCli(priorMessages) + prompt;
-  }
-  const images = callbacks.attachments && callbacks.attachments.length > 0 ? callbacks.attachments : undefined;
+  const { effectivePrompt, extras } = prepareInvokeArgs({
+    prompt,
+    priorMessages: callbacks.priorMessages,
+    images: callbacks.attachments,
+    consumesPriorMessages: config.consumesPriorMessages,
+  });
   const result = await config.invokePlan({
     prompt: effectivePrompt,
     projectDir,
@@ -367,8 +397,7 @@ async function runSinglePhasePlanning(
       onSessionId: callbacks.onSessionId,
       onSessionExpired: callbacks.onSessionExpired,
     },
-    ...(config.consumesPriorMessages && priorMessages ? { priorMessages } : {}),
-    ...(images ? { images } : {}),
+    ...extras,
   });
   buffer.flush();
 

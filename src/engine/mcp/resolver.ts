@@ -2,8 +2,10 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJsonSafeAsync, readFileSafeAsync } from '../../lib/fs.js';
 import { warnError } from '../../lib/warn.js';
+import { isRecord } from '../../utils/type-guards.js';
 import type { McpResourceDescriptor, McpResourceContent } from './types.js';
 import { sessionDir, SPEC_FILE, PLAN_FILE, TASKS_FILE, STATE_FILE, EVIDENCE_FILE, DRIFT_REPORT_FILE } from '../../core/paths.js';
+import { SUMMARY_FILE } from '../orchestrator/explain/artifacts.js';
 import { listAllSessions } from '../../core/sessions/io.js';
 import { SessionSchema } from '../../core/schemas/session.js';
 import { WorkflowStateSchema } from '../../core/schemas/workflow.js';
@@ -22,7 +24,6 @@ export type McpResolver = {
 };
 
 const BASE = 'mcp://diptych';
-const SUMMARY_FILE = 'summary.json';
 
 function sessionsUri(): string {
   return `${BASE}/sessions`;
@@ -78,8 +79,8 @@ async function readBriefHash(projectDir: string, sessionId: string): Promise<str
   if (!content) return null;
   try {
     const parsed: unknown = JSON.parse(content);
-    if (parsed !== null && typeof parsed === 'object' && 'hash' in parsed && typeof (parsed as Record<string, unknown>).hash === 'string') {
-      return (parsed as Record<string, unknown>).hash as string;
+    if (isRecord(parsed) && typeof parsed.hash === 'string') {
+      return parsed.hash;
     }
     return null;
   } catch {

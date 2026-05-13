@@ -1,7 +1,7 @@
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { EvidenceLedger, EvidenceFinalReviewStatus } from '../../../core/schemas/evidence.js';
 import { EVIDENCE_FILE, REVIEW_FILE } from '../../../core/paths.js';
-import { nowIso } from './ledger.js';
+import { nowIso } from '../../../utils/format-time.js';
 import { uniquePush } from './task-evidence.js';
 
 export type RecordFinalReviewEvidenceInput = {

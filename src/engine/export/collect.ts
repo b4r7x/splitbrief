@@ -6,7 +6,7 @@ import { EvidenceLedgerSchema, type EvidenceLedger } from '../../core/schemas/ev
 import { BRIEF_QUALITY_FILE, DRIFT_REPORT_FILE, EVIDENCE_FILE } from '../../core/paths.js';
 import { readJsonSafe, writeSecureFile } from '../../lib/fs.js';
 import { isBriefQualityReport } from '../spec/brief-quality.js';
-import { isDriftReport } from '../orchestrator/drift/drift.js';
+import { isDriftReport } from '../../core/schemas/drift.js';
 import { renderSessionHtml } from './html-renderer.js';
 import type { BriefQualityExport, DriftExport, EvidenceExport, ExportData } from './types.js';
 

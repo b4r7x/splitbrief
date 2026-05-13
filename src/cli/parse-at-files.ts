@@ -43,6 +43,7 @@ export function parseAtFiles(
 
   for (const raw of atPaths) {
     const absPath = resolve(projectDir, raw);
+    const relForCheck = isAbsolute(raw) ? relative(resolve(projectDir), absPath) : raw;
 
     if (!isAbsolute(raw)) {
       try {
@@ -74,14 +75,6 @@ export function parseAtFiles(
       continue;
     }
 
-    const projectPath = relative(resolve(projectDir), absPath);
-    try {
-      assertPathConfined(projectPath, projectDir);
-    } catch {
-      errors.push({ path: raw, reason: 'outside-project' });
-      continue;
-    }
-
     let stat: ReturnType<typeof statSync>;
     try {
       stat = statSync(absPath);
@@ -96,7 +89,7 @@ export function parseAtFiles(
     }
 
     try {
-      assertExistingPathConfined(projectPath, projectDir);
+      assertExistingPathConfined(relForCheck, projectDir);
     } catch {
       errors.push({ path: raw, reason: 'outside-project' });
       continue;

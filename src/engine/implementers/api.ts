@@ -9,7 +9,7 @@ import { isProviderId } from '../../core/schemas/enums.js';
 import { assertImplementerKind } from '../config-assertions.js';
 import { providerError } from '../providers/errors.js';
 import { dispatchStreamCompletion } from '../providers/dispatch-stream.js';
-import type { StreamClient } from '../providers/openai-stream.js';
+import { toStreamClient, type StreamClient } from '../providers/openai-stream.js';
 
 export function createApiImplementer(initialConfig: Config, options?: ImplementerFactoryOptions): Implementer {
   assertImplementerKind(initialConfig, 'api');
@@ -33,7 +33,7 @@ export function createApiImplementer(initialConfig: Config, options?: Implemente
       const model = resolveAutoModel(impl.model, impl.provider);
       if (!model) throw providerError.missingModel('implementer');
 
-      const client = impl.provider === 'anthropic' ? null : createClient(config);
+      const client: StreamClient | null = impl.provider === 'anthropic' ? null : toStreamClient(createClient(config));
 
       const providerEnvKey = isProviderId(impl.provider) ? PROVIDER_CATALOG[impl.provider]?.apiKeyEnv : undefined;
       const resolvedApiKey = impl.apiKey ?? (providerEnvKey ? process.env[providerEnvKey] : undefined) ?? '';
@@ -45,7 +45,7 @@ export function createApiImplementer(initialConfig: Config, options?: Implemente
 
       return dispatchStreamCompletion({
         provider: impl.provider,
-        client: client as StreamClient | null,
+        client,
         apiKey: resolvedApiKey,
         apiBase: impl.apiBase ?? '',
         model,
