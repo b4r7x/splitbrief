@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SESSION_LOG_FILE, sessionsRoot } from '../../../src/core/paths.js';
 import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
-import { e2eImplementer, e2ePlanner } from '../helpers/e2e-config.js';
+import { makeE2eScenarioConfig } from '../helpers/e2e-config.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/e2e-harness.js';
 
 const scenario = {
@@ -11,21 +11,7 @@ const scenario = {
   cassetteName: 'quick-add-endpoint',
   feature: 'add GET /api/health endpoint',
   mode: 'quick' as const,
-  config: {
-    version: 2,
-    planner: e2ePlanner,
-    implementer: e2eImplementer,
-    workflow: {
-      mode: 'quick',
-      commitStrategy: 'none',
-    },
-    validation: {
-      typecheck: false,
-      lint: false,
-      test: false,
-      testCommand: 'npm test',
-    },
-  },
+  config: makeE2eScenarioConfig('quick'),
 };
 
 function hasSessionArtifact(projectDir: string, fileName: string): boolean {

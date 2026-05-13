@@ -10,8 +10,9 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { sessionDir, BRIEF_QUALITY_FILE, TASKS_FILE } from '../../../src/core/paths.js';
+import { makeWorkflowMetadata, TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 
-const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'instant' };
+const TEST_METADATA = makeWorkflowMetadata('instant');
 
 const MINIMAL_TASKS_MD = `---
 id: T001
@@ -121,7 +122,7 @@ describe('runBriefQualityGate', () => {
     const result = await runPlanningPhase({
       wctx: {
         projectDir, config, callbacks, metadata: TEST_METADATA, sessionId, bus,
-        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+        sinks: TEST_WORKFLOW_SINKS,
       },
       planner,
       state,

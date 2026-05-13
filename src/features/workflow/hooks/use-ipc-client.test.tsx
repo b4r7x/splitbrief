@@ -19,12 +19,10 @@ function waitMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Write a ServerMessage line to a socket. */
 function send(socket: Socket, msg: ServerMessage): void {
   socket.write(JSON.stringify(msg) + '\n');
 }
 
-/** Start a raw net.Server that sends session_meta then stays open. */
 function makeServer(sockPath: string, opts?: { readonly?: boolean }): Promise<Server> {
   return new Promise((resolve, reject) => {
     const server = createServer();
@@ -44,7 +42,6 @@ function makeServer(sockPath: string, opts?: { readonly?: boolean }): Promise<Se
   });
 }
 
-/** Start a server that immediately destroys every connection (for reconnect tests). */
 function makeRejectingServer(sockPath: string): Promise<Server> {
   return new Promise((resolve, reject) => {
     const server = createServer();
@@ -59,7 +56,6 @@ function makeRejectingServer(sockPath: string): Promise<Server> {
 function closeServer(server: Server): Promise<void> {
   return new Promise((resolve) => {
     server.close(() => resolve());
-    // destroy open connections
     server.emit('close');
   });
 }
@@ -115,10 +111,8 @@ describe('useIpcClient', () => {
     tmpDirs.push(dir);
     const sockPath = join(dir, 'test.sock');
 
-    // Don't start a server — just observe the initial state
     const capture: { current: CapturedState | null } = { current: null };
     const ui = render(<Harness sockPath={sockPath} capture={capture} />);
-    // Check before ticking — first render is synchronous
     expect(capture.current?.status).toBe('connecting');
     ui.unmount();
     await tick(20);
@@ -184,7 +178,6 @@ describe('useIpcClient', () => {
     const ui = render(<Harness sockPath={sockPath} capture={capture} />);
     await tick(100);
 
-    // Send an event from the server
     if (connectedSocket) {
       const msg: ServerMessage = { kind: 'event', payload: { type: 'workflow_started', ts: 42, phase: 'idle', feature: 'test' } };
       send(connectedSocket, msg);

@@ -4,6 +4,10 @@ import {
   buildImplementerPickerOptions,
   buildPlannerPickerOptions,
   buildRightModels,
+  buildRightModelsForPicker,
+  modelsForImplementerProvider,
+  modelsForPlannerTool,
+  sortModelsByRecency,
 } from './model-catalog.js';
 
 function makePlannerDetection(
@@ -72,6 +76,32 @@ describe('picker options', () => {
     });
 
     expect(models.map(model => model.id)).toContain('claude-sonnet-4-6');
+  });
+
+  it('keeps buildRightModels deterministic unless a cache is passed', () => {
+    const currentItem = {
+      id: 'openai',
+      displayName: 'OpenAI',
+      kind: 'api' as const,
+      available: true,
+      badge: 'API',
+    };
+    const cache = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => [{ id: 'runtime-only-model' }],
+    };
+
+    expect(buildRightModels({ isPlanner: false, customModels: [], currentItem }).map(model => model.id))
+      .not.toContain('runtime-only-model');
+    expect(buildRightModels({ isPlanner: false, customModels: [], currentItem, cache }).map(model => model.id))
+      .toContain('runtime-only-model');
+  });
+
+  it('keeps model helper exports available', () => {
+    expect(sortModelsByRecency([{ id: 'gpt-5' }, { id: 'gpt-4' }]).map(model => model.id)).toEqual(['gpt-5', 'gpt-4']);
+    expect(modelsForPlannerTool('claude-code').length).toBeGreaterThan(0);
+    expect(modelsForImplementerProvider('shell', 'shell')).toEqual([]);
+    expect(typeof buildRightModelsForPicker).toBe('function');
   });
 
   it('includes the custom agent runner in both picker catalogs', () => {

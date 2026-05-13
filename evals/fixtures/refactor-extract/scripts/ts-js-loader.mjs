@@ -2,7 +2,11 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 export async function resolve(specifier, context, nextResolve) {
-  if ((specifier.startsWith('./') || specifier.startsWith('../')) && specifier.endsWith('.js') && context.parentURL) {
+  if (
+    (specifier.startsWith('./') || specifier.startsWith('../')) &&
+    specifier.endsWith('.js') &&
+    context.parentURL
+  ) {
     const jsUrl = new URL(specifier, context.parentURL);
     const tsUrl = new URL(jsUrl.href.replace(/\.js$/, '.ts'));
 

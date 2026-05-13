@@ -3,22 +3,17 @@ import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { spawnWithShellFallback } from '../../lib/process/spawn.js';
 import { processError } from '../../lib/process/errors.js';
-import { extractCode } from '../parsers/response-extractor.js';
 
 export interface CommandBasedOptions {
   command: string;
   args?: string[] | undefined;
   outputFormat?: OutputFormat | undefined;
-  extractsCode: boolean;
-  detectChanges?: (() => Promise<{ changed: boolean; output: string }>) | undefined;
   supportPromptPlaceholder?: boolean | undefined;
   timeout?: number | undefined;
   notFoundMessage?: string | undefined;
 }
 
 export interface CommandBasedResult {
-  code?: string;
-  hasChanges?: boolean;
   stdout: string;
   stderr: string;
   usage?: TokenDelta | null;
@@ -112,19 +107,6 @@ export async function invokeCommandBasedRunner(
 
     stdout = result.text;
     usage = result.usage;
-  }
-
-  if (opts.extractsCode) {
-    const extracted = extractCode(stdout);
-    if ('code' in extracted) {
-      return { code: extracted.code, stdout, stderr, usage };
-    }
-    return { stdout, stderr, usage };
-  }
-
-  if (opts.detectChanges) {
-    const { changed } = await opts.detectChanges();
-    return { hasChanges: changed, stdout, stderr, usage };
   }
 
   return { stdout, stderr, usage };

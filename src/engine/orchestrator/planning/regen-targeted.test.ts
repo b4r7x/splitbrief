@@ -18,7 +18,7 @@ describe('buildTargetedRejectionComment', () => {
       '- T002: "Add logging" (src/log.ts)',
       '',
       'Please regenerate ONLY these tasks. Keep all other tasks unchanged.',
-      'Produce improved versions that address the same goals but with better implementation approach.',
+      'For each flagged task, keep the same goal and revise the description, scope, tests, and implementation steps to address the user feedback.',
     ].join('\n'));
   });
 });

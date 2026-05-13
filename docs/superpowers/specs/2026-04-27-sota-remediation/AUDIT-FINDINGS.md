@@ -51,11 +51,10 @@ This file is the source-of-truth checklist for implementation. A fix pass is inc
 
 - `src/lib/git.ts` introduces `export class GitCommandError extends Error`, violating the zero-class rule.
 - `readApprovalsStore()` hides corrupt approval stores by returning an empty store.
-- Approval CLI docs say `--project-dir` and `.diptych/.approvals.json`; code uses `--project` and `.diptych/approvals.json`.
+- Approval CLI docs used the legacy project-dir spelling and `.diptych/.approvals.json`; code uses `--project` and `.diptych/approvals.json`.
 - Features docs say `package_mutation`; schema uses `package_change`.
 - Plan editor and command palette areas need a local pass for stale errors, no-op dirty state, config custom actions, and behavior tests.
 - CLI tests added in the diff overmock internal collaborators and assert implementation calls instead of user behavior.
 - Lockfile parsing casts arbitrary JSON to `LockfileData` without schema validation and interpolates `pid` into process checks.
 - Crash diagnostic option "Start a new workflow" returns to `attachCommand`, which then throws `session is not running`.
 - `diptych ps` can show crashed sessions with `0s` elapsed because it drops `lastAliveMs`.
-

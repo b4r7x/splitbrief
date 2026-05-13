@@ -49,7 +49,7 @@ A typical run, step by step:
 10. Planner reviews the final result against the spec
 11. Session summary written to disk, workflow done
 
-The user can interrupt at any point (Ctrl-C preserves state), queue messages while the planner is working, rewind to re-plan a spec or plan, or skip individual tasks.
+The user can interrupt live model calls with Ctrl-C, queue messages while the planner is working, rewind to re-plan a spec or plan, or skip individual tasks.
 
 ---
 
@@ -59,15 +59,15 @@ The code is organized in four layers with strict import boundaries:
 
 **CLI** — Parses arguments, boots stores, starts the TUI or runs headless. When you type `diptych start`, this layer handles everything before the workflow engine takes over.
 
-**Stores** — Module-scoped singletons holding all shared state. Both React components and the engine read from stores, but through different APIs: `store.use(selector)` for React (triggers re-render), `store.get()` for engine (synchronous read). Stores have no external dependencies — no React, no engine imports.
+**Stores** — Module-scoped singletons holding UI and application state. React components subscribe through `store.use(selector)` and non-React CLI/TUI wiring can read with `store.get()`. Stores have no external dependencies — no React, no engine imports.
 
-**Engine** — Runs the workflow: creates planner and implementer, manages phase transitions, emits events, persists state. Has zero React imports — it doesn't know the UI exists. This is what lets the full workflow run under Vitest without bringing up a terminal.
+**Engine** — Runs the workflow: creates planner and implementer, manages phase transitions, emits events, persists state. It receives callbacks and sinks from the host instead of importing stores or UI code. This is what lets the full workflow run under Vitest without bringing up a terminal.
 
-**UI** — React 19 + Ink 6 terminal interface. Subscribes to store slices and renders when they change. Never calls engine functions directly — it reacts to state changes published through the EventBus.
+**UI** — React 19 + Ink 6 terminal interface. The workflow screen hosts `runWorkflow()` through runner hooks, supplies callbacks for human gates, and renders store state updated by the TUI event sink.
 
 **How they talk to each other:**
 
-The engine publishes events (like `task_completed` or `spec_done`) through the EventBus. A sink forwards each event into the workflow store. React components subscribe to store slices and re-render.
+The engine publishes events (like `task_completed` or `spec_done`) through the EventBus. The TUI sink forwards each event into workflow actions, which update split workflow stores. React components subscribe to store slices and re-render.
 
 When the workflow needs a human decision — approve a spec, answer a question, confirm a costly action — the engine awaits a callback. The UI fulfills the callback by switching input mode and resolving the promise when the user answers. These gating callbacks are separate from the EventBus: events are fire-and-forget broadcasts, callbacks are blocking request/response pairs.
 
@@ -83,7 +83,7 @@ Four modes trade speed for thoroughness:
 
 **standard** — Four planner calls: research → spec → plan → tasks. Spec approval gate before planning. The default for most work.
 
-**speckit** — Six to seven calls: adds clarification questions, constitution check, and post-plan analysis. All approval gates active. For large, risky, or externally visible work.
+**speckit** — Six to seven calls: adds clarification questions, constitution check, and post-plan analysis. Spec, plan, and briefs gates are active by default. For large, risky, or externally visible work.
 
 All four modes produce the same output: a list of Task Briefs. The difference is how much the planner thinks before writing them.
 
@@ -95,13 +95,13 @@ Every workflow run is a session. A session is a folder on disk under `.diptych/s
 
 - **state.json** — Current phase, task progress. Overwritten on every phase transition. This is the source of truth for resume.
 - **session.jsonl** — Every event and message, append-only. The full audit log.
-- **spec.md / plan.md / tasks.md** — Planning artifacts, written once per planning phase.
+- **research.md / spec.md / plan.md / tasks.md** — Planning artifacts, written once per planning phase when the selected mode produces them. Speckit can also write clarification, constitution-check, and analysis artifacts.
 - **summary.json** — Final cost, timing, outcomes. Written once at the end.
 - **snapshots/** — Content-addressed working-tree snapshots for undo.
 
-One active session at a time per project directory. `.diptych/active` is the lock file — it contains the current session ID. Parallel sessions require git worktrees, which give each worktree its own `.diptych/`.
+One foreground active session at a time per project directory. `.diptych/active` is the foreground lock file — it contains the current session ID when the active pointer is present. Detached sessions use lockfiles. Isolated parallel sessions require git worktrees, which give each worktree its own `.diptych/`.
 
-`diptych resume` picks up where you left off. If the backend supports session persistence (Claude Code, Agent SDK), it reconnects. Otherwise, it rebuilds context from the JSONL log.
+`diptych resume` picks up the active interrupted workflow. If the active pointer is absent, use `diptych continue <session-id>` for a known resumable session. If the backend supports session persistence (Claude Code, Agent SDK), it reconnects. Otherwise, it rebuilds context from the JSONL log.
 
 ---
 
@@ -147,7 +147,7 @@ The workflow pauses at defined points for human review:
 - **Tiered approval** — During implementation, individual file writes are classified by risk (in-scope, out-of-scope, destructive, network, package change) and gated at three tiers: `auto` (allow silently), `sticky` (remember the user's choice), `confirm` (always ask).
 - **Cost gate** — Before tasks start, if the predicted cost exceeds the budget.
 
-`--approve none` skips all document gates. `--approve all` enables everything. The mode sets the default: instant/quick skip gates, standard gates on spec, speckit gates on everything.
+`--approve none` skips spec/plan document gates. Briefs review is separate and still runs in modes that produce reviewable briefs. `--approve all` enables spec and plan gates. The mode sets the default: instant/quick skip spec/plan gates, standard gates on spec, speckit gates on spec and plan.
 
 ---
 

@@ -11,9 +11,9 @@ import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factor
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { makeWorkflowMetadata, TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 
-const SINKS = { setAbortHandler: () => {}, setQueueHandler: () => {} };
-const META = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'quick' as const };
+const META = makeWorkflowMetadata('quick');
 const dirs: string[] = [];
 
 beforeEach(() => resetAllStores());
@@ -56,14 +56,15 @@ describe('codebase context injection into planner', () => {
     state = transition(state, { type: 'START', feature: 'add bar feature' });
 
     await runPlanningPhase({
-      wctx: { projectDir, sessionId, config, callbacks, bus, metadata: META, sinks: SINKS },
+      wctx: { projectDir, sessionId, config, callbacks, bus, metadata: META, sinks: TEST_WORKFLOW_SINKS },
       planner,
       state,
       feature: state.feature,
     });
 
     expect(typeof capturedContext).toBe('string');
-    expect(capturedContext!.length).toBeGreaterThan(0);
+    if (capturedContext === undefined) throw new Error('expected planner to receive codebase context');
+    expect(capturedContext.length).toBeGreaterThan(0);
     expect(capturedContext).toContain('sample.ts');
   });
 
@@ -93,7 +94,7 @@ describe('codebase context injection into planner', () => {
     state = transition(state, { type: 'START', feature: 'add baz feature' });
 
     await runPlanningPhase({
-      wctx: { projectDir, sessionId, config, callbacks, bus, metadata: META, sinks: SINKS },
+      wctx: { projectDir, sessionId, config, callbacks, bus, metadata: META, sinks: TEST_WORKFLOW_SINKS },
       planner,
       state,
       feature: state.feature,

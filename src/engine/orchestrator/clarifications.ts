@@ -4,7 +4,6 @@ import type { EventBus } from '../events/types.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE } from '../../core/paths.js';
-import { publishEvent } from './events.js';
 import { appendMessage } from '../../core/state/persistence.js';
 import { transitionAndSave } from './state-ops.js';
 import { dispatchNativeInjection } from './native-injection.js';
@@ -52,9 +51,9 @@ export async function collectAndPersistClarifications(
 
     state = transitionAndSave(projectDir, sessionId, state, { type: 'ENQUEUE_USER_MSG', message });
 
-    publishEvent(bus, { type: 'clarification_answered', ts: Date.now(), phase: state.phase, questionId: question.id, answer });
+    bus.publish({ type: 'clarification_answered', ts: Date.now(), phase: state.phase, questionId: question.id, answer });
     if (planner) {
-      publishEvent(bus, { type: 'message_queued', ts: Date.now(), phase: state.phase, id: message.id });
+      bus.publish({ type: 'message_queued', ts: Date.now(), phase: state.phase, id: message.id });
       void dispatchNativeInjection(message, planner, projectDir, sessionId, state, (s) => { state = s; }, bus);
     }
   }
@@ -75,7 +74,7 @@ export async function collectAndPersistClarifications(
 
   writeSpecFile(projectDir, sessionId, SPEC_FILE, content, metadata);
 
-  publishEvent(bus, {
+  bus.publish({
     type: 'clarifications_collected', ts: Date.now(), phase: state.phase,
     count: clarifications.length, clarifications,
   });

@@ -9,16 +9,14 @@ import { makeCallbacks, makePlanner, makeBusRecorder } from '#testing/helpers/or
 import { expectBriefQualityBlocked } from '#testing/helpers/assertions/brief-quality.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
-import { BRIEF_QUALITY_FILE, sessionDir } from '../../core/paths.js';
-import { TASKS_FILE } from '../../core/paths.js';
+import { BRIEF_QUALITY_FILE, sessionDir, TASKS_FILE } from '../../core/paths.js';
 import { runPlanningPhase } from './planning/run.js';
 import { createEvidenceLedger } from './evidence/ledger.js';
 import { writeEvidenceLedger } from './evidence/persistence.js';
 import { recordRejectionEvidence } from './evidence/approval-evidence.js';
-import type { WorkflowSinks } from './types.js';
+import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
 import type { Planner } from '../planners/types.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { OrchestratorCallbacks } from './types.js';
 
 const TEST_METADATA = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' };
 
@@ -242,7 +240,6 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     expect(result.cancelled).toBe(false);
     expect(result.tasks).toHaveLength(1);
     expect(result.state.phase).toBe('implementing');
-    // Observable: regeneration happened and forwarded the user's comment.
     expect(regenArgs).toHaveLength(1);
     expect(regenArgs[0]?.prompt).toContain('add auth section');
     expect(regenArgs[0]?.target).toBe('spec');
@@ -443,7 +440,6 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
         return { text: REAL_TASKS_MD, usage: null };
       },
     });
-    // Sequence: approve spec, comment on briefs, then approve regenerated briefs
     const onApprovalNeeded = sequencedApproval([
       { approved: true },
       { approved: false, comment: 'add scope definitions to all tasks' },

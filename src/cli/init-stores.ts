@@ -17,6 +17,7 @@ import { cliError } from './errors.js';
 import { getPlannerToolId } from '../core/config/accessors/runner-config.js';
 import { ensureHooksTrusted } from './hook-trust-prompt.js';
 import { normalizeLegacyMode } from '../core/schemas/enums.js';
+import { buildCLIOverrides } from './build-overrides.js';
 
 export async function initStores(projectDir: string, opts: WorkflowOpts = {}): Promise<void> {
   initUIChrome();
@@ -40,24 +41,9 @@ function loadProjectState(projectDir: string, opts: WorkflowOpts): void {
     warnStderr('--mode full is deprecated; use --mode speckit');
   }
   const normalizedMode = rawMode ? normalizeLegacyMode(rawMode) ?? undefined : undefined;
-  configStore.load(projectDir, {
-    planner: {
-      tool: opts.planner,
-      model: opts.plannerModel,
-      command: opts.plannerCommand,
-    },
-    implementer: {
-      tool: opts.implementer ?? opts.provider,
-      model: opts.implementerModel ?? opts.model,
-      command: opts.implementerCommand,
-    },
-    autoApprove: opts.auto,
-    ...(opts.approve !== undefined ? { approve: opts.approve } : {}),
-    mode: normalizedMode,
-    budget: opts.budget,
-    ...(opts.plannerEffort !== undefined ? { plannerEffort: opts.plannerEffort } : {}),
-    yolo: opts.yolo,
-  });
+  const overrides = buildCLIOverrides(opts);
+  overrides.mode = normalizedMode;
+  configStore.load(projectDir, overrides);
   const storeConfig = configStore.get().config;
   if (!storeConfig) throw cliError('configStore.load did not populate config');
   if (storeConfig.shikiTheme) setHighlightTheme(storeConfig.shikiTheme);

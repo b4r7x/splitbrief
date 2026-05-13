@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { runFullPlanning } from './full.js';
 import { transitionAndSave } from '../state-ops.js';
-import { publishPlannerStatus, createBusTextHandler, publishEvent } from '../events.js';
+import { publishPlannerStatus, createBusTextHandler } from '../events.js';
 import {
   ANALYZE_FILE,
   CLARIFICATIONS_FILE,
@@ -202,7 +202,7 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
   if (briefsLoop.rejected) return { state, tasks: [], cancelled: true };
 
   publishPlannerStatus(bus, state, 'running');
-  publishEvent(bus, { type: 'plan_approved', ts: Date.now(), phase: state.phase });
+  bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
 
   return { state, tasks, cancelled: false };
 }

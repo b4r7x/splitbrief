@@ -1,6 +1,6 @@
 # CLI Reference
 
-Complete reference for every `diptych` command. Generated from `src/cli.ts` and `src/cli/commands/*.ts`.
+Complete reference for every `diptych` command. Maintained against `src/cli.ts` and `src/cli/commands/*.ts`.
 
 ```
 diptych — Cost-optimized AI coding orchestrator (v0.1.0)
@@ -9,7 +9,7 @@ diptych — Cost-optimized AI coding orchestrator (v0.1.0)
 ## Global behavior
 
 - **Binary name:** `diptych`. The `npm run dev -- <cmd>` form is equivalent during local development.
-- **Working directory:** Most commands accept `--project <dir>` (a few use `--project-dir <dir>` — noted per-command). When omitted, the project resolves to the current working directory.
+- **Working directory:** Most commands accept `--project <dir>`. When omitted, the project resolves to the current working directory.
 - **Exit codes:**
   - `0` — success.
   - `1` — generic CLI failure. Almost every command throws via `cliError(message)` which defaults to `exitCode: 1`. The top-level handler in `src/cli.ts` prints `Error: <message>` to stderr and exits with the carried code.
@@ -27,7 +27,7 @@ diptych — Cost-optimized AI coding orchestrator (v0.1.0)
 | 3 | `diptych init` | Create `.diptych/config.yaml` with detected models. |
 | 4 | `diptych status` | Show the active session and optional cost history. |
 | 5 | `diptych explain` | Explain routing, cost, review, and warnings from session artifacts. |
-| 6 | `diptych resume` | Resume the most recent interrupted workflow. |
+| 6 | `diptych resume` | Resume the active interrupted workflow. |
 | 7 | `diptych continue` | Smart session continuity: attach if running, resume if interrupted. |
 | 8 | `diptych last` | Attach or resume the most recent session. |
 | 9 | `diptych stats` | Show cumulative cost savings across all sessions. |
@@ -57,7 +57,7 @@ Launch a complete plan-and-implement workflow. Without a feature argument the TU
 
 **Shorthand.** `diptych "feature"` is equivalent to `diptych start "feature"` — `start` is the default command (`isDefault`). No subcommand required for the happy path.
 
-**`@file` syntax.** Positional arguments prefixed with `@` are resolved as file paths and their contents are injected into the planner context. Example: `diptych "refactor auth" @context.md @screenshot.png`.
+**`@file` syntax.** Positional arguments prefixed with `@` are resolved as file paths. Text files are injected into planner context; image files are queued as planner attachments. Example: `diptych "refactor auth" @context.md @screenshot.png`.
 
 ### Usage
 
@@ -66,7 +66,7 @@ diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
   [--planner <tool>] [--planner-model <model>] [--planner-command <cmd>] \
   [--implementer <provider>] [--implementer-model <model>] [--implementer-command <cmd>] \
   [--model <model>] [--provider <provider>] \
-  [--budget <amount>] [--planner-effort <level>] \
+  [--budget <amount>] [--planner-effort <level>] [--yolo] \
   [--project <dir>] [--worktree [name]] [--detach] \
   [--no-fullscreen] [--no-mouse] \
   [--allow-hooks] [--json] [--rpc] [--otel-exporter <name>]
@@ -89,6 +89,7 @@ diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
 | `--model <model>` | string | — | Alias for `--implementer-model`. |
 | `--provider <provider>` | string | — | Alias for `--implementer`. |
 | `--budget <amount>` | float | — | Maximum budget in USD (e.g. `2.00`). Workflow stops when exceeded. |
+| `--yolo` | boolean | `false` | Disable action-level tiered approval prompts for the session. Workflow review gates still follow `--approve` / mode policy. |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--worktree [name]` | string \| boolean | — | Run inside a new linked git worktree at `.trees/<name>` on branch `diptych/<name>`. If `name` is omitted, the feature slug is used. |
 | `--detach` | boolean | `false` | Spawn the workflow as a background server and exit. Requires a `feature` argument and is mutually exclusive with `--json` and `--rpc`. |
@@ -135,7 +136,7 @@ diptych start --worktree migration "Postgres 17 upgrade"
 ### Exit codes
 
 - `0` — workflow completed (or TUI exited cleanly).
-- `1` — invalid flag combination, missing config, planner/implementer failure, budget exceeded, or any uncaught error.
+- `1` — invalid flag combination, invalid or unwritable config, planner/implementer failure, budget exceeded, or any uncaught error.
 
 ### Files affected
 
@@ -202,7 +203,7 @@ diptych spec --auto --allow-hooks "tighten zod schemas"
 ### Exit codes
 
 - `0` — all three artifacts written.
-- `1` — config missing, hooks distrusted, planner threw, or any other failure (the underlying error message is preserved through `Error.cause`).
+- `1` — not a git repo, invalid or unwritable config, hooks distrusted, planner failure, init failure, or any other failure (the underlying error message is preserved through `Error.cause`).
 
 ### Files affected
 
@@ -267,7 +268,7 @@ diptych doctor --json
 
 ### Behavior notes
 
-- Missing config reports `diptych init`; legacy config warnings report `diptych migrate` or reconfigure, but `doctor` does not run either command.
+- Missing config reports `diptych init`; legacy config warnings report `diptych init --reconfigure`, but `doctor` does not run setup commands.
 - Validation readiness is posture only. It reports disabled checks or missing npm scripts without running validation commands.
 - Runner availability is conservative. Network/API and CLI auth probes are not required for a ready result.
 
@@ -372,7 +373,7 @@ diptych status --project ../other-repo --history
 
 ### Files affected
 
-- **Reads:** `.diptych/active`, `.diptych/sessions/<id>/state.json`, every `state.json` under `.diptych/sessions/` when `--history` is set.
+- **Reads:** `.diptych/active`, `.diptych/sessions/<id>/state.json`, and completed session `summary.json` files when `--history` is set.
 - **Writes:** none.
 
 ### See also
@@ -383,8 +384,8 @@ diptych status --project ../other-repo --history
 ### Behavior notes
 
 - If there is no active session, prints `No active workflow.` and (when `--history` is absent) a hint about `--history`.
-- The `(awaiting continue)` suffix on the phase line means the run paused at an approval gate and is waiting for user input.
-- Cost history loads via `aggregateSessionCosts(listSessions(...))`. If a state file fails to load, the whole history block prints the labeled error and continues.
+- The `(awaiting continue)` suffix on the phase line means the run is in the Ctrl-C abort/continue state and is waiting for user input.
+- Cost history loads via `aggregateSessionCosts(listAllSessions(...))` over completed `summary.json` files. Invalid summaries are skipped with a warning; unexpected history errors print `Cannot load session history`.
 - `Done`, `Escalated`, `Failed` lines only appear when the corresponding count is non-zero.
 
 ---
@@ -470,20 +471,19 @@ diptych resume [--mode <mode>] [--auto] [--approve <level>] \
   [--implementer <provider>] [--implementer-model <model>] [--implementer-command <cmd>] \
   [--model <model>] [--provider <provider>] \
   [--budget <amount>] [--planner-effort <level>] \
-  [--project <dir>] [--worktree [name]] \
+  [--project <dir>] \
   [--no-fullscreen] [--no-mouse] \
   [--allow-hooks] [--json] [--rpc] [--otel-exporter <name>]
 ```
 
 ### Options
 
-Resume inherits every workflow option except `--detach`. See [`diptych start`](#diptych-start) for the full table.
+Resume accepts workflow override options except `--detach` and `--worktree`. See [`diptych start`](#diptych-start) for the shared runner, mode, budget, OTel, and approval flags.
 
 | Flag | Notes |
 |---|---|
 | `--json` | Resume the run in headless mode, streaming NDJSON to stdout. |
 | `--rpc` | Resume the run in RPC mode, reading commands from stdin and writing NDJSON responses to stdout. Mutually exclusive with `--json`. |
-| `--worktree [name]` | Honored on resume; verify the saved state matches the worktree before relying on this. |
 | `--mode` / `--approve` / planner+implementer flags | Override the persisted values for this run only. |
 
 ### Examples
@@ -532,7 +532,7 @@ diptych resume --implementer claude-code --implementer-model claude-sonnet-4-5
 **Synopsis**
 
 ```
-diptych continue [session-id-or-number] [--project <dir>] [--json] [--rpc]
+diptych continue [session-id-or-number] [resume options]
 ```
 
 Smart session continuity command. Figures out the right thing: attaches if the session is still running, resumes if it was interrupted. Replaces the mental model of choosing between `ps`, `attach`, `detach`, and `resume`.
@@ -541,15 +541,18 @@ Smart session continuity command. Figures out the right thing: attaches if the s
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `<session-id-or-number>` | string \| number (positional) | most recent | Session ID, numeric alias from `ps`, or omitted for the most recent session. |
+| `<session-id-or-number>` | string \| number (positional) | active/single running | Session ID, numeric alias from `ps`, or omitted to use `.diptych/active` or the only running session. |
 | `--project <dir>` | path | cwd | Project directory. |
-| `--json` | boolean | `false` | Resume an interrupted session in headless NDJSON mode. |
-| `--rpc` | boolean | `false` | Resume an interrupted session in bidirectional RPC mode. Mutually exclusive with `--json`; running detached sessions still use `attach`. |
+| `--auto` / `--approve <level>` | approval | mode default | Workflow review approval mode. |
+| `--allow-hooks` | boolean | `false` | Trust hook config without prompting. |
+| `--json` | boolean | `false` | Resume an interrupted session in headless NDJSON mode. Live detached sessions still attach through the TUI. |
+| `--rpc` | boolean | `false` | Resume an interrupted session in bidirectional RPC mode. Mutually exclusive with `--json`; rejected for live detached sessions. |
+| Other resume flags | — | — | Runner overrides, mode, budget, OTel, fullscreen/mouse, and approval controls. `--worktree` is only applied by `start`. |
 
 ### Examples
 
 ```bash
-# Continue the most recent session (attach or resume)
+# Continue the active session, or the only running session
 diptych continue
 
 # Continue by numeric alias from ps output
@@ -581,7 +584,7 @@ diptych continue --rpc 2026-05-01-add-auth
 
 ### Behavior notes
 
-- When the target session is running (lockfile present, process alive), `continue` delegates to `attach`.
+- When the target session is running (lockfile present, process alive), `continue` delegates to `attach`; `--json` is ignored on that path and `--rpc` is rejected.
 - When the target session is not running but has resumable state, `continue` delegates to `resume`.
 - `--rpc` applies only to interrupted sessions. It does not attach to a live detached server.
 - Numeric aliases correspond to the `#` column in `diptych ps` output.
@@ -593,16 +596,17 @@ diptych continue --rpc 2026-05-01-add-auth
 **Synopsis**
 
 ```
-diptych last [--project <dir>]
+diptych last [workflow options]
 ```
 
-Attach or resume the most recent session. Equivalent to `diptych continue` with no arguments — a shorthand for the 90% use case of "I left, I came back."
+Attach or resume the newest lockfile-backed session. Use this when you want recency instead of `continue`'s active-or-single-running resolution.
 
 ### Options
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--project <dir>` | path | cwd | Project directory. |
+| Workflow flags | — | — | Same options as `continue`, including `--json`, `--rpc`, `--auto`, `--allow-hooks`, runner overrides, mode, budget, and approval controls. `--json` / `--rpc` apply only when the newest session resolves to interrupted resumable state. |
 
 ### Examples
 
@@ -623,7 +627,7 @@ diptych last
 
 ### See also
 
-- `diptych continue` — same behavior with optional session targeting.
+- `diptych continue` — active, single-running, or explicitly targeted session continuity.
 - `diptych ps` — see all sessions.
 
 ### Behavior notes
@@ -641,7 +645,7 @@ diptych last
 diptych stats [--project <dir>] [--rebuild] [--json]
 ```
 
-Show cumulative cost savings across all sessions in the project. Reads from `.diptych/stats.json` which is updated after each completed workflow.
+Show cumulative cost savings across all sessions in the project. Reads from `.diptych/stats.json`, which is updated when a saved session summary includes cost data.
 
 ### Options
 
@@ -672,10 +676,17 @@ diptych stats --rebuild
 ### Output
 
 ```
-Sessions: 23
-Total spent: $2.76
-All-planner estimate: $18.40
-Saved: $15.64 (85%)
+diptych savings: $15.64 saved across 23 sessions
+
+Total spent:          $2.76
+All-planner would be: $18.40
+Savings rate:         85%
+Tasks completed:      47 (39 local, 8 escalated)
+
+By Provider:
+  Claude Code:  $2.76 (23 sessions)
+
+Last updated: 2026-05-13T08:00:00.000Z
 ```
 
 ### Files affected
@@ -685,12 +696,12 @@ Saved: $15.64 (85%)
 
 ### See also
 
-- `diptych status --history` — per-session cost breakdown.
+- `diptych status --history` — aggregate cost history across completed sessions, with provider totals.
 - `diptych explain` — per-session cost confidence and routing decisions.
 
 ### Behavior notes
 
-- `.diptych/stats.json` is updated atomically after each `workflow_complete` event.
+- `.diptych/stats.json` is updated atomically by `saveFinalSession()` for any saved summary with eligible cost data.
 - When no stats file exists, prints a message indicating no sessions have completed yet.
 - The all-planner estimate uses the same pricing model as the per-run hero savings stat on the summary screen.
 
@@ -831,11 +842,11 @@ The optional `target` argument defaults to `spec-kit`.
 # Default: spec-kit pack into ./handoff/spec-kit/
 diptych handoff
 
-# Pack a specific session for cursor
-diptych handoff cursor --session 2026-04-26-abcd1234
+# Pack a specific session for Claude Code
+diptych handoff claude-code --session 2026-04-26-abcd1234
 
 # Subset of tasks, custom output directory
-diptych handoff aider --task T-001,T-003,T-007 --out ./pack
+diptych handoff agents-md --task T-001,T-003,T-007 --out ./pack
 
 # Overwrite a previous export
 diptych handoff --mode overwrite
@@ -1319,7 +1330,7 @@ diptych worktree remove migration --force --delete-branch
 
 - The list view truncates wide path/branch/name columns when the terminal is narrow. Status, session, phase, and updated columns are preserved.
 - Forced removal prints explicit warnings for each bypassed guard, including the live session id when known and the number of uncommitted files when known.
-- Removing a worktree does not delete the session under `.diptych/sessions/`; that state remains for `diptych status --history` and `diptych handoff`.
+- Removing a worktree removes the worktree-local `.diptych/sessions/` state with that directory. Export or copy needed session artifacts before removal.
 
 ---
 
@@ -1504,17 +1515,17 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 | `--project <dir>` | most | cwd | Project directory. |
 | `-p, --project <dir>` | `migrate` | `.` | The only command with the `-p` short alias. |
 | `--session <id>` | `explain`, `handoff`, `snapshot *`, `mcp serve` | active session | When omitted, the active session is read from `.diptych/active`. |
-| `--auto` | `start`, `resume`, `spec` | `false` | Skip approval gates. On `start` / `resume` it aliases `--approve none`. |
-| `--allow-hooks` | `start`, `resume`, `spec` | `false` | Skip the hook-trust prompt. CI flag. |
-| `--json` | `start`, `resume`, `continue`, `doctor`, `explain`, `stats` | `false` | NDJSON event stream for `start` / `resume` / `continue`; single JSON object for `doctor` / `explain` / `stats`. |
-| `--rpc` | `start`, `resume`, `continue` | `false` | Bidirectional NDJSON. Mutually exclusive with `--json`; command responses are wrapped as `ack`, `error`, `status`, or `event`. |
+| `--auto` | `start`, `resume`, `continue`, `last`, `spec` | `false` | On workflow commands it aliases `--approve none`; on `spec` it auto-approves spec and plan. |
+| `--allow-hooks` | `start`, `resume`, `continue`, `last`, `spec` | `false` | Skip the hook-trust prompt. CI flag. |
+| `--json` | `start`, `resume`, `continue`, `last`, `doctor`, `explain`, `stats` | `false` | NDJSON event stream for workflow commands; single JSON object for `doctor` / `explain` / `stats`. For `continue` / `last`, applies only when the target is an interrupted resumable session; live sessions attach through the TUI. |
+| `--rpc` | `start`, `resume`, `continue`, `last` | `false` | Bidirectional NDJSON. Mutually exclusive with `--json`; command responses are wrapped as `ack`, `error`, `status`, or `event`. For `continue` / `last`, applies only to interrupted resumable sessions and is rejected for live detached sessions. |
 
 ### Where state lives
 
 | Path | Owner | Purpose |
 |---|---|---|
 | `.diptych/config.yaml` | `init` | Provider, model, workflow, hooks, OTel config. |
-| `.diptych/active` | `start`, `resume`, `spec` | Pointer to the latest session id. |
+| `.diptych/active` | `start`, `spec` | Pointer to the current session while a workflow is active; cleared on final save unless preserved for recovery. |
 | `.diptych/sessions/<id>/spec.md` | planner | Spec phase output. |
 | `.diptych/sessions/<id>/plan.md` | planner | Plan phase output. |
 | `.diptych/sessions/<id>/tasks.md` | planner | Task list. |
@@ -1531,11 +1542,11 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 
 ### Headless event stream (`--json`)
 
-When `start` or `resume` runs with `--json`, every `EngineEvent` is emitted as a single-line JSON object on stdout (NDJSON). The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse` are no-ops in this mode. Pair `--json` with `--auto` (or an explicit `--approve`) so the run does not wait for interactive input.
+When `start`, `resume`, or an interrupted resumable `continue` / `last` runs with `--json`, every `EngineEvent` is emitted as a single-line JSON object on stdout (NDJSON). The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse` are no-ops in this mode. Workflow review gates approve by default, questions and continuations resolve non-interactively, and tiered sticky/confirm approvals fail closed instead of waiting for input. Live `continue` / `last` targets attach through the TUI instead.
 
 ### RPC stream (`--rpc`)
 
-When `start`, `resume`, or `continue` runs with `--rpc`, stdin accepts one JSON command per line and stdout emits one JSON response per line. Commands are `approve`, `reject`, `message`, `recovery`, `status`, `abort`, and `slash`. Workflow events are wrapped as `{ "type": "event", "data": <EngineEvent> }`; command results use `{ "type": "ack" | "error" | "status", ... }`. Unlike `--json`, RPC keeps approval, question, continuation, cost, and task-review gates open until the client sends the matching command.
+When `start`, `resume`, or an interrupted resumable `continue` / `last` runs with `--rpc`, stdin accepts one JSON command per line and stdout emits one JSON response per line. Commands are `approve`, `reject`, `message`, `recovery`, `status`, `abort`, and `slash`. Workflow events are wrapped as `{ "type": "event", "data": <EngineEvent> }`; command results use `{ "type": "ack" | "error" | "status", ... }`. Unlike `--json`, RPC keeps approval, question, continuation, cost, and task-review gates open until the client sends the matching command. Live `continue` / `last` targets reject `--rpc` rather than attaching.
 
 ### Workflow modes (`--mode`)
 

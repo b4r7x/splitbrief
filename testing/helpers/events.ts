@@ -12,32 +12,97 @@ export function makePlannerText(overrides?: Partial<EventOfType<'planner_text'>>
 }
 
 export function makeTaskStart(overrides?: Partial<EventOfType<'task_started'>>): EventOfType<'task_started'> {
-  return { type: 'task_started', ts: Date.now(), phase: 'implementing', taskId: taskId('T001'), title: 'Test task', index: 0, total: 3, file: 'src/test.ts', action: 'modify', ...overrides };
+  return {
+    type: 'task_started',
+    ts: Date.now(),
+    phase: 'implementing',
+    taskId: taskId('T001'),
+    title: 'Test task',
+    index: 0,
+    total: 3,
+    file: 'src/test.ts',
+    action: 'modify',
+    ...overrides,
+  };
 }
 
 export function makeTaskComplete(overrides?: Partial<EventOfType<'task_completed'>>): EventOfType<'task_completed'> {
-  return { type: 'task_completed', ts: Date.now(), phase: 'implementing', taskId: taskId('T001'), title: 'Test task', method: 'local', retries: 0, duration: 5000, ...overrides };
+  return {
+    type: 'task_completed',
+    ts: Date.now(),
+    phase: 'implementing',
+    taskId: taskId('T001'),
+    title: 'Test task',
+    method: 'local',
+    retries: 0,
+    duration: 5000,
+    ...overrides,
+  };
 }
 
 export function makeTaskSkipped(overrides?: Partial<EventOfType<'task_skipped'>>): EventOfType<'task_skipped'> {
-  return { type: 'task_skipped', ts: Date.now(), phase: 'implementing', taskId: taskId('T001'), title: 'Test task', reason: 'dependency failed', ...overrides };
+  return {
+    type: 'task_skipped',
+    ts: Date.now(),
+    phase: 'implementing',
+    taskId: taskId('T001'),
+    title: 'Test task',
+    reason: 'dependency failed',
+    ...overrides,
+  };
 }
 
 type ImplementerGenerateEvent = Extract<
   EngineEvent,
   { type: 'implementer_generate_running' | 'implementer_generate_done' | 'implementer_generate_failed' }
 >;
+type ImplementerGenerateRunningEvent = EventOfType<'implementer_generate_running'>;
+type ImplementerGenerateDoneEvent = EventOfType<'implementer_generate_done'>;
+type ImplementerGenerateFailedEvent = EventOfType<'implementer_generate_failed'>;
 
-export function makeImplementerGenerate(overrides?: Record<string, unknown>): ImplementerGenerateEvent {
-  const status = (overrides?.status as string) ?? 'done';
-  const { status: _drop, ...rest } = overrides ?? {};
-  if (status === 'running') {
-    return { type: 'implementer_generate_running', ts: Date.now(), phase: 'implementing', taskId: taskId('T001'), ...rest } as ImplementerGenerateEvent;
+type RunningOverrides = Partial<Omit<ImplementerGenerateRunningEvent, 'type'>> & { status: 'running' };
+type DoneOverrides = Partial<Omit<ImplementerGenerateDoneEvent, 'type'>> & { status?: 'done' };
+type FailedOverrides = Partial<Omit<ImplementerGenerateFailedEvent, 'type'>> & { status: 'failed' };
+
+export function makeImplementerGenerate(overrides: RunningOverrides): ImplementerGenerateRunningEvent;
+export function makeImplementerGenerate(overrides: FailedOverrides): ImplementerGenerateFailedEvent;
+export function makeImplementerGenerate(overrides?: DoneOverrides): ImplementerGenerateDoneEvent;
+export function makeImplementerGenerate(
+  overrides?: RunningOverrides | DoneOverrides | FailedOverrides,
+): ImplementerGenerateEvent {
+  const base = {
+    ts: Date.now(),
+    phase: 'implementing' as const,
+    taskId: taskId('T001'),
+  };
+
+  if (overrides?.status === 'running') {
+    const { status: _status, ...rest } = overrides;
+    return {
+      type: 'implementer_generate_running',
+      ...base,
+      ...rest,
+    };
   }
-  if (status === 'failed') {
-    return { type: 'implementer_generate_failed', ts: Date.now(), phase: 'implementing', taskId: taskId('T001'), model: 'qwen2.5-coder:7b', ...rest } as ImplementerGenerateEvent;
+  if (overrides?.status === 'failed') {
+    const { status: _status, ...rest } = overrides;
+    return {
+      type: 'implementer_generate_failed',
+      ...base,
+      model: 'qwen2.5-coder:7b',
+      ...rest,
+    };
   }
-  return { type: 'implementer_generate_done', ts: Date.now(), phase: 'implementing', taskId: taskId('T001'), file: 'src/test.ts', linesAdded: 10, linesRemoved: 2, duration: 5000, ...rest } as ImplementerGenerateEvent;
+  const { status: _status, ...rest } = overrides ?? {};
+  return {
+    type: 'implementer_generate_done',
+    ...base,
+    file: 'src/test.ts',
+    linesAdded: 10,
+    linesRemoved: 2,
+    duration: 5000,
+    ...rest,
+  };
 }
 
 export function makeValidate(overrides?: Partial<EventOfType<'validate'>>): EventOfType<'validate'> {
@@ -53,9 +118,12 @@ export function makeErrorEvent(overrides?: Partial<EventOfType<'error'>>): Event
 }
 
 const DEFAULT_TOKEN_USAGE = {
-  plannerInput: 100, plannerOutput: 50,
-  implementerInput: 200, implementerOutput: 100,
-  escalationInput: 0, escalationOutput: 0,
+  plannerInput: 100,
+  plannerOutput: 50,
+  implementerInput: 200,
+  implementerOutput: 100,
+  escalationInput: 0,
+  escalationOutput: 0,
 };
 
 export function makeCostUpdate(overrides?: Partial<EventOfType<'cost_update'>>): EventOfType<'cost_update'> {

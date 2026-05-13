@@ -1,6 +1,5 @@
-import type { SessionTree } from '../../core/sessions/tree/store.js';
+import { childrenOf, isOnActivePath, type SessionTree } from '../../core/sessions/tree/store.js';
 import type { TreeEntryEnvelope, EntryId } from '../../core/sessions/tree/schemas.js';
-import { isOnActivePath, childrenOf } from '../../core/sessions/tree/store.js';
 import type { TreeViewState } from './tree-store.js';
 
 export interface TreeLine {
@@ -59,8 +58,7 @@ function formatNode(
   if (isBranchPoint && !isExpanded) return;
 
   const visibleChildren = children.filter(c => passesFilter(c, viewState.filter, false));
-  for (let i = 0; i < visibleChildren.length; i++) {
-    const child = visibleChildren[i]!;
+  for (const [i, child] of visibleChildren.entries()) {
     const isLast = i === visibleChildren.length - 1;
     const childPrefix = prefix + (isLast ? '└── ' : '├── ');
     formatNode(tree, child, depth + 1, childPrefix, viewState, lines);

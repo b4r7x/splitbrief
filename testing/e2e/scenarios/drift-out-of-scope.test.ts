@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
-import { e2eImplementer, e2ePlanner } from '../helpers/e2e-config.js';
+import { makeE2eScenarioConfig } from '../helpers/e2e-config.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/e2e-harness.js';
 
 const scenario = {
@@ -10,22 +10,7 @@ const scenario = {
   cassetteName: 'drift-out-of-scope',
   feature: 'update config parser',
   mode: 'quick' as const,
-  config: {
-    version: 2,
-    planner: e2ePlanner,
-    implementer: e2eImplementer,
-    workflow: {
-      mode: 'quick',
-      commitStrategy: 'none',
-      driftChainThreshold: 0.01,
-    },
-    validation: {
-      typecheck: false,
-      lint: false,
-      test: false,
-      testCommand: 'npm test',
-    },
-  },
+  config: makeE2eScenarioConfig('quick', { workflow: { driftChainThreshold: 0.01 } }),
 };
 
 describe('e2e: drift out-of-scope detection', () => {

@@ -448,16 +448,16 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/yolo',
       label: 'YOLO',
-      description: 'Toggle approval gates off/on (skip all confirmations)',
+      description: 'Toggle action-level tiered approvals off/on',
       validScreens: ALL_SCREENS,
       handler: () => {
         const current = ctx.getApprovalEnabled();
         const next = !current;
         ctx.setApprovalEnabled(next);
         if (!next) {
-          ctx.setFeedbackMessage('YOLO mode ON — all approval gates disabled');
+          ctx.setFeedbackMessage('YOLO mode ON — action-level tiered approvals disabled');
         } else {
-          ctx.setFeedbackMessage('YOLO mode OFF — approval gates restored');
+          ctx.setFeedbackMessage('YOLO mode OFF — action-level tiered approvals restored');
         }
       },
     },

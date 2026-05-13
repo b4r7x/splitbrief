@@ -10,7 +10,12 @@ import type { Task } from '../../core/schemas/task.js';
 
 const context = { ...defaultContext, testCommand: 'node --test' };
 
-function makeTask(overrides: Partial<Task> = {}): Task {
+type TaskOverrides = Omit<Partial<Task>, 'id' | 'dependsOn'> & {
+  id?: string;
+  dependsOn?: string[];
+};
+
+function makeTask(overrides: TaskOverrides = {}): Task {
   return makeBaseTask({
     title: 'Create utility module',
     file: 'src/utils/helpers.ts',
@@ -281,6 +286,32 @@ describe('formatTaskPrompt with contextLength', () => {
     expect(idxTests).toBeGreaterThan(idxSteps);
   });
 
+  it('uses plain code context labels when only the target function fits', () => {
+    const task = makeTask({
+      action: 'modify',
+      signature: 'export function target(): string',
+      currentCode: [
+        "import { helper } from './helper.js';",
+        '',
+        `const fixture = '${'x'.repeat(40_000)}';`,
+        '',
+        'export function other(): string {',
+        "  return 'ok';",
+        '}',
+        '',
+        'export function target(): string {',
+        '  return helper();',
+        '}',
+      ].join('\n'),
+    });
+    const prompt = formatTaskPrompt(task, context, 4096);
+
+    expect(prompt).toContain('#### Imports');
+    expect(prompt).toContain('#### Target Function');
+    expect(prompt).toContain('#### Other Exports (do not modify): other');
+    expect(prompt).not.toContain('// ===');
+  });
+
   it('works without contextLength (backward compatible)', () => {
     const task = makeTask({
       action: 'modify',
@@ -320,7 +351,7 @@ describe('formatTasks', () => {
 
   it('round-trips ordered tasks with metadata and optional brief fields', () => {
     const first = makeTask({
-      id: 'T001' as never,
+      id: 'T001',
       title: 'My Task',
       action: 'modify',
       file: 'src/foo.ts',
@@ -337,7 +368,7 @@ describe('formatTasks', () => {
       pattern: 'Follow the existing parseConfig(raw) guard shape.',
     });
     const second = makeBaseTask({
-      id: 'T002' as never,
+      id: 'T002',
       title: 'Second',
       file: 'src/bar.ts',
       description: 'Do bar',

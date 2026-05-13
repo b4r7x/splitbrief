@@ -1,12 +1,11 @@
 import type { ProjectContext } from '../../core/state/types.js';
-import type { Task } from '../../core/schemas/task.js';
+import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type { RunnerRuntime } from '../runners/types.js';
 import type { EventBus } from '../events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
-import type { TaskId } from '../../core/schemas/task.js';
 
 export interface ImplementerResult {
   success: boolean;
@@ -58,6 +57,17 @@ export interface RetryOptions extends ImplementerOptions {
   error: string;
   attempt: number;
   kind: 'local' | 'hint';
+}
+
+export interface InvokeOpts {
+  prompt: string;
+  task: Task;
+  projectDir: string;
+  config: Config;
+  onOutput: (text: string) => void;
+  systemPreamble: string;
+  temperature?: number;
+  signal?: AbortSignal | undefined;
 }
 
 export interface Implementer extends RunnerRuntime {

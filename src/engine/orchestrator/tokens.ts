@@ -3,7 +3,6 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TokenUsage, TokenDelta, TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { EventBus } from '../events/types.js';
 import type { RoutingDecision } from './context-routing/types.js';
-import { publishEvent } from './events.js';
 
 export type UsageCategory = 'planner' | 'implementer' | 'escalation';
 
@@ -66,7 +65,7 @@ function tokenDelta(before: TokenUsage, after: TokenUsage): { implementerTokens:
 }
 
 function emitTaskTokens(bus: EventBus, state: WorkflowState, id: TaskId, usage: TaskTokenUsage): void {
-  publishEvent(bus, {
+  bus.publish({
     type: 'task_tokens',
     ts: Date.now(),
     phase: state.phase,

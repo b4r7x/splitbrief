@@ -62,7 +62,10 @@ function optionalSectionsYaml(): Record<string, unknown> {
       headless: true,
       tiers: {
         read: 'auto',
+        write_in_scope: 'sticky',
+        write_out_of_scope: 'confirm',
         destructive: 'confirm',
+        package_change: 'confirm',
       },
       feed_rejections_to_planner: false,
     },
@@ -132,8 +135,74 @@ describe('config loading', () => {
       expect(config.approval).toEqual({
         enabled: true,
         headless: true,
-        tiers: { read: 'auto', destructive: 'confirm' },
+        tiers: {
+          read: 'auto',
+          write_in_scope: 'sticky',
+          write_out_of_scope: 'confirm',
+          destructive: 'confirm',
+          package_change: 'confirm',
+        },
         feedRejectionsToPlanner: false,
+      });
+    });
+
+    it('preserves hook event and option keys from YAML', () => {
+      const dir = join(TMP, 'hooks-snake-case');
+      writeConfigYaml(dir, {
+        implementer: { model: 'codellama:13b' },
+        hooks: {
+          pre_task: [
+            {
+              command: './scripts/pre-task.sh',
+              timeout_ms: 5000,
+              on_failure: 'block',
+            },
+          ],
+        },
+      });
+
+      const { config } = loadConfig(dir);
+
+      expect(config.hooks?.pre_task?.[0]).toMatchObject({
+        command: './scripts/pre-task.sh',
+        timeout_ms: 5000,
+        on_failure: 'block',
+      });
+    });
+
+    it('accepts camelCase hook and approval tier keys from YAML', () => {
+      const dir = join(TMP, 'nested-camel-case');
+      writeConfigYaml(dir, {
+        implementer: { model: 'codellama:13b' },
+        hooks: {
+          preTask: [
+            {
+              command: './scripts/pre-task.sh',
+              timeoutMs: 5000,
+              onFailure: 'block',
+            },
+          ],
+        },
+        approval: {
+          tiers: {
+            writeInScope: 'sticky',
+            writeOutOfScope: 'confirm',
+            packageChange: 'confirm',
+          },
+        },
+      });
+
+      const { config } = loadConfig(dir);
+
+      expect(config.hooks?.pre_task?.[0]).toMatchObject({
+        command: './scripts/pre-task.sh',
+        timeout_ms: 5000,
+        on_failure: 'block',
+      });
+      expect(config.approval?.tiers).toMatchObject({
+        write_in_scope: 'sticky',
+        write_out_of_scope: 'confirm',
+        package_change: 'confirm',
       });
     });
 
@@ -155,6 +224,12 @@ describe('config loading', () => {
       expect(written.palette).toBeDefined();
       expect(written.approval).toBeDefined();
       expect((written.palette as Record<string, unknown>).custom_actions).toBeDefined();
+      const approval = written.approval as Record<string, unknown>;
+      const tiers = approval.tiers as Record<string, unknown>;
+      expect(tiers.write_in_scope).toBe('sticky');
+      expect(tiers.write_out_of_scope).toBe('confirm');
+      expect(tiers.package_change).toBe('confirm');
+      expect(tiers.writeInScope).toBeUndefined();
     });
 
     it('loads and writes implementer profiles without changing the legacy implementer', () => {
@@ -331,7 +406,6 @@ describe('config loading', () => {
       const { config } = loadConfig(dir);
       expect(config.implementer.kind).toBe('api');
       expect(config.implementer.model).toBe('llama3');
-      // contextLength and temperature filled from defaults
       expect((config.implementer as Record<string, unknown>).contextLength).toBe(32768);
       expect((config.implementer as Record<string, unknown>).temperature).toBe(0.3);
     });
@@ -397,7 +471,6 @@ describe('config loading', () => {
 
       let thrownMessage = '';
       try { loadConfig(dir); } catch (err) { thrownMessage = (err as Error).message; }
-      // Thrown error identifies the problematic path and provides diagnostic info
       expect(thrownMessage).toContain('implementer.kind');
       expect(thrownMessage).toMatch(/invalid|expected|discriminator/i);
     });

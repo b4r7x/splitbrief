@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
-import { e2eImplementer, e2ePlanner } from '../helpers/e2e-config.js';
+import { e2eImplementer, e2ePlanner, makeE2eScenarioConfig } from '../helpers/e2e-config.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/e2e-harness.js';
 
 const scenario = {
@@ -10,10 +10,7 @@ const scenario = {
   cassetteName: 'cost-routing-cheapest',
   feature: 'add utility function',
   mode: 'quick' as const,
-  config: {
-    version: 2,
-    planner: e2ePlanner,
-    implementer: e2eImplementer,
+  config: makeE2eScenarioConfig('quick', {
     implementerProfiles: {
       default: 'cheap-local',
       profiles: {
@@ -29,17 +26,7 @@ const scenario = {
         },
       },
     },
-    workflow: {
-      mode: 'quick',
-      commitStrategy: 'none',
-    },
-    validation: {
-      typecheck: false,
-      lint: false,
-      test: false,
-      testCommand: 'npm test',
-    },
-  },
+  }),
 };
 
 describe('e2e: cost routing cheapest capable', () => {

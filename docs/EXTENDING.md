@@ -34,7 +34,8 @@ Existing example to follow: `src/cli/commands/start.ts`.
 ## 3. New EngineEvent type
 
 1. Add a variant to the `EngineEvent` discriminated union in `src/engine/events/types.ts`
-   - Every variant needs: `type` (snake_case string literal), `ts: number`, `phase: Phase`
+   - Every variant needs: `type` (snake_case string literal) and `ts: number`
+   - Add `phase: Phase` unless the event is intentionally global or snapshot-resolution metadata; current phase-less events are `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed`
 2. Add a typed publish helper in `src/engine/orchestrator/events.ts`
    - Pattern: `export function publishMyEvent(bus: EventBus, phase: Phase, payload): void { bus.publish({ type: 'my_event', ts: Date.now(), phase, ...payload }); }`
 3. If the event should update UI state: handle it in `src/stores/workflow/actions.ts` inside `addEvent()`
@@ -127,7 +128,7 @@ Factory: `src/stores/create-store.ts` (~45 LOC).
 2. Register in `src/engine/providers/registry.ts`
    - If bespoke: add to the `BESPOKE_PROVIDERS` map
    - If OpenAI-compatible: add an entry in `src/core/providers/catalog.ts` with `baseURL` and `apiKeyEnv` — the `buildOpenAICompatFactories()` loop picks it up automatically
-3. Add model-specific pricing in `src/core/providers/catalog.ts` (the `PROVIDER_CATALOG` object)
+3. Add bundled model pricing in `src/core/providers/known-models.ts` when a fallback is needed. Runtime/model catalog pricing is resolved through `src/engine/providers/models-dev.ts`, `src/engine/providers/model/`, and `src/engine/providers/pricing-resolver.ts`.
 
 ---
 

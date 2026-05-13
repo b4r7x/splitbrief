@@ -2,7 +2,7 @@ import type { Config } from '../../core/schemas/config.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { EventBus } from '../../engine/events/types.js';
-import type { QueueHandler } from '../../engine/orchestrator/types.js';
+import type { ClearQueueHandler, QueueHandler } from '../../engine/orchestrator/types.js';
 import { createRuntimeCommands } from '../../core/runtime/commands/registry.js';
 import { executeRuntimeCommand } from '../../core/runtime/commands/dispatch.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -17,6 +17,7 @@ export function createCommandHandler(deps: {
   setConfig: (config: Config) => void;
   getPhase: () => Phase;
   getQueueHandler: () => QueueHandler | null;
+  getClearQueueHandler: () => ClearQueueHandler | null;
   abort: (reason?: unknown) => void;
   bus: EventBus;
   approvalGate: { handle: (cmd: RpcCommand) => boolean };
@@ -42,6 +43,7 @@ export function createCommandHandler(deps: {
       setConfig: deps.setConfig,
       getPhase: deps.getPhase,
       queueHandler: deps.getQueueHandler,
+      clearQueueHandler: deps.getClearQueueHandler,
       abort: deps.abort,
       bus: deps.bus,
       messages,

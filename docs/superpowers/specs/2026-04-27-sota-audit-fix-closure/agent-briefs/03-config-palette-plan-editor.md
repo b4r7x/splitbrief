@@ -16,8 +16,10 @@ Fix lossless config loading, make configured command palette actions work in rea
 - `docs/superpowers/specs/2026-04-26-plan-editor-screen/README.md`
 - `src/core/schemas/config.ts`
 - `src/core/config/load/load.ts`
-- `src/features/tool-picker/config-transforms.ts`
-- `src/features/workflow/components/command-palette-overlay.tsx`
+- `src/features/runners/config-transforms.ts`
+- `src/features/palette/overlay.tsx`
+- `src/features/palette/sources.ts`
+- `src/features/palette/results.ts`
 - `src/features/workflow/components/plan-editor/actions.ts`
 - `src/features/workflow/hooks/use-plan-editor-save.ts`
 - `src/features/workflow/components/plan-editor/external-editor.ts`
@@ -27,9 +29,9 @@ Fix lossless config loading, make configured command palette actions work in rea
 
 **In bounds:**
 
-- Preserve every schema-supported optional top-level config section during default merge.
+- Preserve the listed optional top-level config sections during default merge.
 - Preserve those sections during config save/write transforms used by setup or tool picker flows.
-- Ensure `palette.customActions` from config reaches the command palette.
+- Route `palette.customActions` from config to the command palette.
 - Fix plan editor merge/delete dependency relinking.
 - Fix save validation so parse errors are caught and ID validation is set-based, not index-based.
 - Respect non-zero external editor exit.
@@ -48,7 +50,7 @@ Fix lossless config loading, make configured command palette actions work in rea
 
 ### 1. Config merge is lossless
 
-`mergeWithDefaults()` and any config write/transform path must preserve schema-supported optional top-level sections, including:
+`mergeWithDefaults()` and any config write/transform path must preserve the listed optional top-level sections:
 
 - `codebase`,
 - `hooks`,
@@ -110,7 +112,7 @@ Tests should render or exercise public stores/actions. Avoid implementation-spy 
 ## Verification Commands
 
 ```bash
-npm test -- src/core/config src/features/workflow/components/command-palette-overlay.test.tsx src/features/workflow/components/plan-editor src/features/workflow/hooks
+npm test -- src/core/config src/features/palette src/features/workflow/components/plan-editor src/features/workflow/hooks
 npm run typecheck
 npm run lint
 npm test

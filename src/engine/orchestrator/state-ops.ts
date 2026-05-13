@@ -9,7 +9,7 @@ import { isENOENT } from '../../lib/process/errors.js';
 import { transition } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
 import { addUsage, type UsageCategory } from './tokens.js';
-import { publishCostUpdate, publishPlannerStatus, publishEvent } from './events.js';
+import { publishCostUpdate, publishPlannerStatus } from './events.js';
 
 export function transitionAndSave(
   projectDir: string,
@@ -63,6 +63,6 @@ export function addUsageAndSave(
 
 export function publishPlanApproved(state: WorkflowState, bus: EventBus): WorkflowState {
   publishPlannerStatus(bus, state, 'running');
-  publishEvent(bus, { type: 'plan_approved', ts: Date.now(), phase: state.phase });
+  bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
   return state;
 }

@@ -11,11 +11,11 @@
 It splits the work an AI normally does in one shot into two roles:
 
 - A **planner** — an expensive, smart model (Claude Opus, GPT-5, Codex, Claude Code via your existing subscription) that *thinks*: it reads your repo, asks clarifying questions, and compiles your request into a structured **Task Brief**.
-- An **implementer** — a cheap or local model (LM Studio, Ollama, DeepSeek, Sonnet, Haiku) that *types*: it executes one task at a time against the brief, with a `tsc → lint → test` gate after each.
+- An **implementer** — a cheap or local model (LM Studio, Ollama, DeepSeek, Sonnet, Haiku) that *types*: it executes one task at a time against the brief, with the resolved typecheck, lint, and test pipeline after each.
 
-The orchestrator in the middle owns persistence, validation, retries, escalation, checkpoints, and final review. You never lose work, you can interrupt at any point, and the brief is durable on disk.
+The orchestrator in the middle owns persistence, validation, retries, escalation, checkpoints, and final review. It persists state at workflow boundaries; abort and continue preserve resumable phases, and the brief is durable on disk.
 
-The economic story is simple: a typical feature costs ~350K planner tokens (one Opus session) and ~$0 implementer tokens (a 7B model running on your laptop). Compared to running the full feature through Claude Code Opus, you save roughly **10× on tokens** for the same end result — because the mechanical typing happens locally.
+The economic story is simple: a typical feature costs ~350K planner tokens (one Opus session) and can use ~$0 implementer tokens when a local model handles the mechanical typing. Savings depend on the task mix, model choices, and escalation rate.
 
 ---
 
@@ -25,7 +25,7 @@ Today's AI coding workflow has four sharp edges that diptych is designed to file
 
 | Problem | What goes wrong | What diptych does |
 |---|---|---|
-| **Token burn** | Opus writes the boilerplate the same way Haiku would, but at 60× the price. | Opus writes the brief. Haiku writes the code. |
+| **Token burn** | Frontier models spend expensive tokens on mechanical edits. | The planner writes the brief. A cheaper or local implementer writes the code. |
 | **Plan drift** | The agent forgets the plan halfway and starts inventing. | The brief is on disk, the planner reviews the final diff against it. |
 | **Destructive actions** | A bad rename or migration trashes the working tree, no undo. | Checkpoints, file-level snapshots, hash-guarded restore. |
 | **Vendor lock-in** | Switching from Claude → Codex means re-learning the tool. | Five interchangeable runner kinds (`cli`, `api`, `shell`, `agent`, `agent-sdk`) on both sides. |
@@ -58,7 +58,7 @@ diptych --help
 
 ## 4. First run
 
-Pick any TypeScript or JavaScript project (diptych is TS/JS-only in v1) and run:
+Pick a project with configured or detectable validation and run:
 
 ```bash
 cd ~/code/my-project
@@ -71,11 +71,11 @@ Here is what happens, step by step:
 1. `diptych init` walks you through picking a planner (default: Claude Code via your existing subscription) and an implementer (default: a local Ollama model). It writes `.diptych/config.yaml`.
 2. `diptych start` opens a fullscreen TUI. The planner thinks for a few seconds, looks at your repo, and writes a Task Brief to `.diptych/sessions/<date>-fix-the-typo/tasks.md`.
 3. The brief is **scored for quality** automatically. Weak briefs (missing scope, missing validation, vague tests) are blocked before any code is written.
-4. The implementer picks up the first task, generates code, and the orchestrator runs `tsc → lint → tests`. On failure, it retries up to 3 times, then escalates back to the planner.
+4. The implementer picks up the first task, generates code, and the orchestrator runs the resolved validation pipeline from config, planner discovery, or project heuristics. On failure, it retries up to 3 times, then escalates back to the planner.
 5. Each successful task records evidence and can create a checkpoint. Product-level git commits are optional when `workflow.git.commitStrategy` is explicitly configured; in this repository, agents must never stage or commit.
 6. After all tasks complete, the planner does a final review: it diffs the actual changes against the brief and writes `review.md`. A deterministic drift report flags anything the agent touched outside the planned scope.
 
-Hit `q` to quit at any point. State is on disk. Resume later with `diptych resume`. Press `Ctrl+K` inside the TUI at any time to open the command palette — a searchable list of all slash commands.
+Use `/quit` or `Ctrl-Q` to exit. State is on disk. Resume later with `diptych resume`. Press `Ctrl+K` inside the TUI at any time to open the command palette — a searchable list of all slash commands.
 
 ---
 
@@ -118,7 +118,7 @@ Hit `q` to quit at any point. State is on disk. Resume later with `diptych resum
        │                                                                  │
        │  - Receives a fully self-contained task prompt                   │
        │  - Returns code (whole-file or search/replace markers)           │
-       │  - Never touches disk directly                                   │
+       │  - Extraction runners return code; direct-file runners write diff │
        └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -134,14 +134,14 @@ Pick a mode based on how much ceremony the work warrants. Set with `--mode`, in 
 |---|:---:|:---:|---|---|
 | `instant` | 1 | none | Trivial one-step edits | `"rename foo to bar in src/util.ts"` |
 | `quick` | 1 | none | Small but real tasks | `"add a debounce helper to lib/timing.ts"` |
-| `standard` (default) | 4 | 1 (spec) | Ordinary feature work | `"add an email validator with RFC 5321 support"` |
-| `speckit` | 6–7 | 2 (spec + plan) | Large, risky, audited work | `"migrate auth from sessions to JWT"` |
+| `standard` (default) | 4 | 2 (spec + briefs) | Ordinary feature work | `"add an email validator with RFC 5321 support"` |
+| `speckit` | 6–7 | 3 (spec + plan + briefs) | Large, risky, audited work | `"migrate auth from sessions to JWT"` |
 
 Concrete guidance:
 
 - Use `instant` for typo fixes, one-line edits, anything where writing a spec would take longer than the change itself.
 - Use `quick` for small additions where you still want a Task Brief on disk for review.
-- Use `standard` as your default — research → spec → plan → tasks, with a single approval gate so you can sanity-check the spec before code is written.
+- Use `standard` as your default — research → spec → plan → tasks, with spec review and briefs review before code is written.
 - Use `speckit` for anything touching auth, security, billing, payments, migrations, or anything externally visible. Adds clarification rounds, a constitution check (against `.specify/memory/constitution.md`), and post-planning analysis with coverage scoring.
 
 A built-in **mode advisor** watches your prompt and quietly suggests a switch when the mode looks wrong (e.g. `speckit` for "fix typo" → suggests `instant`). It never auto-switches; you decide.
@@ -179,7 +179,7 @@ workflow:
   mode: standard              # instant | quick | standard | speckit
   approve: default            # follow the per-mode default
   maxRetries: 3
-  maxBudget: 2.00             # dollars; the gate fires at 85%
+  maxBudget: 2.00             # dollars; pause gate defaults to 85%
   git:
     commitStrategy: none      # manual review and commits
 ```
@@ -214,7 +214,7 @@ diptych shows you what you are spending, in real time, without ceremony.
 
 **Drill-down overlay**: press `$` at any time to open a per-phase / per-task breakdown with horizontal bars showing input vs output token split (output is typically 3–5× more expensive) and cache-hit % per phase.
 
-**Budget gate**: at **85%** of `workflow.maxBudget`, the task loop pauses and asks you to approve continuing. In headless `--json` mode, the same threshold exits non-zero with a machine-readable error so CI doesn't keep burning. The pause threshold is configurable via `workflow.budgetPauseThreshold`.
+**Budget gate**: at `workflow.budgetPauseThreshold` (default **85%**) of `workflow.maxBudget`, the task loop pauses and asks you to approve continuing. In headless `--json` mode, the same threshold exits non-zero with a machine-readable error so CI doesn't keep burning.
 
 Local/subscription runners that don't expose pricing data show `local` instead of a dollar amount — diptych never invents fake savings.
 
@@ -252,8 +252,8 @@ Explicit non-goals, so you don't go looking:
 
 - **Not a swarm or generic multi-agent manager.** Two roles, one workflow. An implementer pool selects one capable worker per Task Brief; it does not fan out competing agents over the same checkout.
 - **Not Windows-supported in v1.** macOS and Linux only. The IPC server (`diptych attach` / `diptych ps`) and the snapshot path encoding need POSIX semantics. Windows support is planned but not v1.
-- **TypeScript/JavaScript validator pipeline only.** The `tsc → lint → test` gate assumes Node tooling. Python / Go / Rust support means swapping the validator backend; that is on the roadmap, not in v1.
-- **No tool-call format for implementers.** Small models (7B–27B) cannot reliably produce tool-call JSON. The implementer pipeline is `prompt → text → extract code → write file`. This is deliberate — see [docs/VISION.md §Strategic decisions](./VISION.md).
+- **No fixed validator language.** Validation is command-based and can be resolved for TypeScript, JavaScript, Python, Go, and Rust projects.
+- **No tool-call format for implementers.** Small models (7B–27B) cannot reliably produce tool-call JSON. Some implementers use extraction; direct-file runners (`agent`, `agent-sdk`) write to the working tree and diptych inspects the resulting diff. See [docs/VISION.md §Strategic decisions](./VISION.md).
 - **No cloud-side state.** Everything lives under `.diptych/` in your project. No accounts, no SaaS, no telemetry-by-default (OpenTelemetry is opt-in via `otel.enabled: true`).
 
 ---

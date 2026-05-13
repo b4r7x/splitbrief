@@ -10,7 +10,8 @@ import {
   formatPlanReviewSummary,
   formatQualityDisplay,
   formatTaskCount,
-  getReviewMetadataForTask,
+} from './brief-review.js';
+import {
   PlanReviewScorecardLine,
 } from './brief-review-view.js';
 import { usePlanEditorKeys } from '../hooks/use-plan-editor-keys.js';
@@ -89,7 +90,7 @@ export function PlanEditorComponent({
       ? t.success
       : t.error;
   const selectedTask = tasks[cursor];
-  const selectedTaskMetadata = selectedTask ? getReviewMetadataForTask(reviewMetadata, selectedTask) : undefined;
+  const selectedTaskMetadata = selectedTask ? reviewMetadata.get(selectedTask.id) : undefined;
   const projectDir = configState.projectDir || sessionDirPath;
   const testCommand = configState.config?.validation.testCommand ?? 'npm test';
   const previewRows = isPacketPreviewOpen
@@ -133,7 +134,7 @@ export function PlanEditorComponent({
             <TaskEditorRow
               key={task.id}
               task={task}
-              metadata={getReviewMetadataForTask(reviewMetadata, task)}
+              metadata={reviewMetadata.get(task.id)}
               isCursor={absoluteIndex === cursor}
               isExpanded={expandedIds.has(task.id)}
               isFlagged={flaggedIds.has(task.id)}

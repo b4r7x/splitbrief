@@ -150,7 +150,7 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 **Acceptance criteria:**
 - Zero imports from React, Ink, `src/components/`, `src/hooks/`, `src/features/`
 - Owns the workflow loop: planners, implementers, validation, retry, escalation, commits
-- Emits `EngineEvent` values through the `EventBus`; sinks fan out to the workflow store (for the UI), JSONL log, stdout NDJSON, OTel, and hooks. Engine never calls React directly.
+- Emits `EngineEvent` values through the `EventBus`; sinks fan out to the workflow store (for the UI), JSONL log, session-tree log, stdout NDJSON, OTel, and hooks. Engine never calls React directly.
 - Side-effectful: spawns subprocesses, streams HTTP, writes files
 
 **What lives here:**
@@ -162,11 +162,12 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - `engine/parsers/` — response parsers (question, code extraction)
 - `engine/streaming/` — streaming transport layer
 - `engine/detection/` — auto-detect installed tools
-- `engine/skills/` — skill discovery
+- `engine/skill-discovery.ts` — planner skill source discovery
 - `engine/errors/` — engine-scoped error diagnosis (provider hints, etc.)
-- `engine/events/` — event bus subsystem: `types.ts` (`EngineEvent` discriminated union, `EventBus`/`EventSink` types), `bus.ts` (`createEventBus()` factory with crash isolation per sink), and `sinks/` holding the four shipped subscribers:
-  - `sinks/tui.ts` — pass-through sink forwarding `EngineEvent` to `workflow/actions.addEvent` (workflow sub-stores consume `EngineEvent` directly)
+- `engine/events/` — event bus subsystem: `types.ts` (`EngineEvent` discriminated union, `EventBus`/`EventSink` types), `bus.ts` (`createEventBus()` factory with crash isolation per sink), and `sinks/` holding headless/persistence/telemetry subscribers:
+  - `features/workflow/tui-sink.ts` — pass-through sink forwarding `EngineEvent` to `workflow/actions.addEvent` (workflow sub-stores consume `EngineEvent` directly)
   - `sinks/jsonl.ts` — appends every event to `.diptych/sessions/<id>/session.jsonl` via `appendEngineEvent`
+  - `sinks/tree-recorder.ts` — always-on sink appending `.diptych/sessions/<id>/session-tree.jsonl` and `tree-meta.json`
   - `sinks/stdout-json.ts` — NDJSON emitter for `diptych start --json` / headless mode
   - `sinks/otel.ts` — optional OpenTelemetry span emitter (workflow → phase → task span tree)
 - `engine/hooks/` — workflow hook runtime: `dispatch.ts` (subprocess `command` hooks), `load-module.ts` (in-process `module` hooks), `substitute.ts` (safe `${event.*}` regex substitution), `run-pre-hook.ts` (sequential `pre_*` runner with deny short-circuit), `sink.ts` (bus sink for `post_*`/`on_*` fire-and-forget), `types.ts`, `builtins/` (`prettier-on-change`, `block-secrets`, `registry.ts`)

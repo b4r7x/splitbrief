@@ -139,7 +139,7 @@ await maybeAutoSnapshot({
 
 ### Pre-Final-Review Hook
 
-In `src/engine/orchestrator/final-review.ts`, add after the `ALL_DONE` transition (line ~33) and before `publishEvent(bus, { type: 'all_tasks_done', ... })`:
+In `src/engine/orchestrator/final-review.ts`, add after the `ALL_DONE` transition (line ~33) and before the `all_tasks_done` event publish:
 
 ```ts
 await maybeAutoSnapshot({

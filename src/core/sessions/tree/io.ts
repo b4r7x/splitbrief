@@ -1,9 +1,8 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import type { TreeMeta, TreeEntryEnvelope } from './schemas.js';
-import { TreeEntryEnvelopeSchema, TreeMetaSchema } from './schemas.js';
-import type { EntryId } from './schemas.js';
+import { TreeEntryEnvelopeSchema, TreeMetaSchema, type EntryId, type TreeEntryEnvelope, type TreeMeta } from './schemas.js';
 import type { SessionTree } from './store.js';
+import { warnError, warnStderr } from '../../../lib/warn.js';
 
 const TREE_JSONL = 'session-tree.jsonl';
 const TREE_META = 'tree-meta.json';
@@ -36,8 +35,13 @@ export function readTreeMeta(sessionDir: string): TreeMeta | null {
   try {
     const raw: unknown = JSON.parse(readFileSync(filePath, 'utf-8'));
     const result = TreeMetaSchema.safeParse(raw);
-    return result.success ? result.data : null;
-  } catch {
+    if (!result.success) {
+      warnStderr(`Warning: invalid session tree metadata ${filePath}: ${result.error.message}`);
+      return null;
+    }
+    return result.data;
+  } catch (err) {
+    warnError(`Failed to read session tree metadata ${filePath}`, err);
     return null;
   }
 }
@@ -52,8 +56,13 @@ export function readTreeEntries(sessionDir: string): TreeEntryEnvelope[] {
     try {
       const raw: unknown = JSON.parse(line);
       const result = TreeEntryEnvelopeSchema.safeParse(raw);
-      if (result.success) entries.push(result.data);
-    } catch {
+      if (result.success) {
+        entries.push(result.data);
+      } else {
+        warnStderr(`Warning: invalid session tree entry ${filePath}: ${result.error.message}`);
+      }
+    } catch (err) {
+      warnError(`Failed to read session tree entry ${filePath}`, err);
     }
   }
   return entries;

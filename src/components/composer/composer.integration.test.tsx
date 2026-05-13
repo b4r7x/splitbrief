@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Box } from 'ink';
@@ -92,7 +92,9 @@ describe('composer integration: completions', () => {
     ui.stdin.write('/');
     await tick(20);
     ui.stdin.write(DOWN);
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('▸ /mode');
+    });
     ui.stdin.write(TAB);
     await tick(20);
 

@@ -11,7 +11,7 @@ import { updateStats } from '../../core/stats/persistence.js';
 import { warnError } from '../../lib/warn.js';
 import { withSignalHandlers } from './signals.js';
 import { shutdownWorkflow } from './final-review.js';
-import { createQueueHandler } from './queue.js';
+import { createClearQueueHandler, createQueueHandler } from './queue.js';
 import type { Planner } from '../planners/types.js';
 import type { WorkflowSinks } from './types.js';
 
@@ -92,5 +92,12 @@ export function installQueueHandler(opts: InstallQueueHandlerOpts): void {
     opts.bus,
     opts.config.workflow.persistTranscript,
     opts.planner,
+  ));
+  opts.sinks.setClearQueueHandler?.(createClearQueueHandler(
+    opts.projectDir,
+    opts.sessionId,
+    opts.getTrackedState,
+    opts.setTrackedState,
+    opts.bus,
   ));
 }

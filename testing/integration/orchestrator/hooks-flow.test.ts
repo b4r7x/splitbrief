@@ -5,11 +5,29 @@ import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TASK_MARKDOWN, CODE_RESPONSE } from '#testing/helpers/fixtures/shell-runner.js';
+import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/run.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
-import type { WorkflowSinks } from '../../../src/engine/orchestrator/types.js';
+import type { HooksConfig } from '../../../src/core/schemas/hooks.js';
 
-const SINKS: WorkflowSinks = { setAbortHandler: () => {}, setQueueHandler: () => {} };
+const DENY_PRE_TASK_HOOKS: HooksConfig = {
+  pre_task: [{
+    kind: 'command',
+    command: 'node',
+    args: ['-e', 'process.stdout.write(JSON.stringify({decision:"deny",message:"blocked by test"}))'],
+    timeout_ms: 5000,
+    on_failure: 'block',
+  }],
+};
+const ALLOW_POST_TASK_HOOKS: HooksConfig = {
+  post_task: [{
+    kind: 'command',
+    command: 'echo',
+    args: ['hook-fired'],
+    timeout_ms: 5000,
+    on_failure: 'warn',
+  }],
+};
 
 const dirs: string[] = [];
 
@@ -41,24 +59,15 @@ describe('hooks integration flow', () => {
       },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: { mode: 'quick', commitStrategy: 'none', persistTranscript: false, maxRetries: 1 },
+      hooks: DENY_PRE_TASK_HOOKS,
     });
-
-    // Add a pre_task hook that unconditionally denies (node prints deny JSON then exits 0)
-    (config as Record<string, unknown>)['hooks'] = {
-      pre_task: [{
-        command: 'node',
-        args: ['-e', 'process.stdout.write(JSON.stringify({decision:"deny",message:"blocked by test"}))'],
-        timeout_ms: 5000,
-        on_failure: 'block',
-      }],
-    };
 
     await runWorkflow({
       feature: 'add foo',
       projectDir,
       config,
       callbacks,
-      sinks: SINKS,
+      sinks: TEST_WORKFLOW_SINKS,
       _eventSink: (e) => recorded.push(e),
     });
 
@@ -99,24 +108,15 @@ describe('hooks integration flow', () => {
       },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: { mode: 'quick', commitStrategy: 'none', persistTranscript: false, maxRetries: 1 },
+      hooks: ALLOW_POST_TASK_HOOKS,
     });
-
-    // Add a post_task hook that allows (echo exits 0)
-    (config as Record<string, unknown>)['hooks'] = {
-      post_task: [{
-        command: 'echo',
-        args: ['hook-fired'],
-        timeout_ms: 5000,
-        on_failure: 'warn',
-      }],
-    };
 
     await runWorkflow({
       feature: 'add foo',
       projectDir,
       config,
       callbacks,
-      sinks: SINKS,
+      sinks: TEST_WORKFLOW_SINKS,
       _eventSink: (e) => recorded.push(e),
     });
 

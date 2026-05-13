@@ -4,7 +4,7 @@ import { createInitialState, transition } from '../../core/state/machine.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
-import { createQueueHandler, drainQueue, formatDrainedMessages, formatMessage } from './queue.js';
+import { createClearQueueHandler, createQueueHandler, drainQueue, formatDrainedMessages, formatMessage } from './queue.js';
 import { dispatchNativeInjection } from './native-injection.js';
 import { collectAndPersistClarifications } from './clarifications.js';
 
@@ -32,7 +32,7 @@ function makeResearchingState(): WorkflowState {
 function makeSpecifyingState(): WorkflowState {
   let state = createInitialState('test-feature');
   state = transition(state, { type: 'START', feature: 'test-feature' });
-  state = transition(state, { type: 'RESEARCH_DONE' }); // → specifying
+  state = transition(state, { type: 'RESEARCH_DONE' });
   return state;
 }
 
@@ -110,10 +110,8 @@ describe('enqueue', () => {
 
     handler('inject me', 'researching');
 
-    // Give the fire-and-forget dispatch a tick to run.
     await new Promise((r) => setTimeout(r, 0));
 
-    // Observable: the planner's injection port delivered the enqueued text.
     expect(injectedTurns).toHaveLength(1);
     expect(injectedTurns[0]?.text).toBe('inject me');
     expect(injectedTurns[0]?.dir).toBe(projectDir);
@@ -158,7 +156,6 @@ describe('enqueue', () => {
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner();
 
-    // Pre-fill the queue to MAX_QUEUE_SIZE (50).
     const fakeMessages: QueuedMessage[] = Array.from({ length: 50 }, (_, i) => ({
       id: `msg-${i}`,
       text: `message ${i}`,
@@ -183,6 +180,37 @@ describe('enqueue', () => {
     const warning = events.find((e) => e.type === 'warning');
     expect(warning).toBeDefined();
     expect(state?.messageQueue).toHaveLength(50);
+  });
+});
+
+describe('clear', () => {
+  it('removes pending messages from live state and emits queue_cleared', () => {
+    const { projectDir, sessionId } = setupProject();
+    let state: WorkflowState | undefined = makeStateWithQueue([
+      makeMessage('pending'),
+      { ...makeMessage('drained'), id: 'msg-drained', drainedAt: new Date().toISOString() },
+    ]);
+    const { bus, events } = makeBusRecorder();
+
+    const clear = createClearQueueHandler(
+      projectDir,
+      sessionId,
+      () => state,
+      (next) => { state = next; },
+      bus,
+    );
+
+    const count = clear();
+
+    expect(count).toBe(1);
+    expect(state?.messageQueue).toEqual([
+      expect.objectContaining({ id: 'msg-drained', text: 'drained' }),
+    ]);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'queue_cleared',
+      count: 1,
+      phase: state?.phase,
+    }));
   });
 });
 
@@ -305,7 +333,6 @@ describe('native injection', () => {
     const setState = (s: WorkflowState) => { writtenState = s; };
     const { bus } = makeBusRecorder();
     const planner = makePlanner();
-    // makePlanner() produces a planner without injectUserTurn
 
     await dispatchNativeInjection(makeMessage(), planner, projectDir, sessionId, state, setState, bus);
 
@@ -421,7 +448,7 @@ describe('clarifications', () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeSpecifyingState();
     const { bus } = makeBusRecorder();
-    const planner = makePlanner(); // no injectUserTurn
+    const planner = makePlanner();
     const questions = [{ id: 'q2', type: 'input' as const, text: 'Use sessions?' }];
     const onQuestionAsked = vi.fn().mockResolvedValue('No sessions');
 
@@ -442,15 +469,13 @@ describe('clarifications', () => {
     let state = createInitialState('test-feature');
     state = transition(state, { type: 'START', feature: 'test-feature' });
     state = transition(state, { type: 'RESEARCH_DONE' });
-    state = transition(state, { type: 'SPEC_DONE' }); // → reviewing-spec (not specifying)
+    state = transition(state, { type: 'SPEC_DONE' });
     const { bus } = makeBusRecorder();
     const planner = makePlanner();
     const questions = [{ id: 'q3', type: 'input' as const, text: 'Should I use Redis?' }];
     let asked = 0;
     const onQuestionAsked = async () => { asked++; return 'Yes'; };
 
-    // process.stderr.write is a sanctioned global boundary; we observe that
-    // the unexpected-phase warning reached it.
     const stderrWrites: string[] = [];
     const originalWrite = process.stderr.write.bind(process.stderr);
     process.stderr.write = ((chunk: string | Uint8Array) => {

@@ -1,6 +1,5 @@
 import { readdirSync, existsSync } from 'node:fs';
-import { readLockfile } from '../engine/ipc/lockfile.js';
-import type { LockfileData } from '../engine/ipc/lockfile.js';
+import { readLockfile, type LockfileData } from '../engine/ipc/lockfile.js';
 import { sessionsRoot, sessionDir } from '../core/paths.js';
 import { cliError } from './errors.js';
 
@@ -9,6 +8,21 @@ export type AliasedSession = {
   sessionId: string;
   lockfile: LockfileData;
 };
+
+export type AliasableSession = {
+  sessionId: string;
+  lockfile: LockfileData;
+};
+
+export function assignSessionAliases(sessions: AliasableSession[]): AliasedSession[] {
+  return [...sessions]
+    .sort((a, b) => b.lockfile.startTimeMs - a.lockfile.startTimeMs)
+    .map((s, i) => ({
+      alias: i + 1,
+      sessionId: s.sessionId,
+      lockfile: s.lockfile,
+    }));
+}
 
 export async function buildAliasedSessions(projectDir: string): Promise<AliasedSession[]> {
   const root = sessionsRoot(projectDir);
@@ -26,14 +40,7 @@ export async function buildAliasedSessions(projectDir: string): Promise<AliasedS
     sessions.push({ sessionId: entry.name, lockfile: data });
   }
 
-  // Sort by startTimeMs descending (newest first) — same order as ps.
-  sessions.sort((a, b) => b.lockfile.startTimeMs - a.lockfile.startTimeMs);
-
-  return sessions.map((s, i) => ({
-    alias: i + 1,
-    sessionId: s.sessionId,
-    lockfile: s.lockfile,
-  }));
+  return assignSessionAliases(sessions);
 }
 
 const NUMERIC_PATTERN = /^\d+$/;

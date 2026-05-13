@@ -14,8 +14,6 @@ export function createAgentPlanner(config: Config): Planner {
   const capabilities = resolveCapabilities(plannerCfg.capabilities);
 
   const base = createCommandBasedPlanner(plannerCfg, 'Agent planner', {
-    extractsCode: false,
-    detectChanges: createChangeDetector('Agent planner'),
     readPhaseOutput: (filename, resultText, projectDir, sessionId) =>
       (sessionId ? readSpecFile(projectDir, sessionId, filename) : null) ?? resultText,
     capabilities,

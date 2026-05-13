@@ -1,12 +1,10 @@
 import { stat, readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { createRequire } from 'node:module';
-import { Parser, Language } from 'web-tree-sitter';
-import type { Node, Tree } from 'web-tree-sitter';
+import { Parser, Language, type Node, type Tree } from 'web-tree-sitter';
 import { error } from '../../utils/error.js';
 import type { FileNode, SymbolKind, SymbolRef } from './types.js';
-import { getLanguageForExtension } from './languages.js';
-import type { LanguageConfig } from './languages.js';
+import { getLanguageForExtension, type LanguageConfig } from './languages.js';
 
 export const parseError = {
   parseFailed: (absPath: string) =>
@@ -166,24 +164,27 @@ export async function parseFile(absPath: string): Promise<FileNode | null> {
   }
 
   const parser = new Parser();
-  parser.setLanguage(grammar);
-  const tree = parser.parse(source);
+  let tree: Tree | null = null;
+  try {
+    parser.setLanguage(grammar);
+    tree = parser.parse(source);
 
-  if (!tree) {
-    throw parseError.parseFailed(absPath);
+    if (!tree) {
+      throw parseError.parseFailed(absPath);
+    }
+
+    const symbols = extractSymbols(tree, lang);
+    const imports = extractImports(source, lang.importRegex);
+
+    return {
+      path: absPath,
+      symbols,
+      imports,
+      sizeBytes: fileStat.size,
+      mtimeMs: fileStat.mtimeMs,
+    };
+  } finally {
+    tree?.delete();
+    parser.delete();
   }
-
-  const symbols = extractSymbols(tree, lang);
-  const imports = extractImports(source, lang.importRegex);
-
-  parser.delete();
-  tree.delete();
-
-  return {
-    path: absPath,
-    symbols,
-    imports,
-    sizeBytes: fileStat.size,
-    mtimeMs: fileStat.mtimeMs,
-  };
 }

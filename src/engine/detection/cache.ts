@@ -1,8 +1,7 @@
 import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
-import type { PlannerDetection, ProviderDetection } from '../../core/types/config-options.js';
-import type { DetectedModel } from '../../core/types/config-options.js';
+import type { DetectedModel, PlannerDetection, ProviderDetection } from '../../core/types/config-options.js';
 import { PLANNER_TOOL_IDS, PROVIDER_IDS } from '../../core/schemas/enums.js';
 import { getDiptychPath } from '../../core/paths.js';
 
@@ -10,13 +9,7 @@ const CACHE_FILENAME = 'detection-cache.json';
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
 const CACHE_VERSION = 1;
 
-function stripUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
-  const out: Partial<T> = {};
-  for (const [k, v] of Object.entries(obj)) if (v !== undefined) out[k as keyof T] = v as T[keyof T];
-  return out;
-}
-
-const DetectedModelSchema = z.object({
+const DetectedModelRawSchema = z.object({
   id: z.string(),
   contextLength: z.number().optional(),
   pricingInput: z.number().optional(),
@@ -24,25 +17,53 @@ const DetectedModelSchema = z.object({
   isFree: z.boolean().optional(),
   capabilities: z.array(z.string()).optional(),
   releaseDate: z.string().optional(),
-}).transform((m): DetectedModel => stripUndefined(m) as DetectedModel);
+});
 
-const PlannerDetectionSchema = z.object({
+const DetectedModelSchema = DetectedModelRawSchema.transform((m): DetectedModel => ({
+  id: m.id,
+  ...(m.contextLength !== undefined && { contextLength: m.contextLength }),
+  ...(m.pricingInput !== undefined && { pricingInput: m.pricingInput }),
+  ...(m.pricingOutput !== undefined && { pricingOutput: m.pricingOutput }),
+  ...(m.isFree !== undefined && { isFree: m.isFree }),
+  ...(m.capabilities !== undefined && { capabilities: m.capabilities }),
+  ...(m.releaseDate !== undefined && { releaseDate: m.releaseDate }),
+}));
+
+const PlannerDetectionRawSchema = z.object({
   tool: z.enum(PLANNER_TOOL_IDS),
   type: z.enum(['cli', 'api', 'shell']),
   available: z.boolean(),
   version: z.string().optional(),
   description: z.string().optional(),
   error: z.string().optional(),
-}).transform((p): PlannerDetection => stripUndefined(p) as PlannerDetection);
+});
 
-const ProviderDetectionSchema = z.object({
+const PlannerDetectionSchema = PlannerDetectionRawSchema.transform((p): PlannerDetection => ({
+  tool: p.tool,
+  type: p.type,
+  available: p.available,
+  ...(p.version !== undefined && { version: p.version }),
+  ...(p.description !== undefined && { description: p.description }),
+  ...(p.error !== undefined && { error: p.error }),
+}));
+
+const ProviderDetectionRawSchema = z.object({
   provider: z.enum(PROVIDER_IDS),
   available: z.boolean(),
   models: z.array(DetectedModelSchema).optional(),
   isLocal: z.boolean(),
   hasKey: z.boolean().optional(),
   error: z.string().optional(),
-}).transform((p): ProviderDetection => stripUndefined(p) as ProviderDetection);
+});
+
+const ProviderDetectionSchema = ProviderDetectionRawSchema.transform((p): ProviderDetection => ({
+  provider: p.provider,
+  available: p.available,
+  isLocal: p.isLocal,
+  ...(p.models !== undefined && { models: p.models }),
+  ...(p.hasKey !== undefined && { hasKey: p.hasKey }),
+  ...(p.error !== undefined && { error: p.error }),
+}));
 
 const DetectionCacheSchema = z.object({
   version: z.literal(CACHE_VERSION),

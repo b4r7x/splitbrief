@@ -1,76 +1,28 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
   makeCallbacks,
-  makePlanner,
   makeImplementer,
   makeBusRecorder,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeImplStateWithMetadata as implementingState } from '#testing/helpers/factories/workflow-state.js';
+import {
+  cleanupTaskProjects,
+  makeTaskWorkflowContext as makeWorkflowContext,
+  setupTaskProject as setupProject,
+} from '#testing/helpers/orchestrator-task-context.js';
 import { loadState } from '../../../core/state/persistence.js';
-import { transition } from '../../../core/state/machine.js';
-import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
-import type { WorkflowContext, WorkflowSinks } from '../types.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import { createImplementerBase } from '../../implementers/base.js';
 import { createValidator } from '../validation.js';
 import { runSingleTask } from './step.js';
-import { retryAndRecord } from './retry.js';
 import { readEvidenceLedger } from '../evidence/persistence.js';
 
-let dirs: string[] = [];
-
-afterEach(() => {
-  for (const d of dirs) cleanupTempDir(d);
-  dirs = [];
-});
-
-function setupProject(files: Record<string, string> = {}): { projectDir: string; sessionId: string } {
-  const projectDir = createTempDir('task-step-test');
-  dirs.push(projectDir);
-  createTestGitRepo(projectDir, files);
-  const sessionId = 'sess-task-step';
-  ensureSessionDir(projectDir, sessionId);
-  return { projectDir, sessionId };
-}
-
-function makeSinks(): WorkflowSinks {
-  return { setAbortHandler: () => {}, setQueueHandler: () => {} };
-}
-
-const implementingState = makeImplStateWithMetadata;
-
-function makeWorkflowContext(overrides?: Partial<WorkflowContext>): WorkflowContext {
-  const proj = overrides?.projectDir
-    ? { projectDir: overrides.projectDir, sessionId: overrides.sessionId ?? 'sess-task-step' }
-    : setupProject();
-  const callbacks = overrides?.callbacks ?? makeCallbacks().callbacks;
-  const base: WorkflowContext = {
-    projectDir: proj.projectDir,
-    sessionId: proj.sessionId,
-    config: makeConfig({
-      // Disable validation subprocess entirely — keeps the test focused on task-step
-      // plumbing, not on tsc/eslint/npm test I/O.
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { commitStrategy: 'none', maxRetries: 2 },
-    }),
-    callbacks,
-    bus: makeBusRecorder().bus,
-    planner: makePlanner(),
-    implementer: makeImplementer(),
-    context: defaultContext,
-    metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
-    sinks: makeSinks(),
-    validator: createValidator(),
-  };
-  return { ...base, ...overrides, projectDir: proj.projectDir, sessionId: proj.sessionId, callbacks };
-}
+afterEach(cleanupTaskProjects);
 
 describe('runSingleTask — happy path', () => {
   it('emits task-start and task-complete, advances to done, and records token usage', async () => {
@@ -104,12 +56,10 @@ describe('runSingleTask — happy path', () => {
       setCurrentTask,
     });
 
-    // Completed task → advanced past it.
     expect(result.currentTaskIndex).toBe(1);
     expect(result.tasks[0]?.status).toBe('done');
     expect(result.pendingRecovery).toBeUndefined();
 
-    // Token usage accumulated on state.
     expect(result.tokenUsage.implementerInput).toBe(300);
     expect(result.tokenUsage.implementerOutput).toBe(120);
 
@@ -118,7 +68,6 @@ describe('runSingleTask — happy path', () => {
     expect(start).toMatchObject({ type: 'task_started', taskId: 'T001', index: 0, total: 1 });
     expect(complete).toMatchObject({ type: 'task_completed', taskId: 'T001', method: 'local' });
 
-    // One per-task breakdown recorded.
     expect(taskBreakdowns).toHaveLength(1);
     expect(taskBreakdowns[0]).toMatchObject({ taskId: 'T001', method: 'local' });
   });
@@ -146,7 +95,6 @@ describe('runSingleTask — happy path', () => {
     });
 
     expect(implement).not.toHaveBeenCalled();
-    // Task was not advanced.
     expect(result.currentTaskIndex).toBe(state.currentTaskIndex);
     expect(result.tasks[0]?.status).toBe('pending');
   });
@@ -349,7 +297,6 @@ describe('runSingleTask — happy path', () => {
 
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async () => {
-        // Implementer writes to an out-of-scope file that was already dirty
         writeFileSync(join(projectDir, 'src/existing.ts'), 'export const v = 99; // implementer\n');
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
@@ -407,7 +354,6 @@ describe('runSingleTask — happy path', () => {
 
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async () => {
-        // Implementer clobbers the user-edited file (out of scope)
         writeFileSync(join(projectDir, 'src/existing.ts'), 'export const v = 99; // implementer\n');
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
@@ -437,7 +383,6 @@ describe('runSingleTask — happy path', () => {
       setCurrentTask: vi.fn(),
     });
 
-    // User's pre-task edit must survive the denial rollback
     expect(readFileSync(join(projectDir, 'src/existing.ts'), 'utf-8')).toBe(userEdit);
   });
 
@@ -867,241 +812,6 @@ describe('runSingleTask — happy path', () => {
       actionClass: 'write_in_scope',
       actionDescription: 'create src/hello.ts',
       reason: 'approved scoped source write',
-    }));
-  });
-});
-
-describe('retryAndRecord — retry budget', () => {
-  it('local retry on first attempt succeeds → advances task, records local method', async () => {
-    const task = makeTask({ id: 'T001' });
-    const state = implementingState([task]);
-
-    const { callbacks } = makeCallbacks();
-    const { bus, events: busEvents } = makeBusRecorder();
-    const retry = vi.fn().mockResolvedValue({
-      success: true,
-      output: 'fixed',
-      usage: { inputTokens: 50, outputTokens: 25 },
-    });
-    const implementer = makeImplementer({ retry });
-
-    const wctx = makeWorkflowContext({ callbacks, implementer, bus });
-    const setTrackedState = vi.fn();
-    const taskBreakdowns: TaskTokenUsage[] = [];
-
-    const res = await retryAndRecord({
-      wctx,
-      task,
-      initialError: 'tsc failed',
-      state,
-      taskStartTime: Date.now(),
-      tokensBefore: { ...state.tokenUsage },
-      taskBreakdowns,
-      setTrackedState,
-    });
-
-    expect(res.completed).toBe(true);
-    expect(res.state.tasks[0]?.status).toBe('done');
-    expect(res.state.currentTaskIndex).toBe(1);
-
-    // Retry event observed with attempt=1.
-    const retryEvents = busEvents.filter((e) => e.type === 'task_retry');
-    expect(retryEvents.length).toBeGreaterThanOrEqual(1);
-    const firstRetry = retryEvents[0];
-    if (firstRetry?.type === 'task_retry') {
-      expect(firstRetry.taskId).toBe('T001');
-      expect(firstRetry.attempt).toBe(1);
-    }
-
-    // Breakdown recorded with method=local.
-    expect(taskBreakdowns[0]?.method).toBe('local');
-  });
-
-  it('exhausts local retry budget and persists recovery when escalation also fails', async () => {
-    const task = makeTask({ id: 'T001' });
-    let state = implementingState([task]);
-    state = transition(state, { type: 'START_TASK', taskId: task.id });
-    state = transition(state, { type: 'TASK_SENT' });
-
-    const { callbacks } = makeCallbacks();
-    const { bus, events: busEvents } = makeBusRecorder();
-    // Local retry always fails.
-    const retry = vi.fn().mockResolvedValue({
-      success: false,
-      output: 'still broken',
-      error: 'tsc failed again',
-      usage: { inputTokens: 20, outputTokens: 10 },
-    });
-    // Escalation tiers: intermediate planner is absent in config (default),
-    // hint and full also fail.
-    const planner = makePlanner({
-      escalateHint: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
-      escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
-    });
-    const implementer = makeImplementer({ retry });
-
-    const wctx = makeWorkflowContext({
-      callbacks,
-      implementer,
-      planner,
-      bus,
-      // Shrink the retry budget to keep the test fast.
-      config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { commitStrategy: 'none', maxRetries: 2 },
-      }),
-    });
-
-    const res = await retryAndRecord({
-      wctx,
-      task,
-      initialError: 'initial tsc failure',
-      state,
-      taskStartTime: Date.now(),
-      tokensBefore: { ...state.tokenUsage },
-      taskBreakdowns: [],
-      setTrackedState: vi.fn(),
-    });
-
-    expect(res.completed).toBe(false);
-    // retry is called maxRetries times (local) plus once on the hint tier before giving up.
-    expect(retry.mock.calls.length).toBeGreaterThanOrEqual(2);
-    expect(res.state.tasks[0]?.status).toBe('in_progress');
-    expect(res.state.currentTaskIndex).toBe(0);
-    expect(res.state.pendingRecovery).toMatchObject({
-      reason: 'retry-exhausted',
-      taskId: 'T001',
-      availableActions: ['retry-same-worker', 'planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
-    });
-    expect(loadState(wctx.projectDir, wctx.sessionId)?.pendingRecovery).toMatchObject({
-      reason: 'retry-exhausted',
-      taskId: 'T001',
-    });
-
-    const complete = busEvents.find((e) => e.type === 'task_completed');
-    expect(complete).toBeUndefined();
-    expect(busEvents.find((e) => e.type === 'task_failed')).toBeUndefined();
-
-    const retryEvents = busEvents.filter((e) => e.type === 'task_retry');
-    // At least as many retry events as local attempts.
-    expect(retryEvents.length).toBeGreaterThanOrEqual(2);
-  });
-});
-
-describe('retryAndRecord — recovery stop points', () => {
-  it('persists pending recovery when retry or escalation throws before returning a result', async () => {
-    const { projectDir, sessionId } = setupProject();
-
-    const task = makeTask({ id: 'T001' });
-    let state = implementingState([task]);
-    state = transition(state, { type: 'START_TASK', taskId: task.id });
-    state = transition(state, { type: 'TASK_SENT' });
-
-    const { bus, events } = makeBusRecorder();
-    const planner = makePlanner({
-      escalateHint: vi.fn().mockRejectedValueOnce(new Error('planner crashed')),
-    });
-    const implementer = makeImplementer({ retry: vi.fn() });
-    const wctx = makeWorkflowContext({
-      projectDir,
-      sessionId,
-      bus,
-      planner,
-      implementer,
-      config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { commitStrategy: 'none', maxRetries: 0 },
-      }),
-    });
-
-    const result = await retryAndRecord({
-      wctx,
-      task,
-      initialError: 'initial validation failed',
-      state,
-      taskStartTime: Date.now(),
-      taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
-      tokensBefore: { ...state.tokenUsage },
-      taskBreakdowns: [],
-      setTrackedState: vi.fn(),
-    });
-
-    expect(result.completed).toBe(false);
-    expect(result.state.pendingRecovery).toMatchObject({
-      reason: 'retry-exhausted',
-      taskId: 'T001',
-      availableActions: ['retry-same-worker', 'planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
-    });
-    expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
-      reason: 'retry-exhausted',
-      taskId: 'T001',
-    });
-    expect(events).toContainEqual(expect.objectContaining({
-      type: 'recovery_prompted',
-      reason: 'retry-exhausted',
-      taskId: 'T001',
-      availableActions: ['retry-same-worker', 'planner-split-rebase', 'skip-current-task', 'pause-run', 'abort-workflow'],
-    }));
-  });
-
-  it('adds recovery to the latest persisted retry state when a later retry step throws', async () => {
-    const { projectDir, sessionId } = setupProject();
-
-    const task = makeTask({ id: 'T001' });
-    let state = implementingState([task]);
-    state = transition(state, { type: 'START_TASK', taskId: task.id });
-    state = transition(state, { type: 'TASK_SENT' });
-
-    const { bus, events } = makeBusRecorder();
-    const implementer = makeImplementer({
-      retry: vi.fn().mockResolvedValue({
-        success: false,
-        error: 'retry still failed',
-        usage: { inputTokens: 10, outputTokens: 5 },
-      }),
-    });
-    const planner = makePlanner({
-      escalateHint: vi.fn().mockRejectedValueOnce(new Error('hint planner crashed')),
-    });
-    const wctx = makeWorkflowContext({
-      bus,
-      implementer,
-      planner,
-      projectDir,
-      sessionId,
-      config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { commitStrategy: 'none', maxRetries: 1 },
-      }),
-    });
-
-    const result = await retryAndRecord({
-      wctx,
-      task,
-      initialError: 'initial validation failed',
-      state,
-      taskStartTime: Date.now(),
-      taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
-      tokensBefore: { ...state.tokenUsage },
-      taskBreakdowns: [],
-      setTrackedState: vi.fn(),
-    });
-
-    expect(result.completed).toBe(false);
-    expect(result.state.attempt).toBe(1);
-    expect(result.state.pendingRecovery).toMatchObject({
-      reason: 'retry-exhausted',
-      taskId: 'T001',
-      attempts: 1,
-    });
-    expect(loadState(projectDir, sessionId)).toMatchObject({
-      attempt: 1,
-      pendingRecovery: expect.objectContaining({ reason: 'retry-exhausted' }),
-    });
-    expect(events).toContainEqual(expect.objectContaining({
-      type: 'recovery_prompted',
-      reason: 'retry-exhausted',
-      taskId: 'T001',
     }));
   });
 });

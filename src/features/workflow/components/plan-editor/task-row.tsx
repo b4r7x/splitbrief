@@ -9,7 +9,7 @@ import {
   formatTaskReviewLine,
   getTaskStatusSymbol,
   hasTaskReviewWarning,
-} from '../brief-review-view.js';
+} from '../brief-review.js';
 
 function DetailList({ label, items }: { label: string; items: string[] }) {
   const t = useTheme();

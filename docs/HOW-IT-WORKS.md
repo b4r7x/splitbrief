@@ -8,7 +8,7 @@ This is the data flow from CLI entry to workflow completion. You've read the [me
 
 The user types `diptych start "add email validation"`. Execution begins in `src/cli.ts`, which creates a Commander program and registers subcommands. `start` is registered by `registerStartCommand()` in `src/cli/commands/start.ts` and is the default command — bare `diptych "feature"` hits the same path.
 
-The handler validates flag combinations first — `--json` and `--rpc` are mutually exclusive, `--detach` requires a feature argument. If the user provided `@file` arguments, `parseAtFiles()` (`src/cli/parse-at-files.ts`) reads them and populates the attachments store. Then the handler branches into one of four paths:
+The handler validates flag combinations first — `--json` and `--rpc` are mutually exclusive, `--detach` requires a feature argument. If the user provided `@file` arguments, `parseAtFiles()` (`src/cli/parse-at-files.ts`) reads them, inlines text files into `<user-context>`, and queues image files in the attachments store. Then the handler branches into one of four paths:
 
 ```mermaid
 graph TD
@@ -24,7 +24,7 @@ graph TD
 
 **`--detach`** spawns a background server via `spawnServer()` (`src/engine/ipc/spawn-server.ts`), prints the session ID and PID, then exits. The user attaches later with `diptych attach`.
 
-**`--json`** runs the workflow headless via `runHeadless()` (`src/cli/headless.ts`). Events stream as NDJSON to stdout. Approval gates are auto-approved.
+**`--json`** runs the workflow headless via `runHeadless()` (`src/cli/headless.ts`). Events stream as NDJSON to stdout. Workflow review gates are auto-approved; tiered sticky/confirm approvals fail closed unless their tiers allow the action.
 
 **`--rpc`** runs via `runRpc()` (`src/cli/rpc/run.ts`). Bidirectional NDJSON — the caller sends gate responses, diptych sends events back. Gates are interactive.
 
@@ -44,7 +44,7 @@ After setup, the handler calls `initStores()` and then `renderApp()`.
 
 **`ensureHooksTrusted()`** (`src/cli/hook-trust-prompt.ts`) checks whether the project's configured hooks have been approved. If not, it prompts the user before continuing. This runs after config is loaded (hooks come from config) but before discovery (discovery shouldn't run under untrusted hooks).
 
-**`loadDiscovery()`** runs last because it's async and independent of config/session state. It does three things in parallel: discovers skills from `.claude/skills/*.md` via `discoverSkills()` (`src/engine/skill-discovery.ts`), detects provider capabilities via `detectCapabilities()` (`src/engine/providers/registry.ts`), and detects available CLI tools and models via `loadDetectionIntoStores()`.
+**`loadDiscovery()`** runs last because it's async and independent of config/session state. It does three things in parallel: discovers planner skills via `discoverSkills()` (`src/engine/skill-discovery.ts`), detects provider capabilities via `detectCapabilities()` (`src/engine/providers/registry.ts`), and detects available CLI tools and models via `loadDetectionIntoStores()`. Skill sources depend on the planner: `.claude/skills/`, `.diptych/skills/`, global tool skill dirs, `AGENTS.md`, or `CONVENTIONS.md`.
 
 ---
 
@@ -103,7 +103,7 @@ After initialization, `runWorkflow()` installs a queue handler (for messages the
 
 **quick** — `runQuickPlanning()` (`src/engine/orchestrator/planning/quick.ts`). One planner call. Tasks only, no supporting documents.
 
-**standard** — `runFullPlanning()` (`src/engine/orchestrator/planning/full.ts`). Four planner calls: research, spec, plan, tasks. The spec goes through an approval loop — the user can approve, comment (triggers regeneration), or reject. After tasks are generated, they pass through a brief quality gate.
+**standard** — `runFullPlanning()` (`src/engine/orchestrator/planning/full.ts`). Four planner calls: research, spec, plan, tasks. The spec goes through an approval loop — the user can approve, comment (triggers regeneration), or reject. After tasks are generated, they pass through the brief quality gate, then `runBriefsApprovalLoop()` enters `reviewing-briefs` before implementation.
 
 **speckit** — `runSpeckitPlanning()` (`src/engine/orchestrator/planning/speckit.ts`). Adds clarification questions, a constitution check, and post-plan analysis on top of the standard flow.
 
@@ -111,7 +111,7 @@ Before any mode-specific handler runs, `runPlanningPhase()` builds a repo map vi
 
 During planning, the planner streams text. `planner_heartbeat` events (`src/engine/orchestrator/planning/heartbeat.ts`) fire every 2 seconds after a 5-second threshold, reporting accumulated tokens and a phase hint. These are proof-of-life signals during long waits — the TUI shows them as a spinning indicator.
 
-Planning artifacts (`spec.md`, `plan.md`, `tasks.md`) are written to the session folder at the end of each planning phase via `writeSpecFile()` in `src/core/paths-io.ts`.
+Planning artifacts (`research.md`, `spec.md`, `plan.md`, `tasks.md`, plus speckit artifacts when produced) are written to the session folder at the end of each planning phase via `writeSpecFile()` in `src/core/paths-io.ts`.
 
 ---
 
@@ -125,7 +125,7 @@ The loop iterates tasks in order (tasks are already topologically sorted by `dep
 
 **User edit detection** — `checkUserEditConflicts()` checks whether the user modified files outside diptych while the workflow was running. If there's a conflict with the current task's target file, recovery is triggered.
 
-**Implementer profile routing** — `routeTaskToImplementerProfile()` (`src/engine/orchestrator/context-routing.ts`) estimates the task's token requirements and selects the best implementer profile. If no profile can handle the task (context overflow), the task enters recovery.
+**Implementer profile routing** — `routeTaskToImplementerProfile()` (`src/engine/orchestrator/context-routing/route.ts`) estimates the task's token requirements and selects the best implementer profile. If no profile can handle the task (context overflow), the task enters recovery.
 
 **Execution** — `runSingleTask()` (`src/engine/orchestrator/task/step.ts`) runs the task:
 
@@ -182,13 +182,13 @@ Every workflow run produces files on disk under `.diptych/sessions/<id>/`:
 
 **`session.jsonl`** — the full event log, append-only. The JSONL sink writes every `EngineEvent` as it's published. This is the audit trail and the source for context rebuild when resuming with a stateless backend.
 
-**`spec.md`, `plan.md`, `tasks.md`** — planning artifacts, written once at the end of each planning phase. The user reviews these during approval gates.
+**`research.md`, `spec.md`, `plan.md`, `tasks.md`** — planning artifacts, written once at the end of each planning phase when the selected mode produces them. The user reviews applicable artifacts during approval gates.
 
 **`summary.json`** — final cost, timing, task outcomes. Written once at workflow end by `saveFinalSession()` (`src/engine/orchestrator/session-lifecycle.ts`), which also updates cumulative stats and clears the `.diptych/active` lock file.
 
 **`snapshots/`** — content-addressed working-tree snapshots for undo, created at configurable points (pre-task, post-task, pre-final-review).
 
-**On interrupt** (SIGINT/SIGTERM), `withSignalHandlers()` (`src/engine/orchestrator/signals.ts`) runs `shutdownWorkflow()` (`src/engine/orchestrator/final-review.ts`): it kills all child processes, saves the current state to `state.json`, and discards any in-progress file change. The `.diptych/active` marker is preserved when there's pending recovery or a rewind in progress, cleared otherwise. `diptych resume` picks up where the interrupt happened.
+**On interrupt** (SIGINT/SIGTERM), `withSignalHandlers()` (`src/engine/orchestrator/signals.ts`) runs `shutdownWorkflow()` (`src/engine/orchestrator/final-review.ts`): it kills all child processes, saves the current state to `state.json`, and discards any in-progress file change. The `.diptych/active` marker is preserved when there's pending recovery or a rewind in progress, cleared otherwise. Continue later with `diptych continue <session-id>` when the saved state is resumable.
 
 ---
 
@@ -213,7 +213,7 @@ In the TUI, `onComplete` causes the router to navigate to the summary screen, wh
 The CLI reads `.diptych/active` to find the session ID, loads `state.json` via `loadState()` (`src/core/state/persistence.ts`), and runs three guards:
 
 1. **Version check** -- `stateVersion` must equal `CURRENT_STATE_VERSION` (currently 3). Older versions refuse with an error.
-2. **Phase check** -- `isResumable(state)` (`src/core/phases.ts`) returns true for review/gate phases, `implementing`, `validating-task`, `escalating`, `final-review`, and any phase with `awaitingContinue: true`. Generative phases (`researching`, `specifying`, `planning`) are not resumable -- the stream is lost.
+2. **Phase check** -- `isResumable(state)` (`src/core/phases.ts`) returns true for review/gate phases, `analyzing`, `implementing`, `validating-task`, `escalating`, `final-review`, and any phase with `awaitingContinue: true`. Generative phases (`researching`, `specifying`, `planning`) are not resumable -- the stream is lost.
 3. **Recovery check** -- if `pendingRecovery` is set, the orchestrator shows the recovery prompt before dispatching work.
 
 After validation, the CLI routes to headless (`--json`), RPC (`--rpc`), or interactive (TUI) mode, passing the loaded state as `resumeState`.
@@ -228,9 +228,9 @@ The orchestrator then publishes `workflow_resumed` and picks up from the saved p
 
 ### Related commands
 
-**`diptych spec <feature>`** (`src/cli/commands/spec.ts`) -- runs planning phases only (research, spec, plan, tasks) and exits without implementation. Produces the same artifacts (`spec.md`, `plan.md`, `tasks.md`) as a full run.
+**`diptych spec <feature>`** (`src/cli/commands/spec.ts`) -- runs planning phases only (research, spec, plan, tasks) and exits without implementation. Produces the same planning artifacts (`research.md`, `spec.md`, `plan.md`, `tasks.md`, plus speckit artifacts when produced) as a full run.
 
-**`diptych continue [alias]`** (`src/cli/commands/continue.ts`) -- resumes a session by numeric alias (from `diptych status` output) or by session ID. Resolves the alias, then follows the same resume path.
+**`diptych continue [alias]`** (`src/cli/commands/continue.ts`) -- continues a session by numeric alias from `diptych ps`, by session ID, or by active/single-running discovery. It attaches when the target is running and resumes saved state otherwise.
 
 ---
 

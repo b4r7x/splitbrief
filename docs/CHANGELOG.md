@@ -21,7 +21,7 @@ See [`docs/OTEL.md`](./OTEL.md) for the span model, attribute namespace, and set
 
 #### A2 — Headless mode (--json flag)
 
-New `--json` flag on the `start` and `resume` commands. No-TUI execution, NDJSON `EngineEvent` stream on stdout, auto-approval of every gating callback. CI-integration friendly; pairs with `--allow-hooks` for a non-interactive hooks config.
+New `--json` flag on workflow commands. No-TUI execution, NDJSON `EngineEvent` stream on stdout, review-gate auto-approval, empty clarification answers, and fail-closed tiered approvals unless configured or granted. CI-integration friendly; pairs with `--allow-hooks` for a non-interactive hooks config.
 
 Files:
 - `src/cli/headless.ts`
@@ -33,7 +33,7 @@ See [`docs/MIGRATION.md` §Headless mode](./MIGRATION.md).
 
 Task T1.4 in the original plan called for a full `EngineEvent → TuiEvent` mapper inside the TUI sink. Because T1.10 landed first (deleting `TuiEvent` and `src/features/workflow/types.ts` outright), the mapper became vestigial. `createTuiSink()` is now a thin pass-through that returns `actions.addEvent` — the workflow store consumes `EngineEvent` directly.
 
-File: `src/engine/events/sinks/tui.ts`.
+File: `src/features/workflow/tui-sink.ts`.
 
 #### A4 — Test suite cleanup
 
@@ -58,7 +58,7 @@ Copied verbatim from the plan's §Architectural rules. These are the non-negotia
 
 | Rule | Source |
 |---|---|
-| Zero classes — pure functions + module-scoped state only | `CLAUDE.md` |
+| Zero runtime classes — pure functions + module-scoped state only | `CLAUDE.md` |
 | ESM with `.js` extension in every import path | `CLAUDE.md` |
 | kebab-case file/folder names | `CLAUDE.md` |
 | No barrels — no re-export-only `index.ts` anywhere in `src/` | `docs/NO-BARRELS.md` |

@@ -28,7 +28,7 @@ import { ToolModelPicker } from './features/runners/picker.js';
 import { CostDrilldownOverlay } from './features/workflow/components/cost/drilldown-overlay.js';
 import { PlanEditorHelpOverlay } from './features/workflow/components/plan-editor/help-overlay.js';
 import type { RuntimeCommandDef } from './core/runtime/commands/types.js';
-import type { OverlayType, Screen } from './stores/navigation/router.js';
+import type { OverlayType, Screen } from './core/navigation/types.js';
 import { assertNever } from './utils/type-guards.js';
 
 export function App() {

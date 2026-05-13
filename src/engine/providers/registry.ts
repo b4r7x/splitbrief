@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+import type OpenAI from 'openai';
 import type { DetectedModel, ProviderDef, ProviderOverrides } from './types.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { ProviderDetection } from '../../core/types/config-options.js';
@@ -9,7 +9,7 @@ import { createOpenRouterProvider } from './openrouter.js';
 import { createGroqProvider } from './groq.js';
 import { createTogetherProvider } from './together.js';
 import { createAnthropicProvider } from './anthropic/adapter.js';
-import { createOpenAICompatProvider } from './compat.js';
+import { createOpenAICompatProvider } from './openai-compat.js';
 import { PROVIDER_CATALOG } from '../../core/providers/catalog.js';
 import { isProviderId, type ProviderId } from '../../core/schemas/enums.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -93,7 +93,8 @@ export async function detectCapabilities(config: Config): Promise<{ contextLengt
 
 async function detectOne(name: ProviderId, factory: ProviderFactory): Promise<ProviderDetection> {
   const provider = factory();
-  if (!provider.isLocal && !provider.apiKey()) {
+  const apiKey = provider.apiKey();
+  if (!provider.isLocal && apiKey.length === 0) {
     return { provider: name, available: false, isLocal: false, hasKey: false };
   }
   try {
@@ -110,7 +111,7 @@ async function detectOne(name: ProviderId, factory: ProviderFactory): Promise<Pr
       available: models.length > 0,
       isLocal: provider.isLocal,
       ...(models.length > 0 ? { models } : {}),
-      ...(!provider.isLocal ? { hasKey: !!provider.apiKey() } : {}),
+      ...(!provider.isLocal ? { hasKey: apiKey.length > 0 } : {}),
       ...(lastError ? { error: lastError } : {}),
     };
   } catch (error) {
@@ -118,7 +119,7 @@ async function detectOne(name: ProviderId, factory: ProviderFactory): Promise<Pr
       provider: name,
       available: false,
       isLocal: provider.isLocal,
-      ...(!provider.isLocal ? { hasKey: !!provider.apiKey() } : {}),
+      ...(!provider.isLocal ? { hasKey: apiKey.length > 0 } : {}),
       error: toErrorMessage(error),
     };
   }

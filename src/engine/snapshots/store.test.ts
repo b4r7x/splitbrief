@@ -58,17 +58,7 @@ describe('generateSnapshotId', () => {
   });
 });
 
-describe('encodeSnapshotPath / decodeSnapshotPath', () => {
-  it('roundtrips paths with slashes', () => {
-    const original = 'src/core/paths.ts';
-    expect(decodeSnapshotPath(encodeSnapshotPath(original))).toBe(original);
-  });
-
-  it('roundtrips paths with special characters', () => {
-    const original = 'src/some file (with spaces) & stuff.ts';
-    expect(decodeSnapshotPath(encodeSnapshotPath(original))).toBe(original);
-  });
-
+describe('encodeSnapshotPath', () => {
   it('encodes paths to a filesystem-safe form without slashes', () => {
     const encoded = encodeSnapshotPath('a/b/c.ts');
     expect(encoded).not.toContain('/');
@@ -83,8 +73,11 @@ describe('encodeSnapshotPath / decodeSnapshotPath', () => {
     const a = encodeSnapshotPath('a/b.ts');
     const b = encodeSnapshotPath('a__b.ts');
     expect(a).not.toBe(b);
-    expect(decodeSnapshotPath(a)).toBe('a/b.ts');
-    expect(decodeSnapshotPath(b)).toBe('a__b.ts');
+  });
+
+  it('decodes the filesystem-safe path form', () => {
+    const path = 'src/nested/file name.ts';
+    expect(decodeSnapshotPath(encodeSnapshotPath(path))).toBe(path);
   });
 });
 
@@ -194,7 +187,6 @@ describe('acquireSnapshotLock', () => {
   it('succeeds on first call and releases cleanly', async () => {
     const release = await acquireSnapshotLock(tmp, 'sess-01');
     await release();
-    // Should be acquirable again after release
     const release2 = await acquireSnapshotLock(tmp, 'sess-01');
     await release2();
   });
@@ -211,20 +203,16 @@ describe('acquireSnapshotLock', () => {
   });
 
   it('removes and retakes stale lock (mtime > 60s)', async () => {
-    // Create the lock directory first
     const lockDir = join(tmp, '.diptych', 'sessions', 'sess-01', 'snapshots');
     await mkdir(lockDir, { recursive: true });
     const lockPath = join(lockDir, '.lock');
 
-    // Create a stale lock file manually
     const fd = openSync(lockPath, 'wx');
     closeSync(fd);
 
-    // Set mtime to 2 minutes ago
     const oldDate = new Date(Date.now() - 120_000);
     await utimes(lockPath, oldDate, oldDate);
 
-    // Should be able to acquire despite the existing file
     const release = await acquireSnapshotLock(tmp, 'sess-01');
     await release();
   });
@@ -263,7 +251,6 @@ describe('createSnapshot — first call (baseline)', () => {
     expect(result.manifest.fileEntries.some(e => e.path === 'foo.ts')).toBe(true);
     expect(result.manifest.fileEntries.some(e => e.path === 'bar.ts')).toBe(true);
 
-    // Baseline files dir should contain the written files
     const filesDir = join(result.snapshotDir, 'files');
     const written = await readdir(filesDir);
     expect(written.length).toBeGreaterThanOrEqual(2);
@@ -360,7 +347,6 @@ describe('createSnapshot — second call (delta snapshot)', () => {
 
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
-    // Modify one file
     await writeFile(join(tmp, 'changed.ts'), 'modified content');
 
     const result = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
@@ -434,14 +420,12 @@ describe('listSnapshots', () => {
     await writeFile(join(tmp, 'g.ts'), 'g');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
-    // Write a corrupted snapshot dir
     const corruptDir = join(tmp, '.diptych', 'sessions', 'sess-01', 'snapshots', '0000-corrupt');
     await mkdir(corruptDir, { recursive: true });
     await writeFile(join(corruptDir, 'manifest.json'), '{"invalid": true}');
 
     const { manifests, corruptedIds } = await listSnapshots(tmp, 'sess-01');
 
-    // The corrupted entry is skipped, no throw
     expect(manifests.every(m => m.id !== '0000-corrupt')).toBe(true);
     expect(corruptedIds).toEqual(['0000-corrupt']);
   });

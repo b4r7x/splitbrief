@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../components/theme.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
-import type { Screen } from '../../stores/navigation/router.js';
+import type { Screen } from '../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { getShortcutsForScreen } from '../../core/keybindings/registry.js';
 

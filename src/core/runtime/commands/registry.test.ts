@@ -2,8 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createRuntimeCommands, canReviseSpec, canRevisePlan, canRedoTask } from './registry.js';
 import { executeRuntimeCommand as runRuntimeCommand } from './dispatch.js';
 import type { RuntimeCommandDef, RuntimeCommandContext } from './types.js';
-import type { Phase } from '../../schemas/enums.js';
-import { PHASES } from '../../schemas/enums.js';
+import { PHASES, type Phase } from '../../schemas/enums.js';
 
 const noop = () => {};
 const noopTrue = () => true;
@@ -71,6 +70,23 @@ describe('executeRuntimeCommand', () => {
     let errorMsg = '';
     executeRuntimeCommand([], '/nope', 'home', (msg) => { errorMsg = msg; });
     expect(errorMsg).toContain('Unknown command');
+  });
+
+  it('executes fuzzy command matches', async () => {
+    const calls: string[] = [];
+    let errorMsg = '';
+    const cmds: RuntimeCommandDef[] = [
+      { kind: 'noarg', name: '/mode', description: 'mode', validScreens: ['home'], handler: () => { calls.push('mode'); } },
+      { kind: 'arg', name: '/reject-run', description: 'reject run', validScreens: ['home'], handler: (args) => { calls.push(`reject:${args ?? ''}`); } },
+    ];
+
+    await executeRuntimeCommand(cmds, '/mde', 'home', (msg) => { errorMsg = msg; });
+    expect(calls).toEqual(['mode']);
+    expect(errorMsg).toBe('');
+
+    await executeRuntimeCommand(cmds, '/reject-rn confirm', 'home', (msg) => { errorMsg = msg; });
+    expect(calls).toEqual(['mode', 'reject:confirm']);
+    expect(errorMsg).toBe('');
   });
 
   it('reports an error when the command is not valid on the current screen', () => {
@@ -605,11 +621,11 @@ describe('/yolo command', () => {
 
     yolo.handler();
     expect(approvalEnabled).toBe(false);
-    expect(feedback).toBe('YOLO mode ON — all approval gates disabled');
+    expect(feedback).toBe('YOLO mode ON — action-level tiered approvals disabled');
 
     yolo.handler();
     expect(approvalEnabled).toBe(true);
-    expect(feedback).toBe('YOLO mode OFF — approval gates restored');
+    expect(feedback).toBe('YOLO mode OFF — action-level tiered approvals restored');
   });
 });
 

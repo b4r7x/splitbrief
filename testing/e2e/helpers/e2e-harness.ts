@@ -14,13 +14,14 @@ import { resetAllStores } from '../../helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '../../helpers/temp-dir.js';
 import { createCassetteRecorder } from '../../helpers/cassette/recorder.js';
 import { createCassetteReplayer, loadCassette } from '../../helpers/cassette/replayer.js';
+import { TEST_WORKFLOW_SINKS } from '../../helpers/orchestrator-context.js';
 
 export interface E2eScenario {
   name: string;
   cassetteName: string;
   feature: string;
   mode: WorkflowMode;
-  config: Record<string, unknown>;
+  config: Config;
 }
 
 export interface E2eContext {
@@ -110,7 +111,7 @@ export async function runE2eWorkflow(
     projectDir: ctx.projectDir,
     config: loadAndOverrideConfig(ctx.projectDir, scenario.mode),
     headless: true,
-    sinks: { setAbortHandler: () => undefined, setQueueHandler: () => undefined },
+    sinks: TEST_WORKFLOW_SINKS,
     eventBus: bus,
     _eventSink: (event) => ctx.events.push(event),
     callbacks: {

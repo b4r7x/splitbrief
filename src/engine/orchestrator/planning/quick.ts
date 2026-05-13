@@ -1,5 +1,5 @@
 import type { PlanResult } from '../../planners/types.js';
-import { publishEvent, publishPlannerStatus } from '../events.js';
+import { publishPlannerStatus } from '../events.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import {
   drainAndFormat,
@@ -55,7 +55,7 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
 
   state = transitionAndSave(projectDir, sessionId, state, { type: 'START_QUICK', tasks: planResult.tasks });
   publishPlannerStatus(wctx.bus, state, 'running');
-  publishEvent(wctx.bus, { type: 'plan_approved', ts: Date.now(), phase: state.phase });
+  wctx.bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
 
   return { state, tasks: planResult.tasks, cancelled: false };
 }

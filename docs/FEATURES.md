@@ -1,6 +1,6 @@
 # diptych Features
 
-Comprehensive catalog of every user-facing capability shipped in diptych today. For each feature: what it does, how to invoke it, when to reach for it, the relevant config, and the on-screen output where applicable. This is the "what can diptych do?" reference; deeper rationale lives in the linked specs and design docs.
+User-facing capability reference for diptych. For each feature: what it does, how to invoke it, when to reach for it, the relevant config, and the on-screen output where applicable. Deeper rationale lives in the linked specs and design docs.
 
 > **Cross-references.** Workflow phases: [WORKFLOW.md](./WORKFLOW.md). Config schema: [CONFIGURATION.md](./CONFIGURATION.md). Slash commands: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md). Architecture inventory: [ARCHITECTURE.md#part-2--current-state-the-what](./ARCHITECTURE.md#part-2--current-state-the-what). Hooks: [HOOKS-CONFIG.md](./HOOKS-CONFIG.md). Worktrees: [WORKTREES.md](./WORKTREES.md).
 
@@ -45,7 +45,7 @@ diptych "add JWT middleware" --mode standard
 
 ### `@file` context injection
 
-**What it does.** Positional arguments prefixed with `@` are resolved as file paths. Their contents are injected into the planner context alongside the feature description — ad-hoc context enrichment without config or interaction.
+**What it does.** Positional arguments prefixed with `@` are resolved as file paths. Text files are injected into planner context alongside the feature description; image files become planner attachments.
 
 **How to use.**
 
@@ -282,9 +282,9 @@ If the saved tasks fail brief-quality validation, the editor stays open with the
 
 ### Pricing catalog
 
-**What it does.** Built-in per-model pricing for Anthropic plus the agent-sdk; verified at the snapshot date and overridable per-runner. `local` replaces the dollar amount when the implementer is unpriced (e.g. local Ollama or an OpenCode/Claude-Code subscription) so no fake savings are shown.
+**What it does.** Built-in per-model pricing for priced API providers, with runtime catalog pricing when model discovery reports it. `local` replaces the dollar amount when the implementer is unpriced (for example local Ollama, Agent SDK, or an OpenCode/Claude-Code subscription) so no fake savings are shown.
 
-**How to use.** Pricing is auto-resolved per provider/model. Override via `pricing:` block keyed by `<provider>/<model>` (see `src/engine/providers/pricing-resolver.ts`).
+**How to use.** Pricing is auto-resolved per provider/model from the built-in catalog or runtime model cache (see `src/engine/providers/pricing-resolver.ts`).
 
 ### Budget pause gate
 
@@ -318,7 +318,7 @@ Events: `budget_warning` (80%), `budget_paused` (configured threshold), `budget_
 
 ### Cumulative stats (`diptych stats`)
 
-**What it does.** Tracks cumulative cost savings across all completed sessions in `.diptych/stats.json`. Shows total sessions, total spend, all-planner estimate, and aggregate savings percentage.
+**What it does.** Tracks cumulative cost savings for saved session summaries with cost data in `.diptych/stats.json`. Shows total sessions, total spend, all-planner estimate, and aggregate savings percentage.
 
 **How to use.**
 
@@ -418,7 +418,7 @@ snapshots:
 
 Auto-snapshot failures emit a `warning` event and do not abort the run. See [CONFIGURATION.md §snapshots](./CONFIGURATION.md#10-snapshots).
 
-### Drift detection (per-task)
+### Drift detection (final review)
 
 **What it does.** Before final review, the orchestrator computes a deterministic drift report comparing the Task Brief against the actual git diff and the evidence ledger. Findings include out-of-scope file edits, missing target files, orphan diffs, out-of-bounds substring matches, missing observed evidence, and failed tasks that nevertheless left changes.
 
@@ -428,7 +428,7 @@ Auto-snapshot failures emit a `warning` event and do not abort the run. See [CON
 
 ### Drift action chains (cross-task)
 
-**What it does.** A second-tier scorer that scores chains of consecutive out-of-bounds writes across tasks. A single out-of-scope file is usually a refactor; three across consecutive tasks is the implementer wandering. Score formula: `length(0.3) + overlap(0.5) + newFiles(0.2)`, capped to `[0,1]`. Emits `drift_chain_detected` when the score crosses the configured threshold.
+**What it does.** A second-tier scorer that scores chains of consecutive out-of-bounds writes across tasks. A single out-of-scope file is usually a refactor; three across consecutive tasks is the implementer wandering. Score formula: `length(0.3) + overlap(0.5) + newFiles(0.2)`, capped to `[0,1]`. Emits `drift_chain_detected` when the score meets or exceeds the configured threshold.
 
 **How to use.**
 
@@ -477,12 +477,12 @@ In the TUI: `/handoff <target> [task-id]` writes to `.diptych/sessions/<id>/hand
 
 ### Custom handoff renderers (advanced)
 
-**What it does.** Drop a TypeScript or JavaScript file at `.diptych/handoff-renderers/<name>.ts` exporting a default function. `diptych handoff <name>` then dispatches to it via `renderHandoffWithCustom`.
+**What it does.** Drop a `.js` or runtime-loadable `.ts` file at `.diptych/handoff-renderers/<name>.<ext>` exporting a default function. `diptych handoff <name>` then dispatches to it via `renderHandoffWithCustom`.
 
 **How to use.**
 
-```ts
-// .diptych/handoff-renderers/jira.ts
+```js
+// .diptych/handoff-renderers/jira.js
 export default async function render(input) {
   return { files: [{ path: 'JIRA.md', content: '...' }] };
 }
@@ -530,7 +530,7 @@ diptych start --worktree feature-a "add user auth"
 diptych start --worktree feature-b "refactor billing"
 ```
 
-The source worktree must be clean before creation. `--detach` combination validation (missing feature, `--json` conflict, Windows) runs **before** the worktree is created so a failed validation never leaves behind a `.trees/<slug>` directory or a `diptych/<slug>` branch. With `--detach --worktree`, worktree selection happens before the detached server is spawned.
+The source worktree must be clean before creation. `--detach` combination validation (missing feature, `--json`/`--rpc` conflict, Windows) runs **before** the worktree is created so a failed validation never leaves behind a `.trees/<slug>` directory or a `diptych/<slug>` branch. With `--detach --worktree`, worktree selection happens before the detached server is spawned.
 
 **When to use.** Isolate unrelated sessions in separate working directories; A/B-test two implementer model configs against the same brief; keep a long planner exploration alive while making quick edits elsewhere. This is not same-directory parallel writing, and same-checkout fan-out is out of scope.
 
@@ -566,7 +566,7 @@ diptych start --detach --mode speckit "long planner run"
 
 Prints the session ID and exits. The server logs to `.diptych/sessions/<id>/server.log`. On spawn, writes `.diptych/sessions/<id>/lockfile.json` (heartbeat-tracked, see SCD-03).
 
-**Constraints.** `--detach` requires a feature argument (cannot be omitted). It cannot be combined with `--json` (the two flags are mutually exclusive — `start.ts` throws if both are set).
+**Constraints.** `--detach` requires a feature argument (cannot be omitted). It cannot be combined with `--json` or `--rpc` (`start.ts` throws before worktree creation).
 
 ### `diptych attach [session-id]`
 
@@ -610,12 +610,12 @@ If a session crashed, `diptych attach` shows a crash diagnostic with last-alive 
 
 ### Session continuity (`diptych continue` / `diptych last`)
 
-**What it does.** One command for session lifecycle. `diptych continue` figures out the right thing: attach if running, resume if interrupted. `diptych last` is the zero-arg shorthand for the most recent session. Replaces the mental model of choosing between `ps`/`attach`/`detach`/`resume` for the 90% case.
+**What it does.** One command for session lifecycle. `diptych continue` figures out the right thing for the active session, or for the only running session when there is no active pointer. `diptych last` targets the newest lockfile-backed session. Replaces the mental model of choosing between `ps`/`attach`/`detach`/`resume` for the common case.
 
 **How to use.**
 
 ```bash
-diptych continue         # most recent session
+diptych continue         # active session, or only running session
 diptych continue 1       # numeric alias from ps output
 diptych last             # always the most recent session
 ```
@@ -642,17 +642,17 @@ diptych continue 2
 
 **What it does.** Session data is stored as append-only JSONL entries forming a tree: `{id, parentId, type, timestamp, ...payload}`. A `leafId` pointer tracks the active execution path. Recovery decisions create branches — nothing is deleted. Sessions survive crashes, branching is free, and the full audit trail is preserved.
 
-**Entry types.** Seven custom entry types with a registry: `plan-step`, `agent-invocation`, `recovery-decision`, `compaction`, `branch-summary`, `file-state`, `custom`.
+**Entry types.** Seven registered entry types: `session-start`, `plan-step`, `agent-invocation`, `recovery-decision`, `file-state`, `cost-checkpoint`, `branch-summary`.
 
 **How to use.** Automatic. The tree model underlies all session persistence. Implementation: `src/core/sessions/tree/`.
 
 ### Branch summarization
 
-**What it does.** When execution branches (recovery decision moves the leaf backward), an LLM call summarizes the abandoned branch. The summary uses a structured format (Goal / Progress / Key Decisions / Constraints Discovered / Next Steps) and is injected as context for the new branch so subsequent attempts know what didn't work.
+**What it does.** The tree schema can store `branch-summary` entries for summarized branch context. Current workflow recording preserves recovery decisions and branch history; it does not automatically call an LLM to summarize abandoned branches.
 
-**How to use.** Automatic on recovery branching. The summary is appended as a `branch-summary` entry in the tree.
+**How to use.** No user action is needed for branch history. `branch-summary` is a schema-supported entry type for code paths that explicitly write branch summaries.
 
-**When to use.** No configuration needed — fires whenever a recovery decision creates a new branch.
+**When to use.** Inspect branch history when diagnosing recovery decisions or comparing attempts.
 
 ### Tree navigation TUI
 
@@ -703,7 +703,7 @@ diptych continue 2
 | `/approval [list\|clear]` | List or clear sticky approval grants |
 | `/accept-run` | Accept current run changes and prevent run rejection |
 | `/reject-run confirm` | Restore diptych-written files from the run baseline |
-| `/yolo` | Toggle approval gates off/on for the session |
+| `/yolo` | Toggle action-level tiered approvals off/on for the session |
 | `/quit` | Exit application (Ctrl+Q) |
 
 Full reference: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
@@ -730,7 +730,7 @@ palette:
 
 ### Sessions picker
 
-**What it does.** Browses past sessions backed by `.diptych/sessions/`. Open via `/sessions` or from the home screen. Each row shows session id, mode, feature, status, cost, and elapsed time.
+**What it does.** Browses summary-backed past sessions from `.diptych/sessions/`. Open via `/sessions` or from the home screen. Each row shows status icon, feature, and relative start time.
 
 Sessions are execution records, not a plan archive or project-management database. Plan Review v2 is scoped to the current session's Task Briefs, routing, context fit, checkpoints, and conflict posture before execution.
 
@@ -828,7 +828,7 @@ Return shape: `{ kind: 'allow' | 'deny' | 'warn' | 'crash', message?: string }`.
 
 ### `diptych start --json`
 
-**What it does.** Skips Ink, emits a readiness report first, replaces the TUI sink with NDJSON-on-stdout, and stubs interactive callbacks (auto-accept/reject per config, empty answers to questions). The JSONL session log is byte-identical to an interactive run after the pre-run readiness line.
+**What it does.** Skips Ink, emits a readiness report first, replaces the TUI sink with NDJSON-on-stdout, and stubs workflow host callbacks: review gates approve, questions answer empty, and recovery exits non-zero. Action-level tiered approvals still follow approval config and fail closed for sticky/confirm tiers without a grant. The normal `session.jsonl` log is still written for the run.
 
 **How to use.**
 
@@ -876,7 +876,7 @@ diptych doctor [--json]
 
 ### `diptych resume`
 
-**What it does.** Re-enters the workflow at the saved phase. Refuses if `state.json` is missing, version-mismatched, or in a non-resumable phase (`researching`, `specifying`, `planning` without `awaitingContinue`).
+**What it does.** Re-enters the active workflow at the saved phase. Refuses if `.diptych/active` or `state.json` is missing, version-mismatched, or in a non-resumable phase (`researching`, `specifying`, `planning` without `awaitingContinue`).
 
 ```bash
 diptych resume
@@ -911,7 +911,7 @@ Force a rebuild with `/repomap rebuild`. Full details: [REPOMAP.md](./REPOMAP.md
 
 ### OpenTelemetry sink
 
-**What it does.** Maps every `EngineEvent` to OpenTelemetry spans. Off by default.
+**What it does.** Maps workflow, phase, task, validation, warning, error, and cost events to OpenTelemetry spans. Other engine events are no-ops for tracing. Off by default.
 
 **How to use.**
 
@@ -934,11 +934,11 @@ Or per-run: `--otel-exporter console`. Full details: [OTEL.md](./OTEL.md).
 /detach 1
 ```
 
-### Skills (Claude skills metadata)
+### Skills
 
-**What it does.** Loads `.claude/skills/*.md` markdown into the planner skills picker so the planner can be primed with project-specific knowledge.
+**What it does.** Loads planner skills into the picker so the planner can be primed with project-specific knowledge. Source discovery lives in `src/engine/skill-discovery.ts` and covers `.claude/skills/`, `.diptych/skills/`, global tool skill dirs, `AGENTS.md`, and `CONVENTIONS.md` depending on the selected planner.
 
-**How to use.** Open the picker via `/skills` (home screen only; Ctrl+S). Read-only — diptych never writes to `.claude/skills/`.
+**How to use.** Open the picker via `/skills` (home screen only; Ctrl+S). Read-only — diptych never writes to skill sources.
 
 ---
 

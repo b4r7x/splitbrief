@@ -44,12 +44,12 @@ otel:
   serviceName: diptych
 ```
 
-You must register a TracerProvider yourself before invoking diptych. See [OTEL.md](./OTEL.md).
+For the built-in console exporter, use `OTEL_TRACES_EXPORTER=console`, `DIPTYCH_OTEL_EXPORTER=console`, or `--otel-exporter console`. For OTLP or custom exporters, register a `TracerProvider` before invoking diptych. See [OTEL.md](./OTEL.md).
 
 ## CLI flag additions
 
-- `--json` (start, resume) — headless NDJSON mode
-- `--allow-hooks` (start, resume, spec) — trust hooks without prompting
+- `--json` (start, resume, continue, last) — headless NDJSON mode
+- `--allow-hooks` (start, resume, continue, last, spec) — trust hooks without prompting
 
 ## Breaking changes for integrators
 
@@ -57,7 +57,7 @@ If you wrap diptych programmatically (not as CLI):
 
 - **Event subscription replaced `callbacks.onEvent(event)`.** There are two supported paths:
   1. Pass `_eventSink: (event: EngineEvent) => void` in the `runWorkflow` config — the sink is subscribed to the internal bus at workflow init and receives every event.
-  2. Add a custom sink module under `src/engine/events/sinks/` alongside the shipped `tui.ts` / `jsonl.ts` / `stdout-json.ts` / `otel.ts`, then wire it from `orchestrator/run/init.ts`. Use this path when the sink needs construction config (endpoints, credentials) rather than a per-run closure.
+  2. Add a custom sink module under `src/engine/events/sinks/` alongside `jsonl.ts`, `stdout-json.ts`, `tree-recorder.ts`, and `otel.ts`, then wire it from `orchestrator/run/init.ts`. UI-facing sinks belong outside `engine/`; the shipped TUI sink is `src/features/workflow/tui-sink.ts`.
   The existing on-disk append remains available via `sinks/jsonl.ts` and `core/state/persistence.ts:appendEngineEvent(projectDir, sessionId, event)` — the JSONL sink is unchanged by the uplift.
 - **`TuiEvent` and `OrchestratorEvent` are removed.** Use `EngineEvent` from `src/engine/events/types.ts` as the single source of truth. Workflow sub-stores consume `EngineEvent` directly; the workflow-TUI sink (`tuiSink`) is a pass-through, not a mapper.
 - Update `Planner` adapter signatures to accept the new `codebaseContext` parameter.
@@ -68,12 +68,12 @@ If you query session JSONL files programmatically:
 
 ## New CLI surface
 
-- `diptych start --json "..."` runs the workflow without the Ink TUI and streams `EngineEvent` as NDJSON on stdout. Driver: `src/cli/headless.ts`.
+- `diptych start --json "..."` runs the workflow without the Ink TUI and streams `EngineEvent` as NDJSON on stdout. `resume`, `continue`, and `last` support the same headless mode for interrupted sessions. Driver: `src/cli/headless.ts`.
 - `--allow-hooks` bypasses the interactive hook-trust prompt — required in CI / non-TTY.
 
 ## Headless mode (--json flag)
 
-New `--json` flag on the `start` and `resume` commands. Disables the Ink TUI, emits an NDJSON `EngineEvent` stream on stdout (one JSON document per line, parseable by `jq` or any NDJSON consumer), and stubs every gating callback so the workflow can complete without a human at the keyboard (auto-approve on spec/plan gates, empty answers on clarifications, continue through budget warnings).
+New `--json` flag on workflow commands. Disables the Ink TUI, emits an NDJSON `EngineEvent` stream on stdout (one JSON document per line, parseable by `jq` or any NDJSON consumer), auto-approves workflow review gates, answers clarifications with an empty string, and emits recovery before exiting non-zero on budget pauses or budget exceedance.
 
 Exit codes:
 - `0` — workflow completed successfully (`workflow_complete` emitted).

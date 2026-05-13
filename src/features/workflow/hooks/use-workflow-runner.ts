@@ -1,5 +1,5 @@
 import { useRef, useEffect, useEffectEvent, useState } from 'react';
-import type { Config } from '../../../core/schemas/config.js';
+import { DEFAULT_WORKFLOW_MODE, type Config } from '../../../core/schemas/config.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
@@ -29,6 +29,7 @@ import { saveFinalSession } from '../../../engine/orchestrator/session-lifecycle
 import {
   setAbortHandler,
   setCancelHandler,
+  setClearQueueHandler,
   setQueueHandler,
   setRewindHandler,
   clearAllHandlers,
@@ -39,7 +40,6 @@ import { killAllProcesses } from '../../../lib/process/registry.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { readActive } from '../../../core/sessions/lifecycle.js';
 import { transition } from '../../../core/state/machine.js';
-import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../../../core/config/accessors/runner-config.js';
 import { resolveAutoModel } from '../../../core/providers/model-selection.js';
 import { REVIEW_HINT } from '../review-parser.js';
@@ -93,6 +93,7 @@ export function useWorkflowRunner({
 
   const sinks: WorkflowSinks = {
     setAbortHandler,
+    setClearQueueHandler,
     setQueueHandler,
   };
 

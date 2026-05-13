@@ -5,7 +5,7 @@ import type { ProjectContext } from '../../core/state/types.js';
 import type { Planner, PriorMessage } from '../planners/types.js';
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
 import type { SpecMetadata } from '../../core/paths-io.js';
-import type { Summary } from '../../core/schemas/summary.js';
+import type { CostPrediction, Summary } from '../../core/schemas/summary.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { Validator } from './validation.js';
 import type { EventBus } from '../events/types.js';
@@ -15,7 +15,6 @@ import type { RoutingDecision } from './context-routing/types.js';
 import type { TaskReviewRequest, TaskReviewResponse } from './task/review.js';
 import type { ModelCacheAccessor } from '../providers/model/resolution.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
-import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { StreamingSink } from './task/streaming-feed.js';
 
 export interface OrchestratorCallbacks {
@@ -36,10 +35,12 @@ export interface ResumeContextHolder {
 }
 
 export type QueueHandler = (text: string, phase: Phase) => void;
+export type ClearQueueHandler = () => number;
 
 export interface WorkflowSinks {
   setAbortHandler: (handler: (() => void) | null) => void;
   setQueueHandler: (handler: QueueHandler | null) => void;
+  setClearQueueHandler?: ((handler: ClearQueueHandler | null) => void) | undefined;
 }
 
 export interface WorkflowContext {

@@ -1,8 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Cassette, CassetteEntry } from './types.js';
-
-type RequestInfo = string | URL | Request;
+import { headersToRecord, normalizeRequest, type CassetteRequestInfo } from './requests.js';
 
 const AUTH_HEADER_KEYS = ['authorization', 'x-api-key'];
 
@@ -21,42 +20,14 @@ function detectProvider(url: string, headers: Record<string, string>): string {
   return 'unknown';
 }
 
-function headersToRecord(headers: Headers): Record<string, string> {
-  const result: Record<string, string> = {};
-  headers.forEach((value, key) => {
-    result[key] = value;
-  });
-  return result;
-}
-
-function requestUrl(input: RequestInfo | URL): string {
-  if (typeof input === 'string') return input;
-  if (input instanceof URL) return input.toString();
-  return input.url;
-}
-
-function requestMethod(input: RequestInfo | URL, init?: RequestInit): string {
-  if (init?.method) return init.method;
-  if (typeof input !== 'string' && !(input instanceof URL)) return input.method;
-  return 'GET';
-}
-
-function requestHeaders(input: RequestInfo | URL, init?: RequestInit): Headers {
-  if (init?.headers) return new Headers(init.headers);
-  if (typeof input !== 'string' && !(input instanceof URL)) return new Headers(input.headers);
-  return new Headers();
-}
-
 export function createCassetteRecorder(cassettePath: string, name: string, meta?: Record<string, unknown>) {
   const entries: CassetteEntry[] = [];
   const originalFetch = globalThis.fetch;
 
   function install(): void {
-    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      const url = requestUrl(input);
-      const method = requestMethod(input, init);
-      const recordedRequestHeaders = headersToRecord(requestHeaders(input, init));
-      const body = init?.body ? String(init.body) : null;
+    globalThis.fetch = async (input: CassetteRequestInfo, init?: RequestInit): Promise<Response> => {
+      const request = normalizeRequest(input, init);
+      const recordedRequestHeaders = headersToRecord(request.headers);
       const start = Date.now();
 
       const realResponse = await originalFetch(input, init);
@@ -74,17 +45,17 @@ export function createCassetteRecorder(cassettePath: string, name: string, meta?
         index: entries.length,
         recordedAt: new Date().toISOString(),
         request: {
-          method,
-          url,
+          method: request.method,
+          url: request.url,
           headers: redactHeaders(recordedRequestHeaders),
-          body,
+          body: request.body,
         },
         response: {
           status: realResponse.status,
           headers: responseHeaders,
           body: responseBody,
         },
-        provider: detectProvider(url, recordedRequestHeaders),
+        provider: detectProvider(request.url, recordedRequestHeaders),
         durationMs,
       });
 

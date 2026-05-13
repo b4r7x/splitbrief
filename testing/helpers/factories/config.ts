@@ -1,6 +1,6 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Config } from '../../../src/core/schemas/config.js';
+import { ConfigSchema, type Config } from '../../../src/core/schemas/config.js';
 import type { ApiImplementerConfig, ImplementerConfig } from '../../../src/core/schemas/implementer-config.js';
 import type { PlannerConfig } from '../../../src/core/schemas/planner-config.js';
 import type { ProjectContext } from '../../../src/core/state/types.js';
@@ -14,13 +14,42 @@ const defaultApiImplementer: ApiImplementerConfig = {
   temperature: 0.2,
 };
 
-export function makeConfig(overrides?: Omit<Partial<Config>, 'implementer' | 'planner' | 'validation' | 'workflow'> & { implementer?: Partial<ImplementerConfig>; planner?: PlannerConfig; validation?: Partial<Config['validation']>; workflow?: Partial<Config['workflow']> }): Config {
-  const base: Config = {
+type ConfigOverrides = Omit<Partial<Config>, 'implementer' | 'planner' | 'validation' | 'workflow'> & {
+  implementer?: Partial<ImplementerConfig>;
+  planner?: PlannerConfig;
+  validation?: Partial<Config['validation']>;
+  workflow?: Partial<Config['workflow']>;
+};
+
+type ConfigInput = {
+  version: Config['version'];
+  planner: PlannerConfig;
+  implementer: Partial<ImplementerConfig>;
+  validation: Config['validation'];
+  workflow: Config['workflow'];
+  theme?: Config['theme'];
+  shikiTheme?: Config['shikiTheme'];
+  sessions?: Config['sessions'];
+  escalation?: Config['escalation'];
+  codebase?: Config['codebase'];
+  hooks?: Config['hooks'];
+  approval?: Config['approval'];
+  plannerEstimateReview?: Config['plannerEstimateReview'];
+  autoSplitOverflow?: Config['autoSplitOverflow'];
+};
+
+function makeImplementerConfig(overrides?: Partial<ImplementerConfig>): Partial<ImplementerConfig> {
+  if (overrides?.kind !== undefined && overrides.kind !== 'api') {
+    return overrides;
+  }
+  return { ...defaultApiImplementer, ...overrides };
+}
+
+export function makeConfig(overrides?: ConfigOverrides): Config {
+  const base: ConfigInput = {
     version: 2,
     planner: overrides?.planner ?? { kind: 'cli', tool: 'claude-code' },
-    implementer: overrides?.implementer
-      ? { ...defaultApiImplementer, ...overrides.implementer } as ImplementerConfig
-      : defaultApiImplementer,
+    implementer: makeImplementerConfig(overrides?.implementer),
     validation: {
       typecheck: true,
       lint: true,
@@ -49,7 +78,7 @@ export function makeConfig(overrides?: Omit<Partial<Config>, 'implementer' | 'pl
   if (overrides?.approval !== undefined) base.approval = overrides.approval;
   if (overrides?.plannerEstimateReview !== undefined) base.plannerEstimateReview = overrides.plannerEstimateReview;
   if (overrides?.autoSplitOverflow !== undefined) base.autoSplitOverflow = overrides.autoSplitOverflow;
-  return base;
+  return ConfigSchema.parse(base);
 }
 
 export function makeNoValidationConfig(overrides?: Parameters<typeof makeConfig>[0]): Config {

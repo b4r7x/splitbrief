@@ -79,7 +79,7 @@ Reference also: `.specify/memory/constitution.md` — 6 constitutional principle
 
 These are the rules that apply everywhere; deeper specifications live in the linked doc.
 
-- **Zero classes.** Pure functions, module-scoped state. The `class` keyword does not appear in `src/`.
+- **Zero runtime classes.** Pure functions and module-scoped state in production source; test fixtures may contain class syntax when that is the behavior under test.
 - **ESM with `.js` extension** in every import: `'./config.js'` not `'./config'`.
 - **kebab-case** file and folder names (`models-dev.ts`, `lm-studio.ts`). Single-word where natural (`pricing.ts`).
 - **No decorative comments.** No section banners. Ordering is the documentation.
@@ -101,7 +101,7 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 
 ## Runner kinds
 
-Both planner and implementer accept five runner kinds. The `kind` field is the discriminant and is always required. Config uses `version: 2`.
+Both planner and implementer accept five runner kinds. The `kind` field is the discriminant and is always required. Current configs write `version: 3`; `version: 2` is accepted and migrated for backwards compatibility.
 
 | `kind` | What it is | Example |
 |---|---|---|
@@ -121,11 +121,11 @@ Full config schemas and YAML examples: [docs/ARCHITECTURE.md](./docs/ARCHITECTUR
 |---|:---:|:---:|---|
 | `instant` | 1 | none | Trivial edits that need almost no ceremony |
 | `quick` | 1 | none | Small tasks that still need a brief |
-| `standard` (default) | 4 | supporting spec | Ordinary feature work |
-| `speckit` | 6–7 | supporting spec + plan | Large, risky, or externally visible work |
+| `standard` (default) | 4 | supporting spec + briefs | Ordinary feature work |
+| `speckit` | 6–7 | supporting spec + plan + briefs | Large, risky, or externally visible work |
 
 Set via `--mode`, config `workflow.mode`, or `/mode` at runtime. `full` is only a legacy alias. Detailed semantics: [docs/WORKFLOW.md](./docs/WORKFLOW.md).
 
 ## Known limitations
 
-- TypeScript / JavaScript target projects only.
+- Primary development stack is TypeScript / JavaScript. Command-based validation also supports configured or detected Python, Go, and Rust pipelines.

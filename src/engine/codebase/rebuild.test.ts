@@ -37,4 +37,16 @@ describe('rebuildRepomap', () => {
     const second = rebuildRepomap(projectDir);
     expect(second.deleted).toBe(false);
   });
+
+  it('deletes cache files from a custom cacheDir', () => {
+    const dir = join(projectDir, '.custom-cache');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'repomap.sqlite'), 'data');
+
+    const result = rebuildRepomap(projectDir, { cacheDir: '.custom-cache' });
+
+    expect(result.deleted).toBe(true);
+    expect(result.files).toEqual([join(dir, 'repomap.sqlite')]);
+    expect(existsSync(join(dir, 'repomap.sqlite'))).toBe(false);
+  });
 });

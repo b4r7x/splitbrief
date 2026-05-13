@@ -1,6 +1,6 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { Implementer, ImplementerFactoryOptions } from './types.js';
-import { assertImplementerKind } from './utils.js';
+import { assertImplementerKind } from '../config-assertions.js';
 import { createCommandBasedImplementer } from './command-invoke.js';
 
 export function createShellImplementer(initialConfig: Config, options?: ImplementerFactoryOptions): Implementer {

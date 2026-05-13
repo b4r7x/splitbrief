@@ -188,7 +188,6 @@ describe('startIpcServer', () => {
 
     await waitForClose(s2);
     expect(s2.destroyed).toBe(true);
-    // s1 still alive
     expect(s1.destroyed).toBe(false);
   });
 
@@ -291,8 +290,10 @@ describe('startIpcServer', () => {
       approvalType: 'briefs',
       filePath: '/tmp/briefs.md',
     })).rejects.toMatchObject({
+      kind: 'ipc-prompt-no-client-headless',
       code: 'ipc_prompt_no_client_headless',
       promptKind: 'approval_needed',
+      data: { promptKind: 'approval_needed' },
       message: 'IPC prompt cannot be answered in explicit headless mode without an attached client: approval_needed',
     });
   });
@@ -418,7 +419,6 @@ describe('startIpcServer', () => {
     await waitForClose(s1);
     expect(s1.destroyed).toBe(true);
 
-    // Server still accepts new connections
     const s2 = await connectClient(srv.sockPath);
     sockets.push(s2);
     const afterDetachMsgs = await readLines(s2, 1);
@@ -466,7 +466,6 @@ describe('startIpcServer', () => {
     await tick();
 
     expect(events.some((e) => e.type === 'warning')).toBe(true);
-    // server is still alive
     expect(srv.sockPath).toBeTruthy();
     expect(existsSync(srv.sockPath)).toBe(true);
   });
@@ -476,7 +475,6 @@ describe('startIpcServer', () => {
     expect(existsSync(srv.sockPath)).toBe(true);
     await srv.close();
     expect(existsSync(srv.sockPath)).toBe(false);
-    // remove from servers list since already closed
     const idx = servers.indexOf(srv);
     if (idx !== -1) servers.splice(idx, 1);
   });
@@ -526,7 +524,6 @@ describe('startIpcServer replay', () => {
     const socket = await connectClient(srv.sockPath);
     sockets.push(socket);
 
-    // Expect: session_meta, event(replay_started), replay_meta, event(wf_started), event(wf_complete), event(replay_complete)
     const msgs = await readLines(socket, 6);
 
     expect(msgs[0]!.kind).toBe('session_meta');
@@ -573,10 +570,8 @@ describe('startIpcServer replay', () => {
     const socket = await connectClient(srv.sockPath);
     sockets.push(socket);
 
-    // session_meta, event(replay_started), replay_meta, event*3, event(replay_complete) = 7
     const msgs = await readLines(socket, 7);
 
-    // messages at indices 3,4,5 are the replayed events in order
     const replayed = msgs.slice(3, 6);
     expect(replayed[0]!.kind).toBe('event');
     expect(replayed[1]!.kind).toBe('event');
@@ -585,7 +580,6 @@ describe('startIpcServer replay', () => {
     if (replayed[1]!.kind === 'event') expect(replayed[1]!.payload.type).toBe('warning');
     if (replayed[2]!.kind === 'event') expect(replayed[2]!.payload.type).toBe('warning');
 
-    // replay_complete is the last message (index 6)
     const completeMsg = msgs[6]!;
     expect(completeMsg.kind).toBe('event');
     if (completeMsg.kind === 'event') {
@@ -616,10 +610,8 @@ describe('startIpcServer replay', () => {
     const socket = await connectClient(srv.sockPath);
     sockets.push(socket);
 
-    // session_meta, event(replay_started), replay_meta, event(wf_started), event(replay_complete) = 5
     await readLines(socket, 5);
 
-    // Now publish a new live event
     const livePromise = readLines(socket, 1);
     bus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: 'live event' });
     const liveMsg = await livePromise;
@@ -634,9 +626,8 @@ describe('startIpcServer replay', () => {
     const socket = await connectClient(srv.sockPath);
     sockets.push(socket);
 
-    await readLines(socket, 1); // session_meta
+    await readLines(socket, 1);
 
-    // Without replay, next message should be a live event (no replay_meta in between)
     const liveP = readLines(socket, 1);
     testBus.publish({ type: 'warning', ts: Date.now(), phase: 'idle', message: 'direct' });
     const live = await liveP;

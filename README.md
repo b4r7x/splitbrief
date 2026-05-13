@@ -31,7 +31,7 @@ You: "add user authentication with JWT"
           │ code changes
           ▼
 ┌─────────────────────┐
-│  VALIDATION          │  tsc → lint → tests → evidence
+│  VALIDATION          │  typecheck → lint → tests → evidence
 │  Per task            │  Retry, then escalate if needed
 └─────────┬───────────┘
           │
@@ -80,7 +80,7 @@ diptych init        # auto-detects running models
 diptych start "add user authentication with JWT"
 ```
 
-After `diptych init`, diptych creates a `.diptych/` folder in your project:
+After `diptych init` and the first `diptych start`, diptych creates a `.diptych/` folder in your project:
 
 ```
 .diptych/
@@ -90,6 +90,7 @@ After `diptych init`, diptych creates a `.diptych/` folder in your project:
     └── 2026-04-14-add-user-auth/
         ├── state.json
         ├── session.jsonl
+        ├── research.md  ← optional research notes when produced
         ├── spec.md      ← optional support doc for larger work
         ├── plan.md
         └── tasks.md     ← markdown transport for Task Briefs
@@ -109,9 +110,9 @@ export DIPTYCH_CONTEXT_LENGTH=32768
 
 | Action | Key | Effect |
 |--------|-----|--------|
-| Queue a message | Type + Enter | Message delivered at next safe point; current call continues uninterrupted |
-| Abort current turn | Ctrl-C (single press) | Preserves partial work, enters awaiting-continue |
-| Exit workflow | Ctrl-C twice within 2s | Saves state; resume later with `diptych resume` |
+| Queue a message | Type + Enter | During live planner phases, queues text for the next safe point; planners with `injectUserTurn()` also receive it immediately |
+| Abort current call | Ctrl-C (single press) | During live phases, aborts the active model call and enters awaiting-continue |
+| Exit workflow | Ctrl-C twice within 2s | Saves state and exits; continue later with `diptych continue <session-id>` if the saved state is resumable |
 | Continue | Enter (empty) or type + Enter | Exit awaiting-continue; queued messages folded into next call |
 
 ## Commands
@@ -125,7 +126,7 @@ export DIPTYCH_CONTEXT_LENGTH=32768
 | `diptych status` | Show current workflow state |
 | `diptych migrate` | Migrate pre-v3 `.diptych/current/` state to new layout |
 
-`--auto` skips approval prompts.
+`--auto` auto-approves spec/plan review gates. Briefs review and action-level gates still follow workflow and approval config; use `--yolo` or approval tiers for unattended writes.
 
 ## Slash commands
 
@@ -218,18 +219,18 @@ Anything that speaks the OpenAI chat completions protocol works.
 
 #### Custom providers
 
-Any string works as `provider` — set `apiBase` for unknown ones:
+Any string works as `provider` when you set both `apiBase` and `apiKey`:
 
 ```yaml
 implementer:
   kind: api
-  provider: together
+  provider: custom-openai
   model: Qwen/Qwen2.5-Coder-32B-Instruct
   apiBase: https://api.together.xyz/v1
-  apiKey: your-key     # or set TOGETHER_API_KEY env var
+  apiKey: your-key
 ```
 
-API key resolution: config `apiKey` → `<PROVIDER>_API_KEY` env var → `"no-key"` fallback.
+API key resolution for built-ins: config `apiKey` overrides the provider env var. Unknown providers must set `apiKey` in config.
 
 #### CLI tool implementers
 
@@ -287,16 +288,11 @@ For large files (300+ LOC), diptych switches from whole-file to function-level c
 | DeepSeek V3.2 | $0.28/M input, ~$0.20/feature |
 | OpenRouter | Varies, free tier for some models |
 
-## Cost math
+## Cost model
 
-With Claude Code Max 5x ($100/month):
+diptych is designed to keep expensive models on planning, review, and escalation while routing routine implementation to cheaper or local models. The actual savings depend on current provider pricing, subscription limits, task size, local model quality, validation coverage, and escalation rate.
 
-| Setup | Monthly Cost | Features/month |
-|-------|-------------|----------------|
-| Opus only | $100 | 5-6 |
-| **Opus + diptych** | **$100** | **12-15** |
-
-The planner handles research, Task Brief compilation, and escalation (~350K tokens/feature). Implementation is $0 with local models. In practice, 70-85% of tasks complete locally without escalation.
+The planner handles research, Task Brief compilation, and escalation. Implementation can be local for routine tasks when the brief is specific enough and validation is available.
 
 ## Development
 
@@ -307,22 +303,22 @@ npm test                         # Vitest colocated test suite
 npm run build                    # tsc → dist/
 ```
 
-Running the CLI via `diptych` or `npm run dev -- start` requires a fresh build (`npm run build`) if you've just pulled. The `dist/` directory is gitignored and regenerated.
+Running the installed `diptych` binary requires a fresh build (`npm run build`) if you've just pulled. `npm run dev -- start` runs the TypeScript source through `tsx`. The `dist/` directory is gitignored and regenerated.
 
 TypeScript 6.x, ESM only, Ink 6.8 + React 19 for the TUI. Tests are colocated with source files.
 
 ## Extensibility
 
-- **EventBus architecture** — engine emits typed `EngineEvent` discriminated union (50 variants); UI, persistence, hooks, and observability subscribe as independent sinks. See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md#eventbus).
+- **EventBus architecture** — engine emits typed `EngineEvent` values; UI, persistence, hooks, and observability subscribe as independent sinks. See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md#eventbus).
 - **Workflow hooks** — fire shell commands or JS modules at workflow events (`pre_task`, `post_commit`, etc.). 2 built-ins: `prettier-on-change`, `block-secrets`. See [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md).
 - **Repo-map context** — Aider-style symbol summary auto-injected into the planner prompt so it can compile a sharper Task Brief. Tree-sitter + PageRank + SQLite cache for fast incremental updates. See [docs/REPOMAP.md](./docs/REPOMAP.md).
-- **Headless mode** — `diptych start --json "feature"` emits each engine event as NDJSON to stdout, skips the TUI. CI/agent-friendly; auto-approves all gates.
+- **Headless mode** — `diptych start --json "feature"` emits each engine event as NDJSON to stdout and skips the TUI. Workflow review gates are auto-approved; tiered sticky/confirm approvals fail closed unless their tiers allow the action.
 - **Advanced interop** — handoff packs and the MCP server expose read-only session artifacts for external tools; they are escape hatches, not the main execution path.
 - **OpenTelemetry** — opt-in span emission for workflow, phase, and task lifecycle with per-cost attributes. See [docs/OTEL.md](./docs/OTEL.md).
 
 ## Current state
 
-TypeScript/JavaScript projects only. Not tested on Windows.
+Primary development stack is TypeScript/JavaScript. Command-based validation also supports configured or detected Python, Go, and Rust pipelines. Not tested on Windows.
 
 ## Contributing
 

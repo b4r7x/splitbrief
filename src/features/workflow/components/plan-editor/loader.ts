@@ -4,7 +4,7 @@ import type { Task } from '../../../../core/schemas/task.js';
 import { isBriefQualityReport, type BriefQualityReport } from '../../../../engine/spec/brief-quality.js';
 import { parseTasks } from '../../../../engine/spec/parser.js';
 import { planEditorStore } from '../../../../stores/workflow/plan-editor.js';
-import { refreshPlanReviewMetadata } from '../brief-review-view.js';
+import { refreshPlanReviewMetadata } from '../brief-review.js';
 
 interface LoadPlanEditorDataOptions {
   filePath: string;

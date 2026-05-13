@@ -7,6 +7,12 @@ import { resetWorkflow } from '../../../src/stores/workflow/actions.js';
 import { makeErrorEvent } from '#testing/helpers/events.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 
+type ErrorEvent = Extract<EngineEvent, { type: 'error' }>;
+
+function isErrorEvent(event: EngineEvent | undefined): event is ErrorEvent {
+  return event?.type === 'error';
+}
+
 describe('error event → UI propagation', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -28,8 +34,8 @@ describe('error event → UI propagation', () => {
 
       const events = eventsStore.get().events;
       const last = events.at(-1);
-      expect(last?.type).toBe('error');
-      expect((last as Extract<EngineEvent, { type: 'error' }>).message).toBe('Model context exceeded');
+      if (!isErrorEvent(last)) throw new Error('expected last event to be an error event');
+      expect(last.message).toBe('Model context exceeded');
     });
 
     it('multiple error events accumulate in the events store in order', () => {
@@ -40,7 +46,7 @@ describe('error event → UI propagation', () => {
       bus.publish(makeErrorEvent({ message: 'second error', ts: 2 }));
       bus.publish(makeErrorEvent({ message: 'third error', ts: 3 }));
 
-      const errors = eventsStore.get().events.filter(e => e.type === 'error') as Array<Extract<EngineEvent, { type: 'error' }>>;
+      const errors = eventsStore.get().events.filter(isErrorEvent);
       expect(errors).toHaveLength(3);
       expect(errors[0]?.message).toBe('first error');
       expect(errors[1]?.message).toBe('second error');

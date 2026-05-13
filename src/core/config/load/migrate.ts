@@ -1,9 +1,8 @@
-import { CLI_TOOL_IDS, RUNNER_KINDS, KNOWN_API_PROVIDERS, type ApproveLevel } from '../../schemas/enums.js';
+import { CLI_TOOL_IDS, RUNNER_KINDS, KNOWN_API_PROVIDERS, type ApproveLevel, type RunnerKind } from '../../schemas/enums.js';
 import { getRunnerKindMeta } from '../../schemas/runner-fields.js';
 import { resolveDefaultApiBase } from '../../providers/catalog.js';
 import { narrowRecord, includes } from '../../../utils/type-guards.js';
 import { configError } from '../errors.js';
-import type { RunnerKind } from '../../schemas/enums.js';
 
 export function migrateConfig(raw: unknown, warnings?: string[]): unknown {
   if (!raw || typeof raw !== 'object') {
@@ -23,7 +22,7 @@ export function migrateConfig(raw: unknown, warnings?: string[]): unknown {
     return raw;
   } else if (version === 2) {
     v2 = obj;
-    warnings?.push("config.version 2 is deprecated; upgrade to 3 (run `diptych migrate` or rerun `diptych init`).");
+    warnings?.push('config.version 2 is deprecated; diptych migrated it in memory. Run `diptych init --reconfigure` to write a current config.');
   } else {
     v2 = narrowRecord(migrateV1ToV2(obj)) ?? {};
   }

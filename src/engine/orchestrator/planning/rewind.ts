@@ -4,7 +4,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../../core/paths.js';
 import { buildRegeneratePrompt } from '../../spec/prompts/plan.js';
-import { publishEvent, createBusTextHandler, publishPlannerStatus } from '../events.js';
+import { createBusTextHandler, publishPlannerStatus } from '../events.js';
 import { addUsageAndSave, transitionAndSave, publishPlanApproved } from '../state-ops.js';
 import { appendMessage } from '../../../core/state/persistence.js';
 import { runApprovalLoop } from '../approval/approval.js';
@@ -42,7 +42,7 @@ export async function handleRewindSpec(
     });
     state = addUsageAndSave(projectDir, sessionId, state, 'planner', regenResult.usage, wctx.bus);
     writeSpecFile(projectDir, sessionId, SPEC_FILE, regenResult.text, metadata);
-    publishEvent(wctx.bus, { type: 'spec_regenerated', ts: Date.now(), phase: state.phase, comment: rewindPending.comment });
+    wctx.bus.publish({ type: 'spec_regenerated', ts: Date.now(), phase: state.phase, comment: rewindPending.comment });
   }
 
   state = transitionAndSave(projectDir, sessionId, state, { type: 'SPEC_DONE' });
@@ -118,7 +118,7 @@ export async function handleRewindPlan(
     });
     state = addUsageAndSave(projectDir, sessionId, state, 'planner', regenResult.usage, wctx.bus);
     writeSpecFile(projectDir, sessionId, PLAN_FILE, regenResult.text, metadata);
-    publishEvent(wctx.bus, { type: 'plan_regenerated', ts: Date.now(), phase: state.phase, comment: rewindPending.comment });
+    wctx.bus.publish({ type: 'plan_regenerated', ts: Date.now(), phase: state.phase, comment: rewindPending.comment });
   }
 
   const taskRegen = await regenerateTasks(projectDir, sessionId, planner, callbacks, wctx.bus, state, metadata);

@@ -61,13 +61,13 @@ export function clearGrantsByScope(
 
 Following the existing pattern, register a `approval` command group with two subcommands:
 
-**`diptych approval list [--project-dir <dir>]`**
+**`diptych approval list [--project <dir>]`**
 - Reads `.diptych/approvals.json`.
 - If no grants: prints `No sticky approvals on record.`
 - Otherwise prints a table: one row per grant with columns `pattern`, `class`, `scope`, `sessionId?`, `grantedAt`.
 - Exit 0.
 
-**`diptych approval clear [--scope session|always|all] [--project-dir <dir>]`**
+**`diptych approval clear [--scope session|always|all] [--project <dir>]`**
 - Defaults to `--scope all` if not specified.
 - Calls `clearGrantsByScope`, writes back.
 - Prints `Cleared N approval grant(s).`

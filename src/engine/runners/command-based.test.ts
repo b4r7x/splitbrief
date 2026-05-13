@@ -1,11 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { invokeCommandBasedRunner } from './command-based.js';
 
 describe('invokeCommandBasedRunner', () => {
   it('writes prompt to stdin when no placeholder present', async () => {
-    // Use 'cat' to echo stdin back
     const result = await invokeCommandBasedRunner(
-      { command: 'cat', extractsCode: false, detectChanges: async () => ({ changed: true, output: '' }) },
+      { command: 'cat' },
       'test prompt',
       process.cwd(),
     );
@@ -17,8 +16,6 @@ describe('invokeCommandBasedRunner', () => {
       {
         command: 'echo',
         args: ['{prompt}'],
-        extractsCode: false,
-        detectChanges: async () => ({ changed: true, output: '' }),
         supportPromptPlaceholder: true,
       },
       'hello world',
@@ -28,13 +25,10 @@ describe('invokeCommandBasedRunner', () => {
   });
 
   it('substitutes {prompt} placeholder in command', async () => {
-    // Use sh -c to run a command that includes the prompt
     const result = await invokeCommandBasedRunner(
       {
         command: 'sh',
         args: ['-c', 'echo "{prompt}"'],
-        extractsCode: false,
-        detectChanges: async () => ({ changed: true, output: '' }),
         supportPromptPlaceholder: true,
       },
       'substituted text',
@@ -44,13 +38,10 @@ describe('invokeCommandBasedRunner', () => {
   });
 
   it('uses stdin when supportPromptPlaceholder is false', async () => {
-    // Even with {prompt} in args, if supportPromptPlaceholder is false, use stdin
     const result = await invokeCommandBasedRunner(
       {
         command: 'cat',
-        args: [], // no placeholder
-        extractsCode: false,
-        detectChanges: async () => ({ changed: true, output: '' }),
+        args: [],
         supportPromptPlaceholder: false,
       },
       'stdin content',
@@ -59,50 +50,20 @@ describe('invokeCommandBasedRunner', () => {
     expect(result.stdout).toContain('stdin content');
   });
 
-  it('extracts code when extractsCode is true', async () => {
+  it('returns stdout without extracting code', async () => {
     const codeBlock = '```js\nconsole.log("hi")\n```';
     const result = await invokeCommandBasedRunner(
-      { command: 'echo', args: [codeBlock], extractsCode: true },
+      { command: 'echo', args: [codeBlock] },
       '',
       process.cwd(),
     );
-    expect(result.code).toContain('console.log');
-  });
-
-  it('returns undefined code when no code block found', async () => {
-    const result = await invokeCommandBasedRunner(
-      { command: 'echo', args: ['no code here'], extractsCode: true },
-      '',
-      process.cwd(),
-    );
-    expect(result.code).toBeUndefined();
-    expect(result.stdout).toContain('no code here');
-  });
-
-  it('reports changed files via detectChanges when extractsCode is false', async () => {
-    const detectChanges = vi.fn().mockResolvedValue({ changed: true, output: '' });
-    const result = await invokeCommandBasedRunner(
-      { command: 'echo', args: ['done'], extractsCode: false, detectChanges },
-      '',
-      process.cwd(),
-    );
-    expect(result.hasChanges).toBe(true);
-  });
-
-  it('returns hasChanges: false when detectChanges returns false', async () => {
-    const detectChanges = vi.fn().mockResolvedValue({ changed: false, output: 'no changes' });
-    const result = await invokeCommandBasedRunner(
-      { command: 'echo', args: ['done'], extractsCode: false, detectChanges },
-      '',
-      process.cwd(),
-    );
-    expect(result.hasChanges).toBe(false);
+    expect(result.stdout).toContain('console.log');
   });
 
   it('propagates command-not-found error', async () => {
     await expect(
       invokeCommandBasedRunner(
-        { command: 'nonexistent-command-xyz', extractsCode: true },
+        { command: 'nonexistent-command-xyz' },
         'prompt',
         process.cwd(),
       ),
@@ -112,7 +73,7 @@ describe('invokeCommandBasedRunner', () => {
   it('streams stdout chunks to the output subscriber', async () => {
     const chunks: string[] = [];
     await invokeCommandBasedRunner(
-      { command: 'echo', args: ['hello'], extractsCode: false },
+      { command: 'echo', args: ['hello'] },
       '',
       process.cwd(),
       (text: string) => { chunks.push(text); },
@@ -123,21 +84,19 @@ describe('invokeCommandBasedRunner', () => {
 
   it('captures stderr', async () => {
     const result = await invokeCommandBasedRunner(
-      { command: 'sh', args: ['-c', 'echo error >&2'], extractsCode: false },
+      { command: 'sh', args: ['-c', 'echo error >&2'] },
       '',
       process.cwd(),
     );
     expect(result.stderr).toContain('error');
   });
 
-  it('returns stdout and stderr when no extractsCode or detectChanges', async () => {
+  it('returns stdout and stderr', async () => {
     const result = await invokeCommandBasedRunner(
-      { command: 'echo', args: ['output'], extractsCode: false },
+      { command: 'echo', args: ['output'] },
       '',
       process.cwd(),
     );
     expect(result.stdout).toContain('output');
-    expect(result.hasChanges).toBeUndefined();
-    expect(result.code).toBeUndefined();
   });
 });

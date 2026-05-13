@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { runNpmTest } from './shared.js';
-import type { EvalScenario, QualityCheck } from './types.js';
+import type { EvalScenario, QualityCheck, QualityCheckResult } from './types.js';
 
 const explicitTestCandidates = [
   'src/email.test.ts',
@@ -59,71 +59,79 @@ function hasPattern(content: string, patterns: RegExp[]): boolean {
   return patterns.some((pattern) => pattern.test(content));
 }
 
+function emailValidationTestExists(dir: string): QualityCheckResult {
+  const testFiles = findEmailTestFiles(dir);
+  if (testFiles.length > 0) {
+    return { passed: true, detail: `Found ${testFiles.map((path) => path.replace(`${dir}/`, '')).join(', ')}` };
+  }
+
+  return { passed: false, detail: 'No email validation test file found' };
+}
+
+function validEmailCasesCovered(dir: string): QualityCheckResult {
+  const content = readEmailTestContent(dir);
+  const hasValidAddress = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.test(content);
+  const hasValidSignal = /\b(valid|accepts?|allows?|returns true|toBe\(true\)|toEqual\(true\))\b/i.test(content);
+
+  return hasValidAddress && hasValidSignal
+    ? { passed: true, detail: 'Valid email cases covered' }
+    : { passed: false, detail: 'Valid email cases not found' };
+}
+
+function invalidFormatCasesCovered(dir: string): QualityCheckResult {
+  const content = readEmailTestContent(dir);
+  const hasInvalidSignal = /\b(invalid|rejects?|denies?|returns false|toBe\(false\)|toEqual\(false\))\b/i.test(content);
+  const hasInvalidExample = hasPattern(content, [
+    /not[-_ ]?an[-_ ]?email/i,
+    /\bplain\b/i,
+    /\bno[-_ ]?at\b/i,
+    /example\.com/i,
+    /user@/i,
+    /@example/i,
+  ]);
+
+  return hasInvalidSignal && hasInvalidExample
+    ? { passed: true, detail: 'Invalid format cases covered' }
+    : { passed: false, detail: 'Invalid format cases not found' };
+}
+
+function edgeCasesCovered(dir: string): QualityCheckResult {
+  const content = readEmailTestContent(dir);
+  const hasEdgeCase = hasPattern(content, [
+    /\b(empty|blank)\b/i,
+    /\bwhitespace\b/i,
+    /\bmissing[-_ ]?(domain|local)\b/i,
+    /(['"`])\1/,
+    /(['"`])\s+\1/,
+    /(['"`])@[a-z0-9.-]+\.[a-z]{2,}\1/i,
+    /[a-z0-9._%+-]+@(['"`]|[,)\]\s;])/i,
+  ]);
+
+  return hasEdgeCase
+    ? { passed: true, detail: 'Edge cases covered' }
+    : { passed: false, detail: 'Edge cases not found' };
+}
+
 const qualityChecks: QualityCheck[] = [
   {
     name: 'email validation test file exists',
-    check: async (dir) => {
-      const testFiles = findEmailTestFiles(dir);
-      if (testFiles.length > 0) {
-        return { passed: true, detail: `Found ${testFiles.map((path) => path.replace(`${dir}/`, '')).join(', ')}` };
-      }
-
-      return { passed: false, detail: 'No email validation test file found' };
-    },
+    check: emailValidationTestExists,
   },
   {
     name: 'tests cover valid email cases',
-    check: async (dir) => {
-      const content = readEmailTestContent(dir);
-      const hasValidAddress = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.test(content);
-      const hasValidSignal = /\b(valid|accepts?|allows?|returns true|toBe\(true\)|toEqual\(true\))\b/i.test(content);
-
-      return hasValidAddress && hasValidSignal
-        ? { passed: true, detail: 'Valid email cases covered' }
-        : { passed: false, detail: 'Valid email cases not found' };
-    },
+    check: validEmailCasesCovered,
   },
   {
     name: 'tests cover invalid format cases',
-    check: async (dir) => {
-      const content = readEmailTestContent(dir);
-      const hasInvalidSignal = /\b(invalid|rejects?|denies?|returns false|toBe\(false\)|toEqual\(false\))\b/i.test(content);
-      const hasInvalidExample = hasPattern(content, [
-        /not[-_ ]?an[-_ ]?email/i,
-        /\bplain\b/i,
-        /\bno[-_ ]?at\b/i,
-        /example\.com/i,
-        /user@/i,
-        /@example/i,
-      ]);
-
-      return hasInvalidSignal && hasInvalidExample
-        ? { passed: true, detail: 'Invalid format cases covered' }
-        : { passed: false, detail: 'Invalid format cases not found' };
-    },
+    check: invalidFormatCasesCovered,
   },
   {
     name: 'tests cover edge cases',
-    check: async (dir) => {
-      const content = readEmailTestContent(dir);
-      const hasEdgeCase = hasPattern(content, [
-        /\b(empty|blank)\b/i,
-        /\bwhitespace\b/i,
-        /\bmissing[-_ ]?(domain|local)\b/i,
-        /(['"`])\1/,
-        /(['"`])\s+\1/,
-        /(['"`])@[a-z0-9.-]+\.[a-z]{2,}\1/i,
-        /[a-z0-9._%+-]+@(['"`]|[,)\]\s;])/i,
-      ]);
-
-      return hasEdgeCase
-        ? { passed: true, detail: 'Edge cases covered' }
-        : { passed: false, detail: 'Edge cases not found' };
-    },
+    check: edgeCasesCovered,
   },
   {
     name: 'tests pass after implementation',
-    check: async (dir) => runNpmTest(dir),
+    check: runNpmTest,
   },
 ];
 

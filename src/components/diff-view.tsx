@@ -56,8 +56,8 @@ function DiffLine({ line, lineNum, highlightedContent, theme: t }: DiffLineProps
   const stripped = stripPrefix(line);
   const bg = diffBg(isAdded, isRemoved, t.diff);
   const fallbackColor = diffColor(isAdded, isRemoved, t.diff);
-  const content = (isAdded || isRemoved) && highlightedContent ? highlightedContent : stripped;
-  const hasHighlight = !!(isAdded || isRemoved) && highlightedContent;
+  const hasHighlight = (isAdded || isRemoved) && highlightedContent !== null;
+  const content = hasHighlight ? highlightedContent : stripped;
   const colorProp = hasHighlight ? {} : { color: fallbackColor };
   const bgProp = bg !== undefined ? { backgroundColor: bg } : {};
   return (

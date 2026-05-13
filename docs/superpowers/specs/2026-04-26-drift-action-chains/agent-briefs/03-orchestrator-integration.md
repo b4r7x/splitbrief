@@ -129,7 +129,7 @@ async function runChainAnalysisSafe(opts: {
 
 `publishDriftChainDetected` is defined in brief 04. In this brief, you may stub it as a no-op or leave a TODO comment — brief 04 will implement it. The chain state write still happens.
 
-If you prefer to avoid the dependency on brief 04 for the initial implementation: inline the event publish using `publishEvent(bus, { type: 'drift_chain_detected', ... })` after brief 04 adds the event variant to `EngineEvent`. Brief 04 will also refactor this call site if needed, since it owns the event shape.
+If you prefer to avoid the dependency on brief 04 for the initial implementation: inline the event publish using `bus.publish({ type: 'drift_chain_detected', ... })` after brief 04 adds the event variant to `EngineEvent`. Brief 04 will also refactor this call site if needed, since it owns the event shape.
 
 ## `taskStartRef` Threading
 

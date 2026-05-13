@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
+import '#testing/helpers/cli/ink-mocks.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { runCommand } from '#testing/helpers/commander.js';
@@ -12,14 +13,6 @@ import { toYaml } from '../../../src/core/config/load/transform.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { DIPTYCH_DIR, CONFIG_FILE, sessionDir } from '../../../src/core/paths.js';
-
-vi.mock('ink', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('ink')>();
-  return { ...actual, render: () => ({ waitUntilExit: async () => {}, unmount: () => {}, clear: () => {}, rerender: () => {}, cleanup: () => {} }) };
-});
-vi.mock('fullscreen-ink', () => ({
-  withFullScreen: () => ({ start: async () => {}, waitUntilExit: async () => {} }),
-}));
 
 let tmp: string;
 

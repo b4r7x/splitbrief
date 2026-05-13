@@ -6,6 +6,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { registerStatusCommand } from './status.js';
 import { DIPTYCH_DIR, STATE_FILE, SESSION_LOG_FILE } from '../../core/paths.js';
 import { createInitialState } from '../../core/state/machine.js';
+import { makeSession } from '#testing/helpers/factories/session.js';
 
 let tmp: string;
 // console.log is a sanctioned global spy — see docs/TESTING.md core rules.
@@ -35,6 +36,31 @@ function writeActiveSession(projectDir: string, sessionId: string, feature: stri
   writeFileSync(join(projectDir, DIPTYCH_DIR, 'active'), sessionId + '\n');
 }
 
+function writeCompletedSession(projectDir: string, sessionId: string, startedAt: number): void {
+  const sessionDir = join(projectDir, DIPTYCH_DIR, 'sessions', sessionId);
+  mkdirSync(sessionDir, { recursive: true });
+  const base = makeSession({ status: 'complete' });
+  if (!base.summary) throw new Error('expected complete session summary');
+  writeFileSync(join(sessionDir, 'summary.json'), JSON.stringify(makeSession({
+    id: sessionId,
+    status: 'complete',
+    startedAt,
+    completedAt: startedAt + 1,
+    summary: {
+      ...base.summary,
+      costBreakdown: {
+        hypotheticalCost: 2,
+        actualPlannerCost: 0.2,
+        actualImplementerCost: 0.3,
+        totalActualCost: 0.5,
+        savingsAmount: 1.5,
+        savingsPercentage: 75,
+        localCompletionRate: 1,
+      },
+    },
+  })));
+}
+
 async function runStatus(args: string[]): Promise<void> {
   const program = new Command();
   program.exitOverride();
@@ -46,7 +72,6 @@ describe('status command', () => {
   it('reports no active workflow when .diptych has no active marker', async () => {
     await runStatus([]);
     const out = captureOutput();
-    // Shape: non-empty and mentions the "active" concept (resilient to copy tweaks).
     expect(out.length).toBeGreaterThan(0);
     expect(out.toLowerCase()).toMatch(/active|no.*workflow/);
   });
@@ -56,7 +81,6 @@ describe('status command', () => {
 
     await runStatus([]);
     const out = captureOutput();
-    // User-observable: feature name + phase appear somewhere in the output.
     expect(out).toContain('add auth');
     expect(out).toContain('implementing');
   });
@@ -65,7 +89,16 @@ describe('status command', () => {
     await runStatus(['--history']);
     const out = captureOutput();
     expect(out.length).toBeGreaterThan(0);
-    // Hint should NOT appear when the flag is already set (shape check, not exact copy).
     expect(out).not.toMatch(/Run .*--history/);
+  });
+
+  it('uses all sessions for --history instead of the recent-session cap', async () => {
+    for (let i = 0; i < 12; i += 1) {
+      writeCompletedSession(tmp, `2026-04-18-history-${i}`, i);
+    }
+
+    await runStatus(['--history']);
+
+    expect(captureOutput()).toContain('Cost History (12 sessions)');
   });
 });

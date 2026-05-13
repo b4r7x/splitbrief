@@ -22,7 +22,7 @@ import { analyzeBriefDrift, formatDriftReportForPrompt, publishDriftReport, writ
 
 import type { Planner } from '../planners/types.js';
 import { buildSummary, type SummaryBase } from './summary.js';
-import { publishEvent, publishError, publishPlannerStatus, publishWarning } from './events.js';
+import { publishError, publishPlannerStatus, publishWarning } from './events.js';
 import { transitionAndSave } from './state-ops.js';
 import { runPlannerReview } from './planner-review.js';
 import { createSnapshot } from '../snapshots/store.js';
@@ -59,7 +59,7 @@ export async function runFinalReviewPhase(
 
   const finalReviewStart = Date.now();
   publishPlannerStatus(bus, state, 'running');
-  publishEvent(bus, { type: 'all_tasks_done', ts: Date.now(), phase: state.phase });
+  bus.publish({ type: 'all_tasks_done', ts: Date.now(), phase: state.phase });
 
   let reviewStatus: 'written' | 'failed' = 'written';
   try {
@@ -105,7 +105,7 @@ export async function runFinalReviewPhase(
 
   state = transitionAndSave(projectDir, sessionId, state, { type: 'REVIEW_DONE' });
   publishPlannerStatus(bus, state, 'done', { duration: Date.now() - finalReviewStart });
-  publishEvent(bus, { type: 'workflow_complete', ts: Date.now(), phase: state.phase });
+  bus.publish({ type: 'workflow_complete', ts: Date.now(), phase: state.phase });
 
   const summaryOpts = {
     ...summaryBase,

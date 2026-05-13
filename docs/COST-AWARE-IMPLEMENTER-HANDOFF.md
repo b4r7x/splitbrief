@@ -2,6 +2,7 @@
 
 > Status: implemented and locally verified with targeted checks.
 > Last updated: 2026-04-28.
+> Archive note: this handoff records the implementation state on 2026-04-28. Some path inventory below predates later refactors; use current source search before editing.
 
 This is the short handoff for a fresh AI context. Read it with [COST-AWARE-IMPLEMENTER-DIRECTION.md](./COST-AWARE-IMPLEMENTER-DIRECTION.md) before changing the cost-aware implementer code.
 
@@ -37,17 +38,17 @@ expensive planner -> Task Briefs -> cheapest capable implementer profile -> chec
 - `src/core/schemas/config.ts` wires optional `implementerProfiles` into config while preserving the existing single `implementer`.
 - `src/core/config/accessors/implementer-profiles.ts` resolves profiles, default profile selection, derived capabilities, and compatibility with legacy config.
 - `src/core/config/load/load.ts`, `src/core/config/load/migrate.ts`, and `src/core/config/load/validate.ts` load, preserve, and validate profile config.
-- `src/engine/orchestrator/context-routing.ts` estimates prompt size, classifies context fit, requires direct writes only for path-like multi-file scopes, and chooses the cheapest capable profile.
+- `src/engine/orchestrator/context-routing/` estimates prompt size, classifies context fit, requires direct writes only for path-like multi-file scopes, and chooses the cheapest capable profile.
 
 ### Fresh Task Execution
 
-- `src/engine/orchestrator/task-loop.ts` and `src/engine/orchestrator/task-step.ts` integrate routing before task dispatch and keep execution sequential.
+- `src/engine/orchestrator/task/loop.ts` and `src/engine/orchestrator/task/step.ts` integrate routing before task dispatch and keep execution sequential.
 - `src/engine/orchestrator/run/phases.ts` carries routing and task execution through the run phases.
 - Each task is treated as its own implementer dispatch with compact routing metadata. The implementer does not receive a single growing plan transcript.
 
 ### User Edit Conflicts
 
-- `src/engine/orchestrator/user-edit-conflicts.ts` classifies external edits as unrelated, current-task conflict, future-task stale input, dependency conflict, or changed-during-approval-promotion.
+- `src/engine/orchestrator/user-edit/conflicts.ts` classifies external edits as unrelated, current-task conflict, future-task stale input, dependency conflict, or changed-during-approval-promotion.
 - `src/features/workflow/user-edit-conflict-prompt.ts` formats the prompt and normalizes choices.
 - `src/features/workflow/hooks/use-workflow-runner.ts` and `src/features/workflow/screen.tsx` surface conflict decisions in the workflow.
 - Promotion is blocked when user edits touch files that would otherwise be overwritten.
@@ -55,7 +56,7 @@ expensive planner -> Task Briefs -> cheapest capable implementer profile -> chec
 ### Cost Accounting
 
 - `src/engine/orchestrator/tokens.ts`, `src/core/schemas/tokens.ts`, and `src/engine/events/types.ts` carry routing context, selected profile, estimated tokens, context fit, truncation mode, and cost posture.
-- `src/engine/orchestrator/budget.ts`, `src/engine/orchestrator/summary.ts`, and `src/features/summary/screen.tsx` keep budget and summary surfaces aware of routing/cost metadata.
+- `src/engine/orchestrator/budget/budget.ts`, `src/engine/orchestrator/summary.ts`, and `src/features/summary/screen.tsx` keep budget and summary surfaces aware of routing/cost metadata.
 - `src/engine/providers/pricing.ts` keeps provider pricing lookup behavior aligned with summary accounting.
 
 ### Plan Review And TUI
@@ -84,13 +85,13 @@ expensive planner -> Task Briefs -> cheapest capable implementer profile -> chec
 - `src/core/config/accessors/implementer-profiles.test.ts`
 - `src/core/config/load/load.test.ts`
 - `src/core/config/load/validate.test.ts`
-- `src/engine/orchestrator/context-routing.test.ts`
-- `src/engine/orchestrator/task-loop.test.ts`
-- `src/engine/orchestrator/task-step.test.ts`
+- `src/engine/orchestrator/context-routing/route.test.ts`
+- `src/engine/orchestrator/task/loop.test.ts`
+- `src/engine/orchestrator/task/step.test.ts`
 - `src/engine/orchestrator/run/phases.test.ts`
-- `src/engine/orchestrator/user-edit-conflicts.test.ts`
+- `src/engine/orchestrator/user-edit/conflicts.test.ts`
 - `src/engine/orchestrator/tokens.test.ts`
-- `src/engine/orchestrator/budget.test.ts`
+- `src/engine/orchestrator/budget/budget.test.ts`
 - `src/engine/orchestrator/summary.test.ts`
 - `src/engine/providers/pricing.test.ts`
 - `src/features/workflow/components/brief-review-view.test.ts`

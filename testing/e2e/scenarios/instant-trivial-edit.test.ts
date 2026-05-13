@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { e2eImplementer, e2ePlanner } from '../helpers/e2e-config.js';
+import { makeE2eScenarioConfig } from '../helpers/e2e-config.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/e2e-harness.js';
 
 const scenario = {
@@ -9,21 +9,7 @@ const scenario = {
   cassetteName: 'instant-trivial-edit',
   feature: 'fix typo in README',
   mode: 'instant' as const,
-  config: {
-    version: 2,
-    planner: e2ePlanner,
-    implementer: e2eImplementer,
-    workflow: {
-      mode: 'instant',
-      commitStrategy: 'none',
-    },
-    validation: {
-      typecheck: false,
-      lint: false,
-      test: false,
-      testCommand: 'npm test',
-    },
-  },
+  config: makeE2eScenarioConfig('instant'),
 };
 
 describe('e2e: instant mode trivial edit', () => {

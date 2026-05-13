@@ -11,6 +11,7 @@ export type Metrics = { hits: number; misses: number };
 export interface ParseCache {
   getOrParse(absPath: string, parse: (p: string) => Promise<FileNode | null>): Promise<FileNode | null>;
   metrics: Metrics;
+  close(): void;
 }
 
 type CacheRow = {
@@ -80,5 +81,9 @@ export function createParseCache(dbPath: string): ParseCache {
     return node;
   }
 
-  return { getOrParse, metrics };
+  function close(): void {
+    if (db.open) db.close();
+  }
+
+  return { getOrParse, metrics, close };
 }

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -568,6 +568,9 @@ describe('PlanEditorComponent review metadata', () => {
     ui.stdin.write('p');
     await tick(50);
 
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('freshDiskValue');
+    });
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Packet Preview T001');
     expect(frame).toContain('freshDiskValue');

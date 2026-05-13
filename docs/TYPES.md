@@ -71,12 +71,12 @@ Why: shared intra-folder contract. Folder name provides the naming context (`run
 
 ```ts
 // src/core/skills/types.ts — shared SkillMeta contract
-export interface SkillMeta { id: string; title: string; ... }
+export interface SkillMeta { id: string; name: string; description: string; path: string; scope: 'global' | 'project'; }
 ```
 
 ```ts
-// src/engine/skills/discovery.ts — produces SkillMeta values
-import type { SkillMeta } from '../../core/skills/types.js';
+// src/engine/skill-discovery.ts — produces SkillMeta values
+import type { SkillMeta } from '../core/skills/types.js';
 ```
 
 Why: if producers and stores/features both consume the type, place the contract in `core/` so lower layers do not import from `engine/`.
@@ -109,7 +109,7 @@ Types should live where their domain meaning is created — not in a central `ty
 | `EngineEvent` | n/a (new) | `engine/events/types.ts` | Single source of truth for every engine event; workflow sub-stores and all sinks consume it directly |
 | `EventBus`, `EventSink` | n/a (new) | `engine/events/types.ts` | Declared alongside `EngineEvent`; ports for `createEventBus()` and sink subscribers |
 | `RunnerRuntime`, `ToolUseInfo`, `ParsedLine`, `InvokeResult` | `core/types/runner.ts` | `engine/runners/types.ts` | Created by the runner factory — runner-domain |
-| `SkillMeta` | `core/types/app.ts` | `core/skills/types.ts` | Produced by `engine/skills/discovery.ts`, consumed by stores/features without importing `engine/` |
+| `SkillMeta` | `core/types/app.ts` | `core/skills/types.ts` | Produced by `engine/skill-discovery.ts`, consumed by stores/features without importing `engine/` |
 | `ThemeColors` | `core/types/theme.ts` | `components/theme.tsx` (inline) | Only used by the theme component |
 | `SidebarTask` | `core/types/app.ts` | `features/workflow/components/sidebar.tsx` (inline) | Single consumer |
 | `Screen`, `InputMode`, `OverlayType` | `core/types/app.ts` | `stores/navigation/router.ts` (inline) | Single consumer |
@@ -219,7 +219,7 @@ If it turns out a value (constant, helper fn) from `features/workflow/` is neede
 | Name | Verdict | Reason |
 |---|---|---|
 | `<folder>/types.ts` | ✅ | Folder context provides the domain |
-| `<folder>/types.ts` with two files `z.infer`d from a schema | ✅ | Accept — the schema's inferred type is still allowed to live elsewhere if the folder genuinely owns the type |
+| `<folder>/types.ts` with `z.infer`d schema types | ❌ | Inferred schema types must live beside their schema owner |
 | `<folder>/<name>-types.ts` | ❌ | Suffix duplicates the folder's domain |
 | `<folder>/<name>.types.ts` | ❌ | Same as above, different punctuation |
 | `src/types.ts` | ❌ | Top-level dumping ground |
@@ -236,7 +236,7 @@ A: Inline into `review-parser.ts` (Case A).
 **Q: I'm adding a `PlannerDetection` type used by three files inside `engine/detection/`.**
 A: `engine/detection/types.ts` (Case B).
 
-**Q: I'm adding a `ProviderMetadata` type created by `engine/providers/metadata.ts` and consumed by `engine/catalog/registry.ts` + `stores/discovery/model-cache.ts`.**
+**Q: I'm adding a `ProviderMetadata` type created by `engine/providers/metadata.ts` and consumed by `engine/providers/registry.ts` + `stores/discovery/model-cache.ts`.**
 A: Inline in `engine/providers/metadata.ts` (the producer). Consumers `import type`. (Case C)
 
 **Q: I'm adding a Zod schema for a new config section.**

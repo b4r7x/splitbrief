@@ -30,27 +30,36 @@ const OpenRouterModelSchema = z.object({
 
 type OpenRouterModel = z.infer<typeof OpenRouterModelSchema>;
 
-export function parsePrice(str: string | undefined): number {
-  if (!str) return 0;
-  const val = parseFloat(str);
-  return Number.isNaN(val) ? 0 : perTokenToPerMillion(val);
+export function parsePrice(str: string | undefined): number | undefined {
+  if (str === undefined) return undefined;
+  const trimmed = str.trim();
+  if (trimmed === '') return undefined;
+  const val = Number(trimmed);
+  return Number.isFinite(val) ? perTokenToPerMillion(val) : undefined;
 }
 
 export function toDetectedModel(m: OpenRouterModel): DetectedModel {
   const inputPrice = parsePrice(m.pricing?.prompt);
   const outputPrice = parsePrice(m.pricing?.completion);
-  const isFree = m.id.endsWith(':free') || (inputPrice === 0 && outputPrice === 0);
+  const hasCompletePricing = inputPrice !== undefined && outputPrice !== undefined;
+  const isFree = m.id.endsWith(':free') || (hasCompletePricing ? inputPrice === 0 && outputPrice === 0 : undefined);
 
   const capabilities: string[] = [];
   if (m.architecture?.modality?.input?.includes('image')) capabilities.push('vision');
 
   const result: DetectedModel = {
     id: m.id,
-    pricingInput: inputPrice,
-    pricingOutput: outputPrice,
-    isFree,
   };
 
+  if (isFree !== undefined) {
+    result.isFree = isFree;
+  }
+  if (inputPrice !== undefined) {
+    result.pricingInput = inputPrice;
+  }
+  if (outputPrice !== undefined) {
+    result.pricingOutput = outputPrice;
+  }
   if (m.context_length !== undefined) {
     result.contextLength = m.context_length;
   }

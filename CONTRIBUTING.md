@@ -70,14 +70,14 @@ rg "throw new Error" src/engine/ src/lib/ src/cli/ | rg -v "\.test\."
 # 5. No raw setter on store facade
 rg "^\s*set:\s*store\.set" src/stores/
 
-# 6. simple-git imported only in lib/git
-rg "from 'simple-git'" src/ | rg -v "lib/git"
+# 6. simple-git imported only in lib/git in production source
+rg "from 'simple-git'" src/ --glob '!**/*.test.ts' | rg -v "^src/lib/git.ts:"
 
 # 7. Anthropic SDK key scoped via env option, no global mutation
-rg "process\.env\['ANTHROPIC_API_KEY'\]" src/engine/agent-sdk.ts
+rg "process\.env\['ANTHROPIC_API_KEY'\]" src/engine/agent-sdk-backend.ts
 
-# 8. Zero classes
-rg "class\s+\w+\s+extends\s+Error" src/
+# 8. No classes in production source
+rg "\bclass\s+\w+" src/ --glob '!**/*.test.ts' --glob '!**/*.test.tsx'
 
 # 9. No cross-feature imports
 rg "from '\.\./\.\./features/" src/features/
@@ -99,7 +99,7 @@ Each gate must return 0 matches (or the stated count). Sanctioned exceptions for
 
 ## Code conventions
 
-- **Zero classes.** Pure functions + module-scoped state.
+- **Zero runtime classes.** Production source uses pure functions and module-scoped state. Tests may contain class syntax only when class behavior is under test.
 - **ESM with `.js` extension** in imports: `import x from './foo.js'`, never `./foo`.
 - **kebab-case** for file and folder names.
 - **No barrels.** No re-export-only `index.ts` anywhere in `src/` or `testing/` — see [docs/NO-BARRELS.md](./docs/NO-BARRELS.md).

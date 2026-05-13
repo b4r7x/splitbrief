@@ -22,9 +22,11 @@ describe('spec approval gate suspends until externally resolved', () => {
     ensureSessionDir(projectDir, sessionId);
     writeSpecFile(projectDir, sessionId, SPEC_FILE, '# Spec', null);
 
-    let resolveApproval!: (value: ApprovalResolution) => void;
-    const approvalPromise = new Promise<ApprovalResolution>((resolve) => { resolveApproval = resolve; });
-    const onApprovalNeeded = (): Promise<ApprovalResolution> => approvalPromise;
+    let approve: ((value: ApprovalResolution) => void) | undefined;
+    const approval = new Promise<ApprovalResolution>((resolve) => {
+      approve = resolve;
+    });
+    const onApprovalNeeded = (): Promise<ApprovalResolution> => approval;
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus, events } = makeBusRecorder();
 
@@ -36,20 +38,18 @@ describe('spec approval gate suspends until externally resolved', () => {
       projectDir, sessionId, callbacks, bus, state, persistTranscript: false,
     });
 
-    // Workflow is suspended: onApprovalNeeded is in-flight, no resolution yet.
     await Promise.resolve();
     const resolved = { kind: 'none' } as { kind: 'none' | 'done' };
     void loopPromise.then(() => { resolved.kind = 'done'; });
     await Promise.resolve();
     expect(resolved.kind).toBe('none');
 
-    // External resolution unblocks the gate.
-    resolveApproval({ approved: true });
+    expect(approve).toBeDefined();
+    approve?.({ approved: true });
     const result = await loopPromise;
 
     expect(result.rejected).toBe(false);
     expect(result.regenerated).toBe(false);
-    // No planner-status 'done' event was emitted on this approved path — only rejection path emits that.
     expect(events.find((e) => e.type === 'planner_status' && e.status === 'done')).toBeUndefined();
   });
 });

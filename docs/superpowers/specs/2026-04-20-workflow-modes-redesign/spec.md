@@ -289,7 +289,7 @@ The following elements land in the TUI:
 | Attachment chip in input bar | `src/components/input/multiline-input.tsx` | `📎 2` if pending attachments exist |
 | Downgrade-advisor toast | reuses existing feedback-message store | one-line advisory |
 | `/mode instant` / `/mode speckit` | `src/core/slash-commands/catalog.ts` | runtime switch |
-| `/approve none\|spec\|plan\|all` | same | runtime switch |
+| Approval-level runtime command (archived design; not in current registry) | same | runtime switch |
 | `/attach <path>` | same | add image |
 | `/effort low\|medium\|high\|xhigh` | same | runtime switch |
 | `/settings` overlay: git, mode, approve, effort | `src/core/settings/catalog.ts` | persistent config editing |

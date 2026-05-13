@@ -8,7 +8,7 @@ This doc is the authority. If you are writing a new error type or reading code t
 
 ## The three rules
 
-### Rule 1 — Zero classes for errors
+### Rule 1 — Zero runtime classes for errors
 
 No `class FooError extends Error`. Errors are built by a factory function that returns a plain `Error` object decorated with a discriminator field and a typed `data` payload.
 
@@ -27,13 +27,13 @@ One field, one convention, zero bike-shedding. Every domain error in the codebas
 
 ### Rule 3 — Each domain exports a predicate bag
 
-Factories and type guards for the same domain live together in a single `export const xError = { ... } as const` bag, placed next to the producer. The bag is the domain's error surface.
+Factories and type guards for the same domain live together in a single `export const xError = { ... } as const` bag, placed next to the producer. The bag is the domain's error surface. Abbreviated shape:
 
 ```ts
 export const processError = {
   notFound: (command: string) => error('command-not-found', `Command not found: ${command}`, { command }),
-  timeout: (command: string, output: string, ms: number) =>
-    error('command-timeout', `${command} timed out after ${ms}ms`, { command, output, ms }),
+  timeout: (opts: { command: string; timeoutMs: number; output: string }) =>
+    error('command-timeout', `${opts.command} timed out after ${Math.round(opts.timeoutMs / 1000)}s`, opts),
   isNotFound: matches('command-not-found'),
   isTimeout: matches('command-timeout'),
 } as const;
@@ -62,9 +62,10 @@ export function error<K extends string, D = undefined>(
   data?: D,
   cause?: unknown,
 ): AppError<K, D> {
-  const err = new Error(message) as AppError<K, D>;
+  const err = (cause !== undefined
+    ? new Error(message, { cause })
+    : new Error(message)) as AppError<K, D>;
   Object.assign(err, { kind, data: data as D });
-  if (cause !== undefined) (err as { cause: unknown }).cause = cause;
   return err;
 }
 
@@ -86,20 +87,34 @@ A domain bag is a single `as const` object colocated with the module that produc
 import { error, matches } from '../../utils/error.js';
 import { redactSecrets } from '../../utils/redact.js';
 
-type ProcessErrorData = { command: string; output?: string; code?: number };
-
 export const processError = {
-  notFound: (command: string) =>
-    error('command-not-found', `Command not found: ${command}`, { command } satisfies ProcessErrorData),
-  timeout: (command: string, output: string, ms: number) =>
-    error('command-timeout', `${command} timed out after ${ms}ms`,
-      { command, output: redactSecrets(output) }),
-  outputFailure: (message: string, output: string) =>
-    error('process-output', redactSecrets(message),
-      { command: '', output: redactSecrets(output) }),
+  notFound: (command: string, message?: string) =>
+    error('command-not-found', message ?? `Command not found: ${command}`, { command, message }),
+  timeout: (opts: { command: string; label?: string; timeoutMs: number; output: string }) => {
+    const subject = opts.label ?? opts.command;
+    const seconds = Math.round(opts.timeoutMs / 1000);
+    return error('command-timeout', `${subject} timed out after ${seconds}s`, {
+      command: opts.command,
+      label: opts.label,
+      timeoutMs: opts.timeoutMs,
+      output: opts.output,
+    });
+  },
+  exitCode: (opts: { command: string; label?: string; code: number | null; stderr: string; output?: string }) => {
+    const subject = opts.label ?? opts.command;
+    const detail = opts.stderr?.trim();
+    const message = `${subject} exited with code ${opts.code}${detail ? `: ${detail}` : ''}`;
+    return error('process-output', redactSecrets(message), {
+      command: opts.command,
+      label: opts.label,
+      code: opts.code,
+      stderr: redactSecrets(opts.stderr ?? ''),
+      output: redactSecrets(opts.output ?? opts.stderr ?? ''),
+    });
+  },
   isNotFound: matches('command-not-found'),
   isTimeout: matches('command-timeout'),
-  isOutputFailure: matches('process-output'),
+  isExitCode: matches('process-output'),
 } as const;
 ```
 
@@ -111,7 +126,7 @@ Both live in the same `export const`. There is no separate `processErrorGuards.t
 
 ### Predicates are YAGNI until a caller narrows
 
-Do not add an `isXxx` predicate until a non-test caller needs to narrow on its kind. Factories and kinds are cheap; predicates without runtime callers are dead weight. Use `matches(err, 'kind')` from `utils/error.ts` for ad-hoc narrowing (e.g. inside tests or one-off branches) instead of pre-populating the bag. Unused predicates are YAGNI violations — delete them.
+Do not add an `isXxx` predicate until a non-test caller needs to narrow on its kind. Factories and kinds are cheap; predicates without runtime callers are dead weight. Use `matches('kind')(err)` from `utils/error.ts` for ad-hoc narrowing (e.g. inside tests or one-off branches) instead of pre-populating the bag. Unused predicates are YAGNI violations — delete them.
 
 ### Factories produce the final message
 
@@ -136,7 +151,7 @@ throw processError.timeout({ command: 'codex', label: 'Codex', timeoutMs: 120_00
 ```ts
 // Don't — a separate formatter defeats the purpose of the bag
 const msg = formatCommandError('timeout', { command: 'codex', label: 'Codex', timeoutMs: 120_000 });
-throw processError.timeout(msg, output); // duplicated concerns, two places to keep in sync
+throw processError.timeout({ command: msg, timeoutMs: 120_000, output }); // duplicated concerns
 ```
 
 If a caller needs a custom message that the factory's default would not produce (e.g. a CLI tool that wants `'Claude Code CLI not found. Install it from https://claude.ai/code'`), expose an optional `message` parameter on the factory. The factory still owns message construction — it just accepts the override rather than delegating to a second formatter.
@@ -149,7 +164,7 @@ If a caller needs a custom message that the factory's default would not produce 
 
 ```ts
 throw processError.notFound('git');
-throw processError.timeout('ollama serve', stderr, 30_000);
+throw processError.timeout({ command: 'ollama serve', timeoutMs: 30_000, output: stderr });
 ```
 
 ### Catching and narrowing
@@ -162,6 +177,9 @@ try {
     return promptInstall(err.data.command);
   }
   if (processError.isTimeout(err)) {
+    return showStderr(err.data.output);
+  }
+  if (processError.isExitCode(err)) {
     return showStderr(err.data.output);
   }
   throw err;
@@ -207,7 +225,7 @@ When an error wraps a lower-level one, thread the original through the fourth ar
 try {
   await readFile(path);
 } catch (err) {
-  throw configError.missing(path, err);  // factory passes err as cause to error()
+  throw configError.invalidYaml(path, err); // factory passes err as cause to error()
 }
 ```
 
@@ -254,7 +272,7 @@ The top-level catch in `src/cli.ts` checks `isCliError(err)` and calls `process.
 1. **New code uses the factory + bag.** No new `Error` subclasses.
 2. **When touching old `Error` subclass code**, migrate it in the same change. Do not leave a half-migrated file.
 
-The four subclasses at the point of writing (`CommandNotFoundError`, `CommandTimeoutError`, `ProcessOutputError`, `IdleTimeoutError`) migrate to two bags: `processError` (three kinds, in `src/lib/process/errors.ts`) and `timeoutError` (one kind, in `src/utils/with-timeout.ts`). The three `instanceof` call sites in `engine/` become `processError.isNotFound(err)` / `timeoutError.isIdle(err)`.
+Old `Error` subclasses migrate to domain bags such as `processError` in `src/lib/process/errors.ts` and `timeoutError` in `src/utils/with-timeout.ts`. `instanceof` call sites become bag predicates such as `processError.isNotFound(err)` or `timeoutError.isIdle(err)`.
 
 ---
 

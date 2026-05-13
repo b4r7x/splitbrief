@@ -1,21 +1,18 @@
 import type { Readable, Writable } from 'node:stream';
-import type { Config } from '../../core/schemas/config.js';
-import type { Phase } from '../../core/schemas/enums.js';
+import { DEFAULT_WORKFLOW_MODE, type Config } from '../../core/schemas/config.js';
+import { RecoveryActionSchema, type Phase } from '../../core/schemas/enums.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 import type { Planner } from '../../engine/planners/types.js';
 import type { Implementer } from '../../engine/implementers/types.js';
-import type { QueueHandler } from '../../engine/orchestrator/types.js';
-import type { RunWorkflowOptions } from '../../engine/orchestrator/run/run.js';
+import type { ClearQueueHandler, QueueHandler } from '../../engine/orchestrator/types.js';
+import { runWorkflow, type RunWorkflowOptions } from '../../engine/orchestrator/run/run.js';
 import type { CollectedReadiness } from '../../core/readiness/collect.js';
 import { loadConfig } from '../../core/config/load/load.js';
 import { applyCLIOverrides } from '../../core/config/runtime/overrides.js';
-import { DEFAULT_WORKFLOW_MODE } from '../../core/schemas/config.js';
-import { RecoveryActionSchema } from '../../core/schemas/enums.js';
 import { loadState } from '../../core/state/persistence.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
-import { runWorkflow } from '../../engine/orchestrator/run/run.js';
 import { createEventBus } from '../../engine/events/bus.js';
 import { applyRecoveryAction } from '../../engine/orchestrator/recovery/actions.js';
 import { publishRecoveryPrompted } from '../../engine/orchestrator/events.js';
@@ -93,6 +90,7 @@ export async function runRpc(
   let activeSessionId = currentSessionId(projectDir, sessionId);
   let currentPhase: Phase = savedState?.phase ?? 'idle';
   let queueHandler: QueueHandler | null = null;
+  let clearQueueHandler: ClearQueueHandler | null = null;
   let abortTurnHandler: (() => void) | null = null;
   const queuedRecoveryActions: string[] = [];
 
@@ -202,6 +200,7 @@ export async function runRpc(
     setConfig: (next) => { config = next; },
     getPhase: () => currentPhase,
     getQueueHandler: () => queueHandler,
+    getClearQueueHandler: () => clearQueueHandler,
     abort: (reason?: unknown) => {
       abortTurnHandler?.();
       abortController.abort(reason);
@@ -251,6 +250,9 @@ export async function runRpc(
           },
           setQueueHandler: (handler) => {
             queueHandler = handler;
+          },
+          setClearQueueHandler: (handler) => {
+            clearQueueHandler = handler;
           },
         },
         modelCache: modelCacheStore,

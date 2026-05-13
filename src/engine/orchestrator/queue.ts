@@ -4,7 +4,7 @@ import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.j
 import type { Planner } from '../planners/types.js';
 import type { EventBus } from '../events/types.js';
 import { transitionAndSave } from './state-ops.js';
-import { publishEvent, publishWarning } from './events.js';
+import { publishWarning } from './events.js';
 import { appendMessage } from '../../core/state/persistence.js';
 import { dispatchNativeInjection } from './native-injection.js';
 import { warnError } from '../../lib/warn.js';
@@ -36,7 +36,7 @@ export function enqueueUserMessage(
 
   const next = transitionAndSave(projectDir, sessionId, state, { type: 'ENQUEUE_USER_MSG', message });
   appendMessage(projectDir, sessionId, { role: 'user', phase, text, queuedAt: message.queuedAt }, persistTranscript);
-  publishEvent(bus, { type: 'message_queued', ts: Date.now(), phase: next.phase, id: message.id });
+  bus.publish({ type: 'message_queued', ts: Date.now(), phase: next.phase, id: message.id });
   return { state: next, queued: true, message };
 }
 
@@ -69,6 +69,37 @@ export function createQueueHandler(
   };
 }
 
+export function clearPendingQueue(
+  projectDir: string,
+  sessionId: string,
+  state: WorkflowState,
+  bus: EventBus,
+): { state: WorkflowState; count: number } {
+  const pending = state.messageQueue.filter(m => !m.drainedAt);
+  if (pending.length === 0) return { state, count: 0 };
+
+  const next = transitionAndSave(projectDir, sessionId, state, { type: 'CLEAR_QUEUE' });
+  bus.publish({ type: 'queue_cleared', ts: Date.now(), phase: next.phase, count: pending.length });
+  return { state: next, count: pending.length };
+}
+
+export function createClearQueueHandler(
+  projectDir: string,
+  sessionId: string,
+  getState: () => WorkflowState | undefined,
+  setState: (s: WorkflowState) => void,
+  bus: EventBus,
+): () => number {
+  return () => {
+    const state = getState();
+    if (!state) return 0;
+
+    const result = clearPendingQueue(projectDir, sessionId, state, bus);
+    setState(result.state);
+    return result.count;
+  };
+}
+
 export function drainQueue(
   projectDir: string,
   sessionId: string,
@@ -79,7 +110,7 @@ export function drainQueue(
   if (pending.length === 0) return { state, messages: [] };
 
   const next = transitionAndSave(projectDir, sessionId, state, { type: 'DRAIN_QUEUE' });
-  publishEvent(bus, { type: 'queue_drained', ts: Date.now(), phase: next.phase, count: pending.length });
+  bus.publish({ type: 'queue_drained', ts: Date.now(), phase: next.phase, count: pending.length });
 
   return { state: next, messages: pending };
 }
