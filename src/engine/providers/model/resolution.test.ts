@@ -11,7 +11,7 @@ import {
   getDefaultKnownModel,
   getEffectiveModelId,
 } from './resolution.js';
-import type { ModelsDevCatalog } from '../models-dev.js';
+import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import type { ProviderId } from '../../../core/schemas/enums.js';
 import { makeModelCacheAccessor as makeCache } from '#testing/helpers/factories/model-cache.js';
 

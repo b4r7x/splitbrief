@@ -1,8 +1,6 @@
 import { createStore, storeBase } from '../create-store.js';
 import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
 
-export type { TieredApprovalRequest, TieredApprovalResponse };
-
 export type ApprovalPromptState =
   | { status: 'idle' }
   | {

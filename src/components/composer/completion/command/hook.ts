@@ -68,6 +68,9 @@ export function useCommandCompletion({
 }: UseCommandCompletionOptions): UseCommandCompletionResult {
   const [inputKey, setInputKey] = useState(0);
   const [selection, setSelection] = useState<SelectionState>({ key: '', index: 0 });
+  // Snapshot of derived render state for the useInput handler. Ink invokes the latest
+  // committed render's callback so closure capture would also work, but mirroring the
+  // fields together keeps the handler reading a single coherent snapshot.
   const latestRef = useRef<LatestCommandState | null>(null);
   const phase = lifecycleStore.use(s => s.phase);
 

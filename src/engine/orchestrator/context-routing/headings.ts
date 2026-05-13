@@ -1,5 +1,5 @@
 import type { Task } from '../../../core/schemas/task.js';
-import type { CurrentCodeContextMode } from './types.js';
+import type { CurrentCodeContextMode } from '../../events/workflow-events.js';
 
 export const TRUNCATION_MARKER = '// ... truncated to fit context window ...';
 export const FUNCTION_CONTEXT_HEADING = '### Current Code (relevant section)';

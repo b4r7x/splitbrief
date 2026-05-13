@@ -8,9 +8,7 @@ import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { ImplementerPublisher } from '../implementers/types.js';
 import type { EmittedChain } from '../../core/schemas/drift-chain.js';
-import type { UserEditConflict, UserEditConflictAction } from './user-edit/conflicts.js';
-import type { CurrentCodeContextMode, TaskContextFit } from './context-routing/types.js';
-import type { TaskReviewRequest } from './task/review.js';
+import type { UserEditConflict, UserEditConflictAction, CurrentCodeContextMode, TaskContextFit, TaskReviewRequest } from '../events/workflow-events.js';
 import { labelError } from '../../utils/format-errors.js';
 
 const EMPTY_STAGES: ValidationStages = { typecheck: false, lint: false, test: false };

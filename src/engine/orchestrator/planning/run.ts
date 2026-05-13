@@ -7,8 +7,6 @@ import { runSpeckitPlanning } from './speckit.js';
 import { adviseMode, setAdvisory } from './mode-advisor.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 
-export { runBriefQualityGate } from './shared.js';
-
 export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx } = opts;
   const { projectDir, config } = wctx;

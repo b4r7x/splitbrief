@@ -79,6 +79,9 @@ export function useReferenceCompletion({
   const [inputKey, setInputKey] = useState(0);
   const [selection, setSelection] = useState<SelectionState>({ key: '', index: 0 });
   const [dismissedValue, setDismissedValue] = useState<string | null>(null);
+  // Snapshot of derived render state for the useInput handler. Ink invokes the latest
+  // committed render's callback so closure capture would also work, but mirroring the
+  // five fields together keeps the handler reading a single coherent snapshot.
   const latestRef = useRef<LatestReferenceState | null>(null);
 
   const token = findReferenceToken(value);

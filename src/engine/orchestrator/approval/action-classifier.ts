@@ -1,8 +1,6 @@
 import type { ActionClass } from '../../../core/schemas/enums.js';
 import type { ApprovalTier } from '../../../core/schemas/config.js';
 
-export type { ApprovalTier };
-
 export type TierMap = Partial<Record<ActionClass, ApprovalTier>>;
 
 export type ClassifyInput = {

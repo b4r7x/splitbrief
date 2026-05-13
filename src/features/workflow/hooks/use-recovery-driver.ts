@@ -1,4 +1,3 @@
-import { useEffectEvent } from 'react';
 import { DEFAULT_WORKFLOW_MODE, type Config } from '../../../core/schemas/config.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -38,7 +37,7 @@ interface UseRecoveryDriverOptions {
 export function useRecoveryDriver(): (
   opts: UseRecoveryDriverOptions,
 ) => (args: PromptPendingRecoveryArgs) => Promise<PendingRecoveryResult> {
-  return useEffectEvent((opts: UseRecoveryDriverOptions) => {
+  return (opts: UseRecoveryDriverOptions) => {
     const { projectDir, config, inputMode, abortedRef, setInlineResume } = opts;
 
     const createRecoveryBus = (activeSessionId: string) => {
@@ -138,5 +137,5 @@ export function useRecoveryDriver(): (
         ...retryOverrides,
       };
     };
-  });
+  };
 }

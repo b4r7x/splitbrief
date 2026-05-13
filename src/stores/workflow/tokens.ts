@@ -134,57 +134,23 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
         cacheCreate: clampDelta((curr.implementerCacheCreate ?? 0) - (prev.implementerCacheCreate ?? 0)),
       };
 
-      let inputDelta = 0;
-      let outputDelta = 0;
-      let cacheReadDelta = 0;
-      let cacheCreateDelta = 0;
-      let plannerInputDelta = 0;
-      let plannerOutputDelta = 0;
-      let plannerCacheReadDelta = 0;
-      let plannerCacheCreateDelta = 0;
-      let implementerInputDelta = 0;
-      let implementerOutputDelta = 0;
-      let implementerCacheReadDelta = 0;
-      let implementerCacheCreateDelta = 0;
-      const costRole = phaseCostRole(phase);
-
-      if (costRole === 'planner') {
-        inputDelta = plannerDelta.input;
-        outputDelta = plannerDelta.output;
-        cacheReadDelta = plannerDelta.cacheRead;
-        cacheCreateDelta = plannerDelta.cacheCreate;
-        plannerInputDelta = plannerDelta.input;
-        plannerOutputDelta = plannerDelta.output;
-        plannerCacheReadDelta = plannerDelta.cacheRead;
-        plannerCacheCreateDelta = plannerDelta.cacheCreate;
-      } else if (costRole === 'implementer') {
-        inputDelta = implementerDelta.input + plannerDelta.input;
-        outputDelta = implementerDelta.output + plannerDelta.output;
-        cacheReadDelta = implementerDelta.cacheRead + plannerDelta.cacheRead;
-        cacheCreateDelta = implementerDelta.cacheCreate + plannerDelta.cacheCreate;
-        plannerInputDelta = plannerDelta.input;
-        plannerOutputDelta = plannerDelta.output;
-        plannerCacheReadDelta = plannerDelta.cacheRead;
-        plannerCacheCreateDelta = plannerDelta.cacheCreate;
-        implementerInputDelta = implementerDelta.input;
-        implementerOutputDelta = implementerDelta.output;
-        implementerCacheReadDelta = implementerDelta.cacheRead;
-        implementerCacheCreateDelta = implementerDelta.cacheCreate;
-      }
+      const role = phaseCostRole(phase);
+      const pd = role === null ? { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 } : plannerDelta;
+      const id = role === 'implementer' ? implementerDelta : { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
 
       const updatedPhase: PhaseTokens = {
-        inputTokens: existingPhase.inputTokens + inputDelta,
-        outputTokens: existingPhase.outputTokens + outputDelta,
-        cacheReadTokens: existingPhase.cacheReadTokens + cacheReadDelta,
-        cacheCreateTokens: existingPhase.cacheCreateTokens + cacheCreateDelta,
-        plannerInputTokens: (existingPhase.plannerInputTokens ?? 0) + plannerInputDelta,
-        plannerOutputTokens: (existingPhase.plannerOutputTokens ?? 0) + plannerOutputDelta,
-        plannerCacheReadTokens: (existingPhase.plannerCacheReadTokens ?? 0) + plannerCacheReadDelta,
-        plannerCacheCreateTokens: (existingPhase.plannerCacheCreateTokens ?? 0) + plannerCacheCreateDelta,
-        implementerInputTokens: (existingPhase.implementerInputTokens ?? 0) + implementerInputDelta,
-        implementerOutputTokens: (existingPhase.implementerOutputTokens ?? 0) + implementerOutputDelta,
-        implementerCacheReadTokens: (existingPhase.implementerCacheReadTokens ?? 0) + implementerCacheReadDelta,
-        implementerCacheCreateTokens: (existingPhase.implementerCacheCreateTokens ?? 0) + implementerCacheCreateDelta,
+        inputTokens: existingPhase.inputTokens + pd.input + id.input,
+        outputTokens: existingPhase.outputTokens + pd.output + id.output,
+        cacheReadTokens: existingPhase.cacheReadTokens + pd.cacheRead + id.cacheRead,
+        cacheCreateTokens: existingPhase.cacheCreateTokens + pd.cacheCreate + id.cacheCreate,
+        plannerInputTokens: (existingPhase.plannerInputTokens ?? 0) + pd.input,
+        plannerOutputTokens: (existingPhase.plannerOutputTokens ?? 0) + pd.output,
+        plannerCacheReadTokens: (existingPhase.plannerCacheReadTokens ?? 0) + pd.cacheRead,
+        plannerCacheCreateTokens: (existingPhase.plannerCacheCreateTokens ?? 0) + pd.cacheCreate,
+        implementerInputTokens: (existingPhase.implementerInputTokens ?? 0) + id.input,
+        implementerOutputTokens: (existingPhase.implementerOutputTokens ?? 0) + id.output,
+        implementerCacheReadTokens: (existingPhase.implementerCacheReadTokens ?? 0) + id.cacheRead,
+        implementerCacheCreateTokens: (existingPhase.implementerCacheCreateTokens ?? 0) + id.cacheCreate,
         cost: existingPhase.cost,
       };
 

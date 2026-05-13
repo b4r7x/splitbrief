@@ -1,5 +1,5 @@
 import type { ModelCacheAccessor } from '../../../src/engine/providers/model/resolution.js';
-import type { ModelsDevCatalog } from '../../../src/engine/providers/models-dev.js';
+import type { ModelsDevCatalog } from '../../../src/core/schemas/models-dev.js';
 import type { DetectedModel } from '../../../src/core/types/config-options.js';
 import type { ProviderId } from '../../../src/core/schemas/enums.js';
 

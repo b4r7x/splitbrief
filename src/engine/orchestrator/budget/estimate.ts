@@ -11,7 +11,8 @@ import { resolvePricing } from '../../providers/pricing-resolver.js';
 import { estimateFormattedTaskPromptTokens } from '../context-routing/estimation.js';
 import { DEFAULT_CONSERVATIVE_CONTEXT_LENGTH, resolveProfileContextLength } from '../context-routing/context-length.js';
 import { routeTaskToImplementerProfile } from '../context-routing/route.js';
-import type { ContextLengthSource, TaskContextFit } from '../context-routing/types.js';
+import type { ContextLengthSource } from '../context-routing/types.js';
+import type { TaskContextFit } from '../../events/workflow-events.js';
 
 export type EstimateContextConfidence =
   | 'context-explicit'

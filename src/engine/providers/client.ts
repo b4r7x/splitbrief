@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { z } from 'zod';
-import type { DetectedModel, ProviderDef, ProviderDefWithMetadata, ProviderOverrides } from './types.js';
+import type { ProviderDef, ProviderDefWithMetadata, ProviderOverrides } from './types.js';
+import type { DetectedModel } from '../../core/types/config-options.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { redactSecrets } from '../../utils/redact.js';

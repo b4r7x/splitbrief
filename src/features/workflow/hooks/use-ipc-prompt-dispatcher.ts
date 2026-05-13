@@ -1,4 +1,3 @@
-import { useEffectEvent } from 'react';
 import type { IpcPromptRequest, IpcPromptResponse } from '../../../engine/ipc/protocol.js';
 import { openApprovalPrompt } from '../../../stores/approval-prompt/actions.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
@@ -9,7 +8,7 @@ import type { UseInputModeResult } from './use-input-mode.js';
 export function useIpcPromptDispatcher(
   inputMode: UseInputModeResult,
 ): (request: IpcPromptRequest) => Promise<IpcPromptResponse> {
-  return useEffectEvent(async (request: IpcPromptRequest): Promise<IpcPromptResponse> => {
+  return async (request: IpcPromptRequest): Promise<IpcPromptResponse> => {
     if (request.kind === 'approval_needed') {
       reviewStore.setReviewFile(request.filePath);
       const hint = request.approvalType === 'briefs' ? BRIEFS_REVIEW_HINT : REVIEW_HINT;
@@ -62,5 +61,5 @@ export function useIpcPromptDispatcher(
 
     const response = await openApprovalPrompt(request.request);
     return { kind: 'tiered_approval', response };
-  });
+  };
 }

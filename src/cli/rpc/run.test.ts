@@ -7,7 +7,7 @@ import { createInitialState } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { CONFIG_FILE, DIPTYCH_DIR } from '../../core/paths.js';
-import type { RunWorkflowOptions } from '../../engine/orchestrator/run/run.js';
+import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
 import { runRpc } from './run.js';
 
 let dirs: string[] = [];

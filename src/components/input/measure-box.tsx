@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useEffectEvent, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { Box, measureElement, type DOMElement } from 'ink';
 
 interface MeasureBoxProps {
@@ -10,15 +10,14 @@ interface MeasureBoxProps {
 export function MeasureBox({ children, onHeightChange, measureKey }: MeasureBoxProps) {
   const ref = useRef<DOMElement>(null);
   const lastHeightRef = useRef<number | undefined>(undefined);
-  const onHeightChangeRef = useRef(onHeightChange);
-  onHeightChangeRef.current = onHeightChange;
+  const stableHeightChange = useEffectEvent((h: number) => onHeightChange?.(h));
 
   useLayoutEffect(() => {
     if (ref.current) {
       const { height } = measureElement(ref.current);
       if (lastHeightRef.current !== height) {
         lastHeightRef.current = height;
-        onHeightChangeRef.current?.(height);
+        stableHeightChange(height);
       }
     }
   }, [measureKey ?? null]);

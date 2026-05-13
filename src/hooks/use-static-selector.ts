@@ -23,6 +23,9 @@ export function useStaticSelector<T>({
 }: UseStaticSelectorOptions<T>): UseStaticSelectorResult {
   const [selectedIndex, setSelectedIndex] = useState(clampIndex(initialIndex, items.length));
   const effectiveIndex = clampIndex(selectedIndex, items.length);
+  // Mirror current index synchronously: Ink may deliver UP+ENTER in the same render
+  // generation, before React flushes setSelectedIndex from the prior key. The handler
+  // also writes selectedRef on UP/DOWN so ENTER reads the latest index.
   const selectedRef = useRef(effectiveIndex);
   selectedRef.current = effectiveIndex;
 

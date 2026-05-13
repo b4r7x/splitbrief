@@ -4,7 +4,8 @@ import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
 import type { RoutingDecision } from '../context-routing/types.js';
 import { publishTaskReviewNeeded } from '../events.js';
-import { buildTaskReviewRequest, shouldReviewTask, type TaskReviewRequest } from './review.js';
+import { buildTaskReviewRequest, shouldReviewTask } from './review.js';
+import type { TaskReviewRequest } from '../../events/workflow-events.js';
 import { enqueueUserMessage } from '../queue.js';
 
 export async function reviewTaskIfNeeded(opts: {

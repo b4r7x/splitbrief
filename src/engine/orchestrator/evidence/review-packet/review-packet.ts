@@ -9,9 +9,6 @@ import { buildReviewPacket, type BuildReviewPacketOptions } from './build.js';
 import { stringifyReviewPacket, renderReviewPacketMarkdown } from './render.js';
 import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
 
-export { buildReviewPacket, REVIEWER_CHECKLIST, type BuildReviewPacketOptions } from './build.js';
-export { stringifyReviewPacket, renderReviewPacketMarkdown } from './render.js';
-
 export async function writeReviewPacket(opts: BuildReviewPacketOptions): Promise<ReviewPacket> {
   const packet = await buildReviewPacket(opts);
   writeSecureFile(reviewPacketJsonPath(opts.projectDir, opts.sessionId), stringifyReviewPacket(packet));
