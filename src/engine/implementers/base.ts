@@ -1,8 +1,14 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Implementer, ImplementerOptions, ImplementerPublisher, RetryOptions } from './types.js';
+import type {
+  Implementer,
+  ImplementerOptions,
+  ImplementerPublisher,
+  ImplementerResult,
+  InvokeOpts,
+  RetryOptions,
+} from './types.js';
 import type { Task } from '../../core/schemas/task.js';
-import type { ImplementerResult } from './types.js';
 import type { InvokeResult } from '../runners/types.js';
 import { readFileOrEmpty } from '../../lib/fs.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -14,10 +20,12 @@ import { formatTaskPrompt, formatRetryPrompt } from '../spec/prompt-formatter.js
 import { buildLanguageContext } from '../spec/prompts/language-context.js';
 import { buildSystemPreamble } from '../spec/prompts/system.js';
 import { processError } from '../../lib/process/errors.js';
-import { retryTemperature, type InvokeOpts } from './utils.js';
 import { DEFAULT_AVAILABILITY } from '../../lib/availability.js';
 import { getCurrentChangedFiles } from '../../lib/git.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
+
+const MAX_RETRY_TEMPERATURE = 2;
+const DEFAULT_RETRY_TEMPERATURE = 0.7;
 
 export function extractedCodeApprovalRaceError(file: string): string {
   return `write blocked because ${file} changed during approval`;
@@ -96,6 +104,11 @@ export interface ImplementerBaseConfig {
 
 function defaultShouldThrow(err: unknown): boolean {
   return processError.isNotFound(err) || processError.isTimeout(err);
+}
+
+function retryTemperature(base: number | undefined, step: number | undefined, attempt: number): number | undefined {
+  if (step == null) return undefined;
+  return Math.min((base ?? DEFAULT_RETRY_TEMPERATURE) + step * attempt, MAX_RETRY_TEMPERATURE);
 }
 
 export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implementer {

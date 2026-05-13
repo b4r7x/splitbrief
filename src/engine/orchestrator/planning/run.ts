@@ -4,12 +4,11 @@ import { runQuickPlanning } from './quick.js';
 import { runInstantPlanning } from './instant.js';
 import { runFullPlanning } from './full.js';
 import { runSpeckitPlanning } from './speckit.js';
-import { publishEvent } from '../events.js';
 import { adviseMode, setAdvisory } from './mode-advisor.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 
-export type { PlanningPhaseOptions } from './types.js';
 export { runBriefQualityGate } from './shared.js';
+export type { PlanningPhaseOptions } from './types.js';
 
 export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx } = opts;
@@ -20,7 +19,7 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
   const advisory = adviseMode(opts.feature, mode);
   setAdvisory(advisory.kind !== 'none' ? advisory : null);
   if (advisory.kind !== 'none') {
-    publishEvent(wctx.bus, {
+    wctx.bus.publish({
       type: 'mode_advice',
       ts: Date.now(),
       phase: opts.state.phase,
@@ -43,7 +42,7 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
     }
   }
 
-  publishEvent(wctx.bus, {
+  wctx.bus.publish({
     type: 'mode_resolved',
     ts: Date.now(),
     phase: opts.state.phase,
@@ -55,6 +54,7 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
     ? await buildRepoMap(projectDir, {
         featureText: opts.feature,
         tokenBudget: config.codebase?.tokenBudget ?? 4000,
+        ...(config.codebase?.cacheDir !== undefined && { cacheDir: config.codebase.cacheDir }),
         ...(config.codebase?.include && { include: config.codebase.include }),
         ...(config.codebase?.exclude && { exclude: config.codebase.exclude }),
       })
@@ -63,7 +63,7 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
   const drainedAttachments = wctx.drainPendingAttachments ? wctx.drainPendingAttachments() : [];
   let attachments = drainedAttachments;
   if (drainedAttachments.length > 0 && !opts.planner.capabilities.supportsImages) {
-    publishEvent(wctx.bus, {
+    wctx.bus.publish({
       type: 'planner_attachments_dropped',
       ts: Date.now(),
       phase: opts.state.phase,
@@ -94,5 +94,3 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
 
   return runFullPlanning(optsWithContext);
 }
-
-

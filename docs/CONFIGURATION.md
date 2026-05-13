@@ -2,7 +2,7 @@
 
 Complete reference for `.diptych/config.yaml` — the single declarative file that wires diptych to your planner, implementer, validation tools, workflow gates, hooks, snapshots, and observability.
 
-This document is a comprehensive, field-by-field reference. For end-user mode semantics see [WORKFLOW.md](./WORKFLOW.md); for hook plumbing see [HOOKS-CONFIG.md](./HOOKS-CONFIG.md); for repo-map tuning see [REPOMAP.md](./REPOMAP.md); for OpenTelemetry export see [OTEL.md](./OTEL.md). For a one-screen lookup table see [CONFIGURATION.md](./CONFIGURATION.md) — this document supersedes and extends it with worked examples and "when to use" guidance.
+This document is a field-by-field reference. For end-user mode semantics see [WORKFLOW.md](./WORKFLOW.md); for hook plumbing see [HOOKS-CONFIG.md](./HOOKS-CONFIG.md); for repo-map tuning see [REPOMAP.md](./REPOMAP.md); for OpenTelemetry export see [OTEL.md](./OTEL.md).
 
 ---
 
@@ -13,7 +13,7 @@ This document is a comprehensive, field-by-field reference. For end-user mode se
 ```
 
 - The file is created on first `diptych init` (or implicitly on first `diptych start`). Missing file → diptych runs with `createDefaultConfig()` (`src/core/config/load/load.ts`).
-- **Schema version:** `version: 3` (current). `version: 2` is still accepted on input — `diptych migrate` upgrades it in place. Pre-v2 configs are auto-migrated through `migrateV1ToV2 → migrateV2ToV3` at load time.
+- **Schema version:** `version: 3` (current). `version: 2` and older supported config shapes are upgraded in memory through `migrateV1ToV2 → migrateV2ToV3` at load time. `diptych migrate` is for legacy session layout migration, not config rewriting.
 - **Key style:** the loader transforms `snake_case` YAML into `camelCase` before validation (`src/core/config/load/transform.ts`), so both styles work. This document uses `camelCase`.
 - **Permissions:** the loader warns on stderr if the file is mode `>0600` on POSIX systems. `init` writes it `0600` via `writeSecureFile`.
 - **`.gitignore`:** `init` appends `.diptych/` to your `.gitignore` so secrets and per-machine state stay out of source control.
@@ -71,8 +71,8 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `model` | string | — | Model identifier. Planner: optional. Implementer: required (except `agent-sdk` which falls back to `claude-sonnet-4-6`). |
-| `customModels` | string[] | — | Extra model IDs merged into the provider catalog so they appear in pickers and pricing tables. |
+| `model` | string | — | Model identifier. Planner: optional. Implementer: required for every runner kind; use `auto` when you want the runner's default model. |
+| `customModels` | string[] | — | Extra model IDs merged into the provider catalog so they appear in pickers. Pricing remains unknown unless models.dev, runtime provider metadata, or the bundled catalog supplies rates. |
 | `contextLength` | int > 0 | provider default | Override the detected context window. Useful for self-hosted Ollama/LM Studio whose `/api/show` reports the wrong number. |
 | `temperature` | 0..2 | provider default | Sampling temperature. Implementers usually want `0.2`-`0.4`; planners can run hotter. |
 | `timeout` | ms (≤ 600000) | unset → provider default | Per-call timeout. Raise for long planner thinks; lower for cheap probe calls. |
@@ -200,7 +200,7 @@ In-process call into the Anthropic Agent SDK (`@anthropic-ai/claude-agent-sdk`).
 | Field | Type | Required | Description |
 |---|---|:---:|---|
 | `apiKey` | string | no | Per-call key. Falls back to `ANTHROPIC_API_KEY`. Never mutates global env (`src/engine/agent-sdk-backend.ts`). |
-| `model` | string | no | Defaults to `claude-sonnet-4-6` (`DEFAULT_AGENT_SDK_MODEL`). |
+| `model` | string | planner: no; implementer: yes | Planner defaults to `claude-sonnet-4-6` when omitted. Implementer config must include a model; `auto` resolves to the same default. |
 
 ```yaml
 implementer:
@@ -234,7 +234,7 @@ Custom OpenAI-compatible API providers are allowed when `apiBase` is set. Becaus
 
 ## 3. `implementer`
 
-Same discriminated union as `planner`. The only schema difference: `model` is required on every variant **except** `agent-sdk` (which defaults to `claude-sonnet-4-6`). For an Anthropic-CLI implementer (`kind: cli, tool: claude-code`), the wrapper picks the model itself when `model` is omitted, but other CLIs may reject an empty model.
+Same discriminated union as `planner`. The schema difference: `model` is required on every implementer variant, including `agent-sdk`. Use `model: auto` to ask the runner adapter for its default when supported.
 
 YAML — minimal (local Ollama):
 
@@ -377,10 +377,10 @@ validation:
 
 Diptych resolves each validation stage through 4 layers, in priority order:
 
-1. **User config** — `typecheckCommand`, `lintCommand`, `testCommand` override everything.
-2. **Planner-discovered** — during the research phase, the planner reads config files and reports the project's validation toolchain. This is persisted to `WorkflowState.discoveredValidation` and used if no user config exists.
+1. **Project config** — `typecheckCommand`, `lintCommand`, `testCommand` override everything.
+2. **Planner-discovered** — during the research phase, the planner reads config files and reports the project's validation toolchain. This is persisted to `WorkflowState.discoveredValidation` and used if no project command override exists.
 3. **Heuristic fallback** — if no config or discovery exists, diptych looks at marker files (`Cargo.toml`, `go.mod`, `pyproject.toml`, `package.json`) to infer the language and default commands.
-4. **Graceful skip** — if no layer provides a command, the stage is silently skipped (no error).
+4. **Built-in defaults / graceful skip** — typecheck falls back to `npx tsc --noEmit`, tests fall back to `npm test`, and lint skips when unresolved.
 
 Master switches (`typecheck`, `lint`, `test`) still gate each stage: setting `lint: false` skips lint regardless of whether a command is available.
 
@@ -448,9 +448,9 @@ workflow: {
 | `git.commitStrategy` | enum | `none` | Optional product-level git behavior: `none` (no commits — user reviews everything), `checkpoint` (one commit at end), `per-task` (one commit per task). Checkpoint safety does not require git commits. |
 | `git.createBranch` | boolean | `false` | Auto-create `diptych/<slug>` branch at workflow start. |
 | `briefReview` | enum | `simple` | `simple` (read-only review) \| `rich` (interactive plan editor). Press `e` from the simple view to opt into rich for the current session. |
-| `maxBudget` | number > 0 | unset | USD ceiling. Workflow prompts when exceeded; if `budgetPauseThreshold` is set, also pauses earlier. |
-| `budgetPauseThreshold` | 0..1 | unset | Fraction of `maxBudget` at which to pause. e.g. `0.8` pauses at 80%. |
-| `driftChainThreshold` | 0..1 | unset | Drift-detection threshold for repeated escalation cycles. Higher = more tolerance. |
+| `maxBudget` | number > 0 | unset | USD ceiling. Workflow warns at 80%, pauses at `budgetPauseThreshold` (default `0.85`), and stops at the hard cap. |
+| `budgetPauseThreshold` | 0..1 | `0.85` | Fraction of `maxBudget` at which to pause. e.g. `0.8` pauses at 80%. |
+| `driftChainThreshold` | 0..1 | `0.6` | Threshold used when omitted; higher = fewer drift-chain events. |
 | `speckit.minCoverage` | 0..1 | unset | Speckit-mode minimum test-coverage gate. |
 | `persistTranscript` | boolean | `true` | Persist planner/user text chunks to `session.jsonl` for replay/audit and `/compact-transcript`. |
 | `compactionThreshold` | int >= 10 | unset | On resume, auto-compact persisted transcript context when compacted message count exceeds this threshold and the planner supports self-summarisation. |
@@ -515,7 +515,7 @@ workflow:
 - `briefReview: rich` — when you want to edit the brief in-place before implementation; otherwise stick with `simple` for speed.
 - `persistTranscript: true` — keep this enabled if you want resume reconstruction and manual transcript compaction. `/compact-transcript` appends a summary entry and keeps recent turns verbatim; it does not delete old log lines.
 
-**See also:** [WORKFLOW.md](./WORKFLOW.md), [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) (`/mode`, `/approve` runtime overrides).
+**See also:** [WORKFLOW.md](./WORKFLOW.md), [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) (`/mode`, `/effort` runtime overrides). Workflow approval level is set with `--approve` or `workflow.approve`.
 
 ---
 
@@ -689,7 +689,7 @@ otel: {
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | boolean | `false` | Install the OTel span sink. Requires bootstrapping an exporter (see env vars). |
-| `serviceName` | string | `diptych` | `service.name` resource attribute on every span |
+| `serviceName` | string | `diptych` | Tracer/instrumentation scope name used when creating spans |
 
 YAML:
 
@@ -704,7 +704,7 @@ Exporter selection — set **one** of:
 - `DIPTYCH_OTEL_EXPORTER=console` — alias for the same.
 - `--otel-exporter console` — CLI flag, same effect.
 
-For OTLP HTTP/gRPC exporters, follow the standard [OTel SDK env var contract](https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/).
+For OTLP HTTP/gRPC exporters, provide your own in-process provider bootstrap or add support to `src/cli/otel-bootstrap.ts`; only `console` is built in.
 
 **When to use:** wire diptych into your existing observability stack to track per-task duration, planner vs implementer cost, escalation rates.
 
@@ -868,7 +868,7 @@ palette:
 |---|---|---|---|
 | `theme` | enum | `terminal` | `terminal` (uses your terminal's color scheme) \| `mono` (no color) |
 | `shikiTheme` | enum | `github-dark` | `github-dark` \| `github-light` (Shiki syntax-highlighting theme) |
-| `sessions.scope` | enum | `project` | `project` writes session state under `<projectDir>/.diptych`; `global` writes under `~/.diptych` (handy for one-off jobs you don't want polluting the repo). |
+| `sessions.scope` | enum | `project` | Accepted by the schema for future session backends. Current workflow commands write session state under `<projectDir>/.diptych`. |
 
 ```yaml
 theme: mono
@@ -894,9 +894,8 @@ Source: `src/core/providers/catalog.ts`, `src/cli/setup.ts`, `src/cli/otel-boots
 | `GROQ_API_KEY` | `groq` | |
 | `TOGETHER_API_KEY` | `together` | |
 | `OLLAMA_API_KEY` | `ollama` | Optional; usually unset. |
-| `<PROVIDER>_API_KEY` | custom | For any custom `provider` name on `kind: api`, derived as `<UPPERCASE_PROVIDER>_API_KEY`. |
 
-Inline `apiKey` in YAML works but triggers a stderr warning recommending the env var.
+Inline `apiKey` in YAML works but triggers a stderr warning recommending the env var. Unknown providers without a built-in catalog entry must set both `apiBase` and `apiKey` in YAML.
 
 ### Runtime overrides
 
@@ -911,13 +910,13 @@ Inline `apiKey` in YAML works but triggers a stderr warning recommending the env
 |---|---|
 | `OTEL_TRACES_EXPORTER` | Standard OTel — set to `console` to bootstrap the built-in `ConsoleSpanExporter`. |
 | `DIPTYCH_OTEL_EXPORTER` | Alias for the above (same values). |
-| Other `OTEL_*` | Standard OTel SDK env vars (endpoint, headers, etc.) when you wire an OTLP exporter. |
+| Other `OTEL_*` | Read by your own OTel bootstrap/provider; diptych's built-in bootstrap only handles console exporter selection. |
 
 ### TUI / process
 
 | Variable | Purpose |
 |---|---|
-| `CI` | If truthy, suppress fullscreen TUI — diptych falls back to plain stdout (`src/cli/setup.ts`). |
+| `CI` | If truthy, suppress fullscreen/alternate-screen rendering. Use `--json` or `--rpc` when stdout must be machine-readable. |
 | `SHELL` | Shell detection for spawn fallback (`src/lib/process/spawn.ts`). |
 | `TERM_PROGRAM` | Kitty keyboard-protocol detection for advanced key bindings. |
 | `EDITOR` | External editor for spec/plan/brief review (`vi` fallback). |
@@ -927,28 +926,33 @@ Inline `apiKey` in YAML works but triggers a stderr warning recommending the env
 
 ## 15. CLI flags
 
-Declared in `src/cli/options.ts` (shared by `start` + `resume`). These flags **override** the matching config field for the current invocation only.
+Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `continue`, `last`) plus command-specific registrations. These flags **override** the matching config field for the current invocation only. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the canonical flag matrix.
 
 | Flag | Purpose | Commands |
 |---|---|---|
-| `--auto` | Alias for `--approve none` | start, resume, spec |
-| `--approve <level>` | `none` \| `spec` \| `plan` \| `all` \| `default` | start, resume |
-| `--mode <mode>` | `instant` \| `quick` \| `standard` \| `speckit` (`full` legacy alias) | start, resume |
-| `--budget <amount>` | Dollar ceiling | start, resume |
-| `--model <m>` | Alias for `--implementer-model` | start, resume |
-| `--provider <p>` | Alias for `--implementer` | start, resume |
-| `--planner <tool>` | Planner tool override | start, resume |
-| `--planner-model <m>` | Planner model override | start, resume |
-| `--planner-command <cmd>` | Custom planner command (kind=shell) | start, resume |
-| `--implementer <p>` | Implementer provider override | start, resume |
-| `--implementer-model <m>` | Implementer model override | start, resume |
-| `--implementer-command <cmd>` | Custom implementer command (kind=shell) | start, resume |
-| `--project <dir>` | Project directory (default cwd) | start, resume, spec, status |
-| `--no-fullscreen` | Disable alt-screen buffer | start, resume |
-| `--no-mouse` | Disable mouse tracking | start, resume |
-| `--allow-hooks` | Trust hook config without prompting (CI) | start, resume, spec |
-| `--json` | Headless: NDJSON `EngineEvent`s to stdout, no TUI | start, resume |
-| `--otel-exporter <name>` | Bootstrap built-in exporter (`console` only) | start, resume |
+| `--auto` | Alias for `--approve none` | start, resume, continue, last, spec |
+| `--approve <level>` | `none` \| `spec` \| `plan` \| `all` \| `default` | start, resume, continue, last |
+| `--mode <mode>` | `instant` \| `quick` \| `standard` \| `speckit` (`full` legacy alias) | start, resume, continue, last |
+| `--budget <amount>` | Dollar ceiling | start, resume, continue, last |
+| `--model <m>` | Alias for `--implementer-model` | start, resume, continue, last |
+| `--provider <p>` | Alias for `--implementer` | start, resume, continue, last |
+| `--planner <tool>` | Planner tool override | start, resume, continue, last |
+| `--planner-model <m>` | Planner model override | start, resume, continue, last |
+| `--planner-command <cmd>` | Custom planner command (kind=shell) | start, resume, continue, last |
+| `--planner-effort <level>` | Planner effort hint (`low` \| `medium` \| `high` \| `xhigh`) | start, resume, continue, last |
+| `--implementer <p>` | Implementer provider override | start, resume, continue, last |
+| `--implementer-model <m>` | Implementer model override | start, resume, continue, last |
+| `--implementer-command <cmd>` | Custom implementer command (kind=shell) | start, resume, continue, last |
+| `--project <dir>` | Project directory (default cwd) | most commands |
+| `--no-fullscreen` | Disable alt-screen buffer | start, resume, continue, last |
+| `--no-mouse` | Disable mouse tracking | start, resume, continue, last |
+| `--allow-hooks` | Trust hook config without prompting (CI) | start, resume, continue, last, spec |
+| `--json` | Headless: NDJSON `EngineEvent`s to stdout, no TUI | start, resume, continue, last |
+| `--rpc` | Bidirectional NDJSON over stdin/stdout | start, resume, continue, last |
+| `--otel-exporter <name>` | Bootstrap built-in exporter (`console` only) | start, resume, continue, last |
+| `--worktree [name]` | Start in a linked git worktree | start |
+| `--yolo` | Skip action-level tiered approval prompts for this session | start, resume, continue, last |
+| `--detach` | Spawn workflow as background IPC server | start |
 | `--reconfigure` | Overwrite existing config | init |
 | `--history` | Show cost history across sessions | status |
 | `-p, --project <dir>` | Project dir (migrate only) | migrate |
@@ -970,9 +974,11 @@ Unknown top-level keys are tolerated; unknown nested keys in `.strict()` blocks 
 
 ---
 
-## 17. Migration (`diptych migrate`)
+## 17. Migration
 
-`diptych migrate -p <dir>` rewrites your config to the latest version in place. The migrator chains `migrateV1ToV2 → migrateV2ToV3` (`src/core/config/load/migrate.ts`).
+Config migration happens during load: supported older shapes are normalized in memory by `migrateV1ToV2 → migrateV2ToV3` (`src/core/config/load/migrate.ts`). Subsequent config writes use the current v3 shape.
+
+`diptych migrate -p <dir>` is separate: it migrates pre-v3 `.diptych/current/` session state into the session-folder layout.
 
 **v2 → v3 changes:**
 - `version: 2` → `version: 3`.
@@ -990,7 +996,7 @@ The loader runs `migrateConfig` automatically on load, so even if you forget to 
 
 ## 18. Full production example
 
-A representative config: Claude Code subscription as planner, Sonnet via direct Anthropic API as implementer, mid-tier escalation through OpenRouter, budget caps, snapshots, hooks, OTel, and tiered approval. Drop into `.diptych/config.yaml`, `chmod 600`, and you're production-ready.
+A representative config: Claude Code subscription as planner, Sonnet via direct Anthropic API as implementer, mid-tier escalation through OpenRouter, budget caps, snapshots, hooks, OTel, and tiered approval. Use it as a starting point, then adjust credentials, budgets, hooks, and approval tiers for your environment.
 
 ```yaml
 version: 3
@@ -1124,7 +1130,7 @@ sessions:
 Required env vars to make this run:
 - `ANTHROPIC_API_KEY=sk-ant-...` (implementer)
 - `OPENROUTER_API_KEY=sk-or-...` (escalation)
-- `OTEL_TRACES_EXPORTER=console` *or* a full OTel exporter env block (observability)
+- `OTEL_TRACES_EXPORTER=console` for the built-in shortcut, or an in-process provider bootstrap for non-console exporters; standard `OTEL_*` alone is not enough
 
 Then:
 
@@ -1146,4 +1152,4 @@ diptych start --allow-hooks "your feature description"
 - [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — runtime overrides and palette commands
 - [DEBUGGING.md](./DEBUGGING.md) — diagnosing config load failures
 - [ERRORS.md](./ERRORS.md) — `ConfigError` shape and exit codes
-- [CONFIGURATION.md](./CONFIGURATION.md) — quick lookup table (this doc supersedes with examples)
+- [WORKFLOW.md](./WORKFLOW.md) — workflow modes and approval semantics

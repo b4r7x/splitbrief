@@ -10,7 +10,7 @@ import {
   buildTaskDetailParts,
   formatTaskCount,
   refreshPlanReviewMetadata,
-} from './brief-review-view.js';
+} from './brief-review.js';
 import type { BriefQualityReport, BriefQualityIssue } from '../../../engine/spec/brief-quality.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';

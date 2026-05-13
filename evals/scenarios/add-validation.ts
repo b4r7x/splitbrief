@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { readSourceFiles, runNpmTest } from './shared.js';
-import type { EvalScenario, QualityCheck } from './types.js';
+import type { EvalScenario, QualityCheck, QualityCheckResult } from './types.js';
 
 function hasZodUsage(content: string): boolean {
   return /from\s+['"]zod['"]/.test(content) || /\bz\.(object|string|email|optional)\b/.test(content);
@@ -37,37 +37,39 @@ describe('createUser validation', () => {
   );
 }
 
+function zodIsUsed(dir: string): QualityCheckResult {
+  const files = readSourceFiles(dir);
+  const match = files.find((file) => hasZodUsage(file.content));
+  return match
+    ? { passed: true, detail: `Zod usage found in ${match.path}` }
+    : { passed: false, detail: 'No Zod import or usage found in users/schema files' };
+}
+
+function schemaValidatesFields(dir: string): QualityCheckResult {
+  const files = readSourceFiles(dir);
+  const match = files.find((file) => hasValidationSchema(file.content));
+  return match
+    ? { passed: true, detail: `Validation schema found in ${match.path}` }
+    : { passed: false, detail: 'No schema validates email, name length, and optional phone' };
+}
+
+function invalidInputReturns400(dir: string): QualityCheckResult {
+  writeInvalidInputTest(dir);
+  return runNpmTest(dir);
+}
+
 const qualityChecks: QualityCheck[] = [
   {
     name: 'zod is used for validation',
-    check: async (dir) => {
-      const files = readSourceFiles(dir);
-      const match = files.find((file) => hasZodUsage(file.content));
-      return match
-        ? { passed: true, detail: `Zod usage found in ${match.path}` }
-        : { passed: false, detail: 'No Zod import or usage found in users/schema files' };
-    },
+    check: zodIsUsed,
   },
   {
     name: 'schema validates email name and optional phone',
-    check: async (dir) => {
-      const files = readSourceFiles(dir);
-      const match = files.find((file) => hasValidationSchema(file.content));
-      return match
-        ? { passed: true, detail: `Validation schema found in ${match.path}` }
-        : { passed: false, detail: 'No schema validates email, name length, and optional phone' };
-    },
+    check: schemaValidatesFields,
   },
   {
     name: 'invalid input returns status 400',
-    check: async (dir) => {
-      writeInvalidInputTest(dir);
-      return runNpmTest(dir);
-    },
-  },
-  {
-    name: 'tests pass after implementation',
-    check: async (dir) => runNpmTest(dir),
+    check: invalidInputReturns400,
   },
 ];
 

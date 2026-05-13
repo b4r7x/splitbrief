@@ -9,7 +9,7 @@ import { saveState } from '../../../core/state/persistence.js';
 import { parseDiscoveredValidation } from './parse-validation.js';
 import { buildSkillsSection } from '../../skill-discovery.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
-import { publishPlannerStatus, publishEvent } from '../events.js';
+import { publishPlannerStatus } from '../events.js';
 import { collectAndPersistClarifications } from '../clarifications.js';
 import { runApprovalLoop } from '../approval/approval.js';
 import { blocksSpecGate, blocksPlanGate, resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
@@ -140,7 +140,7 @@ async function runNewPlanning(
     if (briefsLoop.rejected) return { state, tasks: [], cancelled: true };
 
     publishPlannerStatus(wctx.bus, state, 'running');
-    publishEvent(wctx.bus, { type: 'plan_approved', ts: Date.now(), phase: state.phase });
+    wctx.bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
   }
 
   return { state, tasks, cancelled: false };

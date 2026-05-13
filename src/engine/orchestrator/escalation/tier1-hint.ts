@@ -1,7 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
-import { createBusTextHandler, publishPlannerStatus, publishEscalate, publishEvent } from '../events.js';
+import { createBusTextHandler, publishPlannerStatus, publishEscalate } from '../events.js';
 import { transitionAndSave, addUsageAndSave } from '../state-ops.js';
 import { truncateByChars } from '../../../utils/truncate.js';
 import { runRetryStep } from './step.js';
@@ -14,7 +14,7 @@ export async function runTier1Hint(
   const textHandler = createBusTextHandler(ctx.bus, state.phase);
   state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'ESCALATE' });
   publishPlannerStatus(ctx.bus, state, 'running');
-  publishEvent(ctx.bus, { type: 'task_escalating', ts: Date.now(), phase: state.phase, taskId: initialTask.id });
+  ctx.bus.publish({ type: 'task_escalating', ts: Date.now(), phase: state.phase, taskId: initialTask.id });
 
   publishEscalate(ctx.bus, state.phase, initialTask.id, 1);
   const languageContext = buildProjectLanguageContext(ctx.projectDir, state.discoveredValidation?.language);

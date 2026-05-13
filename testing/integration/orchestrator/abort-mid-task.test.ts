@@ -10,9 +10,9 @@ import { makeCallbacks, makeImplementer, makePlanner, makeBusRecorder } from '#t
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { makeWorkflowMetadata, TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 
-const SINKS = { setAbortHandler: () => {}, setQueueHandler: () => {} };
-const META = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' as const };
+const META = makeWorkflowMetadata('standard');
 const dirs: string[] = [];
 
 beforeEach(() => resetAllStores());
@@ -51,15 +51,13 @@ describe('abort during implementer phase terminates the task loop cleanly', () =
     const { state: finalState } = await runTaskLoop({
       wctx: { projectDir, sessionId, config: makeNoValidationConfig({ workflow: { commitStrategy: 'none', maxRetries: 1 } }),
         callbacks, planner: makePlanner(), implementer, context: defaultContext,
-        metadata: META, sinks: SINKS, validator: createValidator(), bus, signal: controller.signal },
+        metadata: META, sinks: TEST_WORKFLOW_SINKS, validator: createValidator(), bus, signal: controller.signal },
       initialState: state, setTrackedState: vi.fn(), setCurrentTask: vi.fn(),
     });
 
     expect(abortStore.get().pending).toBe(true);
-    // Second task (T002) was never started — the signal short-circuits the outer loop.
-    const t002Start = busEvents.find((e) => e.type === 'task_started' && (e as { taskId: string }).taskId === 'T002');
+    const t002Start = busEvents.find((e) => e.type === 'task_started' && e.taskId === 'T002');
     expect(t002Start).toBeUndefined();
-    // No task was marked complete after the abort.
     expect(busEvents.find((e) => e.type === 'task_completed')).toBeUndefined();
     expect(finalState.currentTaskIndex).toBeLessThan(finalState.tasks.length);
   });

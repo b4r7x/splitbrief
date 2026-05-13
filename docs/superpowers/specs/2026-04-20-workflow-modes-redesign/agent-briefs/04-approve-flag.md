@@ -292,7 +292,7 @@ Add:
 
 ```ts
 {
-  name: '/approve',
+  name: '<archived approval-level runtime command>',
   kind: 'arg',
   validScreens: ['workflow'],
   argChoices: ['none', 'spec', 'plan', 'all', 'default'],
@@ -417,7 +417,7 @@ Revert the listed files. Restore `config.workflow.autoApproveSpec / autoApproveP
 
 - `--approve` works.
 - `--auto` still works.
-- `/approve <level>` slash command works.
+- Archived approval-level runtime command works.
 - `/settings` overlay shows the new setting.
 - Every combination of mode × approve behaves per the table in `../spec.md` §4.2.
 - All previous tests still pass.

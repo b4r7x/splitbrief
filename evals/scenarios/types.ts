@@ -1,6 +1,6 @@
 export type QualityCheck = {
   name: string;
-  check: (resultDir: string) => Promise<QualityCheckResult>;
+  check: (resultDir: string) => QualityCheckResult | Promise<QualityCheckResult>;
 };
 
 export type QualityCheckResult = {

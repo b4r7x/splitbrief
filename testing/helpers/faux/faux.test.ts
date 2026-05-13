@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { fauxPlanner } from './planner.js';
 import { fauxImplementer } from './implementer.js';
+import type { ImplementerOptions } from '../../../src/engine/implementers/types.js';
+import { defaultContext, makeConfig } from '../factories/config.js';
 import { makeTask } from '../factories/task.js';
 
 describe('fauxPlanner', () => {
@@ -27,9 +29,15 @@ describe('fauxImplementer', () => {
         { success: false, error: 'fail' },
       ],
     });
-    const opts = { task: makeTask(), projectDir: '/tmp', config: {} as any, context: {} as any, onOutput: () => {} };
-    const r1 = await implementer.implement(opts as any);
-    const r2 = await implementer.implement(opts as any);
+    const opts: ImplementerOptions = {
+      task: makeTask(),
+      projectDir: '/tmp',
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: () => {},
+    };
+    const r1 = await implementer.implement(opts);
+    const r2 = await implementer.implement(opts);
     expect(r1.success).toBe(true);
     expect(r2.success).toBe(false);
     expect(state.implementCallCount).toBe(2);

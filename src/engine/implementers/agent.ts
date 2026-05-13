@@ -1,6 +1,7 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { Implementer, ImplementerFactoryOptions } from './types.js';
-import { DEFAULT_TIMEOUT, assertImplementerKind } from './utils.js';
+import { IMPLEMENTER_TIMEOUT_MS } from '../constants.js';
+import { assertImplementerKind } from '../config-assertions.js';
 import { createChangeDetector } from '../change-detection.js';
 import { createCommandBasedImplementer } from './command-invoke.js';
 
@@ -19,7 +20,7 @@ export function createAgentImplementer(initialConfig: Config, options?: Implemen
           command: impl.command,
           args: impl.args,
           outputFormat: impl.outputFormat,
-          timeout: config.implementer.timeout ?? DEFAULT_TIMEOUT,
+          timeout: config.implementer.timeout ?? IMPLEMENTER_TIMEOUT_MS,
         };
       },
       detectChanges: createChangeDetector('Agent implementer'),

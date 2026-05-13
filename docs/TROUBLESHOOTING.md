@@ -47,7 +47,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 1. Inspect ownership: `ls -la .diptych`.
 2. If owned by `root` or another account, reclaim it: `sudo chown -R "$USER":"$(id -gn)" .diptych`.
 3. Confirm the directory is writable: `touch .diptych/.write-test && rm .diptych/.write-test`.
-4. If the filesystem itself is read-only (CI sandbox, Docker volume), point diptych at a writable location by setting `DIPTYCH_HOME` or running from a writable working directory.
+4. If the filesystem itself is read-only (CI sandbox, Docker volume), run diptych from a writable working directory or fix the mounted workspace permissions.
 
 **Prevention:** Never run diptych under `sudo`. If you accidentally do, immediately `chown` the resulting directory back. CI containers should mount the workspace with read-write permissions for the running user.
 
@@ -57,11 +57,11 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: `diptych doctor` or `diptych start` says Run Readiness is `blocked`
 
-**Likely cause:** A hard local precondition failed before model calls: missing/invalid `.diptych/config.yaml`, not a git repository, a live `.diptych/active` session in the same checkout, or a dirty source checkout for an operation that requires a clean worktree.
+**Likely cause:** A hard local precondition failed before model calls: invalid or unwritable `.diptych/config.yaml`, not a git repository, a live `.diptych/active` session in the same checkout, or a dirty source checkout for an operation that requires a clean worktree. `diptych doctor` can also report a missing config because it does not bootstrap setup files.
 
 **Fix:**
 1. Read the `Next action` line. It points to `diptych init`, config repair, or cleaning/isolating the repo.
-2. For missing config, run `diptych init` or `diptych init --reconfigure`.
+2. For doctor-only missing config warnings, run `diptych init` or `diptych init --reconfigure`.
 3. For invalid config, fix `.diptych/config.yaml` and re-run `diptych doctor --json` to verify.
 4. For active-session blockers, run `diptych status`, then `diptych resume` or `diptych attach <session-id>` if the run is still live.
 
@@ -127,12 +127,12 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Fix:**
 1. Inspect `workflow.maxBudget` and `workflow.budgetPauseThreshold` in `.diptych/config.yaml`.
 2. Either raise `maxBudget` (if the task legitimately needs more headroom) or lower `budgetPauseThreshold` (if you want the warning earlier and resume manually each time).
-3. If you simply want to silence the pause for one run, pass `--max-budget <usd>` on the CLI.
+3. If you simply want to silence the pause for one run, pass `--budget <usd>` on the CLI.
 4. Inspect `summary.json` after the run for the actual spend distribution and right-size the limits.
 
 **Prevention:** Calibrate budgets against `summary.json` from a few representative runs before locking them down.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), `src/engine/orchestrator/budget.ts`.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), `src/engine/orchestrator/budget/`.
 
 ---
 
@@ -157,11 +157,10 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Fix:**
 1. Check the exact model string in `summary.json` under `runs[].model`.
-2. Add a pricing override in `.diptych/config.yaml` under `planner.customModels` or the runner-level config, or open a PR to `src/core/providers/known-models.ts`, mapping the model string to `{ input: <usd-per-million>, output: <usd-per-million>, cacheRead?, cacheWrite? }`.
-3. Re-run `diptych status` — the resolved table now shows your override.
-4. If the model is widely used and missing upstream, open a PR adding it to `known-models.ts`.
+2. Check whether the provider returns pricing metadata during model discovery; runtime metadata can supply rates for models that are not bundled.
+3. If the model is widely used and missing upstream, open a PR adding it to `src/core/providers/known-models.ts`.
 
-**Prevention:** Audit `summary.json` for any `n/a` row after introducing a new model and add the override before relying on cost totals.
+**Prevention:** Audit `summary.json` for any `n/a` row after introducing a new model. Treat USD totals as incomplete until pricing comes from models.dev, runtime provider metadata, or `known-models.ts`.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), `src/core/providers/known-models.ts`.
 
@@ -175,7 +174,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Fix:**
 1. Re-run with a higher mode: `npm run dev -- start --mode standard "..."` or `--mode speckit` for risky / cross-cutting work.
-2. Inside the TUI, run `/clarify` to force the planner into an explicit clarification pass.
+2. Add concrete guidance in the review comment, or rerun with `--mode speckit` when the task needs an explicit clarification/specification pass.
 3. Confirm the planner is large enough — Sonnet 4.6 minimum, Opus for unfamiliar codebases.
 4. Tune the codebase config (`codebase.tokenBudget`) so the planner sees enough of the codebase to ground its references.
 
@@ -225,7 +224,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 1. Read the gate's rejection message — it lists the missing sections.
 2. Bump the planner model up a tier; Sonnet handles the contract reliably, smaller models often do not.
 3. Switch to `--mode speckit` so the planner runs the iterative refinement passes that backfill missing sections.
-4. If a specific section is consistently missing, run `/clarify` in the TUI to force a targeted pass.
+4. If a specific section is consistently missing, use `/revise-spec <comment>` or `/revise-plan <comment>` to force a targeted regeneration.
 
 **Prevention:** Treat the brief quality gate output as a smoke test for planner model fitness — repeated rejections mean the model is too small.
 
@@ -237,10 +236,10 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: Implementer modified files outside the brief's declared scope
 
-**Likely cause:** The model wandered. Drift detection should flag it during the final-review phase, but if you see drift only after merging it means the report was ignored or the matching threshold missed it.
+**Likely cause:** The model wandered. Drift detection should flag it during the final-review phase, but if you see drift only after merging it means the report was ignored or the brief scope strings were too broad or too short.
 
 **Fix:**
-1. Inspect `evidence.json` for the task — it contains the drift report with in-bounds and out-of-bounds touched paths.
+1. Inspect `.diptych/sessions/<id>/drift-report.json` for in-bounds and out-of-bounds touched paths.
 2. If the changes are legitimate (the brief was incomplete), add the paths to `scope.approvedOutOfBounds` in the brief and re-run the final review.
 3. If the changes are wrong, revert via the snapshot system: `diptych snapshot restore <snapshot-id>`.
 4. For repeat offenders, raise the implementer model or tighten the brief's scope language.
@@ -263,7 +262,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** Configure `workflow.maxRetries` and `escalation.intermediateProvider` + `escalation.intermediateModel` so escalation lands on a model strictly stronger than the default.
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), `src/engine/orchestrator/task-loop.ts`.
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), `src/engine/orchestrator/task/loop.ts`.
 
 ---
 
@@ -306,7 +305,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Fix:**
 1. Run `diptych ps` to list known sessions; it reads each lockfile, checks whether the PID is alive, and marks stale entries as `crashed`.
-2. If the session is listed as `crashed`, the process is already gone — `diptych resume <session-id>` or `diptych attach <session-id>` will show you the post-mortem and let you recover.
+2. If the session is listed as `crashed`, the process is already gone — `diptych continue <session-id>` will resume that session, while `diptych attach <session-id>` attaches if a server is still running.
 3. If you want to force-clear a stale lock: `rm .diptych/sessions/<session-id>/lockfile.json` — but prefer `diptych ps` so you can see all crashed sessions at once.
 4. If the lock is fresh and a real process is alive, you have a genuine concurrent session — attach to that one rather than starting another.
 
@@ -318,14 +317,14 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: Workflow stalls indefinitely at an approval gate
 
-**Likely cause:** The TUI is waiting for input but the input mode is wrong, or you ran headless and the approval gate has no way to surface a prompt.
+**Likely cause:** The TUI is waiting for input but the input mode is wrong, or a non-interactive run reached an approval gate that needs a response.
 
 **Fix:**
 1. In the TUI, focus the composer (Tab if focus is elsewhere) and submit `approve` / `comment ...` / `reject`.
-2. If you ran with `--headless`, the run paused waiting for an approval that headless cannot deliver. Re-attach with `diptych attach <session>` and approve interactively, or re-run with `--mode quick` (which has no approval gates).
+2. If you ran with `--json`, the NDJSON stream cannot accept replies. Workflow review gates are auto-approved in headless JSON mode; tiered approvals fail closed with `APPROVAL_REQUIRED` unless their tiers allow the action. Use `--rpc` from the start when a client needs to answer approvals programmatically, or resume with `diptych continue --rpc <session-id>` when the session is resumable. For unattended runs, use `--mode quick` or configure approval tiers so they do not prompt.
 3. Check `workflow.approve` in config; `workflow.approve: none` skips all workflow gates, `workflow.approve: spec` (default) blocks only on the spec, `workflow.approve: all` blocks on both spec and plan. For action-level control, see the `approval.tiers` config block.
 
-**Prevention:** Decide up front whether a run is interactive or headless; configure approval policy to match.
+**Prevention:** Decide up front whether a run is interactive, `--json`, or `--rpc`; configure approval policy to match.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
@@ -339,7 +338,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 1. Confirm the comment was attached to the brief (not the spec) and that you submitted `comment "<text>"` rather than `approve`.
 2. Inspect `planner.review` activity in the session log; it should record a new planner call after your comment.
 3. If the planner returned identical output, your comment may have been too vague — restate it as a concrete, falsifiable change.
-4. As a workaround, run `/clarify` to force a clarification pass before the next regen.
+4. As a workaround, use `/revise-spec <comment>` or `/revise-plan <comment>` to force a clearer regeneration prompt.
 
 **Prevention:** Write review comments as imperatives ("rename `foo` to `bar`", "remove constraint about X"), not impressions ("seems off").
 
@@ -351,14 +350,14 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: `APPROVAL_REQUIRED` (headless run paused, or stuck on a sticky/confirm tier)
 
-**Likely cause:** A headless run hit an approval gate that has no way to surface a prompt; or an interactive run has `approval.headless: true` set, which forces fail-closed on any tier that would ordinarily prompt.
+**Likely cause:** A `--json` run hit a tiered approval that has no reply channel; an RPC client did not answer the prompt; or an interactive run has `approval.headless: true` set, which forces fail-closed on any tier that would ordinarily prompt.
 
 **Fix:**
-1. Re-attach interactively: `diptych attach <session-id>` and approve from the TUI.
+1. If the session is resumable, continue it with an interactive TUI (`diptych continue <session-id>`) or RPC (`diptych continue --rpc <session-id>`).
 2. Or set the offending tier to `auto` in `.diptych/config.yaml` under `approval.tiers.<class>: auto`.
 3. For CI runs that should never prompt, make sure every tier is set to `auto` (or remove the `approval` block entirely for fully non-interactive runs). Set `approval.headless: true` only when you want fail-closed behaviour on unexpected prompts.
 
-**Prevention:** Audit `approval.tiers` before running headless. Any tier left at `sticky` or `confirm` will block headless runs.
+**Prevention:** Audit `approval.tiers` before running `--json` or unattended RPC. Any tier left at `sticky` or `confirm` can require an approval response.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval, [docs/WORKFLOW.md](./WORKFLOW.md).
 
@@ -388,7 +387,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Fix:**
 1. Wait 60 seconds and retry; stale locks expire automatically.
 2. If a real concurrent operation is running, finish it first (or attach with `diptych attach` to see what it is doing).
-3. If no other process exists and the lock is older than 60s, remove it manually: `rm .diptych/snapshots/.lock`.
+3. If no other process exists and the lock is older than 60s, remove it manually: `rm .diptych/sessions/<session-id>/snapshots/.lock`.
 4. Re-run the snapshot operation.
 
 **Prevention:** Avoid running multiple `diptych start` invocations against the same workspace simultaneously — use worktrees instead.
@@ -405,7 +404,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 1. Stash or commit your local changes first if you want to keep them: `git stash`.
 2. Re-run restore; it should now apply cleanly.
 3. If you want to discard local changes outright, restore with `--force`.
-4. If only some files conflict, restore selectively: `diptych snapshot restore <id> --paths src/foo.ts src/bar.ts`.
+4. If only some files conflict, restore with `--force` only when you intend to overwrite all conflicted files. Selective restore is not currently exposed by the CLI.
 
 **Prevention:** Snapshot before risky implementer runs, restore promptly, and avoid manual edits in the meantime.
 
@@ -418,11 +417,10 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Likely cause:** The baseline + delta snapshot scheme keeps a full baseline plus per-task deltas; long sessions touching large files (build outputs, lockfiles, generated assets) accumulate quickly.
 
 **Fix:**
-1. The snapshot system always excludes `.git`, `.diptych`, and `node_modules`; for additional paths, add them to `.gitignore` so the snapshot walker skips them automatically.
-2. Run `diptych snapshot prune --keep <n>` to drop everything except the last N snapshots.
-3. For terminal cleanup, archive the session and delete its snapshot directory: `rm -rf .diptych/sessions/<session-id>/snapshots`.
+1. The snapshot system always excludes `.git`, `.diptych`, `node_modules`, and `.trees`; for additional paths, add them to `.gitignore` so the snapshot walker skips them automatically.
+2. For terminal cleanup, archive the session and delete its snapshot directory: `rm -rf .diptych/sessions/<session-id>/snapshots`.
 
-**Prevention:** Keep build outputs and lockfiles in `.gitignore` — the snapshot walker respects it. Run `prune` periodically as a maintenance step.
+**Prevention:** Keep build outputs and lockfiles in `.gitignore` — the snapshot walker respects it. Delete old session snapshot directories after you no longer need restore points.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/INVARIANTS.md](./INVARIANTS.md).
 
@@ -435,10 +433,10 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Likely cause:** Drift matching uses substring comparison against the brief's declared paths; loose globs and short tokens produce false positives.
 
 **Fix:**
-1. Inspect the drift report in `evidence.json` and confirm whether the file was actually modified (run `git diff` against the pre-task snapshot).
+1. Inspect `.diptych/sessions/<id>/drift-report.json` and confirm whether the file was actually modified (run `git diff` against the pre-task snapshot).
 2. If the match is spurious, tighten the brief's scope strings (use full paths, not bare filenames).
 3. If the file is intentionally out of scope, add it to `scope.approvedOutOfBounds` in the brief.
-4. For repeat offenders, raise drift specificity by increasing minimum match length in config.
+4. For repeat offenders, tighten future brief scope strings or add intentional shared files to `approvedOutOfBounds`.
 
 **Prevention:** Write brief scope sections with full project-relative paths (`src/engine/orchestrator/run/run.ts`), never bare names (`run.ts`).
 
@@ -448,12 +446,12 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: Chain-drift detection flags every task
 
-**Likely cause:** `workflow.driftChainThreshold` is set too low for your codebase — small overlaps in touched files trip the chain heuristic. When the field is absent from config, the gate is off entirely (unset ≠ default value).
+**Likely cause:** `workflow.driftChainThreshold` is set too low for your codebase — small overlaps in touched files trip the chain heuristic. If unset, the chain threshold defaults to `0.6`; there is no config-level off switch.
 
 **Fix:**
-1. Inspect `summary.json` for the per-task `chainDriftSummary.score`.
+1. Inspect `.diptych/sessions/<id>/drift-chains.json`; `summary.json.chainDriftSummary` is only the aggregate/top emitted chain summary.
 2. Raise `workflow.driftChainThreshold` in config (try 0.75 or 0.85) until only meaningful chains trip it.
-3. If you want chain detection off entirely, remove `driftChainThreshold` from config (or set it to `1.0` for exact-overlap only).
+3. Set it to `1.0` to make emissions least likely, or add a real disable flag before documenting off semantics.
 
 **Prevention:** Tune the threshold against a representative session before relying on it as a gate.
 
@@ -463,13 +461,13 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: Edits to `drift.ts` do not change behavior
 
-**Likely cause:** Drift logic exists at two layers — Phase 1 (per-task scope check) and Phase 6.2 (final-review chain check). You probably edited the wrong file.
+**Likely cause:** Drift logic exists at two layers. Per-task chain analysis runs from `src/engine/orchestrator/task/step.ts` through `src/engine/orchestrator/drift/chain.ts` and persists to `drift-chains.json`. The final deterministic drift report runs from `src/engine/orchestrator/final-review.ts` through `src/engine/orchestrator/drift/drift.ts`, persists to `drift-report.json`, and is summarized in `summary.json`.
 
 **Fix:**
-1. Confirm which phase the symptom belongs to: per-task scope = Phase 1, end-of-run summary = Phase 6.2.
-2. Phase 1 lives under `src/engine/orchestrator/task-step.ts` and the per-task drift helper.
-3. Phase 6.2 lives under `src/engine/orchestrator/final-review.ts`.
-4. Edit the correct file, re-run, and re-verify in `evidence.json` (Phase 1) or `summary.json` (Phase 6.2).
+1. For repeated off-scope edits across tasks, inspect `drift-chains.json` and `src/engine/orchestrator/drift/chain.ts`.
+2. For final review drift findings, inspect `drift-report.json` and `src/engine/orchestrator/drift/drift.ts`.
+3. Use `summary.json` only for the aggregate drift summary.
+4. Edit the correct file, re-run, and re-verify in `drift-chains.json`, `drift-report.json`, or the drift summary in `summary.json`.
 
 **Prevention:** Before editing drift code, grep for the symptom string in both files and confirm which one emits it.
 
@@ -481,10 +479,10 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: Handoff pack missing `manifest.json`
 
-**Likely cause:** The brief-hash-versioning prerequisite is not wired — the renderer expects brief 04 (or whichever brief produces the manifest) to have completed.
+**Likely cause:** `writeHandoffPack()` generates `manifest.json` after rendering. If the manifest is missing, handoff failed before `writeManifest()` completed.
 
 **Fix:**
-1. Inspect the session directory; if `briefs/04-*.json` (or your equivalent) is absent, the upstream brief did not produce the manifest input.
+1. Inspect the command error output, selected output path, renderer path safety checks, and renderer load result.
 2. Re-run the planner pass that produces brief 04.
 3. If you wrote a custom renderer, verify it reads from the brief-hash-versioning output rather than older artifacts.
 4. Re-run handoff: `diptych handoff <target>`.
@@ -497,13 +495,13 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: Custom handoff renderer is not picked up
 
-**Likely cause:** The renderer file does not export a default function, or it has the wrong file extension. Handoff loads only `.ts` and `.js` files exporting a default function.
+**Likely cause:** The renderer file does not export a default function, has the wrong file extension, or cannot be loaded by the current runtime. Handoff loads only runtime-loadable `.ts` and `.js` files exporting a default function.
 
 **Fix:**
-1. Ensure the file exports `export default function render(input) { ... }` (or async).
-2. Confirm the extension is `.ts` or `.js`. Other extensions are ignored.
+1. For `.js`, ensure the file exports `export default function render(input) { ... }` (or async).
+2. For `.ts`, type the function with `RendererFunction` or annotate `input` and return; `.ts` also needs runtime loader support.
 3. Place the file at `.diptych/handoff-renderers/<target>.ts` (or `.js`). The loader scans that directory automatically — there is no `handoff.renderersDir` config field.
-4. Re-run `diptych handoff <target>`; the loader logs which files it inspected.
+4. Re-run `diptych handoff <target>`; loader errors report the import or default-export failure reason. Unknown-target errors include the target name.
 
 **Prevention:** Copy from a known-good renderer template when starting a new one rather than writing from scratch.
 
@@ -518,7 +516,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Fix:**
 1. Run `diptych handoff --list` to enumerate known targets.
 2. If the name is a typo, correct it.
-3. If you want a new target, add a custom renderer at `.diptych/handoff-renderers/<target>.ts` — the loader picks it up automatically.
+3. If you want a new target, add a runtime-loadable custom renderer at `.diptych/handoff-renderers/<target>.ts` or `.js` — the loader picks it up automatically.
 4. Verify with `diptych handoff --list` that the new target now appears.
 
 **Prevention:** Define custom renderers as soon as you adopt a new downstream consumer, and document the available targets in your team handbook.
@@ -565,12 +563,12 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ### Symptom: Expected MCP resources are missing or empty
 
-**Likely cause:** Resources are synthesized from the live session's artifacts. If the session has not produced briefs, evidence, or summary yet, those resources will be empty. MCP evidence tools can update the evidence ledger, but no MCP tool can create missing planning artifacts.
+**Likely cause:** Resources are synthesized from the served session artifacts. `resources/list` omits missing concrete artifacts; reading a missing concrete resource returns resource-not-found. The virtual `tasks` resource returns an empty JSON array when `tasks.md` is absent. MCP evidence tools can update the evidence ledger, but no MCP tool can create missing planning artifacts.
 
 **Fix:**
-1. Confirm the session is past the planning phase: `diptych status <session>` should show artifacts present.
+1. Confirm session status with `diptych ps`.
 2. If the session is still planning, wait for the artifacts to materialize.
-3. Inspect the session directory directly (`.diptych/sessions/<id>/`) to confirm what exists.
+3. Use `diptych explain --session <id>` or inspect `.diptych/sessions/<id>/` directly to confirm what exists.
 4. If artifacts exist but the MCP server does not expose them, restart `diptych mcp serve` to re-scan.
 
 **Prevention:** Start MCP after the session has produced at least its first brief.
@@ -586,9 +584,9 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 **Fix:**
 1. Confirm the session ID exists: `diptych ps`.
 2. If the session was created after the server started, restart `diptych mcp serve` — the server does not hot-reload new sessions.
-3. To serve all sessions (including new ones), use `diptych mcp serve --all-sessions --port 4321`.
+3. To serve all sessions known at server startup, use `diptych mcp serve --all-sessions --port 4321`; restart the server to include sessions created later.
 
-**Prevention:** Start the MCP server after all relevant sessions exist, or use `--all-sessions` for a long-lived MCP endpoint.
+**Prevention:** Start or restart the MCP server after all relevant sessions exist.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
@@ -722,7 +720,7 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 **Fix:**
 1. Run `diptych ps` and confirm the session's PID is alive.
 2. If the PID is dead, the run is over; archive the session and start fresh.
-3. If the PID is alive but the socket is gone, the IPC layer crashed — restart the server (`diptych start --resume <session>`).
+3. If the PID is alive but the socket is gone, the IPC layer crashed — continue from saved state with `diptych continue <session>`.
 4. Check OS logs for OOM kills if this happens repeatedly.
 
 **Prevention:** Use `--detach` for any long-running session so the server lives independently of the terminal.
@@ -733,11 +731,11 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ### Symptom: TUI input is dropped or duplicated when multiple clients are attached
 
-**Likely cause:** Single-writer constraint. Only one client may send input to a session at a time; additional clients should attach in read-only mode.
+**Likely cause:** Single-writer constraint. Only one attached client should send input to a session at a time.
 
 **Fix:**
 1. Detach all but one client.
-2. For multi-viewer setups, attach extra clients with `diptych attach --read-only`.
+2. For multi-viewer setups, use `diptych status`, `diptych ps`, and the session artifacts instead of extra interactive attach clients.
 3. If you need to hand off control between people, the current writer must `detach` before the next one attaches as writer.
 
 **Prevention:** Establish a convention: only one teammate is the active writer per session at any time.
@@ -748,12 +746,12 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ### Symptom: `attach` is slow because the entire event log replays
 
-**Likely cause:** The session's `events.jsonl` has grown large; the client replays from the start to reconstruct UI state.
+**Likely cause:** The session's `session.jsonl` has grown large; the client replays from the start to reconstruct UI state.
 
 **Fix:**
-1. Use `diptych attach --since <timestamp>` (or `--tail <n>`) to skip the historical replay and start from recent events.
-2. For very long sessions, consider archiving the early events and resuming from a checkpoint.
-3. As a workaround, attach in read-only mode first and accept the slow initial render.
+1. Use `diptych status` or `diptych ps` to confirm you are attaching to the intended session.
+2. For very long sessions, detach and resume from a checkpoint when the workflow reaches a stable boundary.
+3. Keep the existing session directory intact; `attach` only accepts `--project` plus the optional session id.
 
 **Prevention:** Keep sessions short — split long-running multi-feature work across multiple sessions rather than one mega-session.
 
@@ -799,10 +797,10 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 **Fix:**
 1. Resize the terminal to at least 80 columns (120 recommended).
-2. If you are on a tiny window, run headless instead: `diptych start --headless ...`.
+2. If you are on a tiny window, run without the TUI instead: `diptych start --json "..."` for NDJSON output, or `diptych start --rpc "..."` for an interactive NDJSON protocol.
 3. For tmux/screen users, increase the pane width or detach from the multiplexer.
 
-**Prevention:** Default to a wide terminal for diptych sessions, or alias `diptych` to `--headless` when working in narrow contexts.
+**Prevention:** Default to a wide terminal for diptych sessions, or use `--json`/`--rpc` when working in narrow contexts.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md).
 
@@ -860,10 +858,10 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 **Fix:**
 1. Confirm the runner kind via `diptych status`. CLI runners often skip cost events.
-2. Switch to `kind: api` or `kind: agent-sdk` for full cost visibility.
+2. Switch to `kind: api` for USD pricing when the provider/model is priced. `agent-sdk` can report token usage, but it remains unpriced because it is a meta/subscription runner.
 3. If you must use a CLI runner and want approximate costs, post-process `summary.json` after the run rather than relying on the live status.
 
-**Prevention:** Use `api` / `agent-sdk` runners when live cost feedback matters.
+**Prevention:** Use `api` runners when live USD cost feedback matters.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/OTEL.md](./OTEL.md).
 
@@ -952,14 +950,14 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ## CI and headless
 
-### Symptom: `diptych start --headless --json` output is interleaved with logs
+### Symptom: `diptych start --json` output is interleaved with logs
 
-**Likely cause:** Logs go to stderr, JSON goes to stdout. If you captured both streams together, they interleave.
+**Likely cause:** Logs go to stderr, JSON goes to stdout. If you captured both streams together, they interleave. Console OTel (`OTEL_TRACES_EXPORTER=console`, `DIPTYCH_OTEL_EXPORTER=console`, or `--otel-exporter console`) also writes spans to stdout and can interleave with `--json`.
 
 **Fix:**
-1. Redirect stderr separately: `diptych start --headless --json 2>diptych.log >diptych.json`.
+1. Redirect stderr separately: `diptych start --json "feature" 2>diptych.log >diptych.json`.
 2. Or, parse line-by-line and reject any line that does not begin with `{`.
-3. For CI scripts, always split streams explicitly — never rely on `2>&1`.
+3. Do not combine console OTel with NDJSON output; use a non-console provider bootstrap or disable OTel for JSON automation.
 
 **Prevention:** In CI, redirect stdout and stderr to distinct files.
 
@@ -972,9 +970,9 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 **Likely cause:** Drift is not a hard failure by design — it is reported, not enforced. The exit code reflects only fatal failures (validation, runner errors).
 
 **Fix:**
-1. Inspect `evidence.json` and `summary.json` after the run; they contain the drift details.
+1. Inspect `drift-report.json` for per-finding details and `summary.json.driftSummary` for the final deterministic drift aggregate; `evidence.json` only contains the evidence ledger.
 2. To gate CI on drift, post-process `summary.json` and exit non-zero from your wrapper script when drift exceeds your threshold.
-3. Use `chainDriftSummary.score` as the numeric signal.
+3. Use `driftSummary.score`, `driftSummary.errorCount`, or `driftSummary.warningCount` as the numeric signal; use `chainDriftSummary.score` only when gating repeated cross-task drift chains.
 
 **Prevention:** Wire drift checks into your CI script explicitly; do not assume diptych will fail the build for you.
 
@@ -987,10 +985,10 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 **Likely cause:** No built-in flag enforces a drift threshold; you wire it yourself.
 
 **Fix:**
-1. In your CI script, after `diptych start --headless --json ...`, parse `summary.json`.
-2. Read `chainDriftSummary.score` (or the per-task drift counts).
+1. In your CI script, after `diptych start --json ...`, resolve the session id from readiness/session output, `.diptych/active`, or wrapper state, then parse `.diptych/sessions/<id>/summary.json`.
+2. Read `driftSummary.score`, `driftSummary.errorCount`, or `driftSummary.warningCount`; use `chainDriftSummary.score` only for chain-drift gating.
 3. Exit non-zero from the wrapper if the score exceeds your threshold:
-   `node -e "process.exit(JSON.parse(require('fs').readFileSync('summary.json')).chainDriftSummary.score > 0.7 ? 1 : 0)"`.
+   `node -e "const s=JSON.parse(require('fs').readFileSync(process.argv[1])); process.exit((s.driftSummary?.score ?? 0) > 0.7 ? 1 : 0)" .diptych/sessions/<id>/summary.json`.
 4. Tune the threshold against representative runs.
 
 **Prevention:** Bake the drift gate into your CI workflow definition so it is uniform across branches.
@@ -1003,15 +1001,15 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ### Symptom: Config rejected with a Zod schema error mentioning `version`
 
-**Likely cause:** Your `.diptych/config.yaml` is on an older schema version than the current build expects. diptych refuses to silently coerce versions.
+**Likely cause:** Your `.diptych/config.yaml` has an unsupported `version` or an old field shape that cannot be migrated in memory.
 
 **Fix:**
 1. Read the error — it states the expected `version` and the field that broke.
-2. Run `diptych migrate` to upgrade the config in place.
-3. If migration fails, regenerate from scratch (`diptych init`) and merge your customizations back manually.
+2. For supported older shapes, start diptych normally; the loader migrates them in memory and later config writes use the current shape.
+3. If the version is unsupported, regenerate from scratch (`diptych init --reconfigure`) and merge your customizations back manually.
 4. Keep a copy of the old config under version control in case you need to diff.
 
-**Prevention:** Run `diptych migrate` after every diptych version bump.
+**Prevention:** After a version bump, run `diptych doctor` and follow any config warning it reports.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/MIGRATION.md](./MIGRATION.md).
 
@@ -1019,13 +1017,13 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ### Symptom: A config override (CLI flag, env var) does not take effect
 
-**Likely cause:** Resolution order: CLI flag > env var > project config > user config > built-in defaults. A higher-priority source is overriding what you set.
+**Likely cause:** Only specific startup options are overrideable. Diptych loads project `.diptych/config.yaml`, applies explicit CLI runner/workflow flags for that invocation, and reads documented environment variables for provider keys, context length, OTel, terminal behavior, and editor selection. It does not load a global config file.
 
 **Fix:**
-1. Run `diptych status` and read the **resolved** configuration table; it shows the effective value and the source it came from.
-2. If the wrong source wins, either remove the higher-priority value or set the value at the higher-priority layer.
-3. Common gotcha: a global `~/.config/diptych/config.yaml` shadowing the project config. Inspect it with `cat ~/.config/diptych/config.yaml`.
+1. Inspect `.diptych/config.yaml` for persistent values.
+2. Check the command line for one-shot overrides such as `--planner`, `--implementer`, `--model`, or `--mode`.
+3. Check the documented environment variables in `docs/CONFIGURATION.md`, especially provider API keys and `DIPTYCH_CONTEXT_LENGTH`.
 
-**Prevention:** Standardize on one configuration layer per setting. Keep CLI flags for one-off overrides only.
+**Prevention:** Put durable settings in `.diptych/config.yaml`. Keep CLI flags for one-off runs and environment variables for secrets or process-level behavior.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/BOOTSTRAP.md](./BOOTSTRAP.md).

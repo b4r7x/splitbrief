@@ -16,13 +16,12 @@ describe('hooks-builtins integration', () => {
   afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
   describe('block-secrets via runPreHooks — production path (git_commit event)', () => {
-    it('denies when git_commit event has file field containing AWS key (production path via task-commit.ts)', async () => {
+    it('denies when git_commit event has file field containing AWS key (production path via task/commit.ts)', async () => {
       const f = join(dir, 'infra.ts');
       writeFileSync(f, 'const key = "AKIAIOSFODNN7EXAMPLE"; // planted secret');
 
       const hooks: HooksConfig = { builtin: { 'block-secrets': true } };
       const commitMsg = 'feat(diptych): T1 - add infra';
-      // This is the exact shape task-commit.ts constructs for the pre_commit hook payload
       const event: EngineEvent = {
         type: 'git_commit',
         ts: Date.now(),
@@ -55,25 +54,21 @@ describe('hooks-builtins integration', () => {
       expect(result.allow).toBe(true);
     });
 
-    it('allows silently (bug path) when git_commit event has NO file field — demonstrates pre-fix behaviour', async () => {
+    it('allows when git_commit event has no file field', async () => {
       const f = join(dir, 'secret-no-file.ts');
       writeFileSync(f, 'const key = "AKIAIOSFODNN7EXAMPLE";');
 
       const hooks: HooksConfig = { builtin: { 'block-secrets': true } };
-      // Deliberately omit `file` — this was the pre-fix shape
       const event: EngineEvent = {
         type: 'git_commit',
         ts: Date.now(),
         phase: 'implementing',
         taskId: taskId('T1'),
         message: 'feat(diptych): T1 - oops',
-        // no file field
       };
 
-      // blockSecrets returns allow when file is absent — intentional design (no path = no scan)
-      // This test documents that behaviour so regressions are caught explicitly
       const result = await runPreHooks(hooks, 'pre_commit', event, ctx(dir));
-      expect(result.allow).toBe(true); // allow because file is absent — hook cannot scan unknown path
+      expect(result.allow).toBe(true);
     });
   });
 

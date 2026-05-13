@@ -1,77 +1,43 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
+import { ensureNodeModules } from './ensure-node-modules.js';
 import { runNpmTest } from './shared.js';
 import type { EvalScenario, QualityCheck, QualityCheckResult } from './types.js';
 
-const healthEndpointCandidates = ['src/routes/health.ts', 'src/health.ts', 'src/api/health.ts'];
+function executeHealthRequest(dir: string): QualityCheckResult {
+  ensureNodeModules(dir);
+  const script = [
+    "import { handleRequest } from './src/server.ts';",
+    "const response = handleRequest('GET', '/api/health');",
+    "if (response.statusCode !== 200) throw new Error('Expected 200, got ' + response.statusCode);",
+    "if (!response.body || typeof response.body !== 'object') throw new Error('Expected object response body');",
+    "if (response.body.status !== 'ok') throw new Error('Expected status ok, got ' + response.body.status);",
+    "if (typeof response.body.uptime !== 'number') throw new Error('Expected numeric uptime, got ' + typeof response.body.uptime);",
+  ].join('\n');
+  const result = spawnSync(process.execPath, ['--import', 'tsx/esm', '--eval', script], {
+    cwd: dir,
+    encoding: 'utf-8',
+    timeout: 30_000,
+  });
 
-function fileContains(dir: string, path: string, substring: string): QualityCheckResult {
-  const full = join(dir, path);
-  if (!existsSync(full)) {
-    return { passed: false, detail: `${path} not found` };
-  }
-
-  const content = readFileSync(full, 'utf-8');
-  return content.includes(substring)
-    ? { passed: true, detail: `${path} contains "${substring}"` }
-    : { passed: false, detail: `${path} does not contain "${substring}"` };
-}
-
-function findCandidateFile(dir: string): string | undefined {
-  return healthEndpointCandidates.find((path) => existsSync(join(dir, path)));
+  return result.status === 0
+    ? { passed: true, detail: "handleRequest('GET', '/api/health') returned status ok with uptime" }
+    : {
+        passed: false,
+        detail: `Health request failed: ${
+          result.stderr.trim() || result.stdout.trim() || result.error?.message || `exit ${result.status ?? 'unknown'}`
+        }`,
+      };
 }
 
 const qualityChecks: QualityCheck[] = [
   {
-    name: 'health endpoint file exists',
-    check: async (dir) => {
-      const path = findCandidateFile(dir);
-      return path
-        ? { passed: true, detail: `Found ${path}` }
-        : { passed: false, detail: 'No health endpoint file found' };
-    },
-  },
-  {
-    name: 'health endpoint exports handler',
-    check: async (dir) => {
-      const path = findCandidateFile(dir);
-      if (!path) {
-        return { passed: false, detail: 'No health endpoint file found' };
-      }
-
-      const result = fileContains(dir, path, 'export');
-      return result.passed ? result : { passed: false, detail: `${path} does not export a handler` };
-    },
-  },
-  {
-    name: 'health endpoint returns status ok',
-    check: async (dir) => {
-      for (const path of healthEndpointCandidates) {
-        const result = fileContains(dir, path, 'status');
-        if (result.passed) {
-          return result;
-        }
-      }
-
-      return { passed: false, detail: 'No file contains "status"' };
-    },
-  },
-  {
-    name: 'health endpoint returns uptime',
-    check: async (dir) => {
-      for (const path of healthEndpointCandidates) {
-        const result = fileContains(dir, path, 'uptime');
-        if (result.passed) {
-          return result;
-        }
-      }
-
-      return { passed: false, detail: 'No file contains "uptime"' };
-    },
+    name: 'GET /api/health returns status ok with uptime',
+    check: executeHealthRequest,
   },
   {
     name: 'tests pass after implementation',
-    check: async (dir) => runNpmTest(dir),
+    check: runNpmTest,
   },
 ];
 

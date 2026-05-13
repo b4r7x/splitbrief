@@ -5,7 +5,7 @@ import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE } from '../../../core/paths.js';
 import { buildRegeneratePrompt } from '../../spec/prompts/plan.js';
 import type { Planner } from '../../planners/types.js';
-import { createBusTextHandler, publishPlannerStatus, publishEvent } from '../events.js';
+import { createBusTextHandler, publishPlannerStatus } from '../events.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { appendMessage } from '../../../core/state/persistence.js';
 
@@ -39,7 +39,7 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ stat
     if (!result.approved && !result.comment) {
       state = transitionAndSave(projectDir, sessionId, state, { type: rejectType });
       publishPlannerStatus(bus, state, 'done');
-      publishEvent(bus, { type: rejectedEvent, ts: Date.now(), phase: state.phase });
+      bus.publish({ type: rejectedEvent, ts: Date.now(), phase: state.phase });
       return { state, rejected: true, regenerated };
     }
     if (!result.comment) return { state, rejected: false, regenerated };
@@ -58,7 +58,7 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ stat
     });
     state = addUsageAndSave(projectDir, sessionId, state, 'planner', regenResult.usage, bus);
     regenerated = true;
-    publishEvent(bus, { type: regeneratedEvent, ts: Date.now(), phase: state.phase, comment: result.comment });
+    bus.publish({ type: regeneratedEvent, ts: Date.now(), phase: state.phase, comment: result.comment });
   }
 
 }

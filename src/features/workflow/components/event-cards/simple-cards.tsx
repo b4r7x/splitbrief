@@ -173,7 +173,7 @@ export function renderSimpleCard(event: SimpleCardEvent, t: Theme): ReactNode {
         <Card
           label="approval"
           labelColor={event.mode === 'yolo' ? t.warning : t.textDim}
-          value={event.mode === 'yolo' ? 'YOLO mode enabled' : 'approval gates restored'}
+          value={event.mode === 'yolo' ? 'tiered approvals disabled' : 'tiered approvals restored'}
           valueColor={event.mode === 'yolo' ? t.warning : t.textDim}
         />
       );

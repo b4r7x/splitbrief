@@ -23,7 +23,7 @@ Distilled from:
 | 8 | **Screaming types** — types live where their domain meaning is created, not in a central `core/types/` grab-bag. Only truly cross-cutting types (fan-in > 30, ≥3 top-level folders) stay in `core/types/`. | [TYPES.md](./TYPES.md#screaming-types) |
 | 9 | **No giant merged files** — if merging would produce a file with >300 LOC and >1 responsibility, use a folder instead. | [STRUCTURE.md](./STRUCTURE.md#file-length-thresholds) |
 | 10 | **No decorative comments** — no section banners (`// ═══ X ═══`). Organize by keeping related exports near each other — the ordering is the documentation. | [STRUCTURE.md](./STRUCTURE.md#no-decorative-comments) |
-| 11 | **Zero classes** — pure functions + module-scoped state. The `class` keyword does not appear in `src/`. | [CLAUDE.md](../CLAUDE.md) |
+| 11 | **Zero runtime classes** — production source uses pure functions + module-scoped state. Test fixtures may contain class syntax only when class behavior is under test. | [CLAUDE.md](../CLAUDE.md) |
 | 12 | **External stores via `useSyncExternalStore`** — state lives in `src/stores/`, not React Context. No `useMemo`, `useCallback`, or `React.memo`. | [STORES.md](./STORES.md) |
 | 13 | **No `forwardRef` / `useImperativeHandle`** — React 19 + stores cover every case. Extract state to a store instead. | [STORES.md](./STORES.md) |
 | 14 | **Prompts get their own folder** — never inlined into orchestrator or runner code. Currently `src/engine/spec/prompts/`. | [STRUCTURE.md](./STRUCTURE.md#prompts-folder) |

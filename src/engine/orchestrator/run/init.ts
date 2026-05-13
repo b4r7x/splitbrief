@@ -1,10 +1,8 @@
-import type { Config } from '../../../core/schemas/config.js';
-import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
+import { DEFAULT_WORKFLOW_MODE, type Config } from '../../../core/schemas/config.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { TaskId } from '../../../core/schemas/task.js';
-import type { OrchestratorCallbacks } from '../types.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { Planner } from '../../planners/types.js';
 import type { Implementer } from '../../implementers/types.js';
@@ -30,9 +28,9 @@ import { createBranch } from '../../../lib/git.js';
 import { slugify } from '../../../utils/slugify.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 
-import type { WorkflowContext, WorkflowSinks, ResumeContextHolder } from '../types.js';
+import type { OrchestratorCallbacks, ResumeContextHolder, WorkflowContext, WorkflowSinks } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary.js';
-import { createImplementerPublisher, publishEvent, publishError, publishPlannerStatus, publishWorkflowConfig, publishUserMessage, publishWarning, publishGitBranchCreated } from '../events.js';
+import { createImplementerPublisher, publishError, publishPlannerStatus, publishWorkflowConfig, publishUserMessage, publishWarning, publishGitBranchCreated } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { applyRebuiltContext, autoCompactResumeContext } from '../resume-context.js';
 import { createValidator } from '../validation.js';
@@ -132,7 +130,7 @@ export async function initializeWorkflow(
     state = savedState;
     setTrackedState(state);
     publishPlannerStatus(bus, state, 'running');
-    publishEvent(bus, { type: 'workflow_resumed', ts: Date.now(), phase: state.phase });
+    bus.publish({ type: 'workflow_resumed', ts: Date.now(), phase: state.phase });
   } else {
     state = createInitialState(feature);
     state = {
@@ -145,7 +143,7 @@ export async function initializeWorkflow(
     state = transitionAndSave(projectDir, sessionId, state, { type: 'START', feature });
     setTrackedState(state);
     publishPlannerStatus(bus, state, 'running');
-    publishEvent(bus, { type: 'workflow_started', ts: Date.now(), phase: state.phase, feature });
+    bus.publish({ type: 'workflow_started', ts: Date.now(), phase: state.phase, feature });
     appendMessage(projectDir, sessionId, { role: 'user', text: feature }, config.workflow.persistTranscript);
     publishUserMessage(bus, state.phase, feature);
 
@@ -191,7 +189,7 @@ export async function initializeWorkflow(
     const prePlanPayload: EngineEvent = { type: 'workflow_started', ts: Date.now(), phase: state.phase, feature };
     const pre = await runPreHooks(config.hooks, 'pre_planning', prePlanPayload, { projectDir, sessionId });
     if (!pre.allow) {
-      publishEvent(bus, { type: 'warning', ts: Date.now(), phase: state.phase, message: `pre_planning blocked: ${pre.reason ?? 'hook denied'}` });
+      bus.publish({ type: 'warning', ts: Date.now(), phase: state.phase, message: `pre_planning blocked: ${pre.reason ?? 'hook denied'}` });
       return { ok: false, summary: buildSummary({ ...summaryBase, state }) };
     }
   }

@@ -47,7 +47,7 @@ There is no `src/screens/` directory. Each feature exports its own `screen.tsx` 
 
 ## Layer inventory — non-feature folders
 
-Contents of the non-feature folders that have more than a handful of files. Feature folders are catalogued in [Feature inventory](#feature-inventory).
+Representative contents of the non-feature folders that have more than a handful of files. Feature folders are catalogued in [Feature inventory](#feature-inventory); use `rg --files <folder>` for the exact current inventory.
 
 ### `src/cli/` — CLI entry + subcommand handlers
 
@@ -58,7 +58,7 @@ src/cli/
 ├── setup.ts           # bootstrap prep (resolveProjectDir, ensureGitAndConfig, setupWorkflow)
 ├── render.ts          # Ink / fullscreen render setup
 ├── errors.ts          # cliError() factory + isCliError predicate — see ERRORS.md
-├── headless.ts        # runHeadless(feature, dir, opts) — no-TUI workflow driver for `--json`; stubs all gating callbacks
+├── headless.ts        # runHeadless(feature, dir, opts) — no-TUI workflow driver for `--json`
 ├── hook-trust-prompt.ts  # TTY trust prompt for hook config; refuses in non-TTY unless --allow-hooks
 ├── otel-bootstrap.ts  # OTEL_TRACES_EXPORTER=console shortcut (BasicTracerProvider + ConsoleSpanExporter)
 └── commands/          # commander subcommand handlers (thin — delegate to core)
@@ -94,12 +94,12 @@ src/engine/events/
 ├── bus.ts             # createEventBus() — sync pub/sub with per-sink crash isolation
 ├── types.ts           # EngineEvent discriminated union + EventSink + EventBus types
 └── sinks/
-    ├── tui.ts         # pass-through into workflow/actions.addEvent
     ├── jsonl.ts       # appends every event to sessions/<id>/session.jsonl
     ├── tree-recorder.ts # maps EngineEvents to session tree entries; branches on recovery
     ├── stdout-json.ts # NDJSON emitter for `diptych start --json`
     └── otel.ts        # optional OpenTelemetry span emitter
 ```
+The interactive TUI sink lives at `src/features/workflow/tui-sink.ts` because it forwards into workflow stores.
 
 ### `src/engine/hooks/` — workflow hook runtime
 
@@ -243,7 +243,7 @@ features/setup/
 Rules:
 - **`components/` subfolder** appears only when the feature has ≥2 component files.
 - **`hooks/` subfolder** appears only when the feature has ≥2 hook files.
-- **Pure helpers** (non-React modules) sit at the feature root as flat files (`handlers.ts`, `keyboard.ts`, `layout.ts`). They get the `.ts` extension and their tests colocate (`keyboard.test.ts`).
+- **Pure helpers** (non-React modules) sit at the feature root as flat files (`handlers.ts`, `keyboard.ts`, `layout.ts`). They get the `.ts` extension and their tests colocate when they carry behavior (`layout.test.ts`).
 - **No `index.ts` barrels** inside a feature. The entry point is a named file (`screen.tsx`, `overlay.tsx`, `picker.tsx`). See [`NO-BARRELS.md`](./NO-BARRELS.md).
 
 ## File placement decision tree
@@ -330,10 +330,10 @@ The one sanctioned cross-cutting channel between features is **stores**. Feature
 
 `src/components/` holds UI that is not tied to any single feature:
 
-- **Primitives** — `theme.tsx`, `spinner.tsx`, `scroll-indicator.tsx`, `card.tsx`, `labeled-row.tsx`, `screen-shell.tsx`, `diff-view.tsx`, `filter-input.tsx`, `markdown.tsx`.
+- **Primitives** — `theme.tsx`, `spinner.tsx`, `scroll-indicator.tsx`, `labeled-row.tsx`, `screen-shell.tsx`, `diff-view.tsx`, `filter-input.tsx`, `markdown.tsx`, `session-row.tsx`.
 - **Input subsystem** — `input/` (multiline input primitive), `composer/` (composite used on every screen).
 - **Shared overlays** — `overlays/overlay-panel.tsx`, `overlays/text-input-overlay.tsx`. Feature-specific overlays live in their feature folder (e.g. `features/help/overlay.tsx`, `features/palette/overlay.tsx`, `features/settings/mode-selector.tsx`).
-- **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/static-selector.tsx`, `pickers/two-column-picker/`.
+- **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/single-column-picker.tsx`, `pickers/two-column-picker/`, plus the `hooks/use-static-selector.ts` selection hook.
 
 There is **no separate `src/ui/` directory** for primitives. The distinction between "primitive" and "composed" is fuzzy in practice (stateful primitives exist; stateless composed widgets exist). Flat `src/components/` with natural subfolders (`input/`, `overlays/`, `pickers/`) is enough.
 
@@ -378,7 +378,7 @@ Tests follow a hybrid layout driven by **blast radius** — how many top-level f
 
 | Blast radius | Location | Example |
 |---|---|---|
-| ≤ 1 top-level folder | Colocated next to source (`foo.test.ts` by `foo.ts`) | `src/engine/orchestrator/validation.test.ts`, `src/features/workflow/keyboard.test.ts` |
+| ≤ 1 top-level folder | Colocated next to source (`foo.test.ts` by `foo.ts`) | `src/engine/orchestrator/validation.test.ts`, `src/features/workflow/components/header.test.tsx` |
 | ≥ 2 top-level folders | `testing/integration/<layer>/` | `testing/integration/cli/`, `testing/integration/orchestrator/`, `testing/integration/ui/` |
 
 The three `testing/integration/` subfolders align with the three stable seams: commander (`cli/`), `runWorkflow()` (`orchestrator/`), and Ink screen + engine-written stores (`ui/`).
@@ -386,14 +386,14 @@ The three `testing/integration/` subfolders align with the three stable seams: c
 **Companion rules:**
 
 - **Pure helpers get colocated tests.** `keyboard.ts`, `layout.ts`, `handlers.ts`, `core/state/machine.ts`, parsers, pricing math — inputs → outputs, zero I/O.
-- **Ink tested at the feature seam.** Feature entries (`screen.tsx`, `overlay.tsx`, `picker.tsx`) get tests; feature sub-components do not. Shared primitives in `src/components/` (`FilterableList`, `MultilineInput`, `TwoColumnPicker`) earn dedicated tests because their cost amortises across consumers.
-- **Engine tested at `runWorkflow()`.** Pure decision modules get colocated units; orchestrator control-flow modules are covered only via integration tests at the `runWorkflow()` seam with fakes from `testing/helpers/orchestrator-factories.ts`.
+- **Ink tested at behavior seams.** Feature entries (`screen.tsx`, `overlay.tsx`, `picker.tsx`) and behavior-heavy feature sub-components get tests. Shared primitives in `src/components/` (`FilterableList`, `MultilineInput`, `TwoColumnPicker`) earn dedicated tests because their cost amortises across consumers.
+- **Engine tested by blast radius.** Pure decision modules and narrow orchestrator control-flow modules get colocated units; cross-module workflow behavior is covered through integration tests at the `runWorkflow()` seam with fakes from `testing/helpers/`.
 - **Trivial hooks (≤30 LOC, no branching) do not need tests.** Covered through the component that uses them. See [`HOOKS.md`](./HOOKS.md).
 - **Fixtures vs factories split by kind.** `testing/fixtures/<domain>/` = read-only bytes on disk; `testing/helpers/factories/<domain>.ts` = pure TS constructors. Rule of two: inline until the second consumer appears.
 - **Static is a tier.** TS strict + Zod schemas are first-class correctness — no runtime shape tests for Zod schemas, no `expectType<>` games.
 - **Do not test implementation.** No `vi.mock()` on `./` / `../` siblings, no spies on internal module functions, no `toHaveBeenCalledTimes` unless call-count IS the contract. See [`test-behavior-not-implementation`](../CLAUDE.md#testing-policy).
 
-Test discovery is configured in `vitest.config.ts` via `include: ['src/**/*.test.{ts,tsx}', 'testing/integration/**/*.test.{ts,tsx}']`. Both trees are picked up by a single `npm test`.
+Test discovery is configured in `vitest.config.ts` via `include: ['src/**/*.test.{ts,tsx}', 'testing/integration/**/*.test.{ts,tsx}', 'testing/helpers/**/*.test.{ts,tsx}', 'evals/eval.test.ts']`. All trees are picked up by a single `npm test`.
 
 ## Design decisions
 
@@ -450,6 +450,7 @@ Features are small and irregular. A template would over-prescribe (minimal featu
 | `sessions` | Sessions picker — select a past session to resume | `picker.tsx` |
 | `runners` | Planner/implementer runner + model selection | `picker.tsx` |
 | `skills` | Skills picker — toggle available skills for a workflow | `picker.tsx` |
+| `tree-view` | Session tree rendering primitives used by tree-view tests and consumers | `tree-view.tsx` |
 
 Each feature's entry file is what `src/app.tsx` (or `src/layout.tsx` for overlays) imports. Internal structure is documented by inspection — there is no catalog per-feature.
 
@@ -476,7 +477,7 @@ The canonical patterns in this codebase are `src/engine/orchestrator/planning/` 
 orchestrator/
 ├── planning/
 │   ├── run.ts        # entry — dispatches to the right planning variant
-│   ├── new.ts        # internal — new-feature planning flow
+│   ├── full.ts       # internal — standard/full planning flow
 │   ├── quick.ts      # internal — quick-mode planning flow
 │   ├── rewind.ts     # internal — rewind-to-approval flow
 │   └── shared.ts     # internal — shared planning helpers

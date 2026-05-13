@@ -35,7 +35,7 @@ Read before implementing:
 
 - `src/engine/orchestrator/action-classifier.ts` (from brief 01) — `classifyAction`, `ActionClass`, `ApprovalTier`, `ClassifyInput`
 - `src/engine/orchestrator/types.ts` — `OrchestratorCallbacks`, `WorkflowContext`
-- `src/engine/events/types.ts` — event union shape, `publishEvent` pattern
+- `src/engine/events/types.ts` — event union shape and direct `bus.publish(...)` event pattern
 - `src/engine/hooks/run-pre-hook.ts` — `PreHookResult`, `runPreHooks` — gate runs before this
 - `src/core/paths.ts` — `APPROVALS_FILE`, `diptychDir`, `getDiptychPath`
 - `src/core/schemas/config.ts` — to read `ApprovalConfig` (from brief 03, optional field)

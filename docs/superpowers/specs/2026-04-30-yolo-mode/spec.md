@@ -7,7 +7,7 @@
 
 ## Summary
 
-Add explicit YOLO mode that disables all approval gates for a session. Two entry points:
+Add explicit YOLO mode that skips action-level tiered approval prompts for a session. Two entry points:
 
 1. `--yolo` CLI flag on `diptych start` — sets `approval.enabled: false` for the session
 2. `/yolo` slash command — toggles YOLO mode on/off at runtime
@@ -63,7 +63,7 @@ yolo?: boolean;
 
 ```ts
 // Add after the --worktree option (line 24):
-    .option('--yolo', 'Skip all approval gates for this session (auto-approve everything)', false);
+    .option('--yolo', 'Skip action-level tiered approval prompts for this session', false);
 ```
 
 **Full file after change:**
@@ -93,7 +93,7 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--json', 'Headless mode: emit each EngineEvent as NDJSON to stdout, skip TUI render', false)
     .option('--otel-exporter <name>', 'Bootstrap an OTel exporter (currently only "console"); requires otel.enabled in config')
     .option('--worktree [name]', 'run in a new linked git worktree (.trees/<name>)')
-    .option('--yolo', 'Skip all approval gates for this session (auto-approve everything)', false);
+    .option('--yolo', 'Skip action-level tiered approval prompts for this session', false);
 }
 ```
 
@@ -215,16 +215,16 @@ Look for where `CLIOverrides` is built from `opts` in `init-stores.ts` and add `
       kind: 'noarg',
       name: '/yolo',
       label: 'YOLO',
-      description: 'Toggle approval gates off/on (skip all confirmations)',
+      description: 'Toggle action-level tiered approvals off/on',
       validScreens: ALL_SCREENS,
       handler: () => {
         const current = ctx.getApprovalEnabled();
         const next = !current;
         ctx.setApprovalEnabled(next);
         if (!next) {
-          ctx.setFeedbackMessage('YOLO mode ON — all approval gates disabled');
+          ctx.setFeedbackMessage('YOLO mode ON — action-level tiered approvals disabled');
         } else {
-          ctx.setFeedbackMessage('YOLO mode OFF — approval gates restored');
+          ctx.setFeedbackMessage('YOLO mode OFF — action-level tiered approvals restored');
         }
       },
     },
@@ -351,10 +351,10 @@ $ diptych start --yolo "add login feature"
 
 ```
 > /yolo
-YOLO mode ON — all approval gates disabled
+YOLO mode ON — action-level tiered approvals disabled
 
 > /yolo
-YOLO mode OFF — approval gates restored
+YOLO mode OFF — action-level tiered approvals restored
 ```
 
 - Feedback message appears for 3 seconds (standard `feedbackStore` behavior)
@@ -481,12 +481,12 @@ it('/yolo toggles approval enabled state', () => {
   // First toggle: disable
   yolo!.handler();
   expect(approvalEnabled).toBe(false);
-  expect(ctx.lastFeedback).toBe('YOLO mode ON — all approval gates disabled');
+  expect(ctx.lastFeedback).toBe('YOLO mode ON — action-level tiered approvals disabled');
 
   // Second toggle: re-enable
   yolo!.handler();
   expect(approvalEnabled).toBe(true);
-  expect(ctx.lastFeedback).toBe('YOLO mode OFF — approval gates restored');
+  expect(ctx.lastFeedback).toBe('YOLO mode OFF — action-level tiered approvals restored');
 });
 ```
 
@@ -494,7 +494,7 @@ it('/yolo toggles approval enabled state', () => {
 
 ## Acceptance criteria
 
-1. `diptych start --yolo "feature"` starts with all approval gates disabled
+1. `diptych start --yolo "feature"` starts with action-level tiered approvals disabled
 2. `diptych start --yolo --json "feature"` works in headless mode
 3. `/yolo` typed in the TUI toggles approval off → on → off
 4. `/yolo` shows feedback message confirming the toggle

@@ -87,7 +87,6 @@ export function analyzeDriftChain(
     overlapCount = overlap.length;
 
     if (overlapCount >= 1) {
-      // extend chain
       newEntries = [...state.activeChain.entries, { taskId, outOfBoundsFiles: currentFiles }];
       const unionSet = new Set([...prevEntry.outOfBoundsFiles, ...currentFiles]);
       unionSize = unionSet.size;
@@ -96,14 +95,12 @@ export function analyzeDriftChain(
       const addedUnique = currentFiles.filter((f) => !existingUnique.has(f));
       newUniqueFiles = [...state.activeChain.uniqueFiles, ...addedUnique];
     } else {
-      // start new chain
       newEntries = [{ taskId, outOfBoundsFiles: currentFiles }];
       newUniqueFiles = [...currentFiles];
       overlapCount = 0;
-      unionSize = currentFiles.length; // single entry, overlap=0 so overlapTerm=0 anyway
+      unionSize = currentFiles.length;
     }
   } else {
-    // empty chain → start new
     newEntries = [{ taskId, outOfBoundsFiles: currentFiles }];
     newUniqueFiles = [...currentFiles];
     overlapCount = 0;

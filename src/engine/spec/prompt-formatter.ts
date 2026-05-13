@@ -4,8 +4,7 @@ import { extractFunctionContext } from '../parsers/scope-extractor.js';
 import { DECLARATION_NAME_RE } from '../parsers/code-patterns.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import { truncateMiddle, computeTokenBudget } from './token-budget.js';
-import type { LanguageContext } from './prompts/language-context.js';
-import { buildLanguageContext } from './prompts/language-context.js';
+import { buildLanguageContext, type LanguageContext } from './prompts/language-context.js';
 import { buildSystemPreamble } from './prompts/system.js';
 import { buildScopeLines } from './formatter.js';
 
@@ -144,9 +143,9 @@ function insertCodeContext(sections: string[], task: Task, budget?: { remaining:
   if (codeCtx.mode === 'function-level') {
     insertCodeContextSection(sections, [
       '', '### Current Code (relevant section)',
-      '// === Imports ===', codeCtx.imports, '',
-      '// === Target Function ===', codeCtx.targetFunction, '',
-      `// === Other Exports (do not modify): ${codeCtx.otherExports.join(', ')}`,
+      '#### Imports', codeCtx.imports, '',
+      '#### Target Function', codeCtx.targetFunction, '',
+      `#### Other Exports (do not modify): ${codeCtx.otherExports.join(', ')}`,
     ]);
   } else {
     insertCodeContextSection(sections, ['', '### Current Code', codeCtx.content]);

@@ -6,11 +6,11 @@ import type { EvalScenario, QualityCheck, QualityCheckResult } from './types.js'
 const paginationPath = 'src/pagination.ts';
 const evalCheckPath = 'src/pagination.eval-check.test.ts';
 
-function fileExists(dir: string, path: string): QualityCheckResult {
-  const full = join(dir, path);
+function paginationExists(dir: string): QualityCheckResult {
+  const full = join(dir, paginationPath);
   return existsSync(full)
-    ? { passed: true, detail: `${path} exists` }
-    : { passed: false, detail: `${path} not found` };
+    ? { passed: true, detail: `${paginationPath} exists` }
+    : { passed: false, detail: `${paginationPath} not found` };
 }
 
 function readPagination(dir: string): string | undefined {
@@ -70,19 +70,19 @@ function lastPageIsReachable(dir: string): QualityCheckResult {
 const qualityChecks: QualityCheck[] = [
   {
     name: 'pagination implementation exists',
-    check: async (dir) => fileExists(dir, paginationPath),
+    check: paginationExists,
   },
   {
     name: 'buggy division pattern removed',
-    check: async (dir) => buggyPatternRemoved(dir),
+    check: buggyPatternRemoved,
   },
   {
     name: 'tests pass after implementation',
-    check: async (dir) => runNpmTest(dir),
+    check: runNpmTest,
   },
   {
     name: 'last page is reachable',
-    check: async (dir) => lastPageIsReachable(dir),
+    check: lastPageIsReachable,
   },
 ];
 

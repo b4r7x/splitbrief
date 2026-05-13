@@ -69,10 +69,11 @@ export function buildCommandContext({ exit }: { exit: () => void }): RuntimeComm
     requestTaskRedo: (taskId) =>
       requestRewind({ target: 'task', taskId }),
     getQueueDepth: () => lifecycleStore.get().queueDepth,
-    clearQueue: () => requestClearQueue(),
+    clearQueue: requestClearQueue,
     rebuildRepomap: async () => {
-      const projectDir = configStore.get().projectDir;
-      return doRebuildRepomap(projectDir);
+      const { config, projectDir } = configStore.get();
+      const cacheDir = config?.codebase?.cacheDir;
+      return doRebuildRepomap(projectDir, cacheDir === undefined ? {} : { cacheDir });
     },
     attachImage: (input) => {
       const projectDir = configStore.get().projectDir;
@@ -80,9 +81,7 @@ export function buildCommandContext({ exit }: { exit: () => void }): RuntimeComm
       if (!result.ok) return { ok: false, reason: result.reason };
       return { ok: true, path: result.path };
     },
-    detachImage: (idOrIndex) => {
-      return detachImage(idOrIndex);
-    },
+    detachImage,
     listAttachments,
     writeHandoff: async (target, taskId) => {
       const projectDir = configStore.get().projectDir;

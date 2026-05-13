@@ -1,7 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
-import { createBusTextHandler, publishWarning, publishEscalate, publishEvent } from '../events.js';
+import { createBusTextHandler, publishWarning, publishEscalate } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { runRetryStep } from './step.js';
 import type { EscalationContext, RetryResult } from './types.js';
@@ -12,7 +12,7 @@ export async function runTier2Full(
   const attempts = priorAttempts + 1;
   const textHandler = createBusTextHandler(ctx.bus, state.phase);
   state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'HINT_FAIL' });
-  publishEvent(ctx.bus, { type: 'hint_failed', ts: Date.now(), phase: state.phase, taskId: initialTask.id });
+  ctx.bus.publish({ type: 'hint_failed', ts: Date.now(), phase: state.phase, taskId: initialTask.id });
 
   publishEscalate(ctx.bus, state.phase, initialTask.id, 2);
   const languageContext = buildProjectLanguageContext(ctx.projectDir, state.discoveredValidation?.language);
@@ -34,6 +34,6 @@ export async function runTier2Full(
     return { state: outcome.state, result: outcome.result };
   }
 
-  publishEvent(ctx.bus, { type: 'task_full_fail', ts: Date.now(), phase: outcome.state.phase, taskId: outcome.task.id });
+  ctx.bus.publish({ type: 'task_full_fail', ts: Date.now(), phase: outcome.state.phase, taskId: outcome.task.id });
   return { state: outcome.state, result: { completed: false, method: 'failed', attempts } };
 }

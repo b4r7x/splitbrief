@@ -77,6 +77,17 @@ describe('attachment actions', () => {
     expect(listAttachments()).toEqual([]);
   });
 
+  it('treats partial numeric strings as ids or path suffixes, not indexes', () => {
+    const firstPath = writeImage('1-first.png');
+    const secondPath = writeImage('2-second.png');
+    attachImage(firstPath, projectDir);
+    attachImage(secondPath, projectDir);
+
+    expect(detachImage('1-first.png')).toBe(true);
+
+    expect(listAttachments().map(a => a.path)).toEqual([real(secondPath)]);
+  });
+
   it('formats long attachment names without requiring workflow imports', () => {
     expect(attachmentShortName('/tmp/averyveryveryverylongname.png')).toBe('averyveryveryverylong...');
   });

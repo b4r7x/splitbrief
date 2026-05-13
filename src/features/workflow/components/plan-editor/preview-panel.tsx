@@ -10,7 +10,7 @@ import type { RoutingDecision } from '../../../../engine/orchestrator/context-ro
 import { buildProjectLanguageContext } from '../../../../engine/spec/prompts/language-context.js';
 import type { PlanReviewEstimateStatus, PlanTaskReviewMetadata } from '../../../../stores/workflow/plan-editor.js';
 import { buildWorkerPacketPreview, type WorkerPacketPreview } from '../../worker-packet-preview.js';
-import { refreshTaskForRoutingPreview } from '../brief-review-view.js';
+import { refreshTaskForRoutingPreview } from '../brief-review.js';
 import { compactExcerpt, compactValue, taskWithoutCurrentCode } from './task-helpers.js';
 
 interface PacketPreviewRefresh {
@@ -57,18 +57,12 @@ export function usePacketPreview(opts: UsePacketPreviewOptions): WorkerPacketPre
       setPacketPreviewRefresh(null);
       return;
     }
-
-    const previewSourceTask = selectedTask;
-
-    if (previewSourceTask.action !== 'modify') {
-      setPacketPreviewRefresh({
-        sourceTask: previewSourceTask,
-        projectDir,
-        task: previewSourceTask,
-      });
+    if (selectedTask.action !== 'modify') {
+      setPacketPreviewRefresh(null);
       return;
     }
 
+    const previewSourceTask = selectedTask;
     const controller = new AbortController();
     setPacketPreviewRefresh({
       sourceTask: previewSourceTask,

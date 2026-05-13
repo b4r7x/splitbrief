@@ -58,11 +58,11 @@ How many top-level folders does the test import from?
 
 **Feature sub-components do not get dedicated tests.** Ink is tested at the feature seam (`screen.tsx` / `overlay.tsx` / `picker.tsx`). Shared primitives in `src/components/` (`FilterableList`, `MultilineInput`, `TwoColumnPicker`) are the exception — their cost amortises across consumers.
 
-**Orchestrator internals do not get dedicated tests.** Pure decision modules in `src/engine/` do (parsers, state machine, layout math, pricing math). Control-flow modules (`approval`, `continuation`, `escalation/*`, `task-loop`, `task-step`, `queue`, `signals`, `planning/*`, `run/*`) are covered only via integration tests at the `runWorkflow()` seam.
+**Orchestrator internals do not get dedicated tests.** Pure decision modules in `src/engine/` do (parsers, state machine, layout math, pricing math). Control-flow modules (`approval`, `continuation`, `escalation/*`, `task/loop.ts`, `task/step.ts`, `queue`, `signals`, `planning/*`, `run/*`) are covered only via integration tests at the `runWorkflow()` seam.
 
 **Zod schemas do not get shape tests.** TS strict + Zod `.parse()` is first-class correctness — no runtime tests for schema shape. One repo-wide `.strict()` rejection test lives in `src/core/schemas/runner-fields.test.ts`; do not duplicate per schema.
 
-Test support files that import `vitest` (or any other dev-only dependency) MUST be named `__test-helpers__*.ts` and be excluded from the production `tsc` build via `tsconfig.json` `exclude: ["**/__test-helpers__*"]`. Place them beside the test files that consume them. This keeps `vitest` out of the production type-check graph so `npm run build` does not need dev dependencies.
+Colocated support files under `src/**` that import `vitest` or another dev-only dependency must use the `*.test.ts` / `*.test.tsx` pattern so production builds exclude them. Shared support belongs under `testing/helpers/**`, which is already outside the production type-check graph.
 
 **Coverage thresholds** (`vitest.config.ts`): `statements: 50, branches: 40, functions: 50, lines: 55`. These are **non-regression gates, not aspirational targets** — do not add dead tests to lift coverage. Static (TS strict + Zod) is a first-class tier and carries real safety even when it does not increment coverage numbers.
 
@@ -76,7 +76,7 @@ Cost-aware implementer routing, user-edit conflict handling, and Plan Review v2 
 
 **Routing and context fit.** Public pure helpers are valid unit-test targets when they encode product policy. Examples: context-window classification, prompt-size estimation, profile ordering, cheapest-capable selection, and no-capable-profile failure. These tests should assert the returned decision object, selected profile, rejection reasons, and fit status. Do not spy on internal sort helpers or duplicate the full prompt formatter in the test.
 
-**User-edit conflicts.** Conflict tests should set up real task/file ownership data and assert the public classification or emitted event: conflict kind, affected task ids, `safeToContinue`, and available actions. Do not assert that a particular detector function was called. Orchestrator-level coverage belongs at the task-loop or `runWorkflow()` seam when the behavior is "pause before overwriting the user" or "continue on unrelated external edits."
+**User-edit conflicts.** Conflict tests should set up real task/file ownership data and assert the public classification or emitted event: conflict kind, affected task ids, `safeToContinue`, and available actions. Do not assert that a particular detector function was called. Orchestrator-level coverage belongs at the task loop or `runWorkflow()` seam when the behavior is "pause before overwriting the user" or "continue on unrelated external edits."
 
 **Plan Review v2.** Keep pure editor reducers/actions colocated with the store or hook module when they have branching behavior. Component tests should render the Plan Review surface and assert visible markers the user depends on: selected worker, context fit or overflow, dirty state, save error, and conflict labels. Avoid micro-tests for keybinding passthrough unless the helper is exported as a pure public parser; prefer grouping key maps with `it.each` when adding more cases.
 
@@ -90,13 +90,13 @@ npm test -- src/core/schemas/workflow.test.ts
 npm test -- src/core/schemas/enums.test.ts
 npm test -- src/core/state/machine.test.ts
 npm test -- src/core/state/persistence.test.ts
-npm test -- src/engine/orchestrator/recovery.test.ts
-npm test -- src/engine/orchestrator/budget.test.ts
-npm test -- src/engine/orchestrator/task-loop.recovery.test.ts
-npm test -- src/engine/orchestrator/task-step.recovery.test.ts
-npm test -- src/engine/orchestrator/run/run.recovery.test.ts
+npm test -- src/engine/orchestrator/recovery/recovery.test.ts
+npm test -- src/engine/orchestrator/budget/budget.test.ts
+npm test -- src/engine/orchestrator/task/loop.test.ts
+npm test -- src/engine/orchestrator/task/step.test.ts
+npm test -- src/engine/orchestrator/run/run.test.ts
 npm test -- src/engine/orchestrator/session-lifecycle.test.ts
-npm test -- src/cli/headless.recovery.test.ts
+npm test -- src/cli/headless.test.ts
 npm test -- src/features/workflow/recovery-prompt.test.ts
 npm test -- src/features/workflow/user-edit-conflict-prompt.test.ts
 ```
@@ -172,7 +172,7 @@ it('start --json emits NDJSON and exits 0', async () => {
   });
 });
 ```
-The headless driver (`src/cli/headless.ts`) wires `stdoutJsonSink` to the bus and stubs every gating callback to auto-approve, so an integration test can drive `diptych start --json` end-to-end and assert on the event sequence plus exit code. No Ink mount, no TTY detection.
+The headless driver (`src/cli/headless.ts`) wires `stdoutJsonSink` to the bus and stubs workflow host callbacks so integration tests can drive `diptych start --json` end-to-end and assert on the event sequence plus exit code. Tiered approvals still use approval config and fail closed when headless sticky/confirm has no grant. No Ink mount, no TTY detection.
 
 **UI flow — render a feature + drive engine events through stores** (`testing/helpers/ink.ts`):
 
@@ -253,7 +253,6 @@ The `orchestrator-factories.ts` fakes work but are `vi.fn` wrappers — assertio
 testing/helpers/faux/
   planner.ts         fauxPlanner(opts) → { planner: Planner, state: FauxPlannerState }
   implementer.ts     fauxImplementer(opts) → { implementer: Implementer, state: FauxImplementerState }
-  workflow.ts        createFauxWorkflow(opts) → combines both + bus + config + temp dir
 ```
 
 - Scripts are cycled: `steps: [{ success: true }, { success: false }]` alternates on repeated calls.
@@ -272,7 +271,7 @@ Starts a local HTTP server that speaks OpenAI SSE (or Anthropic event format). R
 
 ### Migration path
 
-`testing/helpers/faux/` is implemented (L1: `planner.ts`, `implementer.ts`, `workflow.ts`). New tests use faux objects; old tests using `orchestrator-factories.ts` continue to work and are gradually migrated. Once all consumers migrate, the old factories will be deprecated and removed.
+`testing/helpers/faux/` is implemented (L1: `planner.ts`, `implementer.ts`). New tests use faux objects; old tests using `orchestrator-factories.ts` continue to work and are gradually migrated. Once all consumers migrate, the old factories will be deprecated and removed.
 
 ### What stays unchanged
 
@@ -473,12 +472,12 @@ Verify: a `warning` event with `pre_commit blocked ... AWS access key` fires, no
 
 ### M4. OTel activation
 
-Any of the three paths below should emit `diptych.workflow`, `diptych.phase.*`, and `diptych.task` spans on stderr:
+Any of the three paths below should emit `diptych.workflow`, `diptych.phase.*`, and `diptych.task` spans on stdout:
 
 ```bash
 OTEL_TRACES_EXPORTER=console   node dist/cli.js start --json --mode quick "otel test"
 DIPTYCH_OTEL_EXPORTER=console  node dist/cli.js start --json --mode quick "otel test"
-node dist/cli.js --otel-exporter=console start --json --mode quick "otel test"
+node dist/cli.js start --otel-exporter=console --json --mode quick "otel test"
 ```
 
 See [`OTEL.md` §Design decisions](./OTEL.md) for why the bootstrap has to run before commander parses.

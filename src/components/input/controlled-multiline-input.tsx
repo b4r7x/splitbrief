@@ -85,7 +85,6 @@ export function ControlledMultilineInput({
     onVisibleRowsChange?.(effectiveVisibleRows);
   }, [effectiveVisibleRows, onVisibleRowsChange]);
 
-  // Derived during render via ref to avoid a derived-state useEffect.
   const scrollOffset = computeViewportScroll({
     previous: scrollOffsetRef.current,
     markerHeight,

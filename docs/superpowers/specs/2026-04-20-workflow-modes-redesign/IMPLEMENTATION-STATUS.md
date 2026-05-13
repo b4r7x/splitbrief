@@ -19,7 +19,7 @@ Forbidden-pattern checks: zero memoization, zero barrels, zero classes, zero eng
 | 01 — Mode taxonomy | ✅ Complete | All code in place. enums, config, migrate, CLI, settings, resolve. |
 | 02 — Instant mode | ✅ Complete | START_INSTANT, events, prompt, dispatcher, base planner. |
 | 03 — Speckit phases | ✅ Complete | Phases in enum, state machine handlers, prompts. **Fixed:** WorkflowState schema now declares `clarifications?`, `constitutionFailureReason?`, `analysisResult?`. Path constants moved from `speckit.ts` to `paths.ts`. `phases.ts` already had new phases. |
-| 04 — Approve flag | ✅ Complete | APPROVE_LEVELS, resolveApproveLevel, --approve CLI, /approve command, settings. |
+| 04 — Approve flag | ✅ Complete | APPROVE_LEVELS, resolveApproveLevel, --approve CLI, settings. Archived design also proposed an approval-level runtime command that is not in the current registry. |
 | 05 — Planner effort | ✅ Complete | EFFORT_LEVELS, per-backend pass-through, /effort command, settings. Note: real field name is `GenerationCommonFields` not `CommonFields`. |
 | 06 — Image passthrough | ✅ Complete | **Fixed:** Added `onFileDrop` prop + `FILE_DROP_PATTERN` to `multiline-input.tsx`. Added `requestAttach`/`requestDetach` to `handlers.ts`. Wired `handleFileDrop` in `input-bar/input-bar.tsx`. `/attach` and `/detach` slash commands already existed. |
 | 07 — Git modes settings | ✅ Complete | createBranch, slug, settings catalog, footer badge, task-commit reads correct path. |

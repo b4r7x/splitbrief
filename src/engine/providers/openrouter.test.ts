@@ -8,11 +8,12 @@ import { setupFetchMock, setupEnvMock } from '#testing/helpers/fetch-mock.js';
 
 describe('parsePrice', () => {
   it.each([
-    [undefined, 0],
+    [undefined, undefined],
+    ['', undefined],
     ['0', 0],
     ['0.000005', 5],
     ['0.015', 15000],
-    ['not-a-number', 0],
+    ['not-a-number', undefined],
   ] as const)('parsePrice(%s) => %s', (input, expected) => {
     expect(parsePrice(input)).toBe(expected);
   });
@@ -94,10 +95,21 @@ describe('toDetectedModel', () => {
 
     expect(model.id).toBe('minimal-model');
     expect(model.contextLength).toBeUndefined();
-    expect(model.pricingInput).toBe(0);
-    expect(model.pricingOutput).toBe(0);
-    expect(model.isFree).toBe(true); // zero pricing = free
+    expect(model.pricingInput).toBeUndefined();
+    expect(model.pricingOutput).toBeUndefined();
+    expect(model.isFree).toBeUndefined();
     expect(model.capabilities).toBeUndefined();
+  });
+
+  it('omits malformed pricing instead of treating it as free', () => {
+    const model = toDetectedModel({
+      id: 'openai/gpt-4o',
+      pricing: { prompt: 'not-a-number', completion: '0' },
+    });
+
+    expect(model.pricingInput).toBeUndefined();
+    expect(model.pricingOutput).toBe(0);
+    expect(model.isFree).toBeUndefined();
   });
 });
 

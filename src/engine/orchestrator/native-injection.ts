@@ -2,7 +2,6 @@ import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.j
 import type { Planner } from '../planners/types.js';
 import type { EventBus } from '../events/types.js';
 import { transitionAndSave } from './state-ops.js';
-import { publishEvent } from './events.js';
 
 export async function dispatchNativeInjection(
   message: QueuedMessage,
@@ -25,7 +24,7 @@ export async function dispatchNativeInjection(
       id: message.id,
     });
     setState(next);
-    publishEvent(bus, { type: 'message_injected_native', ts: Date.now(), phase: next.phase, id: message.id });
+    bus.publish({ type: 'message_injected_native', ts: Date.now(), phase: next.phase, id: message.id });
   } catch {
     // Fire-and-forget — failure is not fatal, message stays in queue for drain
   }

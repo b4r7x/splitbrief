@@ -37,11 +37,8 @@ export interface PlanTaskReviewMetadata {
 }
 
 export interface PlanEditorState {
-  /** Current mutable task list. Empty until the editor is initialized. */
   tasks: Task[];
-  /** Zero-based index of the cursor within tasks[]. Clamped to [0, tasks.length - 1]. */
   cursor: number;
-  /** Set of task IDs whose full body is expanded (toggled by <enter>). */
   expandedIds: ReadonlySet<string>;
   /**
    * True when the in-memory task list differs from what is on disk.
@@ -63,7 +60,6 @@ export interface PlanEditorState {
    * are produced elsewhere; the editor only renders whatever metadata is known.
    */
   reviewMetadata: ReadonlyMap<string, PlanTaskReviewMetadata>;
-  /** Set of task IDs flagged for rejection/regeneration. */
   flaggedIds: ReadonlySet<string>;
 }
 

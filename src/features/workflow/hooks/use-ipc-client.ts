@@ -172,8 +172,6 @@ export function useIpcClient(opts: {
 
       socket.on('connect', () => {
         if (!canMutate(socket)) return;
-        // status will be set properly once session_meta arrives;
-        // for now just stay in 'connecting' until meta is received
       });
 
       socket.on('timeout', () => {

@@ -3,9 +3,9 @@ import { join } from 'node:path';
 import { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
 import { assertNotWindows } from '../platform.js';
-import { checkServerStatus, readLockfile } from '../../engine/ipc/lockfile.js';
-import type { LockfileData } from '../../engine/ipc/lockfile.js';
+import { checkServerStatus, readLockfile, type LockfileData } from '../../engine/ipc/lockfile.js';
 import { sessionsRoot } from '../../core/paths.js';
+import { assignSessionAliases } from '../session-aliases.js';
 
 export type PsDeps = {
   readLockfile: (sessionDir: string) => Promise<LockfileData | null>;
@@ -18,6 +18,7 @@ const defaultDeps: PsDeps = {
 };
 
 type SessionRow = {
+  alias: number | null;
   sessionId: string;
   status: 'running' | 'exited' | 'crashed' | 'unknown';
   pid: number | null;
@@ -26,6 +27,7 @@ type SessionRow = {
   endTimeMs: number | null;
   lastAliveMs: number | null;
   feature: string;
+  lockfile: LockfileData | null;
 };
 
 function formatElapsed(startMs: number, endMs: number): string {
@@ -43,6 +45,7 @@ async function buildRow(sessDir: string, sessionId: string, deps: PsDeps): Promi
 
   if (!data) {
     return {
+      alias: null,
       sessionId,
       status: 'unknown',
       pid: null,
@@ -51,6 +54,7 @@ async function buildRow(sessDir: string, sessionId: string, deps: PsDeps): Promi
       endTimeMs: null,
       lastAliveMs: null,
       feature: '-',
+      lockfile: null,
     };
   }
 
@@ -66,6 +70,7 @@ async function buildRow(sessDir: string, sessionId: string, deps: PsDeps): Promi
   }
 
   return {
+    alias: null,
     sessionId,
     status: rowStatus,
     pid: data.pid,
@@ -74,7 +79,18 @@ async function buildRow(sessDir: string, sessionId: string, deps: PsDeps): Promi
     endTimeMs: data.exitedAt ?? null,
     lastAliveMs: data.lastAliveMs,
     feature: data.feature,
+    lockfile: data,
   };
+}
+
+function assignDisplayedAliases(rows: SessionRow[]): SessionRow[] {
+  const aliases = assignSessionAliases(
+    rows
+      .filter((row): row is SessionRow & { lockfile: LockfileData } => row.lockfile !== null)
+      .map(row => ({ sessionId: row.sessionId, lockfile: row.lockfile })),
+  );
+  const aliasBySession = new Map(aliases.map(row => [row.sessionId, row.alias]));
+  return rows.map(row => ({ ...row, alias: aliasBySession.get(row.sessionId) ?? null }));
 }
 
 export async function psCommand(
@@ -97,9 +113,9 @@ export async function psCommand(
     return;
   }
 
-  const rows = await Promise.all(
+  const rows = assignDisplayedAliases(await Promise.all(
     entries.map((e) => buildRow(join(root, e.name), e.name, deps)),
-  );
+  ));
 
   rows.sort((a, b) => b.startTimeMs - a.startTimeMs);
 
@@ -124,8 +140,8 @@ export async function psCommand(
 
   console.log(header);
 
-  for (const [i, row] of rows.entries()) {
-    const alias = String(i + 1);
+  for (const row of rows) {
+    const alias = row.alias === null ? '-' : String(row.alias);
     const endMs = row.endTimeMs ?? (row.status === 'running' ? now : (row.lastAliveMs ?? row.startTimeMs));
     const elapsed = row.startTimeMs > 0 ? formatElapsed(row.startTimeMs, endMs) : '-';
     const line = [

@@ -31,10 +31,6 @@ export interface TokensState {
   escalatedCount: number;
   tokenUsage: TokenUsage | null;
   perPhase: Record<string, PhaseTokens>;
-  // projectedCost is NOT stored in state. Brief 03 (use-cost-stats.ts) derives it:
-  //   projectedCost = (costBreakdown.totalActualCost / completedTaskCount) * totalTasks
-  // when completedTaskCount > 0, else falls back to prediction.expectedCost.
-  // Per-task cost in perTask is also derived in brief 04 from totalTokens and avg cost-per-token.
   perTask: Record<string, PerTaskTokens>;
   prediction: CostPrediction | null;
   completedTaskCount: number;
@@ -67,7 +63,6 @@ function __testReset(next?: Partial<TokensState>): void {
 }
 
 // Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
-// Production use is limited to workflow/actions.ts (the dispatcher).
 export const _tokensInternal = { set: store.set };
 
 export const tokensStore = {

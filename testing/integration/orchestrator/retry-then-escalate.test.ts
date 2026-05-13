@@ -10,9 +10,9 @@ import { makeCallbacks, makeImplementer, makePlanner, makeBusRecorder } from '#t
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { makeWorkflowMetadata, TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 
-const SINKS = { setAbortHandler: () => {}, setQueueHandler: () => {} };
-const META = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' as const };
+const META = makeWorkflowMetadata('standard');
 const dirs: string[] = [];
 
 beforeEach(() => resetAllStores());
@@ -52,7 +52,7 @@ describe('retry-then-escalate bridge', () => {
     const { result } = await handleRetryAndEscalation({
       wctx: { projectDir, sessionId, config: makeNoValidationConfig({ workflow: { maxRetries: 3, commitStrategy: 'none' } }),
         context: defaultContext, planner: makePlanner(), callbacks, implementer,
-        metadata: META, sinks: SINKS, validator: createValidator(), bus },
+        metadata: META, sinks: TEST_WORKFLOW_SINKS, validator: createValidator(), bus },
       task: makeTask(), initialError: 'type err', currentState: makeValidatingState(),
     });
 
@@ -76,7 +76,7 @@ describe('retry-then-escalate bridge', () => {
     await handleRetryAndEscalation({
       wctx: { projectDir, sessionId, config: makeNoValidationConfig({ workflow: { maxRetries: 3, commitStrategy: 'none' } }),
         context: defaultContext, planner, callbacks, implementer,
-        metadata: META, sinks: SINKS, validator: createValidator(), bus },
+        metadata: META, sinks: TEST_WORKFLOW_SINKS, validator: createValidator(), bus },
       task: makeTask(), initialError: 'type err', currentState: makeValidatingState(),
     });
 

@@ -7,7 +7,7 @@ import { createServer, type Server } from 'node:net';
 import { IPC_SOCK_FILE } from '../../core/paths.js';
 import { HEARTBEAT_STALENESS_MS } from './constants.js';
 import { writeLockfile } from './lockfile.js';
-import { buildServerArgv, waitForServerReady } from './spawn-server.js';
+import { waitForServerReady } from './spawn-server.js';
 import { parseIpcServerArgs, readIpcServerArgsFile, writeIpcServerArgsFile } from './server-args.js';
 
 let testDir: string;
@@ -112,13 +112,11 @@ describe('server args launch contract', () => {
       feature: 'implement from @file\n\nsecret context',
       overrides: { budget: 4 },
     });
-  });
 
-  it('keeps feature text out of detached process argv', () => {
-    const argv = buildServerArgv(['server-entry.js'], '/repo/.diptych/sessions/s/server-args.json');
-
-    expect(argv).toEqual(['server-entry.js', '/repo/.diptych/sessions/s/server-args.json']);
-    expect(argv.join(' ')).not.toContain('secret context');
+    const argv = ['server-entry.js', argsFile];
+    expect(argv.join('\n')).not.toContain('implement from @file');
+    expect(argv.join('\n')).not.toContain('secret context');
+    expect(argv).toEqual(['server-entry.js', argsFile]);
   });
 
   it('rejects server args with incorrectly typed nested overrides', () => {

@@ -3,6 +3,7 @@ import { SettingsOverlay } from './overlay.js';
 import { renderFeature, tick } from '../../../testing/helpers/ink.js';
 import { resetAllStores } from '../../../testing/helpers/stores.js';
 import { createTempDir, cleanupTempDir } from '../../../testing/helpers/temp-dir.js';
+import { loadConfig } from '../../core/config/load/load.js';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 
@@ -31,7 +32,7 @@ describe('settings overlay integration', () => {
     ui.stdin.write(' ');
     await tick(20);
 
-    expect(configStore.get().config?.validation.typecheck).toBe(false);
+    expect(loadConfig(dir).config.validation.typecheck).toBe(false);
     ui.unmount();
   });
 
@@ -42,16 +43,22 @@ describe('settings overlay integration', () => {
     expect(ui.lastFrame()).toContain('Max Retries');
 
     ui.stdin.write('\r'); // Enter edit mode on the numeric field.
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('[3|]');
+    });
     ui.stdin.write('\x7f'); // backspace — clear seeded "3"
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('[|]');
+    });
     ui.stdin.write('5');
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('[5|]');
+    });
     ui.stdin.write('\r'); // commit
     await tick(20);
 
     await vi.waitFor(() => {
-      expect(configStore.get().config?.workflow.maxRetries).toBe(5);
+      expect(loadConfig(dir).config.workflow.maxRetries).toBe(5);
     });
     ui.unmount();
   });
@@ -71,7 +78,7 @@ describe('settings overlay integration', () => {
     ui.stdin.write('\x1b'); // escape
     await tick(20);
 
-    expect(configStore.get().config?.workflow.maxRetries).toBe(3);
+    expect(loadConfig(dir).config.workflow.maxRetries).toBe(3);
     ui.unmount();
   });
 });

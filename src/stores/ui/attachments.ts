@@ -1,5 +1,4 @@
-import { resolveAttachment } from '../../core/attachments/resolve.js';
-import type { ResolveAttachmentReason } from '../../core/attachments/resolve.js';
+import { resolveAttachment, type ResolveAttachmentReason } from '../../core/attachments/resolve.js';
 import { attachmentsStore } from '../workflow/attachments.js';
 
 export type AttachImageResult =
@@ -18,8 +17,9 @@ export function detachImage(idOrIndex?: string): boolean {
   if (pending.length === 0) return false;
 
   if (idOrIndex) {
-    const asIndex = Number.parseInt(idOrIndex, 10);
-    if (Number.isFinite(asIndex) && asIndex >= 1 && asIndex <= pending.length) {
+    if (/^\d+$/.test(idOrIndex)) {
+      const asIndex = Number.parseInt(idOrIndex, 10);
+      if (asIndex < 1 || asIndex > pending.length) return false;
       const target = pending.at(asIndex - 1);
       if (!target) return false;
       attachmentsStore.remove(target.id);

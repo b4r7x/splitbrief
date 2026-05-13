@@ -5,11 +5,9 @@ import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TASK_MARKDOWN, CODE_RESPONSE } from '#testing/helpers/fixtures/shell-runner.js';
+import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/run.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
-import type { WorkflowSinks } from '../../../src/engine/orchestrator/types.js';
-
-const SINKS: WorkflowSinks = { setAbortHandler: () => {}, setQueueHandler: () => {} };
 
 const dirs: string[] = [];
 
@@ -48,7 +46,7 @@ describe('EventBus end-to-end flow', () => {
       projectDir,
       config,
       callbacks,
-      sinks: SINKS,
+      sinks: TEST_WORKFLOW_SINKS,
       _eventSink: (e) => recorded.push(e),
     });
 

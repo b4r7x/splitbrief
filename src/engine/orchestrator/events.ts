@@ -2,11 +2,10 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { Phase, RecoveryAction, TaskCompletionMethod, WorkflowMode } from '../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery.js';
-import type { ValidationStages } from '../events/types.js';
+import type { EngineEvent, EventBus, ValidationStages } from '../events/types.js';
 import type { ValidationResult } from './validation.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
-import type { EventBus, EngineEvent } from '../events/types.js';
 import type { ImplementerPublisher } from '../implementers/types.js';
 import type { EmittedChain } from '../../core/schemas/drift-chain.js';
 import type { UserEditConflict, UserEditConflictAction } from './user-edit/conflicts.js';
@@ -303,9 +302,4 @@ export function publishDriftChainDetected(
     uniqueOutOfBoundsFiles: chain.uniqueOutOfBoundsFiles,
     representativePath: chain.representativePath,
   });
-}
-
-/** Low-level publish for sites that don't fit a typed helper. Prefer the publish* helpers above when one applies. */
-export function publishEvent(bus: EventBus, event: EngineEvent): void {
-  bus.publish(event);
 }

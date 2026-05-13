@@ -1,7 +1,6 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { OutputFormat } from '../../core/schemas/enums.js';
-import type { Implementer, ImplementerFactoryOptions } from './types.js';
-import type { InvokeOpts } from './utils.js';
+import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types.js';
 import { createImplementerBase } from './base.js';
 import { createCommandAvailability } from '../../lib/availability.js';
 import { invokeCommandBasedRunner } from '../runners/command-based.js';
@@ -21,10 +20,6 @@ export interface CommandBasedImplementerOpts {
   shouldThrow?: ((err: unknown) => boolean) | undefined;
 }
 
-/**
- * Creates a command-based implementer (shared setup for shell + agent kinds).
- * Handles: invoke wiring via invokeCommandBasedRunner, availability, and base implementer construction.
- */
 export function createCommandBasedImplementer(opts: CommandBasedImplementerOpts, options?: ImplementerFactoryOptions): Implementer {
   const notFoundMessage = `${opts.label} command not found: ${opts.initialCommand}`;
 
@@ -40,7 +35,6 @@ export function createCommandBasedImplementer(opts: CommandBasedImplementerOpts,
         {
           command: cfg.command,
           args: cfg.args ?? [],
-          extractsCode: opts.extractsCode,
           ...(cfg.outputFormat && { outputFormat: cfg.outputFormat }),
           ...(opts.supportPromptPlaceholder && { supportPromptPlaceholder: true }),
           ...(cfg.timeout !== undefined && { timeout: cfg.timeout }),

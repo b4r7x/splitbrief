@@ -17,7 +17,7 @@ One JSON object per line. Written by `src/engine/events/sinks/jsonl.ts` via `app
 Inspect with `jq`:
 
 ```bash
-# All events for the latest session
+# All events across sessions
 cat .diptych/sessions/*/session.jsonl | jq .
 
 # Only failures
@@ -25,7 +25,7 @@ jq 'select(.type == "task_failed" or .type == "task_full_fail" or .type == "erro
   .diptych/sessions/<id>/session.jsonl
 
 # Validation outcomes
-jq 'select(.type == "validate") | {taskId, passed, stages, error}' \
+jq 'select(.type == "validate") | {taskId, passed: .data.passed, stages: .data.stages, error: .data.error}' \
   .diptych/sessions/<id>/session.jsonl
 
 # Cost accumulation
@@ -48,7 +48,7 @@ diptych start --json "feature description" 2>/dev/null | jq .
 
 Implementation: `src/cli/headless.ts` wires a `createStdoutJsonSink()` (`src/engine/events/sinks/stdout-json.ts`) in place of the TUI. The JSONL sink still writes the on-disk session log.
 
-`--json` requires a feature argument on `start`. `resume --json` rehydrates from saved state.
+`--json` requires a feature argument on `start`. `resume`, `continue`, and `last` rehydrate interrupted sessions from saved state.
 
 ### OpenTelemetry console exporter
 
@@ -61,7 +61,7 @@ DIPTYCH_OTEL_EXPORTER=console diptych start --json --mode quick "…"
 diptych start --otel-exporter console --json --mode quick "…"
 ```
 
-Also set `otel.enabled: true` in `.diptych/config.yaml` — the env var / flag only registers the provider; the sink is only installed when config allows. Spans print to stderr on workflow end. Full details: [OTEL.md](./OTEL.md). Bootstrap source: `src/cli/otel-bootstrap.ts`.
+Also set `otel.enabled: true` in `.diptych/config.yaml` — the env var / flag only registers the provider; the sink is only installed when config allows. The console exporter writes spans with `console.dir`, so it uses stdout and can interleave with `--json` output. Full details: [OTEL.md](./OTEL.md). Bootstrap source: `src/cli/otel-bootstrap.ts`.
 
 ### Debug environment variables
 
@@ -87,7 +87,7 @@ Cause: YAML failed zod validation. The message lists each failing path. Check:
 - Per-kind required fields are set (e.g. `kind: api` requires `provider` and `apiBase`).
 - No unknown keys in `codebase`, `hooks`, `otel` — those sections are `.strict()`.
 
-See [CONFIGURATION.md](./CONFIGURATION.md) for the full schema. The loader throws `ConfigError` (`src/core/config/errors.ts`) mapped to CLI exit code 2 by `loadConfigOrExit` in `src/cli/setup.ts`.
+See [CONFIGURATION.md](./CONFIGURATION.md) for the full schema. The loader throws `ConfigError` (`src/core/config/errors.ts`) and `loadConfigOrExit` in `src/cli/setup.ts` exits with code 1.
 
 ### "Hook config is not trusted and no TTY available"
 

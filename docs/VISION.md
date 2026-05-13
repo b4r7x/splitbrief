@@ -25,15 +25,15 @@ An implementer pool, when enabled, is profile selection inside the single implem
 | Claude Squad | Manages multiple Claude Code/Codex/Aider instances in parallel | Doesn't split planning from implementation. Same expensive model for everything. |
 | Agent Orchestrator (Composio) | Parallel coding agents with git worktrees | Multi-agent coordination, not cost optimization. |
 | Overstory | Multi-agent with 11 runtimes, SQLite mail | Coordination complexity. No cost-aware Task Brief handoff. |
-| Claude Code native teams | Multiple Claude Code sessions coordinating | All sessions use Opus. No cost savings. |
+| Claude Code native teams | Multiple Claude Code sessions coordinating | Not centered on planner/implementer cost splitting. |
 
-**Our moat**: Intelligent Task Brief compilation with cheap execution, validation, retry, escalation, and evidence. Nobody else does this.
+**Differentiator**: Intelligent Task Brief compilation with cheap execution, validation, retry, escalation, and evidence.
 
 ## Strategic Decisions
 
 ### 1. Keep the cost-optimization focus
 
-Don't pivot to "universal connector". The market for multi-agent orchestrators is crowded (Claude Squad, Overstory, Composio, etc.). The market for cost-optimized split orchestration is ours.
+Don't pivot to "universal connector". Stay focused on cost-optimized split orchestration and avoid universal-connector scope.
 
 ### 2. Interactive TUI picker — YES
 
@@ -45,7 +45,7 @@ Interactive model/provider selection in `start` command. Auto-detect available p
 
 ### 4. Tool calls in implementer — NO
 
-Small models (7B-27B) can't reliably produce tool call format. Current pipeline works: prompt → text → extract code → write file. Adding tool calls = massive complexity for marginal gain.
+Small models (7B-27B) are less reliable at producing strict tool-call payloads. Current pipeline works: prompt → text → extract code → write file. Adding tool calls would require a second control protocol and approval surface for limited benefit in the current extraction-based pipeline.
 
 ### 5. Don't wrap agents in agents
 
@@ -53,9 +53,9 @@ If the implementer IS a file-writing coding agent, there's a conflict of control
 
 ### 6. OpenCode-inspired TUI (v0.5 — 2026-03-31)
 
-The TUI visual language is modeled after opencode — the best-looking terminal coding assistant. Key principles:
+The TUI visual language uses opencode as a reference point. Key principles:
 
-**Why opencode as reference**: opencode has the most polished terminal UI in the AI coding space. It achieves visual quality through simple, replicable patterns — not GPU acceleration or custom renderers.
+**Why opencode as reference**: opencode shows that a terminal UI can feel refined through simple, replicable patterns — not GPU acceleration or custom renderers.
 
 **Design language** (achievable in Ink 6):
 - **Background color stepping** (3 levels: `#0a0a0a` → `#141414` → `#1e1e1e`) instead of box-drawing borders
@@ -76,16 +76,16 @@ The TUI visual language is modeled after opencode — the best-looking terminal 
 - `<Static>` for completed events — zero re-render cost
 - `backgroundColor` on `<Box>` (Ink 6.1+) — the depth effect that makes opencode look good
 
-### 7. Clean architecture: engine/ + ui/
+### 7. Clean architecture: engine + feature slices
 
-Previous: tangled `orchestrator/` with 25+ files and `tui/` with components. Bulletproof React features pattern was attempted and rejected — artificial feature boundaries don't fit a single-view CLI app.
+Previous: tangled `orchestrator/` with 25+ files and a flat TUI component layer.
 
-Current: `engine/` (zero React deps, all business logic) + `ui/` (flat, ~14 Ink components) + `hooks/` (bridge). Theme is project-level (`src/theme.ts`), importable by both engine and UI.
+Current: `src/engine/` owns orchestration with zero React dependencies; `src/features/` owns TUI feature slices; `src/components/` and `src/hooks/` hold cross-feature UI primitives and hooks. Runtime commands live in `src/core/runtime/commands/`, and the command palette lives in `src/features/palette/`.
 
 ### 8. Stay on Ink 6.x
 
 Evaluated alternatives:
-- **@opentui/react** (OpenCode's framework, Zig core) — production-ready but requires Bun, v0.1.x, migration risk
+- **@opentui/react** (OpenCode's framework, Zig core) — usable but requires Bun, v0.1.x, migration risk
 - **Bubbletea** (Go) — not applicable (wrong language)
 - **neo-blessed** — semi-maintained, not React
 
@@ -100,9 +100,9 @@ Multi-agent coding space is exploding:
 - **Agent Orchestrator** (github.com/ComposioHQ/agent-orchestrator) — parallel agents, git worktrees, swappable backends
 - **Overstory** (github.com/jayminwest/overstory) — 11 runtime adapters, tmux, SQLite mail
 - **Ruflo** — multi-agent swarms for Claude Code
-- **OpenCode** (opencode.ai) — beautiful TUI, OpenTUI framework, but no cost optimization
+- **OpenCode** (opencode.ai) — polished TUI, OpenTUI framework, but not centered on cost optimization
 
-None of these optimize for cost. They assume the same tier of model for all work.
+These tools primarily optimize parallel coordination or interface quality rather than planner/implementer cost splitting.
 
 ## Architecture Principles
 
@@ -111,8 +111,8 @@ See `.specify/memory/constitution.md` for the 6 constitutional principles (v1.3.
 1. **Cost-Optimal Orchestration** — Opus only for tasks where quality matters; implementation on cheap models
 2. **Spec-Driven Development** — Task Briefs first; specs only for larger or riskier work
 3. **Local-First Implementation** — Default to Ollama/LM Studio ($0); cloud is opt-in
-4. **Functional Purity** — Zero classes, pure functions, ESM, no unnecessary comments
-5. **Validate Before Checkpoint** — tsc → lint → test per task; optional product commits only when configured; final Opus review
+4. **Functional Purity** — zero runtime classes, pure functions, ESM, no unnecessary comments
+5. **Validate Before Checkpoint** — resolved validation pipeline per task; optional product commits only when configured; final Opus review
 6. **Identity & Anti-Goals** — Not a multi-agent coordinator; beautiful orchestration UX is product identity, not scope creep
 
 ## Version History

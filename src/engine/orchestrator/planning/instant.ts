@@ -1,5 +1,5 @@
-import type { PlanResult } from '../../planners/types.js';
-import { publishEvent, publishPlannerStatus } from '../events.js';
+import type { PlannerCallbacks, PlanResult } from '../../planners/types.js';
+import { createBusTextHandler, publishPlannerStatus } from '../events.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import {
   drainAndFormat,
@@ -9,9 +9,7 @@ import {
 } from './shared.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 import { createTranscriptBuffer } from '../../streaming/transcript-buffer.js';
-import { createBusTextHandler } from '../events.js';
 import { createSessionExpiredHandler } from '../resume-context.js';
-import type { PlannerCallbacks } from '../../planners/types.js';
 
 export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx, planner } = opts;
@@ -20,7 +18,7 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
   let feature = opts.feature;
 
   if (opts.approveLevel && opts.approveLevel !== 'none' && opts.approveLevel !== 'default') {
-    publishEvent(wctx.bus, {
+    wctx.bus.publish({
       type: 'warning',
       ts: Date.now(),
       phase: state.phase,
@@ -76,7 +74,7 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
     );
   }
 
-  publishEvent(wctx.bus, {
+  wctx.bus.publish({
     type: 'instant_plan_received',
     ts: Date.now(),
     phase: state.phase,
@@ -94,7 +92,7 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
 
   state = transitionAndSave(projectDir, sessionId, state, { type: 'START_INSTANT', tasks: planResult.tasks });
   publishPlannerStatus(wctx.bus, state, 'done');
-  publishEvent(wctx.bus, { type: 'plan_approved', ts: Date.now(), phase: state.phase });
+  wctx.bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
 
   return { state, tasks: planResult.tasks, cancelled: false };
 }

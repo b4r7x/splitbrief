@@ -6,12 +6,12 @@ If you only want a short overview, see [`FEATURES.md`](./FEATURES.md#slash-comma
 
 ## How dispatch works
 
-Type `/` in the TUI to open the command picker. Names resolve in two phases inside `src/core/runtime/commands/dispatch.ts`:
+Type `/` in the TUI to open the command picker. Dispatch inside `src/core/runtime/commands/dispatch.ts` resolves commands in two steps:
 
 1. Exact match on `name` or any `aliases`. Example: `/config` resolves to `/settings`.
-2. Fuzzy match via the `fzf` matcher in `src/core/runtime/commands/lookup.ts`. Example: `/rev-spec` resolves to `/revise-spec`.
+2. Fuzzy fallback through `src/core/runtime/commands/lookup.ts`. Example: `/mde` resolves to `/mode`. Commands with no match return an error.
 
-Each command declares `validScreens`. The four screens are `home`, `workflow`, `summary`, and `setup` (`src/stores/navigation/router.ts`). Invoking a command on the wrong screen surfaces an error through the `feedbackStore`. The constant `ALL_SCREENS` (`src/stores/navigation/router.ts`) is shorthand for "available everywhere".
+Each command declares `validScreens`. The four screens are `home`, `workflow`, `summary`, and `setup` (`src/core/navigation/types.ts`). Invoking a command on the wrong screen surfaces an error through the `feedbackStore`. The constant `ALL_SCREENS` (`src/core/navigation/types.ts`) is shorthand for "available everywhere".
 
 Three rewind-family commands also enforce a `phaseGuard`. The guards are the single source of truth for when a rewind can run:
 
@@ -27,7 +27,7 @@ There are 26 slash commands in total. They cover overlays, workflow mode/tool se
 
 ## Workflow control
 
-Commands that mutate the active workflow: rewind to an earlier phase, re-run a task, or drain the message queue. All are restricted to the `workflow` screen, and the rewind family additionally gates on the current `Phase`.
+Commands that mutate the active workflow: rewind to an earlier phase, re-run a task, or drain the message queue. Most are restricted to the `workflow` screen, and the rewind family additionally gates on the current `Phase`. Run accept/reject commands are available from workflow and summary run-state screens.
 
 ### `/revise-spec [comment]`
 
@@ -36,7 +36,7 @@ Commands that mutate the active workflow: rewind to an earlier phase, re-run a t
 - **Phase guard**: `canReviseSpec` — allowed in `reviewing-spec`, `clarifying`, `constitution-check`, `planning`, `reviewing-plan`, `reviewing-briefs`, `analyzing`, `implementing`, `validating-task`, `escalating`, `final-review`. Denied in `idle`, `researching`, `specifying`, `complete`.
 - **Args**: optional free-form comment. The remainder of the line after `/revise-spec ` is passed verbatim, trimmed.
 - **Example**: `/revise-spec the validator should also strip whitespace`
-- **Behavior**: If the phase guard fails, the feedback line shows `"/revise-spec is only available after the spec is written."`. Otherwise `requestRewind('spec', comment)` is dispatched through `src/features/workflow/handlers.ts`, the lifecycle store transitions, and the orchestrator picks up the rewind on its next tick.
+- **Behavior**: If the phase guard fails, the feedback line shows `"/revise-spec is not available during the <phase> phase."`. Otherwise `requestRewind('spec', comment)` is dispatched through `src/features/workflow/handlers.ts`, the lifecycle store transitions, and the orchestrator picks up the rewind on its next tick.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; context wiring at `src/app/command-context.ts`.
 - **See also**: `/revise-plan`, `/redo-task`.
 
@@ -47,7 +47,7 @@ Commands that mutate the active workflow: rewind to an earlier phase, re-run a t
 - **Phase guard**: `canRevisePlan` — allowed from `reviewing-plan` onward (`reviewing-plan`, `reviewing-briefs`, `analyzing`, `implementing`, `validating-task`, `escalating`, `final-review`).
 - **Args**: optional free-form comment, same parsing as `/revise-spec`.
 - **Example**: `/revise-plan split task T003 into smaller steps`
-- **Behavior**: If the phase guard fails the feedback line shows `"/revise-plan is only available after the plan is written."`. Otherwise `requestRewind('plan', comment)` runs and the orchestrator regenerates downstream artifacts.
+- **Behavior**: If the phase guard fails the feedback line shows `"/revise-plan is not available during the <phase> phase."`. Otherwise `requestRewind('plan', comment)` runs and the orchestrator regenerates downstream artifacts.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; context wiring at `src/app/command-context.ts`.
 - **See also**: `/revise-spec`, `/redo-task`.
 
@@ -136,11 +136,11 @@ Commands that open an overlay for interactive selection. None of these mutate st
 
 ### `/sessions`
 
-- **Purpose**: Browse past sessions. Opens the sessions overlay backed by `.diptych/sessions/` so you can resume, replay, or inspect a previous run.
+- **Purpose**: Browse summary-backed past sessions. Opens the sessions overlay backed by `.diptych/sessions/` so you can resume interrupted runs or inspect completed runs.
 - **Screens**: all.
 - **Args**: none.
 - **Example**: `/sessions`
-- **Behavior**: Opens the `sessions` overlay. Selecting a session resumes it via the same path as `npm run dev -- resume <id>`.
+- **Behavior**: Opens the `sessions` overlay. Selecting an interrupted session loads workflow state directly; selecting a completed session opens its summary. Failed sessions without summaries show feedback instead.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; opens overlay via `overlayStore.open` (`src/app/command-context.ts`).
 - **See also**: `/handoff`, `/home`.
 
@@ -209,7 +209,7 @@ Commands that produce or manage on-disk artifacts: handoff packs for external ag
 - **Purpose**: Export a Handoff Pack for the active session — a self-contained directory of markdown files that an external agent (Claude Code, GitHub Copilot, spec-kit, AGENTS.md-style harness) can pick up and continue the work.
 - **Screens**: `workflow`, `summary`.
 - **Args**:
-  - `<target>` (required): one of `spec-kit`, `agents-md`, `claude-code`, `copilot-issue` (the `HANDOFF_TARGETS` tuple in `src/engine/handoff/types.ts`). Invalid values print `"Unknown target \"<x>\". Valid: spec-kit, agents-md, claude-code, copilot-issue"`.
+  - `<target>` (required): one of `spec-kit`, `agents-md`, `claude-code`, `copilot-issue` (the `HANDOFF_TARGETS` tuple in `src/core/handoff/targets.ts`). Invalid values print `"Unknown target \"<x>\". Valid: spec-kit, agents-md, claude-code, copilot-issue"`.
   - `[task-id]` (optional): a single task ID (e.g. `T003`) to export a single-task pack instead of the full session.
 - **Parsing**: the argument string is split on whitespace; the first token is the target, the second (if any) is the task ID. Calling without a target prints `"Usage: /handoff <target> [task-id]"`.
 - **Example**: `/handoff spec-kit`, `/handoff claude-code T003`, `/handoff copilot-issue`
@@ -290,11 +290,11 @@ See [Workflow control](#workflow-control) above. Listed under workflow control b
 
 ### `/yolo`
 
-- **Purpose**: Toggle approval gates off or back on for the current session.
+- **Purpose**: Toggle action-level tiered approvals off or back on for the current session.
 - **Screens**: all.
 - **Args**: none.
 - **Example**: `/yolo`
-- **Behavior**: Flips the approval-enabled state and prints either `YOLO mode ON — all approval gates disabled` or `YOLO mode OFF — approval gates restored`.
+- **Behavior**: Flips the approval-enabled state and prints either `YOLO mode ON — action-level tiered approvals disabled` or `YOLO mode OFF — action-level tiered approvals restored`.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; approval state wiring in `src/app/command-context.ts`.
 - **See also**: `/approval`, `/settings`.
 
@@ -306,7 +306,7 @@ Commands that change which screen is active.
 
 ### `/home`
 
-- **Purpose**: Navigate back to the home screen from an active workflow or summary screen. Does not abort or pause an in-flight workflow — the workflow continues in the background and you can return to it via `/sessions`.
+- **Purpose**: Navigate back to the home screen from the workflow or summary screen. Leaving an active workflow unmounts the workflow UI and aborts the active run.
 - **Screens**: `workflow`, `summary`.
 - **Args**: none.
 - **Example**: `/home`
@@ -457,7 +457,7 @@ Alphabetical, for fast lookup:
 - [`/sessions`](#sessions) — browse past sessions.
 - [`/settings`](#settings-alias-config) — open the settings overlay.
 - [`/skills`](#skills) — pick planner skills (home only).
-- [`/yolo`](#yolo) — toggle approval gates for the session.
+- [`/yolo`](#yolo) — toggle action-level tiered approvals for the session.
 
 ---
 

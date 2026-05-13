@@ -43,7 +43,7 @@ These enforce consistency across the codebase. Read the relevant one before touc
 
 | Rule | Doc |
 |------|-----|
-| Zero classes, ESM `.js` imports, kebab-case files | [PRINCIPLES.md](./PRINCIPLES.md) |
+| Zero runtime classes, ESM `.js` imports, kebab-case files | [PRINCIPLES.md](./PRINCIPLES.md) |
 | Where to put files, directory length thresholds | [STRUCTURE.md](./STRUCTURE.md) |
 | `utils/` vs `lib/` vs `core/` vs `engine/` vs `features/` | [LAYERS.md](./LAYERS.md) |
 | Zero re-export-only `index.ts` | [NO-BARRELS.md](./NO-BARRELS.md) |

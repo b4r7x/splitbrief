@@ -23,5 +23,5 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--rpc', 'RPC mode: bidirectional NDJSON on stdin/stdout', false)
     .option('--otel-exporter <name>', 'Bootstrap an OTel exporter (currently only "console"); requires otel.enabled in config')
     .option('--worktree [name]', 'run in a new linked git worktree (.trees/<name>)')
-    .option('--yolo', 'Skip all approval gates for this session (auto-approve everything)', false);
+    .option('--yolo', 'Skip action-level tiered approval prompts for this session', false);
 }

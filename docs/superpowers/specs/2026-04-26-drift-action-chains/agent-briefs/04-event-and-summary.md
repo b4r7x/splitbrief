@@ -77,7 +77,7 @@ export function publishDriftChainDetected(
 }
 ```
 
-If `src/engine/orchestrator/events.ts` already exists and exports similar publish helpers, add `publishDriftChainDetected` there. If it does not exist, add it to whichever file in `src/engine/orchestrator/` already exports `publishWarning` and `publishEvent`.
+If `src/engine/orchestrator/events.ts` already exists and exports similar publish helpers, add `publishDriftChainDetected` there. If it does not exist, add it to whichever file in `src/engine/orchestrator/` already exports event publish helpers, or publish directly with `bus.publish(...)`.
 
 ## Summary Schema
 

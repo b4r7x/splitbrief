@@ -115,8 +115,8 @@ These fire from any phase. They modify sub-state without changing `phase`.
 
 | Action | Effect |
 |--------|--------|
-| `CANCEL` | Sets `phase: 'idle'`, clears `awaitingContinue`. Double Ctrl-C / exit. |
-| `ABORT_TURN` | Sets `awaitingContinue: true`. Single Ctrl-C. |
+| `CANCEL` | Sets `phase: 'idle'`, clears `awaitingContinue`. Used by explicit cancellation paths, not by the TUI double Ctrl-C exit. |
+| `ABORT_TURN` | Sets `awaitingContinue: true`. Reducer accepts it in any phase; the TUI dispatches it only for `isLivePhase()` phases. |
 | `CONTINUE_TURN` | Sets `awaitingContinue: false`. User pressed Enter. |
 | `SET_PLANNER_SESSION_ID` | Stores backend session handle for resume. |
 | `ENQUEUE_USER_MSG` | Appends message to `messageQueue`. |
@@ -145,22 +145,22 @@ From `src/core/phases.ts`. Each phase has four properties derived from the sourc
 | `idle` | — | no | no | no |
 | `researching` | planner | yes | no | yes |
 | `specifying` | planner | yes | no | yes |
-| `reviewing-spec` | planner | yes | yes | no |
-| `clarifying` | planner | yes | yes | no |
-| `constitution-check` | planner | yes | yes | no |
+| `reviewing-spec` | planner | no | yes | no |
+| `clarifying` | planner | no | yes | no |
+| `constitution-check` | planner | no | yes | no |
 | `planning` | planner | yes | no | yes |
-| `reviewing-plan` | planner | yes | yes | no |
-| `reviewing-briefs` | planner | yes | yes | no |
-| `analyzing` | planner | yes | yes | no |
+| `reviewing-plan` | planner | no | yes | no |
+| `reviewing-briefs` | planner | no | yes | no |
+| `analyzing` | planner | no | yes | no |
 | `implementing` | implementer | yes | yes | yes |
-| `validating-task` | implementer | yes | yes | no |
+| `validating-task` | implementer | no | yes | no |
 | `escalating` | implementer | yes | yes | yes |
 | `final-review` | planner | yes | yes | yes |
 | `complete` | — | no | no | no |
 
 **Role** — `phaseRole()`: implementer for `implementing`, `validating-task`, `escalating`; planner for everything else (cost accounting adds `final-review` to the implementer bucket via `phaseCostRole()`).
 
-**Cancellable** — Ctrl-C can interrupt. Every phase except `idle` and `complete`.
+**Cancellable** — single Ctrl-C aborts the active model call. This matches `isLivePhase()` in `src/core/phases.ts`.
 
 **Resumable** — `diptych resume` can pick up here. All review/gate phases plus `analyzing`, `implementing`, `validating-task`, `escalating`, `final-review`. Generative phases (`researching`, `specifying`, `planning`) are not resumable — if the process dies mid-stream, the stream is lost and the feature must restart.
 
@@ -187,12 +187,14 @@ Mode selection: `src/engine/orchestrator/planning/run.ts` → `resolveMode()`. M
 
 Controlled by `workflow.approve`: `none` | `spec` | `plan` | `all` | `default`. Each mode has a default; `default` follows that mode default. Override via `--approve <level>` on the CLI.
 
-- `none` — skip all document gates. instant/quick default.
+- `none` — skip spec/plan document gates. instant/quick default. Briefs review still runs in modes that produce reviewable briefs.
 - `spec` — gate on supporting spec. standard default.
 - `plan` — gate on plan (implies spec gate too).
 - `all` — gate on spec and plan. speckit default.
 
 The brief quality gate (`src/engine/spec/brief-quality.ts`) runs for all four modes after the Task Brief is produced and before `implementing`. It writes `brief-quality.json` and publishes `brief_quality_passed` or `brief_quality_failed`. Error-level issues block the transition.
+
+Briefs review is separate from `workflow.approve`: `standard` and `speckit` enter `reviewing-briefs` after the quality gate so the user can review `tasks.md` before implementation.
 
 ### Mode advisor
 
@@ -210,14 +212,14 @@ Four user actions during a live phase:
 
 | Action | Trigger | Effect |
 |--------|---------|--------|
-| Queue message | Type + Enter | Appends to `messageQueue`. Current call continues. On backends with `supportsMidStreamInjection`, also dispatched in parallel to the live session. Drained at next safe-point. |
+| Queue message | Type + Enter | Appends to `messageQueue`. Current call continues. Planners with `injectUserTurn()` also receive the message immediately. Drained at next safe-point. |
 | Abort turn | Ctrl-C (single) | `AbortController.abort()`. Current call terminates. Partial response preserved in `session.jsonl` with `interrupted: true`. Dispatches `ABORT_TURN` → `awaitingContinue: true`. |
-| Exit workflow | Ctrl-C twice within 2s | Saves state, clears `.diptych/active`, exits. Dispatches `CANCEL` → phase resets to `idle`, `awaitingContinue` cleared. |
+| Exit workflow | Ctrl-C twice within 2s | Exits after state is saved. The TUI unmounts; the saved state may be resumable later with `diptych continue <session-id>`. |
 | Continue | Enter (from awaiting-continue) | Dispatches `CONTINUE_TURN` → `awaitingContinue: false`. Next planner call includes queued messages and partial context. |
 
 **Queue scope.** Planner-only. Mid-task interjection at the implementer level is disallowed — small local models lose coherence when their task prompt is perturbed mid-call.
 
-**Abort scope.** All cancellable phases, including `validating-task`. Aborting validation sends SIGTERM to the active child process (tsc / linter / test runner). Safe because validation never mutates owned files.
+**Abort scope.** Live model-call phases only: `researching`, `specifying`, `planning`, `implementing`, `escalating`, and `final-review`. Validation is resumable from saved state, but it is not a live input phase.
 
 **Queue lifecycle.** `ENQUEUE_USER_MSG` appends. `MARK_DELIVERED_NATIVE` flags a message as delivered to the native session. `DRAIN_QUEUE` timestamps all un-drained messages. `CLEAR_QUEUE` removes drained entries. On the next safe-point the orchestrator reads the queue, folds contents into the next prompt as `[user also says: ...]`, and drains.
 
@@ -286,9 +288,9 @@ Resume uses the capability matrix:
 1. Backend has `supportsSessionResume: true` and `plannerSessionId` is set → reuse the native session (Claude Code: `--session-id`, Agent SDK: `options.resume`).
 2. Backend rejects the session (expired, unknown) → emit `session_expired`, notify user, fall through.
 3. Rebuild from `session.jsonl`: read transcript messages, use latest compact summary entry plus later messages. Pass as initial context to fresh planner call.
-4. If `persistTranscript: false` and step 1 failed → no transcript to rebuild from. Emit `transcript_unavailable`, ask user to confirm, continue with Task Brief transport plus any supporting spec/plan as handoff.
+4. If `persistTranscript: false` and step 1 failed → no transcript context is available. `applyRebuiltContext()` publishes a warning and continues with Task Brief transport plus any supporting spec/plan as handoff.
 
-In-flight tasks: tasks marked `in_progress` at save time are re-attempted from `attempt: 0`. Partial implementer output from `session.jsonl` is used as a hint in the retry prompt.
+In-flight tasks: tasks marked `in_progress` at save time are re-attempted from `attempt: 0`. They are re-run from the Task Brief with refreshed `currentCode`.
 
 ---
 
@@ -364,7 +366,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
       implementing → START_TASK (task in_progress, attempt 0)
       implementer.implement(taskPrompt) → code written to disk
       implementing → TASK_SENT → validating-task
-      tsc → lint → tests (stops on first failure)
+      typecheck → lint → tests (stops on first failure)
         pass → VALIDATION_PASS → implementing (next task)
         fail → VALIDATION_FAIL → implementing (attempt++, retry)
         fail (attempt >= maxRetries) → VALIDATION_FAIL → escalating
@@ -377,7 +379,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     summary.json written. .diptych/active cleared. Session done.
 ```
 
-User can interrupt at any point: single Ctrl-C enters `awaitingContinue`, double Ctrl-C exits. Messages typed during live phases queue and drain at the next safe-point. `/revise-spec` and `/revise-plan` rewind to the appropriate phase. `/redo-task` replays a single task.
+During live model-call phases, single Ctrl-C enters `awaitingContinue`; double Ctrl-C exits. Messages typed during live planner phases queue and drain at the next safe-point. `/revise-spec` and `/revise-plan` rewind to the appropriate phase. `/redo-task` replays a single task.
 
 ---
 

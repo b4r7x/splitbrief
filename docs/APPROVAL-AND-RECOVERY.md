@@ -58,9 +58,9 @@ Classification works by pattern matching. The classifier checks the action descr
 
 `sticky` — Check `.diptych/approvals.json` for a matching grant. If a grant exists with the right pattern and action class, allow silently. If not, prompt the user through `onTieredApproval`. The user can grant once (this action only), for the session (this run), or always (persisted to `approvals.json`). The gate function in `src/engine/orchestrator/approval/tiered-approval.ts` calls `gateAction()`, which reads the grants store, tries to match against `always` grants first, then `session` grants scoped to the current session ID.
 
-`confirm` — Always prompt the user, regardless of prior grants. The user must type the literal phrase "I confirm" and provide a reason (`tiered-approval.ts:398`). This is deliberately high-friction for destructive and network actions.
+`confirm` — Always prompt the user, regardless of prior grants. The user must type the literal phrase "I confirm" and provide a reason (`src/engine/orchestrator/approval/tiered-approval.ts`). This is deliberately high-friction for destructive and network actions.
 
-Override the default tier map per action class in config via `approval.tiers`. Disable tiered approval entirely with `approval.enabled: false`. `/approval list` shows active sticky grants. `/approval clear` removes them. `/yolo` toggles all gates to auto for the rest of the session.
+Override the default tier map per action class in config via `approval.tiers`. Disable tiered approval entirely with `approval.enabled: false`. `/approval list` shows active sticky grants. `/approval clear` removes them. `/yolo` toggles action-level tiered approvals off or back on for the rest of the session.
 
 ---
 
@@ -68,12 +68,12 @@ Override the default tier map per action class in config via `approval.tiers`. D
 
 Budget enforcement runs in `src/engine/orchestrator/budget/`. Two phases: prediction before tasks start, and tracking during execution.
 
-**Pre-task prediction.** `cost-prediction.ts` estimates the total cost based on task count, planner and implementer pricing, and three escalation-rate scenarios: low (0% escalation), expected (15%), and high (40%). This produces a `CostPrediction` with `lowCost`, `expectedCost`, and `highCost`. If the expected cost exceeds the configured budget, `onCostApprovalNeeded(prediction)` fires. The user can continue, abort, or raise the budget.
+**Pre-task prediction.** `cost-prediction.ts` estimates the total cost based on task count, planner and implementer pricing, and three escalation-rate scenarios: low (0% escalation), expected (15%), and high (40%). This produces a `CostPrediction` with `lowCost`, `expectedCost`, and `highCost`. If the expected cost exceeds the configured budget, `onCostApprovalNeeded(prediction)` fires and the user can approve continuing despite the estimate or abort.
 
-**Runtime tracking.** `budget.ts` tracks actual spend at task boundaries. It calculates the current cost from accumulated token usage and checks it against the configured `workflow.budget`:
+**Runtime tracking.** `budget.ts` tracks actual spend at task boundaries. It calculates the current cost from accumulated token usage and checks it against the configured `workflow.maxBudget` and `workflow.budgetPauseThreshold`, which defaults to `0.85`:
 
 - At 80% of budget: `budget_warning` event. Informational only.
-- At 85% of budget: `budget_paused` event. The workflow stops and enters recovery with reason `budget-paused`. The user can continue (if still below the hard cap), pause, or abort.
+- At the pause threshold: `budget_paused` event. The workflow stops and enters recovery with reason `budget-paused`. The user can continue (if still below the hard cap), pause, or abort.
 - At 100% of budget: `budget_exceeded` event. The workflow stops with reason `budget-exceeded`. Only `pause-run` and `abort-workflow` are available — no continue.
 
 The `enforceBudget()` function guarantees threshold events fire in order: if cost jumps from 70% to 90% in a single task, `budget_warning` publishes first, then `budget_paused`.
@@ -157,7 +157,7 @@ When a recovery-worthy event happens, the orchestrator builds a `RecoveryIssue` 
 | `context-overflow` | Task too large for any profile | `route-bigger-worker`*, `planner-split-rebase`, `pause-run`, `abort-workflow` | `route-bigger-worker` |
 | `user-edit-conflict` | External file edits conflict | `continue`*, `skip-current-task`, `pause-run`, `abort-workflow` | depends on `safeToContinue` |
 | `approval-promotion-conflict` | Approved changes can't promote | `planner-split-rebase`, `skip-current-task`, `pause-run`, `abort-workflow` | `planner-split-rebase` |
-| `budget-paused` | Cost hit 85% threshold | `continue`*, `skip-current-task`*, `pause-run`, `abort-workflow` | `pause-run` |
+| `budget-paused` | Cost hit configured pause threshold (default 85%) | `continue`*, `skip-current-task`*, `pause-run`, `abort-workflow` | `pause-run` |
 | `budget-exceeded` | Cost hit 100% of budget | `pause-run`, `abort-workflow` | `pause-run` |
 | `dependency-blocked` | Upstream task failed/skipped | `planner-split-rebase`, `skip-current-task`, `pause-run`, `abort-workflow` | `planner-split-rebase` |
 
@@ -192,7 +192,7 @@ The recovery state tracks the issue lifecycle:
 
 ## Drift detection
 
-After each task completes, `src/engine/orchestrator/drift/drift.ts` compares what the implementer actually changed against what the Task Brief specified.
+Before final review, `src/engine/orchestrator/final-review.ts` calls `analyzeBriefDrift()` from `src/engine/orchestrator/drift/drift.ts` against the current diff, tasks, and evidence ledger.
 
 `analyzeBriefDrift()` takes the task list, the list of changed files, and the diff text. It checks for:
 
@@ -215,4 +215,4 @@ The report is written to the session folder as `drift-report.json` and published
 
 If a task has zero out-of-bounds files, the chain resets. If the current task's out-of-bounds files overlap with the previous entry's, the chain extends. No overlap starts a new chain.
 
-When the chain score exceeds the configured threshold, `drift_chain_detected` publishes with the chain length, score, and the most frequently touched out-of-bounds file. Chain state is persisted to the session folder as `drift-chains.json` (`src/engine/orchestrator/drift/chain-state.ts`).
+When the chain score meets or exceeds the configured threshold, `drift_chain_detected` publishes with the chain length, score, and the most frequently touched out-of-bounds file. Chain state is persisted to the session folder as `drift-chains.json` (`src/engine/orchestrator/drift/chain-state.ts`).

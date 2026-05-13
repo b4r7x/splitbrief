@@ -1,6 +1,6 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
-import type { PlannerConfig } from '../../core/schemas/planner-config.js';
+import { PlannerConfigSchema, type PlannerConfig } from '../../core/schemas/planner-config.js';
 import { buildRunnerConfig } from '../../core/config/runtime/build-runner.js';
 import type { PickerOption } from './model-catalog.js';
 
@@ -87,7 +87,6 @@ export function removeCustomModel(config: Config, role: 'planner' | 'implementer
 }
 
 function omitModel(planner: PlannerConfig, customModels: string[]): PlannerConfig {
-  // exactOptionalPropertyTypes forbids { model: undefined } — destructure to omit.
   const { model: _model, ...rest } = planner;
-  return { ...rest, customModels } as PlannerConfig;
+  return PlannerConfigSchema.parse({ ...rest, customModels });
 }

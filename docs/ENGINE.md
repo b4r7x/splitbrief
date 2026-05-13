@@ -41,7 +41,7 @@ The orchestrator is split by concern under `src/engine/orchestrator/`:
 - **`drift/`** — Brief drift detection. Checks whether implementer output drifted from the Task Brief and reports a score. `chain.ts` tracks chains of drifting tasks.
 - **`evidence/`** — Collects evidence of task completion for the final review. The `review-packet/` subfolder assembles all evidence into a structured packet for the planner.
 - **`user-edit/`** — Detects when the user edits files outside of diptych during a running workflow. `conflicts.ts` handles merge conflicts between user edits and implementer output.
-- **`explain/`** — Post-hoc explanation of workflow decisions. Formats artifacts, routing choices, and section breakdowns for the `/explain` slash command.
+- **`explain/`** — Post-hoc explanation of workflow decisions. Formats artifacts, routing choices, and section breakdowns for the `diptych explain` CLI command.
 
 ---
 
@@ -87,7 +87,7 @@ function createEventBus(): EventBus {
 
 ### EngineEvent
 
-`src/engine/events/types.ts`. A discriminated union with a mandatory `type` field (snake_case), `ts` (epoch millis), and `phase` (current workflow phase). Event type names use snake_case to match the on-disk JSONL convention — no translation layer between memory and persistence.
+`src/engine/events/types.ts`. A discriminated union with a mandatory `type` field (snake_case) and `ts` (epoch millis). Workflow events also carry `phase` when they occur inside a workflow phase; global events such as snapshot restore conflicts and approval-mode changes are phase-less. Event type names use snake_case to match the on-disk JSONL convention — no translation layer between memory and persistence.
 
 Events cover the full workflow lifecycle. A few examples:
 
@@ -96,7 +96,7 @@ Events cover the full workflow lifecycle. A few examples:
 - `planner_text` — streaming planner output chunks
 - `cost_update` — cumulative token usage after each planner or implementer call
 
-The full union has many variants, but the pattern is consistent: every event is a flat object with snake_case type, timestamp, phase, and domain-specific fields.
+The full union has many variants, but the pattern is consistent: every event is a flat object with snake_case type, timestamp, optional phase, and domain-specific fields.
 
 ---
 
@@ -144,7 +144,7 @@ Two separate communication mechanisms serve different purposes.
 - `onTaskReviewNeeded(request)` — task needs human review
 - `onComplete(summary)` — workflow finished
 
-In **interactive mode**, the TUI fulfills callbacks by switching input mode (e.g., showing an approval prompt) and resolving the promise when the user acts. In **headless mode**, stubs auto-approve or auto-reject based on `--approve` level. In **IPC mode** (detached server/client), the server publishes a status event and blocks until the client sends a command back.
+In **interactive mode**, the TUI fulfills callbacks by switching input mode (e.g., showing an approval prompt) and resolving the promise when the user acts. In **headless mode**, workflow review gates are auto-approved, questions answer empty, recovery exits non-zero, and tiered approvals fail closed unless approval config already allows the action. In **IPC mode** (detached server/client), the server publishes a status event and blocks until the client sends a command back.
 
 The split exists because events and callbacks solve different problems. Events push state outward (anyone can listen). Callbacks pull decisions inward (the workflow needs an answer before it can proceed). Merging them would mean either every event blocks until consumed, or every callback becomes lossy.
 
@@ -187,9 +187,9 @@ The two serve different consumers: `state.json` is for the state machine (small,
 
 **Message records** (`kind: 'message'`). Written by the transcript buffer (`src/engine/streaming/transcript-buffer.ts`) during planner and implementer streaming output. Fields: `kind`, `ts`, `role` (`'user'` or `'assistant'`), `text`, optional `phase`, and optional `interrupted`. The buffer accumulates streaming chunks and flushes at 16 KB or when the phase ends. If the call is aborted (Ctrl-C during a planner call), `flushInterrupted()` writes the partial text with `interrupted: true`. Context rebuild on resume reads these records to reconstruct the conversation history for stateless backends.
 
-**Summary records** (`kind: 'summary'`). Written by the compaction system (see SUBSYSTEMS.md section 11). Contains `text`, `summarizedUpTo` timestamp, and optional `structured` fields. On resume, only messages after the latest summary's `summarizedUpTo` are loaded.
+**Summary records** (`kind: 'summary'`). Written by the compaction system (see SUBSYSTEMS.md section 11). Contains `text`, `summarizedUpTo` timestamp, optional `tokenEstimate`, and optional `structured` fields. On resume, only messages after the latest summary's `summarizedUpTo` are loaded.
 
-All three live in the same file because consumers need chronological ordering. Context rebuild interleaves events and messages by timestamp to reconstruct what happened and in what order. A separate file per record type would require merge-sorting at read time.
+All three live in the same file because consumers need chronological ordering. Context rebuild reads message records and, when compaction exists, uses the latest summary record as a synthetic message before loading later messages. A separate file per record type would require merge-sorting at read time.
 
 ---
 
@@ -277,7 +277,7 @@ The summary is the final artifact. It carries enough data to render the summary 
 
 ## Key event shapes
 
-From `src/engine/events/types.ts`. Every event also carries `ts: number` (epoch ms) and `phase: Phase`.
+From `src/engine/events/types.ts`. Every event carries `ts: number` (epoch ms); workflow-phase events also carry `phase: Phase`.
 
 ```ts
 // Task lifecycle

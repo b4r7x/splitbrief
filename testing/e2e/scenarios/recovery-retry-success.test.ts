@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
-import { e2eImplementer, e2ePlanner } from '../helpers/e2e-config.js';
+import { makeE2eScenarioConfig } from '../helpers/e2e-config.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/e2e-harness.js';
 
 const scenario = {
@@ -10,22 +10,7 @@ const scenario = {
   cassetteName: 'recovery-retry-success',
   feature: 'add validation to form handler',
   mode: 'quick' as const,
-  config: {
-    version: 2,
-    planner: e2ePlanner,
-    implementer: e2eImplementer,
-    workflow: {
-      mode: 'quick',
-      commitStrategy: 'none',
-      maxRetries: 2,
-    },
-    validation: {
-      typecheck: false,
-      lint: false,
-      test: false,
-      testCommand: 'npm test',
-    },
-  },
+  config: makeE2eScenarioConfig('quick', { workflow: { maxRetries: 2 } }),
 };
 
 describe('e2e: recovery retry success', () => {

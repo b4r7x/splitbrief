@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer, type Server, type Socket } from 'node:net';
-import { detachCommand } from './detach.js';
-import type { DetachDeps } from './detach.js';
+import { detachCommand, type DetachDeps } from './detach.js';
 import type { ServerStatus } from '../../engine/ipc/lockfile.js';
 
 let testDir: string;
@@ -25,6 +24,20 @@ function runningStatus(sessionId: string): ServerStatus {
       feature: 'do a thing',
     },
   };
+}
+
+function writeLockfile(sessionId: string, startTimeMs: number): void {
+  const sessDir = join(testDir, '.diptych', 'sessions', sessionId);
+  mkdirSync(sessDir, { recursive: true });
+  writeFileSync(join(sessDir, 'lockfile.json'), JSON.stringify({
+    version: 1,
+    pid: 99,
+    startTimeMs,
+    lastAliveMs: startTimeMs + 1000,
+    sessionId,
+    mode: 'quick',
+    feature: 'do a thing',
+  }));
 }
 
 function createDeps(status: ServerStatus): DetachDeps {
@@ -107,6 +120,27 @@ describe('detachCommand', () => {
 
     expect(received.map((line) => JSON.parse(line))).toContainEqual({ kind: 'detach' });
     expect(logs).toContain('Session alive-session detached.');
+  });
+
+  it('resolves numeric aliases before detaching', async () => {
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+
+    writeLockfile('older-session', 1000);
+    writeLockfile('newer-session', 2000);
+    const sessDir = join(testDir, '.diptych', 'sessions', 'newer-session');
+    await listen(join(sessDir, 'ipc.sock'));
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((line) => {
+      logs.push(line);
+    });
+
+    await expect(
+      detachCommand('1', { projectDir: testDir }, createDeps(runningStatus('newer-session'))),
+    ).resolves.toBeUndefined();
+
+    expect(received.map((line) => JSON.parse(line))).toContainEqual({ kind: 'detach' });
+    expect(logs).toContain('Session newer-session detached.');
   });
 
   it('fails when the session is not running', async () => {

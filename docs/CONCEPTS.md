@@ -11,7 +11,7 @@ diptych is a CLI that splits AI coding work across two roles:
 - A **planner** — an expensive, high-quality model (Claude Code, Codex, GPT-4-class, …) does the *thinking*: researches the codebase and compiles the request into a Task Brief, with optional supporting spec/plan artifacts when the work needs more structure.
 - An **implementer** — a cheap or local model (Ollama, LM Studio, DeepSeek, …) does the *typing*: turns each task from the list into code, one task at a time.
 
-The orchestrator in the middle owns the workflow: it runs the planner, persists the Task Brief transport and supporting artifacts, walks through tasks, validates each one (`tsc → lint → tests`), records evidence and checkpoint boundaries, and escalates back to the planner when the implementer gets stuck. Product-level git commit strategies are optional; agents working in this repository must never stage or commit.
+The orchestrator in the middle owns the workflow: it runs the planner, persists the Task Brief transport and supporting artifacts, walks through tasks, validates each one (`typecheck → lint → tests`), records evidence and checkpoint boundaries, and escalates back to the planner when the implementer gets stuck. Product-level git commit strategies are optional; agents working in this repository must never stage or commit.
 
 The goal is *same planning quality, lower total cost*. Typical split: ~350K planner tokens per feature, ~$0 implementer tokens when running locally.
 
@@ -38,7 +38,7 @@ The "typing" side. Responsibilities:
 
 1. Receive a self-contained task prompt (signature, types, tests, constraints, implementation steps, code context).
 2. Produce code: either whole-file write or search/replace markers.
-3. Return that code to the orchestrator — it never touches disk directly.
+3. Return code to the orchestrator for extraction-based runners, or write files directly for `agent` / `agent-sdk`; diptych inspects filesystem changes afterward.
 
 The implementer is *stateless per task*. No conversation is maintained between tasks. This is deliberate: atomic tasks keep the context small enough to fit in an 8K model.
 
@@ -47,10 +47,10 @@ The implementer is *stateless per task*. No conversation is maintained between t
 The middle layer. Zero React, zero Ink — pure logic in `src/engine/orchestrator/`. Owns:
 
 - The state machine (see `docs/WORKFLOW.md`).
-- Disk writes (`tasks.md` as Task Brief transport, optional `spec.md` / `plan.md`, `sessions/<id>/state.json`, `sessions/<id>/session.jsonl`).
-- Validation pipeline (`tsc → lint → tests`).
+- Disk writes (`tasks.md` as Task Brief transport, mode-dependent planning artifacts such as `research.md`, `spec.md`, and `plan.md`, `sessions/<id>/state.json`, `sessions/<id>/session.jsonl`).
+- Validation pipeline (`typecheck → lint → tests`).
 - Optional git checkpoint/commit strategy when explicitly configured.
-- Event emission to the TUI.
+- Event emission through the EventBus to subscribed sinks: TUI, JSONL, session tree, stdout JSON, OTel, and hooks.
 
 ---
 
@@ -78,8 +78,8 @@ The `workflow.mode` config field controls how many planner calls run before impl
 |------|:---:|:---:|---|
 | `instant` | 1 (minimal Task Brief + task transport) | 0 | Tiny fixes, obvious one-step changes |
 | `quick` | 1 (small Task Brief + task transport) | 0 | Small work that still needs a little structure |
-| `standard` (default) | 4 (research → supporting spec → plan → Task Brief transport) | 1 (supporting spec) | Normal features |
-| `speckit` | 7 (research → supporting spec → clarify → constitution-check → plan → analyze → Task Brief transport) | 2 (supporting spec + plan) | Large, risky, or audited work |
+| `standard` (default) | 4 (research → supporting spec → plan → Task Brief transport) | 2 (supporting spec + briefs) | Normal features |
+| `speckit` | 7 (research → supporting spec → clarify → constitution-check → plan → analyze → Task Brief transport) | 3 (supporting spec + plan + briefs) | Large, risky, or audited work |
 
 `full` is a legacy alias for `speckit` at the CLI/config boundary.
 
@@ -99,15 +99,15 @@ idle
  ├─► planning          (planner is compiling the Task Brief + tasks.md transport)
  │   └─► reviewing-plan   (waiting for user, speckit-only by default)
  ├─► implementing      (implementer is working on current task)
- │   └─► validating-task  (tsc → lint → tests running)
+ │   └─► validating-task  (typecheck → lint → tests running)
  │       └─► escalating   (validation failed 3× → planner takes over)
  ├─► final-review      (planner reviews whole diff vs Task Brief/supporting spec)
  └─► complete
 ```
 
-**Cancellable phases** (Ctrl-C quits gracefully): everything except `idle` and `complete`.
+**Live phases** (single Ctrl-C aborts the active call): `researching`, `specifying`, `planning`, `implementing`, `escalating`, and `final-review`.
 
-**Resumable phases** (`diptych resume` picks up from here): `reviewing-spec`, `reviewing-plan`, `implementing`, `validating-task`, `escalating`, `final-review`, plus any phase with `awaitingContinue: true`. The planner-generation phases (`researching`, `specifying`, `planning`) are **not resumable** without `awaitingContinue` — if a cold crash wiped the process mid-generation, the stream is lost and the only safe behaviour is to restart the feature.
+**Resumable phases** (saved state can continue from here): `reviewing-spec`, `clarifying`, `constitution-check`, `reviewing-plan`, `reviewing-briefs`, `analyzing`, `implementing`, `validating-task`, `escalating`, `final-review`, plus any phase with `awaitingContinue: true`. The planner-generation phases (`researching`, `specifying`, `planning`) are **not resumable** without `awaitingContinue` — if a cold crash wiped the process mid-generation, the stream is lost and the only safe behaviour is to restart the feature.
 
 ---
 
@@ -121,7 +121,7 @@ Task fields (`src/core/schemas/task.ts`):
 - `file` — path to the file the task edits or creates
 - `action` — file operation: `create` or `modify`
 - `description` — longer task body
-- `signature` — TypeScript signature for the function/class being added
+- `signature` — language-appropriate function, interface, or type signature hint
 - `typeDefs` — inlined type definitions (the planner resolves types so the implementer doesn't have to)
 - `tests` — concrete test cases / acceptance criteria
 - `constraints` — rules the implementer must follow
@@ -137,7 +137,7 @@ Task briefs are topologically sorted on dependency. Each task is independently p
 
 Runs after every implementer response. Defined in `src/engine/orchestrator/validation.ts`.
 
-1. **Type-check** — `tsc --noEmit` (or project's equivalent).
+1. **Type-check** — the configured, discovered, or heuristic command; default fallback is `npx tsc --noEmit`.
 2. **Lint** — `npm run lint` / Biome / ESLint, depending on config.
 3. **Tests** — the `testCommand` from config, typically `npm test`.
 
@@ -154,7 +154,7 @@ On validation failure:
   - **Hint escalation** (if the planner supports it — see `supportsHintEscalation`): planner reads the error, returns a short hint, implementer retries once with the hint.
   - **Full escalation**: planner takes over and writes the code itself. The task is marked `escalated` (not `done`) in the summary so you can see cost impact.
 
-Escalation logic: `src/engine/orchestrator/escalation.ts`.
+Escalation logic: `src/engine/orchestrator/escalation/escalation.ts`.
 
 ---
 
@@ -164,6 +164,7 @@ User-facing pauses where the workflow waits for explicit input. Each gate asks: 
 
 - **Spec gate** — after `specifying`, before `planning`. Active in `standard` and `speckit` modes.
 - **Plan gate** — after `planning`, before `implementing`. Active only in `speckit` mode by default.
+- **Briefs gate** — after Task Briefs pass the quality gate, before `implementing`. Active in `standard` and `speckit` modes.
 
 On a gate:
 
@@ -171,25 +172,25 @@ On a gate:
 - Comment without approve → the planner regenerates the artifact using the comment as feedback, then loops back to the gate.
 - Reject without comment → cancel the workflow, return to idle.
 
-Implementation: `src/engine/orchestrator/approval.ts` via `callbacks.onApprovalNeeded`.
+Implementation: `src/engine/orchestrator/approval/approval.ts` via `callbacks.onApprovalNeeded`.
 
 ---
 
 ## Clarifying questions
 
-During `specifying`, a conversation-capable planner (Claude Code today) can emit inline questions to the user. These come through as `<!-- Q:{JSON} -->` markers in the planner's output and are parsed by `src/engine/parsers/question-parser.ts`.
+During `specifying`, a conversation-capable planner can emit inline questions to the user. These come through as `<!-- Q:{JSON} -->` markers in the planner's output and are parsed by `src/engine/parsers/question-parser.ts`.
 
 Up to 5 questions per run. User can answer each, type `skip` to skip one, or type `done` to stop accepting questions.
 
 Answered questions are appended to `spec.md` under a `## Clarifications` section when a supporting spec exists. On the next planner call (regenerate or plan phase), the planner sees them as part of the supporting-spec context.
 
-Since spec 008, clarification answers also route through the same queue as user-initiated interjections (see §Queue & Interjection). On backends with `supportsMidStreamInjection`, the answer reaches the live session immediately; on stateless backends it is drained at the next phase boundary.
+Since spec 008, clarification answers also route through the same queue as user-initiated interjections (see §Queue & Interjection). Planners that implement `injectUserTurn()` receive the answer immediately; other planners drain it at the next phase boundary.
 
 ---
 
 ## Skills
 
-Optional markdown files under `.claude/skills/` that provide extra context to the planner (coding standards, domain knowledge, architectural notes). Discovered at startup via `src/engine/skills/discovery.ts`. User picks which skills to include for a given run; selected skills are concatenated into a `skills_context` block and passed to the planner alongside the feature prompt.
+Optional markdown files that provide extra context to the planner (coding standards, domain knowledge, architectural notes). `src/engine/skill-discovery.ts` discovers Claude Code skills from `.claude/skills/` and `~/.claude/skills/`, default runner skills from `.diptych/skills/` and `~/.diptych/skills/`, Codex instructions from `AGENTS.md` plus `~/.codex/skills/`, and Aider conventions from `CONVENTIONS.md`. User picks which skills to include for a given run; selected skills are concatenated into a `skills_context` block and passed to the planner alongside the feature prompt.
 
 Skills are planner-only. The implementer never sees them — its prompts are derived from the resolved Task Brief transport and any supporting artifacts.
 
@@ -199,13 +200,13 @@ Skills are planner-only. The implementer never sees them — its prompts are der
 
 A **diptych session** is one self-contained piece of work from initial feature prompt to final summary. Every session lives in its own folder under `.diptych/sessions/<session-id>/`, where `<session-id>` has the form `<ISO-date>-<slug>` (e.g. `2026-04-14-add-email-validator`). Same-day slug collisions get a `-N` suffix (`2026-04-14-add-email-validator-2`).
 
-The currently-active session is pointed to by `.diptych/active`, a plain text file containing the session-id. Only **one session can be active at a time** in a given project directory — `diptych start` fails if `.diptych/active` already points at a live session. Users who want to run truly parallel workflows should use separate git worktrees, which naturally isolate `.diptych/` per working directory.
+Foreground sessions are pointed to by `.diptych/active`, a plain text file containing the session-id. Only **one foreground session can be active at a time** in a given project directory — `diptych start` fails if `.diptych/active` already points at a live session. Detached sessions use lockfiles instead. Users who want to run truly parallel workflows should use separate git worktrees, which naturally isolate `.diptych/` per working directory.
 
 This is distinct from a **planner session** — e.g. the `session_id` Claude Code stream-json emits — which is a backend-specific conversation handle. Planner session ids are persisted inside `state.json` so they can be reused on resume (see `docs/WORKFLOW.md` §1.5). One diptych session may own several planner session ids over its lifetime (e.g. if the first expired and a fresh one was opened on resume).
 
 ## Queue & Interjection
 
-The **queue** is a workflow-scoped buffer of user messages that the user types while the planner is actively generating. Implemented on `workflowStore`. It solves the problem of "I want to add something without restarting the phase".
+The **queue** is a workflow-scoped buffer of user messages that the user types while the planner is actively generating. The engine stores queued messages on `WorkflowState.messageQueue`; the TUI stores queue depth and display state in the workflow lifecycle store. It solves the problem of "I want to add something without restarting the phase".
 
 Flow:
 
@@ -220,13 +221,13 @@ Flow:
 
 ## Awaiting-continue
 
-A **sub-state** of any planner phase that the workflow enters after the user aborts (single Ctrl-C). Characteristics:
+A **sub-state** entered after the user aborts a live model call (single Ctrl-C). Characteristics:
 
-- Workflow phase stays what it was (`researching` / `specifying` / `planning` / `reviewing-*` / `escalating` / `final-review`). The abort does **not** reset the phase.
+- Workflow phase stays what it was (`researching` / `specifying` / `planning` / `implementing` / `escalating` / `final-review`). The abort does **not** reset the phase.
 - Partial planner output up to the abort point is preserved in `session.jsonl` with `interrupted: true`.
 - Orchestrator is idle, waiting for user action.
 - User can: (a) type text + Enter → queued → next call proceeds with queue appended, (b) press Enter on empty input → explicit continue, next call is a `continue` turn (for Claude Code: native session next turn with `"continue"`; for stateless backends: messages array becomes `[originalPrompt, assistantPartial, "continue"]`).
-- No timeout. The state is persisted to `state.json` — user can close the terminal, come back hours later, and `diptych resume` picks up right here.
+- No timeout. The state is persisted to `state.json` — user can close the terminal, come back hours later, and continue from the saved session.
 
 ## Capability matrix
 
@@ -237,11 +238,13 @@ type PlannerCapabilities = {
   supportsConversationalPlanning: boolean;  // inline clarification questions (existing)
   supportsHintEscalation: boolean;          // hint-before-direct escalation (existing)
   supportsSessionResume: boolean;           // --session-id reuse on resume
-  supportsMidStreamInjection: boolean;      // parallel user turn into live session
+  supportsEffort: boolean;                  // effort/reasoning hint support
+  supportsImages: boolean;                  // image attachment support
+  supportsSelfSummarisation: boolean;       // transcript compaction support
 };
 ```
 
-The orchestrator reads capabilities at run start and degrades gracefully per backend. Example: Claude Code has all four; a shell planner defaults to none and gets queue + transcript-rebuild behaviour instead of native session reuse.
+The orchestrator reads capabilities at run start and degrades gracefully per backend. Native user-turn injection is an optional `Planner.injectUserTurn()` method rather than a capability flag.
 
 ---
 
@@ -249,16 +252,16 @@ The orchestrator reads capabilities at run start and degrades gracefully per bac
 
 The engine publishes every observable step as an `EngineEvent` on a single `EventBus` (synchronous pub/sub, `src/engine/events/bus.ts`). Sinks subscribe and receive the stream in registration order. The bus is the only broadcast channel between engine and the rest of the system.
 
-- **EngineEvent** — the discriminated union (snake_case `type`, mandatory `ts: number` and `phase: Phase`) in `src/engine/events/types.ts`. Single source of truth for every workflow event that crosses the engine boundary. Extended by adding a new variant to the union — no separate registration step. The legacy `TuiEvent` / `OrchestratorEvent` types were removed during the 2026-04 uplift.
-- **EventBus** — synchronous pub/sub port declared in `src/engine/events/types.ts`, created by `createEventBus()`. `publish(event)` fans out to every subscribed sink inline, in registration order; a throw in one sink is caught and surfaced as a warning but does not break fan-out to the others.
-- **EventSink** — any subscriber that matches `(event: EngineEvent) => void`. Synchronous by contract (so ordering is preserved and one slow sink cannot starve another). Four are shipped: `tuiSink` (workflow store), `jsonlSink` (session log), `stdoutJsonSink` (NDJSON on stdout for `--json`), `otelSink` (OpenTelemetry spans). The workflow hook system attaches its own sink for `post_*`/`on_*` events.
-- **Phase** — `'idle' | 'researching' | 'specifying' | 'reviewing-spec' | 'clarifying' | 'constitution-check' | 'planning' | 'reviewing-plan' | 'analyzing' | 'implementing' | 'validating-task' | 'escalating' | 'final-review' | 'complete'` (`src/core/schemas/enums.ts`). Every `EngineEvent` carries the current `phase` so sinks (OTel span hierarchy, hook dispatcher, TUI router) can filter and group without having to reconstruct workflow position from event type alone.
+- **EngineEvent** — the discriminated union (snake_case `type`, mandatory `ts: number`, usually `phase: Phase`) in `src/engine/events/types.ts`. `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed` are phase-less. Single source of truth for every workflow event that crosses the engine boundary. Extended by adding a new variant to the union — no separate registration step. The legacy `TuiEvent` / `OrchestratorEvent` types were removed during the 2026-04 uplift.
+- **EventBus** — synchronous pub/sub port declared in `src/engine/events/types.ts`, created by `createEventBus()`. `publish(event)` fans out to every subscribed sink inline, in registration order; a throw in one sink is caught and swallowed so it does not break fan-out to the others. Sinks that want operator-visible failures must publish their own warning before throwing.
+- **EventSink** — any subscriber that matches `(event: EngineEvent) => void`. Synchronous by contract, so ordering is preserved and a slow sink can delay later sinks. Shipped sinks: `jsonlSink`, `treeRecorderSink`, optional `tuiSink`, optional `stdoutJsonSink`, optional `otelSink`, and optional hook sink.
+- **Phase** — `'idle' | 'researching' | 'specifying' | 'reviewing-spec' | 'clarifying' | 'constitution-check' | 'planning' | 'reviewing-plan' | 'reviewing-briefs' | 'analyzing' | 'implementing' | 'validating-task' | 'escalating' | 'final-review' | 'complete'` (`src/core/schemas/enums.ts`). Phase-bearing `EngineEvent` variants carry the current `phase` so sinks (OTel span hierarchy, hook dispatcher, TUI router) can filter and group without having to reconstruct workflow position from event type alone.
 
-Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`, `onBudgetExceeded`, `onUserEditConflict`, `onComplete`) are a **separate** mechanism — they are discrete `await`-able request/response pairs supplied by the workflow host. Use the bus for broadcast; use callbacks for gates. `onExternalChanges` is legacy compatibility; file-aware edit handling now flows through `onUserEditConflict`.
+Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`, `onBudgetExceeded`, `onBudgetPaused`, `onCostApprovalNeeded`, `onUserEditConflict`, `onTieredApproval`, `onTaskReviewNeeded`) are a **separate** mechanism — they are discrete `await`-able request/response pairs supplied by the workflow host. `onComplete(summary)` is a synchronous completion notification. Use the bus for broadcast; use callbacks for gates.
 
 ## Headless mode
 
-`diptych start --json "feature"` runs the workflow without the Ink TUI. All gating callbacks are stubbed (`auto-approve`, empty clarifications, continue on budget). Events stream as NDJSON on stdout via `stdoutJsonSink` — one JSON-encoded `EngineEvent` per line, parseable by `jq` or any NDJSON consumer. Driver: `src/cli/headless.ts` → `runWorkflow({ headless: true })`. Intended for CI, logging pipelines, and programmatic integration. See [MIGRATION.md §Headless mode](./MIGRATION.md).
+`diptych start --json "feature"` runs the workflow without the Ink TUI. Workflow host callbacks are stubbed: review gates approve, clarifications and continuations answer empty, and budget pause/exceeded recovery exits non-zero. Action-level tiered approvals are not auto-approved and can fail closed with `APPROVAL_REQUIRED` unless their tiers allow the action. Events stream as NDJSON on stdout via `stdoutJsonSink` — one JSON-encoded `EngineEvent` per line, parseable by `jq` or any NDJSON consumer. Driver: `src/cli/headless.ts` → `runWorkflow({ headless: true })`. Intended for CI, logging pipelines, and programmatic integration. See [MIGRATION.md §Headless mode](./MIGRATION.md).
 
 ## Hooks (workflow)
 
@@ -293,9 +296,13 @@ All workflow state lives under `.diptych/` in the target project. Each session g
     │   ├── state.json                      # mutable: phase, tasks, currentTaskIndex, tokenUsage, plannerSessionId
     │   ├── session.jsonl                   # append-only log: type-tagged events + messages
     │   ├── summary.json                    # written once at end of run (Summary: tokens, cost, timings, outcomes)
+    │   ├── research.md                     # Standard/speckit research notes when produced
     │   ├── spec.md                         # supporting artifact (optional)
     │   ├── plan.md                         # supporting artifact (optional)
-    │   └── tasks.md                        # Task Brief transport
+    │   ├── tasks.md                        # Task Brief transport
+    │   ├── clarifications.md               # speckit clarification artifact when produced
+    │   ├── constitution-check.json         # speckit constitution result when produced
+    │   └── analyze.json                    # speckit analysis result when produced
     └── 2026-04-13-fix-auth-bug/
         └── …                               # same shape, one folder per historical session
 ```
@@ -306,32 +313,34 @@ Key rules:
 - `state.json` is what `diptych resume` reads to rebuild the in-memory `WorkflowState`. It is overwritten on every phase transition.
 - `summary.json` is written exactly once, at end-of-run.
 - `session.jsonl` is append-only and the single source of truth for history (see "Events & messages" below).
-- `tasks.md` is the human-readable Task Brief transport. `spec.md` and `plan.md` are supporting artifacts written when the corresponding planner phase needs them. They are **always** written when produced, regardless of `workflow.persistTranscript`.
-- `.diptych/active` holds the session-id of whichever session is currently running. Its presence acts as a lock against a second concurrent `diptych start` in the same project directory.
+- `tasks.md` is the human-readable Task Brief transport. `research.md`, `spec.md`, `plan.md`, and speckit artifacts are supporting artifacts written when the corresponding planner phase produces them. They are **always** written when produced, regardless of `workflow.persistTranscript`.
+- `.diptych/active` holds the session-id for foreground sessions that should block another same-directory `diptych start`. Detached sessions use lockfiles instead.
 
 ---
 
 ## Events & messages
 
-Everything the orchestrator does is logged to `session.jsonl` — a single append-only JSON Lines file per session. Each line is one entry with an ISO timestamp. The file serves three consumers: the TUI (for live and replay rendering), the resume path (for transcript rebuild when a native session is unavailable), and humans debugging a run.
+Everything the orchestrator does is logged to `session.jsonl` — a single append-only JSON Lines file per session. Each line is one timestamped entry; event and message records use ISO timestamps, while summary records use the schema's accepted timestamp string/number form. The file serves three consumers: the TUI (for live and replay rendering), the resume path (for transcript rebuild when a native session is unavailable), and humans debugging a run.
 
-Entries come in two **kinds**, distinguished by the `kind` field:
+Entries come in three **kinds**, distinguished by the `kind` field:
 
 ```jsonl
-{"ts":"2026-04-14T10:32:00.123Z","kind":"event","type":"workflow_started","feature":"add email validator"}
-{"ts":"2026-04-14T10:32:01.001Z","kind":"event","type":"phase","phase":"researching"}
+{"ts":"2026-04-14T10:32:00.123Z","kind":"event","type":"workflow_started","phase":"idle","data":{"feature":"add email validator"}}
+{"ts":"2026-04-14T10:32:01.001Z","kind":"event","type":"planner_status","phase":"researching","data":{"status":"running"}}
 {"ts":"2026-04-14T10:32:05.200Z","kind":"message","role":"assistant","phase":"researching","text":"I'll look at..."}
-{"ts":"2026-04-14T10:35:00.000Z","kind":"event","type":"clarification_asked","questionId":"q1"}
+{"ts":"2026-04-14T10:35:00.000Z","kind":"event","type":"clarifications_collected","phase":"specifying","data":{"count":1,"clarifications":[{"question":"Auth scheme?","answer":"JWT"}]}}
 {"ts":"2026-04-14T10:35:30.200Z","kind":"message","role":"user","text":"Use JWT with refresh tokens"}
-{"ts":"2026-04-14T10:36:00.000Z","kind":"event","type":"spec_written","path":"spec.md","bytes":2340}
+{"ts":"2026-04-14T10:35:45.000Z","kind":"summary","text":"User chose JWT with refresh tokens.","summarizedUpTo":"2026-04-14T10:35:30.200Z","tokenEstimate":128}
+{"ts":"2026-04-14T10:36:00.000Z","kind":"event","type":"spec_done","phase":"reviewing-spec","data":{}}
 ```
 
 - `kind: "event"` — operational metadata. Workflow lifecycle, phase transitions, validation results, escalation triggers, artifact writes, errors. Small, always logged.
 - `kind: "message"` — conversation content. User prompts, planner text chunks, clarification Q&A, approval comments, planner reviews. Text-heavy, **opt-outable** via `workflow.persistTranscript: false` (default `true`).
+- `kind: "summary"` — compaction output. Contains `text`, `summarizedUpTo`, optional `tokenEstimate`, and optional `structured` data. Resume uses the latest summary as a synthetic message, then loads later messages.
 
 Filtering happens at read time: `lines.filter(l => l.kind === 'message')`. There is no separate file for events vs. messages — this is deliberate. A log is a chronological stream, and splitting it would force consumers to merge-sort at every read while opening new crash-atomicity problems. This is the same design Claude Code uses (`~/.claude/projects/<cwd>/<id>.jsonl`), and the same pattern event-sourcing frameworks settle on.
 
-Typed event schema: `src/core/types/events.ts`. Reader API (async iterables for log, messages, events): `src/core/sessions/log-reader.ts`. Renderer registry for the TUI: `src/components/event-cards/index.tsx`.
+Typed event schema: `src/engine/events/types.ts`. Reader API (async iterables for log, messages, events): `src/core/sessions/log-reader.ts`. Renderer registry for the TUI: `src/features/workflow/components/event-cards/event-card.tsx`.
 
 ---
 

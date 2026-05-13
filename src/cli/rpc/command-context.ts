@@ -1,11 +1,13 @@
+import { join } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { taskId as parseTaskId } from '../../core/schemas/task.js';
 import type { EventBus } from '../../engine/events/types.js';
-import type { QueueHandler } from '../../engine/orchestrator/types.js';
+import type { ClearQueueHandler, QueueHandler } from '../../engine/orchestrator/types.js';
 import { sessionDir } from '../../core/paths.js';
 import { transitionAndSave } from '../../engine/orchestrator/state-ops.js';
+import { clearPendingQueue } from '../../engine/orchestrator/queue.js';
 import { WORKFLOW_REWIND_ABORT_REASON } from '../../engine/orchestrator/run/run.js';
 import type { RuntimeCommandContext } from '../../core/runtime/commands/types.js';
 import { rebuildRepomap } from '../../engine/codebase/rebuild.js';
@@ -29,6 +31,7 @@ export function createRpcCommandContext(opts: {
   setConfig: (config: Config) => void;
   getPhase: () => Phase;
   queueHandler: () => QueueHandler | null;
+  clearQueueHandler: () => ClearQueueHandler | null;
   abort: (reason?: unknown) => void;
   bus: EventBus;
   messages: string[];
@@ -88,17 +91,17 @@ export function createRpcCommandContext(opts: {
     },
     getQueueDepth: () => opts.pendingQueueDepth(opts.getState()),
     clearQueue: () => {
+      const clearLiveQueue = opts.clearQueueHandler();
+      if (clearLiveQueue) return clearLiveQueue();
       const state = opts.getState();
       const sessionId = opts.getSessionId();
       if (!state || !sessionId) return 0;
-      const count = opts.pendingQueueDepth(state);
-      const next = transitionAndSave(opts.projectDir, sessionId, state, { type: 'CLEAR_QUEUE' });
-      if (count > 0) {
-        opts.bus.publish({ type: 'queue_cleared', ts: Date.now(), phase: next.phase, count });
-      }
-      return count;
+      return clearPendingQueue(opts.projectDir, sessionId, state, opts.bus).count;
     },
-    rebuildRepomap: async () => rebuildRepomap(opts.projectDir),
+    rebuildRepomap: async () => {
+      const cacheDir = opts.getConfig().codebase?.cacheDir;
+      return rebuildRepomap(opts.projectDir, cacheDir === undefined ? {} : { cacheDir });
+    },
     attachImage: (input) => attachImage(input, opts.projectDir),
     detachImage,
     listAttachments,
@@ -108,7 +111,7 @@ export function createRpcCommandContext(opts: {
         projectDir: opts.projectDir,
         sessionId,
         target,
-        outDir: `${opts.projectDir}/.diptych/sessions/${sessionId}/handoffs/${target}`,
+        outDir: join(sessionDir(opts.projectDir, sessionId), 'handoffs', target),
         ...(taskId !== undefined && { selectedTaskIds: [taskId] }),
         mode: 'overwrite',
       });

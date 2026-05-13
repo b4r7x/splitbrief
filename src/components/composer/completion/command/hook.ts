@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useInput } from 'ink';
-import type { Screen } from '../../../../stores/navigation/router.js';
+import type { Screen } from '../../../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../../../core/runtime/commands/types.js';
 import { suggestRuntimeCommand } from '../../../../core/runtime/commands/lookup.js';
 import { rotateIndex } from '../../../pickers/picker-utils.js';

@@ -9,9 +9,9 @@ import { makeCallbacks, makeImplementer, makePlanner, makeBusRecorder } from '#t
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { makeWorkflowMetadata, TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 
-const SINKS = { setAbortHandler: () => {}, setQueueHandler: () => {} };
-const META = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' as const };
+const META = makeWorkflowMetadata('standard');
 const dirs: string[] = [];
 
 beforeEach(() => resetAllStores());
@@ -37,11 +37,9 @@ describe('escalation cascade: local retries exhaust, then hint (tier 1), then fu
 
     const { callbacks } = makeCallbacks();
     const { bus, events: busEvents } = makeBusRecorder();
-    // Every implementer retry fails → local retries exhaust → hint/full escalations exercised.
     const implementer = makeImplementer({
       retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken', usage: { inputTokens: 5, outputTokens: 5 } }),
     });
-    // Hint retry still fails; full escalation also fails → cascade reaches the bottom.
     const planner = makePlanner({
       escalateHint: vi.fn().mockResolvedValue({ success: true, output: 'hint', code: null, usage: { inputTokens: 30, outputTokens: 10 } }),
       escalateFull: vi.fn().mockResolvedValue({ success: false, output: '', code: null, usage: null }),
@@ -52,7 +50,7 @@ describe('escalation cascade: local retries exhaust, then hint (tier 1), then fu
         projectDir, sessionId,
         config: makeNoValidationConfig({ workflow: { maxRetries: 2, commitStrategy: 'none' } }),
         context: defaultContext, planner, callbacks, implementer,
-        metadata: META, sinks: SINKS, validator: createValidator(), bus,
+        metadata: META, sinks: TEST_WORKFLOW_SINKS, validator: createValidator(), bus,
       },
       task, initialError: 'type error', currentState: state,
     });

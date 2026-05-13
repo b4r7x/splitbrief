@@ -26,7 +26,7 @@ Hooks support two kinds: `command` (spawns a subprocess, receives the event as J
 
 Content-addressed working-tree snapshots stored under `.diptych/sessions/<id>/snapshots/`. The snapshot store (`src/engine/snapshots/store.ts`) handles creation, manifest management, and file collection. Restore logic lives in `src/engine/snapshots/restore.ts`. Run-level accept/reject logic lives in `src/engine/snapshots/run.ts`.
 
-A **baseline snapshot** is taken at workflow start -- the "before" state. It stores every tracked file (excluding `.git`, `.diptych`, `node_modules`, `.trees`). Subsequent snapshots store only files whose hash differs from the baseline, with the manifest recording every file's hash. File blobs are stored under hex-encoded path names within each snapshot directory.
+The first snapshot creates the **baseline snapshot** -- the "before" state. It stores every tracked file (excluding `.git`, `.diptych`, `node_modules`, `.trees`). Subsequent snapshots store only files whose hash differs from the baseline, with the manifest recording every file's hash. File blobs are stored under hex-encoded path names within each snapshot directory.
 
 Auto-snapshot triggers fire at `preTask`, `postTask`, and `preFinalReview` phases. Manual snapshots are available via `diptych snapshot create`. The run ledger (`run-ledger.json`) tracks which snapshots belong to the current run so that `/accept-run` and `/reject-run confirm` operate on the correct state. Rejection restores baseline files, deletes files that were created during the run, and reports conflicts where the working tree diverged from both baseline and snapshot. Events: `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`.
 
@@ -67,7 +67,7 @@ Export compiled briefs to formats other agents consume. `src/engine/handoff/rend
 - `claude-code` -- `src/engine/handoff/renderers/claude-code.ts`
 - `copilot-issue` -- `src/engine/handoff/renderers/copilot-issue.ts`
 
-Custom renderers are loaded from `.diptych/handoff-renderers/<target>.ts` (or `.js`) via `src/engine/handoff/load-renderer.ts`. A handoff manifest with metadata (session ID, brief hash, source commit, task IDs, artifact paths) is written alongside the pack (`src/engine/handoff/manifest.ts`). Triggered via `/handoff <target>` slash command or `diptych handoff` CLI.
+Custom renderers are loaded from runtime-loadable `.diptych/handoff-renderers/<target>.ts` or `.js` files via `src/engine/handoff/load-renderer.ts`. A handoff manifest with metadata (session ID, brief hash, source commit, task IDs, artifact paths) is written alongside the pack (`src/engine/handoff/manifest.ts`). Custom targets are supported by the `diptych handoff <target>` CLI; `/handoff` currently validates against built-in `HANDOFF_TARGETS`.
 
 ---
 
@@ -75,9 +75,9 @@ Custom renderers are loaded from `.diptych/handoff-renderers/<target>.ts` (or `.
 
 `src/engine/mcp/`
 
-Exposes session artifacts as MCP resources for external clients. Started via `diptych mcp`. The HTTP server (`src/engine/mcp/server.ts`) implements Streamable HTTP MCP (protocol version `2025-11-25`), with bearer token auth and local-origin CORS enforcement.
+Exposes session artifacts as MCP resources for external clients. Started via `diptych mcp serve`. The HTTP server (`src/engine/mcp/server.ts`) implements Streamable HTTP MCP (protocol version `2025-11-25`), with bearer token auth and local-origin CORS enforcement.
 
-The resolver (`src/engine/mcp/resolver.ts`) serves resources under `mcp://diptych/sessions/<id>/`: session list, manifest, spec, plan, tasks (list and individual briefs), evidence ledger, drift report, workflow state, and summary. All resources are read from the session directory on disk.
+The resolver (`src/engine/mcp/resolver.ts`) serves the sessions index at `mcp://diptych/sessions` and per-session resources under `mcp://diptych/sessions/<id>/`: manifest, spec, plan, tasks (list and individual briefs), evidence ledger, drift report, workflow state, and summary. All resources are read from the session directory on disk.
 
 The server optionally exposes MCP tools when a tool handler is provided (`src/engine/mcp/tool/`). The tools mutate the evidence ledger: `report_evidence`, `report_progress`, `mark_task_done`, `report_validation_result`, and `report_error`. Input validation uses Zod schemas (`src/engine/mcp/tool/schemas.ts`). These tools let external agents report work back into a diptych session.
 
@@ -141,7 +141,7 @@ Compaction summarizes older turns in `session.jsonl` without deleting them. A su
 
 ## 12. Evidence ledger
 
-`src/engine/orchestrator/evidence/evidence.ts`, `src/core/schemas/evidence.ts`
+`src/engine/orchestrator/evidence/{ledger,persistence,reporting,task-evidence}.ts`, `src/core/schemas/evidence.ts`
 
 The evidence ledger records what happened during implementation -- approval decisions, validation outcomes, task completions, skip reasons, escalation results, and rejection reasons. One ledger per session, persisted as `evidence.json` inside the session directory (`.diptych/sessions/<id>/evidence.json`).
 
@@ -173,4 +173,4 @@ Activated via `diptych start --rpc`. The workflow runs headlessly with a machine
 
 **How gates work.** When the engine hits an approval callback (`onApprovalNeeded`), it publishes a status event and blocks. The client sees the status, sends `approve`, `reject`, or `message`. The dispatch handler (`src/cli/rpc/dispatch.ts`) resolves the gate's promise and acks. If no gate is pending, the command returns an error. Message gates work the same way -- if no gate is pending, the message goes to the queue instead.
 
-**Difference from `--json`.** Both are headless. `--json` auto-approves all gates and streams events to stdout -- it's observe-only. `--rpc` keeps gates interactive -- the client must explicitly approve or reject. Use `--json` for CI pipelines that just want to watch. Use `--rpc` for programmatic clients that need to make decisions.
+**Difference from `--json`.** Both are headless. `--json` auto-approves workflow review gates and streams events to stdout -- it's observe-only; action-level tiered approvals still follow approval config and can fail closed. `--rpc` keeps gates interactive -- the client must explicitly approve or reject. Use `--json` for CI pipelines that just want to watch. Use `--rpc` for programmatic clients that need to make decisions.

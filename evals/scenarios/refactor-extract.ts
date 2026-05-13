@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { readSourceFiles, runNpmTest } from './shared.js';
-import type { EvalScenario, QualityCheck } from './types.js';
+import type { EvalScenario, QualityCheck, QualityCheckResult } from './types.js';
 
 type SourceFile = {
   path: string;
@@ -40,50 +40,56 @@ function processQueueFile(files: SourceFile[]): SourceFile | null {
   return files.find((file) => /\bprocessQueue\b/.test(file.content)) ?? null;
 }
 
+function retryWithBackoffExistsInSource(dir: string): QualityCheckResult {
+  const file = retryWithBackoffExists(readSourceFiles(dir));
+  return file
+    ? { passed: true, detail: `Found retryWithBackoff in ${file.path}` }
+    : { passed: false, detail: 'No retryWithBackoff function found in src' };
+}
+
+function processQueueUsesRetry(dir: string): QualityCheckResult {
+  const file = processQueueFile(readSourceFiles(dir));
+  if (!file) return { passed: false, detail: 'processQueue not found' };
+
+  const body = findFunctionBody(file.content, 'processQueue');
+  if (!body) return { passed: false, detail: 'processQueue body not found' };
+
+  return body.includes('retryWithBackoff')
+    ? { passed: true, detail: `processQueue uses retryWithBackoff in ${file.path}` }
+    : { passed: false, detail: 'processQueue does not reference retryWithBackoff' };
+}
+
+function retryLogicIsExtracted(dir: string): QualityCheckResult {
+  const file = processQueueFile(readSourceFiles(dir));
+  if (!file) return { passed: false, detail: 'processQueue not found' };
+
+  const body = findFunctionBody(file.content, 'processQueue');
+  if (!body) return { passed: false, detail: 'processQueue body not found' };
+
+  const hasRetryLoop = /\b(?:for|while)\s*\([^)]*\battempt\b/.test(body);
+  const hasBackoffSleep = /\b(?:setTimeout|sleep)\s*\(|\bbackoffFactor\b|\bdelayMs\s*[=*]/.test(body);
+
+  return hasRetryLoop && hasBackoffSleep
+    ? { passed: false, detail: 'processQueue still contains inline retry loop and backoff sleep' }
+    : { passed: true, detail: 'processQueue no longer contains the full inline retry loop' };
+}
+
 const qualityChecks: QualityCheck[] = [
   {
     name: 'retryWithBackoff function exists',
-    check: async (dir) => {
-      const file = retryWithBackoffExists(readSourceFiles(dir));
-      return file
-        ? { passed: true, detail: `Found retryWithBackoff in ${file.path}` }
-        : { passed: false, detail: 'No retryWithBackoff function found in src' };
-    },
+    check: retryWithBackoffExistsInSource,
   },
   {
     name: 'processQueue uses retryWithBackoff',
-    check: async (dir) => {
-      const file = processQueueFile(readSourceFiles(dir));
-      if (!file) return { passed: false, detail: 'processQueue not found' };
-
-      const body = findFunctionBody(file.content, 'processQueue');
-      if (!body) return { passed: false, detail: 'processQueue body not found' };
-
-      return body.includes('retryWithBackoff')
-        ? { passed: true, detail: `processQueue uses retryWithBackoff in ${file.path}` }
-        : { passed: false, detail: 'processQueue does not reference retryWithBackoff' };
-    },
+    check: processQueueUsesRetry,
   },
   {
     name: 'tests pass after refactor',
-    check: async (dir) => runNpmTest(dir),
+    check: runNpmTest,
   },
   {
     name: 'retry logic is extracted rather than duplicated',
-    check: async (dir) => {
-      const file = processQueueFile(readSourceFiles(dir));
-      if (!file) return { passed: false, detail: 'processQueue not found' };
-
-      const body = findFunctionBody(file.content, 'processQueue');
-      if (!body) return { passed: false, detail: 'processQueue body not found' };
-
-      const hasRetryLoop = /\b(?:for|while)\s*\([^)]*\battempt\b/.test(body);
-      const hasBackoffSleep = /\b(?:setTimeout|sleep)\s*\(|\bbackoffFactor\b|\bdelayMs\s*[=*]/.test(body);
-
-      return hasRetryLoop && hasBackoffSleep
-        ? { passed: false, detail: 'processQueue still contains inline retry loop and backoff sleep' }
-        : { passed: true, detail: 'processQueue no longer contains the full inline retry loop' };
-    },
+    check: retryLogicIsExtracted,
   },
 ];
 

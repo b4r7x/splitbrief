@@ -6,10 +6,10 @@ import { resolveProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { assertNotWindows } from '../platform.js';
-import { checkServerStatus } from '../../engine/ipc/lockfile.js';
+import { checkServerStatus, type ServerStatus } from '../../engine/ipc/lockfile.js';
 import { sessionsRoot, sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import type { ClientMessage, ServerMessage } from '../../engine/ipc/protocol.js';
-import type { ServerStatus } from '../../engine/ipc/lockfile.js';
+import { isNumericAlias, resolveNumericAlias } from '../session-aliases.js';
 
 export type DetachDeps = {
   checkServerStatus: (sessionDir: string) => Promise<ServerStatus>;
@@ -97,7 +97,11 @@ export async function detachCommand(
 ): Promise<void> {
   assertNotWindows();
 
-  const resolvedId = sessionId ?? (await resolveRunningSession(opts.projectDir, deps));
+  const resolvedId = sessionId === undefined
+    ? await resolveRunningSession(opts.projectDir, deps)
+    : isNumericAlias(sessionId)
+      ? await resolveNumericAlias(sessionId, opts.projectDir)
+      : sessionId;
   const sessDir = sessionDir(opts.projectDir, resolvedId);
   const status = await deps.checkServerStatus(sessDir);
 

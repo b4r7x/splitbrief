@@ -344,6 +344,57 @@ describe('runRpc', () => {
     await run;
   });
 
+  it('clears the live workflow queue from slash commands', async () => {
+    const projectDir = setupProject();
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    let finishWorkflow: (() => void) | undefined;
+    let clearHandlerInstalled = false;
+    let clearCalls = 0;
+    const workflowDone = new Promise<void>((resolve) => {
+      finishWorkflow = resolve;
+    });
+    const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
+      workflowOpts.sinks.setClearQueueHandler?.(() => {
+        clearCalls += 1;
+        return 2;
+      });
+      clearHandlerInstalled = true;
+      await workflowDone;
+    };
+
+    const run = runRpc(
+      'queue clear test',
+      projectDir,
+      { rpc: true },
+      undefined,
+      'rpc-queue-clear-session',
+      undefined,
+      undefined,
+      undefined,
+      { input, output, runWorkflow: runWorkflowStub },
+    );
+
+    await vi.waitFor(() => {
+      expect(clearHandlerInstalled).toBe(true);
+    });
+    input.write('{"type":"slash","command":"/queue clear"}\n');
+    await waitForLine(chunks, line =>
+      line.type === 'ack' &&
+      line.command === 'slash' &&
+      typeof line.data === 'object' &&
+      line.data !== null &&
+      'messages' in line.data &&
+      Array.isArray(line.data.messages) &&
+      line.data.messages.includes('Cleared 2 queued messages'),
+    );
+
+    expect(clearCalls).toBe(1);
+
+    finishWorkflow?.();
+    await run;
+  });
+
   it('does not acknowledge slash commands that report errors', async () => {
     const projectDir = setupProject();
     const input = new PassThrough();
@@ -376,6 +427,41 @@ describe('runRpc', () => {
 
     expect(parseLines(chunks)).not.toContainEqual(
       expect.objectContaining({ type: 'ack', command: 'slash' }),
+    );
+  });
+
+  it('executes fuzzy slash command matches', async () => {
+    const projectDir = setupProject();
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    let finishWorkflow: (() => void) | undefined;
+    const workflowDone = new Promise<void>((resolve) => {
+      finishWorkflow = resolve;
+    });
+    const runWorkflowStub = async () => workflowDone;
+
+    const run = runRpc(
+      'slash typo test',
+      projectDir,
+      { rpc: true },
+      undefined,
+      'rpc-slash-typo-session',
+      undefined,
+      undefined,
+      undefined,
+      { input, output, runWorkflow: runWorkflowStub },
+    );
+
+    input.write('{"type":"slash","command":"/mde"}\n');
+    await waitForLine(chunks, line =>
+      line.type === 'ack' && line.command === 'slash',
+    );
+
+    finishWorkflow?.();
+    await run;
+
+    expect(parseLines(chunks)).not.toContainEqual(
+      expect.objectContaining({ type: 'error', error: expect.stringContaining('Unknown command') }),
     );
   });
 

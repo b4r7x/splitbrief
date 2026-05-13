@@ -1,6 +1,6 @@
 # diptych Cookbook — Usage Examples
 
-A task-oriented reference for "how do I do X?". Every recipe is copy-paste ready against the current CLI surface and slash-command catalog (21 commands). Where a recipe references a config field, the field name matches the zod schema in `src/core/schemas/config.ts`.
+A task-oriented reference for "how do I do X?". Every recipe is copy-paste ready against the current CLI surface and slash-command catalog. Where a recipe references a config field, the field name matches the zod schema in `src/core/schemas/config.ts`.
 
 If you're new to diptych, read this in order: recipes 1–5 cover the basic workflow, 6–9 cover cost, 10–15 cover safety, then jump to whatever you need.
 
@@ -35,7 +35,7 @@ diptych init
 
 `init` writes `.diptych/config.yaml` (`version: 3`) and creates `.diptych/`. The first `diptych start` then creates `.diptych/sessions/<session-id>/` and writes `.diptych/active`.
 
-**Variations:** `diptych init --reconfigure` overwrites an existing config. `diptych init --project ../other-repo` initializes a different project.
+**Variations:** `diptych init --reconfigure` overwrites an existing config. To initialize another project, run `diptych init` from that project directory.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/BOOTSTRAP.md](./BOOTSTRAP.md), [docs/API-KEYS.md](./API-KEYS.md).
 
@@ -132,7 +132,7 @@ workflow_complete
 
 `standard` is the default mode (4 planner calls). The spec gate blocks by default (`approve: spec`). Press `a` to approve, `c <text>` to send a comment that triggers regeneration, `r` to reject, `e` to open `$EDITOR` for inline edits.
 
-**Variations:** `--approve none` skips both gates. `--approve all` blocks on spec and plan (the speckit default). `/approve` at runtime updates the resolved level mid-run.
+**Variations:** `--approve none` skips both gates. `--approve all` blocks on spec and plan (the speckit default). During a gate, approve or reject through the TUI prompt or the matching RPC response.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.3, recipe 5.
 
@@ -270,6 +270,8 @@ diptych status --history
 
 **You'll see:**
 
+TUI `$` drilldown:
+
 ```
 Cost breakdown
   planner    research        $0.18
@@ -282,9 +284,22 @@ Cost breakdown
   total                      $0.90
 ```
 
+CLI `diptych status --history`:
+
+```
+Cost History (3 sessions)
+  Total spent:    $0.90
+  Total saved:    ~$4.20
+  Avg savings:    82%
+  Avg local rate: 73%
+
+  By Provider:
+    Claude Code:  $0.90 (3 sessions)
+```
+
 The drilldown reads from `summary.json` (final spend) plus per-event `cost_update` records in `session.jsonl`. Bars at the top of each row scale to the largest line item.
 
-**Variations:** `diptych status` prints just the active-session totals. `diptych status --history` walks every `summary.json` under `.diptych/sessions/`.
+**Variations:** `diptych status` prints the active workflow phase, task, and provider status. `diptych status --history` walks every `summary.json` under `.diptych/sessions/`.
 
 **See also:** [docs/DEBUGGING.md](./DEBUGGING.md) §Event log, recipe 36.
 
@@ -348,7 +363,7 @@ Snapshot created: 2026-04-26T14-30-00-000Z
   Location: .diptych/sessions/<id>/snapshots/2026-04-26T14-30-00-000Z
 ```
 
-Snapshots use a baseline + delta layout under `.diptych/sessions/<id>/snapshots/`. The first snapshot copies every tracked file (honouring `.gitignore` plus the always-excluded set `.git`, `.diptych`, `node_modules`); later snapshots only store changed files.
+Snapshots use a baseline + delta layout under `.diptych/sessions/<id>/snapshots/`. The first snapshot copies every tracked file (honouring `.gitignore` plus the always-excluded set `.git`, `.diptych`, `node_modules`, `.trees`); later snapshots only store changed files.
 
 **Variations:** Omit `--name` to get an unnamed snapshot keyed only by ISO timestamp. `--session <id>` snapshots a specific session (default: active).
 
@@ -463,7 +478,7 @@ approval:
   enabled: true
   tiers:
     read:               auto       # silent
-    write_in_scope:     auto       # silent (file in task.targetFiles)
+    write_in_scope:     auto       # silent (task.file or task.scope.inBounds)
     validation:         auto
     write_out_of_scope: confirm    # always prompt
     destructive:        confirm    # rm, drop database, etc.
@@ -519,7 +534,7 @@ diptych status     # after a few tasks
 **You'll see:**
 
 ```
-drift_report · T002  passed=true  errors=0  warnings=2
+drift_report passed=true errors=0 warnings=2
 drift_chain_detected
   score: 0.71
   representativePath: src/utils/format.ts
@@ -528,7 +543,7 @@ drift_chain_detected
 
 The drift chain detector tracks out-of-bounds files across tasks. A high score indicates the implementer is repeatedly straying into the same off-scope area — usually a sign the brief was wrong about scope.
 
-**Variations:** Inspect the per-task report directly: `cat .diptych/sessions/<id>/drift-report.json | jq`. The summary screen shows a `Drift` row with the latest score.
+**Variations:** Inspect the final deterministic report directly: `cat .diptych/sessions/<id>/drift-report.json | jq`. Inspect `drift-chains.json` for cross-task chain state. The summary screen shows a `Drift` row with the latest score.
 
 **See also:** [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md) §Drift detection rules.
 
@@ -741,7 +756,7 @@ Mode set to 'quick'. Saved to .diptych/config.yaml.
 **Run:**
 
 - **Ctrl-C once** during a live phase: aborts the current planner / implementer call. Partial output preserved with `interrupted: true` in `session.jsonl`. Workflow enters `awaitingContinue: true`. Press Enter to continue, or type a message and Enter to inject context on resume.
-- **Ctrl-C twice within 2 seconds:** saves state, clears `.diptych/active`, exits the process. Resume later with `diptych resume`.
+- **Ctrl-C twice within 2 seconds:** exits the process after state is saved. Continue later with `diptych continue <session-id>` if the saved state is resumable.
 
 **You'll see:**
 
@@ -754,7 +769,7 @@ phase: planning  ← resumes with the message folded in
 
 `Esc` does **not** abort — it only closes overlays. This is deliberate (avoid accidental aborts).
 
-**Variations:** `diptych resume` re-enters the saved phase. Phases that aren't safely resumable (`researching`, `specifying`, `planning` without `awaitingContinue`) refuse resume with a clear error.
+**Variations:** `diptych resume` re-enters the active saved phase. Use `diptych continue <session-id>` when the active pointer is absent but you know the session id. Phases that aren't safely resumable (`researching`, `specifying`, `planning` without `awaitingContinue`) refuse resume with a clear error.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.5, §1.6.
 
@@ -892,16 +907,14 @@ The pack contains only the requested task, but the supporting spec / plan are st
 
 **When:** none of the four built-in targets fit and you want a Linear ticket / Jira issue / Slack post format.
 
-**Setup:** create `.diptych/handoff-renderers/linear-ticket.ts`:
+**Setup:** create `.diptych/handoff-renderers/linear-ticket.js`:
 
-```ts
-import type { HandoffInput, HandoffPack } from 'diptych/handoff';
-
-export default function render(input: HandoffInput): HandoffPack {
+```js
+export default function render(input) {
   const body =
     `## Tasks\n\n` +
     input.tasks
-      .map(t => `- [ ] **${t.id}** — ${t.title} (\`${t.targetFiles.join(', ')}\`)`)
+      .map(t => `- [ ] **${t.id}** — ${t.title} (\`${(t.scope?.inBounds ?? [t.file]).join(', ')}\`)`)
       .join('\n');
   return {
     files: [
@@ -933,7 +946,7 @@ Handoff written to: handoff/linear
   ticket.md
 ```
 
-Custom renderers are dynamically imported — `.ts` files use the project's tsx loader. They can be sync or async.
+Custom renderers are dynamically imported from `.diptych/handoff-renderers/`. They can be sync or async; TypeScript renderers must be loadable by the current Node runtime or an already-registered loader.
 
 **See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §8 `engine/handoff/load-renderer.ts`.
 
@@ -1001,7 +1014,7 @@ diptych MCP server ready
   Sessions: all
 ```
 
-The MCP resource list now includes every session's `state.json`, `tasks.md`, `evidence.json`, `drift-report.json`, and snapshot manifests. Multi-session mode is still not an execution surface; the only mutation surface is the constrained evidence-tool set for existing sessions and tasks.
+The MCP resource list now includes `state.json`, `summary.json`, `tasks`, individual `tasks/<id>`, `evidence.json`, `drift-report.json`, and available spec/plan resources. Multi-session mode is still not an execution surface; the only mutation surface is the constrained evidence-tool set for existing sessions and tasks.
 
 **Variations:** `--session` and `--all-sessions` are mutually exclusive.
 
@@ -1087,7 +1100,7 @@ Run: diptych attach 2026-04-26-rewrite-billing
 
 `--detach` spawns the workflow as a background server with its own IPC socket at `.diptych/sessions/<id>/ipc.sock`. Logs go to `.diptych/sessions/<id>/server.log`. The lockfile records pid + heartbeat for `diptych ps`.
 
-**Variations:** `diptych ps` lists every running, exited, and crashed session in the project. `--detach` cannot be combined with `--json`.
+**Variations:** `diptych ps` lists every running, exited, and crashed session in the project. `--detach` cannot be combined with `--json` or `--rpc`.
 
 **See also:** recipe 33, [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §1 IPC server.
 
@@ -1300,9 +1313,9 @@ exit $status
 ```markdown
 # Project Constitution
 
-## Principle 1 — Zero classes
-TypeScript code must use pure functions and module-scoped state.
-The `class` keyword does not appear in `src/`.
+## Principle 1 — Zero runtime classes
+Production TypeScript uses pure functions and module-scoped state.
+Test fixtures may contain class syntax only when class behavior is under test.
 
 ## Principle 2 — ESM .js suffix
 Every internal import uses the `.js` suffix: `'./foo.js'` not `'./foo'`.
@@ -1425,20 +1438,20 @@ node --import ./otel-bootstrap.mjs ./node_modules/.bin/diptych start "..."
 **You'll see (in your OTLP backend):**
 
 ```
-workflow.run            6m12s   service.name=diptych  workflow.mode=standard
-├─ phase.researching    0m38s
-├─ phase.specifying     1m02s
-├─ phase.planning       0m51s
-├─ phase.implementing   3m14s
-│  ├─ task.T001         0m58s   task.method=local
-│  ├─ task.T002         1m21s   task.method=escalation
-│  └─ task.T003         0m55s   task.method=local
-└─ phase.final-review   0m27s
+diptych.workflow                6m12s   diptych.mode=standard
+├─ diptych.phase.researching    0m38s
+├─ diptych.phase.specifying     1m02s
+├─ diptych.phase.planning       0m51s
+├─ diptych.phase.implementing   3m14s
+│  ├─ diptych.task              0m58s   diptych.task.id=T001  diptych.task.method=local
+│  ├─ diptych.task              1m21s   diptych.task.id=T002  diptych.task.method=escalation
+│  └─ diptych.task              0m55s   diptych.task.id=T003  diptych.task.method=local
+└─ diptych.phase.final-review   0m27s
 ```
 
-Engine code never imports `@opentelemetry/*` directly — the sink (`src/engine/events/sinks/otel.ts`) is the only OTel-aware file and is dynamically imported only when `otel.enabled: true`.
+The sink (`src/engine/events/sinks/otel.ts`) maps engine events to spans; registration is gated by `otel.enabled: true`.
 
-**Variations:** `--otel-exporter console` is the easiest way to confirm the sink is wired before configuring OTLP. `serviceName` overrides the `service.name` resource attribute.
+**Variations:** `--otel-exporter console` is the easiest way to confirm the sink is wired before configuring OTLP. `serviceName` sets the tracer/instrumentation scope name.
 
 **See also:** [docs/OTEL.md](./OTEL.md), [docs/DEBUGGING.md](./DEBUGGING.md) §OpenTelemetry.
 
@@ -1459,9 +1472,9 @@ Press `Ctrl+K` from any screen.
 ```
 ┌─ Commands ──────────────────────────────────────────────┐
 │ > _                                                      │
-│   /approve              Approve current gate             │
-│   /clarify              Force a clarification pass       │
 │   /mode                 Change workflow mode             │
+│   /effort               Change planner effort            │
+│   /planner              Choose planner                   │
 │   /revise-spec          Rewind to spec with comment      │
 │   …                                                      │
 └──────────────────────────────────────────────────────────┘

@@ -3,11 +3,10 @@ import { feedbackStore } from '../ui/feedback.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
-import { ALL_SCREENS } from '../../core/navigation/types.js';
-import type { OverlayType, Screen } from '../../core/navigation/types.js';
+import type { Screen } from '../../core/navigation/types.js';
 
-export { ALL_SCREENS };
-export type { OverlayType, Screen };
+export { ALL_SCREENS } from '../../core/navigation/types.js';
+export type { OverlayType, Screen } from '../../core/navigation/types.js';
 
 export type InputMode = 'normal' | 'review' | 'question';
 

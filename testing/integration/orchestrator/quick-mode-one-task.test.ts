@@ -14,9 +14,9 @@ import { makeCallbacks, makeImplementer, makePlanner, makeBusRecorder } from '#t
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { makeWorkflowMetadata, TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 
-const SINKS = { setAbortHandler: () => {}, setQueueHandler: () => {} };
-const META = { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'quick' as const };
+const META = makeWorkflowMetadata('quick');
 const dirs: string[] = [];
 
 beforeEach(() => resetAllStores());
@@ -43,7 +43,7 @@ describe('quick-mode one-task workflow', () => {
     });
 
     const { state: finalState, taskBreakdowns } = await runTaskLoop({
-      wctx: { projectDir, sessionId, config, callbacks, planner: makePlanner(), implementer, context: defaultContext, metadata: META, sinks: SINKS, validator: createValidator(), bus },
+      wctx: { projectDir, sessionId, config, callbacks, planner: makePlanner(), implementer, context: defaultContext, metadata: META, sinks: TEST_WORKFLOW_SINKS, validator: createValidator(), bus },
       initialState: state, setTrackedState: vi.fn(), setCurrentTask: vi.fn(),
     });
 

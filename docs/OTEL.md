@@ -9,7 +9,7 @@ otel:
   serviceName: diptych     # default 'diptych'
 ```
 
-Schema lives in `src/core/schemas/otel.ts` (zod, `.strict()`). Validation runs at config load. The sink lives in `src/engine/events/sinks/otel.ts` and is the only OTel-aware file in the engine — it subscribes to the `EventBus` and maps `EngineEvent` values to spans using `@opentelemetry/api`. Engine code itself never imports `@opentelemetry/*`. Disabling `otel.enabled` leaves the bus intact and all other sinks (JSONL, TUI, hooks, stdout-JSON) working; the `@opentelemetry/api` import is dynamic, gated behind the `config.otel?.enabled` check in `src/engine/orchestrator/run/init.ts`.
+Schema lives in `src/core/schemas/otel.ts` (zod, `.strict()`). Validation runs at config load. The sink lives in `src/engine/events/sinks/otel.ts`; it subscribes to the `EventBus` and maps `EngineEvent` values to spans using `@opentelemetry/api`. Disabling `otel.enabled` leaves the bus intact and all other sinks (JSONL, session tree, TUI, hooks, stdout-JSON) working; sink registration is gated by `config.otel?.enabled` in `src/engine/orchestrator/run/init.ts`.
 
 ## Quick-start: console exporter
 
@@ -26,15 +26,15 @@ DIPTYCH_OTEL_EXPORTER=console node dist/cli.js start --json --mode quick "otel s
 node dist/cli.js start --otel-exporter=console --json --mode quick "otel smoke"
 ```
 
-You still need `otel.enabled: true` in `.diptych/config.yaml` — the env var / flag only bootstraps the provider; the sink is only installed when the config says so. Spans print to stderr on workflow end.
+You still need `otel.enabled: true` in `.diptych/config.yaml` — the env var / flag only bootstraps the provider; the sink is only installed when the config says so. The console exporter writes spans with `console.dir`, so it uses stdout and can interleave with `--json` output.
 
-The argv / env path exists because pre-registering a `TracerProvider` from an external wrapper script is defeated by ESM's dual-resolution of `@opentelemetry/api` (absolute path vs bare specifier → distinct module cache entries). The bootstrap (`src/cli/otel-bootstrap.ts`) registers the provider in the same resolution context that the sink imports from, sidestepping the dual cache.
+The argv / env path exists because pre-registering a `TracerProvider` from an external wrapper script can miss diptych's `@opentelemetry/api` instance when ESM resolves duplicate module paths. The bootstrap (`src/cli/otel-bootstrap.ts`) registers the provider in the same resolution context that the sink imports from, sidestepping the dual cache.
 
-For OTLP HTTP/gRPC or other exporters, register your own `TracerProvider` globally before invoking diptych. The sink uses `trace.getTracerProvider()`.
+diptych only bootstraps the console exporter. For OTLP HTTP/gRPC or other exporters, register a provider in the same `@opentelemetry/api` resolution context as diptych or extend `src/cli/otel-bootstrap.ts`; standard `OTEL_*` vars alone do not install a provider.
 
-## Provider setup (required)
+## Provider Setup For Non-Console Exporters
 
-diptych uses the **global OTel TracerProvider**. You must register a provider with your chosen exporter before invoking diptych. Example using the Node.js SDK:
+diptych uses the **global OTel TracerProvider**. For non-console exporters, install a provider in-process before the sink runs. Example using the Node.js SDK:
 
 ```ts
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
@@ -57,7 +57,7 @@ diptych ships **no** exporter by default (only the `ConsoleSpanExporter` shortcu
 
 - **No sensible default endpoint.** There is no universal OTLP URL or credential set that works out of the box. Picking one (Honeycomb? Tempo? localhost:4318?) would be wrong for most users.
 - **Users already have collector infrastructure.** Teams adopting OTel have a `TracerProvider` and exporter configured for their other services. Bundling another one means two parallel pipelines and duplicate configuration.
-- **Avoid silent data loss.** A bundled OTLP exporter pointed at an unreachable default would swallow spans without any obvious failure. Requiring explicit provider registration makes "no backend configured" loud and deliberate.
+- **Avoid silent data loss.** A bundled OTLP exporter pointed at an unreachable default would swallow spans without any obvious failure. Non-console exporters require explicit provider registration so "no backend configured" stays loud and deliberate.
 - **Avoid vendor lock-in.** The OTel ecosystem already ships exporters for every backend worth supporting. diptych's job is to emit spans correctly, not to adapt to each vendor.
 
 ## Span hierarchy
@@ -78,23 +78,22 @@ Phase spans are opened on the first `planner_status { status: 'running' }` for a
 
 ## Event → span mapping
 
-The sink maps every `EngineEvent` type to exactly one span effect. Any event before `workflow_started` is a no-op.
+The sink handles the event types below. Other `EngineEvent` variants are no-ops for tracing. Any event before `workflow_started` is also a no-op.
 
 | EngineEvent | Span effect |
 |---|---|
-| `workflow_started` | Open root `diptych.workflow`; set `diptych.feature`. Attributes: `session_id`, `feature`, `mode` |
+| `workflow_started` | Open root `diptych.workflow`; set `diptych.feature` |
 | `workflow_config` | Set `diptych.mode`, `diptych.planner.{tool,model}`, `diptych.implementer.{tool,model}` on workflow span |
-| `workflow_complete` | Close workflow (status OK) and any open children; flush cost accumulator |
+| `workflow_complete` | Close workflow (status OK) and any open children |
 | `workflow_cancelled` | Close workflow and children with status ERROR (`cancelled`) |
-| `phase_started` (planning / implementation / validation / review) | Close previous phase span if any; open `diptych.phase.<name>` as child of workflow |
 | `planner_status { status: 'running' }` | If `phase` changed: close previous phase span, open `diptych.phase.<name>` |
 | `planner_status { status: 'done' }` | Set `diptych.phase.duration_ms` on the active phase span |
-| `task_started` | Open `diptych.task` grandchild under active phase (or workflow if no phase open); attributes: `task_id`, `plan_step`, `diptych.task.{id,title,file,action,index,total}` |
-| `task_completed` | End task span with status OK; attributes: `tokens`, `cost`, `duration`, `diptych.task.{method,retries,duration_ms}` |
-| `task_failed` / `task_full_fail` | End task span with `SpanStatusCode.ERROR`; record exception |
+| `task_started` | Open `diptych.task` grandchild under active phase (or workflow if no phase open); attributes: `diptych.task.{id,title,file,action,index,total}` |
+| `task_completed` | End task span with status OK; attributes: `diptych.task.{method,retries,duration_ms}` |
+| `task_failed` / `task_full_fail` | End task span with `SpanStatusCode.ERROR` |
 | `task_skipped` | Set `diptych.task.skip_reason`; close |
 | `cost_update` | Accumulate `diptych.cost.input_tokens` / `diptych.cost.output_tokens` on workflow span |
-| `validate` | Span event `diptych.validate` on active phase (status: `done` / `running`) |
+| `validate { status: 'done' }` | Span event `diptych.validate` on active phase |
 | `error` | `span.recordException` on workflow span |
 | `warning` | Span event `diptych.warning` on workflow span |
 | (any other event before `workflow_started`) | No-op |
@@ -122,7 +121,7 @@ One span per implementation task. Attributes: `diptych.task.id`, `diptych.task.t
 
 ## Span events
 
-- `diptych.validate` — added to the active phase span when a validate cycle completes. Attrs: `diptych.validate.passed`, `diptych.validate.tsc`, `diptych.validate.lint`, `diptych.validate.test`, `diptych.validate.error` (if failed).
+- `diptych.validate` — added to the active phase span when a validate cycle completes. Attrs: `diptych.validate.passed`, `diptych.validate.typecheck`, `diptych.validate.lint`, `diptych.validate.test`, `diptych.validate.error` (if failed).
 - `diptych.warning` — added to the workflow span for each `warning` event. Attr: `diptych.warning.message`.
 - `exception` — recorded on the workflow span via `recordException` for each `error` event.
 
@@ -132,8 +131,8 @@ The sink carries its own `Context` chain (workflow → phase → task) via `trac
 
 ### Limitations (v1)
 
-- **No subprocess propagation.** Planner and implementer subprocess spawns (`cli`, `api`, `shell`, `agent`, `agent-sdk` runners) do **not** receive `traceparent` headers or environment variables in v1. Neither the `cli` nor the `api` runner currently exposes a headers / env hook for propagation.
-- **Subprocess spans are not children of the workflow span.** Calls into Claude Code / Ollama / etc. appear as opaque windows inside the phase span. If the subprocess emits its own spans, they land in a separate trace with no parent link.
+- **No runner propagation.** Subprocess runners (`cli`, `shell`, `agent`) do not receive `traceparent` environment variables in v1. In-process/network runners (`api`, `agent-sdk`) also do not receive propagated OTel context from the sink.
+- **Runner spans are not children of the workflow span.** Calls into Claude Code, local CLIs, provider HTTP APIs, or the Agent SDK appear as opaque windows inside the phase span. If a runner emits its own spans, they land in a separate trace with no parent link.
 - **Workaround.** Users who want end-to-end traces can configure their own tracer inside the subprocess (e.g. wrap a planner CLI in a script that registers a provider and honors `TRACEPARENT` manually). The `diptych.task.duration_ms` attribute remains accurate regardless.
 - **Planned for v2.** Threading a `TraceContextPropagator` through the runner adapters — env var for `cli` / `shell` / `agent` kinds, request headers for `api` kinds, SDK context for `agent-sdk` — is on the roadmap.
 

@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import { IPC_SOCK_FILE } from '../../core/paths.js';
 import type { EngineEvent, EventBus } from '../events/types.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
-import type { ServerMessage, IpcPromptRequest, IpcPromptResponse, IpcPromptRequestInput } from './protocol.js';
-import { parseClientMessage } from './protocol.js';
+import { parseClientMessage, type IpcPromptRequest, type IpcPromptRequestInput, type IpcPromptResponse, type ServerMessage } from './protocol.js';
 import { readReplayEvents } from './replay.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { error, type AppError } from '../../utils/error.js';
 
 export type IpcServerOptions = {
   sessionId: string;
@@ -27,7 +27,9 @@ export type IpcServer = {
   close(): Promise<void>;
 };
 
-export type IpcPromptUnavailableError = Error & {
+export type IpcPromptUnavailableError = AppError<'ipc-prompt-no-client-headless', {
+  promptKind: IpcPromptRequest['kind'];
+}> & {
   code: 'ipc_prompt_no_client_headless';
   promptKind: IpcPromptRequest['kind'];
 };
@@ -92,7 +94,11 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
 
   function createNoClientPromptError(request: IpcPromptRequest): IpcPromptUnavailableError {
     return Object.assign(
-      new Error(`IPC prompt cannot be answered in explicit headless mode without an attached client: ${request.kind}`),
+      error(
+        'ipc-prompt-no-client-headless',
+        `IPC prompt cannot be answered in explicit headless mode without an attached client: ${request.kind}`,
+        { promptKind: request.kind },
+      ),
       {
         code: 'ipc_prompt_no_client_headless' as const,
         promptKind: request.kind,

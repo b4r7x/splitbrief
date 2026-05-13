@@ -2,8 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { psCommand } from './ps.js';
-import type { PsDeps } from './ps.js';
+import { psCommand, type PsDeps } from './ps.js';
 import type { LockfileData, ServerStatus } from '../../engine/ipc/lockfile.js';
 
 let testDir: string;
@@ -134,6 +133,26 @@ describe('psCommand', () => {
     expect(body).toHaveLength(2);
     expect(body[0]).toContain('b-newer-session');
     expect(body[1]).toContain('a-older-session');
+  });
+
+  it('only displays numeric aliases for sessions the alias resolver can resolve', async () => {
+    const nowMs = Date.now();
+    const data: LockfileData = {
+      version: 1,
+      pid: 100,
+      startTimeMs: nowMs,
+      lastAliveMs: nowMs,
+      sessionId: 'aliased-session',
+      mode: 'standard',
+      feature: 'aliased feature',
+    };
+    putSession('aliased-session', data, { alive: true, data });
+    putSession('unknown-session', null);
+
+    const lines = await collectPsOutput();
+
+    expect(lines.find(line => line.includes('aliased-session'))?.trimStart()).toMatch(/^1\s/);
+    expect(lines.find(line => line.includes('unknown-session'))?.trimStart()).toMatch(/^-\s/);
   });
 
   it('ELAPSED column shows correct duration string for exited session', async () => {

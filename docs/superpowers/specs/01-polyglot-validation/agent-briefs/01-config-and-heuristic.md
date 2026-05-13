@@ -42,7 +42,7 @@ validation: z.object({
   typecheck: z.boolean(),
   lint: z.boolean(),
   test: z.boolean(),
-  testCommand: z.string().min(1),
+  testCommand: z.string().min(1).optional(),
   typecheckCommand: z.string().min(1).optional(),
   lintCommand: z.string().min(1).optional(),
   testPattern: z.string().min(1).optional(),
@@ -56,18 +56,11 @@ Do NOT add defaults for the new fields in `createDefaultConfig()`. They are opti
 Create `src/engine/orchestrator/validation-heuristic.ts`:
 
 ```typescript
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { DiscoveredValidation } from '../../core/schemas/workflow.js';
 
-export interface DetectedValidation {
-  typecheckCommand?: string;
-  lintCommand?: string;
-  testCommand?: string;
-  testPattern?: string;
-  language?: string;
-}
-
-export function detectValidationHeuristic(projectDir: string): DetectedValidation | null {
+export function detectValidationHeuristic(projectDir: string): DiscoveredValidation | null {
   if (existsSync(join(projectDir, 'Cargo.toml'))) {
     return {
       typecheckCommand: 'cargo check',
@@ -98,7 +91,6 @@ export function detectValidationHeuristic(projectDir: string): DetectedValidatio
   const pkgPath = join(projectDir, 'package.json');
   if (existsSync(pkgPath)) {
     try {
-      const { readFileSync } = await import('node:fs');
       const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
       const deps = { ...pkg.dependencies, ...pkg.devDependencies };
       if (deps.typescript) return null; // null = use existing TS defaults
@@ -119,31 +111,18 @@ export function detectValidationHeuristic(projectDir: string): DetectedValidatio
 Modify `src/core/validation/test-discovery.ts` to accept an optional `testPattern`:
 
 ```typescript
-export function createTestFileFinder(testPattern?: string) {
-  const cache = new Map<string, string | null>();
+export function findAffectedTestFile(
+  taskFile: string,
+  projectDir: string,
+  testPattern?: string,
+): string | null {
+  const dir = dirname(taskFile);
+  const name = basename(taskFile).replace(/\.\w+$/, '');
+  const candidates = testPattern
+    ? buildCandidatesFromPattern(name, dir, projectDir, testPattern)
+    : buildDefaultTsCandidates(name, dir, projectDir);
 
-  return function findAffectedTestFile(taskFile: string, projectDir: string): string | null {
-    const cacheKey = `${projectDir}::${taskFile}::${testPattern ?? 'default'}`;
-    const cached = cache.get(cacheKey);
-    if (cached !== undefined) return cached;
-
-    const dir = dirname(taskFile);
-    const name = basename(taskFile).replace(/\.\w+$/, '');
-
-    const candidates = testPattern
-      ? buildCandidatesFromPattern(name, dir, projectDir, testPattern)
-      : buildDefaultTsCandidates(name, dir, projectDir);
-
-    for (const candidate of candidates) {
-      if (existsSync(candidate)) {
-        cache.set(cacheKey, candidate);
-        return candidate;
-      }
-    }
-
-    cache.set(cacheKey, null);
-    return null;
-  };
+  return candidates.find(existsSync) ?? null;
 }
 ```
 
@@ -220,9 +199,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createTestFileFinder } from './test-discovery.js';
+import { findAffectedTestFile } from './test-discovery.js';
 
-describe('createTestFileFinder', () => {
+describe('findAffectedTestFile', () => {
   let tmpDir: string;
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'test-disc-'));
@@ -232,21 +211,18 @@ describe('createTestFileFinder', () => {
 
   it('finds Go test file with custom pattern', () => {
     writeFileSync(join(tmpDir, 'src', 'handler_test.go'), '');
-    const finder = createTestFileFinder('*_test.go');
-    const result = finder('src/handler.go', tmpDir);
+    const result = findAffectedTestFile('src/handler.go', tmpDir, '*_test.go');
     expect(result).toContain('handler_test.go');
   });
 
   it('finds TS test file with default pattern', () => {
     writeFileSync(join(tmpDir, 'src', 'handler.test.ts'), '');
-    const finder = createTestFileFinder();
-    const result = finder('src/handler.ts', tmpDir);
+    const result = findAffectedTestFile('src/handler.ts', tmpDir);
     expect(result).toContain('handler.test.ts');
   });
 
   it('returns null when no test file exists', () => {
-    const finder = createTestFileFinder('*_test.go');
-    const result = finder('src/handler.go', tmpDir);
+    const result = findAffectedTestFile('src/handler.go', tmpDir, '*_test.go');
     expect(result).toBeNull();
   });
 });

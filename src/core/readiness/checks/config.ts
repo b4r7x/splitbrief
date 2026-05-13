@@ -48,7 +48,7 @@ export function buildConfigChecks(configLoad: ConfigReadinessInput): ReadinessCh
       id: 'config.warning',
       severity: 'warning',
       summary: warning,
-      fix: warning.includes('version 2') ? 'Run `diptych migrate` or rerun `diptych init`.' : undefined,
+      fix: warning.includes('version 2') ? 'Run `diptych init --reconfigure` to write a current config.' : undefined,
       nextAction: warning.includes('version 2') ? 'fix-config' : undefined,
     });
   }

@@ -14,7 +14,8 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { configStore } from '../../stores/project/config.js';
 import { listProjectFiles } from '../../lib/file-listing.js';
 import { useStores } from '../../stores/use-stores.js';
-import type { InputMode, Screen } from '../../stores/navigation/router.js';
+import type { Screen } from '../../core/navigation/types.js';
+import type { InputMode } from '../../stores/navigation/router.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { useHistory } from './use-history.js';
 import { attachImage } from '../../stores/ui/attachments.js';
@@ -42,10 +43,6 @@ function readProjectFiles(projectDir: string): string[] {
   } catch {
     return [];
   }
-}
-
-function isRefreshCommand(command: string): boolean {
-  return command.trim() === '/refresh';
 }
 
 interface ComposerProps {
@@ -90,7 +87,7 @@ export function Composer({
 
   const handleRuntimeCommand = (command: string) => {
     onRuntimeCommand(command);
-    if (isRefreshCommand(command)) {
+    if (command.trim() === '/refresh') {
       refreshProjectFiles();
     }
   };
