@@ -1,6 +1,6 @@
 import { loadDetectionCache, saveDetectionCache, invalidateCache } from './cache.js';
 import type { DetectAllResult } from './detect.js';
-import type { ModelsDevCatalog } from '../providers/models-dev.js';
+import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 import type { CliToolId } from '../../core/schemas/enums.js';
 import type { DetectedModel } from '../../core/types/config-options.js';
 

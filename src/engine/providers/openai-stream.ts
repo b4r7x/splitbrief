@@ -6,7 +6,8 @@ import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { timeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
 import { toTokenDelta } from '../streaming/token-utils.js';
-import { STREAM_IDLE_TIMEOUT_MS, throwMappedError } from '../streaming/stream-errors.js';
+import { throwMappedError } from '../streaming/stream-errors.js';
+import { STREAM_IDLE_TIMEOUT_MS } from '../constants.js';
 import { readImagesAsBase64 } from '../streaming/attachments.js';
 
 interface StreamCompletionOptions {

@@ -1,4 +1,4 @@
-import type { TaskReviewRequest, TaskReviewResponse } from '../../engine/orchestrator/task/review.js';
+import type { TaskReviewRequest, TaskReviewResponse } from '../../engine/events/workflow-events.js';
 
 const COMMAND_ALIASES: Record<string, TaskReviewResponse['action']> = {
   c: 'continue',

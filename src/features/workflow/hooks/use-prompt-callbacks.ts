@@ -1,4 +1,3 @@
-import { useEffectEvent } from 'react';
 import type { RecoveryIssue } from '../../../core/schemas/recovery.js';
 import { openApprovalPrompt } from '../../../stores/approval-prompt/actions.js';
 import { openCostApprovalPrompt } from '../../../stores/cost-approval/actions.js';
@@ -54,7 +53,7 @@ interface BuildCallbacksOptions {
 }
 
 export function usePromptCallbacks(): (opts: BuildCallbacksOptions) => OrchestratorCallbacks {
-  return useEffectEvent((opts: BuildCallbacksOptions): OrchestratorCallbacks => {
+  return (opts: BuildCallbacksOptions): OrchestratorCallbacks => {
     const { inputMode, abortedRef, controller, onComplete } = opts;
     return {
       onApprovalNeeded: async (_type, filePath) => {
@@ -107,5 +106,5 @@ export function usePromptCallbacks(): (opts: BuildCallbacksOptions) => Orchestra
         if (!controller.signal.aborted && !abortedRef.current) onComplete(summary);
       },
     };
-  });
+  };
 }

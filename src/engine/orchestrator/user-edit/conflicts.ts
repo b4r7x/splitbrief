@@ -3,10 +3,6 @@ import { uniqueIds, uniqueSorted } from '../../../utils/collections.js';
 import { matchesActionPattern } from '../approval/action-classifier.js';
 
 import type { UserEditConflictKind, UserEditConflictAction, UserEditConflictFile, UserEditConflict } from '../../events/workflow-events.js';
-import { isUserEditConflictAction } from '../../events/workflow-events.js';
-
-export type { UserEditConflictKind, UserEditConflictAction, UserEditConflictFile, UserEditConflict };
-export { isUserEditConflictAction };
 
 function taskPatterns(task: Task): string[] {
   return [

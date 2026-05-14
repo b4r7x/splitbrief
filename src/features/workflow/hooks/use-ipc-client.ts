@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useEffectEvent, useRef } from 'react';
 import { createConnection, type Socket } from 'node:net';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { IpcPromptRequest, IpcPromptResponse, ServerMessage } from '../../../engine/ipc/protocol.js';
@@ -51,12 +51,19 @@ export function useIpcClient(opts: {
   // Use refs for flags that are checked in async callbacks to avoid stale closures
   const isDetachedRef = useRef(false);
   const generationRef = useRef(0);
-  const onEventRef = useRef(opts.onEvent);
-  onEventRef.current = opts.onEvent;
-  const onPromptRequestRef = useRef(opts.onPromptRequest);
-  onPromptRequestRef.current = opts.onPromptRequest;
-  const backoffMsRef = useRef(opts.backoffMs);
-  backoffMsRef.current = opts.backoffMs;
+
+  const onEvent = useEffectEvent(opts.onEvent);
+  const hasPromptHandler = useEffectEvent(() => opts.onPromptRequest !== undefined);
+  const handlePromptRequest = useEffectEvent(
+    (request: IpcPromptRequest): Promise<IpcPromptResponse> => {
+      const handler = opts.onPromptRequest;
+      if (!handler) {
+        return Promise.reject(new Error('IPC: no prompt handler registered'));
+      }
+      return handler(request);
+    },
+  );
+  const backoff = useEffectEvent((attempt: number) => (opts.backoffMs ?? backoffDelay)(attempt));
 
   useEffect(() => {
     const generation = generationRef.current + 1;
@@ -112,7 +119,7 @@ export function useIpcClient(opts: {
           try {
             msg = JSON.parse(trimmed) as ServerMessage;
           } catch {
-            onEventRef.current({
+            onEvent({
               type: 'warning',
               ts: Date.now(),
               phase: 'idle',
@@ -129,11 +136,10 @@ export function useIpcClient(opts: {
             });
             attemptRef.current = 0;
           } else if (msg.kind === 'event') {
-            onEventRef.current(msg.payload);
+            onEvent(msg.payload);
           } else if (msg.kind === 'prompt_request') {
-            const handler = onPromptRequestRef.current;
-            if (!handler) {
-              onEventRef.current({
+            if (!hasPromptHandler()) {
+              onEvent({
                 type: 'warning',
                 ts: Date.now(),
                 phase: 'idle',
@@ -141,8 +147,8 @@ export function useIpcClient(opts: {
               });
               continue;
             }
-            void handler(msg.request)
-              .then((response) => {
+            void handlePromptRequest(msg.request)
+              .then((response: IpcPromptResponse) => {
                 if (!ownsSocket(socket) || socket.destroyed) return;
                 socket.write(JSON.stringify({
                   kind: 'prompt_response',
@@ -150,9 +156,9 @@ export function useIpcClient(opts: {
                   response,
                 }) + '\n');
               })
-              .catch((err) => {
+              .catch((err: unknown) => {
                 if (!canMutate(socket)) return;
-                onEventRef.current({
+                onEvent({
                   type: 'warning',
                   ts: Date.now(),
                   phase: 'idle',
@@ -162,7 +168,7 @@ export function useIpcClient(opts: {
           } else if (msg.kind === 'error') {
             isDetachedRef.current = true;
             setState(prev => ({ ...prev, status: 'failed' }));
-            onEventRef.current({
+            onEvent({
               type: 'warning',
               ts: Date.now(),
               phase: 'idle',
@@ -194,7 +200,7 @@ export function useIpcClient(opts: {
         const attempt = attemptRef.current;
         if (attempt >= MAX_ATTEMPTS) {
           setState(prev => ({ ...prev, status: 'failed' }));
-          onEventRef.current({
+          onEvent({
             type: 'ipc_reconnect_failed',
             ts: Date.now(),
             phase: 'idle',
@@ -203,7 +209,7 @@ export function useIpcClient(opts: {
         }
 
         setState(prev => ({ ...prev, status: 'reconnecting' }));
-        onEventRef.current({
+        onEvent({
           type: 'ipc_reconnect_attempt',
           ts: Date.now(),
           phase: 'idle',
@@ -212,7 +218,7 @@ export function useIpcClient(opts: {
         });
 
         attemptRef.current = attempt + 1;
-        const delay = (backoffMsRef.current ?? backoffDelay)(attempt);
+        const delay = backoff(attempt);
         const timer = setTimeout(() => {
           reconnectTimers.delete(timer);
           if (!canMutate()) return;

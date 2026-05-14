@@ -1,4 +1,4 @@
-import type { TieredApprovalRequest, TieredApprovalResponse } from './store.js';
+import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
 import { _approvalPromptInternal } from './store.js';
 
 export function openApprovalPrompt(request: TieredApprovalRequest): Promise<TieredApprovalResponse> {

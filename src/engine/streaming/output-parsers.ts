@@ -6,8 +6,6 @@ import { toTokenDelta } from './token-utils.js';
 import { assertNever, narrowRecord } from '../../utils/type-guards.js';
 import { warnError } from '../../lib/warn.js';
 
-export type { ToolUseInfo };
-
 interface StreamParseResult {
   text?: string | undefined;
   sessionId?: string | undefined;

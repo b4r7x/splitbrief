@@ -6,7 +6,8 @@ import { effortToAnthropicBudget } from '../../../core/schemas/enums.js';
 import { timeoutError, withIdleTimeout } from '../../../utils/with-timeout.js';
 import { stripV1Suffix, ANTHROPIC_API_VERSION } from '../constants.js';
 import { narrowRecord, assertNever } from '../../../utils/type-guards.js';
-import { STREAM_IDLE_TIMEOUT_MS, streamError, throwMappedError } from '../../streaming/stream-errors.js';
+import { streamError, throwMappedError } from '../../streaming/stream-errors.js';
+import { STREAM_IDLE_TIMEOUT_MS } from '../../constants.js';
 import { readImagesAsBase64 } from '../../streaming/attachments.js';
 
 type AnthropicEventType =

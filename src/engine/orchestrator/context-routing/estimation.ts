@@ -2,7 +2,7 @@ import { estimateTokens } from '../../../core/tokens/estimate.js';
 import { formatTaskPrompt } from '../../spec/prompt-formatter.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import { buildSystemPreamble } from '../../spec/prompts/system.js';
-import type { TaskContextFit } from './types.js';
+import type { TaskContextFit } from '../../events/workflow-events.js';
 import type { TaskPromptEstimateOptions, ContextFitOptions } from './types.js';
 
 const DEFAULT_SAFETY_MARGIN = 0.15;

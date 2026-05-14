@@ -5,9 +5,6 @@ import type { Summary } from '../../core/schemas/summary.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { Screen } from '../../core/navigation/types.js';
 
-export { ALL_SCREENS } from '../../core/navigation/types.js';
-export type { OverlayType, Screen } from '../../core/navigation/types.js';
-
 export type InputMode = 'normal' | 'review' | 'question';
 
 export type WorkflowAttach = {

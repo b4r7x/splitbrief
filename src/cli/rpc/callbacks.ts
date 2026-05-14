@@ -1,7 +1,8 @@
 import type { TieredApprovalResponse } from '../../core/approval/types.js';
-import type { TaskReviewRequest, TaskReviewResponse } from '../../engine/orchestrator/task/review.js';
-import type { RunWorkflowOptions } from '../../engine/orchestrator/run/run.js';
-import { isUserEditConflictAction, normalizeUserEditConflictAction } from '../../engine/orchestrator/user-edit/conflicts.js';
+import type { TaskReviewRequest, TaskReviewResponse } from '../../engine/events/workflow-events.js';
+import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
+import { isUserEditConflictAction } from '../../engine/events/workflow-events.js';
+import { normalizeUserEditConflictAction } from '../../engine/orchestrator/user-edit/conflicts.js';
 import type { ApprovalGateResult } from './gates.js';
 
 export function parseTaskReviewResponse(text: string): TaskReviewResponse | null {

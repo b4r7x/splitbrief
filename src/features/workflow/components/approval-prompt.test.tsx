@@ -3,7 +3,8 @@ import { render } from 'ink-testing-library';
 import { tick } from '#testing/helpers/ink.js';
 import { ApprovalPrompt } from './approval-prompt.js';
 import { openApprovalPrompt } from '../../../stores/approval-prompt/actions.js';
-import { approvalPromptStore, type TieredApprovalRequest } from '../../../stores/approval-prompt/store.js';
+import { approvalPromptStore } from '../../../stores/approval-prompt/store.js';
+import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 
 const ENTER = '\r';
 const ESC = '\u001b';

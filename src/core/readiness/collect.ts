@@ -9,12 +9,10 @@ import { isRecord } from '../../utils/type-guards.js';
 import { buildReadinessReport } from './checks/build.js';
 import type { Config } from '../schemas/config.js';
 import type { WorkflowOpts } from '../types/config-options.js';
-import type {
-  BuildReadinessReportInput,
-  ConfigReadinessInput,
-  PackageScriptsReadinessInput,
-  RepoReadinessInput,
-} from './checks/build.js';
+import type { BuildReadinessReportInput } from './checks/build.js';
+import type { ConfigReadinessInput } from './checks/config.js';
+import type { PackageScriptsReadinessInput } from './checks/validation.js';
+import type { RepoReadinessInput } from './checks/repo.js';
 import type { ReadinessReport } from './types.js';
 
 export interface CollectedReadiness {

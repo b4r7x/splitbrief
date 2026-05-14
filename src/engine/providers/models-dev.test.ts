@@ -2,8 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   fetchModelsDevCatalog,
   getModelsForProvider,
-  type ModelsDevCatalog,
 } from './models-dev.js';
+import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 
 const FIXTURE: ModelsDevCatalog = {

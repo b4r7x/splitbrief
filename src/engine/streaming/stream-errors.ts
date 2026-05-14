@@ -4,8 +4,6 @@ import { formatErrorWithHint } from '../error-hints.js';
 import { redactSecrets } from '../../utils/redact.js';
 import { isRecord } from '../../utils/type-guards.js';
 
-export { STREAM_IDLE_TIMEOUT_MS } from '../constants.js';
-
 export const streamError = {
   connectionRefused: (provider: string, apiBase: string | undefined, cause?: unknown) => {
     const baseURL = apiBase ?? 'unknown endpoint';

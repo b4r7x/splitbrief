@@ -6,8 +6,6 @@ import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type { LanguageContext } from '../../spec/prompts/language-context.js';
 import type { TaskContextFit, CurrentCodeContextMode } from '../../events/workflow-events.js';
 
-export type { TaskContextFit, CurrentCodeContextMode } from '../../events/workflow-events.js';
-
 export interface TaskPromptEstimateOptions {
   task: Task;
   context: ProjectContext;

@@ -4,7 +4,8 @@ import type { ClarificationQuestion } from '../core/schemas/question.js';
 import type { EffortLevel } from '../core/schemas/enums.js';
 import type { Attachment } from '../core/schemas/attachment.js';
 import { spawnWithStdin } from '../lib/process/spawn.js';
-import { parseStreamLine, type ToolUseInfo } from './streaming/output-parsers.js';
+import { parseStreamLine } from './streaming/output-parsers.js';
+import type { ToolUseInfo } from './runners/types.js';
 import { createQuestionAccumulator } from './parsers/question-parser.js';
 
 const CLAUDE_NOT_FOUND = 'Claude Code CLI not found. Install it from https://claude.ai/code';

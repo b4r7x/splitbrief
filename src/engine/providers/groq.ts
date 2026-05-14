@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { DetectedModel, ProviderDefWithMetadata, ProviderOverrides } from './types.js';
+import type { ProviderDefWithMetadata, ProviderOverrides } from './types.js';
+import type { DetectedModel } from '../../core/types/config-options.js';
 import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers/catalog.js';
 import { createMetadataProvider } from './client.js';
 

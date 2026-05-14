@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { approvalPromptStore } from './store.js';
 import { openApprovalPrompt, closeApprovalPrompt } from './actions.js';
-import type { TieredApprovalRequest } from './store.js';
+import type { TieredApprovalRequest } from '../../core/approval/types.js';
 
 const makeRequest = (desc = 'test action'): TieredApprovalRequest => ({
   tier: 'sticky',

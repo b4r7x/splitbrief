@@ -8,7 +8,6 @@ import type { RoutingDecision } from '../context-routing/types.js';
 import { EVIDENCE_FILE, sessionDir } from '../../../core/paths.js';
 import { readEvidenceLedger } from '../evidence/persistence.js';
 
-export type { TaskReviewStatus, TaskReviewCommand, TaskReviewAction, TaskReviewValidation, TaskReviewRequest, TaskReviewResponse } from '../../events/workflow-events.js';
 import type { TaskReviewRequest, TaskReviewValidation } from '../../events/workflow-events.js';
 
 interface BuildTaskReviewRequestOptions {

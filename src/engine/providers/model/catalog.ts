@@ -14,8 +14,6 @@ import {
 import { isApiPricedProvider, getPricingMode, type PricingMode } from '../pricing-resolver.js';
 import { buildComparableKeys } from './parsing.js';
 
-export type { ModelCacheAccessor } from './resolution.js';
-
 export interface ResolvedModelCatalogEntry extends DetectedModel {
   id: string;
   isDefault?: boolean;

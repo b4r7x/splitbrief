@@ -21,8 +21,6 @@ import { saveFinalSession, withShutdownHandlers, installQueueHandler } from '../
 import { initializeWorkflow, type RunWorkflowOptions } from './init.js';
 import { runPlanningPhases, runTasksAndReview, applyPostPlanDrain } from './phases.js';
 
-export type { RunWorkflowOptions } from './init.js';
-
 export const WORKFLOW_REWIND_ABORT_REASON = 'workflow-rewind';
 
 function shouldPreserveActiveSession(state: WorkflowState | undefined, signal: AbortSignal | undefined): boolean {

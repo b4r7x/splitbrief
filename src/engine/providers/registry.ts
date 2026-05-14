@@ -1,5 +1,6 @@
 import type OpenAI from 'openai';
-import type { DetectedModel, ProviderDef, ProviderOverrides } from './types.js';
+import type { ProviderDef, ProviderOverrides } from './types.js';
+import type { DetectedModel } from '../../core/types/config-options.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { ProviderDetection } from '../../core/types/config-options.js';
 import { createClientFromProvider } from './client.js';

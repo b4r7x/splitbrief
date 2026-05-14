@@ -91,7 +91,10 @@ export function ControlledMultilineInput({
     visibleRows: effectiveVisibleRows,
     contentHeight,
   });
-  scrollOffsetRef.current = scrollOffset;
+
+  useEffect(() => {
+    scrollOffsetRef.current = scrollOffset;
+  }, [scrollOffset]);
 
   const resolvedHighlightStyle: TextStyle = highlightStyle ?? { backgroundColor: t.highlight.bg, color: t.highlight.fg };
 

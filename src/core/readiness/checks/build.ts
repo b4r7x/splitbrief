@@ -18,8 +18,6 @@ import type { ConfigReadinessInput } from './config.js';
 import type { PackageScriptsReadinessInput } from './validation.js';
 import type { RepoReadinessInput } from './repo.js';
 
-export type { ConfigReadinessInput, PackageScriptsReadinessInput, RepoReadinessInput };
-
 export interface BuildReadinessReportInput {
   projectDir: string;
   config?: Config | undefined;

@@ -15,6 +15,9 @@ export interface UseInputModeResult {
 
 export function useInputMode(): UseInputModeResult {
   const [modeState, setModeState] = useState<{ mode: InputMode; hint: string }>({ mode: 'normal', hint: '' });
+  // Mirror committed mode into a ref: resolve() can be invoked after `await` boundaries
+  // (e.g. review-parser.ts awaits openInEditor before calling resolve), where a captured
+  // closure value would go stale across intervening renders/mode changes.
   const modeRef = useRef(modeState.mode);
   modeRef.current = modeState.mode;
   const reviewResolverRef = useRef<((value: ReviewResult) => void) | null>(null);
