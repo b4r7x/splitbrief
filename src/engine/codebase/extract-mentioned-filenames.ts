@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
-import { basename, isAbsolute, resolve } from 'node:path';
+import { basename } from 'node:path';
+import { resolveFromProject } from '../../utils/path-patterns.js';
 
 const PATH_PATTERN = /(?:\.{1,2}\/)?(?:[\w./-]+\/)?[\w-]+\.(tsx|ts|jsx|js|py|go|rs)\b/g;
 
@@ -11,7 +12,7 @@ export function extractMentionedFilenames(
   const matches = text.match(PATH_PATTERN) ?? [];
   const results: string[] = [];
   for (const m of matches) {
-    const abs = isAbsolute(m) ? m : resolve(projectDir, m);
+    const abs = resolveFromProject(projectDir, m);
     if (existsSync(abs)) {
       results.push(m);
       continue;

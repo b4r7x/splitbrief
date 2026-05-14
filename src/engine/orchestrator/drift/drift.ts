@@ -5,34 +5,8 @@ import type { EngineEvent, EventBus } from '../../events/types.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import { DRIFT_REPORT_FILE, sessionDir } from '../../../core/paths.js';
 import { readJsonSafe, writeSecureFile } from '../../../lib/fs.js';
-import { isRecord } from '../../../utils/type-guards.js';
-
-export type DriftSeverity = 'info' | 'warning' | 'error';
-export type DriftCode =
-  | 'out_of_scope_file'
-  | 'missing_expected_file'
-  | 'orphan_diff'
-  | 'out_of_bounds_text_match'
-  | 'missing_evidence'
-  | 'failed_task_with_diff';
-
-export type DriftFinding = {
-  severity: DriftSeverity;
-  code: DriftCode;
-  taskId?: string;
-  file?: string;
-  message: string;
-};
-
-export type DriftReport = {
-  version: 1;
-  passed: boolean;
-  score: number;
-  changedFiles: string[];
-  expectedFiles: string[];
-  findings: DriftFinding[];
-  briefHash: string | null;
-};
+import { countBySeverity } from '../../../utils/collections.js';
+import { isDriftReport, type DriftFinding, type DriftReport } from '../../../core/schemas/drift.js';
 
 export type AnalyzeBriefDriftInput = {
   tasks: Task[];
@@ -41,17 +15,6 @@ export type AnalyzeBriefDriftInput = {
   ledger?: EvidenceLedger | null | undefined;
   briefHash?: string | null;
 };
-
-export function isDriftReport(value: unknown): value is DriftReport {
-  if (!isRecord(value)) return false;
-  return value.version === 1
-    && typeof value.passed === 'boolean'
-    && typeof value.score === 'number'
-    && Number.isFinite(value.score)
-    && Array.isArray(value.changedFiles)
-    && Array.isArray(value.expectedFiles)
-    && Array.isArray(value.findings);
-}
 
 function isFailedOrSkipped(status: Task['status']): boolean {
   return status === 'failed' || status === 'skipped';
@@ -218,8 +181,7 @@ export function formatDriftReportForPrompt(report: DriftReport): string {
 }
 
 export function publishDriftReport(bus: EventBus, phase: Phase, report: DriftReport): void {
-  const errorCount = report.findings.filter(f => f.severity === 'error').length;
-  const warningCount = report.findings.filter(f => f.severity === 'warning').length;
+  const { error: errorCount, warning: warningCount } = countBySeverity(report.findings);
   const event: EngineEvent = {
     type: 'drift_report',
     ts: Date.now(),

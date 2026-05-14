@@ -6,7 +6,7 @@ import type { ResolvedCompactionFormat, StructuredSummary } from '../schemas/com
 import type { SessionLogEntry, SessionLogMessageEntry, SessionLogSummaryEntry } from '../schemas/session-log.js';
 import { findLatestSummary, isAfterTimestamp, readSessionLogFromDir } from './log-reader.js';
 
-const DEFAULT_KEEP_RECENT_COUNT = 10;
+export const DEFAULT_KEEP_RECENT_COUNT = 10;
 
 export type TranscriptCompactionPlanner = {
   summarize: (msgs: Array<{ role: string; text: string }>) => Promise<string>;

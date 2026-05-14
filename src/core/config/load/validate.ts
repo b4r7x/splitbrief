@@ -6,6 +6,7 @@ import type { PlannerConfig } from '../../schemas/planner-config.js';
 import type { ImplementerConfig } from '../../schemas/implementer-config.js';
 import { missingRunnerCredential } from '../accessors/runner-credentials.js';
 import { getRunnerDisplayName, getRunnerApiKey } from '../accessors/runner-config.js';
+import { pickDefaultProfileName } from '../accessors/implementer-profiles.js';
 
 export interface ConfigError {
   path: string;
@@ -76,9 +77,8 @@ function apiKeyErrors(config: Config): ConfigError[] {
 }
 
 function selectedImplementerProfileName(config: Config): string | undefined {
-  const profiles = config.implementerProfiles?.profiles;
-  if (!profiles) return undefined;
-  return config.implementerProfiles?.default ?? Object.keys(profiles).sort()[0];
+  if (!config.implementerProfiles) return undefined;
+  return pickDefaultProfileName(config.implementerProfiles);
 }
 
 function keyFormatWarnings(provider: string, key: string): string[] {

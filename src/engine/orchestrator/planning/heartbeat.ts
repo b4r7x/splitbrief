@@ -1,8 +1,9 @@
 import type { EventBus } from '../../events/types.js';
 import type { Phase } from '../../../core/schemas/enums.js';
+import { HEARTBEAT_INTERVAL_MS } from '../../ipc/constants.js';
 
+export { HEARTBEAT_INTERVAL_MS };
 export const HEARTBEAT_THRESHOLD_MS = 5000;
-export const HEARTBEAT_INTERVAL_MS = 2000;
 
 interface HeartbeatState {
   accumulatedTokens: number;

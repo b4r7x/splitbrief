@@ -1,4 +1,3 @@
-import { loadDetection, refreshDetection } from '../../engine/detection/service.js';
 import { detectionStore } from '../project/detection.js';
 import { modelCacheStore } from './model-cache.js';
 import { isProviderId } from '../../core/schemas/enums.js';
@@ -14,14 +13,13 @@ function applyToStores(result: DetectionServiceResult): void {
   }
 }
 
-export async function loadDetectionIntoStores(deps: DetectionDeps, projectDir?: string, service?: DetectionService): Promise<void> {
-  const fn = service?.loadDetection ?? loadDetection;
-  const result = await fn(deps, projectDir);
+export async function loadDetectionIntoStores(service: DetectionService, deps: DetectionDeps, projectDir?: string): Promise<void> {
+  const result = await service.loadDetection(deps, projectDir);
   applyToStores(result);
 }
 
-export async function refreshDetectionStores(projectDir: string | undefined): Promise<void> {
+export async function refreshDetectionStores(service: DetectionService, projectDir: string | undefined): Promise<void> {
   modelCacheStore.invalidateAll();
-  const result = await refreshDetection(projectDir);
+  const result = await service.refreshDetection(projectDir);
   if (result) applyToStores(result);
 }

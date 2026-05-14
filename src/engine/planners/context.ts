@@ -2,6 +2,7 @@ import type { Dirent } from 'node:fs';
 import { readFile, readdir, access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { readPackageJson } from '../../core/project-meta.js';
+import { isRecord } from '../../utils/type-guards.js';
 
 const MAX_LISTED_ENTRIES = 500;
 
@@ -12,9 +13,7 @@ export async function buildProjectContextMarkdown(projectDir: string): Promise<s
   if (pkg) {
     const name = typeof pkg.name === 'string' ? pkg.name : 'unknown';
     const description = typeof pkg.description === 'string' ? pkg.description : '';
-    const rawScripts = (typeof pkg.scripts === 'object' && pkg.scripts !== null && !Array.isArray(pkg.scripts))
-      ? pkg.scripts
-      : {};
+    const rawScripts = isRecord(pkg.scripts) ? pkg.scripts : {};
 
     parts.push(`## Package: ${name}`);
     if (description) parts.push(description);

@@ -3,10 +3,10 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { EventBus } from '../../events/types.js';
-import { labelError } from '../../../utils/format-errors.js';
 import { getFailedTaskIds, getSkippedTaskIds } from '../../../core/state/selectors.js';
+import { nowIso } from '../../../utils/format-time.js';
 import type { WorkflowContext } from '../types.js';
-import { publishError, publishRecoveryPrompted, publishWarning } from '../events.js';
+import { publishError, publishRecoveryPrompted, publishWarningFromError } from '../events.js';
 import { runSingleTask } from './step.js';
 import { refreshAndPersistCode, transitionAndSave } from '../state-ops.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../../../core/config/accessors/runner-config.js';
@@ -48,7 +48,7 @@ async function maybeAutoSnapshot(opts: {
       await recordRunSnapshot(opts.projectDir, opts.sessionId, result.manifest, 'post-task');
     }
   } catch (err) {
-    publishWarning(opts.bus, opts.phase, labelError(`auto-snapshot (${opts.label}) failed`, err));
+    publishWarningFromError(opts.bus, opts.phase, `auto-snapshot (${opts.label}) failed`, err);
   }
 }
 
@@ -94,7 +94,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     if (hasDependencyFailed(task, failedTaskIds, skippedTaskIds)) {
       const blockedByTaskIds = task.dependsOn.filter((id) => failedTaskIds.includes(id) || skippedTaskIds.includes(id));
       const blockedByTasks = state.tasks.filter((candidate) => blockedByTaskIds.includes(candidate.id));
-      const issue = buildDependencyBlockedRecoveryIssue({ task, blockedByTaskIds, blockedByTasks, phase: state.phase, createdAt: new Date().toISOString() });
+      const issue = buildDependencyBlockedRecoveryIssue({ task, blockedByTaskIds, blockedByTasks, phase: state.phase, createdAt: nowIso() });
       state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });
       publishRecoveryPrompted(wctx.bus, issue);
       setTrackedState(state);
@@ -117,7 +117,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     if (routingProfiles.length === 0) {
       const message = `Recovery selected implementer profile "${retryProfileOverride}" is not configured.`;
       publishError(wctx.bus, state.phase, message);
-      const issue = buildContextOverflowRecoveryIssue({ task: refreshedTask, phase: state.phase, selectedImplementerProfile: retryProfileOverride, canRouteBigger: false, routingReason: message, createdAt: new Date().toISOString() });
+      const issue = buildContextOverflowRecoveryIssue({ task: refreshedTask, phase: state.phase, selectedImplementerProfile: retryProfileOverride, canRouteBigger: false, routingReason: message, createdAt: nowIso() });
       state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });
       publishRecoveryPrompted(wctx.bus, issue);
       setTrackedState(state);
@@ -130,7 +130,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     if (!selectedProfile) {
       const message = routingBlockMessage(routingDecision);
       publishError(wctx.bus, state.phase, message);
-      const issue = buildContextOverflowRecoveryIssue({ task: refreshedTask, phase: state.phase, routingDecision, createdAt: new Date().toISOString() });
+      const issue = buildContextOverflowRecoveryIssue({ task: refreshedTask, phase: state.phase, routingDecision, createdAt: nowIso() });
       state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });
       publishRecoveryPrompted(wctx.bus, issue);
       setTrackedState(state);

@@ -1,7 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { resolvePricing, isApiPricedProvider, getPricingMode, LOCAL_PRICING } from './pricing-resolver.js';
 import { NULL_CACHE } from './model/resolution.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 
 describe('pricing-resolver', () => {
@@ -96,11 +95,6 @@ describe('pricing-resolver', () => {
   });
 
   describe('resolvePricing with model cache', () => {
-    beforeEach(() => {
-      vi.restoreAllMocks();
-      modelCacheStore.reset();
-    });
-
     it('returns LOCAL_PRICING for local providers', () => {
       expect(resolvePricing('ollama')).toEqual(LOCAL_PRICING);
       expect(resolvePricing('lm-studio')).toEqual(LOCAL_PRICING);
@@ -131,20 +125,22 @@ describe('pricing-resolver', () => {
     });
 
     it('prefers models.dev pricing over bundled fallback', () => {
-      modelCacheStore.setModelsDevCatalog({
-        anthropic: {
-          id: 'anthropic',
-          models: {
-            'claude-opus-4-6': {
-              id: 'claude-opus-4-6',
-              cost: { input: 99, output: 199 },
-              limit: { context: 1_000_000 },
+      const cache = makeModelCacheAccessor({
+        catalog: {
+          anthropic: {
+            id: 'anthropic',
+            models: {
+              'claude-opus-4-6': {
+                id: 'claude-opus-4-6',
+                cost: { input: 99, output: 199 },
+                limit: { context: 1_000_000 },
+              },
             },
           },
         },
       });
 
-      const pricing = resolvePricing('anthropic', modelCacheStore, 'claude-opus-4-6');
+      const pricing = resolvePricing('anthropic', cache, 'claude-opus-4-6');
       expect(pricing.isPriced).toBe(true);
       expect(pricing.inputPer1M).toBe(99);
       expect(pricing.outputPer1M).toBe(199);
@@ -152,11 +148,15 @@ describe('pricing-resolver', () => {
     });
 
     it('uses runtime provider metadata when models.dev is unavailable', () => {
-      modelCacheStore.setProviderModels('anthropic', [
-        { id: 'claude-opus-4-6', pricingInput: 77, pricingOutput: 177, contextLength: 1_000_000 },
-      ]);
+      const cache = makeModelCacheAccessor({
+        providerModels: {
+          anthropic: [
+            { id: 'claude-opus-4-6', pricingInput: 77, pricingOutput: 177, contextLength: 1_000_000 },
+          ],
+        },
+      });
 
-      const pricing = resolvePricing('anthropic', modelCacheStore, 'claude-opus-4-6');
+      const pricing = resolvePricing('anthropic', cache, 'claude-opus-4-6');
       expect(pricing.isPriced).toBe(true);
       expect(pricing.inputPer1M).toBe(77);
       expect(pricing.outputPer1M).toBe(177);

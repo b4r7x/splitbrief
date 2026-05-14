@@ -26,11 +26,9 @@ import { runPreHooks } from '../../hooks/run-pre-hook.js';
 import { resolveHooksConfig } from '../../hooks/discover.js';
 import { createBranch } from '../../../lib/git.js';
 import { slugify } from '../../../utils/slugify.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
-
 import type { OrchestratorCallbacks, ResumeContextHolder, WorkflowContext, WorkflowSinks } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary.js';
-import { createImplementerPublisher, publishError, publishPlannerStatus, publishWorkflowConfig, publishUserMessage, publishWarning, publishGitBranchCreated } from '../events.js';
+import { createImplementerPublisher, publishError, publishPlannerStatus, publishWorkflowConfig, publishUserMessage, publishWarningFromError, publishGitBranchCreated } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { applyRebuiltContext, autoCompactResumeContext } from '../resume-context.js';
 import { createValidator } from '../validation.js';
@@ -153,7 +151,7 @@ export async function initializeWorkflow(
         const actual = await createBranch(projectDir, desired);
         publishGitBranchCreated(bus, state.phase, actual);
       } catch (err) {
-        publishWarning(bus, state.phase, `failed to create branch: ${toErrorMessage(err)}`);
+        publishWarningFromError(bus, state.phase, 'failed to create branch', err);
       }
     }
   }

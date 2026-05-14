@@ -29,5 +29,3 @@ export function createRingBuffer(capacity: number = DEFAULT_CAPACITY): RingBuffe
     },
   };
 }
-
-export { DEFAULT_CAPACITY };

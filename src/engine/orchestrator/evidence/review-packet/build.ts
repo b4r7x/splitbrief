@@ -18,7 +18,8 @@ import {
 } from '../../../../core/paths.js';
 import { readEvents } from '../../../../core/sessions/log-reader.js';
 import { readJsonSafe } from '../../../../lib/fs.js';
-import { includes, narrowRecord } from '../../../../utils/type-guards.js';
+import { includes, narrowRecord, optionalString } from '../../../../utils/type-guards.js';
+import { nowIso } from '../../../../utils/format-time.js';
 import { readEvidenceLedger } from '../persistence.js';
 import { readDriftReport } from '../../drift/drift.js';
 import { listCheckpointSummaries, type CheckpointSummary } from '../../../snapshots/checkpoint-summary.js';
@@ -67,23 +68,8 @@ export type BriefQualityArtifact = {
 
 export type PacketEvent = ReviewPacket['recoveryDecisions']['events'][number];
 
-export type MissingCollector = {
-  missingArtifacts: string[];
-  addMissing: (artifact: string) => void;
-};
-
-function createMissingCollector(): MissingCollector {
-  const missingArtifacts: string[] = [];
-  return {
-    missingArtifacts,
-    addMissing: (artifact) => {
-      if (!missingArtifacts.includes(artifact)) missingArtifacts.push(artifact);
-    },
-  };
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined;
+export function addMissing(missing: string[], artifact: string): void {
+  if (!missing.includes(artifact)) missing.push(artifact);
 }
 
 function recoveryReason(value: unknown): RecoveryReason | undefined {
@@ -116,17 +102,17 @@ function strings(value: unknown): string[] | undefined {
   return values.length > 0 ? values : undefined;
 }
 
-function readBriefQuality(projectDir: string, sessionId: string, missing: MissingCollector): BriefQualityArtifact | null {
+function readBriefQuality(projectDir: string, sessionId: string, missing: string[]): BriefQualityArtifact | null {
   const target = join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE);
   const raw = readJsonSafe(target);
   if (raw === null) {
-    missing.addMissing(BRIEF_QUALITY_FILE);
+    addMissing(missing, BRIEF_QUALITY_FILE);
     return null;
   }
 
   const record = narrowRecord(raw);
   if (!record || record.version !== 1 || typeof record.passed !== 'boolean' || typeof record.score !== 'number') {
-    missing.addMissing(BRIEF_QUALITY_FILE);
+    addMissing(missing, BRIEF_QUALITY_FILE);
     return null;
   }
 
@@ -148,11 +134,11 @@ function readBriefQuality(projectDir: string, sessionId: string, missing: Missin
   };
 }
 
-function readReadiness(projectDir: string, sessionId: string, missing: MissingCollector): ReviewPacket['readiness'] {
+function readReadiness(projectDir: string, sessionId: string, missing: string[]): ReviewPacket['readiness'] {
   const target = join(sessionDir(projectDir, sessionId), READINESS_FILE);
   const raw = readJsonSafe(target);
   if (raw === null) {
-    missing.addMissing(READINESS_FILE);
+    addMissing(missing, READINESS_FILE);
     return {
       path: READINESS_FILE,
       present: false,
@@ -166,7 +152,7 @@ function readReadiness(projectDir: string, sessionId: string, missing: MissingCo
 
   const record = narrowRecord(raw);
   if (!record || record.type !== 'start-readiness') {
-    missing.addMissing(READINESS_FILE);
+    addMissing(missing, READINESS_FILE);
     return {
       path: READINESS_FILE,
       present: false,
@@ -195,19 +181,18 @@ function nonnegativeIntegerOrNull(value: unknown): number | null {
   return Number.isInteger(value) && typeof value === 'number' && value >= 0 ? value : null;
 }
 
+const READINESS_NEXT_ACTIONS = [
+  'continue',
+  'run-init',
+  'fix-config',
+  'clean-or-isolate-repo',
+  'raise-context',
+  'set-budget',
+  'exit',
+] as const;
+
 function recoveryReadinessAction(value: unknown): ReviewPacket['readiness']['nextAction'] {
-  if (
-    value === 'continue' ||
-    value === 'run-init' ||
-    value === 'fix-config' ||
-    value === 'clean-or-isolate-repo' ||
-    value === 'raise-context' ||
-    value === 'set-budget' ||
-    value === 'exit'
-  ) {
-    return value;
-  }
-  return null;
+  return includes(READINESS_NEXT_ACTIONS, value) ? value : null;
 }
 
 function readinessChecks(value: unknown): ReviewPacket['readiness']['checks'] {
@@ -226,10 +211,10 @@ function readinessChecks(value: unknown): ReviewPacket['readiness']['checks'] {
   return checks;
 }
 
-async function readPacketEvents(projectDir: string, sessionId: string, missing: MissingCollector): Promise<PacketEvent[]> {
+async function readPacketEvents(projectDir: string, sessionId: string, missing: string[]): Promise<PacketEvent[]> {
   const target = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);
   if (!existsSync(target)) {
-    missing.addMissing(SESSION_LOG_FILE);
+    addMissing(missing, SESSION_LOG_FILE);
     return [];
   }
 
@@ -270,17 +255,17 @@ async function readPacketEvents(projectDir: string, sessionId: string, missing: 
 async function readCheckpoints(
   projectDir: string,
   sessionId: string,
-  missing: MissingCollector,
+  missing: string[],
 ): Promise<ReviewPacket['checkpoints']> {
   let items: ReviewPacketCheckpoint[] = [];
   try {
     items = (await listCheckpointSummaries(projectDir, sessionId)).map(toReviewPacketCheckpoint);
   } catch {
-    missing.addMissing(SNAPSHOTS_DIR);
+    addMissing(missing, SNAPSHOTS_DIR);
   }
 
   const ledger = await readRunSnapshotLedger(projectDir, sessionId);
-  if (!ledger) missing.addMissing(RUN_LEDGER_PATH);
+  if (!ledger) addMissing(missing, RUN_LEDGER_PATH);
 
   const latestRunCheckpointId = ledger?.runSnapshotIds.at(-1) ?? null;
   const latestRunCheckpoint = latestRunCheckpointId
@@ -318,16 +303,16 @@ function toReviewPacketCheckpoint(checkpoint: CheckpointSummary): ReviewPacketCh
 }
 
 export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise<ReviewPacket> {
-  const missing = createMissingCollector();
+  const missing: string[] = [];
   sourceArtifactMissing(opts.projectDir, opts.sessionId, missing);
 
   const ledger = readEvidenceLedger(opts.projectDir, opts.sessionId);
-  if (!ledger) missing.addMissing(EVIDENCE_FILE);
+  if (!ledger) addMissing(missing, EVIDENCE_FILE);
 
   const drift = readDriftReport(opts.projectDir, opts.sessionId);
-  if (!drift) missing.addMissing(DRIFT_REPORT_FILE);
+  if (!drift) addMissing(missing, DRIFT_REPORT_FILE);
 
-  if (!existsSync(join(sessionDir(opts.projectDir, opts.sessionId), DRIFT_CHAINS_FILE))) missing.addMissing(DRIFT_CHAINS_FILE);
+  if (!existsSync(join(sessionDir(opts.projectDir, opts.sessionId), DRIFT_CHAINS_FILE))) addMissing(missing, DRIFT_CHAINS_FILE);
   const briefQuality = readBriefQuality(opts.projectDir, opts.sessionId, missing);
   const readiness = readReadiness(opts.projectDir, opts.sessionId, missing);
   const events = await readPacketEvents(opts.projectDir, opts.sessionId, missing);
@@ -338,7 +323,7 @@ export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise
   const packet: ReviewPacket = {
     version: REVIEW_PACKET_VERSION,
     sessionId: opts.sessionId,
-    generatedAt: new Date().toISOString(),
+    generatedAt: nowIso(),
     run: buildRun(opts, events),
     readiness,
     changes: buildChanges(opts.state, ledger, drift, changedFiles),
@@ -351,7 +336,7 @@ export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise
     cost: buildCost(opts.summary, events),
     finalReview,
     reviewerChecklist: [...REVIEWER_CHECKLIST],
-    missingArtifacts: [...missing.missingArtifacts].sort((a, b) => a.localeCompare(b)),
+    missingArtifacts: [...missing].sort((a, b) => a.localeCompare(b)),
   };
 
   return ReviewPacketSchema.parse(packet);

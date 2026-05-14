@@ -106,8 +106,9 @@ export function reconstructTree(sessionDir: string): SessionTree | null {
   }
 
   const maxCount = maxEntryCount(entries);
+  const [firstEntry] = entries;
   const lastEntry = entries.at(-1);
-  if (!lastEntry) return null;
+  if (!firstEntry || !lastEntry) return null;
 
   const resolvedLeafId = meta && entryMap.has(meta.leafId) ? meta.leafId : lastEntry.id;
 
@@ -117,7 +118,7 @@ export function reconstructTree(sessionDir: string): SessionTree | null {
         leafId: resolvedLeafId,
         entryCount: maxCount,
         branchCount: countBranches(childMap),
-        createdAt: entries[0]!.timestamp,
+        createdAt: firstEntry.timestamp,
         updatedAt: lastEntry.timestamp,
       };
 

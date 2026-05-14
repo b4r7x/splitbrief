@@ -7,6 +7,7 @@ import {
   readEvidenceLedger,
   writeEvidenceLedger,
 } from '../../orchestrator/evidence/persistence.js';
+import { uniquePush } from '../../orchestrator/evidence/task-evidence.js';
 import {
   MarkTaskDoneInputSchema,
   ReportErrorInputSchema,
@@ -54,11 +55,7 @@ function assertTaskExists(ledger: EvidenceLedger | null, taskId: TaskId): string
   return null;
 }
 
-function uniquePush(arr: string[], value: string): void {
-  if (!arr.includes(value)) arr.push(value);
-}
-
-function findOrCreateTask(
+function findTask(
   ledger: EvidenceLedger,
   taskId: TaskId,
 ): EvidenceTask | null {
@@ -93,7 +90,7 @@ export function readCheckedLedger(
   if (taskError !== null) return { ok: false, error: taskError };
   if (ledger === null) return { ok: false, error: 'Evidence ledger not found for this session' };
 
-  const task = findOrCreateTask(ledger, taskId);
+  const task = findTask(ledger, taskId);
   if (task === null) return { ok: false, error: `Task not found in evidence ledger: ${taskId}` };
 
   return { ok: true, ledger, task };

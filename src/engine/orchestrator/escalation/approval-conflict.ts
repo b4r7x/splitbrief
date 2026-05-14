@@ -5,6 +5,7 @@ import { transitionAndSave } from '../state-ops.js';
 import { publishRecoveryPrompted, publishUserEditConflict } from '../events.js';
 import { createApprovalPromotionConflict } from '../user-edit/conflicts.js';
 import { buildApprovalPromotionConflictRecoveryIssue } from '../recovery/builders/workflow.js';
+import { nowIso } from '../../../utils/format-time.js';
 
 export async function handleApprovalTimeUserEditConflict(opts: {
   ctx: WorkflowContext;
@@ -22,7 +23,7 @@ export async function handleApprovalTimeUserEditConflict(opts: {
     conflict,
     currentTask: opts.task,
     phase: opts.state.phase,
-    createdAt: new Date().toISOString(),
+    createdAt: nowIso(),
   });
   const next = transitionAndSave(opts.ctx.projectDir, opts.ctx.sessionId, opts.state, { type: 'SET_PENDING_RECOVERY', issue });
   publishRecoveryPrompted(opts.ctx.bus, issue);

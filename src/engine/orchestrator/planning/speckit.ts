@@ -18,6 +18,7 @@ import { runBriefQualityGate, runBriefsApprovalLoop } from './shared.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 import type { ConstitutionCheckResult, ConstitutionViolation } from '../../../core/schemas/constitution.js';
 import type { AnalyzeResult } from '../../../core/schemas/analyze.js';
+import { narrowRecord } from '../../../utils/type-guards.js';
 
 const DEFAULT_MIN_COVERAGE = 0.9;
 
@@ -54,17 +55,16 @@ function findFirstBalancedObject(text: string): string | null {
 }
 
 function parseConstitutionCheck(text: string): ConstitutionCheckResult {
-  const json = extractJsonBlock(text);
-  if (!json || typeof json !== 'object') {
+  const obj = narrowRecord(extractJsonBlock(text));
+  if (!obj) {
     return { passed: true, violations: [{ principle: 'meta', reason: 'constitution check output malformed', severity: 'soft' }] };
   }
-  const obj = json as Record<string, unknown>;
   const passed = typeof obj.passed === 'boolean' ? obj.passed : true;
   const rawViolations = Array.isArray(obj.violations) ? obj.violations : [];
   const violations: ConstitutionViolation[] = [];
   for (const v of rawViolations) {
-    if (!v || typeof v !== 'object') continue;
-    const rec = v as Record<string, unknown>;
+    const rec = narrowRecord(v);
+    if (!rec) continue;
     const principle = typeof rec.principle === 'string' ? rec.principle : 'unknown';
     const reason = typeof rec.reason === 'string' ? rec.reason : '';
     const severity: 'hard' | 'soft' = rec.severity === 'hard' ? 'hard' : 'soft';
@@ -74,7 +74,6 @@ function parseConstitutionCheck(text: string): ConstitutionCheckResult {
 }
 
 function parseAnalyze(text: string): AnalyzeResult {
-  const json = extractJsonBlock(text);
   const fallback: AnalyzeResult = {
     specTaskCoverage: 0,
     planTaskCoverage: 0,
@@ -82,8 +81,8 @@ function parseAnalyze(text: string): AnalyzeResult {
     unaddressedSpecSections: [],
     warnings: ['analyze output malformed'],
   };
-  if (!json || typeof json !== 'object') return fallback;
-  const obj = json as Record<string, unknown>;
+  const obj = narrowRecord(extractJsonBlock(text));
+  if (!obj) return fallback;
   const num = (v: unknown, def: number): number => {
     if (typeof v !== 'number' || Number.isNaN(v)) return def;
     return Math.max(0, Math.min(1, v));

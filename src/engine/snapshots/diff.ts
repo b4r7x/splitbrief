@@ -34,6 +34,15 @@ export type DiffOptions = {
 
 const execFileAsync = promisify(execFile);
 
+function execFileFailure(err: unknown): { code: number | null; stdout: string | null } | null {
+  if (typeof err !== 'object' || err === null) return null;
+  const { code, stdout } = err as { code?: unknown; stdout?: unknown };
+  return {
+    code: typeof code === 'number' ? code : null,
+    stdout: typeof stdout === 'string' ? stdout : null,
+  };
+}
+
 function manualTwoPassDiff(snapshotContent: string, currentContent: string, path: string): string {
   const snapshotLines = snapshotContent.split('\n');
   const currentLines = currentContent.split('\n');
@@ -77,9 +86,9 @@ async function unifiedDiff(snapshotFile: string, currentFile: string, path: stri
       return fallbackDiff(snapshotFile, currentFile, path);
     }
     // diff exits 1 when files differ (normal), 2+ on error
-    if (err && typeof err === 'object' && 'code' in err && (err as { code: unknown }).code === 1) {
-      const stdout = 'stdout' in err ? (err as { stdout: unknown }).stdout : undefined;
-      return typeof stdout === 'string' ? stdout : '';
+    const failure = execFileFailure(err);
+    if (failure !== null && failure.code === 1) {
+      return failure.stdout ?? '';
     }
     return fallbackDiff(snapshotFile, currentFile, path);
   }

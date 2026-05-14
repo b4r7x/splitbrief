@@ -3,14 +3,6 @@ import type { ReviewPacket } from '../../../core/schemas/review-packet.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SessionLogEventEntry } from '../../../core/schemas/session-log.js';
 
-export function stringValue(value: unknown): string | null {
-  return typeof value === 'string' && value.trim().length > 0 ? value : null;
-}
-
-export function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values.filter((value) => value.trim().length > 0))];
-}
-
 export type DeterministicEstimate = NonNullable<CostPrediction['deterministic']>;
 export type ExplainCostConfidence = 'known' | 'partial' | 'unavailable';
 export type ExplainFinalReviewStatus = ReviewPacket['finalReview']['status'] | 'not-reached' | 'unavailable';

@@ -3,6 +3,8 @@ import { isProviderId } from '../../../core/schemas/enums.js';
 import { findKnownModel, getEffectiveModelId, lookupModelsDevModel, lookupRuntimeModel, type ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type { ResolvedProfileContextLength } from './types.js';
 
+export const DEFAULT_CONSERVATIVE_CONTEXT_LENGTH = 8192;
+
 export function profileProviderId(profile: ResolvedImplementerProfile): string {
   const { config } = profile;
   switch (config.kind) {

@@ -23,7 +23,7 @@ export function transitionAndSave(
   return next;
 }
 
-export async function refreshCurrentCode(task: Task, projectDir: string): Promise<Task> {
+async function refreshCurrentCode(task: Task, projectDir: string): Promise<Task> {
   const filePath = join(projectDir, task.file);
   try {
     const currentCode = await readFile(filePath, 'utf-8');

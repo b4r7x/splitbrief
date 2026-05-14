@@ -2,6 +2,7 @@ import type { CostPrediction, PlannerEstimateReview } from '../../core/schemas/s
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import { TaskIdSchema, taskId } from '../../core/schemas/task.js';
 import { topoSort } from '../../core/state/topo-sort.js';
+import { CONCRETE_FILE_PATH_PATTERN } from '../../utils/path-patterns.js';
 
 type DeterministicEstimate = NonNullable<CostPrediction['deterministic']>;
 type DeterministicTaskEstimate = DeterministicEstimate['tasks'][number];
@@ -52,7 +53,6 @@ interface DraftTask {
 
 const MAX_CHILD_TASKS = 4;
 const MAX_DUPLICATE_FILE_OWNERSHIP = 2;
-const CONCRETE_FILE_PATH_PATTERN = /\b(?:[a-zA-Z][a-zA-Z0-9_-]*\/)+[a-zA-Z][a-zA-Z0-9._-]*\.[a-zA-Z]{1,5}\b/g;
 const TASK_ID_NUMBER_PATTERN = /^T(\d+)$/;
 
 function unique<T>(values: T[]): T[] {

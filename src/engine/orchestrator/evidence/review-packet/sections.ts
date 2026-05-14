@@ -18,15 +18,12 @@ import {
   sessionDir,
 } from '../../../../core/paths.js';
 import { getCurrentChangedFiles } from '../../../../lib/git.js';
+import { countBySeverity, uniqueSorted } from '../../../../utils/collections.js';
 import { readDriftChainState } from '../../drift/chain-state.js';
-import type { DriftFinding, DriftReport } from '../../drift/drift.js';
-import type { BuildReviewPacketOptions, BriefQualityArtifact, MissingCollector, PacketEvent } from './build.js';
+import type { DriftFinding, DriftReport } from '../../../../core/schemas/drift.js';
+import { addMissing, type BuildReviewPacketOptions, type BriefQualityArtifact, type PacketEvent } from './build.js';
 
 const REVIEW_EXCERPT_MAX = 500;
-
-function uniqueSorted(values: Iterable<string>): string[] {
-  return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
-}
 
 function taskEvidence(task: Task, ledger: EvidenceLedger | null): EvidenceTask | undefined {
   return ledger?.tasks.find((entry) => entry.id === task.id);
@@ -48,13 +45,13 @@ function missingExpectedEvidence(expectedEvidence: string[], observedEvidence: s
 export async function resolveChangedFiles(
   projectDir: string,
   drift: DriftReport | null,
-  missing: MissingCollector,
+  missing: string[],
 ): Promise<string[]> {
   if (drift) return uniqueSorted(drift.changedFiles);
   try {
     return uniqueSorted(await getCurrentChangedFiles(projectDir));
   } catch {
-    missing.addMissing('git status');
+    addMissing(missing, 'git status');
     return [];
   }
 }
@@ -159,13 +156,15 @@ export function buildDrift(
     ? chainState.emittedChains.reduce((best, chain) => best.score >= chain.score ? best : chain)
     : undefined;
   const findings = drift?.findings ?? [];
+  const driftCounts = countBySeverity(findings);
+  const briefQualityCounts = countBySeverity(briefQuality?.issues ?? []);
   return {
     path: drift ? DRIFT_REPORT_FILE : null,
     present: drift !== null,
     passed: drift?.passed ?? null,
     score: drift?.score ?? null,
-    errorCount: findings.filter((finding) => finding.severity === 'error').length,
-    warningCount: findings.filter((finding) => finding.severity === 'warning').length,
+    errorCount: driftCounts.error,
+    warningCount: driftCounts.warning,
     changedFiles: drift?.changedFiles ?? [],
     expectedFiles: drift?.expectedFiles ?? [],
     findings,
@@ -190,8 +189,8 @@ export function buildDrift(
       present: briefQuality !== null,
       passed: briefQuality?.passed ?? null,
       score: briefQuality?.score ?? null,
-      errorCount: briefQuality?.issues.filter((issue) => issue.severity === 'error').length ?? 0,
-      warningCount: briefQuality?.issues.filter((issue) => issue.severity === 'warning').length ?? 0,
+      errorCount: briefQualityCounts.error,
+      warningCount: briefQualityCounts.warning,
     },
   };
 }
@@ -216,7 +215,14 @@ function recoveryIssueSummary(state: WorkflowState): ReviewPacket['recoveryDecis
 type RecoveryOutcome = ReviewPacket['recoveryDecisions']['outcomes'][number];
 type RecoverySelectedAction = ReviewPacket['recoveryDecisions']['selectedActions'][number];
 
-function buildRecovery(state: WorkflowState, events: PacketEvent[], missing: MissingCollector): ReviewPacket['recoveryDecisions'] {
+const RECOVERY_RESOLVED_STATUS: Record<string, RecoveryOutcome['status']> = {
+  'skipped-current-task': 'skipped',
+  'aborted': 'aborted',
+  'continued': 'continued',
+  'retry-current-task': 'retry-current-task',
+};
+
+function buildRecovery(state: WorkflowState, events: PacketEvent[], missing: string[]): ReviewPacket['recoveryDecisions'] {
   const recoveryEvents = events.filter((event) => event.type.startsWith('recovery_'));
   const selectedActions: RecoverySelectedAction[] = recoveryEvents
     .filter((event) => event.type === 'recovery_action_selected' && event.issueId && event.reason && event.action)
@@ -230,15 +236,11 @@ function buildRecovery(state: WorkflowState, events: PacketEvent[], missing: Mis
   const resolvedOutcomes: RecoveryOutcome[] = recoveryEvents
     .filter((event) => event.type === 'recovery_resolved')
     .map((event) => {
-      const outcome = event.outcome === 'skipped-current-task' ? 'skipped'
-        : event.outcome === 'aborted' ? 'aborted'
-          : event.outcome === 'continued' ? 'continued'
-            : event.outcome === 'retry-current-task' ? 'retry-current-task'
-              : 'unresolved';
+      const status = RECOVERY_RESOLVED_STATUS[event.outcome ?? ''] ?? 'unresolved';
       return {
         issueId: event.issueId ?? null,
         ...(event.action !== undefined && { action: event.action }),
-        status: outcome,
+        status,
       };
     });
 
@@ -283,7 +285,7 @@ function buildRecovery(state: WorkflowState, events: PacketEvent[], missing: Mis
     ...unresolvedOutcomes.map((outcome) => outcome.message ?? 'Recovery issue remains unresolved.'),
   ];
 
-  if (missing.missingArtifacts.includes(SESSION_LOG_FILE)) {
+  if (missing.includes(SESSION_LOG_FILE)) {
     unresolvedRisks.push('Recovery events are unavailable because session.jsonl is missing.');
   }
 
@@ -303,7 +305,7 @@ export function makeRecoveryWithSources(
   state: WorkflowState,
   events: PacketEvent[],
   ledger: EvidenceLedger | null,
-  missing: MissingCollector,
+  missing: string[],
 ): ReviewPacket['recoveryDecisions'] {
   const recovery = buildRecovery(state, events, missing);
   return {
@@ -436,11 +438,11 @@ export async function buildFinalReview(
   sessionId: string,
   requestedStatus: 'written' | 'failed',
   ledger: EvidenceLedger | null,
-  missing: MissingCollector,
+  missing: string[],
 ): Promise<ReviewPacket['finalReview']> {
   const target = join(sessionDir(projectDir, sessionId), REVIEW_FILE);
   const exists = existsSync(target);
-  if (!exists) missing.addMissing(REVIEW_FILE);
+  if (!exists) addMissing(missing, REVIEW_FILE);
   const status: ReviewPacketFinalReviewStatus = requestedStatus === 'failed'
     ? 'failed'
     : exists
@@ -460,8 +462,8 @@ export async function buildFinalReview(
   };
 }
 
-export function sourceArtifactMissing(projectDir: string, sessionId: string, missing: MissingCollector): void {
-  if (!existsSync(join(sessionDir(projectDir, sessionId), STATE_FILE))) missing.addMissing(STATE_FILE);
+export function sourceArtifactMissing(projectDir: string, sessionId: string, missing: string[]): void {
+  if (!existsSync(join(sessionDir(projectDir, sessionId), STATE_FILE))) addMissing(missing, STATE_FILE);
 }
 
 function latestWorkflowComplete(events: PacketEvent[]): string | null {

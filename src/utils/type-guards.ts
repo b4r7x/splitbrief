@@ -12,6 +12,16 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 
+export function optionalString(
+  value: unknown,
+  options?: { trim?: boolean; nonEmpty?: boolean },
+): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const candidate = options?.trim ? value.trim() : value;
+  if (options?.nonEmpty && candidate.length === 0) return undefined;
+  return candidate;
+}
+
 export function narrowRecord(val: unknown): Record<string, unknown> | null {
   return isRecord(val) ? val : null;
 }

@@ -22,7 +22,7 @@ import { analyzeBriefDrift, formatDriftReportForPrompt, publishDriftReport, writ
 
 import type { Planner } from '../planners/types.js';
 import { buildSummary, type SummaryBase } from './summary.js';
-import { publishError, publishPlannerStatus, publishWarning } from './events.js';
+import { publishError, publishPlannerStatus, publishWarningFromError } from './events.js';
 import { transitionAndSave } from './state-ops.js';
 import { runPlannerReview } from './planner-review.js';
 import { createSnapshot } from '../snapshots/store.js';
@@ -53,7 +53,7 @@ export async function runFinalReviewPhase(
       });
       await recordRunSnapshot(projectDir, sessionId, result.manifest, 'pre-final-review');
     } catch (err) {
-      publishWarning(bus, state.phase, labelError('auto-snapshot (pre-final-review) failed', err));
+      publishWarningFromError(bus, state.phase, 'auto-snapshot (pre-final-review) failed', err);
     }
   }
 
@@ -126,7 +126,7 @@ export async function runFinalReviewPhase(
       finalReviewStatus: reviewStatus,
     });
   } catch (err) {
-    publishWarning(bus, state.phase, labelError('Review packet generation failed', err));
+    publishWarningFromError(bus, state.phase, 'Review packet generation failed', err);
   }
 
   if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;

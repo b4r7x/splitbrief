@@ -8,6 +8,7 @@ import { formatTimeHHMMSS } from '../../../utils/format-time.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { useStores } from '../../../stores/use-stores.js';
+import type { Phase } from '../../../core/schemas/enums.js';
 
 interface HeaderProps {
   startedAt: string;
@@ -17,22 +18,28 @@ function formatElapsed(startedAt: string): string {
   return formatTimeHHMMSS(Date.now() - new Date(startedAt).getTime());
 }
 
-export function Header({ startedAt }: HeaderProps) {
-  const [{ cols, isSmall }, { phase }] = useStores(terminalSizeStore, lifecycleStore);
+function ElapsedClock({ startedAt, phase }: { startedAt: string; phase: Phase }) {
   const t = useTheme();
-  const feature = routerStore.use(s => s.screen === 'workflow' ? s.feature : '');
-  const worktreeName = routerStore.use(s => s.screen === 'workflow' ? s.worktreeName : undefined);
   const [elapsed, setElapsed] = useState(() => formatElapsed(startedAt));
-  const timerWidth = 10;
-  const pipelineWidth = isSmall ? 30 : 35;
-  const featureWidth = Math.max(8, cols - pipelineWidth - timerWidth - 4);
-  const labelWidth = worktreeName ? worktreeName.length + 3 : 0;
 
   useEffect(() => {
     if (phase === 'complete') return;
     const id = setInterval(() => setElapsed(formatElapsed(startedAt)), 1000);
     return () => clearInterval(id);
   }, [startedAt, phase]);
+
+  return <Text color={t.textDim}>{elapsed}</Text>;
+}
+
+export function Header({ startedAt }: HeaderProps) {
+  const [{ cols, isSmall }, { phase }] = useStores(terminalSizeStore, lifecycleStore);
+  const t = useTheme();
+  const feature = routerStore.use(s => s.screen === 'workflow' ? s.feature : '');
+  const worktreeName = routerStore.use(s => s.screen === 'workflow' ? s.worktreeName : undefined);
+  const timerWidth = 10;
+  const pipelineWidth = isSmall ? 30 : 35;
+  const featureWidth = Math.max(8, cols - pipelineWidth - timerWidth - 4);
+  const labelWidth = worktreeName ? worktreeName.length + 3 : 0;
 
   return (
     <Box width="100%" paddingX={1} justifyContent="space-between">
@@ -42,7 +49,7 @@ export function Header({ startedAt }: HeaderProps) {
       </Box>
       <PipelineBar phase={phase} />
       <Box width={timerWidth} justifyContent="flex-end">
-        <Text color={t.textDim}>{elapsed}</Text>
+        <ElapsedClock startedAt={startedAt} phase={phase} />
       </Box>
     </Box>
   );

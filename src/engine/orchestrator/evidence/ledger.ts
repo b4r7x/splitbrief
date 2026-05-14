@@ -6,10 +6,7 @@ import type {
   EvidenceApproval,
   EvidenceRejection,
 } from '../../../core/schemas/evidence.js';
-
-export function nowIso(): string {
-  return new Date().toISOString();
-}
+import { nowIso } from '../../../utils/format-time.js';
 
 function buildExpectedEvidence(task: Task): string[] {
   const out: string[] = [];

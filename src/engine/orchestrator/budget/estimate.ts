@@ -9,7 +9,7 @@ import { calculateCost } from '../../providers/pricing.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { resolvePricing } from '../../providers/pricing-resolver.js';
 import { estimateFormattedTaskPromptTokens } from '../context-routing/estimation.js';
-import { resolveProfileContextLength } from '../context-routing/context-length.js';
+import { DEFAULT_CONSERVATIVE_CONTEXT_LENGTH, resolveProfileContextLength } from '../context-routing/context-length.js';
 import { routeTaskToImplementerProfile } from '../context-routing/route.js';
 import type { ContextLengthSource, TaskContextFit } from '../context-routing/types.js';
 
@@ -59,8 +59,6 @@ interface TaskEstimateInput {
   conservativeContextLength?: number | undefined;
   languageContext?: LanguageContext | undefined;
 }
-
-const DEFAULT_CONSERVATIVE_CONTEXT_LENGTH = 8192;
 
 function contextConfidence(source: ContextLengthSource | null): EstimateContextConfidence {
   if (source === 'explicit') return 'context-explicit';

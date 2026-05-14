@@ -36,6 +36,7 @@ export function useIpcClient(opts: {
   onEvent: (event: EngineEvent) => void;
   onPromptRequest?: ((request: IpcPromptRequest) => Promise<IpcPromptResponse>) | undefined;
   enabled?: boolean | undefined;
+  backoffMs?: ((attempt: number) => number) | undefined;
 }): [IpcClientState, IpcClientActions] {
   const enabled = opts.enabled ?? true;
   const [state, setState] = useState<IpcClientState>({
@@ -54,6 +55,8 @@ export function useIpcClient(opts: {
   onEventRef.current = opts.onEvent;
   const onPromptRequestRef = useRef(opts.onPromptRequest);
   onPromptRequestRef.current = opts.onPromptRequest;
+  const backoffMsRef = useRef(opts.backoffMs);
+  backoffMsRef.current = opts.backoffMs;
 
   useEffect(() => {
     const generation = generationRef.current + 1;
@@ -209,7 +212,7 @@ export function useIpcClient(opts: {
         });
 
         attemptRef.current = attempt + 1;
-        const delay = backoffDelay(attempt);
+        const delay = (backoffMsRef.current ?? backoffDelay)(attempt);
         const timer = setTimeout(() => {
           reconnectTimers.delete(timer);
           if (!canMutate()) return;

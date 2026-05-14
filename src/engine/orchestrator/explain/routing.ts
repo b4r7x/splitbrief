@@ -1,9 +1,8 @@
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { SessionLogEventEntry } from '../../../core/schemas/session-log.js';
-import { narrowRecord } from '../../../utils/type-guards.js';
+import { narrowRecord, optionalString } from '../../../utils/type-guards.js';
+import { uniqueSorted } from '../../../utils/collections.js';
 import {
-  stringValue,
-  uniqueStrings,
   type DeterministicEstimate,
   type ExplainArtifactInputs,
   type RunExplainRoute,
@@ -86,16 +85,16 @@ function mergeActualRoute(route: RunExplainRoute, routing: TaskTokenUsage): void
 
 function mergeEventRoute(route: RunExplainRoute, event: SessionLogEventEntry): void {
   const data = narrowRecord(event.data);
-  route.title = stringValue(data?.title) ?? stringValue(data?.taskTitle) ?? route.title;
-  route.method = stringValue(data?.method) ?? route.method;
-  route.selectedProfile = stringValue(data?.implementerProfile) ?? route.selectedProfile;
-  route.tool = stringValue(data?.tool) ?? route.tool;
-  route.model = stringValue(data?.model) ?? route.model;
-  route.contextFit = stringValue(data?.contextFit) ?? route.contextFit;
+  route.title = optionalString(data?.title, { trim: true, nonEmpty: true }) ?? optionalString(data?.taskTitle, { trim: true, nonEmpty: true }) ?? route.title;
+  route.method = optionalString(data?.method, { trim: true, nonEmpty: true }) ?? route.method;
+  route.selectedProfile = optionalString(data?.implementerProfile, { trim: true, nonEmpty: true }) ?? route.selectedProfile;
+  route.tool = optionalString(data?.tool, { trim: true, nonEmpty: true }) ?? route.tool;
+  route.model = optionalString(data?.model, { trim: true, nonEmpty: true }) ?? route.model;
+  route.contextFit = optionalString(data?.contextFit, { trim: true, nonEmpty: true }) ?? route.contextFit;
   route.estimatedTokens = numberValue(data?.estimatedTokens) ?? route.estimatedTokens;
   route.contextLength = numberValue(data?.contextLength) ?? route.contextLength;
-  route.costPosture = stringValue(data?.costPosture) ?? route.costPosture;
-  route.routingReason = stringValue(data?.routingReason) ?? route.routingReason;
+  route.costPosture = optionalString(data?.costPosture, { trim: true, nonEmpty: true }) ?? route.costPosture;
+  route.routingReason = optionalString(data?.routingReason, { trim: true, nonEmpty: true }) ?? route.routingReason;
   addSource(route, 'session-log');
 }
 
@@ -108,7 +107,7 @@ function routeNotes(route: RunExplainRoute): string[] {
   if (route.priceConfidence && route.priceConfidence !== 'price-known') notes.push('pricing unknown');
   if (route.costPosture?.includes('No capable')) notes.push(route.costPosture);
   if (route.routingReason) notes.push(route.routingReason);
-  return uniqueStrings(notes);
+  return uniqueSorted(notes, { trim: true, nonEmpty: true });
 }
 
 function addSource(route: RunExplainRoute, source: string): void {

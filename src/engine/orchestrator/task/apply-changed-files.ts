@@ -2,7 +2,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
-import { publishError, publishWarning } from '../events.js';
+import { publishError, publishWarning, publishWarningFromError } from '../events.js';
 import { gateChangedFiles, type GateChangedFilesDecision } from '../approval/gate-files.js';
 import {
   captureCurrentFileContents,
@@ -87,7 +87,7 @@ export async function applyChangedFiles(opts: {
         }
       }
     } catch (err) {
-      publishWarning(wctx.bus, state.phase, `failed to discard denied task changes: ${toErrorMessage(err)}`);
+      publishWarningFromError(wctx.bus, state.phase, 'failed to discard denied task changes', err);
     }
     staged?.cleanup();
     opts.recordApprovalDenial(

@@ -5,6 +5,7 @@ import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/a
 import type { UserEditConflict, UserEditConflictAction } from '../orchestrator/user-edit/conflicts.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { isUserEditConflictAction } from '../events/workflow-events.js';
+import { isOptionalString } from './guards.js';
 
 export type IpcPromptRequest =
   | { requestId: string; kind: 'approval_needed'; approvalType: 'spec' | 'plan' | 'briefs'; filePath: string }
@@ -49,10 +50,6 @@ export type ClientMessage =
   | { kind: 'detach' };
 
 export const IPC_PROTOCOL_VERSION = 1;
-
-function isOptionalString(value: unknown): value is string | undefined {
-  return value === undefined || typeof value === 'string';
-}
 
 function isTieredApprovalResponse(value: unknown): value is TieredApprovalResponse {
   if (!isRecord(value) || typeof value.decision !== 'string') return false;

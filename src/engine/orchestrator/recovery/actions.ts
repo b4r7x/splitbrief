@@ -5,6 +5,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
+import { nowIso } from '../../../utils/format-time.js';
 import type { EventBus } from '../../events/types.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -325,7 +326,7 @@ function markRecoveryApplying(opts: ApplyRecoveryActionOptions, issue: RecoveryI
   return transitionAndSave(opts.projectDir, opts.sessionId, opts.state, {
     type: 'MARK_RECOVERY_APPLYING',
     action: opts.action,
-    selectedAt: opts.selectedAt ?? new Date().toISOString(),
+    selectedAt: opts.selectedAt ?? nowIso(),
   });
 }
 

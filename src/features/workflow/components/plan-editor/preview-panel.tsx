@@ -3,13 +3,13 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../../../components/theme.js';
 import type { Config } from '../../../../core/schemas/config.js';
 import type { Task } from '../../../../core/schemas/task.js';
-import type { ProjectContext } from '../../../../core/state/types.js';
 import { resolveImplementerProfiles } from '../../../../core/config/accessors/implementer-profiles.js';
 import { routeTaskToImplementerProfile } from '../../../../engine/orchestrator/context-routing/route.js';
 import type { RoutingDecision } from '../../../../engine/orchestrator/context-routing/types.js';
 import { buildProjectLanguageContext } from '../../../../engine/spec/prompts/language-context.js';
 import type { PlanReviewEstimateStatus, PlanTaskReviewMetadata } from '../../../../stores/workflow/plan-editor.js';
 import { buildWorkerPacketPreview, type WorkerPacketPreview } from '../../worker-packet-preview.js';
+import { buildProjectContext } from '../../project-context.js';
 import { refreshTaskForRoutingPreview } from '../brief-review.js';
 import { compactExcerpt, compactValue, taskWithoutCurrentCode } from './task-helpers.js';
 
@@ -29,15 +29,6 @@ interface UsePacketPreviewOptions {
   testCommand: string;
   config: Config | null;
   width?: number | undefined;
-}
-
-function buildProjectContext(projectDir: string, testCommand: string): ProjectContext {
-  return {
-    name: 'unknown',
-    dir: projectDir,
-    runtime: 'node',
-    testCommand,
-  };
 }
 
 export function usePacketPreview(opts: UsePacketPreviewOptions): WorkerPacketPreview | null {

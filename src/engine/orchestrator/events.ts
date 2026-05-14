@@ -11,6 +11,7 @@ import type { EmittedChain } from '../../core/schemas/drift-chain.js';
 import type { UserEditConflict, UserEditConflictAction } from './user-edit/conflicts.js';
 import type { CurrentCodeContextMode, TaskContextFit } from './context-routing/types.js';
 import type { TaskReviewRequest } from './task/review.js';
+import { labelError } from '../../utils/format-errors.js';
 
 const EMPTY_STAGES: ValidationStages = { typecheck: false, lint: false, test: false };
 
@@ -149,6 +150,10 @@ export function publishWarning(bus: EventBus, phase: Phase, message: string): vo
   bus.publish({ type: 'warning', ts: Date.now(), phase, message });
 }
 
+export function publishWarningFromError(bus: EventBus, phase: Phase, label: string, err: unknown): void {
+  publishWarning(bus, phase, labelError(label, err));
+}
+
 export function publishUserMessage(bus: EventBus, phase: Phase, text: string): void {
   bus.publish({ type: 'user_message', ts: Date.now(), phase, text });
 }
@@ -187,19 +192,50 @@ export function publishTaskReviewNeeded(bus: EventBus, phase: Phase, request: Ta
   bus.publish({ type: 'task_review_needed', ts: Date.now(), phase, ...request });
 }
 
-export function publishRecoveryActionSelected(
+type RecoveryEventSpec =
+  | { kind: 'selected' }
+  | { kind: 'failed'; message: string }
+  | {
+      kind: 'resolved';
+      outcome: 'continued' | 'retry-current-task' | 'skipped-current-task' | 'aborted';
+      implementerProfile?: string | undefined;
+    };
+
+export function publishRecoveryEvent(
   bus: EventBus,
   issue: RecoveryIssue,
   action: RecoveryAction,
+  spec: RecoveryEventSpec,
 ): void {
-  bus.publish({
-    type: 'recovery_action_selected',
+  const base = {
     ts: Date.now(),
     phase: issue.phase,
     issueId: issue.id,
     reason: issue.reason,
     action,
+  } as const;
+  if (spec.kind === 'selected') {
+    bus.publish({ type: 'recovery_action_selected', ...base });
+    return;
+  }
+  if (spec.kind === 'failed') {
+    bus.publish({ type: 'recovery_action_failed', ...base, message: spec.message });
+    return;
+  }
+  bus.publish({
+    type: 'recovery_resolved',
+    ...base,
+    outcome: spec.outcome,
+    ...(spec.implementerProfile !== undefined && { implementerProfile: spec.implementerProfile }),
   });
+}
+
+export function publishRecoveryActionSelected(
+  bus: EventBus,
+  issue: RecoveryIssue,
+  action: RecoveryAction,
+): void {
+  publishRecoveryEvent(bus, issue, action, { kind: 'selected' });
 }
 
 export function publishRecoveryActionFailed(
@@ -208,15 +244,7 @@ export function publishRecoveryActionFailed(
   action: RecoveryAction,
   message: string,
 ): void {
-  bus.publish({
-    type: 'recovery_action_failed',
-    ts: Date.now(),
-    phase: issue.phase,
-    issueId: issue.id,
-    reason: issue.reason,
-    action,
-    message,
-  });
+  publishRecoveryEvent(bus, issue, action, { kind: 'failed', message });
 }
 
 export function publishRecoveryResolved(
@@ -226,13 +254,8 @@ export function publishRecoveryResolved(
   outcome: 'continued' | 'retry-current-task' | 'skipped-current-task' | 'aborted',
   implementerProfile?: string | undefined,
 ): void {
-  bus.publish({
-    type: 'recovery_resolved',
-    ts: Date.now(),
-    phase: issue.phase,
-    issueId: issue.id,
-    reason: issue.reason,
-    action,
+  publishRecoveryEvent(bus, issue, action, {
+    kind: 'resolved',
     outcome,
     ...(implementerProfile !== undefined && { implementerProfile }),
   });

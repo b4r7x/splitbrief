@@ -52,11 +52,14 @@ export const CODE_LINE_STARTS = [
 
 export const CODE_LINE_CHARS = ['{', '}', ')', ';', '//', '/*', ' *', '*/'];
 
-const FENCED_BLOCK_WITH_LANG_PATTERN = '```[\\w]*\\s*\\n([\\s\\S]*?)```';
-const FENCED_ANY_BLOCK_RE = /```[\w]*\n([\s\S]*?)```/;
+const FENCED_BLOCK_SOURCE = '```[\\w]*\\s*\\n([\\s\\S]*?)```';
 const FENCE_OPEN_LINE_RE = /^```[\w]*\s*\n/gm;
 const FENCE_CLOSE_LINE_RE = /^```\s*$/gm;
 const CODE_PREFIX_RE = /^(import |export |\/\/|\/\*)/;
+
+function makeFencedRegex(flags = ''): RegExp {
+  return new RegExp(FENCED_BLOCK_SOURCE, flags);
+}
 
 export const EXPORT_BOUNDARY_RE =
   /^export\s+(default\s+(function|class)|async\s+function|function|const|interface|type|class)\b/;
@@ -81,7 +84,7 @@ export const DECLARATION_NAME_RE = /(?:function|const|class|interface|type)\s+(\
 
 export function extractFencedBlocks(text: string): string[] {
   const blocks: string[] = [];
-  const re = new RegExp(FENCED_BLOCK_WITH_LANG_PATTERN, 'g');
+  const re = makeFencedRegex('g');
   for (let match = re.exec(text); match !== null; match = re.exec(text)) {
     if (match[1] !== undefined) blocks.push(match[1].trim());
   }
@@ -100,6 +103,6 @@ export function hasCodePrefix(line: string): boolean {
 }
 
 export function extractFirstFencedBlock(text: string): string | null {
-  const match = text.match(FENCED_ANY_BLOCK_RE);
+  const match = text.match(makeFencedRegex());
   return match?.[1] !== undefined ? match[1].trim() : null;
 }

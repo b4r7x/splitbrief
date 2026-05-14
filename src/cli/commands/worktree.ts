@@ -130,8 +130,7 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (opts: { project?: string }) => {
       const projectDir = resolveProjectDir(opts.project);
-      const git = createGitClient(projectDir);
-      const worktrees = await deps.listWorktrees(projectDir, git);
+      const worktrees = await deps.listWorktrees(projectDir);
 
       if (worktrees.length === 0) {
         console.log('No diptych-managed worktrees found.');
@@ -147,8 +146,7 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (name: string, opts: { project?: string }) => {
       const projectDir = resolveProjectDir(opts.project);
-      const git = createGitClient(projectDir);
-      const worktrees = await deps.listWorktrees(projectDir, git);
+      const worktrees = await deps.listWorktrees(projectDir);
       const found = worktrees.some((w) => w.name === name);
 
       if (!found) {
@@ -176,7 +174,7 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
         const projectDir = resolveProjectDir(opts.project);
         const git = createGitClient(projectDir);
 
-        const worktrees = await deps.listWorktrees(projectDir, git);
+        const worktrees = await deps.listWorktrees(projectDir);
         const found = worktrees.some((w) => w.name === name);
         if (!found) {
           throw cliError(`Worktree "${name}" not found.`, 1);

@@ -5,6 +5,7 @@ import { DIPTYCH_DIR, ACTIVE_FILE, STATE_FILE, SESSIONS_DIR, TREES_DIR, worktree
 import { readJsonSafeAsync } from '../lib/fs.js';
 import type { GitClient } from '../lib/git.js';
 import { error } from '../utils/error.js';
+import { isRecord } from '../utils/type-guards.js';
 
 export type WorktreeStatus = 'active' | 'idle' | 'none';
 
@@ -91,8 +92,8 @@ async function readSessionState(worktreeDir: string, sessionId: string): Promise
     lastUpdated = null;
   }
   const raw = await readJsonSafeAsync(stateFile);
-  if (raw !== null && typeof raw === 'object' && 'phase' in raw && typeof (raw as Record<string, unknown>).phase === 'string') {
-    return { phase: (raw as Record<string, unknown>).phase as string, lastUpdated };
+  if (isRecord(raw) && typeof raw.phase === 'string') {
+    return { phase: raw.phase, lastUpdated };
   }
   return { phase: null, lastUpdated };
 }
@@ -135,7 +136,7 @@ export async function createWorktree(opts: CreateWorktreeOptions): Promise<strin
   return wtPath;
 }
 
-export async function listWorktrees(projectDir: string, _git: GitClient): Promise<WorktreeInfo[]> {
+export async function listWorktrees(projectDir: string): Promise<WorktreeInfo[]> {
   const treesDir = join(projectDir, TREES_DIR);
   if (!existsSync(treesDir)) return [];
 

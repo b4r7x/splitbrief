@@ -1,8 +1,8 @@
-import { resolve, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { EngineEvent } from '../events/types.js';
 import type { HookOutcome, HookContext } from './types.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { resolveFromProject } from '../../utils/path-patterns.js';
 
 export type HookModuleFunction = (event: EngineEvent, ctx: HookContext) => Promise<HookOutcome> | HookOutcome;
 
@@ -12,7 +12,7 @@ export type LoadResult =
 
 // ESM import() is cached by URL — the module is loaded once per process lifetime.
 export async function loadHookModule(modulePath: string, projectDir: string): Promise<LoadResult> {
-  const absPath = isAbsolute(modulePath) ? modulePath : resolve(projectDir, modulePath);
+  const absPath = resolveFromProject(projectDir, modulePath);
   const url = pathToFileURL(absPath).href;
   try {
     const mod: unknown = await import(url);

@@ -7,6 +7,7 @@ import type { WorkflowContext } from '../types.js';
 import type { RoutingDecision } from '../context-routing/types.js';
 
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
+import { nowIso } from '../../../utils/format-time.js';
 import { publishError, publishRecoveryPrompted } from '../events.js';
 import { handleRetryAndEscalation } from '../escalation/escalation.js';
 import { transitionAndSave } from '../state-ops.js';
@@ -83,7 +84,7 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
       allowRetryOverride: true,
       selectedImplementerProfile: wctx.implementerProfile,
       routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
-      createdAt: new Date().toISOString(),
+      createdAt: nowIso(),
     });
     const nextState = transitionAndSave(wctx.projectDir, wctx.sessionId, recoveryBaseState, { type: 'SET_PENDING_RECOVERY', issue });
     publishRecoveryPrompted(wctx.bus, issue);
@@ -108,7 +109,7 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
         allowRetryOverride: true,
         selectedImplementerProfile: retryImplementerProfile,
         routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
-        createdAt: new Date().toISOString(),
+        createdAt: nowIso(),
       });
       nextState = transitionAndSave(wctx.projectDir, wctx.sessionId, nextState, { type: 'SET_PENDING_RECOVERY', issue });
       publishRecoveryPrompted(wctx.bus, issue);

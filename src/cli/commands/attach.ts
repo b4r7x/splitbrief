@@ -1,5 +1,4 @@
 import { join } from 'node:path';
-import { readdirSync, existsSync } from 'node:fs';
 import { Command } from 'commander';
 import { createElement } from 'react';
 import { App } from '../../app.js';
@@ -10,9 +9,10 @@ import { cliError } from '../errors.js';
 import { assertNotWindows } from '../platform.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import { showCrashDiagnostic } from '../../engine/ipc/crash-diagnostic.js';
-import { sessionsRoot, sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
+import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { isNumericAlias, resolveNumericAlias } from '../session-aliases.js';
+import { findSingleRunningSession } from '../sessions/single-running-session.js';
 import type { ServerStatus } from '../../engine/ipc/lockfile.js';
 
 export interface AttachDeps {
@@ -33,28 +33,13 @@ async function resolveRunningSession(
   projectDir: string,
   deps: AttachDeps,
 ): Promise<string> {
-  const root = sessionsRoot(projectDir);
-  if (!existsSync(root)) {
-    throw cliError('no running sessions found; pass <session-id> explicitly', 1);
-  }
-
-  const entries = readdirSync(root, { withFileTypes: true });
-  const running: string[] = [];
-
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const sessDir = join(root, entry.name);
-    const status = await deps.checkServerStatus(sessDir);
-    if (status.alive) running.push(entry.name);
-  }
-
-  const [single] = running;
-  if (running.length === 1 && single) return single;
-  if (running.length === 0) {
+  const result = await findSingleRunningSession(projectDir, deps);
+  if (result.kind === 'single') return result.id;
+  if (result.kind === 'none') {
     throw cliError('no running sessions found; pass <session-id> explicitly', 1);
   }
   throw cliError(
-    `multiple running sessions (${running.join(', ')}); pass <session-id> explicitly`,
+    `multiple running sessions (${result.ids.join(', ')}); pass <session-id> explicitly`,
     1,
   );
 }

@@ -2,6 +2,7 @@ import { writeFileSync, mkdirSync, statSync, existsSync, readFileSync, appendFil
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { error, matches } from '../utils/error.js';
+import { isENOENT } from './process/errors.js';
 
 export function readJsonSafe(path: string): unknown | null {
   if (!existsSync(path)) return null;
@@ -77,10 +78,6 @@ export async function readFileOrEmpty(filePath: string): Promise<string> {
     if (isENOENT(err)) return '';
     throw err;
   }
-}
-
-function isENOENT(err: unknown): err is Error & { code: unknown } {
-  return err instanceof Error && 'code' in err && err.code === 'ENOENT';
 }
 
 export function ensureGitignore(projectDir: string, entry: string): void {

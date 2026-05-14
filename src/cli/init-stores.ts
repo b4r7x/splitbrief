@@ -8,6 +8,7 @@ import { setHighlightTheme } from '../lib/highlight.js';
 import { warnError, warnStderr } from '../lib/warn.js';
 import { detectCapabilities } from '../engine/providers/registry.js';
 import { detectAll } from '../engine/detection/detect.js';
+import { getDefaultDetectionService } from '../engine/detection/service.js';
 import { loadDetectionIntoStores } from '../stores/discovery/detection-adapter.js';
 import { fetchModelsDevCatalog } from '../engine/providers/models-dev.js';
 import { discoverAllCliTools } from '../engine/providers/discovery.js';
@@ -74,6 +75,6 @@ async function loadDiscovery(projectDir: string): Promise<void> {
     discoverSkills(getPlannerToolId(storeConfig.planner), projectDir).then(skills => {
       skillsStore.setAvailable(skills);
     }),
-    loadDetectionIntoStores({ detectAll, fetchModelsDevCatalog, discoverAllCliTools }, projectDir),
+    loadDetectionIntoStores(getDefaultDetectionService(), { detectAll, fetchModelsDevCatalog, discoverAllCliTools }, projectDir),
   ]);
 }

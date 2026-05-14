@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isRecord } from '../../utils/type-guards.js';
 
 export const HookEventSchema = z.enum([
   'pre_planning',
@@ -47,7 +48,7 @@ export const HookModuleEntrySchema = z
   .strict();
 
 function isObjectWithoutKind(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !('kind' in value);
+  return isRecord(value) && !('kind' in value);
 }
 
 export const HookEntrySchema = z.preprocess(

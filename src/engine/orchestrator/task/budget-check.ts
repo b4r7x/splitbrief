@@ -7,6 +7,7 @@ import { getEscalatedTaskIds } from '../../../core/state/selectors.js';
 import { transitionAndSave } from '../state-ops.js';
 import { publishRecoveryPrompted } from '../events.js';
 import { buildBudgetExceededRecoveryIssue, buildBudgetPausedRecoveryIssue } from '../recovery/builders/workflow.js';
+import { nowIso } from '../../../utils/format-time.js';
 
 export async function checkBudgetAfterTask(opts: {
   wctx: WorkflowContext;
@@ -59,7 +60,7 @@ export async function checkBudgetAfterTask(opts: {
         threshold: budgetResult.recovery.threshold,
         blockedStep,
         nextTask,
-        createdAt: new Date().toISOString(),
+        createdAt: nowIso(),
       })
     : buildBudgetExceededRecoveryIssue({
         currentCost: budgetResult.recovery.currentCost,
@@ -67,7 +68,7 @@ export async function checkBudgetAfterTask(opts: {
         phase: state.phase,
         blockedStep,
         nextTask,
-        createdAt: new Date().toISOString(),
+        createdAt: nowIso(),
       });
 
   const newState = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PENDING_RECOVERY', issue });

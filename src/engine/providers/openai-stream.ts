@@ -1,3 +1,5 @@
+import type OpenAI from 'openai';
+import type { ChatCompletionCreateParamsStreaming } from 'openai/resources/chat/completions';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { InvokeResult } from '../runners/types.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
@@ -5,7 +7,7 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import { timeoutError, withIdleTimeout } from '../../utils/with-timeout.js';
 import { toTokenDelta } from '../streaming/token-utils.js';
 import { STREAM_IDLE_TIMEOUT_MS, throwMappedError } from '../streaming/stream-errors.js';
-import { readFile } from 'node:fs/promises';
+import { readImagesAsBase64 } from '../streaming/attachments.js';
 
 interface StreamCompletionOptions {
   temperature: number;
@@ -55,16 +57,15 @@ export interface StreamClient {
 
 async function attachImagesToLastUserMessage(messages: ChatMessage[], images: Attachment[]): Promise<ChatMessage[]> {
   if (images.length === 0) return messages;
-  const parts: OpenAIImagePart[] = await Promise.all(images.map(async img => ({
+  const encoded = await readImagesAsBase64(images);
+  const parts: OpenAIImagePart[] = encoded.map(({ mime, data }) => ({
     type: 'image_url' as const,
-    image_url: {
-      url: `data:${img.mimeType};base64,${(await readFile(img.path)).toString('base64')}`,
-    },
-  })));
+    image_url: { url: `data:${mime};base64,${data}` },
+  }));
   const out = messages.map(m => ({ ...m }));
   for (let i = out.length - 1; i >= 0; i--) {
-    const msg = out[i]!;
-    if (msg.role !== 'user') continue;
+    const msg = out[i];
+    if (!msg || msg.role !== 'user') continue;
     const existing: OpenAIContentPart[] = typeof msg.content === 'string'
       ? [{ type: 'text', text: msg.content }]
       : msg.content;
@@ -131,4 +132,18 @@ export async function streamCompletion(
   }
 
   return { text: fullResponse, usage };
+}
+
+export function toStreamClient(client: OpenAI): StreamClient {
+  return {
+    chat: {
+      completions: {
+        create: (body, requestOptions) =>
+          client.chat.completions.create(
+            body as ChatCompletionCreateParamsStreaming,
+            requestOptions ?? undefined,
+          ) as Promise<AsyncIterable<StreamChunk>>,
+      },
+    },
+  };
 }

@@ -1,8 +1,3 @@
-import type { EventBus } from '../events/types.js';
-import type { Phase } from '../../core/schemas/enums.js';
-import { labelError } from '../../utils/format-errors.js';
-import { publishWarning } from './events.js';
-
 export async function withSignalHandlers(
   handler: () => void | Promise<void>,
   fn: () => Promise<void>,
@@ -24,18 +19,5 @@ export async function withSignalHandlers(
     process.removeListener('SIGINT', onSignal);
     process.removeListener('SIGTERM', onSignal);
     await pendingShutdown;
-  }
-}
-
-export async function warnOnFailure(
-  bus: EventBus,
-  phase: Phase,
-  action: string,
-  fn: () => Promise<void>,
-): Promise<void> {
-  try {
-    await fn();
-  } catch (err) {
-    publishWarning(bus, phase, labelError(`Failed to ${action}`, err));
   }
 }

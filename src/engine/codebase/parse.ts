@@ -6,7 +6,7 @@ import { error } from '../../utils/error.js';
 import type { FileNode, SymbolKind, SymbolRef } from './types.js';
 import { getLanguageForExtension, type LanguageConfig } from './languages.js';
 
-export const parseError = {
+const parseError = {
   parseFailed: (absPath: string) =>
     error('codebase-parse-failed', `tree-sitter failed to parse: ${absPath}`, { absPath }),
 } as const;

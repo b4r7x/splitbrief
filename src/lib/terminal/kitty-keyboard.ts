@@ -1,4 +1,4 @@
-export interface KittyKeyboardFlags {
+interface KittyKeyboardFlags {
   mode: 'auto' | 'enabled';
   flags: ['disambiguateEscapeCodes'];
 }

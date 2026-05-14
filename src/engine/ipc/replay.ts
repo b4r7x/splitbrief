@@ -14,6 +14,12 @@ export type ReplayResult = {
   lastTs: number | null;
 };
 
+function isEngineEvent(value: unknown): value is EngineEvent {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as { type?: unknown; ts?: unknown };
+  return typeof v.type === 'string' && v.type.length > 0 && typeof v.ts === 'number';
+}
+
 function entryToEvent(raw: unknown): EngineEvent | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const entry = raw as Record<string, unknown>;
@@ -36,10 +42,10 @@ function entryToEvent(raw: unknown): EngineEvent | null {
   const phase = entry['phase'];
   const taskId = entry['taskId'];
   if (type.length === 0) return null;
-  const event: Record<string, unknown> = { type, ts, ...data };
-  if (phase !== undefined) event['phase'] = phase;
-  if (taskId !== undefined) event['taskId'] = taskId;
-  return event as unknown as EngineEvent;
+  const candidate: Record<string, unknown> = { type, ts, ...data };
+  if (phase !== undefined) candidate['phase'] = phase;
+  if (taskId !== undefined) candidate['taskId'] = taskId;
+  return isEngineEvent(candidate) ? candidate : null;
 }
 
 export async function readReplayEvents(opts: ReplayOptions): Promise<ReplayResult> {

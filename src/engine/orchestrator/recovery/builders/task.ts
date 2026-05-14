@@ -3,7 +3,7 @@ import type { RecoveryIssue } from '../../../../core/schemas/recovery.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import type { ValidationResult } from '../../validation.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
-import { uniqueIds } from '../../../../utils/collections.js';
+import { uniqueIds, uniqueSorted } from '../../../../utils/collections.js';
 import type { RecoveryBuilderBase, TaskRecoveryContext } from './shared.js';
 import {
   attemptDetails,
@@ -18,7 +18,6 @@ import {
   summarizeUnknownError,
   summarizeValidation,
   taskFiles,
-  uniqueFiles,
 } from './shared.js';
 
 export interface ImplementationErrorRecoveryOptions extends RecoveryBuilderBase, TaskRecoveryContext {
@@ -302,7 +301,7 @@ export function buildDependencyBlockedRecoveryIssue(opts: DependencyBlockedRecov
     reason: 'dependency-blocked',
     phase,
     task: opts.task,
-    files: uniqueFiles([opts.task.file, ...blockedFiles]),
+    files: uniqueSorted([opts.task.file, ...blockedFiles], { trim: true, nonEmpty: true }),
     affectedTaskIds,
     message: `${opts.task.id} is blocked by dependency status`,
     details: [

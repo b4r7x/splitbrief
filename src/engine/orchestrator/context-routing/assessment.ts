@@ -1,29 +1,16 @@
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import { missingRunnerCredential } from '../../../core/config/accessors/runner-credentials.js';
-import type { Task } from '../../../core/schemas/task.js';
 import { estimateTokens } from '../../../core/tokens/estimate.js';
 import { formatTaskPrompt } from '../../spec/prompt-formatter.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import { buildSystemPreamble } from '../../spec/prompts/system.js';
 import { isProviderId } from '../../../core/schemas/enums.js';
 import { getEffectiveModelId } from '../../providers/model/resolution.js';
-import type { ProfileFit, RouteTaskOptions, TaskContextFit, CurrentCodeContextMode } from './types.js';
-import { resolveProfileContextLength, profileProviderId } from './context-length.js';
+import type { CurrentCodeContextMode, ProfileFit, RouteTaskOptions, TaskContextFit } from './types.js';
+import { DEFAULT_CONSERVATIVE_CONTEXT_LENGTH, resolveProfileContextLength, profileProviderId } from './context-length.js';
 import { estimateFormattedTaskPromptTokens, classifyContextFit } from './estimation.js';
+import { currentCodeContextMode } from './headings.js';
 import { requiredWriteModeForTask } from './helpers.js';
-
-const DEFAULT_CONSERVATIVE_CONTEXT_LENGTH = 8192;
-const TRUNCATION_MARKER = '// ... truncated to fit context window ...';
-const FUNCTION_CONTEXT_HEADING = '### Current Code (relevant section)';
-const WHOLE_FILE_CONTEXT_HEADING = '### Current Code';
-
-function currentCodeContextMode(task: Task, prompt: string): CurrentCodeContextMode {
-  if (task.action !== 'modify' || !task.currentCode) return 'none';
-  if (prompt.includes(FUNCTION_CONTEXT_HEADING)) return 'function-level';
-  if (prompt.includes(TRUNCATION_MARKER)) return 'truncated';
-  if (!prompt.includes(WHOLE_FILE_CONTEXT_HEADING)) return 'none';
-  return prompt.includes(task.currentCode) ? 'whole-file' : 'truncated';
-}
 
 function determineFit(
   currentCodeTruncated: boolean,

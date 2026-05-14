@@ -3,7 +3,7 @@ import type { RecoveryFact, RecoveryIssue } from '../../../../core/schemas/recov
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import type { ValidationResult } from '../../validation.js';
 import type { UserEditConflict, UserEditConflictAction } from '../../user-edit/conflicts.js';
-import { uniqueIds } from '../../../../utils/collections.js';
+import { uniqueIds, uniqueSorted } from '../../../../utils/collections.js';
 import { looksLikeFilePath } from '../../../../utils/path-patterns.js';
 
 const ACTION_ORDER: RecoveryAction[] = [
@@ -74,7 +74,7 @@ export function createRecoveryIssue(opts: {
     phase: opts.phase,
     status: 'awaiting-user',
     ...(opts.task ? { taskId: opts.task.id, taskTitle: opts.task.title } : {}),
-    files: uniqueFiles(opts.files),
+    files: uniqueSorted(opts.files, { trim: true, nonEmpty: true }),
     affectedTaskIds: uniqueIds(opts.affectedTaskIds),
     message: opts.message,
     details: opts.details.map(summarizeText).filter(detail => detail.length > 0),
@@ -186,11 +186,11 @@ export function routeBiggerDetails(opts: {
 }
 
 export function taskFiles(task: Task): string[] {
-  return uniqueFiles([
+  return uniqueSorted([
     task.file,
     ...(task.scope?.inBounds ?? []).filter(looksLikeFilePath),
     ...(task.scope?.approvedOutOfBounds ?? []).filter(looksLikeFilePath),
-  ]);
+  ], { trim: true, nonEmpty: true });
 }
 
 export function fileConflictDetails(conflict: UserEditConflict): string[] {
@@ -223,6 +223,3 @@ export function formatCostFact(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
-export function uniqueFiles(files: string[]): string[] {
-  return Array.from(new Set(files.map(file => file.trim()).filter(Boolean))).sort();
-}

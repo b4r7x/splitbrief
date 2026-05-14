@@ -73,10 +73,12 @@ function Harness({
   sockPath,
   capture,
   onPromptRequest,
+  backoffMs,
 }: {
   sockPath: string;
   capture: { current: CapturedState | null };
   onPromptRequest?: ((request: IpcPromptRequest) => Promise<IpcPromptResponse>) | undefined;
+  backoffMs?: ((attempt: number) => number) | undefined;
 }) {
   const [events, setEvents] = useState<EngineEvent[]>([]);
   const [state, actions] = useIpcClient({
@@ -85,6 +87,7 @@ function Harness({
       setEvents((prev) => [...prev, event]);
     },
     onPromptRequest,
+    backoffMs,
   });
   useEffect(() => {
     capture.current = { ...state, events, ...actions };
@@ -553,17 +556,16 @@ describe('useIpcClient', () => {
     servers.push(server);
 
     const capture: { current: CapturedState | null } = { current: null };
-    const ui = render(<Harness sockPath={sockPath} capture={capture} />);
+    const ui = render(<Harness sockPath={sockPath} capture={capture} backoffMs={() => 1} />);
 
-    // Total backoff: 100 + 200 + 400 + 800 + 1600 = 3100ms; wait with margin
-    await waitMs(4500);
+    await waitMs(100);
 
     expect(capture.current?.status).toBe('failed');
     const failedEvents = capture.current?.events.filter(e => e.type === 'ipc_reconnect_failed') ?? [];
     expect(failedEvents.length).toBeGreaterThan(0);
     ui.unmount();
     await tick(20);
-  }, 15000);
+  });
 
   it('malformed server message emits a warning event', async () => {
     const dir = makeTmpDir();

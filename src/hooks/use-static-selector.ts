@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useInput } from 'ink';
 import { clampIndex, navigateIndex } from '../utils/indexing.js';
 
@@ -23,20 +23,27 @@ export function useStaticSelector<T>({
 }: UseStaticSelectorOptions<T>): UseStaticSelectorResult {
   const [selectedIndex, setSelectedIndex] = useState(clampIndex(initialIndex, items.length));
   const effectiveIndex = clampIndex(selectedIndex, items.length);
+  const selectedRef = useRef(effectiveIndex);
+  selectedRef.current = effectiveIndex;
 
   useInput(
     (_input, key) => {
       if (key.upArrow) {
-        setSelectedIndex((i) => navigateIndex('up', i, items.length));
+        const next = navigateIndex('up', selectedRef.current, items.length);
+        selectedRef.current = next;
+        setSelectedIndex(next);
         return;
       }
       if (key.downArrow) {
-        setSelectedIndex((i) => navigateIndex('down', i, items.length));
+        const next = navigateIndex('down', selectedRef.current, items.length);
+        selectedRef.current = next;
+        setSelectedIndex(next);
         return;
       }
       if (key.return) {
-        const item = items[effectiveIndex];
-        if (item !== undefined) onSelect(item, effectiveIndex);
+        const index = selectedRef.current;
+        const item = items[index];
+        if (item !== undefined) onSelect(item, index);
         return;
       }
       if (key.escape) {

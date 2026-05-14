@@ -21,6 +21,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
 import { readEvidenceLedger } from '../../engine/orchestrator/evidence/persistence.js';
+import { uniqueSorted } from '../../utils/collections.js';
 
 interface SummaryScreenProps {
   commands: RuntimeCommandDef[];
@@ -36,11 +37,11 @@ function formatImplementerSummary(summary: Summary): string | null {
 
   const uniqueTaskImplementers = new Set(taskImplementers ?? []);
   if (uniqueTaskImplementers.size > 1) {
-    const profiles = Array.from(new Set(
+    const profiles = uniqueSorted(
       summary.taskBreakdown
         ?.map(task => task.implementerProfile)
         .filter((profile): profile is string => profile !== undefined) ?? [],
-    )).sort();
+    );
     return profiles.length > 0
       ? `mixed profiles (${profiles.join(', ')})`
       : 'mixed implementers';

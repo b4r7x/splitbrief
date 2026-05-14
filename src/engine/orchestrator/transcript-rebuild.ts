@@ -1,6 +1,6 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { CompactTranscriptResult } from '../../core/runtime/commands/types.js';
-import { compactTranscript, type TranscriptCompactionResult } from '../../core/sessions/compaction.js';
+import { compactTranscript, DEFAULT_KEEP_RECENT_COUNT, type TranscriptCompactionResult } from '../../core/sessions/compaction.js';
 import { readCompactedMessages, readMessages } from '../../core/sessions/log-reader.js';
 import { sessionDir } from '../../core/paths.js';
 import { createPlanner } from '../runners/factory.js';
@@ -20,7 +20,6 @@ async function readCompactedResumeMessages(projectDir: string, sessionId: string
   return messages.map(message => ({ role: message.role, content: message.text }));
 }
 
-const DEFAULT_KEEP_RECENT_COUNT = 10;
 const MIN_COMPACTION_KEEP_RECENT = 1;
 
 export function keepRecentCountForThreshold(threshold: number): number {

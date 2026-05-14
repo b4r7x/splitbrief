@@ -1,3 +1,4 @@
+// Stateful selector — module-scoped cache, not a hook. Avoids per-render scans of large event lists.
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { EventsState } from '../../../stores/workflow/events.js';
 

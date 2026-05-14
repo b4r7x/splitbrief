@@ -1,5 +1,6 @@
 import type { TreeEntryEnvelope } from './schemas.js';
 import type { BranchContext } from './branch-summary.js';
+import { narrowRecord } from '../../../utils/type-guards.js';
 
 export function buildBranchSummaryPrompt(ctx: BranchContext): string {
   const entryDescriptions = ctx.entries
@@ -33,12 +34,12 @@ function summarizePayload(entry: TreeEntryEnvelope): string {
   if (entry.payload === null || entry.payload === undefined) {
     return `(${entry.type} at ${new Date(entry.timestamp).toISOString()})`;
   }
-  if (typeof entry.payload === 'object' && entry.payload !== null) {
-    const obj = entry.payload as Record<string, unknown>;
-    if ('message' in obj && typeof obj.message === 'string') {
+  const obj = narrowRecord(entry.payload);
+  if (obj) {
+    if (typeof obj.message === 'string') {
       return obj.message.slice(0, 120);
     }
-    if ('title' in obj && typeof obj.title === 'string') {
+    if (typeof obj.title === 'string') {
       return obj.title;
     }
   }

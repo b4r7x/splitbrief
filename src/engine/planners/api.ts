@@ -13,8 +13,7 @@ import { assertPlannerKind } from '../config-assertions.js';
 import { isProviderId } from '../../core/schemas/enums.js';
 import { modelSupportsEffort, modelSupportsImages } from '../providers/capability-inference.js';
 import { dispatchStreamCompletion } from '../providers/dispatch-stream.js';
-import type { StreamClient } from '../providers/openai-stream.js';
-import type OpenAI from 'openai';
+import { toStreamClient, type StreamClient } from '../providers/openai-stream.js';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -25,7 +24,7 @@ function buildMessages(prompt: string, priorMessages?: PriorMessage[] | undefine
 }
 
 async function invokeApi(
-  client: OpenAI | null,
+  client: StreamClient | null,
   model: string,
   planner: { provider: string; apiBase?: string | undefined; apiKey: string },
   prompt: string,
@@ -37,7 +36,7 @@ async function invokeApi(
   const messages = buildMessages(prompt, priorMessages);
   return dispatchStreamCompletion({
     provider: planner.provider,
-    client: client as StreamClient | null,
+    client,
     apiKey: planner.apiKey,
     apiBase: planner.apiBase ?? '',
     model,
@@ -59,7 +58,7 @@ export function createApiPlanner(config: Config): Planner {
     apiKey: plannerCfg.apiKey,
   });
 
-  const client = provider === 'anthropic' ? null : createClientFromProvider(resolved);
+  const client: StreamClient | null = provider === 'anthropic' ? null : toStreamClient(createClientFromProvider(resolved));
   const effort = plannerCfg.effort;
   const providerId: ProviderId | null = isProviderId(provider) ? provider : null;
   const supportsEffort = providerId !== null && modelSupportsEffort(providerId, model);

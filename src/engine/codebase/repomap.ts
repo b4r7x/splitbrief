@@ -1,4 +1,5 @@
 import { extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { resolveFromProject } from '../../utils/path-patterns.js';
 import { mkdir, readdir } from 'node:fs/promises';
 import { initParser, parseFile } from './parse.js';
 import { createParseCache } from './cache.js';
@@ -50,9 +51,7 @@ export async function buildRepoMap(projectDir: string, opts: RepoMapOptions = {}
     const mentionedFiles = opts.featureText
       ? extractMentionedFilenames(opts.featureText, projectDir, discoveredPaths)
       : [];
-    const explicitFocusFiles = (opts.focusFiles ?? []).map(f =>
-      isAbsolute(f) ? f : resolve(projectDir, f)
-    );
+    const explicitFocusFiles = (opts.focusFiles ?? []).map(f => resolveFromProject(projectDir, f));
     const absFocusFiles = [...new Set([...explicitFocusFiles, ...mentionedFiles])];
     const rankings = pagerank(graph, absFocusFiles);
 

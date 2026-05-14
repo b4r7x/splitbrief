@@ -4,7 +4,6 @@ import { makeConfig } from '../../../../testing/helpers/factories/config.js';
 import {
   adviseMode,
   setAdvisory,
-  __resetAdvisoryForTests,
 } from '../../../engine/orchestrator/planning/mode-advisor.js';
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
@@ -16,7 +15,7 @@ import { InputFooter } from './input-footer.js';
 
 describe('InputFooter advisory display', () => {
   beforeEach(() => {
-    __resetAdvisoryForTests();
+    setAdvisory(null);
     configStore.__testReset({ config: makeConfig(), projectDir: '/tmp/diptych-test' });
     routerStore.init({ screen: 'workflow', feature: 'demo' });
     conversationScrollStore.__testReset();
@@ -26,7 +25,7 @@ describe('InputFooter advisory display', () => {
   });
 
   afterEach(() => {
-    __resetAdvisoryForTests();
+    setAdvisory(null);
     configStore.__testReset();
     routerStore.init({ screen: 'home' });
     conversationScrollStore.__testReset();

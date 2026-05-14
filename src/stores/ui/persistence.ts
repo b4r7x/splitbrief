@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { DIPTYCH_DIR } from '../../core/paths.js';
 import { writeSecureFile } from '../../lib/fs.js';
-import { isNodeError } from '../../lib/process/errors.js';
+import { isENOENT } from '../../lib/process/errors.js';
 import { warnError } from '../../lib/warn.js';
 import { inputHistoryStore, MAX_INPUT_HISTORY } from './input-history.js';
 
@@ -20,7 +20,7 @@ export function loadHistoryFromDisk(): string[] {
       .filter(line => line.length > 0)
       .slice(0, MAX_INPUT_HISTORY);
   } catch (err) {
-    if (isNodeError(err) && err.code === 'ENOENT') return [];
+    if (isENOENT(err)) return [];
     warnError('input-history: failed to load', err);
     return [];
   }

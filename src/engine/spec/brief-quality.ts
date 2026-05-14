@@ -1,5 +1,6 @@
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import { taskId } from '../../core/schemas/task.js';
+import { CONCRETE_FILE_PATH_PATTERN } from '../../utils/path-patterns.js';
 import { isRecord } from '../../utils/type-guards.js';
 
 export type BriefQualitySeverity = 'error' | 'warning';
@@ -89,12 +90,6 @@ const RISK_PATTERNS = [
   /\bpermission\b/i,
   /public\s+api/i,
 ];
-
-// Concrete project-relative file references only.
-// Grammar: one or more path segments plus a filename with an extension, e.g.
-// `src/foo.ts`, `docs/specs/task-brief.md`, or `packages/app/src/index.ts`.
-// Repeated mentions of the same file do not count as multi-file.
-const CONCRETE_FILE_PATH_PATTERN = /\b(?:[a-zA-Z][a-zA-Z0-9_-]*\/)+[a-zA-Z][a-zA-Z0-9._-]*\.[a-zA-Z]{1,5}\b/g;
 
 function isVague(test: string): boolean {
   return VAGUE_PATTERNS.some(p => p.test(test.trim()));

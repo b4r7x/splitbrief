@@ -10,7 +10,7 @@ function parseVersion(raw: string): string | null {
   return m ? `${m[1]}.${m[2]}.${m[3]}` : null;
 }
 
-export async function probeCommand(
+async function probeCommand(
   command: string,
   opts?: { timeout?: number | undefined },
 ): Promise<{ available: boolean; version: string | null }> {
