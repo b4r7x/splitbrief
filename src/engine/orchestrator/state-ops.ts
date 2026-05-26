@@ -6,6 +6,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { EventBus } from '../events/types.js';
 import { isENOENT } from '../../lib/process/errors.js';
+import { assertPathConfined } from '../../lib/path-confinement.js';
 import { transition } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
 import { addUsage, type UsageCategory } from './tokens.js';
@@ -24,6 +25,7 @@ export function transitionAndSave(
 }
 
 async function refreshCurrentCode(task: Task, projectDir: string): Promise<Task> {
+  assertPathConfined(task.file, projectDir);
   const filePath = join(projectDir, task.file);
   try {
     const currentCode = await readFile(filePath, 'utf-8');

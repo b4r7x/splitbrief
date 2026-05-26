@@ -1,6 +1,6 @@
 import { readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { Command } from 'commander';
+import type { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
 import { assertNotWindows } from '../platform.js';
 import { checkServerStatus, readLockfile, type LockfileData } from '../../engine/ipc/lockfile.js';

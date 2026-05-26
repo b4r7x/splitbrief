@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import type { Command } from 'commander';
 import { createElement } from 'react';
 import { existsSync } from 'node:fs';
 import { App } from '../../app.js';

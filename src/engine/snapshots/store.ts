@@ -119,6 +119,7 @@ async function readdirRecursive(dir: string, base: string): Promise<string[]> {
     const rel = relative(base, join(dir, name));
     const topLevel = rel.split('/')[0];
     if (topLevel !== undefined && ALWAYS_EXCLUDED.includes(topLevel)) continue;
+    if (entry.isSymbolicLink()) continue;
     if (entry.isDirectory()) {
       const children = await readdirRecursive(join(dir, name), base);
       results.push(...children);

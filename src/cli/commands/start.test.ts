@@ -151,6 +151,28 @@ describe('start command — concurrency guard', () => {
   });
 });
 
+describe('start command — session lifecycle during setup', () => {
+  it('does not create a session when setup is needed, preventing orphaned sessions', async () => {
+    await runStart(['--project', tmp, 'implement X']);
+
+    expect(routerStore.get()).toMatchObject({ screen: 'setup', feature: 'implement X' });
+    const activePath = join(tmp, DIPTYCH_DIR, 'active');
+    expect(existsSync(activePath)).toBe(false);
+    const sessionsDir = join(tmp, DIPTYCH_DIR, 'sessions');
+    expect(existsSync(sessionsDir)).toBe(false);
+  });
+
+  it('creates a session when setup is not needed and feature is given', async () => {
+    writeConfigMarker(tmp);
+
+    await runStart(['--project', tmp, 'implement X']);
+
+    expect(routerStore.get()).toMatchObject({ screen: 'workflow', feature: 'implement X' });
+    const activePath = join(tmp, DIPTYCH_DIR, 'active');
+    expect(existsSync(activePath)).toBe(true);
+  });
+});
+
 describe('start command — --worktree flag', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -510,7 +532,7 @@ describe('start command — @file syntax', () => {
     vi.restoreAllMocks();
   });
 
-  it('inlines text @file content into workflow feature', async () => {
+  it('separates @file content into plannerContext, not feature', async () => {
     writeConfigMarker(tmp);
     writeFileSync(join(tmp, 'brief.md'), 'Context about the feature.');
 
@@ -520,9 +542,10 @@ describe('start command — @file syntax', () => {
     await program.parseAsync(['node', 'diptych', 'start', 'build it', '@brief.md', '--project', tmp]);
 
     expect(routerStore.get()).toMatchObject({ screen: 'workflow' });
-    const featureString = (routerStore.get() as { feature?: string }).feature ?? '';
-    expect(featureString).toContain('build it');
-    expect(featureString).toContain('Context about the feature.');
+    const route = routerStore.get() as { feature?: string; plannerContext?: string };
+    expect(route.feature ?? '').toContain('build it');
+    expect(route.feature ?? '').not.toContain('Context about the feature.');
+    expect(route.plannerContext ?? '').toContain('Context about the feature.');
   });
 
   it('warns on stderr for missing @file without aborting', async () => {

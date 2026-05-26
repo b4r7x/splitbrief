@@ -16,6 +16,8 @@ export type IpcServerArgs = {
   mode: string;
   configPath: string;
   overrides: CLIOverrides;
+  allowHooks?: boolean;
+  plannerContext?: string;
 };
 
 export const ipcServerArgsError = {
@@ -108,6 +110,8 @@ export function parseIpcServerArgs(value: unknown): IpcServerArgs | null {
   }
   const overrides = parseCliOverrides(value.overrides);
   if (overrides === null) return null;
+  if (!isOptionalBoolean(value.allowHooks)) return null;
+  if (!isOptionalString(value.plannerContext)) return null;
   return {
     sessionId: value.sessionId,
     projectDir: value.projectDir,
@@ -115,6 +119,8 @@ export function parseIpcServerArgs(value: unknown): IpcServerArgs | null {
     mode: value.mode,
     configPath: value.configPath,
     overrides,
+    ...(value.allowHooks !== undefined && { allowHooks: value.allowHooks }),
+    ...(value.plannerContext !== undefined && { plannerContext: value.plannerContext }),
   };
 }
 

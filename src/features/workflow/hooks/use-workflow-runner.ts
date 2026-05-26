@@ -35,6 +35,7 @@ import { useRecoveryDriver } from './use-recovery-driver.js';
 
 interface UseWorkflowRunnerOptions {
   feature: string;
+  plannerContext?: string | undefined;
   projectDir: string;
   config: Config;
   onComplete: (summary: Summary) => void;
@@ -52,6 +53,7 @@ interface UseWorkflowRunnerResult {
 
 export function useWorkflowRunner({
   feature,
+  plannerContext,
   projectDir,
   config,
   onComplete,
@@ -148,6 +150,7 @@ export function useWorkflowRunner({
 
         await runWorkflow({
           feature,
+          plannerContext,
           projectDir,
           config,
           sinks,

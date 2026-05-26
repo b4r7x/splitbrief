@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { createElement } from 'react';
-import { Command } from 'commander';
+import type { Command } from 'commander';
 import { App } from '../../app.js';
 import { setupWorkflow, resolveProjectDir } from '../setup.js';
 import { initStores } from '../init-stores.js';

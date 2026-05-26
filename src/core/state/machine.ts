@@ -113,11 +113,23 @@ function setTaskStatus(state: WorkflowState, taskId: TaskId, status: TaskStatus)
   };
 }
 
+function stripCurrentCode(state: WorkflowState, taskId: TaskId): WorkflowState {
+  return {
+    ...state,
+    tasks: state.tasks.map(t => {
+      if (t.id !== taskId) return t;
+      const { currentCode: _currentCode, ...rest } = t;
+      return rest;
+    }),
+  };
+}
+
 function advanceTask(state: WorkflowState, status: TaskStatus): WorkflowState {
   const currentId = state.tasks[state.currentTaskIndex]?.id;
   const withStatus = currentId ? setTaskStatus(state, currentId, status) : state;
+  const cleaned = currentId ? stripCurrentCode(withStatus, currentId) : withStatus;
   return {
-    ...withStatus,
+    ...cleaned,
     phase: 'implementing',
     currentTaskIndex: state.currentTaskIndex + 1,
     attempt: 0,
@@ -203,8 +215,11 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
     case 'START_TASK':
       return { ...setTaskStatus(state, action.taskId, 'in_progress'), attempt: 0 };
 
-    case 'TASK_SENT':
-      return { ...state, phase: 'validating-task' };
+    case 'TASK_SENT': {
+      const sentId = state.tasks[state.currentTaskIndex]?.id;
+      const cleaned = sentId ? stripCurrentCode(state, sentId) : state;
+      return { ...cleaned, phase: 'validating-task' };
+    }
 
     case 'VALIDATION_PASS':
       return advanceTask(state, 'done');

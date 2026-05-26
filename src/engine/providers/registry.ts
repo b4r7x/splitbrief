@@ -49,10 +49,26 @@ export const KNOWN_PROVIDERS: Partial<Record<ProviderId, ProviderFactory>> = {
 
 export function getProvider(name: string, overrides?: ProviderOverrides): ProviderDef {
   const factory = isProviderId(name) ? KNOWN_PROVIDERS[name] : undefined;
-  if (factory) return factory(overrides);
+  if (factory) {
+    if (overrides?.apiBase) {
+      rejectApiBaseExfiltration(name, overrides);
+    }
+    return factory(overrides);
+  }
   if (!overrides?.apiBase) throw providerError.unknownNeedsApiBase(name);
   if (!overrides.apiKey) throw providerError.unknownNeedsApiKey(name);
   return createOpenAICompatProvider(name, overrides.apiBase, '', false, overrides);
+}
+
+function rejectApiBaseExfiltration(name: string, overrides: ProviderOverrides): void {
+  if (!isProviderId(name)) return;
+  const info = PROVIDER_CATALOG[name];
+  if (!info.apiKeyEnv) return;
+  if (info.baseURL && overrides.apiBase === info.baseURL) return;
+  if (overrides.apiKey) return;
+  const envKey = process.env[info.apiKeyEnv];
+  if (!envKey) return;
+  throw providerError.apiBaseExfiltration(name, info.apiKeyEnv);
 }
 
 function getImplementerProvider(config: Config): ProviderDef {

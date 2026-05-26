@@ -21,10 +21,10 @@ import { readJsonSafeAsync } from '../../../lib/fs.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { error } from '../../../utils/error.js';
 import { narrowRecord, optionalString } from '../../../utils/type-guards.js';
-import {
-  type ExplainArtifactInputs,
-  type ReadinessSummary,
-  type RunExplainArtifact,
+import type {
+  ExplainArtifactInputs,
+  ReadinessSummary,
+  RunExplainArtifact,
 } from './types.js';
 
 export const SUMMARY_FILE = 'summary.json';

@@ -1,4 +1,3 @@
-import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -22,7 +21,9 @@ type CacheRow = {
   parse_version: number;
 };
 
-export function createParseCache(dbPath: string): ParseCache {
+export async function createParseCache(dbPath: string): Promise<ParseCache> {
+  const { default: Database } = await import('better-sqlite3');
+
   mkdirSync(dirname(dbPath), { recursive: true });
 
   const db = new Database(dbPath);

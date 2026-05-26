@@ -35,6 +35,8 @@ export function loadState(projectDir: string, sessionId: string): WorkflowState 
   return result.data;
 }
 
+const ensuredDirs = new Set<string>();
+
 function appendLine(
   projectDir: string,
   sessionId: string,
@@ -42,7 +44,10 @@ function appendLine(
 ): void {
   const dir = sessionDir(projectDir, sessionId);
   try {
-    ensureSecureDir(dir);
+    if (!ensuredDirs.has(dir)) {
+      ensureSecureDir(dir);
+      ensuredDirs.add(dir);
+    }
     appendFileSync(join(dir, SESSION_LOG_FILE), JSON.stringify(entry) + '\n', { mode: SECURE_FILE_MODE });
   } catch (err) {
     warnStderr(`Warning: failed to persist log entry: ${toErrorMessage(err)}`);

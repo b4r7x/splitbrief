@@ -61,7 +61,11 @@ The TUI shows planner and implementer working together as a conversation flow â€
 ## Quick start
 
 ```bash
-npm install -g diptych
+# Not yet published on npm. Install from source:
+git clone https://github.com/b4r7x/tiny-spec.git
+cd tiny-spec
+npm install
+npm link
 
 # Have a planner ready (pick one):
 #   Claude Code (default) â€” uses existing subscription, $0 extra

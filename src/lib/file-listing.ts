@@ -2,6 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+export const MAX_PROJECT_FILES = 10_000;
+
 const ALWAYS_EXCLUDE: RegExp[] = [
   /(?:^|\/)\.env(?:\.|$)/i,
   /\.pem$/i,
@@ -37,7 +39,9 @@ function shouldSkipDirectory(name: string, rel: string): boolean {
 }
 
 function listViaReaddir(dir: string, base: string, result: string[]): void {
+  if (result.length >= MAX_PROJECT_FILES) return;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (result.length >= MAX_PROJECT_FILES) return;
     const rel = base ? `${base}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
       if (!shouldSkipDirectory(entry.name, rel)) {
@@ -57,5 +61,8 @@ function listViaFilesystem(projectDir: string): string[] {
 
 export function listProjectFiles(projectDir: string): string[] {
   const files = listViaGit(projectDir) ?? listViaFilesystem(projectDir);
-  return files.filter((file) => !isExcluded(file)).sort();
+  const filtered = files.filter((file) => !isExcluded(file));
+  filtered.sort();
+  if (filtered.length > MAX_PROJECT_FILES) return filtered.slice(0, MAX_PROJECT_FILES);
+  return filtered;
 }

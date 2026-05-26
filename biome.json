@@ -30,7 +30,7 @@
       },
       "style": {
         "noNonNullAssertion": "off",
-        "useImportType": "off",
+        "useImportType": "error",
         "useTemplate": "off"
       },
       "complexity": {

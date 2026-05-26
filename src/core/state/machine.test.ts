@@ -618,4 +618,49 @@ describe('transition', () => {
     expect(next.phase).toBe('validating-task');
     expect(next.pendingRecovery).toBeUndefined();
   });
+
+  it('TASK_SENT strips currentCode from the sent task', () => {
+    const tasks = [makeTask({ id: 't1', currentCode: 'const x = 1;' })];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks,
+      currentTaskIndex: 0,
+    };
+    const next = transition(state, { type: 'TASK_SENT' });
+    expect(next.phase).toBe('validating-task');
+    expect(next.tasks[0]?.currentCode).toBeUndefined();
+  });
+
+  it('VALIDATION_PASS strips currentCode from the completed task', () => {
+    const tasks = [
+      makeTask({ id: 't1', currentCode: 'const x = 1;' }),
+      makeTask({ id: 't2' }),
+    ];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'validating-task',
+      tasks,
+      currentTaskIndex: 0,
+    };
+    const next = transition(state, { type: 'VALIDATION_PASS' });
+    expect(next.tasks[0]?.currentCode).toBeUndefined();
+    expect(next.tasks[0]?.status).toBe('done');
+  });
+
+  it('FULL_SUCCESS strips currentCode from the escalated task', () => {
+    const tasks = [
+      makeTask({ id: 't1', currentCode: 'source code here' }),
+      makeTask({ id: 't2' }),
+    ];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'escalating',
+      tasks,
+      currentTaskIndex: 0,
+    };
+    const next = transition(state, { type: 'FULL_SUCCESS' });
+    expect(next.tasks[0]?.currentCode).toBeUndefined();
+    expect(next.tasks[0]?.status).toBe('escalated');
+  });
 });

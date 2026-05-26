@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import type { Command } from 'commander';
 import { buildRunExplain } from '../../engine/orchestrator/explain/explain.js';
 import { formatRunExplain } from '../../engine/orchestrator/explain/format.js';
 import { toErrorMessage } from '../../utils/format-errors.js';

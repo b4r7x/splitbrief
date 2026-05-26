@@ -2,13 +2,7 @@
 
 A consolidated set of grep / find commands that must return **zero** (or match the stated count) before any PR merges. Each one encodes an architectural rule documented elsewhere in `docs/`; this file is the single place to run them all.
 
-Run before every commit of non-trivial scope:
-
-```bash
-npm run test-ci
-```
-
-…plus the checks below.
+All gates run automatically as part of `npm run test-ci` via `npm run check:invariants` (implemented in `scripts/check-invariants.ts`).
 
 ---
 
@@ -17,6 +11,7 @@ npm run test-ci
 | # | Command | Expected | Rule |
 |---|---|---|---|
 | 1 | `find src -name 'index.ts'` | 0 results | No barrels — [NO-BARRELS.md](./NO-BARRELS.md) |
+| 1b | `find src -name 'index.tsx'` | 0 results | No barrels (JSX variant) — [NO-BARRELS.md](./NO-BARRELS.md) |
 | 2 | `rg "z\.infer" src/core/types/` | 0 matches | Inferred types live with their schema — [TYPES.md](./TYPES.md) |
 | 3 | `rg "useMemo\|useCallback\|React\.memo\|forwardRef\|useImperativeHandle" src/` | 0 matches | Zero memoization, no imperative handles — [STORES.md](./STORES.md), [CLAUDE.md](../CLAUDE.md) |
 | 4 | `rg "throw new Error" src/engine/ src/lib/ src/cli/ \| rg -v "\.test\."` | 0 matches | Errors go through `error()` factory + domain bag — [ERRORS.md](./ERRORS.md) |
@@ -28,9 +23,13 @@ npm run test-ci
 | 10 | `grep -rn "callbacks\.onEvent" src/` | 0 matches | **Post-migration defensive regression guard.** Engine no longer uses the `onEvent` callback — `EventBus` + sinks are the only event path. Expected 0; any match means a regression has been reintroduced. (See [ARCHITECTURE.md §Design decisions](./ARCHITECTURE.md#design-decisions--why-eventbus)) |
 | 11 | `grep -rn "OrchestratorEvent\b" src/` | 0 matches | **Post-migration defensive regression guard.** Legacy `OrchestratorEvent` type was deleted during the 2026-04 uplift; `EngineEvent` is the single source of truth. Expected 0; any match means a regression. (See [ARCHITECTURE.md §Design decisions](./ARCHITECTURE.md#design-decisions--why-eventbus)) |
 | 12 | `grep -rln "from.*features" src/engine \| grep -v "\.test\." \| wc -l` | 0 | Engine MUST NOT import from features. (See [LAYERS.md](./LAYERS.md)) |
+| 12b | `rg -ln "from 'react'\|from 'ink'" src/engine/ --glob '!**/*.test.ts' --glob '!**/*.test.tsx'` | 0 matches | Engine MUST NOT import React or Ink packages — [LAYERS.md](./LAYERS.md), [CLAUDE.md](../CLAUDE.md) |
+| 12c | `rg -n "from '\.\.\/\.\.\/\.\.\/(hooks\|components\|cli)/" src/engine/ --glob '!**/*.test.ts' --glob '!**/*.test.tsx'` | 0 matches | Engine MUST NOT import from top-level `src/hooks/`, `src/components/`, or `src/cli/` — [LAYERS.md](./LAYERS.md) |
 | 13 | `grep -rn "\bTuiEvent\b" src/` | 0 matches | **Post-migration defensive regression guard.** The `TuiEvent` union was removed during the 2026-04 uplift; the workflow store consumes `EngineEvent` directly. Expected 0; any match means a regression. |
 | 14 | `rg -n -e "components/input-bar" -e "core/slash-commands" -e "features/tool-picker" -e "hooks/use-app-keys" -e "workflow/components/command-palette-overlay" -e "engine/palette-aggregate" -e "InputBar" -e "toPaletteItems" -e "slashItems" -e "source: 'slash'" -e "'slash:'" src CLAUDE.md docs --glob '*.md' --glob '!docs/INVARIANTS.md' --glob '!docs/superpowers/**' --glob '!docs/audits/**'` | 0 matches | React architecture refactor guard: composer, runtime commands, runners, app keys, and palette source naming are canonical. |
 | 15 | `find src -type f \( -name '*.ts' -o -name '*.tsx' \) -exec perl -ne 'while (/([\x00-\x08\x0B\x0C\x0E-\x1F\x7F])/g) { printf "%s:%d:%d:U+%04X\n", $ARGV, $., pos($_), ord($1) } close ARGV if eof' {} +` | 0 matches | No hidden ASCII control bytes in source. Use visible escapes like `\u001b` / `\u007f` in tests. |
+
+| 16 | `rg -n "from '\.\.?/" src/ --glob '*.ts' --glob '*.tsx' --glob '!**/*.test.ts' --glob '!**/*.test.tsx' \| rg -v "\.js'\|\.json'"` | 0 matches | Relative imports in production source must use `.js` extension — ESM resolution — [CLAUDE.md](../CLAUDE.md) |
 
 Gates are consolidated here; full rationale for each lives in the linked doc.
 

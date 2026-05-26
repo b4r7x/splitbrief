@@ -98,68 +98,69 @@ export async function runPlannerCallInContinuationLoop(
     }
   });
 
-  const loop = await withContinuationLoop<PlanResult>({
-    ctx: { projectDir, sessionId, callbacks, signal, sinks },
-    state,
-    onStateChange: (s) => { state = s; },
-    body: async ({ continuationPrompt, recordOutput }) => {
-      let prompt = continuationPrompt ?? feature;
+  try {
+    const loop = await withContinuationLoop<PlanResult>({
+      ctx: { projectDir, sessionId, callbacks, signal, sinks },
+      state,
+      onStateChange: (s) => { state = s; },
+      body: async ({ signal: callSignal, continuationPrompt, recordOutput }) => {
+        let prompt = continuationPrompt ?? feature;
 
-      // Inject prior approval rejection context so the planner can adapt and avoid
-      // re-proposing actions the user has already declined.
-      if (config.approval?.feedRejectionsToPlanner !== false) {
-        try {
-          const ledger = readEvidenceLedger(projectDir, sessionId);
-          if (ledger) {
-            const rejectionCtx = buildRejectionContext(ledger);
-            if (rejectionCtx.length > 0) {
-              prompt = `${rejectionCtx}\n${prompt}`;
+        if (config.approval?.feedRejectionsToPlanner !== false) {
+          try {
+            const ledger = readEvidenceLedger(projectDir, sessionId);
+            if (ledger) {
+              const rejectionCtx = buildRejectionContext(ledger);
+              if (rejectionCtx.length > 0) {
+                prompt = `${rejectionCtx}\n${prompt}`;
+              }
             }
+          } catch {
+            // Best-effort: never fail the planner call because the ledger is unreadable.
           }
-        } catch {
-          // Best-effort: never fail the planner call because the ledger is unreadable.
         }
-      }
 
-      const callAttachments = !attachmentsConsumed && attachments && attachments.length > 0 ? attachments : undefined;
-      attachmentsConsumed = true;
-      const plannerCallbacks: PlannerCallbacks = {
-        onOutput: (text) => { recordOutput(text); textHandler(text); },
-        onSessionId: (id) => { state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PLANNER_SESSION_ID', sessionId: id }); },
-        onSessionExpired: createSessionExpiredHandler({ projectDir, sessionId, callbacks, bus: wctx.bus, config, resumeHolder }),
-        sessionId,
-        persistTranscript: config.workflow.persistTranscript,
-        ...(priorMessages && priorMessages.length > 0 ? { priorMessages } : {}),
-        ...(callAttachments ? { attachments: callAttachments } : {}),
-        ...(state.discoveredValidation !== undefined ? { discoveredValidation: state.discoveredValidation } : {}),
-        ...(mode === 'speckit' && conversational && collectedQuestions
-          ? {
-              onQuestion: (questions) => {
-                for (const q of questions) {
-                  if (collectedQuestions.length < MAX_CLARIFICATION_QUESTIONS) {
-                    collectedQuestions.push(q);
+        const callAttachments = !attachmentsConsumed && attachments && attachments.length > 0 ? attachments : undefined;
+        attachmentsConsumed = true;
+        const plannerCallbacks: PlannerCallbacks = {
+          onOutput: (text) => { recordOutput(text); textHandler(text); },
+          onSessionId: (id) => { state = transitionAndSave(projectDir, sessionId, state, { type: 'SET_PLANNER_SESSION_ID', sessionId: id }); },
+          onSessionExpired: createSessionExpiredHandler({ projectDir, sessionId, callbacks, bus: wctx.bus, config, resumeHolder }),
+          sessionId,
+          persistTranscript: config.workflow.persistTranscript,
+          signal: callSignal,
+          ...(priorMessages && priorMessages.length > 0 ? { priorMessages } : {}),
+          ...(callAttachments ? { attachments: callAttachments } : {}),
+          ...(state.discoveredValidation !== undefined ? { discoveredValidation: state.discoveredValidation } : {}),
+          ...(mode === 'speckit' && conversational && collectedQuestions
+            ? {
+                onQuestion: (questions) => {
+                  for (const q of questions) {
+                    if (collectedQuestions.length < MAX_CLARIFICATION_QUESTIONS) {
+                      collectedQuestions.push(q);
+                    }
                   }
-                }
-              },
-            }
-          : {}),
-      };
+                },
+              }
+            : {}),
+        };
 
-      if (mode === 'quick') {
-        const quickPlanFn = planner.quickPlan ?? planner.plan;
-        const result = await quickPlanFn.call(planner, prompt, projectDir, plannerCallbacks, codebaseContext);
+        if (mode === 'quick') {
+          const quickPlanFn = planner.quickPlan ?? planner.plan;
+          const result = await quickPlanFn.call(planner, prompt, projectDir, plannerCallbacks, codebaseContext);
+          return { value: result };
+        }
+        const result = await planner.plan(prompt, projectDir, plannerCallbacks, skillsContext, codebaseContext);
         return { value: result };
-      }
-      const result = await planner.plan(prompt, projectDir, plannerCallbacks, skillsContext, codebaseContext);
-      return { value: result };
-    },
-  });
+      },
+    });
 
-  heartbeat.stop();
-  unsubscribeHeartbeat();
-
-  state = loop.state;
-  return { state, result: loop.value };
+    state = loop.state;
+    return { state, result: loop.value };
+  } finally {
+    heartbeat.stop();
+    unsubscribeHeartbeat();
+  }
 }
 
 type PersistedTasksResult =

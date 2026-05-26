@@ -830,7 +830,7 @@ The optional `target` argument defaults to `spec-kit`.
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--session <id>` | string | active session | Session ID to export. |
-| `--out <dir>` | path | `./handoff/<target>/` | Output directory. |
+| `--out <dir>` | path | `.diptych/handoffs/<target>/` | Output directory. |
 | `--task <ids>` | csv | all tasks | Comma-separated list of task IDs to include. |
 | `--mode <mode>` | enum | `default` | Write mode: `default` (refuse on conflict), `append`, or `overwrite`. |
 | `--project <dir>` | path | cwd | Project directory. |
@@ -839,7 +839,7 @@ The optional `target` argument defaults to `spec-kit`.
 ### Examples
 
 ```bash
-# Default: spec-kit pack into ./handoff/spec-kit/
+# Default: spec-kit pack into .diptych/handoffs/spec-kit/
 diptych handoff
 
 # Pack a specific session for Claude Code
@@ -863,7 +863,7 @@ diptych handoff --list
 ### Files affected
 
 - **Reads:** `.diptych/sessions/<id>/{spec.md,plan.md,tasks.md,state.json}`, custom renderer modules under `.diptych/handoff-renderers/`.
-- **Writes:** every file in `--out` (default `./handoff/<target>/`).
+- **Writes:** every file in `--out` (default `.diptych/handoffs/<target>/`).
 
 ### See also
 
@@ -1538,7 +1538,7 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 | `.diptych/hook-trust.json` | `start`/`resume`/`spec` trust prompt | Hook trust ledger. |
 | `.diptych/handoff-renderers/` | user | Custom Handoff Pack renderers. |
 | `.trees/<slug>/` | `worktree`, `start --worktree` | Linked git worktrees on branch `diptych/<slug>`. |
-| `handoff/<target>/` | `handoff` | Default Handoff Pack output (overridden by `--out`). |
+| `.diptych/handoffs/<target>/` | `handoff` | Default Handoff Pack output (overridden by `--out`). |
 
 ### Headless event stream (`--json`)
 

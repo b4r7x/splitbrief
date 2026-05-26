@@ -17,6 +17,8 @@ export type SpawnServerOptions = {
   mode: string;
   configPath: string;
   overrides?: CLIOverrides;
+  allowHooks?: boolean;
+  plannerContext?: string;
 };
 
 export type SpawnServerResult =
@@ -100,6 +102,8 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<SpawnServer
     mode: opts.mode,
     configPath: opts.configPath,
     overrides: opts.overrides ?? {},
+    ...(opts.allowHooks !== undefined && { allowHooks: opts.allowHooks }),
+    ...(opts.plannerContext !== undefined && { plannerContext: opts.plannerContext }),
   });
   const argv = buildServerArgv(entryArgs, argsFile);
 

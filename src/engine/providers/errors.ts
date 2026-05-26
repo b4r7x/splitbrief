@@ -22,4 +22,12 @@ export const providerError = {
     error('provider-expected-openai-client', `Expected OpenAI-compatible client for provider '${provider}'`, { provider }),
   httpFailure: (status: number, url: string) =>
     error('provider-http-failure', `HTTP ${status}`, { status, url }),
+  apiBaseExfiltration: (provider: string, envVar: string) =>
+    error(
+      'provider-api-base-exfiltration',
+      `Refusing to send ${envVar} to a custom apiBase for known provider '${provider}'. ` +
+      `This combination can exfiltrate API keys. Either remove the apiBase override, ` +
+      `or set the API key explicitly in the same config (not via environment variable).`,
+      { provider, envVar },
+    ),
 } as const;

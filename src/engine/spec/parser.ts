@@ -1,15 +1,24 @@
 import { z } from 'zod';
+import { isAbsolute, normalize } from 'node:path';
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import { taskId } from '../../core/schemas/task.js';
 import { topoSort } from '../../core/state/topo-sort.js';
 import { parseSimpleYamlFrontmatter, extractFrontmatter } from '../../utils/frontmatter.js';
 import { extractFirstFencedBlock } from '../parsers/code-patterns.js';
 
+function isConfinedRelativePath(p: string): boolean {
+  if (isAbsolute(p)) return false;
+  const normalized = normalize(p);
+  if (normalized.startsWith('..')) return false;
+  if (isAbsolute(normalized)) return false;
+  return true;
+}
+
 const TaskFrontmatterSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   action: z.enum(['create', 'modify']),
-  file: z.string().min(1),
+  file: z.string().min(1).refine(isConfinedRelativePath, { message: 'task file path must be a confined relative path' }),
   depends_on: z.union([
     z.array(z.string()),
     z.string().transform(s => [s]),

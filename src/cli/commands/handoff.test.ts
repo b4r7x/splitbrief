@@ -53,7 +53,7 @@ describe('handoff command — target validation', () => {
     const logs = await runHandoff(['custom-target']);
 
     expect(writes).toMatchObject([{ target: 'custom-target' }]);
-    expect(logs.join('\n')).toContain(`${tmp}/handoff/custom-target`);
+    expect(logs.join('\n')).toContain(`${tmp}/.diptych/handoffs/custom-target`);
     expect(logs.join('\n')).toContain('custom-target.md');
   });
 
@@ -134,10 +134,10 @@ describe('handoff command — defaults', () => {
     expect(writes).toMatchObject([{ target: 'spec-kit' }]);
   });
 
-  it('defaults outDir to <projectDir>/handoff/spec-kit', async () => {
+  it('defaults outDir to <projectDir>/.diptych/handoffs/spec-kit', async () => {
     const logs = await runHandoff([]);
 
-    expect(writes).toMatchObject([{ outDir: join(tmp, 'handoff', 'spec-kit') }]);
-    expect(logs.join('\n')).toContain(join(tmp, 'handoff', 'spec-kit'));
+    expect(writes).toMatchObject([{ outDir: join(tmp, '.diptych', 'handoffs', 'spec-kit') }]);
+    expect(logs.join('\n')).toContain(join(tmp, '.diptych', 'handoffs', 'spec-kit'));
   });
 });

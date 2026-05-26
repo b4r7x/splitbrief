@@ -1,5 +1,4 @@
 import { Box, Text } from 'ink';
-import cfonts from 'cfonts';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { useTheme } from '../../components/theme.js';
 import { Composer } from '../../components/composer/composer.js';
@@ -12,15 +11,6 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { useStores } from '../../stores/use-stores.js';
 import { getHomeLayout } from './layout.js';
 
-let cachedBanner: string | undefined;
-
-function getBanner(): string {
-  if (cachedBanner !== undefined) return cachedBanner;
-  const result = cfonts.render('diptych', { font: 'tiny', colors: ['cyan'] });
-  cachedBanner = result ? result.string : '';
-  return cachedBanner;
-}
-
 interface HomeScreenProps {
   commands: RuntimeCommandDef[];
   onRuntimeCommand: (command: string) => void;
@@ -31,7 +21,6 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
   const hasOverlay = overlayStore.use(s => s.active !== 'none');
   const [{ cols, rows, isSmall }] = useStores(terminalSizeStore);
 
-  const banner = getBanner();
   const layout = getHomeLayout({ cols, rows, isSmall });
   const onStartWorkflow = (feat: string) => routerStore.navigate({ to: 'workflow', feature: feat });
 
@@ -47,11 +36,7 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
         >
           <Box flexDirection="column" width={layout.bodyWidth} gap={isSmall ? 0 : 1}>
             <Box justifyContent="center" marginBottom={1}>
-              {layout.showBanner && banner ? (
-                <Text>{banner.trimEnd()}</Text>
-              ) : (
-                <Text bold color={theme.accent}>diptych</Text>
-              )}
+              <Text bold color={theme.accent}>diptych</Text>
             </Box>
 
             <HomeConfigSummary />

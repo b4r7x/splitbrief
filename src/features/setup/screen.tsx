@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Text, useApp } from 'ink';
 import { useTheme } from '../../components/theme.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
@@ -29,6 +29,7 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
   const [{ planners }, { projectDir }] = useStores(detectionStore, configStore);
   const onComplete = routerStore.use(s => s.screen === 'setup' ? s.onComplete : undefined);
   const pendingFeature = routerStore.use(s => s.screen === 'setup' ? s.feature : undefined);
+  const pendingPlannerContext = routerStore.use(s => s.screen === 'setup' ? s.plannerContext : undefined);
 
   const [step, setStep] = useState<Step>(() =>
     planners.filter(p => p.available).length === 0 ? 'no-planners' : 'planner',
@@ -42,7 +43,7 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
       return;
     }
     if (onComplete === 'workflow' && pendingFeature) {
-      routerStore.navigate({ to: 'workflow', feature: pendingFeature });
+      routerStore.navigate({ to: 'workflow', feature: pendingFeature, plannerContext: pendingPlannerContext });
     } else {
       routerStore.navigate({ to: 'home' });
     }

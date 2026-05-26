@@ -267,6 +267,7 @@ describe('runWorkflow — smoke', () => {
         },
       }),
       callbacks,
+      allowHooks: true,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _eventSink: (event) => events.push(event),
       _planner: makePlanner({

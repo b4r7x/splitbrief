@@ -110,10 +110,17 @@ const TOOL_DEFINITIONS: McpToolDefinition[] = [
   },
 ];
 
-export function createToolHandler(projectDir: string): McpToolHandler {
+export function createToolHandler(projectDir: string, allowedSessionIds?: readonly string[]): McpToolHandler {
   return {
     listTools: () => TOOL_DEFINITIONS,
     callTool(name: string, args: Record<string, unknown>): ToolCallResult {
+      if (allowedSessionIds !== undefined) {
+        const sessionId = typeof args['sessionId'] === 'string' ? args['sessionId'] : undefined;
+        if (sessionId === undefined || !allowedSessionIds.includes(sessionId)) {
+          return { ok: false, error: `Session not allowed: ${sessionId ?? '(missing)'}` };
+        }
+      }
+
       switch (name) {
         case 'report_evidence':
           return handleReportEvidence(projectDir, args);

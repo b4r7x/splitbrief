@@ -66,7 +66,7 @@ describe('createImplementerBase — error paths', () => {
     expect(existsSync(join(projectDir, 'src/nope.ts'))).toBe(false);
   });
 
-  it('returns failure when applyCode cannot write (path escapes projectDir)', async () => {
+  it('throws when task file path escapes projectDir', async () => {
     const invoke = vi.fn().mockResolvedValue({
       text: '```ts\nconst x = 1;\n```',
       usage: null,
@@ -74,12 +74,11 @@ describe('createImplementerBase — error paths', () => {
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
     const task = makeTask({ id: 'T001', file: '../escape.ts', action: 'create' });
 
-    const result = await implementer.implement({
-      task, projectDir, config: makeConfig(), context: defaultContext, onOutput: vi.fn(),
-    });
-
-    expect(result.success).toBe(false);
-    if (!result.success) expect(result.error).toBeTruthy();
+    await expect(
+      implementer.implement({
+        task, projectDir, config: makeConfig(), context: defaultContext, onOutput: vi.fn(),
+      }),
+    ).rejects.toThrow(/unsafe path/);
   });
 });
 

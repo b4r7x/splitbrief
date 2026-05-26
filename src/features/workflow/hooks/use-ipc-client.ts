@@ -1,7 +1,8 @@
 import { useState, useEffect, useEffectEvent, useRef } from 'react';
 import { createConnection, type Socket } from 'node:net';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import type { IpcPromptRequest, IpcPromptResponse, ServerMessage } from '../../../engine/ipc/protocol.js';
+import type { IpcPromptRequest, IpcPromptResponse } from '../../../engine/ipc/protocol.js';
+import { parseServerMessage } from '../../../engine/ipc/protocol.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 
 export type IpcClientStatus =
@@ -115,15 +116,25 @@ export function useIpcClient(opts: {
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed) continue;
-          let msg: ServerMessage;
+          let parsed: unknown;
           try {
-            msg = JSON.parse(trimmed) as ServerMessage;
+            parsed = JSON.parse(trimmed);
           } catch {
             onEvent({
               type: 'warning',
               ts: Date.now(),
               phase: 'idle',
               message: 'IPC: malformed server message',
+            });
+            continue;
+          }
+          const msg = parseServerMessage(parsed);
+          if (msg === null) {
+            onEvent({
+              type: 'warning',
+              ts: Date.now(),
+              phase: 'idle',
+              message: 'IPC: invalid server message structure',
             });
             continue;
           }

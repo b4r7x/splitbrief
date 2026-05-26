@@ -31,7 +31,7 @@ export async function ensureGitAndConfig(projectDir: string): Promise<void> {
   await assertGitRepo(projectDir);
 
   if (!existsSync(configPath(projectDir))) {
-    console.log(NO_CONFIG_MSG);
+    console.error(NO_CONFIG_MSG);
     initConfig(projectDir);
   }
 }

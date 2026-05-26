@@ -68,6 +68,7 @@ describe('hooks integration flow', () => {
       config,
       callbacks,
       sinks: TEST_WORKFLOW_SINKS,
+      allowHooks: true,
       _eventSink: (e) => recorded.push(e),
     });
 
@@ -117,6 +118,7 @@ describe('hooks integration flow', () => {
       config,
       callbacks,
       sinks: TEST_WORKFLOW_SINKS,
+      allowHooks: true,
       _eventSink: (e) => recorded.push(e),
     });
 

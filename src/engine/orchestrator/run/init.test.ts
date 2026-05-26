@@ -56,6 +56,7 @@ describe('initializeWorkflow', () => {
           sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
           _planner: makePlanner(),
           _implementer: makeImplementer(),
+          allowHooks: true,
         },
         sessionId,
         summaryBase,

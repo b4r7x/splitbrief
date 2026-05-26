@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { DIPTYCH_DIR } from '../../core/paths.js';
 import { writeSecureFile } from '../../lib/fs.js';
 import { isENOENT } from '../../lib/process/errors.js';
+import { redactSecrets } from '../../utils/redact.js';
 import { warnError } from '../../lib/warn.js';
 import { inputHistoryStore, MAX_INPUT_HISTORY } from './input-history.js';
 
@@ -38,7 +39,7 @@ export function installHistoryPersistence(): () => void {
     saveTimer = setTimeout(() => {
       saveTimer = null;
       try {
-        writeSecureFile(HISTORY_FILE, entries.join('\n'));
+        writeSecureFile(HISTORY_FILE, entries.map(e => redactSecrets(e)).join('\n'));
       } catch (err) {
         warnError('input-history: failed to save', err);
       }

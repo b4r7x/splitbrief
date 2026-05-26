@@ -3,22 +3,32 @@ import type { RpcCommand } from './types.js';
 export type ApprovalGateResult = { approved: boolean; comment?: string | undefined };
 
 export function createGate<T>() {
-  let pending: ((value: T) => void) | null = null;
+  let resolveFn: ((value: T) => void) | null = null;
+  let rejectFn: ((reason: Error) => void) | null = null;
 
   return {
     wait(): Promise<T> {
-      return new Promise((r) => {
-        pending = r;
+      return new Promise((resolve, reject) => {
+        resolveFn = resolve;
+        rejectFn = reject;
       });
     },
     resolve(value: T): boolean {
-      if (!pending) return false;
-      pending(value);
-      pending = null;
+      if (!resolveFn) return false;
+      resolveFn(value);
+      resolveFn = null;
+      rejectFn = null;
+      return true;
+    },
+    reject(reason: Error): boolean {
+      if (!rejectFn) return false;
+      rejectFn(reason);
+      resolveFn = null;
+      rejectFn = null;
       return true;
     },
     isPending(): boolean {
-      return pending !== null;
+      return resolveFn !== null;
     },
   };
 }
@@ -28,6 +38,7 @@ export function createApprovalGate() {
 
   return {
     wait: gate.wait,
+    reject: gate.reject,
     handle(cmd: RpcCommand): boolean {
       if (!gate.isPending()) return false;
       if (cmd.type === 'approve') {

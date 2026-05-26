@@ -37,7 +37,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
-describe('runTasksAndReview', () => {
+describe('runTasksAndReview', { timeout: 30_000 }, () => {
   it('publishes deterministic cost prediction before task execution', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });

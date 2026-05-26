@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { eventsStore, MAX_EVENTS } from './events.js';
+import { eventsStore, MAX_EVENTS, MAX_MERGED_TEXT_LENGTH, mergeEvent } from './events.js';
 import { addEvent, resetWorkflow } from './actions.js';
 import { taskId } from '../../core/schemas/task.js';
 import {
@@ -68,6 +68,25 @@ describe('eventsStore — append via addEvent', () => {
       addEvent(makeValidate({ status: 'running', passed: false, stages: { typecheck: false, lint: false, test: false } }));
       expect(eventsStore.get().events).toHaveLength(2);
     });
+  });
+
+  it('caps merged planner_text at MAX_MERGED_TEXT_LENGTH', () => {
+    const bigChunk = 'x'.repeat(MAX_MERGED_TEXT_LENGTH);
+    addEvent(makePlannerText({ text: bigChunk }));
+    addEvent(makePlannerText({ text: 'tail' }));
+    const s = eventsStore.get();
+    expect(s.events).toHaveLength(1);
+    const text = (s.events[0] as { text: string }).text;
+    expect(text.length).toBeLessThanOrEqual(MAX_MERGED_TEXT_LENGTH);
+    expect(text.endsWith('tail')).toBe(true);
+  });
+
+  it('mergeEvent caps text and keeps most recent content', () => {
+    const base = [makePlannerText({ text: 'a'.repeat(MAX_MERGED_TEXT_LENGTH) })];
+    const result = mergeEvent(base, makePlannerText({ text: 'RECENT' }));
+    const text = (result[0] as { text: string }).text;
+    expect(text.length).toBe(MAX_MERGED_TEXT_LENGTH);
+    expect(text.endsWith('RECENT')).toBe(true);
   });
 
   describe('planner_heartbeat coalescing', () => {

@@ -104,6 +104,7 @@ describe('runRpc', () => {
       undefined,
       undefined,
       undefined,
+      undefined,
       { input, output, runWorkflow: runWorkflowStub },
     );
 
@@ -154,6 +155,7 @@ describe('runRpc', () => {
       undefined,
       undefined,
       undefined,
+      undefined,
       { input, output, runWorkflow: runWorkflowStub },
     );
 
@@ -198,6 +200,7 @@ describe('runRpc', () => {
       undefined,
       undefined,
       undefined,
+      undefined,
       { input, output, runWorkflow: runWorkflowStub },
     );
 
@@ -238,6 +241,7 @@ describe('runRpc', () => {
       { rpc: true },
       undefined,
       'rpc-abort-session',
+      undefined,
       undefined,
       undefined,
       undefined,
@@ -294,6 +298,7 @@ describe('runRpc', () => {
       undefined,
       undefined,
       undefined,
+      undefined,
       { input, output, runWorkflow: runWorkflowStub },
     );
 
@@ -329,6 +334,7 @@ describe('runRpc', () => {
       { rpc: true },
       undefined,
       'rpc-slash-session',
+      undefined,
       undefined,
       undefined,
       undefined,
@@ -369,6 +375,7 @@ describe('runRpc', () => {
       { rpc: true },
       undefined,
       'rpc-queue-clear-session',
+      undefined,
       undefined,
       undefined,
       undefined,
@@ -414,6 +421,7 @@ describe('runRpc', () => {
       undefined,
       undefined,
       undefined,
+      undefined,
       { input, output, runWorkflow: runWorkflowStub },
     );
 
@@ -446,6 +454,7 @@ describe('runRpc', () => {
       { rpc: true },
       undefined,
       'rpc-slash-typo-session',
+      undefined,
       undefined,
       undefined,
       undefined,
@@ -484,6 +493,7 @@ describe('runRpc', () => {
       undefined,
       undefined,
       undefined,
+      undefined,
       { input, output, runWorkflow: runWorkflowStub },
     );
 
@@ -494,5 +504,34 @@ describe('runRpc', () => {
     const lines = parseLines(chunks);
     const hasError = lines.some(line => line.type === 'error' && String(line.error).includes('crash'));
     expect(hasError).toBe(false);
+  });
+
+  it('rejects pending approval gate when stdin closes unexpectedly', async () => {
+    const projectDir = setupProject();
+    const input = new PassThrough();
+    const { output } = captureWritable();
+    const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
+      await workflowOpts.callbacks.onApprovalNeeded('spec', join(projectDir, 'spec.md'));
+    };
+
+    const run = runRpc(
+      'gate-close test',
+      projectDir,
+      { rpc: true },
+      undefined,
+      'rpc-gate-close-session',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { input, output, runWorkflow: runWorkflowStub },
+    );
+
+    await vi.waitFor(() => {
+      expect(input.readable).toBe(true);
+    });
+
+    input.end();
+    await expect(run).rejects.toThrow('stdin closed');
   });
 });

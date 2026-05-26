@@ -1,6 +1,7 @@
-import { writeFileSync, mkdirSync, statSync, existsSync, readFileSync, appendFileSync, chmodSync } from 'node:fs';
+import { writeFileSync, mkdirSync, statSync, existsSync, readFileSync, appendFileSync, chmodSync, lstatSync, renameSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { error, matches } from '../utils/error.js';
 import { isENOENT } from './process/errors.js';
 
@@ -33,6 +34,9 @@ export const fsError = {
       { label, id, reason },
     ),
   isInvalidId: matches('fs-invalid-id'),
+  symlinkWrite: (filePath: string) =>
+    error('fs-symlink-write', `refusing to write through symlink: ${filePath}`, { filePath }),
+  isSymlinkWrite: matches('fs-symlink-write'),
 } as const;
 
 export function ensureSecureDir(dir: string): void {
@@ -41,7 +45,22 @@ export function ensureSecureDir(dir: string): void {
 
 export function writeSecureFile(filePath: string, content: string): void {
   ensureSecureDir(dirname(filePath));
-  writeFileSync(filePath, content, { mode: SECURE_FILE_MODE });
+
+  try {
+    const st = lstatSync(filePath);
+    if (st.isSymbolicLink()) {
+      throw fsError.symlinkWrite(filePath);
+    }
+  } catch (err: unknown) {
+    if (fsError.isSymlinkWrite(err)) throw err;
+  }
+
+  const dir = dirname(filePath);
+  const tmpName = `.${basename(filePath)}.tmp.${randomBytes(8).toString('hex')}`;
+  const tmpPath = join(dir, tmpName);
+
+  writeFileSync(tmpPath, content, { mode: SECURE_FILE_MODE });
+  renameSync(tmpPath, filePath);
   chmodSync(filePath, SECURE_FILE_MODE);
 }
 

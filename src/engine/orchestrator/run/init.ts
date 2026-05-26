@@ -24,6 +24,8 @@ import type { EngineEvent, EventBus, EventSink } from '../../events/types.js';
 import { createHookSink } from '../../hooks/sink.js';
 import { runPreHooks } from '../../hooks/run-pre-hook.js';
 import { resolveHooksConfig } from '../../hooks/discover.js';
+import { isHooksConfigTrusted, markHooksConfigTrusted } from '../../../core/hooks/trust.js';
+import { error } from '../../../utils/error.js';
 import { createBranch } from '../../../lib/git.js';
 import { slugify } from '../../../utils/slugify.js';
 import type { OrchestratorCallbacks, ResumeContextHolder, WorkflowContext, WorkflowSinks } from '../types.js';
@@ -32,6 +34,7 @@ import { createImplementerPublisher, publishError, publishPlannerStatus, publish
 import { transitionAndSave } from '../state-ops.js';
 import { applyRebuiltContext, autoCompactResumeContext } from '../resume-context.js';
 import { createValidator } from '../validation.js';
+import { rejectUntrustedRunners } from '../../runners/trust.js';
 
 export type RunWorkflowOptions = {
   feature: string;
@@ -43,8 +46,12 @@ export type RunWorkflowOptions = {
   sessionId?: string | undefined;
   selectedSkills?: SkillMeta[] | undefined;
   signal?: AbortSignal | undefined;
+  /** Transient @file text context appended to the planner prompt but never persisted in state, summaries, or events. */
+  plannerContext?: string | undefined;
   /** Headless mode: emit events as NDJSON to stdout. TUI render is skipped at the CLI layer. */
   headless?: boolean | undefined;
+  /** When true, automatically trust hooks without prompting. Fail-closed otherwise in non-interactive paths. */
+  allowHooks?: boolean | undefined;
   /** Optional TUI event sink — bridges engine events to React stores. Supplied by the React workflow layer. */
   tuiSink?: EventSink | undefined;
   /** Optional externally-owned bus, used by the detached IPC server/client path. */
@@ -83,7 +90,19 @@ export async function initializeWorkflow(
   ensureSessionDir(projectDir, sessionId);
 
   const hooks = await resolveHooksConfig(projectDir, opts.config.hooks);
+  if (hooks !== undefined && !isHooksConfigTrusted(projectDir, hooks)) {
+    if (opts.allowHooks) {
+      markHooksConfigTrusted(projectDir, hooks);
+    } else {
+      throw error(
+        'hooks-not-trusted',
+        'Hooks are not trusted. The merged hook configuration (config + discovered) has not been approved. Re-run with --allow-hooks or approve hooks interactively first.',
+      );
+    }
+  }
   const config: Config = hooks === undefined ? opts.config : { ...opts.config, hooks };
+
+  rejectUntrustedRunners(config, projectDir, opts.allowHooks ?? false);
 
   const bus = opts.eventBus ?? createEventBus();
   if (opts.tuiSink) bus.subscribe(opts.tuiSink);
@@ -181,6 +200,7 @@ export async function initializeWorkflow(
     ...(opts.modelCache !== undefined && { modelCache: opts.modelCache }),
     ...(opts.drainPendingAttachments !== undefined && { drainPendingAttachments: opts.drainPendingAttachments }),
     ...(opts.streamingSink !== undefined && { streamingSink: opts.streamingSink }),
+    ...(opts.plannerContext !== undefined && { plannerContext: opts.plannerContext }),
   };
 
   if (!savedState && config.hooks) {

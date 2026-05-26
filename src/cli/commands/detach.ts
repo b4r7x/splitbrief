@@ -1,13 +1,14 @@
 import { join } from 'node:path';
 import { createConnection } from 'node:net';
-import { Command } from 'commander';
+import type { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { assertNotWindows } from '../platform.js';
 import { checkServerStatus, type ServerStatus } from '../../engine/ipc/lockfile.js';
 import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
-import type { ClientMessage, ServerMessage } from '../../engine/ipc/protocol.js';
+import type { ClientMessage } from '../../engine/ipc/protocol.js';
+import { parseServerMessage } from '../../engine/ipc/protocol.js';
 import { isNumericAlias, resolveNumericAlias } from '../session-aliases.js';
 import { findSingleRunningSession } from '../sessions/single-running-session.js';
 
@@ -59,14 +60,16 @@ function sendDetach(sockPath: string): Promise<void> {
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
+        let parsed: unknown;
         try {
-          const msg = JSON.parse(trimmed) as ServerMessage;
-          if (msg.kind === 'error') {
-            finish(new Error(msg.message));
-            return;
-          }
+          parsed = JSON.parse(trimmed);
         } catch {
-          // Ignore malformed server messages; detach is best-effort once connected.
+          continue;
+        }
+        const msg = parseServerMessage(parsed);
+        if (msg !== null && msg.kind === 'error') {
+          finish(new Error(msg.message));
+          return;
         }
       }
     });

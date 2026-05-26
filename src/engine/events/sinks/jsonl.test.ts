@@ -44,11 +44,31 @@ describe('jsonlSink', () => {
     expect(lines[0]?.['type']).toBe('workflow_started');
   });
 
-  it('keeps user_message events even when persistTranscript=false', () => {
+  it('drops user_message events when persistTranscript=false', () => {
     const sink = createJsonlSink(projectDir, sessionId, false);
     sink({ type: 'user_message', ts: 100, phase: 'researching', text: 'hi' });
+    sink({ type: 'workflow_started', ts: 200, phase: 'idle', feature: 'x' });
     const lines = readLog();
     expect(lines).toHaveLength(1);
+    expect(lines[0]?.['type']).toBe('workflow_started');
+  });
+
+  it('drops clarification_answered events when persistTranscript=false', () => {
+    const sink = createJsonlSink(projectDir, sessionId, false);
+    sink({ type: 'clarification_answered', ts: 100, phase: 'clarifying', answer: 'yes' });
+    sink({ type: 'workflow_started', ts: 200, phase: 'idle', feature: 'x' });
+    const lines = readLog();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.['type']).toBe('workflow_started');
+  });
+
+  it('drops implementer_generate_done events when persistTranscript=false', () => {
+    const sink = createJsonlSink(projectDir, sessionId, false);
+    sink({ type: 'implementer_generate_done', ts: 100, phase: 'implementing', taskId: 't1' as never, file: 'a.ts', linesAdded: 10, linesRemoved: 5, duration: 100, diff: 'big diff here' });
+    sink({ type: 'workflow_started', ts: 200, phase: 'idle', feature: 'x' });
+    const lines = readLog();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.['type']).toBe('workflow_started');
   });
 
   it('serializes taskId outside data when present', () => {

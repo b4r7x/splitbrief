@@ -51,4 +51,60 @@ describe('createIpcWorkflowBridge', () => {
     ]);
     bridge.close();
   });
+
+  it('exposes an AbortSignal that is not aborted initially', () => {
+    const bus = createEventBus();
+    const bridge = createIpcWorkflowBridge(bus);
+
+    expect(bridge.signal.aborted).toBe(false);
+    bridge.close();
+  });
+
+  it('abort() sets the signal to aborted', () => {
+    const bus = createEventBus();
+    const bridge = createIpcWorkflowBridge(bus);
+
+    bridge.abort();
+
+    expect(bridge.signal.aborted).toBe(true);
+    bridge.close();
+  });
+
+  it('abort() invokes the registered abort handler', () => {
+    const bus = createEventBus();
+    const bridge = createIpcWorkflowBridge(bus);
+    let handlerCalled = false;
+    bridge.sinks.setAbortHandler(() => { handlerCalled = true; });
+
+    bridge.abort();
+
+    expect(handlerCalled).toBe(true);
+    bridge.close();
+  });
+
+  it('abort() clears the handler after calling it once', () => {
+    const bus = createEventBus();
+    const bridge = createIpcWorkflowBridge(bus);
+    let callCount = 0;
+    bridge.sinks.setAbortHandler(() => { callCount++; });
+
+    bridge.abort();
+    bridge.abort();
+
+    expect(callCount).toBe(1);
+    bridge.close();
+  });
+
+  it('stores abort handler registered via setAbortHandler', () => {
+    const bus = createEventBus();
+    const bridge = createIpcWorkflowBridge(bus);
+    let handlerCalled = false;
+    bridge.sinks.setAbortHandler(() => { handlerCalled = true; });
+    bridge.sinks.setAbortHandler(null);
+
+    bridge.abort();
+
+    expect(handlerCalled).toBe(false);
+    bridge.close();
+  });
 });

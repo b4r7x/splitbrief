@@ -364,3 +364,41 @@ describe('restoreSnapshot — event emission', () => {
     await expect(readFile(join(tmp, 'foo.ts'), 'utf-8')).resolves.toBe('user-edit-after-snapshot');
   });
 });
+
+describe('restoreSnapshot — path confinement', () => {
+  it('rejects manifest paths that traverse outside the project via ../', async () => {
+    await writeFile(join(tmp, 'safe.ts'), 'safe');
+    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+
+    const { writeManifest } = await import('./store.js');
+    const snap = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+
+    const corruptManifest = {
+      ...snap.manifest,
+      fileHashes: { ...snap.manifest.fileHashes, '../outside.txt': 'abc123' },
+    };
+    await writeManifest(tmp, 'sess-01', corruptManifest);
+
+    await expect(
+      restoreSnapshot({ projectDir: tmp, sessionId: 'sess-01', idOrName: snap.manifest.id }),
+    ).rejects.toThrow(/unsafe path/);
+  });
+
+  it('rejects manifest paths that use absolute paths', async () => {
+    await writeFile(join(tmp, 'safe.ts'), 'safe');
+    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+
+    const { writeManifest } = await import('./store.js');
+    const snap = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+
+    const corruptManifest = {
+      ...snap.manifest,
+      fileHashes: { ...snap.manifest.fileHashes, '/etc/passwd': 'abc123' },
+    };
+    await writeManifest(tmp, 'sess-01', corruptManifest);
+
+    await expect(
+      restoreSnapshot({ projectDir: tmp, sessionId: 'sess-01', idOrName: snap.manifest.id }),
+    ).rejects.toThrow(/unsafe path/);
+  });
+});

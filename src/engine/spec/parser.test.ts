@@ -727,3 +727,57 @@ Only in bounds listed.
     expect(task.scope).toEqual({ inBounds: ['new file src/partial.ts'] });
   });
 });
+
+describe('parseTasks — path confinement', () => {
+  it('rejects tasks with ../traversal file paths', () => {
+    const input = `---
+id: T001
+title: "Escape"
+action: create
+file: ../sensitive-file.ts
+depends_on: []
+---
+
+### Description
+Should be rejected.
+`;
+
+    const tasks = parseTasks(input);
+    expect(tasks).toHaveLength(0);
+  });
+
+  it('rejects tasks with absolute file paths', () => {
+    const input = `---
+id: T001
+title: "Escape"
+action: create
+file: /etc/passwd
+depends_on: []
+---
+
+### Description
+Should be rejected.
+`;
+
+    const tasks = parseTasks(input);
+    expect(tasks).toHaveLength(0);
+  });
+
+  it('accepts valid relative file paths', () => {
+    const input = `---
+id: T001
+title: "Valid"
+action: create
+file: src/nested/file.ts
+depends_on: []
+---
+
+### Description
+Should work.
+`;
+
+    const tasks = parseTasks(input);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.file).toBe('src/nested/file.ts');
+  });
+});

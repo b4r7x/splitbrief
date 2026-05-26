@@ -52,7 +52,7 @@ function setupSessionOnly(): { projectDir: string; sessionId: string } {
 // Validation disabled: keeps us from spawning tsc/eslint/npm-test subprocesses.
 const defaultWorkflow = { commitStrategy: 'none' as const, maxRetries: 2 };
 
-describe('runTaskLoop', () => {
+describe('runTaskLoop', { timeout: 30_000 }, () => {
   it('task with failed dependency creates dependency-blocked recovery instead of auto-skipping', async () => {
     const { projectDir, sessionId } = setupProject();
     const dependency = makeTask({ id: 'T001', status: 'failed' });

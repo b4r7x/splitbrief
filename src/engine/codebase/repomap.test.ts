@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, it, expect } from 'vitest';
-import { buildRepoMap } from './repomap.js';
+import { buildRepoMap, MAX_FILE_SIZE_BYTES } from './repomap.js';
 import { initParser } from './parse.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
@@ -75,6 +75,61 @@ describe('buildRepoMap', () => {
       expect(out).toContain('src/main.ts:');
       expect(out).toContain('src/nested/feature.ts:');
       expect(out).not.toContain('root.ts:');
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('excludes node_modules and .git directories by name', async () => {
+    const dir = createTempDir('repomap-exclude-dirs');
+    try {
+      mkdirSync(join(dir, 'node_modules', 'pkg'), { recursive: true });
+      mkdirSync(join(dir, '.git', 'objects'), { recursive: true });
+      mkdirSync(join(dir, 'src'), { recursive: true });
+      writeFileSync(join(dir, 'node_modules', 'pkg', 'index.ts'), 'export function dep() { return "dep"; }');
+      writeFileSync(join(dir, '.git', 'objects', 'hook.ts'), 'export function hook() { return "hook"; }');
+      writeFileSync(join(dir, 'src', 'app.ts'), 'export function app() { return "app"; }');
+
+      const out = await buildRepoMap(dir, { tokenBudget: 5000 });
+
+      expect(out).toContain('src/app.ts:');
+      expect(out).not.toContain('node_modules');
+      expect(out).not.toContain('.git');
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('skips files larger than MAX_FILE_SIZE_BYTES', async () => {
+    const dir = createTempDir('repomap-large-file');
+    try {
+      writeFileSync(join(dir, 'small.ts'), 'export function small() { return "ok"; }');
+      writeFileSync(join(dir, 'huge.ts'), 'export function huge() { return "' + 'x'.repeat(MAX_FILE_SIZE_BYTES + 1) + '"; }');
+
+      const out = await buildRepoMap(dir, { tokenBudget: 5000 });
+
+      expect(out).toContain('small.ts:');
+      expect(out).not.toContain('huge.ts:');
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('merges user exclude patterns with defaults instead of replacing', async () => {
+    const dir = createTempDir('repomap-merge-excludes');
+    try {
+      mkdirSync(join(dir, 'node_modules', 'pkg'), { recursive: true });
+      mkdirSync(join(dir, 'src'), { recursive: true });
+      writeFileSync(join(dir, 'node_modules', 'pkg', 'lib.ts'), 'export function lib() { return "lib"; }');
+      writeFileSync(join(dir, 'src', 'app.ts'), 'export function app() { return "app"; }');
+      writeFileSync(join(dir, 'src', 'app.test.ts'), 'import { app } from "./app.js";');
+      writeFileSync(join(dir, 'src', 'gen.ts'), 'export function gen() { return "gen"; }');
+
+      const out = await buildRepoMap(dir, { tokenBudget: 5000, exclude: ['gen\\.ts$'] });
+
+      expect(out).toContain('src/app.ts:');
+      expect(out).not.toContain('node_modules');
+      expect(out).not.toContain('gen.ts');
     } finally {
       cleanupTempDir(dir);
     }

@@ -295,4 +295,37 @@ describe('MCP tool handler', () => {
     expect(checkACount).toBe(1);
     expect(task.observedEvidence).toContain('check B');
   });
+
+  it('rejects tool call with unauthorized sessionId when allowedSessionIds is set', () => {
+    const handler = createToolHandler(projectDir, ['sess-allowed']);
+    const before = readLedger(projectDir, 'sess-001');
+    const result = handler.callTool('report_evidence', {
+      sessionId: 'sess-001',
+      taskId: 'T001',
+      observedEvidence: ['should be blocked'],
+    });
+    const error = expectToolError(result);
+    expect(error).toContain('Session not allowed');
+    expect(readLedger(projectDir, 'sess-001')).toEqual(before);
+  });
+
+  it('rejects tool call with missing sessionId when allowedSessionIds is set', () => {
+    const handler = createToolHandler(projectDir, ['sess-001']);
+    const result = handler.callTool('report_evidence', {
+      taskId: 'T001',
+      observedEvidence: ['no session'],
+    });
+    const error = expectToolError(result);
+    expect(error).toContain('Session not allowed');
+  });
+
+  it('allows tool call with authorized sessionId', () => {
+    const handler = createToolHandler(projectDir, ['sess-001']);
+    const result = handler.callTool('report_evidence', {
+      sessionId: 'sess-001',
+      taskId: 'T001',
+      observedEvidence: ['authorized call'],
+    });
+    expect(result.ok).toBe(true);
+  });
 });

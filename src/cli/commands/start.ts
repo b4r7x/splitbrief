@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import type { Command } from 'commander';
 import { createElement } from 'react';
 import { join } from 'node:path';
 import { App } from '../../app.js';
@@ -125,20 +125,17 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
     await applyWorktreeOption(feature, opts);
 
     let enrichedFeature = feature;
-    let textContext = '';
+    let plannerContext: string | undefined;
     if (feature && files.length > 0) {
       const projectDirAt = resolveProjectDir(opts.project);
       const parsed = parseAtFiles(feature, files, projectDirAt);
       enrichedFeature = parsed.feature;
-      textContext = parsed.textContext;
+      if (parsed.textContext) plannerContext = parsed.textContext;
       for (const att of parsed.attachments) attachmentsStore.add(att);
       for (const err of parsed.errors) {
         console.error(`Warning: @${err.path}: ${err.reason}`);
       }
     }
-    const plannerFeature = textContext
-      ? `${enrichedFeature}\n\n<user-context>\n${textContext}\n</user-context>`
-      : enrichedFeature;
 
     if (opts.detach) {
       const projectDir = resolveProjectDir(opts.project);
@@ -160,10 +157,12 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
         sessionDir: sessDir,
         sessionId: sessId,
         projectDir,
-        feature: plannerFeature ?? detachFeature,
+        feature: enrichedFeature ?? detachFeature,
         mode,
         configPath: configPath(projectDir),
         overrides,
+        ...(opts.allowHooks !== undefined && { allowHooks: opts.allowHooks }),
+        ...(plannerContext !== undefined && { plannerContext }),
       });
 
       if (!result.ok) {
@@ -188,7 +187,7 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       clearStaleSessionForCli(projectDir);
       const sessionId = beginSession(projectDir, feature);
       persistStartReadiness(projectDir, sessionId, readiness.report);
-      await deps.runHeadless(plannerFeature ?? feature, projectDir, opts, undefined, sessionId, readiness);
+      await deps.runHeadless(enrichedFeature ?? feature, projectDir, opts, undefined, sessionId, readiness, undefined, undefined, plannerContext);
       return;
     }
 
@@ -201,7 +200,7 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       clearStaleSessionForCli(projectDir);
       const sessionId = beginSession(projectDir, feature);
       persistStartReadiness(projectDir, sessionId, readiness.report);
-      await deps.runRpc(plannerFeature ?? feature, projectDir, opts, undefined, sessionId, readiness);
+      await deps.runRpc(enrichedFeature ?? feature, projectDir, opts, undefined, sessionId, readiness, undefined, undefined, plannerContext);
       return;
     }
 
@@ -214,8 +213,8 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
 
     clearStaleSessionForCli(projectDir);
 
-    const sessionId = feature ? beginSession(projectDir, feature) : undefined;
-    if (feature && sessionId && readiness) persistStartReadiness(projectDir, sessionId, readiness.report);
+    const sessionId = feature && !needsSetup ? beginSession(projectDir, feature) : undefined;
+    if (sessionId && readiness) persistStartReadiness(projectDir, sessionId, readiness.report);
 
     await deps.initStores(projectDir, opts);
     let worktreeName: string | null = null;
@@ -225,11 +224,12 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       worktreeName = null;
     }
     if (needsSetup) {
-      routerStore.init({ screen: 'setup', onComplete: feature ? 'workflow' : 'home', feature });
+      routerStore.init({ screen: 'setup', onComplete: feature ? 'workflow' : 'home', feature: enrichedFeature ?? feature, plannerContext });
     } else if (feature) {
       routerStore.init({
         screen: 'workflow',
-        feature: plannerFeature ?? feature,
+        feature: enrichedFeature ?? feature,
+        plannerContext,
         sessionId,
         worktreeName: worktreeName ?? undefined,
         readiness: readiness ? readinessForInteractiveStart(readiness.report) : undefined,

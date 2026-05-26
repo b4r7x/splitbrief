@@ -59,6 +59,23 @@ describe('createCommandReader', () => {
     expect(errors).toEqual(['Invalid JSON: not json']);
   });
 
+  it('calls onClose when stdin ends', async () => {
+    let closed = false;
+    const stream = createReadableInput();
+
+    createCommandReader(
+      stream,
+      () => {},
+      () => {},
+      () => { closed = true; },
+    );
+
+    stream.end();
+    await waitForReader();
+
+    expect(closed).toBe(true);
+  });
+
   it('reports validation errors for unsupported commands and empty payloads', async () => {
     const commands: RpcCommand[] = [];
     const errors: string[] = [];

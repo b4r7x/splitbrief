@@ -2,7 +2,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Planner } from '../planners/types.js';
 import type { EventBus } from '../events/types.js';
 import { writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';
-import { SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE } from '../../core/paths.js';
+import type { SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE } from '../../core/paths.js';
 import { createBusTextHandler } from './events.js';
 import { addUsageAndSave } from './state-ops.js';
 

@@ -59,6 +59,16 @@ export function useIpcPromptDispatcher(
       return { kind: 'continuation_needed', text };
     }
 
+    if (request.kind === 'cost_approval') {
+      const result = await inputMode.setReviewMode('Cost estimate ready. approve / reject');
+      return { kind: 'cost_approval', approved: result.approved };
+    }
+
+    if (request.kind === 'task_review') {
+      const result = await inputMode.setReviewMode(`Review task ${request.request.taskId}: continue / abort`);
+      return { kind: 'task_review', response: { action: result.approved ? 'continue' : 'abort' } };
+    }
+
     const response = await openApprovalPrompt(request.request);
     return { kind: 'tiered_approval', response };
   };

@@ -2,10 +2,10 @@ import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { SessionLogEventEntry } from '../../../core/schemas/session-log.js';
 import { narrowRecord, optionalString } from '../../../utils/type-guards.js';
 import { uniqueSorted } from '../../../utils/collections.js';
-import {
-  type DeterministicEstimate,
-  type ExplainArtifactInputs,
-  type RunExplainRoute,
+import type {
+  DeterministicEstimate,
+  ExplainArtifactInputs,
+  RunExplainRoute,
 } from './types.js';
 
 export function buildRoutes(opts: Pick<ExplainArtifactInputs, 'summary' | 'reviewPacket' | 'state' | 'events'>): RunExplainRoute[] {

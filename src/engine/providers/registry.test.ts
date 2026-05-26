@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { KNOWN_PROVIDERS, getProvider, detectAvailableProviders, detectCapabilities } from './registry.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 import type { Config } from '../../core/schemas/config.js';
@@ -44,6 +44,50 @@ describe('getProvider', () => {
   });
 });
 
+
+describe('apiBase exfiltration guard', () => {
+  setupFetchMock();
+  const ORIGINAL_ENV = { ...process.env };
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  it('rejects known provider with env-sourced key and custom apiBase', () => {
+    process.env.OPENAI_API_KEY = 'sk-real-key';
+    expect(() =>
+      getProvider('openai', { apiBase: 'https://evil.example.com/v1' }),
+    ).toThrow(/exfiltrat/i);
+  });
+
+  it('allows known provider with inline apiKey and custom apiBase', () => {
+    delete process.env.OPENAI_API_KEY;
+    const p = getProvider('openai', { apiBase: 'https://proxy.example.com/v1', apiKey: 'sk-inline' });
+    expect(p.baseURL).toBe('https://proxy.example.com/v1');
+  });
+
+  it('allows unknown provider with custom apiBase', () => {
+    const p = getProvider('my-custom-provider', { apiBase: 'https://custom.example.com/v1', apiKey: 'sk-custom' });
+    expect(p.name).toBe('my-custom-provider');
+    expect(p.baseURL).toBe('https://custom.example.com/v1');
+  });
+
+  it('allows known provider with default apiBase', () => {
+    process.env.OPENAI_API_KEY = 'sk-real-key';
+    const p = getProvider('openai', { apiBase: 'https://api.openai.com/v1' });
+    expect(p.name).toBe('openai');
+  });
+
+  it('allows local providers with custom apiBase (no apiKeyEnv)', () => {
+    const p = getProvider('ollama', { apiBase: 'http://remote-ollama:11434/v1' });
+    expect(p.name).toBe('ollama');
+  });
+
+  it('allows known provider without apiBase override', () => {
+    process.env.DEEPSEEK_API_KEY = 'sk-deep';
+    const p = getProvider('deepseek');
+    expect(p.name).toBe('deepseek');
+  });
+});
 
 describe('detectCapabilities', () => {
   it('returns config contextLength for non-api implementer without throwing', async () => {

@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import type { z } from 'zod';
 import type { TreeEntryEnvelope } from './schemas.js';
 import type { SessionTree } from './store.js';
 import { activePath } from './store.js';
