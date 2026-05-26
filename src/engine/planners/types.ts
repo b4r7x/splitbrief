@@ -81,6 +81,8 @@ export interface PlannerCallbacks {
   attachments?: Attachment[] | undefined;
   /** Validation toolchain discovered by prior research or restored workflow state. */
   discoveredValidation?: DiscoveredValidation | undefined;
+  /** Abort signal propagated from the continuation loop so backends can cancel in-flight requests. */
+  signal?: AbortSignal | undefined;
 }
 
 /** Result from a single planning phase. */

@@ -150,7 +150,7 @@ export interface ClaudePlannerStreamOpts {
 
 export async function runClaudePlannerStream(opts: ClaudePlannerStreamOpts): Promise<ClaudePlannerStreamResult> {
   const { prompt, projectDir, sessionId, onOutput, onQuestion, model, effort, images } = opts;
-  const args = buildClaudeArgs({ prompt, sessionId, model, effort, ...(images ? { images } : {}) });
+  const args = buildClaudeArgs({ useStdin: true, sessionId, model, effort, ...(images ? { images } : {}) });
 
   const { state, handleLine } = createStreamHandler({ onOutput, onQuestion });
   state.sessionId = sessionId;
@@ -159,6 +159,7 @@ export async function runClaudePlannerStream(opts: ClaudePlannerStreamOpts): Pro
     command: 'claude',
     args,
     cwd: projectDir,
+    stdin: applyEffortPrefix(prompt, effort),
     notFoundMessage: CLAUDE_NOT_FOUND,
     onLine: handleLine,
   });

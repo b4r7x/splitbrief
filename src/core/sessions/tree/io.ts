@@ -1,5 +1,6 @@
-import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { SECURE_FILE_MODE } from '../../../lib/fs.js';
 import { TreeEntryEnvelopeSchema, TreeMetaSchema, type EntryId, type TreeEntryEnvelope, type TreeMeta } from './schemas.js';
 import type { SessionTree } from './store.js';
 import { warnError, warnStderr } from '../../../lib/warn.js';
@@ -17,16 +18,18 @@ export function treeMetaPath(sessionDir: string): string {
 
 export function appendTreeEntry(sessionDir: string, entry: TreeEntryEnvelope): void {
   const filePath = treeJsonlPath(sessionDir);
-  mkdirSync(dirname(filePath), { recursive: true });
-  appendFileSync(filePath, JSON.stringify(entry) + '\n');
+  mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
+  appendFileSync(filePath, JSON.stringify(entry) + '\n', { mode: SECURE_FILE_MODE });
+  chmodSync(filePath, SECURE_FILE_MODE);
 }
 
 export function writeTreeMeta(sessionDir: string, meta: TreeMeta): void {
   const filePath = treeMetaPath(sessionDir);
-  mkdirSync(dirname(filePath), { recursive: true });
+  mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
   const tmpPath = filePath + '.tmp';
-  writeFileSync(tmpPath, JSON.stringify(meta) + '\n');
+  writeFileSync(tmpPath, JSON.stringify(meta) + '\n', { mode: SECURE_FILE_MODE });
   renameSync(tmpPath, filePath);
+  chmodSync(filePath, SECURE_FILE_MODE);
 }
 
 export function readTreeMeta(sessionDir: string): TreeMeta | null {

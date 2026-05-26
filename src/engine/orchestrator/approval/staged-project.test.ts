@@ -40,6 +40,32 @@ describe('createStagedProject', () => {
   });
 });
 
+describe('createStagedProject — sensitive file exclusion', () => {
+  it('excludes .env files from the staged copy', async () => {
+    const dir = createTempDir('staged-env-test');
+    try {
+      createTestGitRepo(dir);
+      mkdirSync(join(dir, 'src'), { recursive: true });
+      writeFileSync(join(dir, 'src', 'app.ts'), 'export const app = true;\n');
+      writeFileSync(join(dir, '.env'), 'SECRET=abc\n');
+      writeFileSync(join(dir, '.env.local'), 'LOCAL_SECRET=xyz\n');
+      writeFileSync(join(dir, '.env.production'), 'PROD_SECRET=123\n');
+
+      const staged = await createStagedProject(dir);
+      try {
+        expect(existsSync(join(staged.projectDir, 'src', 'app.ts'))).toBe(true);
+        expect(existsSync(join(staged.projectDir, '.env'))).toBe(false);
+        expect(existsSync(join(staged.projectDir, '.env.local'))).toBe(false);
+        expect(existsSync(join(staged.projectDir, '.env.production'))).toBe(false);
+      } finally {
+        staged.cleanup();
+      }
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
 describe('promoteStagedChanges', () => {
   it('copies staged content only when the original file still matches the expected snapshot', async () => {
     const projectDir = createTempDir('promote-project');

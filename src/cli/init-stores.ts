@@ -17,6 +17,7 @@ import type { WorkflowOpts } from '../core/types/config-options.js';
 import { cliError } from './errors.js';
 import { getPlannerToolId } from '../core/config/accessors/runner-config.js';
 import { ensureHooksTrusted } from './hook-trust-prompt.js';
+import { resolveHooksConfig } from '../engine/hooks/discover.js';
 import { normalizeLegacyMode } from '../core/schemas/enums.js';
 import { buildCLIOverrides } from './build-overrides.js';
 
@@ -24,9 +25,10 @@ export async function initStores(projectDir: string, opts: WorkflowOpts = {}): P
   initUIChrome();
   loadProjectState(projectDir, opts);
   const storeConfig = configStore.get().config;
+  const mergedHooks = await resolveHooksConfig(projectDir, storeConfig?.hooks);
   await ensureHooksTrusted({
     projectDir,
-    hooks: storeConfig?.hooks,
+    hooks: mergedHooks,
     allowHooks: opts.allowHooks ?? false,
   });
   await loadDiscovery(projectDir);

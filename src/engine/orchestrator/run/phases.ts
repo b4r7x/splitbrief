@@ -56,11 +56,14 @@ export async function runPlanningPhases(opts: RunPlanningPhasesOptions): Promise
   const { projectDir, sessionId, config, callbacks, planner } = wctx;
 
   if (!savedState || savedState.rewindPending) {
+    const plannerFeature = wctx.plannerContext
+      ? `${state.feature}\n\n<user-context>\n${wctx.plannerContext}\n</user-context>`
+      : state.feature;
     const planning = await runPlanningPhase({
       wctx: { projectDir, sessionId, config, callbacks, bus: wctx.bus, signal: wctx.signal, metadata: wctx.metadata, sinks: wctx.sinks, drainPendingAttachments: wctx.drainPendingAttachments },
       planner,
       state,
-      feature: state.feature,
+      feature: plannerFeature,
       selectedSkills,
       rewindPending: savedState?.rewindPending,
     });

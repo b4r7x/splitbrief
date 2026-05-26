@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdtemp, rm, writeFile, mkdir, utimes, readdir } from 'node:fs/promises';
-import { openSync, closeSync } from 'node:fs';
+import { openSync, closeSync, symlinkSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -180,6 +180,37 @@ describe('collectTrackedFiles', () => {
     expect(files).not.toContain('coverage/nested/report.json');
     expect(files).toContain('important.log');
     expect(files).toContain('src.ts');
+  });
+
+  it('skips symlinked files during capture', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'diptych-outside-'));
+    try {
+      writeFileSync(join(outside, 'secret.txt'), 'sensitive data');
+      await writeFile(join(tmp, 'real.ts'), 'safe content');
+      symlinkSync(join(outside, 'secret.txt'), join(tmp, 'linked.txt'));
+
+      const files = await collectTrackedFiles(tmp);
+      expect(files).toContain('real.ts');
+      expect(files).not.toContain('linked.txt');
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('skips symlinked directories during capture', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'diptych-outside-'));
+    try {
+      mkdirSync(join(outside, 'secrets'), { recursive: true });
+      writeFileSync(join(outside, 'secrets', 'key.pem'), 'private key');
+      await writeFile(join(tmp, 'real.ts'), 'safe');
+      symlinkSync(join(outside, 'secrets'), join(tmp, 'linked-dir'));
+
+      const files = await collectTrackedFiles(tmp);
+      expect(files).toContain('real.ts');
+      expect(files.some(f => f.startsWith('linked-dir/'))).toBe(false);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 });
 

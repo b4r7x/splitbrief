@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import type { Command } from 'commander';
 import ansis from 'ansis';
 import { loadState } from '../../core/state/persistence.js';
 import {

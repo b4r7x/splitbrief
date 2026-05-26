@@ -111,6 +111,7 @@ export async function runE2eWorkflow(
     projectDir: ctx.projectDir,
     config: loadAndOverrideConfig(ctx.projectDir, scenario.mode),
     headless: true,
+    allowHooks: true,
     sinks: TEST_WORKFLOW_SINKS,
     eventBus: bus,
     _eventSink: (event) => ctx.events.push(event),

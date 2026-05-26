@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { Command } from 'commander';
+import type { Command } from 'commander';
 import { migrateCommand, type MigrationResult } from '../../core/migration/executor.js';
 
 export function printMigrationResult(

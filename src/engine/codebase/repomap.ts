@@ -1,6 +1,6 @@
 import { extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { resolveFromProject } from '../../utils/path-patterns.js';
-import { mkdir, readdir } from 'node:fs/promises';
+import { mkdir, readdir, stat } from 'node:fs/promises';
 import { initParser, parseFile } from './parse.js';
 import { createParseCache } from './cache.js';
 import { resolveCodebaseCacheDir, resolveRepoMapDbPath } from './cache-path.js';
@@ -9,6 +9,9 @@ import { pagerank } from './pagerank.js';
 import { formatWithBudget } from './budget.js';
 import { extractMentionedFilenames } from './extract-mentioned-filenames.js';
 import { ALL_KNOWN_EXTENSIONS } from './languages.js';
+
+export const MAX_FILE_SIZE_BYTES = 100_000;
+export const PARSE_CONCURRENCY = 8;
 
 export interface RepoMapOptions {
   focusFiles?: string[];
@@ -19,22 +22,23 @@ export interface RepoMapOptions {
   exclude?: string[];
 }
 
-const DEFAULT_EXCLUDE_PATTERNS = [
+const DEFAULT_EXCLUDE_DIR_NAMES = new Set(['node_modules', '.git', 'dist', '.diptych']);
+
+const DEFAULT_EXCLUDE_FILE_PATTERNS = [
   /\.test\.tsx?$/,
-  /node_modules\//,
-  /dist\//,
-  /\.diptych\//,
 ];
 
 export async function buildRepoMap(projectDir: string, opts: RepoMapOptions = {}): Promise<string> {
-  await initParser();
-
-  const tokenBudget = opts.tokenBudget ?? 4000;
-  const cacheDir = resolveCodebaseCacheDir(projectDir, opts.cacheDir);
-  await mkdir(cacheDir, { recursive: true });
-  const cache = createParseCache(resolveRepoMapDbPath(projectDir, opts.cacheDir));
-
+  let cache: Awaited<ReturnType<typeof createParseCache>> | null = null;
   try {
+    await initParser();
+
+    const tokenBudget = opts.tokenBudget ?? 4000;
+    const cacheDir = resolveCodebaseCacheDir(projectDir, opts.cacheDir);
+    await mkdir(cacheDir, { recursive: true });
+    cache = await createParseCache(resolveRepoMapDbPath(projectDir, opts.cacheDir));
+    const c = cache;
+
     const absFiles = await discoverFiles(projectDir, {
       cacheDir,
       ...(opts.exclude ? { excludePatterns: opts.exclude } : {}),
@@ -42,7 +46,7 @@ export async function buildRepoMap(projectDir: string, opts: RepoMapOptions = {}
     });
     if (absFiles.length === 0) return '';
 
-    const parsedNodes = await Promise.all(absFiles.map(f => cache.getOrParse(f, parseFile)));
+    const parsedNodes = await parseWithConcurrencyLimit(absFiles, f => c.getOrParse(f, parseFile), PARSE_CONCURRENCY);
     const nodesAbs = parsedNodes.filter((node): node is NonNullable<typeof node> => node !== null);
     if (nodesAbs.length === 0) return '';
 
@@ -62,9 +66,39 @@ export async function buildRepoMap(projectDir: string, opts: RepoMapOptions = {}
     }
 
     return formatWithBudget(displayNodes, rankingsByRelPath, tokenBudget);
+  } catch (err) {
+    console.warn(`repo-map unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    return '';
   } finally {
-    cache.close();
+    cache?.close();
   }
+}
+
+async function parseWithConcurrencyLimit<T>(
+  files: string[],
+  parseFn: (file: string) => Promise<T | null>,
+  concurrency: number,
+): Promise<(T | null)[]> {
+  const results: (T | null)[] = new Array(files.length).fill(null) as (T | null)[];
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < files.length) {
+      const idx = nextIndex++;
+      const file = files[idx]!;
+      try {
+        const fileStat = await stat(file);
+        if (fileStat.size > MAX_FILE_SIZE_BYTES) continue;
+      } catch {
+        continue;
+      }
+      results[idx] = await parseFn(file);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, files.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
 }
 
 interface DiscoverOptions {
@@ -136,21 +170,27 @@ function createIncludeMatcher(pattern: string): IncludeMatcher {
     regex.test(relPath) && (globExtension !== null ? ext === globExtension : ALL_KNOWN_EXTENSIONS.has(ext));
 }
 
-function createDefaultExcludePatterns(projectDir: string, cacheDir: string): RegExp[] {
+function buildExcludeDirNames(projectDir: string, cacheDir: string): Set<string> {
+  const names = new Set(DEFAULT_EXCLUDE_DIR_NAMES);
   const cacheRelPath = normalizeRelativePath(relative(projectDir, cacheDir));
-  if (cacheRelPath === '' || cacheRelPath.startsWith('..') || isAbsolute(cacheRelPath)) {
-    return DEFAULT_EXCLUDE_PATTERNS;
+  if (cacheRelPath && !cacheRelPath.startsWith('..') && !isAbsolute(cacheRelPath)) {
+    const topSegment = cacheRelPath.split('/')[0];
+    if (topSegment) names.add(topSegment);
   }
-  return [
-    ...DEFAULT_EXCLUDE_PATTERNS,
-    new RegExp(`^${escapeRegExp(cacheRelPath)}(?:/|$)`),
-  ];
+  return names;
+}
+
+function buildFileExcludePatterns(userPatterns?: string[]): RegExp[] {
+  if (!userPatterns?.length) return DEFAULT_EXCLUDE_FILE_PATTERNS;
+  return [...DEFAULT_EXCLUDE_FILE_PATTERNS, ...userPatterns.map(p => new RegExp(p))];
 }
 
 async function discoverFiles(projectDir: string, opts: DiscoverOptions): Promise<string[]> {
-  const exclude = opts.excludePatterns
+  const excludeDirNames = buildExcludeDirNames(projectDir, opts.cacheDir);
+  const excludeFilePatterns = buildFileExcludePatterns(opts.excludePatterns);
+  const userDirPatterns = opts.excludePatterns?.length
     ? opts.excludePatterns.map(p => new RegExp(p))
-    : createDefaultExcludePatterns(projectDir, opts.cacheDir);
+    : [];
   const include = opts.includePatterns?.length
     ? opts.includePatterns.map(createIncludeMatcher)
     : null;
@@ -159,13 +199,18 @@ async function discoverFiles(projectDir: string, opts: DiscoverOptions): Promise
   async function walk(dir: string): Promise<void> {
     const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
-      const abs = join(dir, entry.name);
-      const rel = relative(projectDir, abs);
-      const relPath = normalizeRelativePath(rel);
-      if (exclude.some(re => re.test(relPath))) continue;
       if (entry.isDirectory()) {
-        await walk(abs);
+        if (excludeDirNames.has(entry.name)) continue;
+        if (userDirPatterns.length > 0) {
+          const dirRel = normalizeRelativePath(relative(projectDir, join(dir, entry.name)));
+          if (userDirPatterns.some(re => re.test(dirRel) || re.test(dirRel + '/'))) continue;
+        }
+        await walk(join(dir, entry.name));
       } else if (entry.isFile()) {
+        const abs = join(dir, entry.name);
+        const rel = relative(projectDir, abs);
+        const relPath = normalizeRelativePath(rel);
+        if (excludeFilePatterns.some(re => re.test(relPath))) continue;
         const ext = extname(abs);
         const isIncluded = include
           ? include.some(matcher => matcher(relPath, ext))

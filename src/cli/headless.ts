@@ -50,6 +50,7 @@ export async function runHeadless(
   readiness?: CollectedReadiness | undefined,
   _planner?: Planner | undefined,
   _implementer?: Implementer | undefined,
+  plannerContext?: string | undefined,
 ): Promise<void> {
   const loadedResult = readiness?.config
     ? { config: readiness.config, warnings: readiness.warnings }
@@ -69,9 +70,11 @@ export async function runHeadless(
 
   await runWorkflow({
     feature,
+    plannerContext,
     projectDir,
     config,
     headless: true,
+    allowHooks: opts.allowHooks ?? false,
     sinks: buildNoopSinks(),
     modelCache: modelCacheStore,
     drainPendingAttachments: () => attachmentsStore.drain(),

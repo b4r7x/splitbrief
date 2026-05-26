@@ -5,7 +5,7 @@ import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { computeScrollWindow } from '../../components/pickers/picker-utils.js';
 import { CursorCell } from '../../components/pickers/cursor-cell.js';
-import { type SettingDef } from '../../core/settings/catalog.js';
+import type { SettingDef } from '../../core/settings/catalog.js';
 import { displayValue, valueColor } from '../../core/settings/presentation.js';
 
 import { useSettingsEditor } from './hooks/editor.js';

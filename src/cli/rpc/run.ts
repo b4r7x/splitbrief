@@ -78,6 +78,7 @@ export async function runRpc(
   readiness?: CollectedReadiness | undefined,
   planner?: Planner | undefined,
   implementer?: Implementer | undefined,
+  plannerContext?: string | undefined,
   deps: RunRpcDeps = {},
 ): Promise<void> {
   let config = loadAndApplyConfig(projectDir, opts, readiness);
@@ -215,10 +216,18 @@ export async function runRpc(
     pendingQueueDepth,
   });
 
+  const stdinClosedError = new Error('stdin closed unexpectedly');
+
   const reader = createCommandReader(
     deps.input ?? process.stdin,
     handleCommand,
     (message) => writer.error(message),
+    () => {
+      abortController.abort(stdinClosedError);
+      approvalGate.reject(stdinClosedError);
+      messageGate.reject(stdinClosedError);
+      recoveryGate.reject(stdinClosedError);
+    },
   );
 
   try {
@@ -242,9 +251,11 @@ export async function runRpc(
 
       await runWorkflowImpl({
         feature,
+        plannerContext,
         projectDir,
         config,
         eventBus: bus,
+        allowHooks: opts.allowHooks ?? false,
         sinks: {
           setAbortHandler: (handler) => {
             abortTurnHandler = handler;

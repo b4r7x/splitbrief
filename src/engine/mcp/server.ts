@@ -29,6 +29,12 @@ const LOCAL_ORIGIN_PREFIXES = [
   'http://127.0.0.1', 'https://127.0.0.1',
 ];
 
+export function normalizeHeader(value: string | string[] | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
 function isLocalOrigin(origin: string | undefined): boolean {
   if (origin === undefined) return true;
   if (origin === 'null') return false;
@@ -132,8 +138,7 @@ export function startMcpServer(config: McpServerConfig): Promise<McpServerHandle
         return;
       }
 
-      // Origin validation: reject non-local browser origins
-      const origin = req.headers['origin'] as string | undefined;
+      const origin = normalizeHeader(req.headers['origin']);
       if (!isLocalOrigin(origin)) {
         send403(res);
         return;
@@ -190,6 +195,10 @@ export function startMcpServer(config: McpServerConfig): Promise<McpServerHandle
       res.writeHead(404);
       res.end();
     });
+
+    server.headersTimeout = 30_000;
+    server.requestTimeout = 60_000;
+    server.timeout = 120_000;
 
     server.on('error', reject);
 

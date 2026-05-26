@@ -913,7 +913,6 @@ All per-session state lives under `.diptych/sessions/<session-id>/`. Path consta
 
 Also relative to project root, **outside** `.diptych/`:
 
-- `./handoff/<target>/` — default output dir for `diptych handoff <target>` CLI command (override via `--out`).
 - `./.trees/<slug>/` — git worktrees managed by `diptych worktree`.
 - `./.claude/skills/`, `~/.claude/skills/`, `./.diptych/skills/`, `~/.diptych/skills/`, `AGENTS.md`, `~/.codex/skills/`, `CONVENTIONS.md` — skill sources, read-only to diptych.
 

@@ -57,7 +57,7 @@ describe('HomeScreen', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('█▀▄');
+    expect(frame).toContain('diptych');
     expect(frame).toContain('standard');
     expect(frame).toContain('no recent sessions');
     ui.unmount();

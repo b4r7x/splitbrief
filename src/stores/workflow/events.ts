@@ -24,11 +24,16 @@ export const eventsStore = {
 };
 
 export const MAX_EVENTS = 10_000;
+export const MAX_MERGED_TEXT_LENGTH = 500_000;
 
 export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEvent[] {
   const last = events[events.length - 1];
   if (event.type === 'planner_text' && last?.type === 'planner_text') {
-    const merged = { ...last, text: last.text + event.text };
+    let mergedText = last.text + event.text;
+    if (mergedText.length > MAX_MERGED_TEXT_LENGTH) {
+      mergedText = mergedText.slice(-MAX_MERGED_TEXT_LENGTH);
+    }
+    const merged = { ...last, text: mergedText };
     const next = events.slice();
     next[next.length - 1] = merged;
     return next;

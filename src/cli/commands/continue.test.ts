@@ -215,4 +215,26 @@ describe('continueCommand', () => {
     await expect(resolveSessionInput(undefined, '/tmp')).resolves.toBeUndefined();
     await expect(resolveSessionInput('2025-04-01-feat', '/tmp')).resolves.toBe('2025-04-01-feat');
   });
+
+  it('rejects a session with an older stateVersion via loadState filtering', async () => {
+    const projectDir = makeTmpProject();
+    const sessDir = makeSessionDir(projectDir, '2025-04-01-old');
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-old' });
+    writeState(sessDir, 'implementing', { stateVersion: 1 });
+
+    await expect(
+      continueCommand('2025-04-01-old', { projectDir }, deps),
+    ).rejects.toThrow(/no saved state/);
+  });
+
+  it('accepts a session with the current stateVersion', async () => {
+    const projectDir = makeTmpProject();
+    const sessDir = makeSessionDir(projectDir, '2025-04-01-current');
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-current' });
+    writeState(sessDir, 'implementing');
+
+    await continueCommand('2025-04-01-current', { projectDir }, deps);
+
+    expect(renderRuns).toHaveLength(1);
+  });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { MCP_PROTOCOL_VERSION } from './handlers.js';
-import { startMcpServer } from './server.js';
+import { normalizeHeader, startMcpServer } from './server.js';
 import type { McpServerHandle } from './server.js';
 import type { McpResolver } from './resolver.js';
 
@@ -309,6 +309,24 @@ describe('MCP-Protocol-Version header', () => {
     });
     expect(res.status).toBe(202);
     expect(res.headers.get('mcp-protocol-version')).toBe(MCP_PROTOCOL_VERSION);
+  });
+});
+
+describe('normalizeHeader', () => {
+  it('returns undefined for undefined', () => {
+    expect(normalizeHeader(undefined)).toBeUndefined();
+  });
+
+  it('returns the string for a string value', () => {
+    expect(normalizeHeader('http://localhost:3000')).toBe('http://localhost:3000');
+  });
+
+  it('returns the first element for an array value', () => {
+    expect(normalizeHeader(['http://localhost:3000', 'http://evil.com'])).toBe('http://localhost:3000');
+  });
+
+  it('returns undefined for an empty array', () => {
+    expect(normalizeHeader([])).toBeUndefined();
   });
 });
 

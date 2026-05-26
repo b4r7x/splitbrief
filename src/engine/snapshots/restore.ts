@@ -4,8 +4,10 @@ import type { SnapshotManifest } from '../../core/schemas/snapshot.js';
 import { snapshotFilesDir, SNAPSHOT_BASELINE_ID } from '../../core/paths.js';
 import type { EventBus } from '../events/types.js';
 import { error } from '../../utils/error.js';
+import { assertPathConfined } from '../../lib/path-confinement.js';
 import {
   acquireSnapshotLock,
+  decodeSnapshotPath,
   hashFile,
   listSnapshotIds,
   readManifest,
@@ -94,13 +96,25 @@ export async function restoreSnapshot(opts: RestoreOptions): Promise<RestoreResu
     const snapshotEntryByPath = new Map(manifest.fileEntries.map(e => [e.path, e]));
     const baselineEntryByPath = new Map(baselineManifest.fileEntries.map(e => [e.path, e]));
 
+    const VALID_ENCODED_NAME = /^[0-9a-f]+$/;
+
     for (const path of Object.keys(manifest.fileHashes)) {
+      assertPathConfined(path, projectDir);
+
       const absPath = join(projectDir, path);
 
       let sourceFilePath: string;
       let expectedBlobHash: string;
       const snapshotEntry = snapshotEntryByPath.get(path);
       if (snapshotEntry) {
+        if (!VALID_ENCODED_NAME.test(snapshotEntry.encodedName)) {
+          missingSnapshotFiles.push(path);
+          continue;
+        }
+        if (decodeSnapshotPath(snapshotEntry.encodedName) !== path) {
+          missingSnapshotFiles.push(path);
+          continue;
+        }
         sourceFilePath = join(
           snapshotFilesDir(projectDir, sessionId, manifest.id),
           snapshotEntry.encodedName,

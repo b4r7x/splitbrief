@@ -85,6 +85,7 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
   const selectedSkillMetas = skills.available.filter(m => skills.selected.has(m.id));
   const hasOverlay = overlayStore.use(s => s.active !== 'none');
   const feature = routerStore.use(s => s.screen === 'workflow' ? s.feature : '');
+  const plannerContext = routerStore.use(s => s.screen === 'workflow' ? s.plannerContext : undefined);
   const resumeState = routerStore.use(s => s.screen === 'workflow' ? s.resumeState : undefined);
   const sessionId = routerStore.use(s => s.screen === 'workflow' ? s.sessionId : undefined);
   const routeReadiness = routerStore.use(s => s.screen === 'workflow' ? s.readiness : undefined);
@@ -103,6 +104,7 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
   const inputMode = useInputMode();
   const runner = useWorkflowRunner({
     feature,
+    plannerContext,
     projectDir,
     config,
     onComplete,

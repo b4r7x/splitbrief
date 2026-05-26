@@ -64,6 +64,7 @@ export interface WorkflowContext {
   modelCache?: ModelCacheAccessor | undefined;
   drainPendingAttachments?: (() => Attachment[]) | undefined;
   streamingSink?: StreamingSink | undefined;
+  plannerContext?: string | undefined;
 }
 
 export type PlannerCallbacksContext = Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'config' | 'callbacks' | 'bus' | 'signal' | 'metadata' | 'resumeHolder' | 'sinks' | 'drainPendingAttachments'>;

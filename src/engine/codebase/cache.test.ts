@@ -12,7 +12,7 @@ describe('parseCache', () => {
 
   it('parses on miss and serves cache on subsequent identical mtime', async () => {
     const f = join(dir, 'a.ts'); writeFileSync(f, 'export function x() {}');
-    const cache = createParseCache(join(dir, 'cache.sqlite'));
+    const cache = await createParseCache(join(dir, 'cache.sqlite'));
     let parseCount = 0;
     const parseSpy = (p: string) => { parseCount++; return Promise.resolve(makeFileNode(p)); };
 
@@ -30,7 +30,7 @@ describe('parseCache', () => {
 
   it('re-parses when mtime changes', async () => {
     const f = join(dir, 'a.ts'); writeFileSync(f, 'export function x() {}');
-    const cache = createParseCache(join(dir, 'cache.sqlite'));
+    const cache = await createParseCache(join(dir, 'cache.sqlite'));
     let parseCount = 0;
     const parseSpy = (p: string) => { parseCount++; return Promise.resolve(makeFileNode(p)); };
 
@@ -49,7 +49,7 @@ describe('parseCache', () => {
 
   it('re-parses when file size changes (mtime same)', async () => {
     const f = join(dir, 'a.ts'); writeFileSync(f, 'export function x() {}');
-    const cache = createParseCache(join(dir, 'cache.sqlite'));
+    const cache = await createParseCache(join(dir, 'cache.sqlite'));
     let parseCount = 0;
     const parseSpy = (p: string) => { parseCount++; return Promise.resolve(makeFileNode(p)); };
 
@@ -73,14 +73,14 @@ describe('parseCache', () => {
     let parseCount = 0;
     const parseSpy = (p: string) => { parseCount++; return Promise.resolve(makeFileNode(p)); };
 
-    const cache1 = createParseCache(dbPath);
+    const cache1 = await createParseCache(dbPath);
     try {
       await cache1.getOrParse(f, parseSpy);
     } finally {
       cache1.close();
     }
 
-    const cache2 = createParseCache(dbPath);
+    const cache2 = await createParseCache(dbPath);
     try {
       await cache2.getOrParse(f, parseSpy);
     } finally {

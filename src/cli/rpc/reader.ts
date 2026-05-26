@@ -5,6 +5,7 @@ export function createCommandReader(
   stream: NodeJS.ReadableStream,
   onCommand: (cmd: RpcCommand) => void,
   onError: (err: string) => void,
+  onClose?: () => void,
 ): { close: () => void } {
   const rl = createInterface({ input: stream, terminal: false });
 
@@ -28,6 +29,10 @@ export function createCommandReader(
 
     onError(`Invalid command: ${result.error.message}`);
   });
+
+  if (onClose) {
+    rl.on('close', onClose);
+  }
 
   return { close: () => rl.close() };
 }

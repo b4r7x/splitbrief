@@ -61,9 +61,15 @@ export async function runFinalReviewPhase(
   publishPlannerStatus(bus, state, 'running');
   bus.publish({ type: 'all_tasks_done', ts: Date.now(), phase: state.phase });
 
+  const MAX_DIFF_CHARS = 100_000;
+
   let reviewStatus: 'written' | 'failed' = 'written';
   try {
-    const diff = await getCurrentDiff(projectDir);
+    let diff = await getCurrentDiff(projectDir);
+    if (diff.length > MAX_DIFF_CHARS) {
+      const omitted = diff.length - MAX_DIFF_CHARS;
+      diff = diff.slice(0, MAX_DIFF_CHARS) + `\n\n[... diff truncated, ${omitted} characters omitted ...]`;
+    }
     const spec = readSpecFileOrEmpty(projectDir, sessionId, SPEC_FILE);
 
     let driftPromptSection: string | undefined;

@@ -17,6 +17,12 @@ export const handoffRenderError = {
   invalidTarget: (target: string, reason: string) =>
     error('handoff-invalid-target', `invalid handoff target "${target}": ${reason}`, { target, reason }),
   loadFailed: (reason: string) => error('handoff-renderer-load-failed', reason, { reason }),
+  customRendererBlocked: (target: string) =>
+    error(
+      'handoff-custom-renderer-blocked',
+      `Custom renderer "${target}" blocked: repo-local renderers require trust.customRenderers: true in config or --allow-custom-renderer.`,
+      { target },
+    ),
 } as const;
 
 export function renderHandoff(input: HandoffInput): HandoffPack {
@@ -46,9 +52,14 @@ export function renderHandoff(input: HandoffInput): HandoffPack {
   }
 }
 
+export interface RenderHandoffWithCustomOptions {
+  trustCustomRenderers?: boolean;
+}
+
 export async function renderHandoffWithCustom(
   input: Omit<HandoffInput, 'target'> & { target: string },
   projectDir: string,
+  options: RenderHandoffWithCustomOptions = {},
 ): Promise<HandoffPack> {
   const validation = validateHandoffTargetName(input.target);
   if (!validation.ok) {
@@ -57,6 +68,10 @@ export async function renderHandoffWithCustom(
 
   if ((HANDOFF_TARGETS as readonly string[]).includes(input.target)) {
     return renderHandoff(input as HandoffInput);
+  }
+
+  if (!options.trustCustomRenderers) {
+    throw handoffRenderError.customRendererBlocked(input.target);
   }
 
   const tsPath = join(projectDir, '.diptych', 'handoff-renderers', `${input.target}.ts`);

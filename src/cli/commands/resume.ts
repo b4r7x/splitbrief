@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import type { Command } from 'commander';
 import { createElement } from 'react';
 import { App } from '../../app.js';
 import { loadState } from '../../core/state/persistence.js';

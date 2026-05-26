@@ -786,14 +786,14 @@ phase: planning  ← resumes with the message folded in
 ```bash
 diptych spec "add JWT auth"            # plan only, no implementation
 diptych handoff claude-code
-cd handoff/claude-code
+cd .diptych/handoffs/claude-code
 claude                                  # opens Claude Code in a primed dir
 ```
 
 **You'll see:**
 
 ```
-Handoff written to: handoff/claude-code
+Handoff written to: .diptych/handoffs/claude-code
   manifest.json
   README.md
   spec.md
@@ -818,16 +818,16 @@ The Claude Code renderer drops a `CLAUDE.md` and per-task `.md` files structured
 **Run:**
 
 ```bash
-diptych handoff copilot-issue --out handoff/issue
+diptych handoff copilot-issue --out .diptych/handoffs/issue
 gh issue create \
   --title "Add JWT auth" \
-  --body-file handoff/issue/issue-body.md
+  --body-file .diptych/handoffs/issue/issue-body.md
 ```
 
 **You'll see:**
 
 ```
-Handoff written to: handoff/issue
+Handoff written to: .diptych/handoffs/issue
   manifest.json
   issue-body.md
 ```
@@ -1423,9 +1423,9 @@ const provider = new NodeTracerProvider({
   }))],
 });
 trace.setGlobalTracerProvider(provider);
-
-await import('diptych/cli');
 ```
+
+Node's `--import` flag ensures the bootstrap runs before the main script, so the TracerProvider is registered before diptych starts.
 
 **Run:**
 

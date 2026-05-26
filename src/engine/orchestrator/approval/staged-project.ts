@@ -3,6 +3,7 @@ import { cp, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { DIPTYCH_DIR, TREES_DIR } from '../../../core/paths.js';
+import { warnStderr } from '../../../lib/warn.js';
 import { getChangedFilesSnapshot } from './file-snapshots.js';
 import type { ChangedFilesSnapshot, FileContentSnapshot } from './file-snapshots.js';
 import { readCurrentFileContent, writeCurrentFileContent } from './file-snapshots.js';
@@ -18,17 +19,28 @@ export type PromoteStagedChangesResult = {
   conflictedFiles: string[];
 };
 
+const STAGED_COPY_EXCLUDE = new Set([
+  'node_modules',
+  DIPTYCH_DIR,
+  TREES_DIR,
+  '.env',
+]);
+
+function isStagedCopyExcluded(name: string): boolean {
+  if (STAGED_COPY_EXCLUDE.has(name)) return true;
+  if (name.startsWith('.env.')) return true;
+  return false;
+}
+
 export async function createStagedProject(projectDir: string): Promise<StagedProject> {
   const snapshot = await getChangedFilesSnapshot(projectDir);
   const stagedRoot = await mkdtemp(join(tmpdir(), 'diptych-stage-'));
+  warnStderr(`Staged project temp root: ${stagedRoot}`);
   const stagedProjectDir = join(stagedRoot, basename(projectDir));
   await cp(projectDir, stagedProjectDir, {
     recursive: true,
     verbatimSymlinks: true,
-    filter: (source) => {
-      const name = basename(source);
-      return name !== 'node_modules' && name !== DIPTYCH_DIR && name !== TREES_DIR;
-    },
+    filter: (source) => !isStagedCopyExcluded(basename(source)),
   });
   return {
     projectDir: stagedProjectDir,

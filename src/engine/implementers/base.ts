@@ -11,6 +11,7 @@ import type {
 import type { Task } from '../../core/schemas/task.js';
 import type { InvokeResult } from '../runners/types.js';
 import { readFileOrEmpty } from '../../lib/fs.js';
+import { assertPathConfined } from '../../lib/path-confinement.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { formatErrorWithHint } from '../error-hints.js';
 import { extractCode } from '../parsers/response-extractor.js';
@@ -129,6 +130,8 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     const systemPreamble = buildSystemPreamble(languageContext);
     const prompt = prependSystemPreamble ? systemPreamble + '\n\n' + rawPrompt : rawPrompt;
     const { task, projectDir, config, onOutput, sessionId, phase } = opts;
+
+    assertPathConfined(task.file, projectDir);
 
     let oldContent: string | null = null;
     if (baseConfig.extractsCode) {

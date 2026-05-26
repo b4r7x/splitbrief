@@ -62,6 +62,7 @@ type InternalInvokeFn = (opts: {
   callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired'>;
   priorMessages?: PriorMessage[] | undefined;
   images?: Attachment[] | undefined;
+  signal?: AbortSignal | undefined;
 }) => Promise<InvokeResult>;
 
 // invokeEscalate exists separately: Claude Code uses session-chaining for plan phases but one-shot for escalations.
@@ -202,6 +203,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
             onSessionExpired: callbacks.onSessionExpired,
           },
           ...extras,
+          signal: callbacks.signal,
         });
         buffer.flush();
         if (result.usage) usage = accumulateUsage(usage, result.usage);
@@ -398,6 +400,7 @@ async function runSinglePhasePlanning(
       onSessionExpired: callbacks.onSessionExpired,
     },
     ...extras,
+    signal: callbacks.signal,
   });
   buffer.flush();
 

@@ -13,9 +13,9 @@ export type WorkflowAttach = {
 
 export type RouteData =
   | { screen: 'home' }
-  | { screen: 'workflow'; feature: string; resumeState?: WorkflowState | undefined; sessionId?: string | undefined; worktreeName?: string | undefined; attach?: WorkflowAttach | undefined; readiness?: ReadinessReport | undefined }
+  | { screen: 'workflow'; feature: string; plannerContext?: string | undefined; resumeState?: WorkflowState | undefined; sessionId?: string | undefined; worktreeName?: string | undefined; attach?: WorkflowAttach | undefined; readiness?: ReadinessReport | undefined }
   | { screen: 'summary'; summary: Summary; sessionId?: string | undefined }
-  | { screen: 'setup'; onComplete?: 'home' | 'workflow' | undefined; feature?: string | undefined };
+  | { screen: 'setup'; onComplete?: 'home' | 'workflow' | undefined; feature?: string | undefined; plannerContext?: string | undefined };
 
 const transitions: Record<Screen, Screen[]> = {
   home: ['workflow', 'setup'],
@@ -30,9 +30,9 @@ const store = createStore<RouteData>(initial);
 
 export type NavigateArgs =
   | { to: 'home' }
-  | { to: 'workflow'; feature: string; resumeState?: WorkflowState | undefined; sessionId?: string | undefined; worktreeName?: string | undefined; attach?: WorkflowAttach | undefined; readiness?: ReadinessReport | undefined }
+  | { to: 'workflow'; feature: string; plannerContext?: string | undefined; resumeState?: WorkflowState | undefined; sessionId?: string | undefined; worktreeName?: string | undefined; attach?: WorkflowAttach | undefined; readiness?: ReadinessReport | undefined }
   | { to: 'summary'; summary: Summary; sessionId?: string | undefined }
-  | { to: 'setup'; onComplete?: 'home' | 'workflow' | undefined; feature?: string | undefined };
+  | { to: 'setup'; onComplete?: 'home' | 'workflow' | undefined; feature?: string | undefined; plannerContext?: string | undefined };
 
 function navigate(args: NavigateArgs) {
   const current = store.get().screen;
@@ -50,6 +50,7 @@ function navigate(args: NavigateArgs) {
       store.set({
         screen: 'workflow',
         feature: args.feature,
+        plannerContext: args.plannerContext,
         resumeState: args.resumeState,
         sessionId: args.sessionId,
         worktreeName: args.worktreeName,
@@ -65,6 +66,7 @@ function navigate(args: NavigateArgs) {
         screen: 'setup',
         onComplete: args.onComplete,
         feature: args.feature,
+        plannerContext: args.plannerContext,
       });
       return;
   }

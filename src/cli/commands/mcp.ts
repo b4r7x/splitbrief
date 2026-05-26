@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import type { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
 import { resolveSessionIds } from '../../engine/mcp/discovery.js';
 import { generateToken } from '../../engine/mcp/auth-token.js';
@@ -62,7 +62,7 @@ export function registerMcpCommand(program: Command, deps: McpDeps = defaultDeps
         const token = generateToken();
         const diptychVersion = getDiptychVersion();
         const resolver = createResolver({ projectDir, sessionIds, diptychVersion });
-        const toolHandler = createToolHandler(projectDir);
+        const toolHandler = createToolHandler(projectDir, sessionIds);
 
         let handle: Awaited<ReturnType<typeof startMcpServer>>;
         try {

@@ -7,10 +7,13 @@ import { runCommand } from '../../lib/process/spawn.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { publishValidation } from './events.js';
 import { truncateByLines } from '../../utils/truncate.js';
+import { truncateByChars } from '../../utils/truncate.js';
+import { redactSecrets } from '../../utils/redact.js';
 import { parseShellCommand } from '../../utils/parse-shell-command.js';
 import { findAffectedTestFile } from '../../core/validation/test-discovery.js';
 import type { DiscoveredValidation } from '../../core/schemas/workflow.js';
 import { detectValidationHeuristic } from './validation-heuristic.js';
+import { sanitizeDiscoveredValidation } from './planning/sanitize-discovered-validation.js';
 
 export interface ValidationResult {
   passed: boolean;
@@ -154,7 +157,8 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
     const startTime = Date.now();
     publishValidation(bus, phase, taskId, { phase: 'start' });
     const heuristic = detectValidationHeuristic(projectDir);
-    const results = await validateTask(task, projectDir, config, discoveredValidation, heuristic, (stages) => {
+    const sanitizedDiscovered = sanitizeDiscoveredValidation(discoveredValidation);
+    const results = await validateTask(task, projectDir, config, sanitizedDiscovered, heuristic, (stages) => {
       publishValidation(bus, phase, taskId, { phase: 'progress', stages, startTime });
     });
     publishValidation(bus, phase, taskId, { phase: 'result', results, startTime });
@@ -162,6 +166,12 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
   }
 
   return { findAffectedTestFile, runValidation };
+}
+
+const MAX_VALIDATION_OUTPUT_CHARS = 4096;
+
+function sanitizeValidationOutput(text: string): string {
+  return redactSecrets(truncateByChars(text, MAX_VALIDATION_OUTPUT_CHARS));
 }
 
 async function runValidationStep(opts: {
@@ -179,9 +189,9 @@ async function runValidationStep(opts: {
       return { passed: true, stage, output: `${cmd} not found, skipping ${stage}` };
     }
 
-    const result: ValidationResult = { passed: code === 0, stage, output: stdout };
+    const result: ValidationResult = { passed: code === 0, stage, output: sanitizeValidationOutput(stdout) };
     if (code !== 0) {
-      result.error = (stderr || stdout).trim();
+      result.error = sanitizeValidationOutput((stderr || stdout).trim());
     }
     return result;
   } catch (err: unknown) {

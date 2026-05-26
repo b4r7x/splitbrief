@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import type { Command } from 'commander';
 
 export function addWorkflowOptions(cmd: Command): Command {
   return cmd

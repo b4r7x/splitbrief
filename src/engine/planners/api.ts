@@ -32,6 +32,7 @@ async function invokeApi(
   priorMessages?: PriorMessage[] | undefined,
   effort?: EffortLevel | undefined,
   images?: Attachment[] | undefined,
+  signal?: AbortSignal | undefined,
 ): Promise<InvokeResult> {
   const messages = buildMessages(prompt, priorMessages);
   return dispatchStreamCompletion({
@@ -45,6 +46,7 @@ async function invokeApi(
     onProgress: onOutput,
     effort,
     images,
+    signal,
   });
 }
 
@@ -64,12 +66,13 @@ export function createApiPlanner(config: Config): Planner {
   const supportsEffort = providerId !== null && modelSupportsEffort(providerId, model);
   const supportsImages = providerId !== null && modelSupportsImages(providerId, model);
 
-  const invoke = ({ prompt, callbacks, priorMessages, images }: {
+  const invoke = ({ prompt, callbacks, priorMessages, images, signal }: {
     prompt: string;
     projectDir: string;
     callbacks: { onOutput: (text: string) => void };
     priorMessages?: PriorMessage[] | undefined;
     images?: Attachment[] | undefined;
+    signal?: AbortSignal | undefined;
   }) =>
     invokeApi(
       client,
@@ -80,6 +83,7 @@ export function createApiPlanner(config: Config): Planner {
       priorMessages,
       supportsEffort ? effort : undefined,
       supportsImages ? images : undefined,
+      signal,
     );
 
   return createPlannerBase({

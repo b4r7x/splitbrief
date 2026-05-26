@@ -7,12 +7,12 @@ import { formatCost } from '../../../core/formatting.js';
 import { narrowRecord, optionalString } from '../../../utils/type-guards.js';
 import { uniqueSorted } from '../../../utils/collections.js';
 import { artifactPath } from './artifacts.js';
-import {
-  type DeterministicEstimate,
-  type ReadinessSummary,
-  type RunExplain,
-  type RunExplainArtifact,
-  type RunExplainRoute,
+import type {
+  DeterministicEstimate,
+  ReadinessSummary,
+  RunExplain,
+  RunExplainArtifact,
+  RunExplainRoute,
 } from './types.js';
 
 export function sessionStatus(summary: Summary | null, state: WorkflowState | null): string | null {

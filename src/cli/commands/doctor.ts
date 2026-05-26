@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import type { Command } from 'commander';
 import { collectReadiness } from '../../core/readiness/collect.js';
 import { formatReadinessReport, readinessBlockerMessage } from '../../core/readiness/format.js';
 import { resolveProjectDir } from '../setup.js';

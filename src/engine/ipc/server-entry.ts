@@ -135,14 +135,17 @@ async function main() {
     void markCrashed(dir, 'uncaught', err.message).then(() => process.exit(1));
   });
 
-  await runWorkflow({
+  const summary = await runWorkflow({
     feature: argv.feature,
+    plannerContext: argv.plannerContext,
     projectDir: argv.projectDir,
     config,
     headless: true,
+    allowHooks: argv.allowHooks ?? false,
     sessionId: argv.sessionId,
     eventBus: ipcBus,
     sinks: ipcBridge.sinks,
+    signal: ipcBridge.signal,
     callbacks: {
       onApprovalNeeded: async (approvalType, filePath) => {
         const response = assertPromptResponse(
@@ -197,11 +200,28 @@ async function main() {
         );
         return response.response;
       },
+      onCostApprovalNeeded: async (prediction) => {
+        const response = assertPromptResponse(
+          await ipcServer.requestClientPrompt({ kind: 'cost_approval', prediction }),
+          'cost_approval',
+        );
+        return response.approved;
+      },
+      onTaskReviewNeeded: async (request) => {
+        const response = assertPromptResponse(
+          await ipcServer.requestClientPrompt({ kind: 'task_review', request }),
+          'task_review',
+        );
+        return response.response;
+      },
       onComplete: () => undefined,
     },
   });
 
-  await onCleanup(0);
+  const completedTasks = summary.completedByLocal + summary.escalatedToPlanner + summary.skipped;
+  const isIncomplete = summary.totalTasks > 0 && completedTasks < summary.totalTasks;
+  const exitCode = summary.failed > 0 || isIncomplete ? 1 : 0;
+  await onCleanup(exitCode);
 }
 
 main().catch((err) => {

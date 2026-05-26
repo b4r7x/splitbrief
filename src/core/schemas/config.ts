@@ -122,6 +122,9 @@ export const ConfigSchema = z.object({
   otel: OtelConfigSchema.optional(),
   snapshots: SnapshotsConfigSchema.optional(),
   palette: PaletteConfigSchema.optional(),
+  trust: z.object({
+    customRenderers: z.boolean().default(false),
+  }).optional(),
   approval: ApprovalConfigSchema.optional(),
   plannerEstimateReview: z.boolean().optional(),
   autoSplitOverflow: z.boolean().optional(),

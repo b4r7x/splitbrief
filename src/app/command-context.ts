@@ -85,7 +85,7 @@ export function buildCommandContext({ exit }: { exit: () => void }): RuntimeComm
     listAttachments,
     writeHandoff: async (target, taskId) => {
       const projectDir = configStore.get().projectDir;
-      const sessionId = readActive(projectDir);
+      const sessionId = currentSessionId(projectDir);
       if (!sessionId) throw appCommandContextError.noActiveSession('handoff');
       const outDir = join(
         projectDir, '.diptych', 'sessions', sessionId, 'handoffs', target,

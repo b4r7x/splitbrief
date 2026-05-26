@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createTreeRecorderSink } from './tree-recorder.js';
-import { reconstructTree, readTreeMeta } from '../../../core/sessions/tree/io.js';
+import { reconstructTree, readTreeMeta, treeJsonlPath, treeMetaPath } from '../../../core/sessions/tree/io.js';
 import type { EngineEvent } from '../types.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 
@@ -267,5 +267,17 @@ describe('createTreeRecorderSink', () => {
     expect(tree).not.toBeNull();
     // root + 2 plan-steps + 2 agent-invocations + 1 cost-checkpoint = 6
     expect(tree!.meta.entryCount).toBe(6);
+  });
+
+  it('writes tree files with secure permissions (0o600)', () => {
+    const sink = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
+    sink({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'add login' });
+
+    const sDir = join(tmpDir, '.diptych', 'sessions', sessionId);
+    const jsonlStat = statSync(treeJsonlPath(sDir));
+    const metaStat = statSync(treeMetaPath(sDir));
+
+    expect(jsonlStat.mode & 0o777).toBe(0o600);
+    expect(metaStat.mode & 0o777).toBe(0o600);
   });
 });

@@ -163,6 +163,30 @@ describe('writeSecureFile', () => {
     expect(readFileSync(join(real, 'through-link.txt'), 'utf-8')).toBe('via symlink');
   });
 
+  it('refuses to write through a file symlink pointing outside the directory', () => {
+    const dir = makeTmp();
+    const outside = join(dir, 'outside');
+    mkdirSync(outside);
+    const outsideFile = join(outside, 'target.txt');
+    writeFileSync(outsideFile, 'original');
+    const link = join(dir, 'link.txt');
+    symlinkSync(outsideFile, link);
+
+    expect(() => writeSecureFile(link, 'malicious')).toThrow(/refusing to write through symlink/);
+    expect(readFileSync(outsideFile, 'utf-8')).toBe('original');
+  });
+
+  it('refuses to write through a file symlink even when target is in same directory', () => {
+    const dir = makeTmp();
+    const realFile = join(dir, 'real.txt');
+    writeFileSync(realFile, 'original');
+    const link = join(dir, 'link.txt');
+    symlinkSync(realFile, link);
+
+    expect(() => writeSecureFile(link, 'overwrite')).toThrow(/refusing to write through symlink/);
+    expect(readFileSync(realFile, 'utf-8')).toBe('original');
+  });
+
   it('concurrent writes to distinct files in the same new directory both succeed', async () => {
     const dir = makeTmp();
     const base = join(dir, 'concurrent');

@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import type { Command } from 'commander';
 import ansis from 'ansis';
 import { createPlanner } from '../../engine/runners/factory.js';
 import type { PlanResult } from '../../engine/planners/types.js';
@@ -11,6 +11,8 @@ import { writeSpecFile } from '../../core/paths-io.js';
 import { beginSession } from '../../core/sessions/lifecycle.js';
 import { clearStaleSession } from '../../core/sessions/guards.js';
 import { ensureHooksTrusted } from '../hook-trust-prompt.js';
+import { resolveHooksConfig } from '../../engine/hooks/discover.js';
+import { rejectUntrustedRunners } from '../../engine/runners/trust.js';
 
 type SpecOpts = { auto: boolean; project?: string; allowHooks: boolean };
 
@@ -28,7 +30,9 @@ export function registerSpecCommand(program: Command): void {
       clearStaleSession(projectDir);
 
       const { config: baseConfig, warnings } = loadConfigOrExit(projectDir);
-      await ensureHooksTrusted({ projectDir, hooks: baseConfig.hooks, allowHooks: opts.allowHooks });
+      const mergedHooks = await resolveHooksConfig(projectDir, baseConfig.hooks);
+      await ensureHooksTrusted({ projectDir, hooks: mergedHooks, allowHooks: opts.allowHooks });
+      rejectUntrustedRunners(baseConfig, projectDir, opts.allowHooks);
       for (const w of warnings) warnStderr(`⚠ ${w}`);
       const config = opts.auto
         ? {
