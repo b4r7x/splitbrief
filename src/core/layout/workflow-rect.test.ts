@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clampWorkflowPromptRows,
   getReviewContentHeight,
   getWorkflowContentRect,
   getWorkflowContentWidth,
@@ -59,6 +60,11 @@ describe('workflow viewport layout', () => {
     expect(getWorkflowViewportHeight(30, 2, false)).toBeGreaterThan(
       getWorkflowViewportHeight(30, 2, true),
     );
+  });
+
+  it('caps prompt rows to the available middle area', () => {
+    expect(clampWorkflowPromptRows(10, 3, true, 999)).toBeLessThan(10);
+    expect(getWorkflowViewportHeight(10, 3, true, 999)).toBe(0);
   });
 });
 

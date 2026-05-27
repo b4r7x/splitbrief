@@ -1,9 +1,11 @@
 import { Box, Text, useInput } from 'ink';
+import { formatCostGateSummary } from '../../../core/cost-gate-summary.js';
+import type { CostPrediction } from '../../../core/schemas/summary.js';
 import { useTheme } from '../../../components/theme.js';
-import { formatCostGateSummary } from '../../../engine/orchestrator/cost-gate.js';
 import { costApprovalStore } from '../../../stores/cost-approval/store.js';
 import { closeCostApprovalPrompt } from '../../../stores/cost-approval/actions.js';
-import type { CostPrediction } from '../../../core/schemas/summary.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { getCostApprovalPromptRowsForPrediction } from '../prompt-rows.js';
 
 interface CostApprovalPromptProps {
   prediction: CostPrediction;
@@ -13,7 +15,9 @@ interface CostApprovalPromptProps {
 
 export function CostApprovalPrompt({ prediction, onApprove, onReject }: CostApprovalPromptProps) {
   const t = useTheme();
+  const cols = terminalSizeStore.use(s => s.cols);
   const summary = formatCostGateSummary(prediction);
+  const promptRows = getCostApprovalPromptRowsForPrediction(prediction, cols);
 
   useInput((input, key) => {
     if (input === 'y' || input === 'Y' || key.return) {
@@ -28,14 +32,32 @@ export function CostApprovalPrompt({ prediction, onApprove, onReject }: CostAppr
 
   if (!summary) {
     return (
-      <Box flexDirection="column" paddingX={2} paddingY={1}>
+      <Box
+        flexDirection="column"
+        paddingX={2}
+        paddingY={1}
+        height={promptRows}
+        width="100%"
+        overflow="hidden"
+        flexShrink={0}
+      >
         <Text color={t.textDim}>Cost estimate unavailable. Proceeding automatically.</Text>
       </Box>
     );
   }
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1} borderStyle="round" borderColor={t.accent}>
+    <Box
+      flexDirection="column"
+      paddingX={2}
+      paddingY={1}
+      borderStyle="round"
+      borderColor={t.accent}
+      height={promptRows}
+      width="100%"
+      overflow="hidden"
+      flexShrink={0}
+    >
       <Text bold color={t.accent}>Cost Approval Required</Text>
       <Box marginTop={1} flexDirection="column">
         <Text>

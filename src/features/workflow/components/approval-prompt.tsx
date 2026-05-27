@@ -3,6 +3,8 @@ import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/store.js';
 import { closeApprovalPrompt } from '../../../stores/approval-prompt/actions.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { getApprovalPromptRows } from '../prompt-rows.js';
 
 type ConfirmStep = 'phrase' | 'reason';
 
@@ -13,6 +15,7 @@ export function ApprovalPrompt() {
   const [confirmStep, setConfirmStep] = useState<ConfirmStep>('phrase');
   const [phraseError, setPhraseError] = useState('');
   const t = useTheme();
+  const cols = terminalSizeStore.use(s => s.cols);
 
   const isActive = state.status === 'pending';
   const promptIdentity = state.status === 'pending' ? state.resolve : null;
@@ -116,10 +119,20 @@ export function ApprovalPrompt() {
   if (state.status !== 'pending') return null;
 
   const { request } = state;
+  const promptRows = getApprovalPromptRows(state, cols);
 
   if (request.tier === 'sticky') {
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={t.warning} paddingX={1}>
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor={t.warning}
+        paddingX={1}
+        height={promptRows}
+        width="100%"
+        overflow="hidden"
+        flexShrink={0}
+      >
         <Text color={t.warning}>{`[?] Write outside task scope: ${request.actionDescription}`}</Text>
         <Text color={t.text}>{'  [A] Approve once'}</Text>
         <Text color={t.text}>{'  [S] Approve for this session'}</Text>
@@ -131,7 +144,16 @@ export function ApprovalPrompt() {
 
   if (request.tier === 'confirm') {
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={t.error} paddingX={1}>
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor={t.error}
+        paddingX={1}
+        height={promptRows}
+        width="100%"
+        overflow="hidden"
+        flexShrink={0}
+      >
         <Text color={t.error}>{`[!] Destructive action: ${request.actionDescription}`}</Text>
         {confirmStep === 'phrase' && (
           <>
@@ -142,6 +164,7 @@ export function ApprovalPrompt() {
               <Text color={t.accent}>{'_'}</Text>
             </Box>
             {phraseError ? <Text color={t.error}>{`    ${phraseError}`}</Text> : null}
+            {!phraseError && <Text> </Text>}
           </>
         )}
         {confirmStep === 'reason' && (

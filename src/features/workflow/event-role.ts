@@ -1,6 +1,6 @@
-import type { EngineEvent } from '../../../../engine/events/types.js';
-import { phaseRole } from '../../../../core/phases.js';
-import { assertNever } from '../../../../utils/type-guards.js';
+import { phaseRole } from '../../core/phases.js';
+import type { EngineEvent } from '../../engine/events/types.js';
+import { assertNever } from '../../utils/type-guards.js';
 
 export type GutterRole = 'planner' | 'implementer' | null;
 

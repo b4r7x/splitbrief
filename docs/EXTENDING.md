@@ -40,7 +40,7 @@ Existing example to follow: `src/cli/commands/start.ts`.
    - Pattern: `export function publishMyEvent(bus: EventBus, phase: Phase, payload): void { bus.publish({ type: 'my_event', ts: Date.now(), phase, ...payload }); }`
 3. If the event should update UI state: handle it in `src/stores/workflow/actions.ts` inside `addEvent()`
    - The ordering invariant is: events store, then tasks store, then tokens store, then lifecycle store (all synchronous)
-4. If the event needs a visual card: add a case in `src/features/workflow/components/event-cards/event-card.tsx`
+4. If the event should appear in the workflow conversation: add a case in `src/features/workflow/conversation-rows/event-rows.ts`
 
 ---
 
@@ -132,17 +132,15 @@ Factory: `src/stores/create-store.ts` (~45 LOC).
 
 ---
 
-## 9. New event card renderer
+## 9. New workflow conversation event renderer
 
-1. Open `src/features/workflow/components/event-cards/event-card.tsx`
-2. The `EventCard` component is a switch on `event.type`. Two switches exist:
-   - `getGutterRole()` returns `'planner'`, `'implementer'`, or `null` for gutter styling
-   - The main `switch` in `EventCard()` returns the rendered `content`
-3. Add your event type to both switches:
-   - In `getGutterRole()`: return the appropriate role or `null`
-   - In `EventCard()`: return a `<Card>` (simple label/value), a dedicated component, or `null` (silent)
-4. If the card is non-trivial, create a dedicated component in the same directory (e.g., `my-event-card.tsx`) and import it
-5. Existing dedicated components: `ImplementerCard`, `ValidateCard`, `PlannerStatusCard`, `CostPredictionCard`, `EscalateCard`, `WorkflowConfigCard`, `UserMessageCard`
+1. Open `src/features/workflow/conversation-rows/event-rows.ts`
+2. The row renderer is a switch on `event.type` and returns concrete one-terminal-row records.
+3. Add your event type to:
+   - `src/features/workflow/event-role.ts` when it needs planner/implementer gutter styling
+   - `eventRows()` when it should appear in the scrollable conversation
+4. Keep each returned `ConversationRow` height-safe. Use helpers from `conversation-rows/row-format.ts` for wrapping, cards, and gutters.
+5. Events that should remain silent in the conversation should return `[]`.
 
 The `assertNever(event)` default case ensures the compiler catches missing event types.
 

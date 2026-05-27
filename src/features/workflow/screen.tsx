@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Text, useApp, useInput } from 'ink';
+import { Box, Text, useApp, useInput } from 'ink';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { ApprovalPrompt } from './components/approval-prompt.js';
@@ -30,13 +30,17 @@ import { reviewStore } from '../../stores/workflow/review.js';
 import { planEditorStore } from '../../stores/workflow/plan-editor.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { conversationScrollStore } from '../../stores/workflow/conversation-scroll.js';
+import { approvalPromptStore } from '../../stores/approval-prompt/store.js';
+import { costApprovalStore } from '../../stores/cost-approval/store.js';
 import { useStores } from '../../stores/use-stores.js';
 import {
+  clampWorkflowPromptRows,
   getWorkflowContentWidth,
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
   hasWorkflowConfig,
 } from '../../core/layout/workflow-rect.js';
+import { getApprovalPromptRows, getCostApprovalPromptRows } from './prompt-rows.js';
 
 interface WorkflowScreenProps {
   commands: RuntimeCommandDef[];
@@ -97,10 +101,17 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
   const sidebarVisible = controlsStore.use(s => s.sidebarVisible);
 
   const hasConfig = eventsStore.use(s => hasWorkflowConfig(s.events));
+  const approvalPromptState = approvalPromptStore.use(s => s);
+  const costApprovalState = costApprovalStore.use(s => s);
 
   const sidebarWidth = getWorkflowSidebarWidth(cols, sidebarVisible, isSmall);
   const showSidebar = sidebarWidth > 0;
-  const contentHeight = getWorkflowViewportHeight(rows, inputRows, hasConfig);
+  const approvalRows = getApprovalPromptRows(approvalPromptState, cols);
+  const costRows = getCostApprovalPromptRows(costApprovalState, cols);
+  const promptRows = clampWorkflowPromptRows(rows, inputRows, hasConfig, approvalRows + costRows);
+  const approvalPromptRows = Math.min(approvalRows, promptRows);
+  const costPromptRows = Math.min(costRows, Math.max(0, promptRows - approvalPromptRows));
+  const contentHeight = getWorkflowViewportHeight(rows, inputRows, hasConfig, promptRows);
   const contentWidth = getWorkflowContentWidth(cols, sidebarVisible, isSmall);
 
   const briefReview = config.workflow.briefReview ?? 'simple';
@@ -178,8 +189,10 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
         contentWidth={contentWidth}
         sections={sections}
       />
-      <ApprovalPrompt />
-      <CostApprovalPromptConnected />
+      <Box height={promptRows} overflow="hidden" flexDirection="column" flexShrink={0}>
+        {approvalPromptRows > 0 && <ApprovalPrompt />}
+        {costPromptRows > 0 && <CostApprovalPromptConnected />}
+      </Box>
     </ScreenShell>
   );
 }

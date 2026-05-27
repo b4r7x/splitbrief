@@ -23,13 +23,3 @@ export function plannerEstimateReviewLine(prediction: CostPrediction): string | 
   if (review.status === 'unavailable') return 'Planner estimate review: unavailable; deterministic estimate remains usable';
   return `Planner estimate review: extra planner call completed (${review.classification ?? 'unclassified'})`;
 }
-
-export function getCostPredictionCardRowCount(prediction: CostPrediction | undefined): number {
-  if (!hasDisplayableCostPrediction(prediction)) return 1;
-
-  const reviewRows = plannerEstimateReviewLine(prediction) ? 1 : 0;
-  if (!prediction.deterministic) return 4 + reviewRows;
-
-  const unknownRows = formatCostPredictionUnknownReasons(prediction.deterministic.totals.unknownCostReason).length > 0 ? 1 : 0;
-  return 7 + unknownRows + reviewRows;
-}
