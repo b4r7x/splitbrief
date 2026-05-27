@@ -8,6 +8,12 @@ interface PipelineBarProps {
 }
 
 const STAGES = ['res', 'spec', 'plan', 'impl', 'rev'] as const;
+const SYMBOL_LABEL_GAP_WIDTH = 1;
+const STAGE_GAP_WIDTH = 1;
+
+export const PIPELINE_BAR_WIDTH =
+  STAGES.reduce((width, stage) => width + 1 + SYMBOL_LABEL_GAP_WIDTH + stage.length, 0)
+  + ((STAGES.length - 1) * STAGE_GAP_WIDTH);
 
 function getStageIndex(phase: Phase): number {
   switch (phase) {
@@ -28,7 +34,7 @@ export function PipelineBar({ phase }: PipelineBarProps) {
   const currentIndex = getStageIndex(phase);
 
   return (
-    <Box>
+    <Box gap={STAGE_GAP_WIDTH}>
       {STAGES.map((stage, i) => {
         const { symbol, color } =
           i < currentIndex ? { symbol: '●', color: t.success }
@@ -36,10 +42,9 @@ export function PipelineBar({ phase }: PipelineBarProps) {
           : { symbol: '○', color: t.textDim };
         const labelColor = i === currentIndex && stage === 'impl' ? t.implementer : color;
         return (
-          <Box key={stage}>
-            <Text color={color}>{symbol} </Text>
+          <Box key={stage} gap={SYMBOL_LABEL_GAP_WIDTH}>
+            <Text color={color}>{symbol}</Text>
             <Text color={labelColor}>{stage}</Text>
-            {i < STAGES.length - 1 && <Text> </Text>}
           </Box>
         );
       })}

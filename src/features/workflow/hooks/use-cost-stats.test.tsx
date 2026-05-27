@@ -6,7 +6,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
-import { useCostStats } from './use-cost-stats.js';
+import { formatCostDisplay, useCostStats } from './use-cost-stats.js';
 
 function Harness() {
   const stats = useCostStats();
@@ -56,5 +56,24 @@ describe('useCostStats', () => {
 
     expect(ui.lastFrame()).toBe('mixed');
     ui.unmount();
+  });
+});
+
+describe('formatCostDisplay', () => {
+  it('hides zero-dollar savings estimates', () => {
+    const display = formatCostDisplay(100, {
+      hypotheticalCost: 0,
+      actualPlannerCost: 0,
+      actualImplementerCost: 0,
+      totalActualCost: 0,
+      savingsAmount: 0,
+      savingsPercentage: 0,
+      localCompletionRate: 1,
+      hasPricedUsage: true,
+      hasUnpricedUsage: false,
+      hasSavingsEstimate: true,
+    });
+
+    expect(display.showSavings).toBe(false);
   });
 });

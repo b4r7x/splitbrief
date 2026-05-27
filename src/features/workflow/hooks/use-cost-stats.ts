@@ -14,6 +14,7 @@ export type CostPricingState = 'priced' | 'mixed' | 'local' | 'unpriced' | 'n/a'
 
 interface CostStats {
   localRate: number;
+  routedTasks: number;
   costBreakdown: CostBreakdown | null;
   pricingState: CostPricingState;
   currentTask: number;
@@ -62,7 +63,7 @@ export function formatSpentText(costBreakdown: CostBreakdown | null, pricingStat
 }
 
 export function formatCostDisplay(localRate: number, costBreakdown: CostBreakdown | null): CostDisplay {
-  const showSavings = costBreakdown?.hasSavingsEstimate ?? false;
+  const showSavings = (costBreakdown?.hasSavingsEstimate ?? false) && (costBreakdown?.savingsAmount ?? 0) > 0;
   const hasPricedUsage = costBreakdown?.hasPricedUsage ?? false;
   const pricingState = resolvePricingState(costBreakdown);
   return {
@@ -82,8 +83,9 @@ export function useCostStats(): CostStats {
     { currentTask, totalTasks, taskCompletionTimes },
   ] = useStores(tokensStore, tasksStore);
 
-  const localRate = (localCount + escalatedCount) > 0
-    ? (localCount / (localCount + escalatedCount)) * 100
+  const routedTasks = localCount + escalatedCount;
+  const localRate = routedTasks > 0
+    ? (localCount / routedTasks) * 100
     : 0;
 
   const plannerTool = getRunnerDisplayName(config.planner);
@@ -110,5 +112,5 @@ export function useCostStats(): CostStats {
     implementerPricing.pricingMode,
   );
 
-  return { localRate, costBreakdown, pricingState, currentTask, totalTasks, taskCompletionTimes };
+  return { localRate, routedTasks, costBreakdown, pricingState, currentTask, totalTasks, taskCompletionTimes };
 }

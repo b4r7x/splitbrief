@@ -108,10 +108,10 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
   const showSidebar = sidebarWidth > 0;
   const approvalRows = getApprovalPromptRows(approvalPromptState, cols);
   const costRows = getCostApprovalPromptRows(costApprovalState, cols);
-  const promptRows = clampWorkflowPromptRows(rows, inputRows, hasConfig, approvalRows + costRows);
+  const promptRows = clampWorkflowPromptRows(rows, inputRows, hasConfig, approvalRows + costRows, cols);
   const approvalPromptRows = Math.min(approvalRows, promptRows);
   const costPromptRows = Math.min(costRows, Math.max(0, promptRows - approvalPromptRows));
-  const contentHeight = getWorkflowViewportHeight(rows, inputRows, hasConfig, promptRows);
+  const contentHeight = getWorkflowViewportHeight(rows, inputRows, hasConfig, promptRows, cols);
   const contentWidth = getWorkflowContentWidth(cols, sidebarVisible, isSmall);
 
   const briefReview = config.workflow.briefReview ?? 'simple';

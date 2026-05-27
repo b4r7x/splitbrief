@@ -74,7 +74,7 @@ describe('readConversationScrollSnapshot', () => {
 
     const snap = readConversationScrollSnapshot();
 
-    expect(snap.contentRect.width).toBe(160); // no sidebar, no config → full width
+    expect(snap.contentRect.width).toBe(160);
     expect(snap.viewportHeight).toBeGreaterThan(0);
     expect(snap.viewportHeight).toBeLessThan(40);
   });
@@ -90,7 +90,7 @@ describe('readConversationScrollSnapshot', () => {
   });
 
   it('accounts for config chrome rows when a workflow-config event is present', () => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+    terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });
 
     const snapWithout = readConversationScrollSnapshot();
@@ -197,6 +197,6 @@ describe('readReviewContentHeight', () => {
     reviewStore.setLineCount(1000);
     const tallContent = readReviewContentHeight();
 
-    expect(tallContent).toBeLessThanOrEqual(shortContent);
+    expect(tallContent).toBe(shortContent - 1);
   });
 });

@@ -16,7 +16,7 @@ describe('workflow events display', () => {
   });
 
   describe('WorkflowConfigCard', () => {
-    it('renders Mode, Planner, and Implementer on separate lines', () => {
+    it('renders Mode, Planner, and Implementer inline on one line', () => {
       const event: EngineEventOf<'workflow_config'> = {
         type: 'workflow_config',
         ts: Date.now(),
@@ -32,16 +32,53 @@ describe('workflow events display', () => {
       const frame = ui.lastFrame() ?? '';
       const lines = frame.split('\n');
 
-      const modeLine = lines.findIndex(l => l.includes('Mode:'));
-      const plannerLine = lines.findIndex(l => l.includes('Planner:'));
-      const implementerLine = lines.findIndex(l => l.includes('Implementer:'));
+      expect(lines).toHaveLength(1);
+      expect(frame).toContain('standard');
+      expect(frame).toContain('Planner:');
+      expect(frame).toContain('Implementer:');
+      expect(frame).toContain('claude-sonnet-4-20250514');
+      expect(frame).toContain('deepseek-coder');
 
-      expect(modeLine).toBeGreaterThanOrEqual(0);
-      expect(plannerLine).toBeGreaterThanOrEqual(0);
-      expect(implementerLine).toBeGreaterThanOrEqual(0);
-      expect(modeLine).not.toBe(plannerLine);
-      expect(plannerLine).not.toBe(implementerLine);
-      expect(modeLine).not.toBe(implementerLine);
+      ui.unmount();
+    });
+
+    it('renders both selected tool slots in tools density even when tools match', () => {
+      const event: EngineEventOf<'workflow_config'> = {
+        type: 'workflow_config',
+        ts: Date.now(),
+        phase: 'planning',
+        mode: 'instant',
+        plannerTool: 'codex',
+        implementerTool: 'codex',
+      };
+
+      const ui = renderFeature(<WorkflowConfigCard event={event} density="tools" />);
+      const frame = ui.lastFrame() ?? '';
+
+      expect(frame).toContain('instant · Codex → Codex');
+      expect(frame).not.toContain('Planner:');
+      expect(frame).not.toContain('Implementer:');
+      expect(frame.match(/Codex/g)).toHaveLength(2);
+
+      ui.unmount();
+    });
+
+    it('renders both selected tools in tools density when planner and implementer differ', () => {
+      const event: EngineEventOf<'workflow_config'> = {
+        type: 'workflow_config',
+        ts: Date.now(),
+        phase: 'planning',
+        mode: 'standard',
+        plannerTool: 'anthropic',
+        implementerTool: 'deepseek',
+      };
+
+      const ui = renderFeature(<WorkflowConfigCard event={event} density="tools" />);
+      const frame = ui.lastFrame() ?? '';
+
+      expect(frame).toContain('standard · Anthropic → DeepSeek');
+      expect(frame).not.toContain('Planner:');
+      expect(frame).not.toContain('Implementer:');
 
       ui.unmount();
     });

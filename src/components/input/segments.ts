@@ -27,13 +27,27 @@ export interface BuildSegmentsParams {
 type FormatText = (text: string, isPlaceholder?: boolean) => string;
 type SegmentResult = { preCursor: Segment[]; postCursor: Segment[] };
 
+function buildPlainSegments(
+  textBefore: string,
+  textAfter: string,
+  showCursor: boolean,
+  formatText: FormatText,
+): SegmentResult {
+  return {
+    preCursor: [
+      { value: formatText(textBefore) },
+      { value: showCursor ? ' ' : '', type: 'cursor' },
+    ],
+    postCursor: [{ value: formatText(textAfter) }],
+  };
+}
+
 function buildSegmentsWithHighlight(
   highlight: { start: number; end: number },
   textBefore: string,
   textAfter: string,
   cursorIndex: number,
   showCursor: boolean,
-  focus: boolean,
   valueLength: number,
   formatText: FormatText,
 ): SegmentResult {
@@ -43,22 +57,7 @@ function buildSegmentsWithHighlight(
     highlight.end <= valueLength;
 
   if (!hasValidHighlight) {
-    const formattedBefore = formatText(textBefore);
-    const formattedAfter = formatText(textAfter);
-    const lineStart = formattedBefore.lastIndexOf('\n') + 1;
-    const rawEnd = formattedAfter.indexOf('\n');
-    const lineEnd = rawEnd === -1 ? formattedAfter.length : rawEnd;
-    return {
-      preCursor: [
-        { value: formattedBefore.slice(0, lineStart) },
-        { value: formattedBefore.slice(lineStart), type: 'highlight' },
-        { value: showCursor && focus ? ' ' : '', type: 'cursor' },
-      ],
-      postCursor: [
-        { value: formattedAfter.slice(0, lineEnd), type: 'highlight' },
-        { value: formattedAfter.slice(lineEnd) },
-      ],
-    };
+    return buildPlainSegments(textBefore, textAfter, showCursor, formatText);
   }
 
   const hlStartAfter = Math.max(highlight.start - cursorIndex, 0);
@@ -74,7 +73,7 @@ function buildSegmentsWithHighlight(
         type: 'highlight',
       },
       { value: formatText(textBefore.slice(highlight.end)) },
-      { value: ' ', type: 'cursor' },
+      { value: showCursor ? ' ' : '', type: 'cursor' },
     ],
     postCursor: [
       { value: formatText(textAfter.slice(0, hlStartAfter)) },
@@ -121,14 +120,17 @@ export function buildSegments(params: BuildSegmentsParams): SegmentResult {
     };
   }
 
-  return buildSegmentsWithHighlight(
-    highlight ?? { start: 0, end: 0 },
-    textBefore,
-    textAfter,
-    cursorIndex,
-    showCursor,
-    focus,
-    value.length,
-    formatText,
-  );
+  if (highlight) {
+    return buildSegmentsWithHighlight(
+      highlight,
+      textBefore,
+      textAfter,
+      cursorIndex,
+      showCursor,
+      value.length,
+      formatText,
+    );
+  }
+
+  return buildPlainSegments(textBefore, textAfter, showCursor, formatText);
 }

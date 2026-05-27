@@ -3,7 +3,7 @@ import type { Theme } from './theme.js';
 import { useTheme } from './theme.js';
 import { useAsyncHighlight } from '../hooks/use-async-highlight.js';
 
-type CodeBlock = { type: 'code'; lang: string; code: string };
+type CodeBlock = { type: 'code'; lang: string; label: string; code: string };
 type TextBlock = { type: 'text'; lines: string[] };
 type Block = CodeBlock | TextBlock;
 
@@ -13,6 +13,7 @@ function parseBlocks(text: string): Block[] {
   let currentText: string[] = [];
   let inCode = false;
   let codeLang = 'typescript';
+  let codeLabel = '';
   let codeLines: string[] = [];
 
   for (const line of lines) {
@@ -23,11 +24,18 @@ function parseBlocks(text: string): Block[] {
       }
       const langHint = line.slice(3).trim().toLowerCase();
       codeLang = langHint || 'typescript';
+      codeLabel = langHint;
       inCode = true;
       codeLines = [];
     } else if (inCode && line.startsWith('```')) {
-      blocks.push({ type: 'code', lang: codeLang, code: codeLines.join('\n') });
+      blocks.push({
+        type: 'code',
+        lang: codeLang,
+        label: codeLabel,
+        code: codeLines.join('\n'),
+      });
       inCode = false;
+      codeLabel = '';
       codeLines = [];
     } else if (inCode) {
       codeLines.push(line);
@@ -36,7 +44,12 @@ function parseBlocks(text: string): Block[] {
     }
   }
   if (inCode && codeLines.length > 0) {
-    blocks.push({ type: 'code', lang: codeLang, code: codeLines.join('\n') });
+    blocks.push({
+      type: 'code',
+      lang: codeLang,
+      label: codeLabel,
+      code: codeLines.join('\n'),
+    });
   }
   if (currentText.length > 0) {
     blocks.push({ type: 'text', lines: currentText });
@@ -58,33 +71,98 @@ function renderInlineItalic(segment: string, baseKey: string, t: Theme) {
   );
 }
 
+function renderInlineElements(text: string, baseKey: string, t: Theme) {
+  const codeParts = text.split(/(`[^`]+`)/g);
+  return codeParts.map((part, i) => {
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return <Text key={`${baseKey}-c${i}`} color={t.markdown.code}>{part.slice(1, -1)}</Text>;
+    }
+    const boldParts = part.split(/\*\*([^*]+)\*\*/g);
+    if (boldParts.length === 1) {
+      return renderInlineItalic(part, `${baseKey}-${i}`, t);
+    }
+    return (
+      <Text key={`${baseKey}-b${i}`}>
+        {boldParts.map((bPart, j) =>
+          j % 2 === 1
+            ? <Text key={j} color={t.markdown.bold} bold>{bPart}</Text>
+            : renderInlineItalic(bPart, `${baseKey}-${i}-${j}`, t)
+        )}
+      </Text>
+    );
+  });
+}
+
 export function renderMarkdownLine(line: string, key: number, t: Theme) {
-  if (line.startsWith('# ') || line.startsWith('## ') || line.startsWith('### ')) {
+  if (/^#{1,3}\s+/.test(line)) {
     const text = line.replace(/^#+\s*/, '');
     return <Text key={key} color={t.markdown.heading} bold>{text}</Text>;
   }
-  const boldParts = line.split(/\*\*([^*]+)\*\*/g);
-  if (boldParts.length === 1) {
-    return <Text key={key} color={t.text}>{renderInlineItalic(line, `${key}-i`, t)}</Text>;
+
+  if (/^(---|\*\*\*|___)\s*$/.test(line)) {
+    return <Text key={key} color={t.markdown.rule}>{'─'.repeat(40)}</Text>;
   }
-  return (
-    <Text key={key} color={t.text}>
-      {boldParts.map((part, i) =>
-        i % 2 === 1
-          ? <Text key={i} color={t.markdown.bold} bold>{part}</Text>
-          : renderInlineItalic(part, `${key}-${i}`, t)
-      )}
-    </Text>
-  );
+
+  if (line.startsWith('> ')) {
+    return (
+      <Text key={key} color={t.markdown.blockquote}>
+        {'  ▎ '}{line.slice(2)}
+      </Text>
+    );
+  }
+
+  if (/^(\*|-)\s+/.test(line)) {
+    const text = line.replace(/^(\*|-)\s+/, '');
+    return (
+      <Text key={key} color={t.markdown.list}>
+        {'  • '}{renderInlineElements(text, `${key}`, t)}
+      </Text>
+    );
+  }
+
+  const orderedListMarker = /^\d+\.\s+/.exec(line)?.[0];
+  if (orderedListMarker) {
+    const text = line.slice(orderedListMarker.length);
+    const num = orderedListMarker.slice(0, orderedListMarker.indexOf('.'));
+    return (
+      <Text key={key} color={t.markdown.list}>
+        {'  '}{num}. {renderInlineElements(text, `${key}`, t)}
+      </Text>
+    );
+  }
+
+  return <Text key={key} color={t.text}>{renderInlineElements(line, `${key}`, t)}</Text>;
 }
 
-function HighlightedCode({ code, lang, theme: t }: { code: string; lang: string; theme: Theme }) {
+function HighlightedCode({
+  code,
+  lang,
+  label,
+  marginTop,
+  theme: t,
+}: {
+  code: string;
+  lang: string;
+  label: string;
+  marginTop: number;
+  theme: Theme;
+}) {
   const hl = useAsyncHighlight(code, lang);
   const bgProp = t.panelBg ? { backgroundColor: t.panelBg } : {};
-  const colorProp = hl ? {} : { color: t.markdown.code };
+  const lines = (hl ?? code).split('\n');
+
   return (
-    <Box marginY={0} paddingX={1} flexDirection="column">
-      <Text {...bgProp} {...colorProp}>{hl ?? code}</Text>
+    <Box flexDirection="column" marginTop={marginTop} marginBottom={1} {...bgProp}>
+      {label ? (
+        <Box paddingX={1}>
+          <Text color={t.textDim} dimColor>{label}</Text>
+        </Box>
+      ) : null}
+      <Box paddingX={1} flexDirection="column">
+        {lines.map((line, i) => (
+          <Text key={i}>{line}</Text>
+        ))}
+      </Box>
     </Box>
   );
 }
@@ -97,10 +175,19 @@ export function MarkdownBlock({ text }: { text: string }) {
     <Box flexDirection="column">
       {blocks.map((block, i) => {
         if (block.type === 'code') {
-          return <HighlightedCode key={i} code={block.code} lang={block.lang} theme={t} />;
+          return (
+            <HighlightedCode
+              key={i}
+              code={block.code}
+              lang={block.lang}
+              label={block.label}
+              marginTop={i === 0 ? 0 : 1}
+              theme={t}
+            />
+          );
         }
         return (
-          <Box key={i} flexDirection="column">
+          <Box key={i} flexDirection="column" marginTop={i === 0 ? 0 : 1}>
             {block.lines.map((line, j) => renderMarkdownLine(line, j, t))}
           </Box>
         );

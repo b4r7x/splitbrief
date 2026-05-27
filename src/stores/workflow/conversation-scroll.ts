@@ -28,8 +28,8 @@ function __testReset(next?: Partial<ConversationScrollState>): void {
 export const conversationScrollStore = {
   ...storeBase(store),
   __testReset,
-  scrollUp: ({ renderableCount, totalHeight, step = 1 }: { renderableCount: number; totalHeight: number; step?: number }) => store.set(s => {
-    const next = Math.min(s.scrollOffset + Math.max(1, step), totalHeight);
+  scrollUp: ({ renderableCount, totalHeight, step = 1, maxOffset }: { renderableCount: number; totalHeight: number; step?: number; maxOffset: number }) => store.set(s => {
+    const next = Math.min(s.scrollOffset + Math.max(1, step), maxOffset);
     const justStarted = s.scrollOffset === 0 && next > 0;
     const countAtScroll = justStarted ? renderableCount : s.renderableCountAtScroll;
     const heightAtScroll = justStarted ? totalHeight : s.heightAtScroll;
