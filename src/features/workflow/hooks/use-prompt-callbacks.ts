@@ -6,7 +6,7 @@ import { reviewStore } from '../../../stores/workflow/review.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import type { OrchestratorCallbacks } from '../../../engine/orchestrator/types.js';
 import { formatCost } from '../../../core/formatting.js';
-import { formatCostGateSummary } from '../../../engine/orchestrator/cost-gate.js';
+import { formatCostGateSummary } from '../../../core/cost-gate-summary.js';
 import { REVIEW_HINT } from '../review-parser.js';
 import { formatUserEditConflictPrompt, parseUserEditConflictAnswer } from '../user-edit-conflict-prompt.js';
 import { formatRecoveryPrompt, parseRecoveryActionAnswer } from '../recovery-prompt.js';

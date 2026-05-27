@@ -139,7 +139,9 @@ The main screen during execution. Key hooks:
 - **`useWorkflowKeys()`** -- keyboard shortcuts (Ctrl-C abort, Ctrl-D detach, arrow navigation).
 - **`useIpcClient()`** -- connects to a running workflow via Unix socket for attach mode.
 
-Key components: `Header`, `ConfigLine`, `AgentStatusRow`, `CostStatusLine`, `ConversationFlow` (event cards), `Sidebar`, `Composer`, `InputFooter`, `ApprovalPrompt`, `CostApprovalPromptConnected`.
+Key components: `Header`, `ConfigLine`, `AgentStatusRow`, `CostStatusLine`, `ConversationFlow` (row-based event stream), `Sidebar`, `Composer`, `InputFooter`, `ApprovalPrompt`, `CostApprovalPromptConnected`.
+
+Conversation scrolling is row-based. See [`WORKFLOW-CONVERSATION-SCROLL.md`](./WORKFLOW-CONVERSATION-SCROLL.md) for the row renderer, prompt-row budgeting, terminal resize behavior, and scroll-window invariants.
 
 ---
 

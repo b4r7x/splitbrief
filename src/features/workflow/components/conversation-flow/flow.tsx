@@ -1,93 +1,20 @@
-import { Box, Text, Static } from 'ink';
+import { Box, Text } from 'ink';
 import { useTheme } from '../../../../components/theme.js';
-import { EventCard } from '../event-cards/event-card.js';
 import { TaskSummary } from '../task-summary.js';
 import { getScrollWindowState } from '../../../../core/layout/scroll-window.js';
-import { computeConversationScroll } from '../../../../core/layout/conversation-scroll.js';
-import { trimRenderableItemsToViewport } from '../../../../core/layout/viewport-trimming.js';
+import { getCompletedTaskSummaryRows } from '../../../../core/layout/completed-task-summary-rows.js';
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
+import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { useStores } from '../../../../stores/use-stores.js';
+import { computeConversationRowScroll } from '../../conversation-rows/scroll.js';
 import type { Section } from '../../../../core/layout/event-sections.js';
 import type { EngineEvent } from '../../../../engine/events/types.js';
+import { ConversationRowView } from './conversation-row-view.js';
 
 interface ConversationFlowProps {
   sections: Section<EngineEvent>[];
   height: number;
   width: number;
-}
-
-// Keys that some EngineEvent variants carry — used to build a stable React key per event.
-// Field set is intentional and ordered; reordering would churn keys for in-flight renders.
-type EngineEventOptionalKey =
-  | 'taskId' | 'issueId' | 'id' | 'snapshotId' | 'message' | 'file' | 'path'
-  | 'action' | 'reason' | 'scope' | 'pattern' | 'sockPath' | 'sessionId'
-  | 'attempt' | 'maxAttempts';
-
-const EVENT_KEY_FIELDS: readonly EngineEventOptionalKey[] = [
-  'taskId',
-  'issueId',
-  'id',
-  'snapshotId',
-  'message',
-  'file',
-  'path',
-  'action',
-  'reason',
-  'scope',
-  'pattern',
-  'sockPath',
-  'sessionId',
-  'attempt',
-  'maxAttempts',
-];
-
-function keyPart(value: unknown): string | null {
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    const primitiveValues = value.filter(
-      (item): item is string | number | boolean =>
-        typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean',
-    );
-    return primitiveValues.length > 0 ? primitiveValues.join(',') : null;
-  }
-  return null;
-}
-
-type EventWithField<F extends EngineEventOptionalKey> = Extract<EngineEvent, { [K in F]: unknown }>;
-
-function hasField<F extends EngineEventOptionalKey>(event: EngineEvent, field: F): event is EventWithField<F> {
-  return field in event;
-}
-
-function readEventField<F extends EngineEventOptionalKey>(event: EngineEvent, field: F): EventWithField<F>[F] | undefined {
-  return hasField(event, field) ? event[field] : undefined;
-}
-
-function getEventBaseKey(event: EngineEvent): string {
-  const parts = [`type:${event.type}`, `ts:${event.ts}`];
-  if ('phase' in event) {
-    const phase = keyPart(event.phase);
-    if (phase !== null) parts.push(`phase:${phase}`);
-  }
-  for (const field of EVENT_KEY_FIELDS) {
-    const value = keyPart(readEventField(event, field));
-    if (value !== null) parts.push(`${field}:${value}`);
-  }
-  return parts.join('|');
-}
-
-function buildEventKeys(items: readonly { event: EngineEvent; globalIndex: number }[]): Map<number, string> {
-  const counts = new Map<string, number>();
-  const keys = new Map<number, string>();
-  for (const { event, globalIndex } of items) {
-    const baseKey = getEventBaseKey(event);
-    const count = counts.get(baseKey) ?? 0;
-    counts.set(baseKey, count + 1);
-    keys.set(globalIndex, count === 0 ? baseKey : `${baseKey}|duplicate:${count}`);
-  }
-  return keys;
 }
 
 function computeScrollBannerText(
@@ -107,13 +34,21 @@ export function ConversationFlow({ sections, height, width }: ConversationFlowPr
     expandedDiffs,
     renderableCountAtScroll,
     heightAtScroll,
-  }] = useStores(conversationScrollStore);
+  }, streaming] = useStores(conversationScrollStore, streamingOutputStore);
   const viewportHeight = Math.max(0, height);
   const cols = width;
   const completedItems = sections
     .filter((section): section is Section & { type: 'completed-task' } => section.type === 'completed-task')
     .map(section => section.summary);
-  const { newEventCount, renderableItems, scrollOffset, totalDynamicHeight } = computeConversationScroll({
+  const completedRows = getCompletedTaskSummaryRows(sections, viewportHeight);
+  const visibleCompletedItems = completedRows > 0 ? completedItems.slice(-completedRows) : [];
+  const {
+    newEventCount,
+    rows,
+    scrollOffset,
+    totalDynamicHeight,
+    viewportHeight: scrollViewportHeight,
+  } = computeConversationRowScroll({
     sections,
     expandedDiffs,
     cols,
@@ -121,35 +56,25 @@ export function ConversationFlow({ sections, height, width }: ConversationFlowPr
     rawScrollOffset,
     renderableCountAtScroll,
     heightAtScroll,
+    streaming,
   });
 
   const hasNewEvents = newEventCount > 0;
   const windowState = getScrollWindowState(
     totalDynamicHeight,
-    viewportHeight,
+    scrollViewportHeight,
     scrollOffset,
     hasNewEvents,
   );
   const { above, below } = computeScrollBannerText(windowState.linesAbove, windowState.linesBelow);
   const { newEventRows, innerHeight } = windowState;
-  const eventKeys = buildEventKeys(renderableItems);
-  const { visibleItems, trimTop } = trimRenderableItemsToViewport(
-    renderableItems,
-    totalDynamicHeight,
-    windowState.windowStart,
-    windowState.windowEnd,
-  );
-
-  // Overflowing content uses a negative marginTop equal to trimTop to offset the partial first section.
-  const hasOverflow = totalDynamicHeight > innerHeight;
-  const scrollMargin = hasOverflow ? -trimTop : 0;
+  const visibleRows = rows.slice(windowState.windowStart, windowState.windowEnd);
 
   return (
-    <Box flexDirection="column" height={height} width={width}>
-      <Static items={completedItems}>
-        {(item) => (
+    <Box flexDirection="column" height={height} width={width} overflow="hidden" flexShrink={0}>
+      {visibleCompletedItems.map(item => (
+        <Box key={`completed-${item.index}`} height={1} overflow="hidden" flexShrink={0}>
           <TaskSummary
-            key={`completed-${item.index}`}
             index={item.index}
             title={item.title}
             method={item.method}
@@ -158,26 +83,20 @@ export function ConversationFlow({ sections, height, width }: ConversationFlowPr
             file={item.file}
             reason={item.reason}
           />
-        )}
-      </Static>
+        </Box>
+      ))}
       {above !== '' && (
         <Box justifyContent="center" height={1} flexShrink={0} width="100%">
           <Text color={t.textDim}>{above}</Text>
         </Box>
       )}
       <Box height={innerHeight} overflow="hidden" flexDirection="column" flexShrink={0}>
-        <Box width="100%" flexDirection="column" marginTop={scrollMargin} flexShrink={0}>
-          {renderableItems.length === 0 && completedItems.length === 0 && (
+        <Box width="100%" flexDirection="column" flexShrink={0}>
+          {rows.length === 0 && completedItems.length === 0 && (
             <Text color={t.textDim}>No events yet</Text>
           )}
-          {visibleItems.map(({ event, globalIndex, leadingSpacer }) => (
-            <Box key={eventKeys.get(globalIndex) ?? getEventBaseKey(event)} flexShrink={0} flexDirection="column">
-              {leadingSpacer && <Box height={1} flexShrink={0} />}
-              <EventCard
-                event={event}
-                diffExpanded={expandedDiffs.has(globalIndex)}
-              />
-            </Box>
+          {visibleRows.map(row => (
+            <ConversationRowView key={row.key} row={row} />
           ))}
         </Box>
       </Box>

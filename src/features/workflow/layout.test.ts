@@ -7,6 +7,12 @@ import { eventsStore } from '../../stores/workflow/events.js';
 import { resetWorkflow } from '../../stores/workflow/actions.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { reviewStore } from '../../stores/workflow/review.js';
+import { approvalPromptStore } from '../../stores/approval-prompt/store.js';
+import { costApprovalStore } from '../../stores/cost-approval/store.js';
+import { getApprovalPromptRows } from './prompt-rows.js';
+import { taskId } from '../../core/schemas/task.js';
+import type { TieredApprovalRequest } from '../../core/approval/types.js';
+import type { EngineEvent } from '../../engine/events/types.js';
 
 beforeEach(() => {
   terminalSizeStore.reset();
@@ -15,7 +21,40 @@ beforeEach(() => {
   resetWorkflow();
   controlsStore.reset();
   reviewStore.reset();
+  approvalPromptStore.reset();
+  costApprovalStore.reset();
 });
+
+function makeConfirmRequest(actionDescription: string): TieredApprovalRequest {
+  return {
+    tier: 'confirm',
+    actionClass: 'destructive',
+    actionDescription,
+    phase: 'implementing',
+  };
+}
+
+function makeLongTaskStarted(): Extract<EngineEvent, { type: 'task_started' }> {
+  return {
+    type: 'task_started',
+    ts: 0,
+    phase: 'implementing',
+    taskId: taskId('T001'),
+    title: 'No-op workflow demonstration with enough metadata to wrap',
+    index: 0,
+    total: 1,
+    file: 'README.md',
+    action: 'modify',
+    tool: 'claude-code',
+    model: 'sonnet',
+    implementerProfile: 'default',
+    contextFit: 'fits',
+    estimatedTokens: 3911,
+    contextLength: 32768,
+    currentCodeContextMode: 'whole-file',
+    costPosture: 'Selected unknown cost tier via cheapest-capable routing',
+  };
+}
 
 describe('readConversationScrollSnapshot', () => {
   it('returns sensible defaults with empty stores', () => {
@@ -63,6 +102,55 @@ describe('readConversationScrollSnapshot', () => {
     const snapWith = readConversationScrollSnapshot();
 
     expect(snapWith.viewportHeight).toBeLessThan(snapWithout.viewportHeight);
+  });
+
+  it('subtracts dynamic prompt rows from the conversation viewport', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 40, isSmall: true });
+    inputHeightStore.__testReset({ rows: 3 });
+
+    const withoutPrompt = readConversationScrollSnapshot();
+    const request = makeConfirmRequest('delete generated files');
+    approvalPromptStore.__testReset({
+      status: 'pending',
+      request,
+      resolve: () => undefined,
+    });
+
+    const withPrompt = readConversationScrollSnapshot();
+
+    expect(withPrompt.viewportHeight).toBe(
+      withoutPrompt.viewportHeight - getApprovalPromptRows(approvalPromptStore.get(), 80),
+    );
+  });
+
+  it('recomputes prompt row budget when terminal width changes', () => {
+    const request = makeConfirmRequest('delete a generated artifact outside the active task scope after reviewing all safeguards');
+    approvalPromptStore.__testReset({
+      status: 'pending',
+      request,
+      resolve: () => undefined,
+    });
+
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const wide = readConversationScrollSnapshot();
+
+    terminalSizeStore.__testReset({ cols: 40, rows: 40, isSmall: true });
+    const narrow = readConversationScrollSnapshot();
+
+    expect(narrow.viewportHeight).toBeLessThan(wide.viewportHeight);
+  });
+
+  it('recomputes conversation row height when terminal width changes', () => {
+    eventsStore.__testReset({ events: [makeLongTaskStarted()] });
+    inputHeightStore.__testReset({ rows: 3 });
+
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const wide = readConversationScrollSnapshot();
+
+    terminalSizeStore.__testReset({ cols: 44, rows: 40, isSmall: true });
+    const narrow = readConversationScrollSnapshot();
+
+    expect(narrow.totalHeight).toBeGreaterThan(wide.totalHeight);
   });
 
   it('sidebar presence narrows content width', () => {

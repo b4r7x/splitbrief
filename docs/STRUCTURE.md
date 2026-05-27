@@ -209,7 +209,7 @@ features/workflow/
 │   ├── header.tsx
 │   ├── sidebar.tsx
 │   ├── conversation-flow/    # sub-component folder
-│   └── event-cards/
+│   └── event-cards/          # fixed workflow chrome cards
 ├── hooks/                    # feature-local hooks
 │   ├── use-workflow.ts
 │   └── use-workflow-keys.ts
@@ -330,7 +330,7 @@ The one sanctioned cross-cutting channel between features is **stores**. Feature
 
 `src/components/` holds UI that is not tied to any single feature:
 
-- **Primitives** — `theme.tsx`, `spinner.tsx`, `scroll-indicator.tsx`, `labeled-row.tsx`, `screen-shell.tsx`, `diff-view.tsx`, `filter-input.tsx`, `markdown.tsx`, `session-row.tsx`.
+- **Primitives** — `theme.tsx`, `spinner.tsx`, `scroll-indicator.tsx`, `labeled-row.tsx`, `screen-shell.tsx`, `filter-input.tsx`, `markdown.tsx`, `session-row.tsx`.
 - **Input subsystem** — `input/` (multiline input primitive), `composer/` (composite used on every screen).
 - **Shared overlays** — `overlays/overlay-panel.tsx`, `overlays/text-input-overlay.tsx`. Feature-specific overlays live in their feature folder (e.g. `features/help/overlay.tsx`, `features/palette/overlay.tsx`, `features/settings/mode-selector.tsx`).
 - **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/single-column-picker.tsx`, `pickers/two-column-picker/`, plus the `hooks/use-static-selector.ts` selection hook.

@@ -302,7 +302,7 @@ See [Part 2 §12](#12-test-suite-shape) for current test counts.
 | New implementer backend | Mirror of above under `src/engine/implementers/` |
 | New provider (for `api` kind) | `src/engine/providers/<name>.ts` + register in `providers/registry.ts` |
 | New phase | `src/core/state/machine.ts` (+ update `core/phases.ts` sets) — **read `docs/WORKFLOW.md` first**, phases are load-bearing |
-| New event type | `src/engine/events/types.ts` (add variant to the `EngineEvent` discriminated union) + renderer in `src/features/workflow/components/event-cards/event-card.tsx` |
+| New event type | `src/engine/events/types.ts` (add variant to the `EngineEvent` discriminated union) + row renderer in `src/features/workflow/conversation-rows/event-rows.ts` |
 | New store | `src/stores/<group>/<name>.ts` using `createStore` from `create-store.ts`; init in `cli/init-stores.ts` if it reads disk |
 | New shared overlay (used by 2+ features) | `src/components/overlays/<name>.tsx` + register via `overlayStore` |
 | New feature overlay | `src/features/<feature>/overlay.tsx` + register via `overlayStore` |
@@ -468,11 +468,11 @@ src/
 │   │   └── errors.ts              ConfigError types
 │   ├── formatting.ts              formatCost, formatDuration, etc.
 │   ├── hooks/trust.ts             Hook trust store (.diptych/hook-trust.json)
-│   ├── layout/                    8 pure helpers: chrome-rows,
-│   │                              conversation-scroll, diff-height,
-│   │                              event-sections, renderable-conversation,
+│   ├── layout/                    pure helpers: chrome-rows,
+│   │                              completed-task-summary-rows,
+│   │                              diff-height, event-sections,
 │   │                              scroll-window, terminal-width,
-│   │                              viewport-trimming, workflow-rect
+│   │                              workflow-rect
 │   ├── migration/                 executor, legacy migration helpers
 │   ├── model-display.ts           formatToolModel, etc.
 │   ├── paths.ts                   All on-disk path constants + builders
@@ -670,14 +670,12 @@ src/
 │   │                              implementer runner selection)
 │   └── workflow/                  Largest feature
 │       ├── attach-resolver.ts     /attach path resolver
+│       ├── conversation-rows/     row-based conversation renderer
 │       ├── components/            agent-status-row, approval-prompt,
 │       │                          brief-review-view, config-line,
-│       │                          conversation-flow/flow,
+│       │                          conversation-flow/,
 │       │                          cost-display/drilldown/footer/status,
-│       │                          event-cards/{card, cost-prediction-,
-│       │                          escalate-, event- (the exhaustive
-│       │                          switch), implementer-, planner-status-,
-│       │                          user-message-, validate-,
+│       │                          event-cards/{planner-status-card,
 │       │                          workflow-config-card},
 │       │                          feedback-row, header, input-footer,
 │       │                          pipeline-bar, plan-editor +
@@ -697,7 +695,6 @@ src/
 │       └── screen.tsx             Workflow screen entry
 │
 ├── components/                    Shared UI (cross-feature)
-│   ├── diff-view.tsx              Diff renderer
 │   ├── filter-input.tsx           Filterable text input
 │   ├── input/                     controlled-multiline-input,
 │   │                              measure-box, multiline-input, segments,
@@ -848,12 +845,12 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 **Generic (2):**
 `warning`, `error`
 
-### Exhaustive switch in `event-card.tsx`
+### Exhaustive switch in conversation row rendering
 
-`src/features/workflow/components/event-cards/event-card.tsx` is the canonical UI dispatcher and uses `assertNever(event)` in its `default` arm. **Two switches** must remain exhaustive:
+`src/features/workflow/conversation-rows/event-rows.ts` is the canonical scrollable conversation dispatcher and uses `assertNever(event)` in its `default` arm. **Two switches** must remain exhaustive:
 
-1. `getGutterRole(event)` — decides `planner` / `implementer` / `null` gutter color.
-2. `EventCard({ event })` — renders the card body or returns `null`.
+1. `getGutterRole(event)` in `src/features/workflow/event-role.ts` — decides `planner` / `implementer` / `null` gutter color.
+2. `eventRows(event, ...)` — returns one-row conversation records or `[]` for silent events.
 
 Adding a new EngineEvent variant without adding it to **both** switches is a compile error.
 
@@ -1213,7 +1210,7 @@ Enforced by hooks, type system, exhaustive switches, or pre-merge greps. Breakin
 7. **Zero runtime classes.** Production source uses functions and module-scoped state; test fixtures may contain class syntax when that is the behavior under test.
 8. **Zero barrels.** No re-export-only `index.ts` anywhere in `src/`; currently there are no `index.ts` or `index.tsx` files in `src/`.
 9. **ESM `.js` suffix on every internal import.** `'./foo.js'` not `'./foo'`. Required for Node 22 ESM resolution.
-10. **`event-card.tsx` exhaustive switches handle EVERY EngineEvent variant.** Both `getGutterRole` and the main render switch end with `default: return assertNever(event)`. Adding a variant without updating both is a TypeScript error.
+10. **Conversation row exhaustive switches handle EVERY EngineEvent variant.** Both `getGutterRole` and `eventRows` end with `default: return assertNever(event)`. Adding a variant without updating both is a TypeScript error.
 11. **One foreground active session per project directory.** `.diptych/active` is the foreground lock; detached sessions use lockfiles, and for isolated parallel work use `diptych worktree` (each worktree has its own `.diptych/`).
 12. **Snapshot path encoding.** Always go through `encodeSnapshotPath` / `decodeSnapshotPath` — never bare-join slashes.
 13. **Sanctioned `as` / `!` only.** Production code may not use unsafe assertions outside the named modules listed in `CLAUDE.md`.
@@ -1232,4 +1229,4 @@ Quickest path for a fresh agent:
 6. `src/engine/events/types.ts` — see the full event vocabulary.
 7. `src/core/paths.ts` — see every path the system writes.
 
-For UI specifically: `src/app.tsx` → `src/features/workflow/screen.tsx` → `src/features/workflow/components/conversation-flow/flow.tsx` → `event-cards/event-card.tsx`.
+For UI specifically: `src/app.tsx` → `src/features/workflow/screen.tsx` → `src/features/workflow/components/conversation-flow/flow.tsx` → `src/features/workflow/conversation-rows/event-rows.ts`.

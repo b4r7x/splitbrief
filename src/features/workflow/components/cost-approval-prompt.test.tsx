@@ -54,4 +54,5 @@ describe('CostApprovalPrompt', () => {
     expect(onApprove).not.toHaveBeenCalled();
     ui.unmount();
   });
+
 });

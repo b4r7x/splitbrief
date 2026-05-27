@@ -36,12 +36,13 @@ export interface WorkflowContentRectInput {
   hasConfig: boolean;
   sidebarVisible: boolean;
   isSmall: boolean;
+  promptRows?: number;
 }
 
 const REVIEW_HEADER_ROWS = 1;
 const REVIEW_FOOTER_ROWS = 1;
 
-export function getWorkflowViewportHeight(
+export function getWorkflowMiddleRows(
   rows: number,
   inputRows: number,
   hasConfig: boolean,
@@ -49,11 +50,29 @@ export function getWorkflowViewportHeight(
   return Math.max(0, rows - getChromeHeight(inputRows, hasConfig));
 }
 
+export function clampWorkflowPromptRows(
+  rows: number,
+  inputRows: number,
+  hasConfig: boolean,
+  promptRows: number,
+): number {
+  return Math.min(Math.max(0, promptRows), getWorkflowMiddleRows(rows, inputRows, hasConfig));
+}
+
+export function getWorkflowViewportHeight(
+  rows: number,
+  inputRows: number,
+  hasConfig: boolean,
+  promptRows = 0,
+): number {
+  return Math.max(0, getWorkflowMiddleRows(rows, inputRows, hasConfig) - clampWorkflowPromptRows(rows, inputRows, hasConfig, promptRows));
+}
+
 export function getWorkflowContentRect(input: WorkflowContentRectInput): WorkflowContentRect {
-  const { cols, rows, inputRows, hasConfig, sidebarVisible, isSmall } = input;
+  const { cols, rows, inputRows, hasConfig, sidebarVisible, isSmall, promptRows = 0 } = input;
   const sidebarWidth = getWorkflowSidebarWidth(cols, sidebarVisible, isSmall);
   const width = getWorkflowContentWidth(cols, sidebarVisible, isSmall);
-  const height = getWorkflowViewportHeight(rows, inputRows, hasConfig);
+  const height = getWorkflowViewportHeight(rows, inputRows, hasConfig, promptRows);
   const left = sidebarWidth > 0 ? sidebarWidth + 1 : 1;
   const top = getContentTopRow(hasConfig);
   const right = width > 0 ? left + width - 1 : left;

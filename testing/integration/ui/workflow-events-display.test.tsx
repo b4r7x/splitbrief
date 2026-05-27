@@ -3,9 +3,6 @@ import { renderFeature } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { WorkflowConfigCard } from '../../../src/features/workflow/components/event-cards/workflow-config-card.js';
 import { PlannerStatusCard } from '../../../src/features/workflow/components/event-cards/planner-status-card.js';
-import { StreamingLines } from '../../../src/features/workflow/components/event-cards/streaming-lines.js';
-import { streamingOutputStore } from '../../../src/stores/workflow/streaming-output.js';
-import { taskId } from '../../../src/core/schemas/task.js';
 import type { EngineEventOf } from '../../../src/engine/events/types.js';
 
 describe('workflow events display', () => {
@@ -69,20 +66,4 @@ describe('workflow events display', () => {
     });
   });
 
-  describe('StreamingLines', () => {
-    it('displays streaming lines during implementer execution', () => {
-      const id = taskId('T001');
-      streamingOutputStore.startStreaming(id);
-      streamingOutputStore.pushLines(['line one', 'line two', 'line three']);
-
-      const ui = renderFeature(<StreamingLines />);
-      const frame = ui.lastFrame() ?? '';
-
-      expect(frame).toContain('line one');
-      expect(frame).toContain('line two');
-      expect(frame).toContain('line three');
-
-      ui.unmount();
-    });
-  });
 });

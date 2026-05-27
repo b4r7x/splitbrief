@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { decideCostGate, formatCostGateSummary } from './cost-gate.js';
+import { formatCostGateSummary } from '../../core/cost-gate-summary.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
+import { decideCostGate } from './cost-gate.js';
 
 function makePrediction(overrides: Partial<CostPrediction> = {}): CostPrediction {
   return {
