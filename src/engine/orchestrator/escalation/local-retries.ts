@@ -15,12 +15,19 @@ export async function runLocalRetries(
   let attempts = 0;
   const maxRetries = ctx.config.workflow.maxRetries;
 
-  const textHandler = createBusTextHandler(ctx.bus, state.phase);
+  const textHandler = createBusTextHandler({ bus: ctx.bus, phase: state.phase });
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     attempts = attempt;
+    if (state.phase === 'implementing') {
+      state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'TASK_SENT' });
+    }
     state = transitionAndSave(ctx.projectDir, ctx.sessionId, state, { type: 'VALIDATION_FAIL' }, maxRetries);
-    publishRetry(ctx.bus, state.phase, task.id, attempt, maxRetries, lastError);
+    if (state.phase === 'escalating') {
+      publishRetry({ bus: ctx.bus, phase: state.phase }, task.id, attempt, maxRetries, lastError);
+      break;
+    }
+    publishRetry({ bus: ctx.bus, phase: state.phase }, task.id, attempt, maxRetries, lastError);
 
     const outcome = await runRetryStep({
       ctx, task, state, lastError, attempts,

@@ -5,7 +5,7 @@ import type { HandoffManifest } from '../../core/schemas/handoff-manifest.js';
 import type { HandoffTarget } from '../../core/handoff/targets.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import { HandoffManifestSchema } from '../../core/schemas/handoff-manifest.js';
-import { hashTaskBrief } from '../../core/brief-hash.js';
+import { hashTaskBrief } from '../brief-hash.js';
 
 export type BuildManifestOptions = {
   sessionId: string;

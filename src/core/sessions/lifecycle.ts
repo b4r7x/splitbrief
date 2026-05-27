@@ -5,7 +5,9 @@ import { ensureSessionDir } from '../paths-io.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import { writeSecureFile } from '../../lib/fs.js';
 import { slugify } from '../../utils/slugify.js';
+import type { SessionRef } from '../types/session-ref.js';
 import { sessionError } from './errors.js';
+import { findUnusedId } from './id/find-unused-id.js';
 
 export function readActive(projectDir: string): string | null {
   const p = activeFile(projectDir);
@@ -13,7 +15,8 @@ export function readActive(projectDir: string): string | null {
   return readFileSync(p, 'utf-8').trim() || null;
 }
 
-export function writeActive(projectDir: string, sessionId: string): void {
+export function writeActive(ref: SessionRef): void {
+  const { projectDir, sessionId } = ref;
   validateSessionId(sessionId);
   writeSecureFile(activeFile(projectDir), sessionId + '\n');
 }
@@ -23,7 +26,8 @@ export function clearActive(projectDir: string): void {
   if (existsSync(p)) unlinkSync(p);
 }
 
-export function isSessionLive(projectDir: string, sessionId: string): boolean {
+export function isSessionLive(ref: SessionRef): boolean {
+  const { projectDir, sessionId } = ref;
   const stateFile = join(sessionDir(projectDir, sessionId), STATE_FILE);
   if (!existsSync(stateFile)) return false;
   try {
@@ -40,11 +44,8 @@ const MAX_COLLISION_ATTEMPTS = 999;
 
 function findUniqueId(projectDir: string, base: string): string {
   const root = sessionsRoot(projectDir);
-  if (!existsSync(join(root, base))) return base;
-  for (let n = 2; n <= MAX_COLLISION_ATTEMPTS; n++) {
-    const candidate = `${base}-${n}`;
-    if (!existsSync(join(root, candidate))) return candidate;
-  }
+  const id = findUnusedId(root, base, (candidateBase, collisionIndex) => `${candidateBase}-${collisionIndex + 1}`, MAX_COLLISION_ATTEMPTS - 1);
+  if (id !== null) return id;
   throw sessionError.idCollision(base, MAX_COLLISION_ATTEMPTS);
 }
 
@@ -58,6 +59,6 @@ export function generateSessionId(projectDir: string, feature: string, now: Date
 export function beginSession(projectDir: string, feature: string): string {
   const sessionId = generateSessionId(projectDir, feature);
   ensureSessionDir(projectDir, sessionId);
-  writeActive(projectDir, sessionId);
+  writeActive({ projectDir, sessionId });
   return sessionId;
 }

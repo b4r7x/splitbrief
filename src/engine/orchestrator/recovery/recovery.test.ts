@@ -19,9 +19,7 @@ import { RecoveryIssueSchema } from '../../../core/schemas/recovery.js';
 import {
   buildContextOverflowRecoveryIssue,
   buildDependencyBlockedRecoveryIssue,
-  buildImplementationErrorRecoveryIssue,
   buildRetryExhaustedRecoveryIssue,
-  buildValidationFailedRecoveryIssue,
 } from './builders/task.js';
 import {
   buildApprovalPromotionConflictRecoveryIssue,
@@ -100,7 +98,8 @@ function implementingState(tasks: Task[], currentTaskIndex = 0): WorkflowState {
   state = transition(state, { type: 'SPEC_DONE' });
   state = transition(state, { type: 'APPROVE_SPEC' });
   state = transition(state, { type: 'PLAN_DONE', tasks });
-  state = transition(state, { type: 'APPROVE_PLAN' });
+  state = transition(state, { type: 'BRIEFS_READY', tasks });
+  state = transition(state, { type: 'APPROVE_BRIEFS' });
   return { ...state, currentTaskIndex };
 }
 
@@ -109,74 +108,6 @@ function readSessionLog(projectDir: string, sessionId: string): string {
 }
 
 describe('recovery issue builders', () => {
-  it('builds implementation-error issues with retry, route, task, and error details', () => {
-    const task = makeTask({ id: 'T010', title: 'Patch auth flow', file: 'src/auth.ts' });
-
-    const issue = buildImplementationErrorRecoveryIssue({
-      task,
-      createdAt,
-      error: new Error('worker returned empty output'),
-      attempts: 1,
-      maxAttempts: 3,
-      selectedImplementerProfile: 'local-qwen',
-      routeBiggerProfile: 'cheap-cloud',
-    });
-
-    expect(issue).toMatchObject({
-      reason: 'implementation-error',
-      phase: 'implementing',
-      taskId: task.id,
-      taskTitle: 'Patch auth flow',
-      selectedImplementerProfile: 'local-qwen',
-      recommendedAction: 'retry-same-worker',
-    });
-    expect(issue.files).toEqual(['src/auth.ts']);
-    expect(issue.affectedTaskIds).toEqual([task.id]);
-    expect(issue.details).toContain('Error: worker returned empty output');
-    expect(issue.details).toContain('Attempts: 1/3');
-    expect(issue.availableActions).toEqual(expect.arrayContaining([
-      'retry-same-worker',
-      'route-bigger-worker',
-      'skip-current-task',
-      'pause-run',
-      'abort-workflow',
-    ]));
-    expectValidRecoveryIssue(issue);
-  });
-
-  it('builds validation-failed issues with validation summary and retry budget filtering', () => {
-    const task = makeTask({ id: 'T011', file: 'src/session.ts' });
-
-    const issue = buildValidationFailedRecoveryIssue({
-      task,
-      createdAt,
-      validationResults: [
-        { stage: 'typecheck', passed: true },
-        { stage: 'test', passed: false, error: 'session.test.ts expected token refresh' },
-      ],
-      attempts: 2,
-      maxAttempts: 3,
-      selectedImplementerProfile: 'local-qwen',
-    });
-
-    expect(issue.reason).toBe('validation-failed');
-    expect(issue.phase).toBe('validating-task');
-    expect(issue.details[0]).toBe('Validation test failed: session.test.ts expected token refresh');
-    expect(issue.facts).toMatchObject({
-      validationStage: 'test',
-      validationSummary: 'session.test.ts expected token refresh',
-      canRetry: true,
-    });
-    expect(issue.availableActions).toEqual(expect.arrayContaining([
-      'retry-same-worker',
-      'planner-split-rebase',
-      'skip-current-task',
-      'pause-run',
-      'abort-workflow',
-    ]));
-    expectValidRecoveryIssue(issue);
-  });
-
   it('builds retry-exhausted issues without ordinary retry unless override is explicit', () => {
     const task = makeTask({ id: 'T012' });
 
@@ -505,7 +436,7 @@ describe('applyRecoveryAction', () => {
   it('pauses with the recovery issue still pending and selected action persisted', () => {
     const { projectDir, sessionId } = setupSession('pause-run');
     const task = makeTask({ id: 'T032' });
-    const issue = buildValidationFailedRecoveryIssue({
+    const issue = buildRetryExhaustedRecoveryIssue({
       task,
       createdAt,
       validationSummary: 'test failed',
@@ -564,11 +495,11 @@ describe('applyRecoveryAction', () => {
     expect(result).toMatchObject({ ok: true, status: 'aborted' });
     expect(result.state.phase).toBe('idle');
     expect(result.state.pendingRecovery).toBeUndefined();
-    expect(result.state.tasks[0]?.status).toBe('in_progress');
+    expect(result.state.tasks).toEqual([]);
     const persisted = loadState(projectDir, sessionId);
     expect(persisted?.phase).toBe('idle');
     expect(persisted?.pendingRecovery).toBeUndefined();
-    expect(persisted?.tasks[0]).toMatchObject({ id: 'T033', status: 'in_progress' });
+    expect(persisted?.tasks).toEqual([]);
     expect(events.map(event => event.type)).toEqual(expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']));
   });
 
@@ -617,13 +548,14 @@ describe('applyRecoveryAction', () => {
   it('prepares retry-same-worker by resetting only the current task without advancing', () => {
     const { projectDir, sessionId } = setupSession('retry-same-worker');
     const task = makeTask({ id: 'T035', status: 'in_progress' });
-    const issue = buildValidationFailedRecoveryIssue({
+    const issue = buildRetryExhaustedRecoveryIssue({
       task,
       createdAt,
       validationSummary: 'lint failed',
       attempts: 1,
       maxAttempts: 3,
       selectedImplementerProfile: 'local-qwen',
+      allowRetryOverride: true,
     });
     const state = {
       ...implementingState([task]),

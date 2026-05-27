@@ -56,7 +56,7 @@ export async function applyCode(code: string, task: Task, projectDir: string): P
       return { success: false, error: `Search block not found in ${task.file}:\n${search.slice(0, 200)}` };
     }
 
-    result = result.replace(search, () => replace);
+    result = result.replaceAll(search, () => replace);
   }
 
   if (hasMarkers) {

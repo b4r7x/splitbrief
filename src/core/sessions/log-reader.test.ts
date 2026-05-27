@@ -38,7 +38,7 @@ describe('readSessionLog', () => {
   it('returns all entries in order', async () => {
     const dir = makeTmp();
     writeFixture(dir, FIXTURE_LINES);
-    const entries = await collect(readSessionLog(dir, SESSION_ID));
+    const entries = await collect(readSessionLog({ projectDir: dir, sessionId: SESSION_ID }));
     expect(entries).toHaveLength(4);
     expect(entries[0]).toMatchObject({ kind: 'event', type: 'workflow_started' });
     expect(entries[1]).toMatchObject({ kind: 'message', role: 'user' });
@@ -46,27 +46,27 @@ describe('readSessionLog', () => {
 
   it('returns empty when file does not exist', async () => {
     const dir = makeTmp();
-    const entries = await collect(readSessionLog(dir, SESSION_ID));
+    const entries = await collect(readSessionLog({ projectDir: dir, sessionId: SESSION_ID }));
     expect(entries).toHaveLength(0);
   });
 
   it('skips corrupt lines without throwing', async () => {
     const dir = makeTmp();
     writeFixture(dir, [FIXTURE_LINES[0] ?? '', 'NOT VALID JSON{{{', FIXTURE_LINES[1] ?? '']);
-    const entries = await collect(readSessionLog(dir, SESSION_ID));
+    const entries = await collect(readSessionLog({ projectDir: dir, sessionId: SESSION_ID }));
     expect(entries).toHaveLength(2);
   });
 
   it('skips blank lines', async () => {
     const dir = makeTmp();
     writeFixture(dir, [FIXTURE_LINES[0] ?? '', '', '   ', FIXTURE_LINES[1] ?? '']);
-    const entries = await collect(readSessionLog(dir, SESSION_ID));
+    const entries = await collect(readSessionLog({ projectDir: dir, sessionId: SESSION_ID }));
     expect(entries).toHaveLength(2);
   });
 
   it('rejects invalid session ids', async () => {
     const dir = makeTmp();
-    await expect(collect(readSessionLog(dir, '../outside'))).rejects.toThrow('Invalid session id');
+    await expect(collect(readSessionLog({ projectDir: dir, sessionId: '../outside' }))).rejects.toThrow('Invalid session id');
   });
 });
 
@@ -74,7 +74,7 @@ describe('readMessages', () => {
   it('yields only kind:message entries', async () => {
     const dir = makeTmp();
     writeFixture(dir, FIXTURE_LINES);
-    const messages = await collect(readMessages(dir, SESSION_ID));
+    const messages = await collect(readMessages({ projectDir: dir, sessionId: SESSION_ID }));
     expect(messages).toHaveLength(2);
     expect(messages.every(m => m.kind === 'message')).toBe(true);
     expect(messages[0]?.role).toBe('user');
@@ -86,7 +86,7 @@ describe('readEvents', () => {
   it('yields only kind:event entries', async () => {
     const dir = makeTmp();
     writeFixture(dir, FIXTURE_LINES);
-    const events = await collect(readEvents(dir, SESSION_ID));
+    const events = await collect(readEvents({ projectDir: dir, sessionId: SESSION_ID }));
     expect(events).toHaveLength(2);
     expect(events.every(e => e.kind === 'event')).toBe(true);
   });

@@ -12,6 +12,7 @@ import { warnError } from '../../lib/warn.js';
 import { withSignalHandlers } from './signals.js';
 import { shutdownWorkflow } from './final-review.js';
 import { createClearQueueHandler, createQueueHandler } from './queue.js';
+import { createStateSerializer } from './state-serializer.js';
 import type { Planner } from '../planners/types.js';
 import type { WorkflowSinks } from './types.js';
 
@@ -37,7 +38,7 @@ export function saveFinalSession(opts: SaveFinalSessionOpts): void {
       status: opts.status,
       summary: opts.summary,
     };
-    saveSummary(opts.projectDir, opts.sessionId, session);
+    saveSummary({ projectDir: opts.projectDir, sessionId: opts.sessionId }, session);
     if (opts.summary.costBreakdown && opts.summary.costBreakdown.hasSavingsEstimate !== false) {
       try {
         updateStats(opts.projectDir, {
@@ -84,6 +85,7 @@ export type InstallQueueHandlerOpts = {
 };
 
 export function installQueueHandler(opts: InstallQueueHandlerOpts): void {
+  const serialize = createStateSerializer();
   opts.sinks.setQueueHandler(createQueueHandler(
     opts.projectDir,
     opts.sessionId,
@@ -92,6 +94,7 @@ export function installQueueHandler(opts: InstallQueueHandlerOpts): void {
     opts.bus,
     opts.config.workflow.persistTranscript,
     opts.planner,
+    serialize,
   ));
   opts.sinks.setClearQueueHandler?.(createClearQueueHandler(
     opts.projectDir,

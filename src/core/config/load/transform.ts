@@ -10,7 +10,6 @@ function camelToSnake(s: string): string {
 
 const HOOK_EVENT_KEYS = new Set([
   'pre_planning',
-  'post_planning',
   'pre_task',
   'post_task',
   'pre_validation',

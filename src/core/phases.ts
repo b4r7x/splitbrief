@@ -9,7 +9,7 @@ const IMPLEMENTER_PHASES: ReadonlySet<Phase> = new Set([
   'escalating',
 ]);
 
-const PLANNER_COST_PHASES: ReadonlySet<string> = new Set([
+const PLANNER_COST_PHASES: ReadonlySet<Phase> = new Set([
   'planning',
   'researching',
   'specifying',
@@ -20,7 +20,7 @@ const PLANNER_COST_PHASES: ReadonlySet<string> = new Set([
   'reviewing-briefs',
 ]);
 
-const IMPLEMENTER_COST_PHASES: ReadonlySet<string> = new Set([
+const IMPLEMENTER_COST_PHASES: ReadonlySet<Phase> = new Set([
   'implementing',
   'validating-task',
   'escalating',
@@ -31,7 +31,7 @@ export function phaseRole(phase: Phase): PhaseRole {
   return IMPLEMENTER_PHASES.has(phase) ? 'implementer' : 'planner';
 }
 
-export function phaseCostRole(phase: string): PhaseRole | null {
+export function phaseCostRole(phase: Phase): PhaseRole | null {
   if (PLANNER_COST_PHASES.has(phase)) return 'planner';
   if (IMPLEMENTER_COST_PHASES.has(phase)) return 'implementer';
   return null;

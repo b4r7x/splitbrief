@@ -63,8 +63,8 @@ function writeSession(projectDir: string): void {
     ],
   });
   saveState(projectDir, SESSION_ID, state);
-  saveSummary(projectDir, SESSION_ID, makeSession({ id: SESSION_ID, status: 'complete', summary }));
-  writeActive(projectDir, SESSION_ID);
+  saveSummary({ projectDir: projectDir, sessionId: SESSION_ID }, makeSession({ id: SESSION_ID, status: 'complete', summary }));
+  writeActive({ projectDir: projectDir, sessionId: SESSION_ID });
 }
 
 describe('explain command', () => {

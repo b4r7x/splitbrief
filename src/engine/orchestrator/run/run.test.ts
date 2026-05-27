@@ -14,7 +14,7 @@ import { transition } from '../../../core/state/machine.js';
 import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { readActive, writeActive } from '../../../core/sessions/lifecycle.js';
-import { buildValidationFailedRecoveryIssue } from '../recovery/builders/task.js';
+import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
 import { simpleGit } from 'simple-git';
 import { runWorkflow, WORKFLOW_REWIND_ABORT_REASON } from './run.js';
 
@@ -194,7 +194,7 @@ describe('runWorkflow — smoke', () => {
     });
     const controller = new AbortController();
     controller.abort(WORKFLOW_REWIND_ABORT_REASON);
-    writeActive(projectDir, sessionId);
+    writeActive({ projectDir: projectDir, sessionId: sessionId });
 
     await runWorkflow({
       feature: 'rewind-active',
@@ -226,7 +226,7 @@ describe('runWorkflow — smoke', () => {
     });
     const controller = new AbortController();
     controller.abort();
-    writeActive(projectDir, sessionId);
+    writeActive({ projectDir: projectDir, sessionId: sessionId });
 
     await runWorkflow({
       feature: 'normal-abort-active',
@@ -365,10 +365,10 @@ describe('runWorkflow — recovery resume', () => {
     const projectDir = setupProject();
     const sessionId = 'sess-run-recovery';
     ensureSessionDir(projectDir, sessionId);
-    writeActive(projectDir, sessionId);
+    writeActive({ projectDir: projectDir, sessionId: sessionId });
 
     const task = makeTask({ id: 'T001' });
-    const issue = buildValidationFailedRecoveryIssue({
+    const issue = buildRetryExhaustedRecoveryIssue({
       task,
       validationSummary: 'tsc failed',
       attempts: 1,
@@ -399,7 +399,7 @@ describe('runWorkflow — recovery resume', () => {
 
     expect(readActive(projectDir)).toBe(sessionId);
     expect(loadState(projectDir, sessionId)?.pendingRecovery).toMatchObject({
-      reason: 'validation-failed',
+      reason: 'retry-exhausted',
       taskId: 'T001',
     });
   });

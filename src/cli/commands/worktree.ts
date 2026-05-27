@@ -1,7 +1,6 @@
 import type { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
-import { cliError } from '../errors.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { cliError, rethrowAsCli } from '../errors.js';
 import { listWorktrees, removeWorktree } from '../../engine/worktree.js';
 import { createGitClient } from '../../lib/git.js';
 import type { WorktreeInfo } from '../../engine/worktree.js';
@@ -189,7 +188,7 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
             deleteBranch: opts.deleteBranch ?? false,
           });
         } catch (err) {
-          throw cliError(toErrorMessage(err), 1);
+          rethrowAsCli(err);
         }
 
         console.log(`Removed worktree ".trees/${name}".`);

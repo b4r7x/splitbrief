@@ -14,10 +14,6 @@ export function unregisterProcess(proc: ChildProcess): void {
   activeProcesses.delete(proc);
 }
 
-export function getActiveProcessCount(): number {
-  return activeProcesses.size;
-}
-
 export function killProcess(proc: ChildProcess, options?: { group?: boolean; killDelay?: number }): void {
   if (proc.exitCode !== null || proc.killed) return;
   const pid = proc.pid;

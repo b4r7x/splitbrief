@@ -5,7 +5,7 @@ import { createPlannerBase } from './base.js';
 import { resolveCapabilities } from './command-invoke.js';
 import { invokeCommandBasedRunner } from '../runners/command-based.js';
 import { extractQuestionsFromStream } from '../parsers/question-parser.js';
-import { createCommandAvailability } from '../../lib/availability.js';
+import { createCommandAvailability } from '../availability.js';
 import { readSpecFile } from '../../core/paths-io.js';
 import { assertPlannerKind } from '../config-assertions.js';
 

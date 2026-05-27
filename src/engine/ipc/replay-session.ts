@@ -1,0 +1,45 @@
+import type { Socket } from 'node:net';
+import type { ServerMessage } from './protocol.js';
+import { readReplayEvents } from './replay.js';
+
+export function writeServerMessage(socket: Socket, msg: ServerMessage): void {
+  if (socket.destroyed) return;
+  try {
+    socket.write(JSON.stringify(msg) + '\n');
+  } catch {
+    // socket may have closed mid-write; ignore
+  }
+}
+
+type ReplaySessionOptions = {
+  socket: Socket;
+  sessionJsonlPath: string;
+  writeMessage: (socket: Socket, msg: ServerMessage) => void;
+};
+
+export async function replaySession(opts: ReplaySessionOptions): Promise<void> {
+  const { socket, sessionJsonlPath, writeMessage } = opts;
+  const replayStart = Date.now();
+  const result = await readReplayEvents({ sessionJsonlPath });
+  const { events: replayedEvents, count: totalEvents, firstTs, lastTs } = result;
+
+  if (!socket.destroyed) {
+    writeMessage(socket, { kind: 'event', payload: { type: 'replay_started', ts: Date.now(), phase: 'idle', totalEvents } });
+  }
+
+  const replayMeta: ServerMessage = { kind: 'replay_meta', totalEvents, firstTs, lastTs };
+  if (!socket.destroyed) {
+    writeMessage(socket, replayMeta);
+  }
+
+  for (const event of replayedEvents) {
+    if (socket.destroyed) break;
+    writeMessage(socket, { kind: 'event', payload: event });
+  }
+
+  const durationMs = Date.now() - replayStart;
+  const completeEvent = { type: 'replay_complete' as const, ts: Date.now(), phase: 'idle' as const, totalEvents, durationMs };
+  if (!socket.destroyed) {
+    writeMessage(socket, { kind: 'event', payload: completeEvent });
+  }
+}

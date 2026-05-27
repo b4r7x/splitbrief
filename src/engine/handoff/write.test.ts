@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { writeHandoffPack } from './write.js';
-import { hashTaskBrief } from '../../core/brief-hash.js';
+import { hashTaskBrief } from '../brief-hash.js';
 import { DIPTYCH_DIR, STATE_FILE } from '../../core/paths.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';

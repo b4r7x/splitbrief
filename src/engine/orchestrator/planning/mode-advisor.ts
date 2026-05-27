@@ -241,13 +241,13 @@ function riskLabel(risk: WorkRisk): string {
   return ({ trivial: 'trivial edit', small: 'small/localized', normal: 'standard scope', high: 'security/config risk' } as const)[risk];
 }
 
-export interface AdvisoryStore {
+interface AdvisoryStore {
   get: () => AdvisorResult | null;
   set: (next: AdvisorResult | null) => void;
   subscribe: (listener: () => void) => () => void;
 }
 
-export function createAdvisoryStore(): AdvisoryStore {
+function createAdvisoryStore(): AdvisoryStore {
   let current: AdvisorResult | null = null;
   const listeners = new Set<() => void>();
 

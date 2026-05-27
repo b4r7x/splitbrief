@@ -2,15 +2,15 @@ import { join } from 'node:path';
 import { createConnection } from 'node:net';
 import type { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
-import { cliError } from '../errors.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { cliError, rethrowAsCli } from '../errors.js';
 import { assertNotWindows } from '../platform.js';
 import { checkServerStatus, type ServerStatus } from '../../engine/ipc/lockfile.js';
 import { sessionDir, IPC_SOCK_FILE } from '../../core/paths.js';
 import type { ClientMessage } from '../../engine/ipc/protocol.js';
 import { parseServerMessage } from '../../engine/ipc/protocol.js';
 import { isNumericAlias, resolveNumericAlias } from '../session-aliases.js';
-import { findSingleRunningSession } from '../sessions/single-running-session.js';
+import { resolveRunningSession } from '../session-resolve.js';
+import { createLineBuffer } from '../../lib/process/line-buffer.js';
 
 export type DetachDeps = {
   checkServerStatus: (sessionDir: string) => Promise<ServerStatus>;
@@ -20,24 +20,25 @@ const defaultDeps: DetachDeps = {
   checkServerStatus,
 };
 
-async function resolveRunningSession(projectDir: string, deps: DetachDeps): Promise<string> {
-  const result = await findSingleRunningSession(projectDir, deps);
-  if (result.kind === 'single') return result.id;
-  if (result.kind === 'none') {
-    throw cliError('no running sessions found; pass <session-id> explicitly', 1);
-  }
-  throw cliError(
-    `multiple running sessions (${result.ids.join(', ')}); pass <session-id> explicitly`,
-    1,
-  );
-}
-
 function sendDetach(sockPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const socket = createConnection(sockPath);
-    let buffer = '';
     let settled = false;
     const timer = setTimeout(() => finish(), 1000);
+    const lineBuffer = createLineBuffer((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        return;
+      }
+      const msg = parseServerMessage(parsed);
+      if (msg !== null && msg.kind === 'error') {
+        finish(new Error(msg.message));
+      }
+    });
 
     function finish(err?: Error): void {
       if (settled) return;
@@ -54,24 +55,7 @@ function sendDetach(sockPath: string): Promise<void> {
     });
 
     socket.on('data', (chunk: Buffer) => {
-      buffer += chunk.toString('utf8');
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(trimmed);
-        } catch {
-          continue;
-        }
-        const msg = parseServerMessage(parsed);
-        if (msg !== null && msg.kind === 'error') {
-          finish(new Error(msg.message));
-          return;
-        }
-      }
+      lineBuffer.push(chunk.toString('utf8'));
     });
 
     socket.on('error', (err) => finish(err));
@@ -101,7 +85,7 @@ export async function detachCommand(
   try {
     await sendDetach(join(sessDir, IPC_SOCK_FILE));
   } catch (err) {
-    throw cliError(toErrorMessage(err), 1);
+    rethrowAsCli(err);
   }
   console.log(`Session ${resolvedId} detached.`);
 }

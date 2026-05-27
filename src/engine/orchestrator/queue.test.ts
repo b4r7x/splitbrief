@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { WorkflowState, QueuedMessage } from '../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
+import { saveState } from '../../core/state/persistence.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { createClearQueueHandler, createQueueHandler, drainQueue, formatDrainedMessages, formatMessage } from './queue.js';
 import { dispatchNativeInjection } from './native-injection.js';
 import { collectAndPersistClarifications } from './clarifications.js';
+import { createStateSerializer } from './state-serializer.js';
+import { transitionAndSave } from './state-ops.js';
 
 let dirs: string[] = [];
 
@@ -54,7 +57,7 @@ function makeMessage(text = 'test message'): QueuedMessage {
 }
 
 describe('enqueue', () => {
-  it('enqueues a message into state and emits message-queued event', () => {
+  it('enqueues a message into state and emits message-queued event', async () => {
     const { projectDir, sessionId } = setupProject();
     let state: WorkflowState | undefined = makeResearchingState();
     const { bus, events } = makeBusRecorder();
@@ -68,9 +71,11 @@ describe('enqueue', () => {
       bus,
       false,
       planner,
+      createStateSerializer(),
     );
 
     handler('hello world', 'researching');
+    await new Promise((r) => setTimeout(r, 0));
 
     expect(state?.messageQueue).toHaveLength(1);
     expect(state?.messageQueue[0]?.text).toBe('hello world');
@@ -106,6 +111,7 @@ describe('enqueue', () => {
       bus,
       false,
       planner,
+      createStateSerializer(),
     );
 
     handler('inject me', 'researching');
@@ -117,7 +123,7 @@ describe('enqueue', () => {
     expect(injectedTurns[0]?.dir).toBe(projectDir);
   });
 
-  it('does not enqueue when state getter returns undefined', () => {
+  it('does not enqueue when state getter returns undefined', async () => {
     const { projectDir, sessionId } = setupProject();
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({
@@ -142,15 +148,17 @@ describe('enqueue', () => {
       bus,
       false,
       planner,
+      createStateSerializer(),
     );
 
     handler('no state', 'researching');
+    await new Promise((r) => setTimeout(r, 0));
 
     expect(writtenState).toBeUndefined();
     expect(events.find((e) => e.type === 'message_queued')).toBeUndefined();
   });
 
-  it('emits warning and does not enqueue when queue is full', () => {
+  it('emits warning and does not enqueue when queue is full', async () => {
     const { projectDir, sessionId } = setupProject();
     let state: WorkflowState | undefined = makeResearchingState();
     const { bus, events } = makeBusRecorder();
@@ -173,13 +181,75 @@ describe('enqueue', () => {
       bus,
       false,
       planner,
+      createStateSerializer(),
     );
 
     handler('overflow', 'researching');
+    await new Promise((r) => setTimeout(r, 0));
 
     const warning = events.find((e) => e.type === 'warning');
     expect(warning).toBeDefined();
     expect(state?.messageQueue).toHaveLength(50);
+  });
+
+  it('serializes concurrent handler invocations so no messages are lost', async () => {
+    const { projectDir, sessionId } = setupProject();
+    let state: WorkflowState | undefined = makeResearchingState();
+    const { bus } = makeBusRecorder();
+    const planner = makePlanner();
+    const serialize = createStateSerializer();
+
+    const handler = createQueueHandler(
+      projectDir,
+      sessionId,
+      () => state,
+      (s) => { state = s; },
+      bus,
+      false,
+      planner,
+      serialize,
+    );
+
+    handler('first', 'researching');
+    handler('second', 'researching');
+    handler('third', 'researching');
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(state?.messageQueue).toHaveLength(3);
+    expect(state?.messageQueue.map((m) => m.text)).toEqual(['first', 'second', 'third']);
+  });
+
+  it('preserves queued messages when a later orchestrator transition starts from stale state', async () => {
+    const { projectDir, sessionId } = setupProject();
+    let state: WorkflowState | undefined = transitionAndSave(
+      projectDir,
+      sessionId,
+      createInitialState('test-feature'),
+      { type: 'START', feature: 'test-feature' },
+    );
+    const staleState = state;
+    const { bus } = makeBusRecorder();
+    const planner = makePlanner();
+
+    const handler = createQueueHandler(
+      projectDir,
+      sessionId,
+      () => state,
+      (s) => { state = s; },
+      bus,
+      false,
+      planner,
+      createStateSerializer(),
+    );
+
+    handler('do not drop me', 'researching');
+    await new Promise((r) => setTimeout(r, 0));
+
+    state = transitionAndSave(projectDir, sessionId, staleState, { type: 'RESEARCH_DONE' });
+
+    expect(state.messageQueue.map((m) => m.text)).toEqual(['do not drop me']);
+    expect(state.phase).toBe('specifying');
   });
 });
 
@@ -211,6 +281,31 @@ describe('clear', () => {
       count: 1,
       phase: state?.phase,
     }));
+  });
+
+  it('clears pending messages from persisted state when caller state is stale', () => {
+    const { projectDir, sessionId } = setupProject();
+    let state: WorkflowState | undefined = makeResearchingState();
+    saveState(projectDir, sessionId, makeStateWithQueue([
+      makeMessage('persisted pending'),
+      { ...makeMessage('persisted drained'), id: 'msg-drained', drainedAt: new Date().toISOString() },
+    ]));
+    const { bus } = makeBusRecorder();
+
+    const clear = createClearQueueHandler(
+      projectDir,
+      sessionId,
+      () => state,
+      (next) => { state = next; },
+      bus,
+    );
+
+    const count = clear();
+
+    expect(count).toBe(1);
+    expect(state?.messageQueue).toEqual([
+      expect.objectContaining({ id: 'msg-drained', text: 'persisted drained' }),
+    ]);
   });
 });
 
@@ -262,6 +357,20 @@ describe('drain', () => {
 
     expect(result.messages).toHaveLength(1);
     expect(result.messages[0]?.text).toBe('pending');
+  });
+
+  it('drains pending messages from persisted state when caller state is stale', () => {
+    const { projectDir, sessionId } = setupProject();
+    const staleState = makeResearchingState();
+    saveState(projectDir, sessionId, makeStateWithQueue([
+      makeMessage('persisted pending'),
+    ]));
+    const { bus } = makeBusRecorder();
+
+    const result = drainQueue(projectDir, sessionId, staleState, bus);
+
+    expect(result.messages).toEqual([expect.objectContaining({ text: 'persisted pending' })]);
+    expect(result.state.messageQueue[0]?.drainedAt).toBeDefined();
   });
 });
 
@@ -334,7 +443,7 @@ describe('native injection', () => {
     const { bus } = makeBusRecorder();
     const planner = makePlanner();
 
-    await dispatchNativeInjection(makeMessage(), planner, projectDir, sessionId, state, setState, bus);
+    await dispatchNativeInjection(makeMessage(), planner, projectDir, sessionId, () => state, setState, bus);
 
     expect(writtenState).toBeUndefined();
   });
@@ -361,7 +470,7 @@ describe('native injection', () => {
     });
     const message = makeMessage('inject this');
 
-    await dispatchNativeInjection(message, planner, projectDir, sessionId, state, setState, bus);
+    await dispatchNativeInjection(message, planner, projectDir, sessionId, () => state, setState, bus);
 
     expect(injectedTurns).toEqual([{ text: 'inject this', dir: projectDir }]);
     expect(capturedState).toBeDefined();
@@ -389,11 +498,39 @@ describe('native injection', () => {
     });
 
     await expect(
-      dispatchNativeInjection(makeMessage(), planner, projectDir, sessionId, state, setState, bus),
+      dispatchNativeInjection(makeMessage(), planner, projectDir, sessionId, () => state, setState, bus),
     ).resolves.toBeUndefined();
 
     expect(writtenState).toBeUndefined();
     expect(events.find((e) => e.type === 'message_injected_native')).toBeUndefined();
+  });
+
+  it('reads fresh state via getState after awaiting injectUserTurn', async () => {
+    const { projectDir, sessionId } = setupProject();
+    let state = makeResearchingState();
+    const { bus } = makeBusRecorder();
+    const planner = makePlanner({
+      capabilities: {
+        supportsConversationalPlanning: true,
+        supportsHintEscalation: false,
+        supportsSessionResume: true,
+        supportsEffort: false,
+        supportsImages: false,
+        supportsSelfSummarisation: false,
+      },
+      injectUserTurn: async () => {
+        state = transition(state, { type: 'ENQUEUE_USER_MSG', message: makeMessage('concurrent') });
+      },
+    });
+
+    let capturedState: WorkflowState | undefined;
+    await dispatchNativeInjection(
+      makeMessage('original'), planner, projectDir, sessionId,
+      () => state, (s) => { capturedState = s; }, bus,
+    );
+
+    expect(capturedState).toBeDefined();
+    expect(capturedState!.messageQueue.some((m) => m.text === 'concurrent')).toBe(true);
   });
 });
 

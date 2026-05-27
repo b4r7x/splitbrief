@@ -67,7 +67,7 @@ The code is organized in four layers with strict import boundaries:
 
 **How they talk to each other:**
 
-The engine publishes events (like `task_completed` or `spec_done`) through the EventBus. The TUI sink forwards each event into workflow actions, which update split workflow stores. React components subscribe to store slices and re-render.
+The engine publishes events (like `task_completed` or `planner_status`) through the EventBus. The TUI sink forwards each event into workflow actions, which update split workflow stores. React components subscribe to store slices and re-render.
 
 When the workflow needs a human decision — approve a spec, answer a question, confirm a costly action — the engine awaits a callback. The UI fulfills the callback by switching input mode and resolving the promise when the user answers. These gating callbacks are separate from the EventBus: events are fire-and-forget broadcasts, callbacks are blocking request/response pairs.
 

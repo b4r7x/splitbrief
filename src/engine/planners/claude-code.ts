@@ -4,7 +4,7 @@ import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { CONVERSATIONAL_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
-import { createCommandAvailability } from '../../lib/availability.js';
+import { createCommandAvailability } from '../availability.js';
 import { writeProjectFile } from '../../core/paths-io.js';
 import { runClaudePlannerStream, runClaudeOneShot } from '../claude-invoke.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';

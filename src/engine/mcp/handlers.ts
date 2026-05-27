@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { McpResponse, McpError } from './types.js';
 import type { McpResolver } from './resolver.js';
 import type { McpToolHandler } from './types.js';
@@ -7,7 +8,6 @@ export const PARSE_ERROR = -32700;
 export const INVALID_REQUEST = -32600;
 export const METHOD_NOT_FOUND = -32601;
 export const INVALID_PARAMS = -32602;
-export const INTERNAL_ERROR = -32603;
 
 // Current Streamable HTTP MCP version.
 export const MCP_PROTOCOL_VERSION = '2025-11-25';
@@ -17,6 +17,9 @@ export type HandleResult =
   | { kind: 'response'; body: McpResponse }
   | { kind: 'error'; body: McpError }
   | { kind: 'notification' };
+
+const JsonRpcParamsSchema = z.record(z.string(), z.unknown()).optional().nullable().transform(value => value ?? {});
+const ToolArgumentsSchema = z.record(z.string(), z.unknown()).optional().nullable().transform(value => value ?? {});
 
 function jsonRpcError(code: number, message: string, id: string | number | null): McpError {
   return { jsonrpc: '2.0', id, error: { code, message } };
@@ -65,9 +68,11 @@ export async function handleMessage(
 
   const id = rawId;
   const method = msg['method'];
-  const params = (msg['params'] !== undefined && msg['params'] !== null && typeof msg['params'] === 'object')
-    ? msg['params'] as Record<string, unknown>
-    : {};
+  const paramsResult = JsonRpcParamsSchema.safeParse(msg['params']);
+  if (!paramsResult.success) {
+    return { kind: 'error', body: jsonRpcError(INVALID_PARAMS, 'Invalid params', id) };
+  }
+  const params = paramsResult.data;
 
   if (method === 'initialize') {
     return {
@@ -148,9 +153,11 @@ export async function handleMessage(
     if (typeof name !== 'string') {
       return { kind: 'error', body: jsonRpcError(INVALID_PARAMS, 'Missing tool name', id) };
     }
-    const toolArgs = (params['arguments'] !== undefined && typeof params['arguments'] === 'object' && params['arguments'] !== null)
-      ? params['arguments'] as Record<string, unknown>
-      : {};
+    const toolArgsResult = ToolArgumentsSchema.safeParse(params['arguments']);
+    if (!toolArgsResult.success) {
+      return { kind: 'error', body: jsonRpcError(INVALID_PARAMS, 'Invalid tool arguments', id) };
+    }
+    const toolArgs = toolArgsResult.data;
 
     const result = toolHandler.callTool(name, toolArgs);
 

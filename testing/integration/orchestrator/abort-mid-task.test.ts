@@ -32,7 +32,8 @@ describe('abort during implementer phase terminates the task loop cleanly', () =
     state = transition(state, { type: 'SPEC_DONE' });
     state = transition(state, { type: 'APPROVE_SPEC' });
     state = transition(state, { type: 'PLAN_DONE', tasks: [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })] });
-    state = transition(state, { type: 'APPROVE_PLAN' });
+    state = transition(state, { type: 'BRIEFS_READY', tasks: [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })] });
+    state = transition(state, { type: 'APPROVE_BRIEFS' });
 
     const controller = new AbortController();
     const { callbacks } = makeCallbacks();

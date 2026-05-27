@@ -1,14 +1,110 @@
+import { z } from 'zod';
 import type { EngineEvent } from '../events/types.js';
-import type { WorkflowMode } from '../../core/schemas/enums.js';
-import type { ClarificationQuestion } from '../../core/schemas/question.js';
+import { EngineEventSchema } from '../events/schema.js';
+import { WorkflowModeSchema, type WorkflowMode, ActionClassSchema, PhaseSchema } from '../../core/schemas/enums.js';
+import { ClarificationQuestionSchema, type ClarificationQuestion } from '../../core/schemas/question.js';
 import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
-import type { CostPrediction } from '../../core/schemas/summary.js';
+import { ApprovalTierSchema } from '../../core/schemas/config.js';
+import { TaskIdSchema } from '../../core/schemas/task.js';
+import { CostPredictionSchema, type CostPrediction } from '../../core/schemas/summary.js';
 import type { UserEditConflict, UserEditConflictAction, TaskReviewRequest, TaskReviewResponse } from '../events/workflow-events.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { isUserEditConflictAction } from '../events/workflow-events.js';
 import { isOptionalString } from './guards.js';
 
 const TASK_REVIEW_ACTIONS = new Set<string>(['continue', 'redo-task', 'revise-plan', 'abort']);
+
+const TieredApprovalRequestShape = z.object({
+  tier: ApprovalTierSchema,
+  actionClass: ActionClassSchema,
+  actionDescription: z.string(),
+  taskId: TaskIdSchema.optional(),
+  phase: PhaseSchema,
+});
+
+const TieredApprovalRequestSchema = z.custom<TieredApprovalRequest>((value) =>
+  TieredApprovalRequestShape.safeParse(value).success
+);
+
+const TaskReviewRequestSchema = z.custom<TaskReviewRequest>(isRecord);
+
+const IpcPromptRequestSchema = z.discriminatedUnion('kind', [
+  z.object({
+    requestId: z.string(),
+    kind: z.literal('approval_needed'),
+    approvalType: z.enum(['spec', 'plan', 'briefs']),
+    filePath: z.string(),
+  }),
+  z.object({ requestId: z.string(), kind: z.literal('external_changes') }),
+  z.object({
+    requestId: z.string(),
+    kind: z.literal('user_edit_conflict'),
+    conflict: z.custom<UserEditConflict>(isRecord),
+  }),
+  z.object({
+    requestId: z.string(),
+    kind: z.literal('question_asked'),
+    question: ClarificationQuestionSchema,
+    num: z.number(),
+    total: z.number(),
+  }),
+  z.object({
+    requestId: z.string(),
+    kind: z.literal('budget_exceeded'),
+    currentCost: z.number(),
+    maxBudget: z.number(),
+  }),
+  z.object({
+    requestId: z.string(),
+    kind: z.literal('budget_paused'),
+    currentCost: z.number(),
+    maxBudget: z.number(),
+  }),
+  z.object({
+    requestId: z.string(),
+    kind: z.literal('continuation_needed'),
+    partialResponse: z.string(),
+  }),
+  z.object({
+    requestId: z.string(),
+    kind: z.literal('tiered_approval'),
+    request: TieredApprovalRequestSchema,
+  }),
+  z.object({
+    requestId: z.string(),
+    kind: z.literal('cost_approval'),
+    prediction: CostPredictionSchema,
+  }),
+  z.object({
+    requestId: z.string(),
+    kind: z.literal('task_review'),
+    request: TaskReviewRequestSchema,
+  }),
+]);
+
+const ServerMessageSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('session_meta'),
+    sessionId: z.string(),
+    startedAt: z.number(),
+    mode: WorkflowModeSchema,
+    feature: z.string(),
+    readonly: z.boolean(),
+  }),
+  z.object({ kind: z.literal('event'), payload: EngineEventSchema }),
+  z.object({ kind: z.literal('prompt_request'), request: IpcPromptRequestSchema }),
+  z.object({
+    kind: z.literal('replay_meta'),
+    totalEvents: z.number(),
+    firstTs: z.number().nullable(),
+    lastTs: z.number().nullable(),
+  }),
+  z.object({
+    kind: z.literal('error'),
+    code: z.literal('already_attached'),
+    message: z.string(),
+  }),
+]);
 
 export type IpcPromptRequest =
   | { requestId: string; kind: 'approval_needed'; approvalType: 'spec' | 'plan' | 'briefs'; filePath: string }
@@ -57,8 +153,6 @@ export type ClientMessage =
   | { kind: 'user_input'; text: string }
   | { kind: 'prompt_response'; requestId: string; response: IpcPromptResponse }
   | { kind: 'detach' };
-
-export const IPC_PROTOCOL_VERSION = 1;
 
 function isTieredApprovalResponse(value: unknown): value is TieredApprovalResponse {
   if (!isRecord(value) || typeof value.decision !== 'string') return false;
@@ -122,14 +216,14 @@ export function parseIpcPromptResponse(value: unknown): IpcPromptResponse | null
         : null;
     case 'task_review':
       return isTaskReviewResponse(value.response)
-        ? { kind: value.kind, response: value.response as TaskReviewResponse }
+        ? { kind: value.kind, response: value.response }
         : null;
     default:
       return null;
   }
 }
 
-function isTaskReviewResponse(value: unknown): boolean {
+function isTaskReviewResponse(value: unknown): value is TaskReviewResponse {
   if (!isRecord(value)) return false;
   if (typeof value.action !== 'string' || !TASK_REVIEW_ACTIONS.has(value.action)) return false;
   if (value.notes !== undefined && typeof value.notes !== 'string') return false;
@@ -137,33 +231,8 @@ function isTaskReviewResponse(value: unknown): boolean {
 }
 
 export function parseServerMessage(value: unknown): ServerMessage | null {
-  if (!isRecord(value) || typeof value.kind !== 'string') return null;
-
-  switch (value.kind) {
-    case 'session_meta':
-      if (
-        typeof value.sessionId !== 'string' ||
-        typeof value.startedAt !== 'number' ||
-        typeof value.mode !== 'string' ||
-        typeof value.feature !== 'string' ||
-        typeof value.readonly !== 'boolean'
-      ) return null;
-      return value as ServerMessage;
-    case 'event':
-      if (!isRecord(value.payload) || typeof (value.payload as Record<string, unknown>).type !== 'string' || typeof (value.payload as Record<string, unknown>).ts !== 'number') return null;
-      return value as ServerMessage;
-    case 'prompt_request':
-      if (!isRecord(value.request) || typeof (value.request as Record<string, unknown>).requestId !== 'string' || typeof (value.request as Record<string, unknown>).kind !== 'string') return null;
-      return value as ServerMessage;
-    case 'replay_meta':
-      if (typeof value.totalEvents !== 'number') return null;
-      return value as ServerMessage;
-    case 'error':
-      if (value.code !== 'already_attached' || typeof value.message !== 'string') return null;
-      return value as ServerMessage;
-    default:
-      return null;
-  }
+  const result = ServerMessageSchema.safeParse(value);
+  return result.success ? result.data : null;
 }
 
 export function parseClientMessage(value: unknown): ClientMessage | null {

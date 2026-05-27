@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createInitialState, transition, transitionError } from './machine.js';
+import { createInitialState, transition } from './machine.js';
 import {
   getCompletedTaskIds,
   getEscalatedTaskIds,
@@ -27,18 +27,6 @@ describe('transition', () => {
     expect(() => transition(state, { type: 'VALIDATION_PASS' })).toThrow('Cannot apply VALIDATION_PASS');
   });
 
-  it('does not allow plan approval to bypass brief review actions', () => {
-    const tasks = [makeTask({ id: 't1' })];
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-briefs', tasks };
-
-    try {
-      transition(state, { type: 'APPROVE_PLAN' });
-      throw new Error('expected transition to throw');
-    } catch (err) {
-      expect(transitionError.isInvalidActionForPhase(err)).toBe(true);
-    }
-  });
-
   it('START -> researching', () => {
     const state = createInitialState('feat');
     const next = transition(state, { type: 'START', feature: 'feat' });
@@ -56,9 +44,13 @@ describe('transition', () => {
   });
 
   it('REJECT_SPEC -> idle', () => {
-    const state = { ...createInitialState('feat'), phase: 'reviewing-spec' as const };
+    const tasks = [makeTask({ id: 't1' })];
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-spec', tasks, currentTaskIndex: 1, attempt: 2 };
     const next = transition(state, { type: 'REJECT_SPEC' });
     expect(next.phase).toBe('idle');
+    expect(next.tasks).toEqual([]);
+    expect(next.currentTaskIndex).toBe(0);
+    expect(next.attempt).toBe(0);
   });
 
   it('VALIDATION_FAIL with attempt < 3 -> implementing with attempt incremented', () => {
@@ -78,10 +70,26 @@ describe('transition', () => {
   it('ESCALATE -> escalating', () => {
     const state: WorkflowState = {
       ...createInitialState('feat'),
-      phase: 'implementing',
+      phase: 'validating-task',
     };
     const next = transition(state, { type: 'ESCALATE' });
     expect(next.phase).toBe('escalating');
+  });
+
+  it('VALIDATION_FAIL is rejected from implementing phase', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+    };
+    expect(() => transition(state, { type: 'VALIDATION_FAIL' })).toThrow('Cannot apply VALIDATION_FAIL');
+  });
+
+  it('ESCALATE is rejected from implementing phase', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+    };
+    expect(() => transition(state, { type: 'ESCALATE' })).toThrow('Cannot apply ESCALATE');
   });
 
   it('HINT_SUCCESS -> implementing with index advanced', () => {
@@ -98,32 +106,20 @@ describe('transition', () => {
     expect(getCompletedTaskIds(next)).toEqual(['t1']);
   });
 
-  it('FULL_FAIL -> implementing with task in failedTasks', () => {
-    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'escalating',
-      tasks,
-      currentTaskIndex: 0,
-    };
-    const next = transition(state, { type: 'FULL_FAIL' });
-    expect(next.phase).toBe('implementing');
-    expect(next.currentTaskIndex).toBe(1);
-    expect(getFailedTaskIds(next)).toEqual(['t1']);
-  });
-
-  it('CANCEL -> idle with state preserved', () => {
+  it('CANCEL -> idle with tasks cleared and counters reset', () => {
     const tasks = [makeTask({ id: 't0', status: 'done' }), makeTask({ id: 't1' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'implementing',
       tasks,
       currentTaskIndex: 1,
+      attempt: 2,
     };
     const next = transition(state, { type: 'CANCEL' });
     expect(next.phase).toBe('idle');
-    expect(next.tasks).toEqual(tasks);
-    expect(getCompletedTaskIds(next)).toEqual(['t0']);
+    expect(next.tasks).toEqual([]);
+    expect(next.currentTaskIndex).toBe(0);
+    expect(next.attempt).toBe(0);
     expect(next.feature).toBe('feat');
   });
 
@@ -159,12 +155,19 @@ describe('transition', () => {
   });
 
   it('REJECT_PLAN -> idle', () => {
+    const tasks = [makeTask({ id: 't1' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'reviewing-plan',
+      tasks,
+      currentTaskIndex: 1,
+      attempt: 2,
     };
     const next = transition(state, { type: 'REJECT_PLAN' });
     expect(next.phase).toBe('idle');
+    expect(next.tasks).toEqual([]);
+    expect(next.currentTaskIndex).toBe(0);
+    expect(next.attempt).toBe(0);
   });
 
   it('HINT_FAIL -> stays in escalating', () => {
@@ -255,20 +258,6 @@ describe('transition', () => {
     expect(next.attempt).toBe(0);
   });
 
-  it('FULL_FAIL resets attempt to 0', () => {
-    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'escalating',
-      tasks,
-      currentTaskIndex: 0,
-      attempt: 3,
-    };
-    const next = transition(state, { type: 'FULL_FAIL' });
-    expect(next.phase).toBe('implementing');
-    expect(next.attempt).toBe(0);
-  });
-
   it('configurable maxRetries: attempt < custom max stays in implementing', () => {
     const tasks = [makeTask({ id: 't1' })];
     const state: WorkflowState = {
@@ -331,7 +320,9 @@ describe('transition', () => {
     expect(s.phase).toBe('reviewing-plan');
     expect(s.tasks).toEqual(tasks);
 
-    s = transition(s, { type: 'APPROVE_PLAN' });
+    s = transition(s, { type: 'BRIEFS_READY', tasks });
+    expect(s.phase).toBe('reviewing-briefs');
+    s = transition(s, { type: 'APPROVE_BRIEFS' });
     expect(s.phase).toBe('implementing');
     expect(s.currentTaskIndex).toBe(0);
 
@@ -372,6 +363,11 @@ describe('transition', () => {
       currentTaskIndex: 1,
       attempt: 2,
       awaitingContinue: true,
+      plannerSessionId: 'old-session',
+      clarifications: [{ id: 'c1', question: 'q', answer: 'a' }],
+      constitutionFailureReason: 'old reason',
+      analysisResult: { decisions: [] } as any,
+      discoveredValidation: { testCommand: 'npm test' },
     };
     const next = transition(state, { type: 'REWIND_TO_SPEC' });
     expect(next.phase).toBe('specifying');
@@ -379,6 +375,11 @@ describe('transition', () => {
     expect(next.currentTaskIndex).toBe(0);
     expect(next.attempt).toBe(0);
     expect(next.awaitingContinue).toBe(false);
+    expect(next.plannerSessionId).toBeUndefined();
+    expect(next.clarifications).toEqual([]);
+    expect(next.constitutionFailureReason).toBeUndefined();
+    expect(next.analysisResult).toBeUndefined();
+    expect(next.discoveredValidation).toBeUndefined();
   });
 
   it('REWIND_TO_PLAN -> planning with tasks cleared and counters reset', () => {
@@ -390,6 +391,11 @@ describe('transition', () => {
       currentTaskIndex: 1,
       attempt: 2,
       awaitingContinue: true,
+      plannerSessionId: 'old-session',
+      clarifications: [{ id: 'c1', question: 'q', answer: 'a' }],
+      constitutionFailureReason: 'old reason',
+      analysisResult: { decisions: [] } as any,
+      discoveredValidation: { testCommand: 'npm test' },
     };
     const next = transition(state, { type: 'REWIND_TO_PLAN' });
     expect(next.phase).toBe('planning');
@@ -397,6 +403,11 @@ describe('transition', () => {
     expect(next.currentTaskIndex).toBe(0);
     expect(next.attempt).toBe(0);
     expect(next.awaitingContinue).toBe(false);
+    expect(next.plannerSessionId).toBeUndefined();
+    expect(next.clarifications).toEqual([]);
+    expect(next.constitutionFailureReason).toBeUndefined();
+    expect(next.analysisResult).toBeUndefined();
+    expect(next.discoveredValidation).toBeUndefined();
   });
 
   it('RESET_TASK -> implementing with task set to pending and index rewound', () => {
@@ -496,14 +507,21 @@ describe('transition', () => {
   });
 
   it('CONSTITUTION_CHECK_FAIL -> idle and clears awaitingContinue', () => {
+    const tasks = [makeTask({ id: 't1' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'constitution-check',
       awaitingContinue: true,
+      tasks,
+      currentTaskIndex: 1,
+      attempt: 2,
     };
     const next = transition(state, { type: 'CONSTITUTION_CHECK_FAIL', reason: 'violates principle X' });
     expect(next.phase).toBe('idle');
     expect(next.awaitingContinue).toBe(false);
+    expect(next.tasks).toEqual([]);
+    expect(next.currentTaskIndex).toBe(0);
+    expect(next.attempt).toBe(0);
   });
 
   it('ANALYZE_START -> analyzing', () => {
@@ -539,9 +557,12 @@ describe('transition', () => {
 
   it('REJECT_BRIEFS -> idle', () => {
     const tasks = [makeTask({ id: 't1' })];
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-briefs', tasks };
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-briefs', tasks, currentTaskIndex: 1, attempt: 2 };
     const next = transition(state, { type: 'REJECT_BRIEFS' });
     expect(next.phase).toBe('idle');
+    expect(next.tasks).toEqual([]);
+    expect(next.currentTaskIndex).toBe(0);
+    expect(next.attempt).toBe(0);
   });
 
   it('BRIEFS_READY can be called from implementing phase', () => {
@@ -646,6 +667,22 @@ describe('transition', () => {
     const next = transition(state, { type: 'VALIDATION_PASS' });
     expect(next.tasks[0]?.currentCode).toBeUndefined();
     expect(next.tasks[0]?.status).toBe('done');
+  });
+
+  it('SKIP_TASK -> implementing with attempt reset and index advanced', () => {
+    const tasks = [makeTask({ id: 't1' }), makeTask({ id: 't2' })];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks,
+      currentTaskIndex: 0,
+      attempt: 2,
+    };
+    const next = transition(state, { type: 'SKIP_TASK', taskId: tasks[0]!.id });
+    expect(next.phase).toBe('implementing');
+    expect(next.currentTaskIndex).toBe(1);
+    expect(next.attempt).toBe(0);
+    expect(getSkippedTaskIds(next)).toEqual(['t1']);
   });
 
   it('FULL_SUCCESS strips currentCode from the escalated task', () => {

@@ -29,6 +29,15 @@ export interface WorkflowContentRect {
   height: number;
 }
 
+export interface WorkflowContentRectInput {
+  cols: number;
+  rows: number;
+  inputRows: number;
+  hasConfig: boolean;
+  sidebarVisible: boolean;
+  isSmall: boolean;
+}
+
 const REVIEW_HEADER_ROWS = 1;
 const REVIEW_FOOTER_ROWS = 1;
 
@@ -40,14 +49,8 @@ export function getWorkflowViewportHeight(
   return Math.max(0, rows - getChromeHeight(inputRows, hasConfig));
 }
 
-export function getWorkflowContentRect(
-  cols: number,
-  rows: number,
-  inputRows: number,
-  hasConfig: boolean,
-  sidebarVisible: boolean,
-  isSmall: boolean,
-): WorkflowContentRect {
+export function getWorkflowContentRect(input: WorkflowContentRectInput): WorkflowContentRect {
+  const { cols, rows, inputRows, hasConfig, sidebarVisible, isSmall } = input;
   const sidebarWidth = getWorkflowSidebarWidth(cols, sidebarVisible, isSmall);
   const width = getWorkflowContentWidth(cols, sidebarVisible, isSmall);
   const height = getWorkflowViewportHeight(rows, inputRows, hasConfig);

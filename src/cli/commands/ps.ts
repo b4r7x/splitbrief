@@ -6,6 +6,7 @@ import { assertNotWindows } from '../platform.js';
 import { checkServerStatus, readLockfile, type LockfileData } from '../../engine/ipc/lockfile.js';
 import { sessionsRoot } from '../../core/paths.js';
 import { assignSessionAliases } from '../session-aliases.js';
+import type { WorkflowMode } from '../../core/schemas/enums.js';
 
 export type PsDeps = {
   readLockfile: (sessionDir: string) => Promise<LockfileData | null>;
@@ -22,7 +23,7 @@ type SessionRow = {
   sessionId: string;
   status: 'running' | 'exited' | 'crashed' | 'unknown';
   pid: number | null;
-  mode: string;
+  mode: WorkflowMode | '-';
   startTimeMs: number;
   endTimeMs: number | null;
   lastAliveMs: number | null;

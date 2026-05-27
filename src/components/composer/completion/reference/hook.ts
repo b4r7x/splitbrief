@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useInput } from 'ink';
 import { Fzf, type FzfResultItem } from 'fzf';
-import { rotateIndex } from '../../../pickers/picker-utils.js';
+import { useCompletionSelection } from '../use-completion-selection.js';
 
 const MAX_RESULTS = 50;
 
@@ -24,17 +24,12 @@ interface ReferenceToken {
   query: string;
 }
 
-interface SelectionState {
-  key: string;
-  index: number;
-}
-
 interface LatestReferenceState {
   value: string;
   token: ReferenceToken | null;
   selectionKey: string;
+  itemCount: number;
   filtered: string[];
-  effectiveSelectedIndex: number;
 }
 
 function isTokenBoundary(value: string, index: number): boolean {
@@ -77,26 +72,19 @@ export function useReferenceCompletion({
   disabled,
 }: UseReferenceCompletionOptions): UseReferenceCompletionResult {
   const [inputKey, setInputKey] = useState(0);
-  const [selection, setSelection] = useState<SelectionState>({ key: '', index: 0 });
   const [dismissedValue, setDismissedValue] = useState<string | null>(null);
-  // Snapshot of derived render state for the useInput handler. Ink invokes the latest
-  // committed render's callback so closure capture would also work, but mirroring the
-  // five fields together keeps the handler reading a single coherent snapshot.
-  const latestRef = useRef<LatestReferenceState | null>(null);
 
   const token = findReferenceToken(value);
   const filtered = token ? filterFiles(files, token.query) : [];
   const showSuggestions = token !== null && filtered.length > 0 && dismissedValue !== value;
   const selectionKey = buildSelectionKey(token, filtered);
-  const selectedIndex = selection.key === selectionKey ? selection.index : 0;
-  const effectiveSelectedIndex = Math.min(selectedIndex, Math.max(0, filtered.length - 1));
-  latestRef.current = {
+  const { effectiveSelectedIndex, latestRef, moveSelection } = useCompletionSelection<LatestReferenceState>({
     value,
     token,
     selectionKey,
+    itemCount: filtered.length,
     filtered,
-    effectiveSelectedIndex,
-  };
+  });
 
   useInput(
     (_input, key) => {
@@ -104,17 +92,11 @@ export function useReferenceCompletion({
       if (!latest?.token || latest.filtered.length === 0) return;
 
       if (key.upArrow) {
-        setSelection({
-          key: latest.selectionKey,
-          index: rotateIndex(latest.effectiveSelectedIndex, latest.filtered.length, -1),
-        });
+        moveSelection(latest, -1);
         return;
       }
       if (key.downArrow) {
-        setSelection({
-          key: latest.selectionKey,
-          index: rotateIndex(latest.effectiveSelectedIndex, latest.filtered.length, 1),
-        });
+        moveSelection(latest, 1);
         return;
       }
       if (key.tab || key.return) {

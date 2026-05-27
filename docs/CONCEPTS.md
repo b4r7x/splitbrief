@@ -267,7 +267,7 @@ Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`,
 
 Workflow lifecycle hooks let users run custom commands or in-process modules at well-known moments (pre/post task, pre/post commit, etc.). Built on top of the EventBus — `post_*`/`on_*` are a fire-and-forget sink; `pre_*` hooks run sequentially at the orchestrator call site and a `deny` outcome short-circuits the upcoming action. Hooks are declared under `hooks:` in `.diptych/config.yaml`. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — **not** to be confused with React hooks ([HOOKS.md](./HOOKS.md)).
 
-- **HookEvent** — the lifecycle trigger keys (`src/core/schemas/hooks.ts`): `'pre_planning' | 'post_planning' | 'pre_task' | 'post_task' | 'pre_validation' | 'post_validation' | 'pre_commit' | 'post_commit' | 'pre_escalation' | 'pre_compact' | 'on_error' | 'on_complete'`. `pre_*` hooks block the upcoming action (a `deny` outcome short-circuits it); `post_*` and `on_*` hooks are fire-and-forget through the EventBus sink.
+- **HookEvent** — the lifecycle trigger keys (`src/core/schemas/hooks.ts`): `'pre_planning' | 'pre_task' | 'post_task' | 'pre_validation' | 'post_validation' | 'pre_commit' | 'post_commit' | 'pre_escalation' | 'pre_compact' | 'on_error' | 'on_complete'`. `pre_*` hooks block the upcoming action (a `deny` outcome short-circuits it); `post_*` and `on_*` hooks are fire-and-forget through the EventBus sink.
 - **HookEntry** — one configured hook: discriminated on `kind: 'command' | 'module'`. `command` entries carry `{ command, args, timeout_ms, on_failure }`; `module` entries carry `{ path, timeout_ms, on_failure }`. `on_failure` is one of `'block' | 'warn' | 'ignore'`. `timeout_ms` is bounded at 300_000 ms with a 30_000 ms default.
 - **HooksConfig** — the `hooks:` section of `.diptych/config.yaml`: a map from `HookEvent` to `HookEntry[]`, plus an optional `builtin: Record<string, boolean>` toggles block for shipped hooks (e.g. `prettier-on-change`, `block-secrets`).
 
@@ -331,7 +331,7 @@ Entries come in three **kinds**, distinguished by the `kind` field:
 {"ts":"2026-04-14T10:35:00.000Z","kind":"event","type":"clarifications_collected","phase":"specifying","data":{"count":1,"clarifications":[{"question":"Auth scheme?","answer":"JWT"}]}}
 {"ts":"2026-04-14T10:35:30.200Z","kind":"message","role":"user","text":"Use JWT with refresh tokens"}
 {"ts":"2026-04-14T10:35:45.000Z","kind":"summary","text":"User chose JWT with refresh tokens.","summarizedUpTo":"2026-04-14T10:35:30.200Z","tokenEstimate":128}
-{"ts":"2026-04-14T10:36:00.000Z","kind":"event","type":"spec_done","phase":"reviewing-spec","data":{}}
+{"ts":"2026-04-14T10:36:00.000Z","kind":"event","type":"plan_approved","phase":"reviewing-plan","data":{}}
 ```
 
 - `kind: "event"` — operational metadata. Workflow lifecycle, phase transitions, validation results, escalation triggers, artifact writes, errors. Small, always logged.

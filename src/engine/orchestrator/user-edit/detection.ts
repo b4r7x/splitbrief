@@ -41,7 +41,7 @@ export async function checkUserEditConflicts(opts: {
       for (const fileConflict of conflict.fileConflicts) {
         acknowledgedUserEditFiles.add(fileConflict.file);
       }
-      publishUserEditConflict(bus, state.phase, conflict, 'continue-unrelated');
+      publishUserEditConflict({ bus: bus, phase: state.phase }, conflict, 'continue-unrelated');
       return { state, stopped: false };
     }
 
@@ -54,7 +54,7 @@ export async function checkUserEditConflicts(opts: {
           'continue-unrelated',
         )
       : 'pause';
-    publishUserEditConflict(bus, state.phase, conflict, selectedAction);
+    publishUserEditConflict({ bus: bus, phase: state.phase }, conflict, selectedAction);
 
     if (selectedAction === 'continue-unrelated' && conflict.safeToContinue) {
       for (const fileConflict of conflict.fileConflicts) {
@@ -66,9 +66,7 @@ export async function checkUserEditConflicts(opts: {
     }
 
     if (selectedAction === 'regenerate-rebase') {
-      publishWarning(
-        bus,
-        state.phase,
+      publishWarning({ bus: bus, phase: state.phase },
         'User edit conflict needs regenerate/rebase; workflow paused so the plan or task can be revised against the current files.',
       );
     }
@@ -84,7 +82,7 @@ export async function checkUserEditConflicts(opts: {
     setTrackedState(state);
     return { state, stopped: true };
   } catch (err) {
-    publishWarningFromError(bus, state.phase, 'Failed to check user edit conflicts', err);
+    publishWarningFromError({ bus: bus, phase: state.phase }, 'Failed to check user edit conflicts', err);
   }
   const issue = buildUserEditConflictRecoveryIssue({
     conflict: {

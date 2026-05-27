@@ -1,31 +1,21 @@
-import { useEffect, useState } from 'react';
-import { Box, Text, useApp, useInput } from 'ink';
-import { dirname } from 'node:path';
+import { useEffect } from 'react';
+import { Text, useApp, useInput } from 'ink';
 import type { Summary } from '../../core/schemas/summary.js';
-import type { InputMode } from '../../stores/navigation/router.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { ApprovalPrompt } from './components/approval-prompt.js';
 import { CostApprovalPromptConnected } from './components/cost-approval-prompt.js';
 import { ReadinessPanel } from './components/readiness-panel.js';
-import { Header } from './components/header.js';
-import { AgentStatusRow } from './components/agent-status-row.js';
-import { CostStatusLine } from './components/cost/status-line.js';
-import { ConfigLine } from './components/config-line.js';
-import { ConversationFlow } from './components/conversation-flow/flow.js';
-import { FeedbackRow } from './components/feedback-row.js';
-import { Composer } from '../../components/composer/composer.js';
-import { InputFooter } from './components/input-footer.js';
 import { ScreenShell } from '../../components/screen-shell.js';
-import { ReviewView } from './components/review-view.js';
-import { BriefReviewView } from './components/brief-review-view.js';
-import { PlanEditorComponent } from './components/plan-editor.js';
-import { Sidebar } from './components/sidebar.js';
+import { WorkflowBody } from './components/workflow-body.js';
+import { WorkflowFooter, WorkflowHeader } from './components/workflow-chrome.js';
 import { useInputMode } from './hooks/use-input-mode.js';
 import { useWorkflowRunner } from './hooks/use-workflow-runner.js';
-import { useIpcClient, type IpcClientStatus } from './hooks/use-ipc-client.js';
+import { useIpcClient } from './hooks/use-ipc-client.js';
 import { useIpcPromptDispatcher } from './hooks/use-ipc-prompt-dispatcher.js';
+import { useReadinessFetch } from './hooks/use-readiness-fetch.js';
 import { useWorkflowKeys } from './hooks/use-workflow-keys.js';
-import { REVIEW_HINT, BRIEFS_REVIEW_HINT, createReviewInputHandler } from './review-parser.js';
+import { createReviewInputHandler } from './review-parser.js';
+import { resolveAttachInputHint, resolveInputHint } from './input-hints.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { configStore } from '../../stores/project/config.js';
 import { skillsStore } from '../../stores/project/skills.js';
@@ -38,7 +28,6 @@ import { addEvent, resetWorkflow, useSections } from '../../stores/workflow/acti
 import { controlsStore } from '../../stores/ui/controls.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { planEditorStore } from '../../stores/workflow/plan-editor.js';
-import { buildTargetedRejectionComment } from '../../engine/orchestrator/planning/regen-targeted.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { conversationScrollStore } from '../../stores/workflow/conversation-scroll.js';
 import { useStores } from '../../stores/use-stores.js';
@@ -48,29 +37,10 @@ import {
   getWorkflowViewportHeight,
   hasWorkflowConfig,
 } from '../../core/layout/workflow-rect.js';
-import { collectReadiness } from '../../core/readiness/collect.js';
-import type { ReadinessReport } from '../../core/readiness/types.js';
-import { buildReadinessFailureReport } from './readiness-failure.js';
 
 interface WorkflowScreenProps {
   commands: RuntimeCommandDef[];
   onRuntimeCommand: (command: string) => void;
-}
-
-function resolveInputHint(cancelled: boolean, inputHint: string, inputMode: InputMode, phase: string): string {
-  if (cancelled) return 'Enter to resume, ESC for home, /quit to exit';
-  if (inputHint) return inputHint;
-  if (inputMode === 'review') return phase === 'reviewing-briefs' ? BRIEFS_REVIEW_HINT : REVIEW_HINT;
-  return '';
-}
-
-function resolveAttachInputHint(status: IpcClientStatus): string {
-  if (status === 'connected') return 'queue message to running workflow';
-  if (status === 'readonly') return 'attached read-only';
-  if (status === 'reconnecting') return 'reconnecting to server...';
-  if (status === 'failed') return 'server connection failed';
-  if (status === 'detached') return 'detached';
-  return 'connecting to server...';
 }
 
 export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenProps) {
@@ -91,8 +61,7 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
   const routeReadiness = routerStore.use(s => s.screen === 'workflow' ? s.readiness : undefined);
   const attach = routerStore.use(s => s.screen === 'workflow' ? s.attach : undefined);
   const isAttachedClient = attach !== undefined;
-  const [computedReadiness, setComputedReadiness] = useState<ReadinessReport | undefined>(routeReadiness);
-  const readiness = routeReadiness ?? computedReadiness;
+  const readiness = useReadinessFetch({ isAttachedClient, routeReadiness, projectDir, config });
   const readinessLoaded = isAttachedClient || readiness !== undefined;
   const readinessBlocked = !isAttachedClient && readiness?.status === 'blocked';
   const { cols, rows, isSmall } = terminal;
@@ -147,25 +116,6 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
     conversationScrollStore.reset();
   }, [isAttachedClient, attach?.sockPath]);
 
-  useEffect(() => {
-    if (isAttachedClient || routeReadiness || !projectDir) return undefined;
-    let cancelled = false;
-    collectReadiness({ projectDir, config })
-      .then(({ report }) => {
-        if (!cancelled) setComputedReadiness(report);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          const failure = buildReadinessFailureReport(projectDir, err);
-          setComputedReadiness(failure);
-          feedbackStore.setError('Readiness check failed.');
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isAttachedClient, routeReadiness, projectDir, config]);
-
   useInput(
     (input, key) => {
       if (!(key.ctrl && input === 'd')) return;
@@ -207,58 +157,27 @@ export function WorkflowScreen({ commands, onRuntimeCommand }: WorkflowScreenPro
 
   return (
     <ScreenShell
-      header={
-        <>
-          <Header startedAt={runner.startedAt} />
-          <ConfigLine />
-          <AgentStatusRow />
-          <CostStatusLine />
-          <Box height={1} flexShrink={0} />
-        </>
-      }
-      footer={
-        <>
-          <FeedbackRow />
-          <Composer
-            onSubmit={handleInput}
-            onRuntimeCommand={onRuntimeCommand}
-            commands={commands}
-            mode={inputMode.mode}
-            hint={inputHint}
-            currentScreen="workflow"
-            disabled={hasOverlay || (isAttachedClient && ipcState.status !== 'connected')}
-          />
-          <InputFooter />
-        </>
-      }
+      header={<WorkflowHeader startedAt={runner.startedAt} />}
+      footer={<WorkflowFooter
+        handleInput={handleInput}
+        onRuntimeCommand={onRuntimeCommand}
+        commands={commands}
+        mode={inputMode.mode}
+        inputHint={inputHint}
+        disabled={hasOverlay || (isAttachedClient && ipcState.status !== 'connected')}
+      />}
     >
-      <Box flexDirection="row" flexGrow={1}>
-        {showSidebar && (
-          <Sidebar width={sidebarWidth} />
-        )}
-        {inputMode.mode === 'review' && reviewFilePath && phase === 'reviewing-briefs' && useRichEditor ? (
-          <PlanEditorComponent
-            filePath={reviewFilePath}
-            height={contentHeight}
-            width={contentWidth}
-            sessionDirPath={dirname(reviewFilePath)}
-            onApprove={() => inputMode.resolve({ approved: true })}
-            onRegenerateFlagged={async () => {
-              const flagged = planEditorStore.getFlaggedTasks();
-              if (flagged.length === 0) return;
-              const comment = buildTargetedRejectionComment(flagged);
-              planEditorStore.clearFlags();
-              inputMode.resolve({ approved: true, comment });
-            }}
-          />
-        ) : inputMode.mode === 'review' && reviewFilePath && phase === 'reviewing-briefs' ? (
-          <BriefReviewView filePath={reviewFilePath} height={contentHeight} width={contentWidth} />
-        ) : inputMode.mode === 'review' && reviewFilePath ? (
-          <ReviewView height={contentHeight} width={contentWidth} />
-        ) : (
-          <ConversationFlow sections={sections} height={contentHeight} width={contentWidth} />
-        )}
-      </Box>
+      <WorkflowBody
+        showSidebar={showSidebar}
+        sidebarWidth={sidebarWidth}
+        inputMode={inputMode}
+        reviewFilePath={reviewFilePath}
+        phase={phase}
+        useRichEditor={useRichEditor}
+        contentHeight={contentHeight}
+        contentWidth={contentWidth}
+        sections={sections}
+      />
       <ApprovalPrompt />
       <CostApprovalPromptConnected />
     </ScreenShell>

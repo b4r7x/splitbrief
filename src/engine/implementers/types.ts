@@ -6,6 +6,7 @@ import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type { RunnerRuntime } from '../runners/types.js';
 import type { EventBus } from '../events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
+import type * as ImplementerConfig from '../../core/schemas/implementer-config.js';
 
 export interface ImplementerResult {
   success: boolean;
@@ -13,12 +14,6 @@ export interface ImplementerResult {
   error?: string | undefined;
   usage?: TokenDelta | undefined;
 }
-
-export type ImplementerWriteMode = 'extracted-code' | 'direct';
-
-export type ImplementerCapabilities = {
-  writesFiles: ImplementerWriteMode;
-};
 
 export interface ImplementerPublisher {
   publishRunning(opts: { phase: Phase; taskId: TaskId; file?: string | undefined }): void;
@@ -73,5 +68,5 @@ export interface InvokeOpts {
 export interface Implementer extends RunnerRuntime {
   implement(opts: ImplementerOptions): Promise<ImplementerResult>;
   retry(opts: RetryOptions): Promise<ImplementerResult>;
-  capabilities?: ImplementerCapabilities | undefined;
+  capabilities?: ImplementerConfig.ImplementerCapabilities | undefined;
 }

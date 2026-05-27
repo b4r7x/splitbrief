@@ -54,7 +54,7 @@ export async function collectAndPersistClarifications(
     bus.publish({ type: 'clarification_answered', ts: Date.now(), phase: state.phase, questionId: question.id, answer });
     if (planner) {
       bus.publish({ type: 'message_queued', ts: Date.now(), phase: state.phase, id: message.id });
-      await dispatchNativeInjection(message, planner, projectDir, sessionId, state, (s) => { state = s; }, bus);
+      await dispatchNativeInjection(message, planner, projectDir, sessionId, () => state, (s) => { state = s; }, bus);
     }
   }
 

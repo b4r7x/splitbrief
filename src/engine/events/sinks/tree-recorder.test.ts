@@ -113,7 +113,7 @@ describe('createTreeRecorderSink', () => {
     expect(payload.tokensUsed).toBe(600);
   });
 
-  it('records task_failed as agent-invocation entry with failed status', () => {
+  it('records task_full_fail as agent-invocation entry with failed status', () => {
     const sink = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
     sink({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'x' });
     sink({
@@ -123,7 +123,7 @@ describe('createTreeRecorderSink', () => {
       file: 'config.ts', action: 'modify',
     });
     sink({
-      type: 'task_failed', ts: 4000, phase: 'implementing',
+      type: 'task_full_fail', ts: 4000, phase: 'implementing',
       taskId: 'T001' as unknown as TaskId,
     });
 

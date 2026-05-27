@@ -52,9 +52,9 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ stat
 
     const current = readSpecFileOrEmpty(projectDir, sessionId, filename);
     const regenPrompt = buildRegeneratePrompt(type, current, result.comment);
-    createBusTextHandler(bus, state.phase)(`\n[Regenerating ${type} with feedback: ${result.comment}]\n`);
+    createBusTextHandler({ bus: bus, phase: state.phase })(`\n[Regenerating ${type} with feedback: ${result.comment}]\n`);
     const regenResult = await planner.regenerate(regenPrompt, type, projectDir, {
-      onOutput: createBusTextHandler(bus, state.phase),
+      onOutput: createBusTextHandler({ bus: bus, phase: state.phase }),
     });
     state = addUsageAndSave(projectDir, sessionId, state, 'planner', regenResult.usage, bus);
     regenerated = true;

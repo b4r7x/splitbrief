@@ -76,7 +76,7 @@ export function updateTaskMap(
     next.set(event.taskId, { ...existing, status });
     return next;
   }
-  if (event.type === 'task_failed' || event.type === 'task_escalating' || event.type === 'task_full_fail') {
+  if (event.type === 'task_escalating' || event.type === 'task_full_fail') {
     const status = event.type === 'task_escalating' ? 'escalated' : 'failed';
     const existing = taskMap.get(event.taskId);
     if (!existing || existing.status === status) return taskMap;

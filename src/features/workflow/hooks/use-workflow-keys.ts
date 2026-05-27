@@ -45,14 +45,14 @@ function getWorkflowScrollAction(input: string, key: Key): WorkflowKeyAction {
   }
 
   const { maxOffset, renderableCount, totalHeight, viewportHeight } = readConversationScrollSnapshot();
-  return handleConversationScroll(
+  return handleConversationScroll({
     input,
     key,
     renderableCount,
     maxOffset,
     viewportHeight,
     totalHeight,
-  );
+  });
 }
 
 export function useWorkflowKeys(isActive: boolean) {

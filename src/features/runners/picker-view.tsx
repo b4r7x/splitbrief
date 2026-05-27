@@ -3,6 +3,7 @@ import { TwoColumnPicker } from '../../components/pickers/two-column-picker/pick
 import { useTheme } from '../../components/theme.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { refreshDetectionStores } from '../../stores/discovery/detection-adapter.js';
+import { detectionStore } from '../../stores/project/detection.js';
 import { getDefaultDetectionService } from '../../engine/detection/service.js';
 import { configStore } from '../../stores/project/config.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -66,7 +67,7 @@ function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }
   return <Text color={t.textDim}>No models available. Press Ctrl+R to refresh.</Text>;
 }
 
-const defaultRefresh = (projectDir: string | undefined) => refreshDetectionStores(getDefaultDetectionService(), projectDir);
+const defaultRefresh = (projectDir: string | undefined) => refreshDetectionStores(getDefaultDetectionService(), detectionStore, projectDir);
 
 export async function refreshPickerDetection(
   projectDir: string,

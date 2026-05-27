@@ -3,9 +3,9 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { attachmentShortName } from '../../core/attachments/resolve.js';
-import { attachmentsStore } from '../workflow/attachments.js';
 import {
   attachImage,
+  attachmentsStore,
   detachImage,
   listAttachments,
 } from './attachments.js';

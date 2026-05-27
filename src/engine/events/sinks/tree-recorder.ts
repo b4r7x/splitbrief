@@ -1,5 +1,5 @@
 import type { EngineEvent, EventSink } from '../types.js';
-import type { TaskId } from '../../../core/schemas/task.js';
+import { taskIdToString } from '../../../core/schemas/task.js';
 import type { TreeEntryEnvelope } from '../../../core/sessions/tree/schemas.js';
 import type { SessionTree } from '../../../core/sessions/tree/store.js';
 import { createEmptyTree, appendEntry, branchFrom } from '../../../core/sessions/tree/store.js';
@@ -7,6 +7,7 @@ import { persistAppend, writeTreeMeta, appendTreeEntry, reconstructTree } from '
 import { sessionDir } from '../../../core/paths.js';
 import { totalInputTokens, totalOutputTokens } from '../../../core/schemas/tokens.js';
 import type { AgentInvocationPayload, CostCheckpointPayload, PlanStepPayload, RecoveryDecisionPayload } from '../../../core/sessions/tree/entry-types.js';
+import * as typeGuards from '../../../utils/type-guards.js';
 
 export interface TreeRecorderOptions {
   projectDir: string;
@@ -18,8 +19,6 @@ const BRANCHING_ACTIONS = new Set(['retry-same-worker', 'route-bigger-worker', '
 // All disk I/O is wrapped in try/catch — persistence failures must not crash the workflow.
 export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
   const dir = sessionDir(opts.projectDir, opts.sessionId);
-
-  const tid = (id: TaskId): string => id as string;
 
   let tree: SessionTree | null = null;
   const taskStartTimes = new Map<string, number>();
@@ -80,14 +79,14 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
           display: true,
         });
         tree = result.tree;
-        taskStartTimes.set(tid(event.taskId), event.ts);
+        taskStartTimes.set(taskIdToString(event.taskId), event.ts);
         persist(result.entry);
         return;
       }
 
       case 'task_tokens': {
         if (!tree) return;
-        taskTokens.set(tid(event.taskId), event.implementerTokens + event.escalationTokens);
+        taskTokens.set(taskIdToString(event.taskId), event.implementerTokens + event.escalationTokens);
         return;
       }
 
@@ -101,7 +100,7 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
           phase: event.phase,
           status: 'completed',
           durationMs: event.duration,
-          tokensUsed: taskTokens.get(tid(event.taskId)),
+          tokensUsed: taskTokens.get(taskIdToString(event.taskId)),
         };
         const result = appendEntry(tree, {
           type: 'agent-invocation',
@@ -110,15 +109,14 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
         });
         tree = result.tree;
         persist(result.entry);
-        taskTokens.delete(tid(event.taskId));
-        taskStartTimes.delete(tid(event.taskId));
+        taskTokens.delete(taskIdToString(event.taskId));
+        taskStartTimes.delete(taskIdToString(event.taskId));
         return;
       }
 
-      case 'task_failed':
       case 'task_full_fail': {
         if (!tree) return;
-        const startTime = taskStartTimes.get(tid(event.taskId));
+        const startTime = taskStartTimes.get(taskIdToString(event.taskId));
         const payload: AgentInvocationPayload = {
           taskId: event.taskId,
           role: 'implementer',
@@ -126,7 +124,7 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
           phase: event.phase,
           status: 'failed',
           durationMs: startTime !== undefined ? event.ts - startTime : undefined,
-          tokensUsed: taskTokens.get(tid(event.taskId)),
+          tokensUsed: taskTokens.get(taskIdToString(event.taskId)),
         };
         const result = appendEntry(tree, {
           type: 'agent-invocation',
@@ -135,8 +133,8 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
         });
         tree = result.tree;
         persist(result.entry);
-        taskTokens.delete(tid(event.taskId));
-        taskStartTimes.delete(tid(event.taskId));
+        taskTokens.delete(taskIdToString(event.taskId));
+        taskStartTimes.delete(taskIdToString(event.taskId));
         return;
       }
 
@@ -192,8 +190,79 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
         return;
       }
 
-      default:
+      case 'workflow_complete':
+      case 'workflow_cancelled':
+      case 'workflow_config':
+      case 'paused_external_changes':
+      case 'recovery_prompted':
+      case 'recovery_action_failed':
+      case 'recovery_resolved':
+      case 'planner_status':
+      case 'planner_text':
+      case 'planner_heartbeat':
+      case 'spec_rejected':
+      case 'spec_regenerated':
+      case 'plan_approved':
+      case 'plan_rejected':
+      case 'plan_regenerated':
+      case 'rewind_to_spec':
+      case 'rewind_to_plan':
+      case 'all_tasks_done':
+      case 'brief_quality_passed':
+      case 'brief_quality_failed':
+      case 'drift_report':
+      case 'drift_chain_detected':
+      case 'snapshot_created':
+      case 'snapshot_restored':
+      case 'snapshot_restore_conflict':
+      case 'mode_resolved':
+      case 'mode_downgrade_advised':
+      case 'mode_advice':
+      case 'instant_plan_received':
+      case 'task_skipped':
+      case 'task_retry':
+      case 'task_escalating':
+      case 'task_reset':
+      case 'task_review_needed':
+      case 'hint_failed':
+      case 'implementer_generate_running':
+      case 'implementer_generate_done':
+      case 'implementer_generate_failed':
+      case 'validate':
+      case 'escalate':
+      case 'git_commit':
+      case 'git_checkpoint':
+      case 'git_branch_created':
+      case 'clarifications_collected':
+      case 'clarification_answered':
+      case 'message_queued':
+      case 'message_injected_native':
+      case 'queue_drained':
+      case 'queue_cleared':
+      case 'user_message':
+      case 'planner_attachments_dropped':
+      case 'cost_prediction':
+      case 'budget_warning':
+      case 'budget_paused':
+      case 'budget_exceeded':
+      case 'approval_prompted':
+      case 'approval_granted':
+      case 'approval_rejected':
+      case 'approval_sticky_recorded':
+      case 'approval_mode_changed':
+      case 'ipc_server_started':
+      case 'ipc_client_attached':
+      case 'ipc_client_detached':
+      case 'ipc_reconnect_attempt':
+      case 'ipc_reconnect_failed':
+      case 'replay_started':
+      case 'replay_complete':
+      case 'warning':
+      case 'error':
         return;
+
+      default:
+        return typeGuards.assertNever(event);
     }
   };
 }

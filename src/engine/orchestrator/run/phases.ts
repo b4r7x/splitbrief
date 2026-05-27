@@ -130,14 +130,14 @@ async function reviewAutoSplitOutput(opts: {
 }): Promise<{ state: WorkflowState; tasks: Task[]; approved: boolean }> {
   const tasksFilePath = join(sessionDir(opts.wctx.projectDir, opts.wctx.sessionId), TASKS_FILE);
   writeSpecFile(opts.wctx.projectDir, opts.wctx.sessionId, TASKS_FILE, formatTasks(opts.tasks), opts.wctx.metadata);
-  publishWarning(opts.wctx.bus, opts.state.phase, `Auto-split overflow produced ${opts.tasks.length} Task Briefs. Review ${TASKS_FILE} before implementation.`);
+  publishWarning({ bus: opts.wctx.bus, phase: opts.state.phase }, `Auto-split overflow produced ${opts.tasks.length} Task Briefs. Review ${TASKS_FILE} before implementation.`);
 
   let state = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, opts.state, { type: 'BRIEFS_READY', tasks: opts.tasks });
   opts.setTrackedState(state);
 
   const result = await opts.wctx.callbacks.onApprovalNeeded('briefs', tasksFilePath);
   if (!result.approved && result.action !== 'edit') {
-    publishError(opts.wctx.bus, state.phase, result.comment ? `Auto-split overflow rejected: ${result.comment}` : 'Auto-split overflow rejected before implementation.');
+    publishError({ bus: opts.wctx.bus, phase: state.phase }, result.comment ? `Auto-split overflow rejected: ${result.comment}` : 'Auto-split overflow rejected before implementation.');
     state = transitionAndSave(opts.wctx.projectDir, opts.wctx.sessionId, state, { type: 'REJECT_BRIEFS' });
     opts.setTrackedState(state);
     return { state, tasks: opts.tasks, approved: false };
@@ -145,14 +145,14 @@ async function reviewAutoSplitOutput(opts: {
 
   const approvedTasks = await readApprovedSplitTasks(tasksFilePath);
   if (!approvedTasks) {
-    publishError(opts.wctx.bus, state.phase, `Auto-split overflow review failed: ${tasksFilePath} has no parseable Task Briefs.`);
+    publishError({ bus: opts.wctx.bus, phase: state.phase }, `Auto-split overflow review failed: ${tasksFilePath} has no parseable Task Briefs.`);
     return { state, tasks: opts.tasks, approved: false };
   }
 
   const { ok, report } = runBriefQualityGate(approvedTasks, opts.wctx.projectDir, opts.wctx.sessionId, opts.wctx.bus, state.phase);
   if (!ok) {
     const firstError = report.issues.find(issue => issue.severity === 'error');
-    publishError(opts.wctx.bus, state.phase, `Auto-split overflow review failed quality gate: ${firstError?.message ?? 'unknown error'}`);
+    publishError({ bus: opts.wctx.bus, phase: state.phase }, `Auto-split overflow review failed quality gate: ${firstError?.message ?? 'unknown error'}`);
     return { state, tasks: approvedTasks, approved: false };
   }
 
@@ -183,7 +183,7 @@ export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise
     if (wctx.config.plannerEstimateReview) {
       prediction.plannerEstimateReview = runningPlannerEstimateReview();
     }
-    publishCostPrediction(wctx.bus, state.phase, prediction);
+    publishCostPrediction({ bus: wctx.bus, phase: state.phase }, prediction);
 
     const gateDecision = decideCostGate({
       mode: wctx.config.workflow?.mode,
@@ -215,7 +215,7 @@ export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise
       state = reviewed.state;
       setTrackedState(state);
       prediction = { ...prediction, plannerEstimateReview: reviewed.review };
-      publishCostPrediction(wctx.bus, state.phase, prediction);
+      publishCostPrediction({ bus: wctx.bus, phase: state.phase }, prediction);
     }
 
     if (prediction.deterministic) {
@@ -226,7 +226,7 @@ export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise
         plannerReview: prediction.plannerEstimateReview,
       });
       if (split.skippedSplits.length > 0) {
-        publishWarning(wctx.bus, state.phase, formatSkippedSplitNotice(split.skippedSplits));
+        publishWarning({ bus: wctx.bus, phase: state.phase }, formatSkippedSplitNotice(split.skippedSplits));
       }
       if (split.changed) {
         const reviewed = await reviewAutoSplitOutput({ wctx, state, tasks: split.tasks, setTrackedState });
@@ -244,7 +244,7 @@ export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise
           state,
           plannerEstimateReview: prediction.plannerEstimateReview,
         });
-        publishCostPrediction(wctx.bus, state.phase, prediction);
+        publishCostPrediction({ bus: wctx.bus, phase: state.phase }, prediction);
       }
     }
     summaryBase = { ...summaryBase, costPrediction: prediction };

@@ -63,7 +63,7 @@ const phaseActions = {
   clarifying: ['SPEC_CLARIFY_DONE'],
   'constitution-check': ['CONSTITUTION_CHECK_PASS', 'CONSTITUTION_CHECK_FAIL'],
   planning: ['RESEARCH_DONE', 'PLAN_DONE', 'SPEC_CLARIFY_START'],
-  'reviewing-plan': ['APPROVE_PLAN', 'REJECT_PLAN', 'PLAN_DONE', 'BRIEFS_READY', 'ANALYZE_START'],
+  'reviewing-plan': ['REJECT_PLAN', 'PLAN_DONE', 'BRIEFS_READY', 'ANALYZE_START'],
   'reviewing-briefs': ['BRIEFS_READY', 'APPROVE_BRIEFS', 'REJECT_BRIEFS'],
   analyzing: ['ANALYZE_DONE'],
   implementing: [
@@ -72,8 +72,6 @@ const phaseActions = {
     'CLEAR_TASK_CODE',
     'TASK_SENT',
     'VALIDATION_PASS',
-    'VALIDATION_FAIL',
-    'ESCALATE',
     'SKIP_TASK',
     'RESET_TASK',
     'BRIEFS_READY',
@@ -81,7 +79,7 @@ const phaseActions = {
     'ALL_DONE',
   ],
   'validating-task': [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'VALIDATION_FAIL', 'ESCALATE'],
-  escalating: [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'UPDATE_TASK_CODE', 'CLEAR_TASK_CODE', 'HINT_FAIL', 'FULL_FAIL'],
+  escalating: [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'UPDATE_TASK_CODE', 'CLEAR_TASK_CODE', 'HINT_FAIL'],
   'final-review': ['REVIEW_DONE'],
   complete: [],
 } as const satisfies Record<Phase, readonly StateAction['type'][]>;
@@ -174,16 +172,13 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
       return { ...state, phase: 'planning' };
 
     case 'REJECT_SPEC':
-      return { ...state, phase: 'idle' };
+      return { ...state, phase: 'idle', tasks: [], currentTaskIndex: 0, attempt: 0 };
 
     case 'PLAN_DONE':
       return { ...state, phase: 'reviewing-plan', tasks: action.tasks };
 
-    case 'APPROVE_PLAN':
-      return { ...state, phase: 'implementing', currentTaskIndex: 0, attempt: 0 };
-
     case 'REJECT_PLAN':
-      return { ...state, phase: 'idle' };
+      return { ...state, phase: 'idle', tasks: [], currentTaskIndex: 0, attempt: 0 };
 
     case 'BRIEFS_READY':
       return { ...state, phase: 'reviewing-briefs', tasks: action.tasks, currentTaskIndex: 0, attempt: 0 };
@@ -192,7 +187,7 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
       return { ...state, phase: 'implementing', currentTaskIndex: 0, attempt: 0 };
 
     case 'REJECT_BRIEFS':
-      return { ...state, phase: 'idle' };
+      return { ...state, phase: 'idle', tasks: [], currentTaskIndex: 0, attempt: 0 };
 
     case 'SPEC_CLARIFY_START':
       return { ...state, phase: 'clarifying' };
@@ -204,7 +199,7 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
       return { ...state, phase: 'planning' };
 
     case 'CONSTITUTION_CHECK_FAIL':
-      return { ...state, phase: 'idle', awaitingContinue: false };
+      return { ...state, phase: 'idle', awaitingContinue: false, tasks: [], currentTaskIndex: 0, attempt: 0 };
 
     case 'ANALYZE_START':
       return { ...state, phase: 'analyzing' };
@@ -242,14 +237,13 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
     case 'FULL_SUCCESS':
       return advanceTask(state, 'escalated');
 
-    case 'FULL_FAIL':
-      return advanceTask(state, 'failed');
-
     case 'SKIP_TASK': {
       const withStatus = setTaskStatus(state, action.taskId, 'skipped');
       return {
         ...withStatus,
+        phase: 'implementing',
         currentTaskIndex: state.currentTaskIndex + 1,
+        attempt: 0,
       };
     }
 
@@ -276,7 +270,7 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
       return { ...state, phase: 'complete' };
 
     case 'CANCEL':
-      return { ...state, phase: 'idle', awaitingContinue: false };
+      return { ...state, phase: 'idle', awaitingContinue: false, tasks: [], currentTaskIndex: 0, attempt: 0 };
 
     case 'ABORT_TURN':
       return { ...state, awaitingContinue: true };
@@ -295,6 +289,11 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
         currentTaskIndex: 0,
         attempt: 0,
         awaitingContinue: false,
+        plannerSessionId: undefined,
+        clarifications: [],
+        constitutionFailureReason: undefined,
+        analysisResult: undefined,
+        discoveredValidation: undefined,
         rewindPending: { target: 'spec', ...(action.comment ? { comment: action.comment } : {}) },
       };
 
@@ -306,6 +305,11 @@ export function transition(state: WorkflowState, action: StateAction, maxRetries
         currentTaskIndex: 0,
         attempt: 0,
         awaitingContinue: false,
+        plannerSessionId: undefined,
+        clarifications: [],
+        constitutionFailureReason: undefined,
+        analysisResult: undefined,
+        discoveredValidation: undefined,
         rewindPending: { target: 'plan', ...(action.comment ? { comment: action.comment } : {}) },
       };
 

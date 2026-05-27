@@ -53,7 +53,7 @@ function makeCompleteSession(id: string) {
 }
 
 function writeCanonicalArtifacts(projectDir: string, sessionId: string): void {
-  saveSummary(projectDir, sessionId, makeCompleteSession(sessionId));
+  saveSummary({ projectDir: projectDir, sessionId: sessionId }, makeCompleteSession(sessionId));
   saveState(projectDir, sessionId, {
     ...createInitialState('test feature'),
     stateVersion: CURRENT_STATE_VERSION,
@@ -116,7 +116,7 @@ describe('listResources', () => {
     const projectDir = createTempDir('resolver-test'); dirs.push(projectDir);
     const id = 'sess-without-state';
     ensureSessionDir(projectDir, id);
-    saveSummary(projectDir, id, makeCompleteSession(id));
+    saveSummary({ projectDir: projectDir, sessionId: id }, makeCompleteSession(id));
 
     const resolver = makeResolver(projectDir, id);
     const uris = (await resolver.listResources()).map(r => r.uri);
@@ -129,7 +129,7 @@ describe('listResources', () => {
     const projectDir = createTempDir('resolver-test'); dirs.push(projectDir);
     const id = 'sess-2';
     ensureSessionDir(projectDir, id);
-    saveSummary(projectDir, id, { ...SESSION_STUB, id });
+    saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
 
     const resolver = makeResolver(projectDir, id);
     const uris = (await resolver.listResources()).map(r => r.uri);
@@ -141,7 +141,7 @@ describe('listResources', () => {
     const projectDir = createTempDir('resolver-test'); dirs.push(projectDir);
     const id = 'sess-3';
     ensureSessionDir(projectDir, id);
-    saveSummary(projectDir, id, { ...SESSION_STUB, id });
+    saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
 
     const resolver = makeResolver(projectDir, id);
     const uris = (await resolver.listResources()).map(r => r.uri);
@@ -153,7 +153,7 @@ describe('listResources', () => {
     const projectDir = createTempDir('resolver-test'); dirs.push(projectDir);
     const id = 'sess-4';
     ensureSessionDir(projectDir, id);
-    saveSummary(projectDir, id, { ...SESSION_STUB, id });
+    saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
     writeFileSync(join(sessionPath(projectDir, id), 'spec.md'), '# Spec');
 
     const resolver = makeResolver(projectDir, id);
@@ -166,7 +166,7 @@ describe('listResources', () => {
     const projectDir = createTempDir('resolver-test'); dirs.push(projectDir);
     const id = 'sess-5';
     ensureSessionDir(projectDir, id);
-    saveSummary(projectDir, id, { ...SESSION_STUB, id });
+    saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
     writeFileSync(join(sessionPath(projectDir, id), 'tasks.md'), TASKS_MD);
 
     const resolver = makeResolver(projectDir, id);
@@ -182,8 +182,8 @@ describe('listResources', () => {
     const otherId = 'sess-other';
     ensureSessionDir(projectDir, id);
     ensureSessionDir(projectDir, otherId);
-    saveSummary(projectDir, id, { ...SESSION_STUB, id });
-    saveSummary(projectDir, otherId, { ...SESSION_STUB, id: otherId });
+    saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
+    saveSummary({ projectDir: projectDir, sessionId: otherId }, { ...SESSION_STUB, id: otherId });
 
     const resolver = createResolver({ projectDir, sessionIds: [id], diptychVersion: '1.0.0' });
     const uris = (await resolver.listResources()).map(r => r.uri);
@@ -197,7 +197,7 @@ describe('readResource - /sessions', () => {
     const projectDir = createTempDir('resolver-test'); dirs.push(projectDir);
     const id = 'sess-a';
     ensureSessionDir(projectDir, id);
-    saveSummary(projectDir, id, { ...SESSION_STUB, id });
+    saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
 
     const resolver = makeResolver(projectDir, id);
     const result = await resolver.readResource('mcp://diptych/sessions');
@@ -254,7 +254,7 @@ describe('readResource - /manifest.json', () => {
     const projectDir = createTempDir('resolver-test'); dirs.push(projectDir);
     const id = 'sess-missing-state';
     ensureSessionDir(projectDir, id);
-    saveSummary(projectDir, id, makeCompleteSession(id));
+    saveSummary({ projectDir: projectDir, sessionId: id }, makeCompleteSession(id));
 
     const resolver = makeResolver(projectDir, id);
     const result = await resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
@@ -300,7 +300,7 @@ describe('readResource - file resources', () => {
     const projectDir = createTempDir('resolver-test'); dirs.push(projectDir);
     const id = 'sess-e';
     ensureSessionDir(projectDir, id);
-    saveSummary(projectDir, id, { ...SESSION_STUB, id });
+    saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
     writeFileSync(join(sessionPath(projectDir, id), 'spec.md'), '# My Spec\nHello');
 
     const resolver = makeResolver(projectDir, id);
@@ -314,7 +314,7 @@ describe('readResource - file resources', () => {
     const projectDir = createTempDir('resolver-test'); dirs.push(projectDir);
     const id = 'sess-f';
     ensureSessionDir(projectDir, id);
-    saveSummary(projectDir, id, { ...SESSION_STUB, id });
+    saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
 
     const resolver = makeResolver(projectDir, id);
     const result = await resolver.readResource(`mcp://diptych/sessions/${id}/evidence.json`);
@@ -355,7 +355,7 @@ describe('readResource - tasks', () => {
     const projectDir = createTempDir('resolver-test'); dirs.push(projectDir);
     const id = 'sess-g';
     ensureSessionDir(projectDir, id);
-    saveSummary(projectDir, id, { ...SESSION_STUB, id });
+    saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
     writeFileSync(join(sessionPath(projectDir, id), 'tasks.md'), TASKS_MD);
 
     const resolver = makeResolver(projectDir, id);
@@ -370,7 +370,7 @@ describe('readResource - tasks', () => {
     const projectDir = createTempDir('resolver-test'); dirs.push(projectDir);
     const id = 'sess-h';
     ensureSessionDir(projectDir, id);
-    saveSummary(projectDir, id, { ...SESSION_STUB, id });
+    saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
     writeFileSync(join(sessionPath(projectDir, id), 'tasks.md'), TASKS_MD);
 
     const resolver = makeResolver(projectDir, id);
@@ -385,7 +385,7 @@ describe('readResource - edge cases', () => {
     const projectDir = createTempDir('resolver-test'); dirs.push(projectDir);
     const id = 'sess-i';
     ensureSessionDir(projectDir, id);
-    saveSummary(projectDir, id, { ...SESSION_STUB, id });
+    saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
 
     const resolver = makeResolver(projectDir, id);
     const result = await resolver.readResource('mcp://diptych/unknown/path');
@@ -419,7 +419,7 @@ describe('readResource - edge cases', () => {
     const projectDir = createTempDir('resolver-test'); dirs.push(projectDir);
     const id = 'sess-k';
     ensureSessionDir(projectDir, id);
-    saveSummary(projectDir, id, { ...SESSION_STUB, id });
+    saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
 
     const resolver = makeResolver(projectDir, id);
     const result = await resolver.readResource(`mcp://diptych/sessions/${id}/tasks`);

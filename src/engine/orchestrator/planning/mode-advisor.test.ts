@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import {
   adviseMode,
-  createAdvisoryStore,
   formatAdvisoryText,
 } from './mode-advisor.js';
 
@@ -165,43 +164,5 @@ describe('formatAdvisoryText', () => {
     const text = formatAdvisoryText(result);
     expect(text).toContain('advisor:');
     expect(text.length).toBeLessThan(80);
-  });
-});
-
-describe('advisory store', () => {
-  it('starts with no advisory', () => {
-    const store = createAdvisoryStore();
-    expect(store.get()).toBeNull();
-  });
-
-  it('notifies subscribers when advisory changes', () => {
-    const store = createAdvisoryStore();
-    let calls = 0;
-    const unsubscribe = store.subscribe(() => {
-      calls += 1;
-    });
-
-    const advisory = adviseMode('fix typo', 'standard');
-    store.set(advisory);
-    expect(store.get()).toEqual(advisory);
-    expect(calls).toBe(1);
-
-    store.set(null);
-    expect(store.get()).toBeNull();
-    expect(calls).toBe(2);
-
-    unsubscribe();
-    store.set(advisory);
-    expect(calls).toBe(2);
-  });
-
-  it('skips notification when value is unchanged reference', () => {
-    const store = createAdvisoryStore();
-    let calls = 0;
-    store.subscribe(() => {
-      calls += 1;
-    });
-    store.set(null);
-    expect(calls).toBe(0);
   });
 });

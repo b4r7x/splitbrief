@@ -6,8 +6,7 @@ import { createResolver } from '../../engine/mcp/resolver.js';
 import { startMcpServer } from '../../engine/mcp/server.js';
 import { createToolHandler } from '../../engine/mcp/tool/handler.js';
 import { getDiptychVersion } from '../../core/paths-io.js';
-import { cliError, isCliError } from '../errors.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { cliError, rethrowAsCli } from '../errors.js';
 
 const DEFAULT_PORT = 4321;
 
@@ -55,8 +54,7 @@ export function registerMcpCommand(program: Command, deps: McpDeps = defaultDeps
             ...(opts.allSessions && { allSessions: opts.allSessions }),
           });
         } catch (err) {
-          if (isCliError(err)) throw err;
-          throw cliError(toErrorMessage(err), 1);
+          rethrowAsCli(err);
         }
 
         const token = generateToken();
@@ -75,8 +73,7 @@ export function registerMcpCommand(program: Command, deps: McpDeps = defaultDeps
             toolHandler,
           });
         } catch (err) {
-          if (isCliError(err)) throw err;
-          throw cliError(toErrorMessage(err), 1);
+          rethrowAsCli(err);
         }
 
         const actualPort = handle.port;

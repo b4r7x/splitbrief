@@ -25,14 +25,14 @@ describe('jsonlSink', () => {
   it('writes event-kind entries with on-disk shape (kind, ts ISO, type, phase, data)', () => {
     const sink = createJsonlSink(projectDir, sessionId, true);
     sink({ type: 'workflow_started', ts: 100, phase: 'idle', feature: 'add x' });
-    sink({ type: 'plan_done', ts: 200, phase: 'planning', taskCount: 3 });
+    sink({ type: 'instant_plan_received', ts: 200, phase: 'planning', taskCount: 3 });
 
     const lines = readLog();
     expect(lines).toHaveLength(2);
     expect(lines[0]).toMatchObject({ kind: 'event', type: 'workflow_started', phase: 'idle', data: { feature: 'add x' } });
     expect(typeof lines[0]?.['ts']).toBe('string');
     expect(String(lines[0]?.['ts'])).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect(lines[1]).toMatchObject({ kind: 'event', type: 'plan_done', phase: 'planning', data: { taskCount: 3 } });
+    expect(lines[1]).toMatchObject({ kind: 'event', type: 'instant_plan_received', phase: 'planning', data: { taskCount: 3 } });
   });
 
   it('drops planner_text events when persistTranscript=false', () => {

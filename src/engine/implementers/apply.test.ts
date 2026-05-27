@@ -63,6 +63,27 @@ describe('applyCode', () => {
     expect(content).not.toContain('export const old = true;');
   });
 
+  it('search/replace patches all occurrences of a repeated search block', async () => {
+    tempDir = createTempDir('impl-test');
+    const filePath = join(tempDir, 'src', 'repeated.ts');
+    const task = makeTask({ action: 'modify', file: 'src/repeated.ts' });
+
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    const lines = Array.from({ length: 250 }, (_, i) => `// line ${i + 1}`);
+    lines[10] = 'const x = old;';
+    lines[50] = 'const x = old;';
+    lines[100] = 'const x = old;';
+    writeFileSync(filePath, lines.join('\n'));
+
+    const patchCode = '<<<<<<< SEARCH\nconst x = old;\n=======\nconst x = new;\n>>>>>>> REPLACE';
+    const result = await applyCode(patchCode, task, tempDir);
+
+    expect(result.success).toBe(true);
+    const content = readFileSync(filePath, 'utf-8');
+    expect(content).not.toContain('const x = old;');
+    expect(content.match(/const x = new;/g)).toHaveLength(3);
+  });
+
   it('search/replace returns error when search block not found', async () => {
     tempDir = createTempDir('impl-test');
     const filePath = join(tempDir, 'src', 'large2.ts');

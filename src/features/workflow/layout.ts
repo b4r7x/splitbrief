@@ -48,14 +48,14 @@ export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
   );
   const sidebarVisible = controlsStore.get().sidebarVisible;
   const contentWidth = getWorkflowContentWidth(cols, sidebarVisible, isSmall);
-  const contentRect = getWorkflowContentRect(
+  const contentRect = getWorkflowContentRect({
     cols,
     rows,
-    inputHeightStore.get().rows,
+    inputRows: inputHeightStore.get().rows,
     hasConfig,
     sidebarVisible,
     isSmall,
-  );
+  });
   const {
     maxOffset,
     renderableCount,

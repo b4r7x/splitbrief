@@ -4,8 +4,7 @@ import { resolveProjectDir } from '../setup.js';
 import { createSnapshot, listSnapshots } from '../../engine/snapshots/store.js';
 import { resolveSnapshot, restoreSnapshot } from '../../engine/snapshots/restore.js';
 import { computeSnapshotDiff, formatSnapshotDiff } from '../../engine/snapshots/diff.js';
-import { cliError, isCliError } from '../errors.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { cliError, rethrowAsCli } from '../errors.js';
 import { resolveSessionOrThrow } from '../session-resolve.js';
 
 export function registerSnapshotCommand(program: Command): void {
@@ -61,8 +60,7 @@ export function registerSnapshotCommand(program: Command): void {
         console.log(`  Files: ${result.manifest.trackedFileCount}`);
         console.log(`  Location: ${result.snapshotDir}`);
       } catch (err) {
-        if (isCliError(err)) throw err;
-        throw cliError(toErrorMessage(err), 1);
+        rethrowAsCli(err);
       }
     });
 
@@ -90,8 +88,7 @@ export function registerSnapshotCommand(program: Command): void {
           );
         }
       } catch (err) {
-        if (isCliError(err)) throw err;
-        throw cliError(toErrorMessage(err), 1);
+        rethrowAsCli(err);
       }
     });
 
@@ -114,8 +111,7 @@ export function registerSnapshotCommand(program: Command): void {
           force: opts.force ?? false,
         });
       } catch (err) {
-        if (isCliError(err)) throw err;
-        throw cliError(toErrorMessage(err), 1);
+        rethrowAsCli(err);
       }
 
       console.log(`Restored ${result.restoredPaths.length} file(s) from snapshot ${result.snapshotId}.`);
@@ -160,16 +156,14 @@ export function registerSnapshotCommand(program: Command): void {
       try {
         manifest = await resolveSnapshot(projectDir, sessionId, idOrName);
       } catch (err) {
-        if (isCliError(err)) throw err;
-        throw cliError(toErrorMessage(err), 1);
+        rethrowAsCli(err);
       }
 
       let result: Awaited<ReturnType<typeof computeSnapshotDiff>>;
       try {
         result = await computeSnapshotDiff({ projectDir, sessionId, manifest });
       } catch (err) {
-        if (isCliError(err)) throw err;
-        throw cliError(toErrorMessage(err), 1);
+        rethrowAsCli(err);
       }
 
       const formatted = formatSnapshotDiff(result, { color: opts.color !== false });

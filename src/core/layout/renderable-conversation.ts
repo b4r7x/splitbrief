@@ -54,12 +54,8 @@ function applyHeightRule(event: LayoutEvent, ctx: HeightCtx): number {
     case 'recovery_action_failed': return 1;
     case 'recovery_resolved': return 1;
     case 'planner_text': return Math.max(1, visualLineCount(event.text, cols));
-    case 'research_done': return 0;
-    case 'spec_done': return 0;
-    case 'spec_approved': return 0;
     case 'spec_rejected': return 0;
     case 'spec_regenerated': return 0;
-    case 'plan_done': return 0;
     case 'plan_approved': return 0;
     case 'plan_rejected': return 0;
     case 'plan_regenerated': return 0;
@@ -79,7 +75,6 @@ function applyHeightRule(event: LayoutEvent, ctx: HeightCtx): number {
     case 'instant_plan_received': return 0;
     case 'task_started': return 1;
     case 'task_completed': return 0;
-    case 'task_failed': return 0;
     case 'task_skipped': return 1;
     case 'task_escalating': return 0;
     case 'task_full_fail': return 0;
@@ -107,7 +102,6 @@ function applyHeightRule(event: LayoutEvent, ctx: HeightCtx): number {
     case 'queue_drained': return 1;
     case 'queue_cleared': return 1;
     case 'user_message': return Math.max(1, visualLineCount(event.text, cols));
-    case 'planner_attachment_added': return 1;
     case 'planner_attachments_dropped': return 1;
     case 'warning': return visualLineCount(`warning  ${event.message}`, cols);
     case 'error': return visualLineCount(`error  ${event.message}`, cols);
@@ -127,8 +121,6 @@ function applyHeightRule(event: LayoutEvent, ctx: HeightCtx): number {
     case 'ipc_client_detached': return 0;
     case 'ipc_reconnect_attempt': return 0;
     case 'ipc_reconnect_failed': return 0;
-    case 'server_crash_detected': return 0;
-    case 'server_post_mortem_shown': return 0;
     case 'replay_started': return 0;
     case 'replay_complete': return 0;
     default: return assertNever(event);

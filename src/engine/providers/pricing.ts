@@ -239,15 +239,26 @@ export type TaskCostTokenUsage = Pick<TokenUsage,
   | 'implementerCacheCreate'
 >;
 
-export function calculateTaskUsageCost(
-  task: TaskTokenUsage,
-  tokenUsage: TaskCostTokenUsage,
-  implementerTool: string,
-  plannerTool: string,
-  implementerModel?: string | undefined,
-  plannerModel?: string | undefined,
-  cache?: ModelCacheAccessor,
-): number {
+export interface CalculateTaskUsageCostOptions {
+  task: TaskTokenUsage;
+  tokenUsage: TaskCostTokenUsage;
+  implementerTool: string;
+  plannerTool: string;
+  implementerModel?: string | undefined;
+  plannerModel?: string | undefined;
+  cache?: ModelCacheAccessor | undefined;
+}
+
+export function calculateTaskUsageCost(options: CalculateTaskUsageCostOptions): number {
+  const {
+    task,
+    tokenUsage,
+    implementerTool,
+    plannerTool,
+    implementerModel,
+    plannerModel,
+    cache,
+  } = options;
   const totalImplementerTokens = tokenUsage.implementerInput + tokenUsage.implementerOutput;
   const implementerSplit = splitTokens(task.implementerTokens, tokenUsage.implementerInput, tokenUsage.implementerOutput);
   const taskTool = task.tool ?? implementerTool;

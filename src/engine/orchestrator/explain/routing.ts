@@ -6,7 +6,7 @@ import type {
   DeterministicEstimate,
   ExplainArtifactInputs,
   RunExplainRoute,
-} from './types.js';
+} from './explain.js';
 
 export function buildRoutes(opts: Pick<ExplainArtifactInputs, 'summary' | 'reviewPacket' | 'state' | 'events'>): RunExplainRoute[] {
   const routes = new Map<string, RunExplainRoute>();

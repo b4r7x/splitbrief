@@ -56,7 +56,7 @@ diptych start --mode instant "rename function calcualteTax to calculateTax in sr
 ```
 mode resolved: instant
 planner_status: instant_plan
-plan_done · 1 task
+instant_plan_received · 1 task
 T001  modify  src/billing/tax.ts  rename function
 implementer_generate_done
 validate · tsc ✓ lint ✓ test ✓
@@ -87,7 +87,6 @@ diptych start --mode quick "add an isAdult helper that returns true when age >= 
 ```
 mode resolved: quick
 planner_status: quick_plan
-plan_done · 1 task
 brief_quality_passed
 T001  create  src/utils/age.ts  add isAdult helper
 validate · tsc ✓ lint ✓ test ✓
@@ -603,7 +602,7 @@ phase: reviewing-spec
 spec_regenerated
 phase: reviewing-spec    ← second pass
 > a
-spec_approved
+planner_status: planning
 ```
 
 A non-empty comment regenerates; an empty comment skips back to the gate without regenerating. Hard reject (`r`) ends the workflow.
@@ -1182,7 +1181,7 @@ diptych start --json --allow-hooks "regenerate API client from openapi.yaml" \
 ```
 {"type":"workflow_started","ts":1745692800000,"phase":"researching","feature":"regenerate API client from openapi.yaml"}
 {"type":"planner_status","ts":1745692801200,"phase":"researching","status":"researching"}
-{"type":"plan_done","ts":1745692840100,"phase":"planning","taskCount":4}
+{"type":"brief_quality_passed","ts":1745692840100,"phase":"planning","score":1,"warningCount":0}
 {"type":"task_completed","ts":1745692902300,"phase":"implementing","taskId":"T001"}
 …
 {"type":"workflow_complete","ts":1745692980000,"phase":"complete"}
@@ -1255,7 +1254,7 @@ jq 'select(.type == "task_tokens") | {task: .taskId, method: .method, cost: .cos
 
 The same data lives in `.diptych/sessions/<id>/summary.json` once the run finishes.
 
-**Variations:** Filter for failures: `jq 'select(.type == "task_failed" or .type == "task_full_fail")' events.ndjson`.
+**Variations:** Filter for failures: `jq 'select(.type == "task_full_fail" or .type == "error")' events.ndjson`.
 
 **See also:** [docs/DEBUGGING.md](./DEBUGGING.md) §Event log, recipe 8.
 
@@ -1561,7 +1560,7 @@ On the next planner call (e.g. after `/revise-plan` or a task loop restart), the
 
 ```
 planner_status: planning (with 2 rejection(s) in context)
-plan_done · 3 tasks  ← T002 now avoids the rejected path
+plan_regenerated · 3 tasks  ← T002 now avoids the rejected path
 ```
 
 **Variations:** Set `approval.feedRejectionsToPlanner: false` to keep rejections out of planner context (useful when you want to deny an action once without influencing the plan).

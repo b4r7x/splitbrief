@@ -50,9 +50,9 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
       };
       const pre = await runPreHooks(config.hooks, 'pre_commit', preCommitPayload, { projectDir, sessionId });
       if (!pre.allow) {
-        publishWarning(bus, state.phase, `pre_commit blocked: ${pre.reason ?? 'hook denied'}`);
+        publishWarning({ bus: bus, phase: state.phase }, `pre_commit blocked: ${pre.reason ?? 'hook denied'}`);
         const nextState = transitionAndSave(projectDir, sessionId, state, { type: transitionType });
-        publishTaskComplete(bus, nextState.phase, {
+        publishTaskComplete({ bus: bus, phase: nextState.phase }, {
           taskId: task.id, title: task.title,
           method, retries: retryCount ?? state.attempt,
           duration: taskStartTime ? Date.now() - taskStartTime : 0,
@@ -67,23 +67,23 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
     try {
       await gitOps.stageAll(projectDir);
       await gitOps.commitChanges(projectDir, commitMsg);
-      publishGitCommit(bus, state.phase, task.id, commitMsg, task.file);
+      publishGitCommit({ bus: bus, phase: state.phase }, task.id, commitMsg, task.file);
     } catch (err) {
-      publishWarningFromError(bus, state.phase, 'Failed to commit', err);
+      publishWarningFromError({ bus: bus, phase: state.phase }, 'Failed to commit', err);
     }
   } else if (strategy === 'checkpoint') {
     try {
       const tag = await gitOps.createTaggedStash(projectDir, `diptych checkpoint: ${task.id}`, `diptych/${task.id}`);
       if (tag) {
-        publishGitCheckpoint(bus, state.phase, task.id, tag);
+        publishGitCheckpoint({ bus: bus, phase: state.phase }, task.id, tag);
       }
     } catch (err) {
-      publishWarningFromError(bus, state.phase, 'Failed to create checkpoint', err);
+      publishWarningFromError({ bus: bus, phase: state.phase }, 'Failed to create checkpoint', err);
     }
   }
 
   const nextState = transitionAndSave(projectDir, sessionId, state, { type: transitionType });
-  publishTaskComplete(bus, nextState.phase, {
+  publishTaskComplete({ bus: bus, phase: nextState.phase }, {
     taskId: task.id, title: task.title,
     method, retries: retryCount ?? state.attempt,
     duration: taskStartTime ? Date.now() - taskStartTime : 0,

@@ -4,8 +4,7 @@ import { resolveProjectDir } from '../setup.js';
 import { HANDOFF_TARGETS, validateHandoffTargetName } from '../../core/handoff/targets.js';
 import { listCustomRenderers } from '../../engine/handoff/load-renderer.js';
 import { writeHandoffPack } from '../../engine/handoff/write.js';
-import { cliError, isCliError } from '../errors.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { cliError, rethrowAsCli } from '../errors.js';
 import { resolveSessionOrThrow } from '../session-resolve.js';
 
 const VALID_MODES = ['default', 'append', 'overwrite'] as const;
@@ -92,8 +91,7 @@ export function registerHandoffCommand(program: Command, deps: HandoffDeps = def
             console.log(`  ${file}`);
           }
         } catch (err) {
-          if (isCliError(err)) throw err;
-          throw cliError(toErrorMessage(err), 1);
+          rethrowAsCli(err);
         }
       },
     );

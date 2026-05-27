@@ -1,34 +1,27 @@
-// Planner→implementer contract: docs/TASK-CONTRACT.md
 import type { Task } from '../../core/schemas/task.js';
 import type { InvokeResult } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
-import { tryParseStructuredSummary, type StructuredSummary } from '../../core/schemas/compaction.js';
+import type { StructuredSummary } from '../../core/schemas/compaction.js';
 import type { Planner, PlannerCallbacks, PlanResult, EscalationResult, RegenerateResult, PhaseResult, PlannerCapabilities, PriorMessage, PlannerSummaryMessage } from './types.js';
-import { formatMessagesForCli } from '../streaming/format-messages.js';
 import { buildResearchPrompt } from '../spec/prompts/research.js';
 import { buildSpecPrompt } from '../spec/prompts/spec.js';
 import { buildPlanPrompt } from '../spec/prompts/plan.js';
 import { buildTasksPrompt } from '../spec/prompts/tasks.js';
-import { buildHintPrompt, buildEscalationPrompt } from '../spec/prompts/escalation.js';
 import { buildQuickPlanPrompt } from '../spec/prompts/quick-plan.js';
 import { buildInstantPrompt } from '../spec/prompts/instant.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
 import { buildProjectLanguageContext, extractLanguageFromResearch } from '../spec/prompts/language-context.js';
 import { parseTasks } from '../spec/parser.js';
 import { RESEARCH_FILE, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
-import { extractCode } from '../parsers/response-extractor.js';
 import { buildProjectContextMarkdown } from './context.js';
 import { accumulateUsage } from '../streaming/token-utils.js';
-import { DEFAULT_AVAILABILITY } from '../../lib/availability.js';
-import { getCurrentChangedFiles } from '../../lib/git.js';
-import { createChangeDetector } from '../change-detection.js';
+import { DEFAULT_AVAILABILITY } from '../availability.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
 import type { Phase } from '../../core/schemas/enums.js';
-
-function formatRepoMapBlock(codebaseContext: string | undefined): string {
-  return codebaseContext ? `<repo-map>\n${codebaseContext}\n</repo-map>\n\n` : '';
-}
+import { escalateFull, escalateHint } from './escalation.js';
+import { formatRepoMapBlock, prepareInvokeArgs, runSinglePhasePlanning } from './planning-helpers.js';
+import { summarize, summarizeStructured } from './summary.js';
 
 const PHASE_MAP: Partial<Record<string, Phase>> = {
   researching: 'researching',
@@ -38,23 +31,7 @@ const PHASE_MAP: Partial<Record<string, Phase>> = {
   'quick-planning': 'planning',
 };
 
-const SUMMARY_PROMPT = 'Summarize this conversation compactly. Preserve: feature goal, key decisions, progress (phases/tasks done), files modified, active constraints, pending items. Output as structured markdown.';
-const STRUCTURED_SUMMARY_PROMPT = `Summarize this conversation as JSON with exactly these fields:
-{
-  "goal": "what feature is being built",
-  "stepsCompleted": ["phase/task completed", ...],
-  "currentStep": "what is in progress now",
-  "filesModified": ["path/to/file.ts", ...],
-  "constraintsDiscovered": ["constraint or pattern found", ...],
-  "remainingWork": ["what is left to do", ...]
-}
-Return ONLY valid JSON, no markdown fences, no explanation.`;
-const STRUCTURED_MERGE_PROMPT = `You have a previous structured summary and new conversation messages.
-Merge the new information into the existing summary. Extend arrays, update currentStep, add new files/constraints.
-Return ONLY valid JSON with the same schema. Do not regenerate - merge incrementally.
-
-Previous summary:
-`;
+type PlannerArtifactPhase = Phase | 'generating-tasks' | 'quick-planning' | 'instant-planning';
 
 type InternalInvokeFn = (opts: {
   prompt: string;
@@ -97,31 +74,6 @@ export interface PlannerBaseConfig {
   consumesPriorMessages?: boolean;
   injectUserTurn?: (text: string, projectDir: string) => Promise<void>;
 }
-
-type InvokeExtras = {
-  priorMessages?: PriorMessage[];
-  images?: Attachment[];
-};
-
-function prepareInvokeArgs(opts: {
-  prompt: string;
-  priorMessages: PriorMessage[] | undefined;
-  images: Attachment[] | undefined;
-  consumesPriorMessages: boolean | undefined;
-}): { effectivePrompt: string; extras: InvokeExtras } {
-  const { prompt, priorMessages, images, consumesPriorMessages } = opts;
-  const hasPrior = priorMessages !== undefined && priorMessages.length > 0;
-  const effectivePrompt = hasPrior && !consumesPriorMessages
-    ? formatMessagesForCli(priorMessages) + prompt
-    : prompt;
-  const hasImages = images !== undefined && images.length > 0;
-  const extras: InvokeExtras = {
-    ...(consumesPriorMessages && hasPrior ? { priorMessages } : {}),
-    ...(hasImages ? { images } : {}),
-  };
-  return { effectivePrompt, extras };
-}
-
 function normalizeCapabilities(capabilities: PlannerCapabilities): PlannerCapabilities {
   return {
     supportsConversationalPlanning: capabilities.supportsConversationalPlanning,
@@ -132,29 +84,6 @@ function normalizeCapabilities(capabilities: PlannerCapabilities): PlannerCapabi
     supportsSelfSummarisation: capabilities.supportsSelfSummarisation ?? false,
   };
 }
-
-function formatSummaryTranscript(messages: PlannerSummaryMessage[]): string {
-  return messages
-    .map(message => `[${message.role}]\n${message.text}`)
-    .join('\n\n');
-}
-
-function buildSummaryPrompt(messages: PlannerSummaryMessage[]): string {
-  const transcript = formatSummaryTranscript(messages);
-  return `${SUMMARY_PROMPT}\n\nConversation:\n${transcript}`;
-}
-
-function buildStructuredSummaryPrompt(
-  messages: PlannerSummaryMessage[],
-  previousSummary: StructuredSummary | undefined,
-): string {
-  const transcript = formatSummaryTranscript(messages);
-  if (previousSummary) {
-    return `${STRUCTURED_MERGE_PROMPT}${JSON.stringify(previousSummary)}\n\nNew messages:\n${transcript}`;
-  }
-  return `${STRUCTURED_SUMMARY_PROMPT}\n\nConversation:\n${transcript}`;
-}
-
 export function createPlannerBase(config: PlannerBaseConfig): Planner {
   const capabilities = normalizeCapabilities(config.capabilities);
 
@@ -174,9 +103,9 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       let priorInjected = false;
       let imagesInjected = false;
       const pendingImages = callbacks.attachments;
-      async function runPhase(phase: string, prompt: string, filename: string): Promise<string> {
-        callbacks.onPhase?.(phase);
+      async function runPhase(phase: PlannerArtifactPhase, prompt: string, filename: string): Promise<string> {
         const plannerPhase = PHASE_MAP[phase];
+        if (plannerPhase) callbacks.onPhase?.(plannerPhase);
         const buffer = createTranscriptBuffer(
           projectDir, callbacks.sessionId ?? '', plannerPhase, callbacks.persistTranscript ?? true,
         );
@@ -228,7 +157,6 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
 
       return { spec, plan, tasks, usage, phases };
     },
-
     async quickPlan(
       feature: string,
       projectDir: string,
@@ -245,7 +173,6 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
         codebaseContext,
       );
     },
-
     async instantPlan(
       feature: string,
       projectDir: string,
@@ -280,18 +207,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       callbacks: { onOutput: (text: string) => void },
       languageContext?: LanguageContext,
     ): Promise<EscalationResult> {
-      if (config.capabilities.supportsHintEscalation === false) {
-        return { success: false, output: '', code: null, usage: null };
-      }
-      const hintPrompt = buildHintPrompt(task, error, languageContext ?? buildProjectLanguageContext(projectDir, undefined));
-      const useFiles = config.hintSuccessMode === 'files';
-      const detect = useFiles ? createChangeDetector('Hint escalation') : null;
-      const filesBefore = useFiles ? await getCurrentChangedFiles(projectDir) : [];
-      const result = await config.invokeEscalate({ prompt: hintPrompt, projectDir, callbacks });
-      const success = detect
-        ? (await detect(projectDir, filesBefore)).changed
-        : result.text.length > 0;
-      return { success, output: result.text, code: null, usage: result.usage };
+      return escalateHint(config, task, error, projectDir, callbacks, languageContext);
     },
 
     async escalateFull(
@@ -301,28 +217,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       callbacks: { onOutput: (text: string) => void },
       languageContext?: LanguageContext,
     ): Promise<EscalationResult> {
-      const escalationPrompt = buildEscalationPrompt(task, task.currentCode ?? '', error, languageContext ?? buildProjectLanguageContext(projectDir, undefined));
-
-      if (config.escalateFullMode === 'files') {
-        const detect = createChangeDetector('Full escalation');
-        const filesBefore = await getCurrentChangedFiles(projectDir);
-        const result = await config.invokeEscalate({ prompt: escalationPrompt, projectDir, callbacks });
-        const { changed } = await detect(projectDir, filesBefore);
-        return { success: changed, output: result.text, code: null, usage: result.usage };
-      }
-
-      const result = await config.invokeEscalate({ prompt: escalationPrompt, projectDir, callbacks });
-
-      const extracted = extractCode(result.text);
-      if ('error' in extracted) {
-        return { success: false, output: result.text, code: null, usage: result.usage };
-      }
-
-      if (config.escalateFullPostProcess) {
-        return config.escalateFullPostProcess(task, result, extracted, projectDir);
-      }
-
-      return { success: true, output: result.text, code: extracted.code, usage: result.usage };
+      return escalateFull(config, task, error, projectDir, callbacks, languageContext);
     },
 
     async review(
@@ -334,13 +229,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
     },
 
     async summarize(messages: PlannerSummaryMessage[], projectDir?: string): Promise<string> {
-      if (messages.length === 0) return '';
-      const result = await config.invokeEscalate({
-        prompt: buildSummaryPrompt(messages),
-        projectDir: projectDir ?? process.cwd(),
-        callbacks: { onOutput: () => {} },
-      });
-      return result.text.trim();
+      return summarize(config, messages, projectDir);
     },
 
     async summarizeStructured(
@@ -348,14 +237,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       previousSummary?: StructuredSummary,
       projectDir?: string,
     ): Promise<{ text: string; structured: StructuredSummary | null }> {
-      if (messages.length === 0) return { text: '', structured: null };
-      const result = await config.invokeEscalate({
-        prompt: buildStructuredSummaryPrompt(messages, previousSummary),
-        projectDir: projectDir ?? process.cwd(),
-        callbacks: { onOutput: () => {} },
-      });
-      const text = result.text.trim();
-      return { text, structured: tryParseStructuredSummary(text) };
+      return summarizeStructured(config, messages, previousSummary, projectDir);
     },
 
     ...DEFAULT_AVAILABILITY,
@@ -364,50 +246,4 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
     ...(config.injectUserTurn && { injectUserTurn: config.injectUserTurn }),
     capabilities,
   };
-}
-
-async function runSinglePhasePlanning(
-  config: PlannerBaseConfig,
-  promptBuilder: (feature: string, projectContext: string, languageContext: LanguageContext) => string,
-  phaseName: string,
-  feature: string,
-  projectDir: string,
-  callbacks: PlannerCallbacks,
-  codebaseContext: string | undefined,
-): Promise<PlanResult> {
-  const projectContext = await buildProjectContextMarkdown(projectDir);
-  const languageContext = buildProjectLanguageContext(projectDir, callbacks.discoveredValidation?.language);
-  const repoMapBlock = formatRepoMapBlock(codebaseContext);
-  const prompt = repoMapBlock + promptBuilder(feature, projectContext, languageContext);
-
-  callbacks.onPhase?.(phaseName);
-  const buffer = createTranscriptBuffer(
-    projectDir, callbacks.sessionId ?? '', 'planning', callbacks.persistTranscript ?? true,
-  );
-  const { effectivePrompt, extras } = prepareInvokeArgs({
-    prompt,
-    priorMessages: callbacks.priorMessages,
-    images: callbacks.attachments,
-    consumesPriorMessages: config.consumesPriorMessages,
-  });
-  const result = await config.invokePlan({
-    prompt: effectivePrompt,
-    projectDir,
-    callbacks: {
-      onOutput: (text) => { callbacks.onOutput(text); buffer.append(text); },
-      onQuestion: callbacks.onQuestion,
-      onSessionId: callbacks.onSessionId,
-      onSessionExpired: callbacks.onSessionExpired,
-    },
-    ...extras,
-    signal: callbacks.signal,
-  });
-  buffer.flush();
-
-  const tasksContent = config.readPhaseOutput
-    ? config.readPhaseOutput(TASKS_FILE, result.text, projectDir, callbacks.sessionId)
-    : result.text;
-  const tasks = parseTasks(tasksContent);
-  const rawOutput = tasksContent !== result.text ? result.text : undefined;
-  return { spec: '', plan: '', tasks, usage: result.usage, phases: [{ text: tasksContent, filename: TASKS_FILE, rawOutput }] };
 }

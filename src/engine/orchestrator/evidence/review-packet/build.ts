@@ -219,7 +219,7 @@ async function readPacketEvents(projectDir: string, sessionId: string, missing: 
   }
 
   const events: PacketEvent[] = [];
-  for await (const entry of readEvents(projectDir, sessionId)) {
+  for await (const entry of readEvents({ projectDir: projectDir, sessionId: sessionId })) {
     const data = narrowRecord(entry.data) ?? {};
     const reason = recoveryReason(data.reason);
     const action = recoveryAction(data.action);

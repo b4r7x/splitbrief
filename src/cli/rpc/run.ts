@@ -37,6 +37,19 @@ export interface RunRpcDeps {
   runWorkflow?: RunWorkflowFn | undefined;
 }
 
+export interface RunRpcOptions {
+  feature: string;
+  projectDir: string;
+  opts: WorkflowOpts;
+  savedState?: WorkflowState | undefined;
+  sessionId?: string | undefined;
+  readiness?: CollectedReadiness | undefined;
+  planner?: Planner | undefined;
+  implementer?: Implementer | undefined;
+  plannerContext?: string | undefined;
+  deps?: RunRpcDeps | undefined;
+}
+
 function loadAndApplyConfig(projectDir: string, opts: WorkflowOpts, readiness: CollectedReadiness | undefined): Config {
   const loadedResult = readiness?.config
     ? { config: readiness.config, warnings: readiness.warnings }
@@ -69,18 +82,19 @@ function pendingGateType(
   return null;
 }
 
-export async function runRpc(
-  feature: string,
-  projectDir: string,
-  opts: WorkflowOpts,
-  savedState?: WorkflowState | undefined,
-  sessionId?: string | undefined,
-  readiness?: CollectedReadiness | undefined,
-  planner?: Planner | undefined,
-  implementer?: Implementer | undefined,
-  plannerContext?: string | undefined,
-  deps: RunRpcDeps = {},
-): Promise<void> {
+export async function runRpc(options: RunRpcOptions): Promise<void> {
+  const {
+    feature,
+    projectDir,
+    opts,
+    savedState,
+    sessionId,
+    readiness,
+    planner,
+    implementer,
+    plannerContext,
+    deps = {},
+  } = options;
   let config = loadAndApplyConfig(projectDir, opts, readiness);
   const writer = createResponseWriter(deps.output ?? process.stdout);
   const bus = createEventBus();

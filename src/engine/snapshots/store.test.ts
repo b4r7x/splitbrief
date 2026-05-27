@@ -265,6 +265,7 @@ function makeMockBus(): { bus: EventBus; events: EngineEvent[] } {
   const bus: EventBus = {
     publish: (e) => events.push(e),
     subscribe: () => () => {},
+    unsubscribeAll: () => {},
   };
   return { bus, events };
 }

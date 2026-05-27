@@ -15,7 +15,7 @@ import {
   REVIEW_PACKET_JSON_FILE,
   REVIEW_PACKET_MARKDOWN_FILE,
 } from '../../core/paths.js';
-import { hashTaskBrief } from '../../core/brief-hash.js';
+import { hashTaskBrief } from '../brief-hash.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { runFinalReviewPhase, shutdownWorkflow } from './final-review.js';
 import type { Task } from '../../core/schemas/task.js';
@@ -49,7 +49,8 @@ function allTasksDoneState(tasks: Task[]): WorkflowState {
   s = transition(s, { type: 'SPEC_DONE' });
   s = transition(s, { type: 'APPROVE_SPEC' });
   s = transition(s, { type: 'PLAN_DONE', tasks });
-  s = transition(s, { type: 'APPROVE_PLAN' });
+  s = transition(s, { type: 'BRIEFS_READY', tasks });
+  s = transition(s, { type: 'APPROVE_BRIEFS' });
   s = { ...s, implementerTool: 'ollama', implementerModel: 'qwen2.5' };
   return s;
 }
@@ -58,7 +59,7 @@ const TEST_METADATA = {
   plannerTool: 'claude-code',
   implementerTool: 'ollama',
   mode: 'standard',
-};
+} as const;
 
 const SUMMARY_BASE = {
   feature: 'test feature',

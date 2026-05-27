@@ -63,7 +63,7 @@ describe('loadDetectionIntoStores', () => {
       discoverAllCliTools: vi.fn().mockResolvedValue({}),
     };
 
-    await loadDetectionIntoStores(service, deps, undefined);
+    await loadDetectionIntoStores(service, deps, detectionStore, undefined);
 
     const state = detectionStore.get();
     expect(state.planners).toEqual(planners);
@@ -87,7 +87,7 @@ describe('loadDetectionIntoStores', () => {
     it('uses cache on second call when projectDir is supplied', async () => {
       const deps = makeCountingDeps();
 
-      await loadDetectionIntoStores(service, deps, tempDir);
+      await loadDetectionIntoStores(service, deps, detectionStore, tempDir);
       // First call ran real detection — planner version stamped gen-1.
       expect(detectionStore.get().planners[0]?.version).toBe('gen-1');
 
@@ -95,7 +95,7 @@ describe('loadDetectionIntoStores', () => {
       // Reset the store so we can observe what the second call writes.
       detectionStore.reset();
 
-      await loadDetectionIntoStores(service, deps, tempDir);
+      await loadDetectionIntoStores(service, deps, detectionStore, tempDir);
       // Second call hit the cache — the cached payload (gen-1) is restored,
       // proving detectAll was NOT re-invoked (otherwise we would see gen-2).
       expect(detectionStore.get().planners[0]?.version).toBe('gen-1');
@@ -121,13 +121,13 @@ describe('loadDetectionIntoStores', () => {
         discoverAllCliTools: vi.fn().mockResolvedValue({ opencode: [{ id: 'anthropic/claude-sonnet-4.6' }] }),
       };
 
-      await loadDetectionIntoStores(service, deps, tempDir);
+      await loadDetectionIntoStores(service, deps, detectionStore, tempDir);
       await service.getPendingSave();
 
       detectionStore.reset();
       modelCacheStore.reset();
 
-      await loadDetectionIntoStores(service, deps, tempDir);
+      await loadDetectionIntoStores(service, deps, detectionStore, tempDir);
 
       // Cached planner gen-1 is restored (not re-detected into gen-2).
       expect(detectionStore.get().planners[0]?.version).toBe('gen-1');
@@ -138,10 +138,10 @@ describe('loadDetectionIntoStores', () => {
     it('always runs detection when projectDir is undefined (no cache scope)', async () => {
       const deps = makeCountingDeps();
 
-      await loadDetectionIntoStores(service, deps, undefined);
+      await loadDetectionIntoStores(service, deps, detectionStore, undefined);
       expect(detectionStore.get().planners[0]?.version).toBe('gen-1');
 
-      await loadDetectionIntoStores(service, deps, undefined);
+      await loadDetectionIntoStores(service, deps, detectionStore, undefined);
       // No projectDir → no cache path → every call re-detects.
       expect(detectionStore.get().planners[0]?.version).toBe('gen-2');
     });
@@ -149,13 +149,13 @@ describe('loadDetectionIntoStores', () => {
     it('invalidate() forces re-detection on next load', async () => {
       const deps = makeCountingDeps();
 
-      await loadDetectionIntoStores(service, deps, tempDir);
+      await loadDetectionIntoStores(service, deps, detectionStore, tempDir);
       expect(detectionStore.get().planners[0]?.version).toBe('gen-1');
 
       await service.getPendingSave();
       await service.invalidateDetection(tempDir);
 
-      await loadDetectionIntoStores(service, deps, tempDir);
+      await loadDetectionIntoStores(service, deps, detectionStore, tempDir);
       // After invalidation the second load re-ran detection → gen-2 lands.
       expect(detectionStore.get().planners[0]?.version).toBe('gen-2');
     });

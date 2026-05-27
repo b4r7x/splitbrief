@@ -7,6 +7,7 @@ import type {
   SessionLogMessageEntry,
   SessionLogSummaryEntry,
 } from '../schemas/session-log.js';
+import type { SessionRef } from '../types/session-ref.js';
 import { SESSION_LOG_FILE, sessionDir } from '../paths.js';
 import { SessionLogEntrySchema } from '../schemas/session-log.js';
 
@@ -31,18 +32,18 @@ export async function* readSessionLogFromDir(dir: string): AsyncIterable<Session
   yield* readSessionLogFile(join(dir, SESSION_LOG_FILE));
 }
 
-export async function* readSessionLog(projectDir: string, sessionId: string): AsyncIterable<SessionLogEntry> {
-  yield* readSessionLogFromDir(sessionDir(projectDir, sessionId));
+export async function* readSessionLog(ref: SessionRef): AsyncIterable<SessionLogEntry> {
+  yield* readSessionLogFromDir(sessionDir(ref.projectDir, ref.sessionId));
 }
 
-export async function* readMessages(projectDir: string, sessionId: string): AsyncIterable<SessionLogMessageEntry> {
-  for await (const entry of readSessionLog(projectDir, sessionId)) {
+export async function* readMessages(ref: SessionRef): AsyncIterable<SessionLogMessageEntry> {
+  for await (const entry of readSessionLog(ref)) {
     if (entry.kind === 'message') yield entry;
   }
 }
 
-export async function* readEvents(projectDir: string, sessionId: string): AsyncIterable<SessionLogEventEntry> {
-  for await (const entry of readSessionLog(projectDir, sessionId)) {
+export async function* readEvents(ref: SessionRef): AsyncIterable<SessionLogEventEntry> {
+  for await (const entry of readSessionLog(ref)) {
     if (entry.kind === 'event') yield entry;
   }
 }

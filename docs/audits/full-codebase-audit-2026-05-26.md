@@ -976,7 +976,7 @@ All agents received combined Wave 1 + Wave 2 findings. Severity is dropping: Wav
 
 These cascade into dead consumer branches across ~10 files (renderable-conversation.ts, event-types.ts, event-card.tsx, event-role.ts, simple-cards.tsx, task-cards.tsx, otel.ts, tree-recorder.ts, explain/sections.ts, stores/workflow/tasks.ts).
 
-**DEAD-2 (HIGH — possible bug):** `plan_done` maps to `post_planning` hook lifecycle event in `engine/hooks/sink.ts:68`. Since `plan_done` is never emitted, user-configured `post_planning` hooks silently never execute.
+**DEAD-2 (HIGH — possible bug):** `plan_done` maps to an obsolete planning-complete hook lifecycle event in `engine/hooks/sink.ts:68`. Since `plan_done` is never emitted, user-configured planning-complete hooks silently never execute.
 
 ## W3-Type Safety: 10 Findings (systemic type widening at layer boundaries)
 

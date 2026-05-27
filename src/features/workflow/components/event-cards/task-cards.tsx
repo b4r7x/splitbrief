@@ -12,7 +12,6 @@ type TaskCardEvent = Extract<EngineEvent, {
     | 'task_completed'
     | 'task_skipped'
     | 'task_retry'
-    | 'task_failed'
     | 'task_escalating'
     | 'task_full_fail'
     | 'task_tokens'
@@ -74,7 +73,6 @@ export function renderTaskCard(event: TaskCardEvent, t: Theme): ReactNode {
           valueColor={t.textDim}
         />
       );
-    case 'task_failed':
     case 'task_escalating':
     case 'task_full_fail':
     case 'task_tokens':

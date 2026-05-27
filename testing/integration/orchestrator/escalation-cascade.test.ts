@@ -32,7 +32,8 @@ describe('escalation cascade: local retries exhaust, then hint (tier 1), then fu
     state = transition(state, { type: 'SPEC_DONE' });
     state = transition(state, { type: 'APPROVE_SPEC' });
     state = transition(state, { type: 'PLAN_DONE', tasks: [task] });
-    state = transition(state, { type: 'APPROVE_PLAN' });
+    state = transition(state, { type: 'BRIEFS_READY', tasks: [task] });
+    state = transition(state, { type: 'APPROVE_BRIEFS' });
     state = transition(state, { type: 'TASK_SENT' });
 
     const { callbacks } = makeCallbacks();

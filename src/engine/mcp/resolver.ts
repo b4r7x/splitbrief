@@ -5,12 +5,12 @@ import { warnError } from '../../lib/warn.js';
 import { isRecord } from '../../utils/type-guards.js';
 import type { McpResourceDescriptor, McpResourceContent } from './types.js';
 import { sessionDir, SPEC_FILE, PLAN_FILE, TASKS_FILE, STATE_FILE, EVIDENCE_FILE, DRIFT_REPORT_FILE } from '../../core/paths.js';
-import { SUMMARY_FILE } from '../orchestrator/explain/artifacts.js';
+import { SUMMARY_FILE } from '../../core/paths.js';
 import { listAllSessions } from '../../core/sessions/io.js';
 import { SessionSchema } from '../../core/schemas/session.js';
 import { WorkflowStateSchema } from '../../core/schemas/workflow.js';
 import { parseTasks, splitTaskBlocks } from '../spec/parser.js';
-import { hashTaskBrief } from '../../core/brief-hash.js';
+import { hashTaskBrief } from '../brief-hash.js';
 
 export type McpResolverConfig = {
   projectDir: string;

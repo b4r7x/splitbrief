@@ -36,6 +36,8 @@ import { applyRebuiltContext, autoCompactResumeContext } from '../resume-context
 import { createValidator } from '../validation.js';
 import { rejectUntrustedRunners } from '../../runners/trust.js';
 
+const initSinkUnsubscribers = new WeakMap<EventBus, Array<() => void>>();
+
 export type RunWorkflowOptions = {
   feature: string;
   projectDir: string;
@@ -105,16 +107,22 @@ export async function initializeWorkflow(
   rejectUntrustedRunners(config, projectDir, opts.allowHooks ?? false);
 
   const bus = opts.eventBus ?? createEventBus();
-  if (opts.tuiSink) bus.subscribe(opts.tuiSink);
-  bus.subscribe(createJsonlSink(projectDir, sessionId, config.workflow.persistTranscript));
-  bus.subscribe(createTreeRecorderSink({ projectDir, sessionId }));
-  if (opts.headless) bus.subscribe(createStdoutJsonSink());
-  if (opts._eventSink) bus.subscribe(opts._eventSink);
-  if (config.hooks) bus.subscribe(createHookSink(config.hooks, { projectDir, sessionId }, bus));
+  const prev = initSinkUnsubscribers.get(bus);
+  if (prev) {
+    for (const unsub of prev) unsub();
+  }
+  const unsubs: Array<() => void> = [];
+  if (opts.tuiSink) unsubs.push(bus.subscribe(opts.tuiSink));
+  unsubs.push(bus.subscribe(createJsonlSink(projectDir, sessionId, config.workflow.persistTranscript)));
+  unsubs.push(bus.subscribe(createTreeRecorderSink({ projectDir, sessionId })));
+  if (opts.headless) unsubs.push(bus.subscribe(createStdoutJsonSink()));
+  if (opts._eventSink) unsubs.push(bus.subscribe(opts._eventSink));
+  if (config.hooks) unsubs.push(bus.subscribe(createHookSink(config.hooks, { projectDir, sessionId }, bus)));
   if (config.otel?.enabled) {
     const { trace } = await import('@opentelemetry/api');
-    bus.subscribe(createOtelSink({ provider: trace.getTracerProvider(), serviceName: config.otel.serviceName }));
+    unsubs.push(bus.subscribe(createOtelSink({ provider: trace.getTracerProvider(), serviceName: config.otel.serviceName })));
   }
+  initSinkUnsubscribers.set(bus, unsubs);
   if (config.approval?.enabled === false) {
     bus.publish({ type: 'approval_mode_changed', ts: Date.now(), mode: 'yolo' });
   }
@@ -134,7 +142,7 @@ export async function initializeWorkflow(
   if (!hasPendingRecovery) {
     const available = await planner.isAvailable();
     if (!available) {
-      publishError(bus, 'idle', `Planner '${getRunnerDisplayName(config.planner)}' is not available. Make sure it's installed.`);
+      publishError({ bus: bus, phase: 'idle' }, `Planner '${getRunnerDisplayName(config.planner)}' is not available. Make sure it's installed.`);
       return { ok: false, summary: buildSummary({ ...summaryBase, state: savedState ?? createInitialState(feature) }) };
     }
   }
@@ -162,20 +170,20 @@ export async function initializeWorkflow(
     publishPlannerStatus(bus, state, 'running');
     bus.publish({ type: 'workflow_started', ts: Date.now(), phase: state.phase, feature });
     appendMessage(projectDir, sessionId, { role: 'user', text: feature }, config.workflow.persistTranscript);
-    publishUserMessage(bus, state.phase, feature);
+    publishUserMessage({ bus: bus, phase: state.phase }, feature);
 
     if (config.workflow.git?.createBranch) {
       const desired = `diptych/${slugify(feature, 40)}`;
       try {
         const actual = await createBranch(projectDir, desired);
-        publishGitBranchCreated(bus, state.phase, actual);
+        publishGitBranchCreated({ bus: bus, phase: state.phase }, actual);
       } catch (err) {
-        publishWarningFromError(bus, state.phase, 'failed to create branch', err);
+        publishWarningFromError({ bus: bus, phase: state.phase }, 'failed to create branch', err);
       }
     }
   }
 
-  publishWorkflowConfig(bus, state.phase, {
+  publishWorkflowConfig({ bus: bus, phase: state.phase }, {
     mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
     plannerTool: summaryBase.plannerTool,
     plannerModel: summaryBase.plannerModel,

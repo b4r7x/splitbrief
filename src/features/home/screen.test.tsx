@@ -86,7 +86,7 @@ describe('HomeScreen', () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 18, isSmall: true });
 
     for (let i = 0; i < 4; i++) {
-      saveSummary(projectDir, `session-${i}`, makeSession({
+      saveSummary({ projectDir: projectDir, sessionId: `session-${i}` }, makeSession({
         id: `session-${i}`,
         feature: `feature ${i}`,
         startedAt: 1_700_000_000 + i,
@@ -106,7 +106,7 @@ describe('HomeScreen', () => {
 
   it('does not load recent sessions when the compact layout hides them', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 17, isSmall: true });
-    saveSummary(projectDir, 'hidden-session', makeSession({
+    saveSummary({ projectDir: projectDir, sessionId: 'hidden-session' }, makeSession({
       id: 'hidden-session',
       feature: 'hidden feature',
     }));

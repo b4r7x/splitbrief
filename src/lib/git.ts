@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { simpleGit, type SimpleGit } from 'simple-git';
 import { error, matches } from '../utils/error.js';
 
@@ -78,12 +79,6 @@ export async function getCurrentDiff(dir: string): Promise<string> {
   return [staged, unstaged].filter(Boolean).join('\n');
 }
 
-export async function hasExternalChanges(dir: string): Promise<boolean> {
-  const git = getGit(dir);
-  const status = await git.status();
-  return getStatusPaths(status).length > 0;
-}
-
 export async function getCurrentCommitSha(dir: string): Promise<string> {
   try {
     const out = await getGit(dir).raw(['rev-parse', 'HEAD']);
@@ -111,11 +106,23 @@ export async function getCommittedFilesSince(dir: string, baseRef: string): Prom
 }
 
 export async function checkIgnoredPaths(dir: string, paths: string[]): Promise<string[]> {
-  try {
-    return await getGit(dir).checkIgnore(paths);
-  } catch {
-    return [];
-  }
+  if (paths.length === 0) return [];
+  return new Promise<string[]>((resolve) => {
+    const child = spawn('git', ['check-ignore', '--stdin', '-z'], { cwd: dir });
+    const chunks: Buffer[] = [];
+    child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
+    child.on('error', () => resolve([]));
+    child.on('close', (code: number | null) => {
+      if (code !== 0 && code !== 1) {
+        resolve([]);
+        return;
+      }
+      const output = Buffer.concat(chunks).toString('utf8');
+      const ignored = output.split('\0').filter(Boolean);
+      resolve(ignored);
+    });
+    child.stdin.end(paths.join('\0'));
+  });
 }
 
 export async function createTaggedStash(dir: string, message: string, tagName: string): Promise<string> {

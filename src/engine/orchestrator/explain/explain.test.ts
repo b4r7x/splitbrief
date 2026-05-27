@@ -229,7 +229,7 @@ async function writeRichArtifacts(): Promise<string> {
     state,
     finalReviewStatus: 'written',
   });
-  saveSummary(projectDir, SESSION_ID, makeSession({ id: SESSION_ID, status: 'complete', summary }));
+  saveSummary({ projectDir: projectDir, sessionId: SESSION_ID }, makeSession({ id: SESSION_ID, status: 'complete', summary }));
   return projectDir;
 }
 

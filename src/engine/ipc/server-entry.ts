@@ -57,6 +57,10 @@ function getArgv(): IpcServerArgs {
   if (!sessionId || !projectDir || !feature || !mode || !configPath) {
     exitInvalidArgs('missing required argv');
   }
+  const workflowMode = normalizeLegacyMode(mode);
+  if (workflowMode === null) {
+    exitInvalidArgs('invalid workflow mode');
+  }
 
   const argsFile = join(sessionDir(projectDir, sessionId), SERVER_ARGS_FILE);
   if (existsSync(argsFile)) {
@@ -67,7 +71,7 @@ function getArgv(): IpcServerArgs {
     }
   }
 
-  return { sessionId, projectDir, feature, mode, configPath, overrides: {} };
+  return { sessionId, projectDir, feature, mode: workflowMode, configPath, overrides: {} };
 }
 
 const argv = getArgv();
@@ -132,7 +136,7 @@ async function main() {
   });
 
   process.on('uncaughtException', (err) => {
-    void markCrashed(dir, 'uncaught', err.message).then(() => process.exit(1));
+    void markCrashed(dir, 'uncaught', toErrorMessage(err)).then(() => process.exit(1));
   });
 
   const summary = await runWorkflow({

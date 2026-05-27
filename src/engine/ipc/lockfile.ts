@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { LOCKFILE } from '../../core/paths.js';
 import { SECURE_FILE_MODE } from '../../lib/fs.js';
 import { HEARTBEAT_STALENESS_MS } from './constants.js';
+import { WorkflowModeSchema } from '../../core/schemas/enums.js';
 
 const LockfileDataSchema = z.object({
   version: z.literal(1),
@@ -14,7 +15,7 @@ const LockfileDataSchema = z.object({
   startTimeMs: z.number(),
   lastAliveMs: z.number(),
   sessionId: z.string(),
-  mode: z.string(),
+  mode: WorkflowModeSchema,
   feature: z.string(),
   exitedAt: z.number().optional(),
   exitCode: z.number().optional(),

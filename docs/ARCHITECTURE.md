@@ -818,11 +818,11 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 **Planner stream:**
 `planner_status`, `planner_text`, `planner_heartbeat`
 
-**Planning milestones (23):**
-`research_done`, `spec_done`, `spec_approved`, `spec_rejected`, `spec_regenerated`, `plan_done`, `plan_approved`, `plan_rejected`, `plan_regenerated`, `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `brief_quality_passed`, `brief_quality_failed`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_downgrade_advised`, `mode_advice`, `instant_plan_received`
+**Planning milestones (19):**
+`spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated`, `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `brief_quality_passed`, `brief_quality_failed`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_downgrade_advised`, `mode_advice`, `instant_plan_received`
 
 **Task lifecycle:**
-`task_started`, `task_completed`, `task_failed`, `task_skipped`, `task_retry`, `task_escalating`, `task_full_fail`, `task_reset`, `task_tokens`, `task_review_needed`, `hint_failed`
+`task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_full_fail`, `task_reset`, `task_tokens`, `task_review_needed`, `hint_failed`
 
 **Implementer (3):**
 `implementer_generate_running`, `implementer_generate_done`, `implementer_generate_failed`
@@ -833,8 +833,8 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 **Clarifications / queue / messages (7):**
 `clarifications_collected`, `clarification_answered`, `message_queued`, `message_injected_native`, `queue_drained`, `queue_cleared`, `user_message`
 
-**Attachments (2):**
-`planner_attachment_added`, `planner_attachments_dropped`
+**Attachments (1):**
+`planner_attachments_dropped`
 
 **Cost & budget (5):**
 `cost_update`, `cost_prediction`, `budget_warning`, `budget_paused`, `budget_exceeded`
@@ -842,8 +842,8 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 **Tiered approval:**
 `approval_prompted`, `approval_granted`, `approval_rejected`, `approval_sticky_recorded`, `approval_mode_changed`
 
-**IPC / session replay (9):**
-`ipc_server_started`, `ipc_client_attached`, `ipc_client_detached`, `ipc_reconnect_attempt`, `ipc_reconnect_failed`, `server_crash_detected`, `server_post_mortem_shown`, `replay_started`, `replay_complete`
+**IPC / session replay (7):**
+`ipc_server_started`, `ipc_client_attached`, `ipc_client_detached`, `ipc_reconnect_attempt`, `ipc_reconnect_failed`, `replay_started`, `replay_complete`
 
 **Generic (2):**
 `warning`, `error`

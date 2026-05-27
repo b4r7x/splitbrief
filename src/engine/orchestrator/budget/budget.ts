@@ -12,7 +12,7 @@ export type BudgetCheckResult =
   | { action: 'paused' }
   | { action: 'exceeded'; shouldStop: boolean };
 
-export type BudgetRecoveryBoundary = {
+type BudgetRecoveryBoundary = {
   reason: 'budget-paused' | 'budget-exceeded';
   currentCost: number;
   maxBudget: number;
@@ -112,8 +112,8 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{
     (result.action === 'warning' || result.action === 'paused' || result.action === 'exceeded') &&
     currentCost >= maxBudget * BUDGET_WARNING_THRESHOLD
   ) {
-    publishBudgetWarning(bus, 'implementing', currentCost, maxBudget);
-    publishWarning(bus, 'implementing', `Budget 80% reached: ${fmtBudgetRange(currentCost, maxBudget)} limit`);
+    publishBudgetWarning({ bus: bus, phase: 'implementing' }, currentCost, maxBudget);
+    publishWarning({ bus: bus, phase: 'implementing' }, `Budget 80% reached: ${fmtBudgetRange(currentCost, maxBudget)} limit`);
     warningEmitted = true;
     if (result.action === 'warning') {
       return { stop: false, warningEmitted: true, pauseEmitted };
@@ -121,8 +121,8 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{
   }
 
   if (result.action === 'paused' && !pauseEmitted) {
-    publishBudgetPaused(bus, 'implementing', currentCost, maxBudget, effectivePauseThreshold);
-    publishWarning(bus, 'implementing', `Budget ${Math.round(effectivePauseThreshold * 100)}% reached: ${fmtBudgetRange(currentCost, maxBudget)} limit — recovery decision required`);
+    publishBudgetPaused({ bus: bus, phase: 'implementing' }, currentCost, maxBudget, effectivePauseThreshold);
+    publishWarning({ bus: bus, phase: 'implementing' }, `Budget ${Math.round(effectivePauseThreshold * 100)}% reached: ${fmtBudgetRange(currentCost, maxBudget)} limit — recovery decision required`);
     return {
       stop: true,
       warningEmitted: true,
@@ -137,8 +137,8 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{
   }
 
   if (result.action === 'exceeded') {
-    publishBudgetExceeded(bus, 'implementing', currentCost, maxBudget);
-    publishWarning(bus, 'implementing', `Budget exceeded: ${fmtBudgetRange(currentCost, maxBudget)} limit — recovery decision required`);
+    publishBudgetExceeded({ bus: bus, phase: 'implementing' }, currentCost, maxBudget);
+    publishWarning({ bus: bus, phase: 'implementing' }, `Budget exceeded: ${fmtBudgetRange(currentCost, maxBudget)} limit — recovery decision required`);
     return {
       stop: true,
       warningEmitted: true,

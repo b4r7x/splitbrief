@@ -3,9 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import { runLocalRetries } from './local-retries.js';
-import { runTier0Intermediate } from './tier0-intermediate.js';
-import { runTier1Hint } from './tier1-hint.js';
-import { runTier2Full } from './tier2-full.js';
+import { FULL_TIER, HINT_TIER, INTERMEDIATE_TIER, runEscalationTier } from './run-escalation-tier.js';
 import type { EscalationContext, RetryResult } from './types.js';
 import { runPreHooks } from '../../hooks/run-pre-hook.js';
 import { publishWarning, publishWarningFromError } from '../events.js';
@@ -30,7 +28,7 @@ export async function handleRetryAndEscalation(opts: HandleRetryOptions): Promis
     try {
       taskStartSnapshot = await getChangedFilesSnapshot(wctx.projectDir);
     } catch (err) {
-      publishWarningFromError(wctx.bus, currentState.phase, 'retry approval snapshot failed', err);
+      publishWarningFromError({ bus: wctx.bus, phase: currentState.phase }, 'retry approval snapshot failed', err);
       return { state: currentState, result: { completed: false, method: 'failed', attempts: 0 } };
     }
   }
@@ -54,21 +52,21 @@ export async function handleRetryAndEscalation(opts: HandleRetryOptions): Promis
     };
     const pre = await runPreHooks(ctx.config.hooks, 'pre_escalation', preEscalationPayload, { projectDir: ctx.projectDir, sessionId: ctx.sessionId });
     if (!pre.allow) {
-      publishWarning(ctx.bus, retries.state.phase, `pre_escalation blocked: ${pre.reason ?? 'hook denied'}`);
+      publishWarning({ bus: ctx.bus, phase: retries.state.phase }, `pre_escalation blocked: ${pre.reason ?? 'hook denied'}`);
       return { state: retries.state, result: { completed: false, method: 'failed', attempts: retries.attempts } };
     }
   }
 
-  const tier0 = await runTier0Intermediate(ctx, retries.task, retries.state, retries.lastError, retries.attempts);
+  const tier0 = await runEscalationTier(INTERMEDIATE_TIER, ctx, retries.task, retries.state, retries.lastError, retries.attempts);
   if (tier0.result) return { state: tier0.state, result: tier0.result };
 
   if (ctx.signal?.aborted) return { state: tier0.state, result: { completed: false, method: 'failed', attempts: tier0.attempts } };
 
-  const tier1 = await runTier1Hint(ctx, tier0.task, tier0.state, tier0.lastError, tier0.attempts);
+  const tier1 = await runEscalationTier(HINT_TIER, ctx, tier0.task, tier0.state, tier0.lastError, tier0.attempts);
   if (tier1.result) return { state: tier1.state, result: tier1.result };
 
   if (ctx.signal?.aborted) return { state: tier1.state, result: { completed: false, method: 'failed', attempts: tier1.attempts } };
 
-  const tier2 = await runTier2Full(ctx, tier1.task, tier1.state, tier1.lastError, tier1.attempts);
-  return { state: tier2.state, result: tier2.result };
+  const tier2 = await runEscalationTier(FULL_TIER, ctx, tier1.task, tier1.state, tier1.lastError, tier1.attempts);
+  return { state: tier2.state, result: tier2.result ?? { completed: false, method: 'failed', attempts: tier2.attempts } };
 }

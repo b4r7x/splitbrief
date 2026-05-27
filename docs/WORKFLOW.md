@@ -40,7 +40,7 @@ stateDiagram-v2
 
     planning --> reviewing_plan : PLAN_DONE
 
-    reviewing_plan --> implementing : APPROVE_PLAN
+    reviewing_plan --> reviewing_briefs : BRIEFS_READY
     reviewing_plan --> idle : REJECT_PLAN
 
     implementing --> reviewing_briefs : BRIEFS_READY
@@ -57,7 +57,7 @@ stateDiagram-v2
     validating_task --> implementing : VALIDATION_FAIL (attempt < max)
     validating_task --> escalating : VALIDATION_FAIL (attempt >= max)
 
-    escalating --> implementing : HINT_SUCCESS / FULL_SUCCESS / FULL_FAIL
+    escalating --> implementing : HINT_SUCCESS / FULL_SUCCESS
 
     final_review --> complete : REVIEW_DONE
     complete --> [*]
@@ -83,7 +83,7 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 | `constitution-check` | `CONSTITUTION_CHECK_PASS` | `planning` | — |
 | `constitution-check` | `CONSTITUTION_CHECK_FAIL` | `idle` | Clears `awaitingContinue`; carries `reason` |
 | `planning` | `PLAN_DONE` | `reviewing-plan` | Attaches `tasks` to state |
-| `reviewing-plan` | `APPROVE_PLAN` | `implementing` | Resets `currentTaskIndex` and `attempt` to 0 |
+| `reviewing-plan` | `BRIEFS_READY` | `reviewing-briefs` | Sets `tasks`, resets `currentTaskIndex` and `attempt` to 0 |
 | `reviewing-plan` | `REJECT_PLAN` | `idle` | Workflow ends |
 | `implementing` | `BRIEFS_READY` | `reviewing-briefs` | Sets `tasks`, resets `currentTaskIndex` and `attempt` to 0 |
 | `reviewing-briefs` | `APPROVE_BRIEFS` | `implementing` | Resets `currentTaskIndex` and `attempt` to 0 |
@@ -95,11 +95,10 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 | `validating-task` | `VALIDATION_PASS` | `implementing` | Marks task `done`, advances `currentTaskIndex`, resets `attempt` |
 | `validating-task` | `VALIDATION_FAIL` (attempt < maxRetries) | `implementing` | Increments `attempt` |
 | `validating-task` | `VALIDATION_FAIL` (attempt >= maxRetries) | `escalating` | — |
-| `implementing` / `validating-task` | `ESCALATE` | `escalating` | — |
+| `validating-task` | `ESCALATE` | `escalating` | — |
 | `escalating` | `HINT_SUCCESS` | `implementing` | Marks task `done`, advances index |
 | `escalating` | `HINT_FAIL` | `escalating` | Falls through to full escalation |
 | `escalating` | `FULL_SUCCESS` | `implementing` | Marks task `escalated`, advances index |
-| `escalating` | `FULL_FAIL` | `implementing` | Marks task `failed`, advances index |
 | `implementing` / `validating-task` / `escalating` | `SKIP_TASK` | *(same)* | Marks task `skipped`, advances `currentTaskIndex` |
 | `implementing` / `validating-task` / `escalating` | `RESET_TASK` | `implementing` | Sets task to `pending`, rewinds `currentTaskIndex` to that task's index, resets `attempt`. Tasks after it keep their status. |
 | `implementing` | `ALL_DONE` | `final-review` | — |
@@ -352,7 +351,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
 10. phase: planning → PLAN_DONE → reviewing-plan
     In standard mode, plan gate is auto-advanced (approve level is 'spec').
 
-11. phase: reviewing-plan → APPROVE_PLAN → implementing
+11. phase: reviewing-plan → BRIEFS_READY → reviewing-briefs
     Brief quality gate runs. Writes brief-quality.json.
 
 12. phase: implementing → BRIEFS_READY → reviewing-briefs
@@ -370,7 +369,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
         pass → VALIDATION_PASS → implementing (next task)
         fail → VALIDATION_FAIL → implementing (attempt++, retry)
         fail (attempt >= maxRetries) → VALIDATION_FAIL → escalating
-          HINT_SUCCESS / HINT_FAIL / FULL_SUCCESS / FULL_FAIL → implementing
+          HINT_SUCCESS / HINT_FAIL / FULL_SUCCESS → implementing
 
 15. implementing (last task) → ALL_DONE → final-review
     Drift report computed. Planner reviews diff against Task Brief and spec.

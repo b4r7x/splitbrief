@@ -1,4 +1,5 @@
 import { createStore, storeBase } from '../create-store.js';
+import { subscribeFeedbackErrors } from '../shared/feedback-events.js';
 
 const FEEDBACK_AUTO_CLEAR_MS = 3000;
 
@@ -25,6 +26,8 @@ const setMessage = (msg: string | null) => {
   }
   store.set({ message: msg, isError: false });
 };
+
+subscribeFeedbackErrors(setError);
 
 export const feedbackStore = {
   ...storeBase(store),

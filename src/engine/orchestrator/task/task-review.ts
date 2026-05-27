@@ -40,7 +40,7 @@ export async function reviewTaskIfNeeded(opts: {
   })) {
     return { state: opts.state, decision: 'continue' };
   }
-  publishTaskReviewNeeded(opts.wctx.bus, opts.state.phase, request);
+  publishTaskReviewNeeded({ bus: opts.wctx.bus, phase: opts.state.phase }, request);
   const response = opts.wctx.callbacks.onTaskReviewNeeded
     ? await opts.wctx.callbacks.onTaskReviewNeeded(request)
     : { action: 'abort' as const };

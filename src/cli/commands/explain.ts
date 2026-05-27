@@ -1,8 +1,7 @@
 import type { Command } from 'commander';
 import { buildRunExplain } from '../../engine/orchestrator/explain/explain.js';
 import { formatRunExplain } from '../../engine/orchestrator/explain/format.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
-import { cliError, isCliError } from '../errors.js';
+import { rethrowAsCli } from '../errors.js';
 import { resolveProjectDir } from '../setup.js';
 import { resolveSessionOrThrow } from '../session-resolve.js';
 
@@ -31,8 +30,7 @@ export function registerExplainCommand(program: Command): void {
         }
         console.log(formatRunExplain(explain));
       } catch (err) {
-        if (isCliError(err)) throw err;
-        throw cliError(toErrorMessage(err), 1);
+        rethrowAsCli(err);
       }
     });
 }

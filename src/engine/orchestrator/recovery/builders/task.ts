@@ -10,19 +10,13 @@ import {
   chooseRecommended,
   compactFacts,
   createRecoveryIssue,
-  hasRetryBudget,
   hasRouteBigger,
   implementerDetails,
   orderedActions,
   routeBiggerDetails,
-  summarizeUnknownError,
   summarizeValidation,
   taskFiles,
 } from './shared.js';
-
-export interface ImplementationErrorRecoveryOptions extends RecoveryBuilderBase, TaskRecoveryContext {
-  error: unknown;
-}
 
 export interface ValidationRecoveryOptions extends RecoveryBuilderBase, TaskRecoveryContext {
   validationResults?: ValidationResult[] | undefined;
@@ -51,100 +45,6 @@ export interface DependencyBlockedRecoveryOptions extends RecoveryBuilderBase {
   blockedByTasks?: Task[] | undefined;
   blockedByTaskIds?: TaskId[] | undefined;
   phase?: Phase | undefined;
-}
-
-export function buildImplementationErrorRecoveryIssue(opts: ImplementationErrorRecoveryOptions): RecoveryIssue {
-  const phase = opts.phase ?? 'implementing';
-  const errorSummary = summarizeUnknownError(opts.error);
-  const canRetry = hasRetryBudget(opts.attempts, opts.maxAttempts);
-  const actions = orderedActions([
-    canRetry ? 'retry-same-worker' : undefined,
-    hasRouteBigger(opts) ? 'route-bigger-worker' : undefined,
-    'skip-current-task',
-    'pause-run',
-    'abort-workflow',
-  ]);
-  const recommendedAction = chooseRecommended(actions, [
-    'retry-same-worker',
-    'route-bigger-worker',
-    'pause-run',
-  ]);
-
-  return createRecoveryIssue({
-    id: opts.id,
-    reason: 'implementation-error',
-    phase,
-    task: opts.task,
-    files: taskFiles(opts.task),
-    affectedTaskIds: [opts.task.id],
-    message: `${opts.task.id} implementation failed`,
-    details: [
-      `Error: ${errorSummary}`,
-      ...attemptDetails(opts.attempts, opts.maxAttempts),
-      ...implementerDetails(opts.selectedImplementerProfile),
-      ...routeBiggerDetails(opts),
-    ],
-    attempts: opts.attempts,
-    maxAttempts: opts.maxAttempts,
-    selectedImplementerProfile: opts.selectedImplementerProfile,
-    facts: compactFacts({
-      errorSummary,
-      canRetry,
-      canRouteBigger: hasRouteBigger(opts),
-      routeBiggerProfile: opts.routeBiggerProfile,
-    }),
-    availableActions: actions,
-    recommendedAction,
-    createdAt: opts.createdAt,
-  });
-}
-
-export function buildValidationFailedRecoveryIssue(opts: ValidationRecoveryOptions): RecoveryIssue {
-  const phase = opts.phase ?? 'validating-task';
-  const validation = summarizeValidation(opts);
-  const canRetry = hasRetryBudget(opts.attempts, opts.maxAttempts);
-  const actions = orderedActions([
-    canRetry ? 'retry-same-worker' : undefined,
-    hasRouteBigger(opts) ? 'route-bigger-worker' : undefined,
-    'planner-split-rebase',
-    'skip-current-task',
-    'pause-run',
-    'abort-workflow',
-  ]);
-  const recommendedAction = chooseRecommended(actions, [
-    'retry-same-worker',
-    'route-bigger-worker',
-    'planner-split-rebase',
-  ]);
-
-  return createRecoveryIssue({
-    id: opts.id,
-    reason: 'validation-failed',
-    phase,
-    task: opts.task,
-    files: taskFiles(opts.task),
-    affectedTaskIds: [opts.task.id],
-    message: `${opts.task.id} validation failed`,
-    details: [
-      validation.detail,
-      ...attemptDetails(opts.attempts, opts.maxAttempts),
-      ...implementerDetails(opts.selectedImplementerProfile),
-      ...routeBiggerDetails(opts),
-    ],
-    attempts: opts.attempts,
-    maxAttempts: opts.maxAttempts,
-    selectedImplementerProfile: opts.selectedImplementerProfile,
-    facts: compactFacts({
-      validationStage: validation.stage,
-      validationSummary: validation.summary,
-      canRetry,
-      canRouteBigger: hasRouteBigger(opts),
-      routeBiggerProfile: opts.routeBiggerProfile,
-    }),
-    availableActions: actions,
-    recommendedAction,
-    createdAt: opts.createdAt,
-  });
 }
 
 export function buildRetryExhaustedRecoveryIssue(opts: RetryExhaustedRecoveryOptions): RecoveryIssue {

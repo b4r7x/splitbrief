@@ -34,7 +34,7 @@ import { join, basename, extname } from 'node:path';
 import type { HookEvent } from '../../core/schemas/hooks.js';
 
 const KEBAB_TO_SNAKE: Record<string, string> = {
-  'pre-planning': 'pre_planning', 'post-planning': 'post_planning',
+  'pre-planning': 'pre_planning',
   'pre-task': 'pre_task', 'post-task': 'post_task',
   'pre-validation': 'pre_validation', 'post-validation': 'post_validation',
   'pre-commit': 'pre_commit', 'post-commit': 'post_commit',

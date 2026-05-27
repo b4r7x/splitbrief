@@ -12,7 +12,6 @@ export type StateAction =
   | { type: 'APPROVE_SPEC' }
   | { type: 'REJECT_SPEC' }
   | { type: 'PLAN_DONE'; tasks: Task[] }
-  | { type: 'APPROVE_PLAN' }
   | { type: 'REJECT_PLAN' }
   | { type: 'BRIEFS_READY'; tasks: Task[] }
   | { type: 'APPROVE_BRIEFS' }
@@ -31,7 +30,6 @@ export type StateAction =
   | { type: 'HINT_SUCCESS' }
   | { type: 'HINT_FAIL' }
   | { type: 'FULL_SUCCESS' }
-  | { type: 'FULL_FAIL' }
   | { type: 'SKIP_TASK'; taskId: TaskId }
   | { type: 'UPDATE_TASK_CODE'; taskId: TaskId; code: string }
   | { type: 'CLEAR_TASK_CODE'; taskId: TaskId }

@@ -212,6 +212,7 @@ describe('publishDriftReport', () => {
       subscribe() {
         return () => {};
       },
+      unsubscribeAll() {},
     };
     const report = analyzeBriefDrift({
       tasks: [done({ id: 'T001', file: 'src/a.ts', scope: { outOfBounds: ['src/extra.ts'] } })],

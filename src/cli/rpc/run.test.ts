@@ -92,21 +92,16 @@ describe('runRpc', () => {
       workflowOpts.eventBus?.publish({ type: 'workflow_started', ts: 1, phase: 'researching', feature: 'ship rpc' });
       const result = await workflowOpts.callbacks.onApprovalNeeded('spec', join(projectDir, 'spec.md'));
       approved = result.approved;
-      workflowOpts.eventBus?.publish({ type: 'spec_approved', ts: 2, phase: 'planning' });
+      workflowOpts.eventBus?.publish({ type: 'plan_approved', ts: 2, phase: 'planning' });
     };
 
-    const run = runRpc(
-      'ship rpc',
-      projectDir,
-      { rpc: true },
-      undefined,
-      'rpc-session',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { input, output, runWorkflow: runWorkflowStub },
-    );
+    const run = runRpc({
+      feature: 'ship rpc',
+      projectDir: projectDir,
+      opts: { rpc: true },
+      sessionId: 'rpc-session',
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
 
     await waitForLine(chunks, line =>
       line.type === 'status' &&
@@ -128,7 +123,7 @@ describe('runRpc', () => {
     expect(lines).toContainEqual({ type: 'ack', command: 'approve' });
     expect(lines).toContainEqual(expect.objectContaining({
       type: 'event',
-      data: expect.objectContaining({ type: 'spec_approved' }),
+      data: expect.objectContaining({ type: 'plan_approved' }),
     }));
     expect(approved).toBe(true);
   });
@@ -146,18 +141,13 @@ describe('runRpc', () => {
     });
     const runWorkflowStub = async () => workflowDone;
 
-    const run = runRpc(
-      'status feature',
-      projectDir,
-      { rpc: true },
-      undefined,
-      sessionId,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { input, output, runWorkflow: runWorkflowStub },
-    );
+    const run = runRpc({
+      feature: 'status feature',
+      projectDir: projectDir,
+      opts: { rpc: true },
+      sessionId: sessionId,
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
 
     input.write('not json\n');
     input.write('{"type":"status"}\n');
@@ -191,18 +181,13 @@ describe('runRpc', () => {
       comment = result.comment;
     };
 
-    const run = runRpc(
-      'reject test',
-      projectDir,
-      { rpc: true },
-      undefined,
-      'rpc-reject-session',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { input, output, runWorkflow: runWorkflowStub },
-    );
+    const run = runRpc({
+      feature: 'reject test',
+      projectDir: projectDir,
+      opts: { rpc: true },
+      sessionId: 'rpc-reject-session',
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
 
     await waitForLine(chunks, line =>
       line.type === 'status' &&
@@ -235,18 +220,13 @@ describe('runRpc', () => {
       await workflowDone;
     };
 
-    const run = runRpc(
-      'abort test',
-      projectDir,
-      { rpc: true },
-      undefined,
-      'rpc-abort-session',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { input, output, runWorkflow: runWorkflowStub },
-    );
+    const run = runRpc({
+      feature: 'abort test',
+      projectDir: projectDir,
+      opts: { rpc: true },
+      sessionId: 'rpc-abort-session',
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
 
     await vi.waitFor(() => {
       expect(abortSignal).toBeDefined();
@@ -289,18 +269,14 @@ describe('runRpc', () => {
 
     const runWorkflowStub = async () => {};
 
-    const run = runRpc(
-      'recovery feature',
-      projectDir,
-      { rpc: true },
-      stateWithRecovery,
-      sessionId,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { input, output, runWorkflow: runWorkflowStub },
-    );
+    const run = runRpc({
+      feature: 'recovery feature',
+      projectDir: projectDir,
+      opts: { rpc: true },
+      savedState: stateWithRecovery,
+      sessionId: sessionId,
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
 
     await waitForLine(chunks, line =>
       line.type === 'status' &&
@@ -328,18 +304,13 @@ describe('runRpc', () => {
     });
     const runWorkflowStub = async () => workflowDone;
 
-    const run = runRpc(
-      'slash test',
-      projectDir,
-      { rpc: true },
-      undefined,
-      'rpc-slash-session',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { input, output, runWorkflow: runWorkflowStub },
-    );
+    const run = runRpc({
+      feature: 'slash test',
+      projectDir: projectDir,
+      opts: { rpc: true },
+      sessionId: 'rpc-slash-session',
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
 
     input.write('{"type":"slash","command":"/mode quick"}\n');
     await waitForLine(chunks, line =>
@@ -369,18 +340,13 @@ describe('runRpc', () => {
       await workflowDone;
     };
 
-    const run = runRpc(
-      'queue clear test',
-      projectDir,
-      { rpc: true },
-      undefined,
-      'rpc-queue-clear-session',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { input, output, runWorkflow: runWorkflowStub },
-    );
+    const run = runRpc({
+      feature: 'queue clear test',
+      projectDir: projectDir,
+      opts: { rpc: true },
+      sessionId: 'rpc-queue-clear-session',
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
 
     await vi.waitFor(() => {
       expect(clearHandlerInstalled).toBe(true);
@@ -412,18 +378,13 @@ describe('runRpc', () => {
     });
     const runWorkflowStub = async () => workflowDone;
 
-    const run = runRpc(
-      'slash error test',
-      projectDir,
-      { rpc: true },
-      undefined,
-      'rpc-slash-error-session',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { input, output, runWorkflow: runWorkflowStub },
-    );
+    const run = runRpc({
+      feature: 'slash error test',
+      projectDir: projectDir,
+      opts: { rpc: true },
+      sessionId: 'rpc-slash-error-session',
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
 
     input.write('{"type":"slash","command":"/mode nope"}\n');
     await waitForLine(chunks, line =>
@@ -448,18 +409,13 @@ describe('runRpc', () => {
     });
     const runWorkflowStub = async () => workflowDone;
 
-    const run = runRpc(
-      'slash typo test',
-      projectDir,
-      { rpc: true },
-      undefined,
-      'rpc-slash-typo-session',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { input, output, runWorkflow: runWorkflowStub },
-    );
+    const run = runRpc({
+      feature: 'slash typo test',
+      projectDir: projectDir,
+      opts: { rpc: true },
+      sessionId: 'rpc-slash-typo-session',
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
 
     input.write('{"type":"slash","command":"/mde"}\n');
     await waitForLine(chunks, line =>
@@ -484,18 +440,13 @@ describe('runRpc', () => {
     });
     const runWorkflowStub = async () => workflowDone;
 
-    const run = runRpc(
-      'eof test',
-      projectDir,
-      { rpc: true },
-      undefined,
-      'rpc-eof-session',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { input, output, runWorkflow: runWorkflowStub },
-    );
+    const run = runRpc({
+      feature: 'eof test',
+      projectDir: projectDir,
+      opts: { rpc: true },
+      sessionId: 'rpc-eof-session',
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
 
     input.end();
     finishWorkflow?.();
@@ -514,18 +465,13 @@ describe('runRpc', () => {
       await workflowOpts.callbacks.onApprovalNeeded('spec', join(projectDir, 'spec.md'));
     };
 
-    const run = runRpc(
-      'gate-close test',
-      projectDir,
-      { rpc: true },
-      undefined,
-      'rpc-gate-close-session',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { input, output, runWorkflow: runWorkflowStub },
-    );
+    const run = runRpc({
+      feature: 'gate-close test',
+      projectDir: projectDir,
+      opts: { rpc: true },
+      sessionId: 'rpc-gate-close-session',
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
 
     await vi.waitFor(() => {
       expect(input.readable).toBe(true);

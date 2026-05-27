@@ -1,5 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { readPackageJson } from '../project-meta.js';
 import { configPath, loadConfig } from '../config/load/load.js';
 import { applyCLIOverrides } from '../config/runtime/overrides.js';
 import { readActive, isSessionLive } from '../sessions/lifecycle.js';
@@ -129,7 +130,7 @@ function readPackageScripts(projectDir: string): PackageScriptsReadinessInput {
   }
 
   try {
-    const parsed: unknown = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+    const parsed: unknown = readPackageJson(projectDir, { throwOnInvalid: true });
     if (!isRecord(parsed)) {
       return { packageJsonExists: true, scripts: {}, parseError: 'package.json root is not an object.' };
     }
@@ -174,7 +175,7 @@ async function readRepoPosture(projectDir: string, requiresCleanWorktree: boolea
     requiresCleanWorktree,
     ...(activeSession !== null && {
       activeSession,
-      activeSessionLive: isSessionLive(projectDir, activeSession),
+      activeSessionLive: isSessionLive({ projectDir: projectDir, sessionId: activeSession }),
     }),
   };
 }

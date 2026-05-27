@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import type { HandoffTarget } from '../../core/handoff/targets.js';
@@ -27,3 +28,12 @@ export type HandoffFile = {
 export type HandoffPack = {
   files: HandoffFile[];
 };
+
+export type HandoffRendererInput = Omit<HandoffInput, 'target'> & { target: string };
+
+export const HandoffPackSchema = z.object({
+  files: z.array(z.object({
+    path: z.string(),
+    content: z.string(),
+  })),
+});

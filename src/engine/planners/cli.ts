@@ -5,7 +5,7 @@ import type { InvokeResult } from '../runners/types.js';
 import type { Planner, PlannerCallbacks } from './types.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
-import { createCommandAvailability } from '../../lib/availability.js';
+import { createCommandAvailability } from '../availability.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { CLI_TOOLS } from '../cli-tools.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';

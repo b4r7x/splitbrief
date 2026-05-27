@@ -71,7 +71,7 @@ describe('getWorkflowContentRect', () => {
     const sidebarVisible = true;
     const isSmall = false;
 
-    const rect = getWorkflowContentRect(cols, rows, inputRows, hasConfig, sidebarVisible, isSmall);
+    const rect = getWorkflowContentRect({ cols, rows, inputRows, hasConfig, sidebarVisible, isSmall });
 
     // width/height match the dedicated helpers
     expect(rect.width).toBe(getWorkflowContentWidth(cols, sidebarVisible, isSmall));
@@ -87,13 +87,27 @@ describe('getWorkflowContentRect', () => {
   });
 
   it('when the sidebar is hidden the rect starts at column 1 and takes full width', () => {
-    const rect = getWorkflowContentRect(100, 30, 2, true, false, false);
+    const rect = getWorkflowContentRect({
+      cols: 100,
+      rows: 30,
+      inputRows: 2,
+      hasConfig: true,
+      sidebarVisible: false,
+      isSmall: false,
+    });
     expect(rect.left).toBe(1);
     expect(rect.width).toBe(100);
   });
 
   it('keeps edges non-inverted when the terminal has no usable content area', () => {
-    const rect = getWorkflowContentRect(0, 0, 20, true, true, false);
+    const rect = getWorkflowContentRect({
+      cols: 0,
+      rows: 0,
+      inputRows: 20,
+      hasConfig: true,
+      sidebarVisible: true,
+      isSmall: false,
+    });
 
     expect(rect.width).toBe(0);
     expect(rect.height).toBe(0);

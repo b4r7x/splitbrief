@@ -22,6 +22,7 @@ import { countBySeverity, uniqueSorted } from '../../../../utils/collections.js'
 import { readDriftChainState } from '../../drift/chain-state.js';
 import type { DriftFinding, DriftReport } from '../../../../core/schemas/drift.js';
 import { addMissing, type BuildReviewPacketOptions, type BriefQualityArtifact, type PacketEvent } from './build.js';
+import { retryCountsFromEvents } from '../retry-counts.js';
 
 const REVIEW_EXCERPT_MAX = 500;
 
@@ -318,21 +319,8 @@ export function makeRecoveryWithSources(
   };
 }
 
-function retryCountsFromEvents(events: PacketEvent[]): Map<TaskId, { retryCount: number; lastError: string | null }> {
-  const retries = new Map<TaskId, { retryCount: number; lastError: string | null }>();
-  for (const event of events) {
-    if (event.type !== 'task_retry' || event.taskId === undefined) continue;
-    const current = retries.get(event.taskId) ?? { retryCount: 0, lastError: null };
-    retries.set(event.taskId, {
-      retryCount: current.retryCount + 1,
-      lastError: event.message ?? current.lastError,
-    });
-  }
-  return retries;
-}
-
 export function buildEscalations(state: WorkflowState, ledger: EvidenceLedger | null, events: PacketEvent[]): ReviewPacket['escalations'] {
-  const retryMap = retryCountsFromEvents(events);
+  const retryMap = retryCountsFromEvents(events, (event) => event.message);
   for (const entry of ledger?.tasks ?? []) {
     if (entry.retries <= 0) continue;
     const current = retryMap.get(entry.id);

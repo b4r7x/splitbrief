@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CLIOverrides } from '../../core/config/runtime/overrides.js';
-import { normalizeLegacyMode } from '../../core/schemas/enums.js';
+import { normalizeLegacyMode, type WorkflowMode } from '../../core/schemas/enums.js';
 import { writeSecureFile } from '../../lib/fs.js';
 import { error } from '../../utils/error.js';
 import { isRecord } from '../../utils/type-guards.js';
@@ -13,7 +13,7 @@ export type IpcServerArgs = {
   sessionId: string;
   projectDir: string;
   feature: string;
-  mode: string;
+  mode: WorkflowMode;
   configPath: string;
   overrides: CLIOverrides;
   allowHooks?: boolean;
@@ -103,11 +103,13 @@ export function parseIpcServerArgs(value: unknown): IpcServerArgs | null {
     typeof value.sessionId !== 'string' ||
     typeof value.projectDir !== 'string' ||
     typeof value.feature !== 'string' ||
-    typeof value.mode !== 'string' ||
     typeof value.configPath !== 'string'
   ) {
     return null;
   }
+  if (typeof value.mode !== 'string') return null;
+  const mode = normalizeLegacyMode(value.mode);
+  if (mode === null) return null;
   const overrides = parseCliOverrides(value.overrides);
   if (overrides === null) return null;
   if (!isOptionalBoolean(value.allowHooks)) return null;
@@ -116,7 +118,7 @@ export function parseIpcServerArgs(value: unknown): IpcServerArgs | null {
     sessionId: value.sessionId,
     projectDir: value.projectDir,
     feature: value.feature,
-    mode: value.mode,
+    mode,
     configPath: value.configPath,
     overrides,
     ...(value.allowHooks !== undefined && { allowHooks: value.allowHooks }),

@@ -38,7 +38,7 @@ describe('clearStaleSession', () => {
     const dir = makeTmp();
     const sessionId = '2026-04-18-old-feature';
     writeState(dir, sessionId, 'complete');
-    writeActive(dir, sessionId);
+    writeActive({ projectDir: dir, sessionId: sessionId });
     expect(existsSync(activeFile(dir))).toBe(true);
 
     clearStaleSession(dir);
@@ -49,7 +49,7 @@ describe('clearStaleSession', () => {
   it('clears the active pointer when the referenced session never persisted state', () => {
     const dir = makeTmp();
     // Session id points to a folder that does not exist — treated as not-live.
-    writeActive(dir, '2026-04-18-phantom');
+    writeActive({ projectDir: dir, sessionId: '2026-04-18-phantom' });
 
     clearStaleSession(dir);
 
@@ -60,7 +60,7 @@ describe('clearStaleSession', () => {
     const dir = makeTmp();
     const sessionId = '2026-04-18-in-progress';
     writeState(dir, sessionId, 'implementing');
-    writeActive(dir, sessionId);
+    writeActive({ projectDir: dir, sessionId: sessionId });
 
     try {
       clearStaleSession(dir);
@@ -79,7 +79,7 @@ describe('clearStaleSession', () => {
     const dir = makeTmp();
     const sessionId = '2026-04-18-alive';
     writeState(dir, sessionId, 'planning');
-    writeActive(dir, sessionId);
+    writeActive({ projectDir: dir, sessionId: sessionId });
 
     // First invocation throws, second still sees a live session and still throws.
     expect(() => clearStaleSession(dir)).toThrow();
@@ -91,7 +91,7 @@ describe('clearStaleSession', () => {
     const dir = makeTmp();
     const sessionId = '2026-04-18-idle';
     writeState(dir, sessionId, 'idle');
-    writeActive(dir, sessionId);
+    writeActive({ projectDir: dir, sessionId: sessionId });
 
     clearStaleSession(dir);
 
@@ -104,7 +104,7 @@ describe('clearStaleSession', () => {
     const sDir = sessionDir(dir, sessionId);
     mkdirSync(sDir, { recursive: true });
     writeFileSync(join(sDir, STATE_FILE), '{not valid json');
-    writeActive(dir, sessionId);
+    writeActive({ projectDir: dir, sessionId: sessionId });
 
     clearStaleSession(dir);
 

@@ -8,7 +8,7 @@ import { stripV1Suffix, ANTHROPIC_API_VERSION } from '../constants.js';
 import { narrowRecord, assertNever } from '../../../utils/type-guards.js';
 import { streamError, throwMappedError } from '../../streaming/stream-errors.js';
 import { STREAM_IDLE_TIMEOUT_MS } from '../../constants.js';
-import { readImagesAsBase64 } from '../../streaming/attachments.js';
+import { attachImagesToLastUserMessage } from '../image-attach.js';
 
 type AnthropicEventType =
   | 'message_start'
@@ -199,35 +199,22 @@ function getApiErrorMessage(payload: Record<string, unknown>): string {
   return JSON.stringify(payload);
 }
 
-async function attachImagesToLastUserMessage(
-  conversation: AnthropicMessage[],
-  images: Attachment[],
-): Promise<void> {
-  if (images.length === 0) return;
-  const encoded = await readImagesAsBase64(images);
-  const blocks: AnthropicImageBlock[] = encoded.map(({ mime, data }) => ({
-    type: 'image' as const,
-    source: { type: 'base64' as const, media_type: mime, data },
-  }));
-  for (let i = conversation.length - 1; i >= 0; i--) {
-    const msg = conversation[i];
-    if (!msg || msg.role !== 'user') continue;
-    const existing: AnthropicContentBlock[] = typeof msg.content === 'string'
-      ? [{ type: 'text', text: msg.content }]
-      : msg.content;
-    msg.content = [...blocks, ...existing];
-    return;
-  }
-  conversation.push({ role: 'user', content: blocks });
-}
-
 export async function streamAnthropicCompletion(
   opts: AnthropicStreamOptions,
 ): Promise<InvokeResult> {
   const { system, conversation } = splitSystemMessages(opts.messages);
-  if (opts.images && opts.images.length > 0) {
-    await attachImagesToLastUserMessage(conversation, opts.images);
-  }
+  const finalConversation = opts.images && opts.images.length > 0
+    ? await attachImagesToLastUserMessage<AnthropicMessage, AnthropicContentBlock, AnthropicImageBlock>(conversation, {
+        images: opts.images,
+        imagePlacement: 'before-existing',
+        mapText: text => ({ type: 'text', text }),
+        mapImage: ({ mime, data }) => ({
+          type: 'image',
+          source: { type: 'base64', media_type: mime, data },
+        }),
+        createUserMessage: content => ({ role: 'user', content }),
+      })
+    : conversation;
   const url = `${stripV1Suffix(opts.apiBase)}/v1/messages`;
   const endpoint = { provider: 'anthropic', apiBase: opts.apiBase };
 
@@ -242,7 +229,7 @@ export async function streamAnthropicCompletion(
       },
       body: JSON.stringify({
         model: opts.model,
-        messages: conversation,
+        messages: finalConversation,
         temperature: opts.temperature,
         stream: true,
         max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,

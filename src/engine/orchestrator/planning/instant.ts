@@ -32,7 +32,7 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
     feature = prefix + feature;
   }
 
-  const textHandler = createBusTextHandler(wctx.bus, state.phase);
+  const textHandler = createBusTextHandler({ bus: wctx.bus, phase: state.phase });
   const buffer = createTranscriptBuffer(
     projectDir, sessionId, 'planning', config.workflow.persistTranscript ?? true,
   );

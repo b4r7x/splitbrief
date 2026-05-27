@@ -21,7 +21,7 @@ import { formatTaskPrompt, formatRetryPrompt } from '../spec/prompt-formatter.js
 import { buildLanguageContext } from '../spec/prompts/language-context.js';
 import { buildSystemPreamble } from '../spec/prompts/system.js';
 import { processError } from '../../lib/process/errors.js';
-import { DEFAULT_AVAILABILITY } from '../../lib/availability.js';
+import { DEFAULT_AVAILABILITY } from '../availability.js';
 import { getCurrentChangedFiles } from '../../lib/git.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
 import { isRecord } from '../../utils/type-guards.js';

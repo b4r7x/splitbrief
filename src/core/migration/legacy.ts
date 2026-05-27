@@ -1,11 +1,11 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { writeSecureFile } from '../../lib/fs.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import { slugify } from '../../utils/slugify.js';
 import { sessionsRoot } from '../paths.js';
 import { CURRENT_STATE_VERSION } from '../state/machine.js';
 import { sessionError } from '../sessions/errors.js';
+import { findUnusedId } from '../sessions/id/find-unused-id.js';
 
 const MAX_MIGRATION_COLLISION_ATTEMPTS = 999;
 
@@ -13,14 +13,6 @@ function datePartFromStartedAt(startedAt: string, fallback: Date): string {
   const parsed = new Date(startedAt);
   const date = Number.isNaN(parsed.getTime()) ? fallback : parsed;
   return date.toISOString().slice(0, 10);
-}
-
-function collisionCandidates(base: string): string[] {
-  const candidates = [base, `${base}-migrated`];
-  for (let n = 2; n <= MAX_MIGRATION_COLLISION_ATTEMPTS; n++) {
-    candidates.push(`${base}-migrated-${n}`);
-  }
-  return candidates;
 }
 
 export function deriveSessionId(
@@ -33,9 +25,15 @@ export function deriveSessionId(
   const slug = slugify(feature).slice(0, 50) || 'unknown';
   const base = `${date}-${slug}`;
   const root = sessionsRoot(projectDir);
-  for (const candidate of collisionCandidates(base)) {
-    if (!existsSync(join(root, candidate))) return candidate;
-  }
+  const id = findUnusedId(
+    root,
+    base,
+    (candidateBase, collisionIndex) => collisionIndex === 1
+      ? `${candidateBase}-migrated`
+      : `${candidateBase}-migrated-${collisionIndex}`,
+    MAX_MIGRATION_COLLISION_ATTEMPTS,
+  );
+  if (id !== null) return id;
   throw sessionError.idCollision(base, MAX_MIGRATION_COLLISION_ATTEMPTS);
 }
 

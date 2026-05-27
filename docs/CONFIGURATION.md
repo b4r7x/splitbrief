@@ -611,7 +611,6 @@ Workflow lifecycle hooks. Quick overview here; full schema, trust model, and sub
 hooks: {
   builtin?:         Record<string, boolean>;
   pre_planning?:    HookEntry[];
-  post_planning?:   HookEntry[];
   pre_task?:        HookEntry[];
   post_task?:       HookEntry[];
   pre_validation?:  HookEntry[];

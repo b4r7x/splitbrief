@@ -27,12 +27,11 @@ The first time you run with hooks defined, diptych prompts to trust them. Use `-
 
 ## Hook events
 
-12 events fire during a workflow. Each can have multiple hooks declared.
+11 events fire during a workflow. Each can have multiple hooks declared.
 
 | Event            | When                                        | Payload (event fields)                                              |
 |------------------|---------------------------------------------|----------------------------------------------------------------------|
 | `pre_planning`   | Before any planner phase starts             | `feature`                                                            |
-| `post_planning`  | After Task Brief transport (`tasks.md`) is written, before implementing | `taskCount`                                                          |
 | `pre_task`       | Before each implementer task starts         | `taskId`, `title`, `file`, `action`, `index`, `total`                |
 | `post_task`      | After each implementer task succeeds        | `taskId`, `title`, `method`, `file`, `retries`, `duration`           |
 | `pre_validation` | Before tsc/lint/test runs                   | `taskId`, `file`                                                     |
@@ -174,7 +173,6 @@ args: ["${event.file}", "--task=${event.taskId}"]
 | `${event.feature}`   | workflow_started                       | The user's feature prompt                |
 | `${event.duration}`  | task_completed, validate               | Number (ms)                              |
 | `${event.method}`    | task_completed, task_tokens            | `'local'` / `'hint'` / `'escalation'`   |
-| `${event.taskCount}` | plan_done                              | Number                                   |
 
 Missing fields collapse to empty string. Object/array values are JSON-stringified. **No `eval`** — substitution is regex-based.
 
@@ -184,12 +182,11 @@ Subprocesses are spawned without `shell: true`, so substituted values are passed
 
 ### Per-event availability
 
-Which placeholders resolve depends on the event type. Using `${event.file}` in a `post_planning` hook, for example, collapses to empty string — `post_planning` carries no `file`.
+Which placeholders resolve depends on the event type. Missing fields collapse to empty strings.
 
 | Event             | Resolvable placeholders                                                           |
 |-------------------|-----------------------------------------------------------------------------------|
 | `pre_planning`    | `${event.feature}`, `${event.ts}`, `${event.phase}`, `${event.type}`              |
-| `post_planning`   | `${event.taskCount}`, `${event.specPath}`, `${event.planPath}`, `${event.tasksPath}` |
 | `pre_task`        | `${event.taskId}`, `${event.title}`, `${event.file}`, `${event.action}`, `${event.index}`, `${event.total}` |
 | `post_task`       | `${event.taskId}`, `${event.title}`, `${event.file}`, `${event.method}`, `${event.retries}`, `${event.duration}` |
 | `pre_validation`  | `${event.taskId}`, `${event.file}`                                                |

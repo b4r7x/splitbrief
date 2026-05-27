@@ -31,6 +31,23 @@ describe('WorkflowStateSchema recovery compatibility', () => {
     expect(result.data.messageQueue).toEqual([]);
   });
 
+  it('parses rewound state without plannerSessionId', () => {
+    const result = WorkflowStateSchema.safeParse({
+      stateVersion: 3,
+      phase: 'planning',
+      feature: 'rewound session',
+      currentTaskIndex: 0,
+      attempt: 0,
+      tasks: [],
+      startedAt: '2026-04-28T12:00:00.000Z',
+      tokenUsage,
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.plannerSessionId).toBeUndefined();
+  });
+
   it('accepts state with pendingRecovery field', () => {
     const result = WorkflowStateSchema.safeParse({
       stateVersion: 3,

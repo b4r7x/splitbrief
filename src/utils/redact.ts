@@ -76,9 +76,3 @@ export function redactSecretsWithMetadata(msg: string, opts: RedactSecretsOption
 export function redactSecrets(msg: string): string {
   return redactSecretsWithMetadata(msg).text;
 }
-
-export function maskApiKey(key: string | undefined): string {
-  if (!key) return '';
-  if (key.length < 8) return '••••••••';
-  return '••••' + key.slice(-4);
-}

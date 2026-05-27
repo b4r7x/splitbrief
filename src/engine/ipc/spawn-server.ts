@@ -8,13 +8,14 @@ import { SERVER_LOG_FILE, IPC_SOCK_FILE } from '../../core/paths.js';
 import { checkServerStatus } from './lockfile.js';
 import { writeIpcServerArgsFile } from './server-args.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides.js';
+import type { WorkflowMode } from '../../core/schemas/enums.js';
 
 export type SpawnServerOptions = {
   sessionDir: string;
   sessionId: string;
   projectDir: string;
   feature: string;
-  mode: string;
+  mode: WorkflowMode;
   configPath: string;
   overrides?: CLIOverrides;
   allowHooks?: boolean;

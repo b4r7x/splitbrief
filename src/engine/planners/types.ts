@@ -1,4 +1,5 @@
 import type { Task } from '../../core/schemas/task.js';
+import type { Phase } from '../../core/schemas/enums.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
@@ -54,7 +55,7 @@ export interface PlannerSummaryMessage {
 
 export interface PlannerCallbacks {
   onOutput: (text: string) => void;
-  onPhase?: ((phase: string) => void) | undefined;
+  onPhase?: ((phase: Phase) => void) | undefined;
   onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
   /** Emitted when the backend reports its native session handle (e.g. Claude Code --session-id). */
   onSessionId?: ((sessionId: string) => void) | undefined;

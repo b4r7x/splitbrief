@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { runCommand, spawnWithTimeout, spawnWithStdin } from './spawn.js';
-import { killProcess, getActiveProcessCount } from './registry.js';
+import { killProcess } from './registry.js';
 import { isENOENT } from './errors.js';
 import { spawn } from 'node:child_process';
 describe('runCommand', () => {
@@ -14,20 +14,6 @@ describe('runCommand', () => {
     await expect(
       runCommand('nonexistent-command-that-does-not-exist-xyz', []),
     ).rejects.toMatchObject({ code: 'ENOENT' });
-  });
-
-  it('does not leave process in activeProcesses after completion', async () => {
-    const sizeBefore = getActiveProcessCount();
-    await runCommand('echo', ['test']);
-    expect(getActiveProcessCount()).toBe(sizeBefore);
-  });
-
-  it('does not leave process in activeProcesses after error', async () => {
-    const sizeBefore = getActiveProcessCount();
-    try {
-      await runCommand('nonexistent-command-that-does-not-exist-xyz', []);
-    } catch {}
-    expect(getActiveProcessCount()).toBe(sizeBefore);
   });
 
   it('ENOENT rejection completes quickly without dangling timer', async () => {

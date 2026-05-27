@@ -8,9 +8,29 @@ import type { EventBus } from '../events/types.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { assertPathConfined } from '../../lib/path-confinement.js';
 import { transition } from '../../core/state/machine.js';
-import { saveState } from '../../core/state/persistence.js';
+import { loadState, saveState } from '../../core/state/persistence.js';
 import { addUsage, type UsageCategory } from './tokens.js';
 import { publishCostUpdate, publishPlannerStatus } from './events.js';
+
+export function mergePersistedMessageQueue(projectDir: string, sessionId: string, state: WorkflowState): WorkflowState {
+  const persisted = loadState(projectDir, sessionId);
+  if (!persisted) return state;
+
+  const byId = new Map(persisted.messageQueue.map(message => [message.id, message]));
+  for (const current of state.messageQueue) {
+    const persistedMessage = byId.get(current.id);
+    byId.set(current.id, persistedMessage
+      ? {
+        ...persistedMessage,
+        ...current,
+        deliveredViaNative: persistedMessage.deliveredViaNative || current.deliveredViaNative,
+        drainedAt: current.drainedAt ?? persistedMessage.drainedAt,
+      }
+      : current);
+  }
+
+  return { ...state, messageQueue: [...byId.values()] };
+}
 
 export function transitionAndSave(
   projectDir: string,
@@ -19,7 +39,8 @@ export function transitionAndSave(
   action: StateAction,
   maxRetries?: number,
 ): WorkflowState {
-  const next = transition(state, action, maxRetries);
+  const base = mergePersistedMessageQueue(projectDir, sessionId, state);
+  const next = transition(base, action, maxRetries);
   saveState(projectDir, sessionId, next);
   return next;
 }
@@ -55,10 +76,11 @@ export function addUsageAndSave(
   projectDir: string, sessionId: string, state: WorkflowState, category: UsageCategory, usage: TokenDelta | null | undefined,
   bus: EventBus,
 ): WorkflowState {
-  const next = addUsage(state, category, usage);
+  const base = mergePersistedMessageQueue(projectDir, sessionId, state);
+  const next = addUsage(base, category, usage);
   saveState(projectDir, sessionId, next);
   if (usage) {
-    publishCostUpdate(bus, next.phase, next.tokenUsage);
+    publishCostUpdate({ bus: bus, phase: next.phase }, next.tokenUsage);
   }
   return next;
 }

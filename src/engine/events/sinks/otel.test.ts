@@ -88,11 +88,11 @@ describe('createOtelSink', () => {
     expect(task?.parentSpanContext?.spanId).toBe(phase?.spanContext().spanId);
   });
 
-  it('marks task span with ERROR status on task_failed', () => {
+  it('marks task span with ERROR status on task_full_fail', () => {
     const sink = createOtelSink({ provider });
     sink({ type: 'workflow_started', ts: 1, phase: 'idle', feature: 'x' });
     sink({ type: 'task_started', ts: 10, phase: 'implementing', taskId: 'T2' as never, title: 'Modify bar', index: 0, total: 1, file: 'b.ts', action: 'modify' });
-    sink({ type: 'task_failed', ts: 50, phase: 'implementing', taskId: 'T2' as never });
+    sink({ type: 'task_full_fail', ts: 50, phase: 'implementing', taskId: 'T2' as never });
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
     const task = exporter.getFinishedSpans().find(s => s.name === 'diptych.task');
