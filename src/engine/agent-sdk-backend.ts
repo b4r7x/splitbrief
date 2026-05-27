@@ -6,6 +6,7 @@ import { accumulateUsage, toTokenDelta } from './streaming/token-utils.js';
 import { createChangeDetector } from './change-detection.js';
 import { createSessionResumeState, runWithResumeFallback } from './session-expiry.js';
 import { error } from '../utils/error.js';
+import { throwIfAborted } from '../utils/abort.js';
 
 export const PLANNER_ALLOWED_TOOLS = ['Read', 'Glob', 'Grep', 'Write'] as const;
 export const IMPLEMENTER_ALLOWED_TOOLS = ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'] as const;
@@ -19,7 +20,8 @@ interface SdkMessage {
   type: string;
   subtype?: string;
   session_id?: string;
-  content?: SdkBlock[];
+  message?: { content?: SdkBlock[] };
+  result?: string;
   usage?: {
     input_tokens: number;
     output_tokens: number;
@@ -35,7 +37,8 @@ interface SdkQueryOptions {
     cwd: string;
     resume?: string | undefined;
     env?: Record<string, string | undefined>;
-    thinking?: { type: 'enabled'; budget_tokens: number } | undefined;
+    thinking?: { type: 'enabled'; budgetTokens: number } | undefined;
+    abortController?: AbortController | undefined;
   };
 }
 
@@ -53,7 +56,6 @@ export function isModuleNotFoundError(err: unknown): boolean {
 
 export async function loadSdk(): Promise<SdkClient> {
   try {
-    // @ts-expect-error - optional peer dependency not in tsconfig when not installed
     return await import('@anthropic-ai/claude-agent-sdk');
   } catch (err) {
     if (isModuleNotFoundError(err)) {
@@ -76,12 +78,21 @@ export async function isAgentSdkAvailable(apiKey?: string): Promise<boolean> {
   }
 }
 
-function extractTextFromMessage(message: SdkMessage): string {
-  if (!message?.content) return '';
-  return message.content
-    .filter((block: SdkBlock) => block.type === 'text')
+function extractTextFromBlocks(blocks: SdkBlock[] | undefined): string {
+  if (!blocks) return '';
+  return blocks
+    .filter((block: SdkBlock) => block.type === 'text' && typeof block.text === 'string')
     .map((block: SdkBlock) => block.text)
     .join('');
+}
+
+function extractAssistantText(message: SdkMessage): string {
+  return extractTextFromBlocks(message.message?.content);
+}
+
+function extractResultText(message: SdkMessage): string {
+  if (typeof message.result === 'string') return message.result;
+  return extractTextFromBlocks(message.message?.content);
 }
 
 interface StreamResult {
@@ -90,23 +101,28 @@ interface StreamResult {
   sessionId: string | null;
 }
 
-export async function processStream(
-  stream: AsyncIterable<SdkMessage>,
-  onOutput: (text: string) => void,
-  onSessionId?: (id: string) => void,
-): Promise<StreamResult> {
+export interface ProcessStreamOptions {
+  stream: AsyncIterable<SdkMessage>;
+  onOutput: (text: string) => void;
+  onSessionId?: ((id: string) => void) | undefined;
+  signal?: AbortSignal | undefined;
+}
+
+export async function processStream(opts: ProcessStreamOptions): Promise<StreamResult> {
+  const { stream, onOutput, onSessionId, signal } = opts;
   let collectedText = '';
   let usage: { inputTokens: number; outputTokens: number } | null = null;
   let sessionId: string | null = null;
 
   for await (const message of stream) {
+    throwIfAborted(signal);
     if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
       sessionId = message.session_id;
       onSessionId?.(message.session_id);
     }
 
     if (message.type === 'assistant') {
-      const text = extractTextFromMessage(message);
+      const text = extractAssistantText(message);
       if (text) {
         collectedText += text;
         onOutput(text);
@@ -122,7 +138,7 @@ export async function processStream(
       if (delta) {
         usage = accumulateUsage(usage, delta);
       }
-      const resultText = extractTextFromMessage(message);
+      const resultText = extractResultText(message);
       if (resultText) {
         collectedText = resultText;
       }
@@ -130,6 +146,18 @@ export async function processStream(
   }
 
   return { text: collectedText, usage, sessionId };
+}
+
+function createForwardedAbortController(signal: AbortSignal | undefined): { controller?: AbortController; cleanup: () => void } {
+  if (!signal) return { cleanup: () => {} };
+  throwIfAborted(signal);
+  const controller = new AbortController();
+  const abort = () => controller.abort(signal.reason);
+  signal.addEventListener('abort', abort, { once: true });
+  return {
+    controller,
+    cleanup: () => signal.removeEventListener('abort', abort),
+  };
 }
 
 export interface AgentSdkBackendOpts {
@@ -149,6 +177,7 @@ export interface AgentSdkInvokeOpts {
   onSessionExpired?: ((previousId: string) => void) | undefined;
   effort?: EffortLevel | undefined;
   images?: Attachment[] | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 export interface AgentSdkBackend {
@@ -172,7 +201,8 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
   session.capture(opts.initialSessionId ?? null);
 
   const backend: AgentSdkBackend = {
-    async invoke({ prompt, projectDir, model, onOutput, onSessionId, onSessionExpired, effort, images }) {
+    async invoke({ prompt, projectDir, model, onOutput, onSessionId, onSessionExpired, effort, images, signal }) {
+      throwIfAborted(signal);
       const { query } = await loadSdk();
 
       const apiKey = opts.apiKey;
@@ -180,16 +210,23 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
       const finalPrompt = buildPromptWithImages(prompt, images);
 
       const runQuery = async (resumeId: string | undefined) => {
+        throwIfAborted(signal);
+        const forwardedAbort = createForwardedAbortController(signal);
         const options: SdkQueryOptions['options'] = {
           allowedTools: opts.allowedTools, permissionMode, model, cwd: projectDir,
         };
         if (resumeId) options.resume = resumeId;
-        if (effort) options.thinking = { type: 'enabled', budget_tokens: effortToAnthropicBudget(effort) };
+        if (effort) options.thinking = { type: 'enabled', budgetTokens: effortToAnthropicBudget(effort) };
         // Scope ANTHROPIC_API_KEY to this SDK call via the `env` option so concurrent
         // workflows with different keys don't race. Omit `env` entirely when no override
         // is set so the SDK inherits process.env as usual.
         if (apiKey) options.env = { ...process.env, ANTHROPIC_API_KEY: apiKey };
-        return processStream(query({ prompt: finalPrompt, options }), onOutput, captureSession);
+        if (forwardedAbort.controller) options.abortController = forwardedAbort.controller;
+        try {
+          return await processStream({ stream: query({ prompt: finalPrompt, options }), onOutput, onSessionId: captureSession, signal });
+        } finally {
+          forwardedAbort.cleanup();
+        }
       };
 
       const priorId = session.getResumeId();

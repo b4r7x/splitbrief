@@ -4,6 +4,7 @@ import { pathToRoot, branchFrom } from './store.js';
 import { buildBranchSummaryPrompt } from './summary-prompt.js';
 import { BranchSummaryPayloadSchema } from './entry-types.js';
 import type { BranchSummaryPayload } from './entry-types.js';
+import type { BranchContext } from './branch-context.js';
 
 export type BranchSummary = BranchSummaryPayload;
 
@@ -32,12 +33,6 @@ export function parseBranchSummaryResponse(raw: string): BranchSummary | null {
   }
 
   return null;
-}
-
-export interface BranchContext {
-  entries: TreeEntryEnvelope[];
-  recoveryReason: string;
-  taskTitle?: string | undefined;
 }
 
 export function mechanicalBranchSummary(ctx: BranchContext): BranchSummary {

@@ -12,6 +12,7 @@ import { killAllProcesses } from '../../lib/process/registry.js';
 import { getCurrentDiff, discardFileChange, getCurrentChangedFiles } from '../../lib/git.js';
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
+import { isAbortError } from '../../utils/abort.js';
 import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
 import { recordFinalReviewEvidence } from './evidence/reporting.js';
 import {
@@ -31,7 +32,7 @@ import { hashTaskBrief } from '../brief-hash.js';
 import { writeReviewPacket } from './evidence/review-packet/review-packet.js';
 
 export async function runFinalReviewPhase(
-  opts: { projectDir: string; sessionId: string; config: Config; callbacks: OrchestratorCallbacks; bus: EventBus; state: WorkflowState; planner: Planner; metadata?: SpecMetadata | null },
+  opts: { projectDir: string; sessionId: string; config: Config; callbacks: OrchestratorCallbacks; bus: EventBus; state: WorkflowState; planner: Planner; metadata?: SpecMetadata | null; signal?: AbortSignal | undefined },
   summaryBase: SummaryBase,
   taskBreakdowns: TaskTokenUsage[],
   phaseTimings?: Record<string, number>,
@@ -58,6 +59,12 @@ export async function runFinalReviewPhase(
   }
 
   const finalReviewStart = Date.now();
+  const interruptedSummary = (): Summary => {
+    if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
+    publishPlannerStatus(bus, state, 'done', { duration: Date.now() - finalReviewStart, summary: 'Final review aborted' });
+    return buildSummary({ ...summaryBase, projectDir, sessionId, state, taskBreakdowns, ...(phaseTimings && { phaseTimings }) });
+  };
+  if (opts.signal?.aborted) return interruptedSummary();
   publishPlannerStatus(bus, state, 'running');
   bus.publish({ type: 'all_tasks_done', ts: Date.now(), phase: state.phase });
 
@@ -93,12 +100,15 @@ export async function runFinalReviewPhase(
       state,
       metadata,
       writeTo: REVIEW_FILE,
+      signal: opts.signal,
     });
     state = review.state;
   } catch (err) {
+    if (opts.signal?.aborted || isAbortError(err)) return interruptedSummary();
     publishError({ bus: bus, phase: state.phase }, labelError('Final review failed', err));
     reviewStatus = 'failed';
   }
+  if (opts.signal?.aborted) return interruptedSummary();
 
   try {
     const ledger = readEvidenceLedger(projectDir, sessionId);

@@ -58,7 +58,7 @@ export const PROVIDER_CATALOG: Record<ProviderId, ProviderInfo> = {
   openai: makeProvider('openai', 'OpenAI', { apiKeyEnv: 'OPENAI_API_KEY' }),
   groq: makeProvider('groq', 'Groq', { apiKeyEnv: 'GROQ_API_KEY' }),
   together: makeProvider('together', 'Together AI', { apiKeyEnv: 'TOGETHER_API_KEY' }),
-  ollama: makeProvider('ollama', 'Ollama', { isLocal: true }),
+  ollama: makeProvider('ollama', 'Ollama', { isLocal: true, apiKeyEnv: 'OLLAMA_API_KEY' }),
   'lm-studio': makeProvider('lm-studio', 'LM Studio', { isLocal: true }),
   shell: makeProvider('shell', 'Custom Shell'),
   agent: makeProvider('agent', 'Agent'),

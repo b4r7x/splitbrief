@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isModuleNotFoundError, loadSdk, isAgentSdkAvailable } from './agent-sdk-backend.js';
+import { isModuleNotFoundError, loadSdk, isAgentSdkAvailable, createAgentSdkBackend } from './agent-sdk-backend.js';
 
 describe('isModuleNotFoundError', () => {
   it('returns true for ERR_MODULE_NOT_FOUND', () => {
@@ -41,6 +41,22 @@ describe('loadSdk', () => {
     await expect(loadSdk()).rejects.toThrow(
       'Agent SDK not installed. Run: npm install @anthropic-ai/claude-agent-sdk',
     );
+  });
+});
+
+describe('createAgentSdkBackend', () => {
+  it('honors an already-aborted signal before loading the optional SDK peer', async () => {
+    const controller = new AbortController();
+    controller.abort(new Error('cancelled'));
+
+    const backend = createAgentSdkBackend({ allowedTools: ['Read'] });
+    await expect(backend.invoke({
+      prompt: 'hello',
+      projectDir: '/tmp/proj',
+      model: 'claude-sonnet-4-5',
+      onOutput: () => {},
+      signal: controller.signal,
+    })).rejects.toThrow('cancelled');
   });
 });
 

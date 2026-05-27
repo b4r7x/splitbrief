@@ -3,7 +3,7 @@ import type { InvokeResult } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StructuredSummary } from '../../core/schemas/compaction.js';
-import type { Planner, PlannerCallbacks, PlanResult, EscalationResult, RegenerateResult, PhaseResult, PlannerCapabilities, PriorMessage, PlannerSummaryMessage } from './types.js';
+import type { Planner, PlannerCallbacks, PlannerOutputCallbacks, PlanResult, EscalationResult, RegenerateResult, PhaseResult, PlannerCapabilities, PriorMessage, PlannerSummaryMessage } from './types.js';
 import { buildResearchPrompt } from '../spec/prompts/research.js';
 import { buildSpecPrompt } from '../spec/prompts/spec.js';
 import { buildPlanPrompt } from '../spec/prompts/plan.js';
@@ -194,9 +194,9 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       prompt: string,
       _artifactType: 'spec' | 'plan',
       projectDir: string,
-      callbacks: { onOutput: (text: string) => void },
+      callbacks: PlannerOutputCallbacks,
     ): Promise<RegenerateResult> {
-      const result = await config.invokeEscalate({ prompt, projectDir, callbacks });
+      const result = await config.invokeEscalate({ prompt, projectDir, callbacks, signal: callbacks.signal });
       return { text: result.text, usage: result.usage };
     },
 
@@ -204,7 +204,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       task: Task,
       error: string,
       projectDir: string,
-      callbacks: { onOutput: (text: string) => void },
+      callbacks: PlannerOutputCallbacks,
       languageContext?: LanguageContext,
     ): Promise<EscalationResult> {
       return escalateHint(config, task, error, projectDir, callbacks, languageContext);
@@ -214,7 +214,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       task: Task,
       error: string,
       projectDir: string,
-      callbacks: { onOutput: (text: string) => void },
+      callbacks: PlannerOutputCallbacks,
       languageContext?: LanguageContext,
     ): Promise<EscalationResult> {
       return escalateFull(config, task, error, projectDir, callbacks, languageContext);
@@ -223,9 +223,9 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
     async review(
       prompt: string,
       projectDir: string,
-      callbacks: { onOutput: (text: string) => void },
+      callbacks: PlannerOutputCallbacks,
     ): Promise<{ text: string; usage: TokenDelta | null }> {
-      return config.invokeEscalate({ prompt, projectDir, callbacks });
+      return config.invokeEscalate({ prompt, projectDir, callbacks, signal: callbacks.signal });
     },
 
     async summarize(messages: PlannerSummaryMessage[], projectDir?: string): Promise<string> {

@@ -1,6 +1,7 @@
-import { execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
-interface Gate {
+export interface Gate {
   id: string;
   description: string;
   command: string;
@@ -23,91 +24,91 @@ const gates: Gate[] = [
   {
     id: '2',
     description: 'No z.infer in core/types/',
-    command: 'rg "z\\.infer" src/core/types/ | wc -l',
+    command: '{ rg "z\\.infer" src/core/types/ || true; } | wc -l',
     expected: 0,
   },
   {
     id: '3',
     description: 'Zero memoization / imperative handles',
-    command: 'rg "useMemo|useCallback|React\\.memo|forwardRef|useImperativeHandle" src/ | wc -l',
+    command: '{ rg "useMemo|useCallback|React\\.memo|forwardRef|useImperativeHandle" src/ || true; } | wc -l',
     expected: 0,
   },
   {
     id: '4',
     description: 'No raw throw new Error in engine/lib/cli',
-    command: "rg \"throw new Error\" src/engine/ src/lib/ src/cli/ | rg -v '\\.test\\.' | wc -l",
+    command: "{ rg \"throw new Error\" src/engine/ src/lib/ src/cli/ | rg -v '\\.test\\.' || true; } | wc -l",
     expected: 0,
   },
   {
     id: '5',
     description: 'No raw setter on store facade',
-    command: 'rg "^\\s*set:\\s*store\\.set" src/stores/ | wc -l',
+    command: '{ rg "^\\s*set:\\s*store\\.set" src/stores/ || true; } | wc -l',
     expected: 0,
   },
   {
     id: '6',
     description: 'simple-git only in src/lib/git.ts',
-    command: "rg \"from 'simple-git'\" src/ --glob '!**/*.test.ts' | rg -v '^src/lib/git.ts:' | wc -l",
+    command: "{ rg \"from 'simple-git'\" src/ --glob '!**/*.test.ts' | rg -v '^src/lib/git.ts:' || true; } | wc -l",
     expected: 0,
   },
   {
     id: '7',
     description: 'No global env mutation in agent-sdk-backend',
-    command: "rg \"process\\.env(?:\\.[A-Z_]+|\\[['\\\"'][A-Z_]+['\\\"]\\])\\s*=\" src/engine/agent-sdk-backend.ts | wc -l",
+    command: "{ rg \"process\\.env(?:\\.[A-Z_]+|\\[['\\\"'][A-Z_]+['\\\"]\\])\\s*=\" src/engine/agent-sdk-backend.ts || true; } | wc -l",
     expected: 0,
   },
   {
     id: '8',
     description: 'Zero runtime classes in production source',
-    command: "rg \"\\bclass\\s+\\w+\" src/ --glob '!**/*.test.ts' --glob '!**/*.test.tsx' | wc -l",
+    command: "{ rg \"\\bclass\\s+\\w+\" src/ --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l",
     expected: 0,
   },
   {
     id: '9',
     description: 'No cross-feature imports',
-    command: "rg \"from '\\.\\./(\\.\\./)features/\" src/features/ | wc -l",
+    command: "{ rg \"from '\\.\\./(\\.\\./)features/\" src/features/ || true; } | wc -l",
     expected: 0,
   },
   {
     id: '10',
     description: 'No callbacks.onEvent (post-migration guard)',
-    command: 'grep -rn "callbacks\\.onEvent" src/ | wc -l',
+    command: '{ grep -rn "callbacks\\.onEvent" src/ || true; } | wc -l',
     expected: 0,
   },
   {
     id: '11',
     description: 'No OrchestratorEvent (post-migration guard)',
-    command: 'grep -rn "OrchestratorEvent\\b" src/ | wc -l',
+    command: '{ grep -rn "OrchestratorEvent\\b" src/ || true; } | wc -l',
     expected: 0,
   },
   {
     id: '12',
     description: 'Engine must not import from features',
-    command: "grep -rln 'from.*features' src/engine | grep -v '\\.test\\.' | wc -l",
+    command: "{ grep -rln 'from.*features' src/engine | grep -v '\\.test\\.' || true; } | wc -l",
     expected: 0,
   },
   {
     id: '12b',
     description: 'Engine must not import react or ink',
-    command: "rg -ln \"from 'react'|from 'ink'\" src/engine/ --glob '!**/*.test.ts' --glob '!**/*.test.tsx' | wc -l",
+    command: "{ rg -ln \"from 'react'|from 'ink'\" src/engine/ --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l",
     expected: 0,
   },
   {
     id: '12c',
     description: 'Engine must not import from src/components/ or src/hooks/ or src/cli/',
-    command: "rg -n \"from '\\.\\./\\.\\./\\.\\./(hooks|components|cli)/\" src/engine/ --glob '!**/*.test.ts' --glob '!**/*.test.tsx' | wc -l",
+    command: "{ rg -n \"from '\\.\\./\\.\\./\\.\\./(hooks|components|cli)/\" src/engine/ --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l",
     expected: 0,
   },
   {
     id: '13',
     description: 'No TuiEvent (post-migration guard)',
-    command: 'grep -rn "\\bTuiEvent\\b" src/ | wc -l',
+    command: '{ grep -rn "\\bTuiEvent\\b" src/ || true; } | wc -l',
     expected: 0,
   },
   {
     id: '14',
     description: 'React architecture refactor guard',
-    command: "rg -n -e \"components/input-bar\" -e \"core/slash-commands\" -e \"features/tool-picker\" -e \"hooks/use-app-keys\" -e \"workflow/components/command-palette-overlay\" -e \"engine/palette-aggregate\" -e \"InputBar\" -e \"toPaletteItems\" -e \"slashItems\" -e \"source: 'slash'\" -e \"'slash:'\" src CLAUDE.md docs --glob '*.md' --glob '!docs/INVARIANTS.md' --glob '!docs/superpowers/**' --glob '!docs/audits/**' | wc -l",
+    command: "{ rg -n -e \"components/input-bar\" -e \"core/slash-commands\" -e \"features/tool-picker\" -e \"hooks/use-app-keys\" -e \"workflow/components/command-palette-overlay\" -e \"engine/palette-aggregate\" -e \"InputBar\" -e \"toPaletteItems\" -e \"slashItems\" -e \"source: 'slash'\" -e \"'slash:'\" src CLAUDE.md docs --glob '*.md' --glob '!docs/INVARIANTS.md' --glob '!docs/superpowers/**' --glob '!docs/audits/**' || true; } | wc -l",
     expected: 0,
   },
   {
@@ -119,38 +120,74 @@ const gates: Gate[] = [
   {
     id: '16',
     description: 'Relative imports must use .js extension',
-    command: "rg -n \"from '\\.\\.?/\" src/ --glob '*.ts' --glob '*.tsx' --glob '!**/*.test.ts' --glob '!**/*.test.tsx' | rg -v \"\\.js'|\\.json'\" | wc -l",
+    command: "{ rg -n \"from '\\.\\.?/\" src/ --glob '*.ts' --glob '*.tsx' --glob '!**/*.test.ts' --glob '!**/*.test.tsx' | rg -v \"\\.js'|\\.json'\" || true; } | wc -l",
     expected: 0,
   },
 ];
 
-let failed = 0;
+type ExecGateCommand = (command: string) => string;
+type LogLine = (line?: string) => void;
 
-for (const gate of gates) {
-  let count: number;
-  try {
-    const output = execSync(gate.command, {
-      shell: '/bin/bash',
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-    count = parseInt(output, 10) || 0;
-  } catch {
-    count = 0;
+function execGateCommand(command: string): string {
+  const result = spawnSync('/bin/bash', ['-o', 'pipefail', '-c', command], {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  if (result.error) throw result.error;
+  const stderr = result.stderr.trim();
+  if (result.status !== 0 || result.signal !== null || stderr.length > 0) {
+    throw new Error(stderr || `command exited with ${result.status ?? result.signal}`);
   }
-
-  const pass = count === gate.expected;
-  const status = pass ? 'PASS' : 'FAIL';
-  const symbol = pass ? '✓' : '✗';
-  console.log(`  ${symbol} [${gate.id}] ${gate.description}: ${count} (expected ${gate.expected}) ${status}`);
-
-  if (!pass) failed++;
+  return result.stdout.trim();
 }
 
-console.log();
-if (failed > 0) {
-  console.log(`${failed} gate(s) failed.`);
-  process.exit(1);
-} else {
-  console.log(`All ${gates.length} gates passed.`);
+export function runInvariantGates(
+  gatesToRun: readonly Gate[] = gates,
+  execCommand: ExecGateCommand = execGateCommand,
+  log: LogLine = console.log,
+): number {
+  let failed = 0;
+
+  for (const gate of gatesToRun) {
+    let count: number;
+    try {
+      const output = execCommand(gate.command).trim();
+      if (!/^\d+$/.test(output)) {
+        log(`  ✗ [${gate.id}] ${gate.description}: invalid output "${output}" (expected ${gate.expected}) FAIL`);
+        failed++;
+        continue;
+      }
+      count = parseInt(output, 10);
+    } catch {
+      log(`  ✗ [${gate.id}] ${gate.description}: command failed (expected ${gate.expected}) FAIL`);
+      failed++;
+      continue;
+    }
+
+    const pass = count === gate.expected;
+    const status = pass ? 'PASS' : 'FAIL';
+    const symbol = pass ? '✓' : '✗';
+    log(`  ${symbol} [${gate.id}] ${gate.description}: ${count} (expected ${gate.expected}) ${status}`);
+
+    if (!pass) failed++;
+  }
+
+  return failed;
+}
+
+function isMainModule(): boolean {
+  return process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+}
+
+if (isMainModule()) {
+  const failed = runInvariantGates();
+
+  console.log();
+  if (failed > 0) {
+    console.log(`${failed} gate(s) failed.`);
+    process.exit(1);
+  } else {
+    console.log(`All ${gates.length} gates passed.`);
+  }
 }

@@ -1,7 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
-import type { ValidationResult } from '../validation.js';
+import type { ValidationResult } from '../validation-types.js';
 import type { TaskStatus } from '../../../core/schemas/enums.js';
 import type { WorkflowContext } from '../types.js';
 import type { RoutingDecision } from '../context-routing/types.js';
@@ -139,8 +139,10 @@ export async function retryAndRecord(opts: RetryAndRecordOptions): Promise<{ sta
     retries: result.attempts,
     durationMs: Date.now() - taskStartTime,
     escalated,
-    validation: opts.initialValidation,
-    changedFiles: opts.initialChangedFiles,
+    initialValidation: opts.initialValidation,
+    initialChangedFiles: opts.initialChangedFiles,
+    validation: result.validationResults,
+    changedFiles: result.changedFiles,
   });
   return { state: nextState, completed: true };
 }

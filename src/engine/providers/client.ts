@@ -52,6 +52,22 @@ export async function fetchJsonWithTimeout(
   return await res.json();
 }
 
+export function validateProviderBaseURL(baseURL: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(baseURL);
+  } catch {
+    throw providerError.invalidApiBase(baseURL, 'must be an absolute URL');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw providerError.invalidApiBase(baseURL, 'must use http or https');
+  }
+  if (parsed.username || parsed.password) {
+    throw providerError.invalidApiBase(baseURL, 'must not include credentials');
+  }
+  return baseURL;
+}
+
 export function createClientFromProvider(provider: ProviderDef): OpenAI {
   return new OpenAI({ baseURL: provider.baseURL, apiKey: provider.apiKey() });
 }
@@ -112,7 +128,7 @@ export function createMetadataProvider<TRaw extends { id: string }>(
   opts: MetadataProviderOpts<TRaw>,
   overrides?: ProviderOverrides,
 ): ProviderDefWithMetadata {
-  const baseURL = overrides?.apiBase ?? opts.defaultBaseURL;
+  const baseURL = validateProviderBaseURL(overrides?.apiBase ?? opts.defaultBaseURL);
   const shell = createProviderShell({ name: opts.name, baseURL, isLocal: opts.isLocal });
   const apiKey = (): string =>
     overrides?.apiKey ?? process.env[opts.envKeyName] ?? opts.apiKeyDefault ?? '';

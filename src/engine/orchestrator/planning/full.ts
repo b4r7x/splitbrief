@@ -85,7 +85,9 @@ async function runNewPlanning(
 
   if (conversational && collectedQuestions.length > 0 && callbacks.onQuestionAsked) {
     state = await collectAndPersistClarifications(collectedQuestions, projectDir, sessionId, state, callbacks.onQuestionAsked, config.workflow.persistTranscript, wctx.bus, metadata, planner);
-    ({ state, tasks } = await regeneratePlanAndTasks(projectDir, sessionId, planner, callbacks, wctx.bus, state, metadata, skillsContext));
+    ({ state, tasks } = await regeneratePlanAndTasks({
+      projectDir, sessionId, planner, callbacks, bus: wctx.bus, state, metadata, skillsContext, signal,
+    }));
   }
 
   state = transitionAndSave(projectDir, sessionId, state, { type: 'SPEC_DONE' });
@@ -98,7 +100,9 @@ async function runNewPlanning(
     state = specLoop.state;
     if (specLoop.rejected) return { state, tasks: [], cancelled: true };
     if (specLoop.regenerated) {
-      ({ state, tasks } = await regeneratePlanAndTasks(projectDir, sessionId, planner, callbacks, wctx.bus, state, metadata, skillsContext));
+      ({ state, tasks } = await regeneratePlanAndTasks({
+        projectDir, sessionId, planner, callbacks, bus: wctx.bus, state, metadata, skillsContext, signal,
+      }));
     }
   }
 
@@ -115,7 +119,9 @@ async function runNewPlanning(
     state = planLoop.state;
     if (planLoop.rejected) return { state, tasks: [], cancelled: true };
     if (planLoop.regenerated) {
-      const taskRegen = await regenerateTasks(projectDir, sessionId, planner, callbacks, wctx.bus, state, metadata);
+      const taskRegen = await regenerateTasks({
+        projectDir, sessionId, planner, callbacks, bus: wctx.bus, state, metadata, signal,
+      });
       state = taskRegen.state;
       tasks = taskRegen.tasks;
     }

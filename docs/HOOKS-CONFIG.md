@@ -137,7 +137,7 @@ Diptych also auto-discovers JS/TS module hooks from `.diptych/hooks/`. Files nam
 
 Discovery only considers `.js` and `.ts` files. Non-matching filenames such as `utils.ts`, `readme.md`, or `pre_task.ts` are ignored. A missing `.diptych/hooks/` directory is fine and registers no hooks.
 
-Discovered hooks are equivalent to `kind: module` entries with their `path` set to the discovered file. For the same event, explicitly configured hooks run first, then discovered hooks.
+Discovered hooks are equivalent to `kind: module` entries with their `path` set to the project-relative discovered file, for example `.diptych/hooks/pre-task.js`. For the same event, explicitly configured hooks run first, then discovered hooks.
 
 ### `command` restrictions
 
@@ -325,10 +325,10 @@ Because of that authority, diptych layers several guardrails:
 
 Adding a hook to `.diptych/config.yaml` is RCE on the next `diptych start`. A malicious PR could drop a `hooks:` block and own the reviewer's machine. To prevent this:
 
-- The first time diptych sees a hook config, it computes `sha256(canonical-JSON)` and prompts in TTY: `Trust these hooks for this project? [y/N]`
+- The first time diptych sees a hook config, it computes `sha256(canonical-JSON + module file digests)` and prompts in TTY: `Trust these hooks for this project? [y/N]`
 - On `y`: hash stored in `.diptych/hook-trust.json`. Future runs compare against the stored hash.
 - On `N`: refuses to start.
-- Editing the config invalidates the trust — next run re-prompts.
+- Editing the config or a module hook file invalidates the trust — next run re-prompts.
 
 **In CI** (non-TTY): you must pass `--allow-hooks` explicitly. Without it, diptych refuses to start with an actionable error message.
 

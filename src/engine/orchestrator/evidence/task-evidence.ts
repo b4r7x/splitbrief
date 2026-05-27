@@ -1,6 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
-import type { ValidationResult } from '../validation.js';
+import type { ValidationResult } from '../validation-types.js';
 import type {
   EvidenceLedger,
   EvidenceValidationEntry,
@@ -21,13 +21,13 @@ export function validationEntries(
   results: ValidationResult[],
   metadata?: { retryState?: EvidenceValidationEntry['retryState']; changedFiles?: string[] | undefined } | undefined,
 ): EvidenceValidationEntry[] {
-  return results.map(r => {
-    const entry: EvidenceValidationEntry = { stage: r.stage, passed: r.passed };
-    if (r.error && !r.passed) entry.errorSummary = r.error.split('\n').slice(0, 5).join('\n');
-    if (!r.passed && metadata?.retryState) entry.retryState = metadata.retryState;
-    if (!r.passed && metadata?.changedFiles && metadata.changedFiles.length > 0) {
-      entry.changedFiles = [...metadata.changedFiles];
-    }
+	return results.map(r => {
+	  const entry: EvidenceValidationEntry = { stage: r.stage, passed: r.passed };
+	  if (r.error && !r.passed) entry.errorSummary = r.error.split('\n').slice(0, 5).join('\n');
+	  if (metadata?.retryState) entry.retryState = metadata.retryState;
+	  if (metadata?.changedFiles && metadata.changedFiles.length > 0) {
+	    entry.changedFiles = [...metadata.changedFiles];
+	  }
     return entry;
   });
 }

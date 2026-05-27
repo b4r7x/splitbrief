@@ -7,11 +7,18 @@ import type { Implementer } from '../../implementers/types.js';
 import type { WorkflowContext } from '../types.js';
 import type { UsageCategory } from '../tokens.js';
 import type { ChangedFilesSnapshot } from '../approval/file-snapshots.js';
+import type { ValidationResult } from '../validation-types.js';
 
 export const MAX_HINT_ERROR_LENGTH = 4000;
 
 export type RetryResult =
-  | { completed: true; method: Exclude<TaskCompletionMethod, 'failed' | 'skipped'>; attempts: number }
+  | {
+    completed: true;
+    method: Exclude<TaskCompletionMethod, 'failed' | 'skipped'>;
+    attempts: number;
+    validationResults?: ValidationResult[] | undefined;
+    changedFiles?: string[] | undefined;
+  }
   | { completed: false; method: 'failed'; attempts: number };
 
 export type EscalationContext = WorkflowContext & {
@@ -38,6 +45,7 @@ export type RetryInvokeArgs = {
   config: Config;
   implementer: Implementer;
   implementerProfile?: string | undefined;
+  signal?: AbortSignal | undefined;
 };
 
 export type RetryStepOpts = {

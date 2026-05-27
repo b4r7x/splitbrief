@@ -15,7 +15,7 @@ export function createAgentSdkPlanner(model?: string, apiKey?: string, initialSe
     initialSessionId: initialSessionId ?? null,
   });
 
-  const invoke = ({ prompt, projectDir, callbacks, images }: {
+  const invoke = ({ prompt, projectDir, callbacks, images, signal }: {
     prompt: string;
     projectDir: string;
     callbacks: {
@@ -24,6 +24,7 @@ export function createAgentSdkPlanner(model?: string, apiKey?: string, initialSe
       onSessionExpired?: ((id: string) => void) | undefined;
     };
     images?: Attachment[] | undefined;
+    signal?: AbortSignal | undefined;
   }) =>
     backend.invoke({
       prompt,
@@ -34,6 +35,7 @@ export function createAgentSdkPlanner(model?: string, apiKey?: string, initialSe
       onSessionExpired: callbacks.onSessionExpired,
       ...(effort !== undefined && { effort }),
       ...(images && images.length > 0 ? { images } : {}),
+      ...(signal !== undefined && { signal }),
     });
 
   return createPlannerBase({

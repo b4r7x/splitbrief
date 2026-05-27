@@ -1,8 +1,9 @@
 import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
 import type { EngineEvent } from '../events/types.js';
 import type { HookOutcome, HookContext } from './types.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { resolveFromProject } from '../../utils/path-patterns.js';
+import { assertExistingPathConfined } from '../../lib/path-confinement.js';
 
 export type HookModuleFunction = (event: EngineEvent, ctx: HookContext) => Promise<HookOutcome> | HookOutcome;
 
@@ -10,11 +11,11 @@ export type LoadResult =
   | { ok: true; fn: HookModuleFunction }
   | { ok: false; reason: string; error?: unknown };
 
-// ESM import() is cached by URL — the module is loaded once per process lifetime.
 export async function loadHookModule(modulePath: string, projectDir: string): Promise<LoadResult> {
-  const absPath = resolveFromProject(projectDir, modulePath);
-  const url = pathToFileURL(absPath).href;
   try {
+    assertExistingPathConfined(modulePath, projectDir);
+    const absPath = resolve(projectDir, modulePath);
+    const url = pathToFileURL(absPath).href;
     const mod: unknown = await import(url);
     if (mod === null || typeof mod !== 'object') {
       return { ok: false, reason: invalidDefaultExportReason(absPath, undefined) };

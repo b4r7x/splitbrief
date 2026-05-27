@@ -211,6 +211,7 @@ export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise
         estimate: prediction.deterministic,
         metadata: wctx.metadata,
         forcedProfileId: wctx.implementerProfile,
+        signal: wctx.signal,
       });
       state = reviewed.state;
       setTrackedState(state);
@@ -275,11 +276,11 @@ export async function runTasksAndReview(opts: RunTasksAndReviewOptions): Promise
     };
   }
 
-  const summary = await runFinalReviewPhase(
-    { projectDir: wctx.projectDir, sessionId: wctx.sessionId, config: wctx.config, callbacks, bus: wctx.bus, state, planner: wctx.planner, metadata: wctx.metadata },
-    summaryBase,
-    taskResult.taskBreakdowns,
-    phaseTimings,
-  );
-  return { summary, completed: true };
-}
+	  const summary = await runFinalReviewPhase(
+	    { projectDir: wctx.projectDir, sessionId: wctx.sessionId, config: wctx.config, callbacks, bus: wctx.bus, state, planner: wctx.planner, metadata: wctx.metadata, signal: wctx.signal },
+	    summaryBase,
+	    taskResult.taskBreakdowns,
+	    phaseTimings,
+	  );
+	  return { summary, completed: !wctx.signal?.aborted };
+	}

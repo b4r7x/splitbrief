@@ -1193,7 +1193,7 @@ All sections are optional; absence means the feature is off (snapshots) or uses 
 
 Colocated test files (`foo.test.ts` next to `foo.ts`). Engine tests are headless; stores reset in `beforeEach`. Agent-implementer tests spawn real subprocesses (slow, ~30s per test).
 
-Full verification: `npm run test-ci` (typecheck, lint, then Vitest). Targeted verification: `npm test -- <path>` for the touched files before running the full suite.
+Full verification: `npm run test-ci` (typecheck, lint, Vitest, then invariants). Targeted verification: `npm test -- <path>` for the touched files before running the full suite.
 
 ---
 

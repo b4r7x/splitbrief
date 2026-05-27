@@ -18,10 +18,12 @@ export function createAgentPlanner(config: Config): Planner {
     prompt,
     projectDir,
     callbacks,
+    signal,
   }: {
     prompt: string;
     projectDir: string;
     callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion'>;
+    signal?: AbortSignal | undefined;
   }): Promise<InvokeResult> => {
     const result = await invokeCommandBasedRunner(
       {
@@ -33,6 +35,7 @@ export function createAgentPlanner(config: Config): Planner {
       prompt,
       projectDir,
       callbacks.onOutput,
+      signal,
     );
 
     if (callbacks.onQuestion) {

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { simpleGit, type SimpleGit } from 'simple-git';
 import { error, matches } from '../utils/error.js';
+import { toErrorMessage } from '../utils/format-errors.js';
 
 const getGit = (dir: string): SimpleGit => simpleGit(dir);
 
@@ -21,7 +22,7 @@ export const gitError = {
 export type GitCommandError = ReturnType<typeof gitError.commandFailed>;
 
 function toGitCommandError(intent: string, err: unknown): GitCommandError {
-  return gitError.commandFailed(intent, err instanceof Error ? err.message : String(err), err);
+  return gitError.commandFailed(intent, toErrorMessage(err), err);
 }
 
 function getStatusPaths(status: Awaited<ReturnType<SimpleGit['status']>>): string[] {

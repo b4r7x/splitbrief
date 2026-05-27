@@ -91,9 +91,9 @@ See [CONFIGURATION.md](./CONFIGURATION.md) for the full schema. The loader throw
 
 ### "Hook config is not trusted and no TTY available"
 
-Cause: `.diptych/config.yaml` declares `hooks:` but `.diptych/hook-trust.json` does not record the current config hash, and stdin is not a TTY (CI).
+Cause: `.diptych/config.yaml` declares `hooks:` but `.diptych/hook-trust.json` does not record the current hook config and module-file hash, and stdin is not a TTY (CI).
 
-Fix: run interactively once to trust (`diptych start`), or pass `--allow-hooks` on every CI run. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) §Trust model. Editing the hook config invalidates trust and triggers a re-prompt.
+Fix: run interactively once to trust (`diptych start`), or pass `--allow-hooks` on every CI run. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) §Trust model. Editing the hook config or a module hook file invalidates trust and triggers a re-prompt.
 
 ### Planner hangs / implementer times out
 
@@ -147,7 +147,7 @@ Diagnostic checklist:
 - `CI=1` is set in CI → TUI disabled, some tests depend on non-TTY stdout. Run locally with `CI=1 npm test` to reproduce.
 - Temp dir state: some tests write under `os.tmpdir()`. Flake when runs don't clean up; rerun after `rm -rf $TMPDIR/diptych-*`.
 - API-key env vars from your shell leak into tests. CI runs cleaner. Unset local keys to reproduce CI.
-- Run the CI pipeline exactly: `npm run test-ci` (typecheck → lint → test).
+- Run the CI pipeline exactly: `npm run test-ci` (typecheck → lint → test → invariants).
 
 ### API key warning in logs
 

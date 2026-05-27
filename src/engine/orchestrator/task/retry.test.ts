@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplStateWithMetadata as implementingState } from '#testing/helpers/factories/workflow-state.js';
@@ -16,6 +18,7 @@ import {
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
+import { readEvidenceLedger } from '../evidence/persistence.js';
 import { retryAndRecord } from './retry.js';
 
 afterEach(cleanupTaskProjects);
@@ -64,6 +67,61 @@ describe('retryAndRecord — retry budget', () => {
     }
 
     expect(taskBreakdowns[0]?.method).toBe('local');
+  });
+
+  it('keeps initial failure evidence distinct from successful retry validation', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', file: 'src/task.ts' });
+    let state = implementingState([task]);
+    state = transition(state, { type: 'START_TASK', taskId: task.id });
+    state = transition(state, { type: 'TASK_SENT' });
+
+    const implementer = makeImplementer({
+      retry: vi.fn().mockImplementation(async ({ projectDir: retryDir }: { projectDir: string }) => {
+        mkdirSync(join(retryDir, 'src'), { recursive: true });
+        writeFileSync(join(retryDir, task.file), 'recovered implementation');
+        return {
+          success: true,
+          output: 'fixed',
+          usage: { inputTokens: 20, outputTokens: 10 },
+        };
+      }),
+    });
+    const validator = {
+      findAffectedTestFile: vi.fn().mockReturnValue(null),
+      runValidation: vi.fn().mockResolvedValue([{ stage: 'test' as const, passed: true }]),
+    };
+
+    const result = await retryAndRecord({
+      wctx: makeWorkflowContext({ projectDir, sessionId, implementer, validator }),
+      task,
+      initialError: 'test failed',
+      initialValidation: [{ stage: 'test', passed: false, error: 'initial failed' }],
+      initialChangedFiles: ['src/initial.ts'],
+      state,
+      taskStartTime: Date.now(),
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+
+    expect(result.completed).toBe(true);
+    expect(readEvidenceLedger(projectDir, sessionId)?.tasks[0]?.validation).toEqual([
+      {
+        stage: 'test',
+        passed: false,
+        errorSummary: 'initial failed',
+        retryState: 'initial-failure',
+        changedFiles: ['src/initial.ts'],
+      },
+	      {
+	        stage: 'test',
+	        passed: true,
+	        retryState: 'retry',
+	        changedFiles: ['src/task.ts'],
+	      },
+	    ]);
+    expect(readEvidenceLedger(projectDir, sessionId)?.tasks[0]?.changedFiles).toEqual(['src/initial.ts', 'src/task.ts']);
   });
 
   it('exhausts local retry budget and persists recovery when escalation also fails', async () => {

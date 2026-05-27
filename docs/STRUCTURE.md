@@ -137,7 +137,7 @@ src/engine/codebase/
 
 ```
 src/core/hooks/
-└── trust.ts           # sha256(canonical-JSON) trust hashing; compared against .diptych/hook-trust.json
+└── trust.ts           # hook config + module file digest trust hash; compared against .diptych/hook-trust.json
 ```
 
 ### `src/core/tokens/` — token math

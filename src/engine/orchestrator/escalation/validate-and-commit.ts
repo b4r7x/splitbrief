@@ -37,7 +37,7 @@ export async function validateAndCommit(
       blockedReason: reason,
     };
   }
-  if (preApprovedChangedFiles === undefined) {
+	  if (preApprovedChangedFiles === undefined) {
     const preApprovalChangedFileContents = await captureCurrentFileContents(ctx.projectDir, changedFiles);
     const changedFilesGate = await gateChangedFiles({
       changedFiles,
@@ -87,8 +87,14 @@ export async function validateAndCommit(
     }
     persistRetryApprovalEvidence(ctx, state, task, changedFilesGate);
   }
+  if (ctx.signal?.aborted) {
+    return { state, completed: false, validationResults: [], blockedReason: 'aborted' };
+  }
 
   const validationResults = await ctx.validator.runValidation(task, ctx.projectDir, ctx.config, ctx.bus, state.phase, task.id, state.discoveredValidation);
+  if (ctx.signal?.aborted) {
+    return { state, completed: false, validationResults, blockedReason: 'aborted' };
+  }
   const result = await validateCommitAndAdvance({
     task, projectDir: ctx.projectDir, sessionId: ctx.sessionId,
     config: ctx.config, bus: ctx.bus,

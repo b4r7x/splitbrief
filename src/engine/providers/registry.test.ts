@@ -24,6 +24,18 @@ describe('getProvider', () => {
     expect(() => getProvider('unknown-provider')).toThrow(/apiBase/);
   });
 
+  it('rejects apiBase values that are not http URLs', () => {
+    expect(() =>
+      getProvider('custom-api', { apiBase: 'file:///tmp/socket', apiKey: 'sk-test' }),
+    ).toThrow(/http or https/);
+  });
+
+  it('rejects apiBase values with embedded credentials', () => {
+    expect(() =>
+      getProvider('custom-api', { apiBase: 'https://user:pass@example.com/v1', apiKey: 'sk-test' }),
+    ).toThrow(/must not include credentials/);
+  });
+
   it('lists Anthropic models with Anthropic headers', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(
@@ -77,9 +89,23 @@ describe('apiBase exfiltration guard', () => {
     expect(p.name).toBe('openai');
   });
 
-  it('allows local providers with custom apiBase (no apiKeyEnv)', () => {
+  it('allows known provider env keys for equivalent official apiBase variants', () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-real-key';
+    const p = getProvider('anthropic', { apiBase: 'https://api.anthropic.com/' });
+    expect(p.name).toBe('anthropic');
+  });
+
+  it('allows local providers with custom apiBase when no env key is set', () => {
+    delete process.env.OLLAMA_API_KEY;
     const p = getProvider('ollama', { apiBase: 'http://remote-ollama:11434/v1' });
     expect(p.name).toBe('ollama');
+  });
+
+  it('rejects local providers with env-sourced key and custom apiBase', () => {
+    process.env.OLLAMA_API_KEY = 'ollama-real-key';
+    expect(() =>
+      getProvider('ollama', { apiBase: 'http://remote-ollama:11434/v1' }),
+    ).toThrow(/exfiltrat/i);
   });
 
   it('allows known provider without apiBase override', () => {

@@ -1,7 +1,7 @@
 import type { Phase, RecoveryAction, RecoveryReason } from '../../../../core/schemas/enums.js';
 import type { RecoveryFact, RecoveryIssue } from '../../../../core/schemas/recovery.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
-import type { ValidationResult } from '../../validation.js';
+import type { ValidationResult } from '../../validation-types.js';
 import type { UserEditConflict, UserEditConflictAction } from '../../../events/workflow-events.js';
 import { uniqueIds, uniqueSorted } from '../../../../utils/collections.js';
 import { looksLikeFilePath } from '../../../../utils/path-patterns.js';
@@ -222,4 +222,3 @@ export function formatCostFact(value: number): string {
   if (!Number.isFinite(value)) return String(value);
   return `$${value.toFixed(2)}`;
 }
-

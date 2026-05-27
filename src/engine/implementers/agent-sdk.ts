@@ -15,8 +15,8 @@ export function createAgentSdkImplementer(config: Config, options?: ImplementerF
     publisher: options?.publisher,
 
     async invoke(opts: InvokeOpts) {
-      const { prompt, projectDir, onOutput } = opts;
-      return backend.invoke({ prompt, projectDir, model: effectiveModel, onOutput });
+      const { prompt, projectDir, onOutput, signal } = opts;
+      return backend.invoke({ prompt, projectDir, model: effectiveModel, onOutput, signal });
     },
 
     ...(backend.detectChanges && { detectChanges: backend.detectChanges }),

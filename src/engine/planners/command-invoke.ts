@@ -30,10 +30,12 @@ export function createCommandBasedPlanner(
     prompt,
     projectDir,
     callbacks,
+    signal,
   }: {
     prompt: string;
     projectDir: string;
     callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion'>;
+    signal?: AbortSignal | undefined;
   }): Promise<InvokeResult> => {
     const result = await invokeCommandBasedRunner(
       {
@@ -45,6 +47,7 @@ export function createCommandBasedPlanner(
       prompt,
       projectDir,
       callbacks.onOutput,
+      signal,
     );
 
     if (callbacks.onQuestion) {

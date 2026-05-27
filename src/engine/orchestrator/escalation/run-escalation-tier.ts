@@ -83,7 +83,7 @@ async function runIntermediateTier(
     commitSuffix: 'intermediate',
     usageCategory: 'implementer',
     retryFailureFallback: 'Intermediate escalation failed',
-    invokeRetry: async ({ task: t, lastError: err, attempts: a, projectDir }) =>
+    invokeRetry: async ({ task: t, lastError: err, attempts: a, projectDir, signal }) =>
       intermediateImplementer.retry({
         task: t, projectDir, config: intermediateConfig, context: ctx.context,
         languageContext: buildProjectLanguageContext(ctx.projectDir, state.discoveredValidation?.language),
@@ -91,6 +91,7 @@ async function runIntermediateTier(
         onOutput: textHandler,
         bus: ctx.bus,
         phase: state.phase,
+        signal,
       }),
   });
 }
@@ -143,6 +144,7 @@ async function runHintTier(
   const languageContext = buildProjectLanguageContext(ctx.projectDir, state.discoveredValidation?.language);
   const tier1Result = await ctx.planner.escalateHint(initialTask, lastError, ctx.projectDir, {
     onOutput: textHandler,
+    signal: ctx.signal,
   }, languageContext);
   state = addUsageAndSave(ctx.projectDir, ctx.sessionId, state, 'escalation', tier1Result.usage, ctx.bus);
 
@@ -159,7 +161,7 @@ async function runHintTier(
     usageCategory: 'implementer',
     retryFailureFallback: 'Tier-1 hint retry failed to produce valid code',
     profileOverride: ctx.retryProfileOverride,
-    invokeRetry: async ({ task: t, lastError: err, attempts: a, projectDir, implementer, config }) =>
+    invokeRetry: async ({ task: t, lastError: err, attempts: a, projectDir, implementer, config, signal }) =>
       implementer.retry({
         task: t, projectDir, config, context: ctx.context,
         languageContext,
@@ -167,6 +169,7 @@ async function runHintTier(
         onOutput: textHandler,
         bus: ctx.bus,
         phase: state.phase,
+        signal,
       }),
   });
 }
@@ -188,8 +191,8 @@ async function runFullTier(
     commitSuffix: 'escalated',
     usageCategory: 'escalation',
     retryFailureFallback: 'Tier-2 escalation failed to produce valid code',
-    invokeRetry: async ({ task: t, lastError: err, projectDir }) =>
-      ctx.planner.escalateFull(t, err, projectDir, { onOutput: textHandler }, languageContext),
+    invokeRetry: async ({ task: t, lastError: err, projectDir, signal }) =>
+      ctx.planner.escalateFull(t, err, projectDir, { onOutput: textHandler, signal }, languageContext),
     onValidationAfterRetryFail: (validationError) => {
       publishWarning({ bus: ctx.bus, phase: state.phase }, `Tier-2 escalation produced code but validation failed: ${validationError}`);
     },

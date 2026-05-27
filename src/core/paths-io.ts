@@ -3,7 +3,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readPackageJson } from './project-meta.js';
 import { DIPTYCH_DIR, SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE, sessionDir } from './paths.js';
-import { ensureSecureDir, fsError, SECURE_FILE_MODE } from '../lib/fs.js';
+import { ensureSecureDir, fsError, writeSecureFile } from '../lib/fs.js';
 import { assertWritablePathConfined } from '../lib/path-confinement.js';
 import { validateSafeIdentifier } from '../utils/validate-identifier.js';
 import { error, matches } from '../utils/error.js';
@@ -85,7 +85,7 @@ export function writeSpecFile(projectDir: string, sessionId: string, filename: s
   if (metadata && FRONTMATTER_FILES.has(filename) && !content.startsWith('---\n')) {
     finalContent = buildSpecFrontmatter(metadata) + content;
   }
-  writeFileSync(join(sessionDir(projectDir, sessionId), filename), finalContent, { encoding: 'utf-8', mode: SECURE_FILE_MODE });
+  writeSecureFile(join(sessionDir(projectDir, sessionId), filename), finalContent);
 }
 
 export function readSpecFile(projectDir: string, sessionId: string, filename: string): string | null {

@@ -15,6 +15,7 @@ export type RunPlannerReviewOptions = {
   state: WorkflowState;
   metadata?: SpecMetadata | null | undefined;
   writeTo?: typeof SPEC_FILE | typeof PLAN_FILE | typeof TASKS_FILE | typeof REVIEW_FILE;
+  signal?: AbortSignal | undefined;
 };
 
 export async function runPlannerReview(
@@ -23,6 +24,7 @@ export async function runPlannerReview(
   const { planner, prompt, projectDir, sessionId, bus, writeTo, metadata } = opts;
   const result = await planner.review(prompt, projectDir, {
     onOutput: createBusTextHandler({ bus: bus, phase: opts.state.phase }),
+    signal: opts.signal,
   });
   const state = addUsageAndSave(projectDir, sessionId, opts.state, 'planner', result.usage, bus);
   if (writeTo) writeSpecFile(projectDir, sessionId, writeTo, result.text, metadata);

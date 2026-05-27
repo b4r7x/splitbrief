@@ -47,12 +47,12 @@ function mkModuleEntry(overrides: Partial<HookModuleEntry> & { path: string }): 
   };
 }
 
-async function withTempModule<T>(source: string, run: (modulePath: string) => Promise<T>): Promise<T> {
+async function withTempModule<T>(source: string, run: (moduleProjectDir: string, modulePath: string) => Promise<T>): Promise<T> {
   const tempDir = await mkdtemp(join(tmpdir(), 'diptych-hook-module-'));
-  const modulePath = join(tempDir, 'hook.mjs');
+  const modulePath = 'hook.mjs';
   try {
-    await writeFile(modulePath, source);
-    return await run(modulePath);
+    await writeFile(join(tempDir, modulePath), source);
+    return await run(tempDir, modulePath);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
@@ -148,9 +148,9 @@ describe('runHook — kind: module', () => {
   ] as const)('maps module timeout with on_failure=$onFailure to $outcome', async ({ onFailure, outcome }) => {
     await withTempModule(
       'export default async function hook() { await new Promise((resolve) => setTimeout(resolve, 50)); return { kind: "allow" }; }',
-      async (modulePath) => {
+      async (moduleProjectDir, modulePath) => {
         const entry = mkModuleEntry({ path: modulePath, timeout_ms: 10, on_failure: onFailure });
-        const result = await runHook(entry, event, { projectDir, sessionId: 's' });
+        const result = await runHook(entry, event, { projectDir: moduleProjectDir, sessionId: 's' });
         expect(result.kind).toBe(outcome);
         if (result.kind !== 'allow') expect(result.message).toContain('hook timed out after 10ms');
       },

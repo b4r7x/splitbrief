@@ -90,6 +90,27 @@ describe("streamCompletion", () => {
     expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
   });
 
+  it("rejects instead of returning partial text when aborted mid-stream", async () => {
+    const controller = new AbortController();
+    const client = makeMockClient([
+      { content: "partial" },
+      { content: " must-not-complete" },
+    ]);
+
+    await expect(
+      streamCompletion(
+        client,
+        "test-model",
+        [{ role: "user", content: "hi" }],
+        {
+          temperature: 0.2,
+          signal: controller.signal,
+          onProgress: () => controller.abort(new Error("cancelled")),
+        },
+      ),
+    ).rejects.toThrow("cancelled");
+  });
+
   it("maps ECONNREFUSED to a user-friendly error", async () => {
     const client: MockClient = {
       chat: {

@@ -24,20 +24,19 @@ export function createCliImplementer(config: CliImplementerConfig, options?: Imp
     async invoke(opts: InvokeOpts) {
       const { prompt, projectDir, onOutput, signal } = opts;
       const effectiveModel = resolveAutoModel(config.model, toolName);
-
-      if (toolName === 'claude-code') {
-        return runClaudeOneShot({ prompt, projectDir, onOutput, model: effectiveModel });
-      }
-
-      if (!tool.implementer) throw runnerConfigError.missingToolConfig(toolName, 'implementer');
-      const args = tool.implementer.buildArgs({ prompt, model: effectiveModel });
-
       const timeoutSignal = AbortSignal.timeout(timeout);
       const composedSignal = signal
         ? AbortSignal.any([signal, timeoutSignal])
         : timeoutSignal;
 
       try {
+        if (toolName === 'claude-code') {
+          return await runClaudeOneShot({ prompt, projectDir, onOutput, model: effectiveModel, signal: composedSignal });
+        }
+
+        if (!tool.implementer) throw runnerConfigError.missingToolConfig(toolName, 'implementer');
+        const args = tool.implementer.buildArgs({ prompt, model: effectiveModel });
+
         return await spawnAndCollect({
           command: tool.command,
           args,

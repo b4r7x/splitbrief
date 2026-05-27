@@ -8,6 +8,7 @@ import type { Planner } from '../../planners/types.js';
 import { createBusTextHandler, publishPlannerStatus } from '../events.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { appendMessage } from '../../../core/state/persistence.js';
+import { isAbortError } from '../../../utils/abort.js';
 
 type ApprovalLoopOptions = {
   type: 'spec' | 'plan';
@@ -53,9 +54,16 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{ stat
     const current = readSpecFileOrEmpty(projectDir, sessionId, filename);
     const regenPrompt = buildRegeneratePrompt(type, current, result.comment);
     createBusTextHandler({ bus: bus, phase: state.phase })(`\n[Regenerating ${type} with feedback: ${result.comment}]\n`);
-    const regenResult = await planner.regenerate(regenPrompt, type, projectDir, {
-      onOutput: createBusTextHandler({ bus: bus, phase: state.phase }),
-    });
+    let regenResult: Awaited<ReturnType<Planner['regenerate']>>;
+    try {
+      regenResult = await planner.regenerate(regenPrompt, type, projectDir, {
+        onOutput: createBusTextHandler({ bus: bus, phase: state.phase }),
+        signal,
+      });
+    } catch (err) {
+      if (signal?.aborted || isAbortError(err)) return { state, rejected: false, regenerated };
+      throw err;
+    }
     state = addUsageAndSave(projectDir, sessionId, state, 'planner', regenResult.usage, bus);
     regenerated = true;
     bus.publish({ type: regeneratedEvent, ts: Date.now(), phase: state.phase, comment: result.comment });

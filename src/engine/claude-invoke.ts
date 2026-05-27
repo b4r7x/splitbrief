@@ -146,10 +146,11 @@ export interface ClaudePlannerStreamOpts {
   model?: string | undefined;
   effort?: EffortLevel | undefined;
   images?: Attachment[] | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 export async function runClaudePlannerStream(opts: ClaudePlannerStreamOpts): Promise<ClaudePlannerStreamResult> {
-  const { prompt, projectDir, sessionId, onOutput, onQuestion, model, effort, images } = opts;
+  const { prompt, projectDir, sessionId, onOutput, onQuestion, model, effort, images, signal } = opts;
   const args = buildClaudeArgs({ useStdin: true, sessionId, model, effort, ...(images ? { images } : {}) });
 
   const { state, handleLine } = createStreamHandler({ onOutput, onQuestion });
@@ -162,6 +163,7 @@ export async function runClaudePlannerStream(opts: ClaudePlannerStreamOpts): Pro
     stdin: applyEffortPrefix(prompt, effort),
     notFoundMessage: CLAUDE_NOT_FOUND,
     onLine: handleLine,
+    signal,
   });
 
   return { text: state.text, sessionId: state.sessionId, usage: state.usage };
@@ -173,10 +175,11 @@ export interface ClaudeOneShotOpts {
   onOutput: (text: string) => void;
   model?: string | undefined;
   effort?: EffortLevel | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<InvokeResult> {
-  const { prompt, projectDir, onOutput, model, effort } = opts;
+  const { prompt, projectDir, onOutput, model, effort, signal } = opts;
   const { state, handleLine } = createStreamHandler({ onOutput });
   const args = buildClaudeArgs({ useStdin: true, model, effort });
 
@@ -187,6 +190,7 @@ export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<InvokeR
     stdin: applyEffortPrefix(prompt, effort),
     notFoundMessage: CLAUDE_NOT_FOUND,
     onLine: handleLine,
+    signal,
   });
 
   return { text: state.text, usage: state.usage };

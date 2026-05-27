@@ -78,6 +78,7 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
     callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onSessionId'>,
     mode: 'plan' | 'escalate',
     resumeId: string | null,
+    signal?: AbortSignal | undefined,
   ): Promise<InvokeResult> {
     let stderrOutput = '';
     const buildOpts: Parameters<typeof planner.buildArgs>[0] = {
@@ -97,6 +98,7 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
       parseLine: planner.parseLine,
       onText: callbacks.onOutput,
       onStderr: planner.postProcess ? (chunk) => { stderrOutput += chunk; } : undefined,
+      signal,
       ...(supportsSessionResume && {
         onSessionId: (id: string) => {
           session.capture(id);
@@ -114,22 +116,23 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
     projectDir: string,
     callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onSessionId' | 'onSessionExpired'>,
     mode: 'plan' | 'escalate',
+    signal?: AbortSignal | undefined,
   ): Promise<InvokeResult> {
     if (!supportsSessionResume) {
-      return runOnce(prompt, projectDir, callbacks, mode, null);
+      return runOnce(prompt, projectDir, callbacks, mode, null, signal);
     }
 
     const priorId = session.getResumeId();
     return runWithResumeFallback(
       session,
-      (resumeId) => runOnce(prompt, projectDir, callbacks, mode, resumeId ?? null),
+      (resumeId) => runOnce(prompt, projectDir, callbacks, mode, resumeId ?? null, signal),
       () => { if (priorId) callbacks.onSessionExpired?.(priorId); },
     );
   }
 
   return createPlannerBase({
-    invokePlan: ({ prompt, projectDir, callbacks }) => invoke(prompt, projectDir, callbacks, 'plan'),
-    invokeEscalate: ({ prompt, projectDir, callbacks }) => invoke(prompt, projectDir, callbacks, 'escalate'),
+    invokePlan: ({ prompt, projectDir, callbacks, signal }) => invoke(prompt, projectDir, callbacks, 'plan', signal),
+    invokeEscalate: ({ prompt, projectDir, callbacks, signal }) => invoke(prompt, projectDir, callbacks, 'escalate', signal),
     hintSuccessMode: 'files',
     readPhaseOutput: readCliPhaseOutput,
 

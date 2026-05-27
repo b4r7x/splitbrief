@@ -38,7 +38,7 @@ export async function discoverHookModules(projectDir: string): Promise<Discovere
     const event = HOOK_EVENT_BY_FILE_NAME[basename(entry, ext)];
     if (!event) continue;
 
-    hooks.push({ event, path: join(hooksDir, entry) });
+    hooks.push({ event, path: join('.diptych', 'hooks', entry) });
   }
   return hooks;
 }

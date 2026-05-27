@@ -1,5 +1,5 @@
 import type { TreeEntryEnvelope } from './schemas.js';
-import type { BranchContext } from './branch-summary.js';
+import type { BranchContext } from './branch-context.js';
 import { narrowRecord } from '../../../utils/type-guards.js';
 
 export function buildBranchSummaryPrompt(ctx: BranchContext): string {

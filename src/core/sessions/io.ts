@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Session } from '../schemas/session.js';
 import type { SessionRef } from '../types/session-ref.js';
@@ -7,6 +7,7 @@ import { sessionDir, sessionsRoot } from '../paths.js';
 import { warnError, warnStderr } from '../../lib/warn.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { sessionError } from './errors.js';
+import { writeSecureFile } from '../../lib/fs.js';
 
 function readSummaryFile(filePath: string): Session | null {
   try {
@@ -35,11 +36,7 @@ export function saveSummary(ref: SessionRef, session: Session): void {
   if (result.data.id !== id) {
     throw sessionError.idMismatch(id, result.data.id);
   }
-  const dir = sessionDir(projectDir, id);
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const filePath = join(dir, 'summary.json');
-  writeFileSync(filePath, JSON.stringify(session, null, 2) + '\n');
-  chmodSync(filePath, 0o600);
+  writeSecureFile(join(sessionDir(projectDir, id), 'summary.json'), `${JSON.stringify(session, null, 2)}\n`);
 }
 
 const MAX_RECENT_SESSIONS = 10;

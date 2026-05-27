@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { FilterableItem } from '../picker-utils.js';
-import { isVirtualCustomItem, type RightItemOrVirtual } from './use-two-column-state.js';
+import { isVirtualCustomItem, type RightItemOrVirtual } from './virtual-items.js';
 
 export function findNextEnabled<T>(
   items: T[],

@@ -7,7 +7,7 @@ import { createEvidenceLedger } from './ledger.js';
 import { recordLocalTaskEvidence, recordRetryOrEscalationEvidence, recordSkippedTaskEvidence } from './task-evidence.js';
 import { recordApprovalEvidence, recordRejectionEvidence } from './approval-evidence.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
-import type { ValidationResult } from '../validation.js';
+import type { ValidationResult } from '../validation-types.js';
 import type { ActionClass, TaskCompletionMethod, TaskStatus, WorkflowMode } from '../../../core/schemas/enums.js';
 import { hashTaskBrief } from '../../brief-hash.js';
 import type { GateDecision } from '../approval/tiered-approval.js';
@@ -47,6 +47,8 @@ export function persistTaskEvidence(
     method?: TaskCompletionMethod | undefined;
     retries?: number | undefined;
     durationMs?: number | undefined;
+    initialValidation?: ValidationResult[] | undefined;
+    initialChangedFiles?: string[] | undefined;
     validation?: ValidationResult[] | undefined;
     escalated?: boolean | undefined;
     reason?: string | undefined;
@@ -60,7 +62,10 @@ export function persistTaskEvidence(
     if (recordKind === 'local') {
       updated = recordLocalTaskEvidence({ ledger, task, status: details.status, method: details.method, retries: details.retries, durationMs: details.durationMs, validation: details.validation ?? [], changedFiles: details.changedFiles, briefHash, validationRetryState: details.status === 'failed' ? 'failed' : undefined });
     } else if (recordKind === 'retry') {
-      updated = recordRetryOrEscalationEvidence({ ledger, task, status: details.status, method: details.method, retries: details.retries, durationMs: details.durationMs, validation: details.validation, escalated: details.escalated ?? false, changedFiles: details.changedFiles, briefHash, validationRetryState: details.escalated ? 'escalated' : details.status === 'failed' ? 'failed' : 'initial-failure' });
+      if (details.initialValidation && details.initialValidation.length > 0) {
+        updated = recordRetryOrEscalationEvidence({ ledger: updated, task, status: details.status, method: details.method, retries: details.retries, durationMs: details.durationMs, validation: details.initialValidation, escalated: details.escalated ?? false, changedFiles: details.initialChangedFiles, briefHash, validationRetryState: 'initial-failure' });
+      }
+      updated = recordRetryOrEscalationEvidence({ ledger: updated, task, status: details.status, method: details.method, retries: details.retries, durationMs: details.durationMs, validation: details.validation, escalated: details.escalated ?? false, changedFiles: details.changedFiles, briefHash, validationRetryState: details.escalated ? 'escalated' : details.status === 'failed' ? 'failed' : undefined });
     } else {
       updated = recordSkippedTaskEvidence({ ledger, task, reason: details.reason ?? 'skipped', briefHash });
     }

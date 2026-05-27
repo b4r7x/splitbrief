@@ -7,12 +7,10 @@ import { useStores } from '../../../stores/use-stores.js';
 import { SingleColumnPicker } from '../single-column-picker.js';
 import {
   useTwoColumnState,
-  CUSTOM_ROW_ID,
-  isVirtualCustomItem,
   type LeftColumnProps,
   type RightColumnProps,
-  type RightItemOrVirtual,
 } from './use-two-column-state.js';
+import { CUSTOM_ROW_ID, isVirtualCustomItem, type RightItemOrVirtual } from './virtual-items.js';
 
 export interface TwoColumnPickerProps<L extends FilterableItem, R extends { id: string }> {
   title: string;

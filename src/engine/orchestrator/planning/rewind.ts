@@ -39,6 +39,7 @@ export async function handleRewindSpec(
     createBusTextHandler({ bus: wctx.bus, phase: state.phase })(`\n[Regenerating spec with feedback: ${rewindPending.comment}]\n`);
     const regenResult = await planner.regenerate(regenPrompt, 'spec', projectDir, {
       onOutput: createBusTextHandler({ bus: wctx.bus, phase: state.phase }),
+      signal,
     });
     state = addUsageAndSave(projectDir, sessionId, state, 'planner', regenResult.usage, wctx.bus);
     writeSpecFile(projectDir, sessionId, SPEC_FILE, regenResult.text, metadata);
@@ -58,7 +59,9 @@ export async function handleRewindSpec(
   state = transitionAndSave(projectDir, sessionId, state, { type: 'APPROVE_SPEC' });
   publishPlannerStatus(wctx.bus, state, 'running');
 
-  const { state: planAndTasksState, tasks } = await regeneratePlanAndTasks(projectDir, sessionId, planner, callbacks, wctx.bus, state, metadata, skillsContext);
+  const { state: planAndTasksState, tasks } = await regeneratePlanAndTasks({
+    projectDir, sessionId, planner, callbacks, bus: wctx.bus, state, metadata, skillsContext, signal,
+  });
   state = planAndTasksState;
 
   state = transitionAndSave(projectDir, sessionId, state, { type: 'PLAN_DONE', tasks });
@@ -70,7 +73,18 @@ export async function handleRewindSpec(
     const planLoop = await runApprovalLoop({ type: 'plan', filePath: planPath, planner, projectDir, sessionId, callbacks, bus: wctx.bus, state, signal, persistTranscript: config.workflow.persistTranscript });
     state = planLoop.state;
     if (planLoop.rejected) return { state, tasks: [], cancelled: true };
-    const regen = await regenerateTasksIfNeeded(planLoop.regenerated, projectDir, sessionId, planner, callbacks, wctx.bus, state, tasks, metadata);
+    const regen = await regenerateTasksIfNeeded({
+      regenerated: planLoop.regenerated,
+      projectDir,
+      sessionId,
+      planner,
+      callbacks,
+      bus: wctx.bus,
+      state,
+      tasks,
+      metadata,
+      signal,
+    });
     state = regen.state;
     finalTasks = regen.tasks;
   }
@@ -115,13 +129,16 @@ export async function handleRewindPlan(
     createBusTextHandler({ bus: wctx.bus, phase: state.phase })(`\n[Regenerating plan with feedback: ${rewindPending.comment}]\n`);
     const regenResult = await planner.regenerate(regenPrompt, 'plan', projectDir, {
       onOutput: createBusTextHandler({ bus: wctx.bus, phase: state.phase }),
+      signal,
     });
     state = addUsageAndSave(projectDir, sessionId, state, 'planner', regenResult.usage, wctx.bus);
     writeSpecFile(projectDir, sessionId, PLAN_FILE, regenResult.text, metadata);
     wctx.bus.publish({ type: 'plan_regenerated', ts: Date.now(), phase: state.phase, comment: rewindPending.comment });
   }
 
-  const taskRegen = await regenerateTasks(projectDir, sessionId, planner, callbacks, wctx.bus, state, metadata);
+  const taskRegen = await regenerateTasks({
+    projectDir, sessionId, planner, callbacks, bus: wctx.bus, state, metadata, signal,
+  });
   state = taskRegen.state;
   const rewindTasks: Task[] = taskRegen.tasks;
 
@@ -134,7 +151,18 @@ export async function handleRewindPlan(
     const planLoop = await runApprovalLoop({ type: 'plan', filePath: planPath, planner, projectDir, sessionId, callbacks, bus: wctx.bus, state, signal, persistTranscript: config.workflow.persistTranscript });
     state = planLoop.state;
     if (planLoop.rejected) return { state, tasks: [], cancelled: true };
-    const regen = await regenerateTasksIfNeeded(planLoop.regenerated, projectDir, sessionId, planner, callbacks, wctx.bus, state, rewindTasks, metadata);
+    const regen = await regenerateTasksIfNeeded({
+      regenerated: planLoop.regenerated,
+      projectDir,
+      sessionId,
+      planner,
+      callbacks,
+      bus: wctx.bus,
+      state,
+      tasks: rewindTasks,
+      metadata,
+      signal,
+    });
     state = regen.state;
     finalTasks = regen.tasks;
   }

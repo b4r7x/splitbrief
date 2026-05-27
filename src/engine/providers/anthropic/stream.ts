@@ -9,6 +9,7 @@ import { narrowRecord, assertNever } from '../../../utils/type-guards.js';
 import { streamError, throwMappedError } from '../../streaming/stream-errors.js';
 import { STREAM_IDLE_TIMEOUT_MS } from '../../constants.js';
 import { attachImagesToLastUserMessage } from '../image-attach.js';
+import { throwIfAborted } from '../../../utils/abort.js';
 
 type AnthropicEventType =
   | 'message_start'
@@ -141,7 +142,7 @@ async function* readSseEvents(stream: ReadableStream<Uint8Array>, signal?: Abort
 
   try {
     while (true) {
-      if (signal?.aborted) break;
+      throwIfAborted(signal);
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
@@ -151,12 +152,14 @@ async function* readSseEvents(stream: ReadableStream<Uint8Array>, signal?: Abort
         if (boundary === -1) break;
         const rawEvent = buffer.slice(0, boundary);
         buffer = buffer.slice(boundary + 2);
+        throwIfAborted(signal);
         const parsed = parseSseEvent(rawEvent);
         if (parsed) yield parsed;
       }
     }
 
     buffer += decoder.decode();
+    throwIfAborted(signal);
     const trailing = parseSseEvent(buffer);
     if (trailing) yield trailing;
   } finally {
@@ -253,7 +256,6 @@ export async function streamAnthropicCompletion(
     throw streamError.emptyResponse('Anthropic');
   }
 
-
   let fullResponse = '';
   let usage: TokenDelta | null = null;
 
@@ -298,7 +300,7 @@ export async function streamAnthropicCompletion(
     }
   } catch (err: unknown) {
     if (opts.signal?.aborted) {
-      return { text: fullResponse, usage };
+      throwIfAborted(opts.signal);
     }
     if (timeoutError.isIdle(err)) throw err;
     if (err instanceof SyntaxError) {

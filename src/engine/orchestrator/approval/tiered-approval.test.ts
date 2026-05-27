@@ -11,6 +11,21 @@ import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir } from '#testing/helpers/temp-dir.js';
 import { approvalsFile, DIPTYCH_DIR } from '../../../core/paths.js';
 
+type ConfigOverrides = NonNullable<Parameters<typeof makeConfig>[0]>;
+type ApprovalConfig = NonNullable<ConfigOverrides['approval']>;
+
+function makeApprovalConfig(approval: Pick<ApprovalConfig, 'enabled'> & Partial<ApprovalConfig>) {
+  return makeConfig({
+    approval: {
+      enabled: approval.enabled,
+      feedRejectionsToPlanner: approval.feedRejectionsToPlanner ?? true,
+      ...(approval.headless !== undefined && { headless: approval.headless }),
+      ...(approval.tiers !== undefined && { tiers: approval.tiers }),
+      ...(approval.allowedPaths !== undefined && { allowedPaths: approval.allowedPaths }),
+    },
+  });
+}
+
 function makeInput(overrides: Partial<GateActionInput> = {}): GateActionInput {
   const { bus } = makeBusRecorder();
   const task = makeTask();
@@ -36,7 +51,7 @@ function makeInput(overrides: Partial<GateActionInput> = {}): GateActionInput {
 describe('gateAction', () => {
   it('approval.enabled=false → allow immediately without events', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeConfig({ approval: { enabled: false } } as Parameters<typeof makeConfig>[0]);
+    const config = makeApprovalConfig({ enabled: false });
     const input = makeInput({ bus, config });
     const result = await gateAction(input);
     expect(result.allow).toBe(true);
@@ -54,7 +69,7 @@ describe('gateAction', () => {
 
   it('sticky tier, no grant, no callback → deny APPROVAL_REQUIRED', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeConfig({ approval: { enabled: true, headless: true } } as Parameters<typeof makeConfig>[0]);
+    const config = makeApprovalConfig({ enabled: true, headless: true });
     const input = makeInput({
       bus,
       config,
@@ -85,7 +100,7 @@ describe('gateAction', () => {
       }],
     };
     writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
-    const config = makeConfig({ approval: { enabled: true, headless: true } } as Parameters<typeof makeConfig>[0]);
+    const config = makeApprovalConfig({ enabled: true, headless: true });
     let callbackCalled = false;
     const input = makeInput({
       bus,
@@ -104,10 +119,11 @@ describe('gateAction', () => {
     expect(callbackCalled).toBe(false);
     const granted = events.find(e => e.type === 'approval_granted') as Extract<EngineEvent, { type: 'approval_granted' }> | undefined;
     expect(granted?.scope).toBe('always');
+    expect(events.some(e => e.type === 'approval_prompted')).toBe(false);
   });
 
   it('sticky tier, session grant matching sessionId → allow without callback', async () => {
-    const { bus } = makeBusRecorder();
+    const { bus, events } = makeBusRecorder();
     const projectDir = createTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
     const store = {
@@ -121,7 +137,7 @@ describe('gateAction', () => {
       }],
     };
     writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
-    const config = makeConfig({ approval: { enabled: true, headless: true } } as Parameters<typeof makeConfig>[0]);
+    const config = makeApprovalConfig({ enabled: true, headless: true });
     let callbackCalled = false;
     const input = makeInput({
       bus,
@@ -139,6 +155,9 @@ describe('gateAction', () => {
     const result = await gateAction(input);
     expect(result.allow).toBe(true);
     expect(callbackCalled).toBe(false);
+    const granted = events.find(e => e.type === 'approval_granted') as Extract<EngineEvent, { type: 'approval_granted' }> | undefined;
+    expect(granted?.scope).toBe('session');
+    expect(events.some(e => e.type === 'approval_prompted')).toBe(false);
   });
 
   it('sticky tier, session grant for different sessionId → callback invoked', async () => {
@@ -156,7 +175,7 @@ describe('gateAction', () => {
       }],
     };
     writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
-    const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
+    const config = makeApprovalConfig({ enabled: true });
     let callbackCalled = false;
     const input = makeInput({
       bus,
@@ -181,7 +200,7 @@ describe('gateAction', () => {
     const { bus, events } = makeBusRecorder();
     const projectDir = createTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
-    const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
+    const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
       bus,
       config,
@@ -206,7 +225,7 @@ describe('gateAction', () => {
     const { bus, events } = makeBusRecorder();
     const projectDir = createTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
-    const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
+    const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
       bus,
       config,
@@ -234,7 +253,7 @@ describe('gateAction', () => {
     const { bus, events } = makeBusRecorder();
     const projectDir = createTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
-    const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
+    const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
       bus,
       config,
@@ -257,7 +276,7 @@ describe('gateAction', () => {
 
   it('confirm tier, headless → deny APPROVAL_REQUIRED', async () => {
     const { bus } = makeBusRecorder();
-    const config = makeConfig({ approval: { enabled: true, headless: true, tiers: { destructive: 'confirm' } } } as Parameters<typeof makeConfig>[0]);
+    const config = makeApprovalConfig({ enabled: true, headless: true, tiers: { destructive: 'confirm' } });
     const input = makeInput({
       bus,
       config,
@@ -270,7 +289,7 @@ describe('gateAction', () => {
 
   it('confirm tier, valid phrase + reason → allow, approval_granted emitted', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
+    const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
       bus,
       config,
@@ -292,7 +311,7 @@ describe('gateAction', () => {
 
   it('confirm tier, wrong phrase → deny invalid_confirm_phrase', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
+    const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
       bus,
       config,
@@ -314,7 +333,7 @@ describe('gateAction', () => {
 
   it('confirm tier, callback deny → deny, approval_rejected emitted', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
+    const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
       bus,
       config,
@@ -336,7 +355,7 @@ describe('gateAction', () => {
 
   it('tier override write_out_of_scope → confirm', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeConfig({ approval: { enabled: true, tiers: { write_out_of_scope: 'confirm' } } } as Parameters<typeof makeConfig>[0]);
+    const config = makeApprovalConfig({ enabled: true, tiers: { write_out_of_scope: 'confirm' } });
     const input = makeInput({
       bus,
       config,
@@ -357,7 +376,7 @@ describe('gateAction', () => {
 
   it('confirm tier, callback returns decision:allow → reject invalid_confirm_response', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
+    const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
       bus,
       config,
@@ -381,7 +400,7 @@ describe('gateAction', () => {
 
   it('confirm tier, valid confirm → approval_granted event records confirmReason', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
+    const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
       bus,
       config,
@@ -416,7 +435,7 @@ describe('gateAction', () => {
 
     const { bus, events } = makeBusRecorder();
     let prompted = false;
-    const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
+    const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
       bus,
       config,
@@ -455,7 +474,7 @@ describe('gateAction', () => {
     writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
 
     const { bus } = makeBusRecorder();
-    const config = makeConfig({ approval: { enabled: true } } as Parameters<typeof makeConfig>[0]);
+    const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
       bus,
       config,

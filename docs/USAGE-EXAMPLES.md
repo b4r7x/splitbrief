@@ -1381,7 +1381,7 @@ Trust these hooks for this project? [y/N]
 hooks trusted (sha256 stored in .diptych/hook-trust.json)
 ```
 
-`--allow-hooks` skips the prompt in non-TTY (CI). Editing the hooks block invalidates trust and re-prompts on the next run.
+`--allow-hooks` skips the prompt in non-TTY (CI). Editing the hooks block or a module hook file invalidates trust and re-prompts on the next run.
 
 **Variations:** `kind: module` for in-process JS / TS hooks. `on_failure: block` aborts; `warn` (default) logs; `ignore` is silent. Mandatory `timeout_ms` ceiling: 300_000 ms.
 

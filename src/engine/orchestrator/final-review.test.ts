@@ -96,16 +96,13 @@ describe('runFinalReviewPhase', () => {
       phaseTimings,
     );
 
-    // Planner received a review prompt containing the spec content.
     expect(reviewPrompts).toHaveLength(1);
     expect(reviewPrompts[0]).toContain('Add auth');
 
-    // review.md was written with the planner's output.
     const reviewPath = join(sessionDir(projectDir, sessionId), REVIEW_FILE);
     expect(existsSync(reviewPath)).toBe(true);
     expect(readFileSync(reviewPath, 'utf-8')).toContain(reviewText);
 
-    // onComplete was invoked once with the final summary.
     expect(completions).toHaveLength(1);
     expect(completions[0]).toBe(summary);
 
@@ -114,7 +111,6 @@ describe('runFinalReviewPhase', () => {
     expect(statusEvents[0]).toMatchObject({ status: 'running' });
     expect(statusEvents.at(-1)).toMatchObject({ status: 'done' });
 
-    // Summary shape + phase timing were set.
     expect(summary.feature).toBe('test feature');
     expect(phaseTimings.review).toBeGreaterThanOrEqual(0);
     expect(summary.reviewPacket).toMatchObject({
@@ -172,6 +168,46 @@ describe('runFinalReviewPhase', () => {
     expect(existsSync(packetPath)).toBe(true);
     const packet = ReviewPacketSchema.parse(JSON.parse(readFileSync(packetPath, 'utf-8')));
     expect(packet.finalReview.status).toBe('failed');
+  });
+
+  it('does not emit workflow completion when final review is aborted', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSpecFile(projectDir, sessionId, SPEC_FILE, '# Spec\n', null);
+
+    const controller = new AbortController();
+    const completions: Summary[] = [];
+    const { callbacks } = makeCallbacks({ onComplete: (summary) => { completions.push(summary); } });
+    const { bus, events } = makeBusRecorder();
+    const planner = makePlanner({
+      review: async () => {
+        controller.abort(new DOMException('The user aborted a request.', 'AbortError'));
+        throw new DOMException('The user aborted a request.', 'AbortError');
+      },
+    });
+    const phaseTimings: Record<string, number> = {};
+
+    const summary = await runFinalReviewPhase(
+      {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks,
+        bus,
+        state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })]),
+        planner,
+        metadata: TEST_METADATA,
+        signal: controller.signal,
+      },
+      SUMMARY_BASE,
+      [],
+      phaseTimings,
+    );
+
+    expect(summary).toBeDefined();
+    expect(completions).toEqual([]);
+    expect(events.some(event => event.type === 'workflow_complete')).toBe(false);
+    expect(phaseTimings.review).toBeGreaterThanOrEqual(0);
+    expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE))).toBe(false);
   });
 
   it('works without a phaseTimings map (metadata argument remains optional)', async () => {
